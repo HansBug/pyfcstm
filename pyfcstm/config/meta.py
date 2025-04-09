@@ -7,13 +7,13 @@ Overview:
 __TITLE__ = 'pyfcstm'
 
 #: Version of this project.
-__VERSION__ = '0.10.0'
+__VERSION__ = '0.0.1'
 
 #: Short description of the project, will be included in ``setup.py``.
-__DESCRIPTION__ = 'Useful utilities for huggingface'
+__DESCRIPTION__ = 'Module with state machine model support'
 
 #: Author of this project.
-__AUTHOR__ = 'hansbug1992'
+__AUTHOR__ = 'HansBug'
 
 #: Email of the authors'.
-__AUTHOR_EMAIL__ = 'hansbug1992@hansbug.org'
+__AUTHOR_EMAIL__ = 'hansbug@buaa.edu.cn'

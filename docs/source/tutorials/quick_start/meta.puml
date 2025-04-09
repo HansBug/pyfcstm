@@ -1,0 +1,45 @@
+@startuml
+
+enum StateType {
+    Composite
+    Normal
+    Pseuda
+}
+
+class State {
+    name: str
+    description: str
+    type: StateType
+    min_time_lock: int
+    max_time_lock: int
+    on_entry
+    on_duration
+    on_exit
+    events: List[Event]
+
+}
+
+class Event {
+    name: str
+    guard
+}
+
+class Transition {
+    event: Event
+    from_state: State
+    to_state: State
+}
+Transition "*" *-- "1" State : from_state
+Transition "*" *-- "1" State : to_state
+Transition "*" *-- "1" Event : event
+
+class Statechart {
+    states: List[State]
+    events: List[Event]
+    transitions: List[Transition]
+}
+
+Statechart "1" o-- "*" State
+Statechart "1" o-- "*" Event
+Statechart "1" o-- "*" Transition
+@enduml

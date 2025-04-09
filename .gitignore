@@ -1219,3 +1219,4 @@ fabric.properties
 /runs
 .benchmarks
 /venv*
+junit.xml

@@ -3,7 +3,7 @@ import uuid
 
 import pytest
 
-from pyfcstm.model import NormalState, Event, Transition, CompositeState, Statechart, PseudoState
+from pyfcstm.model import NormalState, Event, Transition, CompositeState, Statechart, PseudoState, StateType
 
 
 @pytest.fixture
@@ -143,6 +143,17 @@ class TestModelState:
         assert normal_state.chart is None
         assert str(normal_state) == "<NormalState #c5d71484-f8cf-4bf4-b76f-47904730804b, name='TestState'>"
         assert repr(normal_state) == "<NormalState name='TestState'>"
+        assert normal_state.json == {
+            'description': '',
+            'id': 'c5d71484-f8cf-4bf4-b76f-47904730804b',
+            'max_time_lock': None,
+            'min_time_lock': None,
+            'name': 'TestState',
+            'on_during': None,
+            'on_entry': None,
+            'on_exit': None,
+            'type': 'normal'
+        }
 
     def test_pseudo_state(self, mock_uuid4, pseudo_state):
         assert pseudo_state.name == 'TestState'
@@ -156,6 +167,17 @@ class TestModelState:
         assert pseudo_state.chart is None
         assert str(pseudo_state) == "<PseudoState #c5d71484-f8cf-4bf4-b76f-47904730804b, name='TestState'>"
         assert repr(pseudo_state) == "<PseudoState name='TestState'>"
+        assert pseudo_state.json == {
+            'description': '',
+            'id': 'c5d71484-f8cf-4bf4-b76f-47904730804b',
+            'max_time_lock': None,
+            'min_time_lock': None,
+            'name': 'TestState',
+            'on_during': None,
+            'on_entry': None,
+            'on_exit': None,
+            'type': 'pseudo'
+        }
 
     def test_event(self, mock_uuid4, event):
         assert event.name == 'TestEvent'
@@ -164,6 +186,11 @@ class TestModelState:
         assert event.chart is None
         assert str(event) == "<Event #c5d71484-f8cf-4bf4-b76f-47904730804b, name='TestEvent', guard=None>"
         assert repr(event) == "<Event name='TestEvent'>"
+        assert event.json == {
+            'guard': None,
+            'id': 'c5d71484-f8cf-4bf4-b76f-47904730804b',
+            'name': 'TestEvent'
+        }
 
     def test_transition(self, mock_uuid4, normal_state, event):
         transition = Transition(normal_state, normal_state, event)
@@ -176,6 +203,12 @@ class TestModelState:
             transition) == "<Transition #cc00fcaa-7ca6-4061-b17a-48e52e29a3fa, src_state='c5d71484-f8cf-4bf4-b76f-47904730804b', dst_state='c5d71484-f8cf-4bf4-b76f-47904730804b', event='9e3225a9-f133-45de-a168-f4e2851f072f'>"
         assert repr(
             transition) == "<Transition src_state='c5d71484-f8cf-4bf4-b76f-47904730804b', dst_state='c5d71484-f8cf-4bf4-b76f-47904730804b', event='9e3225a9-f133-45de-a168-f4e2851f072f'>"
+        assert transition.json == {
+            'dst_state_id': 'c5d71484-f8cf-4bf4-b76f-47904730804b',
+            'event_id': '9e3225a9-f133-45de-a168-f4e2851f072f',
+            'id': 'cc00fcaa-7ca6-4061-b17a-48e52e29a3fa',
+            'src_state_id': 'c5d71484-f8cf-4bf4-b76f-47904730804b'
+        }
 
     def test_composite_state(self, mock_uuid4, composite_state, normal_state):
         assert composite_state.name == 'TestComposite'
@@ -186,3 +219,60 @@ class TestModelState:
         assert str(
             composite_state) == "<CompositeState #9e3225a9-f133-45de-a168-f4e2851f072f, name='TestComposite', states=<StateElements 1 item>>"
         assert repr(composite_state) == "<CompositeState name='TestComposite'>"
+        assert composite_state.json == {
+            'description': '',
+            'id': '9e3225a9-f133-45de-a168-f4e2851f072f',
+            'initial_state_id': 'c5d71484-f8cf-4bf4-b76f-47904730804b',
+            'max_time_lock': None,
+            'min_time_lock': None,
+            'name': 'TestComposite',
+            'on_during': None,
+            'on_entry': None,
+            'on_exit': None,
+            'state_ids': ['c5d71484-f8cf-4bf4-b76f-47904730804b'],
+            'type': 'composite'
+        }
+
+
+@pytest.fixture
+def state_type():
+    return StateType
+
+
+@pytest.mark.unittest
+class TestStateType:
+    def test_state_type_values(self, state_type):
+        assert state_type.COMPOSITE.value == 'composite'
+        assert state_type.NORMAL.value == 'normal'
+        assert state_type.PSEUDO.value == 'pseudo'
+
+    def test_get_cls_composite(self, state_type):
+        assert state_type.COMPOSITE.get_cls() == CompositeState
+
+    def test_get_cls_normal(self, state_type):
+        assert state_type.NORMAL.get_cls() == NormalState
+
+    def test_get_cls_pseudo(self, state_type):
+        assert state_type.PSEUDO.get_cls() == PseudoState
+
+    def test_loads_enum_value(self, state_type):
+        assert state_type.loads(state_type.COMPOSITE) == state_type.COMPOSITE
+        assert state_type.loads(state_type.NORMAL) == state_type.NORMAL
+        assert state_type.loads(state_type.PSEUDO) == state_type.PSEUDO
+
+    def test_loads_string_value(self, state_type):
+        assert state_type.loads('composite') == state_type.COMPOSITE
+        assert state_type.loads('COMPOSITE') == state_type.COMPOSITE
+        assert state_type.loads('normal') == state_type.NORMAL
+        assert state_type.loads('NORMAL') == state_type.NORMAL
+        assert state_type.loads('pseudo') == state_type.PSEUDO
+        assert state_type.loads('PSEUDO') == state_type.PSEUDO
+
+    def test_loads_invalid_type(self, state_type):
+        with pytest.raises(TypeError) as exc_info:
+            state_type.loads(123)
+        assert str(exc_info.value) == "Unknown state value type - 123."
+
+    def test_loads_invalid_string(self, state_type):
+        with pytest.raises(KeyError):
+            state_type.loads('invalid')

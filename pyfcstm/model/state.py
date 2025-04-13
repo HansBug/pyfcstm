@@ -464,7 +464,7 @@ class CompositeState(State):
         return {
             **super()._to_json(),
             'initial_state_id': self._initial_state_id,
-            'state_ids': [state.id for state in self.states],
+            'state_ids': [(state.id if isinstance(state, State) else state) for state in self.states],
         }
 
     @classmethod

@@ -67,9 +67,7 @@ class ChartElement(BaseElement):
     def chart(self, chart: Optional['Statechart']):
         self._chart_ref = weakref.ref(chart) if chart is not None else None
 
-    @chart.deleter
-    def chart(self):
-        self._chart_ref = None
+
 
 
 T = TypeVar('T', bound=ChartElement)

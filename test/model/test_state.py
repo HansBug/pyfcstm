@@ -119,6 +119,9 @@ class TestModelState:
         assert t4.dst_state == d
         assert t4.event == e4
 
+        assert str(sc) == "<Statechart #a1016d07-0132-413c-a59a-8f5d33f3cb29, name='chart1', " \
+                          "root_state=<CompositeState name='Root'>, states=<ChartElements[State] 5 items>, " \
+                          "transitions=<ChartElements[Transition] 4 items>, events=<ChartElements[Event] 4 items>>"
         assert repr(sc) == "<Statechart name='chart1', root_state=<CompositeState name='Root'>>"
         assert str(sc.states) == ("State[<NormalState name='A'>, <NormalState name='B'>, <NormalState name='C'>, "
                                   "<NormalState name='D'>, <CompositeState name='Root'>]")

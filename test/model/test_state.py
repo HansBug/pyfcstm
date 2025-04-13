@@ -50,7 +50,7 @@ def statechart(composite_state):
 
 @pytest.mark.unittest
 class TestModelState:
-    def test_simple_integrate(self):
+    def test_simple_integrate(self, mock_uuid4):
         a = NormalState('A')
         b = NormalState('B')
         c = NormalState('C')
@@ -130,6 +130,90 @@ class TestModelState:
                                        "<Transition src_state=<NormalState name='C'>, dst_state=<NormalState name='D'>, "
                                        "event=<Event name='e4'>>]")
         assert str(sc.events) == "Event[<Event name='e1'>, <Event name='e2'>, <Event name='e3'>, <Event name='e4'>]"
+
+        assert sc.json == {
+            'events': [{'guard': None,
+                        'id': '1085f323-2d42-4c13-a9c8-8d786ed68ce6',
+                        'name': 'e1'},
+                       {'guard': None,
+                        'id': 'fcb62aa6-3bf9-4b61-bc08-8a3b70be57aa',
+                        'name': 'e2'},
+                       {'guard': None, 'id': 'da1f334a-7017-450d-bf60-3dc82ebd3b12',
+                        'name': 'e3'},
+                       {'guard': None,
+                        'id': '0b635e3f-f56b-4f0b-9933-852371249ab3',
+                        'name': 'e4'}],
+            'id': 'a1016d07-0132-413c-a59a-8f5d33f3cb29',
+            'name': 'chart1',
+            'preamble': [],
+            'root_state_id': 'e4f90013-fda6-4fef-99d4-602a4207cdd5',
+            'states': [{'description': '',
+                        'id': 'c5d71484-f8cf-4bf4-b76f-47904730804b',
+                        'max_time_lock': None,
+                        'min_time_lock': None,
+                        'name': 'A',
+                        'on_during': None,
+                        'on_entry': None,
+                        'on_exit': None,
+                        'type': 'normal'},
+                       {'description': '',
+                        'id': '9e3225a9-f133-45de-a168-f4e2851f072f',
+                        'max_time_lock': None,
+                        'min_time_lock': None,
+                        'name': 'B',
+                        'on_during': None,
+                        'on_entry': None,
+                        'on_exit': None,
+                        'type': 'normal'},
+                       {'description': '',
+                        'id': 'cc00fcaa-7ca6-4061-b17a-48e52e29a3fa',
+                        'max_time_lock': None,
+                        'min_time_lock': None,
+                        'name': 'C',
+                        'on_during': None,
+                        'on_entry': None,
+                        'on_exit': None,
+                        'type': 'normal'},
+                       {'description': '',
+                        'id': '379a953f-aa68-43e3-aec5-a27b945e605f',
+                        'max_time_lock': None,
+                        'min_time_lock': None,
+                        'name': 'D',
+                        'on_during': None,
+                        'on_entry': None,
+                        'on_exit': None,
+                        'type': 'normal'},
+                       {'description': '',
+                        'id': 'e4f90013-fda6-4fef-99d4-602a4207cdd5',
+                        'initial_state_id': 'c5d71484-f8cf-4bf4-b76f-47904730804b',
+                        'max_time_lock': None,
+                        'min_time_lock': None,
+                        'name': 'Root',
+                        'on_during': None,
+                        'on_entry': None,
+                        'on_exit': None,
+                        'state_ids': ['c5d71484-f8cf-4bf4-b76f-47904730804b',
+                                      '9e3225a9-f133-45de-a168-f4e2851f072f',
+                                      'cc00fcaa-7ca6-4061-b17a-48e52e29a3fa',
+                                      '379a953f-aa68-43e3-aec5-a27b945e605f'],
+                        'type': 'composite'}],
+            'transitions': [{'dst_state_id': '9e3225a9-f133-45de-a168-f4e2851f072f',
+                             'event_id': '1085f323-2d42-4c13-a9c8-8d786ed68ce6',
+                             'id': 'df5c1fef-1433-4866-85b7-f056681d5152',
+                             'src_state_id': 'c5d71484-f8cf-4bf4-b76f-47904730804b'},
+                            {'dst_state_id': 'cc00fcaa-7ca6-4061-b17a-48e52e29a3fa',
+                             'event_id': 'fcb62aa6-3bf9-4b61-bc08-8a3b70be57aa',
+                             'id': 'af803ce2-5906-41d1-9fb6-c6804e06ea28',
+                             'src_state_id': 'c5d71484-f8cf-4bf4-b76f-47904730804b'},
+                            {'dst_state_id': '379a953f-aa68-43e3-aec5-a27b945e605f',
+                             'event_id': 'da1f334a-7017-450d-bf60-3dc82ebd3b12',
+                             'id': 'ab178f45-7af6-4493-b743-9ec6d4290062',
+                             'src_state_id': '9e3225a9-f133-45de-a168-f4e2851f072f'},
+                            {'dst_state_id': '379a953f-aa68-43e3-aec5-a27b945e605f',
+                             'event_id': '0b635e3f-f56b-4f0b-9933-852371249ab3',
+                             'id': 'ab517a72-e5c1-4410-8dd6-1754e4208450',
+                             'src_state_id': 'cc00fcaa-7ca6-4061-b17a-48e52e29a3fa'}]
+        }
 
     def test_normal_state(self, mock_uuid4, normal_state):
         assert normal_state.name == 'TestState'

@@ -6,11 +6,15 @@ abstract class State {
     type: StateType
     min_time_lock: int
     max_time_lock: int
-    on_entry
-    on_duration
-    on_exit
+    on_entry: List[UpdateAssignment]
+    on_duration: List[UpdateAssignment]
+    on_exit: List[UpdateAssignment]
     events: List[Event]
 }
+
+State "1" *-- "*" UpdateAssignment: on_entry
+State "1" *-- "*" UpdateAssignment: on_duration
+State "1" *-- "*" UpdateAssignment: on_exit
 
 CompositeState -up-|> State
 
@@ -49,13 +53,31 @@ Transition "*" *-- "1" Event : event
 
 class Statechart {
     name: str
-    preamble
+    preamble: List[DeclareAssignment]
     states: List[State]
     events: List[Event]
     transitions: List[Transition]
 }
 
+Statechart "1" *-- "*" DeclareAssignment
 Statechart "1" o-- "*" State
 Statechart "1" o-- "*" Event
 Statechart "1" o-- "*" Transition
+
+abstract class Assignment {
+    lvalue: str
+}
+
+class DeclareAssignment {
+    initial_value: number
+}
+
+DeclareAssignment -up-|> Assignment
+
+class UpdateAssignment {
+    rvalue: expression
+}
+
+UpdateAssignment -up-|> Assignment
+
 @enduml

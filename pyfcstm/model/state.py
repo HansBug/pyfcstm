@@ -206,7 +206,7 @@ class State(ChartElement, metaclass=ABCMeta):
         return retval
 
     def _yield_child_states(self):
-        raise NotImplementedError
+        raise NotImplementedError  # pragma: no cover
 
     def _repr_dict(self):
         d = {
@@ -280,6 +280,7 @@ class CompositeState(State):
     def _yield_child_states(self):
         for state in self.states:
             state: State
+            yield state
             yield from state._yield_child_states()
 
     def _repr_dict(self):
@@ -352,7 +353,7 @@ class Transition(ChartElement):
         return self._event_id
 
     @property
-    def event(self) -> 'Event':
+    def event(self) -> Optional['Event']:
         if self.chart is not None:
             return self.chart.events.get(self._event_id)
         else:
@@ -367,9 +368,9 @@ class Transition(ChartElement):
 
     def _repr_dict(self):
         return {
-            'src_state': self.src_state if self.src_state else None,
-            'dst_state': self.dst_state if self.dst_state else None,
-            'event': self.event if self.event else None,
+            'src_state': self.src_state if self.src_state else self.src_state_id,
+            'dst_state': self.dst_state if self.dst_state else self.dst_state_id,
+            'event': self.event if self.event else self.event_id,
         }
 
 

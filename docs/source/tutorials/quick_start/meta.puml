@@ -19,11 +19,11 @@ State "1" *-- "*" UpdateAssignment: on_exit
 CompositeState -up-|> State
 
 class CompositeState {
-    initial: Optional[State]
+    initial_state: State
     states: List[State]
 }
 
-CompositeState "1" *-- "0..1" State : initial
+CompositeState "1" *-- "0..1" State : initial_state
 CompositeState "1" *-- "0..*" State : states
 
 NormalState -up-|> State
@@ -44,11 +44,11 @@ class Event {
 
 class Transition {
     event: Event
-    from_state: State
-    to_state: State
+    src_state: State
+    dst_state: State
 }
-Transition "*" *-- "1" State : from_state
-Transition "*" *-- "1" State : to_state
+Transition "*" *-- "1" State : src_state
+Transition "*" *-- "1" State : dst_state
 Transition "*" *-- "1" Event : event
 
 class Statechart {

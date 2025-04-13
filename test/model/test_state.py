@@ -141,7 +141,6 @@ class TestModelState:
         assert normal_state.on_during is None
         assert normal_state.on_exit is None
         assert normal_state.chart is None
-        assert normal_state.list_states() == [normal_state]
         assert str(normal_state) == "<NormalState #c5d71484-f8cf-4bf4-b76f-47904730804b, name='TestState'>"
         assert repr(normal_state) == "<NormalState name='TestState'>"
 
@@ -155,7 +154,6 @@ class TestModelState:
         assert pseudo_state.on_during is None
         assert pseudo_state.on_exit is None
         assert pseudo_state.chart is None
-        assert pseudo_state.list_states() == [pseudo_state]
         assert str(pseudo_state) == "<PseudoState #c5d71484-f8cf-4bf4-b76f-47904730804b, name='TestState'>"
         assert repr(pseudo_state) == "<PseudoState name='TestState'>"
 
@@ -185,7 +183,6 @@ class TestModelState:
         assert composite_state.initial_state_id == normal_state.id
         assert len(composite_state.states) == 1
         assert normal_state in composite_state.states
-        assert composite_state.list_states() == [composite_state, normal_state]
         assert str(
-            composite_state) == "<CompositeState #9e3225a9-f133-45de-a168-f4e2851f072f, name='TestComposite', states=<StateElements[State] 1 item>>"
+            composite_state) == "<CompositeState #9e3225a9-f133-45de-a168-f4e2851f072f, name='TestComposite', states=<StateElements 1 item>>"
         assert repr(composite_state) == "<CompositeState name='TestComposite'>"

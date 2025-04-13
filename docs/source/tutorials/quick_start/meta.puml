@@ -9,7 +9,6 @@ abstract class State {
     on_entry: List[UpdateAssignment]
     on_duration: List[UpdateAssignment]
     on_exit: List[UpdateAssignment]
-    events: List[Event]
 }
 
 State "1" *-- "*" UpdateAssignment: on_entry

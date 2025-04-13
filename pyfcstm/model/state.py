@@ -1,10 +1,15 @@
+import copy
 import io
 import uuid
 import weakref
 from abc import ABCMeta
-from typing import Optional, List, Dict, Generic, TypeVar, Union, Type
+from enum import Enum, unique
+from pprint import pformat
+from typing import Optional, List, Dict, Generic, TypeVar, Union, Type, Set
 
 from hbutils.string import plural_word
+
+from pyfcstm.utils import IJsonOp
 
 
 class BaseElement:
@@ -116,7 +121,7 @@ class ChartElements(Generic[T]):
         return f'{self._element_type.__name__}{list(self)!r}'
 
 
-class Statechart(BaseElement):
+class Statechart(BaseElement, IJsonOp):
     def __init__(self, name: str, root_state: 'CompositeState', preamble: Optional[List] = None,
                  states: Optional[List['State']] = None,
                  events: Optional[List['Event']] = None,
@@ -181,8 +186,75 @@ class Statechart(BaseElement):
             'events': self.events,
         }
 
+    def _to_json(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'preamble': self.preamble,
+            'root_state_id': self._root_state_id,
+            'states': [state.json for state in self.states],
+            'events': [event.json for event in self.events],
+            'transitions': [transition.json for transition in self.transitions],
+        }
 
-class State(ChartElement, metaclass=ABCMeta):
+    @classmethod
+    def _from_json(cls, data):
+        original_data = data
+        data: dict = copy.deepcopy(data)
+        id_ = data.pop('id')
+        name = data.pop('name')
+        preamble = data.pop('preamble')
+        root_state_id = data.pop('root_state_id')
+        state_list = data.pop('states')
+        event_list = data.pop('events')
+        transition_list = data.pop('transitions')
+        if data:
+            raise ValueError(f'Unknown fields {list(data.keys())!r} found in {cls.__name__!r}:\n'
+                             f'{pformat(original_data)}')
+
+        states = [State.from_json(state) for state in state_list]
+        events = [Event.from_json(event) for event in event_list]
+        transitions = [Transition.from_json(transition) for transition in transition_list]
+        root_state = {state.id: state for state in states}[root_state_id]
+
+        return cls(
+            name=name,
+            preamble=preamble,
+            root_state=root_state,
+            states=states,
+            transitions=transitions,
+            events=events,
+            id_=id_,
+        )
+
+
+@unique
+class StateType(Enum):
+    COMPOSITE = 'composite'
+    NORMAL = 'normal'
+    PSEUDO = 'pseudo'
+
+    def get_cls(self) -> Type['State']:
+        if self == self.COMPOSITE:
+            return CompositeState
+        elif self == self.NORMAL:
+            return NormalState
+        elif self == self.PSEUDO:
+            return PseudoState
+        else:
+            raise ValueError(f'Unknown state type - {self!r}.')  # pragma: no cover
+
+    @classmethod
+    def loads(cls, value):
+        if isinstance(value, cls):
+            return value
+        elif isinstance(value, str):
+            return {value.value.lower(): value for key, value in cls.__members__.items()}[value.lower()]
+        else:
+            raise TypeError(f'Unknown state value type - {value!r}.')
+
+
+class State(ChartElement, IJsonOp, metaclass=ABCMeta):
     def __init__(self, name: str, description: str = '',
                  min_time_lock: Optional[int] = None, max_time_lock: Optional[int] = None,
                  on_entry=None, on_during=None, on_exit=None,
@@ -196,17 +268,12 @@ class State(ChartElement, metaclass=ABCMeta):
         self.on_during = on_during
         self.on_exit = on_exit
 
-    def list_states(self) -> List['State']:
-        retval = [self]
-        exist_ids = {self.id}
-        for state in self._yield_child_states():
-            if state.id not in exist_ids:
-                exist_ids.add(state.id)
-                retval.append(state)
-        return retval
-
-    def _yield_child_states(self):
+    def _type(self):
         raise NotImplementedError  # pragma: no cover
+
+    @property
+    def type(self) -> StateType:
+        return self._type()
 
     def _repr_dict(self):
         d = {
@@ -224,13 +291,112 @@ class State(ChartElement, metaclass=ABCMeta):
             d['on_exit'] = self.on_exit
         return d
 
+    def _to_json(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'type': self.type.value,
+            'description': self.description,
+            'min_time_lock': self.min_time_lock,
+            'max_time_lock': self.max_time_lock,
+            'on_entry': self.on_entry,
+            'on_during': self.on_during,
+            'on_exit': self.on_exit,
+        }
 
-class StateElements(ChartElements[State]):
-    def _after_add(self, item: T):
-        super()._after_add(item)
-        if self._chart is not None:
-            if item not in self._chart.states:
-                self._chart.states.add(item)
+    @classmethod
+    def _local_from_json(cls, data):
+        original_data = data
+        data: dict = copy.deepcopy(data)
+        id_ = data.pop('id')
+        name = data.pop('name')
+        description = data.pop('description')
+        min_time_lock = data.pop('min_time_lock')
+        max_time_lock = data.pop('max_time_lock')
+        on_entry = data.pop('on_entry')
+        on_during = data.pop('on_during')
+        on_exit = data.pop('on_exit')
+        if data:
+            raise ValueError(f'Unknown fields {list(data.keys())!r} found in {cls.__name__!r}:\n'
+                             f'{pformat(original_data)}')
+
+        return cls(
+            name=name,
+            description=description,
+            min_time_lock=min_time_lock,
+            max_time_lock=max_time_lock,
+            on_entry=on_entry,
+            on_during=on_during,
+            on_exit=on_exit,
+            id_=id_,
+        )
+
+    @classmethod
+    def _from_json(cls, data):
+        data: dict = copy.deepcopy(data)
+        type_ = data.pop('type')
+        implement_cls = StateType.loads(type_).get_cls()
+        return implement_cls._local_from_json(data)
+
+
+class StateElements:
+    def __init__(self, state_ids: List[str], s_state_ids: Set[str], chart: Optional[Statechart] = None):
+        self._s_state_ids = s_state_ids
+        self._state_ids = state_ids
+        self._chart = chart
+
+    def __contains__(self, item: Union[str, State]):
+        element_id = _to_element_id(item)
+        return element_id in self._s_state_ids
+
+    def __delitem__(self, item: Union[str, State]):
+        element_id = _to_element_id(item)
+        self._s_state_ids.remove(element_id)
+        self._state_ids.pop(self._state_ids.index(element_id))
+
+    def add(self, item: Union[str, State]):
+        if not isinstance(item, str) and not isinstance(item, State):
+            raise TypeError(f'Element type {State!r} expected but {item!r} found.')
+        element_id = _to_element_id(item)
+        if element_id not in self._s_state_ids:
+            self._s_state_ids.add(element_id)
+            self._state_ids.append(element_id)
+
+    def get(self, item: Union[str, State]) -> Optional[Union[State, str]]:
+        element_id = _to_element_id(item)
+        if element_id in self._s_state_ids:
+            if self._chart:
+                return self._chart.states.get(element_id)
+            else:
+                return element_id
+        else:
+            return None
+
+    def __getitem__(self, item: Union[str, State]) -> Union[State, str]:
+        element_id = _to_element_id(item)
+        if element_id in self._s_state_ids:
+            if self._chart:
+                return self._chart.states[element_id]
+            else:
+                return element_id
+        else:
+            raise KeyError(f'State {element_id!r} not found.')
+
+    def __len__(self):
+        return len(self._s_state_ids)
+
+    def __iter__(self):
+        for state_id in self._state_ids:
+            if self._chart:
+                yield self._chart.states.get(state_id)
+            else:
+                yield state_id
+
+    def __repr__(self):
+        return f'<{self.__class__.__name__} {plural_word(len(self._s_state_ids), "item")}>'
+
+    def __str__(self):
+        return f'{State.__name__}{list(self)!r}'
 
 
 class CompositeState(State):
@@ -251,9 +417,13 @@ class CompositeState(State):
         )
 
         self._initial_state_id = _to_element_id(initial_state)
-        self._d_states = {}
+        self._state_ids = []
+        self._s_state_ids = set()
         for state in (states or []):
             self.states.add(state)
+
+    def _type(self):
+        return StateType.COMPOSITE
 
     @property
     def initial_state_id(self):
@@ -275,13 +445,11 @@ class CompositeState(State):
 
     @property
     def states(self):
-        return StateElements(self._d_states, chart=self.chart, element_type=State)
-
-    def _yield_child_states(self):
-        for state in self.states:
-            state: State
-            yield state
-            yield from state._yield_child_states()
+        return StateElements(
+            state_ids=self._state_ids,
+            s_state_ids=self._s_state_ids,
+            chart=self.chart
+        )
 
     def _repr_dict(self):
         return super()._repr_dict()
@@ -292,18 +460,56 @@ class CompositeState(State):
             'states': self.states,
         }
 
+    def _to_json(self):
+        return {
+            **super()._to_json(),
+            'initial_state_id': self._initial_state_id,
+            'state_ids': [state.id for state in self.states],
+        }
+
+    @classmethod
+    def _local_from_json(cls, data):
+        original_data = data
+        data: dict = copy.deepcopy(data)
+        id_ = data.pop('id')
+        name = data.pop('name')
+        description = data.pop('description')
+        min_time_lock = data.pop('min_time_lock')
+        max_time_lock = data.pop('max_time_lock')
+        on_entry = data.pop('on_entry')
+        on_during = data.pop('on_during')
+        on_exit = data.pop('on_exit')
+        initial_state_id = data.pop('initial_state_id')
+        state_ids = data.pop('state_ids')
+        if data:
+            raise ValueError(f'Unknown fields {list(data.keys())!r} found in {cls.__name__!r}:\n'
+                             f'{pformat(original_data)}')
+
+        return cls(
+            name=name,
+            description=description,
+            min_time_lock=min_time_lock,
+            max_time_lock=max_time_lock,
+            on_entry=on_entry,
+            on_during=on_during,
+            on_exit=on_exit,
+            initial_state=initial_state_id,
+            states=state_ids,
+            id_=id_,
+        )
+
 
 class NormalState(State):
-    def _yield_child_states(self):
-        yield from []
+    def _type(self):
+        return StateType.NORMAL
 
 
 class PseudoState(State):
-    def _yield_child_states(self):
-        yield from []
+    def _type(self):
+        return StateType.PSEUDO
 
 
-class Transition(ChartElement):
+class Transition(ChartElement, IJsonOp):
     def __init__(self, src_state: Union[str, State], dst_state: Union[str, State], event: Union[str, 'Event'],
                  chart: Optional['Statechart'] = None, id_: Optional[str] = None):
         super().__init__(chart=chart, id_=id_)
@@ -373,8 +579,35 @@ class Transition(ChartElement):
             'event': self.event if self.event else self.event_id,
         }
 
+    def _to_json(self):
+        return {
+            'id': self.id,
+            'src_state_id': self._src_state_id,
+            'dst_state_id': self._dst_state_id,
+            'event_id': self._event_id,
+        }
 
-class Event(ChartElement):
+    @classmethod
+    def _from_json(cls, data):
+        original_data = data
+        data: dict = copy.deepcopy(data)
+        id_ = data.pop('id')
+        src_state_id = data.pop('src_state_id')
+        dst_state_id = data.pop('dst_state_id')
+        event_id = data.pop('event_id')
+        if data:
+            raise ValueError(f'Unknown fields {list(data.keys())!r} found in {cls.__name__!r}:\n'
+                             f'{pformat(original_data)}')
+
+        return cls(
+            src_state=src_state_id,
+            dst_state=dst_state_id,
+            event=event_id,
+            id_=id_,
+        )
+
+
+class Event(ChartElement, IJsonOp):
     def __init__(self, name: str, guard=None, chart: Optional['Statechart'] = None, id_: Optional[str] = None):
         super().__init__(chart=chart, id_=id_)
         self.name = name
@@ -390,3 +623,27 @@ class Event(ChartElement):
             'name': self.name,
             'guard': self.guard,
         }
+
+    def _to_json(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'guard': self.guard,
+        }
+
+    @classmethod
+    def _from_json(cls, data):
+        original_data = data
+        data: dict = copy.deepcopy(data)
+        id_ = data.pop('id')
+        name = data.pop('name')
+        guard = data.pop('guard')
+        if data:
+            raise ValueError(f'Unknown fields {list(data.keys())!r} found in {cls.__name__!r}:\n'
+                             f'{pformat(original_data)}')
+
+        return cls(
+            name=name,
+            guard=guard,
+            id_=id_,
+        )

@@ -1,12 +1,6 @@
 @startuml
 
-enum StateType {
-    Composite
-    Normal
-    Pseuda
-}
-
-class State {
+abstract class State {
     name: str
     description: str
     type: StateType
@@ -16,6 +10,26 @@ class State {
     on_duration
     on_exit
     events: List[Event]
+}
+
+CompositeState -up-|> State
+
+class CompositeState {
+    initial: Optional[State]
+    states: List[State]
+}
+
+CompositeState "1" *-- "0..1" State : initial
+CompositeState "1" *-- "0..*" State : states
+
+NormalState -up-|> State
+
+class NormalState {
+}
+
+PseudaState -up-|> State
+
+class PseudaState {
 
 }
 
@@ -34,6 +48,8 @@ Transition "*" *-- "1" State : to_state
 Transition "*" *-- "1" Event : event
 
 class Statechart {
+    name: str
+    preamble
     states: List[State]
     events: List[Event]
     transitions: List[Transition]

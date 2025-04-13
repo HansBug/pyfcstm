@@ -3,7 +3,7 @@
 abstract class State {
     name: str
     description: str
-    type: StateType
+    ---
     min_time_lock: int
     max_time_lock: int
     on_entry: List[UpdateAssignment]
@@ -54,12 +54,15 @@ Transition "*" *-- "1" Event : event
 class Statechart {
     name: str
     preamble: List[DeclareAssignment]
+    root_state: RootState
+    ---
     states: List[State]
     events: List[Event]
     transitions: List[Transition]
 }
 
 Statechart "1" *-- "*" DeclareAssignment
+Statechart "1" *-- "1" CompositeState
 Statechart "1" o-- "*" State
 Statechart "1" o-- "*" Event
 Statechart "1" o-- "*" Transition

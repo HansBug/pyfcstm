@@ -23,7 +23,7 @@ class CompositeState {
     states: List[State]
 }
 
-CompositeState "1" *-- "0..1" State : initial_state
+CompositeState "1" *-- "1" State : initial_state
 CompositeState "1" *-- "0..*" State : states
 
 NormalState -up-|> State

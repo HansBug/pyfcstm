@@ -394,3 +394,199 @@ class TestStateType:
     def test_loads_invalid_string(self, state_type):
         with pytest.raises(KeyError):
             state_type.loads('invalid')
+
+    def test_statechart_from_json(self):
+        sc = Statechart.from_json({
+            'events': [{'guard': None,
+                        'id': '1085f323-2d42-4c13-a9c8-8d786ed68ce6',
+                        'name': 'e1'},
+                       {'guard': None,
+                        'id': 'fcb62aa6-3bf9-4b61-bc08-8a3b70be57aa',
+                        'name': 'e2'},
+                       {'guard': None, 'id': 'da1f334a-7017-450d-bf60-3dc82ebd3b12',
+                        'name': 'e3'},
+                       {'guard': None,
+                        'id': '0b635e3f-f56b-4f0b-9933-852371249ab3',
+                        'name': 'e4'}],
+            'id': 'a1016d07-0132-413c-a59a-8f5d33f3cb29',
+            'name': 'chart1',
+            'preamble': [],
+            'root_state_id': 'e4f90013-fda6-4fef-99d4-602a4207cdd5',
+            'states': [{'description': '',
+                        'id': 'c5d71484-f8cf-4bf4-b76f-47904730804b',
+                        'max_time_lock': None,
+                        'min_time_lock': None,
+                        'name': 'A',
+                        'on_during': None,
+                        'on_entry': None,
+                        'on_exit': None,
+                        'type': 'normal'},
+                       {'description': '',
+                        'id': '9e3225a9-f133-45de-a168-f4e2851f072f',
+                        'max_time_lock': None,
+                        'min_time_lock': None,
+                        'name': 'B',
+                        'on_during': None,
+                        'on_entry': None,
+                        'on_exit': None,
+                        'type': 'normal'},
+                       {'description': '',
+                        'id': 'cc00fcaa-7ca6-4061-b17a-48e52e29a3fa',
+                        'max_time_lock': None,
+                        'min_time_lock': None,
+                        'name': 'C',
+                        'on_during': None,
+                        'on_entry': None,
+                        'on_exit': None,
+                        'type': 'normal'},
+                       {'description': '',
+                        'id': '379a953f-aa68-43e3-aec5-a27b945e605f',
+                        'max_time_lock': None,
+                        'min_time_lock': None,
+                        'name': 'D',
+                        'on_during': None,
+                        'on_entry': None,
+                        'on_exit': None,
+                        'type': 'normal'},
+                       {'description': '',
+                        'id': 'e4f90013-fda6-4fef-99d4-602a4207cdd5',
+                        'initial_state_id': 'c5d71484-f8cf-4bf4-b76f-47904730804b',
+                        'max_time_lock': None,
+                        'min_time_lock': None,
+                        'name': 'Root',
+                        'on_during': None,
+                        'on_entry': None,
+                        'on_exit': None,
+                        'state_ids': ['c5d71484-f8cf-4bf4-b76f-47904730804b',
+                                      '9e3225a9-f133-45de-a168-f4e2851f072f',
+                                      'cc00fcaa-7ca6-4061-b17a-48e52e29a3fa',
+                                      '379a953f-aa68-43e3-aec5-a27b945e605f'],
+                        'type': 'composite'}],
+            'transitions': [{'dst_state_id': '9e3225a9-f133-45de-a168-f4e2851f072f',
+                             'event_id': '1085f323-2d42-4c13-a9c8-8d786ed68ce6',
+                             'id': 'df5c1fef-1433-4866-85b7-f056681d5152',
+                             'src_state_id': 'c5d71484-f8cf-4bf4-b76f-47904730804b'},
+                            {'dst_state_id': 'cc00fcaa-7ca6-4061-b17a-48e52e29a3fa',
+                             'event_id': 'fcb62aa6-3bf9-4b61-bc08-8a3b70be57aa',
+                             'id': 'af803ce2-5906-41d1-9fb6-c6804e06ea28',
+                             'src_state_id': 'c5d71484-f8cf-4bf4-b76f-47904730804b'},
+                            {'dst_state_id': '379a953f-aa68-43e3-aec5-a27b945e605f',
+                             'event_id': 'da1f334a-7017-450d-bf60-3dc82ebd3b12',
+                             'id': 'ab178f45-7af6-4493-b743-9ec6d4290062',
+                             'src_state_id': '9e3225a9-f133-45de-a168-f4e2851f072f'},
+                            {'dst_state_id': '379a953f-aa68-43e3-aec5-a27b945e605f',
+                             'event_id': '0b635e3f-f56b-4f0b-9933-852371249ab3',
+                             'id': 'ab517a72-e5c1-4410-8dd6-1754e4208450',
+                             'src_state_id': 'cc00fcaa-7ca6-4061-b17a-48e52e29a3fa'}]
+        })
+
+        # Check basic properties
+        assert sc.id == 'a1016d07-0132-413c-a59a-8f5d33f3cb29'
+        assert sc.name == 'chart1'
+        assert sc.preamble == []
+
+        # Check states
+        assert len(sc.states) == 5
+        state_a = sc.states.get_by_name('A')
+        assert state_a.name == 'A'
+        assert state_a.id == 'c5d71484-f8cf-4bf4-b76f-47904730804b'
+        assert isinstance(state_a, NormalState)
+        assert str(state_a) == "<NormalState #c5d71484-f8cf-4bf4-b76f-47904730804b, name='A'>"
+
+        state_b = sc.states.get_by_name('B')
+        assert state_b.name == 'B'
+        assert state_b.id == '9e3225a9-f133-45de-a168-f4e2851f072f'
+        assert isinstance(state_b, NormalState)
+        assert str(state_b) == "<NormalState #9e3225a9-f133-45de-a168-f4e2851f072f, name='B'>"
+
+        state_c = sc.states.get_by_name('C')
+        assert state_c.name == 'C'
+        assert state_c.id == 'cc00fcaa-7ca6-4061-b17a-48e52e29a3fa'
+        assert isinstance(state_c, NormalState)
+        assert str(state_c) == "<NormalState #cc00fcaa-7ca6-4061-b17a-48e52e29a3fa, name='C'>"
+
+        state_d = sc.states.get_by_name('D')
+        assert state_d.name == 'D'
+        assert state_d.id == '379a953f-aa68-43e3-aec5-a27b945e605f'
+        assert isinstance(state_d, NormalState)
+        assert str(state_d) == "<NormalState #379a953f-aa68-43e3-aec5-a27b945e605f, name='D'>"
+
+        root_state = sc.states.get_by_name('Root')
+        assert root_state.name == 'Root'
+        assert root_state.id == 'e4f90013-fda6-4fef-99d4-602a4207cdd5'
+        assert isinstance(root_state, CompositeState)
+        assert root_state.initial_state is state_a
+        assert root_state.initial_state_id == 'c5d71484-f8cf-4bf4-b76f-47904730804b'
+        assert str(
+            root_state) == "<CompositeState #e4f90013-fda6-4fef-99d4-602a4207cdd5, name='Root', states=<StateElements 4 items>>"
+        assert str(root_state.states) == "State[<NormalState name='A'>, <NormalState name='B'>, " \
+                                         "<NormalState name='C'>, <NormalState name='D'>]"
+
+        # Check events
+        assert len(sc.events) == 4
+        event_e1 = sc.events.get_by_name('e1')
+        assert event_e1.name == 'e1'
+        assert event_e1.id == '1085f323-2d42-4c13-a9c8-8d786ed68ce6'
+
+        event_e2 = sc.events.get_by_name('e2')
+        assert event_e2.name == 'e2'
+        assert event_e2.id == 'fcb62aa6-3bf9-4b61-bc08-8a3b70be57aa'
+
+        event_e3 = sc.events.get_by_name('e3')
+        assert event_e3.name == 'e3'
+        assert event_e3.id == 'da1f334a-7017-450d-bf60-3dc82ebd3b12'
+
+        event_e4 = sc.events.get_by_name('e4')
+        assert event_e4.name == 'e4'
+        assert event_e4.id == '0b635e3f-f56b-4f0b-9933-852371249ab3'
+
+        # Check transitions
+        assert len(sc.transitions) == 4
+
+        # A -> B transition
+        transition_1 = sc.transitions['df5c1fef-1433-4866-85b7-f056681d5152']
+        assert transition_1.src_state is state_a
+        assert transition_1.src_state_id == state_a.id
+        assert transition_1.dst_state is state_b
+        assert transition_1.dst_state_id == state_b.id
+        assert transition_1.event is event_e1
+        assert transition_1.event_id == event_e1.id
+        assert str(transition_1) == "<Transition #df5c1fef-1433-4866-85b7-f056681d5152, " \
+                                    "src_state=<NormalState name='A'>, dst_state=<NormalState name='B'>, " \
+                                    "event=<Event name='e1'>>"
+
+        # A -> C transition
+        transition_2 = sc.transitions['af803ce2-5906-41d1-9fb6-c6804e06ea28']
+        assert transition_2.src_state is state_a
+        assert transition_2.src_state_id == state_a.id
+        assert transition_2.dst_state is state_c
+        assert transition_2.dst_state_id == state_c.id
+        assert transition_2.event is event_e2
+        assert transition_2.event_id == event_e2.id
+        assert str(transition_2) == "<Transition #af803ce2-5906-41d1-9fb6-c6804e06ea28, " \
+                                    "src_state=<NormalState name='A'>, dst_state=<NormalState name='C'>, " \
+                                    "event=<Event name='e2'>>"
+
+        # B -> D transition
+        transition_3 = sc.transitions['ab178f45-7af6-4493-b743-9ec6d4290062']
+        assert transition_3.src_state is state_b
+        assert transition_3.src_state_id == state_b.id
+        assert transition_3.dst_state is state_d
+        assert transition_3.dst_state_id == state_d.id
+        assert transition_3.event is event_e3
+        assert transition_3.event_id == event_e3.id
+        assert str(transition_3) == "<Transition #ab178f45-7af6-4493-b743-9ec6d4290062, " \
+                                    "src_state=<NormalState name='B'>, dst_state=<NormalState name='D'>, " \
+                                    "event=<Event name='e3'>>"
+
+        # C -> D transition
+        transition_4 = sc.transitions['ab517a72-e5c1-4410-8dd6-1754e4208450']
+        assert transition_4.src_state is state_c
+        assert transition_4.src_state_id == state_c.id
+        assert transition_4.dst_state is state_d
+        assert transition_4.dst_state_id == state_d.id
+        assert transition_4.event is event_e4
+        assert transition_4.event_id == event_e4.id
+        assert str(transition_4) == "<Transition #ab517a72-e5c1-4410-8dd6-1754e4208450, " \
+                                    "src_state=<NormalState name='C'>, dst_state=<NormalState name='D'>, " \
+                                    "event=<Event name='e4'>>"

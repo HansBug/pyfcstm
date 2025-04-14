@@ -9,10 +9,10 @@ from typing import Optional, List, Dict, Generic, TypeVar, Union, Type, Set, Tup
 
 from hbutils.string import plural_word
 
-from pyfcstm.utils import IJsonOp
+from pyfcstm.utils import IJsonOp, IValidatable, ValidationError
 
 
-class BaseElement:
+class BaseElement(IValidatable):
     __has_name__ = False
 
     def __init__(self, id_: Optional[str] = None):
@@ -45,6 +45,14 @@ class BaseElement:
     def _str_dict(self):
         return self._repr_dict()
 
+    def _validate_id(self):
+        if not isinstance(self.id, str):
+            raise ValidationError(f'ID of element {self!r} should be str but {self.id!r} found.')
+
+    __validators__ = [
+        _validate_id,
+    ]
+
 
 def _to_element_id(element: BaseElement):
     if isinstance(element, BaseElement):
@@ -55,7 +63,7 @@ def _to_element_id(element: BaseElement):
         raise TypeError(f'Unknown element type - {element!r}.')  # pragma: no cover
 
 
-class ChartElement(BaseElement):
+class ChartElement(BaseElement, IValidatable):
     def __init__(self, chart: Optional['Statechart'], id_: Optional[str] = None):
         super().__init__(id_=id_)
         self._chart_ref = None
@@ -68,6 +76,15 @@ class ChartElement(BaseElement):
     @chart.setter
     def chart(self, chart: Optional['Statechart']):
         self._chart_ref = weakref.ref(chart) if chart is not None else None
+
+    def _validate_chart(self):
+        if not self.chart:
+            raise ValidationError(f'No statechart belonging found for {self!r}.')
+
+    __validators__ = [
+        *BaseElement.__validators__,
+        _validate_chart,
+    ]
 
 
 T = TypeVar('T', bound=ChartElement)
@@ -360,6 +377,32 @@ class State(ChartElement, IJsonOp, metaclass=ABCMeta):
         implement_cls = StateType.loads(type_).get_cls()
         return implement_cls._local_from_json(data)
 
+    def _validate_name(self):
+        if not isinstance(self.name, str):
+            raise ValidationError(f'Name of an event should be a string but {self.name!r} found.')
+        if not self.name:
+            raise ValidationError(f'Name of an event should be non-empty but {self.name!r} found,')
+
+    def _validate_description(self):
+        if not isinstance(self.description, str):
+            raise ValidationError(f'Description of an event should be a string but {type(self.description)!r} found.')
+
+    def _validate_min_time_lock(self):
+        if self.min_time_lock is not None and not isinstance(self.min_time_lock, int):
+            raise ValidationError(f'Min time lock should be an integer or None but {self.min_time_lock!r}.')
+
+    def _validate_max_time_lock(self):
+        if self.max_time_lock is not None and not isinstance(self.max_time_lock, int):
+            raise ValidationError(f'Max time lock should be an integer or None but {self.max_time_lock!r}.')
+
+    __validators__ = [
+        *ChartElement.__validators__,
+        _validate_name,
+        _validate_description,
+        _validate_min_time_lock,
+        _validate_max_time_lock,
+    ]
+
 
 class StateElements:
     def __init__(self, state_ids: List[str], s_state_ids: Set[str], chart: Optional[Statechart] = None):
@@ -540,6 +583,20 @@ class CompositeState(State):
             id_=id_,
         )
 
+    def _validate_initial_state(self):
+        if self.chart and not self.initial_state:
+            raise ValidationError(f'Initial state not found or not added into statechart for composite state {self!r}.')
+
+    def _validate_initial_state_in_states(self):
+        if self.chart and self.initial_state and self.initial_state not in self.states:
+            raise ValidationError(f'Initial state not found or not added into state list for composite state {self!r}.')
+
+    __validators__ = [
+        *State.__validators__,
+        _validate_initial_state,
+        _validate_initial_state_in_states,
+    ]
+
 
 class NormalState(State):
     def _type(self):
@@ -648,6 +705,25 @@ class Transition(ChartElement, IJsonOp):
             id_=id_,
         )
 
+    def _validate_src_state(self):
+        if self.chart and not self.src_state:
+            raise ValidationError(f'Source state not found or not added into statechart for transition {self!r}.')
+
+    def _validate_dst_state(self):
+        if self.chart and not self.dst_state:
+            raise ValidationError(f'Destination state not found or not added into statechart for transition {self!r}.')
+
+    def _validate_event(self):
+        if self.chart and not self.event:
+            raise ValidationError(f'Event not found or not added into statechart for transition {self!r}.')
+
+    __validators__ = [
+        *ChartElement.__validators__,
+        _validate_src_state,
+        _validate_dst_state,
+        _validate_event,
+    ]
+
 
 class Event(ChartElement, IJsonOp):
     __has_name__ = True
@@ -691,3 +767,14 @@ class Event(ChartElement, IJsonOp):
             guard=guard,
             id_=id_,
         )
+
+    def _validate_name(self):
+        if not isinstance(self.name, str):
+            raise ValidationError(f'Name of an event should be a string but {self.name!r} found.')
+        if not self.name:
+            raise ValidationError(f'Name of an event should be non-empty but {self.name!r} found,')
+
+    __validators__ = [
+        *ChartElement.__validators__,
+        _validate_name,
+    ]

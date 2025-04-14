@@ -33,6 +33,8 @@ if __name__ == '__main__':
         transitions=[t1, t2, t3, t4],
     )
 
+    sc.validate()
+
     # print(a)
     # print(a.chart)
     # print(sc.states)

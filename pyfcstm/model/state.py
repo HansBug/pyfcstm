@@ -40,7 +40,7 @@ class BaseElement:
             return sio.getvalue()
 
     def _repr_dict(self):
-        return {}
+        return {}  # pragma: no cover
 
     def _str_dict(self):
         return self._repr_dict()
@@ -52,7 +52,7 @@ def _to_element_id(element: BaseElement):
     elif isinstance(element, str):
         return element
     else:
-        raise TypeError(f'Unknown element type - {element!r}.')
+        raise TypeError(f'Unknown element type - {element!r}.')  # pragma: no cover
 
 
 class ChartElement(BaseElement):
@@ -164,8 +164,6 @@ class Statechart(BaseElement, IJsonOp):
             self.transitions.add(transition)
 
         self._root_state_id = _to_element_id(root_state)
-        if self._root_state_id not in self._d_states:
-            self.states.add(root_state)
         _ = self.root_state
 
     @property

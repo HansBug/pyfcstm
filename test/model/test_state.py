@@ -590,3 +590,29 @@ class TestStateType:
         assert str(transition_4) == "<Transition #ab517a72-e5c1-4410-8dd6-1754e4208450, " \
                                     "src_state=<NormalState name='C'>, dst_state=<NormalState name='D'>, " \
                                     "event=<Event name='e4'>>"
+
+        # Check root states
+        assert len(sc.root_state.states) == 4
+        state_a = sc.root_state.states.get('c5d71484-f8cf-4bf4-b76f-47904730804b')
+        assert state_a.name == 'A'
+        assert state_a.id == 'c5d71484-f8cf-4bf4-b76f-47904730804b'
+        assert isinstance(state_a, NormalState)
+        assert str(state_a) == "<NormalState #c5d71484-f8cf-4bf4-b76f-47904730804b, name='A'>"
+
+        state_b = sc.root_state.states.get('9e3225a9-f133-45de-a168-f4e2851f072f')
+        assert state_b.name == 'B'
+        assert state_b.id == '9e3225a9-f133-45de-a168-f4e2851f072f'
+        assert isinstance(state_b, NormalState)
+        assert str(state_b) == "<NormalState #9e3225a9-f133-45de-a168-f4e2851f072f, name='B'>"
+
+        state_c = sc.root_state.states.get('cc00fcaa-7ca6-4061-b17a-48e52e29a3fa')
+        assert state_c.name == 'C'
+        assert state_c.id == 'cc00fcaa-7ca6-4061-b17a-48e52e29a3fa'
+        assert isinstance(state_c, NormalState)
+        assert str(state_c) == "<NormalState #cc00fcaa-7ca6-4061-b17a-48e52e29a3fa, name='C'>"
+
+        state_d = sc.root_state.states.get('379a953f-aa68-43e3-aec5-a27b945e605f')
+        assert state_d.name == 'D'
+        assert state_d.id == '379a953f-aa68-43e3-aec5-a27b945e605f'
+        assert isinstance(state_d, NormalState)
+        assert str(state_d) == "<NormalState #379a953f-aa68-43e3-aec5-a27b945e605f, name='D'>"

@@ -161,6 +161,10 @@ class TestModelState:
         assert str(sc.events) == "Event[<Event name='e1'>, <Event name='e2'>, <Event name='e3'>, <Event name='e4'>]"
         assert repr(sc.events) == "<ChartElements[Event] 4 items>"
 
+        assert str(sc.root_state.states) == "State[<NormalState name='A'>, <NormalState name='B'>, " \
+                                            "<NormalState name='C'>, <NormalState name='D'>]"
+        assert repr(sc.root_state.states) == "<StateElements 4 items>"
+
         assert sc.json == {
             'events': [{'guard': None,
                         'id': '1085f323-2d42-4c13-a9c8-8d786ed68ce6',

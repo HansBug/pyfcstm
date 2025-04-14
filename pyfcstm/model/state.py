@@ -5,7 +5,7 @@ import weakref
 from abc import ABCMeta
 from enum import Enum, unique
 from pprint import pformat
-from typing import Optional, List, Dict, Generic, TypeVar, Union, Type, Set
+from typing import Optional, List, Dict, Generic, TypeVar, Union, Type, Set, Tuple
 
 from hbutils.string import plural_word
 
@@ -13,6 +13,8 @@ from pyfcstm.utils import IJsonOp
 
 
 class BaseElement:
+    __has_name__ = False
+
     def __init__(self, id_: Optional[str] = None):
         self._id = id_ or str(uuid.uuid4())
 
@@ -68,8 +70,6 @@ class ChartElement(BaseElement):
         self._chart_ref = weakref.ref(chart) if chart is not None else None
 
 
-
-
 T = TypeVar('T', bound=ChartElement)
 
 
@@ -105,6 +105,28 @@ class ChartElements(Generic[T]):
         element_id = _to_element_id(item)
         return self._mapping[element_id]
 
+    def get_by_name(self, *names: str) -> Union[Optional[T], Tuple[Optional[T], ...]]:
+        if self._element_type.__has_name__:
+            expected_names = set(names)
+            d_name_maps = {}
+            for item in self._mapping.values():
+                if item.name in expected_names:
+                    if item.name in d_name_maps:
+                        raise ValueError(f'Duplicate name {item.name!r} found in {self!r}.')
+                    else:
+                        d_name_maps[item.name] = item
+
+            retval = []
+            for name in names:
+                retval.append(d_name_maps.get(name))
+            if len(retval) == 1:
+                return retval[0]
+            else:
+                return tuple(retval)
+
+        else:
+            raise TypeError(f'No name supported in {self._element_type!r}.')
+
     def __len__(self):
         return len(self._mapping)
 
@@ -120,6 +142,8 @@ class ChartElements(Generic[T]):
 
 
 class Statechart(BaseElement, IJsonOp):
+    __has_name__ = True
+
     def __init__(self, name: str, root_state: 'CompositeState', preamble: Optional[List] = None,
                  states: Optional[List['State']] = None,
                  events: Optional[List['Event']] = None,
@@ -253,6 +277,8 @@ class StateType(Enum):
 
 
 class State(ChartElement, IJsonOp, metaclass=ABCMeta):
+    __has_name__ = True
+
     def __init__(self, name: str, description: str = '',
                  min_time_lock: Optional[int] = None, max_time_lock: Optional[int] = None,
                  on_entry=None, on_during=None, on_exit=None,
@@ -362,13 +388,33 @@ class StateElements:
 
     def get(self, item: Union[str, State]) -> Optional[Union[State, str]]:
         element_id = _to_element_id(item)
-        if element_id in self._s_state_ids:
+        if element_id in self._state_ids:
             if self._chart:
                 return self._chart.states.get(element_id)
             else:
                 return element_id
         else:
             return None
+
+    def get_by_name(self, *names: str) -> Union[Optional[State], Tuple[Optional[State], ...]]:
+        if self._chart:
+            expected_names = set(names)
+            d_states = {}
+            for element_id in self._state_ids:
+                state = self._chart.states.get(element_id)
+                if state.name in expected_names:
+                    d_states[state.name] = state
+
+            retval = []
+            for name in names:
+                retval.append(d_states.get(name))
+            if len(names) == 1:
+                return retval[0]
+            else:
+                return tuple(retval)
+
+        else:
+            raise ValueError('No chart provided, get_by_name not available.')
 
     def __getitem__(self, item: Union[str, State]) -> Union[State, str]:
         element_id = _to_element_id(item)
@@ -606,6 +652,8 @@ class Transition(ChartElement, IJsonOp):
 
 
 class Event(ChartElement, IJsonOp):
+    __has_name__ = True
+
     def __init__(self, name: str, guard=None, chart: Optional['Statechart'] = None, id_: Optional[str] = None):
         super().__init__(chart=chart, id_=id_)
         self.name = name

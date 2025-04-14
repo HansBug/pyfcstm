@@ -119,12 +119,37 @@ class TestModelState:
         assert t4.dst_state == d
         assert t4.event == e4
 
+        assert sc.states.get_by_name('A') is a
+        assert sc.states.get_by_name('B') is b
+        assert sc.states.get_by_name('C') is c
+        assert sc.states.get_by_name('D') is d
+        assert sc.states.get_by_name('A', "B", "C", 'D') == (a, b, c, d)
+        assert sc.states.get_by_name('A', 'b', 'C', 'd') == (a, None, c, None)
+
+        assert sc.events.get_by_name('e1') is e1
+        assert sc.events.get_by_name('e2') is e2
+        assert sc.events.get_by_name('e3') is e3
+        assert sc.events.get_by_name('e4') is e4
+        assert sc.events.get_by_name('e1', 'e2', 'e3', 'e4') == (e1, e2, e3, e4)
+        assert sc.events.get_by_name('e1', 'E2', 'e3', 'E4') == (e1, None, e3, None)
+
+        with pytest.raises(TypeError):
+            _ = sc.transitions.get_by_name('F')
+
+        assert sc.root_state.states.get_by_name('A') is a
+        assert sc.root_state.states.get_by_name('B') is b
+        assert sc.root_state.states.get_by_name('C') is c
+        assert sc.root_state.states.get_by_name('D') is d
+        assert sc.root_state.states.get_by_name('A', "B", "C", 'D') == (a, b, c, d)
+        assert sc.root_state.states.get_by_name('A', 'b', 'C', 'd') == (a, None, c, None)
+
         assert str(sc) == "<Statechart #a1016d07-0132-413c-a59a-8f5d33f3cb29, name='chart1', " \
                           "root_state=<CompositeState name='Root'>, states=<ChartElements[State] 5 items>, " \
                           "transitions=<ChartElements[Transition] 4 items>, events=<ChartElements[Event] 4 items>>"
         assert repr(sc) == "<Statechart name='chart1', root_state=<CompositeState name='Root'>>"
         assert str(sc.states) == ("State[<NormalState name='A'>, <NormalState name='B'>, <NormalState name='C'>, "
                                   "<NormalState name='D'>, <CompositeState name='Root'>]")
+        assert repr(sc.states) == "<ChartElements[State] 5 items>"
         assert str(sc.transitions) == ("Transition[<Transition src_state=<NormalState name='A'>, "
                                        "dst_state=<NormalState name='B'>, event=<Event name='e1'>>, "
                                        "<Transition src_state=<NormalState name='A'>, dst_state=<NormalState name='C'>, "
@@ -132,7 +157,9 @@ class TestModelState:
                                        "dst_state=<NormalState name='D'>, event=<Event name='e3'>>, "
                                        "<Transition src_state=<NormalState name='C'>, dst_state=<NormalState name='D'>, "
                                        "event=<Event name='e4'>>]")
+        assert repr(sc.transitions) == "<ChartElements[Transition] 4 items>"
         assert str(sc.events) == "Event[<Event name='e1'>, <Event name='e2'>, <Event name='e3'>, <Event name='e4'>]"
+        assert repr(sc.events) == "<ChartElements[Event] 4 items>"
 
         assert sc.json == {
             'events': [{'guard': None,

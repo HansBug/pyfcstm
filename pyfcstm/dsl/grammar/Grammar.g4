@@ -50,6 +50,7 @@ num_expression
 cond_expression
     : '(' cond_expression ')'                               # parenExprCond
     | bool_literal                                          # literalExprCond
+    | op='!' cond_expression                                # unaryExprCond
     | num_expression op=('<'|'>'|'<='|'>=') num_expression  # binaryExprCond
     | num_expression op=('=='|'!=') num_expression          # binaryExprCond
     | cond_expression op='&&' cond_expression               # binaryExprCond

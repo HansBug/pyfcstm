@@ -181,6 +181,14 @@ class GrammarListener(ParseTreeListener):
     def exitBinaryExprCond(self, ctx: GrammarParser.BinaryExprCondContext):
         pass
 
+    # Enter a parse tree produced by GrammarParser#unaryExprCond.
+    def enterUnaryExprCond(self, ctx: GrammarParser.UnaryExprCondContext):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#unaryExprCond.
+    def exitUnaryExprCond(self, ctx: GrammarParser.UnaryExprCondContext):
+        pass
+
     # Enter a parse tree produced by GrammarParser#parenExprCond.
     def enterParenExprCond(self, ctx: GrammarParser.ParenExprCondContext):
         pass

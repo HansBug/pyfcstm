@@ -1,4 +1,4 @@
-.PHONY: docs test unittest resource
+.PHONY: docs test unittest resource antlr antlr_build
 
 PYTHON := $(shell which python)
 
@@ -20,6 +20,10 @@ RANGE_SRC_DIR  := ${SRC_DIR}/${RANGE_DIR}
 GAMES ?= arknights fgo genshin girlsfrontline azurlane
 
 COV_TYPES ?= xml term-missing
+
+ANTLR_VERSION ?= 4.9.3
+ANTLR_GRAMMAR_DIR  := ${SRC_DIR}/dsl/grammar
+ANTLR_GRAMMAR_FILE := ${ANTLR_GRAMMAR_DIR}/Grammar.g4
 
 package:
 	$(PYTHON) -m build --sdist --wheel --outdir ${DIST_DIR}
@@ -45,3 +49,15 @@ docs:
 	$(MAKE) -C "${DOC_DIR}" build
 pdocs:
 	$(MAKE) -C "${DOC_DIR}" prod
+
+antlr-${ANTLR_VERSION}.jar:
+	wget -O $@ https://www.antlr.org/download/antlr-${ANTLR_VERSION}-complete.jar
+
+antlr: antlr-${ANTLR_VERSION}.jar
+	$(PYTHON) antlr_req.py -v ${ANTLR_VERSION}
+	pip install -r requirements.txt
+
+antlr_build:
+	java -jar antlr-${ANTLR_VERSION}.jar -Dlanguage=Python3 ${ANTLR_GRAMMAR_FILE}
+	ruff format ${ANTLR_GRAMMAR_DIR}
+

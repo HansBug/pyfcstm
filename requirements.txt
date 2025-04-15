@@ -2,3 +2,4 @@ hbutils>=0.10.1
 natsort
 cachetools
 pyyaml
+antlr4-python3-runtime==4.9.3

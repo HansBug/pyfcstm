@@ -3,3 +3,4 @@ include MANIFEST.in
 include requirements.txt
 include requirements-*.txt
 recursive-include pyfcstm *.json *.yml *.yaml *.png
+recursive-include pyfcstm/dsl *.g4 *.interp *.tokens

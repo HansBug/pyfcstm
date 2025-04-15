@@ -1220,3 +1220,4 @@ fabric.properties
 .benchmarks
 /venv*
 junit.xml
+/antlr-*.jar

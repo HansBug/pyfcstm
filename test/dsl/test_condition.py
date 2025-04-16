@@ -1,6 +1,6 @@
 import pytest
 
-from pyfcstm.dsl import parse_condition
+from pyfcstm.dsl import parse_condition, GrammarParseError, SyntaxFailError
 from pyfcstm.dsl.node import *
 
 
@@ -223,6 +223,15 @@ class TestGrammarCondition:
             expr2=BinaryOp(expr1=BinaryOp(expr1=Integer(raw='10'), op='-', expr2=Integer(raw='5')), op='<<',
                            expr2=Integer(raw='1'))))),
 
+        ('x < 5', Condition(expr=BinaryOp(expr1=Name(name='x'), op='<', expr2=Integer(raw='5')))),
+        ('foo == bar', Condition(expr=BinaryOp(expr1=Name(name='foo'), op='==', expr2=Name(name='bar')))),
+        ('a + b < c', Condition(
+            expr=BinaryOp(expr1=BinaryOp(expr1=Name(name='a'), op='+', expr2=Name(name='b')), op='<',
+                          expr2=Name(name='c')))),
+        ('!!true', Condition(expr=UnaryOp(op='!', expr=UnaryOp(op='!', expr=Boolean(raw='true'))))),
+        ('not!false', Condition(expr=UnaryOp(op='!', expr=UnaryOp(op='!', expr=Boolean(raw='false'))))),
+        ('TRUE and FALSE', Condition(expr=BinaryOp(expr1=Boolean(raw='true'), op='&&', expr2=Boolean(raw='false')))),
+        ('True and False', Condition(expr=BinaryOp(expr1=Boolean(raw='true'), op='&&', expr2=Boolean(raw='false')))),
     ])
     def test_positive_cases(self, input_text, expected):
         assert parse_condition(input_text) == expected
@@ -299,6 +308,95 @@ class TestGrammarCondition:
         ('sin(pi/2) * cos(0) > sqrt(4) / 2 && log(e) == 1', 'sin(pi / 2) * cos(0) > sqrt(4) / 2 && log(e) == 1'),
         ('true && false || true && !(false || true && false)', 'True && False || True && !(False || True && False)'),
         ('1 + 2 * 3 ** 2 / (4 % 3) >= 10 - 5 << 1', '1 + 2 * 3 ** 2 / (4 % 3) >= 10 - 5 << 1'),
+
+        ('x < 5', 'x < 5'),
+        ('foo == bar', 'foo == bar'),
+        ('a + b < c', 'a + b < c'),
+        ('!!true', '!!True'),
+        ('not!false', '!!False'),
+        ('TRUE and FALSE', 'True && False'),
+        ('True and False', 'True && False'),
     ])
     def test_positive_cases_str(self, input_text, expected_str):
         assert str(parse_condition(input_text)) == expected_str
+
+    @pytest.mark.parametrize(['input_text'], [
+        ('',),
+        (';',),
+        ('true;',),
+        ('1 + ',),
+        (' < 2',),
+        ('&&',),
+        ('||',),
+        ('(',),
+        (')',),
+        ('(true',),
+        ('true)',),
+        ('((true)',),
+        ('(true))',),
+        ('1 < < 2',),
+        ('1 > > 2',),
+        ('true && || false',),
+        ('true and or false',),
+        ('1 === 2',),
+        ('3 !== 4',),
+        ('1 && 2',),
+        ('true < false',),
+        ('true == 1',),
+        ('3.14 || 2.71',),
+        ('true + false',),
+        ('! 1',),
+        ('not 2',),
+        ('sin',),
+        ('sin()',),
+        ('sin(,)',),
+        ('sin(1,2)',),
+        ('unknown(1)',),
+        ('PI',),
+        ('E',),
+        ('TAU',),
+        ('pi()',),
+        ('1..2',),
+        ('3..',),
+        ('.5.6',),
+        ('1e',),
+        ('2e+',),
+        ('3e++1',),
+        ('truee',),
+        ('ffalse',),
+        ('TRUEE',),
+        ('1 +- 2',),
+        ('3 */ 4',),
+        ('5 <<>> 6',),
+        ('7 &| 8',),
+        ('1 + (2',),
+        ('sin(1',),
+        ('1 + sin()',),
+        ('1 + * 2',),
+        ('1 + ',),
+        (' * 3',),
+        ('1 && ',),
+        (' || true',),
+        ('2 ** ** 2',),
+        ('** 2',),
+        ('2 **',),
+        ('1 + 2 == true',),
+        ('(1 < 2)) && ((3 > 4)',),
+        ('sin(true) == 1',),
+        ('log(false) > 0',),
+        ('1 # 2',),
+        ('true @ false',),
+        ('1 $ 2 < 3',),
+        ('1 + 2 * / 3',),
+        ('(1 < 2) && (3 > ) || (5 == 5)',),
+        ('sin(pi/2) * cos() > sqrt(4) / 2',),
+        ('true && false || & true',),
+    ])
+    def test_negative_cases(self, input_text):
+        with pytest.raises(GrammarParseError) as ei:
+            parse_condition(input_text)
+
+        err = ei.value
+        assert isinstance(err, GrammarParseError)
+        assert len(err.errors) > 0
+        assert len([e for e in err.errors if isinstance(e, SyntaxFailError)]) > 0

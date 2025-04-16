@@ -22,7 +22,7 @@ class GrammarItemError(Exception):
     pass
 
 
-class SyntaxError(GrammarItemError):
+class SyntaxFailError(GrammarItemError):
     """
     Error raised when a syntax error is encountered during parsing.
 
@@ -153,7 +153,7 @@ class CollectingErrorListener(ErrorListener):
         :param e: The exception that was raised
         """
         offending_text = offendingSymbol.text if offendingSymbol else None
-        self.errors.append(SyntaxError(line, column, offending_text, msg))
+        self.errors.append(SyntaxFailError(line, column, offending_text, msg))
 
     def reportAmbiguity(self, recognizer, dfa, startIndex, stopIndex, exact, ambigAlts, configs):
         """

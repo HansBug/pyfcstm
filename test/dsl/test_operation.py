@@ -231,9 +231,9 @@ class TestDSLOperation:
         ('complex_expr := 2 ** (3 + 1) * sin(pi/2) / log(E**2) + 5 & 7 | 2;',
          'complex_expr := 2 ** (3 + 1) * sin(pi / 2) / log(E ** 2) + 5 & 7 | 2;'),
         ('float_val := 1.234;', 'float_val := 1.234;'),
-        ('scientific := 1.2e3;', 'scientific := 1200.0;'),
-        ('scientific_neg := 1.2e-3;', 'scientific_neg := 0.0012;'),
-        ('float_no_int := .5;', 'float_no_int := 0.5;'),
+        ('scientific := 1.2e3;', 'scientific := 1.2e3;'),
+        ('scientific_neg := 1.2e-3;', 'scientific_neg := 1.2e-3;'),
+        ('float_no_int := .5;', 'float_no_int := .5;'),
         (
                 '\n    a := 5;\n    b := 10;\n    c := a ** 2 + b ** 2;\n    d := sqrt(c);\n    result := sin(d / 10) * cos(pi/4) + log(a * b);\n    ',
                 'a := 5;\nb := 10;\nc := a ** 2 + b ** 2;\nd := sqrt(c);\nresult := sin(d / 10) * cos(pi / 4) + log(a * b);'),

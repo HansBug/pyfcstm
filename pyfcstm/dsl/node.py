@@ -66,6 +66,9 @@ class Float(Literal):
     def _value(self):
         return float(self.raw)
 
+    def __str__(self):
+        return self.raw
+
 
 @dataclass
 class Boolean(Literal):
@@ -79,7 +82,7 @@ class Boolean(Literal):
 @dataclass
 class Constant(Literal):
     __KNOWN_CONSTANTS__ = {
-        'e': math.e,
+        'E': math.e,
         'pi': math.pi,
         'tau': math.tau,
     }

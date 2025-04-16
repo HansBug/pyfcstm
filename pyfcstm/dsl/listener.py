@@ -97,7 +97,7 @@ class GrammarParseListener(GrammarListener):
         elif ctx.FLOAT():
             node = Float(str(ctx.FLOAT()))
         else:
-            assert False, f'Should not reach this line - {ctx!r}.'
+            assert False, f'Should not reach this line - {ctx!r}.'  # pragma: no cover
         self.nodes[ctx] = node
 
     def exitBool_literal(self, ctx: GrammarParser.Bool_literalContext):

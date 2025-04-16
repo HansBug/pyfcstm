@@ -30,7 +30,7 @@ init_expression
     | init_expression op=('+'|'-') init_expression           # binaryExprInit
     | init_expression op=('<<'|'>>') init_expression         # binaryExprInit
     | init_expression op=('&'|'|'|'^') init_expression       # binaryExprInit
-    | function=ID '(' init_expression ')'                    # funcExprInit
+    | function=UFUNC_NAME '(' init_expression ')'                    # funcExprInit
     ;
 
 num_expression
@@ -44,17 +44,17 @@ num_expression
     | num_expression op=('+'|'-') num_expression           # binaryExprNum
     | num_expression op=('<<'|'>>') num_expression         # binaryExprNum
     | num_expression op=('&'|'|'|'^') num_expression       # binaryExprNum
-    | function=ID '(' num_expression ')'                   # funcExprNum
+    | function=UFUNC_NAME '(' num_expression ')'                   # funcExprNum
     ;
 
 cond_expression
     : '(' cond_expression ')'                               # parenExprCond
     | bool_literal                                          # literalExprCond
-    | op='!' cond_expression                                # unaryExprCond
-    | num_expression op=('<'|'>'|'<='|'>=') num_expression  # binaryExprCond
-    | num_expression op=('=='|'!=') num_expression          # binaryExprCond
-    | cond_expression op='&&' cond_expression               # binaryExprCond
-    | cond_expression op='||' cond_expression               # binaryExprCond
+    | op=('!'|'not') cond_expression                        # unaryExprCond
+    | num_expression op=('<'|'>'|'<='|'>=') num_expression  # binaryExprFromNumCond
+    | num_expression op=('=='|'!=') num_expression          # binaryExprFromNumCond
+    | cond_expression op=('&&'|'and') cond_expression       # binaryExprCond
+    | cond_expression op=('||'|'or') cond_expression        # binaryExprCond
     ;
 
 num_literal
@@ -69,7 +69,6 @@ bool_literal
 
 math_const: 'pi' | 'e' | 'tau';
 
-ID: [a-zA-Z_][a-zA-Z0-9_]*;
 FLOAT: [0-9]+'.'[0-9]* ([eE][+-]?[0-9]+)?
      | '.'[0-9]+ ([eE][+-]?[0-9]+)?
      | [0-9]+ [eE][+-]?[0-9]+;
@@ -77,6 +76,15 @@ INT: [0-9]+;
 
 TRUE: 'True' | 'true' | 'TRUE';
 FALSE: 'False' | 'false' | 'FALSE';
+
+UFUNC_NAME : 'sin' | 'cos' | 'tan' | 'asin' | 'acos' | 'atan'
+           | 'sinh' | 'cosh' | 'tanh' | 'asinh' | 'acosh' | 'atanh'
+           | 'sqrt' | 'cbrt' | 'exp' | 'log' | 'log10' | 'log2' | 'log1p'
+           | 'abs' | 'ceil' | 'floor' | 'round' | 'trunc'
+           | 'sign'
+           ;
+
+ID: [a-zA-Z_][a-zA-Z0-9_]*;
 
 WS: [ \t\n\r]+ -> skip;
 SL_COMMENT: '//' ~[\r\n]* -> skip;

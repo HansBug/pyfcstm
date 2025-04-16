@@ -45,7 +45,7 @@ def serializedATN():
         buf.write("\2BC\t\2\2\2CJ\5\20\t\tDE\7\36\2\2EF\7\6\2\2FG\5\20\t")
         buf.write("\2GH\7\7\2\2HJ\3\2\2\2I;\3\2\2\2I@\3\2\2\2IA\3\2\2\2I")
         buf.write("B\3\2\2\2ID\3\2\2\2J\\\3\2\2\2KL\f\b\2\2LM\7\n\2\2M[\5")
-        buf.write("\20\t\tNO\f\7\2\2OP\t\3\2\2P[\5\20\t\bQR\f\6\2\2RS\t\2")
+        buf.write("\20\t\bNO\f\7\2\2OP\t\3\2\2P[\5\20\t\bQR\f\6\2\2RS\t\2")
         buf.write("\2\2S[\5\20\t\7TU\f\5\2\2UV\t\4\2\2V[\5\20\t\6WX\f\4\2")
         buf.write("\2XY\t\5\2\2Y[\5\20\t\5ZK\3\2\2\2ZN\3\2\2\2ZQ\3\2\2\2")
         buf.write("ZT\3\2\2\2ZW\3\2\2\2[^\3\2\2\2\\Z\3\2\2\2\\]\3\2\2\2]")
@@ -54,7 +54,7 @@ def serializedATN():
         buf.write("gh\t\2\2\2ho\5\22\n\tij\7\36\2\2jk\7\6\2\2kl\5\22\n\2")
         buf.write("lm\7\7\2\2mo\3\2\2\2n_\3\2\2\2nd\3\2\2\2ne\3\2\2\2nf\3")
         buf.write("\2\2\2ng\3\2\2\2ni\3\2\2\2o\u0081\3\2\2\2pq\f\b\2\2qr")
-        buf.write("\7\n\2\2r\u0080\5\22\n\tst\f\7\2\2tu\t\3\2\2u\u0080\5")
+        buf.write("\7\n\2\2r\u0080\5\22\n\bst\f\7\2\2tu\t\3\2\2u\u0080\5")
         buf.write("\22\n\bvw\f\6\2\2wx\t\2\2\2x\u0080\5\22\n\7yz\f\5\2\2")
         buf.write("z{\t\4\2\2{\u0080\5\22\n\6|}\f\4\2\2}~\t\5\2\2~\u0080")
         buf.write("\5\22\n\5\177p\3\2\2\2\177s\3\2\2\2\177v\3\2\2\2\177y")
@@ -811,7 +811,7 @@ class GrammarParser(Parser):
                         self.state = 74
                         localctx.op = self.match(GrammarParser.T__7)
                         self.state = 75
-                        self.init_expression(7)
+                        self.init_expression(6)
                         pass
 
                     elif la_ == 2:
@@ -1228,7 +1228,7 @@ class GrammarParser(Parser):
                         self.state = 111
                         localctx.op = self.match(GrammarParser.T__7)
                         self.state = 112
-                        self.num_expression(7)
+                        self.num_expression(6)
                         pass
 
                     elif la_ == 2:

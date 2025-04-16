@@ -21,30 +21,30 @@ constant_definition: ID '=' init_expression ';';
 operational_assignment: ID ':=' num_expression ';';
 
 init_expression
-    : '(' init_expression ')'                           # parenExprInit
-    | num_literal                                       # literalExprInit
-    | math_const                                        # mathConstExprInit
-    | op=('+'|'-') init_expression                      # unaryExprInit
-    | init_expression op='**' init_expression           # binaryExprInit
-    | init_expression op=('*'|'/'|'%') init_expression  # binaryExprInit
-    | init_expression op=('+'|'-') init_expression      # binaryExprInit
-    | init_expression op=('<<'|'>>') init_expression    # binaryExprInit
-    | init_expression op=('&'|'|'|'^') init_expression  # binaryExprInit
-    | function=ID '(' init_expression ')'               # funcExprInit
+    : '(' init_expression ')'                                # parenExprInit
+    | num_literal                                            # literalExprInit
+    | math_const                                             # mathConstExprInit
+    | op=('+'|'-') init_expression                           # unaryExprInit
+    | <assoc=right> init_expression op='**' init_expression  # binaryExprInit
+    | init_expression op=('*'|'/'|'%') init_expression       # binaryExprInit
+    | init_expression op=('+'|'-') init_expression           # binaryExprInit
+    | init_expression op=('<<'|'>>') init_expression         # binaryExprInit
+    | init_expression op=('&'|'|'|'^') init_expression       # binaryExprInit
+    | function=ID '(' init_expression ')'                    # funcExprInit
     ;
 
 num_expression
-    : '(' num_expression ')'                           # parenExprNum
-    | num_literal                                      # literalExprNum
-    | ID                                               # idExprNum
-    | math_const                                       # mathConstExprNum
-    | op=('+'|'-') num_expression                      # unaryExprNum
-    | num_expression op='**' num_expression            # binaryExprNum
-    | num_expression op=('*'|'/'|'%') num_expression   # binaryExprNum
-    | num_expression op=('+'|'-') num_expression       # binaryExprNum
-    | num_expression op=('<<'|'>>') num_expression     # binaryExprNum
-    | num_expression op=('&'|'|'|'^') num_expression   # binaryExprNum
-    | function=ID '(' num_expression ')'               # funcExprNum
+    : '(' num_expression ')'                               # parenExprNum
+    | num_literal                                          # literalExprNum
+    | ID                                                   # idExprNum
+    | math_const                                           # mathConstExprNum
+    | op=('+'|'-') num_expression                          # unaryExprNum
+    | <assoc=right> num_expression op='**' num_expression  # binaryExprNum
+    | num_expression op=('*'|'/'|'%') num_expression       # binaryExprNum
+    | num_expression op=('+'|'-') num_expression           # binaryExprNum
+    | num_expression op=('<<'|'>>') num_expression         # binaryExprNum
+    | num_expression op=('&'|'|'|'^') num_expression       # binaryExprNum
+    | function=ID '(' num_expression ')'                   # funcExprNum
     ;
 
 cond_expression

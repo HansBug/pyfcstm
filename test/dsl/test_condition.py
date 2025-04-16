@@ -400,3 +400,4 @@ class TestGrammarCondition:
         assert isinstance(err, GrammarParseError)
         assert len(err.errors) > 0
         assert len([e for e in err.errors if isinstance(e, SyntaxFailError)]) > 0
+        assert f'Found {len(err.errors)} errors during parsing:' in err.args[0]

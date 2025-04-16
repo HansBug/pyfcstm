@@ -42,7 +42,7 @@ class Expr(ASTNode):
 
 @dataclass
 class Literal(Expr):
-    raw_text: str
+    raw: str
 
     @property
     def value(self):
@@ -58,22 +58,22 @@ class Literal(Expr):
 @dataclass
 class Integer(Literal):
     def _value(self):
-        return int(self.raw_text)
+        return int(self.raw)
 
 
 @dataclass
 class Float(Literal):
     def _value(self):
-        return float(self.raw_text)
+        return float(self.raw)
 
 
 @dataclass
 class Boolean(Literal):
     def __post_init__(self):
-        self.raw_text = self.raw_text.lower()
+        self.raw = self.raw.lower()
 
     def _value(self):
-        return json.loads(self.raw_text)
+        return json.loads(self.raw)
 
 
 @dataclass
@@ -85,10 +85,10 @@ class Constant(Literal):
     }
 
     def _value(self):
-        return self.__KNOWN_CONSTANTS__[self.raw_text]
+        return self.__KNOWN_CONSTANTS__[self.raw]
 
     def __str__(self):
-        return f'{self.raw_text}'
+        return f'{self.raw}'
 
 
 @dataclass

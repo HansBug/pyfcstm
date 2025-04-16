@@ -1,54 +1,164 @@
+"""
+ANTLR Error Collection and Handling Module
+
+This module provides functionality for collecting and handling errors during ANTLR parsing processes.
+It implements a custom error listener that accumulates errors instead of throwing them immediately,
+allowing for comprehensive error reporting after the parsing is complete.
+"""
+
 import os
+from typing import List
 
 from antlr4.error.ErrorListener import ErrorListener
 
 
+class GrammarItemError(Exception):
+    """Base class for all grammar-related errors."""
+    pass
+
+
+class SyntaxError(GrammarItemError):
+    """Error raised when a syntax error is encountered during parsing."""
+
+    def __init__(self, line, column, offending_symbol_text, msg):
+        self.line = line
+        self.column = column
+        self.offending_symbol_text = offending_symbol_text
+        self.msg = msg
+        ctx_info = f", near '{offending_symbol_text}'" if offending_symbol_text else ""
+        error_msg = f"Syntax error at line {line}, column {column}{ctx_info}: {msg}"
+        super().__init__(error_msg)
+
+
+class AmbiguityError(GrammarItemError):
+    """Error raised when grammar ambiguity is detected."""
+
+    def __init__(self, input_range, start_index, stop_index):
+        self.input_range = input_range
+        self.start_index = start_index
+        self.stop_index = stop_index
+        error_msg = f"Grammar ambiguity at input '{input_range}' (from index {start_index} to {stop_index})."
+        super().__init__(error_msg)
+
+
+class FullContextAttemptError(GrammarItemError):
+    """Error raised when the parser attempts full context interpretation."""
+
+    def __init__(self, input_range, start_index, stop_index):
+        self.input_range = input_range
+        self.start_index = start_index
+        self.stop_index = stop_index
+        error_msg = (f"Parser attempting full context interpretation at input '{input_range}' "
+                     f"(from index {start_index} to {stop_index}).")
+        super().__init__(error_msg)
+
+
+class ContextSensitivityError(GrammarItemError):
+    """Error raised when context sensitivity is detected."""
+
+    def __init__(self, input_range, start_index, stop_index):
+        self.input_range = input_range
+        self.start_index = start_index
+        self.stop_index = stop_index
+        error_msg = f"Context sensitivity at input '{input_range}' (from index {start_index} to {stop_index})."
+        super().__init__(error_msg)
+
+
+class GrammarParseError(Exception):
+    def __init__(self, errors: List[GrammarItemError]):
+        self.errors = errors
+        error_report = os.linesep.join([f"Error {i + 1}: {error}" for i, error in enumerate(self.errors)])
+        error_message = f"Found {len(self.errors)} errors during parsing:{os.linesep}{error_report}"
+        super().__init__(error_message)
+
+
 class CollectingErrorListener(ErrorListener):
-    """Collects all errors during ANTLR parsing process and throws them collectively after parsing is complete"""
+    """
+    A custom ANTLR error listener that collects errors during parsing.
+
+    This class extends ANTLR's ErrorListener to provide comprehensive error collection
+    and reporting functionality. Instead of immediately throwing exceptions, it
+    accumulates errors and can report them collectively.
+
+    :ivar errors: List storing all encountered error messages
+    :type errors: list[GrammarItemError]
+    """
 
     def __init__(self):
+        """
+        Initialize the error listener with an empty error collection.
+        """
         super().__init__()
-        self.errors = []
+        self.errors: List[GrammarItemError] = []
 
     def syntaxError(self, recognizer, offendingSymbol, line, column, msg, e):
-        """Handle syntax errors"""
-        error_location = f"line {line}, column {column}"
+        """
+        Handle and collect syntax errors encountered during parsing.
 
-        # Try to get more context information
-        ctx_info = ""
-        if offendingSymbol:
-            ctx_info = f", near '{offendingSymbol.text}'"
-
-        error_msg = f"Syntax error at {error_location}{ctx_info}: {msg}"
-        self.errors.append(error_msg)
+        :param recognizer: The parser that encountered the error
+        :param offendingSymbol: The problematic input symbol
+        :param line: Line number where the error occurred
+        :param column: Column number where the error occurred
+        :param msg: The error message
+        :param e: The exception that was raised
+        """
+        offending_text = offendingSymbol.text if offendingSymbol else None
+        self.errors.append(SyntaxError(line, column, offending_text, msg))
 
     def reportAmbiguity(self, recognizer, dfa, startIndex, stopIndex, exact, ambigAlts, configs):
-        """Handle grammar ambiguity"""
+        """
+        Handle and collect grammar ambiguity issues.
+
+        :param recognizer: The parser that encountered the ambiguity
+        :param dfa: The DFA being processed
+        :param startIndex: Starting index of the ambiguous input
+        :param stopIndex: Ending index of the ambiguous input
+        :param exact: Whether the ambiguity is exact
+        :param ambigAlts: The ambiguous alternatives
+        :param configs: The ATN configurations
+        """
         tokens = recognizer.getTokenStream()
         input_range = tokens.getText(startIndex, stopIndex)
-
-        error_msg = f"Grammar ambiguity at input '{input_range}' (from index {startIndex} to {stopIndex})."
-        self.errors.append(error_msg)
+        self.errors.append(AmbiguityError(input_range, startIndex, stopIndex))
 
     def reportAttemptingFullContext(self, recognizer, dfa, startIndex, stopIndex, conflictingAlts, configs):
-        """Handle attempts at full context parsing"""
+        """
+        Handle and collect full context parsing attempts.
+
+        :param recognizer: The parser attempting full context
+        :param dfa: The DFA being processed
+        :param startIndex: Starting index of the affected input
+        :param stopIndex: Ending index of the affected input
+        :param conflictingAlts: The conflicting alternatives
+        :param configs: The ATN configurations
+        """
         tokens = recognizer.getTokenStream()
         input_range = tokens.getText(startIndex, stopIndex)
-
-        error_msg = f"Parser attempting full context interpretation at input '{input_range}' " \
-                    f"(from index {startIndex} to {stopIndex})."
-        self.errors.append(error_msg)
+        self.errors.append(FullContextAttemptError(input_range, startIndex, stopIndex))
 
     def reportContextSensitivity(self, recognizer, dfa, startIndex, stopIndex, prediction, configs):
-        """Handle context sensitivity issues"""
+        """
+        Handle and collect context sensitivity issues.
+
+        :param recognizer: The parser that encountered the sensitivity
+        :param dfa: The DFA being processed
+        :param startIndex: Starting index of the sensitive input
+        :param stopIndex: Ending index of the sensitive input
+        :param prediction: The predicted alternative
+        :param configs: The ATN configurations
+        """
         tokens = recognizer.getTokenStream()
         input_range = tokens.getText(startIndex, stopIndex)
-
-        error_msg = f"Context sensitivity at input '{input_range}' (from index {startIndex} to {stopIndex})."
-        self.errors.append(error_msg)
+        self.errors.append(ContextSensitivityError(input_range, startIndex, stopIndex))
 
     def check_errors(self):
-        """Check if there are errors and throw an exception if any exist"""
+        """
+        Check for collected errors and raise an exception if any exist.
+
+        This method should be called after parsing is complete to verify if any
+        errors were encountered during the process.
+
+        :raises GrammarParseError: If any errors were collected during parsing, with detailed error messages
+        """
         if self.errors:
-            error_report = os.linesep.join([f"Error {i + 1}: {error}" for i, error in enumerate(self.errors)])
-            raise Exception(f"Found {len(self.errors)} errors during parsing:{os.linesep}{error_report}")
+            raise GrammarParseError(self.errors)

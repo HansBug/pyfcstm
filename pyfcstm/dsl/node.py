@@ -2,8 +2,11 @@ import math
 import os
 from abc import ABC
 
+from dataclasses import dataclass
+
 __all__ = [
     'ASTNode',
+    'Expr',
     'Literal',
     'Boolean',
     'Integer',
@@ -23,14 +26,22 @@ __all__ = [
     'Condition',
 ]
 
+from typing import List, Union
 
+
+@dataclass
 class ASTNode(ABC):
     pass
 
 
-class Literal(ASTNode):
-    def __init__(self, raw_text: str):
-        self.raw_text = raw_text
+@dataclass
+class Expr(ASTNode):
+    pass
+
+
+@dataclass
+class Literal(Expr):
+    raw_text: str
 
     @property
     def value(self):
@@ -46,16 +57,19 @@ class Literal(ASTNode):
         return f'<{self.__class__.__name__} {self.raw_text}>'
 
 
+@dataclass
 class Integer(Literal):
     def _value(self):
         return int(self.raw_text)
 
 
+@dataclass
 class Float(Literal):
     def _value(self):
         return float(self.raw_text)
 
 
+@dataclass
 class Boolean(Literal):
     def __init__(self, raw_text: str):
         super().__init__(raw_text.lower())
@@ -64,6 +78,7 @@ class Boolean(Literal):
         return eval(self.raw_text)
 
 
+@dataclass
 class Constant(Literal):
     __KNOWN_CONSTANTS__ = {
         'e': math.e,
@@ -75,9 +90,9 @@ class Constant(Literal):
         return self.__KNOWN_CONSTANTS__[self.raw_text]
 
 
-class Name(ASTNode):
-    def __init__(self, name):
-        self.name = name
+@dataclass
+class Name(Expr):
+    name: str
 
     def __str__(self):
         return self.name
@@ -86,9 +101,9 @@ class Name(ASTNode):
         return f'<{self.__class__.__name__} {self.name}>'
 
 
-class Paren(ASTNode):
-    def __init__(self, expr):
-        self.expr = expr
+@dataclass
+class Paren(Expr):
+    expr: Expr
 
     def __str__(self):
         return f'({self.expr})'
@@ -97,14 +112,17 @@ class Paren(ASTNode):
         return f'<{self.__class__.__name__} {self.expr!r}>'
 
 
-class UnaryOp(ASTNode):
+@dataclass
+class UnaryOp(Expr):
     __aliases__ = {
         'not': '!',
     }
 
-    def __init__(self, op, expr):
-        self.op = self.__aliases__.get(op, op)
-        self.expr = expr
+    op: str
+    expr: Expr
+
+    def __post_init__(self):
+        self.op = self.__aliases__.get(self.op, self.op)
 
     def __str__(self):
         return f'{self.op}{self.expr}'
@@ -113,16 +131,19 @@ class UnaryOp(ASTNode):
         return f'<{self.__class__.__name__} op: {self.op!r}, expr: {self.expr!r}>'
 
 
-class BinaryOp(ASTNode):
+@dataclass
+class BinaryOp(Expr):
     __aliases__ = {
         'and': '&&',
         'or': '||',
     }
 
-    def __init__(self, expr1, op, expr2):
-        self.expr1 = expr1
-        self.op = self.__aliases__.get(op, op)
-        self.expr2 = expr2
+    expr1: Expr
+    op: str
+    expr2: Expr
+
+    def __post_init__(self):
+        self.op = self.__aliases__.get(self.op, self.op)
 
     def __str__(self):
         return f'{self.expr1} {self.op} {self.expr2}'
@@ -131,10 +152,10 @@ class BinaryOp(ASTNode):
         return f'<{self.__class__.__name__}, op: {self.op!r}, expr1: {self.expr1!r}, expr2: {self.expr2!r}>'
 
 
-class UFunc(ASTNode):
-    def __init__(self, func, expr):
-        self.func = func
-        self.expr = expr
+@dataclass
+class UFunc(Expr):
+    func: str
+    expr: Expr
 
     def __str__(self):
         return f'{self.func}({self.expr})'
@@ -143,14 +164,15 @@ class UFunc(ASTNode):
         return f'<{self.__class__.__name__}, func: {self.func!r}, expr: {self.expr!r}>'
 
 
+@dataclass
 class Statement(ASTNode):
     pass
 
 
+@dataclass
 class ConstantDefinition(Statement):
-    def __init__(self, name, expr):
-        self.name = name
-        self.expr = expr
+    name: str
+    expr: Expr
 
     def __str__(self):
         return f'{self.name} = {self.expr};'
@@ -159,10 +181,10 @@ class ConstantDefinition(Statement):
         return f'<{self.__class__.__name__} name: {self.name!r}, expr: {self.expr!r}>'
 
 
+@dataclass
 class InitialAssignment(Statement):
-    def __init__(self, name, expr):
-        self.name = name
-        self.expr = expr
+    name: str
+    expr: Expr
 
     def __str__(self):
         return f'{self.name} := {self.expr};'
@@ -171,10 +193,10 @@ class InitialAssignment(Statement):
         return f'<{self.__class__.__name__} name: {self.name!r}, expr: {self.expr!r}>'
 
 
+@dataclass
 class OperationalAssignment(Statement):
-    def __init__(self, name, expr):
-        self.name = name
-        self.expr = expr
+    name: str
+    expr: Expr
 
     def __str__(self):
         return f'{self.name} := {self.expr};'
@@ -183,9 +205,9 @@ class OperationalAssignment(Statement):
         return f'<{self.__class__.__name__} name: {self.name!r}, expr: {self.expr!r}>'
 
 
-class Condition:
-    def __init__(self, expr):
-        self.expr = expr
+@dataclass
+class Condition(ASTNode):
+    expr: Expr
 
     def __str__(self):
         return f'{self.expr}'
@@ -194,9 +216,9 @@ class Condition:
         return f'<{self.__class__.__name__} {self.expr!r}>'
 
 
-class Preamble:
-    def __init__(self, stats):
-        self.stats = stats
+@dataclass
+class Preamble(ASTNode):
+    stats: List[Union[ConstantDefinition, InitialAssignment]]
 
     def __str__(self):
         return os.linesep.join(map(str, self.stats))
@@ -205,9 +227,9 @@ class Preamble:
         return f'<{self.__class__.__name__} {self.stats!r}>'
 
 
-class Operation:
-    def __init__(self, stats):
-        self.stats = stats
+@dataclass
+class Operation(ASTNode):
+    stats: List[OperationalAssignment]
 
     def __str__(self):
         return os.linesep.join(map(str, self.stats))

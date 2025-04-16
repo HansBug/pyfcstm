@@ -1,3 +1,4 @@
+import json
 import math
 import os
 from abc import ABC
@@ -72,7 +73,7 @@ class Boolean(Literal):
         self.raw_text = self.raw_text.lower()
 
     def _value(self):
-        return eval(self.raw_text)
+        return json.loads(self.raw_text)
 
 
 @dataclass

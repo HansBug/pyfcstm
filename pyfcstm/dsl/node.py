@@ -48,7 +48,7 @@ class Literal(Expr):
         return self._value()
 
     def _value(self):
-        raise NotImplementedError
+        raise NotImplementedError  # pragma: no cover
 
     def __str__(self):
         return str(self._value())
@@ -68,8 +68,8 @@ class Float(Literal):
 
 @dataclass
 class Boolean(Literal):
-    def __init__(self, raw_text: str):
-        super().__init__(raw_text.lower())
+    def __post_init__(self):
+        self.raw_text = self.raw_text.lower()
 
     def _value(self):
         return eval(self.raw_text)
@@ -85,6 +85,9 @@ class Constant(Literal):
 
     def _value(self):
         return self.__KNOWN_CONSTANTS__[self.raw_text]
+
+    def __str__(self):
+        return f'{self.raw_text}'
 
 
 @dataclass

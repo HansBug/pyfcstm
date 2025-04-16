@@ -1,20 +1,16 @@
-from pprint import pprint
-
-from antlr4 import CommonTokenStream, InputStream, ParseTreeWalker
-
-from .error import CollectingErrorListener
-from .grammar import GrammarListener, GrammarParser, GrammarLexer
-from .node import Integer, Float, Constant, Boolean, Name, Paren, BinaryOp, UnaryOp, UFunc
+from .grammar import GrammarListener, GrammarParser
+from .node import Integer, Float, Constant, Boolean, Name, Paren, BinaryOp, UnaryOp, UFunc, ConstantDefinition, \
+    OperationalAssignment, InitialAssignment, Condition, Operation, Preamble
 
 
-class ConditionGrammarListener(GrammarListener):
+class GrammarParseListener(GrammarListener):
     def __init__(self):
         super().__init__()
         self.nodes = {}
 
     def exitCondition(self, ctx: GrammarParser.ConditionContext):
         super().exitCondition(ctx)
-        self.nodes[ctx] = self.nodes[ctx.cond_expression()]
+        self.nodes[ctx] = Condition(self.nodes[ctx.cond_expression()])
 
     def exitUnaryExprNum(self, ctx: GrammarParser.UnaryExprNumContext):
         super().exitUnaryExprNum(ctx)
@@ -114,25 +110,69 @@ class ConditionGrammarListener(GrammarListener):
         node = Constant(ctx.getText())
         self.nodes[ctx] = node
 
+    def exitOperation_program(self, ctx: GrammarParser.Operation_programContext):
+        super().exitOperation_program(ctx)
+        self.nodes[ctx] = Operation([self.nodes[stat] for stat in ctx.operational_assignment()])
 
-def parse_condition(input_text):
-    error_listener = CollectingErrorListener()
+    def exitPreamble_program(self, ctx: GrammarParser.Preamble_programContext):
+        super().exitPreamble_program(ctx)
+        self.nodes[ctx] = Preamble([self.nodes[stat] for stat in ctx.preamble_statement()])
 
-    input_stream = InputStream(input_text)
-    lexer = GrammarLexer(input_stream)
-    lexer.removeErrorListeners()
-    lexer.addErrorListener(error_listener)
+    def exitPreamble_statement(self, ctx: GrammarParser.Preamble_statementContext):
+        super().exitPreamble_statement(ctx)
+        self.nodes[ctx] = self.nodes[ctx.initial_assignment() or ctx.constant_definition()]
 
-    stream = CommonTokenStream(lexer)
-    parser = GrammarParser(stream)
-    parser.removeErrorListeners()
-    parser.addErrorListener(error_listener)
+    def exitInitial_assignment(self, ctx: GrammarParser.Initial_assignmentContext):
+        super().exitInitial_assignment(ctx)
+        self.nodes[ctx] = InitialAssignment(
+            name=str(ctx.ID()),
+            expr=self.nodes[ctx.init_expression()],
+        )
 
-    parse_tree = parser.condition()
-    error_listener.check_errors()
+    def exitConstant_definition(self, ctx: GrammarParser.Constant_definitionContext):
+        super().exitConstant_definition(ctx)
+        self.nodes[ctx] = ConstantDefinition(
+            name=str(ctx.ID()),
+            expr=self.nodes[ctx.init_expression()],
+        )
 
-    listener = ConditionGrammarListener()
-    walker = ParseTreeWalker()
-    walker.walk(listener, parse_tree)
-    pprint(listener.nodes)
-    return listener.nodes[parse_tree]
+    def exitOperational_assignment(self, ctx: GrammarParser.Operational_assignmentContext):
+        super().exitOperational_assignment(ctx)
+        self.nodes[ctx] = OperationalAssignment(
+            name=str(ctx.ID()),
+            expr=self.nodes[ctx.num_expression()],
+        )
+
+    def exitFuncExprInit(self, ctx: GrammarParser.FuncExprInitContext):
+        super().exitFuncExprInit(ctx)
+        self.nodes[ctx] = UFunc(
+            func=ctx.function.text,
+            expr=self.nodes[ctx.init_expression()],
+        )
+
+    def exitUnaryExprInit(self, ctx: GrammarParser.UnaryExprInitContext):
+        super().exitUnaryExprInit(ctx)
+        self.nodes[ctx] = UnaryOp(
+            op=ctx.op.text,
+            expr=self.nodes[ctx.init_expression()],
+        )
+
+    def exitBinaryExprInit(self, ctx: GrammarParser.BinaryExprInitContext):
+        super().exitBinaryExprInit(ctx)
+        self.nodes[ctx] = BinaryOp(
+            expr1=self.nodes[ctx.init_expression(0)],
+            op=ctx.op.text,
+            expr2=self.nodes[ctx.init_expression(1)],
+        )
+
+    def exitLiteralExprInit(self, ctx: GrammarParser.LiteralExprInitContext):
+        super().exitLiteralExprInit(ctx)
+        self.nodes[ctx] = self.nodes[ctx.num_literal()]
+
+    def exitMathConstExprInit(self, ctx: GrammarParser.MathConstExprInitContext):
+        super().exitMathConstExprInit(ctx)
+        self.nodes[ctx] = self.nodes[ctx.math_const()]
+
+    def exitParenExprInit(self, ctx: GrammarParser.ParenExprInitContext):
+        super().exitParenExprInit(ctx)
+        self.nodes[ctx] = Paren(self.nodes[ctx.init_expression()])

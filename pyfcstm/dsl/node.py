@@ -1,4 +1,5 @@
 import math
+import os
 from abc import ABC
 
 __all__ = [
@@ -13,6 +14,13 @@ __all__ = [
     'UnaryOp',
     'BinaryOp',
     'UFunc',
+    'Statement',
+    'ConstantDefinition',
+    'InitialAssignment',
+    'OperationalAssignment',
+    'Preamble',
+    'Operation',
+    'Condition',
 ]
 
 
@@ -133,3 +141,76 @@ class UFunc(ASTNode):
 
     def __repr__(self):
         return f'<{self.__class__.__name__}, func: {self.func!r}, expr: {self.expr!r}>'
+
+
+class Statement(ASTNode):
+    pass
+
+
+class ConstantDefinition(Statement):
+    def __init__(self, name, expr):
+        self.name = name
+        self.expr = expr
+
+    def __str__(self):
+        return f'{self.name} = {self.expr};'
+
+    def __repr__(self):
+        return f'<{self.__class__.__name__} name: {self.name!r}, expr: {self.expr!r}>'
+
+
+class InitialAssignment(Statement):
+    def __init__(self, name, expr):
+        self.name = name
+        self.expr = expr
+
+    def __str__(self):
+        return f'{self.name} := {self.expr};'
+
+    def __repr__(self):
+        return f'<{self.__class__.__name__} name: {self.name!r}, expr: {self.expr!r}>'
+
+
+class OperationalAssignment(Statement):
+    def __init__(self, name, expr):
+        self.name = name
+        self.expr = expr
+
+    def __str__(self):
+        return f'{self.name} := {self.expr};'
+
+    def __repr__(self):
+        return f'<{self.__class__.__name__} name: {self.name!r}, expr: {self.expr!r}>'
+
+
+class Condition:
+    def __init__(self, expr):
+        self.expr = expr
+
+    def __str__(self):
+        return f'{self.expr}'
+
+    def __repr__(self):
+        return f'<{self.__class__.__name__} {self.expr!r}>'
+
+
+class Preamble:
+    def __init__(self, stats):
+        self.stats = stats
+
+    def __str__(self):
+        return os.linesep.join(map(str, self.stats))
+
+    def __repr__(self):
+        return f'<{self.__class__.__name__} {self.stats!r}>'
+
+
+class Operation:
+    def __init__(self, stats):
+        self.stats = stats
+
+    def __str__(self):
+        return os.linesep.join(map(str, self.stats))
+
+    def __repr__(self):
+        return f'<{self.__class__.__name__} {self.stats!r}>'

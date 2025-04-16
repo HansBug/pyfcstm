@@ -5,7 +5,7 @@ from pyfcstm.dsl.node import *
 
 
 @pytest.mark.unittest
-class TestGrammarCondition:
+class TestDSLCondition:
     @pytest.mark.parametrize(['input_text', 'expected'], [
         ('true', Condition(expr=Boolean(raw='true'))),
         ('false', Condition(expr=Boolean(raw='false'))),
@@ -232,6 +232,7 @@ class TestGrammarCondition:
         ('not!false', Condition(expr=UnaryOp(op='!', expr=UnaryOp(op='!', expr=Boolean(raw='false'))))),
         ('TRUE and FALSE', Condition(expr=BinaryOp(expr1=Boolean(raw='true'), op='&&', expr2=Boolean(raw='false')))),
         ('True and False', Condition(expr=BinaryOp(expr1=Boolean(raw='true'), op='&&', expr2=Boolean(raw='false')))),
+        ('e < 3', Condition(expr=BinaryOp(expr1=Name(name='e'), op='<', expr2=Integer(raw='3')))),
     ])
     def test_positive_cases(self, input_text, expected):
         assert parse_condition(input_text) == expected
@@ -316,6 +317,7 @@ class TestGrammarCondition:
         ('not!false', '!!False'),
         ('TRUE and FALSE', 'True && False'),
         ('True and False', 'True && False'),
+        ('e<3', 'e < 3'),
     ])
     def test_positive_cases_str(self, input_text, expected_str):
         assert str(parse_condition(input_text)) == expected_str

@@ -73,8 +73,8 @@ ID: [a-zA-Z_][a-zA-Z0-9_]*;
 INT: [0-9]+;
 FLOAT: [0-9]+'.'[0-9]* | '.'[0-9]+;
 
-TRUE: 'True' | 'true';
-FALSE: 'False' | 'false';
+TRUE: 'True' | 'true' | 'TRUE';
+FALSE: 'False' | 'false' | 'FALSE';
 
 WS: [ \t\n\r]+ -> skip;
 SL_COMMENT: '//' ~[\r\n]* -> skip;

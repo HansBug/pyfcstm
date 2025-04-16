@@ -112,7 +112,7 @@ class TestGrammarCondition:
             expr=BinaryOp(expr1=BinaryOp(expr1=Integer(raw='5'), op='^', expr2=Integer(raw='3')), op='==',
                           expr2=Integer(raw='6')))),
         ('pi > 3', Condition(expr=BinaryOp(expr1=Constant(raw='pi'), op='>', expr2=Integer(raw='3')))),
-        ('e < 3', Condition(expr=BinaryOp(expr1=Constant(raw='e'), op='<', expr2=Integer(raw='3')))),
+        ('E < 3', Condition(expr=BinaryOp(expr1=Constant(raw='E'), op='<', expr2=Integer(raw='3')))),
         ('tau > 6', Condition(expr=BinaryOp(expr1=Constant(raw='tau'), op='>', expr2=Integer(raw='6')))),
         ('sin(0) == 0',
          Condition(expr=BinaryOp(expr1=UFunc(func='sin', expr=Integer(raw='0')), op='==', expr2=Integer(raw='0')))),
@@ -201,11 +201,11 @@ class TestGrammarCondition:
                         expr1=Integer(raw='6'),
                         op='!=', expr2=Integer(
                             raw='7')))))))),
-        ('sin(pi/2) * cos(0) > sqrt(4) / 2 && log(e) == 1', Condition(expr=BinaryOp(expr1=BinaryOp(expr1=BinaryOp(
+        ('sin(pi/2) * cos(0) > sqrt(4) / 2 && log(E) == 1', Condition(expr=BinaryOp(expr1=BinaryOp(expr1=BinaryOp(
             expr1=UFunc(func='sin', expr=BinaryOp(expr1=Constant(raw='pi'), op='/', expr2=Integer(raw='2'))), op='*',
             expr2=UFunc(func='cos', expr=Integer(raw='0'))), op='>', expr2=BinaryOp(
             expr1=UFunc(func='sqrt', expr=Integer(raw='4')), op='/', expr2=Integer(raw='2'))), op='&&', expr2=BinaryOp(
-            expr1=UFunc(func='log', expr=Constant(raw='e')), op='==', expr2=Integer(raw='1'))))),
+            expr1=UFunc(func='log', expr=Constant(raw='E')), op='==', expr2=Integer(raw='1'))))),
         ('true && false || true && !(false || true && false)', Condition(
             expr=BinaryOp(expr1=BinaryOp(expr1=Boolean(raw='true'), op='&&', expr2=Boolean(raw='false')), op='||',
                           expr2=BinaryOp(expr1=Boolean(raw='true'), op='&&', expr2=UnaryOp(op='!', expr=Paren(
@@ -286,7 +286,7 @@ class TestGrammarCondition:
         ('5 | 3 == 7', '5 | 3 == 7'),
         ('5 ^ 3 == 6', '5 ^ 3 == 6'),
         ('pi > 3', 'pi > 3'),
-        ('e < 3', 'e < 3'),
+        ('E < 3', 'E < 3'),
         ('tau > 6', 'tau > 6'),
         ('sin(0) == 0', 'sin(0) == 0'),
         ('cos(0) == 1', 'cos(0) == 1'),
@@ -305,7 +305,7 @@ class TestGrammarCondition:
         ('(1 << 2) + 3 == 7', '(1 << 2) + 3 == 7'),
         ('1 + 2 * 3 > 4 && 5 - 6 / 3 < 4', '1 + 2 * 3 > 4 && 5 - 6 / 3 < 4'),
         ('((1 < 2) && (3 > 4)) || (!(5 == 5) && (6 != 7))', '((1 < 2) && (3 > 4)) || (!(5 == 5) && (6 != 7))'),
-        ('sin(pi/2) * cos(0) > sqrt(4) / 2 && log(e) == 1', 'sin(pi / 2) * cos(0) > sqrt(4) / 2 && log(e) == 1'),
+        ('sin(pi/2) * cos(0) > sqrt(4) / 2 && log(E) == 1', 'sin(pi / 2) * cos(0) > sqrt(4) / 2 && log(E) == 1'),
         ('true && false || true && !(false || true && false)', 'True && False || True && !(False || True && False)'),
         ('1 + 2 * 3 ** 2 / (4 % 3) >= 10 - 5 << 1', '1 + 2 * 3 ** 2 / (4 % 3) >= 10 - 5 << 1'),
 

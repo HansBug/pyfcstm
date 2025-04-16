@@ -122,7 +122,7 @@ class GrammarParser(Parser):
         "'||'",
         "'or'",
         "'pi'",
-        "'e'",
+        "'E'",
         "'tau'",
     ]
 

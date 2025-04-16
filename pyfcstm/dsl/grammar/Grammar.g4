@@ -67,7 +67,7 @@ bool_literal
     | FALSE
     ;
 
-math_const: 'pi' | 'e' | 'tau';
+math_const: 'pi' | 'E' | 'tau';
 
 FLOAT: [0-9]+'.'[0-9]* ([eE][+-]?[0-9]+)?
      | '.'[0-9]+ ([eE][+-]?[0-9]+)?

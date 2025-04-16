@@ -4,13 +4,13 @@ grammar Grammar;
 // program: statement+;
 
 // for guard condition
-condition: cond_expression;
+condition: cond_expression EOF;
 
 // for on_xxx operations
-operation_program: operational_assignment+;
+operation_program: operational_assignment+ EOF;
 
 // for preamable initialization
-preamble_program: preamble_statement+;
+preamble_program: preamble_statement+ EOF;
 preamble_statement
     : initial_assignment
     | constant_definition

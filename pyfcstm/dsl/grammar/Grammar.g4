@@ -67,11 +67,13 @@ bool_literal
     | FALSE
     ;
 
-math_const: 'pi' | 'e';
+math_const: 'pi' | 'e' | 'tau';
 
 ID: [a-zA-Z_][a-zA-Z0-9_]*;
+FLOAT: [0-9]+'.'[0-9]* ([eE][+-]?[0-9]+)?
+     | '.'[0-9]+ ([eE][+-]?[0-9]+)?
+     | [0-9]+ [eE][+-]?[0-9]+;
 INT: [0-9]+;
-FLOAT: [0-9]+'.'[0-9]* | '.'[0-9]+;
 
 TRUE: 'True' | 'true' | 'TRUE';
 FALSE: 'False' | 'false' | 'FALSE';

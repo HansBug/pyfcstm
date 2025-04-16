@@ -1,7 +1,10 @@
+from pprint import pprint
+
 from antlr4 import CommonTokenStream, InputStream, ParseTreeWalker
 
 from .error import CollectingErrorListener
 from .grammar import GrammarListener, GrammarParser, GrammarLexer
+from .node import Integer, Float, Constant, Boolean
 
 
 class ConditionGrammarListener(GrammarListener):
@@ -47,14 +50,23 @@ class ConditionGrammarListener(GrammarListener):
 
     def exitNum_literal(self, ctx: GrammarParser.Num_literalContext):
         super().exitNum_literal(ctx)
-
-        print((ctx.INT(), ctx.FLOAT()))
+        if ctx.INT():
+            node = Integer(str(ctx.INT()))
+        elif ctx.FLOAT():
+            node = Float(str(ctx.FLOAT()))
+        else:
+            assert False, f'Should not reach this line - {ctx!r}.'
+        self.nodes[ctx] = node
 
     def exitBool_literal(self, ctx: GrammarParser.Bool_literalContext):
         super().exitBool_literal(ctx)
+        node = Boolean(ctx.getText().lower())
+        self.nodes[ctx] = node
 
     def exitMath_const(self, ctx: GrammarParser.Math_constContext):
         super().exitMath_const(ctx)
+        node = Constant(ctx.getText())
+        self.nodes[ctx] = node
 
 
 def parse_condition(input_text):
@@ -76,4 +88,5 @@ def parse_condition(input_text):
     listener = ConditionGrammarListener()
     walker = ParseTreeWalker()
     walker.walk(listener, parse_tree)
+    pprint(listener.nodes)
     return listener.nodes[parse_tree]

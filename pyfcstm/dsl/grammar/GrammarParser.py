@@ -12,7 +12,7 @@ else:
 
 def serializedATN():
     with StringIO() as buf:
-        buf.write("\3\u608b\ua72a\u8133\ub9ed\u417c\u3be7\u7786\u5964\3$")
+        buf.write("\3\u608b\ua72a\u8133\ub9ed\u417c\u3be7\u7786\u5964\3%")
         buf.write("\u00ad\4\2\t\2\4\3\t\3\4\4\t\4\4\5\t\5\4\6\t\6\4\7\t\7")
         buf.write("\4\b\t\b\4\t\t\t\4\n\t\n\4\13\t\13\4\f\t\f\4\r\t\r\4\16")
         buf.write('\t\16\3\2\3\2\3\2\3\3\6\3!\n\3\r\3\16\3"\3\3\3\3\3\4')
@@ -29,7 +29,7 @@ def serializedATN():
         buf.write("\13\3\13\7\13\u00a2\n\13\f\13\16\13\u00a5\13\13\3\f\3")
         buf.write("\f\3\r\3\r\3\16\3\16\3\16\2\5\20\22\24\17\2\4\6\b\n\f")
         buf.write("\16\20\22\24\26\30\32\2\13\3\2\b\t\3\2\13\r\3\2\16\17")
-        buf.write('\3\2\20\22\3\2\24\27\3\2\30\31\3\2\37 \3\2!"\3\2\34\35')
+        buf.write('\3\2\20\22\3\2\24\27\3\2\30\31\3\2 !\3\2"#\3\2\34\36')
         buf.write("\2\u00bb\2\34\3\2\2\2\4 \3\2\2\2\6'\3\2\2\2\b/\3\2\2")
         buf.write("\2\n\61\3\2\2\2\f\66\3\2\2\2\16;\3\2\2\2\20N\3\2\2\2\22")
         buf.write("s\3\2\2\2\24\u0099\3\2\2\2\26\u00a6\3\2\2\2\30\u00a8\3")
@@ -38,12 +38,12 @@ def serializedATN():
         buf.write('\2\2\2"#\3\2\2\2#$\3\2\2\2$%\7\2\2\3%\5\3\2\2\2&(\5\b')
         buf.write("\5\2'&\3\2\2\2()\3\2\2\2)'\3\2\2\2)*\3\2\2\2*+\3\2\2")
         buf.write("\2+,\7\2\2\3,\7\3\2\2\2-\60\5\n\6\2.\60\5\f\7\2/-\3\2")
-        buf.write("\2\2/.\3\2\2\2\60\t\3\2\2\2\61\62\7\36\2\2\62\63\7\3\2")
+        buf.write("\2\2/.\3\2\2\2\60\t\3\2\2\2\61\62\7\37\2\2\62\63\7\3\2")
         buf.write("\2\63\64\5\20\t\2\64\65\7\4\2\2\65\13\3\2\2\2\66\67\7")
-        buf.write("\36\2\2\678\7\5\2\289\5\20\t\29:\7\4\2\2:\r\3\2\2\2;<")
-        buf.write("\7\36\2\2<=\7\3\2\2=>\5\22\n\2>?\7\4\2\2?\17\3\2\2\2@")
+        buf.write("\37\2\2\678\7\5\2\289\5\20\t\29:\7\4\2\2:\r\3\2\2\2;<")
+        buf.write("\7\37\2\2<=\7\3\2\2=>\5\22\n\2>?\7\4\2\2?\17\3\2\2\2@")
         buf.write("A\b\t\1\2AB\7\6\2\2BC\5\20\t\2CD\7\7\2\2DO\3\2\2\2EO\5")
-        buf.write("\26\f\2FO\5\32\16\2GH\t\2\2\2HO\5\20\t\tIJ\7\36\2\2JK")
+        buf.write("\26\f\2FO\5\32\16\2GH\t\2\2\2HO\5\20\t\tIJ\7\37\2\2JK")
         buf.write("\7\6\2\2KL\5\20\t\2LM\7\7\2\2MO\3\2\2\2N@\3\2\2\2NE\3")
         buf.write("\2\2\2NF\3\2\2\2NG\3\2\2\2NI\3\2\2\2Oa\3\2\2\2PQ\f\b\2")
         buf.write("\2QR\7\n\2\2R`\5\20\t\bST\f\7\2\2TU\t\3\2\2U`\5\20\t\b")
@@ -51,8 +51,8 @@ def serializedATN():
         buf.write("\5\20\t\6\\]\f\4\2\2]^\t\5\2\2^`\5\20\t\5_P\3\2\2\2_S")
         buf.write("\3\2\2\2_V\3\2\2\2_Y\3\2\2\2_\\\3\2\2\2`c\3\2\2\2a_\3")
         buf.write("\2\2\2ab\3\2\2\2b\21\3\2\2\2ca\3\2\2\2de\b\n\1\2ef\7\6")
-        buf.write("\2\2fg\5\22\n\2gh\7\7\2\2ht\3\2\2\2it\5\26\f\2jt\7\36")
-        buf.write("\2\2kt\5\32\16\2lm\t\2\2\2mt\5\22\n\tno\7\36\2\2op\7\6")
+        buf.write("\2\2fg\5\22\n\2gh\7\7\2\2ht\3\2\2\2it\5\26\f\2jt\7\37")
+        buf.write("\2\2kt\5\32\16\2lm\t\2\2\2mt\5\22\n\tno\7\37\2\2op\7\6")
         buf.write("\2\2pq\5\22\n\2qr\7\7\2\2rt\3\2\2\2sd\3\2\2\2si\3\2\2")
         buf.write("\2sj\3\2\2\2sk\3\2\2\2sl\3\2\2\2sn\3\2\2\2t\u0086\3\2")
         buf.write("\2\2uv\f\b\2\2vw\7\n\2\2w\u0085\5\22\n\bxy\f\7\2\2yz\t")
@@ -120,6 +120,7 @@ class GrammarParser(Parser):
         "'||'",
         "'pi'",
         "'e'",
+        "'tau'",
     ]
 
     symbolicNames = [
@@ -151,9 +152,10 @@ class GrammarParser(Parser):
         "<INVALID>",
         "<INVALID>",
         "<INVALID>",
+        "<INVALID>",
         "ID",
-        "INT",
         "FLOAT",
+        "INT",
         "TRUE",
         "FALSE",
         "WS",
@@ -218,13 +220,14 @@ class GrammarParser(Parser):
     T__24 = 25
     T__25 = 26
     T__26 = 27
-    ID = 28
-    INT = 29
+    T__27 = 28
+    ID = 29
     FLOAT = 30
-    TRUE = 31
-    FALSE = 32
-    WS = 33
-    SL_COMMENT = 34
+    INT = 31
+    TRUE = 32
+    FALSE = 33
+    WS = 34
+    SL_COMMENT = 35
 
     def __init__(self, input: TokenStream, output: TextIO = sys.stdout):
         super().__init__(input, output)
@@ -752,14 +755,18 @@ class GrammarParser(Parser):
                 self.state = 65
                 self.match(GrammarParser.T__4)
                 pass
-            elif token in [GrammarParser.INT, GrammarParser.FLOAT]:
+            elif token in [GrammarParser.FLOAT, GrammarParser.INT]:
                 localctx = GrammarParser.LiteralExprInitContext(self, localctx)
                 self._ctx = localctx
                 _prevctx = localctx
                 self.state = 67
                 self.num_literal()
                 pass
-            elif token in [GrammarParser.T__25, GrammarParser.T__26]:
+            elif token in [
+                GrammarParser.T__25,
+                GrammarParser.T__26,
+                GrammarParser.T__27,
+            ]:
                 localctx = GrammarParser.MathConstExprInitContext(self, localctx)
                 self._ctx = localctx
                 _prevctx = localctx
@@ -1695,7 +1702,7 @@ class GrammarParser(Parser):
             self.enterOuterAlt(localctx, 1)
             self.state = 164
             _la = self._input.LA(1)
-            if not (_la == GrammarParser.INT or _la == GrammarParser.FLOAT):
+            if not (_la == GrammarParser.FLOAT or _la == GrammarParser.INT):
                 self._errHandler.recoverInline(self)
             else:
                 self._errHandler.reportMatch(self)
@@ -1783,7 +1790,18 @@ class GrammarParser(Parser):
             self.enterOuterAlt(localctx, 1)
             self.state = 168
             _la = self._input.LA(1)
-            if not (_la == GrammarParser.T__25 or _la == GrammarParser.T__26):
+            if not (
+                ((_la) & ~0x3F) == 0
+                and (
+                    (1 << _la)
+                    & (
+                        (1 << GrammarParser.T__25)
+                        | (1 << GrammarParser.T__26)
+                        | (1 << GrammarParser.T__27)
+                    )
+                )
+                != 0
+            ):
                 self._errHandler.recoverInline(self)
             else:
                 self._errHandler.reportMatch(self)

@@ -649,9 +649,9 @@ class Transition(ChartElement, IJsonOp):
     @dst_state.setter
     def dst_state(self, state: State):
         if self.chart is not None and state not in self.chart.states:
-            self.chart.states.get(state)
+            self.chart.states.add(state)
         state.chart = self.chart
-        self._src_state_id = state.id
+        self._dst_state_id = state.id
 
     @property
     def event_id(self):

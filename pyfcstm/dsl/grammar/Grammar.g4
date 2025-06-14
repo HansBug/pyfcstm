@@ -30,7 +30,7 @@ init_expression
     | init_expression op=('+'|'-') init_expression           # binaryExprInit
     | init_expression op=('<<'|'>>') init_expression         # binaryExprInit
     | init_expression op=('&'|'|'|'^') init_expression       # binaryExprInit
-    | function=UFUNC_NAME '(' init_expression ')'                    # funcExprInit
+    | function=UFUNC_NAME '(' init_expression ')'            # funcExprInit
     ;
 
 num_expression
@@ -44,7 +44,7 @@ num_expression
     | num_expression op=('+'|'-') num_expression           # binaryExprNum
     | num_expression op=('<<'|'>>') num_expression         # binaryExprNum
     | num_expression op=('&'|'|'|'^') num_expression       # binaryExprNum
-    | function=UFUNC_NAME '(' num_expression ')'                   # funcExprNum
+    | function=UFUNC_NAME '(' num_expression ')'           # funcExprNum
     ;
 
 cond_expression

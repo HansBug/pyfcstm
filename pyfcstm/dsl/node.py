@@ -17,6 +17,7 @@ __all__ = [
     'Paren',
     'UnaryOp',
     'BinaryOp',
+    'ConditionalOp',
     'UFunc',
     'Statement',
     'ConstantDefinition',
@@ -142,6 +143,16 @@ class BinaryOp(Expr):
 
     def __str__(self):
         return f'{self.expr1} {self.op} {self.expr2}'
+
+
+@dataclass
+class ConditionalOp(Expr):
+    cond: Expr
+    value_true: Expr
+    value_false: Expr
+
+    def __str__(self):
+        return f'({self.cond}) ? {self.value_true} : {self.value_false}'
 
 
 @dataclass

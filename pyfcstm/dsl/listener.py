@@ -1,6 +1,6 @@
 from .grammar import GrammarListener, GrammarParser
 from .node import Integer, Float, Constant, Boolean, Name, Paren, BinaryOp, UnaryOp, UFunc, ConstantDefinition, \
-    OperationalAssignment, InitialAssignment, Condition, Operation, Preamble
+    OperationalAssignment, InitialAssignment, Condition, Operation, Preamble, ConditionalOp
 
 
 class GrammarParseListener(GrammarListener):
@@ -176,3 +176,19 @@ class GrammarParseListener(GrammarListener):
     def exitParenExprInit(self, ctx: GrammarParser.ParenExprInitContext):
         super().exitParenExprInit(ctx)
         self.nodes[ctx] = Paren(self.nodes[ctx.init_expression()])
+
+    def exitConditionalCStyleExprNum(self, ctx: GrammarParser.ConditionalCStyleExprNumContext):
+        super().exitConditionalCStyleExprNum(ctx)
+        self.nodes[ctx] = ConditionalOp(
+            cond=self.nodes[ctx.cond_expression()],
+            value_true=self.nodes[ctx.num_expression(0)],
+            value_false=self.nodes[ctx.num_expression(1)],
+        )
+
+    def exitConditionalPyStyleExprNum(self, ctx: GrammarParser.ConditionalPyStyleExprNumContext):
+        super().exitConditionalPyStyleExprNum(ctx)
+        self.nodes[ctx] = ConditionalOp(
+            cond=self.nodes[ctx.cond_expression()],
+            value_true=self.nodes[ctx.num_expression(0)],
+            value_false=self.nodes[ctx.num_expression(1)],
+        )

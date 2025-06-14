@@ -133,12 +133,36 @@ class GrammarListener(ParseTreeListener):
     def exitFuncExprNum(self, ctx: GrammarParser.FuncExprNumContext):
         pass
 
+    # Enter a parse tree produced by GrammarParser#conditionalCStyleExprNum.
+    def enterConditionalCStyleExprNum(
+        self, ctx: GrammarParser.ConditionalCStyleExprNumContext
+    ):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#conditionalCStyleExprNum.
+    def exitConditionalCStyleExprNum(
+        self, ctx: GrammarParser.ConditionalCStyleExprNumContext
+    ):
+        pass
+
     # Enter a parse tree produced by GrammarParser#binaryExprNum.
     def enterBinaryExprNum(self, ctx: GrammarParser.BinaryExprNumContext):
         pass
 
     # Exit a parse tree produced by GrammarParser#binaryExprNum.
     def exitBinaryExprNum(self, ctx: GrammarParser.BinaryExprNumContext):
+        pass
+
+    # Enter a parse tree produced by GrammarParser#conditionalPyStyleExprNum.
+    def enterConditionalPyStyleExprNum(
+        self, ctx: GrammarParser.ConditionalPyStyleExprNumContext
+    ):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#conditionalPyStyleExprNum.
+    def exitConditionalPyStyleExprNum(
+        self, ctx: GrammarParser.ConditionalPyStyleExprNumContext
+    ):
         pass
 
     # Enter a parse tree produced by GrammarParser#literalExprNum.

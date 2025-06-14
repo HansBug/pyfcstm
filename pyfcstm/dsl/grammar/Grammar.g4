@@ -87,4 +87,6 @@ UFUNC_NAME : 'sin' | 'cos' | 'tan' | 'asin' | 'acos' | 'atan'
 ID: [a-zA-Z_][a-zA-Z0-9_]*;
 
 WS: [ \t\n\r]+ -> skip;
-SL_COMMENT: '//' ~[\r\n]* -> skip;
+BLOCK_COMMENT: '/*' .*? '*/' -> skip;
+LINE_COMMENT: '//' ~[\r\n]* -> skip;
+PYTHON_COMMENT: '#' ~[\r\n]* -> skip;

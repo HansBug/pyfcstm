@@ -45,8 +45,7 @@ num_expression
     | num_expression op=('<<'|'>>') num_expression         # binaryExprNum
     | num_expression op=('&'|'|'|'^') num_expression       # binaryExprNum
     | function=UFUNC_NAME '(' num_expression ')'           # funcExprNum
-    | '(' cond_expression ')' '?' num_expression ':' num_expression  # conditionalCStyleExprNum
-    | num_expression 'if' cond_expression 'else' num_expression      # conditionalPyStyleExprNum
+    | <assoc=right> '(' cond_expression ')' '?' num_expression ':' num_expression  # conditionalCStyleExprNum
     ;
 
 cond_expression
@@ -57,6 +56,7 @@ cond_expression
     | num_expression op=('=='|'!=') num_expression          # binaryExprFromNumCond
     | cond_expression op=('&&'|'and') cond_expression       # binaryExprCond
     | cond_expression op=('||'|'or') cond_expression        # binaryExprCond
+    | <assoc=right> '(' cond_expression ')' '?' cond_expression ':' cond_expression  # conditionalCStyleCondNum
     ;
 
 num_literal

@@ -233,6 +233,99 @@ class TestDSLCondition:
         ('TRUE and FALSE', Condition(expr=BinaryOp(expr1=Boolean(raw='true'), op='&&', expr2=Boolean(raw='false')))),
         ('True and False', Condition(expr=BinaryOp(expr1=Boolean(raw='true'), op='&&', expr2=Boolean(raw='false')))),
         ('e < 3', Condition(expr=BinaryOp(expr1=Name(name='e'), op='<', expr2=Integer(raw='3')))),
+
+        ('(true) ? true : true', Condition(expr=ConditionalOp(cond=Boolean(raw='true'), value_true=Boolean(raw='true'),
+                                                              value_false=Boolean(raw='true')))),
+        ('(true) ? true : False', Condition(expr=ConditionalOp(cond=Boolean(raw='true'), value_true=Boolean(raw='true'),
+                                                               value_false=Boolean(raw='false')))),
+        ('(true) ? true : x >=0', Condition(expr=ConditionalOp(cond=Boolean(raw='true'), value_true=Boolean(raw='true'),
+                                                               value_false=BinaryOp(expr1=Name(name='x'), op='>=',
+                                                                                    expr2=Integer(raw='0'))))),
+        ('(true) ? False : true', Condition(
+            expr=ConditionalOp(cond=Boolean(raw='true'), value_true=Boolean(raw='false'),
+                               value_false=Boolean(raw='true')))),
+        ('(true) ? False : False', Condition(
+            expr=ConditionalOp(cond=Boolean(raw='true'), value_true=Boolean(raw='false'),
+                               value_false=Boolean(raw='false')))),
+        ('(true) ? False : x >=0', Condition(
+            expr=ConditionalOp(cond=Boolean(raw='true'), value_true=Boolean(raw='false'),
+                               value_false=BinaryOp(expr1=Name(name='x'), op='>=', expr2=Integer(raw='0'))))),
+        ('(true) ? x >=0 : true', Condition(expr=ConditionalOp(cond=Boolean(raw='true'),
+                                                               value_true=BinaryOp(expr1=Name(name='x'), op='>=',
+                                                                                   expr2=Integer(raw='0')),
+                                                               value_false=Boolean(raw='true')))),
+        ('(true) ? x >=0 : False', Condition(expr=ConditionalOp(cond=Boolean(raw='true'),
+                                                                value_true=BinaryOp(expr1=Name(name='x'), op='>=',
+                                                                                    expr2=Integer(raw='0')),
+                                                                value_false=Boolean(raw='false')))),
+        ('(true) ? x >=0 : x >=0', Condition(expr=ConditionalOp(cond=Boolean(raw='true'),
+                                                                value_true=BinaryOp(expr1=Name(name='x'), op='>=',
+                                                                                    expr2=Integer(raw='0')),
+                                                                value_false=BinaryOp(expr1=Name(name='x'), op='>=',
+                                                                                     expr2=Integer(raw='0'))))),
+        ('(False) ? true : true', Condition(
+            expr=ConditionalOp(cond=Boolean(raw='false'), value_true=Boolean(raw='true'),
+                               value_false=Boolean(raw='true')))),
+        ('(False) ? true : False', Condition(
+            expr=ConditionalOp(cond=Boolean(raw='false'), value_true=Boolean(raw='true'),
+                               value_false=Boolean(raw='false')))),
+        ('(False) ? true : x >=0', Condition(
+            expr=ConditionalOp(cond=Boolean(raw='false'), value_true=Boolean(raw='true'),
+                               value_false=BinaryOp(expr1=Name(name='x'), op='>=', expr2=Integer(raw='0'))))),
+        ('(False) ? False : true', Condition(
+            expr=ConditionalOp(cond=Boolean(raw='false'), value_true=Boolean(raw='false'),
+                               value_false=Boolean(raw='true')))),
+        ('(False) ? False : False', Condition(
+            expr=ConditionalOp(cond=Boolean(raw='false'), value_true=Boolean(raw='false'),
+                               value_false=Boolean(raw='false')))),
+        ('(False) ? False : x >=0', Condition(
+            expr=ConditionalOp(cond=Boolean(raw='false'), value_true=Boolean(raw='false'),
+                               value_false=BinaryOp(expr1=Name(name='x'), op='>=', expr2=Integer(raw='0'))))),
+        ('(False) ? x >=0 : true', Condition(expr=ConditionalOp(cond=Boolean(raw='false'),
+                                                                value_true=BinaryOp(expr1=Name(name='x'), op='>=',
+                                                                                    expr2=Integer(raw='0')),
+                                                                value_false=Boolean(raw='true')))),
+        ('(False) ? x >=0 : False', Condition(expr=ConditionalOp(cond=Boolean(raw='false'),
+                                                                 value_true=BinaryOp(expr1=Name(name='x'), op='>=',
+                                                                                     expr2=Integer(raw='0')),
+                                                                 value_false=Boolean(raw='false')))),
+        ('(False) ? x >=0 : x >=0', Condition(expr=ConditionalOp(cond=Boolean(raw='false'),
+                                                                 value_true=BinaryOp(expr1=Name(name='x'), op='>=',
+                                                                                     expr2=Integer(raw='0')),
+                                                                 value_false=BinaryOp(expr1=Name(name='x'), op='>=',
+                                                                                      expr2=Integer(raw='0'))))),
+        ('(x >=0) ? true : true', Condition(
+            expr=ConditionalOp(cond=BinaryOp(expr1=Name(name='x'), op='>=', expr2=Integer(raw='0')),
+                               value_true=Boolean(raw='true'), value_false=Boolean(raw='true')))),
+        ('(x >=0) ? true : False', Condition(
+            expr=ConditionalOp(cond=BinaryOp(expr1=Name(name='x'), op='>=', expr2=Integer(raw='0')),
+                               value_true=Boolean(raw='true'), value_false=Boolean(raw='false')))),
+        ('(x >=0) ? true : x >=0', Condition(
+            expr=ConditionalOp(cond=BinaryOp(expr1=Name(name='x'), op='>=', expr2=Integer(raw='0')),
+                               value_true=Boolean(raw='true'),
+                               value_false=BinaryOp(expr1=Name(name='x'), op='>=', expr2=Integer(raw='0'))))),
+        ('(x >=0) ? False : true', Condition(
+            expr=ConditionalOp(cond=BinaryOp(expr1=Name(name='x'), op='>=', expr2=Integer(raw='0')),
+                               value_true=Boolean(raw='false'), value_false=Boolean(raw='true')))),
+        ('(x >=0) ? False : False', Condition(
+            expr=ConditionalOp(cond=BinaryOp(expr1=Name(name='x'), op='>=', expr2=Integer(raw='0')),
+                               value_true=Boolean(raw='false'), value_false=Boolean(raw='false')))),
+        ('(x >=0) ? False : x >=0', Condition(
+            expr=ConditionalOp(cond=BinaryOp(expr1=Name(name='x'), op='>=', expr2=Integer(raw='0')),
+                               value_true=Boolean(raw='false'),
+                               value_false=BinaryOp(expr1=Name(name='x'), op='>=', expr2=Integer(raw='0'))))),
+        ('(x >=0) ? x >=0 : true', Condition(
+            expr=ConditionalOp(cond=BinaryOp(expr1=Name(name='x'), op='>=', expr2=Integer(raw='0')),
+                               value_true=BinaryOp(expr1=Name(name='x'), op='>=', expr2=Integer(raw='0')),
+                               value_false=Boolean(raw='true')))),
+        ('(x >=0) ? x >=0 : False', Condition(
+            expr=ConditionalOp(cond=BinaryOp(expr1=Name(name='x'), op='>=', expr2=Integer(raw='0')),
+                               value_true=BinaryOp(expr1=Name(name='x'), op='>=', expr2=Integer(raw='0')),
+                               value_false=Boolean(raw='false')))),
+        ('(x >=0) ? x >=0 : x >=0', Condition(
+            expr=ConditionalOp(cond=BinaryOp(expr1=Name(name='x'), op='>=', expr2=Integer(raw='0')),
+                               value_true=BinaryOp(expr1=Name(name='x'), op='>=', expr2=Integer(raw='0')),
+                               value_false=BinaryOp(expr1=Name(name='x'), op='>=', expr2=Integer(raw='0'))))),
     ])
     def test_positive_cases(self, input_text, expected):
         assert parse_condition(input_text) == expected
@@ -318,6 +411,34 @@ class TestDSLCondition:
         ('TRUE and FALSE', 'True && False'),
         ('True and False', 'True && False'),
         ('e<3', 'e < 3'),
+
+        ('(true) ? true : true', '(True) ? True : True'),
+        ('(true) ? true : False', '(True) ? True : False'),
+        ('(true) ? true : x >=0', '(True) ? True : x >= 0'),
+        ('(true) ? False : true', '(True) ? False : True'),
+        ('(true) ? False : False', '(True) ? False : False'),
+        ('(true) ? False : x >=0', '(True) ? False : x >= 0'),
+        ('(true) ? x >=0 : true', '(True) ? x >= 0 : True'),
+        ('(true) ? x >=0 : False', '(True) ? x >= 0 : False'),
+        ('(true) ? x >=0 : x >=0', '(True) ? x >= 0 : x >= 0'),
+        ('(False) ? true : true', '(False) ? True : True'),
+        ('(False) ? true : False', '(False) ? True : False'),
+        ('(False) ? true : x >=0', '(False) ? True : x >= 0'),
+        ('(False) ? False : true', '(False) ? False : True'),
+        ('(False) ? False : False', '(False) ? False : False'),
+        ('(False) ? False : x >=0', '(False) ? False : x >= 0'),
+        ('(False) ? x >=0 : true', '(False) ? x >= 0 : True'),
+        ('(False) ? x >=0 : False', '(False) ? x >= 0 : False'),
+        ('(False) ? x >=0 : x >=0', '(False) ? x >= 0 : x >= 0'),
+        ('(x >=0) ? true : true', '(x >= 0) ? True : True'),
+        ('(x >=0) ? true : False', '(x >= 0) ? True : False'),
+        ('(x >=0) ? true : x >=0', '(x >= 0) ? True : x >= 0'),
+        ('(x >=0) ? False : true', '(x >= 0) ? False : True'),
+        ('(x >=0) ? False : False', '(x >= 0) ? False : False'),
+        ('(x >=0) ? False : x >=0', '(x >= 0) ? False : x >= 0'),
+        ('(x >=0) ? x >=0 : true', '(x >= 0) ? x >= 0 : True'),
+        ('(x >=0) ? x >=0 : False', '(x >= 0) ? x >= 0 : False'),
+        ('(x >=0) ? x >=0 : x >=0', '(x >= 0) ? x >= 0 : x >= 0'),
     ])
     def test_positive_cases_str(self, input_text, expected_str):
         assert str(parse_condition(input_text)) == expected_str

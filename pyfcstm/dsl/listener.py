@@ -185,10 +185,10 @@ class GrammarParseListener(GrammarListener):
             value_false=self.nodes[ctx.num_expression(1)],
         )
 
-    def exitConditionalPyStyleExprNum(self, ctx: GrammarParser.ConditionalPyStyleExprNumContext):
-        super().exitConditionalPyStyleExprNum(ctx)
+    def exitConditionalCStyleCondNum(self, ctx: GrammarParser.ConditionalCStyleCondNumContext):
+        super().exitConditionalCStyleCondNum(ctx)
         self.nodes[ctx] = ConditionalOp(
-            cond=self.nodes[ctx.cond_expression()],
-            value_true=self.nodes[ctx.num_expression(0)],
-            value_false=self.nodes[ctx.num_expression(1)],
+            cond=self.nodes[ctx.cond_expression(0)],
+            value_true=self.nodes[ctx.cond_expression(1)],
+            value_false=self.nodes[ctx.cond_expression(2)],
         )

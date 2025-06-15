@@ -1,6 +1,6 @@
 from .grammar import GrammarListener, GrammarParser
 from .node import Integer, Float, Constant, Boolean, Name, Paren, BinaryOp, UnaryOp, UFunc, ConstantDefinition, \
-    OperationalAssignment, InitialAssignment, Condition, Operation, Preamble, ConditionalOp
+    OperationalAssignment, InitialAssignment, Condition, Operation, Preamble, ConditionalOp, HexInt
 
 
 class GrammarParseListener(GrammarListener):
@@ -96,6 +96,8 @@ class GrammarParseListener(GrammarListener):
             node = Integer(str(ctx.INT()))
         elif ctx.FLOAT():
             node = Float(str(ctx.FLOAT()))
+        elif ctx.HEX_INT():
+            node = HexInt(str(ctx.HEX_INT()))
         else:
             assert False, f'Should not reach this line - {ctx!r}.'  # pragma: no cover
         self.nodes[ctx] = node

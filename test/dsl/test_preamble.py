@@ -297,6 +297,9 @@ class TestDSLPreamble:
                    InitialAssignment(name='float4', expr=Float(raw='1e10')),
                    InitialAssignment(name='float5', expr=Float(raw='1.5e-5'))])),
         ('', Preamble(stats=[])),
+
+        ('x := 0x10;', Preamble(stats=[InitialAssignment(name='x', expr=HexInt(raw='0x10'))])),
+        ('x := 0xAa;', Preamble(stats=[InitialAssignment(name='x', expr=HexInt(raw='0xAa'))])),
     ])
     def test_positive_cases(self, input_text, expected):
         assert parse_preamble(input_text) == expected
@@ -336,6 +339,8 @@ class TestDSLPreamble:
         ('float1 := 0.123;\nfloat2 := .123;\nfloat3 := 123.;\nfloat4 := 1e10;\nfloat5 := 1.5e-5;\n',
          'float1 := 0.123;\nfloat2 := .123;\nfloat3 := 123.;\nfloat4 := 1e10;\nfloat5 := 1.5e-5;'),
         ('', ''),
+        ('x := 0x10;', 'x := 0x10;'),
+        ('x := 0xAa;', 'x := 0xaa;'),
     ])
     def test_positive_cases_str(self, input_text, expected_str, text_aligner):
         text_aligner.assert_equal(
@@ -376,7 +381,7 @@ class TestDSLPreamble:
         ('x := 1.0e+;',),
         ('sin := 1;',),
         ('pi := 3.14;',),
-        ('x := 0x10;',),
+        # ('x := 0x10;',),
         ('x := 10;\ny := x + 5;',),
         ('a := 10;\nb = 20;\nc := a + b;\nd = c * 2;\n',),
     ])

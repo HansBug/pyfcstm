@@ -11,6 +11,7 @@ __all__ = [
     'Literal',
     'Boolean',
     'Integer',
+    'HexInt',
     'Float',
     'Constant',
     'Name',
@@ -60,6 +61,15 @@ class Literal(Expr):
 class Integer(Literal):
     def _value(self):
         return int(self.raw)
+
+
+@dataclass
+class HexInt(Literal):
+    def _value(self):
+        return int(self.raw, 16)
+
+    def __str__(self):
+        return self.raw.lower()
 
 
 @dataclass

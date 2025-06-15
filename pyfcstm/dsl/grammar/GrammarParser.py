@@ -12,7 +12,7 @@ else:
 
 def serializedATN():
     with StringIO() as buf:
-        buf.write("\3\u608b\ua72a\u8133\ub9ed\u417c\u3be7\u7786\u5964\3-")
+        buf.write("\3\u608b\ua72a\u8133\ub9ed\u417c\u3be7\u7786\u5964\3.")
         buf.write("\u00bf\4\2\t\2\4\3\t\3\4\4\t\4\4\5\t\5\4\6\t\6\4\7\t\7")
         buf.write("\4\b\t\b\4\t\t\t\4\n\t\n\4\13\t\13\4\f\t\f\4\r\t\r\4\16")
         buf.write("\t\16\3\2\3\2\3\2\3\3\7\3!\n\3\f\3\16\3$\13\3\3\3\3\3")
@@ -178,6 +178,7 @@ class GrammarParser(Parser):
         "FALSE",
         "UFUNC_NAME",
         "ID",
+        "STRING",
         "WS",
         "BLOCK_COMMENT",
         "LINE_COMMENT",
@@ -254,10 +255,11 @@ class GrammarParser(Parser):
     FALSE = 37
     UFUNC_NAME = 38
     ID = 39
-    WS = 40
-    BLOCK_COMMENT = 41
-    LINE_COMMENT = 42
-    PYTHON_COMMENT = 43
+    STRING = 40
+    WS = 41
+    BLOCK_COMMENT = 42
+    LINE_COMMENT = 43
+    PYTHON_COMMENT = 44
 
     def __init__(self, input: TokenStream, output: TextIO = sys.stdout):
         super().__init__(input, output)

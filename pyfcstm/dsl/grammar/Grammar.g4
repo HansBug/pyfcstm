@@ -88,6 +88,22 @@ UFUNC_NAME : 'sin' | 'cos' | 'tan' | 'asin' | 'acos' | 'atan'
 
 ID: [a-zA-Z_][a-zA-Z0-9_]*;
 
+STRING
+    : '"' (~["\\\r\n] | EscapeSequence)* '"'
+    | '\'' (~['\\\r\n] | EscapeSequence)* '\''
+    ;
+
+fragment EscapeSequence
+    : '\\' [btnfr"'\\]
+    | '\\' ([0-3]? [0-7])? [0-7]
+    | '\\' 'u' HexDigit HexDigit HexDigit HexDigit
+    | '\\' 'x' HexDigit HexDigit
+    ;
+
+fragment HexDigit
+    : [0-9a-fA-F]
+    ;
+
 WS: [ \t\n\r]+ -> skip;
 BLOCK_COMMENT: '/*' .*? '*/' -> skip;
 LINE_COMMENT: '//' ~[\r\n]* -> skip;

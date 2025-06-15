@@ -82,7 +82,7 @@ FLOAT: [0-9]+'.'[0-9]* ([eE][+-]?[0-9]+)?
      | '.'[0-9]+ ([eE][+-]?[0-9]+)?
      | [0-9]+ [eE][+-]?[0-9]+;
 INT: [0-9]+;
-HEX_INT: '0x' [0-9a-fA-F]+;
+HEX_INT: '0x' HexDigit+;
 
 TRUE: 'True' | 'true' | 'TRUE';
 FALSE: 'False' | 'false' | 'FALSE';

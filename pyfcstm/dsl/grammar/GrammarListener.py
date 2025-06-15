@@ -17,6 +17,30 @@ class GrammarListener(ParseTreeListener):
     def exitCondition(self, ctx: GrammarParser.ConditionContext):
         pass
 
+    # Enter a parse tree produced by GrammarParser#def_assignment.
+    def enterDef_assignment(self, ctx: GrammarParser.Def_assignmentContext):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#def_assignment.
+    def exitDef_assignment(self, ctx: GrammarParser.Def_assignmentContext):
+        pass
+
+    # Enter a parse tree produced by GrammarParser#def_block.
+    def enterDef_block(self, ctx: GrammarParser.Def_blockContext):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#def_block.
+    def exitDef_block(self, ctx: GrammarParser.Def_blockContext):
+        pass
+
+    # Enter a parse tree produced by GrammarParser#operation_block.
+    def enterOperation_block(self, ctx: GrammarParser.Operation_blockContext):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#operation_block.
+    def exitOperation_block(self, ctx: GrammarParser.Operation_blockContext):
+        pass
+
     # Enter a parse tree produced by GrammarParser#operation_program.
     def enterOperation_program(self, ctx: GrammarParser.Operation_programContext):
         pass

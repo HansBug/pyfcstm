@@ -23,6 +23,7 @@ __all__ = [
     'Statement',
     'ConstantDefinition',
     'InitialAssignment',
+    'DefAssignment',
     'OperationalAssignment',
     'Preamble',
     'Operation',
@@ -195,6 +196,16 @@ class InitialAssignment(Statement):
 
     def __str__(self):
         return f'{self.name} := {self.expr};'
+
+
+@dataclass
+class DefAssignment(Statement):
+    name: str
+    type: str
+    expr: Expr
+
+    def __str__(self):
+        return f'def {self.type} {self.name} := {self.expr}'
 
 
 @dataclass

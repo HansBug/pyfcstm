@@ -6,6 +6,12 @@ grammar Grammar;
 // for guard condition
 condition: cond_expression EOF;
 
+def_assignment: 'def' deftype=('int'|'float') ID '=' init_expression ';';
+def_block: def_assignment*;
+
+operation_block: operational_assignment*;
+
+// basic configs for the previous design
 // for on_xxx operations
 operation_program: operational_assignment* EOF;
 

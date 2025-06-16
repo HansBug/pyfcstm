@@ -17,6 +17,14 @@ class GrammarListener(ParseTreeListener):
     def exitCondition(self, ctx: GrammarParser.ConditionContext):
         pass
 
+    # Enter a parse tree produced by GrammarParser#state_machine_dsl.
+    def enterState_machine_dsl(self, ctx: GrammarParser.State_machine_dslContext):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#state_machine_dsl.
+    def exitState_machine_dsl(self, ctx: GrammarParser.State_machine_dslContext):
+        pass
+
     # Enter a parse tree produced by GrammarParser#def_assignment.
     def enterDef_assignment(self, ctx: GrammarParser.Def_assignmentContext):
         pass
@@ -25,20 +33,72 @@ class GrammarListener(ParseTreeListener):
     def exitDef_assignment(self, ctx: GrammarParser.Def_assignmentContext):
         pass
 
-    # Enter a parse tree produced by GrammarParser#def_block.
-    def enterDef_block(self, ctx: GrammarParser.Def_blockContext):
+    # Enter a parse tree produced by GrammarParser#leafStateDefinition.
+    def enterLeafStateDefinition(self, ctx: GrammarParser.LeafStateDefinitionContext):
         pass
 
-    # Exit a parse tree produced by GrammarParser#def_block.
-    def exitDef_block(self, ctx: GrammarParser.Def_blockContext):
+    # Exit a parse tree produced by GrammarParser#leafStateDefinition.
+    def exitLeafStateDefinition(self, ctx: GrammarParser.LeafStateDefinitionContext):
         pass
 
-    # Enter a parse tree produced by GrammarParser#operation_block.
-    def enterOperation_block(self, ctx: GrammarParser.Operation_blockContext):
+    # Enter a parse tree produced by GrammarParser#compositeStateDefinition.
+    def enterCompositeStateDefinition(
+        self, ctx: GrammarParser.CompositeStateDefinitionContext
+    ):
         pass
 
-    # Exit a parse tree produced by GrammarParser#operation_block.
-    def exitOperation_block(self, ctx: GrammarParser.Operation_blockContext):
+    # Exit a parse tree produced by GrammarParser#compositeStateDefinition.
+    def exitCompositeStateDefinition(
+        self, ctx: GrammarParser.CompositeStateDefinitionContext
+    ):
+        pass
+
+    # Enter a parse tree produced by GrammarParser#entryTransitionDefinition.
+    def enterEntryTransitionDefinition(
+        self, ctx: GrammarParser.EntryTransitionDefinitionContext
+    ):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#entryTransitionDefinition.
+    def exitEntryTransitionDefinition(
+        self, ctx: GrammarParser.EntryTransitionDefinitionContext
+    ):
+        pass
+
+    # Enter a parse tree produced by GrammarParser#normalTransitionDefinition.
+    def enterNormalTransitionDefinition(
+        self, ctx: GrammarParser.NormalTransitionDefinitionContext
+    ):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#normalTransitionDefinition.
+    def exitNormalTransitionDefinition(
+        self, ctx: GrammarParser.NormalTransitionDefinitionContext
+    ):
+        pass
+
+    # Enter a parse tree produced by GrammarParser#exitTransitionDefinition.
+    def enterExitTransitionDefinition(
+        self, ctx: GrammarParser.ExitTransitionDefinitionContext
+    ):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#exitTransitionDefinition.
+    def exitExitTransitionDefinition(
+        self, ctx: GrammarParser.ExitTransitionDefinitionContext
+    ):
+        pass
+
+    # Enter a parse tree produced by GrammarParser#state_inner_statements.
+    def enterState_inner_statements(
+        self, ctx: GrammarParser.State_inner_statementsContext
+    ):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#state_inner_statements.
+    def exitState_inner_statements(
+        self, ctx: GrammarParser.State_inner_statementsContext
+    ):
         pass
 
     # Enter a parse tree produced by GrammarParser#operation_program.
@@ -287,6 +347,14 @@ class GrammarListener(ParseTreeListener):
 
     # Exit a parse tree produced by GrammarParser#math_const.
     def exitMath_const(self, ctx: GrammarParser.Math_constContext):
+        pass
+
+    # Enter a parse tree produced by GrammarParser#chain_id.
+    def enterChain_id(self, ctx: GrammarParser.Chain_idContext):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#chain_id.
+    def exitChain_id(self, ctx: GrammarParser.Chain_idContext):
         pass
 
 

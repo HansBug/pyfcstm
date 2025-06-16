@@ -202,11 +202,3 @@ class GrammarParseListener(GrammarListener):
             type=ctx.deftype.text,
             expr=self.nodes[ctx.init_expression()],
         )
-
-    def exitDef_block(self, ctx: GrammarParser.Def_blockContext):
-        super().exitDef_block(ctx)
-        self.nodes[ctx] = [self.nodes[stat] for stat in ctx.def_assignment()]
-
-    def exitOperation_block(self, ctx: GrammarParser.Operation_blockContext):
-        super().exitOperation_block(ctx)
-        self.nodes[ctx] = Operation([self.nodes[stat] for stat in ctx.operational_assignment()])

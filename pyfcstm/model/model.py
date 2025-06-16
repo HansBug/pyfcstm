@@ -16,6 +16,10 @@ class Event:
     name: str
     state_path: Tuple[str, ...]
 
+    @property
+    def path(self) -> Tuple[str, ...]:
+        return tuple((*self.state_path, self.name))
+
 
 @dataclass
 class Transition:
@@ -106,13 +110,26 @@ def parse_dsl_node_to_state_machine(dnode: dsl_node.StateMachineDSLProgram) -> S
                 trans_event = cur_events[suffix_name]
             if transnode.condition_expr is not None:
                 guard = parse_expr_node_to_expr(transnode.condition_expr)
+                unknown_vars = []
+                for var in guard.list_variables():
+                    if var.name not in d_defines:
+                        unknown_vars.append(var.name)
+                if unknown_vars:
+                    raise SyntaxError(f'Unknown guard variable {", ".join(unknown_vars)} in transition:\n{transnode}')
 
             post_operations = []
             for p_op in transnode.post_operations:
-                post_operations.append(Operation(
-                    var_name=p_op.name,
-                    expr=parse_expr_node_to_expr(p_op.expr),
-                ))
+                post_operation_val = parse_expr_node_to_expr(p_op.expr)
+                unknown_vars = []
+                for var in post_operation_val.list_variables():
+                    if var.name not in d_defines:
+                        unknown_vars.append(var.name)
+                if p_op.name not in d_defines and p_op.name not in unknown_vars:
+                    unknown_vars.append(p_op.name)
+                if unknown_vars:
+                    raise SyntaxError(
+                        f'Unknown transition operation variable {", ".join(unknown_vars)} in transition:\n{transnode}')
+                post_operations.append(Operation(var_name=p_op.name, expr=post_operation_val))
 
             transition = Transition(
                 src_state=from_state,

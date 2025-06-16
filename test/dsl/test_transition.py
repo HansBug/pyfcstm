@@ -1,93 +1,105 @@
 import pytest
 
 from pyfcstm.dsl import parse_with_grammar_entry, GrammarParseError
-from pyfcstm.dsl.node import Transition, INIT_STATE, ChainID, BinaryOp, Name, Integer, OperationalAssignment, UFunc, \
-    EXIT_STATE
+from pyfcstm.dsl.node import TransitionDefinition, INIT_STATE, ChainID, BinaryOp, Name, Integer, OperationalAssignment, \
+    UFunc, EXIT_STATE
 
 
 @pytest.mark.unittest
 class TestDSLTransition:
     @pytest.mark.parametrize(['input_text', 'expected'], [
         ('[*] -> StateA;',
-         Transition(from_state=INIT_STATE, to_state='StateA', event_id=None, condition_expr=None, post_operations=[])),
+         TransitionDefinition(from_state=INIT_STATE, to_state='StateA', event_id=None, condition_expr=None,
+                              post_operations=[])),
         # Basic entry transition to StateA
         ('[*] -> StateB: chain1;',
-         Transition(from_state=INIT_STATE, to_state='StateB', event_id=ChainID(path=['chain1']), condition_expr=None,
-                    post_operations=[])),  # Entry transition with chain identifier
-        ('[*] -> StateC: if [x > 10];', Transition(from_state=INIT_STATE, to_state='StateC', event_id=None,
-                                                   condition_expr=BinaryOp(expr1=Name(name='x'), op='>',
-                                                                           expr2=Integer(raw='10')),
-                                                   post_operations=[])),  # Entry transition with condition
+         TransitionDefinition(from_state=INIT_STATE, to_state='StateB', event_id=ChainID(path=['chain1']),
+                              condition_expr=None,
+                              post_operations=[])),  # Entry transition with chain identifier
+        ('[*] -> StateC: if [x > 10];', TransitionDefinition(from_state=INIT_STATE, to_state='StateC', event_id=None,
+                                                             condition_expr=BinaryOp(expr1=Name(name='x'), op='>',
+                                                                                     expr2=Integer(raw='10')),
+                                                             post_operations=[])),  # Entry transition with condition
         ('[*] -> StateD post { a := 5; }',
-         Transition(from_state=INIT_STATE, to_state='StateD', event_id=None, condition_expr=None,
-                    post_operations=[OperationalAssignment(name='a', expr=Integer(raw='5'))])),
+         TransitionDefinition(from_state=INIT_STATE, to_state='StateD', event_id=None, condition_expr=None,
+                              post_operations=[OperationalAssignment(name='a', expr=Integer(raw='5'))])),
         # Entry transition with post action
-        ('[*] -> StateF: if [x < 0 && y > 10];', Transition(from_state=INIT_STATE, to_state='StateF', event_id=None,
-                                                            condition_expr=BinaryOp(
-                                                                expr1=BinaryOp(expr1=Name(name='x'), op='<',
-                                                                               expr2=Integer(raw='0')), op='&&',
-                                                                expr2=BinaryOp(expr1=Name(name='y'), op='>',
-                                                                               expr2=Integer(raw='10'))),
-                                                            post_operations=[])),
+        ('[*] -> StateF: if [x < 0 && y > 10];',
+         TransitionDefinition(from_state=INIT_STATE, to_state='StateF', event_id=None,
+                              condition_expr=BinaryOp(
+                                  expr1=BinaryOp(expr1=Name(name='x'), op='<',
+                                                 expr2=Integer(raw='0')), op='&&',
+                                  expr2=BinaryOp(expr1=Name(name='y'), op='>',
+                                                 expr2=Integer(raw='10'))),
+                              post_operations=[])),
         # Entry transition with complex condition
         ('[*] -> StateG post { a := sin(b); c := 10; }',
-         Transition(from_state=INIT_STATE, to_state='StateG', event_id=None, condition_expr=None,
-                    post_operations=[OperationalAssignment(name='a', expr=UFunc(func='sin', expr=Name(name='b'))),
-                                     OperationalAssignment(name='c', expr=Integer(raw='10'))])),
+         TransitionDefinition(from_state=INIT_STATE, to_state='StateG', event_id=None, condition_expr=None,
+                              post_operations=[
+                                  OperationalAssignment(name='a', expr=UFunc(func='sin', expr=Name(name='b'))),
+                                  OperationalAssignment(name='c', expr=Integer(raw='10'))])),
         # Entry transition with multiple post actions
         ('StateA -> StateB;',
-         Transition(from_state='StateA', to_state='StateB', event_id=None, condition_expr=None, post_operations=[])),
+         TransitionDefinition(from_state='StateA', to_state='StateB', event_id=None, condition_expr=None,
+                              post_operations=[])),
         # Basic transition from StateA to StateB
         ('StateC -> StateD: chain4;',
-         Transition(from_state='StateC', to_state='StateD', event_id=ChainID(path=['chain4']), condition_expr=None,
-                    post_operations=[])),  # Transition with chain identifier
-        ('StateE -> StateF: if [x <= 20];', Transition(from_state='StateE', to_state='StateF', event_id=None,
-                                                       condition_expr=BinaryOp(expr1=Name(name='x'), op='<=',
-                                                                               expr2=Integer(raw='20')),
-                                                       post_operations=[])),  # Transition with condition
+         TransitionDefinition(from_state='StateC', to_state='StateD', event_id=ChainID(path=['chain4']),
+                              condition_expr=None,
+                              post_operations=[])),  # Transition with chain identifier
+        ('StateE -> StateF: if [x <= 20];', TransitionDefinition(from_state='StateE', to_state='StateF', event_id=None,
+                                                                 condition_expr=BinaryOp(expr1=Name(name='x'), op='<=',
+                                                                                         expr2=Integer(raw='20')),
+                                                                 post_operations=[])),  # Transition with condition
         ('StateG -> StateH post { a := 15; }',
-         Transition(from_state='StateG', to_state='StateH', event_id=None, condition_expr=None,
-                    post_operations=[OperationalAssignment(name='a', expr=Integer(raw='15'))])),
+         TransitionDefinition(from_state='StateG', to_state='StateH', event_id=None, condition_expr=None,
+                              post_operations=[OperationalAssignment(name='a', expr=Integer(raw='15'))])),
         # Transition with post action
-        ('StateK -> StateL: if [x != y && z == 10];', Transition(from_state='StateK', to_state='StateL', event_id=None,
-                                                                 condition_expr=BinaryOp(
-                                                                     expr1=BinaryOp(expr1=Name(name='x'), op='!=',
-                                                                                    expr2=Name(name='y')), op='&&',
-                                                                     expr2=BinaryOp(expr1=Name(name='z'), op='==',
-                                                                                    expr2=Integer(raw='10'))),
-                                                                 post_operations=[])),
+        ('StateK -> StateL: if [x != y && z == 10];',
+         TransitionDefinition(from_state='StateK', to_state='StateL', event_id=None,
+                              condition_expr=BinaryOp(
+                                  expr1=BinaryOp(expr1=Name(name='x'), op='!=',
+                                                 expr2=Name(name='y')), op='&&',
+                                  expr2=BinaryOp(expr1=Name(name='z'), op='==',
+                                                 expr2=Integer(raw='10'))),
+                              post_operations=[])),
         # Transition with complex condition
         ('StateM -> StateN post { a := cos(b); d := 30; }',
-         Transition(from_state='StateM', to_state='StateN', event_id=None, condition_expr=None,
-                    post_operations=[OperationalAssignment(name='a', expr=UFunc(func='cos', expr=Name(name='b'))),
-                                     OperationalAssignment(name='d', expr=Integer(raw='30'))])),
+         TransitionDefinition(from_state='StateM', to_state='StateN', event_id=None, condition_expr=None,
+                              post_operations=[
+                                  OperationalAssignment(name='a', expr=UFunc(func='cos', expr=Name(name='b'))),
+                                  OperationalAssignment(name='d', expr=Integer(raw='30'))])),
         # Transition with multiple post actions
         ('StateA -> [*];',
-         Transition(from_state='StateA', to_state=EXIT_STATE, event_id=None, condition_expr=None, post_operations=[])),
+         TransitionDefinition(from_state='StateA', to_state=EXIT_STATE, event_id=None, condition_expr=None,
+                              post_operations=[])),
         # Basic exit transition from StateA
         ('StateB -> [*]: chain7;',
-         Transition(from_state='StateB', to_state=EXIT_STATE, event_id=ChainID(path=['chain7']), condition_expr=None,
-                    post_operations=[])),  # Exit transition with chain identifier
-        ('StateC -> [*]: if [x >= 100];', Transition(from_state='StateC', to_state=EXIT_STATE, event_id=None,
-                                                     condition_expr=BinaryOp(expr1=Name(name='x'), op='>=',
-                                                                             expr2=Integer(raw='100')),
-                                                     post_operations=[])),  # Exit transition with condition
+         TransitionDefinition(from_state='StateB', to_state=EXIT_STATE, event_id=ChainID(path=['chain7']),
+                              condition_expr=None,
+                              post_operations=[])),  # Exit transition with chain identifier
+        ('StateC -> [*]: if [x >= 100];', TransitionDefinition(from_state='StateC', to_state=EXIT_STATE, event_id=None,
+                                                               condition_expr=BinaryOp(expr1=Name(name='x'), op='>=',
+                                                                                       expr2=Integer(raw='100')),
+                                                               post_operations=[])),  # Exit transition with condition
         ('StateD -> [*] post { a := 50; }',
-         Transition(from_state='StateD', to_state=EXIT_STATE, event_id=None, condition_expr=None,
-                    post_operations=[OperationalAssignment(name='a', expr=Integer(raw='50'))])),
+         TransitionDefinition(from_state='StateD', to_state=EXIT_STATE, event_id=None, condition_expr=None,
+                              post_operations=[OperationalAssignment(name='a', expr=Integer(raw='50'))])),
         # Exit transition with post action
-        ('StateF -> [*]: if [x == y || z != 10];', Transition(from_state='StateF', to_state=EXIT_STATE, event_id=None,
-                                                              condition_expr=BinaryOp(
-                                                                  expr1=BinaryOp(expr1=Name(name='x'), op='==',
-                                                                                 expr2=Name(name='y')), op='||',
-                                                                  expr2=BinaryOp(expr1=Name(name='z'), op='!=',
-                                                                                 expr2=Integer(raw='10'))),
-                                                              post_operations=[])),
+        ('StateF -> [*]: if [x == y || z != 10];',
+         TransitionDefinition(from_state='StateF', to_state=EXIT_STATE, event_id=None,
+                              condition_expr=BinaryOp(
+                                  expr1=BinaryOp(expr1=Name(name='x'), op='==',
+                                                 expr2=Name(name='y')), op='||',
+                                  expr2=BinaryOp(expr1=Name(name='z'), op='!=',
+                                                 expr2=Integer(raw='10'))),
+                              post_operations=[])),
         # Exit transition with complex condition
         ('StateG -> [*] post { a := sqrt(b); e := 40; }',
-         Transition(from_state='StateG', to_state=EXIT_STATE, event_id=None, condition_expr=None,
-                    post_operations=[OperationalAssignment(name='a', expr=UFunc(func='sqrt', expr=Name(name='b'))),
-                                     OperationalAssignment(name='e', expr=Integer(raw='40'))])),
+         TransitionDefinition(from_state='StateG', to_state=EXIT_STATE, event_id=None, condition_expr=None,
+                              post_operations=[
+                                  OperationalAssignment(name='a', expr=UFunc(func='sqrt', expr=Name(name='b'))),
+                                  OperationalAssignment(name='e', expr=Integer(raw='40'))])),
         # Exit transition with multiple post actions
     ])
     def test_positive_cases(self, input_text, expected):
@@ -129,7 +141,7 @@ class TestDSLTransition:
 
     @pytest.mark.parametrize(['input_text'], [
         ('StateA -> StateB',),  # Missing semicolon at the end
-        ('[*] -> StateC post { a := 5; }',),  # Missing semicolon after post action block
+        # ('[*] -> StateC post { a := 5; }',),  # Missing semicolon after post action block
         ('* -> StateA;',),  # Invalid entry state format, should be [*]
         ('StateB -> *;',),  # Invalid exit state format, should be [*]
         ('(StateC) -> StateD;',),  # Invalid state name format with parentheses
@@ -143,7 +155,7 @@ class TestDSLTransition:
         ('StateP -> StateQ post a := 5;',),  # Missing curly braces in post action
         ('StateR -> StateS post { a := 5 };',),  # Missing semicolon in post action assignment
         ('StateT -> [*] post { a = 5; };',),  # Invalid assignment operator in post action, should be :=
-        ('StateU -> StateV: chain.id;',),  # Invalid chain identifier with dot
+        # ('StateU -> StateV: chain.id;',),  # Invalid chain identifier with dot
         ('[*] -> StateW: :if [x > 10];',),  # Missing chain identifier before colon
         ('StateX [*];',),  # Missing arrow in transition
         ('-> StateY;',),  # Missing source state
@@ -156,7 +168,7 @@ class TestDSLTransition:
     ])
     def test_negative_cases(self, input_text):
         with pytest.raises(GrammarParseError) as ei:
-            parse_with_grammar_entry(input_text, entry_name='chain_id')
+            parse_with_grammar_entry(input_text, entry_name='transition_definition')
 
         err = ei.value
         assert isinstance(err, GrammarParseError)

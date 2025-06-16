@@ -1,7 +1,7 @@
 from .grammar import GrammarListener, GrammarParser
 from .node import Integer, Float, Constant, Boolean, Name, Paren, BinaryOp, UnaryOp, UFunc, ConstantDefinition, \
     OperationalAssignment, InitialAssignment, Condition, Operation, Preamble, ConditionalOp, HexInt, DefAssignment, \
-    ChainID, Transition, INIT_STATE, EXIT_STATE
+    ChainID, TransitionDefinition, INIT_STATE, EXIT_STATE, StateDefinition
 
 
 class GrammarParseListener(GrammarListener):
@@ -209,13 +209,25 @@ class GrammarParseListener(GrammarListener):
 
     def exitLeafStateDefinition(self, ctx: GrammarParser.LeafStateDefinitionContext):
         super().exitLeafStateDefinition(ctx)
+        self.nodes[ctx] = StateDefinition(
+            name=str(ctx.ID()),
+            substates=[],
+            transitions=[],
+        )
 
     def exitCompositeStateDefinition(self, ctx: GrammarParser.CompositeStateDefinitionContext):
         super().exitCompositeStateDefinition(ctx)
+        self.nodes[ctx] = StateDefinition(
+            name=str(ctx.ID()),
+            substates=[self.nodes[item] for item in ctx.state_inner_statement()
+                       if item in self.nodes and isinstance(self.nodes[item], StateDefinition)],
+            transitions=[self.nodes[item] for item in ctx.state_inner_statement()
+                         if item in self.nodes and isinstance(self.nodes[item], TransitionDefinition)],
+        )
 
     def exitEntryTransitionDefinition(self, ctx: GrammarParser.EntryTransitionDefinitionContext):
         super().exitEntryTransitionDefinition(ctx)
-        self.nodes[ctx] = Transition(
+        self.nodes[ctx] = TransitionDefinition(
             from_state=INIT_STATE,
             to_state=ctx.to_state.text,
             event_id=self.nodes[ctx.chain_id()] if ctx.chain_id() else None,
@@ -225,7 +237,7 @@ class GrammarParseListener(GrammarListener):
 
     def exitNormalTransitionDefinition(self, ctx: GrammarParser.NormalTransitionDefinitionContext):
         super().exitNormalTransitionDefinition(ctx)
-        self.nodes[ctx] = Transition(
+        self.nodes[ctx] = TransitionDefinition(
             from_state=ctx.from_state.text,
             to_state=ctx.to_state.text,
             event_id=self.nodes[ctx.chain_id()] if ctx.chain_id() else None,
@@ -235,7 +247,7 @@ class GrammarParseListener(GrammarListener):
 
     def exitExitTransitionDefinition(self, ctx: GrammarParser.ExitTransitionDefinitionContext):
         super().exitExitTransitionDefinition(ctx)
-        self.nodes[ctx] = Transition(
+        self.nodes[ctx] = TransitionDefinition(
             from_state=ctx.from_state.text,
             to_state=EXIT_STATE,
             event_id=self.nodes[ctx.chain_id()] if ctx.chain_id() else None,

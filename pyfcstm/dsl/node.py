@@ -4,6 +4,7 @@ import math
 import os
 from abc import ABC
 from dataclasses import dataclass
+from textwrap import indent
 
 from hbutils.design import SingletonMark
 
@@ -32,7 +33,8 @@ __all__ = [
     'Preamble',
     'Operation',
     'Condition',
-    'Transition',
+    'TransitionDefinition',
+    'StateDefinition',
 ]
 
 from typing import List, Union, Optional
@@ -269,7 +271,7 @@ EXIT_STATE = _SingletonMark('EXIT_STATE')
 
 
 @dataclass
-class Transition(ASTNode):
+class TransitionDefinition(ASTNode):
     from_state: Union[str, INIT_STATE]
     to_state: Union[str, EXIT_STATE]
     event_id: Optional[ChainID]
@@ -294,5 +296,26 @@ class Transition(ASTNode):
                 print('}', file=sf, end='')
             else:
                 print(';', file=sf, end='')
+
+            return sf.getvalue()
+
+
+@dataclass
+class StateDefinition(ASTNode):
+    name: str
+    substates: List['StateDefinition']
+    transitions: List[TransitionDefinition]
+
+    def __str__(self):
+        with io.StringIO() as sf:
+            if not self.substates and not self.transitions:
+                print(f'state {self.name};', file=sf, end='')
+            else:
+                print(f'state {self.name} {{', file=sf)
+                for substate in self.substates:
+                    print(indent(str(substate), prefix='    '), file=sf)
+                for transition in self.transitions:
+                    print(indent(str(transition), prefix='    '), file=sf)
+                print(f'}}', file=sf, end='')
 
             return sf.getvalue()

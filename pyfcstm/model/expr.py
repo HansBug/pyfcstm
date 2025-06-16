@@ -1,3 +1,5 @@
+import math
+import operator
 from dataclasses import dataclass
 from typing import Iterator
 
@@ -37,6 +39,12 @@ class Expr:
                 vs.add(item.name)
         return retval
 
+    def _call(self, **kwargs):
+        raise NotImplementedError  # pragma: no cover
+
+    def __call__(self, **kwargs):
+        return self._call(**kwargs)
+
 
 @dataclass
 class Integer(Expr):
@@ -44,6 +52,9 @@ class Integer(Expr):
 
     def __str__(self):
         return str(self.value)
+
+    def _call(self, **kwargs):
+        return self.value
 
 
 @dataclass
@@ -53,13 +64,22 @@ class Float(Expr):
     def __str__(self):
         return str(self.value)
 
+    def _call(self, **kwargs):
+        return self.value
+
 
 @dataclass
 class Boolean(Expr):
     value: bool
 
+    def __post_init__(self):
+        self.value = bool(self.value)
+
     def __str__(self):
         return 'true' if self.value else 'false'
+
+    def _call(self, **kwargs):
+        return self.value
 
 
 _OP_PRECEDENCE = {
@@ -118,6 +138,40 @@ _OP_PRECEDENCE = {
     "?:": 5
 }
 
+_OP_FUNCTIONS = {
+    # Unary operators
+    "unary+": operator.pos,
+    "unary-": operator.neg,
+    "!": lambda x: not bool(x),
+    "not": lambda x: not bool(x),
+
+    # Binary operators
+    "**": operator.pow,
+    "*": operator.mul,
+    "/": operator.truediv,
+    "%": operator.mod,
+    "+": operator.add,
+    "-": operator.sub,
+    "<<": operator.lshift,
+    ">>": operator.rshift,
+    "&": operator.and_,
+    "^": operator.xor,
+    "|": operator.or_,
+    "<": operator.lt,
+    ">": operator.gt,
+    "<=": operator.le,
+    ">=": operator.ge,
+    "==": operator.eq,
+    "!=": operator.ne,
+    "&&": lambda x, y: bool(x) and bool(y),
+    "and": lambda x, y: bool(x) and bool(y),
+    "||": lambda x, y: bool(x) or bool(y),
+    "or": lambda x, y: bool(x) or bool(y),
+
+    # Ternary operator
+    "?:": lambda condition, true_value, false_value: true_value if condition else false_value
+}
+
 
 @dataclass
 class Op(Expr):
@@ -172,6 +226,9 @@ class BinaryOp(Op):
         yield self.x
         yield self.y
 
+    def _call(self, **kwargs):
+        return _OP_FUNCTIONS[self.op_mark](self.x._call(**kwargs), self.y._call(**kwargs))
+
 
 @dataclass
 class UnaryOp(Op):
@@ -195,6 +252,49 @@ class UnaryOp(Op):
     def _iter_subs(self):
         yield self.x
 
+    def _call(self, **kwargs):
+        return _OP_FUNCTIONS[self.op_mark](self.x._call(**kwargs))
+
+
+_MATH_FUNCTIONS = {
+    # Trigonometric functions
+    "sin": math.sin,
+    "cos": math.cos,
+    "tan": math.tan,
+    "asin": math.asin,
+    "acos": math.acos,
+    "atan": math.atan,
+
+    # Hyperbolic functions
+    "sinh": math.sinh,
+    "cosh": math.cosh,
+    "tanh": math.tanh,
+    "asinh": math.asinh,
+    "acosh": math.acosh,
+    "atanh": math.atanh,
+
+    # Root and power functions
+    "sqrt": math.sqrt,
+    "cbrt": lambda x: math.pow(x, 1 / 3),  # Cube root implementation
+    "exp": math.exp,
+
+    # Logarithmic functions
+    "log": math.log,  # Natural logarithm (base e)
+    "log10": math.log10,
+    "log2": math.log2,
+    "log1p": math.log1p,  # log(1+x)
+
+    # Rounding and absolute value functions
+    "abs": abs,  # Python's built-in abs function
+    "ceil": math.ceil,
+    "floor": math.floor,
+    "round": round,  # Python's built-in round function
+    "trunc": math.trunc,
+
+    # Sign function
+    "sign": lambda x: 0 if x == 0 else (1 if x > 0 else -1)  # Returns the sign of x
+}
+
 
 @dataclass
 class UFunc(Expr):
@@ -206,6 +306,9 @@ class UFunc(Expr):
 
     def _iter_subs(self):
         yield self.x
+
+    def _call(self, **kwargs):
+        return _MATH_FUNCTIONS[self.func](self.x._call(**kwargs))
 
 
 @dataclass
@@ -248,6 +351,13 @@ class ConditionalOp(Op):
         yield self.if_true
         yield self.if_false
 
+    def _call(self, **kwargs):
+        cond_value = self.cond._call(**kwargs)
+        if cond_value:
+            return self.if_true._call(**kwargs)
+        else:
+            return self.if_false._call(**kwargs)
+
 
 @dataclass
 class Variable(Expr):
@@ -255,6 +365,9 @@ class Variable(Expr):
 
     def __str__(self):
         return self.name
+
+    def _call(self, **kwargs):
+        return kwargs[self.name]
 
 
 def parse_expr_node_to_expr(node: dsl_nodes.Expr) -> Expr:

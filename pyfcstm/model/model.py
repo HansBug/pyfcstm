@@ -1,14 +1,21 @@
 from dataclasses import dataclass
 from typing import Optional, Union, List, Dict, Tuple
 
+from .base import AstExportable
 from .expr import Expr, parse_expr_node_to_expr
-from ..dsl import node as dsl_node
+from ..dsl import node as dsl_nodes
 
 
 @dataclass
-class Operation:
+class Operation(AstExportable):
     var_name: str
     expr: Expr
+
+    def to_ast_node(self) -> dsl_nodes.PostOperationalAssignment:
+        return dsl_nodes.PostOperationalAssignment(
+            name=self.var_name,
+            expr=self.expr.to_ast_node(),
+        )
 
 
 @dataclass
@@ -23,15 +30,15 @@ class Event:
 
 @dataclass
 class Transition:
-    src_state: Union[str, dsl_node._StateSingletonMark]
-    dst_state: Union[str, dsl_node._StateSingletonMark]
+    from_state: Union[str, dsl_nodes._StateSingletonMark]
+    to_state: Union[str, dsl_nodes._StateSingletonMark]
     event: Optional[Event]
     guard: Optional[Expr]
     post_operations: List[Operation]
 
 
 @dataclass
-class State:
+class State(AstExportable):
     name: str
     path: Tuple[str, ...]
     substates: Dict[str, 'State']
@@ -42,21 +49,59 @@ class State:
     def is_leaf_state(self) -> bool:
         return len(self.substates) == 0
 
+    def to_ast_node(self) -> dsl_nodes.StateDefinition:
+        return dsl_nodes.StateDefinition(
+            name=self.name,
+            substates=[
+                substate.to_ast_node()
+                for _, substate in self.substates.items()
+            ],
+            transitions=[
+                dsl_nodes.TransitionDefinition(
+                    from_state=trans.from_state,
+                    to_state=trans.to_state,
+                    event_id=dsl_nodes.ChainID(
+                        path=list(trans.event.path[len(self.name):])) if trans.event is not None else None,
+                    condition_expr=trans.guard.to_ast_node() if trans.guard is not None else None,
+                    post_operations=[
+                        item.to_ast_node()
+                        for item in trans.post_operations
+                    ]
+                ) for trans in self.transitions
+            ]
+        )
+
 
 @dataclass
-class VarDefine:
+class VarDefine(AstExportable):
     name: str
     type: str
     init: Expr
 
+    def to_ast_node(self) -> dsl_nodes.DefAssignment:
+        return dsl_nodes.DefAssignment(
+            name=self.name,
+            type=self.type,
+            expr=self.init.to_ast_node(),
+        )
+
 
 @dataclass
-class StateMachine:
+class StateMachine(AstExportable):
     defines: Dict[str, VarDefine]
     root_state: State
 
+    def to_ast_node(self) -> dsl_nodes.StateMachineDSLProgram:
+        return dsl_nodes.StateMachineDSLProgram(
+            definitions=[
+                def_item.to_ast_node()
+                for _, def_item in self.defines.items()
+            ],
+            root_state=self.root_state.to_ast_node(),
+        )
 
-def parse_dsl_node_to_state_machine(dnode: dsl_node.StateMachineDSLProgram) -> StateMachine:
+
+def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> StateMachine:
     d_defines = {}
     for def_item in dnode.definitions:
         if def_item.name not in d_defines:
@@ -68,7 +113,7 @@ def parse_dsl_node_to_state_machine(dnode: dsl_node.StateMachineDSLProgram) -> S
         else:
             raise SyntaxError(f'Duplicated variable definition - {def_item}.')
 
-    def _recursive_build_states(node: dsl_node.StateDefinition, current_path: Tuple[str, ...]):
+    def _recursive_build_states(node: dsl_nodes.StateDefinition, current_path: Tuple[str, ...]):
         current_path = tuple((*current_path, node.name))
         d_substates = {}
 
@@ -81,15 +126,15 @@ def parse_dsl_node_to_state_machine(dnode: dsl_node.StateMachineDSLProgram) -> S
         d_events = {}
         transitions = []
         for transnode in node.transitions:
-            if transnode.from_state is dsl_node.INIT_STATE:
-                from_state = dsl_node.INIT_STATE
+            if transnode.from_state is dsl_nodes.INIT_STATE:
+                from_state = dsl_nodes.INIT_STATE
             else:
                 from_state = transnode.from_state
                 if from_state not in d_substates:
                     raise SyntaxError(f'Unknown from state {from_state!r} of transition:\n{transnode}')
 
-            if transnode.to_state is dsl_node.EXIT_STATE:
-                to_state = dsl_node.EXIT_STATE
+            if transnode.to_state is dsl_nodes.EXIT_STATE:
+                to_state = dsl_nodes.EXIT_STATE
             else:
                 to_state = transnode.to_state
                 if to_state not in d_substates:
@@ -132,8 +177,8 @@ def parse_dsl_node_to_state_machine(dnode: dsl_node.StateMachineDSLProgram) -> S
                 post_operations.append(Operation(var_name=p_op.name, expr=post_operation_val))
 
             transition = Transition(
-                src_state=from_state,
-                dst_state=to_state,
+                from_state=from_state,
+                to_state=to_state,
                 event=trans_event,
                 guard=guard,
                 post_operations=post_operations,

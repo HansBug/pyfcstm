@@ -3,6 +3,7 @@ import operator
 from dataclasses import dataclass
 from typing import Iterator
 
+from .base import AstExportable
 from ..dsl import node as dsl_nodes
 
 __all__ = [
@@ -21,7 +22,7 @@ __all__ = [
 
 
 @dataclass
-class Expr:
+class Expr(AstExportable):
     def _iter_subs(self) -> Iterator['Expr']:
         yield from []
 

@@ -36,6 +36,9 @@ __all__ = [
     'TransitionDefinition',
     'StateDefinition',
     'PostOperationalAssignment',
+    'StateMachineDSLProgram',
+    'INIT_STATE',
+    'EXIT_STATE',
 ]
 
 from typing import List, Union, Optional
@@ -329,3 +332,16 @@ class PostOperationalAssignment(Statement):
 
     def __str__(self):
         return f'{self.name} = {self.expr};'
+
+
+@dataclass
+class StateMachineDSLProgram(ASTNode):
+    definitions: List[DefAssignment]
+    root_state: StateDefinition
+
+    def __str__(self):
+        with io.StringIO() as f:
+            for definition in self.definitions:
+                print(definition, file=f)
+            print(self.root_state, file=f, end='')
+            return f.getvalue()

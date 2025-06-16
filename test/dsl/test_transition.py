@@ -1,9 +1,7 @@
 import pytest
 
 from pyfcstm.dsl import parse_with_grammar_entry, GrammarParseError
-from pyfcstm.dsl.node import TransitionDefinition, INIT_STATE, ChainID, BinaryOp, Name, Integer, \
-    PostOperationalAssignment, \
-    UFunc, EXIT_STATE
+from pyfcstm.dsl.node import *
 
 
 @pytest.mark.unittest

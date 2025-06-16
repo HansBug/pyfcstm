@@ -1,7 +1,8 @@
 from .grammar import GrammarListener, GrammarParser
 from .node import Integer, Float, Constant, Boolean, Name, Paren, BinaryOp, UnaryOp, UFunc, ConstantDefinition, \
     OperationalAssignment, InitialAssignment, Condition, Operation, Preamble, ConditionalOp, HexInt, DefAssignment, \
-    ChainID, TransitionDefinition, INIT_STATE, EXIT_STATE, StateDefinition, PostOperationalAssignment
+    ChainID, TransitionDefinition, INIT_STATE, EXIT_STATE, StateDefinition, PostOperationalAssignment, \
+    StateMachineDSLProgram
 
 
 class GrammarParseListener(GrammarListener):
@@ -215,6 +216,10 @@ class GrammarParseListener(GrammarListener):
 
     def exitState_machine_dsl(self, ctx: GrammarParser.State_machine_dslContext):
         super().exitState_machine_dsl(ctx)
+        self.nodes[ctx] = StateMachineDSLProgram(
+            definitions=[self.nodes[item] for item in ctx.def_assignment()],
+            root_state=self.nodes[ctx.state_definition()],
+        )
 
     def exitLeafStateDefinition(self, ctx: GrammarParser.LeafStateDefinitionContext):
         super().exitLeafStateDefinition(ctx)

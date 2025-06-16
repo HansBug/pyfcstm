@@ -225,7 +225,7 @@ class DefAssignment(Statement):
     expr: Expr
 
     def __str__(self):
-        return f'def {self.type} {self.name} := {self.expr}'
+        return f'def {self.type} {self.name} = {self.expr};'
 
 
 @dataclass

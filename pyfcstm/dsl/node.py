@@ -265,19 +265,19 @@ class Operation(ASTNode):
         return os.linesep.join(map(str, self.stats))
 
 
-class _SingletonMark(SingletonMark):
+class _StateSingletonMark(SingletonMark):
     def __repr__(self):
         return self.mark
 
 
-INIT_STATE = _SingletonMark('INIT_STATE')
-EXIT_STATE = _SingletonMark('EXIT_STATE')
+INIT_STATE = _StateSingletonMark('INIT_STATE')
+EXIT_STATE = _StateSingletonMark('EXIT_STATE')
 
 
 @dataclass
 class TransitionDefinition(ASTNode):
-    from_state: Union[str, INIT_STATE]
-    to_state: Union[str, EXIT_STATE]
+    from_state: Union[str, _StateSingletonMark]
+    to_state: Union[str, _StateSingletonMark]
     event_id: Optional[ChainID]
     condition_expr: Optional[Expr]
     post_operations: List['PostOperationalAssignment']

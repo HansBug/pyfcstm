@@ -27,22 +27,20 @@ def _parse_as_element(input_text, fn_element):
     return listener.nodes[parse_tree]
 
 
-def parse_condition(input_text):
+def parse_with_grammar_entry(input_text: str, entry_name: str):
     return _parse_as_element(
         input_text=input_text,
-        fn_element=GrammarParser.condition,
+        fn_element=getattr(GrammarParser, entry_name),
     )
 
 
-def parse_preamble(input_text):
-    return _parse_as_element(
-        input_text=input_text,
-        fn_element=GrammarParser.preamble_program,
-    )
+def parse_condition(input_text: str):
+    return parse_with_grammar_entry(input_text, 'condition')
 
 
-def parse_operation(input_text):
-    return _parse_as_element(
-        input_text=input_text,
-        fn_element=GrammarParser.operation_program,
-    )
+def parse_preamble(input_text: str):
+    return parse_with_grammar_entry(input_text, 'preamble_program')
+
+
+def parse_operation(input_text: str):
+    return parse_with_grammar_entry(input_text, 'operation_program')

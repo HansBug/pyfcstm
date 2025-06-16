@@ -44,6 +44,9 @@ class Expr:
     def __call__(self, **kwargs):
         return self._call(**kwargs)
 
+    def to_ast_node(self) -> dsl_nodes.Expr:
+        raise NotImplementedError  # pragma: no cover
+
 
 @dataclass
 class Integer(Expr):
@@ -55,6 +58,9 @@ class Integer(Expr):
     def _call(self, **kwargs):
         return self.value
 
+    def to_ast_node(self) -> dsl_nodes.Expr:
+        return dsl_nodes.Integer(raw=str(int(self.value)))
+
 
 @dataclass
 class Float(Expr):
@@ -65,6 +71,20 @@ class Float(Expr):
 
     def _call(self, **kwargs):
         return self.value
+
+    def to_ast_node(self) -> dsl_nodes.Expr:
+        const_name = None
+        if abs(self.value - math.pi) < 1e-10:
+            const_name = 'pi'
+        elif abs(self.value - math.e) < 1e-10:
+            const_name = 'E'
+        elif abs(self.value - math.tau) < 1e-10:
+            const_name = 'tau'
+
+        if const_name is None:
+            return dsl_nodes.Float(raw=str(float(self.value)))
+        else:
+            return dsl_nodes.Constant(raw=const_name)
 
 
 @dataclass
@@ -79,6 +99,9 @@ class Boolean(Expr):
 
     def _call(self, **kwargs):
         return self.value
+
+    def to_ast_node(self) -> dsl_nodes.Expr:
+        return dsl_nodes.Boolean(raw=str(self))
 
 
 _OP_PRECEDENCE = {
@@ -228,6 +251,34 @@ class BinaryOp(Op):
     def _call(self, **kwargs):
         return _OP_FUNCTIONS[self.op_mark](self.x._call(**kwargs), self.y._call(**kwargs))
 
+    def to_ast_node(self) -> dsl_nodes.Expr:
+        my_pre = _OP_PRECEDENCE[self.op_mark]
+
+        left_need_paren = False
+        if isinstance(self.x, Op):
+            left_pre = _OP_PRECEDENCE[self.x.op_mark]
+            if left_pre < my_pre:
+                left_need_paren = True
+
+        right_need_paren = False
+        if isinstance(self.y, Op):
+            right_pre = _OP_PRECEDENCE[self.y.op_mark]
+            if right_pre <= my_pre:
+                right_need_paren = True
+
+        left_term = self.x.to_ast_node()
+        if left_need_paren:
+            left_term = dsl_nodes.Paren(left_term)
+        right_term = self.y.to_ast_node()
+        if right_need_paren:
+            right_term = dsl_nodes.Paren(right_term)
+
+        return dsl_nodes.BinaryOp(
+            expr1=left_term,
+            op=self.op,
+            expr2=right_term,
+        )
+
 
 @dataclass
 class UnaryOp(Op):
@@ -253,6 +304,9 @@ class UnaryOp(Op):
 
     def _call(self, **kwargs):
         return _OP_FUNCTIONS[self.op_mark](self.x._call(**kwargs))
+
+    def to_ast_node(self) -> dsl_nodes.Expr:
+        return dsl_nodes.UnaryOp(op=self.op, expr=self.x.to_ast_node())
 
 
 _MATH_FUNCTIONS = {
@@ -309,6 +363,9 @@ class UFunc(Expr):
     def _call(self, **kwargs):
         return _MATH_FUNCTIONS[self.func](self.x._call(**kwargs))
 
+    def to_ast_node(self) -> dsl_nodes.Expr:
+        return dsl_nodes.UFunc(func=self.func, expr=self.x.to_ast_node())
+
 
 @dataclass
 class ConditionalOp(Op):
@@ -357,6 +414,35 @@ class ConditionalOp(Op):
         else:
             return self.if_false._call(**kwargs)
 
+    def to_ast_node(self) -> dsl_nodes.Expr:
+        my_pre = _OP_PRECEDENCE[self.op_mark]
+
+        true_need_paren = False
+        if isinstance(self.if_true, Op):
+            true_pre = _OP_PRECEDENCE[self.if_true.op_mark]
+            if true_pre <= my_pre:
+                true_need_paren = True
+
+        false_need_paren = False
+        if isinstance(self.if_false, Op):
+            false_pre = _OP_PRECEDENCE[self.if_false.op_mark]
+            if false_pre <= my_pre:
+                false_need_paren = True
+
+        cond_term = self.cond.to_ast_node()
+        true_term = self.if_true.to_ast_node()
+        if true_need_paren:
+            true_term = dsl_nodes.Paren(true_term)
+        false_term = self.if_false.to_ast_node()
+        if false_need_paren:
+            false_term = dsl_nodes.Paren(false_term)
+
+        return dsl_nodes.ConditionalOp(
+            cond=cond_term,
+            value_true=true_term,
+            value_false=false_term,
+        )
+
 
 @dataclass
 class Variable(Expr):
@@ -367,6 +453,9 @@ class Variable(Expr):
 
     def _call(self, **kwargs):
         return kwargs[self.name]
+
+    def to_ast_node(self) -> dsl_nodes.Expr:
+        return dsl_nodes.Name(name=self.name)
 
 
 def parse_expr_node_to_expr(node: dsl_nodes.Expr) -> Expr:

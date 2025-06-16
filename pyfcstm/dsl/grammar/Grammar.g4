@@ -21,8 +21,10 @@ transition_definition
     | from_state=ID '->' '[*]' (|':' chain_id|':' 'if' '[' cond_expression ']') (';'|'post' '{' operational_statement* '}')        # exitTransitionDefinition
     ;
 
+post_operation_assignment: ID '=' num_expression ';';
+
 operational_statement
-    : operational_assignment
+    : post_operation_assignment
     | ';'
     ;
 

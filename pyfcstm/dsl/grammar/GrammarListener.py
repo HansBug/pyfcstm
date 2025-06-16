@@ -89,6 +89,18 @@ class GrammarListener(ParseTreeListener):
     ):
         pass
 
+    # Enter a parse tree produced by GrammarParser#post_operation_assignment.
+    def enterPost_operation_assignment(
+        self, ctx: GrammarParser.Post_operation_assignmentContext
+    ):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#post_operation_assignment.
+    def exitPost_operation_assignment(
+        self, ctx: GrammarParser.Post_operation_assignmentContext
+    ):
+        pass
+
     # Enter a parse tree produced by GrammarParser#operational_statement.
     def enterOperational_statement(
         self, ctx: GrammarParser.Operational_statementContext

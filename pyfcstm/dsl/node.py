@@ -35,6 +35,7 @@ __all__ = [
     'Condition',
     'TransitionDefinition',
     'StateDefinition',
+    'PostOperationalAssignment',
 ]
 
 from typing import List, Union, Optional
@@ -276,7 +277,7 @@ class TransitionDefinition(ASTNode):
     to_state: Union[str, EXIT_STATE]
     event_id: Optional[ChainID]
     condition_expr: Optional[Expr]
-    post_operations: List[OperationalAssignment]
+    post_operations: List['PostOperationalAssignment']
 
     def __str__(self):
         with io.StringIO() as sf:
@@ -319,3 +320,12 @@ class StateDefinition(ASTNode):
                 print(f'}}', file=sf, end='')
 
             return sf.getvalue()
+
+
+@dataclass
+class PostOperationalAssignment(Statement):
+    name: str
+    expr: Expr
+
+    def __str__(self):
+        return f'{self.name} = {self.expr};'

@@ -1,7 +1,7 @@
 from .grammar import GrammarListener, GrammarParser
 from .node import Integer, Float, Constant, Boolean, Name, Paren, BinaryOp, UnaryOp, UFunc, ConstantDefinition, \
     OperationalAssignment, InitialAssignment, Condition, Operation, Preamble, ConditionalOp, HexInt, DefAssignment, \
-    ChainID, TransitionDefinition, INIT_STATE, EXIT_STATE, StateDefinition
+    ChainID, TransitionDefinition, INIT_STATE, EXIT_STATE, StateDefinition, PostOperationalAssignment
 
 
 class GrammarParseListener(GrammarListener):
@@ -270,8 +270,8 @@ class GrammarParseListener(GrammarListener):
 
     def exitOperational_statement(self, ctx: GrammarParser.Operational_statementContext):
         super().exitOperational_statement(ctx)
-        if ctx.operational_assignment():
-            self.nodes[ctx] = self.nodes[ctx.operational_assignment()]
+        if ctx.post_operation_assignment():
+            self.nodes[ctx] = self.nodes[ctx.post_operation_assignment()]
 
     def exitState_inner_statement(self, ctx: GrammarParser.State_inner_statementContext):
         super().exitState_inner_statement(ctx)
@@ -279,3 +279,10 @@ class GrammarParseListener(GrammarListener):
             self.nodes[ctx] = self.nodes[ctx.state_definition()]
         elif ctx.transition_definition():
             self.nodes[ctx] = self.nodes[ctx.transition_definition()]
+
+    def exitPost_operation_assignment(self, ctx: GrammarParser.Post_operation_assignmentContext):
+        super().exitPost_operation_assignment(ctx)
+        self.nodes[ctx] = PostOperationalAssignment(
+            name=str(ctx.ID()),
+            expr=self.nodes[ctx.num_expression()],
+        )

@@ -1,7 +1,8 @@
 import pytest
 
 from pyfcstm.dsl import parse_with_grammar_entry, GrammarParseError
-from pyfcstm.dsl.node import TransitionDefinition, INIT_STATE, ChainID, BinaryOp, Name, Integer, OperationalAssignment, \
+from pyfcstm.dsl.node import TransitionDefinition, INIT_STATE, ChainID, BinaryOp, Name, Integer, \
+    PostOperationalAssignment, \
     EXIT_STATE, StateDefinition
 
 
@@ -60,14 +61,14 @@ class TestDSLTransition:
                 expr1=BinaryOp(expr1=Name(name='x'), op='==', expr2=Integer(raw='10')), op='&&',
                 expr2=BinaryOp(expr1=Name(name='y'), op='<', expr2=Integer(raw='20'))), post_operations=[])])),
         # Composite state with complex conditional transition
-        ('state S1 { S2 -> S3 post { x := 10; } }', StateDefinition(name='S1', substates=[], transitions=[
+        ('state S1 { S2 -> S3 post { x = 10; } }', StateDefinition(name='S1', substates=[], transitions=[
             TransitionDefinition(from_state='S2', to_state='S3', event_id=None, condition_expr=None,
-                                 post_operations=[OperationalAssignment(name='x', expr=Integer(raw='10'))])])),
+                                 post_operations=[PostOperationalAssignment(name='x', expr=Integer(raw='10'))])])),
         # Composite state with post-transition operation
-        ('state S1 { S2 -> S3 post { x := 10; y := 20; } }', StateDefinition(name='S1', substates=[], transitions=[
+        ('state S1 { S2 -> S3 post { x = 10; y = 20; } }', StateDefinition(name='S1', substates=[], transitions=[
             TransitionDefinition(from_state='S2', to_state='S3', event_id=None, condition_expr=None,
-                                 post_operations=[OperationalAssignment(name='x', expr=Integer(raw='10')),
-                                                  OperationalAssignment(name='y', expr=Integer(raw='20'))])])),
+                                 post_operations=[PostOperationalAssignment(name='x', expr=Integer(raw='10')),
+                                                  PostOperationalAssignment(name='y', expr=Integer(raw='20'))])])),
         # Composite state with multiple post-transition operations
         ('state S1 { state S2; S2 -> S3: if [x > 5]; S3 -> [*]; }',
          StateDefinition(name='S1', substates=[StateDefinition(name='S2', substates=[], transitions=[])], transitions=[
@@ -94,12 +95,12 @@ class TestDSLTransition:
                                                                  expr2=Integer(raw='0')),
                                          post_operations=[])])),
         # Complex state machine with nested states and transitions
-        ('state S1 { state S2; state S3; S2 -> S3: if [x > 5] post { x := 10; }; S3 -> [*]; }',
+        ('state S1 { state S2; state S3; S2 -> S3: if [x > 5] post { x = 10; }; S3 -> [*]; }',
          StateDefinition(name='S1', substates=[StateDefinition(name='S2', substates=[], transitions=[]),
                                                StateDefinition(name='S3', substates=[], transitions=[])], transitions=[
              TransitionDefinition(from_state='S2', to_state='S3', event_id=None,
                                   condition_expr=BinaryOp(expr1=Name(name='x'), op='>', expr2=Integer(raw='5')),
-                                  post_operations=[OperationalAssignment(name='x', expr=Integer(raw='10'))]),
+                                  post_operations=[PostOperationalAssignment(name='x', expr=Integer(raw='10'))]),
              TransitionDefinition(from_state='S3', to_state=EXIT_STATE, event_id=None, condition_expr=None,
                                   post_operations=[])])),
         # Composite state with states, conditional transition with post operations
@@ -139,10 +140,10 @@ class TestDSLTransition:
         # Composite state with conditional transition
         ('state S1 { S2 -> S3: if [x == 10 && y < 20]; }', 'state S1 {\n    S2 -> S3 : if [x == 10 && y < 20];\n}'),
         # Composite state with complex conditional transition
-        ('state S1 { S2 -> S3 post { x := 10; } }', 'state S1 {\n    S2 -> S3 post {\n        x := 10;\n    }\n}'),
+        ('state S1 { S2 -> S3 post { x = 10; } }', 'state S1 {\n    S2 -> S3 post {\n        x = 10;\n    }\n}'),
         # Composite state with post-transition operation
-        ('state S1 { S2 -> S3 post { x := 10; y := 20; } }',
-         'state S1 {\n    S2 -> S3 post {\n        x := 10;\n        y := 20;\n    }\n}'),
+        ('state S1 { S2 -> S3 post { x = 10; y = 20; } }',
+         'state S1 {\n    S2 -> S3 post {\n        x = 10;\n        y = 20;\n    }\n}'),
         # Composite state with multiple post-transition operations
         ('state S1 { state S2; S2 -> S3: if [x > 5]; S3 -> [*]; }',
          'state S1 {\n    state S2;\n    S2 -> S3 : if [x > 5];\n    S3 -> [*];\n}'),
@@ -151,8 +152,8 @@ class TestDSLTransition:
                 'state Machine { state Off; state On { state Idle; state Running; } Off -> On: if [power == 1]; On -> Off: if [power == 0]; }',
                 'state Machine {\n    state Off;\n    state On {\n        state Idle;\n        state Running;\n    }\n    Off -> On : if [power == 1];\n    On -> Off : if [power == 0];\n}'),
         # Complex state machine with nested states and transitions
-        ('state S1 { state S2; state S3; S2 -> S3: if [x > 5] post { x := 10; }; S3 -> [*]; }',
-         'state S1 {\n    state S2;\n    state S3;\n    S2 -> S3 : if [x > 5] post {\n        x := 10;\n    }\n    S3 -> [*];\n}'),
+        ('state S1 { state S2; state S3; S2 -> S3: if [x > 5] post { x = 10; }; S3 -> [*]; }',
+         'state S1 {\n    state S2;\n    state S3;\n    S2 -> S3 : if [x > 5] post {\n        x = 10;\n    }\n    S3 -> [*];\n}'),
         # Composite state with states, conditional transition with post operations
         ('state S1 { ; state S2; ; S2 -> S3; ; }',
          'state S1 {\n    state S2;\n    S2 -> S3;\n}'),
@@ -180,13 +181,13 @@ class TestDSLTransition:
         ('state S1 { S2 -> S3: if []; }',),  # Empty condition expression
         ('state S1 { S2 -> S3: if x > 5; }',),  # Missing brackets around condition
         ('state S1 { S2 -> S3 post }',),  # Missing braces after 'post' keyword
-        ('state S1 { S2 -> S3 post { x = 10; } }',),
-        # Incorrect assignment operator in post operation (using = instead of :=)
-        ('state S1 { S2 -> S3 post { x := 10 } }',),  # Missing semicolon after assignment in post operation
+        ('state S1 { S2 -> S3 post { x := 10; } }',),
+        # Incorrect assignment operator in post operation (using := instead of =)
+        ('state S1 { S2 -> S3 post { x = 10 } }',),  # Missing semicolon after assignment in post operation
         ('state { state S2; }',),  # Missing state identifier for outer state
         ('state S1 { state S2 state S3; }',),  # Missing semicolon between inner states
         ('state S1 { [*] -> [*]; }',),  # Invalid transition from entry to exit
-        ('state S1 { S2 -> S3: if [x > 5] post x := 10; }',),  # Missing braces around post operations
+        ('state S1 { S2 -> S3: if [x > 5] post x = 10; }',),  # Missing braces around post operations
         ('state S1 { S2 -> S3: chain..id; }',),  # Invalid chain ID with consecutive dots
         ('state S1 { S2 -> S3: if [x > 5] else [y < 10]; }',),  # Unsupported 'else' clause in condition
         ('state S1 { S2 -> S3: when [x > 5]; }',),  # Using 'when' instead of 'if' for condition

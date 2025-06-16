@@ -222,11 +222,18 @@ class GrammarParseListener(GrammarListener):
     def exitExitTransitionDefinition(self, ctx: GrammarParser.ExitTransitionDefinitionContext):
         super().exitExitTransitionDefinition(ctx)
 
-    def exitState_inner_statements(self, ctx: GrammarParser.State_inner_statementsContext):
-        super().exitState_inner_statements(ctx)
-
     def exitChain_id(self, ctx: GrammarParser.Chain_idContext):
         super().exitChain_id(ctx)
-        self.nodes[ctx] = ChainID(
-            path=list(map(str, ctx.ID())),
-        )
+        self.nodes[ctx] = ChainID(path=list(map(str, ctx.ID())))
+
+    def exitOperational_statement(self, ctx: GrammarParser.Operational_statementContext):
+        super().exitOperational_statement(ctx)
+        if ctx.operational_assignment():
+            self.nodes[ctx] = self.nodes[ctx.operational_assignment()]
+
+    def exitState_inner_statement(self, ctx: GrammarParser.State_inner_statementContext):
+        super().exitState_inner_statement(ctx)
+        if ctx.state_definition():
+            self.nodes[ctx] = self.nodes[ctx.state_definition()]
+        elif ctx.transition_definition():
+            self.nodes[ctx] = self.nodes[ctx.transition_definition()]

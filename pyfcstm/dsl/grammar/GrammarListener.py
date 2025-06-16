@@ -89,15 +89,27 @@ class GrammarListener(ParseTreeListener):
     ):
         pass
 
-    # Enter a parse tree produced by GrammarParser#state_inner_statements.
-    def enterState_inner_statements(
-        self, ctx: GrammarParser.State_inner_statementsContext
+    # Enter a parse tree produced by GrammarParser#operational_statement.
+    def enterOperational_statement(
+        self, ctx: GrammarParser.Operational_statementContext
     ):
         pass
 
-    # Exit a parse tree produced by GrammarParser#state_inner_statements.
-    def exitState_inner_statements(
-        self, ctx: GrammarParser.State_inner_statementsContext
+    # Exit a parse tree produced by GrammarParser#operational_statement.
+    def exitOperational_statement(
+        self, ctx: GrammarParser.Operational_statementContext
+    ):
+        pass
+
+    # Enter a parse tree produced by GrammarParser#state_inner_statement.
+    def enterState_inner_statement(
+        self, ctx: GrammarParser.State_inner_statementContext
+    ):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#state_inner_statement.
+    def exitState_inner_statement(
+        self, ctx: GrammarParser.State_inner_statementContext
     ):
         pass
 

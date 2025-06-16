@@ -11,19 +11,25 @@ state_machine_dsl: def_assignment* state_definition EOF;
 def_assignment: 'def' deftype=('int'|'float') ID '=' init_expression ';';
 
 state_definition
-    : 'state' state_id=ID ';'                              # leafStateDefinition
-    | 'state' state_id=ID '{' state_inner_statements* '}'  # compositeStateDefinition
+    : 'state' state_id=ID ';'                             # leafStateDefinition
+    | 'state' state_id=ID '{' state_inner_statement* '}'  # compositeStateDefinition
     ;
 
 transition_definition
-    : '[*]' '->' to_state=ID (|':' chain_id|'if' '[' cond_expression ']') ('post' '{' operational_assignment* '}')          # entryTransitionDefinition
-    | from_state=ID '->' to_state=ID (|':' chain_id|'if' '[' cond_expression ']') ('post' '{' operational_assignment* '}')  # normalTransitionDefinition
-    | from_state=ID '->' '[*]' (|':' chain_id|'if' '[' cond_expression ']') ('post' '{' operational_assignment* '}')        # exitTransitionDefinition
+    : '[*]' '->' to_state=ID (|':' chain_id|'if' '[' cond_expression ']') ('post' '{' operational_statement* '}')          # entryTransitionDefinition
+    | from_state=ID '->' to_state=ID (|':' chain_id|'if' '[' cond_expression ']') ('post' '{' operational_statement* '}')  # normalTransitionDefinition
+    | from_state=ID '->' '[*]' (|':' chain_id|'if' '[' cond_expression ']') ('post' '{' operational_statement* '}')        # exitTransitionDefinition
     ;
 
-state_inner_statements
+operational_statement
+    : operational_assignment
+    | ';'
+    ;
+
+state_inner_statement
     : state_definition
     | transition_definition
+    | ';'
     ;
 
 // basic configs for the previous design

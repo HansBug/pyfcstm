@@ -125,9 +125,11 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
 
         d_events = {}
         transitions = []
+        has_entry_trans = False
         for transnode in node.transitions:
             if transnode.from_state is dsl_nodes.INIT_STATE:
                 from_state = dsl_nodes.INIT_STATE
+                has_entry_trans = True
             else:
                 from_state = transnode.from_state
                 if from_state not in d_substates:
@@ -184,6 +186,9 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                 post_operations=post_operations,
             )
             transitions.append(transition)
+
+        if d_substates and not has_entry_trans:
+            raise SyntaxError(f'At least 1 entry transition should be assigned in non-leaf states:\n{node}')
 
         return State(
             name=node.name,

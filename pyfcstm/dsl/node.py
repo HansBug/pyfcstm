@@ -259,8 +259,13 @@ class Operation(ASTNode):
         return os.linesep.join(map(str, self.stats))
 
 
-INIT_STATE = SingletonMark('INIT_STATE')
-EXIT_STATE = SingletonMark('EXIT_STATE')
+class _SingletonMark(SingletonMark):
+    def __repr__(self):
+        return self.mark
+
+
+INIT_STATE = _SingletonMark('INIT_STATE')
+EXIT_STATE = _SingletonMark('EXIT_STATE')
 
 
 @dataclass

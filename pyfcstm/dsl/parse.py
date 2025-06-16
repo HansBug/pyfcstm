@@ -5,7 +5,7 @@ from .grammar import GrammarParser, GrammarLexer
 from .listener import GrammarParseListener
 
 
-def _parse_as_element(input_text, fn_element):
+def _parse_as_element(input_text, fn_element, force_finished: bool = True):
     error_listener = CollectingErrorListener()
 
     input_stream = InputStream(input_text)
@@ -19,6 +19,8 @@ def _parse_as_element(input_text, fn_element):
     parser.addErrorListener(error_listener)
 
     parse_tree = fn_element(parser)
+    if force_finished:
+        error_listener.check_unfinished_parsing_error(stream)
     error_listener.check_errors()
 
     listener = GrammarParseListener()
@@ -27,10 +29,11 @@ def _parse_as_element(input_text, fn_element):
     return listener.nodes[parse_tree]
 
 
-def parse_with_grammar_entry(input_text: str, entry_name: str):
+def parse_with_grammar_entry(input_text: str, entry_name: str, force_finished: bool = True):
     return _parse_as_element(
         input_text=input_text,
         fn_element=getattr(GrammarParser, entry_name),
+        force_finished=force_finished
     )
 
 

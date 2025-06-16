@@ -7,6 +7,8 @@ from dataclasses import dataclass
 
 __all__ = [
     'ASTNode',
+    'Identifier',
+    'ChainID',
     'Expr',
     'Literal',
     'Boolean',
@@ -36,6 +38,19 @@ from typing import List, Union
 @dataclass
 class ASTNode(ABC):
     pass
+
+
+@dataclass
+class Identifier(ASTNode):
+    pass
+
+
+@dataclass
+class ChainID(Identifier):
+    path: List[str]
+
+    def __str__(self):
+        return '.'.join(self.path)
 
 
 @dataclass

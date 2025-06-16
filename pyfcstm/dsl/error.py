@@ -9,6 +9,7 @@ allowing for comprehensive error reporting after the parsing is complete.
 import os
 from typing import List
 
+from antlr4 import CommonTokenStream, Token
 from antlr4.error.ErrorListener import ErrorListener
 
 
@@ -107,6 +108,13 @@ class ContextSensitivityError(GrammarItemError):
         super().__init__(error_msg)
 
 
+class UnfinishedParsingError(GrammarItemError):
+    def __init__(self, lineno):
+        self.lineno = lineno
+        error_msg = f"Failed to completely parse input text, unparsed content at position {self.lineno}"
+        super().__init__(error_msg)
+
+
 class GrammarParseError(Exception):
     """
     Exception raised when one or more grammar parsing errors are encountered.
@@ -200,6 +208,10 @@ class CollectingErrorListener(ErrorListener):
         tokens = recognizer.getTokenStream()
         input_range = tokens.getText(startIndex, stopIndex)
         self.errors.append(ContextSensitivityError(input_range, startIndex, stopIndex))
+
+    def check_unfinished_parsing_error(self, stream: CommonTokenStream):
+        if stream.LA(1) != Token.EOF:
+            self.errors.append(UnfinishedParsingError(lineno=stream.get(stream.index).line))
 
     def check_errors(self):
         """

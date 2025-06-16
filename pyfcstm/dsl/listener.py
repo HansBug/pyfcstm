@@ -1,6 +1,7 @@
 from .grammar import GrammarListener, GrammarParser
 from .node import Integer, Float, Constant, Boolean, Name, Paren, BinaryOp, UnaryOp, UFunc, ConstantDefinition, \
-    OperationalAssignment, InitialAssignment, Condition, Operation, Preamble, ConditionalOp, HexInt, DefAssignment
+    OperationalAssignment, InitialAssignment, Condition, Operation, Preamble, ConditionalOp, HexInt, DefAssignment, \
+    ChainID
 
 
 class GrammarParseListener(GrammarListener):
@@ -201,4 +202,31 @@ class GrammarParseListener(GrammarListener):
             name=str(ctx.ID()),
             type=ctx.deftype.text,
             expr=self.nodes[ctx.init_expression()],
+        )
+
+    def exitState_machine_dsl(self, ctx: GrammarParser.State_machine_dslContext):
+        super().exitState_machine_dsl(ctx)
+
+    def exitLeafStateDefinition(self, ctx: GrammarParser.LeafStateDefinitionContext):
+        super().exitLeafStateDefinition(ctx)
+
+    def exitCompositeStateDefinition(self, ctx: GrammarParser.CompositeStateDefinitionContext):
+        super().exitCompositeStateDefinition(ctx)
+
+    def exitEntryTransitionDefinition(self, ctx: GrammarParser.EntryTransitionDefinitionContext):
+        super().exitEntryTransitionDefinition(ctx)
+
+    def exitNormalTransitionDefinition(self, ctx: GrammarParser.NormalTransitionDefinitionContext):
+        super().exitNormalTransitionDefinition(ctx)
+
+    def exitExitTransitionDefinition(self, ctx: GrammarParser.ExitTransitionDefinitionContext):
+        super().exitExitTransitionDefinition(ctx)
+
+    def exitState_inner_statements(self, ctx: GrammarParser.State_inner_statementsContext):
+        super().exitState_inner_statements(ctx)
+
+    def exitChain_id(self, ctx: GrammarParser.Chain_idContext):
+        super().exitChain_id(ctx)
+        self.nodes[ctx] = ChainID(
+            path=list(map(str, ctx.ID())),
         )

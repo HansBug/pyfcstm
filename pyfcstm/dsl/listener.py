@@ -1,7 +1,7 @@
 from .grammar import GrammarListener, GrammarParser
 from .node import Integer, Float, Constant, Boolean, Name, Paren, BinaryOp, UnaryOp, UFunc, ConstantDefinition, \
     OperationalAssignment, InitialAssignment, Condition, Operation, Preamble, ConditionalOp, HexInt, DefAssignment, \
-    ChainID
+    ChainID, Transition, INIT_STATE, EXIT_STATE
 
 
 class GrammarParseListener(GrammarListener):
@@ -215,12 +215,33 @@ class GrammarParseListener(GrammarListener):
 
     def exitEntryTransitionDefinition(self, ctx: GrammarParser.EntryTransitionDefinitionContext):
         super().exitEntryTransitionDefinition(ctx)
+        self.nodes[ctx] = Transition(
+            from_state=INIT_STATE,
+            to_state=ctx.to_state.text,
+            event_id=self.nodes[ctx.chain_id()] if ctx.chain_id() else None,
+            condition_expr=self.nodes[ctx.cond_expression()] if ctx.cond_expression() else None,
+            post_operations=[self.nodes[item] for item in ctx.operational_statement() if item in self.nodes]
+        )
 
     def exitNormalTransitionDefinition(self, ctx: GrammarParser.NormalTransitionDefinitionContext):
         super().exitNormalTransitionDefinition(ctx)
+        self.nodes[ctx] = Transition(
+            from_state=ctx.from_state.text,
+            to_state=ctx.to_state.text,
+            event_id=self.nodes[ctx.chain_id()] if ctx.chain_id() else None,
+            condition_expr=self.nodes[ctx.cond_expression()] if ctx.cond_expression() else None,
+            post_operations=[self.nodes[item] for item in ctx.operational_statement() if item in self.nodes]
+        )
 
     def exitExitTransitionDefinition(self, ctx: GrammarParser.ExitTransitionDefinitionContext):
         super().exitExitTransitionDefinition(ctx)
+        self.nodes[ctx] = Transition(
+            from_state=ctx.from_state.text,
+            to_state=EXIT_STATE,
+            event_id=self.nodes[ctx.chain_id()] if ctx.chain_id() else None,
+            condition_expr=self.nodes[ctx.cond_expression()] if ctx.cond_expression() else None,
+            post_operations=[self.nodes[item] for item in ctx.operational_statement() if item in self.nodes]
+        )
 
     def exitChain_id(self, ctx: GrammarParser.Chain_idContext):
         super().exitChain_id(ctx)

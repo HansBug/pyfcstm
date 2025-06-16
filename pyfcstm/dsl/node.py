@@ -1,9 +1,11 @@
+import io
 import json
 import math
 import os
 from abc import ABC
-
 from dataclasses import dataclass
+
+from hbutils.design import SingletonMark
 
 __all__ = [
     'ASTNode',
@@ -30,9 +32,10 @@ __all__ = [
     'Preamble',
     'Operation',
     'Condition',
+    'Transition',
 ]
 
-from typing import List, Union
+from typing import List, Union, Optional
 
 
 @dataclass
@@ -254,3 +257,37 @@ class Operation(ASTNode):
 
     def __str__(self):
         return os.linesep.join(map(str, self.stats))
+
+
+INIT_STATE = SingletonMark('INIT_STATE')
+EXIT_STATE = SingletonMark('EXIT_STATE')
+
+
+@dataclass
+class Transition(ASTNode):
+    from_state: Union[str, INIT_STATE]
+    to_state: Union[str, EXIT_STATE]
+    event_id: Optional[ChainID]
+    condition_expr: Optional[Expr]
+    post_operations: List[OperationalAssignment]
+
+    def __str__(self):
+        with io.StringIO() as sf:
+            print('[*]' if self.from_state is INIT_STATE else self.from_state, file=sf, end='')
+            print(' -> ', file=sf, end='')
+            print('[*]' if self.to_state is EXIT_STATE else self.to_state, file=sf, end='')
+
+            if self.event_id is not None:
+                print(f' : {self.event_id}', file=sf, end='')
+            elif self.condition_expr is not None:
+                print(f' : if [{self.condition_expr}]', file=sf, end='')
+
+            if len(self.post_operations) > 0:
+                print(' post {', file=sf)
+                for operation in self.post_operations:
+                    print(f'    {operation}', file=sf)
+                print('}', file=sf, end='')
+            else:
+                print(';', file=sf, end='')
+
+            return sf.getvalue()

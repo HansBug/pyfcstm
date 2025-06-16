@@ -2336,6 +2336,28 @@ class GrammarParser(Parser):
         def copyFrom(self, ctx: ParserRuleContext):
             super().copyFrom(ctx)
 
+    class BinaryExprFromCondCondContext(Cond_expressionContext):
+        def __init__(
+            self, parser, ctx: ParserRuleContext
+        ):  # actually a GrammarParser.Cond_expressionContext
+            super().__init__(parser)
+            self.op = None  # Token
+            self.copyFrom(ctx)
+
+        def cond_expression(self, i: int = None):
+            if i is None:
+                return self.getTypedRuleContexts(GrammarParser.Cond_expressionContext)
+            else:
+                return self.getTypedRuleContext(GrammarParser.Cond_expressionContext, i)
+
+        def enterRule(self, listener: ParseTreeListener):
+            if hasattr(listener, "enterBinaryExprFromCondCond"):
+                listener.enterBinaryExprFromCondCond(self)
+
+        def exitRule(self, listener: ParseTreeListener):
+            if hasattr(listener, "exitBinaryExprFromCondCond"):
+                listener.exitBinaryExprFromCondCond(self)
+
     class BinaryExprCondContext(Cond_expressionContext):
         def __init__(
             self, parser, ctx: ParserRuleContext
@@ -2371,12 +2393,6 @@ class GrammarParser(Parser):
                 return self.getTypedRuleContexts(GrammarParser.Num_expressionContext)
             else:
                 return self.getTypedRuleContext(GrammarParser.Num_expressionContext, i)
-
-        def cond_expression(self, i: int = None):
-            if i is None:
-                return self.getTypedRuleContexts(GrammarParser.Cond_expressionContext)
-            else:
-                return self.getTypedRuleContext(GrammarParser.Cond_expressionContext, i)
 
         def enterRule(self, listener: ParseTreeListener):
             if hasattr(listener, "enterBinaryExprFromNumCond"):
@@ -2593,7 +2609,7 @@ class GrammarParser(Parser):
                     self._errHandler.sync(self)
                     la_ = self._interp.adaptivePredict(self._input, 25, self._ctx)
                     if la_ == 1:
-                        localctx = GrammarParser.BinaryExprFromNumCondContext(
+                        localctx = GrammarParser.BinaryExprFromCondCondContext(
                             self,
                             GrammarParser.Cond_expressionContext(
                                 self, _parentctx, _parentState

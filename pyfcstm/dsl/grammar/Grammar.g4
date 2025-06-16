@@ -81,7 +81,7 @@ cond_expression
     | op=('!'|'not') cond_expression                        # unaryExprCond
     | num_expression op=('<'|'>'|'<='|'>=') num_expression  # binaryExprFromNumCond
     | num_expression op=('=='|'!=') num_expression          # binaryExprFromNumCond
-    | cond_expression op=('=='|'!=') cond_expression        # binaryExprFromNumCond
+    | cond_expression op=('=='|'!=') cond_expression        # binaryExprFromCondCond
     | cond_expression op=('&&'|'and') cond_expression       # binaryExprCond
     | cond_expression op=('||'|'or') cond_expression        # binaryExprCond
     | <assoc=right> '(' cond_expression ')' '?' cond_expression ':' cond_expression  # conditionalCStyleCondNum

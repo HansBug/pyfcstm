@@ -65,6 +65,15 @@ class GrammarParseListener(GrammarListener):
         )
         self.nodes[ctx] = node
 
+    def exitBinaryExprFromCondCond(self, ctx: GrammarParser.BinaryExprFromCondCondContext):
+        super().exitBinaryExprFromNumCond(ctx)
+        node = BinaryOp(
+            expr1=self.nodes[ctx.cond_expression(0)],
+            op=ctx.op.text,
+            expr2=self.nodes[ctx.cond_expression(1)],
+        )
+        self.nodes[ctx] = node
+
     def exitBinaryExprCond(self, ctx: GrammarParser.BinaryExprCondContext):
         super().exitBinaryExprCond(ctx)
         node = BinaryOp(

@@ -326,6 +326,15 @@ class TestDSLCondition:
             expr=ConditionalOp(cond=BinaryOp(expr1=Name(name='x'), op='>=', expr2=Integer(raw='0')),
                                value_true=BinaryOp(expr1=Name(name='x'), op='>=', expr2=Integer(raw='0')),
                                value_false=BinaryOp(expr1=Name(name='x'), op='>=', expr2=Integer(raw='0'))))),
+
+        ('(a >1)== (a < 1)', Condition(
+            expr=BinaryOp(expr1=Paren(expr=BinaryOp(expr1=Name(name='a'), op='>', expr2=Integer(raw='1'))), op='==',
+                          expr2=Paren(expr=BinaryOp(expr1=Name(name='a'), op='<', expr2=Integer(raw='1')))))),
+        # comparison between boolean expressions
+        ('(a > 1)!= (a<1)', Condition(
+            expr=BinaryOp(expr1=Paren(expr=BinaryOp(expr1=Name(name='a'), op='>', expr2=Integer(raw='1'))), op='!=',
+                          expr2=Paren(expr=BinaryOp(expr1=Name(name='a'), op='<', expr2=Integer(raw='1')))))),
+        # comparison between boolean expressions
     ])
     def test_positive_cases(self, input_text, expected):
         assert parse_condition(input_text) == expected
@@ -439,6 +448,9 @@ class TestDSLCondition:
         ('(x >=0) ? x >=0 : true', '(x >= 0) ? x >= 0 : True'),
         ('(x >=0) ? x >=0 : False', '(x >= 0) ? x >= 0 : False'),
         ('(x >=0) ? x >=0 : x >=0', '(x >= 0) ? x >= 0 : x >= 0'),
+
+        ('(a >1)== (a < 1)', '(a > 1) == (a < 1)'),  # comparison between boolean expressions
+        ('(a > 1)!= (a<1)', '(a > 1) != (a < 1)'),  # comparison between boolean expressions
     ])
     def test_positive_cases_str(self, input_text, expected_str):
         assert str(parse_condition(input_text)) == expected_str

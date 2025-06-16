@@ -281,6 +281,18 @@ class GrammarListener(ParseTreeListener):
     def exitIdExprNum(self, ctx: GrammarParser.IdExprNumContext):
         pass
 
+    # Enter a parse tree produced by GrammarParser#binaryExprFromCondCond.
+    def enterBinaryExprFromCondCond(
+        self, ctx: GrammarParser.BinaryExprFromCondCondContext
+    ):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#binaryExprFromCondCond.
+    def exitBinaryExprFromCondCond(
+        self, ctx: GrammarParser.BinaryExprFromCondCondContext
+    ):
+        pass
+
     # Enter a parse tree produced by GrammarParser#binaryExprCond.
     def enterBinaryExprCond(self, ctx: GrammarParser.BinaryExprCondContext):
         pass

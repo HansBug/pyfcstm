@@ -33,7 +33,6 @@ class Expr:
     def list_variables(self):
         vs, retval = set(), []
         for item in self._iter_all_subs():
-            print('x', item)
             if isinstance(item, Variable) and item.name not in vs:
                 retval.append(item)
                 vs.add(item.name)

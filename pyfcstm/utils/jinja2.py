@@ -1,71 +1,111 @@
+"""
+This module provides utilities for enhancing Jinja2 environments with Python builtins and additional settings.
+
+It includes functions to add Python built-in functions to Jinja2 environments as filters, tests, and globals,
+as well as adding environment variables and custom text processing functions.
+"""
+
 import builtins
 import inspect
+import os
 
 import jinja2
 
 from .text import normalize, to_identifier
 
 
-def add_builtins_to_env(env):
+def add_builtins_to_env(env: jinja2.Environment) -> jinja2.Environment:
     """
-    将 Python 内置函数挂载到 Jinja2 环境中
+    Mount Python built-in functions to a Jinja2 environment.
 
-    Args:
-        env: jinja2.Environment 实例
+    This function adds Python's built-in functions to the specified Jinja2 environment
+    as filters, tests, or global functions based on their characteristics.
 
-    Returns:
-        挂载完毕后的 jinja2.Environment 实例
+    :param env: A Jinja2 Environment instance
+    :type env: jinja2.Environment
+
+    :return: The Jinja2 Environment with Python builtins mounted
+    :rtype: jinja2.Environment
+
+    Example::
+
+        >>> env = jinja2.Environment()
+        >>> env = add_builtins_to_env(env)
+        >>> # Now Python builtins like len, str, etc. are available in templates
     """
-    # Jinja2 已有的内置过滤器、测试器和全局函数
+    # Existing built-in filters, tests and global functions in Jinja2
     existing_filters = set(env.filters.keys())
     existing_tests = set(env.tests.keys())
     existing_globals = set(env.globals.keys())
 
-    # 获取所有 Python 内置函数
+    # Get all Python built-in functions
     builtin_items = [(name, obj) for name, obj in inspect.getmembers(builtins)
-                     if not name.startswith('_')]  # 排除以下划线开头的内部函数
+                     if not name.startswith('_')]  # Exclude internal functions starting with underscore
 
-    # 分类函数适合的挂载位置
+    # Categorize functions for appropriate mounting positions
     for name, func in builtin_items:
-        # 跳过非函数对象
+        # Skip non-function objects
         if not callable(func):
             continue
 
-        # 判断函数是否适合作为过滤器
+        # Determine if the function is suitable as a filter
         is_filter_candidate = (
-            # 过滤器通常接受一个主要参数并可能有其他可选参数
+            # Filters typically accept one main argument and may have other optional parameters
                 inspect.isfunction(func) or inspect.isbuiltin(func)
         )
 
-        # 判断函数是否适合作为测试器
+        # Determine if the function is suitable as a tester
         is_test_candidate = (
-            # 测试函数通常返回布尔值，如 isinstance, issubclass 等
+            # Test functions typically return boolean values, like isinstance, issubclass, etc.
                 name.startswith('is') or
                 name in ('all', 'any', 'callable', 'hasattr')
         )
 
-        # 挂载为过滤器（如果适合且不冲突）
+        # Mount as a filter (if suitable and no conflict)
         filter_name = name
         if is_filter_candidate and filter_name not in existing_filters:
             env.filters[filter_name] = func
 
-        # 挂载为测试器（如果适合且不冲突）
+        # Mount as a tester (if suitable and no conflict)
         test_name = name
         if name.startswith('is'):
-            # 对于 is 开头的函数，可以去掉 is 前缀作为测试器名称
+            # For functions starting with 'is', the prefix can be removed as the tester name
             test_name = name[2:].lower()
         if is_test_candidate and test_name not in existing_tests:
             env.tests[test_name] = func
 
-        # 挂载为全局函数（如果不冲突）
+        # Mount as a global function (if no conflict)
         if name not in existing_globals:
             env.globals[name] = func
 
     return env
 
 
-def add_settings_for_env(env: jinja2.Environment):
+def add_settings_for_env(env: jinja2.Environment) -> jinja2.Environment:
+    """
+    Add additional settings and functions to a Jinja2 environment.
+
+    This function enhances a Jinja2 environment by:
+    1. Adding Python built-in functions
+    2. Adding custom text processing filters
+    3. Adding environment variables as global variables
+
+    :param env: The Jinja2 environment to enhance
+    :type env: jinja2.Environment
+
+    :return: The enhanced Jinja2 environment
+    :rtype: jinja2.Environment
+
+    Example::
+
+        >>> env = jinja2.Environment()
+        >>> env = add_settings_for_env(env)
+        >>> # Now the environment has additional filters and globals
+    """
     env = add_builtins_to_env(env)
     env.filters['normalize'] = normalize
     env.filters['to_identifier'] = to_identifier
+    for key, value in os.environ.items():
+        if key not in env.globals:
+            env.globals[key] = value
     return env

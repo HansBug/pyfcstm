@@ -51,6 +51,10 @@ class State(AstExportable, PlantUMLExportable):
     def is_leaf_state(self) -> bool:
         return len(self.substates) == 0
 
+    @property
+    def path_text(self):
+        return '.'.join(self.path)
+
     def to_ast_node(self) -> dsl_nodes.StateDefinition:
         return dsl_nodes.StateDefinition(
             name=self.name,

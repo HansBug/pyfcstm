@@ -1,7 +1,33 @@
+"""
+String normalization utilities for converting arbitrary strings to valid identifiers.
+
+This module provides functions to normalize strings into valid identifier formats
+that can be used in programming contexts. It handles special characters, spaces,
+and ensures compliance with identifier naming rules.
+"""
+
 from unidecode import unidecode
 
 
 def normalize(input_string):
+    """
+    Normalize a string to a valid identifier format.
+
+    This is a convenience wrapper around to_identifier() with strict_mode set to False.
+
+    :param input_string: The string to be normalized
+    :type input_string: str
+
+    :return: A normalized identifier string
+    :rtype: str
+
+    Example::
+
+        >>> normalize("Hello World!")
+        'Hello_World'
+        >>> normalize("123 Test")
+        '123_Test'
+    """
     return to_identifier(input_string, strict_mode=False)
 
 
@@ -16,13 +42,23 @@ def to_identifier(input_string, strict_mode: bool = True):
     4. If strict_mode is True, handle empty strings and None inputs
     5. Handle consecutive special characters to avoid multiple consecutive underscores
 
-    Parameters:
-        input_string: The string to be converted
-        strict_mode: When True, applies additional rules to ensure identifier validity across most languages
-                     When False, allows empty strings and identifiers starting with numbers
+    :param input_string: The string to be converted
+    :type input_string: str
+    :param strict_mode: When True, applies additional rules to ensure identifier validity across most languages.
+                        When False, allows empty strings and identifiers starting with numbers
+    :type strict_mode: bool, optional
 
-    Returns:
-        A valid identifier string
+    :return: A valid identifier string
+    :rtype: str
+
+    Example::
+
+        >>> to_identifier("Hello World!", strict_mode=True)
+        'Hello_World'
+        >>> to_identifier("123 Test", strict_mode=True)
+        '_123_Test'
+        >>> to_identifier("", strict_mode=True)
+        '_empty'
     """
     input_string = unidecode(input_string)
     # Initialize result string

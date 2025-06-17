@@ -3,7 +3,8 @@ from .node import Integer, Float, Constant, Boolean, Name, Paren, BinaryOp, Unar
     OperationalDeprecatedAssignment, InitialAssignment, Condition, Operation, Preamble, ConditionalOp, HexInt, \
     DefAssignment, \
     ChainID, TransitionDefinition, INIT_STATE, EXIT_STATE, StateDefinition, OperationAssignment, \
-    StateMachineDSLProgram, EnterOperations, EnterAbstractFunction
+    StateMachineDSLProgram, EnterOperations, EnterAbstractFunction, ExitOperations, ExitAbstractFunction, \
+    DuringOperations, DuringAbstractFunction
 from ..utils import format_multiline_comment
 
 
@@ -314,5 +315,33 @@ class GrammarParseListener(GrammarListener):
         super().exitEnterAbstractFunc(ctx)
         self.nodes[ctx] = EnterAbstractFunction(
             name=ctx.func_name.text if ctx.func_name else None,
+            doc=format_multiline_comment(ctx.raw_doc.text) if ctx.raw_doc else None,
+        )
+
+    def exitExitOperations(self, ctx: GrammarParser.ExitOperationsContext):
+        super().exitExitOperations(ctx)
+        self.nodes[ctx] = ExitOperations(
+            operations=[self.nodes[item] for item in ctx.operational_statement() if item in self.nodes]
+        )
+
+    def exitExitAbstractFunc(self, ctx: GrammarParser.ExitAbstractFuncContext):
+        super().exitExitAbstractFunc(ctx)
+        self.nodes[ctx] = ExitAbstractFunction(
+            name=ctx.func_name.text if ctx.func_name else None,
+            doc=format_multiline_comment(ctx.raw_doc.text) if ctx.raw_doc else None,
+        )
+
+    def exitDuringOperations(self, ctx: GrammarParser.DuringOperationsContext):
+        super().exitDuringOperations(ctx)
+        self.nodes[ctx] = DuringOperations(
+            aspect=ctx.aspect.text if ctx.aspect else None,
+            operations=[self.nodes[item] for item in ctx.operational_statement() if item in self.nodes]
+        )
+
+    def exitDuringAbstractFunc(self, ctx: GrammarParser.DuringAbstractFuncContext):
+        super().exitDuringAbstractFunc(ctx)
+        self.nodes[ctx] = DuringAbstractFunction(
+            name=ctx.func_name.text if ctx.func_name else None,
+            aspect=ctx.aspect.text if ctx.aspect else None,
             doc=format_multiline_comment(ctx.raw_doc.text) if ctx.raw_doc else None,
         )

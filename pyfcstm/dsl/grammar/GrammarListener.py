@@ -105,6 +105,38 @@ class GrammarListener(ParseTreeListener):
     def exitEnterAbstractFunc(self, ctx: GrammarParser.EnterAbstractFuncContext):
         pass
 
+    # Enter a parse tree produced by GrammarParser#exitOperations.
+    def enterExitOperations(self, ctx: GrammarParser.ExitOperationsContext):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#exitOperations.
+    def exitExitOperations(self, ctx: GrammarParser.ExitOperationsContext):
+        pass
+
+    # Enter a parse tree produced by GrammarParser#exitAbstractFunc.
+    def enterExitAbstractFunc(self, ctx: GrammarParser.ExitAbstractFuncContext):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#exitAbstractFunc.
+    def exitExitAbstractFunc(self, ctx: GrammarParser.ExitAbstractFuncContext):
+        pass
+
+    # Enter a parse tree produced by GrammarParser#duringOperations.
+    def enterDuringOperations(self, ctx: GrammarParser.DuringOperationsContext):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#duringOperations.
+    def exitDuringOperations(self, ctx: GrammarParser.DuringOperationsContext):
+        pass
+
+    # Enter a parse tree produced by GrammarParser#duringAbstractFunc.
+    def enterDuringAbstractFunc(self, ctx: GrammarParser.DuringAbstractFuncContext):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#duringAbstractFunc.
+    def exitDuringAbstractFunc(self, ctx: GrammarParser.DuringAbstractFuncContext):
+        pass
+
     # Enter a parse tree produced by GrammarParser#operation_assignment.
     def enterOperation_assignment(self, ctx: GrammarParser.Operation_assignmentContext):
         pass

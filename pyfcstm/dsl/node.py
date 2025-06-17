@@ -42,6 +42,12 @@ __all__ = [
     'EnterStatement',
     'EnterOperations',
     'EnterAbstractFunction',
+    'ExitStatement',
+    'ExitOperations',
+    'ExitAbstractFunction',
+    'DuringStatement',
+    'DuringOperations',
+    'DuringAbstractFunction',
 ]
 
 from typing import List, Union, Optional
@@ -384,6 +390,97 @@ class EnterAbstractFunction(EnterStatement):
                 print(f'enter abstract {self.name}', file=f, end='')
             else:
                 print(f'enter abstract', file=f, end='')
+
+            if self.doc is not None:
+                print(' /*', file=f)
+                print(indent(self.doc, prefix='    '), file=f)
+                print('*/', file=f, end='')
+            else:
+                print(';', file=f, end='')
+
+            return f.getvalue()
+
+
+@dataclass
+class ExitStatement(ASTNode):
+    pass
+
+
+@dataclass
+class ExitOperations(ExitStatement):
+    operations: List[OperationAssignment]
+
+    def __str__(self):
+        with io.StringIO() as f:
+            print('exit {', file=f)
+            for operation in self.operations:
+                print(f'    {operation}', file=f)
+            print('}', file=f, end='')
+            return f.getvalue()
+
+
+@dataclass
+class ExitAbstractFunction(ExitStatement):
+    name: Optional[str]
+    doc: Optional[str]
+
+    def __str__(self):
+        with io.StringIO() as f:
+            if self.name:
+                print(f'exit abstract {self.name}', file=f, end='')
+            else:
+                print(f'exit abstract', file=f, end='')
+
+            if self.doc is not None:
+                print(' /*', file=f)
+                print(indent(self.doc, prefix='    '), file=f)
+                print('*/', file=f, end='')
+            else:
+                print(';', file=f, end='')
+
+            return f.getvalue()
+
+
+@dataclass
+class DuringStatement(ASTNode):
+    pass
+
+
+@dataclass
+class DuringOperations(DuringStatement):
+    aspect: Optional[str]
+    operations: List[OperationAssignment]
+
+    def __str__(self):
+        with io.StringIO() as f:
+            if self.aspect:
+                print(f'during {self.aspect} {{', file=f)
+            else:
+                print(f'during {{', file=f)
+            for operation in self.operations:
+                print(f'    {operation}', file=f)
+            print('}', file=f, end='')
+            return f.getvalue()
+
+
+@dataclass
+class DuringAbstractFunction(DuringStatement):
+    name: Optional[str]
+    aspect: Optional[str]
+    doc: Optional[str]
+
+    def __str__(self):
+        with io.StringIO() as f:
+            if self.name:
+                if self.aspect:
+                    print(f'during {self.aspect} abstract {self.name}', file=f, end='')
+                else:
+                    print(f'during abstract {self.name}', file=f, end='')
+            else:
+                if self.aspect:
+                    print(f'during {self.aspect} abstract', file=f, end='')
+                else:
+                    print(f'during abstract', file=f, end='')
 
             if self.doc is not None:
                 print(' /*', file=f)

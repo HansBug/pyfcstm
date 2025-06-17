@@ -8,6 +8,7 @@ as well as adding environment variables and custom text processing functions.
 import builtins
 import inspect
 import os
+import textwrap
 
 import jinja2
 
@@ -105,6 +106,7 @@ def add_settings_for_env(env: jinja2.Environment) -> jinja2.Environment:
     env = add_builtins_to_env(env)
     env.filters['normalize'] = normalize
     env.filters['to_identifier'] = to_identifier
+    env.globals['indent'] = textwrap.indent
     for key, value in os.environ.items():
         if key not in env.globals:
             env.globals[key] = value

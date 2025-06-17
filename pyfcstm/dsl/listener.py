@@ -1,6 +1,6 @@
 from .grammar import GrammarListener, GrammarParser
 from .node import Integer, Float, Constant, Boolean, Name, Paren, BinaryOp, UnaryOp, UFunc, ConstantDefinition, \
-    OperationalAssignment, InitialAssignment, Condition, Operation, Preamble, ConditionalOp, HexInt, DefAssignment, \
+    OperationalDeprecatedAssignment, InitialAssignment, Condition, Operation, Preamble, ConditionalOp, HexInt, DefAssignment, \
     ChainID, TransitionDefinition, INIT_STATE, EXIT_STATE, StateDefinition, OperationAssignment, \
     StateMachineDSLProgram
 
@@ -151,7 +151,7 @@ class GrammarParseListener(GrammarListener):
 
     def exitOperational_assignment(self, ctx: GrammarParser.Operational_assignmentContext):
         super().exitOperational_assignment(ctx)
-        self.nodes[ctx] = OperationalAssignment(
+        self.nodes[ctx] = OperationalDeprecatedAssignment(
             name=str(ctx.ID()),
             expr=self.nodes[ctx.num_expression()],
         )

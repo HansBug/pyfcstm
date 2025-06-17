@@ -7,110 +7,110 @@ from pyfcstm.dsl.node import *
 @pytest.mark.unittest
 class TestDSLOperation:
     @pytest.mark.parametrize(['input_text', 'expected'], [
-        ('a := 5;', Operation(stats=[OperationalAssignment(name='a', expr=Integer(raw='5'))])),
-        ('variable := 3.14;', Operation(stats=[OperationalAssignment(name='variable', expr=Float(raw='3.14'))])),
-        ('x := pi;', Operation(stats=[OperationalAssignment(name='x', expr=Constant(raw='pi'))])),
-        ('y := E;', Operation(stats=[OperationalAssignment(name='y', expr=Constant(raw='E'))])),
-        ('y := e;', Operation(stats=[OperationalAssignment(name='y', expr=Name(name='e'))])),
-        ('z := tau;', Operation(stats=[OperationalAssignment(name='z', expr=Constant(raw='tau'))])),
-        ('a := +5;', Operation(stats=[OperationalAssignment(name='a', expr=UnaryOp(op='+', expr=Integer(raw='5')))])),
-        ('b := -10;', Operation(stats=[OperationalAssignment(name='b', expr=UnaryOp(op='-', expr=Integer(raw='10')))])),
+        ('a := 5;', Operation(stats=[OperationalDeprecatedAssignment(name='a', expr=Integer(raw='5'))])),
+        ('variable := 3.14;', Operation(stats=[OperationalDeprecatedAssignment(name='variable', expr=Float(raw='3.14'))])),
+        ('x := pi;', Operation(stats=[OperationalDeprecatedAssignment(name='x', expr=Constant(raw='pi'))])),
+        ('y := E;', Operation(stats=[OperationalDeprecatedAssignment(name='y', expr=Constant(raw='E'))])),
+        ('y := e;', Operation(stats=[OperationalDeprecatedAssignment(name='y', expr=Name(name='e'))])),
+        ('z := tau;', Operation(stats=[OperationalDeprecatedAssignment(name='z', expr=Constant(raw='tau'))])),
+        ('a := +5;', Operation(stats=[OperationalDeprecatedAssignment(name='a', expr=UnaryOp(op='+', expr=Integer(raw='5')))])),
+        ('b := -10;', Operation(stats=[OperationalDeprecatedAssignment(name='b', expr=UnaryOp(op='-', expr=Integer(raw='10')))])),
         ('c := -(5);',
-         Operation(stats=[OperationalAssignment(name='c', expr=UnaryOp(op='-', expr=Paren(expr=Integer(raw='5'))))])),
-        ('result := 5 + 3;', Operation(stats=[OperationalAssignment(name='result',
-                                                                    expr=BinaryOp(expr1=Integer(raw='5'), op='+',
+         Operation(stats=[OperationalDeprecatedAssignment(name='c', expr=UnaryOp(op='-', expr=Paren(expr=Integer(raw='5'))))])),
+        ('result := 5 + 3;', Operation(stats=[OperationalDeprecatedAssignment(name='result',
+                                                                              expr=BinaryOp(expr1=Integer(raw='5'), op='+',
                                                                                   expr2=Integer(raw='3')))])),
-        ('diff := 10 - 5;', Operation(stats=[OperationalAssignment(name='diff',
-                                                                   expr=BinaryOp(expr1=Integer(raw='10'), op='-',
+        ('diff := 10 - 5;', Operation(stats=[OperationalDeprecatedAssignment(name='diff',
+                                                                             expr=BinaryOp(expr1=Integer(raw='10'), op='-',
                                                                                  expr2=Integer(raw='5')))])),
-        ('product := 4 * 2;', Operation(stats=[OperationalAssignment(name='product',
-                                                                     expr=BinaryOp(expr1=Integer(raw='4'), op='*',
+        ('product := 4 * 2;', Operation(stats=[OperationalDeprecatedAssignment(name='product',
+                                                                               expr=BinaryOp(expr1=Integer(raw='4'), op='*',
                                                                                    expr2=Integer(raw='2')))])),
-        ('quotient := 10 / 2;', Operation(stats=[OperationalAssignment(name='quotient',
-                                                                       expr=BinaryOp(expr1=Integer(raw='10'), op='/',
+        ('quotient := 10 / 2;', Operation(stats=[OperationalDeprecatedAssignment(name='quotient',
+                                                                                 expr=BinaryOp(expr1=Integer(raw='10'), op='/',
                                                                                      expr2=Integer(raw='2')))])),
-        ('remainder := 10 % 3;', Operation(stats=[OperationalAssignment(name='remainder',
-                                                                        expr=BinaryOp(expr1=Integer(raw='10'), op='%',
+        ('remainder := 10 % 3;', Operation(stats=[OperationalDeprecatedAssignment(name='remainder',
+                                                                                  expr=BinaryOp(expr1=Integer(raw='10'), op='%',
                                                                                       expr2=Integer(raw='3')))])),
-        ('power := 2 ** 3;', Operation(stats=[OperationalAssignment(name='power',
-                                                                    expr=BinaryOp(expr1=Integer(raw='2'), op='**',
+        ('power := 2 ** 3;', Operation(stats=[OperationalDeprecatedAssignment(name='power',
+                                                                              expr=BinaryOp(expr1=Integer(raw='2'), op='**',
                                                                                   expr2=Integer(raw='3')))])),
-        ('complex_power := 2 ** 3 ** 2;', Operation(stats=[OperationalAssignment(name='complex_power',
-                                                                                 expr=BinaryOp(expr1=Integer(raw='2'),
+        ('complex_power := 2 ** 3 ** 2;', Operation(stats=[OperationalDeprecatedAssignment(name='complex_power',
+                                                                                           expr=BinaryOp(expr1=Integer(raw='2'),
                                                                                                op='**', expr2=BinaryOp(
                                                                                          expr1=Integer(raw='3'),
                                                                                          op='**',
                                                                                          expr2=Integer(raw='2'))))])),
-        ('shift_left := 1 << 2;', Operation(stats=[OperationalAssignment(name='shift_left',
-                                                                         expr=BinaryOp(expr1=Integer(raw='1'), op='<<',
+        ('shift_left := 1 << 2;', Operation(stats=[OperationalDeprecatedAssignment(name='shift_left',
+                                                                                   expr=BinaryOp(expr1=Integer(raw='1'), op='<<',
                                                                                        expr2=Integer(raw='2')))])),
-        ('shift_right := 8 >> 2;', Operation(stats=[OperationalAssignment(name='shift_right',
-                                                                          expr=BinaryOp(expr1=Integer(raw='8'), op='>>',
+        ('shift_right := 8 >> 2;', Operation(stats=[OperationalDeprecatedAssignment(name='shift_right',
+                                                                                    expr=BinaryOp(expr1=Integer(raw='8'), op='>>',
                                                                                         expr2=Integer(raw='2')))])),
-        ('bitwise_and := 5 & 3;', Operation(stats=[OperationalAssignment(name='bitwise_and',
-                                                                         expr=BinaryOp(expr1=Integer(raw='5'), op='&',
+        ('bitwise_and := 5 & 3;', Operation(stats=[OperationalDeprecatedAssignment(name='bitwise_and',
+                                                                                   expr=BinaryOp(expr1=Integer(raw='5'), op='&',
                                                                                        expr2=Integer(raw='3')))])),
-        ('bitwise_or := 5 | 3;', Operation(stats=[OperationalAssignment(name='bitwise_or',
-                                                                        expr=BinaryOp(expr1=Integer(raw='5'), op='|',
+        ('bitwise_or := 5 | 3;', Operation(stats=[OperationalDeprecatedAssignment(name='bitwise_or',
+                                                                                  expr=BinaryOp(expr1=Integer(raw='5'), op='|',
                                                                                       expr2=Integer(raw='3')))])),
-        ('bitwise_xor := 5 ^ 3;', Operation(stats=[OperationalAssignment(name='bitwise_xor',
-                                                                         expr=BinaryOp(expr1=Integer(raw='5'), op='^',
+        ('bitwise_xor := 5 ^ 3;', Operation(stats=[OperationalDeprecatedAssignment(name='bitwise_xor',
+                                                                                   expr=BinaryOp(expr1=Integer(raw='5'), op='^',
                                                                                        expr2=Integer(raw='3')))])),
-        ('sine := sin(pi / 2);', Operation(stats=[OperationalAssignment(name='sine', expr=UFunc(func='sin',
-                                                                                                expr=BinaryOp(
+        ('sine := sin(pi / 2);', Operation(stats=[OperationalDeprecatedAssignment(name='sine', expr=UFunc(func='sin',
+                                                                                                          expr=BinaryOp(
                                                                                                     expr1=Constant(
                                                                                                         raw='pi'),
                                                                                                     op='/',
                                                                                                     expr2=Integer(
                                                                                                         raw='2'))))])),
         ('logarithm := log(100);',
-         Operation(stats=[OperationalAssignment(name='logarithm', expr=UFunc(func='log', expr=Integer(raw='100')))])),
-        ('absolute := abs(-5);', Operation(stats=[OperationalAssignment(name='absolute', expr=UFunc(func='abs',
-                                                                                                    expr=UnaryOp(op='-',
+         Operation(stats=[OperationalDeprecatedAssignment(name='logarithm', expr=UFunc(func='log', expr=Integer(raw='100')))])),
+        ('absolute := abs(-5);', Operation(stats=[OperationalDeprecatedAssignment(name='absolute', expr=UFunc(func='abs',
+                                                                                                              expr=UnaryOp(op='-',
                                                                                                                  expr=Integer(
                                                                                                                      raw='5'))))])),
         ('rounded := round(3.7);',
-         Operation(stats=[OperationalAssignment(name='rounded', expr=UFunc(func='round', expr=Float(raw='3.7')))])),
-        ('a := 5; b := a;', Operation(stats=[OperationalAssignment(name='a', expr=Integer(raw='5')),
-                                             OperationalAssignment(name='b', expr=Name(name='a'))])),
-        ('x := 10; y := x + 5;', Operation(stats=[OperationalAssignment(name='x', expr=Integer(raw='10')),
-                                                  OperationalAssignment(name='y',
-                                                                        expr=BinaryOp(expr1=Name(name='x'), op='+',
+         Operation(stats=[OperationalDeprecatedAssignment(name='rounded', expr=UFunc(func='round', expr=Float(raw='3.7')))])),
+        ('a := 5; b := a;', Operation(stats=[OperationalDeprecatedAssignment(name='a', expr=Integer(raw='5')),
+                                             OperationalDeprecatedAssignment(name='b', expr=Name(name='a'))])),
+        ('x := 10; y := x + 5;', Operation(stats=[OperationalDeprecatedAssignment(name='x', expr=Integer(raw='10')),
+                                                  OperationalDeprecatedAssignment(name='y',
+                                                                                  expr=BinaryOp(expr1=Name(name='x'), op='+',
                                                                                       expr2=Integer(raw='5')))])),
-        ('result := 2 + 3 * 4;', Operation(stats=[OperationalAssignment(name='result',
-                                                                        expr=BinaryOp(expr1=Integer(raw='2'), op='+',
+        ('result := 2 + 3 * 4;', Operation(stats=[OperationalDeprecatedAssignment(name='result',
+                                                                                  expr=BinaryOp(expr1=Integer(raw='2'), op='+',
                                                                                       expr2=BinaryOp(
                                                                                           expr1=Integer(raw='3'),
                                                                                           op='*',
                                                                                           expr2=Integer(raw='4'))))])),
-        ('result := (2 + 3) * 4;', Operation(stats=[OperationalAssignment(name='result', expr=BinaryOp(
+        ('result := (2 + 3) * 4;', Operation(stats=[OperationalDeprecatedAssignment(name='result', expr=BinaryOp(
             expr1=Paren(expr=BinaryOp(expr1=Integer(raw='2'), op='+', expr2=Integer(raw='3'))), op='*',
             expr2=Integer(raw='4')))])),
-        ('complex := 2 * 3 + 4 * 5;', Operation(stats=[OperationalAssignment(name='complex', expr=BinaryOp(
+        ('complex := 2 * 3 + 4 * 5;', Operation(stats=[OperationalDeprecatedAssignment(name='complex', expr=BinaryOp(
             expr1=BinaryOp(expr1=Integer(raw='2'), op='*', expr2=Integer(raw='3')), op='+',
             expr2=BinaryOp(expr1=Integer(raw='4'), op='*', expr2=Integer(raw='5'))))])),
-        ('mixed := 2 ** 3 * 4 + 5 / 2 - 1;', Operation(stats=[OperationalAssignment(name='mixed', expr=BinaryOp(
+        ('mixed := 2 ** 3 * 4 + 5 / 2 - 1;', Operation(stats=[OperationalDeprecatedAssignment(name='mixed', expr=BinaryOp(
             expr1=BinaryOp(
                 expr1=BinaryOp(expr1=BinaryOp(expr1=Integer(raw='2'), op='**', expr2=Integer(raw='3')), op='*',
                                expr2=Integer(raw='4')), op='+',
                 expr2=BinaryOp(expr1=Integer(raw='5'), op='/', expr2=Integer(raw='2'))), op='-',
             expr2=Integer(raw='1')))])),
-        ('bitwise_mix := (5 & 3) | (2 << 1);', Operation(stats=[OperationalAssignment(name='bitwise_mix', expr=BinaryOp(
+        ('bitwise_mix := (5 & 3) | (2 << 1);', Operation(stats=[OperationalDeprecatedAssignment(name='bitwise_mix', expr=BinaryOp(
             expr1=Paren(expr=BinaryOp(expr1=Integer(raw='5'), op='&', expr2=Integer(raw='3'))), op='|',
             expr2=Paren(expr=BinaryOp(expr1=Integer(raw='2'), op='<<', expr2=Integer(raw='1')))))])),
-        ('nested := ((2 + 3) * (4 - 1)) / 2;', Operation(stats=[OperationalAssignment(name='nested', expr=BinaryOp(
+        ('nested := ((2 + 3) * (4 - 1)) / 2;', Operation(stats=[OperationalDeprecatedAssignment(name='nested', expr=BinaryOp(
             expr1=Paren(
                 expr=BinaryOp(expr1=Paren(expr=BinaryOp(expr1=Integer(raw='2'), op='+', expr2=Integer(raw='3'))),
                               op='*',
                               expr2=Paren(expr=BinaryOp(expr1=Integer(raw='4'), op='-', expr2=Integer(raw='1'))))),
             op='/', expr2=Integer(raw='2')))])),
-        ('func_nest := sin(cos(pi));', Operation(stats=[OperationalAssignment(name='func_nest', expr=UFunc(func='sin',
-                                                                                                           expr=UFunc(
+        ('func_nest := sin(cos(pi));', Operation(stats=[OperationalDeprecatedAssignment(name='func_nest', expr=UFunc(func='sin',
+                                                                                                                     expr=UFunc(
                                                                                                                func='cos',
                                                                                                                expr=Constant(
                                                                                                                    raw='pi'))))])),
-        ('complex_func := log(abs(sin(pi) + 5));', Operation(stats=[OperationalAssignment(name='complex_func',
-                                                                                          expr=UFunc(func='log',
+        ('complex_func := log(abs(sin(pi) + 5));', Operation(stats=[OperationalDeprecatedAssignment(name='complex_func',
+                                                                                                    expr=UFunc(func='log',
                                                                                                      expr=UFunc(
                                                                                                          func='abs',
                                                                                                          expr=BinaryOp(
@@ -122,12 +122,12 @@ class TestDSLOperation:
                                                                                                              expr2=Integer(
                                                                                                                  raw='5')))))])),
         ('\n    a := 5;\n    b := a * 2;\n    c := a + b;\n    ', Operation(
-            stats=[OperationalAssignment(name='a', expr=Integer(raw='5')),
-                   OperationalAssignment(name='b', expr=BinaryOp(expr1=Name(name='a'), op='*', expr2=Integer(raw='2'))),
-                   OperationalAssignment(name='c',
-                                         expr=BinaryOp(expr1=Name(name='a'), op='+', expr2=Name(name='b')))])),
+            stats=[OperationalDeprecatedAssignment(name='a', expr=Integer(raw='5')),
+                   OperationalDeprecatedAssignment(name='b', expr=BinaryOp(expr1=Name(name='a'), op='*', expr2=Integer(raw='2'))),
+                   OperationalDeprecatedAssignment(name='c',
+                                                   expr=BinaryOp(expr1=Name(name='a'), op='+', expr2=Name(name='b')))])),
         ('complex_expr := 2 ** (3 + 1) * sin(pi/2) / log(E**2) + 5 & 7 | 2;', Operation(stats=[
-            OperationalAssignment(name='complex_expr', expr=BinaryOp(expr1=BinaryOp(expr1=BinaryOp(expr1=BinaryOp(
+            OperationalDeprecatedAssignment(name='complex_expr', expr=BinaryOp(expr1=BinaryOp(expr1=BinaryOp(expr1=BinaryOp(
                 expr1=BinaryOp(expr1=BinaryOp(expr1=Integer(raw='2'), op='**', expr2=Paren(
                     expr=BinaryOp(expr1=Integer(raw='3'), op='+', expr2=Integer(raw='1')))), op='*',
                                expr2=UFunc(func='sin',
@@ -139,17 +139,17 @@ class TestDSLOperation:
                     raw='5')),
                 op='&', expr2=Integer(raw='7')),
                 op='|', expr2=Integer(raw='2')))])),
-        ('float_val := 1.234;', Operation(stats=[OperationalAssignment(name='float_val', expr=Float(raw='1.234'))])),
-        ('scientific := 1.2e3;', Operation(stats=[OperationalAssignment(name='scientific', expr=Float(raw='1.2e3'))])),
+        ('float_val := 1.234;', Operation(stats=[OperationalDeprecatedAssignment(name='float_val', expr=Float(raw='1.234'))])),
+        ('scientific := 1.2e3;', Operation(stats=[OperationalDeprecatedAssignment(name='scientific', expr=Float(raw='1.2e3'))])),
         ('scientific_neg := 1.2e-3;',
-         Operation(stats=[OperationalAssignment(name='scientific_neg', expr=Float(raw='1.2e-3'))])),
-        ('float_no_int := .5;', Operation(stats=[OperationalAssignment(name='float_no_int', expr=Float(raw='.5'))])),
+         Operation(stats=[OperationalDeprecatedAssignment(name='scientific_neg', expr=Float(raw='1.2e-3'))])),
+        ('float_no_int := .5;', Operation(stats=[OperationalDeprecatedAssignment(name='float_no_int', expr=Float(raw='.5'))])),
         (
                 '\n    a := 5;\n    b := 10;\n    c := a ** 2 + b ** 2;\n    d := sqrt(c);\n    result := sin(d / 10) * cos(pi/4) + log(a * b);\n    ',
-                Operation(stats=[OperationalAssignment(name='a', expr=Integer(raw='5')),
-                                 OperationalAssignment(name='b', expr=Integer(raw='10')),
-                                 OperationalAssignment(name='c',
-                                                       expr=BinaryOp(
+                Operation(stats=[OperationalDeprecatedAssignment(name='a', expr=Integer(raw='5')),
+                                 OperationalDeprecatedAssignment(name='b', expr=Integer(raw='10')),
+                                 OperationalDeprecatedAssignment(name='c',
+                                                                 expr=BinaryOp(
                                                            expr1=BinaryOp(
                                                                expr1=Name(
                                                                    name='a'),
@@ -163,9 +163,9 @@ class TestDSLOperation:
                                                                op='**',
                                                                expr2=Integer(
                                                                    raw='2')))),
-                                 OperationalAssignment(name='d', expr=UFunc(func='sqrt', expr=Name(name='c'))),
-                                 OperationalAssignment(name='result',
-                                                       expr=BinaryOp(expr1=BinaryOp(expr1=UFunc(func='sin',
+                                 OperationalDeprecatedAssignment(name='d', expr=UFunc(func='sqrt', expr=Name(name='c'))),
+                                 OperationalDeprecatedAssignment(name='result',
+                                                                 expr=BinaryOp(expr1=BinaryOp(expr1=UFunc(func='sin',
                                                                                                 expr=BinaryOp(
                                                                                                     expr1=Name(
                                                                                                         name='d'),
@@ -187,18 +187,18 @@ class TestDSLOperation:
                                                                                              op='*', expr2=Name(
                                                                                                  name='b')))))])),
 
-        ('a := (true) ? 1 : 1;', Operation(stats=[OperationalAssignment(name='a',
-                                                                        expr=ConditionalOp(cond=Boolean(raw='true'),
+        ('a := (true) ? 1 : 1;', Operation(stats=[OperationalDeprecatedAssignment(name='a',
+                                                                                  expr=ConditionalOp(cond=Boolean(raw='true'),
                                                                                            value_true=Integer(raw='1'),
                                                                                            value_false=Integer(
                                                                                                raw='1')))])),
-        ('a := (true) ? 1 : pi;', Operation(stats=[OperationalAssignment(name='a',
-                                                                         expr=ConditionalOp(cond=Boolean(raw='true'),
+        ('a := (true) ? 1 : pi;', Operation(stats=[OperationalDeprecatedAssignment(name='a',
+                                                                                   expr=ConditionalOp(cond=Boolean(raw='true'),
                                                                                             value_true=Integer(raw='1'),
                                                                                             value_false=Constant(
                                                                                                 raw='pi')))])),
-        ('a := (true) ? 1 : x + 1;', Operation(stats=[OperationalAssignment(name='a',
-                                                                            expr=ConditionalOp(cond=Boolean(raw='true'),
+        ('a := (true) ? 1 : x + 1;', Operation(stats=[OperationalDeprecatedAssignment(name='a',
+                                                                                      expr=ConditionalOp(cond=Boolean(raw='true'),
                                                                                                value_true=Integer(
                                                                                                    raw='1'),
                                                                                                value_false=BinaryOp(
@@ -206,23 +206,23 @@ class TestDSLOperation:
                                                                                                    op='+',
                                                                                                    expr2=Integer(
                                                                                                        raw='1'))))])),
-        ('a := (true) ? pi : 1;', Operation(stats=[OperationalAssignment(name='a',
-                                                                         expr=ConditionalOp(cond=Boolean(raw='true'),
+        ('a := (true) ? pi : 1;', Operation(stats=[OperationalDeprecatedAssignment(name='a',
+                                                                                   expr=ConditionalOp(cond=Boolean(raw='true'),
                                                                                             value_true=Constant(
                                                                                                 raw='pi'),
                                                                                             value_false=Integer(
                                                                                                 raw='1')))])),
-        ('a := (true) ? pi : pi;', Operation(stats=[OperationalAssignment(name='a',
-                                                                          expr=ConditionalOp(cond=Boolean(raw='true'),
+        ('a := (true) ? pi : pi;', Operation(stats=[OperationalDeprecatedAssignment(name='a',
+                                                                                    expr=ConditionalOp(cond=Boolean(raw='true'),
                                                                                              value_true=Constant(
                                                                                                  raw='pi'),
                                                                                              value_false=Constant(
                                                                                                  raw='pi')))])),
-        ('a := (true) ? pi : x + 1;', Operation(stats=[OperationalAssignment(name='a', expr=ConditionalOp(
+        ('a := (true) ? pi : x + 1;', Operation(stats=[OperationalDeprecatedAssignment(name='a', expr=ConditionalOp(
             cond=Boolean(raw='true'), value_true=Constant(raw='pi'),
             value_false=BinaryOp(expr1=Name(name='x'), op='+', expr2=Integer(raw='1'))))])),
-        ('a := (true) ? x + 1 : 1;', Operation(stats=[OperationalAssignment(name='a',
-                                                                            expr=ConditionalOp(cond=Boolean(raw='true'),
+        ('a := (true) ? x + 1 : 1;', Operation(stats=[OperationalDeprecatedAssignment(name='a',
+                                                                                      expr=ConditionalOp(cond=Boolean(raw='true'),
                                                                                                value_true=BinaryOp(
                                                                                                    expr1=Name(name='x'),
                                                                                                    op='+',
@@ -230,92 +230,92 @@ class TestDSLOperation:
                                                                                                        raw='1')),
                                                                                                value_false=Integer(
                                                                                                    raw='1')))])),
-        ('a := (true) ? x + 1 : pi;', Operation(stats=[OperationalAssignment(name='a', expr=ConditionalOp(
+        ('a := (true) ? x + 1 : pi;', Operation(stats=[OperationalDeprecatedAssignment(name='a', expr=ConditionalOp(
             cond=Boolean(raw='true'), value_true=BinaryOp(expr1=Name(name='x'), op='+', expr2=Integer(raw='1')),
             value_false=Constant(raw='pi')))])),
-        ('a := (true) ? x + 1 : x + 1;', Operation(stats=[OperationalAssignment(name='a', expr=ConditionalOp(
+        ('a := (true) ? x + 1 : x + 1;', Operation(stats=[OperationalDeprecatedAssignment(name='a', expr=ConditionalOp(
             cond=Boolean(raw='true'), value_true=BinaryOp(expr1=Name(name='x'), op='+', expr2=Integer(raw='1')),
             value_false=BinaryOp(expr1=Name(name='x'), op='+', expr2=Integer(raw='1'))))])),
-        ('a := (False) ? 1 : 1;', Operation(stats=[OperationalAssignment(name='a',
-                                                                         expr=ConditionalOp(cond=Boolean(raw='false'),
+        ('a := (False) ? 1 : 1;', Operation(stats=[OperationalDeprecatedAssignment(name='a',
+                                                                                   expr=ConditionalOp(cond=Boolean(raw='false'),
                                                                                             value_true=Integer(raw='1'),
                                                                                             value_false=Integer(
                                                                                                 raw='1')))])),
-        ('a := (False) ? 1 : pi;', Operation(stats=[OperationalAssignment(name='a',
-                                                                          expr=ConditionalOp(cond=Boolean(raw='false'),
+        ('a := (False) ? 1 : pi;', Operation(stats=[OperationalDeprecatedAssignment(name='a',
+                                                                                    expr=ConditionalOp(cond=Boolean(raw='false'),
                                                                                              value_true=Integer(
                                                                                                  raw='1'),
                                                                                              value_false=Constant(
                                                                                                  raw='pi')))])),
-        ('a := (False) ? 1 : x + 1;', Operation(stats=[OperationalAssignment(name='a', expr=ConditionalOp(
+        ('a := (False) ? 1 : x + 1;', Operation(stats=[OperationalDeprecatedAssignment(name='a', expr=ConditionalOp(
             cond=Boolean(raw='false'), value_true=Integer(raw='1'),
             value_false=BinaryOp(expr1=Name(name='x'), op='+', expr2=Integer(raw='1'))))])),
-        ('a := (False) ? pi : 1;', Operation(stats=[OperationalAssignment(name='a',
-                                                                          expr=ConditionalOp(cond=Boolean(raw='false'),
+        ('a := (False) ? pi : 1;', Operation(stats=[OperationalDeprecatedAssignment(name='a',
+                                                                                    expr=ConditionalOp(cond=Boolean(raw='false'),
                                                                                              value_true=Constant(
                                                                                                  raw='pi'),
                                                                                              value_false=Integer(
                                                                                                  raw='1')))])),
-        ('a := (False) ? pi : pi;', Operation(stats=[OperationalAssignment(name='a',
-                                                                           expr=ConditionalOp(cond=Boolean(raw='false'),
+        ('a := (False) ? pi : pi;', Operation(stats=[OperationalDeprecatedAssignment(name='a',
+                                                                                     expr=ConditionalOp(cond=Boolean(raw='false'),
                                                                                               value_true=Constant(
                                                                                                   raw='pi'),
                                                                                               value_false=Constant(
                                                                                                   raw='pi')))])),
-        ('a := (False) ? pi : x + 1;', Operation(stats=[OperationalAssignment(name='a', expr=ConditionalOp(
+        ('a := (False) ? pi : x + 1;', Operation(stats=[OperationalDeprecatedAssignment(name='a', expr=ConditionalOp(
             cond=Boolean(raw='false'), value_true=Constant(raw='pi'),
             value_false=BinaryOp(expr1=Name(name='x'), op='+', expr2=Integer(raw='1'))))])),
-        ('a := (False) ? x + 1 : 1;', Operation(stats=[OperationalAssignment(name='a', expr=ConditionalOp(
+        ('a := (False) ? x + 1 : 1;', Operation(stats=[OperationalDeprecatedAssignment(name='a', expr=ConditionalOp(
             cond=Boolean(raw='false'), value_true=BinaryOp(expr1=Name(name='x'), op='+', expr2=Integer(raw='1')),
             value_false=Integer(raw='1')))])),
-        ('a := (False) ? x + 1 : pi;', Operation(stats=[OperationalAssignment(name='a', expr=ConditionalOp(
+        ('a := (False) ? x + 1 : pi;', Operation(stats=[OperationalDeprecatedAssignment(name='a', expr=ConditionalOp(
             cond=Boolean(raw='false'), value_true=BinaryOp(expr1=Name(name='x'), op='+', expr2=Integer(raw='1')),
             value_false=Constant(raw='pi')))])),
-        ('a := (False) ? x + 1 : x + 1;', Operation(stats=[OperationalAssignment(name='a', expr=ConditionalOp(
+        ('a := (False) ? x + 1 : x + 1;', Operation(stats=[OperationalDeprecatedAssignment(name='a', expr=ConditionalOp(
             cond=Boolean(raw='false'), value_true=BinaryOp(expr1=Name(name='x'), op='+', expr2=Integer(raw='1')),
             value_false=BinaryOp(expr1=Name(name='x'), op='+', expr2=Integer(raw='1'))))])),
-        ('a := (x >=0) ? 1 : 1;', Operation(stats=[OperationalAssignment(name='a', expr=ConditionalOp(
+        ('a := (x >=0) ? 1 : 1;', Operation(stats=[OperationalDeprecatedAssignment(name='a', expr=ConditionalOp(
             cond=BinaryOp(expr1=Name(name='x'), op='>=', expr2=Integer(raw='0')), value_true=Integer(raw='1'),
             value_false=Integer(raw='1')))])),
-        ('a := (x >=0) ? 1 : pi;', Operation(stats=[OperationalAssignment(name='a', expr=ConditionalOp(
+        ('a := (x >=0) ? 1 : pi;', Operation(stats=[OperationalDeprecatedAssignment(name='a', expr=ConditionalOp(
             cond=BinaryOp(expr1=Name(name='x'), op='>=', expr2=Integer(raw='0')), value_true=Integer(raw='1'),
             value_false=Constant(raw='pi')))])),
-        ('a := (x >=0) ? 1 : x + 1;', Operation(stats=[OperationalAssignment(name='a', expr=ConditionalOp(
+        ('a := (x >=0) ? 1 : x + 1;', Operation(stats=[OperationalDeprecatedAssignment(name='a', expr=ConditionalOp(
             cond=BinaryOp(expr1=Name(name='x'), op='>=', expr2=Integer(raw='0')), value_true=Integer(raw='1'),
             value_false=BinaryOp(expr1=Name(name='x'), op='+', expr2=Integer(raw='1'))))])),
-        ('a := (x >=0) ? pi : 1;', Operation(stats=[OperationalAssignment(name='a', expr=ConditionalOp(
+        ('a := (x >=0) ? pi : 1;', Operation(stats=[OperationalDeprecatedAssignment(name='a', expr=ConditionalOp(
             cond=BinaryOp(expr1=Name(name='x'), op='>=', expr2=Integer(raw='0')), value_true=Constant(raw='pi'),
             value_false=Integer(raw='1')))])),
-        ('a := (x >=0) ? pi : pi;', Operation(stats=[OperationalAssignment(name='a', expr=ConditionalOp(
+        ('a := (x >=0) ? pi : pi;', Operation(stats=[OperationalDeprecatedAssignment(name='a', expr=ConditionalOp(
             cond=BinaryOp(expr1=Name(name='x'), op='>=', expr2=Integer(raw='0')), value_true=Constant(raw='pi'),
             value_false=Constant(raw='pi')))])),
-        ('a := (x >=0) ? pi : x + 1;', Operation(stats=[OperationalAssignment(name='a', expr=ConditionalOp(
+        ('a := (x >=0) ? pi : x + 1;', Operation(stats=[OperationalDeprecatedAssignment(name='a', expr=ConditionalOp(
             cond=BinaryOp(expr1=Name(name='x'), op='>=', expr2=Integer(raw='0')), value_true=Constant(raw='pi'),
             value_false=BinaryOp(expr1=Name(name='x'), op='+', expr2=Integer(raw='1'))))])),
-        ('a := (x >=0) ? x + 1 : 1;', Operation(stats=[OperationalAssignment(name='a', expr=ConditionalOp(
+        ('a := (x >=0) ? x + 1 : 1;', Operation(stats=[OperationalDeprecatedAssignment(name='a', expr=ConditionalOp(
             cond=BinaryOp(expr1=Name(name='x'), op='>=', expr2=Integer(raw='0')),
             value_true=BinaryOp(expr1=Name(name='x'), op='+', expr2=Integer(raw='1')),
             value_false=Integer(raw='1')))])),
-        ('a := (x >=0) ? x + 1 : pi;', Operation(stats=[OperationalAssignment(name='a', expr=ConditionalOp(
+        ('a := (x >=0) ? x + 1 : pi;', Operation(stats=[OperationalDeprecatedAssignment(name='a', expr=ConditionalOp(
             cond=BinaryOp(expr1=Name(name='x'), op='>=', expr2=Integer(raw='0')),
             value_true=BinaryOp(expr1=Name(name='x'), op='+', expr2=Integer(raw='1')),
             value_false=Constant(raw='pi')))])),
-        ('a := (x >=0) ? x + 1 : x + 1;', Operation(stats=[OperationalAssignment(name='a', expr=ConditionalOp(
+        ('a := (x >=0) ? x + 1 : x + 1;', Operation(stats=[OperationalDeprecatedAssignment(name='a', expr=ConditionalOp(
             cond=BinaryOp(expr1=Name(name='x'), op='>=', expr2=Integer(raw='0')),
             value_true=BinaryOp(expr1=Name(name='x'), op='+', expr2=Integer(raw='1')),
             value_false=BinaryOp(expr1=Name(name='x'), op='+', expr2=Integer(raw='1'))))])),
-        ('a := (true) ? 1 : 1;', Operation(stats=[OperationalAssignment(name='a',
-                                                                        expr=ConditionalOp(cond=Boolean(raw='true'),
+        ('a := (true) ? 1 : 1;', Operation(stats=[OperationalDeprecatedAssignment(name='a',
+                                                                                  expr=ConditionalOp(cond=Boolean(raw='true'),
                                                                                            value_true=Integer(raw='1'),
                                                                                            value_false=Integer(
                                                                                                raw='1')))])),
-        ('a := (true) ? 1 : pi;', Operation(stats=[OperationalAssignment(name='a',
-                                                                         expr=ConditionalOp(cond=Boolean(raw='true'),
+        ('a := (true) ? 1 : pi;', Operation(stats=[OperationalDeprecatedAssignment(name='a',
+                                                                                   expr=ConditionalOp(cond=Boolean(raw='true'),
                                                                                             value_true=Integer(raw='1'),
                                                                                             value_false=Constant(
                                                                                                 raw='pi')))])),
-        ('a := (true) ? 1 : x + 1;', Operation(stats=[OperationalAssignment(name='a',
-                                                                            expr=ConditionalOp(cond=Boolean(raw='true'),
+        ('a := (true) ? 1 : x + 1;', Operation(stats=[OperationalDeprecatedAssignment(name='a',
+                                                                                      expr=ConditionalOp(cond=Boolean(raw='true'),
                                                                                                value_true=Integer(
                                                                                                    raw='1'),
                                                                                                value_false=BinaryOp(
@@ -323,23 +323,23 @@ class TestDSLOperation:
                                                                                                    op='+',
                                                                                                    expr2=Integer(
                                                                                                        raw='1'))))])),
-        ('a := (true) ? pi : 1;', Operation(stats=[OperationalAssignment(name='a',
-                                                                         expr=ConditionalOp(cond=Boolean(raw='true'),
+        ('a := (true) ? pi : 1;', Operation(stats=[OperationalDeprecatedAssignment(name='a',
+                                                                                   expr=ConditionalOp(cond=Boolean(raw='true'),
                                                                                             value_true=Constant(
                                                                                                 raw='pi'),
                                                                                             value_false=Integer(
                                                                                                 raw='1')))])),
-        ('a := (true) ? pi : pi;', Operation(stats=[OperationalAssignment(name='a',
-                                                                          expr=ConditionalOp(cond=Boolean(raw='true'),
+        ('a := (true) ? pi : pi;', Operation(stats=[OperationalDeprecatedAssignment(name='a',
+                                                                                    expr=ConditionalOp(cond=Boolean(raw='true'),
                                                                                              value_true=Constant(
                                                                                                  raw='pi'),
                                                                                              value_false=Constant(
                                                                                                  raw='pi')))])),
-        ('a := (true) ? pi : x + 1;', Operation(stats=[OperationalAssignment(name='a', expr=ConditionalOp(
+        ('a := (true) ? pi : x + 1;', Operation(stats=[OperationalDeprecatedAssignment(name='a', expr=ConditionalOp(
             cond=Boolean(raw='true'), value_true=Constant(raw='pi'),
             value_false=BinaryOp(expr1=Name(name='x'), op='+', expr2=Integer(raw='1'))))])),
-        ('a := (true) ? x + 1 : 1;', Operation(stats=[OperationalAssignment(name='a',
-                                                                            expr=ConditionalOp(cond=Boolean(raw='true'),
+        ('a := (true) ? x + 1 : 1;', Operation(stats=[OperationalDeprecatedAssignment(name='a',
+                                                                                      expr=ConditionalOp(cond=Boolean(raw='true'),
                                                                                                value_true=BinaryOp(
                                                                                                    expr1=Name(name='x'),
                                                                                                    op='+',
@@ -347,77 +347,77 @@ class TestDSLOperation:
                                                                                                        raw='1')),
                                                                                                value_false=Integer(
                                                                                                    raw='1')))])),
-        ('a := (true) ? x + 1 : pi;', Operation(stats=[OperationalAssignment(name='a', expr=ConditionalOp(
+        ('a := (true) ? x + 1 : pi;', Operation(stats=[OperationalDeprecatedAssignment(name='a', expr=ConditionalOp(
             cond=Boolean(raw='true'), value_true=BinaryOp(expr1=Name(name='x'), op='+', expr2=Integer(raw='1')),
             value_false=Constant(raw='pi')))])),
-        ('a := (true) ? x + 1 : x + 1;', Operation(stats=[OperationalAssignment(name='a', expr=ConditionalOp(
+        ('a := (true) ? x + 1 : x + 1;', Operation(stats=[OperationalDeprecatedAssignment(name='a', expr=ConditionalOp(
             cond=Boolean(raw='true'), value_true=BinaryOp(expr1=Name(name='x'), op='+', expr2=Integer(raw='1')),
             value_false=BinaryOp(expr1=Name(name='x'), op='+', expr2=Integer(raw='1'))))])),
-        ('a := (False) ? 1 : 1;', Operation(stats=[OperationalAssignment(name='a',
-                                                                         expr=ConditionalOp(cond=Boolean(raw='false'),
+        ('a := (False) ? 1 : 1;', Operation(stats=[OperationalDeprecatedAssignment(name='a',
+                                                                                   expr=ConditionalOp(cond=Boolean(raw='false'),
                                                                                             value_true=Integer(raw='1'),
                                                                                             value_false=Integer(
                                                                                                 raw='1')))])),
-        ('a := (False) ? 1 : pi;', Operation(stats=[OperationalAssignment(name='a',
-                                                                          expr=ConditionalOp(cond=Boolean(raw='false'),
+        ('a := (False) ? 1 : pi;', Operation(stats=[OperationalDeprecatedAssignment(name='a',
+                                                                                    expr=ConditionalOp(cond=Boolean(raw='false'),
                                                                                              value_true=Integer(
                                                                                                  raw='1'),
                                                                                              value_false=Constant(
                                                                                                  raw='pi')))])),
-        ('a := (False) ? 1 : x + 1;', Operation(stats=[OperationalAssignment(name='a', expr=ConditionalOp(
+        ('a := (False) ? 1 : x + 1;', Operation(stats=[OperationalDeprecatedAssignment(name='a', expr=ConditionalOp(
             cond=Boolean(raw='false'), value_true=Integer(raw='1'),
             value_false=BinaryOp(expr1=Name(name='x'), op='+', expr2=Integer(raw='1'))))])),
-        ('a := (False) ? pi : 1;', Operation(stats=[OperationalAssignment(name='a',
-                                                                          expr=ConditionalOp(cond=Boolean(raw='false'),
+        ('a := (False) ? pi : 1;', Operation(stats=[OperationalDeprecatedAssignment(name='a',
+                                                                                    expr=ConditionalOp(cond=Boolean(raw='false'),
                                                                                              value_true=Constant(
                                                                                                  raw='pi'),
                                                                                              value_false=Integer(
                                                                                                  raw='1')))])),
-        ('a := (False) ? pi : pi;', Operation(stats=[OperationalAssignment(name='a',
-                                                                           expr=ConditionalOp(cond=Boolean(raw='false'),
+        ('a := (False) ? pi : pi;', Operation(stats=[OperationalDeprecatedAssignment(name='a',
+                                                                                     expr=ConditionalOp(cond=Boolean(raw='false'),
                                                                                               value_true=Constant(
                                                                                                   raw='pi'),
                                                                                               value_false=Constant(
                                                                                                   raw='pi')))])),
-        ('a := (False) ? pi : x + 1;', Operation(stats=[OperationalAssignment(name='a', expr=ConditionalOp(
+        ('a := (False) ? pi : x + 1;', Operation(stats=[OperationalDeprecatedAssignment(name='a', expr=ConditionalOp(
             cond=Boolean(raw='false'), value_true=Constant(raw='pi'),
             value_false=BinaryOp(expr1=Name(name='x'), op='+', expr2=Integer(raw='1'))))])),
-        ('a := (False) ? x + 1 : 1;', Operation(stats=[OperationalAssignment(name='a', expr=ConditionalOp(
+        ('a := (False) ? x + 1 : 1;', Operation(stats=[OperationalDeprecatedAssignment(name='a', expr=ConditionalOp(
             cond=Boolean(raw='false'), value_true=BinaryOp(expr1=Name(name='x'), op='+', expr2=Integer(raw='1')),
             value_false=Integer(raw='1')))])),
-        ('a := (False) ? x + 1 : pi;', Operation(stats=[OperationalAssignment(name='a', expr=ConditionalOp(
+        ('a := (False) ? x + 1 : pi;', Operation(stats=[OperationalDeprecatedAssignment(name='a', expr=ConditionalOp(
             cond=Boolean(raw='false'), value_true=BinaryOp(expr1=Name(name='x'), op='+', expr2=Integer(raw='1')),
             value_false=Constant(raw='pi')))])),
-        ('a := (False) ? x + 1 : x + 1;', Operation(stats=[OperationalAssignment(name='a', expr=ConditionalOp(
+        ('a := (False) ? x + 1 : x + 1;', Operation(stats=[OperationalDeprecatedAssignment(name='a', expr=ConditionalOp(
             cond=Boolean(raw='false'), value_true=BinaryOp(expr1=Name(name='x'), op='+', expr2=Integer(raw='1')),
             value_false=BinaryOp(expr1=Name(name='x'), op='+', expr2=Integer(raw='1'))))])),
-        ('a := (x >=0) ? 1 : 1;', Operation(stats=[OperationalAssignment(name='a', expr=ConditionalOp(
+        ('a := (x >=0) ? 1 : 1;', Operation(stats=[OperationalDeprecatedAssignment(name='a', expr=ConditionalOp(
             cond=BinaryOp(expr1=Name(name='x'), op='>=', expr2=Integer(raw='0')), value_true=Integer(raw='1'),
             value_false=Integer(raw='1')))])),
-        ('a := (x >=0) ? 1 : pi;', Operation(stats=[OperationalAssignment(name='a', expr=ConditionalOp(
+        ('a := (x >=0) ? 1 : pi;', Operation(stats=[OperationalDeprecatedAssignment(name='a', expr=ConditionalOp(
             cond=BinaryOp(expr1=Name(name='x'), op='>=', expr2=Integer(raw='0')), value_true=Integer(raw='1'),
             value_false=Constant(raw='pi')))])),
-        ('a := (x >=0) ? 1 : x + 1;', Operation(stats=[OperationalAssignment(name='a', expr=ConditionalOp(
+        ('a := (x >=0) ? 1 : x + 1;', Operation(stats=[OperationalDeprecatedAssignment(name='a', expr=ConditionalOp(
             cond=BinaryOp(expr1=Name(name='x'), op='>=', expr2=Integer(raw='0')), value_true=Integer(raw='1'),
             value_false=BinaryOp(expr1=Name(name='x'), op='+', expr2=Integer(raw='1'))))])),
-        ('a := (x >=0) ? pi : 1;', Operation(stats=[OperationalAssignment(name='a', expr=ConditionalOp(
+        ('a := (x >=0) ? pi : 1;', Operation(stats=[OperationalDeprecatedAssignment(name='a', expr=ConditionalOp(
             cond=BinaryOp(expr1=Name(name='x'), op='>=', expr2=Integer(raw='0')), value_true=Constant(raw='pi'),
             value_false=Integer(raw='1')))])),
-        ('a := (x >=0) ? pi : pi;', Operation(stats=[OperationalAssignment(name='a', expr=ConditionalOp(
+        ('a := (x >=0) ? pi : pi;', Operation(stats=[OperationalDeprecatedAssignment(name='a', expr=ConditionalOp(
             cond=BinaryOp(expr1=Name(name='x'), op='>=', expr2=Integer(raw='0')), value_true=Constant(raw='pi'),
             value_false=Constant(raw='pi')))])),
-        ('a := (x >=0) ? pi : x + 1;', Operation(stats=[OperationalAssignment(name='a', expr=ConditionalOp(
+        ('a := (x >=0) ? pi : x + 1;', Operation(stats=[OperationalDeprecatedAssignment(name='a', expr=ConditionalOp(
             cond=BinaryOp(expr1=Name(name='x'), op='>=', expr2=Integer(raw='0')), value_true=Constant(raw='pi'),
             value_false=BinaryOp(expr1=Name(name='x'), op='+', expr2=Integer(raw='1'))))])),
-        ('a := (x >=0) ? x + 1 : 1;', Operation(stats=[OperationalAssignment(name='a', expr=ConditionalOp(
+        ('a := (x >=0) ? x + 1 : 1;', Operation(stats=[OperationalDeprecatedAssignment(name='a', expr=ConditionalOp(
             cond=BinaryOp(expr1=Name(name='x'), op='>=', expr2=Integer(raw='0')),
             value_true=BinaryOp(expr1=Name(name='x'), op='+', expr2=Integer(raw='1')),
             value_false=Integer(raw='1')))])),
-        ('a := (x >=0) ? x + 1 : pi;', Operation(stats=[OperationalAssignment(name='a', expr=ConditionalOp(
+        ('a := (x >=0) ? x + 1 : pi;', Operation(stats=[OperationalDeprecatedAssignment(name='a', expr=ConditionalOp(
             cond=BinaryOp(expr1=Name(name='x'), op='>=', expr2=Integer(raw='0')),
             value_true=BinaryOp(expr1=Name(name='x'), op='+', expr2=Integer(raw='1')),
             value_false=Constant(raw='pi')))])),
-        ('a := (x >=0) ? x + 1 : x + 1;', Operation(stats=[OperationalAssignment(name='a', expr=ConditionalOp(
+        ('a := (x >=0) ? x + 1 : x + 1;', Operation(stats=[OperationalDeprecatedAssignment(name='a', expr=ConditionalOp(
             cond=BinaryOp(expr1=Name(name='x'), op='>=', expr2=Integer(raw='0')),
             value_true=BinaryOp(expr1=Name(name='x'), op='+', expr2=Integer(raw='1')),
             value_false=BinaryOp(expr1=Name(name='x'), op='+', expr2=Integer(raw='1'))))])),

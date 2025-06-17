@@ -29,7 +29,7 @@ __all__ = [
     'ConstantDefinition',
     'InitialAssignment',
     'DefAssignment',
-    'OperationalAssignment',
+    'OperationalDeprecatedAssignment',
     'Preamble',
     'Operation',
     'Condition',
@@ -233,7 +233,7 @@ class DefAssignment(Statement):
 
 
 @dataclass
-class OperationalAssignment(Statement):
+class OperationalDeprecatedAssignment(Statement):
     name: str
     expr: Expr
 
@@ -259,7 +259,7 @@ class Preamble(ASTNode):
 
 @dataclass
 class Operation(ASTNode):
-    stats: List[OperationalAssignment]
+    stats: List[OperationalDeprecatedAssignment]
 
     def __str__(self):
         return os.linesep.join(map(str, self.stats))

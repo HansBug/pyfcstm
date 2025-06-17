@@ -328,8 +328,9 @@ class StateDefinition(ASTNode):
     exits: List['ExitStatement']
 
     def __str__(self):
-        with io.StringIO() as sf:
-            if not self.substates and not self.transitions:
+        with (io.StringIO() as sf):
+            if not self.substates and not self.transitions and \
+                    not self.enters and not self.durings and not self.exits:
                 print(f'state {self.name};', file=sf, end='')
             else:
                 print(f'state {self.name} {{', file=sf)

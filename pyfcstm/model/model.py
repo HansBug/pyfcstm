@@ -1,4 +1,5 @@
 import io
+import json
 from dataclasses import dataclass
 from textwrap import indent
 from typing import Optional, Union, List, Dict, Tuple
@@ -161,6 +162,18 @@ class State(AstExportable, PlantUMLExportable):
                         trans_text = tf.getvalue()
                     print(indent(trans_text, prefix='    '), file=sf)
                 print(f'}}', file=sf, end='')
+
+            if self.on_enters or self.on_durings or self.on_exits:
+                print('', file=sf)
+                with io.StringIO() as tf:
+                    for enter_item in self.on_enters:
+                        print(enter_item.to_ast_node(), file=tf)
+                    for during_item in self.on_durings:
+                        print(during_item.to_ast_node(), file=tf)
+                    for exit_item in self.on_exits:
+                        print(exit_item.to_ast_node(), file=tf)
+                    text = json.dumps(tf.getvalue().rstrip()).strip("\"")
+                    print(f'{self.name} : {text}', file=sf, end='')
 
             return sf.getvalue()
 

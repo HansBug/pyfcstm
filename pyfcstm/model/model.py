@@ -48,6 +48,10 @@ class OnStage(AstExportable):
     doc: Optional[str]
     operations: List[Operation]
 
+    @property
+    def is_abstract(self) -> bool:
+        return self.name is not None or self.doc is not None
+
     def to_ast_node(self) -> Union[dsl_nodes.EnterStatement, dsl_nodes.DuringStatement, dsl_nodes.ExitStatement]:
         if self.stage == 'enter':
             if self.name or self.doc is not None:
@@ -105,6 +109,30 @@ class State(AstExportable, PlantUMLExportable):
     @property
     def path_text(self):
         return '.'.join(self.path)
+
+    @property
+    def abstract_on_enters(self) -> List[OnStage]:
+        return [item for item in self.on_enters if item.is_abstract]
+
+    @property
+    def non_abstract_on_enters(self) -> List[OnStage]:
+        return [item for item in self.on_enters if not item.is_abstract]
+
+    @property
+    def abstract_on_durings(self) -> List[OnStage]:
+        return [item for item in self.on_durings if item.is_abstract]
+
+    @property
+    def non_abstract_on_durings(self) -> List[OnStage]:
+        return [item for item in self.on_durings if not item.is_abstract]
+
+    @property
+    def abstract_on_exits(self) -> List[OnStage]:
+        return [item for item in self.on_exits if item.is_abstract]
+
+    @property
+    def non_abstract_on_exits(self) -> List[OnStage]:
+        return [item for item in self.on_exits if not item.is_abstract]
 
     def to_ast_node(self) -> dsl_nodes.StateDefinition:
         return dsl_nodes.StateDefinition(

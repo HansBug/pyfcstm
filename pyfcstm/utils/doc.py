@@ -1,3 +1,12 @@
+"""
+Provides functionality for formatting multiline comments in code.
+
+This module contains utilities for cleaning and formatting multiline comments
+that have been parsed from source code, particularly those extracted by ANTLR4.
+It handles removing comment markers, aligning indentation, and cleaning up
+whitespace to produce readable documentation text.
+"""
+
 import os
 import re
 import textwrap
@@ -8,11 +17,24 @@ def format_multiline_comment(raw_doc):
     Format multiline comments parsed by ANTLR4 by removing comment markers
     and aligning indentation.
 
-    Args:
-        raw_doc: Raw comment text including /* */ markers
+    This function takes a raw multiline comment (including /* */ markers) and
+    processes it to produce clean, properly formatted documentation text.
+    It removes comment delimiters, trims unnecessary whitespace, and
+    normalizes indentation.
 
-    Returns:
-        Formatted comment text with markers removed and proper indentation
+    :param raw_doc: Raw comment text including /* */ markers
+    :type raw_doc: str
+
+    :return: Formatted comment text with markers removed and proper indentation
+    :rtype: str
+
+    Example::
+
+        >>> raw = \"\"\"/* This is a
+        ...  *  multiline comment
+        ...  */\"\"\"
+        >>> format_multiline_comment(raw)
+        'This is a\\nmultiline comment'
     """
     if re.fullmatch(r'\s*/\*+/\s*', raw_doc.strip()):
         return ""

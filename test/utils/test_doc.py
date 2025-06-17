@@ -2,7 +2,7 @@ from unittest.mock import patch
 
 import pytest
 
-from pyfcstm.utils.doc import format_multiline_comment
+from pyfcstm.utils import format_multiline_comment
 
 
 @pytest.fixture

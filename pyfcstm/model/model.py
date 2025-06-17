@@ -111,6 +111,11 @@ class State(AstExportable, PlantUMLExportable):
 
             return sf.getvalue()
 
+    def walk_states(self):
+        yield self
+        for _, substate in self.substates.items():
+            yield from substate.walk_states()
+
 
 @dataclass
 class VarDefine(AstExportable):
@@ -156,6 +161,9 @@ class StateMachine(AstExportable, PlantUMLExportable):
             print(f'{self.root_state.name} --> [*]', file=sf)
             print('@enduml', file=sf, end='')
             return sf.getvalue()
+
+    def walk_states(self):
+        yield from self.root_state.walk_states()
 
 
 def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> StateMachine:

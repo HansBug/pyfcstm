@@ -94,7 +94,7 @@ class State(AstExportable, PlantUMLExportable):
                         if trans.event is not None:
                             print(f' : {".".join(list(trans.event.path[len(self.path):]))}', file=tf, end='')
                         elif trans.guard is not None:
-                            print(f' : if [{trans.guard.to_ast_node()}]', file=tf, end='')
+                            print(f' : {trans.guard.to_ast_node()}', file=tf, end='')
 
                         if len(trans.post_operations) > 0:
                             print('', file=tf)

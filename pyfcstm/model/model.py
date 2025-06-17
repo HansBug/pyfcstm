@@ -99,7 +99,7 @@ class State(AstExportable, PlantUMLExportable):
                         if len(trans.post_operations) > 0:
                             print('', file=tf)
                             print('note on link', file=tf)
-                            print('post-operations {', file=tf)
+                            print('effect {', file=tf)
                             for operation in trans.post_operations:
                                 print(f'    {operation.to_ast_node()}', file=tf)
                             print('}', file=tf)

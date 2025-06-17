@@ -294,7 +294,7 @@ class TransitionDefinition(ASTNode):
                 print(f' : if [{self.condition_expr}]', file=sf, end='')
 
             if len(self.post_operations) > 0:
-                print(' post {', file=sf)
+                print(' effect {', file=sf)
                 for operation in self.post_operations:
                     print(f'    {operation}', file=sf)
                 print('}', file=sf, end='')

@@ -205,7 +205,7 @@ class GrammarParser(Parser):
         "'if'",
         "'['",
         "']'",
-        "'post'",
+        "'effect'",
         "':='",
         "'('",
         "')'",

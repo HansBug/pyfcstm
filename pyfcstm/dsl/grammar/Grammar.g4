@@ -16,9 +16,9 @@ state_definition
     ;
 
 transition_definition
-    : '[*]' '->' to_state=ID (|':' chain_id|':' 'if' '[' cond_expression ']') (';'|'post' '{' operational_statement* '}')          # entryTransitionDefinition
-    | from_state=ID '->' to_state=ID (|':' chain_id|':' 'if' '[' cond_expression ']') (';'|'post' '{' operational_statement* '}')  # normalTransitionDefinition
-    | from_state=ID '->' '[*]' (|':' chain_id|':' 'if' '[' cond_expression ']') (';'|'post' '{' operational_statement* '}')        # exitTransitionDefinition
+    : '[*]' '->' to_state=ID (|':' chain_id|':' 'if' '[' cond_expression ']') (';'|'effect' '{' operational_statement* '}')          # entryTransitionDefinition
+    | from_state=ID '->' to_state=ID (|':' chain_id|':' 'if' '[' cond_expression ']') (';'|'effect' '{' operational_statement* '}')  # normalTransitionDefinition
+    | from_state=ID '->' '[*]' (|':' chain_id|':' 'if' '[' cond_expression ']') (';'|'effect' '{' operational_statement* '}')        # exitTransitionDefinition
     ;
 
 operation_assignment: ID '=' num_expression ';';

@@ -100,7 +100,7 @@ class TestDSLTransition:
                 """
                 def int count = 0;
                 state Counter {
-                    [*] -> Counting post {
+                    [*] -> Counting effect {
                         count = count + 1;
                     }
                     Counting -> Done: if [count > 10];
@@ -122,7 +122,7 @@ class TestDSLTransition:
                                                                 post_operations=[]),
                                            TransitionDefinition(from_state='Done', to_state=EXIT_STATE, event_id=None,
                                                                 condition_expr=None, post_operations=[])]))
-        ),  # State machine with post operation in entry transition
+        ),  # State machine with effect operation in entry transition
         (
                 """
                 def float temperature = 25.0;
@@ -216,11 +216,11 @@ class TestDSLTransition:
                 """
                 def int counter = 0;
                 state Process {
-                    [*] -> Start post {
+                    [*] -> Start effect {
                         counter = counter + 1;
                     }
                     Start -> Middle: chain_id;
-                    Middle -> End: if [counter > 5] post {
+                    Middle -> End: if [counter > 5] effect {
                         counter = counter * 2;
                     }
                     End -> [*];
@@ -249,7 +249,7 @@ class TestDSLTransition:
                                                                                                       raw='2')))]),
                                            TransitionDefinition(from_state='End', to_state=EXIT_STATE, event_id=None,
                                                                 condition_expr=None, post_operations=[])]))
-        ),  # State machine with chain_id transition and post operations
+        ),  # State machine with chain_id transition and effect operations
         (
                 """
                 def float x = 1.0;
@@ -306,13 +306,13 @@ class TestDSLTransition:
                 """
                 def int status = 0;
                 state StatusHandler {
-                    [*] -> Checking post {
+                    [*] -> Checking effect {
                         status = status + 1;
                     }
-                    Checking -> Success: if [status > 0] post {
+                    Checking -> Success: if [status > 0] effect {
                         status = 100;
                     }
-                    Checking -> Failure: if [status <= 0] post {
+                    Checking -> Failure: if [status <= 0] effect {
                         status = -1;
                     }
                     Success -> [*];
@@ -350,7 +350,7 @@ class TestDSLTransition:
                                            TransitionDefinition(from_state='Failure', to_state=EXIT_STATE,
                                                                 event_id=None, condition_expr=None,
                                                                 post_operations=[])]))
-        ),  # State machine with multiple post operations in different transitions
+        ),  # State machine with multiple effect operations in different transitions
         (
                 """
                 def int value = 0x1A;
@@ -526,7 +526,7 @@ class TestDSLTransition:
                                                                 condition_expr=None, post_operations=[]),
                                            TransitionDefinition(from_state='End', to_state=EXIT_STATE, event_id=None,
                                                                 condition_expr=None, post_operations=[])]))
-        ),  # State machine with transitions without conditions or post operations
+        ),  # State machine with transitions without conditions or effect operations
         (
                 """
                 def int x = 5;
@@ -671,15 +671,15 @@ class TestDSLTransition:
                 """
                 def int count = 0;
                 state Counter {
-                    [*] -> Counting post {
+                    [*] -> Counting effect {
                         count = count + 1;
                     }
                     Counting -> Done: if [count > 10];
                     Done -> [*];
                 }
                 """,
-                'def int count = 0;\nstate Counter {\n    [*] -> Counting post {\n        count = count + 1;\n    }\n    Counting -> Done : if [count > 10];\n    Done -> [*];\n}'
-        ),  # State machine with post operation in entry transition
+                'def int count = 0;\nstate Counter {\n    [*] -> Counting effect {\n        count = count + 1;\n    }\n    Counting -> Done : if [count > 10];\n    Done -> [*];\n}'
+        ),  # State machine with effect operation in entry transition
         (
                 """
                 def float temperature = 25.0;
@@ -716,18 +716,18 @@ class TestDSLTransition:
                 """
                 def int counter = 0;
                 state Process {
-                    [*] -> Start post {
+                    [*] -> Start effect {
                         counter = counter + 1;
                     }
                     Start -> Middle: chain_id;
-                    Middle -> End: if [counter > 5] post {
+                    Middle -> End: if [counter > 5] effect {
                         counter = counter * 2;
                     }
                     End -> [*];
                 }
                 """,
-                'def int counter = 0;\nstate Process {\n    [*] -> Start post {\n        counter = counter + 1;\n    }\n    Start -> Middle : chain_id;\n    Middle -> End : if [counter > 5] post {\n        counter = counter * 2;\n    }\n    End -> [*];\n}'
-        ),  # State machine with chain_id transition and post operations
+                'def int counter = 0;\nstate Process {\n    [*] -> Start effect {\n        counter = counter + 1;\n    }\n    Start -> Middle : chain_id;\n    Middle -> End : if [counter > 5] effect {\n        counter = counter * 2;\n    }\n    End -> [*];\n}'
+        ),  # State machine with chain_id transition and effect operations
         (
                 """
                 def float x = 1.0;
@@ -753,21 +753,21 @@ class TestDSLTransition:
                 """
                 def int status = 0;
                 state StatusHandler {
-                    [*] -> Checking post {
+                    [*] -> Checking effect {
                         status = status + 1;
                     }
-                    Checking -> Success: if [status > 0] post {
+                    Checking -> Success: if [status > 0] effect {
                         status = 100;
                     }
-                    Checking -> Failure: if [status <= 0] post {
+                    Checking -> Failure: if [status <= 0] effect {
                         status = -1;
                     }
                     Success -> [*];
                     Failure -> [*];
                 }
                 """,
-                'def int status = 0;\nstate StatusHandler {\n    [*] -> Checking post {\n        status = status + 1;\n    }\n    Checking -> Success : if [status > 0] post {\n        status = 100;\n    }\n    Checking -> Failure : if [status <= 0] post {\n        status = -1;\n    }\n    Success -> [*];\n    Failure -> [*];\n}'
-        ),  # State machine with multiple post operations in different transitions
+                'def int status = 0;\nstate StatusHandler {\n    [*] -> Checking effect {\n        status = status + 1;\n    }\n    Checking -> Success : if [status > 0] effect {\n        status = 100;\n    }\n    Checking -> Failure : if [status <= 0] effect {\n        status = -1;\n    }\n    Success -> [*];\n    Failure -> [*];\n}'
+        ),  # State machine with multiple effect operations in different transitions
         (
                 """
                 def int value = 0x1A;
@@ -851,7 +851,7 @@ class TestDSLTransition:
                 }
                 """,
                 'def int counter = 0;\nstate EmptyTransition {\n    [*] -> Start;\n    Start -> Middle;\n    Middle -> End;\n    End -> [*];\n}'
-        ),  # State machine with transitions without conditions or post operations
+        ),  # State machine with transitions without conditions or effect operations
         (
                 """
                 def int x = 5;
@@ -957,31 +957,31 @@ class TestDSLTransition:
         (
                 """
                 state Main {
-                    [*] -> SubState post {
+                    [*] -> SubState effect {
                         x = 5
                     }
                 }
                 """,
-        ),  # Missing semicolon in post operation assignment
+        ),  # Missing semicolon in effect operation assignment
         (
                 """
                 state Main {
-                    [*] -> SubState: if [x > 5] post
+                    [*] -> SubState: if [x > 5] effect
                 }
                 """,
-        ),  # Incomplete post block in transition definition
+        ),  # Incomplete effect block in transition definition
         (
                 """
                 state Main {
                     state SubState {
                         [*] -> NextState;
                     }
-                    SubState -> [*] post {
+                    SubState -> [*] effect {
                         := 5;
                     }
                 }
                 """,
-        ),  # Missing identifier in post operation assignment
+        ),  # Missing identifier in effect operation assignment
         (
                 """
                 def int x = "string";
@@ -1007,12 +1007,12 @@ class TestDSLTransition:
         (
                 """
                 state Main {
-                    [*] -> SubState: if [x > y] post {
+                    [*] -> SubState: if [x > y] effect {
                         x := ;
                     }
                 }
                 """,
-        ),  # Missing expression in post operation assignment
+        ),  # Missing expression in effect operation assignment
         (
                 """
                 def int x = 5;
@@ -1030,7 +1030,7 @@ class TestDSLTransition:
                     }
                 }
                 """,
-        ),  # Missing 'post' keyword before post operation block
+        ),  # Missing 'effect' keyword before effect operation block
         (
                 """
                 state Main {
@@ -1056,12 +1056,12 @@ class TestDSLTransition:
                 """
                 def int x = 5;
                 state Main {
-                    [*] -> SubState: if [x > 5] post {
+                    [*] -> SubState: if [x > 5] effect {
                         x := y + 1;
                     }
                 }
                 """,
-        ),  # Using assignment operator ':=' instead of '=' in post operation
+        ),  # Using assignment operator ':=' instead of '=' in effect operation
         # (
         #         """
         #         state Main {
@@ -1073,12 +1073,12 @@ class TestDSLTransition:
                 """
                 def int x = 5;
                 state Main {
-                    [*] -> SubState post {
+                    [*] -> SubState effect {
                         x := unknown_function(x);
                     }
                 }
                 """,
-        ),  # Using undefined function in post operation
+        ),  # Using undefined function in effect operation
     ])
     def test_negative_cases(self, input_text):
         with pytest.raises(GrammarParseError) as ei:

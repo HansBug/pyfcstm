@@ -39,6 +39,9 @@ __all__ = [
     'StateMachineDSLProgram',
     'INIT_STATE',
     'EXIT_STATE',
+    'EnterStatement',
+    'EnterOperations',
+    'EnterAbstractFunction',
 ]
 
 from typing import List, Union, Optional
@@ -349,4 +352,44 @@ class StateMachineDSLProgram(ASTNode):
             for definition in self.definitions:
                 print(definition, file=f)
             print(self.root_state, file=f, end='')
+            return f.getvalue()
+
+
+@dataclass
+class EnterStatement(ASTNode):
+    pass
+
+
+@dataclass
+class EnterOperations(EnterStatement):
+    operations: List[OperationAssignment]
+
+    def __str__(self):
+        with io.StringIO() as f:
+            print('enter {', file=f)
+            for operation in self.operations:
+                print(f'    {operation}', file=f)
+            print('}', file=f, end='')
+            return f.getvalue()
+
+
+@dataclass
+class EnterAbstractFunction(EnterStatement):
+    name: Optional[str]
+    doc: Optional[str]
+
+    def __str__(self):
+        with io.StringIO() as f:
+            if self.name:
+                print(f'enter abstract {self.name}', file=f, end='')
+            else:
+                print(f'enter abstract', file=f, end='')
+
+            if self.doc is not None:
+                print(' /*', file=f)
+                print(indent(self.doc, prefix='    '), file=f)
+                print('*/', file=f, end='')
+            else:
+                print(';', file=f, end='')
+
             return f.getvalue()

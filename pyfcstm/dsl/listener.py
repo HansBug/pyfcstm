@@ -1,8 +1,10 @@
 from .grammar import GrammarListener, GrammarParser
 from .node import Integer, Float, Constant, Boolean, Name, Paren, BinaryOp, UnaryOp, UFunc, ConstantDefinition, \
-    OperationalDeprecatedAssignment, InitialAssignment, Condition, Operation, Preamble, ConditionalOp, HexInt, DefAssignment, \
+    OperationalDeprecatedAssignment, InitialAssignment, Condition, Operation, Preamble, ConditionalOp, HexInt, \
+    DefAssignment, \
     ChainID, TransitionDefinition, INIT_STATE, EXIT_STATE, StateDefinition, OperationAssignment, \
-    StateMachineDSLProgram
+    StateMachineDSLProgram, EnterOperations, EnterAbstractFunction
+from ..utils import format_multiline_comment
 
 
 class GrammarParseListener(GrammarListener):
@@ -300,4 +302,17 @@ class GrammarParseListener(GrammarListener):
         self.nodes[ctx] = OperationAssignment(
             name=str(ctx.ID()),
             expr=self.nodes[ctx.num_expression()],
+        )
+
+    def exitEnterOperations(self, ctx: GrammarParser.EnterOperationsContext):
+        super().exitEnterOperations(ctx)
+        self.nodes[ctx] = EnterOperations(
+            operations=[self.nodes[item] for item in ctx.operational_statement() if item in self.nodes]
+        )
+
+    def exitEnterAbstractFunc(self, ctx: GrammarParser.EnterAbstractFuncContext):
+        super().exitEnterAbstractFunc(ctx)
+        self.nodes[ctx] = EnterAbstractFunction(
+            name=ctx.func_name.text if ctx.func_name else None,
+            doc=format_multiline_comment(ctx.raw_doc.text) if ctx.raw_doc else None,
         )

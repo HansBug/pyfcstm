@@ -21,6 +21,12 @@ transition_definition
     | from_state=ID '->' '[*]' (|'::' from_id=ID|':' chain_id|':' 'if' '[' cond_expression ']') (';'|'effect' '{' operational_statement* '}')        # exitTransitionDefinition
     ;
 
+enter_definition
+    : 'enter' '{' operational_statement* '}'                        # enterOperations
+    | 'enter' 'abstract' func_name=ID ';'                           # enterAbstractFunc
+    | 'enter' 'abstract' (func_name=ID)? raw_doc=MULTILINE_COMMENT  # enterAbstractFunc
+    ;
+
 operation_assignment: ID '=' num_expression ';';
 
 operational_statement
@@ -143,6 +149,7 @@ fragment HexDigit
     ;
 
 WS: [ \t\n\r]+ -> skip;
-BLOCK_COMMENT: '/*' .*? '*/' -> skip;
+MULTILINE_COMMENT : '/*' .*? '*/';
+// BLOCK_COMMENT: '/*' .*? '*/' -> skip;
 LINE_COMMENT: '//' ~[\r\n]* -> skip;
 PYTHON_COMMENT: '#' ~[\r\n]* -> skip;

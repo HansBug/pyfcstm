@@ -40,12 +40,62 @@ class Transition:
 
 
 @dataclass
+class OnStage(AstExportable):
+    stage: str
+    aspect: Optional[str]
+    name: Optional[str]
+    doc: Optional[str]
+    operations: List[Operation]
+
+    def to_ast_node(self) -> Union[dsl_nodes.EnterStatement, dsl_nodes.DuringStatement, dsl_nodes.ExitStatement]:
+        if self.stage == 'enter':
+            if self.name or self.doc is not None:
+                return dsl_nodes.EnterAbstractFunction(
+                    name=self.name,
+                    doc=self.doc,
+                )
+            else:
+                return dsl_nodes.EnterOperations(
+                    operations=[item.to_ast_node() for item in self.operations],
+                )
+
+        elif self.stage == 'during':
+            if self.name or self.doc is not None:
+                return dsl_nodes.DuringAbstractFunction(
+                    name=self.name,
+                    aspect=self.aspect,
+                    doc=self.doc,
+                )
+            else:
+                return dsl_nodes.DuringOperations(
+                    aspect=self.aspect,
+                    operations=[item.to_ast_node() for item in self.operations],
+                )
+
+        elif self.stage == 'exit':
+            if self.name or self.doc is not None:
+                return dsl_nodes.ExitAbstractFunction(
+                    name=self.name,
+                    doc=self.doc,
+                )
+            else:
+                return dsl_nodes.ExitOperations(
+                    operations=[item.to_ast_node() for item in self.operations],
+                )
+        else:
+            raise ValueError(f'Unknown stage - {self.stage!r}.')  # pragma: no cover
+
+
+@dataclass
 class State(AstExportable, PlantUMLExportable):
     name: str
     path: Tuple[str, ...]
     substates: Dict[str, 'State']
     events: Dict[str, Event]
     transitions: List[Transition]
+    on_enters: List[OnStage]
+    on_durings: List[OnStage]
+    on_exits: List[OnStage]
 
     @property
     def is_leaf_state(self) -> bool:
@@ -74,7 +124,10 @@ class State(AstExportable, PlantUMLExportable):
                         for item in trans.post_operations
                     ]
                 ) for trans in self.transitions
-            ]
+            ],
+            enters=[item.to_ast_node() for item in self.on_enters],
+            durings=[item.to_ast_node() for item in self.on_durings],
+            exits=[item.to_ast_node() for item in self.on_exits],
         )
 
     def to_plantuml(self) -> str:
@@ -230,18 +283,18 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                     raise SyntaxError(f'Unknown guard variable {", ".join(unknown_vars)} in transition:\n{transnode}')
 
             post_operations = []
-            for p_op in transnode.post_operations:
-                post_operation_val = parse_expr_node_to_expr(p_op.expr)
+            for op_item in transnode.post_operations:
+                operation_val = parse_expr_node_to_expr(op_item.expr)
                 unknown_vars = []
-                for var in post_operation_val.list_variables():
+                for var in operation_val.list_variables():
                     if var.name not in d_defines:
                         unknown_vars.append(var.name)
-                if p_op.name not in d_defines and p_op.name not in unknown_vars:
-                    unknown_vars.append(p_op.name)
+                if op_item.name not in d_defines and op_item.name not in unknown_vars:
+                    unknown_vars.append(op_item.name)
                 if unknown_vars:
                     raise SyntaxError(
                         f'Unknown transition operation variable {", ".join(unknown_vars)} in transition:\n{transnode}')
-                post_operations.append(Operation(var_name=p_op.name, expr=post_operation_val))
+                post_operations.append(Operation(var_name=op_item.name, expr=operation_val))
 
             transition = Transition(
                 from_state=from_state,
@@ -255,12 +308,111 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
         if d_substates and not has_entry_trans:
             raise SyntaxError(f'At least 1 entry transition should be assigned in non-leaf states:\n{node}')
 
+        on_enters = []
+        for enter_item in node.enters:
+            if isinstance(enter_item, dsl_nodes.EnterOperations):
+                enter_operations = []
+                for op_item in enter_item.operations:
+                    operation_val = parse_expr_node_to_expr(op_item.expr)
+                    unknown_vars = []
+                    for var in operation_val.list_variables():
+                        if var.name not in d_defines:
+                            unknown_vars.append(var.name)
+                    if op_item.name not in d_defines and op_item.name not in unknown_vars:
+                        unknown_vars.append(op_item.name)
+                    if unknown_vars:
+                        raise SyntaxError(
+                            f'Unknown transition operation variable {", ".join(unknown_vars)} in transition:\n{enter_item}')
+                    enter_operations.append(Operation(var_name=op_item.name, expr=operation_val))
+                on_enters.append(OnStage(
+                    stage='enter',
+                    aspect=None,
+                    name=None,
+                    doc=None,
+                    operations=enter_operations,
+                ))
+            elif isinstance(enter_item, dsl_nodes.EnterAbstractFunction):
+                on_enters.append(OnStage(
+                    stage='enter',
+                    aspect=None,
+                    name=enter_item.name,
+                    doc=enter_item.doc,
+                    operations=[],
+                ))
+
+        on_durings = []
+        for during_item in node.durings:
+            if isinstance(during_item, dsl_nodes.DuringOperations):
+                during_operations = []
+                for op_item in during_item.operations:
+                    operation_val = parse_expr_node_to_expr(op_item.expr)
+                    unknown_vars = []
+                    for var in operation_val.list_variables():
+                        if var.name not in d_defines:
+                            unknown_vars.append(var.name)
+                    if op_item.name not in d_defines and op_item.name not in unknown_vars:
+                        unknown_vars.append(op_item.name)
+                    if unknown_vars:
+                        raise SyntaxError(
+                            f'Unknown transition operation variable {", ".join(unknown_vars)} in transition:\n{during_item}')
+                    during_operations.append(Operation(var_name=op_item.name, expr=operation_val))
+                on_durings.append(OnStage(
+                    stage='during',
+                    aspect=during_item.aspect,
+                    name=None,
+                    doc=None,
+                    operations=during_operations,
+                ))
+            elif isinstance(during_item, dsl_nodes.DuringAbstractFunction):
+                on_durings.append(OnStage(
+                    stage='during',
+                    aspect=during_item.aspect,
+                    name=during_item.name,
+                    doc=during_item.doc,
+                    operations=[],
+                ))
+
+        on_exits = []
+        for exit_item in node.exits:
+            if isinstance(exit_item, dsl_nodes.ExitOperations):
+                exit_operations = []
+                for op_item in exit_item.operations:
+                    operation_val = parse_expr_node_to_expr(op_item.expr)
+                    unknown_vars = []
+                    for var in operation_val.list_variables():
+                        if var.name not in d_defines:
+                            unknown_vars.append(var.name)
+                    if op_item.name not in d_defines and op_item.name not in unknown_vars:
+                        unknown_vars.append(op_item.name)
+                    if unknown_vars:
+                        raise SyntaxError(
+                            f'Unknown transition operation variable {", ".join(unknown_vars)} in transition:\n{exit_item}')
+                    exit_operations.append(Operation(var_name=op_item.name, expr=operation_val))
+                on_exits.append(OnStage(
+                    stage='exit',
+                    aspect=None,
+                    name=None,
+                    doc=None,
+                    operations=exit_operations,
+                ))
+            elif isinstance(exit_item, dsl_nodes.ExitAbstractFunction):
+                on_exits.append(OnStage(
+                    stage='exit',
+                    aspect=None,
+                    name=exit_item.name,
+                    doc=exit_item.doc,
+                    operations=[],
+                ))
+
         return State(
             name=node.name,
             path=current_path,
             substates=d_substates,
             events=d_events,
             transitions=transitions,
+            on_enters=on_enters,
+            on_durings=on_durings,
+            on_exits=on_exits,
         )
 
     root_state = _recursive_build_states(dnode.root_state, current_path=())

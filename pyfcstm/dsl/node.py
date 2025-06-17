@@ -333,6 +333,12 @@ class StateDefinition(ASTNode):
                 print(f'state {self.name};', file=sf, end='')
             else:
                 print(f'state {self.name} {{', file=sf)
+                for enter_item in self.enters:
+                    print(indent(str(enter_item), prefix='    '), file=sf)
+                for during_item in self.durings:
+                    print(indent(str(during_item), prefix='    '), file=sf)
+                for exit_item in self.exits:
+                    print(indent(str(exit_item), prefix='    '), file=sf)
                 for substate in self.substates:
                     print(indent(str(substate), prefix='    '), file=sf)
                 for transition in self.transitions:

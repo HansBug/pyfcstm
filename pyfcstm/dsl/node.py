@@ -323,6 +323,9 @@ class StateDefinition(ASTNode):
     name: str
     substates: List['StateDefinition']
     transitions: List[TransitionDefinition]
+    enters: List['EnterStatement']
+    durings: List['DuringStatement']
+    exits: List['ExitStatement']
 
     def __str__(self):
         with io.StringIO() as sf:

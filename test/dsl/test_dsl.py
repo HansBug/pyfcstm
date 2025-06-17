@@ -13,7 +13,8 @@ class TestDSLTransition:
                 state Main;
                 """,
                 StateMachineDSLProgram(definitions=[DefAssignment(name='counter', type='int', expr=Integer(raw='0'))],
-                                       root_state=StateDefinition(name='Main', substates=[], transitions=[]))
+                                       root_state=StateDefinition(name='Main', substates=[], transitions=[], enters=[],
+                                                                  durings=[], exits=[]))
         ),  # Simple state machine with a single leaf state and an integer definition
         (
                 """
@@ -23,7 +24,8 @@ class TestDSLTransition:
                 """,
                 StateMachineDSLProgram(definitions=[DefAssignment(name='x', type='float', expr=Float(raw='3.14')),
                                                     DefAssignment(name='count', type='int', expr=Integer(raw='10'))],
-                                       root_state=StateDefinition(name='Initial', substates=[], transitions=[]))
+                                       root_state=StateDefinition(name='Initial', substates=[], transitions=[],
+                                                                  enters=[], durings=[], exits=[]))
         ),  # State machine with multiple variable definitions and a single leaf state
         (
                 """
@@ -33,8 +35,10 @@ class TestDSLTransition:
                 }
                 """,
                 StateMachineDSLProgram(definitions=[], root_state=StateDefinition(name='Main', substates=[
-                    StateDefinition(name='SubState1', substates=[], transitions=[]),
-                    StateDefinition(name='SubState2', substates=[], transitions=[])], transitions=[]))
+                    StateDefinition(name='SubState1', substates=[], transitions=[], enters=[], durings=[], exits=[]),
+                    StateDefinition(name='SubState2', substates=[], transitions=[], enters=[], durings=[], exits=[])],
+                                                                                  transitions=[], enters=[], durings=[],
+                                                                                  exits=[]))
         ),  # Composite state containing two leaf states
         (
                 """
@@ -59,7 +63,8 @@ class TestDSLTransition:
                                            TransitionDefinition(from_state='Processing', to_state='Done', event_id=None,
                                                                 condition_expr=None, post_operations=[]),
                                            TransitionDefinition(from_state='Done', to_state=EXIT_STATE, event_id=None,
-                                                                condition_expr=None, post_operations=[])]))
+                                                                condition_expr=None, post_operations=[])], enters=[],
+                                                                  durings=[], exits=[]))
         ),  # Complete state machine with entry, normal, and exit transitions with a condition
         (
                 """
@@ -94,7 +99,8 @@ class TestDSLTransition:
                                                                                           to_state=EXIT_STATE,
                                                                                           event_id=None,
                                                                                           condition_expr=None,
-                                                                                          post_operations=[])]))
+                                                                                          post_operations=[])],
+                                                                                  enters=[], durings=[], exits=[]))
         ),  # State machine with entry, normal transitions with boolean condition, and exit transition
         (
                 """
@@ -113,15 +119,16 @@ class TestDSLTransition:
                                                                 event_id=None, condition_expr=None, post_operations=[
                                                    OperationAssignment(name='count',
                                                                        expr=BinaryOp(expr1=Name(name='count'),
-                                                                                           op='+',
-                                                                                           expr2=Integer(raw='1')))]),
+                                                                                     op='+',
+                                                                                     expr2=Integer(raw='1')))]),
                                            TransitionDefinition(from_state='Counting', to_state='Done', event_id=None,
                                                                 condition_expr=BinaryOp(expr1=Name(name='count'),
                                                                                         op='>',
                                                                                         expr2=Integer(raw='10')),
                                                                 post_operations=[]),
                                            TransitionDefinition(from_state='Done', to_state=EXIT_STATE, event_id=None,
-                                                                condition_expr=None, post_operations=[])]))
+                                                                condition_expr=None, post_operations=[])], enters=[],
+                                                                  durings=[], exits=[]))
         ),  # State machine with effect operation in entry transition
         (
                 """
@@ -141,9 +148,12 @@ class TestDSLTransition:
                 StateMachineDSLProgram(
                     definitions=[DefAssignment(name='temperature', type='float', expr=Float(raw='25.0'))],
                     root_state=StateDefinition(name='ThermostatControl',
-                                               substates=[StateDefinition(name='Heating', substates=[], transitions=[]),
-                                                          StateDefinition(name='Cooling', substates=[], transitions=[]),
-                                                          StateDefinition(name='Idle', substates=[], transitions=[])],
+                                               substates=[StateDefinition(name='Heating', substates=[], transitions=[],
+                                                                          enters=[], durings=[], exits=[]),
+                                                          StateDefinition(name='Cooling', substates=[], transitions=[],
+                                                                          enters=[], durings=[], exits=[]),
+                                                          StateDefinition(name='Idle', substates=[], transitions=[],
+                                                                          enters=[], durings=[], exits=[])],
                                                transitions=[TransitionDefinition(from_state=INIT_STATE, to_state='Idle',
                                                                                  event_id=None, condition_expr=None,
                                                                                  post_operations=[]),
@@ -162,7 +172,8 @@ class TestDSLTransition:
                                                             TransitionDefinition(from_state='Cooling', to_state='Idle',
                                                                                  event_id=None, condition_expr=BinaryOp(
                                                                     expr1=Name(name='temperature'), op='<=',
-                                                                    expr2=Float(raw='24.0')), post_operations=[])]))
+                                                                    expr2=Float(raw='24.0')), post_operations=[])],
+                                               enters=[], durings=[], exits=[]))
         ),  # Complex state machine with multiple states and conditional transitions
         (
                 """
@@ -183,11 +194,17 @@ class TestDSLTransition:
                                                                                                               StateDefinition(
                                                                                                                   name='A1',
                                                                                                                   substates=[],
-                                                                                                                  transitions=[]),
+                                                                                                                  transitions=[],
+                                                                                                                  enters=[],
+                                                                                                                  durings=[],
+                                                                                                                  exits=[]),
                                                                                                               StateDefinition(
                                                                                                                   name='A2',
                                                                                                                   substates=[],
-                                                                                                                  transitions=[])],
+                                                                                                                  transitions=[],
+                                                                                                                  enters=[],
+                                                                                                                  durings=[],
+                                                                                                                  exits=[])],
                                                                                                           transitions=[
                                                                                                               TransitionDefinition(
                                                                                                                   from_state='A1',
@@ -199,10 +216,16 @@ class TestDSLTransition:
                                                                                                                       op='>',
                                                                                                                       expr2=Integer(
                                                                                                                           raw='5')),
-                                                                                                                  post_operations=[])]),
+                                                                                                                  post_operations=[])],
+                                                                                                          enters=[],
+                                                                                                          durings=[],
+                                                                                                          exits=[]),
                                                                                           StateDefinition(name='B',
                                                                                                           substates=[],
-                                                                                                          transitions=[])],
+                                                                                                          transitions=[],
+                                                                                                          enters=[],
+                                                                                                          durings=[],
+                                                                                                          exits=[])],
                                                                   transitions=[
                                                                       TransitionDefinition(from_state='A', to_state='B',
                                                                                            event_id=None,
@@ -210,7 +233,8 @@ class TestDSLTransition:
                                                                                                expr1=Name(name='x'),
                                                                                                op='>',
                                                                                                expr2=Integer(raw='10')),
-                                                                                           post_operations=[])]))
+                                                                                           post_operations=[])],
+                                                                  enters=[], durings=[], exits=[]))
         ),  # Nested composite states with transitions at different levels
         (
                 """
@@ -232,8 +256,8 @@ class TestDSLTransition:
                                                                 condition_expr=None, post_operations=[
                                                    OperationAssignment(name='counter',
                                                                        expr=BinaryOp(expr1=Name(name='counter'),
-                                                                                           op='+',
-                                                                                           expr2=Integer(raw='1')))]),
+                                                                                     op='+',
+                                                                                     expr2=Integer(raw='1')))]),
                                            TransitionDefinition(from_state='Start', to_state='Middle',
                                                                 event_id=ChainID(path=['chain_id']),
                                                                 condition_expr=None, post_operations=[]),
@@ -243,12 +267,13 @@ class TestDSLTransition:
                                                                 post_operations=[
                                                                     OperationAssignment(name='counter',
                                                                                         expr=BinaryOp(expr1=Name(
-                                                                                                  name='counter'),
-                                                                                                  op='*',
-                                                                                                  expr2=Integer(
-                                                                                                      raw='2')))]),
+                                                                                            name='counter'),
+                                                                                            op='*',
+                                                                                            expr2=Integer(
+                                                                                                raw='2')))]),
                                            TransitionDefinition(from_state='End', to_state=EXIT_STATE, event_id=None,
-                                                                condition_expr=None, post_operations=[])]))
+                                                                condition_expr=None, post_operations=[])], enters=[],
+                                                                  durings=[], exits=[]))
         ),  # State machine with chain_id transition and effect operations
         (
                 """
@@ -281,7 +306,8 @@ class TestDSLTransition:
                                                                     post_operations=[]),
                                                TransitionDefinition(from_state='Done', to_state=EXIT_STATE,
                                                                     event_id=None, condition_expr=None,
-                                                                    post_operations=[])]),
+                                                                    post_operations=[])], enters=[], durings=[],
+                                                           exits=[]),
                                            StateDefinition(name='Multiply', substates=[], transitions=[
                                                TransitionDefinition(from_state=INIT_STATE, to_state='Computing',
                                                                     event_id=None, condition_expr=None,
@@ -291,7 +317,8 @@ class TestDSLTransition:
                                                                     post_operations=[]),
                                                TransitionDefinition(from_state='Done', to_state=EXIT_STATE,
                                                                     event_id=None, condition_expr=None,
-                                                                    post_operations=[])])], transitions=[
+                                                                    post_operations=[])], enters=[], durings=[],
+                                                           exits=[])], transitions=[
                                            TransitionDefinition(from_state=INIT_STATE, to_state='Add', event_id=None,
                                                                 condition_expr=BinaryOp(expr1=Name(name='x'), op='<',
                                                                                         expr2=Name(name='y')),
@@ -300,7 +327,7 @@ class TestDSLTransition:
                                                                 event_id=None,
                                                                 condition_expr=BinaryOp(expr1=Name(name='x'), op='>=',
                                                                                         expr2=Name(name='y')),
-                                                                post_operations=[])]))
+                                                                post_operations=[])], enters=[], durings=[], exits=[]))
         ),  # State machine with multiple composite states and conditional entry transitions
         (
                 """
@@ -325,8 +352,8 @@ class TestDSLTransition:
                                                                 event_id=None, condition_expr=None, post_operations=[
                                                    OperationAssignment(name='status',
                                                                        expr=BinaryOp(expr1=Name(name='status'),
-                                                                                           op='+',
-                                                                                           expr2=Integer(raw='1')))]),
+                                                                                     op='+',
+                                                                                     expr2=Integer(raw='1')))]),
                                            TransitionDefinition(from_state='Checking', to_state='Success',
                                                                 event_id=None,
                                                                 condition_expr=BinaryOp(expr1=Name(name='status'),
@@ -334,7 +361,7 @@ class TestDSLTransition:
                                                                 post_operations=[
                                                                     OperationAssignment(name='status',
                                                                                         expr=Integer(
-                                                                                                  raw='100'))]),
+                                                                                            raw='100'))]),
                                            TransitionDefinition(from_state='Checking', to_state='Failure',
                                                                 event_id=None,
                                                                 condition_expr=BinaryOp(expr1=Name(name='status'),
@@ -343,13 +370,13 @@ class TestDSLTransition:
                                                                 post_operations=[
                                                                     OperationAssignment(name='status',
                                                                                         expr=UnaryOp(op='-',
-                                                                                                           expr=Integer(
-                                                                                                               raw='1')))]),
+                                                                                                     expr=Integer(
+                                                                                                         raw='1')))]),
                                            TransitionDefinition(from_state='Success', to_state=EXIT_STATE,
                                                                 event_id=None, condition_expr=None, post_operations=[]),
                                            TransitionDefinition(from_state='Failure', to_state=EXIT_STATE,
                                                                 event_id=None, condition_expr=None,
-                                                                post_operations=[])]))
+                                                                post_operations=[])], enters=[], durings=[], exits=[]))
         ),  # State machine with multiple effect operations in different transitions
         (
                 """
@@ -370,7 +397,8 @@ class TestDSLTransition:
                                                                                         expr2=HexInt(raw='0x1A')),
                                                                 post_operations=[]),
                                            TransitionDefinition(from_state='End', to_state=EXIT_STATE, event_id=None,
-                                                                condition_expr=None, post_operations=[])]))
+                                                                condition_expr=None, post_operations=[])], enters=[],
+                                                                  durings=[], exits=[]))
         ),  # State machine using hexadecimal integer in definition and condition
         (
                 """
@@ -392,7 +420,7 @@ class TestDSLTransition:
                                                                 post_operations=[]),
                                            TransitionDefinition(from_state='Processing', to_state=EXIT_STATE,
                                                                 event_id=None, condition_expr=None,
-                                                                post_operations=[])]))
+                                                                post_operations=[])], enters=[], durings=[], exits=[]))
         ),  # State machine using mathematical constants in definitions and conditions
         (
                 """
@@ -425,7 +453,7 @@ class TestDSLTransition:
                                                                 event_id=None, condition_expr=None, post_operations=[]),
                                            TransitionDefinition(from_state='FalseState', to_state=EXIT_STATE,
                                                                 event_id=None, condition_expr=None,
-                                                                post_operations=[])]))
+                                                                post_operations=[])], enters=[], durings=[], exits=[]))
         ),  # State machine using conditional C-style expressions in transition conditions
         (
                 """
@@ -445,7 +473,8 @@ class TestDSLTransition:
                                                    expr1=UFunc(func='sin', expr=Name(name='angle')), op='<',
                                                    expr2=Float(raw='0.5')), post_operations=[]),
                                            TransitionDefinition(from_state='Result', to_state=EXIT_STATE, event_id=None,
-                                                                condition_expr=None, post_operations=[])]))
+                                                                condition_expr=None, post_operations=[])], enters=[],
+                                                                  durings=[], exits=[]))
         ),  # State machine using mathematical functions in transition conditions
         (
                 """
@@ -467,7 +496,8 @@ class TestDSLTransition:
                                                                     expr2=Integer(raw='1')),
                                                                 post_operations=[]),
                                            TransitionDefinition(from_state='Done', to_state=EXIT_STATE, event_id=None,
-                                                                condition_expr=None, post_operations=[])]))
+                                                                condition_expr=None, post_operations=[])], enters=[],
+                                                                  durings=[], exits=[]))
         ),  # State machine using bitwise operations in transition conditions
         (
                 """
@@ -504,7 +534,7 @@ class TestDSLTransition:
                                                                 event_id=None, condition_expr=None, post_operations=[]),
                                            TransitionDefinition(from_state='Failure', to_state=EXIT_STATE,
                                                                 event_id=None, condition_expr=None,
-                                                                post_operations=[])]))
+                                                                post_operations=[])], enters=[], durings=[], exits=[]))
         ),  # State machine using logical AND/OR operations in transition conditions
         (
                 """
@@ -525,7 +555,8 @@ class TestDSLTransition:
                                            TransitionDefinition(from_state='Middle', to_state='End', event_id=None,
                                                                 condition_expr=None, post_operations=[]),
                                            TransitionDefinition(from_state='End', to_state=EXIT_STATE, event_id=None,
-                                                                condition_expr=None, post_operations=[])]))
+                                                                condition_expr=None, post_operations=[])], enters=[],
+                                                                  durings=[], exits=[]))
         ),  # State machine with transitions without conditions or effect operations
         (
                 """
@@ -540,9 +571,11 @@ class TestDSLTransition:
                 """,
                 StateMachineDSLProgram(definitions=[DefAssignment(name='x', type='int', expr=Integer(raw='5'))],
                                        root_state=StateDefinition(name='SemicolonTest', substates=[
-                                           StateDefinition(name='Inner', substates=[], transitions=[])], transitions=[
+                                           StateDefinition(name='Inner', substates=[], transitions=[], enters=[],
+                                                           durings=[], exits=[])], transitions=[
                                            TransitionDefinition(from_state='Inner', to_state=EXIT_STATE, event_id=None,
-                                                                condition_expr=None, post_operations=[])]))
+                                                                condition_expr=None, post_operations=[])], enters=[],
+                                                                  durings=[], exits=[]))
         ),  # State machine with empty statements (lone semicolons)
         (
                 """
@@ -584,7 +617,8 @@ class TestDSLTransition:
                                            TransitionDefinition(from_state='Hot', to_state=EXIT_STATE, event_id=None,
                                                                 condition_expr=None, post_operations=[]),
                                            TransitionDefinition(from_state='Cold', to_state=EXIT_STATE, event_id=None,
-                                                                condition_expr=None, post_operations=[])]))
+                                                                condition_expr=None, post_operations=[])], enters=[],
+                                                                  durings=[], exits=[]))
         ),  # State machine with complex nested conditional expressions
         (
                 """
@@ -612,7 +646,8 @@ class TestDSLTransition:
                                                    expr1=BinaryOp(expr1=Name(name='a'), op='*', expr2=Name(name='b')),
                                                    op='>', expr2=Float(raw='20.0')), post_operations=[]),
                                            TransitionDefinition(from_state='Result', to_state=EXIT_STATE, event_id=None,
-                                                                condition_expr=None, post_operations=[])]))
+                                                                condition_expr=None, post_operations=[])], enters=[],
+                                                                  durings=[], exits=[]))
         ),  # State machine with complex arithmetic expressions in definitions and conditions
 
     ])

@@ -7,83 +7,108 @@ from pyfcstm.dsl.node import *
 @pytest.mark.unittest
 class TestDSLTransition:
     @pytest.mark.parametrize(['input_text', 'expected'], [
-        ('state S1;', StateDefinition(name='S1', substates=[], transitions=[])),  # Simple leaf state definition
-        ('state Running;', StateDefinition(name='Running', substates=[], transitions=[])),
+        ('state S1;', StateDefinition(name='S1', substates=[], transitions=[], enters=[], durings=[], exits=[])),
+        # Simple leaf state definition
+        ('state Running;',
+         StateDefinition(name='Running', substates=[], transitions=[], enters=[], durings=[], exits=[])),
         # Leaf state with descriptive name
-        ('state IDLE;', StateDefinition(name='IDLE', substates=[], transitions=[])),  # Leaf state with uppercase name
-        ('state s_2;', StateDefinition(name='s_2', substates=[], transitions=[])),  # Leaf state with underscore in name
-        ('state waiting_for_input;', StateDefinition(name='waiting_for_input', substates=[], transitions=[])),
+        ('state IDLE;', StateDefinition(name='IDLE', substates=[], transitions=[], enters=[], durings=[], exits=[])),
+        # Leaf state with uppercase name
+        ('state s_2;', StateDefinition(name='s_2', substates=[], transitions=[], enters=[], durings=[], exits=[])),
+        # Leaf state with underscore in name
+        ('state waiting_for_input;',
+         StateDefinition(name='waiting_for_input', substates=[], transitions=[], enters=[], durings=[], exits=[])),
         # Leaf state with multiple underscores
-        ('state Complex { }', StateDefinition(name='Complex', substates=[], transitions=[])),
+        ('state Complex { }',
+         StateDefinition(name='Complex', substates=[], transitions=[], enters=[], durings=[], exits=[])),
         # Composite state with empty body
-        ('state Parent { }', StateDefinition(name='Parent', substates=[], transitions=[])),
+        ('state Parent { }',
+         StateDefinition(name='Parent', substates=[], transitions=[], enters=[], durings=[], exits=[])),
         # Composite state named Parent with empty body
         ('state S1 { state S2; }',
-         StateDefinition(name='S1', substates=[StateDefinition(name='S2', substates=[], transitions=[])],
-                         transitions=[])),  # Composite state containing a leaf state
+         StateDefinition(name='S1', substates=[
+             StateDefinition(name='S2', substates=[], transitions=[], enters=[], durings=[], exits=[])],
+                         transitions=[], enters=[], durings=[], exits=[])),  # Composite state containing a leaf state
         ('state Parent { state Child1; state Child2; }', StateDefinition(name='Parent', substates=[
-            StateDefinition(name='Child1', substates=[], transitions=[]),
-            StateDefinition(name='Child2', substates=[], transitions=[])], transitions=[])),
+            StateDefinition(name='Child1', substates=[], transitions=[], enters=[], durings=[], exits=[]),
+            StateDefinition(name='Child2', substates=[], transitions=[], enters=[], durings=[], exits=[])],
+                                                                         transitions=[], enters=[], durings=[],
+                                                                         exits=[])),
         # Composite state with multiple leaf states
         ('state S1 { state S2 { state S3; } }', StateDefinition(name='S1', substates=[
-            StateDefinition(name='S2', substates=[StateDefinition(name='S3', substates=[], transitions=[])],
-                            transitions=[])], transitions=[])),  # Composite state with nested composite state
+            StateDefinition(name='S2', substates=[
+                StateDefinition(name='S3', substates=[], transitions=[], enters=[], durings=[], exits=[])],
+                            transitions=[], enters=[], durings=[], exits=[])], transitions=[], enters=[], durings=[],
+                                                                exits=[])),
+        # Composite state with nested composite state
         ('state Machine { state Running { state Fast; state Slow; } }', StateDefinition(name='Machine', substates=[
-            StateDefinition(name='Running', substates=[StateDefinition(name='Fast', substates=[], transitions=[]),
-                                                       StateDefinition(name='Slow', substates=[], transitions=[])],
-                            transitions=[])], transitions=[])),
+            StateDefinition(name='Running', substates=[
+                StateDefinition(name='Fast', substates=[], transitions=[], enters=[], durings=[], exits=[]),
+                StateDefinition(name='Slow', substates=[], transitions=[], enters=[], durings=[], exits=[])],
+                            transitions=[], enters=[], durings=[], exits=[])], transitions=[], enters=[], durings=[],
+                                                                                        exits=[])),
         # Composite state with nested composite state containing multiple leaf states
         ('state S1 { [*] -> S2; }', StateDefinition(name='S1', substates=[], transitions=[
             TransitionDefinition(from_state=INIT_STATE, to_state='S2', event_id=None, condition_expr=None,
-                                 post_operations=[])])),  # Composite state with entry transition
+                                 post_operations=[])], enters=[], durings=[], exits=[])),
+        # Composite state with entry transition
         ('state S1 { S2 -> S3; }', StateDefinition(name='S1', substates=[], transitions=[
             TransitionDefinition(from_state='S2', to_state='S3', event_id=None, condition_expr=None,
-                                 post_operations=[])])),  # Composite state with normal transition
+                                 post_operations=[])], enters=[], durings=[], exits=[])),
+        # Composite state with normal transition
         ('state S1 { S2 -> [*]; }', StateDefinition(name='S1', substates=[], transitions=[
             TransitionDefinition(from_state='S2', to_state=EXIT_STATE, event_id=None, condition_expr=None,
-                                 post_operations=[])])),  # Composite state with exit transition
+                                 post_operations=[])], enters=[], durings=[], exits=[])),
+        # Composite state with exit transition
         ('state S1 { S2 -> S3: chain.id; }', StateDefinition(name='S1', substates=[], transitions=[
             TransitionDefinition(from_state='S2', to_state='S3', event_id=ChainID(path=['chain', 'id']),
-                                 condition_expr=None, post_operations=[])])),
+                                 condition_expr=None, post_operations=[])], enters=[], durings=[], exits=[])),
         # Composite state with transition having chain ID
         ('state S1 { [*] -> S2: entry.chain; }', StateDefinition(name='S1', substates=[], transitions=[
             TransitionDefinition(from_state=INIT_STATE, to_state='S2', event_id=ChainID(path=['entry', 'chain']),
-                                 condition_expr=None, post_operations=[])])),
+                                 condition_expr=None, post_operations=[])], enters=[], durings=[], exits=[])),
         # Composite state with entry transition having chain ID
         ('state S1 { S2 -> S3: if [x > 5]; }', StateDefinition(name='S1', substates=[], transitions=[
             TransitionDefinition(from_state='S2', to_state='S3', event_id=None,
                                  condition_expr=BinaryOp(expr1=Name(name='x'), op='>', expr2=Integer(raw='5')),
-                                 post_operations=[])])),  # Composite state with conditional transition
+                                 post_operations=[])], enters=[], durings=[], exits=[])),
+        # Composite state with conditional transition
         ('state S1 { S2 -> S3: if [x == 10 && y < 20]; }', StateDefinition(name='S1', substates=[], transitions=[
             TransitionDefinition(from_state='S2', to_state='S3', event_id=None, condition_expr=BinaryOp(
                 expr1=BinaryOp(expr1=Name(name='x'), op='==', expr2=Integer(raw='10')), op='&&',
-                expr2=BinaryOp(expr1=Name(name='y'), op='<', expr2=Integer(raw='20'))), post_operations=[])])),
+                expr2=BinaryOp(expr1=Name(name='y'), op='<', expr2=Integer(raw='20'))), post_operations=[])], enters=[],
+                                                                           durings=[], exits=[])),
         # Composite state with complex conditional transition
         ('state S1 { S2 -> S3 effect { x = 10; } }', StateDefinition(name='S1', substates=[], transitions=[
             TransitionDefinition(from_state='S2', to_state='S3', event_id=None, condition_expr=None,
-                                 post_operations=[OperationAssignment(name='x', expr=Integer(raw='10'))])])),
+                                 post_operations=[OperationAssignment(name='x', expr=Integer(raw='10'))])], enters=[],
+                                                                     durings=[], exits=[])),
         # Composite state with effect-transition operation
         ('state S1 { S2 -> S3 effect { x = 10; y = 20; } }', StateDefinition(name='S1', substates=[], transitions=[
             TransitionDefinition(from_state='S2', to_state='S3', event_id=None, condition_expr=None,
                                  post_operations=[OperationAssignment(name='x', expr=Integer(raw='10')),
-                                                  OperationAssignment(name='y', expr=Integer(raw='20'))])])),
+                                                  OperationAssignment(name='y', expr=Integer(raw='20'))])], enters=[],
+                                                                             durings=[], exits=[])),
         # Composite state with multiple effect-transition operations
         ('state S1 { state S2; S2 -> S3: if [x > 5]; S3 -> [*]; }',
-         StateDefinition(name='S1', substates=[StateDefinition(name='S2', substates=[], transitions=[])], transitions=[
+         StateDefinition(name='S1', substates=[
+             StateDefinition(name='S2', substates=[], transitions=[], enters=[], durings=[], exits=[])], transitions=[
              TransitionDefinition(from_state='S2', to_state='S3', event_id=None,
                                   condition_expr=BinaryOp(expr1=Name(name='x'), op='>', expr2=Integer(raw='5')),
                                   post_operations=[]),
              TransitionDefinition(from_state='S3', to_state=EXIT_STATE, event_id=None, condition_expr=None,
-                                  post_operations=[])])),  # Composite state with leaf state and transitions
+                                  post_operations=[])], enters=[], durings=[], exits=[])),
+        # Composite state with leaf state and transitions
         (
                 'state Machine { state Off; state On { state Idle; state Running; } Off -> On: if [power == 1]; On -> Off: if [power == 0]; }',
-                StateDefinition(name='Machine', substates=[StateDefinition(name='Off', substates=[], transitions=[]),
-                                                           StateDefinition(name='On', substates=[
-                                                               StateDefinition(name='Idle', substates=[],
-                                                                               transitions=[]),
-                                                               StateDefinition(name='Running', substates=[],
-                                                                               transitions=[])],
-                                                                           transitions=[])], transitions=[
+                StateDefinition(name='Machine', substates=[
+                    StateDefinition(name='Off', substates=[], transitions=[], enters=[], durings=[], exits=[]),
+                    StateDefinition(name='On', substates=[
+                        StateDefinition(name='Idle', substates=[],
+                                        transitions=[], enters=[], durings=[], exits=[]),
+                        StateDefinition(name='Running', substates=[],
+                                        transitions=[], enters=[], durings=[], exits=[])],
+                                    transitions=[], enters=[], durings=[], exits=[])], transitions=[
                     TransitionDefinition(from_state='Off', to_state='On', event_id=None,
                                          condition_expr=BinaryOp(expr1=Name(name='power'), op='==',
                                                                  expr2=Integer(raw='1')),
@@ -91,21 +116,23 @@ class TestDSLTransition:
                     TransitionDefinition(from_state='On', to_state='Off', event_id=None,
                                          condition_expr=BinaryOp(expr1=Name(name='power'), op='==',
                                                                  expr2=Integer(raw='0')),
-                                         post_operations=[])])),
+                                         post_operations=[])], enters=[], durings=[], exits=[])),
         # Complex state machine with nested states and transitions
         ('state S1 { state S2; state S3; S2 -> S3: if [x > 5] effect { x = 10; }; S3 -> [*]; }',
-         StateDefinition(name='S1', substates=[StateDefinition(name='S2', substates=[], transitions=[]),
-                                               StateDefinition(name='S3', substates=[], transitions=[])], transitions=[
+         StateDefinition(name='S1', substates=[
+             StateDefinition(name='S2', substates=[], transitions=[], enters=[], durings=[], exits=[]),
+             StateDefinition(name='S3', substates=[], transitions=[], enters=[], durings=[], exits=[])], transitions=[
              TransitionDefinition(from_state='S2', to_state='S3', event_id=None,
                                   condition_expr=BinaryOp(expr1=Name(name='x'), op='>', expr2=Integer(raw='5')),
                                   post_operations=[OperationAssignment(name='x', expr=Integer(raw='10'))]),
              TransitionDefinition(from_state='S3', to_state=EXIT_STATE, event_id=None, condition_expr=None,
-                                  post_operations=[])])),
+                                  post_operations=[])], enters=[], durings=[], exits=[])),
         # Composite state with states, conditional transition with effect operations
         ('state S1 { ; state S2; ; S2 -> S3; ; }',
-         StateDefinition(name='S1', substates=[StateDefinition(name='S2', substates=[], transitions=[])], transitions=[
+         StateDefinition(name='S1', substates=[
+             StateDefinition(name='S2', substates=[], transitions=[], enters=[], durings=[], exits=[])], transitions=[
              TransitionDefinition(from_state='S2', to_state='S3', event_id=None, condition_expr=None,
-                                  post_operations=[])])),
+                                  post_operations=[])], enters=[], durings=[], exits=[])),
         # Composite state with empty statements between valid statements
     ])
     def test_positive_cases(self, input_text, expected):

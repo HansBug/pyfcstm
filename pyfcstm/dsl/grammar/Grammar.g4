@@ -49,6 +49,9 @@ operational_statement
 state_inner_statement
     : state_definition
     | transition_definition
+    | enter_definition
+    | during_definition
+    | exit_definition
     | ';'
     ;
 

@@ -1,10 +1,5 @@
 from .grammar import GrammarListener, GrammarParser
-from .node import Integer, Float, Constant, Boolean, Name, Paren, BinaryOp, UnaryOp, UFunc, ConstantDefinition, \
-    OperationalDeprecatedAssignment, InitialAssignment, Condition, Operation, Preamble, ConditionalOp, HexInt, \
-    DefAssignment, \
-    ChainID, TransitionDefinition, INIT_STATE, EXIT_STATE, StateDefinition, OperationAssignment, \
-    StateMachineDSLProgram, EnterOperations, EnterAbstractFunction, ExitOperations, ExitAbstractFunction, \
-    DuringOperations, DuringAbstractFunction
+from .node import *
 from ..utils import format_multiline_comment
 
 
@@ -230,6 +225,9 @@ class GrammarParseListener(GrammarListener):
             name=str(ctx.ID()),
             substates=[],
             transitions=[],
+            enters=[],
+            durings=[],
+            exits=[],
         )
 
     def exitCompositeStateDefinition(self, ctx: GrammarParser.CompositeStateDefinitionContext):
@@ -240,6 +238,12 @@ class GrammarParseListener(GrammarListener):
                        if item in self.nodes and isinstance(self.nodes[item], StateDefinition)],
             transitions=[self.nodes[item] for item in ctx.state_inner_statement()
                          if item in self.nodes and isinstance(self.nodes[item], TransitionDefinition)],
+            enters=[self.nodes[item] for item in ctx.state_inner_statement()
+                    if item in self.nodes and isinstance(self.nodes[item], EnterStatement)],
+            durings=[self.nodes[item] for item in ctx.state_inner_statement()
+                     if item in self.nodes and isinstance(self.nodes[item], DuringStatement)],
+            exits=[self.nodes[item] for item in ctx.state_inner_statement()
+                   if item in self.nodes and isinstance(self.nodes[item], ExitStatement)],
         )
 
     def exitEntryTransitionDefinition(self, ctx: GrammarParser.EntryTransitionDefinitionContext):
@@ -297,6 +301,12 @@ class GrammarParseListener(GrammarListener):
             self.nodes[ctx] = self.nodes[ctx.state_definition()]
         elif ctx.transition_definition():
             self.nodes[ctx] = self.nodes[ctx.transition_definition()]
+        elif ctx.enter_definition():
+            self.nodes[ctx] = self.nodes[ctx.enter_definition()]
+        elif ctx.during_definition():
+            self.nodes[ctx] = self.nodes[ctx.during_definition()]
+        elif ctx.exit_definition():
+            self.nodes[ctx] = self.nodes[ctx.exit_definition()]
 
     def exitOperation_assignment(self, ctx: GrammarParser.Operation_assignmentContext):
         super().exitOperation_assignment(ctx)

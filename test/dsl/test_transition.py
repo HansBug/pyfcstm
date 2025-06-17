@@ -21,7 +21,7 @@ class TestDSLTransition:
                                                              post_operations=[])),  # Entry transition with condition
         ('[*] -> StateD post { a = 5; }',
          TransitionDefinition(from_state=INIT_STATE, to_state='StateD', event_id=None, condition_expr=None,
-                              post_operations=[PostOperationalAssignment(name='a', expr=Integer(raw='5'))])),
+                              post_operations=[OperationAssignment(name='a', expr=Integer(raw='5'))])),
         # Entry transition with post action
         ('[*] -> StateF: if [x < 0 && y > 10];',
          TransitionDefinition(from_state=INIT_STATE, to_state='StateF', event_id=None,
@@ -35,8 +35,8 @@ class TestDSLTransition:
         ('[*] -> StateG post { a = sin(b); c = 10; }',
          TransitionDefinition(from_state=INIT_STATE, to_state='StateG', event_id=None, condition_expr=None,
                               post_operations=[
-                                  PostOperationalAssignment(name='a', expr=UFunc(func='sin', expr=Name(name='b'))),
-                                  PostOperationalAssignment(name='c', expr=Integer(raw='10'))])),
+                                  OperationAssignment(name='a', expr=UFunc(func='sin', expr=Name(name='b'))),
+                                  OperationAssignment(name='c', expr=Integer(raw='10'))])),
         # Entry transition with multiple post actions
         ('StateA -> StateB;',
          TransitionDefinition(from_state='StateA', to_state='StateB', event_id=None, condition_expr=None,
@@ -52,7 +52,7 @@ class TestDSLTransition:
                                                                  post_operations=[])),  # Transition with condition
         ('StateG -> StateH post { a = 15; }',
          TransitionDefinition(from_state='StateG', to_state='StateH', event_id=None, condition_expr=None,
-                              post_operations=[PostOperationalAssignment(name='a', expr=Integer(raw='15'))])),
+                              post_operations=[OperationAssignment(name='a', expr=Integer(raw='15'))])),
         # Transition with post action
         ('StateK -> StateL: if [x != y && z == 10];',
          TransitionDefinition(from_state='StateK', to_state='StateL', event_id=None,
@@ -66,8 +66,8 @@ class TestDSLTransition:
         ('StateM -> StateN post { a = cos(b); d = 30; }',
          TransitionDefinition(from_state='StateM', to_state='StateN', event_id=None, condition_expr=None,
                               post_operations=[
-                                  PostOperationalAssignment(name='a', expr=UFunc(func='cos', expr=Name(name='b'))),
-                                  PostOperationalAssignment(name='d', expr=Integer(raw='30'))])),
+                                  OperationAssignment(name='a', expr=UFunc(func='cos', expr=Name(name='b'))),
+                                  OperationAssignment(name='d', expr=Integer(raw='30'))])),
         # Transition with multiple post actions
         ('StateA -> [*];',
          TransitionDefinition(from_state='StateA', to_state=EXIT_STATE, event_id=None, condition_expr=None,
@@ -83,7 +83,7 @@ class TestDSLTransition:
                                                                post_operations=[])),  # Exit transition with condition
         ('StateD -> [*] post { a = 50; }',
          TransitionDefinition(from_state='StateD', to_state=EXIT_STATE, event_id=None, condition_expr=None,
-                              post_operations=[PostOperationalAssignment(name='a', expr=Integer(raw='50'))])),
+                              post_operations=[OperationAssignment(name='a', expr=Integer(raw='50'))])),
         # Exit transition with post action
         ('StateF -> [*]: if [x == y || z != 10];',
          TransitionDefinition(from_state='StateF', to_state=EXIT_STATE, event_id=None,
@@ -97,8 +97,8 @@ class TestDSLTransition:
         ('StateG -> [*] post { a = sqrt(b); e = 40; }',
          TransitionDefinition(from_state='StateG', to_state=EXIT_STATE, event_id=None, condition_expr=None,
                               post_operations=[
-                                  PostOperationalAssignment(name='a', expr=UFunc(func='sqrt', expr=Name(name='b'))),
-                                  PostOperationalAssignment(name='e', expr=Integer(raw='40'))])),
+                                  OperationAssignment(name='a', expr=UFunc(func='sqrt', expr=Name(name='b'))),
+                                  OperationAssignment(name='e', expr=Integer(raw='40'))])),
         # Exit transition with multiple post actions
     ])
     def test_positive_cases(self, input_text, expected):

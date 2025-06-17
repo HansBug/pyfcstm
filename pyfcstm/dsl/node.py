@@ -35,7 +35,7 @@ __all__ = [
     'Condition',
     'TransitionDefinition',
     'StateDefinition',
-    'PostOperationalAssignment',
+    'OperationAssignment',
     'StateMachineDSLProgram',
     'INIT_STATE',
     'EXIT_STATE',
@@ -280,7 +280,7 @@ class TransitionDefinition(ASTNode):
     to_state: Union[str, _StateSingletonMark]
     event_id: Optional[ChainID]
     condition_expr: Optional[Expr]
-    post_operations: List['PostOperationalAssignment']
+    post_operations: List['OperationAssignment']
 
     def __str__(self):
         with io.StringIO() as sf:
@@ -326,7 +326,7 @@ class StateDefinition(ASTNode):
 
 
 @dataclass
-class PostOperationalAssignment(Statement):
+class OperationAssignment(Statement):
     name: str
     expr: Expr
 

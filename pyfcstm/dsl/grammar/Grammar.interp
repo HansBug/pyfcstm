@@ -126,7 +126,7 @@ state_machine_dsl
 def_assignment
 state_definition
 transition_definition
-post_operation_assignment
+operation_assignment
 operational_statement
 state_inner_statement
 operation_program

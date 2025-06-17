@@ -61,12 +61,12 @@ class TestDSLTransition:
         # Composite state with complex conditional transition
         ('state S1 { S2 -> S3 post { x = 10; } }', StateDefinition(name='S1', substates=[], transitions=[
             TransitionDefinition(from_state='S2', to_state='S3', event_id=None, condition_expr=None,
-                                 post_operations=[PostOperationalAssignment(name='x', expr=Integer(raw='10'))])])),
+                                 post_operations=[OperationAssignment(name='x', expr=Integer(raw='10'))])])),
         # Composite state with post-transition operation
         ('state S1 { S2 -> S3 post { x = 10; y = 20; } }', StateDefinition(name='S1', substates=[], transitions=[
             TransitionDefinition(from_state='S2', to_state='S3', event_id=None, condition_expr=None,
-                                 post_operations=[PostOperationalAssignment(name='x', expr=Integer(raw='10')),
-                                                  PostOperationalAssignment(name='y', expr=Integer(raw='20'))])])),
+                                 post_operations=[OperationAssignment(name='x', expr=Integer(raw='10')),
+                                                  OperationAssignment(name='y', expr=Integer(raw='20'))])])),
         # Composite state with multiple post-transition operations
         ('state S1 { state S2; S2 -> S3: if [x > 5]; S3 -> [*]; }',
          StateDefinition(name='S1', substates=[StateDefinition(name='S2', substates=[], transitions=[])], transitions=[
@@ -98,7 +98,7 @@ class TestDSLTransition:
                                                StateDefinition(name='S3', substates=[], transitions=[])], transitions=[
              TransitionDefinition(from_state='S2', to_state='S3', event_id=None,
                                   condition_expr=BinaryOp(expr1=Name(name='x'), op='>', expr2=Integer(raw='5')),
-                                  post_operations=[PostOperationalAssignment(name='x', expr=Integer(raw='10'))]),
+                                  post_operations=[OperationAssignment(name='x', expr=Integer(raw='10'))]),
              TransitionDefinition(from_state='S3', to_state=EXIT_STATE, event_id=None, condition_expr=None,
                                   post_operations=[])])),
         # Composite state with states, conditional transition with post operations

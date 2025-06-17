@@ -13,8 +13,8 @@ class Operation(AstExportable):
     var_name: str
     expr: Expr
 
-    def to_ast_node(self) -> dsl_nodes.PostOperationalAssignment:
-        return dsl_nodes.PostOperationalAssignment(
+    def to_ast_node(self) -> dsl_nodes.OperationAssignment:
+        return dsl_nodes.OperationAssignment(
             name=self.var_name,
             expr=self.expr.to_ast_node(),
         )

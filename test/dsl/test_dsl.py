@@ -111,8 +111,8 @@ class TestDSLTransition:
                                        root_state=StateDefinition(name='Counter', substates=[], transitions=[
                                            TransitionDefinition(from_state=INIT_STATE, to_state='Counting',
                                                                 event_id=None, condition_expr=None, post_operations=[
-                                                   PostOperationalAssignment(name='count',
-                                                                             expr=BinaryOp(expr1=Name(name='count'),
+                                                   OperationAssignment(name='count',
+                                                                       expr=BinaryOp(expr1=Name(name='count'),
                                                                                            op='+',
                                                                                            expr2=Integer(raw='1')))]),
                                            TransitionDefinition(from_state='Counting', to_state='Done', event_id=None,
@@ -230,8 +230,8 @@ class TestDSLTransition:
                                        root_state=StateDefinition(name='Process', substates=[], transitions=[
                                            TransitionDefinition(from_state=INIT_STATE, to_state='Start', event_id=None,
                                                                 condition_expr=None, post_operations=[
-                                                   PostOperationalAssignment(name='counter',
-                                                                             expr=BinaryOp(expr1=Name(name='counter'),
+                                                   OperationAssignment(name='counter',
+                                                                       expr=BinaryOp(expr1=Name(name='counter'),
                                                                                            op='+',
                                                                                            expr2=Integer(raw='1')))]),
                                            TransitionDefinition(from_state='Start', to_state='Middle',
@@ -241,8 +241,8 @@ class TestDSLTransition:
                                                                 condition_expr=BinaryOp(expr1=Name(name='counter'),
                                                                                         op='>', expr2=Integer(raw='5')),
                                                                 post_operations=[
-                                                                    PostOperationalAssignment(name='counter',
-                                                                                              expr=BinaryOp(expr1=Name(
+                                                                    OperationAssignment(name='counter',
+                                                                                        expr=BinaryOp(expr1=Name(
                                                                                                   name='counter'),
                                                                                                   op='*',
                                                                                                   expr2=Integer(
@@ -323,8 +323,8 @@ class TestDSLTransition:
                                        root_state=StateDefinition(name='StatusHandler', substates=[], transitions=[
                                            TransitionDefinition(from_state=INIT_STATE, to_state='Checking',
                                                                 event_id=None, condition_expr=None, post_operations=[
-                                                   PostOperationalAssignment(name='status',
-                                                                             expr=BinaryOp(expr1=Name(name='status'),
+                                                   OperationAssignment(name='status',
+                                                                       expr=BinaryOp(expr1=Name(name='status'),
                                                                                            op='+',
                                                                                            expr2=Integer(raw='1')))]),
                                            TransitionDefinition(from_state='Checking', to_state='Success',
@@ -332,8 +332,8 @@ class TestDSLTransition:
                                                                 condition_expr=BinaryOp(expr1=Name(name='status'),
                                                                                         op='>', expr2=Integer(raw='0')),
                                                                 post_operations=[
-                                                                    PostOperationalAssignment(name='status',
-                                                                                              expr=Integer(
+                                                                    OperationAssignment(name='status',
+                                                                                        expr=Integer(
                                                                                                   raw='100'))]),
                                            TransitionDefinition(from_state='Checking', to_state='Failure',
                                                                 event_id=None,
@@ -341,8 +341,8 @@ class TestDSLTransition:
                                                                                         op='<=',
                                                                                         expr2=Integer(raw='0')),
                                                                 post_operations=[
-                                                                    PostOperationalAssignment(name='status',
-                                                                                              expr=UnaryOp(op='-',
+                                                                    OperationAssignment(name='status',
+                                                                                        expr=UnaryOp(op='-',
                                                                                                            expr=Integer(
                                                                                                                raw='1')))]),
                                            TransitionDefinition(from_state='Success', to_state=EXIT_STATE,

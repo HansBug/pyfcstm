@@ -306,7 +306,7 @@ class GrammarParser(Parser):
     RULE_def_assignment = 2
     RULE_state_definition = 3
     RULE_transition_definition = 4
-    RULE_post_operation_assignment = 5
+    RULE_operation_assignment = 5
     RULE_operational_statement = 6
     RULE_state_inner_statement = 7
     RULE_operation_program = 8
@@ -329,7 +329,7 @@ class GrammarParser(Parser):
         "def_assignment",
         "state_definition",
         "transition_definition",
-        "post_operation_assignment",
+        "operation_assignment",
         "operational_statement",
         "state_inner_statement",
         "operation_program",
@@ -1039,7 +1039,7 @@ class GrammarParser(Parser):
             self.exitRule()
         return localctx
 
-    class Post_operation_assignmentContext(ParserRuleContext):
+    class Operation_assignmentContext(ParserRuleContext):
         __slots__ = "parser"
 
         def __init__(
@@ -1055,21 +1055,21 @@ class GrammarParser(Parser):
             return self.getTypedRuleContext(GrammarParser.Num_expressionContext, 0)
 
         def getRuleIndex(self):
-            return GrammarParser.RULE_post_operation_assignment
+            return GrammarParser.RULE_operation_assignment
 
         def enterRule(self, listener: ParseTreeListener):
-            if hasattr(listener, "enterPost_operation_assignment"):
-                listener.enterPost_operation_assignment(self)
+            if hasattr(listener, "enterOperation_assignment"):
+                listener.enterOperation_assignment(self)
 
         def exitRule(self, listener: ParseTreeListener):
-            if hasattr(listener, "exitPost_operation_assignment"):
-                listener.exitPost_operation_assignment(self)
+            if hasattr(listener, "exitOperation_assignment"):
+                listener.exitOperation_assignment(self)
 
-    def post_operation_assignment(self):
-        localctx = GrammarParser.Post_operation_assignmentContext(
+    def operation_assignment(self):
+        localctx = GrammarParser.Operation_assignmentContext(
             self, self._ctx, self.state
         )
-        self.enterRule(localctx, 10, self.RULE_post_operation_assignment)
+        self.enterRule(localctx, 10, self.RULE_operation_assignment)
         try:
             self.enterOuterAlt(localctx, 1)
             self.state = 156
@@ -1097,9 +1097,9 @@ class GrammarParser(Parser):
             super().__init__(parent, invokingState)
             self.parser = parser
 
-        def post_operation_assignment(self):
+        def operation_assignment(self):
             return self.getTypedRuleContext(
-                GrammarParser.Post_operation_assignmentContext, 0
+                GrammarParser.Operation_assignmentContext, 0
             )
 
         def getRuleIndex(self):
@@ -1125,7 +1125,7 @@ class GrammarParser(Parser):
             if token in [GrammarParser.ID]:
                 self.enterOuterAlt(localctx, 1)
                 self.state = 161
-                self.post_operation_assignment()
+                self.operation_assignment()
                 pass
             elif token in [GrammarParser.T__4]:
                 self.enterOuterAlt(localctx, 2)

@@ -650,6 +650,660 @@ class TestDSLTransition:
                                                                   durings=[], exits=[]))
         ),  # State machine with complex arithmetic expressions in definitions and conditions
 
+        (
+                """
+                def int x = 0;
+                state A {
+        
+                    enter {
+                        x = 1;
+                    }
+        
+                    B -> C :: E1;
+                    C -> C : if [x == 1] effect {
+                        x = 0;
+                    }
+        
+                    state B;
+                    state C {
+                        enter abstract F1;
+                        enter abstract F2 /*
+                            this is the comment of F2
+                        */
+        
+                        during before abstract /*
+                            this is another during
+                        */
+        
+                        state D {
+                            during {
+                                x = x + 1;
+                            }
+                            state EX;
+                            [*] -> EX : E1;
+                        }
+                        [*] -> D :: E2;
+                        D -> [*] : if [x > 0] effect {
+                            x = ((x + ((-1))));
+                            x = x / 2;
+                        }
+        
+                        exit {
+                            x = 21;
+                        }
+                    }
+        
+                    [*] -> B;
+                    C -> [*] effect {};
+        
+                    C -> B :: E2;
+                    C -> B : C.D.E1;
+        
+                    during after abstract Af;
+        
+                    ;;;
+                }
+                """,
+                StateMachineDSLProgram(definitions=[DefAssignment(name='x', type='int', expr=Integer(raw='0'))],
+                                       root_state=StateDefinition(name='A', substates=[
+                                           StateDefinition(name='B', substates=[], transitions=[], enters=[],
+                                                           durings=[], exits=[]), StateDefinition(name='C', substates=[
+                                               StateDefinition(name='D', substates=[
+                                                   StateDefinition(name='EX', substates=[], transitions=[], enters=[],
+                                                                   durings=[], exits=[])], transitions=[
+                                                   TransitionDefinition(from_state=INIT_STATE, to_state='EX',
+                                                                        event_id=ChainID(path=['E1']),
+                                                                        condition_expr=None, post_operations=[])],
+                                                               enters=[], durings=[DuringOperations(aspect=None,
+                                                                                                    operations=[
+                                                                                                        OperationAssignment(
+                                                                                                            name='x',
+                                                                                                            expr=BinaryOp(
+                                                                                                                expr1=Name(
+                                                                                                                    name='x'),
+                                                                                                                op='+',
+                                                                                                                expr2=Integer(
+                                                                                                                    raw='1')))])],
+                                                               exits=[])], transitions=[
+                                               TransitionDefinition(from_state=INIT_STATE, to_state='D',
+                                                                    event_id=ChainID(path=['E2']), condition_expr=None,
+                                                                    post_operations=[]),
+                                               TransitionDefinition(from_state='D', to_state=EXIT_STATE, event_id=None,
+                                                                    condition_expr=BinaryOp(expr1=Name(name='x'),
+                                                                                            op='>',
+                                                                                            expr2=Integer(raw='0')),
+                                                                    post_operations=[OperationAssignment(name='x',
+                                                                                                         expr=Paren(
+                                                                                                             expr=Paren(
+                                                                                                                 expr=BinaryOp(
+                                                                                                                     expr1=Name(
+                                                                                                                         name='x'),
+                                                                                                                     op='+',
+                                                                                                                     expr2=Paren(
+                                                                                                                         expr=Paren(
+                                                                                                                             expr=UnaryOp(
+                                                                                                                                 op='-',
+                                                                                                                                 expr=Integer(
+                                                                                                                                     raw='1')))))))),
+                                                                                     OperationAssignment(name='x',
+                                                                                                         expr=BinaryOp(
+                                                                                                             expr1=Name(
+                                                                                                                 name='x'),
+                                                                                                             op='/',
+                                                                                                             expr2=Integer(
+                                                                                                                 raw='2')))])],
+                                                                                                  enters=[
+                                                                                                      EnterAbstractFunction(
+                                                                                                          name='F1',
+                                                                                                          doc=None),
+                                                                                                      EnterAbstractFunction(
+                                                                                                          name='F2',
+                                                                                                          doc='this is the comment of F2')],
+                                                                                                  durings=[
+                                                                                                      DuringAbstractFunction(
+                                                                                                          name=None,
+                                                                                                          aspect='before',
+                                                                                                          doc='this is another during')],
+                                                                                                  exits=[ExitOperations(
+                                                                                                      operations=[
+                                                                                                          OperationAssignment(
+                                                                                                              name='x',
+                                                                                                              expr=Integer(
+                                                                                                                  raw='21'))])])],
+                                                                  transitions=[
+                                                                      TransitionDefinition(from_state='B', to_state='C',
+                                                                                           event_id=ChainID(
+                                                                                               path=['B', 'E1']),
+                                                                                           condition_expr=None,
+                                                                                           post_operations=[]),
+                                                                      TransitionDefinition(from_state='C', to_state='C',
+                                                                                           event_id=None,
+                                                                                           condition_expr=BinaryOp(
+                                                                                               expr1=Name(name='x'),
+                                                                                               op='==',
+                                                                                               expr2=Integer(raw='1')),
+                                                                                           post_operations=[
+                                                                                               OperationAssignment(
+                                                                                                   name='x',
+                                                                                                   expr=Integer(
+                                                                                                       raw='0'))]),
+                                                                      TransitionDefinition(from_state=INIT_STATE,
+                                                                                           to_state='B', event_id=None,
+                                                                                           condition_expr=None,
+                                                                                           post_operations=[]),
+                                                                      TransitionDefinition(from_state='C',
+                                                                                           to_state=EXIT_STATE,
+                                                                                           event_id=None,
+                                                                                           condition_expr=None,
+                                                                                           post_operations=[]),
+                                                                      TransitionDefinition(from_state='C', to_state='B',
+                                                                                           event_id=ChainID(
+                                                                                               path=['C', 'E2']),
+                                                                                           condition_expr=None,
+                                                                                           post_operations=[]),
+                                                                      TransitionDefinition(from_state='C', to_state='B',
+                                                                                           event_id=ChainID(
+                                                                                               path=['C', 'D', 'E1']),
+                                                                                           condition_expr=None,
+                                                                                           post_operations=[])],
+                                                                  enters=[EnterOperations(operations=[
+                                                                      OperationAssignment(name='x',
+                                                                                          expr=Integer(raw='1'))])],
+                                                                  durings=[
+                                                                      DuringAbstractFunction(name='Af', aspect='after',
+                                                                                             doc=None)], exits=[]))
+        ),  # A simpler full demo
+        (
+                """
+                def int a = 0;
+                def int b = 0x0;
+        
+                state LX {
+                    [*] -> LX1;
+        
+                    enter {
+                        b = 0;
+                    }
+        
+                    exit {
+                        b = 0;
+                    }
+        
+                    state LX1 {
+                        during before abstract BeforeLX1Enter;
+                        during after abstract AfterLX1Enter /*
+                            this is the comment line
+                        */
+        
+                        state LX11 {
+                            enter abstract LX11Enter;
+                            exit abstract LX11Exit;
+                            during abstract LX11During; 
+                        }
+                        state LX12;
+                        state LX13;
+                        state LX14 {
+                            during {
+                                b = 0x10;
+                            }
+                        }
+        
+                        [*] -> LX11;
+                        LX11 -> LX12 :: E1;
+                        LX12 -> LX13 :: E1;
+                        LX12 -> LX14 :: E2;
+        
+                        LX13 -> [*] :: E1 effect {
+                            a = 0x2;
+                        }
+                        LX13 -> [*] :: E2 effect {
+                            a = 0x3;
+                        }
+                        LX13 -> LX14 :: E3;
+                        LX13 -> LX14 :: E4;
+                        LX14 -> LX12 :: E1;
+                        LX14 -> [*] :: E2 effect {
+                            a = 0x1;
+                        }
+                    }
+        
+                    state LX2 {
+                        [*] -> LX21;
+                        state LX21 {
+                            state LX211;
+                            state LX212;
+                            [*] -> LX211 : if [a == 0x2];
+                            [*] -> LX212 : if [a == 0x3];
+                            LX211 -> [*] :: E1 effect {
+                                a = 0x1;
+                            }
+                            LX211 -> LX212 :: E2;
+                            LX212 -> [*] :: E1 effect {
+                                a = 0x1;
+                            }
+                            LX212 -> LX211 : E2;
+                        }
+                        LX21 -> [*] : if [a == 0x1];
+                    }
+        
+                    LX1 -> LX2 : if [a == 0x2 || a == 0x3];
+                    LX1 -> LX1 : if [a == 0x1];
+                    LX2 -> LX1 : if [a == 0x1];
+                }
+                """,
+                StateMachineDSLProgram(definitions=[DefAssignment(name='a', type='int', expr=Integer(raw='0')),
+                                                    DefAssignment(name='b', type='int', expr=HexInt(raw='0x0'))],
+                                       root_state=StateDefinition(name='LX', substates=[StateDefinition(name='LX1',
+                                                                                                        substates=[
+                                                                                                            StateDefinition(
+                                                                                                                name='LX11',
+                                                                                                                substates=[],
+                                                                                                                transitions=[],
+                                                                                                                enters=[
+                                                                                                                    EnterAbstractFunction(
+                                                                                                                        name='LX11Enter',
+                                                                                                                        doc=None)],
+                                                                                                                durings=[
+                                                                                                                    DuringAbstractFunction(
+                                                                                                                        name='LX11During',
+                                                                                                                        aspect=None,
+                                                                                                                        doc=None)],
+                                                                                                                exits=[
+                                                                                                                    ExitAbstractFunction(
+                                                                                                                        name='LX11Exit',
+                                                                                                                        doc=None)]),
+                                                                                                            StateDefinition(
+                                                                                                                name='LX12',
+                                                                                                                substates=[],
+                                                                                                                transitions=[],
+                                                                                                                enters=[],
+                                                                                                                durings=[],
+                                                                                                                exits=[]),
+                                                                                                            StateDefinition(
+                                                                                                                name='LX13',
+                                                                                                                substates=[],
+                                                                                                                transitions=[],
+                                                                                                                enters=[],
+                                                                                                                durings=[],
+                                                                                                                exits=[]),
+                                                                                                            StateDefinition(
+                                                                                                                name='LX14',
+                                                                                                                substates=[],
+                                                                                                                transitions=[],
+                                                                                                                enters=[],
+                                                                                                                durings=[
+                                                                                                                    DuringOperations(
+                                                                                                                        aspect=None,
+                                                                                                                        operations=[
+                                                                                                                            OperationAssignment(
+                                                                                                                                name='b',
+                                                                                                                                expr=HexInt(
+                                                                                                                                    raw='0x10'))])],
+                                                                                                                exits=[])],
+                                                                                                        transitions=[
+                                                                                                            TransitionDefinition(
+                                                                                                                from_state=INIT_STATE,
+                                                                                                                to_state='LX11',
+                                                                                                                event_id=None,
+                                                                                                                condition_expr=None,
+                                                                                                                post_operations=[]),
+                                                                                                            TransitionDefinition(
+                                                                                                                from_state='LX11',
+                                                                                                                to_state='LX12',
+                                                                                                                event_id=ChainID(
+                                                                                                                    path=[
+                                                                                                                        'LX11',
+                                                                                                                        'E1']),
+                                                                                                                condition_expr=None,
+                                                                                                                post_operations=[]),
+                                                                                                            TransitionDefinition(
+                                                                                                                from_state='LX12',
+                                                                                                                to_state='LX13',
+                                                                                                                event_id=ChainID(
+                                                                                                                    path=[
+                                                                                                                        'LX12',
+                                                                                                                        'E1']),
+                                                                                                                condition_expr=None,
+                                                                                                                post_operations=[]),
+                                                                                                            TransitionDefinition(
+                                                                                                                from_state='LX12',
+                                                                                                                to_state='LX14',
+                                                                                                                event_id=ChainID(
+                                                                                                                    path=[
+                                                                                                                        'LX12',
+                                                                                                                        'E2']),
+                                                                                                                condition_expr=None,
+                                                                                                                post_operations=[]),
+                                                                                                            TransitionDefinition(
+                                                                                                                from_state='LX13',
+                                                                                                                to_state=EXIT_STATE,
+                                                                                                                event_id=ChainID(
+                                                                                                                    path=[
+                                                                                                                        'LX13',
+                                                                                                                        'E1']),
+                                                                                                                condition_expr=None,
+                                                                                                                post_operations=[
+                                                                                                                    OperationAssignment(
+                                                                                                                        name='a',
+                                                                                                                        expr=HexInt(
+                                                                                                                            raw='0x2'))]),
+                                                                                                            TransitionDefinition(
+                                                                                                                from_state='LX13',
+                                                                                                                to_state=EXIT_STATE,
+                                                                                                                event_id=ChainID(
+                                                                                                                    path=[
+                                                                                                                        'LX13',
+                                                                                                                        'E2']),
+                                                                                                                condition_expr=None,
+                                                                                                                post_operations=[
+                                                                                                                    OperationAssignment(
+                                                                                                                        name='a',
+                                                                                                                        expr=HexInt(
+                                                                                                                            raw='0x3'))]),
+                                                                                                            TransitionDefinition(
+                                                                                                                from_state='LX13',
+                                                                                                                to_state='LX14',
+                                                                                                                event_id=ChainID(
+                                                                                                                    path=[
+                                                                                                                        'LX13',
+                                                                                                                        'E3']),
+                                                                                                                condition_expr=None,
+                                                                                                                post_operations=[]),
+                                                                                                            TransitionDefinition(
+                                                                                                                from_state='LX13',
+                                                                                                                to_state='LX14',
+                                                                                                                event_id=ChainID(
+                                                                                                                    path=[
+                                                                                                                        'LX13',
+                                                                                                                        'E4']),
+                                                                                                                condition_expr=None,
+                                                                                                                post_operations=[]),
+                                                                                                            TransitionDefinition(
+                                                                                                                from_state='LX14',
+                                                                                                                to_state='LX12',
+                                                                                                                event_id=ChainID(
+                                                                                                                    path=[
+                                                                                                                        'LX14',
+                                                                                                                        'E1']),
+                                                                                                                condition_expr=None,
+                                                                                                                post_operations=[]),
+                                                                                                            TransitionDefinition(
+                                                                                                                from_state='LX14',
+                                                                                                                to_state=EXIT_STATE,
+                                                                                                                event_id=ChainID(
+                                                                                                                    path=[
+                                                                                                                        'LX14',
+                                                                                                                        'E2']),
+                                                                                                                condition_expr=None,
+                                                                                                                post_operations=[
+                                                                                                                    OperationAssignment(
+                                                                                                                        name='a',
+                                                                                                                        expr=HexInt(
+                                                                                                                            raw='0x1'))])],
+                                                                                                        enters=[],
+                                                                                                        durings=[
+                                                                                                            DuringAbstractFunction(
+                                                                                                                name='BeforeLX1Enter',
+                                                                                                                aspect='before',
+                                                                                                                doc=None),
+                                                                                                            DuringAbstractFunction(
+                                                                                                                name='AfterLX1Enter',
+                                                                                                                aspect='after',
+                                                                                                                doc='this is the comment line')],
+                                                                                                        exits=[]),
+                                                                                        StateDefinition(name='LX2',
+                                                                                                        substates=[
+                                                                                                            StateDefinition(
+                                                                                                                name='LX21',
+                                                                                                                substates=[
+                                                                                                                    StateDefinition(
+                                                                                                                        name='LX211',
+                                                                                                                        substates=[],
+                                                                                                                        transitions=[],
+                                                                                                                        enters=[],
+                                                                                                                        durings=[],
+                                                                                                                        exits=[]),
+                                                                                                                    StateDefinition(
+                                                                                                                        name='LX212',
+                                                                                                                        substates=[],
+                                                                                                                        transitions=[],
+                                                                                                                        enters=[],
+                                                                                                                        durings=[],
+                                                                                                                        exits=[])],
+                                                                                                                transitions=[
+                                                                                                                    TransitionDefinition(
+                                                                                                                        from_state=INIT_STATE,
+                                                                                                                        to_state='LX211',
+                                                                                                                        event_id=None,
+                                                                                                                        condition_expr=BinaryOp(
+                                                                                                                            expr1=Name(
+                                                                                                                                name='a'),
+                                                                                                                            op='==',
+                                                                                                                            expr2=HexInt(
+                                                                                                                                raw='0x2')),
+                                                                                                                        post_operations=[]),
+                                                                                                                    TransitionDefinition(
+                                                                                                                        from_state=INIT_STATE,
+                                                                                                                        to_state='LX212',
+                                                                                                                        event_id=None,
+                                                                                                                        condition_expr=BinaryOp(
+                                                                                                                            expr1=Name(
+                                                                                                                                name='a'),
+                                                                                                                            op='==',
+                                                                                                                            expr2=HexInt(
+                                                                                                                                raw='0x3')),
+                                                                                                                        post_operations=[]),
+                                                                                                                    TransitionDefinition(
+                                                                                                                        from_state='LX211',
+                                                                                                                        to_state=EXIT_STATE,
+                                                                                                                        event_id=ChainID(
+                                                                                                                            path=[
+                                                                                                                                'LX211',
+                                                                                                                                'E1']),
+                                                                                                                        condition_expr=None,
+                                                                                                                        post_operations=[
+                                                                                                                            OperationAssignment(
+                                                                                                                                name='a',
+                                                                                                                                expr=HexInt(
+                                                                                                                                    raw='0x1'))]),
+                                                                                                                    TransitionDefinition(
+                                                                                                                        from_state='LX211',
+                                                                                                                        to_state='LX212',
+                                                                                                                        event_id=ChainID(
+                                                                                                                            path=[
+                                                                                                                                'LX211',
+                                                                                                                                'E2']),
+                                                                                                                        condition_expr=None,
+                                                                                                                        post_operations=[]),
+                                                                                                                    TransitionDefinition(
+                                                                                                                        from_state='LX212',
+                                                                                                                        to_state=EXIT_STATE,
+                                                                                                                        event_id=ChainID(
+                                                                                                                            path=[
+                                                                                                                                'LX212',
+                                                                                                                                'E1']),
+                                                                                                                        condition_expr=None,
+                                                                                                                        post_operations=[
+                                                                                                                            OperationAssignment(
+                                                                                                                                name='a',
+                                                                                                                                expr=HexInt(
+                                                                                                                                    raw='0x1'))]),
+                                                                                                                    TransitionDefinition(
+                                                                                                                        from_state='LX212',
+                                                                                                                        to_state='LX211',
+                                                                                                                        event_id=ChainID(
+                                                                                                                            path=[
+                                                                                                                                'E2']),
+                                                                                                                        condition_expr=None,
+                                                                                                                        post_operations=[])],
+                                                                                                                enters=[],
+                                                                                                                durings=[],
+                                                                                                                exits=[])],
+                                                                                                        transitions=[
+                                                                                                            TransitionDefinition(
+                                                                                                                from_state=INIT_STATE,
+                                                                                                                to_state='LX21',
+                                                                                                                event_id=None,
+                                                                                                                condition_expr=None,
+                                                                                                                post_operations=[]),
+                                                                                                            TransitionDefinition(
+                                                                                                                from_state='LX21',
+                                                                                                                to_state=EXIT_STATE,
+                                                                                                                event_id=None,
+                                                                                                                condition_expr=BinaryOp(
+                                                                                                                    expr1=Name(
+                                                                                                                        name='a'),
+                                                                                                                    op='==',
+                                                                                                                    expr2=HexInt(
+                                                                                                                        raw='0x1')),
+                                                                                                                post_operations=[])],
+                                                                                                        enters=[],
+                                                                                                        durings=[],
+                                                                                                        exits=[])],
+                                                                  transitions=[
+                                                                      TransitionDefinition(from_state=INIT_STATE,
+                                                                                           to_state='LX1',
+                                                                                           event_id=None,
+                                                                                           condition_expr=None,
+                                                                                           post_operations=[]),
+                                                                      TransitionDefinition(from_state='LX1',
+                                                                                           to_state='LX2',
+                                                                                           event_id=None,
+                                                                                           condition_expr=BinaryOp(
+                                                                                               expr1=BinaryOp(
+                                                                                                   expr1=Name(name='a'),
+                                                                                                   op='==',
+                                                                                                   expr2=HexInt(
+                                                                                                       raw='0x2')),
+                                                                                               op='||', expr2=BinaryOp(
+                                                                                                   expr1=Name(name='a'),
+                                                                                                   op='==',
+                                                                                                   expr2=HexInt(
+                                                                                                       raw='0x3'))),
+                                                                                           post_operations=[]),
+                                                                      TransitionDefinition(from_state='LX1',
+                                                                                           to_state='LX1',
+                                                                                           event_id=None,
+                                                                                           condition_expr=BinaryOp(
+                                                                                               expr1=Name(name='a'),
+                                                                                               op='==',
+                                                                                               expr2=HexInt(raw='0x1')),
+                                                                                           post_operations=[]),
+                                                                      TransitionDefinition(from_state='LX2',
+                                                                                           to_state='LX1',
+                                                                                           event_id=None,
+                                                                                           condition_expr=BinaryOp(
+                                                                                               expr1=Name(name='a'),
+                                                                                               op='==',
+                                                                                               expr2=HexInt(raw='0x1')),
+                                                                                           post_operations=[])],
+                                                                  enters=[EnterOperations(operations=[
+                                                                      OperationAssignment(name='b',
+                                                                                          expr=Integer(raw='0'))])],
+                                                                  durings=[], exits=[ExitOperations(
+                                               operations=[OperationAssignment(name='b', expr=Integer(raw='0'))])]))
+        ),  # A full demo
+
+        (
+                """
+                def int x = 0;
+                state A {
+                    enter abstract F;
+                    enter abstract F /* this is F */
+                    enter abstract /* this if another F */
+                    enter {
+                        x = 0;
+                    }
+        
+                    during abstract F;
+                    during abstract F /* this is F */
+                    during abstract /* this if another F */
+                    during {
+                        x = 0;
+                    }
+        
+                    during before abstract F;
+                    during before abstract F /* this is F */
+                    during before abstract /* this if another F */
+                    during before {
+                        x = 0;
+                    }
+        
+                    during after abstract F;
+                    during after abstract F /* this is F */
+                    during after abstract /* this if another F */
+                    during after {
+                        x = 0;
+                    }
+        
+                    exit abstract F;
+                    exit abstract F /* this is F */
+                    exit abstract /* this if another F */
+                    exit {
+                        x = 0;
+                    }
+                }
+                """,
+                StateMachineDSLProgram(definitions=[DefAssignment(name='x', type='int', expr=Integer(raw='0'))],
+                                       root_state=StateDefinition(name='A', substates=[], transitions=[],
+                                                                  enters=[EnterAbstractFunction(name='F', doc=None),
+                                                                          EnterAbstractFunction(name='F',
+                                                                                                doc='this is F'),
+                                                                          EnterAbstractFunction(name=None,
+                                                                                                doc='this if another F'),
+                                                                          EnterOperations(operations=[
+                                                                              OperationAssignment(name='x',
+                                                                                                  expr=Integer(
+                                                                                                      raw='0'))])],
+                                                                  durings=[DuringAbstractFunction(name='F', aspect=None,
+                                                                                                  doc=None),
+                                                                           DuringAbstractFunction(name='F', aspect=None,
+                                                                                                  doc='this is F'),
+                                                                           DuringAbstractFunction(name=None,
+                                                                                                  aspect=None,
+                                                                                                  doc='this if another F'),
+                                                                           DuringOperations(aspect=None, operations=[
+                                                                               OperationAssignment(name='x',
+                                                                                                   expr=Integer(
+                                                                                                       raw='0'))]),
+                                                                           DuringAbstractFunction(name='F',
+                                                                                                  aspect='before',
+                                                                                                  doc=None),
+                                                                           DuringAbstractFunction(name='F',
+                                                                                                  aspect='before',
+                                                                                                  doc='this is F'),
+                                                                           DuringAbstractFunction(name=None,
+                                                                                                  aspect='before',
+                                                                                                  doc='this if another F'),
+                                                                           DuringOperations(aspect='before',
+                                                                                            operations=[
+                                                                                                OperationAssignment(
+                                                                                                    name='x',
+                                                                                                    expr=Integer(
+                                                                                                        raw='0'))]),
+                                                                           DuringAbstractFunction(name='F',
+                                                                                                  aspect='after',
+                                                                                                  doc=None),
+                                                                           DuringAbstractFunction(name='F',
+                                                                                                  aspect='after',
+                                                                                                  doc='this is F'),
+                                                                           DuringAbstractFunction(name=None,
+                                                                                                  aspect='after',
+                                                                                                  doc='this if another F'),
+                                                                           DuringOperations(aspect='after', operations=[
+                                                                               OperationAssignment(name='x',
+                                                                                                   expr=Integer(
+                                                                                                       raw='0'))])],
+                                                                  exits=[ExitAbstractFunction(name='F', doc=None),
+                                                                         ExitAbstractFunction(name='F',
+                                                                                              doc='this is F'),
+                                                                         ExitAbstractFunction(name=None,
+                                                                                              doc='this if another F'),
+                                                                         ExitOperations(operations=[
+                                                                             OperationAssignment(name='x', expr=Integer(
+                                                                                 raw='0'))])]))
+        ),  # A full example of enter/during/exit
+
     ])
     def test_positive_cases(self, input_text, expected):
         assert parse_with_grammar_entry(input_text, entry_name='state_machine_dsl') == expected
@@ -925,6 +1579,187 @@ class TestDSLTransition:
                 """,
                 'def int a = 1 + 2 * 3;\ndef float b = 2.5 ** 2;\nstate ExpressionTest {\n    [*] -> Calculate;\n    Calculate -> Result : if [a * b > 20.0];\n    Result -> [*];\n}'
         ),  # State machine with complex arithmetic expressions in definitions and conditions
+
+        (
+                """
+                def int x = 0;
+                state A {
+        
+                    enter {
+                        x = 1;
+                    }
+        
+                    B -> C :: E1;
+                    C -> C : if [x == 1] effect {
+                        x = 0;
+                    }
+        
+                    state B;
+                    state C {
+                        enter abstract F1;
+                        enter abstract F2 /*
+                            this is the comment of F2
+                        */
+        
+                        during before abstract /*
+                            this is another during
+                        */
+        
+                        state D {
+                            during {
+                                x = x + 1;
+                            }
+                            state EX;
+                            [*] -> EX : E1;
+                        }
+                        [*] -> D :: E2;
+                        D -> [*] : if [x > 0] effect {
+                            x = ((x + ((-1))));
+                            x = x / 2;
+                        }
+        
+                        exit {
+                            x = 21;
+                        }
+                    }
+        
+                    [*] -> B;
+                    C -> [*] effect {};
+        
+                    C -> B :: E2;
+                    C -> B : C.D.E1;
+        
+                    during after abstract Af;
+        
+                    ;;;
+                }
+                """,
+                'def int x = 0;\nstate A {\n    enter {\n        x = 1;\n    }\n    during after abstract Af;\n    state B;\n    state C {\n        enter abstract F1;\n        enter abstract F2 /*\n            this is the comment of F2\n        */\n        during before abstract /*\n            this is another during\n        */\n        exit {\n            x = 21;\n        }\n        state D {\n            during {\n                x = x + 1;\n            }\n            state EX;\n            [*] -> EX :: E1;\n        }\n        [*] -> D :: E2;\n        D -> [*] : if [x > 0] effect {\n            x = ((x + ((-1))));\n            x = x / 2;\n        }\n    }\n    B -> C :: E1;\n    C -> C : if [x == 1] effect {\n        x = 0;\n    }\n    [*] -> B;\n    C -> [*];\n    C -> B :: E2;\n    C -> B : C.D.E1;\n}'
+        ),  # A simpler full demo
+        (
+                """
+                def int a = 0;
+                def int b = 0x0;
+        
+                state LX {
+                    [*] -> LX1;
+        
+                    enter {
+                        b = 0;
+                    }
+        
+                    exit {
+                        b = 0;
+                    }
+        
+                    state LX1 {
+                        during before abstract BeforeLX1Enter;
+                        during after abstract AfterLX1Enter /*
+                            this is the comment line
+                        */
+        
+                        state LX11 {
+                            enter abstract LX11Enter;
+                            exit abstract LX11Exit;
+                            during abstract LX11During; 
+                        }
+                        state LX12;
+                        state LX13;
+                        state LX14 {
+                            during {
+                                b = 0x10;
+                            }
+                        }
+        
+                        [*] -> LX11;
+                        LX11 -> LX12 :: E1;
+                        LX12 -> LX13 :: E1;
+                        LX12 -> LX14 :: E2;
+        
+                        LX13 -> [*] :: E1 effect {
+                            a = 0x2;
+                        }
+                        LX13 -> [*] :: E2 effect {
+                            a = 0x3;
+                        }
+                        LX13 -> LX14 :: E3;
+                        LX13 -> LX14 :: E4;
+                        LX14 -> LX12 :: E1;
+                        LX14 -> [*] :: E2 effect {
+                            a = 0x1;
+                        }
+                    }
+        
+                    state LX2 {
+                        [*] -> LX21;
+                        state LX21 {
+                            state LX211;
+                            state LX212;
+                            [*] -> LX211 : if [a == 0x2];
+                            [*] -> LX212 : if [a == 0x3];
+                            LX211 -> [*] :: E1 effect {
+                                a = 0x1;
+                            }
+                            LX211 -> LX212 :: E2;
+                            LX212 -> [*] :: E1 effect {
+                                a = 0x1;
+                            }
+                            LX212 -> LX211 : E2;
+                        }
+                        LX21 -> [*] : if [a == 0x1];
+                    }
+        
+                    LX1 -> LX2 : if [a == 0x2 || a == 0x3];
+                    LX1 -> LX1 : if [a == 0x1];
+                    LX2 -> LX1 : if [a == 0x1];
+                }
+                """,
+                'def int a = 0;\ndef int b = 0x0;\nstate LX {\n    enter {\n        b = 0;\n    }\n    exit {\n        b = 0;\n    }\n    state LX1 {\n        during before abstract BeforeLX1Enter;\n        during after abstract AfterLX1Enter /*\n            this is the comment line\n        */\n        state LX11 {\n            enter abstract LX11Enter;\n            during abstract LX11During;\n            exit abstract LX11Exit;\n        }\n        state LX12;\n        state LX13;\n        state LX14 {\n            during {\n                b = 0x10;\n            }\n        }\n        [*] -> LX11;\n        LX11 -> LX12 :: E1;\n        LX12 -> LX13 :: E1;\n        LX12 -> LX14 :: E2;\n        LX13 -> [*] :: E1 effect {\n            a = 0x2;\n        }\n        LX13 -> [*] :: E2 effect {\n            a = 0x3;\n        }\n        LX13 -> LX14 :: E3;\n        LX13 -> LX14 :: E4;\n        LX14 -> LX12 :: E1;\n        LX14 -> [*] :: E2 effect {\n            a = 0x1;\n        }\n    }\n    state LX2 {\n        state LX21 {\n            state LX211;\n            state LX212;\n            [*] -> LX211 : if [a == 0x2];\n            [*] -> LX212 : if [a == 0x3];\n            LX211 -> [*] :: E1 effect {\n                a = 0x1;\n            }\n            LX211 -> LX212 :: E2;\n            LX212 -> [*] :: E1 effect {\n                a = 0x1;\n            }\n            LX212 -> LX211 : E2;\n        }\n        [*] -> LX21;\n        LX21 -> [*] : if [a == 0x1];\n    }\n    [*] -> LX1;\n    LX1 -> LX2 : if [a == 0x2 || a == 0x3];\n    LX1 -> LX1 : if [a == 0x1];\n    LX2 -> LX1 : if [a == 0x1];\n}'
+        ),  # A full demo
+
+        (
+                """
+                def int x = 0;
+                state A {
+                    enter abstract F;
+                    enter abstract F /* this is F */
+                    enter abstract /* this if another F */
+                    enter {
+                        x = 0;
+                    }
+        
+                    during abstract F;
+                    during abstract F /* this is F */
+                    during abstract /* this if another F */
+                    during {
+                        x = 0;
+                    }
+        
+                    during before abstract F;
+                    during before abstract F /* this is F */
+                    during before abstract /* this if another F */
+                    during before {
+                        x = 0;
+                    }
+        
+                    during after abstract F;
+                    during after abstract F /* this is F */
+                    during after abstract /* this if another F */
+                    during after {
+                        x = 0;
+                    }
+        
+                    exit abstract F;
+                    exit abstract F /* this is F */
+                    exit abstract /* this if another F */
+                    exit {
+                        x = 0;
+                    }
+                }
+                """,
+                'def int x = 0;\nstate A {\n    enter abstract F;\n    enter abstract F /*\n        this is F\n    */\n    enter abstract /*\n        this if another F\n    */\n    enter {\n        x = 0;\n    }\n    during abstract F;\n    during abstract F /*\n        this is F\n    */\n    during abstract /*\n        this if another F\n    */\n    during {\n        x = 0;\n    }\n    during before abstract F;\n    during before abstract F /*\n        this is F\n    */\n    during before abstract /*\n        this if another F\n    */\n    during before {\n        x = 0;\n    }\n    during after abstract F;\n    during after abstract F /*\n        this is F\n    */\n    during after abstract /*\n        this if another F\n    */\n    during after {\n        x = 0;\n    }\n    exit abstract F;\n    exit abstract F /*\n        this is F\n    */\n    exit abstract /*\n        this if another F\n    */\n    exit {\n        x = 0;\n    }\n}'
+        ),  # A full example of enter/during/exit
+
     ])
     def test_positive_cases_str(self, input_text, expected_str, text_aligner):
         text_aligner.assert_equal(

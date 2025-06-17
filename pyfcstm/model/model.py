@@ -1,5 +1,6 @@
 import io
 import json
+import weakref
 from dataclasses import dataclass
 from textwrap import indent
 from typing import Optional, Union, List, Dict, Tuple
@@ -101,10 +102,53 @@ class State(AstExportable, PlantUMLExportable):
     on_enters: List[OnStage]
     on_durings: List[OnStage]
     on_exits: List[OnStage]
+    parent_ref: Optional[weakref.ReferenceType['State']]
+    substate_name_to_id: Dict[str, int] = None
+
+    def __post_init__(self):
+        self.substate_name_to_id = {name: i for i, (name, _) in enumerate(self.substates.items())}
 
     @property
     def is_leaf_state(self) -> bool:
         return len(self.substates) == 0
+
+    @property
+    def parent(self) -> Optional['State']:
+        if self.parent_ref is None:
+            return None
+        else:
+            return self.parent_ref()
+
+    @parent.setter
+    def parent(self, new_parent: Optional['State']):
+        if new_parent is None:
+            self.parent_ref = None
+        else:
+            self.parent_ref = weakref.ref(new_parent)
+
+    @property
+    def is_root_state(self) -> bool:
+        return self.parent is None
+
+    @property
+    def transitions_from(self) -> List[Transition]:
+        parent = self.parent
+        retval = []
+        if parent is not None:
+            for transition in parent.transitions:
+                if transition.from_state == self.name:
+                    retval.append(transition)
+        return retval
+
+    @property
+    def transitions_to(self) -> List[Transition]:
+        parent = self.parent
+        retval = []
+        if parent is not None:
+            for transition in parent.transitions:
+                if transition.to_state == self.name:
+                    retval.append(transition)
+        return retval
 
     @property
     def path_text(self):
@@ -451,7 +495,7 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                     operations=[],
                 ))
 
-        return State(
+        my_state = State(
             name=node.name,
             path=current_path,
             substates=d_substates,
@@ -460,7 +504,11 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
             on_enters=on_enters,
             on_durings=on_durings,
             on_exits=on_exits,
+            parent_ref=None,
         )
+        for _, substate in d_substates.items():
+            substate.parent = my_state
+        return my_state
 
     root_state = _recursive_build_states(dnode.root_state, current_path=())
     return StateMachine(

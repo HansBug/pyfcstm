@@ -37,7 +37,7 @@ class Transition:
     to_state: Union[str, dsl_nodes._StateSingletonMark]
     event: Optional[Event]
     guard: Optional[Expr]
-    post_operations: List[Operation]
+    effects: List[Operation]
 
 
 @dataclass
@@ -122,7 +122,7 @@ class State(AstExportable, PlantUMLExportable):
                     condition_expr=trans.guard.to_ast_node() if trans.guard is not None else None,
                     post_operations=[
                         item.to_ast_node()
-                        for item in trans.post_operations
+                        for item in trans.effects
                     ]
                 ) for trans in self.transitions
             ],
@@ -150,11 +150,11 @@ class State(AstExportable, PlantUMLExportable):
                         elif trans.guard is not None:
                             print(f' : {trans.guard.to_ast_node()}', file=tf, end='')
 
-                        if len(trans.post_operations) > 0:
+                        if len(trans.effects) > 0:
                             print('', file=tf)
                             print('note on link', file=tf)
                             print('effect {', file=tf)
-                            for operation in trans.post_operations:
+                            for operation in trans.effects:
                                 print(f'    {operation.to_ast_node()}', file=tf)
                             print('}', file=tf)
                             print('end note', file=tf, end='')
@@ -314,7 +314,7 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                 to_state=to_state,
                 event=trans_event,
                 guard=guard,
-                post_operations=post_operations,
+                effects=post_operations,
             )
             transitions.append(transition)
 

@@ -289,7 +289,12 @@ class TransitionDefinition(ASTNode):
             print('[*]' if self.to_state is EXIT_STATE else self.to_state, file=sf, end='')
 
             if self.event_id is not None:
-                print(f' : {self.event_id}', file=sf, end='')
+                if (self.from_state is INIT_STATE and len(self.event_id.path) == 1) or \
+                        (self.from_state is not INIT_STATE and len(self.event_id.path) == 2 and
+                         self.event_id.path[0] == self.from_state):
+                    print(f' :: {self.event_id.path[-1]}', file=sf, end='')
+                else:
+                    print(f' : {self.event_id}', file=sf, end='')
             elif self.condition_expr is not None:
                 print(f' : if [{self.condition_expr}]', file=sf, end='')
 

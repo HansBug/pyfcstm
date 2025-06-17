@@ -251,20 +251,30 @@ class GrammarParseListener(GrammarListener):
 
     def exitNormalTransitionDefinition(self, ctx: GrammarParser.NormalTransitionDefinitionContext):
         super().exitNormalTransitionDefinition(ctx)
+        event_id = None
+        if ctx.chain_id():
+            event_id = self.nodes[ctx.chain_id()]
+        elif ctx.from_id:
+            event_id = ChainID([ctx.from_state.text, ctx.from_id.text])
         self.nodes[ctx] = TransitionDefinition(
             from_state=ctx.from_state.text,
             to_state=ctx.to_state.text,
-            event_id=self.nodes[ctx.chain_id()] if ctx.chain_id() else None,
+            event_id=event_id,
             condition_expr=self.nodes[ctx.cond_expression()] if ctx.cond_expression() else None,
             post_operations=[self.nodes[item] for item in ctx.operational_statement() if item in self.nodes]
         )
 
     def exitExitTransitionDefinition(self, ctx: GrammarParser.ExitTransitionDefinitionContext):
         super().exitExitTransitionDefinition(ctx)
+        event_id = None
+        if ctx.chain_id():
+            event_id = self.nodes[ctx.chain_id()]
+        elif ctx.from_id:
+            event_id = ChainID([ctx.from_state.text, ctx.from_id.text])
         self.nodes[ctx] = TransitionDefinition(
             from_state=ctx.from_state.text,
             to_state=EXIT_STATE,
-            event_id=self.nodes[ctx.chain_id()] if ctx.chain_id() else None,
+            event_id=event_id,
             condition_expr=self.nodes[ctx.cond_expression()] if ctx.cond_expression() else None,
             post_operations=[self.nodes[item] for item in ctx.operational_statement() if item in self.nodes]
         )

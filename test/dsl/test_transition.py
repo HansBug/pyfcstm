@@ -106,15 +106,17 @@ class TestDSLTransition:
 
     @pytest.mark.parametrize(['input_text', 'expected_str'], [
         ('[*] -> StateA;', '[*] -> StateA;'),  # Basic entry transition to StateA
-        ('[*] -> StateB: chain1;', '[*] -> StateB : chain1;'),  # Entry transition with chain identifier
+        ('[*] -> StateB: chain1;', '[*] -> StateB :: chain1;'),  # Entry transition with chain identifier
         ('[*] -> StateC: if [x > 10];', '[*] -> StateC : if [x > 10];'),  # Entry transition with condition
-        ('[*] -> StateD effect { a = 5; }', '[*] -> StateD effect {\n    a = 5;\n}'),  # Entry transition with effect action
+        ('[*] -> StateD effect { a = 5; }', '[*] -> StateD effect {\n    a = 5;\n}'),
+        # Entry transition with effect action
         ('[*] -> StateF: if [x < 0 && y > 10];', '[*] -> StateF : if [x < 0 && y > 10];'),
         # Entry transition with complex condition
         ('[*] -> StateG effect { a = sin(b); c = 10; }', '[*] -> StateG effect {\n    a = sin(b);\n    c = 10;\n}'),
         # Entry transition with multiple effect actions
         ('StateA -> StateB;', 'StateA -> StateB;'),  # Basic transition from StateA to StateB
         ('StateC -> StateD: chain4;', 'StateC -> StateD : chain4;'),  # Transition with chain identifier
+        ('StateC -> StateD: StateC.chain4;', 'StateC -> StateD :: chain4;'),  # Transition with chain identifier
         ('StateE -> StateF: if [x <= 20];', 'StateE -> StateF : if [x <= 20];'),  # Transition with condition
         ('StateG -> StateH effect { a = 15; }', 'StateG -> StateH effect {\n    a = 15;\n}'),
         # Transition with effect action

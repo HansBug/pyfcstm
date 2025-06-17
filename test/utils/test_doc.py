@@ -73,7 +73,7 @@ class TestFormatMultilineComment:
         result = format_multiline_comment("No opening marker */")
         assert result == "No opening marker"
 
-    def test_extra_whitespace(self):
+    def test_extra_whitespace(self, text_aligner):
         raw_doc = """
         /*
             Extra
@@ -82,7 +82,10 @@ class TestFormatMultilineComment:
         """
         expected = "Extra\n    Whitespace"
         result = format_multiline_comment(raw_doc)
-        assert result == expected
+        text_aligner.assert_equal(
+            expect=expected,
+            actual=result
+        )
 
     def test_empty_lines_removal(self):
         raw_doc = """

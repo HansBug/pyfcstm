@@ -996,3 +996,381 @@ class TestModelExpr:
         ast_node = parse_with_grammar_entry(expr_text, entry_name='cond_expression')
         expr = parse_expr_node_to_expr(ast_node)
         assert pytest.approx(expected_value) == expr()
+
+    @pytest.mark.parametrize(['expr_text', 'a', 'b', 'c', 'expected_value'], [
+        ('a + b - c', 74, -15, -66, 125),  # Sum of a and b, subtracted by c
+        ('a * b / c', 58, -86, 67, -74.44776119402985),  # Product of a and b, divided by c
+        ('a % b + c', -92, -5, 66, 64),  # Remainder of a divided by b, plus c
+        ('a ** b + c', -57, -87, 97, 97.0),  # a raised to the power of b, plus c
+        ('(a + b) * c', -3, -74, -31, 2387),  # Sum of a and b, multiplied by c
+        ('a * b ** c', 21, 61, 37, 23956490147809644945650599739257499248964335447281388226410457516241),
+        # a multiplied by b raised to the power of c
+        ('sin(a) + cos(b) - tan(c)', -47, 10, 94, -0.7096665550603087),
+        # Sum of sine of a and cosine of b, minus tangent of c
+        ('a << b | c', -42, 6, 59, -2629),  # a left-shifted by b bits, bitwise OR with c
+        ('a & b ^ c', 34, 29, 87, 87),  # Bitwise AND of a and b, XOR with c
+        ('(a + b) % (c + 1)', 73, -76, -80, -3),  # Remainder when sum of a and b is divided by c plus 1
+        ('sqrt(a**2 + b**2) - c', 35, 65, -81, 154.824115301167),  # Pythagorean calculation of a and b, minus c
+        ('log(a) * exp(b) / log10(c)', 49, 47, 52, 5.854304377385308e+20),
+        # Natural log of a times e raised to b, divided by log base 10 of c
+        ('(a + b) ** (c % 3) + sin(a * b)', 21, 14, -8, 34.03389001073747),
+        # Sum of a and b raised to power of c modulo 3, plus sine of a times b
+        ('abs(a - b) * sign(c) + floor(a/c)', 66, 44, 34, 23),
+        # Absolute difference of a and b multiplied by sign of c, plus floor division of a by c
+        ('(a << 2) & (b >> 1) | (c ^ a)', -11, -35, 51, -58),
+        # a left-shifted by 2 bits AND b right-shifted by 1 bit, OR with XOR of c and a
+        ('(a > b) ? c : a + b', -33, -33, -7, -66),  # c if a is greater than b, otherwise a plus b
+        ('(a == b) ? a * c : b - c', -57, 5, 92, -87),  # a times c if a equals b, otherwise b minus c
+        ('(a <= c && b >= c) ? a + b + c : a * b * c', 24, -72, 38, -65664),
+        # Sum of a, b, and c if a is less than or equal to c AND b is greater than or equal to c, otherwise product of a, b, and c
+        ('cos(a) + sin(b) * tan(c % pi)', 40, -84, -99, -19.064541814849775),
+        # Cosine of a plus sine of b multiplied by tangent of c modulo pi
+        ('log(abs(a - b)) + sqrt(c ** 2)', 75, 7, 86, 90.21950770517611),
+        # Natural log of absolute difference between a and b, plus square root of c squared
+        ('((a + b) % c) ** (a & b) + sin(a * b / c)', 14, -32, -35, 1.231509825101539),
+        # Remainder of a plus b divided by c, raised to power of a AND b, plus sine of a times b divided by c
+        ('(a > b) ? sqrt(a**2 - b**2) : cbrt(c**3 - a**3)', -77, -44, 20, 77.44716482057184),
+        # Square root of difference of squares if a > b, otherwise cube root of difference of cubes
+        ('log2(a) * (b << 3) + (c & 0xFF) - round(sin(a * pi))', 67, 9, 17, 453.7584217129596),
+        # Log base 2 of a times b left-shifted by 3, plus c AND 0xFF, minus rounded sine of a times pi
+        ('(a ** b % c) * (a & b | c) + abs(a - b + c)', -14, 50, -93, 2159),
+        # a raised to b modulo c, multiplied by bitwise operations, plus absolute value of a minus b plus c
+        ('(a > b && b < c) ? (a + b) * c : (a - b) / c', -83, -54, 9, -3.2222222222222223),
+        # Product of sum of a and b with c if a > b AND b < c, otherwise quotient of a minus b divided by c
+        ('sin(a) * cos(b) * tan(c) + sqrt(a**2 + b**2 + c**2)', -83, -63, -82, 132.91202185631857),
+        # Product of trigonometric functions plus 3D distance calculation
+        ('((a & b) | (b ^ c)) ** (a % 3) + log(abs(a - b) + 1)', -93, -17, -75, 5.343805421853684),
+        # Complex bitwise operation raised to power of a modulo 3, plus log of absolute difference plus 1
+        ('(a > b) ? (b > c) ? a + b : b + c : (a > c) ? a + c : b * c', -3, -84, -11, -95),
+        # Nested conditional expression with various arithmetic combinations
+        ('floor(sqrt(a**2 + b**2)) * ceil(log(c + 1)) + round(sin(a * b * c))', 13, 72, 82, 365),
+        # Floor of Pythagorean calculation times ceiling of log, plus rounded sine of product
+        ('(a ** b % c) * ((a << 2) & (b >> 1)) + abs(sin(a) * cos(b) - tan(c))', -17, -71, -69, 0.41264222158717123),
+        # Modular exponentiation times bitwise shift operations, plus absolute difference of trigonometric functions
+    ])
+    def test_num_expression_parse_to_model_call_with_variables(self, expr_text, a, b, c, expected_value):
+        ast_node = parse_with_grammar_entry(expr_text, entry_name='num_expression')
+        expr = parse_expr_node_to_expr(ast_node)
+        assert pytest.approx(expected_value) == expr(a=a, b=b, c=c)
+
+    @pytest.mark.parametrize(['expr_text', 'a', 'b', 'c', 'expected_value'], [
+        ('a > b', -38, -90, -6, True),  # a is greater than b
+        ('a > b', 17, -42, -45, True),  # a is greater than b
+        ('a > b', 21, -76, 93, True),  # a is greater than b
+        ('a > b', -79, 24, -37, False),  # a is greater than b
+        ('a > b', 30, 64, 94, False),  # a is greater than b
+        ('a > b', -75, 88, -29, False),  # a is greater than b
+        ('a == b', 58, 58, -68, True),  # a equals b
+        ('a == b', 98, 98, 49, True),  # a equals b
+        ('a == b', -7, -7, 62, True),  # a equals b
+        ('a == b', -47, 47, 34, False),  # a equals b
+        ('a == b', 24, -69, -52, False),  # a equals b
+        ('a == b', 78, 12, 1, False),  # a equals b
+        ('a != c', 6, 59, -18, True),  # a is not equal to c
+        ('a != c', -94, 15, 60, True),  # a is not equal to c
+        ('a != c', -4, -57, -5, True),  # a is not equal to c
+        ('a != c', -22, -51, -22, False),  # a is not equal to c
+        ('a != c', -79, 21, -79, False),  # a is not equal to c
+        ('a != c', -9, 38, -9, False),  # a is not equal to c
+        ('a >= b && b <= c', 86, -21, 88, True),  # a is greater than or equal to b AND b is less than or equal to c
+        ('a >= b && b <= c', 36, 30, 94, True),  # a is greater than or equal to b AND b is less than or equal to c
+        ('a >= b && b <= c', -49, -88, -58, True),  # a is greater than or equal to b AND b is less than or equal to c
+        ('a >= b && b <= c', -38, 0, -5, False),  # a is greater than or equal to b AND b is less than or equal to c
+        ('a >= b && b <= c', -59, 92, -20, False),  # a is greater than or equal to b AND b is less than or equal to c
+        ('a >= b && b <= c', 20, 67, 9, False),  # a is greater than or equal to b AND b is less than or equal to c
+        ('a < b || b > c', -5, -9, -92, True),  # a is less than b OR b is greater than c
+        ('a < b || b > c', 26, 95, -39, True),  # a is less than b OR b is greater than c
+        ('a < b || b > c', -29, 73, -74, True),  # a is less than b OR b is greater than c
+        ('a < b || b > c', -49, -51, 79, False),  # a is less than b OR b is greater than c
+        ('a < b || b > c', 67, -97, 12, False),  # a is less than b OR b is greater than c
+        ('a < b || b > c', -28, -84, -24, False),  # a is less than b OR b is greater than c
+        ('!(a == b) && c > 0', -99, -13, 51, True),  # a is not equal to b AND c is greater than 0
+        ('!(a == b) && c > 0', 12, -32, 57, True),  # a is not equal to b AND c is greater than 0
+        ('!(a == b) && c > 0', -86, 97, 72, True),  # a is not equal to b AND c is greater than 0
+        ('!(a == b) && c > 0', 80, 80, -26, False),  # a is not equal to b AND c is greater than 0
+        ('!(a == b) && c > 0', 47, 48, -20, False),  # a is not equal to b AND c is greater than 0
+        ('!(a == b) && c > 0', 86, -38, -78, False),  # a is not equal to b AND c is greater than 0
+        ('a > b && b > c && a > c', 27, -5, -25, True),
+        # a is greater than b AND b is greater than c AND a is greater than c
+        ('a > b && b > c && a > c', 78, -53, -70, True),
+        # a is greater than b AND b is greater than c AND a is greater than c
+        ('a > b && b > c && a > c', 20, 12, -79, True),
+        # a is greater than b AND b is greater than c AND a is greater than c
+        ('a > b && b > c && a > c', -66, 5, 73, False),
+        # a is greater than b AND b is greater than c AND a is greater than c
+        ('a > b && b > c && a > c', -36, 24, -75, False),
+        # a is greater than b AND b is greater than c AND a is greater than c
+        ('a > b && b > c && a > c', -81, -98, 36, False),
+        # a is greater than b AND b is greater than c AND a is greater than c
+        ('a == b || b == c || a == c', 7, 33, 7, True),  # a equals b OR b equals c OR a equals c
+        ('a == b || b == c || a == c', 88, 88, -24, True),  # a equals b OR b equals c OR a equals c
+        ('a == b || b == c || a == c', -77, -77, -4, True),  # a equals b OR b equals c OR a equals c
+        ('a == b || b == c || a == c', 69, -90, -87, False),  # a equals b OR b equals c OR a equals c
+        ('a == b || b == c || a == c', -39, -92, -24, False),  # a equals b OR b equals c OR a equals c
+        ('a == b || b == c || a == c', -100, -17, 26, False),  # a equals b OR b equals c OR a equals c
+        ('a >= 0 && b >= 0 && c >= 0', 68, 35, 56, True),  # a, b, and c are all non-negative
+        ('a >= 0 && b >= 0 && c >= 0', 48, 23, 13, True),  # a, b, and c are all non-negative
+        ('a >= 0 && b >= 0 && c >= 0', 97, 1, 68, True),  # a, b, and c are all non-negative
+        ('a >= 0 && b >= 0 && c >= 0', 78, 17, -30, False),  # a, b, and c are all non-negative
+        ('a >= 0 && b >= 0 && c >= 0', -49, -14, 88, False),  # a, b, and c are all non-negative
+        ('a >= 0 && b >= 0 && c >= 0', -48, 81, -16, False),  # a, b, and c are all non-negative
+        ('a < b + c && b < a + c && c < a + b', 68, 63, 82, True),
+        # Triangle inequality: each side is less than sum of other two sides
+        ('a < b + c && b < a + c && c < a + b', 88, 54, 60, True),
+        # Triangle inequality: each side is less than sum of other two sides
+        ('a < b + c && b < a + c && c < a + b', 29, 32, 41, True),
+        # Triangle inequality: each side is less than sum of other two sides
+        ('a < b + c && b < a + c && c < a + b', -65, 86, -55, False),
+        # Triangle inequality: each side is less than sum of other two sides
+        ('a < b + c && b < a + c && c < a + b', 33, -17, -61, False),
+        # Triangle inequality: each side is less than sum of other two sides
+        ('a < b + c && b < a + c && c < a + b', 96, -19, 4, False),
+        # Triangle inequality: each side is less than sum of other two sides
+        ('(a > b) ? (b > c) : (a > c)', 19, 54, 13, True),  # If a > b then check if b > c, otherwise check if a > c
+        ('(a > b) ? (b > c) : (a > c)', 73, 57, 15, True),  # If a > b then check if b > c, otherwise check if a > c
+        ('(a > b) ? (b > c) : (a > c)', -2, -84, -99, True),  # If a > b then check if b > c, otherwise check if a > c
+        ('(a > b) ? (b > c) : (a > c)', -15, -67, -61, False),  # If a > b then check if b > c, otherwise check if a > c
+        ('(a > b) ? (b > c) : (a > c)', 91, 1, 39, False),  # If a > b then check if b > c, otherwise check if a > c
+        ('(a > b) ? (b > c) : (a > c)', -55, -47, 20, False),  # If a > b then check if b > c, otherwise check if a > c
+        ('a**2 + b**2 == c**2', -66, 0, -66, True),  # Pythagorean theorem: a squared plus b squared equals c squared
+        ('a**2 + b**2 == c**2', 60, 25, -65, True),  # Pythagorean theorem: a squared plus b squared equals c squared
+        ('a**2 + b**2 == c**2', 80, 0, -80, True),  # Pythagorean theorem: a squared plus b squared equals c squared
+        ('a**2 + b**2 == c**2', -27, -88, -68, False),  # Pythagorean theorem: a squared plus b squared equals c squared
+        ('a**2 + b**2 == c**2', 12, 78, -33, False),  # Pythagorean theorem: a squared plus b squared equals c squared
+        ('a**2 + b**2 == c**2', -72, -94, 98, False),  # Pythagorean theorem: a squared plus b squared equals c squared
+        ('a % 2 == 0 && b % 2 == 0 && c % 2 == 0', -32, -48, -72, True),  # a, b, and c are all even numbers
+        ('a % 2 == 0 && b % 2 == 0 && c % 2 == 0', -24, -56, 20, True),  # a, b, and c are all even numbers
+        ('a % 2 == 0 && b % 2 == 0 && c % 2 == 0', 60, 90, 70, True),  # a, b, and c are all even numbers
+        ('a % 2 == 0 && b % 2 == 0 && c % 2 == 0', 17, 52, -94, False),  # a, b, and c are all even numbers
+        ('a % 2 == 0 && b % 2 == 0 && c % 2 == 0', 42, -11, -5, False),  # a, b, and c are all even numbers
+        ('a % 2 == 0 && b % 2 == 0 && c % 2 == 0', 89, 31, -57, False),  # a, b, and c are all even numbers
+        ('(a > 0) ? b > 0 && c > 0 : b < 0 && c < 0', 49, 32, 5, True),
+        # If a is positive, check if b and c are positive, otherwise check if b and c are negative
+        ('(a > 0) ? b > 0 && c > 0 : b < 0 && c < 0', 86, 46, 31, True),
+        # If a is positive, check if b and c are positive, otherwise check if b and c are negative
+        ('(a > 0) ? b > 0 && c > 0 : b < 0 && c < 0', 31, 81, 46, True),
+        # If a is positive, check if b and c are positive, otherwise check if b and c are negative
+        ('(a > 0) ? b > 0 && c > 0 : b < 0 && c < 0', -38, 92, -17, False),
+        # If a is positive, check if b and c are positive, otherwise check if b and c are negative
+        ('(a > 0) ? b > 0 && c > 0 : b < 0 && c < 0', -38, 22, -10, False),
+        # If a is positive, check if b and c are positive, otherwise check if b and c are negative
+        ('(a > 0) ? b > 0 && c > 0 : b < 0 && c < 0', -76, 87, -86, False),
+        # If a is positive, check if b and c are positive, otherwise check if b and c are negative
+        ('(a + b > c) && (a + c > b) && (b + c > a)', 52, 52, 85, True),
+        # Sum of any two variables is greater than the third (triangle inequality)
+        ('(a + b > c) && (a + c > b) && (b + c > a)', 45, 91, 71, True),
+        # Sum of any two variables is greater than the third (triangle inequality)
+        ('(a + b > c) && (a + c > b) && (b + c > a)', 100, 58, 43, True),
+        # Sum of any two variables is greater than the third (triangle inequality)
+        ('(a + b > c) && (a + c > b) && (b + c > a)', 64, 32, -85, False),
+        # Sum of any two variables is greater than the third (triangle inequality)
+        ('(a + b > c) && (a + c > b) && (b + c > a)', 64, -44, -19, False),
+        # Sum of any two variables is greater than the third (triangle inequality)
+        ('(a + b > c) && (a + c > b) && (b + c > a)', -27, -40, -60, False),
+        # Sum of any two variables is greater than the third (triangle inequality)
+        ('(a > b && b > c) || (a < b && b < c)', -18, -35, -79, True),
+        # Variables are in strictly ascending or descending order
+        ('(a > b && b > c) || (a < b && b < c)', 50, 55, 87, True),
+        # Variables are in strictly ascending or descending order
+        ('(a > b && b > c) || (a < b && b < c)', 91, -8, -73, True),
+        # Variables are in strictly ascending or descending order
+        ('(a > b && b > c) || (a < b && b < c)', -20, -78, 78, False),
+        # Variables are in strictly ascending or descending order
+        ('(a > b && b > c) || (a < b && b < c)', 4, -26, 100, False),
+        # Variables are in strictly ascending or descending order
+        ('(a > b && b > c) || (a < b && b < c)', 16, 94, -36, False),
+        # Variables are in strictly ascending or descending order
+        ('(a == b && b != c) || (a != b && b == c) || (a == c && c != b)', 53, -32, 53, True),
+        # Exactly two of the three variables are equal
+        ('(a == b && b != c) || (a != b && b == c) || (a == c && c != b)', 2, 2, -70, True),
+        # Exactly two of the three variables are equal
+        ('(a == b && b != c) || (a != b && b == c) || (a == c && c != b)', 88, 88, -43, True),
+        # Exactly two of the three variables are equal
+        ('(a == b && b != c) || (a != b && b == c) || (a == c && c != b)', -44, 94, 63, False),
+        # Exactly two of the three variables are equal
+        ('(a == b && b != c) || (a != b && b == c) || (a == c && c != b)', -85, 71, 30, False),
+        # Exactly two of the three variables are equal
+        ('(a == b && b != c) || (a != b && b == c) || (a == c && c != b)', 47, 56, -81, False),
+        # Exactly two of the three variables are equal
+        ('a**2 + b**2 > c**2 && a > 0 && b > 0 && c > 0', 35, 46, 26, True),
+        # Forms an acute triangle (all sides positive and Pythagorean inequality)
+        ('a**2 + b**2 > c**2 && a > 0 && b > 0 && c > 0', 22, 44, 30, True),
+        # Forms an acute triangle (all sides positive and Pythagorean inequality)
+        ('a**2 + b**2 > c**2 && a > 0 && b > 0 && c > 0', 83, 53, 68, True),
+        # Forms an acute triangle (all sides positive and Pythagorean inequality)
+        ('a**2 + b**2 > c**2 && a > 0 && b > 0 && c > 0', 9, -12, 28, False),
+        # Forms an acute triangle (all sides positive and Pythagorean inequality)
+        ('a**2 + b**2 > c**2 && a > 0 && b > 0 && c > 0', -18, -86, -52, False),
+        # Forms an acute triangle (all sides positive and Pythagorean inequality)
+        ('a**2 + b**2 > c**2 && a > 0 && b > 0 && c > 0', 11, -87, 71, False),
+        # Forms an acute triangle (all sides positive and Pythagorean inequality)
+        ('!(a < b) && !(b < c) && !(a < c)', 51, 34, -96, True),
+        # None of the variables is less than any other (all are equal)
+        ('!(a < b) && !(b < c) && !(a < c)', 20, -25, -69, True),
+        # None of the variables is less than any other (all are equal)
+        ('!(a < b) && !(b < c) && !(a < c)', 8, -53, -60, True),
+        # None of the variables is less than any other (all are equal)
+        ('!(a < b) && !(b < c) && !(a < c)', 52, -20, 38, False),
+        # None of the variables is less than any other (all are equal)
+        ('!(a < b) && !(b < c) && !(a < c)', -41, 69, -17, False),
+        # None of the variables is less than any other (all are equal)
+        ('!(a < b) && !(b < c) && !(a < c)', -90, 55, 70, False),
+        # None of the variables is less than any other (all are equal)
+        ('(a > 0 && b > 0 && c < 0) || (a > 0 && b < 0 && c > 0) || (a < 0 && b > 0 && c > 0)', 33, -5, 25, True),
+        # Exactly one of the variables is negative
+        ('(a > 0 && b > 0 && c < 0) || (a > 0 && b < 0 && c > 0) || (a < 0 && b > 0 && c > 0)', 44, 10, -30, True),
+        # Exactly one of the variables is negative
+        ('(a > 0 && b > 0 && c < 0) || (a > 0 && b < 0 && c > 0) || (a < 0 && b > 0 && c > 0)', 99, -91, 22, True),
+        # Exactly one of the variables is negative
+        ('(a > 0 && b > 0 && c < 0) || (a > 0 && b < 0 && c > 0) || (a < 0 && b > 0 && c > 0)', -4, 44, -77, False),
+        # Exactly one of the variables is negative
+        ('(a > 0 && b > 0 && c < 0) || (a > 0 && b < 0 && c > 0) || (a < 0 && b > 0 && c > 0)', -7, -94, 54, False),
+        # Exactly one of the variables is negative
+        ('(a > 0 && b > 0 && c < 0) || (a > 0 && b < 0 && c > 0) || (a < 0 && b > 0 && c > 0)', -3, 58, -72, False),
+        # Exactly one of the variables is negative
+        ('(a > b) ? ((b > c) ? a > c : a < c) : ((a > c) ? b > c : b < c)', 73, 58, 9, True),
+        # Nested conditional expression comparing all three variables
+        ('(a > b) ? ((b > c) ? a > c : a < c) : ((a > c) ? b > c : b < c)', 10, 33, -46, True),
+        # Nested conditional expression comparing all three variables
+        ('(a > b) ? ((b > c) ? a > c : a < c) : ((a > c) ? b > c : b < c)', 45, -37, 98, True),
+        # Nested conditional expression comparing all three variables
+        ('(a > b) ? ((b > c) ? a > c : a < c) : ((a > c) ? b > c : b < c)', 95, -96, 91, False),
+        # Nested conditional expression comparing all three variables
+        ('(a > b) ? ((b > c) ? a > c : a < c) : ((a > c) ? b > c : b < c)', 90, -95, -1, False),
+        # Nested conditional expression comparing all three variables
+        ('(a > b) ? ((b > c) ? a > c : a < c) : ((a > c) ? b > c : b < c)', 77, -4, 38, False),
+        # Nested conditional expression comparing all three variables
+        ('(a % 2 == 0 && b % 2 == 0) || (a % 2 != 0 && b % 2 != 0) ? c % 2 == 0 : c % 2 != 0', 98, -80, -5, True),
+        # c is even if a and b are both even or both odd, otherwise c is odd
+        ('(a % 2 == 0 && b % 2 == 0) || (a % 2 != 0 && b % 2 != 0) ? c % 2 == 0 : c % 2 != 0', 94, -58, 2, True),
+        # c is even if a and b are both even or both odd, otherwise c is odd
+        ('(a % 2 == 0 && b % 2 == 0) || (a % 2 != 0 && b % 2 != 0) ? c % 2 == 0 : c % 2 != 0', -46, -75, 9, True),
+        # c is even if a and b are both even or both odd, otherwise c is odd
+        ('(a % 2 == 0 && b % 2 == 0) || (a % 2 != 0 && b % 2 != 0) ? c % 2 == 0 : c % 2 != 0', 75, 79, -37, False),
+        # c is even if a and b are both even or both odd, otherwise c is odd
+        ('(a % 2 == 0 && b % 2 == 0) || (a % 2 != 0 && b % 2 != 0) ? c % 2 == 0 : c % 2 != 0', 43, -33, 43, False),
+        # c is even if a and b are both even or both odd, otherwise c is odd
+        ('(a % 2 == 0 && b % 2 == 0) || (a % 2 != 0 && b % 2 != 0) ? c % 2 == 0 : c % 2 != 0', 12, -61, -14, False),
+        # c is even if a and b are both even or both odd, otherwise c is odd
+        ('(a > 0 && b > 0 && c > 0) && (a**2 + b**2 == c**2 || b**2 + c**2 == a**2 || a**2 + c**2 == b**2)', 15, 20, 25,
+         True),  # Forms a right triangle (all sides positive and Pythagorean theorem holds for some combination)
+        ('(a > 0 && b > 0 && c > 0) && (a**2 + b**2 == c**2 || b**2 + c**2 == a**2 || a**2 + c**2 == b**2)', 32, 68, 60,
+         True),  # Forms a right triangle (all sides positive and Pythagorean theorem holds for some combination)
+        ('(a > 0 && b > 0 && c > 0) && (a**2 + b**2 == c**2 || b**2 + c**2 == a**2 || a**2 + c**2 == b**2)', 52, 20, 48,
+         True),  # Forms a right triangle (all sides positive and Pythagorean theorem holds for some combination)
+        ('(a > 0 && b > 0 && c > 0) && (a**2 + b**2 == c**2 || b**2 + c**2 == a**2 || a**2 + c**2 == b**2)', 57, 56, 0,
+         False),  # Forms a right triangle (all sides positive and Pythagorean theorem holds for some combination)
+        ('(a > 0 && b > 0 && c > 0) && (a**2 + b**2 == c**2 || b**2 + c**2 == a**2 || a**2 + c**2 == b**2)', 13, 43, 63,
+         False),  # Forms a right triangle (all sides positive and Pythagorean theorem holds for some combination)
+        ('(a > 0 && b > 0 && c > 0) && (a**2 + b**2 == c**2 || b**2 + c**2 == a**2 || a**2 + c**2 == b**2)', -30, -89,
+         18, False),  # Forms a right triangle (all sides positive and Pythagorean theorem holds for some combination)
+        (
+                '(a <= b && b <= c) || (a <= c && c <= b) || (b <= a && a <= c) || (b <= c && c <= a) || (c <= a && a <= b) || (c <= b && b <= a)',
+                -26, -52, -66, True),  # The three variables can be arranged in non-decreasing order
+        (
+                '(a <= b && b <= c) || (a <= c && c <= b) || (b <= a && a <= c) || (b <= c && c <= a) || (c <= a && a <= b) || (c <= b && b <= a)',
+                -99, 10, -32, True),  # The three variables can be arranged in non-decreasing order
+        (
+                '(a <= b && b <= c) || (a <= c && c <= b) || (b <= a && a <= c) || (b <= c && c <= a) || (c <= a && a <= b) || (c <= b && b <= a)',
+                90, -33, -31, True),  # The three variables can be arranged in non-decreasing order
+        ('(a == b && b == c) || (a != b && b != c && a != c)', -90, 10, 73, True),
+        # Either all three variables are equal or all three are different
+        ('(a == b && b == c) || (a != b && b != c && a != c)', 52, -94, -71, True),
+        # Either all three variables are equal or all three are different
+        ('(a == b && b == c) || (a != b && b != c && a != c)', -46, 28, 73, True),
+        # Either all three variables are equal or all three are different
+        ('(a == b && b == c) || (a != b && b != c && a != c)', -42, 21, 21, False),
+        # Either all three variables are equal or all three are different
+        ('(a == b && b == c) || (a != b && b != c && a != c)', 65, -24, -24, False),
+        # Either all three variables are equal or all three are different
+        ('(a == b && b == c) || (a != b && b != c && a != c)', -76, -73, -76, False),
+        # Either all three variables are equal or all three are different
+        (
+                '(a > 0 && b > 0 && c > 0) && (a + b > c && b + c > a && a + c > b) && (a**2 + b**2 > c**2 && b**2 + c**2 > a**2 && a**2 + c**2 > b**2)',
+                45, 79, 70, True),  # Forms a valid acute triangle (triangle inequality and all angles are acute)
+        (
+                '(a > 0 && b > 0 && c > 0) && (a + b > c && b + c > a && a + c > b) && (a**2 + b**2 > c**2 && b**2 + c**2 > a**2 && a**2 + c**2 > b**2)',
+                91, 78, 70, True),  # Forms a valid acute triangle (triangle inequality and all angles are acute)
+        (
+                '(a > 0 && b > 0 && c > 0) && (a + b > c && b + c > a && a + c > b) && (a**2 + b**2 > c**2 && b**2 + c**2 > a**2 && a**2 + c**2 > b**2)',
+                65, 80, 47, True),  # Forms a valid acute triangle (triangle inequality and all angles are acute)
+        (
+                '(a > 0 && b > 0 && c > 0) && (a + b > c && b + c > a && a + c > b) && (a**2 + b**2 > c**2 && b**2 + c**2 > a**2 && a**2 + c**2 > b**2)',
+                -70, -4, 85, False),  # Forms a valid acute triangle (triangle inequality and all angles are acute)
+        (
+                '(a > 0 && b > 0 && c > 0) && (a + b > c && b + c > a && a + c > b) && (a**2 + b**2 > c**2 && b**2 + c**2 > a**2 && a**2 + c**2 > b**2)',
+                -30, -51, -94, False),  # Forms a valid acute triangle (triangle inequality and all angles are acute)
+        (
+                '(a > 0 && b > 0 && c > 0) && (a + b > c && b + c > a && a + c > b) && (a**2 + b**2 > c**2 && b**2 + c**2 > a**2 && a**2 + c**2 > b**2)',
+                -83, 11, 60, False),  # Forms a valid acute triangle (triangle inequality and all angles are acute)
+        (
+                '!(a == b || b == c || a == c) && ((a > b && a > c) || (b > a && b > c) || (c > a && c > b)) && ((a < b && a < c) || (b < a && b < c) || (c < a && c < b))',
+                -1, 11, 48, True),  # All values are different, and there is both a maximum and minimum value
+        (
+                '!(a == b || b == c || a == c) && ((a > b && a > c) || (b > a && b > c) || (c > a && c > b)) && ((a < b && a < c) || (b < a && b < c) || (c < a && c < b))',
+                35, 48, 76, True),  # All values are different, and there is both a maximum and minimum value
+        (
+                '!(a == b || b == c || a == c) && ((a > b && a > c) || (b > a && b > c) || (c > a && c > b)) && ((a < b && a < c) || (b < a && b < c) || (c < a && c < b))',
+                -11, -98, -29, True),  # All values are different, and there is both a maximum and minimum value
+        (
+                '!(a == b || b == c || a == c) && ((a > b && a > c) || (b > a && b > c) || (c > a && c > b)) && ((a < b && a < c) || (b < a && b < c) || (c < a && c < b))',
+                -7, 20, -7, False),  # All values are different, and there is both a maximum and minimum value
+        (
+                '!(a == b || b == c || a == c) && ((a > b && a > c) || (b > a && b > c) || (c > a && c > b)) && ((a < b && a < c) || (b < a && b < c) || (c < a && c < b))',
+                -35, 32, 32, False),  # All values are different, and there is both a maximum and minimum value
+        (
+                '!(a == b || b == c || a == c) && ((a > b && a > c) || (b > a && b > c) || (c > a && c > b)) && ((a < b && a < c) || (b < a && b < c) || (c < a && c < b))',
+                1, 57, 1, False),  # All values are different, and there is both a maximum and minimum value
+        (
+                '((a % 2 == 0) ? b % 2 == 0 : c % 2 == 0) && ((b % 2 == 0) ? a % 2 == 0 : c % 2 == 0) && ((c % 2 == 0) ? a % 2 == 0 : b % 2 == 0)',
+                -38, 42, -41, True),  # Complex parity relationship between variables
+        (
+                '((a % 2 == 0) ? b % 2 == 0 : c % 2 == 0) && ((b % 2 == 0) ? a % 2 == 0 : c % 2 == 0) && ((c % 2 == 0) ? a % 2 == 0 : b % 2 == 0)',
+                -8, 66, 18, True),  # Complex parity relationship between variables
+        (
+                '((a % 2 == 0) ? b % 2 == 0 : c % 2 == 0) && ((b % 2 == 0) ? a % 2 == 0 : c % 2 == 0) && ((c % 2 == 0) ? a % 2 == 0 : b % 2 == 0)',
+                -64, 30, 53, True),  # Complex parity relationship between variables
+        (
+                '((a % 2 == 0) ? b % 2 == 0 : c % 2 == 0) && ((b % 2 == 0) ? a % 2 == 0 : c % 2 == 0) && ((c % 2 == 0) ? a % 2 == 0 : b % 2 == 0)',
+                -34, -31, 67, False),  # Complex parity relationship between variables
+        (
+                '((a % 2 == 0) ? b % 2 == 0 : c % 2 == 0) && ((b % 2 == 0) ? a % 2 == 0 : c % 2 == 0) && ((c % 2 == 0) ? a % 2 == 0 : b % 2 == 0)',
+                29, 36, -27, False),  # Complex parity relationship between variables
+        (
+                '((a % 2 == 0) ? b % 2 == 0 : c % 2 == 0) && ((b % 2 == 0) ? a % 2 == 0 : c % 2 == 0) && ((c % 2 == 0) ? a % 2 == 0 : b % 2 == 0)',
+                -80, 65, -63, False),  # Complex parity relationship between variables
+        ('(a > 0 && b > 0 && c > 0) && (a**2 + b**2 + c**2 >= 2 * (a*b + b*c + a*c))', 6, 5, 62, True),
+        # The sum of squares is at least twice the sum of products (related to variance)
+        ('(a > 0 && b > 0 && c > 0) && (a**2 + b**2 + c**2 >= 2 * (a*b + b*c + a*c))', 100, 6, 53, True),
+        # The sum of squares is at least twice the sum of products (related to variance)
+        ('(a > 0 && b > 0 && c > 0) && (a**2 + b**2 + c**2 >= 2 * (a*b + b*c + a*c))', 70, 12, 22, True),
+        # The sum of squares is at least twice the sum of products (related to variance)
+        ('(a > 0 && b > 0 && c > 0) && (a**2 + b**2 + c**2 >= 2 * (a*b + b*c + a*c))', 54, -64, 68, False),
+        # The sum of squares is at least twice the sum of products (related to variance)
+        ('(a > 0 && b > 0 && c > 0) && (a**2 + b**2 + c**2 >= 2 * (a*b + b*c + a*c))', -90, -24, 93, False),
+        # The sum of squares is at least twice the sum of products (related to variance)
+        ('(a > 0 && b > 0 && c > 0) && (a**2 + b**2 + c**2 >= 2 * (a*b + b*c + a*c))', 64, -4, 30, False),
+        # The sum of squares is at least twice the sum of products (related to variance)
+        (
+                '(a > b) ? ((b > c) ? ((a > c) ? a > b + c : a < b + c) : ((a > c) ? b < a + c : b > a + c)) : ((a > c) ? ((b > c) ? a < b + c : a > b + c) : ((b > c) ? a + c > b : a + c < b))',
+                -8, 64, -49, True),  # Highly nested conditional expression with complex inequality relationships
+        (
+                '(a > b) ? ((b > c) ? ((a > c) ? a > b + c : a < b + c) : ((a > c) ? b < a + c : b > a + c)) : ((a > c) ? ((b > c) ? a < b + c : a > b + c) : ((b > c) ? a + c > b : a + c < b))',
+                5, 55, 54, True),  # Highly nested conditional expression with complex inequality relationships
+        (
+                '(a > b) ? ((b > c) ? ((a > c) ? a > b + c : a < b + c) : ((a > c) ? b < a + c : b > a + c)) : ((a > c) ? ((b > c) ? a < b + c : a > b + c) : ((b > c) ? a + c > b : a + c < b))',
+                80, -39, -10, True),  # Highly nested conditional expression with complex inequality relationships
+        (
+                '(a > b) ? ((b > c) ? ((a > c) ? a > b + c : a < b + c) : ((a > c) ? b < a + c : b > a + c)) : ((a > c) ? ((b > c) ? a < b + c : a > b + c) : ((b > c) ? a + c > b : a + c < b))',
+                70, 75, -24, False),  # Highly nested conditional expression with complex inequality relationships
+        (
+                '(a > b) ? ((b > c) ? ((a > c) ? a > b + c : a < b + c) : ((a > c) ? b < a + c : b > a + c)) : ((a > c) ? ((b > c) ? a < b + c : a > b + c) : ((b > c) ? a + c > b : a + c < b))',
+                -99, -12, -95, False),  # Highly nested conditional expression with complex inequality relationships
+        (
+                '(a > b) ? ((b > c) ? ((a > c) ? a > b + c : a < b + c) : ((a > c) ? b < a + c : b > a + c)) : ((a > c) ? ((b > c) ? a < b + c : a > b + c) : ((b > c) ? a + c > b : a + c < b))',
+                -29, 90, -29, False),  # Highly nested conditional expression with complex inequality relationships
+    ])
+    def test_cond_expression_parse_to_model_call_with_variables(self, expr_text, a, b, c, expected_value):
+        ast_node = parse_with_grammar_entry(expr_text, entry_name='cond_expression')
+        expr = parse_expr_node_to_expr(ast_node)
+        assert pytest.approx(expected_value) == expr(a=a, b=b, c=c)

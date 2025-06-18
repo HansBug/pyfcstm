@@ -9,6 +9,7 @@ import yaml
 
 from .env import create_env
 from .expr import add_expr_render_to_env
+from .func import process_item_to_object
 from ..model import StateMachine
 
 
@@ -17,19 +18,18 @@ class StateMachineCodeRenderer:
         self.template_dir = os.path.abspath(template_dir)
         self.config_file = os.path.join(self.template_dir, config_file)
 
+        self.env = create_env()
         self._lang_style: Optional[str] = None
         self._lang_ext_configs: Optional[dict] = None
         self._prepare_for_configs()
-
-        self._file_mappings: Dict[str, Callable] = {}
-        self._prepare_for_file_mapping()
-
-        self.env = create_env()
         self.env = add_expr_render_to_env(
             self.env,
             lang_style=self._lang_style,
             ext_configs=self._lang_ext_configs,
         )
+
+        self._file_mappings: Dict[str, Callable] = {}
+        self._prepare_for_file_mapping()
 
     def _prepare_for_configs(self):
         with open(self.config_file, 'r') as f:
@@ -42,6 +42,16 @@ class StateMachineCodeRenderer:
         else:
             self._lang_style = expr_style.pop('base_lang', 'dsl')
             self._lang_ext_configs = expr_style
+
+        globals_ = config_info.pop('globals', None) or {}
+        for name, value in globals_.items():
+            self.env.globals[name] = process_item_to_object(value, env=self.env)
+        filters_ = config_info.pop('filters', None) or {}
+        for name, value in filters_.items():
+            self.env.filters[name] = process_item_to_object(value, env=self.env)
+        tests = config_info.pop('tests', None) or {}
+        for name, value in tests.items():
+            self.env.tests[name] = process_item_to_object(value, env=self.env)
 
     def _prepare_for_file_mapping(self):
         for root, _, files in os.walk(self.template_dir):

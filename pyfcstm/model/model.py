@@ -7,7 +7,7 @@ from typing import Optional, Union, List, Dict, Tuple
 
 from .base import AstExportable, PlantUMLExportable
 from .expr import Expr, parse_expr_node_to_expr
-from ..dsl import node as dsl_nodes, INIT_STATE
+from ..dsl import node as dsl_nodes, INIT_STATE, EXIT_STATE
 
 __all__ = [
     'Operation',
@@ -53,7 +53,7 @@ class Transition(AstExportable):
     event: Optional[Event]
     guard: Optional[Expr]
     effects: List[Operation]
-    parent_ref: weakref.ReferenceType['State'] = None
+    parent_ref: Optional[weakref.ReferenceType['State']] = None
 
     @property
     def parent(self) -> Optional['State']:
@@ -134,7 +134,7 @@ class State(AstExportable, PlantUMLExportable):
     on_enters: List[OnStage]
     on_durings: List[OnStage]
     on_exits: List[OnStage]
-    parent_ref: Optional[weakref.ReferenceType['State']]
+    parent_ref: Optional[weakref.ReferenceType['State']] = None
     substate_name_to_id: Dict[str, int] = None
 
     def __post_init__(self):
@@ -170,6 +170,15 @@ class State(AstExportable, PlantUMLExportable):
             for transition in parent.transitions:
                 if transition.from_state == self.name:
                     retval.append(transition)
+        else:
+            retval.append(Transition(
+                from_state=self.name,
+                to_state=EXIT_STATE,
+                event=None,
+                guard=None,
+                effects=[],
+                parent_ref=weakref.ref(self),
+            ))
         return retval
 
     @property
@@ -180,6 +189,16 @@ class State(AstExportable, PlantUMLExportable):
             for transition in parent.transitions:
                 if transition.to_state == self.name:
                     retval.append(transition)
+        else:
+            retval.append(Transition(
+                from_state=INIT_STATE,
+                to_state=self.name,
+                event=None,
+                guard=None,
+                effects=[],
+                parent_ref=weakref.ref(self),
+            ))
+
         return retval
 
     @property

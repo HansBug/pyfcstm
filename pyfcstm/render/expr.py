@@ -79,7 +79,7 @@ def fn_expr_render(node: dsl_nodes.Expr, templates: Dict[str, str], env: jinja2.
     else:
         template_str = templates['default']
 
-    tp = env.from_string(template_str)
+    tp: jinja2.Template = env.from_string(template_str)
     return tp.render(node=node)
 
 

@@ -209,6 +209,18 @@ class State(AstExportable, PlantUMLExportable):
         ]
 
     @property
+    def transitions_entering_children_for_generation(self) -> List[Optional[Transition]]:
+        retval = []
+        for transition in self.transitions:
+            if transition.from_state is INIT_STATE:
+                retval.append(transition)
+                if transition.event is None and transition.guard is None:
+                    break
+        if not retval or (retval and not (retval[-1].event is None and retval[-1].guard is None)):
+            retval.append(None)
+        return retval
+
+    @property
     def path_text(self):
         return '.'.join(self.path)
 

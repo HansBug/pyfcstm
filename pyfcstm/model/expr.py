@@ -45,6 +45,9 @@ class Expr(AstExportable):
     def __call__(self, **kwargs):
         return self._call(**kwargs)
 
+    def __str__(self):
+        return str(self.to_ast_node())
+
     def to_ast_node(self) -> dsl_nodes.Expr:
         raise NotImplementedError  # pragma: no cover
 
@@ -52,9 +55,6 @@ class Expr(AstExportable):
 @dataclass
 class Integer(Expr):
     value: int
-
-    def __str__(self):
-        return str(self.value)
 
     def _call(self, **kwargs):
         return self.value
@@ -66,9 +66,6 @@ class Integer(Expr):
 @dataclass
 class Float(Expr):
     value: float
-
-    def __str__(self):
-        return str(self.value)
 
     def _call(self, **kwargs):
         return self.value
@@ -95,14 +92,11 @@ class Boolean(Expr):
     def __post_init__(self):
         self.value = bool(self.value)
 
-    def __str__(self):
-        return 'true' if self.value else 'false'
-
     def _call(self, **kwargs):
         return self.value
 
     def to_ast_node(self) -> dsl_nodes.Expr:
-        return dsl_nodes.Boolean(raw=str(self))
+        return dsl_nodes.Boolean(raw=str(self.value).lower())
 
 
 _OP_PRECEDENCE = {
@@ -221,30 +215,6 @@ class BinaryOp(Op):
     def op_mark(self):
         return self.op
 
-    def __str__(self):
-        my_pre = _OP_PRECEDENCE[self.op_mark]
-
-        left_need_paren = False
-        if isinstance(self.x, Op):
-            left_pre = _OP_PRECEDENCE[self.x.op_mark]
-            if left_pre < my_pre:
-                left_need_paren = True
-
-        right_need_paren = False
-        if isinstance(self.y, Op):
-            right_pre = _OP_PRECEDENCE[self.y.op_mark]
-            if right_pre <= my_pre:
-                right_need_paren = True
-
-        left_term = str(self.x)
-        if left_need_paren:
-            left_term = f'({left_term})'
-        right_term = str(self.y)
-        if right_need_paren:
-            right_term = f'({right_term})'
-
-        return f'{left_term} {self.op} {right_term}'
-
     def _iter_subs(self):
         yield self.x
         yield self.y
@@ -297,9 +267,6 @@ class UnaryOp(Op):
     def op_mark(self):
         return f'unary{self.op}' if self.op in {'+', '-'} else self.op
 
-    def __str__(self):
-        return f'{self.op}{self.x}'
-
     def _iter_subs(self):
         yield self.x
 
@@ -307,7 +274,13 @@ class UnaryOp(Op):
         return _OP_FUNCTIONS[self.op_mark](self.x._call(**kwargs))
 
     def to_ast_node(self) -> dsl_nodes.Expr:
-        return dsl_nodes.UnaryOp(op=self.op, expr=self.x.to_ast_node())
+        my_pre = _OP_PRECEDENCE[self.op_mark]
+        x_node = self.x.to_ast_node()
+        if isinstance(self.x, Op):
+            value_pre = _OP_PRECEDENCE[self.x.op_mark]
+            if value_pre <= my_pre:
+                x_node = dsl_nodes.Paren(expr=x_node)
+        return dsl_nodes.UnaryOp(op=self.op, expr=x_node)
 
 
 _MATH_FUNCTIONS = {
@@ -355,9 +328,6 @@ class UFunc(Expr):
     func: str
     x: Expr
 
-    def __str__(self):
-        return f'{self.func}({self.x})'
-
     def _iter_subs(self):
         yield self.x
 
@@ -377,31 +347,6 @@ class ConditionalOp(Op):
     @property
     def op_mark(self):
         return '?:'
-
-    def __str__(self):
-        my_pre = _OP_PRECEDENCE[self.op_mark]
-
-        true_need_paren = False
-        if isinstance(self.if_true, Op):
-            true_pre = _OP_PRECEDENCE[self.if_true.op_mark]
-            if true_pre <= my_pre:
-                true_need_paren = True
-
-        false_need_paren = False
-        if isinstance(self.if_false, Op):
-            false_pre = _OP_PRECEDENCE[self.if_false.op_mark]
-            if false_pre <= my_pre:
-                false_need_paren = True
-
-        cond_term = f'({self.cond})'
-        true_term = str(self.if_true)
-        if true_need_paren:
-            true_term = f'({true_term})'
-        false_term = str(self.if_false)
-        if false_need_paren:
-            false_term = f'({false_term})'
-
-        return f'{cond_term} ? {true_term} : {false_term}'
 
     def _iter_subs(self):
         yield self.cond
@@ -448,9 +393,6 @@ class ConditionalOp(Op):
 @dataclass
 class Variable(Expr):
     name: str
-
-    def __str__(self):
-        return self.name
 
     def _call(self, **kwargs):
         return kwargs[self.name]

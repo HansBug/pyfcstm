@@ -438,3 +438,283 @@ class TestModelExpr:
         ast_node = parse_with_grammar_entry(expr_text, entry_name='cond_expression')
         expr = parse_expr_node_to_expr(ast_node)
         assert pytest.approx(expected_expr) == expr
+
+    @pytest.mark.parametrize(['expr_text', 'expected_str'], [
+        ('42', '42'),  # Integer literal 42
+        ('3.14', '3.14'),  # Floating point literal 3.14
+        ('0x2A', '42'),  # Hexadecimal integer literal 42
+        ('pi', 'pi'),  # Mathematical constant pi
+        ('E', 'E'),  # Mathematical constant E (Euler's number)
+        ('tau', 'tau'),  # Mathematical constant tau (2*pi)
+        ('x', 'x'),  # Variable reference to x
+        ('-5', '-5'),  # Negative integer literal 5
+        ('+7', '+7'),  # Positive integer literal 7
+        ('a + b', 'a + b'),  # Addition of variables a and b
+        ('x - y', 'x - y'),  # Subtraction of y from x
+        ('p * q', 'p * q'),  # Multiplication of variables p and q
+        ('m / n', 'm / n'),  # Division of m by n
+        ('i % j', 'i % j'),  # Modulo operation of i by j
+        ('2 ** 3', '2 ** 3'),  # 2 raised to the power of 3
+        ('a << 2', 'a << 2'),  # Left bit shift of a by 2 bits
+        ('b >> 1', 'b >> 1'),  # Right bit shift of b by 1 bit
+        ('x & y', 'x & y'),  # Bitwise AND of x and y
+        ('p | q', 'p | q'),  # Bitwise OR of p and q
+        ('m ^ n', 'm ^ n'),  # Bitwise XOR of m and n
+        ('sin(x)', 'sin(x)'),  # Sine of x
+        ('cos(theta)', 'cos(theta)'),  # Cosine of theta
+        ('sqrt(2)', 'sqrt(2)'),  # Square root of 2
+        ('log(x)', 'log(x)'),  # Natural logarithm of x
+        ('abs(-7)', 'abs(-7)'),  # Absolute value of -7
+        ('(a + b)', 'a + b'),  # Parenthesized addition of a and b
+        ('(x * y) + z', 'x * y + z'),  # Addition of the product of x and y with z
+        ('(x > y) ? a : b', '(x > y) ? a : b'),  # If x is greater than y, return a, otherwise return b
+        ('(flag == 0x2) ? 1 : 0', '(flag == 2) ? 1 : 0'),  # If flag equals 0x2, return 1, otherwise return 0
+        ('sin(x) + cos(y)', 'sin(x) + cos(y)'),  # Addition of sine of x and cosine of y
+        ('(a + b) * (c - d)', '(a + b) * (c - d)'),  # Product of the sum of a and b with the difference of c and d
+        ('log(x ** 2 + 1)', 'log(x ** 2 + 1)'),  # Natural logarithm of x squared plus 1
+        ('(a & b) | (c & d)', 'a & b | c & d'),  # Bitwise OR of (a AND b) with (c AND d)
+        ('sqrt(x * x + y * y)', 'sqrt(x * x + y * y)'),
+        # Square root of the sum of squares of x and y (Euclidean distance)
+        ('abs(x) + abs(y)', 'abs(x) + abs(y)'),  # Sum of absolute values of x and y (Manhattan distance)
+        ('sin(2 * pi * f * t + phi)', 'sin(2 * pi * f * t + phi)'),  # Sine wave with frequency f, time t, and phase phi
+        ('(x ** 2 + y ** 2 <= r ** 2) ? 1 : 0', '(x ** 2 + y ** 2 <= r ** 2) ? 1 : 0'),
+        # Check if point (x,y) is within circle of radius r
+        ('log(abs(x) + sqrt(x ** 2 + 1))', 'log(abs(x) + sqrt(x ** 2 + 1))'),
+        # Logarithm of a complex mathematical expression
+        ('(a << 2) & (b >> 1) | (c ^ d)', 'a << 2 & b >> 1 | c ^ d'),
+        # Complex bitwise operation combining shift, AND, OR, and XOR
+        ('(sin(x) ** 2 + cos(x) ** 2) * (1 + tan(y) ** 2) / (1 + tanh(z) ** 2)',
+         '(sin(x) ** 2 + cos(x) ** 2) * (1 + tan(y) ** 2) / (1 + tanh(z) ** 2)'),
+        # Complex trigonometric identity expression
+        ('(a + b) * (c - d) / ((e + f) * (g - h)) ** (i % j)', '(a + b) * (c - d) / ((e + f) * (g - h)) ** (i % j)'),
+        # Complex arithmetic expression with multiple operations and groupings
+        ('log(sqrt(x ** 2 + y ** 2)) + atan(2 * y)', 'log(sqrt(x ** 2 + y ** 2)) + atan(2 * y)'),
+        # Logarithm of distance plus angle calculation
+        ('(x > y) ? (a < b) ? p : q : (c < d) ? m : n', '(x > y) ? ((a < b) ? p : q) : ((c < d) ? m : n)'),
+        # Nested conditional expression with multiple conditions
+        ('sin(cos(tan(x))) + log(exp(sqrt(abs(y))))', 'sin(cos(tan(x))) + log(exp(sqrt(abs(y))))'),
+        # Nested function calls with various mathematical functions
+        ('((a & b) | (c ^ d)) << ((e + f) % 8)', '(a & b | c ^ d) << (e + f) % 8'),
+        # Bitwise operations combined with arithmetic for shift amount
+        ('(x ** 2 + y ** 2 + z ** 2) ** 0.5', '(x ** 2 + y ** 2 + z ** 2) ** 0.5'),
+        # Calculation of 3D Euclidean distance using exponentiation
+        ('(a > b && c < d) ? (e + f) * g : (h - i) / j', '(a > b && c < d) ? (e + f) * g : (h - i) / j'),
+        # Conditional expression with logical AND in condition
+        ('sin(2 * pi * f * t) * exp(-t / tau) + A * cos(omega * t + phi)',
+         'sin(2 * pi * f * t) * exp(-t / tau) + A * cos(omega * t + phi)'),  # Damped sinusoidal oscillation with offset
+        ('(((x & 0xFF) << 16) | ((y & 0xFF) << 8) | (z & 0xFF))', '(x & 255) << 16 | (y & 255) << 8 | z & 255'),
+        # RGB color value packing using bitwise operations
+    ])
+    def test_num_expression_parse_to_model_str(self, expr_text, expected_str):
+        ast_node = parse_with_grammar_entry(expr_text, entry_name='num_expression')
+        expr = parse_expr_node_to_expr(ast_node)
+        assert expected_str == str(expr)
+
+    @pytest.mark.parametrize(['expr_text', 'expected_str'], [
+        ('true', 'True'),  # Boolean literal true
+        ('false', 'False'),  # Boolean literal false
+        ('True', 'True'),  # Boolean literal True (alternative syntax)
+        ('False', 'False'),  # Boolean literal False (alternative syntax)
+        ('x > y', 'x > y'),  # Check if x is greater than y
+        ('a < b', 'a < b'),  # Check if a is less than b
+        ('m >= n', 'm >= n'),  # Check if m is greater than or equal to n
+        ('p <= q', 'p <= q'),  # Check if p is less than or equal to q
+        ('x == y', 'x == y'),  # Check if x equals y
+        ('a != b', 'a != b'),  # Check if a is not equal to b
+        ('!(x > y)', '!(x > y)'),  # Logical NOT of the comparison x > y
+        ('not (a == b)', '!(a == b)'),  # Logical NOT of the comparison a equals b (alternative syntax)
+        ('(a > 0) && (b < 1)', 'a > 0 && b < 1'),  # Logical AND of a > 0 and b < 1
+        ('(x == 0) || (y != 1)', 'x == 0 || y != 1'),  # Logical OR of x == 0 and y != 1
+        ('(p > 0) and (q < 1)', 'p > 0 && q < 1'),  # Logical AND of p > 0 and q < 1 (alternative syntax)
+        ('(m == 0) or (n != 1)', 'm == 0 || n != 1'),  # Logical OR of m == 0 and n != 1 (alternative syntax)
+        ('(x > y)', 'x > y'),  # Parenthesized comparison of x and y
+        ('!(a < b)', '!(a < b)'),  # Negation of the comparison a < b
+        ('(x > y) ? (a < b) : (c < d)', '(x > y) ? a < b : c < d'),  # If x > y, check a < b, otherwise check c < d
+        ('(x > 0) ? true : false', '(x > 0) ? True : False'),  # If x > 0, return true, otherwise return false
+        ('x > 0 && y > 0', 'x > 0 && y > 0'),  # Check if both x and y are positive
+        ('a < b || c < d', 'a < b || c < d'),  # Check if either a < b or c < d is true
+        ('(x >= min) && (x <= max)', 'x >= min && x <= max'),  # Check if x is within range [min, max]
+        ('!(a == b) && !(c == d)', '!(a == b) && !(c == d)'),  # Check if both a != b and c != d
+        ('(temp > 100) || (pressure > 200)', 'temp > 100 || pressure > 200'),
+        # Check if either temperature exceeds 100 or pressure exceeds 200
+        ('x == y && y == z', 'x == y && y == z'),  # Check if all three values are equal
+        ('(a < b && c < d) || (e < f && g < h)', 'a < b && c < d || e < f && g < h'),
+        # Check if either both a < b and c < d, or both e < f and g < h
+        ('(x > 0) ? (y > 0) : (z > 0)', '(x > 0) ? y > 0 : z > 0'),
+        # If x is positive, check if y is positive, otherwise check if z is positive
+        ('!(a < b || c < d) && (e < f)', '!(a < b || c < d) && e < f'),  # Check if both NOT(a < b OR c < d) and e < f
+        ('(x == 0) || (y != 0 && z == 0)', 'x == 0 || y != 0 && z == 0'),  # Check if x is 0 OR (y is not 0 AND z is 0)
+        ('(a > b && c > d) || (e > f && g > h) || (i > j && k > l)',
+         'a > b && c > d || e > f && g > h || i > j && k > l'),
+        # Complex condition with multiple AND and OR combinations
+        ('!((x < y) && (z < w)) || (p == q && r != s)', '!(x < y && z < w) || p == q && r != s'),
+        # Negation of a conjunction combined with another conjunction
+        ('((a < b) ? c < d : e < f) && ((g < h) ? i < j : k < l)',
+         '((a < b) ? c < d : e < f) && ((g < h) ? i < j : k < l)'),  # Logical AND of two conditional expressions
+        ('(x == y) == (a == b) && (c != d) != (e != f)', 'x == y == (a == b) && c != d != (e != f)'),
+        # Equality comparison of equality comparisons
+        (
+                '(a > 0 && b > 0) || (c > 0 && d > 0) ? (e > 0 || f > 0) && (g > 0 || h > 0) : (i > 0 && j > 0) || (k > 0 && l > 0)',
+                'a > 0 && b > 0 || ((c > 0 && d > 0) ? (e > 0 || f > 0) && (g > 0 || h > 0) : i > 0 && j > 0 || k > 0 && l > 0)'),
+        # Conditional expression with complex conditions
+        ('!(a < b) && !(c < d) || !(e < f) && !(g < h)', '!(a < b) && !(c < d) || !(e < f) && !(g < h)'),
+        # Complex expression with multiple negations and logical operators
+        (
+                '(x > 0 && y > 0 && z > 0) || (x < 0 && y < 0 && z < 0)',
+                'x > 0 && y > 0 && z > 0 || x < 0 && y < 0 && z < 0'),
+        # Check if all coordinates are positive or all are negative
+        ('(a == 1 || a == 2 || a == 3) && (b == 1 || b == 2 || b == 3)',
+         '(a == 1 || a == 2 || a == 3) && (b == 1 || b == 2 || b == 3)'),
+        # Check if both a and b are one of the values 1, 2, or 3
+        ('((x > y) ? x : y) > ((a > b) ? a : b)', '((x > y) ? x : y) > ((a > b) ? a : b)'),
+        # Compare the maximum of x and y with the maximum of a and b
+        ('!((a < b) ? c < d : e < f) && ((g < h) ? !(i < j) : !(k < l))',
+         '!((a < b) ? c < d : e < f) && ((g < h) ? !(i < j) : !(k < l))'),
+        # Complex expression with negations and conditional expressions
+        ('(a == b && c == d) || (e == f && g == h) || (i == j && k == l) || (m == n && o == p)',
+         'a == b && c == d || e == f && g == h || i == j && k == l || m == n && o == p'),
+        # Multiple equality checks combined with AND and OR
+        ('((a < b) && (c < d)) ? ((e < f) || (g < h)) : ((i < j) && (k < l)) || ((m < n) || (o < p))',
+         '(a < b && c < d) ? e < f || g < h : i < j && k < l || (m < n || o < p)'),
+        # Complex conditional with multiple comparisons
+        ('(x >= min && x <= max) || (y >= min && y <= max) || (z >= min && z <= max)',
+         'x >= min && x <= max || y >= min && y <= max || z >= min && z <= max'),
+        # Check if any of x, y, or z is within range [min, max]
+        ('!((a < b || c < d) && (e < f || g < h)) || !((i < j || k < l) && (m < n || o < p))',
+         '!((a < b || c < d) && (e < f || g < h)) || !((i < j || k < l) && (m < n || o < p))'),
+        # Complex expression with negations of conjunctions of disjunctions
+        ('((a > 0 && b > 0) || (c > 0 && d > 0)) == ((e > 0 && f > 0) || (g > 0 && h > 0))',
+         '(a > 0 && b > 0 || c > 0 && d > 0) == (e > 0 && f > 0 || g > 0 && h > 0)'),
+        # Compare equality of two complex boolean expressions
+    ])
+    def test_cond_expression_parse_to_model_str(self, expr_text, expected_str):
+        ast_node = parse_with_grammar_entry(expr_text, entry_name='cond_expression')
+        expr = parse_expr_node_to_expr(ast_node)
+        assert expected_str == str(expr)
+
+    @pytest.mark.parametrize(['expr_text', ], [
+        ('42',),  # Integer literal 42
+        ('3.14',),  # Floating point literal 3.14
+        ('0x2A',),  # Hexadecimal integer literal 42
+        ('pi',),  # Mathematical constant pi
+        ('E',),  # Mathematical constant E (Euler's number)
+        ('tau',),  # Mathematical constant tau (2*pi)
+        ('x',),  # Variable reference to x
+        ('-5',),  # Negative integer literal 5
+        ('+7',),  # Positive integer literal 7
+        ('a + b',),  # Addition of variables a and b
+        ('x - y',),  # Subtraction of y from x
+        ('p * q',),  # Multiplication of variables p and q
+        ('m / n',),  # Division of m by n
+        ('i % j',),  # Modulo operation of i by j
+        ('2 ** 3',),  # 2 raised to the power of 3
+        ('a << 2',),  # Left bit shift of a by 2 bits
+        ('b >> 1',),  # Right bit shift of b by 1 bit
+        ('x & y',),  # Bitwise AND of x and y
+        ('p | q',),  # Bitwise OR of p and q
+        ('m ^ n',),  # Bitwise XOR of m and n
+        ('sin(x)',),  # Sine of x
+        ('cos(theta)',),  # Cosine of theta
+        ('sqrt(2)',),  # Square root of 2
+        ('log(x)',),  # Natural logarithm of x
+        ('abs(-7)',),  # Absolute value of -7
+        ('(a + b)',),  # Parenthesized addition of a and b
+        ('(x * y) + z',),  # Addition of the product of x and y with z
+        ('(x > y) ? a : b',),  # If x is greater than y, return a, otherwise return b
+        ('(flag == 0x2) ? 1 : 0',),  # If flag equals 0x2, return 1, otherwise return 0
+        ('sin(x) + cos(y)',),  # Addition of sine of x and cosine of y
+        ('(a + b) * (c - d)',),  # Product of the sum of a and b with the difference of c and d
+        ('log(x ** 2 + 1)',),  # Natural logarithm of x squared plus 1
+        ('(a & b) | (c & d)',),  # Bitwise OR of (a AND b) with (c AND d)
+        ('sqrt(x * x + y * y)',),  # Square root of the sum of squares of x and y (Euclidean distance)
+        ('abs(x) + abs(y)',),  # Sum of absolute values of x and y (Manhattan distance)
+        ('sin(2 * pi * f * t + phi)',),  # Sine wave with frequency f, time t, and phase phi
+        ('(x ** 2 + y ** 2 <= r ** 2) ? 1 : 0',),  # Check if point (x,y) is within circle of radius r
+        ('log(abs(x) + sqrt(x ** 2 + 1))',),  # Logarithm of a complex mathematical expression
+        ('(a << 2) & (b >> 1) | (c ^ d)',),  # Complex bitwise operation combining shift, AND, OR, and XOR
+        ('(sin(x) ** 2 + cos(x) ** 2) * (1 + tan(y) ** 2) / (1 + tanh(z) ** 2)',),
+        # Complex trigonometric identity expression
+        ('(a + b) * (c - d) / ((e + f) * (g - h)) ** (i % j)',),
+        # Complex arithmetic expression with multiple operations and groupings
+        ('log(sqrt(x ** 2 + y ** 2)) + atan(2 * y)',),  # Logarithm of distance plus angle calculation
+        ('(x > y) ? (a < b) ? p : q : (c < d) ? m : n',),  # Nested conditional expression with multiple conditions
+        ('sin(cos(tan(x))) + log(exp(sqrt(abs(y))))',),  # Nested function calls with various mathematical functions
+        ('((a & b) | (c ^ d)) << ((e + f) % 8)',),  # Bitwise operations combined with arithmetic for shift amount
+        ('(x ** 2 + y ** 2 + z ** 2) ** 0.5',),  # Calculation of 3D Euclidean distance using exponentiation
+        ('(a > b && c < d) ? (e + f) * g : (h - i) / j',),  # Conditional expression with logical AND in condition
+        ('sin(2 * pi * f * t) * exp(-t / tau) + A * cos(omega * t + phi)',),
+        # Damped sinusoidal oscillation with offset
+        ('(((x & 0xFF) << 16) | ((y & 0xFF) << 8) | (z & 0xFF))',),  # RGB color value packing using bitwise operations
+    ])
+    def test_num_expression_parse_to_model_consistency(self, expr_text):
+        ast_node = parse_with_grammar_entry(expr_text, entry_name='num_expression')
+        expr = parse_expr_node_to_expr(ast_node)
+        ast_node_2 = parse_with_grammar_entry(str(expr.to_ast_node()), entry_name='num_expression')
+        expr2 = parse_expr_node_to_expr(ast_node_2)
+        assert pytest.approx(expr) == expr2
+
+    @pytest.mark.parametrize(['expr_text', ], [
+        ('true',),  # Boolean literal true
+        ('false',),  # Boolean literal false
+        ('True',),  # Boolean literal True (alternative syntax)
+        ('False',),  # Boolean literal False (alternative syntax)
+        ('x > y',),  # Check if x is greater than y
+        ('a < b',),  # Check if a is less than b
+        ('m >= n',),  # Check if m is greater than or equal to n
+        ('p <= q',),  # Check if p is less than or equal to q
+        ('x == y',),  # Check if x equals y
+        ('a != b',),  # Check if a is not equal to b
+        ('!(x > y)',),  # Logical NOT of the comparison x > y
+        ('not (a == b)',),  # Logical NOT of the comparison a equals b (alternative syntax)
+        ('(a > 0) && (b < 1)',),  # Logical AND of a > 0 and b < 1
+        ('(x == 0) || (y != 1)',),  # Logical OR of x == 0 and y != 1
+        ('(p > 0) and (q < 1)',),  # Logical AND of p > 0 and q < 1 (alternative syntax)
+        ('(m == 0) or (n != 1)',),  # Logical OR of m == 0 and n != 1 (alternative syntax)
+        ('(x > y)',),  # Parenthesized comparison of x and y
+        ('!(a < b)',),  # Negation of the comparison a < b
+        ('(x > y) ? (a < b) : (c < d)',),  # If x > y, check a < b, otherwise check c < d
+        ('(x > 0) ? true : false',),  # If x > 0, return true, otherwise return false
+        ('x > 0 && y > 0',),  # Check if both x and y are positive
+        ('a < b || c < d',),  # Check if either a < b or c < d is true
+        ('(x >= min) && (x <= max)',),  # Check if x is within range [min, max]
+        ('!(a == b) && !(c == d)',),  # Check if both a != b and c != d
+        ('(temp > 100) || (pressure > 200)',),  # Check if either temperature exceeds 100 or pressure exceeds 200
+        ('x == y && y == z',),  # Check if all three values are equal
+        ('(a < b && c < d) || (e < f && g < h)',),  # Check if either both a < b and c < d, or both e < f and g < h
+        ('(x > 0) ? (y > 0) : (z > 0)',),  # If x is positive, check if y is positive, otherwise check if z is positive
+        ('!(a < b || c < d) && (e < f)',),  # Check if both NOT(a < b OR c < d) and e < f
+        ('(x == 0) || (y != 0 && z == 0)',),  # Check if x is 0 OR (y is not 0 AND z is 0)
+        ('(a > b && c > d) || (e > f && g > h) || (i > j && k > l)',),
+        # Complex condition with multiple AND and OR combinations
+        ('!((x < y) && (z < w)) || (p == q && r != s)',),  # Negation of a conjunction combined with another conjunction
+        ('((a < b) ? c < d : e < f) && ((g < h) ? i < j : k < l)',),  # Logical AND of two conditional expressions
+        ('(x == y) == (a == b) && (c != d) != (e != f)',),  # Equality comparison of equality comparisons
+        (
+                '(a > 0 && b > 0) || (c > 0 && d > 0) ? (e > 0 || f > 0) && (g > 0 || h > 0) : (i > 0 && j > 0) || (k > 0 && l > 0)',),
+        # Conditional expression with complex conditions
+        ('!(a < b) && !(c < d) || !(e < f) && !(g < h)',),
+        # Complex expression with multiple negations and logical operators
+        ('(x > 0 && y > 0 && z > 0) || (x < 0 && y < 0 && z < 0)',),
+        # Check if all coordinates are positive or all are negative
+        ('(a == 1 || a == 2 || a == 3) && (b == 1 || b == 2 || b == 3)',),
+        # Check if both a and b are one of the values 1, 2, or 3
+        ('((x > y) ? x : y) > ((a > b) ? a : b)',),  # Compare the maximum of x and y with the maximum of a and b
+        ('!((a < b) ? c < d : e < f) && ((g < h) ? !(i < j) : !(k < l))',),
+        # Complex expression with negations and conditional expressions
+        ('(a == b && c == d) || (e == f && g == h) || (i == j && k == l) || (m == n && o == p)',),
+        # Multiple equality checks combined with AND and OR
+        ('((a < b) && (c < d)) ? ((e < f) || (g < h)) : ((i < j) && (k < l)) || ((m < n) || (o < p))',),
+        # Complex conditional with multiple comparisons
+        ('(x >= min && x <= max) || (y >= min && y <= max) || (z >= min && z <= max)',),
+        # Check if any of x, y, or z is within range [min, max]
+        ('!((a < b || c < d) && (e < f || g < h)) || !((i < j || k < l) && (m < n || o < p))',),
+        # Complex expression with negations of conjunctions of disjunctions
+        ('((a > 0 && b > 0) || (c > 0 && d > 0)) == ((e > 0 && f > 0) || (g > 0 && h > 0))',),
+        # Compare equality of two complex boolean expressions
+    ])
+    def test_cond_expression_parse_to_model_consistency(self, expr_text):
+        ast_node = parse_with_grammar_entry(expr_text, entry_name='cond_expression')
+        expr = parse_expr_node_to_expr(ast_node)
+        ast_node_2 = parse_with_grammar_entry(str(expr.to_ast_node()), entry_name='cond_expression')
+        expr2 = parse_expr_node_to_expr(ast_node_2)
+        assert pytest.approx(expr) == expr2

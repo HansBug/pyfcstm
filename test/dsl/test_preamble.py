@@ -124,29 +124,30 @@ class TestDSLPreamble:
                                                                                                           expr=Integer(
                                                                                                               raw='2')))))])),
         ('bit_mix := (1 << 4) | (3 & 7) ^ (10 >> 1);\n', Preamble(stats=[InitialAssignment(name='bit_mix',
-                                                                                           expr=BinaryOp(expr1=BinaryOp(
-                                                                                               expr1=Paren(
-                                                                                                   expr=BinaryOp(
-                                                                                                       expr1=Integer(
-                                                                                                           raw='1'),
-                                                                                                       op='<<',
-                                                                                                       expr2=Integer(
-                                                                                                           raw='4'))),
-                                                                                               op='|', expr2=Paren(
-                                                                                                   expr=BinaryOp(
-                                                                                                       expr1=Integer(
-                                                                                                           raw='3'),
-                                                                                                       op='&',
-                                                                                                       expr2=Integer(
-                                                                                                           raw='7')))),
-                                                                                               op='^',
-                                                                                               expr2=Paren(
-                                                                                                   expr=BinaryOp(
-                                                                                                       expr1=Integer(
-                                                                                                           raw='10'),
-                                                                                                       op='>>',
-                                                                                                       expr2=Integer(
-                                                                                                           raw='1')))))])),
+                                                                                           expr=BinaryOp(expr1=Paren(
+                                                                                               expr=BinaryOp(
+                                                                                                   expr1=Integer(
+                                                                                                       raw='1'),
+                                                                                                   op='<<',
+                                                                                                   expr2=Integer(
+                                                                                                       raw='4'))),
+                                                                                                         op='|',
+                                                                                                         expr2=BinaryOp(
+                                                                                                             expr1=Paren(
+                                                                                                                 expr=BinaryOp(
+                                                                                                                     expr1=Integer(
+                                                                                                                         raw='3'),
+                                                                                                                     op='&',
+                                                                                                                     expr2=Integer(
+                                                                                                                         raw='7'))),
+                                                                                                             op='^',
+                                                                                                             expr2=Paren(
+                                                                                                                 expr=BinaryOp(
+                                                                                                                     expr1=Integer(
+                                                                                                                         raw='10'),
+                                                                                                                     op='>>',
+                                                                                                                     expr2=Integer(
+                                                                                                                         raw='1'))))))])),
         (
                 '\n    sin_val := sin(0.5);\n    cos_val := cos(0.5);\n    tan_val := tan(0.5);\n    asin_val := asin(0.5);\n    acos_val := acos(0.5);\n    atan_val := atan(0.5);\n    sinh_val := sinh(0.5);\n    cosh_val := cosh(0.5);\n    tanh_val := tanh(0.5);\n    asinh_val := asinh(0.5);\n    acosh_val := acosh(1.5);\n    atanh_val := atanh(0.5);\n    sqrt_val := sqrt(4);\n    cbrt_val := cbrt(8);\n    exp_val := exp(1);\n    log_val := log(10);\n    log10_val := log10(100);\n    log2_val := log2(8);\n    log1p_val := log1p(1);\n    abs_val := abs(-5);\n    ceil_val := ceil(4.3);\n    floor_val := floor(4.7);\n    round_val := round(4.5);\n    trunc_val := trunc(4.9);\n    sign_val := sign(-10);\n    ',
                 Preamble(stats=[InitialAssignment(name='sin_val', expr=UFunc(func='sin', expr=Float(raw='0.5'))),

@@ -53,7 +53,7 @@ class Transition(AstExportable):
     event: Optional[Event]
     guard: Optional[Expr]
     effects: List[Operation]
-    parent_ref: Optional[weakref.ReferenceType['State']] = None
+    parent_ref: Optional[weakref.ReferenceType] = None
 
     @property
     def parent(self) -> Optional['State']:
@@ -134,7 +134,7 @@ class State(AstExportable, PlantUMLExportable):
     on_enters: List[OnStage]
     on_durings: List[OnStage]
     on_exits: List[OnStage]
-    parent_ref: Optional[weakref.ReferenceType['State']] = None
+    parent_ref: Optional[weakref.ReferenceType] = None
     substate_name_to_id: Dict[str, int] = None
 
     def __post_init__(self):

@@ -7,7 +7,18 @@ from typing import Optional, Union, List, Dict, Tuple
 
 from .base import AstExportable, PlantUMLExportable
 from .expr import Expr, parse_expr_node_to_expr
-from ..dsl import node as dsl_nodes
+from ..dsl import node as dsl_nodes, INIT_STATE
+
+__all__ = [
+    'Operation',
+    'Event',
+    'Transition',
+    'OnStage',
+    'State',
+    'VarDefine',
+    'StateMachine',
+    'parse_dsl_node_to_state_machine',
+]
 
 
 @dataclass
@@ -21,6 +32,9 @@ class Operation(AstExportable):
             expr=self.expr.to_ast_node(),
         )
 
+    def var_name_to_ast_node(self) -> dsl_nodes.Name:
+        return dsl_nodes.Name(name=self.var_name)
+
 
 @dataclass
 class Event:
@@ -33,12 +47,30 @@ class Event:
 
 
 @dataclass
-class Transition:
+class Transition(AstExportable):
     from_state: Union[str, dsl_nodes._StateSingletonMark]
     to_state: Union[str, dsl_nodes._StateSingletonMark]
     event: Optional[Event]
     guard: Optional[Expr]
     effects: List[Operation]
+    parent_ref: weakref.ReferenceType['State'] = None
+
+    @property
+    def parent(self) -> Optional['State']:
+        if self.parent_ref is None:
+            return None
+        else:
+            return self.parent_ref()
+
+    @parent.setter
+    def parent(self, new_parent: Optional['State']):
+        if new_parent is None:
+            self.parent_ref = None
+        else:
+            self.parent_ref = weakref.ref(new_parent)
+
+    def to_ast_node(self) -> dsl_nodes.ASTNode:
+        return self.parent.to_transition_ast_node(self)
 
 
 @dataclass
@@ -151,6 +183,13 @@ class State(AstExportable, PlantUMLExportable):
         return retval
 
     @property
+    def transitions_entering_children(self) -> List[Transition]:
+        return [
+            transition for transition in self.transitions
+            if transition.from_state is INIT_STATE
+        ]
+
+    @property
     def path_text(self):
         return '.'.join(self.path)
 
@@ -178,6 +217,19 @@ class State(AstExportable, PlantUMLExportable):
     def non_abstract_on_exits(self) -> List[OnStage]:
         return [item for item in self.on_exits if not item.is_abstract]
 
+    def to_transition_ast_node(self, transition: Transition) -> dsl_nodes.TransitionDefinition:
+        return dsl_nodes.TransitionDefinition(
+            from_state=transition.from_state,
+            to_state=transition.to_state,
+            event_id=dsl_nodes.ChainID(
+                path=list(transition.event.path[len(self.path):])) if transition.event is not None else None,
+            condition_expr=transition.guard.to_ast_node() if transition.guard is not None else None,
+            post_operations=[
+                item.to_ast_node()
+                for item in transition.effects
+            ]
+        )
+
     def to_ast_node(self) -> dsl_nodes.StateDefinition:
         return dsl_nodes.StateDefinition(
             name=self.name,
@@ -185,19 +237,7 @@ class State(AstExportable, PlantUMLExportable):
                 substate.to_ast_node()
                 for _, substate in self.substates.items()
             ],
-            transitions=[
-                dsl_nodes.TransitionDefinition(
-                    from_state=trans.from_state,
-                    to_state=trans.to_state,
-                    event_id=dsl_nodes.ChainID(
-                        path=list(trans.event.path[len(self.path):])) if trans.event is not None else None,
-                    condition_expr=trans.guard.to_ast_node() if trans.guard is not None else None,
-                    post_operations=[
-                        item.to_ast_node()
-                        for item in trans.effects
-                    ]
-                ) for trans in self.transitions
-            ],
+            transitions=[self.to_transition_ast_node(trans) for trans in self.transitions],
             enters=[item.to_ast_node() for item in self.on_enters],
             durings=[item.to_ast_node() for item in self.on_durings],
             exits=[item.to_ast_node() for item in self.on_exits],
@@ -267,6 +307,9 @@ class VarDefine(AstExportable):
             type=self.type,
             expr=self.init.to_ast_node(),
         )
+
+    def name_ast_node(self) -> dsl_nodes.Name:
+        return dsl_nodes.Name(self.name)
 
 
 @dataclass
@@ -508,6 +551,8 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
         )
         for _, substate in d_substates.items():
             substate.parent = my_state
+        for transition in transitions:
+            transition.parent = my_state
         return my_state
 
     root_state = _recursive_build_states(dnode.root_state, current_path=())

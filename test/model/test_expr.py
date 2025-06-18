@@ -915,3 +915,84 @@ class TestModelExpr:
         ast_node = parse_with_grammar_entry(expr_text, entry_name='cond_expression')
         expr = parse_expr_node_to_expr(ast_node)
         assert expected_variables == expr.list_variables()
+
+    @pytest.mark.parametrize(['expr_text', 'expected_value'], [
+        ('42', 42),  # Integer literal 42
+        ('3.14', 3.14),  # Floating-point literal 3.14
+        ('0x2A', 42),  # Hexadecimal integer literal 0x2A (42 in decimal)
+        ('pi', 3.141592653589793),  # Mathematical constant pi
+        ('E', 2.718281828459045),  # Mathematical constant E (Euler's number)
+        ('-5', -5),  # Negative integer literal -5
+        ('+3.14', 3.14),  # Positive floating-point literal 3.14
+        ('2 + 3', 5),  # Addition of integers 2 and 3
+        ('7 - 4', 3),  # Subtraction of 4 from 7
+        ('6 * 8', 48),  # Multiplication of 6 and 8
+        ('15 / 3', 5.0),  # Division of 15 by 3
+        ('10 % 3', 1),  # Modulo operation: remainder of 10 divided by 3
+        ('5 & 3', 1),  # Bitwise AND of 5 and 3
+        ('5 | 3', 7),  # Bitwise OR of 5 and 3
+        ('5 ^ 3', 6),  # Bitwise XOR of 5 and 3
+        ('5 << 2', 20),  # Left shift of 5 by 2 bits
+        ('20 >> 2', 5),  # Right shift of 20 by 2 bits
+        ('2 ** 3', 8),  # 2 raised to the power of 3
+        ('3 ** 2 ** 2', 81),  # 3 raised to the power of (2 raised to the power of 2)
+        ('sin(pi/2)', 1.0),  # Sine function applied to pi/2
+        ('cos(0)', 1.0),  # Cosine function applied to 0
+        ('sqrt(16)', 4.0),  # Square root of 16
+        ('log10(100)', 2.0),  # Base-10 logarithm of 100
+        ('(5 > 3) ? 10 : 20', 10),  # If 5 > 3 then 10 else 20
+        ('(2 == 2) ? 5 : 6', 5),  # If 2 equals 2 then 5 else 6
+        ('(3 + 4) * (7 - 2)', 35),  # Product of (3 + 4) and (7 - 2)
+        ('sin(pi/4) ** 2 + cos(pi/4) ** 2', 1.0),  # Sum of squared sine and cosine of pi/4
+        ('(5 > 3 && 2 < 4) ? sqrt(16) : cbrt(27)', 4.0),  # If both 5 > 3 and 2 < 4 then sqrt(16) else cbrt(27)
+        ('log(E ** 2) * (3 + 4 * 5) / (2 ** 3 - 1)', 6.571428571428571),
+        # Complex expression combining logarithm, exponentiation, and arithmetic operations
+        ('abs(-5) + ceil(3.2) + floor(3.8) + round(3.5)', 16),
+        # Sum of absolute value, ceiling, floor, and round functions
+    ])
+    def test_num_expression_parse_to_model_call_without_variables(self, expr_text, expected_value):
+        ast_node = parse_with_grammar_entry(expr_text, entry_name='num_expression')
+        expr = parse_expr_node_to_expr(ast_node)
+        assert pytest.approx(expected_value) == expr()
+
+    @pytest.mark.parametrize(['expr_text', 'expected_value'], [
+        ('true', True),  # Boolean literal true
+        ('false', False),  # Boolean literal false
+        ('TRUE', True),  # Boolean literal TRUE (alternative syntax)
+        ('!true', False),  # Logical NOT of true
+        ('not false', True),  # Logical NOT of false (alternative syntax)
+        ('5 > 3', True),  # Greater than comparison: 5 > 3
+        ('10 <= 10', True),  # Less than or equal comparison: 10 <= 10
+        ('7 == 7', True),  # Equality comparison: 7 equals 7
+        ('4 != 5', True),  # Inequality comparison: 4 not equal to 5
+        ('(5 > 3) == (6 > 4)', True),  # Equality comparison between two conditions
+        ('(2 < 1) != (3 < 2)', False),  # Inequality comparison between two conditions
+        ('true && true', True),  # Logical AND of two true values
+        ('false || true', True),  # Logical OR of false and true
+        ('true and false', False),  # Logical AND of true and false (alternative syntax)
+        ('false or false', False),  # Logical OR of two false values (alternative syntax)
+        ('(5 > 3) && (2 < 4)', True),  # Logical AND of two comparison expressions
+        ('!(5 < 3) || (7 >= 10)', True),  # Logical OR of negated comparison and another comparison
+        ('(true) ? false : true', False),  # If true then false else true
+        ('(5 > 3) ? (2 == 2) : (1 != 1)', True),  # If 5 > 3 then check if 2 equals 2 else check if 1 not equals 1
+        ('(3 * 4 > 10) && (20 / 5 == 4)', True),  # Logical AND of two complex comparisons
+        ('(sin(pi/2) > 0.9) || (cos(0) < 0.5)', True),  # Logical OR of trigonometric function comparisons
+        ('((5 > 3) && (2 < 4)) || ((1 == 1) && (0 != 1))', True),  # Nested logical operations with comparisons
+        ('(true && false) || (true && true)', True),  # Combination of logical AND and OR operations
+        ('(((5 > 3) && (2 < 4)) || ((1 == 1) && (0 != 1))) && (true || false)', True),
+        # Multi-level nesting of logical operations
+        ('!(5 < 3) && !(2 > 4) && (3 == 3)', True),  # Multiple negations combined with logical AND
+        ('sqrt(16) == 4 && log10(1000) == 3', True),  # Comparisons involving mathematical functions
+        ('(sin(0) ** 2 + cos(0) ** 2) == 1', True),  # Trigonometric identity comparison
+        ('((5 * 3 > 10) && (20 / 5 == 4)) || ((sin(pi/2) > 0.9) && (cos(0) > 0.5))', True),
+        # Complex combination of arithmetic, comparison, and trigonometric functions
+        ('(2 ** 3 == 8) ? ((4 * 5 > 15) && (30 / 6 <= 5)) : ((sqrt(16) == 4) || (log10(100) != 2))', True),
+        # Complex conditional expression with nested comparisons
+        ('!((sin(pi/4) ** 2 + cos(pi/4) ** 2 != 1) || (E ** log(1) != 1)) && (pi > 3)', True),
+        # Complex expression with mathematical functions, constants, and logical operations
+        ('( 2 > 3) ? ( 1 == 2) : (3 == 3)', True),  # Negative condition test
+    ])
+    def test_cond_expression_parse_to_model_call_without_variables(self, expr_text, expected_value):
+        ast_node = parse_with_grammar_entry(expr_text, entry_name='cond_expression')
+        expr = parse_expr_node_to_expr(ast_node)
+        assert pytest.approx(expected_value) == expr()

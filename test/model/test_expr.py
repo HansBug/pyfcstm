@@ -718,3 +718,200 @@ class TestModelExpr:
         ast_node_2 = parse_with_grammar_entry(str(expr.to_ast_node()), entry_name='cond_expression')
         expr2 = parse_expr_node_to_expr(ast_node_2)
         assert pytest.approx(expr) == expr2
+
+    @pytest.mark.parametrize(['expr_text', 'expected_variables'], [
+        ('42', []),  # Integer literal 42
+        ('3.14', []),  # Floating point literal 3.14
+        ('0x2A', []),  # Hexadecimal integer literal 42
+        ('pi', []),  # Mathematical constant pi
+        ('E', []),  # Mathematical constant E (Euler's number)
+        ('tau', []),  # Mathematical constant tau (2*pi)
+        ('x', [Variable(name='x')]),  # Variable reference to x
+        ('-5', []),  # Negative integer literal 5
+        ('+7', []),  # Positive integer literal 7
+        ('a + b', [Variable(name='a'), Variable(name='b')]),  # Addition of variables a and b
+        ('x - y', [Variable(name='x'), Variable(name='y')]),  # Subtraction of y from x
+        ('p * q', [Variable(name='p'), Variable(name='q')]),  # Multiplication of variables p and q
+        ('m / n', [Variable(name='m'), Variable(name='n')]),  # Division of m by n
+        ('i % j', [Variable(name='i'), Variable(name='j')]),  # Modulo operation of i by j
+        ('2 ** 3', []),  # 2 raised to the power of 3
+        ('a << 2', [Variable(name='a')]),  # Left bit shift of a by 2 bits
+        ('b >> 1', [Variable(name='b')]),  # Right bit shift of b by 1 bit
+        ('x & y', [Variable(name='x'), Variable(name='y')]),  # Bitwise AND of x and y
+        ('p | q', [Variable(name='p'), Variable(name='q')]),  # Bitwise OR of p and q
+        ('m ^ n', [Variable(name='m'), Variable(name='n')]),  # Bitwise XOR of m and n
+        ('sin(x)', [Variable(name='x')]),  # Sine of x
+        ('cos(theta)', [Variable(name='theta')]),  # Cosine of theta
+        ('sqrt(2)', []),  # Square root of 2
+        ('log(x)', [Variable(name='x')]),  # Natural logarithm of x
+        ('abs(-7)', []),  # Absolute value of -7
+        ('(a + b)', [Variable(name='a'), Variable(name='b')]),  # Parenthesized addition of a and b
+        ('(x * y) + z', [Variable(name='x'), Variable(name='y'), Variable(name='z')]),
+        # Addition of the product of x and y with z
+        ('(x > y) ? a : b', [Variable(name='x'), Variable(name='y'), Variable(name='a'), Variable(name='b')]),
+        # If x is greater than y, return a, otherwise return b
+        ('(flag == 0x2) ? 1 : 0', [Variable(name='flag')]),  # If flag equals 0x2, return 1, otherwise return 0
+        ('sin(x) + cos(y)', [Variable(name='x'), Variable(name='y')]),  # Addition of sine of x and cosine of y
+        ('(a + b) * (c - d)', [Variable(name='a'), Variable(name='b'), Variable(name='c'), Variable(name='d')]),
+        # Product of the sum of a and b with the difference of c and d
+        ('log(x ** 2 + 1)', [Variable(name='x')]),  # Natural logarithm of x squared plus 1
+        ('(a & b) | (c & d)', [Variable(name='a'), Variable(name='b'), Variable(name='c'), Variable(name='d')]),
+        # Bitwise OR of (a AND b) with (c AND d)
+        ('sqrt(x * x + y * y)', [Variable(name='x'), Variable(name='y')]),
+        # Square root of the sum of squares of x and y (Euclidean distance)
+        ('abs(x) + abs(y)', [Variable(name='x'), Variable(name='y')]),
+        # Sum of absolute values of x and y (Manhattan distance)
+        ('sin(2 * pi * f * t + phi)', [Variable(name='f'), Variable(name='t'), Variable(name='phi')]),
+        # Sine wave with frequency f, time t, and phase phi
+        ('(x ** 2 + y ** 2 <= r ** 2) ? 1 : 0', [Variable(name='x'), Variable(name='y'), Variable(name='r')]),
+        # Check if point (x,y) is within circle of radius r
+        ('log(abs(x) + sqrt(x ** 2 + 1))', [Variable(name='x')]),  # Logarithm of a complex mathematical expression
+        ('(a << 2) & (b >> 1) | (c ^ d)',
+         [Variable(name='a'), Variable(name='b'), Variable(name='c'), Variable(name='d')]),
+        # Complex bitwise operation combining shift, AND, OR, and XOR
+        ('(sin(x) ** 2 + cos(x) ** 2) * (1 + tan(y) ** 2) / (1 + tanh(z) ** 2)',
+         [Variable(name='x'), Variable(name='y'), Variable(name='z')]),  # Complex trigonometric identity expression
+        ('(a + b) * (c - d) / ((e + f) * (g - h)) ** (i % j)',
+         [Variable(name='a'), Variable(name='b'), Variable(name='c'), Variable(name='d'), Variable(name='e'),
+          Variable(name='f'), Variable(name='g'), Variable(name='h'), Variable(name='i'), Variable(name='j')]),
+        # Complex arithmetic expression with multiple operations and groupings
+        ('log(sqrt(x ** 2 + y ** 2)) + atan(2 * y)', [Variable(name='x'), Variable(name='y')]),
+        # Logarithm of distance plus angle calculation
+        ('(x > y) ? (a < b) ? p : q : (c < d) ? m : n',
+         [Variable(name='x'), Variable(name='y'), Variable(name='a'), Variable(name='b'), Variable(name='p'),
+          Variable(name='q'), Variable(name='c'), Variable(name='d'), Variable(name='m'), Variable(name='n')]),
+        # Nested conditional expression with multiple conditions
+        ('sin(cos(tan(x))) + log(exp(sqrt(abs(y))))', [Variable(name='x'), Variable(name='y')]),
+        # Nested function calls with various mathematical functions
+        ('((a & b) | (c ^ d)) << ((e + f) % 8)',
+         [Variable(name='a'), Variable(name='b'), Variable(name='c'), Variable(name='d'), Variable(name='e'),
+          Variable(name='f')]),  # Bitwise operations combined with arithmetic for shift amount
+        ('(x ** 2 + y ** 2 + z ** 2) ** 0.5', [Variable(name='x'), Variable(name='y'), Variable(name='z')]),
+        # Calculation of 3D Euclidean distance using exponentiation
+        ('(a > b && c < d) ? (e + f) * g : (h - i) / j',
+         [Variable(name='a'), Variable(name='b'), Variable(name='c'), Variable(name='d'), Variable(name='e'),
+          Variable(name='f'), Variable(name='g'), Variable(name='h'), Variable(name='i'), Variable(name='j')]),
+        # Conditional expression with logical AND in condition
+        ('sin(2 * pi * f * t) * exp(-t / tau) + A * cos(omega * t + phi)',
+         [Variable(name='f'), Variable(name='t'), Variable(name='A'), Variable(name='omega'), Variable(name='phi')]),
+        # Damped sinusoidal oscillation with offset
+        ('(((x & 0xFF) << 16) | ((y & 0xFF) << 8) | (z & 0xFF))',
+         [Variable(name='x'), Variable(name='y'), Variable(name='z')]),
+        # RGB color value packing using bitwise operations
+    ])
+    def test_num_expression_parse_to_model_list_variables(self, expr_text, expected_variables):
+        ast_node = parse_with_grammar_entry(expr_text, entry_name='num_expression')
+        expr = parse_expr_node_to_expr(ast_node)
+        assert expected_variables == expr.list_variables()
+
+    @pytest.mark.parametrize(['expr_text', 'expected_variables'], [
+        ('true', []),  # Boolean literal true
+        ('false', []),  # Boolean literal false
+        ('True', []),  # Boolean literal True (alternative syntax)
+        ('False', []),  # Boolean literal False (alternative syntax)
+        ('x > y', [Variable(name='x'), Variable(name='y')]),  # Check if x is greater than y
+        ('a < b', [Variable(name='a'), Variable(name='b')]),  # Check if a is less than b
+        ('m >= n', [Variable(name='m'), Variable(name='n')]),  # Check if m is greater than or equal to n
+        ('p <= q', [Variable(name='p'), Variable(name='q')]),  # Check if p is less than or equal to q
+        ('x == y', [Variable(name='x'), Variable(name='y')]),  # Check if x equals y
+        ('a != b', [Variable(name='a'), Variable(name='b')]),  # Check if a is not equal to b
+        ('!(x > y)', [Variable(name='x'), Variable(name='y')]),  # Logical NOT of the comparison x > y
+        ('not (a == b)', [Variable(name='a'), Variable(name='b')]),
+        # Logical NOT of the comparison a equals b (alternative syntax)
+        ('(a > 0) && (b < 1)', [Variable(name='a'), Variable(name='b')]),  # Logical AND of a > 0 and b < 1
+        ('(x == 0) || (y != 1)', [Variable(name='x'), Variable(name='y')]),  # Logical OR of x == 0 and y != 1
+        ('(p > 0) and (q < 1)', [Variable(name='p'), Variable(name='q')]),
+        # Logical AND of p > 0 and q < 1 (alternative syntax)
+        ('(m == 0) or (n != 1)', [Variable(name='m'), Variable(name='n')]),
+        # Logical OR of m == 0 and n != 1 (alternative syntax)
+        ('(x > y)', [Variable(name='x'), Variable(name='y')]),  # Parenthesized comparison of x and y
+        ('!(a < b)', [Variable(name='a'), Variable(name='b')]),  # Negation of the comparison a < b
+        ('(x > y) ? (a < b) : (c < d)',
+         [Variable(name='x'), Variable(name='y'), Variable(name='a'), Variable(name='b'), Variable(name='c'),
+          Variable(name='d')]),  # If x > y, check a < b, otherwise check c < d
+        ('(x > 0) ? true : false', [Variable(name='x')]),  # If x > 0, return true, otherwise return false
+        ('x > 0 && y > 0', [Variable(name='x'), Variable(name='y')]),  # Check if both x and y are positive
+        ('a < b || c < d', [Variable(name='a'), Variable(name='b'), Variable(name='c'), Variable(name='d')]),
+        # Check if either a < b or c < d is true
+        ('(x >= min) && (x <= max)', [Variable(name='x'), Variable(name='min'), Variable(name='max')]),
+        # Check if x is within range [min, max]
+        ('!(a == b) && !(c == d)', [Variable(name='a'), Variable(name='b'), Variable(name='c'), Variable(name='d')]),
+        # Check if both a != b and c != d
+        ('(temp > 100) || (pressure > 200)', [Variable(name='temp'), Variable(name='pressure')]),
+        # Check if either temperature exceeds 100 or pressure exceeds 200
+        ('x == y && y == z', [Variable(name='x'), Variable(name='y'), Variable(name='z')]),
+        # Check if all three values are equal
+        ('(a < b && c < d) || (e < f && g < h)',
+         [Variable(name='a'), Variable(name='b'), Variable(name='c'), Variable(name='d'), Variable(name='e'),
+          Variable(name='f'), Variable(name='g'), Variable(name='h')]),
+        # Check if either both a < b and c < d, or both e < f and g < h
+        ('(x > 0) ? (y > 0) : (z > 0)', [Variable(name='x'), Variable(name='y'), Variable(name='z')]),
+        # If x is positive, check if y is positive, otherwise check if z is positive
+        ('!(a < b || c < d) && (e < f)',
+         [Variable(name='a'), Variable(name='b'), Variable(name='c'), Variable(name='d'), Variable(name='e'),
+          Variable(name='f')]),  # Check if both NOT(a < b OR c < d) and e < f
+        ('(x == 0) || (y != 0 && z == 0)', [Variable(name='x'), Variable(name='y'), Variable(name='z')]),
+        # Check if x is 0 OR (y is not 0 AND z is 0)
+        ('(a > b && c > d) || (e > f && g > h) || (i > j && k > l)',
+         [Variable(name='a'), Variable(name='b'), Variable(name='c'), Variable(name='d'), Variable(name='e'),
+          Variable(name='f'), Variable(name='g'), Variable(name='h'), Variable(name='i'), Variable(name='j'),
+          Variable(name='k'), Variable(name='l')]),  # Complex condition with multiple AND and OR combinations
+        ('!((x < y) && (z < w)) || (p == q && r != s)',
+         [Variable(name='x'), Variable(name='y'), Variable(name='z'), Variable(name='w'), Variable(name='p'),
+          Variable(name='q'), Variable(name='r'), Variable(name='s')]),
+        # Negation of a conjunction combined with another conjunction
+        ('((a < b) ? c < d : e < f) && ((g < h) ? i < j : k < l)',
+         [Variable(name='a'), Variable(name='b'), Variable(name='c'), Variable(name='d'), Variable(name='e'),
+          Variable(name='f'), Variable(name='g'), Variable(name='h'), Variable(name='i'), Variable(name='j'),
+          Variable(name='k'), Variable(name='l')]),  # Logical AND of two conditional expressions
+        ('(x == y) == (a == b) && (c != d) != (e != f)',
+         [Variable(name='x'), Variable(name='y'), Variable(name='a'), Variable(name='b'), Variable(name='c'),
+          Variable(name='d'), Variable(name='e'), Variable(name='f')]),  # Equality comparison of equality comparisons
+        (
+                '(a > 0 && b > 0) || (c > 0 && d > 0) ? (e > 0 || f > 0) && (g > 0 || h > 0) : (i > 0 && j > 0) || (k > 0 && l > 0)',
+                [Variable(name='a'), Variable(name='b'), Variable(name='c'), Variable(name='d'), Variable(name='e'),
+                 Variable(name='f'), Variable(name='g'), Variable(name='h'), Variable(name='i'), Variable(name='j'),
+                 Variable(name='k'), Variable(name='l')]),  # Conditional expression with complex conditions
+        ('!(a < b) && !(c < d) || !(e < f) && !(g < h)',
+         [Variable(name='a'), Variable(name='b'), Variable(name='c'), Variable(name='d'), Variable(name='e'),
+          Variable(name='f'), Variable(name='g'), Variable(name='h')]),
+        # Complex expression with multiple negations and logical operators
+        ('(x > 0 && y > 0 && z > 0) || (x < 0 && y < 0 && z < 0)',
+         [Variable(name='x'), Variable(name='y'), Variable(name='z')]),
+        # Check if all coordinates are positive or all are negative
+        ('(a == 1 || a == 2 || a == 3) && (b == 1 || b == 2 || b == 3)', [Variable(name='a'), Variable(name='b')]),
+        # Check if both a and b are one of the values 1, 2, or 3
+        ('((x > y) ? x : y) > ((a > b) ? a : b)',
+         [Variable(name='x'), Variable(name='y'), Variable(name='a'), Variable(name='b')]),
+        # Compare the maximum of x and y with the maximum of a and b
+        ('!((a < b) ? c < d : e < f) && ((g < h) ? !(i < j) : !(k < l))',
+         [Variable(name='a'), Variable(name='b'), Variable(name='c'), Variable(name='d'), Variable(name='e'),
+          Variable(name='f'), Variable(name='g'), Variable(name='h'), Variable(name='i'), Variable(name='j'),
+          Variable(name='k'), Variable(name='l')]),  # Complex expression with negations and conditional expressions
+        ('(a == b && c == d) || (e == f && g == h) || (i == j && k == l) || (m == n && o == p)',
+         [Variable(name='a'), Variable(name='b'), Variable(name='c'), Variable(name='d'), Variable(name='e'),
+          Variable(name='f'), Variable(name='g'), Variable(name='h'), Variable(name='i'), Variable(name='j'),
+          Variable(name='k'), Variable(name='l'), Variable(name='m'), Variable(name='n'), Variable(name='o'),
+          Variable(name='p')]),  # Multiple equality checks combined with AND and OR
+        ('((a < b) && (c < d)) ? ((e < f) || (g < h)) : ((i < j) && (k < l)) || ((m < n) || (o < p))',
+         [Variable(name='a'), Variable(name='b'), Variable(name='c'), Variable(name='d'), Variable(name='e'),
+          Variable(name='f'), Variable(name='g'), Variable(name='h'), Variable(name='i'), Variable(name='j'),
+          Variable(name='k'), Variable(name='l'), Variable(name='m'), Variable(name='n'), Variable(name='o'),
+          Variable(name='p')]),  # Complex conditional with multiple comparisons
+        ('(x >= min && x <= max) || (y >= min && y <= max) || (z >= min && z <= max)',
+         [Variable(name='x'), Variable(name='min'), Variable(name='max'), Variable(name='y'), Variable(name='z')]),
+        # Check if any of x, y, or z is within range [min, max]
+        ('!((a < b || c < d) && (e < f || g < h)) || !((i < j || k < l) && (m < n || o < p))',
+         [Variable(name='a'), Variable(name='b'), Variable(name='c'), Variable(name='d'), Variable(name='e'),
+          Variable(name='f'), Variable(name='g'), Variable(name='h'), Variable(name='i'), Variable(name='j'),
+          Variable(name='k'), Variable(name='l'), Variable(name='m'), Variable(name='n'), Variable(name='o'),
+          Variable(name='p')]),  # Complex expression with negations of conjunctions of disjunctions
+        ('((a > 0 && b > 0) || (c > 0 && d > 0)) == ((e > 0 && f > 0) || (g > 0 && h > 0))',
+         [Variable(name='a'), Variable(name='b'), Variable(name='c'), Variable(name='d'), Variable(name='e'),
+          Variable(name='f'), Variable(name='g'), Variable(name='h')]),
+        # Compare equality of two complex boolean expressions
+    ])
+    def test_cond_expression_parse_to_model_list_variables(self, expr_text, expected_variables):
+        ast_node = parse_with_grammar_entry(expr_text, entry_name='cond_expression')
+        expr = parse_expr_node_to_expr(ast_node)
+        assert expected_variables == expr.list_variables()

@@ -435,4 +435,4 @@ def parse_expr_node_to_expr(node: dsl_nodes.Expr) -> Expr:
             x=parse_expr_node_to_expr(node.expr),
         )
     else:
-        raise TypeError(f'Unknown node type - {node!r}.')
+        raise TypeError(f'Unknown node type - {node!r}.')  # pragma: no cover

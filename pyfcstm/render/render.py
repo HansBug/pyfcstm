@@ -5,6 +5,7 @@ import warnings
 from functools import partial
 from typing import Optional, Dict, Callable
 
+import pathspec
 import yaml
 
 from .env import create_env
@@ -21,11 +22,15 @@ class StateMachineCodeRenderer:
         self.env = create_env()
         self._lang_style: Optional[str] = None
         self._lang_ext_configs: Optional[dict] = None
+        self._ignore_patterns = ['.git']
         self._prepare_for_configs()
         self.env = add_expr_render_to_env(
             self.env,
             lang_style=self._lang_style,
             ext_configs=self._lang_ext_configs,
+        )
+        self._path_spec = pathspec.PathSpec.from_lines(
+            pathspec.patterns.GitWildMatchPattern, self._ignore_patterns
         )
 
         self._file_mappings: Dict[str, Callable] = {}
@@ -53,12 +58,17 @@ class StateMachineCodeRenderer:
         for name, value in tests.items():
             self.env.tests[name] = process_item_to_object(value, env=self.env)
 
+        ignores = list(config_info.pop('ignores', None) or [])
+        self._ignore_patterns.extend(ignores)
+
     def _prepare_for_file_mapping(self):
         for root, _, files in os.walk(self.template_dir):
             for file in files:
                 _, ext = os.path.splitext(file)
                 current_file = os.path.abspath(os.path.join(root, file))
                 rel_file = os.path.relpath(current_file, self.template_dir)
+                if self._path_spec.match_file(rel_file):
+                    continue
                 if ext == '.j2':
                     rel_file = os.path.splitext(rel_file)[0]
                     self._file_mappings[rel_file] = partial(

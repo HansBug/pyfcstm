@@ -18,12 +18,7 @@ from .env import create_env
 from ..dsl import node as dsl_nodes
 from ..model import Integer, Float, Boolean
 
-_DEFAULT = {
-    'default': '{{ node }}',
-}
-
 _DSL_STYLE = {
-    **_DEFAULT,
     'Float': '{{ node.value | repr }}',
     'Integer': '{{ node.value | repr }}',
     'Boolean': '{{ node.value | repr }}',
@@ -38,7 +33,7 @@ _DSL_STYLE = {
 }
 
 _C_STYLE = {
-    **_DEFAULT,
+    **_DSL_STYLE,
     'Float': '{{ node.value | repr }}',
     'Integer': '{{ node.value | repr }}',
     'Boolean': '{{ (1 if node.value else 0) | hex }}',
@@ -54,7 +49,7 @@ _C_STYLE = {
 }
 
 _PY_STYLE = {
-    **_DEFAULT,
+    **_DSL_STYLE,
     'Float': '{{ node.value | repr }}',
     'Integer': '{{ node.value | repr }}',
     'Boolean': '{{ node.value | repr }}',
@@ -72,7 +67,6 @@ _PY_STYLE = {
 }
 
 _KNOWN_STYLES = {
-    'default': _DEFAULT,
     'dsl': _DSL_STYLE,
     'c': _C_STYLE,
     'cpp': _C_STYLE,

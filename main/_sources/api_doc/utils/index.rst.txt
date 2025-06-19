@@ -9,6 +9,9 @@ pyfcstm.utils
 .. toctree::
     :maxdepth: 3
 
-    validate
+    doc
+    jinja2
     json
+    text
+    validate
 

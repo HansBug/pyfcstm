@@ -507,10 +507,11 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
         on_durings = []
         for during_item in node.durings:
             if not d_substates and during_item.aspect is not None:
-                raise SyntaxError(f'For leaf state, during cannot assign aspect {during_item.aspect!r}:\n{during_item}')
+                raise SyntaxError(
+                    f'For leaf state {node.name!r}, during cannot assign aspect {during_item.aspect!r}:\n{during_item}')
             if d_substates and during_item.aspect is None:
                 raise SyntaxError(
-                    f'For composite state, during must assign aspect to either \'before\' or \'after\':\n{during_item}')
+                    f'For composite state {node.name!r}, during must assign aspect to either \'before\' or \'after\':\n{during_item}')
 
             if isinstance(during_item, dsl_nodes.DuringOperations):
                 during_operations = []

@@ -70,7 +70,7 @@ class Transition(AstExportable):
             self.parent_ref = weakref.ref(new_parent)
 
     def to_ast_node(self) -> dsl_nodes.ASTNode:
-        return self.parent.to_transition_ast_node(self)
+        return State.transition_to_ast_node(self.parent, self)
 
 
 @dataclass
@@ -177,7 +177,7 @@ class State(AstExportable, PlantUMLExportable):
                 event=None,
                 guard=None,
                 effects=[],
-                parent_ref=weakref.ref(self),
+                parent_ref=self.parent_ref,
             ))
         return retval
 
@@ -196,7 +196,7 @@ class State(AstExportable, PlantUMLExportable):
                 event=None,
                 guard=None,
                 effects=[],
-                parent_ref=weakref.ref(self),
+                parent_ref=self.parent_ref,
             ))
 
         return retval
@@ -209,7 +209,7 @@ class State(AstExportable, PlantUMLExportable):
         ]
 
     @property
-    def transitions_entering_children_for_generation(self) -> List[Optional[Transition]]:
+    def transitions_entering_children_simplified(self) -> List[Optional[Transition]]:
         retval = []
         for transition in self.transitions:
             if transition.from_state is INIT_STATE:
@@ -219,10 +219,6 @@ class State(AstExportable, PlantUMLExportable):
         if not retval or (retval and not (retval[-1].event is None and retval[-1].guard is None)):
             retval.append(None)
         return retval
-
-    @property
-    def path_text(self):
-        return '.'.join(self.path)
 
     @property
     def abstract_on_enters(self) -> List[OnStage]:
@@ -248,18 +244,26 @@ class State(AstExportable, PlantUMLExportable):
     def non_abstract_on_exits(self) -> List[OnStage]:
         return [item for item in self.on_exits if not item.is_abstract]
 
-    def to_transition_ast_node(self, transition: Transition) -> dsl_nodes.TransitionDefinition:
+    @classmethod
+    def transition_to_ast_node(cls, self: Optional['State'], transition: Transition):
+        if self:
+            cur_path_length = len(self.path)
+        else:
+            cur_path_length = 0
         return dsl_nodes.TransitionDefinition(
             from_state=transition.from_state,
             to_state=transition.to_state,
             event_id=dsl_nodes.ChainID(
-                path=list(transition.event.path[len(self.path):])) if transition.event is not None else None,
+                path=list(transition.event.path[cur_path_length:])) if transition.event is not None else None,
             condition_expr=transition.guard.to_ast_node() if transition.guard is not None else None,
             post_operations=[
                 item.to_ast_node()
                 for item in transition.effects
             ]
         )
+
+    def to_transition_ast_node(self, transition: Transition) -> dsl_nodes.TransitionDefinition:
+        return self.transition_to_ast_node(self, transition)
 
     def to_ast_node(self) -> dsl_nodes.StateDefinition:
         return dsl_nodes.StateDefinition(

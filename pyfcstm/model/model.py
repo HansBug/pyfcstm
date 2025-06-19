@@ -1,3 +1,19 @@
+"""
+State machine module for parsing and representing hierarchical state machines.
+
+This module provides classes and functions for working with state machines, including:
+- Representation of states, transitions, events, and operations
+- Parsing state machine DSL nodes into state machine objects
+- Exporting state machines to AST nodes and PlantUML diagrams
+
+The module implements a hierarchical state machine model with support for:
+- Nested states
+- Entry, during, and exit actions
+- Guards and effects on transitions
+- Abstract function declarations
+- Variable definitions
+"""
+
 import io
 import json
 import weakref
@@ -23,31 +39,91 @@ __all__ = [
 
 @dataclass
 class Operation(AstExportable):
+    """
+    Represents an operation that assigns a value to a variable.
+
+    An operation consists of a variable name and an expression that will be
+    assigned to the variable when the operation is executed.
+
+    :param var_name: The name of the variable to assign to
+    :type var_name: str
+    :param expr: The expression to evaluate and assign to the variable
+    :type expr: Expr
+    """
     var_name: str
     expr: Expr
 
     def to_ast_node(self) -> dsl_nodes.OperationAssignment:
+        """
+        Convert this operation to an AST node.
+
+        :return: An operation assignment AST node
+        :rtype: dsl_nodes.OperationAssignment
+        """
         return dsl_nodes.OperationAssignment(
             name=self.var_name,
             expr=self.expr.to_ast_node(),
         )
 
     def var_name_to_ast_node(self) -> dsl_nodes.Name:
+        """
+        Convert the variable name to an AST node.
+
+        :return: A name AST node
+        :rtype: dsl_nodes.Name
+        """
         return dsl_nodes.Name(name=self.var_name)
 
 
 @dataclass
 class Event:
+    """
+    Represents an event that can trigger state transitions.
+
+    An event has a name and is associated with a specific state path in the
+    state machine hierarchy.
+
+    :param name: The name of the event
+    :type name: str
+    :param state_path: The path to the state that owns this event
+    :type state_path: Tuple[str, ...]
+    """
     name: str
     state_path: Tuple[str, ...]
 
     @property
     def path(self) -> Tuple[str, ...]:
+        """
+        Get the full path of the event including the state path and event name.
+
+        :return: The full path to the event
+        :rtype: Tuple[str, ...]
+        """
         return tuple((*self.state_path, self.name))
 
 
 @dataclass
 class Transition(AstExportable):
+    """
+    Represents a transition between states in a state machine.
+
+    A transition defines how the state machine moves from one state to another,
+    potentially triggered by an event, guarded by a condition, and with effects
+    that execute when the transition occurs.
+
+    :param from_state: The source state name or special state marker
+    :type from_state: Union[str, dsl_nodes._StateSingletonMark]
+    :param to_state: The target state name or special state marker
+    :type to_state: Union[str, dsl_nodes._StateSingletonMark]
+    :param event: The event that triggers this transition, if any
+    :type event: Optional[Event]
+    :param guard: The condition that must be true for the transition to occur, if any
+    :type guard: Optional[Expr]
+    :param effects: Operations to execute when the transition occurs
+    :type effects: List[Operation]
+    :param parent_ref: Weak reference to the parent state
+    :type parent_ref: Optional[weakref.ReferenceType]
+    """
     from_state: Union[str, dsl_nodes._StateSingletonMark]
     to_state: Union[str, dsl_nodes._StateSingletonMark]
     event: Optional[Event]
@@ -57,6 +133,12 @@ class Transition(AstExportable):
 
     @property
     def parent(self) -> Optional['State']:
+        """
+        Get the parent state of this transition.
+
+        :return: The parent state or None if no parent is set
+        :rtype: Optional['State']
+        """
         if self.parent_ref is None:
             return None
         else:
@@ -64,17 +146,46 @@ class Transition(AstExportable):
 
     @parent.setter
     def parent(self, new_parent: Optional['State']):
+        """
+        Set the parent state of this transition.
+
+        :param new_parent: The new parent state or None to clear the parent
+        :type new_parent: Optional['State']
+        """
         if new_parent is None:
             self.parent_ref = None  # pragma: no cover
         else:
             self.parent_ref = weakref.ref(new_parent)
 
     def to_ast_node(self) -> dsl_nodes.ASTNode:
+        """
+        Convert this transition to an AST node.
+
+        :return: A transition definition AST node
+        :rtype: dsl_nodes.ASTNode
+        """
         return State.transition_to_ast_node(self.parent, self)
 
 
 @dataclass
 class OnStage(AstExportable):
+    """
+    Represents an action that occurs during a specific stage of a state's lifecycle.
+
+    OnStage can represent enter, during, or exit actions, and can be either concrete
+    operations or abstract function declarations.
+
+    :param stage: The lifecycle stage ('enter', 'during', or 'exit')
+    :type stage: str
+    :param aspect: For 'during' actions in composite states, specifies if the action occurs 'before' or 'after' substates
+    :type aspect: Optional[str]
+    :param name: For abstract functions, the name of the function
+    :type name: Optional[str]
+    :param doc: For abstract functions, the documentation string
+    :type doc: Optional[str]
+    :param operations: For concrete actions, the list of operations to execute
+    :type operations: List[Operation]
+    """
     stage: str
     aspect: Optional[str]
     name: Optional[str]
@@ -83,9 +194,22 @@ class OnStage(AstExportable):
 
     @property
     def is_abstract(self) -> bool:
+        """
+        Check if this is an abstract function declaration.
+
+        :return: True if this is an abstract function, False otherwise
+        :rtype: bool
+        """
         return self.name is not None or self.doc is not None
 
     def to_ast_node(self) -> Union[dsl_nodes.EnterStatement, dsl_nodes.DuringStatement, dsl_nodes.ExitStatement]:
+        """
+        Convert this OnStage to an appropriate AST node based on the stage.
+
+        :return: An enter, during, or exit statement AST node
+        :rtype: Union[dsl_nodes.EnterStatement, dsl_nodes.DuringStatement, dsl_nodes.ExitStatement]
+        :raises ValueError: If the stage is not one of 'enter', 'during', or 'exit'
+        """
         if self.stage == 'enter':
             if self.name or self.doc is not None:
                 return dsl_nodes.EnterAbstractFunction(
@@ -126,6 +250,33 @@ class OnStage(AstExportable):
 
 @dataclass
 class State(AstExportable, PlantUMLExportable):
+    """
+    Represents a state in a hierarchical state machine.
+
+    A state can contain substates, transitions between those substates, and actions
+    that execute on enter, during, or exit of the state.
+
+    :param name: The name of the state
+    :type name: str
+    :param path: The full path to this state in the hierarchy
+    :type path: Tuple[str, ...]
+    :param substates: Dictionary mapping substate names to State objects
+    :type substates: Dict[str, 'State']
+    :param events: Dictionary mapping event names to Event objects
+    :type events: Dict[str, Event]
+    :param transitions: List of transitions between substates
+    :type transitions: List[Transition]
+    :param on_enters: List of actions to execute when entering the state
+    :type on_enters: List[OnStage]
+    :param on_durings: List of actions to execute while in the state
+    :type on_durings: List[OnStage]
+    :param on_exits: List of actions to execute when exiting the state
+    :type on_exits: List[OnStage]
+    :param parent_ref: Weak reference to the parent state
+    :type parent_ref: Optional[weakref.ReferenceType]
+    :param substate_name_to_id: Dictionary mapping substate names to numeric IDs
+    :type substate_name_to_id: Dict[str, int]
+    """
     name: str
     path: Tuple[str, ...]
     substates: Dict[str, 'State']
@@ -138,14 +289,29 @@ class State(AstExportable, PlantUMLExportable):
     substate_name_to_id: Dict[str, int] = None
 
     def __post_init__(self):
+        """
+        Initialize the substate_name_to_id dictionary after instance creation.
+        """
         self.substate_name_to_id = {name: i for i, (name, _) in enumerate(self.substates.items())}
 
     @property
     def is_leaf_state(self) -> bool:
+        """
+        Check if this state is a leaf state (has no substates).
+
+        :return: True if this is a leaf state, False otherwise
+        :rtype: bool
+        """
         return len(self.substates) == 0
 
     @property
     def parent(self) -> Optional['State']:
+        """
+        Get the parent state of this state.
+
+        :return: The parent state or None if this is the root state
+        :rtype: Optional['State']
+        """
         if self.parent_ref is None:
             return None
         else:
@@ -153,6 +319,12 @@ class State(AstExportable, PlantUMLExportable):
 
     @parent.setter
     def parent(self, new_parent: Optional['State']):
+        """
+        Set the parent state of this state.
+
+        :param new_parent: The new parent state or None to clear the parent
+        :type new_parent: Optional['State']
+        """
         if new_parent is None:
             self.parent_ref = None  # pragma: no cover
         else:
@@ -160,10 +332,25 @@ class State(AstExportable, PlantUMLExportable):
 
     @property
     def is_root_state(self) -> bool:
+        """
+        Check if this state is the root state (has no parent).
+
+        :return: True if this is the root state, False otherwise
+        :rtype: bool
+        """
         return self.parent is None
 
     @property
     def transitions_from(self) -> List[Transition]:
+        """
+        Get all transitions that start from this state.
+
+        For non-root states, these are transitions in the parent state where this state
+        is the source. For the root state, a synthetic transition to EXIT_STATE is returned.
+
+        :return: List of transitions from this state
+        :rtype: List[Transition]
+        """
         parent = self.parent
         retval = []
         if parent is not None:
@@ -183,6 +370,15 @@ class State(AstExportable, PlantUMLExportable):
 
     @property
     def transitions_to(self) -> List[Transition]:
+        """
+        Get all transitions that end at this state.
+
+        For non-root states, these are transitions in the parent state where this state
+        is the target. For the root state, a synthetic transition from INIT_STATE is returned.
+
+        :return: List of transitions to this state
+        :rtype: List[Transition]
+        """
         parent = self.parent
         retval = []
         if parent is not None:
@@ -203,6 +399,14 @@ class State(AstExportable, PlantUMLExportable):
 
     @property
     def transitions_entering_children(self) -> List[Transition]:
+        """
+        Get all transitions that start from the initial state (INIT_STATE).
+
+        These are the transitions that define the initial substate when entering this state.
+
+        :return: List of transitions from INIT_STATE
+        :rtype: List[Transition]
+        """
         return [
             transition for transition in self.transitions
             if transition.from_state is INIT_STATE
@@ -210,6 +414,15 @@ class State(AstExportable, PlantUMLExportable):
 
     @property
     def transitions_entering_children_simplified(self) -> List[Optional[Transition]]:
+        """
+        Get a simplified list of transitions entering child states.
+
+        If there's a default transition (no event or guard), only include that one.
+        Otherwise include all transitions and add None at the end.
+
+        :return: List of transitions, possibly with None at the end
+        :rtype: List[Optional[Transition]]
+        """
         retval = []
         for transition in self.transitions:
             if transition.from_state is INIT_STATE:
@@ -222,30 +435,76 @@ class State(AstExportable, PlantUMLExportable):
 
     @property
     def abstract_on_enters(self) -> List[OnStage]:
+        """
+        Get all abstract enter actions.
+
+        :return: List of abstract enter actions
+        :rtype: List[OnStage]
+        """
         return [item for item in self.on_enters if item.is_abstract]
 
     @property
     def non_abstract_on_enters(self) -> List[OnStage]:
+        """
+        Get all non-abstract enter actions.
+
+        :return: List of non-abstract enter actions
+        :rtype: List[OnStage]
+        """
         return [item for item in self.on_enters if not item.is_abstract]
 
     @property
     def abstract_on_durings(self) -> List[OnStage]:
+        """
+        Get all abstract during actions.
+
+        :return: List of abstract during actions
+        :rtype: List[OnStage]
+        """
         return [item for item in self.on_durings if item.is_abstract]
 
     @property
     def non_abstract_on_durings(self) -> List[OnStage]:
+        """
+        Get all non-abstract during actions.
+
+        :return: List of non-abstract during actions
+        :rtype: List[OnStage]
+        """
         return [item for item in self.on_durings if not item.is_abstract]
 
     @property
     def abstract_on_exits(self) -> List[OnStage]:
+        """
+        Get all abstract exit actions.
+
+        :return: List of abstract exit actions
+        :rtype: List[OnStage]
+        """
         return [item for item in self.on_exits if item.is_abstract]
 
     @property
     def non_abstract_on_exits(self) -> List[OnStage]:
+        """
+        Get all non-abstract exit actions.
+
+        :return: List of non-abstract exit actions
+        :rtype: List[OnStage]
+        """
         return [item for item in self.on_exits if not item.is_abstract]
 
     @classmethod
     def transition_to_ast_node(cls, self: Optional['State'], transition: Transition):
+        """
+        Convert a transition to an AST node, considering the context of its parent state.
+
+        :param self: The parent state, or None
+        :type self: Optional['State']
+        :param transition: The transition to convert
+        :type transition: Transition
+        :return: A transition definition AST node
+        :rtype: dsl_nodes.TransitionDefinition
+        """
         if self:
             cur_path_length = len(self.path)
         else:
@@ -263,9 +522,23 @@ class State(AstExportable, PlantUMLExportable):
         )
 
     def to_transition_ast_node(self, transition: Transition) -> dsl_nodes.TransitionDefinition:
+        """
+        Convert a transition to an AST node in the context of this state.
+
+        :param transition: The transition to convert
+        :type transition: Transition
+        :return: A transition definition AST node
+        :rtype: dsl_nodes.TransitionDefinition
+        """
         return self.transition_to_ast_node(self, transition)
 
     def to_ast_node(self) -> dsl_nodes.StateDefinition:
+        """
+        Convert this state to an AST node.
+
+        :return: A state definition AST node
+        :rtype: dsl_nodes.StateDefinition
+        """
         return dsl_nodes.StateDefinition(
             name=self.name,
             substates=[
@@ -279,6 +552,12 @@ class State(AstExportable, PlantUMLExportable):
         )
 
     def to_plantuml(self) -> str:
+        """
+        Convert this state to PlantUML notation.
+
+        :return: PlantUML representation of the state
+        :rtype: str
+        """
         with io.StringIO() as sf:
             if self.is_leaf_state:
                 print(f'state {self.name}', file=sf, end='')
@@ -325,6 +604,11 @@ class State(AstExportable, PlantUMLExportable):
             return sf.getvalue()
 
     def walk_states(self):
+        """
+        Iterate through this state and all its substates recursively.
+
+        :yield: Each state in the hierarchy, starting with this one
+        """
         yield self
         for _, substate in self.substates.items():
             yield from substate.walk_states()
@@ -332,11 +616,27 @@ class State(AstExportable, PlantUMLExportable):
 
 @dataclass
 class VarDefine(AstExportable):
+    """
+    Represents a variable definition in a state machine.
+
+    :param name: The name of the variable
+    :type name: str
+    :param type: The type of the variable
+    :type type: str
+    :param init: The initial value expression
+    :type init: Expr
+    """
     name: str
     type: str
     init: Expr
 
     def to_ast_node(self) -> dsl_nodes.DefAssignment:
+        """
+        Convert this variable definition to an AST node.
+
+        :return: A definition assignment AST node
+        :rtype: dsl_nodes.DefAssignment
+        """
         return dsl_nodes.DefAssignment(
             name=self.name,
             type=self.type,
@@ -344,15 +644,35 @@ class VarDefine(AstExportable):
         )
 
     def name_ast_node(self) -> dsl_nodes.Name:
+        """
+        Convert the variable name to an AST node.
+
+        :return: A name AST node
+        :rtype: dsl_nodes.Name
+        """
         return dsl_nodes.Name(self.name)
 
 
 @dataclass
 class StateMachine(AstExportable, PlantUMLExportable):
+    """
+    Represents a complete state machine with variable definitions and a root state.
+
+    :param defines: Dictionary mapping variable names to their definitions
+    :type defines: Dict[str, VarDefine]
+    :param root_state: The root state of the state machine
+    :type root_state: State
+    """
     defines: Dict[str, VarDefine]
     root_state: State
 
     def to_ast_node(self) -> dsl_nodes.StateMachineDSLProgram:
+        """
+        Convert this state machine to an AST node.
+
+        :return: A state machine DSL program AST node
+        :rtype: dsl_nodes.StateMachineDSLProgram
+        """
         return dsl_nodes.StateMachineDSLProgram(
             definitions=[
                 def_item.to_ast_node()
@@ -362,6 +682,12 @@ class StateMachine(AstExportable, PlantUMLExportable):
         )
 
     def to_plantuml(self) -> str:
+        """
+        Convert this state machine to PlantUML notation.
+
+        :return: PlantUML representation of the state machine
+        :rtype: str
+        """
         with io.StringIO() as sf:
             print('@startuml', file=sf)
             if self.defines:
@@ -379,10 +705,31 @@ class StateMachine(AstExportable, PlantUMLExportable):
             return sf.getvalue()
 
     def walk_states(self):
+        """
+        Iterate through all states in the state machine.
+
+        :yield: Each state in the hierarchy
+        """
         yield from self.root_state.walk_states()
 
 
 def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> StateMachine:
+    """
+    Parse a state machine DSL program AST node into a StateMachine object.
+
+    This function validates the state machine structure and builds a complete
+    StateMachine object with all states, transitions, events, and variable definitions.
+
+    :param dnode: The state machine DSL program AST node to parse
+    :type dnode: dsl_nodes.StateMachineDSLProgram
+
+    :return: The parsed state machine
+    :rtype: StateMachine
+
+    :raises SyntaxError: If there are syntax errors in the state machine definition,
+                         such as duplicate variable definitions, unknown states in
+                         transitions, missing entry transitions, etc.
+    """
     d_defines = {}
     for def_item in dnode.definitions:
         if def_item.name not in d_defines:

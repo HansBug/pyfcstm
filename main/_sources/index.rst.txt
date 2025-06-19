@@ -29,6 +29,7 @@ Overview
 
     api_doc/config/index
     api_doc/dsl/index
+    api_doc/model/index
     api_doc/utils/index
 
 .. toctree::

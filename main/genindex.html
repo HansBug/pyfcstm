@@ -55,6 +55,7 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="api_doc/config/index.html">pyfcstm.config</a></li>
 <li class="toctree-l1"><a class="reference internal" href="api_doc/dsl/index.html">pyfcstm.dsl</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api_doc/model/index.html">pyfcstm.model</a></li>
 <li class="toctree-l1"><a class="reference internal" href="api_doc/utils/index.html">pyfcstm.utils</a></li>
 </ul>
 
@@ -106,6 +107,7 @@
  | <a href="#T"><strong>T</strong></a>
  | <a href="#U"><strong>U</strong></a>
  | <a href="#V"><strong>V</strong></a>
+ | <a href="#W"><strong>W</strong></a>
  
 </div>
 <h2 id="_">_</h2>
@@ -211,13 +213,21 @@
 <h2 id="A">A</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api_doc/utils/jinja2.html#pyfcstm.utils.jinja2.add_builtins_to_env">add_builtins_to_env() (in module pyfcstm.utils.jinja2)</a>
+      <li><a href="api_doc/model/model.html#pyfcstm.model.model.State.abstract_on_durings">abstract_on_durings (pyfcstm.model.model.State property)</a>
 </li>
-      <li><a href="api_doc/utils/jinja2.html#pyfcstm.utils.jinja2.add_settings_for_env">add_settings_for_env() (in module pyfcstm.utils.jinja2)</a>
+      <li><a href="api_doc/model/model.html#pyfcstm.model.model.State.abstract_on_enters">abstract_on_enters (pyfcstm.model.model.State property)</a>
+</li>
+      <li><a href="api_doc/model/model.html#pyfcstm.model.model.State.abstract_on_exits">abstract_on_exits (pyfcstm.model.model.State property)</a>
+</li>
+      <li><a href="api_doc/utils/jinja2.html#pyfcstm.utils.jinja2.add_builtins_to_env">add_builtins_to_env() (in module pyfcstm.utils.jinja2)</a>
 </li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api_doc/utils/jinja2.html#pyfcstm.utils.jinja2.add_settings_for_env">add_settings_for_env() (in module pyfcstm.utils.jinja2)</a>
+</li>
       <li><a href="api_doc/dsl/error.html#pyfcstm.dsl.error.AmbiguityError">AmbiguityError (class in pyfcstm.dsl.error)</a>
+</li>
+      <li><a href="api_doc/model/base.html#pyfcstm.model.base.AstExportable">AstExportable (class in pyfcstm.model.base)</a>
 </li>
       <li><a href="api_doc/dsl/node.html#pyfcstm.dsl.node.ASTNode">ASTNode (class in pyfcstm.dsl.node)</a>
 </li>
@@ -228,11 +238,19 @@
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api_doc/dsl/node.html#pyfcstm.dsl.node.BinaryOp">BinaryOp (class in pyfcstm.dsl.node)</a>
+
+      <ul>
+        <li><a href="api_doc/model/expr.html#pyfcstm.model.expr.BinaryOp">(class in pyfcstm.model.expr)</a>
 </li>
+      </ul></li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api_doc/dsl/node.html#pyfcstm.dsl.node.Boolean">Boolean (class in pyfcstm.dsl.node)</a>
+
+      <ul>
+        <li><a href="api_doc/model/expr.html#pyfcstm.model.expr.Boolean">(class in pyfcstm.model.expr)</a>
 </li>
+      </ul></li>
   </ul></td>
 </tr></table>
 
@@ -250,7 +268,11 @@
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api_doc/dsl/node.html#pyfcstm.dsl.node.ConditionalOp">ConditionalOp (class in pyfcstm.dsl.node)</a>
+
+      <ul>
+        <li><a href="api_doc/model/expr.html#pyfcstm.model.expr.ConditionalOp">(class in pyfcstm.model.expr)</a>
 </li>
+      </ul></li>
       <li><a href="api_doc/dsl/node.html#pyfcstm.dsl.node.Constant">Constant (class in pyfcstm.dsl.node)</a>
 </li>
       <li><a href="api_doc/dsl/node.html#pyfcstm.dsl.node.ConstantDefinition">ConstantDefinition (class in pyfcstm.dsl.node)</a>
@@ -285,6 +307,8 @@
 </li>
       <li><a href="api_doc/dsl/node.html#pyfcstm.dsl.node.EnterStatement">EnterStatement (class in pyfcstm.dsl.node)</a>
 </li>
+      <li><a href="api_doc/model/model.html#pyfcstm.model.model.Event">Event (class in pyfcstm.model.model)</a>
+</li>
       <li><a href="api_doc/dsl/node.html#pyfcstm.dsl.node.EXIT_STATE">EXIT_STATE (in module pyfcstm.dsl.node)</a>
 </li>
   </ul></td>
@@ -296,7 +320,11 @@
       <li><a href="api_doc/dsl/node.html#pyfcstm.dsl.node.ExitStatement">ExitStatement (class in pyfcstm.dsl.node)</a>
 </li>
       <li><a href="api_doc/dsl/node.html#pyfcstm.dsl.node.Expr">Expr (class in pyfcstm.dsl.node)</a>
+
+      <ul>
+        <li><a href="api_doc/model/expr.html#pyfcstm.model.expr.Expr">(class in pyfcstm.model.expr)</a>
 </li>
+      </ul></li>
   </ul></td>
 </tr></table>
 
@@ -304,11 +332,15 @@
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api_doc/dsl/node.html#pyfcstm.dsl.node.Float">Float (class in pyfcstm.dsl.node)</a>
+
+      <ul>
+        <li><a href="api_doc/model/expr.html#pyfcstm.model.expr.Float">(class in pyfcstm.model.expr)</a>
 </li>
-      <li><a href="api_doc/utils/doc.html#pyfcstm.utils.doc.format_multiline_comment">format_multiline_comment() (in module pyfcstm.utils.doc)</a>
-</li>
+      </ul></li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api_doc/utils/doc.html#pyfcstm.utils.doc.format_multiline_comment">format_multiline_comment() (in module pyfcstm.utils.doc)</a>
+</li>
       <li><a href="api_doc/utils/json.html#pyfcstm.utils.json.IJsonOp.from_json">from_json() (pyfcstm.utils.json.IJsonOp class method)</a>
 </li>
       <li><a href="api_doc/dsl/error.html#pyfcstm.dsl.error.FullContextAttemptError">FullContextAttemptError (class in pyfcstm.dsl.error)</a>
@@ -353,11 +385,21 @@
 </li>
       <li><a href="api_doc/dsl/node.html#pyfcstm.dsl.node.INIT_STATE">INIT_STATE (in module pyfcstm.dsl.node)</a>
 </li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api_doc/dsl/node.html#pyfcstm.dsl.node.InitialAssignment">InitialAssignment (class in pyfcstm.dsl.node)</a>
 </li>
       <li><a href="api_doc/dsl/node.html#pyfcstm.dsl.node.Integer">Integer (class in pyfcstm.dsl.node)</a>
+
+      <ul>
+        <li><a href="api_doc/model/expr.html#pyfcstm.model.expr.Integer">(class in pyfcstm.model.expr)</a>
+</li>
+      </ul></li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api_doc/model/model.html#pyfcstm.model.model.OnStage.is_abstract">is_abstract (pyfcstm.model.model.OnStage property)</a>
+</li>
+      <li><a href="api_doc/model/model.html#pyfcstm.model.model.State.is_leaf_state">is_leaf_state (pyfcstm.model.model.State property)</a>
+</li>
+      <li><a href="api_doc/model/model.html#pyfcstm.model.model.State.is_root_state">is_root_state (pyfcstm.model.model.State property)</a>
 </li>
       <li><a href="api_doc/utils/validate.html#pyfcstm.utils.validate.IValidatable">IValidatable (class in pyfcstm.utils.validate)</a>
 </li>
@@ -374,6 +416,10 @@
 
 <h2 id="L">L</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api_doc/model/expr.html#pyfcstm.model.expr.Expr.list_variables">list_variables() (pyfcstm.model.expr.Expr method)</a>
+</li>
+  </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api_doc/dsl/node.html#pyfcstm.dsl.node.Literal">Literal (class in pyfcstm.dsl.node)</a>
 </li>
@@ -405,6 +451,14 @@
 </li>
         <li><a href="api_doc/dsl/parse.html#module-pyfcstm.dsl.parse">pyfcstm.dsl.parse</a>
 </li>
+        <li><a href="api_doc/model/index.html#module-pyfcstm.model">pyfcstm.model</a>
+</li>
+        <li><a href="api_doc/model/base.html#module-pyfcstm.model.base">pyfcstm.model.base</a>
+</li>
+        <li><a href="api_doc/model/expr.html#module-pyfcstm.model.expr">pyfcstm.model.expr</a>
+</li>
+        <li><a href="api_doc/model/model.html#module-pyfcstm.model.model">pyfcstm.model.model</a>
+</li>
         <li><a href="api_doc/utils/index.html#module-pyfcstm.utils">pyfcstm.utils</a>
 </li>
         <li><a href="api_doc/utils/doc.html#module-pyfcstm.utils.doc">pyfcstm.utils.doc</a>
@@ -426,8 +480,16 @@
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api_doc/dsl/node.html#pyfcstm.dsl.node.Name">Name (class in pyfcstm.dsl.node)</a>
 </li>
+      <li><a href="api_doc/model/model.html#pyfcstm.model.model.VarDefine.name_ast_node">name_ast_node() (pyfcstm.model.model.VarDefine method)</a>
+</li>
+      <li><a href="api_doc/model/model.html#pyfcstm.model.model.State.non_abstract_on_durings">non_abstract_on_durings (pyfcstm.model.model.State property)</a>
+</li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api_doc/model/model.html#pyfcstm.model.model.State.non_abstract_on_enters">non_abstract_on_enters (pyfcstm.model.model.State property)</a>
+</li>
+      <li><a href="api_doc/model/model.html#pyfcstm.model.model.State.non_abstract_on_exits">non_abstract_on_exits (pyfcstm.model.model.State property)</a>
+</li>
       <li><a href="api_doc/utils/text.html#pyfcstm.utils.text.normalize">normalize() (in module pyfcstm.utils.text)</a>
 </li>
   </ul></td>
@@ -436,10 +498,28 @@
 <h2 id="O">O</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api_doc/dsl/node.html#pyfcstm.dsl.node.Operation">Operation (class in pyfcstm.dsl.node)</a>
+      <li><a href="api_doc/model/model.html#pyfcstm.model.model.OnStage">OnStage (class in pyfcstm.model.model)</a>
 </li>
+      <li><a href="api_doc/model/expr.html#pyfcstm.model.expr.Op">Op (class in pyfcstm.model.expr)</a>
+</li>
+      <li><a href="api_doc/model/expr.html#pyfcstm.model.expr.BinaryOp.op_mark">op_mark (pyfcstm.model.expr.BinaryOp property)</a>
+
+      <ul>
+        <li><a href="api_doc/model/expr.html#pyfcstm.model.expr.ConditionalOp.op_mark">(pyfcstm.model.expr.ConditionalOp property)</a>
+</li>
+        <li><a href="api_doc/model/expr.html#pyfcstm.model.expr.Op.op_mark">(pyfcstm.model.expr.Op property)</a>
+</li>
+        <li><a href="api_doc/model/expr.html#pyfcstm.model.expr.UnaryOp.op_mark">(pyfcstm.model.expr.UnaryOp property)</a>
+</li>
+      </ul></li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api_doc/dsl/node.html#pyfcstm.dsl.node.Operation">Operation (class in pyfcstm.dsl.node)</a>
+
+      <ul>
+        <li><a href="api_doc/model/model.html#pyfcstm.model.model.Operation">(class in pyfcstm.model.model)</a>
+</li>
+      </ul></li>
       <li><a href="api_doc/dsl/node.html#pyfcstm.dsl.node.OperationalDeprecatedAssignment">OperationalDeprecatedAssignment (class in pyfcstm.dsl.node)</a>
 </li>
       <li><a href="api_doc/dsl/node.html#pyfcstm.dsl.node.OperationAssignment">OperationAssignment (class in pyfcstm.dsl.node)</a>
@@ -452,13 +532,27 @@
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api_doc/dsl/node.html#pyfcstm.dsl.node.Paren">Paren (class in pyfcstm.dsl.node)</a>
 </li>
+      <li><a href="api_doc/model/model.html#pyfcstm.model.model.State.parent">parent (pyfcstm.model.model.State property)</a>
+
+      <ul>
+        <li><a href="api_doc/model/model.html#pyfcstm.model.model.Transition.parent">(pyfcstm.model.model.Transition property)</a>
+</li>
+      </ul></li>
       <li><a href="api_doc/dsl/parse.html#pyfcstm.dsl.parse.parse_condition">parse_condition() (in module pyfcstm.dsl.parse)</a>
+</li>
+      <li><a href="api_doc/model/model.html#pyfcstm.model.model.parse_dsl_node_to_state_machine">parse_dsl_node_to_state_machine() (in module pyfcstm.model.model)</a>
+</li>
+      <li><a href="api_doc/model/expr.html#pyfcstm.model.expr.parse_expr_node_to_expr">parse_expr_node_to_expr() (in module pyfcstm.model.expr)</a>
 </li>
       <li><a href="api_doc/dsl/parse.html#pyfcstm.dsl.parse.parse_operation">parse_operation() (in module pyfcstm.dsl.parse)</a>
 </li>
       <li><a href="api_doc/dsl/parse.html#pyfcstm.dsl.parse.parse_preamble">parse_preamble() (in module pyfcstm.dsl.parse)</a>
 </li>
       <li><a href="api_doc/dsl/parse.html#pyfcstm.dsl.parse.parse_with_grammar_entry">parse_with_grammar_entry() (in module pyfcstm.dsl.parse)</a>
+</li>
+      <li><a href="api_doc/model/model.html#pyfcstm.model.model.Event.path">path (pyfcstm.model.model.Event property)</a>
+</li>
+      <li><a href="api_doc/model/base.html#pyfcstm.model.base.PlantUMLExportable">PlantUMLExportable (class in pyfcstm.model.base)</a>
 </li>
       <li><a href="api_doc/dsl/node.html#pyfcstm.dsl.node.Preamble">Preamble (class in pyfcstm.dsl.node)</a>
 </li>
@@ -518,6 +612,34 @@
 
       <ul>
         <li><a href="api_doc/dsl/parse.html#module-pyfcstm.dsl.parse">module</a>
+</li>
+      </ul></li>
+      <li>
+    pyfcstm.model
+
+      <ul>
+        <li><a href="api_doc/model/index.html#module-pyfcstm.model">module</a>
+</li>
+      </ul></li>
+      <li>
+    pyfcstm.model.base
+
+      <ul>
+        <li><a href="api_doc/model/base.html#module-pyfcstm.model.base">module</a>
+</li>
+      </ul></li>
+      <li>
+    pyfcstm.model.expr
+
+      <ul>
+        <li><a href="api_doc/model/expr.html#module-pyfcstm.model.expr">module</a>
+</li>
+      </ul></li>
+      <li>
+    pyfcstm.model.model
+
+      <ul>
+        <li><a href="api_doc/model/model.html#module-pyfcstm.model.model">module</a>
 </li>
       </ul></li>
       <li>
@@ -586,12 +708,16 @@
 <h2 id="S">S</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api_doc/model/model.html#pyfcstm.model.model.State">State (class in pyfcstm.model.model)</a>
+</li>
       <li><a href="api_doc/dsl/node.html#pyfcstm.dsl.node.StateDefinition">StateDefinition (class in pyfcstm.dsl.node)</a>
 </li>
-      <li><a href="api_doc/dsl/node.html#pyfcstm.dsl.node.StateMachineDSLProgram">StateMachineDSLProgram (class in pyfcstm.dsl.node)</a>
+      <li><a href="api_doc/model/model.html#pyfcstm.model.model.StateMachine">StateMachine (class in pyfcstm.model.model)</a>
 </li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api_doc/dsl/node.html#pyfcstm.dsl.node.StateMachineDSLProgram">StateMachineDSLProgram (class in pyfcstm.dsl.node)</a>
+</li>
       <li><a href="api_doc/dsl/node.html#pyfcstm.dsl.node.Statement">Statement (class in pyfcstm.dsl.node)</a>
 </li>
       <li><a href="api_doc/dsl/error.html#pyfcstm.dsl.error.CollectingErrorListener.syntaxError">syntaxError() (pyfcstm.dsl.error.CollectingErrorListener method)</a>
@@ -604,15 +730,67 @@
 <h2 id="T">T</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api_doc/model/base.html#pyfcstm.model.base.AstExportable.to_ast_node">to_ast_node() (pyfcstm.model.base.AstExportable method)</a>
+
+      <ul>
+        <li><a href="api_doc/model/expr.html#pyfcstm.model.expr.BinaryOp.to_ast_node">(pyfcstm.model.expr.BinaryOp method)</a>
+</li>
+        <li><a href="api_doc/model/expr.html#pyfcstm.model.expr.Boolean.to_ast_node">(pyfcstm.model.expr.Boolean method)</a>
+</li>
+        <li><a href="api_doc/model/expr.html#pyfcstm.model.expr.ConditionalOp.to_ast_node">(pyfcstm.model.expr.ConditionalOp method)</a>
+</li>
+        <li><a href="api_doc/model/expr.html#pyfcstm.model.expr.Float.to_ast_node">(pyfcstm.model.expr.Float method)</a>
+</li>
+        <li><a href="api_doc/model/expr.html#pyfcstm.model.expr.Integer.to_ast_node">(pyfcstm.model.expr.Integer method)</a>
+</li>
+        <li><a href="api_doc/model/expr.html#pyfcstm.model.expr.UFunc.to_ast_node">(pyfcstm.model.expr.UFunc method)</a>
+</li>
+        <li><a href="api_doc/model/expr.html#pyfcstm.model.expr.UnaryOp.to_ast_node">(pyfcstm.model.expr.UnaryOp method)</a>
+</li>
+        <li><a href="api_doc/model/expr.html#pyfcstm.model.expr.Variable.to_ast_node">(pyfcstm.model.expr.Variable method)</a>
+</li>
+        <li><a href="api_doc/model/model.html#pyfcstm.model.model.OnStage.to_ast_node">(pyfcstm.model.model.OnStage method)</a>
+</li>
+        <li><a href="api_doc/model/model.html#pyfcstm.model.model.Operation.to_ast_node">(pyfcstm.model.model.Operation method)</a>
+</li>
+        <li><a href="api_doc/model/model.html#pyfcstm.model.model.State.to_ast_node">(pyfcstm.model.model.State method)</a>
+</li>
+        <li><a href="api_doc/model/model.html#pyfcstm.model.model.StateMachine.to_ast_node">(pyfcstm.model.model.StateMachine method)</a>
+</li>
+        <li><a href="api_doc/model/model.html#pyfcstm.model.model.Transition.to_ast_node">(pyfcstm.model.model.Transition method)</a>
+</li>
+        <li><a href="api_doc/model/model.html#pyfcstm.model.model.VarDefine.to_ast_node">(pyfcstm.model.model.VarDefine method)</a>
+</li>
+      </ul></li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api_doc/utils/text.html#pyfcstm.utils.text.to_identifier">to_identifier() (in module pyfcstm.utils.text)</a>
 </li>
       <li><a href="api_doc/utils/json.html#pyfcstm.utils.json.IJsonOp.to_json">to_json() (pyfcstm.utils.json.IJsonOp method)</a>
 </li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api_doc/model/base.html#pyfcstm.model.base.PlantUMLExportable.to_plantuml">to_plantuml() (pyfcstm.model.base.PlantUMLExportable method)</a>
+
+      <ul>
+        <li><a href="api_doc/model/model.html#pyfcstm.model.model.State.to_plantuml">(pyfcstm.model.model.State method)</a>
+</li>
+        <li><a href="api_doc/model/model.html#pyfcstm.model.model.StateMachine.to_plantuml">(pyfcstm.model.model.StateMachine method)</a>
+</li>
+      </ul></li>
+      <li><a href="api_doc/model/model.html#pyfcstm.model.model.State.to_transition_ast_node">to_transition_ast_node() (pyfcstm.model.model.State method)</a>
+</li>
       <li><a href="api_doc/utils/json.html#pyfcstm.utils.json.IJsonOp.to_yaml">to_yaml() (pyfcstm.utils.json.IJsonOp method)</a>
 </li>
+      <li><a href="api_doc/model/model.html#pyfcstm.model.model.Transition">Transition (class in pyfcstm.model.model)</a>
+</li>
       <li><a href="api_doc/dsl/node.html#pyfcstm.dsl.node.TransitionDefinition">TransitionDefinition (class in pyfcstm.dsl.node)</a>
+</li>
+      <li><a href="api_doc/model/model.html#pyfcstm.model.model.State.transitions_entering_children">transitions_entering_children (pyfcstm.model.model.State property)</a>
+</li>
+      <li><a href="api_doc/model/model.html#pyfcstm.model.model.State.transitions_entering_children_simplified">transitions_entering_children_simplified (pyfcstm.model.model.State property)</a>
+</li>
+      <li><a href="api_doc/model/model.html#pyfcstm.model.model.State.transitions_from">transitions_from (pyfcstm.model.model.State property)</a>
+</li>
+      <li><a href="api_doc/model/model.html#pyfcstm.model.model.State.transitions_to">transitions_to (pyfcstm.model.model.State property)</a>
 </li>
   </ul></td>
 </tr></table>
@@ -621,11 +799,19 @@
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api_doc/dsl/node.html#pyfcstm.dsl.node.UFunc">UFunc (class in pyfcstm.dsl.node)</a>
+
+      <ul>
+        <li><a href="api_doc/model/expr.html#pyfcstm.model.expr.UFunc">(class in pyfcstm.model.expr)</a>
 </li>
+      </ul></li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api_doc/dsl/node.html#pyfcstm.dsl.node.UnaryOp">UnaryOp (class in pyfcstm.dsl.node)</a>
+
+      <ul>
+        <li><a href="api_doc/model/expr.html#pyfcstm.model.expr.UnaryOp">(class in pyfcstm.model.expr)</a>
 </li>
+      </ul></li>
       <li><a href="api_doc/dsl/error.html#pyfcstm.dsl.error.UnfinishedParsingError">UnfinishedParsingError (class in pyfcstm.dsl.error)</a>
 </li>
   </ul></td>
@@ -636,12 +822,30 @@
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api_doc/utils/validate.html#pyfcstm.utils.validate.IValidatable.validate">validate() (pyfcstm.utils.validate.IValidatable method)</a>
 </li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api_doc/utils/validate.html#pyfcstm.utils.validate.ValidationError">ValidationError (class in pyfcstm.utils.validate)</a>
 </li>
       <li><a href="api_doc/dsl/node.html#pyfcstm.dsl.node.Literal.value">value (pyfcstm.dsl.node.Literal property)</a>
 </li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api_doc/model/model.html#pyfcstm.model.model.Operation.var_name_to_ast_node">var_name_to_ast_node() (pyfcstm.model.model.Operation method)</a>
+</li>
+      <li><a href="api_doc/model/model.html#pyfcstm.model.model.VarDefine">VarDefine (class in pyfcstm.model.model)</a>
+</li>
+      <li><a href="api_doc/model/expr.html#pyfcstm.model.expr.Variable">Variable (class in pyfcstm.model.expr)</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="W">W</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api_doc/model/model.html#pyfcstm.model.model.State.walk_states">walk_states() (pyfcstm.model.model.State method)</a>
+
+      <ul>
+        <li><a href="api_doc/model/model.html#pyfcstm.model.model.StateMachine.walk_states">(pyfcstm.model.model.StateMachine method)</a>
+</li>
+      </ul></li>
   </ul></td>
 </tr></table>
 

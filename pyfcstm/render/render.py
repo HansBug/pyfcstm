@@ -58,8 +58,9 @@ class StateMachineCodeRenderer:
             for file in files:
                 _, ext = os.path.splitext(file)
                 current_file = os.path.abspath(os.path.join(root, file))
-                rel_file = os.path.splitext(os.path.relpath(current_file, self.template_dir))[0]
+                rel_file = os.path.relpath(current_file, self.template_dir)
                 if ext == '.j2':
+                    rel_file = os.path.splitext(rel_file)[0]
                     self._file_mappings[rel_file] = partial(
                         self.render_one_file,
                         template_file=current_file,

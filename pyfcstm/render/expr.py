@@ -1,10 +1,11 @@
 from functools import partial
-from typing import Optional, Dict
+from typing import Optional, Dict, Union, Any
 
 import jinja2
 
 from .env import create_env
 from ..dsl import node as dsl_nodes
+from ..model import Integer, Float, Boolean
 
 _DEFAULT = {
     'default': '{{ node }}',
@@ -57,30 +58,41 @@ _KNOWN_STYLES = {
 }
 
 
-def fn_expr_render(node: dsl_nodes.Expr, templates: Dict[str, str], env: jinja2.Environment):
-    if isinstance(node, (dsl_nodes.Float, dsl_nodes.Integer, dsl_nodes.Boolean, dsl_nodes.Constant,
-                         dsl_nodes.HexInt, dsl_nodes.Paren, dsl_nodes.Name, dsl_nodes.ConditionalOp)) \
-            and type(node).__name__ in templates:
-        template_str = templates[type(node).__name__]
-    elif isinstance(node, dsl_nodes.UFunc) and f'{type(node).__name__}({node.func})' in templates:
-        template_str = templates[f'{type(node).__name__}({node.func})']
-    elif isinstance(node, dsl_nodes.UFunc) and type(node).__name__ in templates:
-        template_str = templates[type(node).__name__]
-    elif isinstance(node, dsl_nodes.UnaryOp) and f'{type(node).__name__}({node.op})' in templates:
-        template_str = templates[f'{type(node).__name__}({node.op})']
-    elif isinstance(node, dsl_nodes.UnaryOp) and type(node).__name__ in templates:
-        template_str = templates[type(node).__name__]
-    elif isinstance(node, dsl_nodes.BinaryOp) and f'{type(node).__name__}({node.op})' in templates:
-        template_str = templates[f'{type(node).__name__}({node.op})']
-    elif isinstance(node, dsl_nodes.BinaryOp) and type(node).__name__ in templates:
-        template_str = templates[type(node).__name__]
-    elif isinstance(node, dsl_nodes.ConditionalOp) and type(node).__name__ in templates:
-        template_str = templates[type(node).__name__]
-    else:
-        template_str = templates['default']
+def fn_expr_render(node: Union[float, int, dict, dsl_nodes.Expr, Any], templates: Dict[str, str],
+                   env: jinja2.Environment):
+    if isinstance(node, dsl_nodes.Expr):
+        if isinstance(node, (dsl_nodes.Float, dsl_nodes.Integer, dsl_nodes.Boolean, dsl_nodes.Constant,
+                             dsl_nodes.HexInt, dsl_nodes.Paren, dsl_nodes.Name, dsl_nodes.ConditionalOp)) \
+                and type(node).__name__ in templates:
+            template_str = templates[type(node).__name__]
+        elif isinstance(node, dsl_nodes.UFunc) and f'{type(node).__name__}({node.func})' in templates:
+            template_str = templates[f'{type(node).__name__}({node.func})']
+        elif isinstance(node, dsl_nodes.UFunc) and type(node).__name__ in templates:
+            template_str = templates[type(node).__name__]
+        elif isinstance(node, dsl_nodes.UnaryOp) and f'{type(node).__name__}({node.op})' in templates:
+            template_str = templates[f'{type(node).__name__}({node.op})']
+        elif isinstance(node, dsl_nodes.UnaryOp) and type(node).__name__ in templates:
+            template_str = templates[type(node).__name__]
+        elif isinstance(node, dsl_nodes.BinaryOp) and f'{type(node).__name__}({node.op})' in templates:
+            template_str = templates[f'{type(node).__name__}({node.op})']
+        elif isinstance(node, dsl_nodes.BinaryOp) and type(node).__name__ in templates:
+            template_str = templates[type(node).__name__]
+        elif isinstance(node, dsl_nodes.ConditionalOp) and type(node).__name__ in templates:
+            template_str = templates[type(node).__name__]
+        else:
+            template_str = templates['default']
 
-    tp: jinja2.Template = env.from_string(template_str)
-    return tp.render(node=node)
+        tp: jinja2.Template = env.from_string(template_str)
+        return tp.render(node=node)
+
+    elif isinstance(node, int):
+        return fn_expr_render(Integer(node).to_ast_node(), templates=templates, env=env)
+    elif isinstance(node, float):
+        return fn_expr_render(Float(node).to_ast_node(), templates=templates, env=env)
+    elif isinstance(node, bool):
+        return fn_expr_render(Boolean(node).to_ast_node(), templates=templates, env=env)
+    else:
+        return repr(node)
 
 
 def add_expr_render_to_env(env: jinja2.Environment,
@@ -92,7 +104,8 @@ def add_expr_render_to_env(env: jinja2.Environment,
     return env
 
 
-def render_expr_node(expr: dsl_nodes.Expr, lang_style: str = 'dsl', ext_configs: Optional[Dict[str, str]] = None,
+def render_expr_node(expr: Union[float, int, dict, dsl_nodes.Expr, Any],
+                     lang_style: str = 'dsl', ext_configs: Optional[Dict[str, str]] = None,
                      env: Optional[jinja2.Environment] = None):
     env = env or create_env()
     env = add_expr_render_to_env(env, lang_style=lang_style, ext_configs=ext_configs)

@@ -421,7 +421,7 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
             else:
                 to_state = transnode.to_state
                 if to_state not in d_substates:
-                    raise SyntaxError(f'Unknown to state {to_state!r} to transition:\n{transnode}')
+                    raise SyntaxError(f'Unknown to state {to_state!r} of transition:\n{transnode}')
 
             trans_event, guard = None, None
             if transnode.event_id is not None:

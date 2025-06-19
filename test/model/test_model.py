@@ -634,3 +634,86 @@ class TestModelModel:
                                                                                  op='==',
                                                                                  expr2=dsl_nodes.Integer(raw='1')),
                                                post_operations=[]))
+
+    def test_parse_duplicate_defs(self):
+        ast_node = parse_with_grammar_entry("""
+        def int a = 0;
+        def int b = 2;
+        def int a=3;
+        state LX;
+        """, entry_name='state_machine_dsl')
+
+        with pytest.raises(SyntaxError) as ei:
+            parse_dsl_node_to_state_machine(ast_node)
+
+        err = ei.value
+        assert isinstance(err, SyntaxError)
+        assert 'Duplicated variable definition' in err.msg
+        assert 'def int a = 3;' in err.msg
+
+    def test_parse_duplicate_state_name(self):
+        ast_node = parse_with_grammar_entry("""
+        def int a = 0;
+        def int b = 2;
+        state LX {
+            state LX1;
+            state LX2;
+            state LX1 {
+                enter abstract F;
+            }
+
+            [*] -> LX1;
+            LX2 -> [*];
+        }
+        """, entry_name='state_machine_dsl')
+
+        with pytest.raises(SyntaxError) as ei:
+            parse_dsl_node_to_state_machine(ast_node)
+
+        err = ei.value
+        assert isinstance(err, SyntaxError)
+        assert "Duplicate state name in namespace 'LX':" in err.msg
+        assert 'state LX1 {' in err.msg
+        assert 'state LX1;' not in err.msg
+
+    def test_parse_unknown_from_state(self):
+        ast_node = parse_with_grammar_entry("""
+        def int a = 0;
+        def int b = 2;
+        state LX {
+            state LX1;
+            state LX2;
+
+            [*] -> LX1;
+            LX3 -> [*];
+        }
+        """, entry_name='state_machine_dsl')
+
+        with pytest.raises(SyntaxError) as ei:
+            parse_dsl_node_to_state_machine(ast_node)
+
+        err = ei.value
+        assert isinstance(err, SyntaxError)
+        assert "Unknown from state 'LX3' of transition:" in err.msg
+        assert "LX3 -> [*];" in err.msg
+
+    def test_parse_unknown_to_state(self):
+        ast_node = parse_with_grammar_entry("""
+        def int a = 0;
+        def int b = 2;
+        state LX {
+            state LX1;
+            state LX2;
+
+            [*] -> LX3;
+            LX1 -> [*];
+        }
+        """, entry_name='state_machine_dsl')
+
+        with pytest.raises(SyntaxError) as ei:
+            parse_dsl_node_to_state_machine(ast_node)
+
+        err = ei.value
+        assert isinstance(err, SyntaxError)
+        assert "Unknown to state 'LX3' of transition:" in err.msg
+        assert "[*] -> LX3;" in err.msg

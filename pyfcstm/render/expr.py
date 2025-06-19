@@ -1,3 +1,14 @@
+"""
+Expression rendering module for converting DSL nodes to different language formats.
+
+This module provides functionality to render expression nodes in various language styles
+including DSL, C/C++, and Python. It uses Jinja2 templating to transform abstract syntax
+tree nodes into string representations according to the specified language style.
+
+The module contains predefined templates for different node types and operators,
+and allows for custom template extensions.
+"""
+
 from functools import partial
 from typing import Optional, Dict, Union, Any
 
@@ -71,6 +82,31 @@ _KNOWN_STYLES = {
 
 def fn_expr_render(node: Union[float, int, dict, dsl_nodes.Expr, Any], templates: Dict[str, str],
                    env: jinja2.Environment):
+    """
+    Render an expression node using the provided templates and Jinja2 environment.
+
+    This function handles different types of expression nodes and selects the appropriate
+    template for rendering based on the node type and available templates.
+
+    :param node: The expression node to render, can be a DSL node or a primitive value
+    :type node: Union[float, int, dict, dsl_nodes.Expr, Any]
+
+    :param templates: Dictionary mapping node types to Jinja2 template strings
+    :type templates: Dict[str, str]
+
+    :param env: Jinja2 environment for template rendering
+    :type env: jinja2.Environment
+
+    :return: The rendered string representation of the expression node
+    :rtype: str
+
+    Example::
+
+        >>> env = create_env()
+        >>> templates = _DSL_STYLE
+        >>> fn_expr_render(Integer(42).to_ast_node(), templates, env)
+        '42'
+    """
     if isinstance(node, dsl_nodes.Expr):
         if isinstance(node, (dsl_nodes.Float, dsl_nodes.Integer, dsl_nodes.Boolean, dsl_nodes.Constant,
                              dsl_nodes.HexInt, dsl_nodes.Paren, dsl_nodes.Name, dsl_nodes.ConditionalOp)) \
@@ -106,6 +142,30 @@ def fn_expr_render(node: Union[float, int, dict, dsl_nodes.Expr, Any], templates
 
 def add_expr_render_to_env(env: jinja2.Environment,
                            lang_style: str = 'dsl', ext_configs: Optional[Dict[str, str]] = None):
+    """
+    Add expression rendering function to the Jinja2 environment.
+
+    This function adds the expression rendering function as both a global function and a filter
+    to the provided Jinja2 environment, allowing templates to render expression nodes.
+
+    :param env: The Jinja2 environment to enhance with expression rendering capability
+    :type env: jinja2.Environment
+
+    :param lang_style: The language style to use for rendering ('dsl', 'c', 'cpp', 'python')
+    :type lang_style: str
+
+    :param ext_configs: Optional additional template configurations to extend or override defaults
+    :type ext_configs: Optional[Dict[str, str]]
+
+    :return: The enhanced Jinja2 environment
+    :rtype: jinja2.Environment
+
+    Example::
+
+        >>> env = create_env()
+        >>> env = add_expr_render_to_env(env, lang_style='python')
+        >>> # Now env can render expressions in Python style
+    """
     templates = {**_KNOWN_STYLES[lang_style], **(ext_configs or {})}
     _fn_expr_render = partial(fn_expr_render, templates=templates, env=env)
     env.globals['expr_render'] = _fn_expr_render
@@ -116,6 +176,35 @@ def add_expr_render_to_env(env: jinja2.Environment,
 def render_expr_node(expr: Union[float, int, dict, dsl_nodes.Expr, Any],
                      lang_style: str = 'dsl', ext_configs: Optional[Dict[str, str]] = None,
                      env: Optional[jinja2.Environment] = None):
+    """
+    Render an expression node to a string representation in the specified language style.
+
+    This is a high-level function that sets up the environment and renders the expression
+    in one step. It's a convenient wrapper around add_expr_render_to_env and fn_expr_render.
+
+    :param expr: The expression to render
+    :type expr: Union[float, int, dict, dsl_nodes.Expr, Any]
+
+    :param lang_style: The language style to use ('dsl', 'c', 'cpp', 'python')
+    :type lang_style: str
+
+    :param ext_configs: Optional additional template configurations
+    :type ext_configs: Optional[Dict[str, str]]
+
+    :param env: Optional pre-configured Jinja2 environment
+    :type env: Optional[jinja2.Environment]
+
+    :return: The rendered string representation of the expression
+    :rtype: str
+
+    Example::
+
+        >>> from pyfcstm.dsl import Integer
+        >>> render_expr_node(Integer('42'), lang_style='python')
+        '42'
+        >>> render_expr_node(Integer('42'), lang_style='c')
+        '42'
+    """
     env = env or create_env()
     env = add_expr_render_to_env(env, lang_style=lang_style, ext_configs=ext_configs)
     _fn_expr_render = env.globals['expr_render']

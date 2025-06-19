@@ -107,12 +107,7 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">..dsl</span><span class="w"> </span><span class="kn">import</span> <span class="n">node</span> <span class="k">as</span> <span class="n">dsl_nodes</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">..model</span><span class="w"> </span><span class="kn">import</span> <span class="n">Integer</span><span class="p">,</span> <span class="n">Float</span><span class="p">,</span> <span class="n">Boolean</span>
 
-<span class="n">_DEFAULT</span> <span class="o">=</span> <span class="p">{</span>
-    <span class="s1">&#39;default&#39;</span><span class="p">:</span> <span class="s1">&#39;{{ node }}&#39;</span><span class="p">,</span>
-<span class="p">}</span>
-
 <span class="n">_DSL_STYLE</span> <span class="o">=</span> <span class="p">{</span>
-    <span class="o">**</span><span class="n">_DEFAULT</span><span class="p">,</span>
     <span class="s1">&#39;Float&#39;</span><span class="p">:</span> <span class="s1">&#39;{{ node.value | repr }}&#39;</span><span class="p">,</span>
     <span class="s1">&#39;Integer&#39;</span><span class="p">:</span> <span class="s1">&#39;{{ node.value | repr }}&#39;</span><span class="p">,</span>
     <span class="s1">&#39;Boolean&#39;</span><span class="p">:</span> <span class="s1">&#39;{{ node.value | repr }}&#39;</span><span class="p">,</span>
@@ -127,41 +122,21 @@
 <span class="p">}</span>
 
 <span class="n">_C_STYLE</span> <span class="o">=</span> <span class="p">{</span>
-    <span class="o">**</span><span class="n">_DEFAULT</span><span class="p">,</span>
-    <span class="s1">&#39;Float&#39;</span><span class="p">:</span> <span class="s1">&#39;{{ node.value | repr }}&#39;</span><span class="p">,</span>
-    <span class="s1">&#39;Integer&#39;</span><span class="p">:</span> <span class="s1">&#39;{{ node.value | repr }}&#39;</span><span class="p">,</span>
+    <span class="o">**</span><span class="n">_DSL_STYLE</span><span class="p">,</span>
     <span class="s1">&#39;Boolean&#39;</span><span class="p">:</span> <span class="s1">&#39;{{ (1 if node.value else 0) | hex }}&#39;</span><span class="p">,</span>
-    <span class="s1">&#39;Constant&#39;</span><span class="p">:</span> <span class="s1">&#39;{{ node.value | repr }}&#39;</span><span class="p">,</span>
-    <span class="s1">&#39;HexInt&#39;</span><span class="p">:</span> <span class="s1">&#39;{{ node.value | hex }}&#39;</span><span class="p">,</span>
-    <span class="s1">&#39;Paren&#39;</span><span class="p">:</span> <span class="s1">&#39;({{ node.expr | expr_render }})&#39;</span><span class="p">,</span>
-    <span class="s1">&#39;UFunc&#39;</span><span class="p">:</span> <span class="s1">&#39;{{ node.func }}({{ node.expr | expr_render }})&#39;</span><span class="p">,</span>
-    <span class="s1">&#39;Name&#39;</span><span class="p">:</span> <span class="s1">&#39;{{ node.name }}&#39;</span><span class="p">,</span>
-    <span class="s1">&#39;UnaryOp&#39;</span><span class="p">:</span> <span class="s1">&#39;{{ node.op }}{{ node.expr | expr_render }}&#39;</span><span class="p">,</span>
-    <span class="s1">&#39;BinaryOp&#39;</span><span class="p">:</span> <span class="s1">&#39;{{ node.expr1 | expr_render }} {{ node.op }} {{ node.expr2 | expr_render }}&#39;</span><span class="p">,</span>
     <span class="s1">&#39;BinaryOp(**)&#39;</span><span class="p">:</span> <span class="s1">&#39;pow({{ node.expr1 | expr_render }}, {{ node.expr2 | expr_render }})&#39;</span><span class="p">,</span>
-    <span class="s1">&#39;ConditionalOp&#39;</span><span class="p">:</span> <span class="s1">&#39;({{ node.cond | expr_render }}) ? {{ node.value_true | expr_render }} : {{ node.value_false | expr_render }}&#39;</span><span class="p">,</span>
 <span class="p">}</span>
 
 <span class="n">_PY_STYLE</span> <span class="o">=</span> <span class="p">{</span>
-    <span class="o">**</span><span class="n">_DEFAULT</span><span class="p">,</span>
-    <span class="s1">&#39;Float&#39;</span><span class="p">:</span> <span class="s1">&#39;{{ node.value | repr }}&#39;</span><span class="p">,</span>
-    <span class="s1">&#39;Integer&#39;</span><span class="p">:</span> <span class="s1">&#39;{{ node.value | repr }}&#39;</span><span class="p">,</span>
-    <span class="s1">&#39;Boolean&#39;</span><span class="p">:</span> <span class="s1">&#39;{{ node.value | repr }}&#39;</span><span class="p">,</span>
-    <span class="s1">&#39;Constant&#39;</span><span class="p">:</span> <span class="s1">&#39;{{ node.value | repr }}&#39;</span><span class="p">,</span>
-    <span class="s1">&#39;HexInt&#39;</span><span class="p">:</span> <span class="s1">&#39;{{ node.value | hex }}&#39;</span><span class="p">,</span>
-    <span class="s1">&#39;Paren&#39;</span><span class="p">:</span> <span class="s1">&#39;({{ node.expr | expr_render }})&#39;</span><span class="p">,</span>
+    <span class="o">**</span><span class="n">_DSL_STYLE</span><span class="p">,</span>
     <span class="s1">&#39;UFunc&#39;</span><span class="p">:</span> <span class="s1">&#39;math.{{ node.func }}({{ node.expr | expr_render }})&#39;</span><span class="p">,</span>
-    <span class="s1">&#39;Name&#39;</span><span class="p">:</span> <span class="s1">&#39;{{ node.name }}&#39;</span><span class="p">,</span>
-    <span class="s1">&#39;UnaryOp&#39;</span><span class="p">:</span> <span class="s1">&#39;{{ node.op }}{{ node.expr | expr_render }}&#39;</span><span class="p">,</span>
     <span class="s1">&#39;UnaryOp(!)&#39;</span><span class="p">:</span> <span class="s1">&#39;not {{ node.expr | expr_render }}&#39;</span><span class="p">,</span>
-    <span class="s1">&#39;BinaryOp&#39;</span><span class="p">:</span> <span class="s1">&#39;{{ node.expr1 | expr_render }} {{ node.op }} {{ node.expr2 | expr_render }}&#39;</span><span class="p">,</span>
     <span class="s1">&#39;BinaryOp(&amp;&amp;)&#39;</span><span class="p">:</span> <span class="s1">&#39;{{ node.expr1 | expr_render }} and {{ node.expr2 | expr_render }}&#39;</span><span class="p">,</span>
     <span class="s1">&#39;BinaryOp(||)&#39;</span><span class="p">:</span> <span class="s1">&#39;{{ node.expr1 | expr_render }} or {{ node.expr2 | expr_render }}&#39;</span><span class="p">,</span>
     <span class="s1">&#39;ConditionalOp&#39;</span><span class="p">:</span> <span class="s1">&#39;{{ node.value_true | expr_render }} if {{ node.cond | expr_render }} else {{ node.value_false | expr_render }}&#39;</span><span class="p">,</span>
 <span class="p">}</span>
 
 <span class="n">_KNOWN_STYLES</span> <span class="o">=</span> <span class="p">{</span>
-    <span class="s1">&#39;default&#39;</span><span class="p">:</span> <span class="n">_DEFAULT</span><span class="p">,</span>
     <span class="s1">&#39;dsl&#39;</span><span class="p">:</span> <span class="n">_DSL_STYLE</span><span class="p">,</span>
     <span class="s1">&#39;c&#39;</span><span class="p">:</span> <span class="n">_C_STYLE</span><span class="p">,</span>
     <span class="s1">&#39;cpp&#39;</span><span class="p">:</span> <span class="n">_C_STYLE</span><span class="p">,</span>

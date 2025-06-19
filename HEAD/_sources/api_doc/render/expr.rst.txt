@@ -14,10 +14,10 @@ fn_expr_render
 
 
 
-add_expr_render_to_env
+create_expr_render_template
 ----------------------------------------------------------
 
-.. autofunction:: add_expr_render_to_env
+.. autofunction:: create_expr_render_template
 
 
 

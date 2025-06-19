@@ -66,8 +66,8 @@
 <li class="toctree-l4"><a class="reference internal" href="#pyfcstm.render.expr.fn_expr_render"><code class="docutils literal notranslate"><span class="pre">fn_expr_render()</span></code></a></li>
 </ul>
 </li>
-<li class="toctree-l3"><a class="reference internal" href="#add-expr-render-to-env">add_expr_render_to_env</a><ul>
-<li class="toctree-l4"><a class="reference internal" href="#pyfcstm.render.expr.add_expr_render_to_env"><code class="docutils literal notranslate"><span class="pre">add_expr_render_to_env()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#create-expr-render-template">create_expr_render_template</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#pyfcstm.render.expr.create_expr_render_template"><code class="docutils literal notranslate"><span class="pre">create_expr_render_template()</span></code></a></li>
 </ul>
 </li>
 <li class="toctree-l3"><a class="reference internal" href="#render-expr-node">render_expr_node</a><ul>
@@ -151,33 +151,32 @@ template for rendering based on the node type and available templates.</p>
 </dd></dl>
 
 </section>
-<section id="add-expr-render-to-env">
-<h2>add_expr_render_to_env<a class="headerlink" href="#add-expr-render-to-env" title="Link to this heading"></a></h2>
+<section id="create-expr-render-template">
+<h2>create_expr_render_template<a class="headerlink" href="#create-expr-render-template" title="Link to this heading"></a></h2>
 <dl class="py function">
-<dt class="sig sig-object py" id="pyfcstm.render.expr.add_expr_render_to_env">
-<span class="sig-prename descclassname"><span class="pre">pyfcstm.render.expr.</span></span><span class="sig-name descname"><span class="pre">add_expr_render_to_env</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">env</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Environment</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lang_style</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'dsl'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ext_configs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/pyfcstm/render/expr.html#add_expr_render_to_env"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.render.expr.add_expr_render_to_env" title="Link to this definition"></a></dt>
-<dd><p>Add expression rendering function to the Jinja2 environment.</p>
-<p>This function adds the expression rendering function as both a global function and a filter
-to the provided Jinja2 environment, allowing templates to render expression nodes.</p>
+<dt class="sig sig-object py" id="pyfcstm.render.expr.create_expr_render_template">
+<span class="sig-prename descclassname"><span class="pre">pyfcstm.render.expr.</span></span><span class="sig-name descname"><span class="pre">create_expr_render_template</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">lang_style</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'dsl'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ext_configs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/pyfcstm/render/expr.html#create_expr_render_template"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.render.expr.create_expr_render_template" title="Link to this definition"></a></dt>
+<dd><p>Create a template dictionary for expression rendering based on the specified language style.</p>
+<p>This function combines the predefined templates for the specified language style with
+any additional custom templates provided in ext_configs.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>env</strong> (<em>jinja2.Environment</em>) – The Jinja2 environment to enhance with expression rendering capability</p></li>
-<li><p><strong>lang_style</strong> (<em>str</em>) – The language style to use for rendering (‘dsl’, ‘c’, ‘cpp’, ‘python’)</p></li>
+<li><p><strong>lang_style</strong> (<em>str</em>) – The language style to use (‘dsl’, ‘c’, ‘cpp’, ‘python’)</p></li>
 <li><p><strong>ext_configs</strong> (<em>Optional</em><em>[</em><em>Dict</em><em>[</em><em>str</em><em>, </em><em>str</em><em>]</em><em>]</em>) – Optional additional template configurations to extend or override defaults</p></li>
 </ul>
 </dd>
 <dt class="field-even">Returns<span class="colon">:</span></dt>
-<dd class="field-even"><p>The enhanced Jinja2 environment</p>
+<dd class="field-even"><p>A dictionary of templates for the specified language style</p>
 </dd>
 <dt class="field-odd">Return type<span class="colon">:</span></dt>
-<dd class="field-odd"><p>jinja2.Environment</p>
+<dd class="field-odd"><p>Dict[str, str]</p>
 </dd>
 </dl>
 <p>Example:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">env</span> <span class="o">=</span> <span class="n">create_env</span><span class="p">()</span>
-<span class="gp">&gt;&gt;&gt; </span><span class="n">env</span> <span class="o">=</span> <span class="n">add_expr_render_to_env</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="n">lang_style</span><span class="o">=</span><span class="s1">&#39;python&#39;</span><span class="p">)</span>
-<span class="gp">&gt;&gt;&gt; </span><span class="c1"># Now env can render expressions in Python style</span>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">templates</span> <span class="o">=</span> <span class="n">create_expr_render_template</span><span class="p">(</span><span class="s1">&#39;python&#39;</span><span class="p">,</span> <span class="p">{</span><span class="s1">&#39;CustomNode&#39;</span><span class="p">:</span> <span class="s1">&#39;{{ node.custom_value }}&#39;</span><span class="p">})</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="s1">&#39;UFunc&#39;</span> <span class="ow">in</span> <span class="n">templates</span> <span class="ow">and</span> <span class="s1">&#39;CustomNode&#39;</span> <span class="ow">in</span> <span class="n">templates</span>
+<span class="go">True</span>
 </pre></div>
 </div>
 </dd></dl>

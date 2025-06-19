@@ -207,39 +207,31 @@
 
 
 
-<div class="viewcode-block" id="add_expr_render_to_env">
-<a class="viewcode-back" href="../../../api_doc/render/expr.html#pyfcstm.render.expr.add_expr_render_to_env">[docs]</a>
-<span class="k">def</span><span class="w"> </span><span class="nf">add_expr_render_to_env</span><span class="p">(</span><span class="n">env</span><span class="p">:</span> <span class="n">jinja2</span><span class="o">.</span><span class="n">Environment</span><span class="p">,</span>
-                           <span class="n">lang_style</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s1">&#39;dsl&#39;</span><span class="p">,</span> <span class="n">ext_configs</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
+<div class="viewcode-block" id="create_expr_render_template">
+<a class="viewcode-back" href="../../../api_doc/render/expr.html#pyfcstm.render.expr.create_expr_render_template">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">create_expr_render_template</span><span class="p">(</span><span class="n">lang_style</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s1">&#39;dsl&#39;</span><span class="p">,</span> <span class="n">ext_configs</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Add expression rendering function to the Jinja2 environment.</span>
+<span class="sd">    Create a template dictionary for expression rendering based on the specified language style.</span>
 
-<span class="sd">    This function adds the expression rendering function as both a global function and a filter</span>
-<span class="sd">    to the provided Jinja2 environment, allowing templates to render expression nodes.</span>
+<span class="sd">    This function combines the predefined templates for the specified language style with</span>
+<span class="sd">    any additional custom templates provided in ext_configs.</span>
 
-<span class="sd">    :param env: The Jinja2 environment to enhance with expression rendering capability</span>
-<span class="sd">    :type env: jinja2.Environment</span>
-
-<span class="sd">    :param lang_style: The language style to use for rendering (&#39;dsl&#39;, &#39;c&#39;, &#39;cpp&#39;, &#39;python&#39;)</span>
+<span class="sd">    :param lang_style: The language style to use (&#39;dsl&#39;, &#39;c&#39;, &#39;cpp&#39;, &#39;python&#39;)</span>
 <span class="sd">    :type lang_style: str</span>
 
 <span class="sd">    :param ext_configs: Optional additional template configurations to extend or override defaults</span>
 <span class="sd">    :type ext_configs: Optional[Dict[str, str]]</span>
 
-<span class="sd">    :return: The enhanced Jinja2 environment</span>
-<span class="sd">    :rtype: jinja2.Environment</span>
+<span class="sd">    :return: A dictionary of templates for the specified language style</span>
+<span class="sd">    :rtype: Dict[str, str]</span>
 
 <span class="sd">    Example::</span>
 
-<span class="sd">        &gt;&gt;&gt; env = create_env()</span>
-<span class="sd">        &gt;&gt;&gt; env = add_expr_render_to_env(env, lang_style=&#39;python&#39;)</span>
-<span class="sd">        &gt;&gt;&gt; # Now env can render expressions in Python style</span>
+<span class="sd">        &gt;&gt;&gt; templates = create_expr_render_template(&#39;python&#39;, {&#39;CustomNode&#39;: &#39;{{ node.custom_value }}&#39;})</span>
+<span class="sd">        &gt;&gt;&gt; &#39;UFunc&#39; in templates and &#39;CustomNode&#39; in templates</span>
+<span class="sd">        True</span>
 <span class="sd">    &quot;&quot;&quot;</span>
-    <span class="n">templates</span> <span class="o">=</span> <span class="p">{</span><span class="o">**</span><span class="n">_KNOWN_STYLES</span><span class="p">[</span><span class="n">lang_style</span><span class="p">],</span> <span class="o">**</span><span class="p">(</span><span class="n">ext_configs</span> <span class="ow">or</span> <span class="p">{})}</span>
-    <span class="n">_fn_expr_render</span> <span class="o">=</span> <span class="n">partial</span><span class="p">(</span><span class="n">fn_expr_render</span><span class="p">,</span> <span class="n">templates</span><span class="o">=</span><span class="n">templates</span><span class="p">,</span> <span class="n">env</span><span class="o">=</span><span class="n">env</span><span class="p">)</span>
-    <span class="n">env</span><span class="o">.</span><span class="n">globals</span><span class="p">[</span><span class="s1">&#39;expr_render&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">_fn_expr_render</span>
-    <span class="n">env</span><span class="o">.</span><span class="n">filters</span><span class="p">[</span><span class="s1">&#39;expr_render&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">_fn_expr_render</span>
-    <span class="k">return</span> <span class="n">env</span></div>
+    <span class="k">return</span> <span class="p">{</span><span class="o">**</span><span class="n">_KNOWN_STYLES</span><span class="p">[</span><span class="n">lang_style</span><span class="p">],</span> <span class="o">**</span><span class="p">(</span><span class="n">ext_configs</span> <span class="ow">or</span> <span class="p">{})}</span></div>
 
 
 
@@ -278,8 +270,10 @@
 <span class="sd">        &#39;42&#39;</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">env</span> <span class="o">=</span> <span class="n">env</span> <span class="ow">or</span> <span class="n">create_env</span><span class="p">()</span>
-    <span class="n">env</span> <span class="o">=</span> <span class="n">add_expr_render_to_env</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="n">lang_style</span><span class="o">=</span><span class="n">lang_style</span><span class="p">,</span> <span class="n">ext_configs</span><span class="o">=</span><span class="n">ext_configs</span><span class="p">)</span>
-    <span class="n">_fn_expr_render</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">globals</span><span class="p">[</span><span class="s1">&#39;expr_render&#39;</span><span class="p">]</span>
+    <span class="n">templates</span> <span class="o">=</span> <span class="n">create_expr_render_template</span><span class="p">(</span><span class="n">lang_style</span><span class="p">,</span> <span class="n">ext_configs</span><span class="p">)</span>
+    <span class="n">_fn_expr_render</span> <span class="o">=</span> <span class="n">partial</span><span class="p">(</span><span class="n">fn_expr_render</span><span class="p">,</span> <span class="n">templates</span><span class="o">=</span><span class="n">templates</span><span class="p">,</span> <span class="n">env</span><span class="o">=</span><span class="n">env</span><span class="p">)</span>
+    <span class="n">env</span><span class="o">.</span><span class="n">globals</span><span class="p">[</span><span class="s1">&#39;expr_render&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">_fn_expr_render</span>
+    <span class="n">env</span><span class="o">.</span><span class="n">filters</span><span class="p">[</span><span class="s1">&#39;expr_render&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">_fn_expr_render</span>
     <span class="k">return</span> <span class="n">_fn_expr_render</span><span class="p">(</span><span class="n">node</span><span class="o">=</span><span class="n">expr</span><span class="p">)</span></div>
 
 </pre></div>

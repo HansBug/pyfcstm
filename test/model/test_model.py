@@ -138,6 +138,41 @@ def var_define_b(demo_model_1):
     return demo_model_1.defines['b']
 
 
+@pytest.fixture()
+def transition_1(root_state_1):
+    return root_state_1.transitions_to[0]
+
+
+@pytest.fixture()
+def transition_2(root_state_1):
+    return root_state_1.transitions_from[0]
+
+
+@pytest.fixture()
+def transition_3(root_state_1):
+    return root_state_1.transitions[0]
+
+
+@pytest.fixture()
+def transition_4(root_state_1):
+    return root_state_1.transitions[1]
+
+
+@pytest.fixture()
+def transition_5(state_LX_LX1):
+    return state_LX_LX1.transitions[3]
+
+
+@pytest.fixture()
+def transition_6(state_LX_LX1):
+    return state_LX_LX1.transitions[4]
+
+
+@pytest.fixture()
+def transition_7(root_state_1):
+    return root_state_1.transitions[-1]
+
+
 @pytest.mark.unittest
 class TestModelModel:
     def test_model_basic(self, demo_model_1):
@@ -519,3 +554,83 @@ class TestModelModel:
         #         print(f'assert state_LX_LX1_LX11.transitions_to[{i}].parent is state_LX_LX1')
         #     else:
         #         print(f'assert state_LX_LX1_LX11.transitions_to[{i}] is None')
+
+    def test_transitions(self, transition_1, transition_2, transition_3, transition_4, transition_5, transition_6,
+                         transition_7, root_state_1, state_LX_LX1):
+        assert transition_1.from_state == dsl_nodes.INIT_STATE
+        assert transition_1.to_state == 'LX'
+        assert transition_1.event is None
+        assert transition_1.guard is None
+        assert transition_1.effects == []
+        assert transition_1.parent is None
+        assert (transition_1.to_ast_node() ==
+                dsl_nodes.TransitionDefinition(from_state=dsl_nodes.INIT_STATE, to_state='LX', event_id=None,
+                                               condition_expr=None, post_operations=[]))
+
+        assert transition_2.from_state == 'LX'
+        assert transition_2.to_state == dsl_nodes.EXIT_STATE
+        assert transition_2.event is None
+        assert transition_2.guard is None
+        assert transition_2.effects == []
+        assert transition_2.parent is None
+        assert (transition_2.to_ast_node() ==
+                dsl_nodes.TransitionDefinition(from_state='LX', to_state=dsl_nodes.EXIT_STATE, event_id=None,
+                                               condition_expr=None, post_operations=[]))
+
+        assert transition_3.from_state == dsl_nodes.INIT_STATE
+        assert transition_3.to_state == 'LX1'
+        assert transition_3.event is None
+        assert transition_3.guard is None
+        assert transition_3.effects == []
+        assert transition_3.parent is root_state_1
+        assert (transition_3.to_ast_node() ==
+                dsl_nodes.TransitionDefinition(from_state=dsl_nodes.INIT_STATE, to_state='LX1', event_id=None,
+                                               condition_expr=None, post_operations=[]))
+
+        assert transition_4.from_state == dsl_nodes.INIT_STATE
+        assert transition_4.to_state == 'LX2'
+        assert transition_4.event == Event(name='EEE', state_path=('LX',))
+        assert transition_4.guard is None
+        assert transition_4.effects == []
+        assert transition_4.parent is root_state_1
+        assert (transition_4.to_ast_node() ==
+                dsl_nodes.TransitionDefinition(from_state=dsl_nodes.INIT_STATE, to_state='LX2',
+                                               event_id=dsl_nodes.ChainID(['EEE']),
+                                               condition_expr=None, post_operations=[]))
+
+        assert transition_5.from_state == 'LX12'
+        assert transition_5.to_state == 'LX14'
+        assert transition_5.event == Event(name='E2', state_path=('LX', 'LX1', 'LX12'))
+        assert transition_5.guard is None
+        assert transition_5.effects == []
+        assert transition_5.parent is state_LX_LX1
+        assert (transition_5.to_ast_node() ==
+                dsl_nodes.TransitionDefinition(from_state='LX12', to_state='LX14',
+                                               event_id=dsl_nodes.ChainID(['LX12', 'E2']),
+                                               condition_expr=None, post_operations=[]))
+
+        assert transition_6.from_state == 'LX13'
+        assert transition_6.to_state == dsl_nodes.EXIT_STATE
+        assert transition_6.event == Event(name='E1', state_path=('LX', 'LX1', 'LX13'))
+        assert transition_6.guard is None
+        assert transition_6.effects == [Operation(var_name='a', expr=Integer(value=2))]
+        assert transition_6.parent is state_LX_LX1
+        assert (transition_6.to_ast_node() ==
+                dsl_nodes.TransitionDefinition(from_state='LX13', to_state=dsl_nodes.EXIT_STATE,
+                                               event_id=dsl_nodes.ChainID(path=['LX13', 'E1']), condition_expr=None,
+                                               post_operations=[dsl_nodes.OperationAssignment(name='a',
+                                                                                              expr=dsl_nodes.Integer(
+                                                                                                  raw='2'))]))
+
+        assert transition_7.from_state == 'LX2'
+        assert transition_7.to_state == 'LX1'
+        assert transition_7.event is None
+        assert transition_7.guard == BinaryOp(x=Variable(name='a'), op='==', y=Integer(value=1))
+        assert transition_7.effects == []
+        assert transition_7.parent is root_state_1
+        assert (transition_7.to_ast_node() ==
+                dsl_nodes.TransitionDefinition(from_state='LX2', to_state='LX1', event_id=None,
+                                               condition_expr=dsl_nodes.BinaryOp(expr1=dsl_nodes.Name(name='a'),
+                                                                                 op='==',
+                                                                                 expr2=dsl_nodes.Integer(raw='1')),
+                                               post_operations=[]))

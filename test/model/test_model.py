@@ -1,3 +1,5 @@
+import textwrap
+
 import pytest
 
 from pyfcstm.dsl import node as dsl_nodes
@@ -171,6 +173,88 @@ def transition_6(state_LX_LX1):
 @pytest.fixture()
 def transition_7(root_state_1):
     return root_state_1.transitions[-1]
+
+
+@pytest.fixture()
+def expected_plantuml_code():
+    return textwrap.dedent("""
+@startuml
+note as DefinitionNote
+defines {
+    def int a = 0;
+    def int b = 2 | 5;
+}
+end note
+
+state LX {
+    state LX1 {
+        state LX11
+        LX11 : enter abstract LX11Enter;\\nenter abstract /*\\n    This is X\\n        this is x'\\n*/\\nduring abstract LX11During;\\nduring {\\n    b = 2 << 3;\\n    b = b + -1;\\n}\\nexit abstract LX11Exit;
+        state LX12
+        state LX13
+        state LX14
+        [*] --> LX11
+        LX11 --> LX12 : LX11.E1
+        LX12 --> LX13 : LX12.E1
+        LX12 --> LX14 : LX12.E2
+        LX13 --> [*] : LX13.E1
+        note on link
+        effect {
+            a = 2;
+        }
+        end note
+        LX13 --> [*] : LX13.E2
+        note on link
+        effect {
+            a = 3;
+        }
+        end note
+        LX13 --> LX14 : LX13.E3
+        LX13 --> LX14 : LX13.E4
+        LX14 --> LX12 : LX14.E1
+        LX14 --> [*] : LX14.E2
+        note on link
+        effect {
+            a = 1;
+        }
+        end note
+    }
+    LX1 : during before abstract BeforeLX1Enter;\\nduring after abstract AfterLX1Enter /*\\n    this is the comment line\\n*/\\nduring before {\\n    b = 1 + 2;\\n}\\nduring after {\\n    b = 3 - 2;\\n    b = 3 + 2 + a;\\n}
+    state LX2 {
+        state LX21 {
+            state LX211
+            state LX212
+            [*] --> LX211 : a == 2
+            [*] --> LX212 : a == 3
+            LX211 --> [*] : LX211.E1
+            note on link
+            effect {
+                a = 1;
+            }
+            end note
+            LX211 --> LX212 : LX211.E2
+            LX212 --> [*] : LX212.E1
+            note on link
+            effect {
+                a = 1;
+            }
+            end note
+            LX212 --> LX211 : E2
+        }
+        [*] --> LX21
+        LX21 --> [*] : a == 1
+    }
+    [*] --> LX1
+    [*] --> LX2 : EEE
+    LX1 --> LX2 : a == 2 || a == 3
+    LX1 --> LX1 : a == 1
+    LX2 --> LX1 : a == 1
+}
+LX : enter {\\n    b = 0 + b;\\n    b = 3 + a * (2 + b);\\n}\\nexit {\\n    b = 0;\\n    b = a << 2;\\n}
+[*] --> LX
+LX --> [*]
+@enduml
+    """).strip()
 
 
 @pytest.mark.unittest
@@ -1075,3 +1159,9 @@ class TestModelModel:
         assert isinstance(err, SyntaxError)
         assert "Unknown exit operation variable c in transition:" in err.msg
         assert "c = a + 2;" in err.msg
+
+    def test_to_plantuml(self, demo_model_1, expected_plantuml_code, text_aligner):
+        text_aligner.assert_equal(
+            expect=expected_plantuml_code,
+            actual=demo_model_1.to_plantuml(),
+        )

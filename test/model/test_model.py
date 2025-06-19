@@ -108,6 +108,16 @@ def root_state_1(demo_model_1):
     return demo_model_1.root_state
 
 
+@pytest.fixture()
+def operation_1(root_state_1):
+    return root_state_1.on_enters[0].operations[0]
+
+
+@pytest.fixture()
+def operation_2(root_state_1):
+    return root_state_1.on_enters[0].operations[1]
+
+
 @pytest.mark.unittest
 class TestModelModel:
     def test_model_basic(self, demo_model_1):
@@ -222,3 +232,26 @@ class TestModelModel:
         assert root_state_1.non_abstract_on_durings == root_state_1.on_durings
         assert root_state_1.abstract_on_exits == []
         assert root_state_1.non_abstract_on_exits == root_state_1.on_exits
+
+        assert root_state_1.events == {'EEE': Event(name='EEE', state_path=('LX',))}
+
+    def test_operation_basic(self, operation_1, operation_2):
+        assert operation_1.var_name == 'b'
+        assert operation_1.expr == BinaryOp(x=Integer(value=0), op='+', y=Variable(name='b'))
+        assert operation_1.to_ast_node() == dsl_nodes.OperationAssignment(name='b', expr=dsl_nodes.BinaryOp(
+            expr1=dsl_nodes.Integer(raw='0'), op='+', expr2=dsl_nodes.Name(name='b')))
+        assert operation_1.var_name_to_ast_node() == dsl_nodes.Name(name='b')
+
+        assert operation_2.var_name == 'b'
+        assert operation_2.expr == BinaryOp(x=Integer(value=3), op='+',
+                                            y=BinaryOp(x=Variable(name='a'), op='*',
+                                                       y=BinaryOp(x=Integer(value=2), op='+',
+                                                                  y=Variable(name='b'))))
+        assert operation_2.to_ast_node() == dsl_nodes.OperationAssignment(name='b', expr=dsl_nodes.BinaryOp(
+            expr1=dsl_nodes.Integer(raw='3'), op='+', expr2=dsl_nodes.BinaryOp(expr1=dsl_nodes.Name(name='a'), op='*',
+                                                                               expr2=dsl_nodes.Paren(
+                                                                                   expr=dsl_nodes.BinaryOp(
+                                                                                       expr1=dsl_nodes.Integer(raw='2'),
+                                                                                       op='+', expr2=dsl_nodes.Name(
+                                                                                           name='b'))))))
+        assert operation_2.var_name_to_ast_node() == dsl_nodes.Name(name='b')

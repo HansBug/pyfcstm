@@ -65,7 +65,7 @@ class Transition(AstExportable):
     @parent.setter
     def parent(self, new_parent: Optional['State']):
         if new_parent is None:
-            self.parent_ref = None
+            self.parent_ref = None  # pragma: no cover
         else:
             self.parent_ref = weakref.ref(new_parent)
 
@@ -154,7 +154,7 @@ class State(AstExportable, PlantUMLExportable):
     @parent.setter
     def parent(self, new_parent: Optional['State']):
         if new_parent is None:
-            self.parent_ref = None
+            self.parent_ref = None  # pragma: no cover
         else:
             self.parent_ref = weakref.ref(new_parent)
 

@@ -469,7 +469,8 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
             transitions.append(transition)
 
         if d_substates and not has_entry_trans:
-            raise SyntaxError(f'At least 1 entry transition should be assigned in non-leaf states:\n{node}')
+            raise SyntaxError(
+                f'At least 1 entry transition should be assigned in non-leaf state {node.name!r}:\n{node}')
 
         on_enters = []
         for enter_item in node.enters:
@@ -485,7 +486,7 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                         unknown_vars.append(op_item.name)
                     if unknown_vars:
                         raise SyntaxError(
-                            f'Unknown transition operation variable {", ".join(unknown_vars)} in transition:\n{enter_item}')
+                            f'Unknown enter operation variable {", ".join(unknown_vars)} in transition:\n{enter_item}')
                     enter_operations.append(Operation(var_name=op_item.name, expr=operation_val))
                 on_enters.append(OnStage(
                     stage='enter',
@@ -523,7 +524,7 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                         unknown_vars.append(op_item.name)
                     if unknown_vars:
                         raise SyntaxError(
-                            f'Unknown transition operation variable {", ".join(unknown_vars)} in transition:\n{during_item}')
+                            f'Unknown during operation variable {", ".join(unknown_vars)} in transition:\n{during_item}')
                     during_operations.append(Operation(var_name=op_item.name, expr=operation_val))
                 on_durings.append(OnStage(
                     stage='during',
@@ -555,7 +556,7 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                         unknown_vars.append(op_item.name)
                     if unknown_vars:
                         raise SyntaxError(
-                            f'Unknown transition operation variable {", ".join(unknown_vars)} in transition:\n{exit_item}')
+                            f'Unknown exit operation variable {", ".join(unknown_vars)} in transition:\n{exit_item}')
                     exit_operations.append(Operation(var_name=op_item.name, expr=operation_val))
                 on_exits.append(OnStage(
                     stage='exit',

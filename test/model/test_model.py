@@ -717,3 +717,212 @@ class TestModelModel:
         assert isinstance(err, SyntaxError)
         assert "Unknown to state 'LX3' of transition:" in err.msg
         assert "[*] -> LX3;" in err.msg
+
+    def test_parse_unknown_guard_variable(self):
+        ast_node = parse_with_grammar_entry("""
+        def int a = 0;
+        def int b = 2;
+        state LX {
+            state LX1;
+            state LX2;
+
+            [*] -> LX2 : if [a == 0];
+            LX1 -> [*] : if [a == 0 && c > 0 || a - d > 0];
+        }
+        """, entry_name='state_machine_dsl')
+
+        with pytest.raises(SyntaxError) as ei:
+            parse_dsl_node_to_state_machine(ast_node)
+
+        err = ei.value
+        assert isinstance(err, SyntaxError)
+        assert "Unknown guard variable c, d in transition:" in err.msg
+        assert "LX1 -> [*] : if [a == 0 && c > 0 || a - d > 0];" in err.msg
+
+    def test_parse_unknown_transition_effect_variable(self):
+        ast_node = parse_with_grammar_entry("""
+        def int a = 0;
+        def int b = 2;
+        state LX {
+            state LX1;
+            state LX2;
+
+            [*] -> LX2 : if [a == 0];
+            LX1 -> [*] effect {
+                a = b + 3;
+                b = b * (c + 2);
+            };
+        }
+        """, entry_name='state_machine_dsl')
+
+        with pytest.raises(SyntaxError) as ei:
+            parse_dsl_node_to_state_machine(ast_node)
+
+        err = ei.value
+        assert isinstance(err, SyntaxError)
+        assert "Unknown transition operation variable c in transition:" in err.msg
+        assert "b = b * (c + 2);" in err.msg
+
+    def test_parse_unknown_transition_effect_set_var(self):
+        ast_node = parse_with_grammar_entry("""
+        def int a = 0;
+        def int b = 2;
+        state LX {
+            state LX1;
+            state LX2;
+
+            [*] -> LX2 : if [a == 0];
+            LX1 -> [*] effect {
+                a = b + 3;
+                c = a * (b + 2);
+            };
+        }
+        """, entry_name='state_machine_dsl')
+
+        with pytest.raises(SyntaxError) as ei:
+            parse_dsl_node_to_state_machine(ast_node)
+
+        err = ei.value
+        assert isinstance(err, SyntaxError)
+        assert "Unknown transition operation variable c in transition:" in err.msg
+        assert "c = a * (b + 2);" in err.msg
+
+    def test_parse_unknown_no_enter_transition(self):
+        ast_node = parse_with_grammar_entry("""
+        def int a = 0;
+        def int b = 2;
+        state LX {
+            state LX1;
+            state LX2;
+
+            LX1 -> LX2 : if [a == 0];
+            LX1 -> [*] effect {
+                a = b + 3;
+                b = a * (b + 2);
+            };
+        }
+        """, entry_name='state_machine_dsl')
+
+        with pytest.raises(SyntaxError) as ei:
+            parse_dsl_node_to_state_machine(ast_node)
+
+        err = ei.value
+        assert isinstance(err, SyntaxError)
+        assert "At least 1 entry transition should be assigned in non-leaf state 'LX':" in err.msg
+        assert "state LX {" in err.msg
+
+    def test_parse_unknown_non_abstract_enter_variable(self):
+        ast_node = parse_with_grammar_entry("""
+        def int a = 0;
+        def int b = 2;
+        state LX {
+            state LX1 {
+                enter {
+                    a = b + a * 2;
+                    b = a + c;
+                }
+            }
+            state LX2;
+
+            [*] -> LX1 : if [a == 0];
+            LX1 -> [*] effect {
+                a = b + 3;
+                b = a * (b + 2);
+            };
+        }
+        """, entry_name='state_machine_dsl')
+
+        with pytest.raises(SyntaxError) as ei:
+            parse_dsl_node_to_state_machine(ast_node)
+
+        err = ei.value
+        assert isinstance(err, SyntaxError)
+        assert "Unknown enter operation variable c in transition:" in err.msg
+        assert "b = a + c;" in err.msg
+
+    def test_parse_unknown_non_abstract_enter_set_var(self):
+        ast_node = parse_with_grammar_entry("""
+        def int a = 0;
+        def int b = 2;
+        state LX {
+            state LX1 {
+                enter {
+                    a = b + a * 2;
+                    c = a + 2;
+                }
+            }
+            state LX2;
+
+            [*] -> LX1 : if [a == 0];
+            LX1 -> [*] effect {
+                a = b + 3;
+                b = a * (b + 2);
+            };
+        }
+        """, entry_name='state_machine_dsl')
+
+        with pytest.raises(SyntaxError) as ei:
+            parse_dsl_node_to_state_machine(ast_node)
+
+        err = ei.value
+        assert isinstance(err, SyntaxError)
+        assert "Unknown enter operation variable c in transition:" in err.msg
+        assert "c = a + 2;" in err.msg
+
+    def test_parse_unknown_non_abstract_exit_variable(self):
+        ast_node = parse_with_grammar_entry("""
+        def int a = 0;
+        def int b = 2;
+        state LX {
+            state LX1 {
+                exit {
+                    a = b + a * 2;
+                    b = a + c;
+                }
+            }
+            state LX2;
+
+            [*] -> LX1 : if [a == 0];
+            LX1 -> [*] effect {
+                a = b + 3;
+                b = a * (b + 2);
+            };
+        }
+        """, entry_name='state_machine_dsl')
+
+        with pytest.raises(SyntaxError) as ei:
+            parse_dsl_node_to_state_machine(ast_node)
+
+        err = ei.value
+        assert isinstance(err, SyntaxError)
+        assert "Unknown exit operation variable c in transition:" in err.msg
+        assert "b = a + c;" in err.msg
+
+    def test_parse_unknown_non_abstract_exit_set_var(self):
+        ast_node = parse_with_grammar_entry("""
+        def int a = 0;
+        def int b = 2;
+        state LX {
+            state LX1 {
+                exit {
+                    a = b + a * 2;
+                    c = a + 2;
+                }
+            }
+            state LX2;
+
+            [*] -> LX1 : if [a == 0];
+            LX1 -> [*] effect {
+                a = b + 3;
+                b = a * (b + 2);
+            };
+        }
+        """, entry_name='state_machine_dsl')
+
+        with pytest.raises(SyntaxError) as ei:
+            parse_dsl_node_to_state_machine(ast_node)
+
+        err = ei.value
+        assert isinstance(err, SyntaxError)
+        assert "Unknown exit operation variable c in transition:" in err.msg
+        assert "c = a + 2;" in err.msg

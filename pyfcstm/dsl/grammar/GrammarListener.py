@@ -221,6 +221,14 @@ class GrammarListener(ParseTreeListener):
     ):
         pass
 
+    # Enter a parse tree produced by GrammarParser#generic_expression.
+    def enterGeneric_expression(self, ctx: GrammarParser.Generic_expressionContext):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#generic_expression.
+    def exitGeneric_expression(self, ctx: GrammarParser.Generic_expressionContext):
+        pass
+
     # Enter a parse tree produced by GrammarParser#funcExprInit.
     def enterFuncExprInit(self, ctx: GrammarParser.FuncExprInitContext):
         pass

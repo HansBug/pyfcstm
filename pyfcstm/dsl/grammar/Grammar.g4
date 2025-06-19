@@ -70,6 +70,11 @@ initial_assignment: ID ':=' init_expression ';';
 constant_definition: ID '=' init_expression ';';
 operational_assignment: ID ':=' num_expression ';';
 
+generic_expression
+    : num_expression
+    | cond_expression
+    ;
+
 init_expression
     : '(' init_expression ')'                                # parenExprInit
     | num_literal                                            # literalExprInit

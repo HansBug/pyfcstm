@@ -13,6 +13,17 @@ _DEFAULT = {
 
 _DSL_STYLE = {
     **_DEFAULT,
+    'Float': '{{ node.value | repr }}',
+    'Integer': '{{ node.value | repr }}',
+    'Boolean': '{{ node.value | repr }}',
+    'Constant': '{{ node.value | repr }}',
+    'HexInt': '{{ node.value | hex }}',
+    'Paren': '({{ node.expr | expr_render }})',
+    'UFunc': '{{ node.func }}({{ node.expr | expr_render }})',
+    'Name': '{{ node.name }}',
+    'UnaryOp': '{{ node.op }}{{ node.expr | expr_render }}',
+    'BinaryOp': '{{ node.expr1 | expr_render }} {{ node.op }} {{ node.expr2 | expr_render }}',
+    'ConditionalOp': '({{ node.cond | expr_render }}) ? {{ node.value_true | expr_render }} : {{ node.value_false | expr_render }}',
 }
 
 _C_STYLE = {
@@ -26,8 +37,8 @@ _C_STYLE = {
     'UFunc': '{{ node.func }}({{ node.expr | expr_render }})',
     'Name': '{{ node.name }}',
     'UnaryOp': '{{ node.op }}{{ node.expr | expr_render }}',
-    'BinaryOp': '{{ node.expr1 | expr_render}} {{ node.op }} {{ node.expr2 | expr_render}}',
-    'BinaryOp(**)': 'pow({{ node.expr1 | expr_render}}, {{ node.expr2 | expr_render}})',
+    'BinaryOp': '{{ node.expr1 | expr_render }} {{ node.op }} {{ node.expr2 | expr_render }}',
+    'BinaryOp(**)': 'pow({{ node.expr1 | expr_render }}, {{ node.expr2 | expr_render }})',
     'ConditionalOp': '({{ node.cond | expr_render }}) ? {{ node.value_true | expr_render }} : {{ node.value_false | expr_render }}',
 }
 
@@ -43,9 +54,9 @@ _PY_STYLE = {
     'Name': '{{ node.name }}',
     'UnaryOp': '{{ node.op }}{{ node.expr | expr_render }}',
     'UnaryOp(!)': 'not {{ node.expr | expr_render }}',
-    'BinaryOp': '{{ node.expr1 | expr_render}} {{ node.op }} {{ node.expr2 | expr_render}}',
-    'BinaryOp(&&)': '{{ node.expr1 | expr_render}} and {{ node.expr2 | expr_render}}',
-    'BinaryOp(||)': '{{ node.expr1 | expr_render}} or {{ node.expr2 | expr_render}}',
+    'BinaryOp': '{{ node.expr1 | expr_render }} {{ node.op }} {{ node.expr2 | expr_render }}',
+    'BinaryOp(&&)': '{{ node.expr1 | expr_render }} and {{ node.expr2 | expr_render }}',
+    'BinaryOp(||)': '{{ node.expr1 | expr_render }} or {{ node.expr2 | expr_render }}',
     'ConditionalOp': '{{ node.value_true | expr_render }} if {{ node.cond | expr_render }} else {{ node.value_false | expr_render }}',
 }
 
@@ -77,20 +88,18 @@ def fn_expr_render(node: Union[float, int, dict, dsl_nodes.Expr, Any], templates
             template_str = templates[f'{type(node).__name__}({node.op})']
         elif isinstance(node, dsl_nodes.BinaryOp) and type(node).__name__ in templates:
             template_str = templates[type(node).__name__]
-        elif isinstance(node, dsl_nodes.ConditionalOp) and type(node).__name__ in templates:
-            template_str = templates[type(node).__name__]
         else:
             template_str = templates['default']
 
         tp: jinja2.Template = env.from_string(template_str)
         return tp.render(node=node)
 
+    elif isinstance(node, bool):
+        return fn_expr_render(Boolean(node).to_ast_node(), templates=templates, env=env)
     elif isinstance(node, int):
         return fn_expr_render(Integer(node).to_ast_node(), templates=templates, env=env)
     elif isinstance(node, float):
         return fn_expr_render(Float(node).to_ast_node(), templates=templates, env=env)
-    elif isinstance(node, bool):
-        return fn_expr_render(Boolean(node).to_ast_node(), templates=templates, env=env)
     else:
         return repr(node)
 

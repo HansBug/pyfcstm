@@ -355,3 +355,9 @@ class GrammarParseListener(GrammarListener):
             aspect=ctx.aspect.text if ctx.aspect else None,
             doc=format_multiline_comment(ctx.raw_doc.text) if ctx.raw_doc else None,
         )
+
+    def exitGeneric_expression(self, ctx: GrammarParser.Generic_expressionContext):
+        if ctx.num_expression():
+            self.nodes[ctx] = self.nodes[ctx.num_expression()]
+        elif ctx.cond_expression():
+            self.nodes[ctx] = self.nodes[ctx.cond_expression()]

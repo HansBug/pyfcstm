@@ -62,7 +62,13 @@
 <li class="toctree-l1 current"><a class="reference internal" href="index.html">pyfcstm.render</a><ul class="current">
 <li class="toctree-l2"><a class="reference internal" href="env.html">pyfcstm.render.env</a></li>
 <li class="toctree-l2"><a class="reference internal" href="expr.html">pyfcstm.render.expr</a></li>
-<li class="toctree-l2 current"><a class="current reference internal" href="#">pyfcstm.render.func</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">pyfcstm.render.func</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#process-item-to-object">process_item_to_object</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#pyfcstm.render.func.process_item_to_object"><code class="docutils literal notranslate"><span class="pre">process_item_to_object()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
 <li class="toctree-l2"><a class="reference internal" href="render.html">pyfcstm.render.render</a></li>
 </ul>
 </li>
@@ -98,6 +104,55 @@
     
   <section id="module-pyfcstm.render.func">
 <span id="pyfcstm-render-func"></span><h1>pyfcstm.render.func<a class="headerlink" href="#module-pyfcstm.render.func" title="Link to this heading"></a></h1>
+<p>Module for processing items to objects with Jinja2 templates and dynamic imports.</p>
+<p>This module provides functionality to convert dictionary configurations into callable objects,
+templates, or imported objects based on their specified type. It supports creating template
+renderers, importing objects from modules, and extracting values from configuration dictionaries.</p>
+<section id="process-item-to-object">
+<h2>process_item_to_object<a class="headerlink" href="#process-item-to-object" title="Link to this heading"></a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="pyfcstm.render.func.process_item_to_object">
+<span class="sig-prename descclassname"><span class="pre">pyfcstm.render.func.</span></span><span class="sig-name descname"><span class="pre">process_item_to_object</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">f</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">env</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Environment</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/pyfcstm/render/func.html#process_item_to_object"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.render.func.process_item_to_object" title="Link to this definition"></a></dt>
+<dd><p>Process a configuration item into an object based on its type.</p>
+<p>This function converts dictionary configurations into different types of objects:</p>
+<ul class="simple">
+<li><p>‘template’: Creates a callable template renderer function</p></li>
+<li><p>‘import’: Imports an object from a specified module</p></li>
+<li><p>‘value’: Extracts a value from the configuration</p></li>
+<li><p>For other types or non-dictionary inputs, returns the input unchanged</p></li>
+</ul>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>f</strong> (<em>dict</em><em> or </em><em>any</em>) – The configuration item to process, can be a dictionary or any other type</p></li>
+<li><p><strong>env</strong> (<em>jinja2.Environment</em>) – The Jinja2 environment used for template rendering</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The processed object (function, imported object, value, or unchanged input)</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>any</p>
+</dd>
+</dl>
+<p>Example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">env</span> <span class="o">=</span> <span class="n">jinja2</span><span class="o">.</span><span class="n">Environment</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="c1"># Create a template renderer</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">template_config</span> <span class="o">=</span> <span class="p">{</span><span class="s1">&#39;type&#39;</span><span class="p">:</span> <span class="s1">&#39;template&#39;</span><span class="p">,</span> <span class="s1">&#39;template&#39;</span><span class="p">:</span> <span class="s1">&#39;Hello {{ name }}&#39;</span><span class="p">,</span> <span class="s1">&#39;params&#39;</span><span class="p">:</span> <span class="p">[</span><span class="s1">&#39;name&#39;</span><span class="p">]}</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">renderer</span> <span class="o">=</span> <span class="n">process_item_to_object</span><span class="p">(</span><span class="n">template_config</span><span class="p">,</span> <span class="n">env</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">renderer</span><span class="p">(</span><span class="s1">&#39;World&#39;</span><span class="p">)</span>
+<span class="go">&#39;Hello World&#39;</span>
+
+<span class="gp">&gt;&gt;&gt; </span><span class="c1"># Import an object</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">import_config</span> <span class="o">=</span> <span class="p">{</span><span class="s1">&#39;type&#39;</span><span class="p">:</span> <span class="s1">&#39;import&#39;</span><span class="p">,</span> <span class="s1">&#39;from&#39;</span><span class="p">:</span> <span class="s1">&#39;math.sqrt&#39;</span><span class="p">}</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">sqrt_fn</span> <span class="o">=</span> <span class="n">process_item_to_object</span><span class="p">(</span><span class="n">import_config</span><span class="p">,</span> <span class="n">env</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">sqrt_fn</span><span class="p">(</span><span class="mi">16</span><span class="p">)</span>
+<span class="go">4.0</span>
+</pre></div>
+</div>
+</dd></dl>
+
+</section>
 </section>
 
 

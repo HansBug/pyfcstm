@@ -66,6 +66,14 @@ def add_builtins_to_env(env: jinja2.Environment) -> jinja2.Environment:
         filter_name = name
         if is_filter_candidate and filter_name not in existing_filters:
             env.filters[filter_name] = func
+        env.filters['str'] = str
+        env.filters['set'] = set
+        env.filters['dict'] = dict
+        env.filters['keys'] = lambda x: x.keys()
+        env.filters['values'] = lambda x: x.values()
+        env.filters['enumerate'] = enumerate
+        env.filters['reversed'] = reversed
+        env.filters['filter'] = lambda x, y: filter(y, x)
 
         # Mount as a tester (if suitable and no conflict)
         test_name = name

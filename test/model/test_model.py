@@ -47,7 +47,6 @@ def demo_model_1():
                 during abstract LX11During; 
                 enter abstract /*
                     This is X
-                        this is x'
                 */
                 during {
                     b = 0x2 << 0x3;
@@ -189,7 +188,7 @@ end note
 state LX {
     state LX1 {
         state LX11
-        LX11 : enter abstract LX11Enter;\\nenter abstract /*\\n    This is X\\n        this is x'\\n*/\\nduring abstract LX11During;\\nduring {\\n    b = 2 << 3;\\n    b = b + -1;\\n}\\nexit abstract LX11Exit;
+        LX11 : enter abstract LX11Enter;\\nenter abstract /*\\n    This is X\\n*/\\nduring abstract LX11During;\\nduring {\\n    b = 2 << 3;\\n    b = b + -1;\\n}\\nexit abstract LX11Exit;
         state LX12
         state LX13
         state LX14

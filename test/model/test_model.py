@@ -128,6 +128,16 @@ def state_LX_LX1_LX11(state_LX_LX1):
     return state_LX_LX1.substates['LX11']
 
 
+@pytest.fixture()
+def var_define_a(demo_model_1):
+    return demo_model_1.defines['a']
+
+
+@pytest.fixture()
+def var_define_b(demo_model_1):
+    return demo_model_1.defines['b']
+
+
 @pytest.mark.unittest
 class TestModelModel:
     def test_model_basic(self, demo_model_1):
@@ -303,3 +313,20 @@ class TestModelModel:
         assert [state.path for state in state_LX_LX1_LX11.walk_states()] == [
             ('LX', 'LX1', 'LX11'),
         ]
+
+    def test_var_defines(self, var_define_a, var_define_b):
+        assert var_define_a.name == 'a'
+        assert var_define_a.type == 'int'
+        assert var_define_a.init == Integer(value=0)
+        assert var_define_a.init() == 0
+        assert var_define_a.to_ast_node() == dsl_nodes.DefAssignment(name='a', type='int',
+                                                                     expr=dsl_nodes.Integer(raw='0'))
+        assert var_define_a.name_ast_node() == dsl_nodes.Name(name='a')
+
+        assert var_define_b.name == 'b'
+        assert var_define_b.type == 'int'
+        assert var_define_b.init == BinaryOp(x=Integer(value=2), op='|', y=Integer(value=5))
+        assert var_define_b.init() == 7
+        assert var_define_b.to_ast_node() == dsl_nodes.DefAssignment(name='b', type='int', expr=dsl_nodes.BinaryOp(
+            expr1=dsl_nodes.Integer(raw='2'), op='|', expr2=dsl_nodes.Integer(raw='5')))
+        assert var_define_b.name_ast_node() == dsl_nodes.Name(name='b')

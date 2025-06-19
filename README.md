@@ -26,57 +26,78 @@
 Some bullshit, still WIP.
 
 ```python
-from pprint import pprint
-
-from pyfcstm.model import Statechart, CompositeState, NormalState, Event, Transition
+from pyfcstm.dsl import parse_with_grammar_entry
+from pyfcstm.model.model import parse_dsl_node_to_state_machine
+from pyfcstm.render import StateMachineCodeRenderer
 
 if __name__ == '__main__':
-    a = NormalState('A')
-    b = NormalState('B')
-    c = NormalState('C')
-    d = NormalState('D')
+    ast_node = parse_with_grammar_entry("""
+    def int a = 0;
+    def int b = 0x0;
+    def int round_count = 0;  // define variables
+    state TrafficLight {
+        state InService {
+            enter {
+                a = 0;
+                b = 0;
+                round_count = 0;
+            }
+            
+            enter abstract InServiceAbstractEnter /*
+                Abstract Operation When Entering State 'InService'
+                TODO: Should be Implemented In Generated Code Framework
+            */
+            
+            // for non-leaf state, either 'before' or 'after' aspect keyword should be used for during block
+            during before abstract InServiceBeforeEnterChild /*
+                Abstract Operation Before Entering Child States of State 'InService'
+                TODO: Should be Implemented In Generated Code Framework
+            */
+            
+            during after abstract InServiceAfterEnterChild /*
+                Abstract Operation After Entering Child States of State 'InService'
+                TODO: Should be Implemented In Generated Code Framework
+            */
+            
+            exit abstract InServiceAbstractExit /*
+                Abstract Operation When Leaving State 'InService'
+                TODO: Should be Implemented In Generated Code Framework
+            */
+        
+            state Red {
+                during {  // no aspect keywords ('before', 'after') should be used for during block of leaf state
+                    a = 0x1 << 2;
+                }
+            }
+            state Yellow;
+            state Green;
+            [*] -> Red :: Start effect {
+                b = 0x1;
+            };
+            Red -> Green effect {
+                b = 0x3;
+            };
+            Green -> Yellow effect {
+                b = 0x2;
+            };
+            Yellow -> Red : if [a >= 10] effect {
+                b = 0x1;
+                round_count = round_count + 1;
+            };
+        }
+        state Idle;
+        
+        [*] -> InService;
+        InService -> Idle :: Maintain;
+        Idle -> [*];
+    }
+    """, entry_name='state_machine_dsl')
+    model = parse_dsl_node_to_state_machine(ast_node)
 
-    e1 = Event('e1')
-    e2 = Event('e2')
-    e3 = Event('e3')
-    e4 = Event('e4')
-
-    t1 = Transition(a, b, e1)
-    t2 = Transition(a, c, e2)
-    t3 = Transition(b, d, e3)
-    t4 = Transition(c, d, e4)
-
-    root = CompositeState('Root', initial_state=a, states=[a, b, c, d])
-
-    sc = Statechart(
-        'chart1',
-        root_state=root,
-        states=[a, b, c, d, root],
-        events=[e1, e2, e3, e4],
-        transitions=[t1, t2, t3, t4],
+    renderer = StateMachineCodeRenderer(
+        # template_dir='test_template',
+        template_dir='../fsm_generation_template'
     )
-
-    sc.validate()
-
-    # print(a)
-    # print(a.chart)
-    # print(sc.states)
-    # print(sc.transitions)
-    # print(sc.events)
-    # print(sc.root_state)
-    #
-    # print(t1)
-
-    # pprint(root.json)
-    # pprint(a.json)
-    # pprint(e1.json)
-    # pprint(t1.json)
-
-    pprint(sc.json)
-
-    print(Statechart.from_json(sc.json))
-
-    sc.to_yaml('test_export.yaml')
-    Statechart.read_yaml('test_export.yaml')
+    renderer.render(model, 'test_output_x')
 
 ```

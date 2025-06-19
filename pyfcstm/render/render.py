@@ -3,14 +3,15 @@ import pathlib
 import shutil
 import warnings
 from functools import partial
-from typing import Optional, Dict, Callable
+from typing import Dict, Callable, Union, Any
 
 import pathspec
 import yaml
 
 from .env import create_env
-from .expr import add_expr_render_to_env
+from .expr import create_expr_render_template, fn_expr_render
 from .func import process_item_to_object
+from ..dsl import node as dsl_nodes
 from ..model import StateMachine
 
 
@@ -20,15 +21,9 @@ class StateMachineCodeRenderer:
         self.config_file = os.path.join(self.template_dir, config_file)
 
         self.env = create_env()
-        self._lang_style: Optional[str] = None
-        self._lang_ext_configs: Optional[dict] = None
         self._ignore_patterns = ['.git']
         self._prepare_for_configs()
-        self.env = add_expr_render_to_env(
-            self.env,
-            lang_style=self._lang_style,
-            ext_configs=self._lang_ext_configs,
-        )
+
         self._path_spec = pathspec.PathSpec.from_lines(
             pathspec.patterns.GitWildMatchPattern, self._ignore_patterns
         )
@@ -40,13 +35,25 @@ class StateMachineCodeRenderer:
         with open(self.config_file, 'r') as f:
             config_info = yaml.safe_load(f)
 
-        expr_style = config_info.pop('expr_style', 'dsl')
-        if isinstance(expr_style, str):
-            self._lang_style = expr_style
-            self._lang_ext_configs = {}
-        else:
-            self._lang_style = expr_style.pop('base_lang', 'dsl')
-            self._lang_ext_configs = expr_style
+        expr_styles = config_info.pop('expr_styles', None) or {}
+        expr_styles['default'] = expr_styles.get('default') or {'base_lang': 'dsl'}
+        d_templates = {}
+        for style_name, expr_style in expr_styles.items():
+            lang_style = expr_style.pop('base_lang')
+            d_templates[style_name] = create_expr_render_template(
+                lang_style=lang_style,
+                ext_configs=expr_style,
+            )
+
+        def _fn_expr_render(node: Union[float, int, dict, dsl_nodes.Expr, Any], style: str = 'default'):
+            return fn_expr_render(
+                node=node,
+                templates=d_templates[style],
+                env=self.env,
+            )
+
+        self.env.globals['expr_render'] = _fn_expr_render
+        self.env.filters['expr_render'] = _fn_expr_render
 
         globals_ = config_info.pop('globals', None) or {}
         for name, value in globals_.items():

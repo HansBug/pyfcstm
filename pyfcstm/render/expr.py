@@ -115,37 +115,8 @@ def fn_expr_render(node: Union[float, int, dict, dsl_nodes.Expr, Any], templates
         return repr(node)
 
 
-def add_expr_render_to_env(env: jinja2.Environment,
-                           lang_style: str = 'dsl', ext_configs: Optional[Dict[str, str]] = None):
-    """
-    Add expression rendering function to the Jinja2 environment.
-
-    This function adds the expression rendering function as both a global function and a filter
-    to the provided Jinja2 environment, allowing templates to render expression nodes.
-
-    :param env: The Jinja2 environment to enhance with expression rendering capability
-    :type env: jinja2.Environment
-
-    :param lang_style: The language style to use for rendering ('dsl', 'c', 'cpp', 'python')
-    :type lang_style: str
-
-    :param ext_configs: Optional additional template configurations to extend or override defaults
-    :type ext_configs: Optional[Dict[str, str]]
-
-    :return: The enhanced Jinja2 environment
-    :rtype: jinja2.Environment
-
-    Example::
-
-        >>> env = create_env()
-        >>> env = add_expr_render_to_env(env, lang_style='python')
-        >>> # Now env can render expressions in Python style
-    """
-    templates = {**_KNOWN_STYLES[lang_style], **(ext_configs or {})}
-    _fn_expr_render = partial(fn_expr_render, templates=templates, env=env)
-    env.globals['expr_render'] = _fn_expr_render
-    env.filters['expr_render'] = _fn_expr_render
-    return env
+def create_expr_render_template(lang_style: str = 'dsl', ext_configs: Optional[Dict[str, str]] = None):
+    return {**_KNOWN_STYLES[lang_style], **(ext_configs or {})}
 
 
 def render_expr_node(expr: Union[float, int, dict, dsl_nodes.Expr, Any],
@@ -181,6 +152,8 @@ def render_expr_node(expr: Union[float, int, dict, dsl_nodes.Expr, Any],
         '42'
     """
     env = env or create_env()
-    env = add_expr_render_to_env(env, lang_style=lang_style, ext_configs=ext_configs)
-    _fn_expr_render = env.globals['expr_render']
+    templates = create_expr_render_template(lang_style, ext_configs)
+    _fn_expr_render = partial(fn_expr_render, templates=templates, env=env)
+    env.globals['expr_render'] = _fn_expr_render
+    env.filters['expr_render'] = _fn_expr_render
     return _fn_expr_render(node=expr)

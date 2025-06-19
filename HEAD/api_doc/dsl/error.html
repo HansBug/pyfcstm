@@ -1,0 +1,396 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>pyfcstm.dsl.error &mdash; pyfcstm 0.0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/custom.css?v=c9d0a6ec" />
+
+  
+      <script src="../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../_static/documentation_options.js?v=d45e8c67"></script>
+      <script src="../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <link rel="next" title="pyfcstm.dsl.listener" href="listener.html" />
+    <link rel="prev" title="pyfcstm.dsl.grammar" href="grammar.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            pyfcstm
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../tutorials/installation/index.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../tutorials/quick_start/index.html">Quick Start</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Information</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../information/environment.result.html">Run Environment Information</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">API Documentation</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../config/index.html">pyfcstm.config</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="index.html">pyfcstm.dsl</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="grammar.html">pyfcstm.dsl.grammar</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">pyfcstm.dsl.error</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#grammaritemerror">GrammarItemError</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#pyfcstm.dsl.error.GrammarItemError"><code class="docutils literal notranslate"><span class="pre">GrammarItemError</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#syntaxfailerror">SyntaxFailError</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#pyfcstm.dsl.error.SyntaxFailError"><code class="docutils literal notranslate"><span class="pre">SyntaxFailError</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#ambiguityerror">AmbiguityError</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#pyfcstm.dsl.error.AmbiguityError"><code class="docutils literal notranslate"><span class="pre">AmbiguityError</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#fullcontextattempterror">FullContextAttemptError</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#pyfcstm.dsl.error.FullContextAttemptError"><code class="docutils literal notranslate"><span class="pre">FullContextAttemptError</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#contextsensitivityerror">ContextSensitivityError</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#pyfcstm.dsl.error.ContextSensitivityError"><code class="docutils literal notranslate"><span class="pre">ContextSensitivityError</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#unfinishedparsingerror">UnfinishedParsingError</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#pyfcstm.dsl.error.UnfinishedParsingError"><code class="docutils literal notranslate"><span class="pre">UnfinishedParsingError</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#grammarparseerror">GrammarParseError</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#pyfcstm.dsl.error.GrammarParseError"><code class="docutils literal notranslate"><span class="pre">GrammarParseError</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#collectingerrorlistener">CollectingErrorListener</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#pyfcstm.dsl.error.CollectingErrorListener"><code class="docutils literal notranslate"><span class="pre">CollectingErrorListener</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="listener.html">pyfcstm.dsl.listener</a></li>
+<li class="toctree-l2"><a class="reference internal" href="node.html">pyfcstm.dsl.node</a></li>
+<li class="toctree-l2"><a class="reference internal" href="parse.html">pyfcstm.dsl.parse</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../utils/index.html">pyfcstm.utils</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">pyfcstm</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="index.html">pyfcstm.dsl</a></li>
+      <li class="breadcrumb-item active">pyfcstm.dsl.error</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../../_sources/api_doc/dsl/error.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+    
+    
+  <section id="module-pyfcstm.dsl.error">
+<span id="pyfcstm-dsl-error"></span><h1>pyfcstm.dsl.error<a class="headerlink" href="#module-pyfcstm.dsl.error" title="Link to this heading"></a></h1>
+<p>ANTLR Error Collection and Handling Module</p>
+<p>This module provides functionality for collecting and handling errors during ANTLR parsing processes.
+It implements a custom error listener that accumulates errors instead of throwing them immediately,
+allowing for comprehensive error reporting after the parsing is complete.</p>
+<section id="grammaritemerror">
+<h2>GrammarItemError<a class="headerlink" href="#grammaritemerror" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="pyfcstm.dsl.error.GrammarItemError">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pyfcstm.dsl.error.</span></span><span class="sig-name descname"><span class="pre">GrammarItemError</span></span><a class="reference internal" href="../../_modules/pyfcstm/dsl/error.html#GrammarItemError"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.dsl.error.GrammarItemError" title="Link to this definition"></a></dt>
+<dd><p>Base class for all grammar-related errors.</p>
+<p>This class serves as the parent class for specific grammar error types,
+providing a common interface for error handling in the grammar parsing system.</p>
+</dd></dl>
+
+</section>
+<section id="syntaxfailerror">
+<h2>SyntaxFailError<a class="headerlink" href="#syntaxfailerror" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="pyfcstm.dsl.error.SyntaxFailError">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pyfcstm.dsl.error.</span></span><span class="sig-name descname"><span class="pre">SyntaxFailError</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">line</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">column</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">offending_symbol_text</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">msg</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/pyfcstm/dsl/error.html#SyntaxFailError"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.dsl.error.SyntaxFailError" title="Link to this definition"></a></dt>
+<dd><p>Error raised when a syntax error is encountered during parsing.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>line</strong> (<em>int</em>) – The line number where the error occurred</p></li>
+<li><p><strong>column</strong> (<em>int</em>) – The column number where the error occurred</p></li>
+<li><p><strong>offending_symbol_text</strong> (<em>str</em>) – The text of the problematic symbol</p></li>
+<li><p><strong>msg</strong> (<em>str</em>) – The error message</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+<section id="ambiguityerror">
+<h2>AmbiguityError<a class="headerlink" href="#ambiguityerror" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="pyfcstm.dsl.error.AmbiguityError">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pyfcstm.dsl.error.</span></span><span class="sig-name descname"><span class="pre">AmbiguityError</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">input_range</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">start_index</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">stop_index</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/pyfcstm/dsl/error.html#AmbiguityError"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.dsl.error.AmbiguityError" title="Link to this definition"></a></dt>
+<dd><p>Error raised when grammar ambiguity is detected.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>input_range</strong> (<em>str</em>) – The range of input text where ambiguity was detected</p></li>
+<li><p><strong>start_index</strong> (<em>int</em>) – The starting index of the ambiguous section</p></li>
+<li><p><strong>stop_index</strong> (<em>int</em>) – The ending index of the ambiguous section</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+<section id="fullcontextattempterror">
+<h2>FullContextAttemptError<a class="headerlink" href="#fullcontextattempterror" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="pyfcstm.dsl.error.FullContextAttemptError">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pyfcstm.dsl.error.</span></span><span class="sig-name descname"><span class="pre">FullContextAttemptError</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">input_range</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">start_index</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">stop_index</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/pyfcstm/dsl/error.html#FullContextAttemptError"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.dsl.error.FullContextAttemptError" title="Link to this definition"></a></dt>
+<dd><p>Error raised when the parser attempts full context interpretation.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>input_range</strong> (<em>str</em>) – The range of input text where full context attempt occurred</p></li>
+<li><p><strong>start_index</strong> (<em>int</em>) – The starting index of the affected section</p></li>
+<li><p><strong>stop_index</strong> (<em>int</em>) – The ending index of the affected section</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+<section id="contextsensitivityerror">
+<h2>ContextSensitivityError<a class="headerlink" href="#contextsensitivityerror" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="pyfcstm.dsl.error.ContextSensitivityError">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pyfcstm.dsl.error.</span></span><span class="sig-name descname"><span class="pre">ContextSensitivityError</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">input_range</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">start_index</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">stop_index</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/pyfcstm/dsl/error.html#ContextSensitivityError"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.dsl.error.ContextSensitivityError" title="Link to this definition"></a></dt>
+<dd><p>Error raised when context sensitivity is detected.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>input_range</strong> (<em>str</em>) – The range of input text where context sensitivity was detected</p></li>
+<li><p><strong>start_index</strong> (<em>int</em>) – The starting index of the sensitive section</p></li>
+<li><p><strong>stop_index</strong> (<em>int</em>) – The ending index of the sensitive section</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+<section id="unfinishedparsingerror">
+<h2>UnfinishedParsingError<a class="headerlink" href="#unfinishedparsingerror" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="pyfcstm.dsl.error.UnfinishedParsingError">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pyfcstm.dsl.error.</span></span><span class="sig-name descname"><span class="pre">UnfinishedParsingError</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">lineno</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/pyfcstm/dsl/error.html#UnfinishedParsingError"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.dsl.error.UnfinishedParsingError" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</section>
+<section id="grammarparseerror">
+<h2>GrammarParseError<a class="headerlink" href="#grammarparseerror" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="pyfcstm.dsl.error.GrammarParseError">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pyfcstm.dsl.error.</span></span><span class="sig-name descname"><span class="pre">GrammarParseError</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">errors</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#pyfcstm.dsl.error.GrammarItemError" title="pyfcstm.dsl.error.GrammarItemError"><span class="pre">GrammarItemError</span></a><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/pyfcstm/dsl/error.html#GrammarParseError"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.dsl.error.GrammarParseError" title="Link to this definition"></a></dt>
+<dd><p>Exception raised when one or more grammar parsing errors are encountered.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>errors</strong> (<em>List</em><em>[</em><a class="reference internal" href="#pyfcstm.dsl.error.GrammarItemError" title="pyfcstm.dsl.error.GrammarItemError"><em>GrammarItemError</em></a><em>]</em>) – List of grammar-related errors that occurred during parsing</p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+<section id="collectingerrorlistener">
+<h2>CollectingErrorListener<a class="headerlink" href="#collectingerrorlistener" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="pyfcstm.dsl.error.CollectingErrorListener">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pyfcstm.dsl.error.</span></span><span class="sig-name descname"><span class="pre">CollectingErrorListener</span></span><a class="reference internal" href="../../_modules/pyfcstm/dsl/error.html#CollectingErrorListener"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.dsl.error.CollectingErrorListener" title="Link to this definition"></a></dt>
+<dd><p>A custom ANTLR error listener that collects errors during parsing.</p>
+<p>This class extends ANTLR’s ErrorListener to provide comprehensive error collection
+and reporting functionality. Instead of immediately throwing exceptions, it
+accumulates errors and can report them collectively.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Variables<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>errors</strong> – List storing all encountered error messages</p>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="pyfcstm.dsl.error.CollectingErrorListener.check_errors">
+<span class="sig-name descname"><span class="pre">check_errors</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/pyfcstm/dsl/error.html#CollectingErrorListener.check_errors"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.dsl.error.CollectingErrorListener.check_errors" title="Link to this definition"></a></dt>
+<dd><p>Check for collected errors and raise an exception if any exist.</p>
+<p>This method should be called after parsing is complete to verify if any
+errors were encountered during the process.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Raises<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="#pyfcstm.dsl.error.GrammarParseError" title="pyfcstm.dsl.error.GrammarParseError"><strong>GrammarParseError</strong></a> – If any errors were collected during parsing, with detailed error messages</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyfcstm.dsl.error.CollectingErrorListener.reportAmbiguity">
+<span class="sig-name descname"><span class="pre">reportAmbiguity</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">recognizer</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dfa</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">startIndex</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">stopIndex</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">exact</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ambigAlts</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">configs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/pyfcstm/dsl/error.html#CollectingErrorListener.reportAmbiguity"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.dsl.error.CollectingErrorListener.reportAmbiguity" title="Link to this definition"></a></dt>
+<dd><p>Handle and collect grammar ambiguity issues.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>recognizer</strong> – The parser that encountered the ambiguity</p></li>
+<li><p><strong>dfa</strong> – The DFA being processed</p></li>
+<li><p><strong>startIndex</strong> – Starting index of the ambiguous input</p></li>
+<li><p><strong>stopIndex</strong> – Ending index of the ambiguous input</p></li>
+<li><p><strong>exact</strong> – Whether the ambiguity is exact</p></li>
+<li><p><strong>ambigAlts</strong> – The ambiguous alternatives</p></li>
+<li><p><strong>configs</strong> – The ATN configurations</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyfcstm.dsl.error.CollectingErrorListener.reportAttemptingFullContext">
+<span class="sig-name descname"><span class="pre">reportAttemptingFullContext</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">recognizer</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dfa</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">startIndex</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">stopIndex</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">conflictingAlts</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">configs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/pyfcstm/dsl/error.html#CollectingErrorListener.reportAttemptingFullContext"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.dsl.error.CollectingErrorListener.reportAttemptingFullContext" title="Link to this definition"></a></dt>
+<dd><p>Handle and collect full context parsing attempts.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>recognizer</strong> – The parser attempting full context</p></li>
+<li><p><strong>dfa</strong> – The DFA being processed</p></li>
+<li><p><strong>startIndex</strong> – Starting index of the affected input</p></li>
+<li><p><strong>stopIndex</strong> – Ending index of the affected input</p></li>
+<li><p><strong>conflictingAlts</strong> – The conflicting alternatives</p></li>
+<li><p><strong>configs</strong> – The ATN configurations</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyfcstm.dsl.error.CollectingErrorListener.reportContextSensitivity">
+<span class="sig-name descname"><span class="pre">reportContextSensitivity</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">recognizer</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dfa</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">startIndex</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">stopIndex</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">prediction</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">configs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/pyfcstm/dsl/error.html#CollectingErrorListener.reportContextSensitivity"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.dsl.error.CollectingErrorListener.reportContextSensitivity" title="Link to this definition"></a></dt>
+<dd><p>Handle and collect context sensitivity issues.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>recognizer</strong> – The parser that encountered the sensitivity</p></li>
+<li><p><strong>dfa</strong> – The DFA being processed</p></li>
+<li><p><strong>startIndex</strong> – Starting index of the sensitive input</p></li>
+<li><p><strong>stopIndex</strong> – Ending index of the sensitive input</p></li>
+<li><p><strong>prediction</strong> – The predicted alternative</p></li>
+<li><p><strong>configs</strong> – The ATN configurations</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyfcstm.dsl.error.CollectingErrorListener.syntaxError">
+<span class="sig-name descname"><span class="pre">syntaxError</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">recognizer</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">offendingSymbol</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">line</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">column</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">msg</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">e</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/pyfcstm/dsl/error.html#CollectingErrorListener.syntaxError"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.dsl.error.CollectingErrorListener.syntaxError" title="Link to this definition"></a></dt>
+<dd><p>Handle and collect syntax errors encountered during parsing.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>recognizer</strong> – The parser that encountered the error</p></li>
+<li><p><strong>offendingSymbol</strong> – The problematic input symbol</p></li>
+<li><p><strong>line</strong> – Line number where the error occurred</p></li>
+<li><p><strong>column</strong> – Column number where the error occurred</p></li>
+<li><p><strong>msg</strong> – The error message</p></li>
+<li><p><strong>e</strong> – The exception that was raised</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+</section>
+
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="grammar.html" class="btn btn-neutral float-left" title="pyfcstm.dsl.grammar" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="listener.html" class="btn btn-neutral float-right" title="pyfcstm.dsl.listener" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, HansBug.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  
+    <div class="rst-versions" data-toggle="rst-versions" role="note" aria-label="versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    <span class="fa fa-book"> Other Versions</span>
+    v: HEAD
+    <span class="fa fa-caret-down"></span>
+  </span>
+        <div class="rst-other-versions">
+                <dl>
+                    <dt>Branches</dt>
+                        <dd><a href="../../../main/api_doc/dsl/error.html">main</a></dd>
+                        <dd><a href="error.html">HEAD</a></dd>
+                        <dd><a href="../../../old_design/index.html">old_design</a></dd>
+                </dl>
+        </div>
+    </div><script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

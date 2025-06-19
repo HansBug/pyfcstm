@@ -1,0 +1,387 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>pyfcstm.dsl &mdash; pyfcstm 0.0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/custom.css?v=c9d0a6ec" />
+
+  
+      <script src="../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../_static/documentation_options.js?v=d45e8c67"></script>
+      <script src="../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <link rel="next" title="pyfcstm.dsl.grammar" href="grammar.html" />
+    <link rel="prev" title="pyfcstm.config.meta" href="../config/meta.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            pyfcstm
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../tutorials/installation/index.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../tutorials/quick_start/index.html">Quick Start</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Information</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../information/environment.result.html">Run Environment Information</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">API Documentation</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../config/index.html">pyfcstm.config</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">pyfcstm.dsl</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="grammar.html">pyfcstm.dsl.grammar</a></li>
+<li class="toctree-l2"><a class="reference internal" href="error.html">pyfcstm.dsl.error</a></li>
+<li class="toctree-l2"><a class="reference internal" href="listener.html">pyfcstm.dsl.listener</a></li>
+<li class="toctree-l2"><a class="reference internal" href="node.html">pyfcstm.dsl.node</a></li>
+<li class="toctree-l2"><a class="reference internal" href="parse.html">pyfcstm.dsl.parse</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../utils/index.html">pyfcstm.utils</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">pyfcstm</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">pyfcstm.dsl</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../../_sources/api_doc/dsl/index.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+    
+    
+  <section id="module-pyfcstm.dsl">
+<span id="pyfcstm-dsl"></span><h1>pyfcstm.dsl<a class="headerlink" href="#module-pyfcstm.dsl" title="Link to this heading"></a></h1>
+<div class="toctree-wrapper compound">
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="grammar.html">pyfcstm.dsl.grammar</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="grammar.html#grammarlexer">GrammarLexer</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="grammar.html#pyfcstm.dsl.grammar.GrammarLexer"><code class="docutils literal notranslate"><span class="pre">GrammarLexer</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="grammar.html#grammarlistener">GrammarListener</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="grammar.html#pyfcstm.dsl.grammar.GrammarListener"><code class="docutils literal notranslate"><span class="pre">GrammarListener</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="grammar.html#grammarparser">GrammarParser</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="grammar.html#pyfcstm.dsl.grammar.GrammarParser"><code class="docutils literal notranslate"><span class="pre">GrammarParser</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="error.html">pyfcstm.dsl.error</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="error.html#grammaritemerror">GrammarItemError</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="error.html#pyfcstm.dsl.error.GrammarItemError"><code class="docutils literal notranslate"><span class="pre">GrammarItemError</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="error.html#syntaxfailerror">SyntaxFailError</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="error.html#pyfcstm.dsl.error.SyntaxFailError"><code class="docutils literal notranslate"><span class="pre">SyntaxFailError</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="error.html#ambiguityerror">AmbiguityError</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="error.html#pyfcstm.dsl.error.AmbiguityError"><code class="docutils literal notranslate"><span class="pre">AmbiguityError</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="error.html#fullcontextattempterror">FullContextAttemptError</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="error.html#pyfcstm.dsl.error.FullContextAttemptError"><code class="docutils literal notranslate"><span class="pre">FullContextAttemptError</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="error.html#contextsensitivityerror">ContextSensitivityError</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="error.html#pyfcstm.dsl.error.ContextSensitivityError"><code class="docutils literal notranslate"><span class="pre">ContextSensitivityError</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="error.html#unfinishedparsingerror">UnfinishedParsingError</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="error.html#pyfcstm.dsl.error.UnfinishedParsingError"><code class="docutils literal notranslate"><span class="pre">UnfinishedParsingError</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="error.html#grammarparseerror">GrammarParseError</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="error.html#pyfcstm.dsl.error.GrammarParseError"><code class="docutils literal notranslate"><span class="pre">GrammarParseError</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="error.html#collectingerrorlistener">CollectingErrorListener</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="error.html#pyfcstm.dsl.error.CollectingErrorListener"><code class="docutils literal notranslate"><span class="pre">CollectingErrorListener</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="listener.html">pyfcstm.dsl.listener</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="listener.html#grammarparselistener">GrammarParseListener</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="listener.html#pyfcstm.dsl.listener.GrammarParseListener"><code class="docutils literal notranslate"><span class="pre">GrammarParseListener</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="node.html">pyfcstm.dsl.node</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="node.html#astnode">ASTNode</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="node.html#pyfcstm.dsl.node.ASTNode"><code class="docutils literal notranslate"><span class="pre">ASTNode</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="node.html#identifier">Identifier</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="node.html#pyfcstm.dsl.node.Identifier"><code class="docutils literal notranslate"><span class="pre">Identifier</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="node.html#chainid">ChainID</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="node.html#pyfcstm.dsl.node.ChainID"><code class="docutils literal notranslate"><span class="pre">ChainID</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="node.html#expr">Expr</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="node.html#pyfcstm.dsl.node.Expr"><code class="docutils literal notranslate"><span class="pre">Expr</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="node.html#literal">Literal</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="node.html#pyfcstm.dsl.node.Literal"><code class="docutils literal notranslate"><span class="pre">Literal</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="node.html#boolean">Boolean</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="node.html#pyfcstm.dsl.node.Boolean"><code class="docutils literal notranslate"><span class="pre">Boolean</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="node.html#integer">Integer</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="node.html#pyfcstm.dsl.node.Integer"><code class="docutils literal notranslate"><span class="pre">Integer</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="node.html#hexint">HexInt</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="node.html#pyfcstm.dsl.node.HexInt"><code class="docutils literal notranslate"><span class="pre">HexInt</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="node.html#float">Float</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="node.html#pyfcstm.dsl.node.Float"><code class="docutils literal notranslate"><span class="pre">Float</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="node.html#constant">Constant</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="node.html#pyfcstm.dsl.node.Constant"><code class="docutils literal notranslate"><span class="pre">Constant</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="node.html#name">Name</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="node.html#pyfcstm.dsl.node.Name"><code class="docutils literal notranslate"><span class="pre">Name</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="node.html#paren">Paren</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="node.html#pyfcstm.dsl.node.Paren"><code class="docutils literal notranslate"><span class="pre">Paren</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="node.html#unaryop">UnaryOp</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="node.html#pyfcstm.dsl.node.UnaryOp"><code class="docutils literal notranslate"><span class="pre">UnaryOp</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="node.html#binaryop">BinaryOp</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="node.html#pyfcstm.dsl.node.BinaryOp"><code class="docutils literal notranslate"><span class="pre">BinaryOp</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="node.html#conditionalop">ConditionalOp</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="node.html#pyfcstm.dsl.node.ConditionalOp"><code class="docutils literal notranslate"><span class="pre">ConditionalOp</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="node.html#ufunc">UFunc</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="node.html#pyfcstm.dsl.node.UFunc"><code class="docutils literal notranslate"><span class="pre">UFunc</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="node.html#statement">Statement</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="node.html#pyfcstm.dsl.node.Statement"><code class="docutils literal notranslate"><span class="pre">Statement</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="node.html#constantdefinition">ConstantDefinition</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="node.html#pyfcstm.dsl.node.ConstantDefinition"><code class="docutils literal notranslate"><span class="pre">ConstantDefinition</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="node.html#initialassignment">InitialAssignment</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="node.html#pyfcstm.dsl.node.InitialAssignment"><code class="docutils literal notranslate"><span class="pre">InitialAssignment</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="node.html#defassignment">DefAssignment</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="node.html#pyfcstm.dsl.node.DefAssignment"><code class="docutils literal notranslate"><span class="pre">DefAssignment</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="node.html#operationaldeprecatedassignment">OperationalDeprecatedAssignment</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="node.html#pyfcstm.dsl.node.OperationalDeprecatedAssignment"><code class="docutils literal notranslate"><span class="pre">OperationalDeprecatedAssignment</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="node.html#preamble">Preamble</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="node.html#pyfcstm.dsl.node.Preamble"><code class="docutils literal notranslate"><span class="pre">Preamble</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="node.html#operation">Operation</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="node.html#pyfcstm.dsl.node.Operation"><code class="docutils literal notranslate"><span class="pre">Operation</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="node.html#condition">Condition</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="node.html#pyfcstm.dsl.node.Condition"><code class="docutils literal notranslate"><span class="pre">Condition</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="node.html#transitiondefinition">TransitionDefinition</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="node.html#pyfcstm.dsl.node.TransitionDefinition"><code class="docutils literal notranslate"><span class="pre">TransitionDefinition</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="node.html#statedefinition">StateDefinition</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="node.html#pyfcstm.dsl.node.StateDefinition"><code class="docutils literal notranslate"><span class="pre">StateDefinition</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="node.html#operationassignment">OperationAssignment</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="node.html#pyfcstm.dsl.node.OperationAssignment"><code class="docutils literal notranslate"><span class="pre">OperationAssignment</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="node.html#statemachinedslprogram">StateMachineDSLProgram</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="node.html#pyfcstm.dsl.node.StateMachineDSLProgram"><code class="docutils literal notranslate"><span class="pre">StateMachineDSLProgram</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="node.html#enterstatement">EnterStatement</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="node.html#pyfcstm.dsl.node.EnterStatement"><code class="docutils literal notranslate"><span class="pre">EnterStatement</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="node.html#enteroperations">EnterOperations</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="node.html#pyfcstm.dsl.node.EnterOperations"><code class="docutils literal notranslate"><span class="pre">EnterOperations</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="node.html#enterabstractfunction">EnterAbstractFunction</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="node.html#pyfcstm.dsl.node.EnterAbstractFunction"><code class="docutils literal notranslate"><span class="pre">EnterAbstractFunction</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="node.html#exitstatement">ExitStatement</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="node.html#pyfcstm.dsl.node.ExitStatement"><code class="docutils literal notranslate"><span class="pre">ExitStatement</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="node.html#exitoperations">ExitOperations</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="node.html#pyfcstm.dsl.node.ExitOperations"><code class="docutils literal notranslate"><span class="pre">ExitOperations</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="node.html#exitabstractfunction">ExitAbstractFunction</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="node.html#pyfcstm.dsl.node.ExitAbstractFunction"><code class="docutils literal notranslate"><span class="pre">ExitAbstractFunction</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="node.html#duringstatement">DuringStatement</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="node.html#pyfcstm.dsl.node.DuringStatement"><code class="docutils literal notranslate"><span class="pre">DuringStatement</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="node.html#duringoperations">DuringOperations</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="node.html#pyfcstm.dsl.node.DuringOperations"><code class="docutils literal notranslate"><span class="pre">DuringOperations</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="node.html#duringabstractfunction">DuringAbstractFunction</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="node.html#pyfcstm.dsl.node.DuringAbstractFunction"><code class="docutils literal notranslate"><span class="pre">DuringAbstractFunction</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="node.html#init-state">INIT_STATE</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="node.html#pyfcstm.dsl.node.INIT_STATE"><code class="docutils literal notranslate"><span class="pre">INIT_STATE</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="node.html#exit-state">EXIT_STATE</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="node.html#pyfcstm.dsl.node.EXIT_STATE"><code class="docutils literal notranslate"><span class="pre">EXIT_STATE</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="parse.html">pyfcstm.dsl.parse</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="parse.html#parse-with-grammar-entry">parse_with_grammar_entry</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="parse.html#pyfcstm.dsl.parse.parse_with_grammar_entry"><code class="docutils literal notranslate"><span class="pre">parse_with_grammar_entry()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="parse.html#parse-condition">parse_condition</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="parse.html#pyfcstm.dsl.parse.parse_condition"><code class="docutils literal notranslate"><span class="pre">parse_condition()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="parse.html#parse-preamble">parse_preamble</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="parse.html#pyfcstm.dsl.parse.parse_preamble"><code class="docutils literal notranslate"><span class="pre">parse_preamble()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="parse.html#parse-operation">parse_operation</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="parse.html#pyfcstm.dsl.parse.parse_operation"><code class="docutils literal notranslate"><span class="pre">parse_operation()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</div>
+</section>
+
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="../config/meta.html" class="btn btn-neutral float-left" title="pyfcstm.config.meta" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="grammar.html" class="btn btn-neutral float-right" title="pyfcstm.dsl.grammar" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, HansBug.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  
+    <div class="rst-versions" data-toggle="rst-versions" role="note" aria-label="versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    <span class="fa fa-book"> Other Versions</span>
+    v: HEAD
+    <span class="fa fa-caret-down"></span>
+  </span>
+        <div class="rst-other-versions">
+                <dl>
+                    <dt>Branches</dt>
+                        <dd><a href="../../../main/api_doc/dsl/index.html">main</a></dd>
+                        <dd><a href="index.html">HEAD</a></dd>
+                        <dd><a href="../../../old_design/index.html">old_design</a></dd>
+                </dl>
+        </div>
+    </div><script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

@@ -116,6 +116,27 @@ def fn_expr_render(node: Union[float, int, dict, dsl_nodes.Expr, Any], templates
 
 
 def create_expr_render_template(lang_style: str = 'dsl', ext_configs: Optional[Dict[str, str]] = None):
+    """
+    Create a template dictionary for expression rendering based on the specified language style.
+
+    This function combines the predefined templates for the specified language style with
+    any additional custom templates provided in ext_configs.
+
+    :param lang_style: The language style to use ('dsl', 'c', 'cpp', 'python')
+    :type lang_style: str
+
+    :param ext_configs: Optional additional template configurations to extend or override defaults
+    :type ext_configs: Optional[Dict[str, str]]
+
+    :return: A dictionary of templates for the specified language style
+    :rtype: Dict[str, str]
+
+    Example::
+
+        >>> templates = create_expr_render_template('python', {'CustomNode': '{{ node.custom_value }}'})
+        >>> 'UFunc' in templates and 'CustomNode' in templates
+        True
+    """
     return {**_KNOWN_STYLES[lang_style], **(ext_configs or {})}
 
 

@@ -118,6 +118,16 @@ def operation_2(root_state_1):
     return root_state_1.on_enters[0].operations[1]
 
 
+@pytest.fixture()
+def state_LX_LX1(root_state_1):
+    return root_state_1.substates['LX1']
+
+
+@pytest.fixture()
+def state_LX_LX1_LX11(state_LX_LX1):
+    return state_LX_LX1.substates['LX11']
+
+
 @pytest.mark.unittest
 class TestModelModel:
     def test_model_basic(self, demo_model_1):
@@ -255,3 +265,41 @@ class TestModelModel:
                                                                                        op='+', expr2=dsl_nodes.Name(
                                                                                            name='b'))))))
         assert operation_2.var_name_to_ast_node() == dsl_nodes.Name(name='b')
+
+    def test_walk_states(self, demo_model_1, root_state_1, state_LX_LX1, state_LX_LX1_LX11):
+        assert [state.path for state in demo_model_1.walk_states()] == [
+            ('LX',),
+            ('LX', 'LX1'),
+            ('LX', 'LX1', 'LX11'),
+            ('LX', 'LX1', 'LX12'),
+            ('LX', 'LX1', 'LX13'),
+            ('LX', 'LX1', 'LX14'),
+            ('LX', 'LX2'),
+            ('LX', 'LX2', 'LX21'),
+            ('LX', 'LX2', 'LX21', 'LX211'),
+            ('LX', 'LX2', 'LX21', 'LX212'),
+        ]
+
+        assert [state.path for state in root_state_1.walk_states()] == [
+            ('LX',),
+            ('LX', 'LX1'),
+            ('LX', 'LX1', 'LX11'),
+            ('LX', 'LX1', 'LX12'),
+            ('LX', 'LX1', 'LX13'),
+            ('LX', 'LX1', 'LX14'),
+            ('LX', 'LX2'),
+            ('LX', 'LX2', 'LX21'),
+            ('LX', 'LX2', 'LX21', 'LX211'),
+            ('LX', 'LX2', 'LX21', 'LX212'),
+        ]
+
+        assert [state.path for state in state_LX_LX1.walk_states()] == [
+            ('LX', 'LX1'),
+            ('LX', 'LX1', 'LX11'),
+            ('LX', 'LX1', 'LX12'),
+            ('LX', 'LX1', 'LX13'),
+            ('LX', 'LX1', 'LX14'),
+        ]
+        assert [state.path for state in state_LX_LX1_LX11.walk_states()] == [
+            ('LX', 'LX1', 'LX11'),
+        ]

@@ -34,33 +34,14 @@ _DSL_STYLE = {
 
 _C_STYLE = {
     **_DSL_STYLE,
-    'Float': '{{ node.value | repr }}',
-    'Integer': '{{ node.value | repr }}',
     'Boolean': '{{ (1 if node.value else 0) | hex }}',
-    'Constant': '{{ node.value | repr }}',
-    'HexInt': '{{ node.value | hex }}',
-    'Paren': '({{ node.expr | expr_render }})',
-    'UFunc': '{{ node.func }}({{ node.expr | expr_render }})',
-    'Name': '{{ node.name }}',
-    'UnaryOp': '{{ node.op }}{{ node.expr | expr_render }}',
-    'BinaryOp': '{{ node.expr1 | expr_render }} {{ node.op }} {{ node.expr2 | expr_render }}',
     'BinaryOp(**)': 'pow({{ node.expr1 | expr_render }}, {{ node.expr2 | expr_render }})',
-    'ConditionalOp': '({{ node.cond | expr_render }}) ? {{ node.value_true | expr_render }} : {{ node.value_false | expr_render }}',
 }
 
 _PY_STYLE = {
     **_DSL_STYLE,
-    'Float': '{{ node.value | repr }}',
-    'Integer': '{{ node.value | repr }}',
-    'Boolean': '{{ node.value | repr }}',
-    'Constant': '{{ node.value | repr }}',
-    'HexInt': '{{ node.value | hex }}',
-    'Paren': '({{ node.expr | expr_render }})',
     'UFunc': 'math.{{ node.func }}({{ node.expr | expr_render }})',
-    'Name': '{{ node.name }}',
-    'UnaryOp': '{{ node.op }}{{ node.expr | expr_render }}',
     'UnaryOp(!)': 'not {{ node.expr | expr_render }}',
-    'BinaryOp': '{{ node.expr1 | expr_render }} {{ node.op }} {{ node.expr2 | expr_render }}',
     'BinaryOp(&&)': '{{ node.expr1 | expr_render }} and {{ node.expr2 | expr_render }}',
     'BinaryOp(||)': '{{ node.expr1 | expr_render }} or {{ node.expr2 | expr_render }}',
     'ConditionalOp': '{{ node.value_true | expr_render }} if {{ node.cond | expr_render }} else {{ node.value_false | expr_render }}',

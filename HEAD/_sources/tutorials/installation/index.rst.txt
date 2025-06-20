@@ -29,5 +29,15 @@ is successful.
     :language: text
     :linenos:
 
+You can check with CLI command as well
+
+.. literalinclude:: cli_check.demo.sh
+    :language: shell
+    :linenos:
+
+.. literalinclude:: cli_check.demo.sh.txt
+    :language: txt
+    :linenos:
+
 pyfcstm is still under development, you can also check out the \
 documents in stable version through `https://hansbug.github.io/pyfcstm/main/index.html <https://hansbug.github.io/pyfcstm/main/index.html>`_.

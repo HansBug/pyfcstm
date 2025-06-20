@@ -63,7 +63,13 @@
 <li class="toctree-l2"><a class="reference internal" href="env.html">pyfcstm.render.env</a></li>
 <li class="toctree-l2"><a class="reference internal" href="expr.html">pyfcstm.render.expr</a></li>
 <li class="toctree-l2"><a class="reference internal" href="func.html">pyfcstm.render.func</a></li>
-<li class="toctree-l2 current"><a class="current reference internal" href="#">pyfcstm.render.render</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">pyfcstm.render.render</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#statemachinecoderenderer">StateMachineCodeRenderer</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#pyfcstm.render.render.StateMachineCodeRenderer"><code class="docutils literal notranslate"><span class="pre">StateMachineCodeRenderer</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="../utils/index.html">pyfcstm.utils</a></li>
@@ -98,6 +104,160 @@
     
   <section id="module-pyfcstm.render.render">
 <span id="pyfcstm-render-render"></span><h1>pyfcstm.render.render<a class="headerlink" href="#module-pyfcstm.render.render" title="Link to this heading"></a></h1>
+<p>State Machine Code Renderer Module</p>
+<p>This module provides functionality for rendering state machine models into code using templates.
+It uses Jinja2 templating engine to transform state machine models into various programming
+languages and formats based on template configurations.</p>
+<dl>
+<dt>Template Directory Structure:</dt><dd><p>The template directory should contain:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">config.yaml</span></code>: Configuration file for the renderer</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">*.j2</span></code> files: Jinja2 templates that will be rendered</p></li>
+<li><p>Other files: Will be copied directly to the output directory</p></li>
+</ul>
+</dd>
+<dt>Configuration File (config.yaml) Structure:</dt><dd><ul>
+<li><p>expr_styles: Dictionary defining expression rendering styles
+- default: Default style configuration (will use ‘dsl’ as base_lang if not specified)
+- <code class="docutils literal notranslate"><span class="pre">[style_name]</span></code>: Additional named styles</p>
+<blockquote>
+<div><ul class="simple">
+<li><p>base_lang: Base language style (‘dsl’, ‘c’, ‘cpp’, ‘python’)</p></li>
+<li><p>[additional options]: Extra rendering options for the style</p></li>
+</ul>
+</div></blockquote>
+</li>
+<li><p>globals: Dictionary of global variables to be added to the Jinja2 environment
+Each entry can be:
+- <code class="docutils literal notranslate"><span class="pre">type:</span> <span class="pre">template</span></code>: A template renderer function</p>
+<blockquote>
+<div><ul class="simple">
+<li><p>params: List[str], means the parameter list of this template rendering function, e.g. <code class="docutils literal notranslate"><span class="pre">['a',</span> <span class="pre">'b']</span></code>.</p></li>
+<li><p>template: str, means the Jinja2-format text render template, e.g. <code class="docutils literal notranslate"><span class="pre">{{</span> <span class="pre">a</span> <span class="pre">+</span> <span class="pre">b</span> <span class="pre">*</span> <span class="pre">2</span> <span class="pre">}}</span></code>.</p></li>
+</ul>
+</div></blockquote>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">type:</span> <span class="pre">import</span></code>: An imported object
+- from: str, means the import position, e.g. <cite>math.sin</cite>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">type:</span> <span class="pre">value</span></code>: A direct value
+- value: Any, means any possible value, e.g. <code class="docutils literal notranslate"><span class="pre">1</span></code>, <code class="docutils literal notranslate"><span class="pre">'Hello</span> <span class="pre">World'</span></code>.</p></li>
+<li><p>Other values (e.g. <code class="docutils literal notranslate"><span class="pre">1</span></code>, <code class="docutils literal notranslate"><span class="pre">'Hello</span> <span class="pre">World'</span></code>) means directly this value itself.</p></li>
+</ul>
+</li>
+<li><p>filters: Dictionary of filter functions to be added to the Jinja2 environment
+(Same format as globals)</p></li>
+<li><p>tests: Dictionary of test functions to be added to the Jinja2 environment
+(Same format as globals)</p></li>
+<li><p>ignores: List of file patterns to ignore (using gitignore syntax, e.g. <code class="docutils literal notranslate"><span class="pre">.git</span></code>, <code class="docutils literal notranslate"><span class="pre">*.md</span></code>, etc)</p></li>
+</ul>
+</dd>
+<dt>Expression Rendering:</dt><dd><p>The expr_styles configuration allows customizing how expressions are rendered in different
+language styles. The base_lang determines the starting template set, which can be extended
+or overridden with additional configuration.</p>
+<p>And you can use these pre-defined styles in <code class="docutils literal notranslate"><span class="pre">expr_render</span></code> function/filter in the template.
+When use <code class="docutils literal notranslate"><span class="pre">{{</span> <span class="pre">expression</span> <span class="pre">|</span> <span class="pre">expr_render</span> <span class="pre">}}</span></code> it will use <code class="docutils literal notranslate"><span class="pre">default</span></code> style to render your expression.
+When use <code class="docutils literal notranslate"><span class="pre">{{</span> <span class="pre">expression</span> <span class="pre">|</span> <span class="pre">expr_render(style='c')</span> <span class="pre">}}</span></code> it will use <code class="docutils literal notranslate"><span class="pre">c</span></code> style to render your expression.</p>
+</dd>
+</dl>
+<section id="statemachinecoderenderer">
+<h2>StateMachineCodeRenderer<a class="headerlink" href="#statemachinecoderenderer" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="pyfcstm.render.render.StateMachineCodeRenderer">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pyfcstm.render.render.</span></span><span class="sig-name descname"><span class="pre">StateMachineCodeRenderer</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">template_dir</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">config_file</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'config.yaml'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/pyfcstm/render/render.html#StateMachineCodeRenderer"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.render.render.StateMachineCodeRenderer" title="Link to this definition"></a></dt>
+<dd><p>Renderer for generating code from state machine models using templates.</p>
+<p>This class handles the rendering of state machine models into code using
+Jinja2 templates. It supports custom expression styles, global functions,
+filters, and tests through a configuration file.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>template_dir</strong> (<em>str</em>) – Directory containing the templates and configuration</p></li>
+<li><p><strong>config_file</strong> (<em>str</em><em>, </em><em>default: 'config.yaml'</em>) – Name of the configuration file within the template directory</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="pyfcstm.render.render.StateMachineCodeRenderer.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">template_dir</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">config_file</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'config.yaml'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/pyfcstm/render/render.html#StateMachineCodeRenderer.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.render.render.StateMachineCodeRenderer.__init__" title="Link to this definition"></a></dt>
+<dd><p>Initialize the StateMachineCodeRenderer.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>template_dir</strong> (<em>str</em>) – Directory containing the templates and configuration</p></li>
+<li><p><strong>config_file</strong> (<em>str</em><em>, </em><em>default: 'config.yaml'</em>) – Name of the configuration file within the template directory</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyfcstm.render.render.StateMachineCodeRenderer.copy_one_file">
+<span class="sig-name descname"><span class="pre">copy_one_file</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">model</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="../model/model.html#pyfcstm.model.model.StateMachine" title="pyfcstm.model.model.StateMachine"><span class="pre">StateMachine</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">output_file</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">src_file</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/pyfcstm/render/render.html#StateMachineCodeRenderer.copy_one_file"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.render.render.StateMachineCodeRenderer.copy_one_file" title="Link to this definition"></a></dt>
+<dd><p>Copy a single file to the output directory.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>model</strong> (<a class="reference internal" href="../model/model.html#pyfcstm.model.model.StateMachine" title="pyfcstm.model.model.StateMachine"><em>StateMachine</em></a>) – The state machine model (unused in this method)</p></li>
+<li><p><strong>output_file</strong> (<em>str</em>) – Path to the output file</p></li>
+<li><p><strong>src_file</strong> (<em>str</em>) – Path to the source file</p></li>
+</ul>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>IOError</strong> – If there’s an error copying the file</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyfcstm.render.render.StateMachineCodeRenderer.render">
+<span class="sig-name descname"><span class="pre">render</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">model</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="../model/model.html#pyfcstm.model.model.StateMachine" title="pyfcstm.model.model.StateMachine"><span class="pre">StateMachine</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">output_dir</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">clear_previous_directory</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/pyfcstm/render/render.html#StateMachineCodeRenderer.render"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.render.render.StateMachineCodeRenderer.render" title="Link to this definition"></a></dt>
+<dd><p>Render the state machine model to the output directory.</p>
+<p>This method processes all template files and copies all other files
+from the template directory to the output directory according to the
+configured mappings.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>model</strong> (<a class="reference internal" href="../model/model.html#pyfcstm.model.model.StateMachine" title="pyfcstm.model.model.StateMachine"><em>StateMachine</em></a>) – The state machine model to render</p></li>
+<li><p><strong>output_dir</strong> (<em>str</em>) – Directory where the rendered files will be placed</p></li>
+<li><p><strong>clear_previous_directory</strong> (<em>bool</em><em>, </em><em>default: False</em>) – Whether to clear the output directory before rendering</p></li>
+</ul>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>IOError</strong> – If there’s an error accessing or writing to the output directory</p>
+</dd>
+</dl>
+<p>Example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">renderer</span> <span class="o">=</span> <span class="n">StateMachineCodeRenderer</span><span class="p">(</span><span class="s1">&#39;./templates&#39;</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">renderer</span><span class="o">.</span><span class="n">render</span><span class="p">(</span><span class="n">my_state_machine</span><span class="p">,</span> <span class="s1">&#39;./output&#39;</span><span class="p">,</span> <span class="n">clear_previous_directory</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyfcstm.render.render.StateMachineCodeRenderer.render_one_file">
+<span class="sig-name descname"><span class="pre">render_one_file</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">model</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="../model/model.html#pyfcstm.model.model.StateMachine" title="pyfcstm.model.model.StateMachine"><span class="pre">StateMachine</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">output_file</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">template_file</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/pyfcstm/render/render.html#StateMachineCodeRenderer.render_one_file"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.render.render.StateMachineCodeRenderer.render_one_file" title="Link to this definition"></a></dt>
+<dd><p>Render a single template file.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>model</strong> (<a class="reference internal" href="../model/model.html#pyfcstm.model.model.StateMachine" title="pyfcstm.model.model.StateMachine"><em>StateMachine</em></a>) – The state machine model to render</p></li>
+<li><p><strong>output_file</strong> (<em>str</em>) – Path to the output file</p></li>
+<li><p><strong>template_file</strong> (<em>str</em>) – Path to the template file</p></li>
+</ul>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><ul class="simple">
+<li><p><strong>jinja2.exceptions.TemplateError</strong> – If there’s an error in the template</p></li>
+<li><p><strong>IOError</strong> – If there’s an error reading or writing files</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</section>
 </section>
 
 

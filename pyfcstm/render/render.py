@@ -13,13 +13,15 @@ Template Directory Structure:
     - Other files: Will be copied directly to the output directory
 
 Configuration File (config.yaml) Structure:
-    - expr_styles: Dictionary defining expression rendering styles
-      - default: Default style configuration (will use 'dsl' as base_lang if not specified)
+    - ``expr_styles``: Dictionary defining expression rendering styles
+      - ``default``: Default style configuration (will use 'dsl' as base_lang if not specified)
+
       - ``[style_name]``: Additional named styles
         - base_lang: Base language style ('dsl', 'c', 'cpp', 'python')
         - [additional options]: Extra rendering options for the style
-    - globals: Dictionary of global variables to be added to the Jinja2 environment
+    - ``globals``: Dictionary of global variables to be added to the Jinja2 environment
       Each entry can be:
+
       - ``type: template``: A template renderer function
         - params: List[str], means the parameter list of this template rendering function, e.g. ``['a', 'b']``.
         - template: str, means the Jinja2-format text render template, e.g. ``{{ a + b * 2 }}``.
@@ -28,11 +30,14 @@ Configuration File (config.yaml) Structure:
       - ``type: value``: A direct value
         - value: Any, means any possible value, e.g. ``1``, ``'Hello World'``.
       - Other values (e.g. ``1``, ``'Hello World'``) means directly this value itself.
-    - filters: Dictionary of filter functions to be added to the Jinja2 environment
+
+    - ``filters``: Dictionary of filter functions to be added to the Jinja2 environment
       (Same format as globals)
-    - tests: Dictionary of test functions to be added to the Jinja2 environment
+
+    - ``tests``: Dictionary of test functions to be added to the Jinja2 environment
       (Same format as globals)
-    - ignores: List of file patterns to ignore (using gitignore syntax, e.g. ``.git``, ``*.md``, etc)
+
+    - ``ignores``: List of file patterns to ignore (using gitignore syntax, e.g. ``.git``, ``*.md``, etc)
 
 Expression Rendering:
     The expr_styles configuration allows customizing how expressions are rendered in different

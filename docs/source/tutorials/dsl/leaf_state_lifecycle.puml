@@ -1,0 +1,43 @@
+@startuml
+title Leaf State Lifecycle
+
+[*] --> EnterState : Enter leaf state
+
+state EnterState {
+  EnterState : Entry point for leaf state
+}
+
+EnterState --> ExecuteEnterOperation : Step 1: Enter the state
+
+state ExecuteEnterOperation {
+  ExecuteEnterOperation : Execute current state's enter operation
+}
+
+ExecuteEnterOperation --> ExecuteDuringOperation : Step 2: Execute enter operation
+
+state ExecuteDuringOperation {
+  ExecuteDuringOperation : Execute current state's during operation
+}
+
+ExecuteDuringOperation --> CheckTransitions : Step 3: Execute during operation
+
+state CheckTransitions {
+  CheckTransitions : Check transition events and guards
+}
+
+CheckTransitions --> ExecuteDuringOperation : Step 4a: No transition triggered\n(back to step 3)
+CheckTransitions --> ExecuteExitOperation : Step 4b: Transition triggered
+
+state ExecuteExitOperation {
+  ExecuteExitOperation : Execute current state's exit operation
+}
+
+ExecuteExitOperation --> ExecuteTransition : Step 5: Execute exit operation
+
+state ExecuteTransition {
+  ExecuteTransition : Execute transition effects and move to next state
+}
+
+ExecuteTransition --> [*] : Step 6: Transition to next state
+
+@enduml

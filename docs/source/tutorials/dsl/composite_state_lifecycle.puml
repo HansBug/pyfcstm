@@ -1,0 +1,61 @@
+@startuml
+title Composite State Lifecycle
+
+[*] --> EnterState : Enter composite state
+
+state EnterState {
+  EnterState : Entry point for composite state
+}
+
+EnterState --> ExecuteEnterOperation : Step 1: Enter the state
+
+state ExecuteEnterOperation {
+  ExecuteEnterOperation : Execute current state's enter operation
+}
+
+ExecuteEnterOperation --> ExecuteDuringBefore : Step 2: Execute enter operation
+
+state ExecuteDuringBefore {
+  ExecuteDuringBefore : Execute current state's during before operation
+}
+
+ExecuteDuringBefore --> TryEnterSubstate : Step 3: Execute during before operation
+
+state TryEnterSubstate {
+  TryEnterSubstate : Try to enter substate
+}
+
+TryEnterSubstate --> EnterSubstate : Step 4a: Success - enter substate
+TryEnterSubstate --> ExecuteDuringAfter : Step 4b: Failure - skip substate
+
+state EnterSubstate {
+  EnterSubstate : Enter substate and return to current state
+}
+
+EnterSubstate --> ExecuteDuringAfter : Step 5: Return from substate
+
+state ExecuteDuringAfter {
+  ExecuteDuringAfter : Execute current state's during after operation
+}
+
+ExecuteDuringAfter --> CheckTransitions : Step 6: Execute during after operation
+
+state CheckTransitions {
+  CheckTransitions : Check transition events and guards
+}
+
+CheckTransitions --> ExecuteDuringBefore : Step 7a: No transition triggered\n(back to step 3)
+CheckTransitions --> ExecuteExitOperation : Step 7b: Transition triggered
+
+state ExecuteExitOperation {
+  ExecuteExitOperation : Execute current state's exit operation
+}
+
+ExecuteExitOperation --> ExecuteTransition : Step 8: Execute exit operation
+
+state ExecuteTransition {
+  ExecuteTransition : Execute transition effects and move to next state
+}
+
+ExecuteTransition --> [*] : Step 9: Transition to next state
+@enduml

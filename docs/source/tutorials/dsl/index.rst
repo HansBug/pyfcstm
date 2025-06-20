@@ -489,7 +489,22 @@ Common Errors
 - Type mismatches in assignments (semantic error)
 - Malformed abstract function declarations (syntax error)
 
-**PlantUML Diagram Placeholder: Lifecycle Action Flow**
+Lifecycle Flows of State Machine
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table::
+   :widths: 55 45
+   :align: center
+
+   * - .. figure:: composite_state_lifecycle.puml.svg
+          :width: 100%
+          :align: center
+          :alt: Lifecycle of Composite States
+
+     - .. figure:: leaf_state_lifecycle.puml.svg
+          :width: 100%
+          :align: center
+          :alt: Lifecycle of Leaf States
 
 Operational Statements
 ----------------------------------------------------

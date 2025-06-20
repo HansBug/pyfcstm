@@ -1,0 +1,8 @@
+if __name__ == '__main__':
+    print('List of Defines:'){% for def_item in model.defines.values() %}
+    print('* {{ def_item.name }} = {{ def_item.init() | expr_render }}')  # {{ def_item.to_ast_node() }}{% endfor %}
+    print()
+
+    print('List of States:'){% for state in model.walk_states() %}
+    print('* {{ state | get_state_name_safe }}')  # {{ state | get_state_name }}{% endfor %}
+    print()

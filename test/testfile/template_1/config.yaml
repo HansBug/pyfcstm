@@ -1,0 +1,29 @@
+expr_styles:
+  default:
+    base_lang: python
+
+globals:
+  # basic names
+  get_state_name_safe:
+    type: template
+    params:
+      - state
+    template: '{{ state.path | join("_") }}'
+  get_state_name:
+    type: template
+    params:
+      - state
+    template: '{{ state.path | join(".") }}'
+
+filters:
+  # basic names
+  get_state_name_safe:
+    type: template
+    params:
+      - state
+    template: '{{ get_state_name_safe(state) }}'
+  get_state_name:
+    type: template
+    params:
+      - state
+    template: '{{ get_state_name(state) }}'

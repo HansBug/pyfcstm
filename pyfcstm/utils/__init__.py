@@ -1,3 +1,4 @@
+from .binary import is_binary_file
 from .doc import format_multiline_comment
 from .jinja2 import add_builtins_to_env, add_settings_for_env
 from .json import IJsonOp

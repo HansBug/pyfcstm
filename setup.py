@@ -96,8 +96,17 @@ setup(
         'Natural Language :: English'
     ],
     project_urls={
-        'Bug Reports': 'https://github.com/hansbug/pyfcstm/issues',
+        'Homepage': 'https://github.com/hansbug/pyfcstm',
+        'Documentation': 'https://hansbug.github.io/pyfcstm/',
         'Source': 'https://github.com/hansbug/pyfcstm',
-        # 'Documentation': 'https://pyfcstm.hansbug.org/',
+        'Download': 'https://pypi.org/project/pyfcstm/#files',
+        'Bug Reports': 'https://github.com/hansbug/pyfcstm/issues',
+        # 'Changelog': 'https://github.com/hansbug/pyfcstm/blob/main/CHANGELOG.md',
+        'Contributing': 'https://github.com/hansbug/pyfcstm/blob/main/CONTRIBUTING.md',
+        'Pull Requests': 'https://github.com/hansbug/pyfcstm/pulls',
+        'CI': 'https://github.com/hansbug/pyfcstm/actions',
+        'Coverage': 'https://codecov.io/gh/hansbug/pyfcstm',
+        'Wiki': 'https://github.com/hansbug/pyfcstm/wiki',
+        'License': 'https://github.com/hansbug/pyfcstm/blob/main/LICENSE',
     },
 )

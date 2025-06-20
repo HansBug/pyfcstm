@@ -8,6 +8,8 @@ BUILDDIR           ?= $(shell readlink -f ${CURDIR}/../build)
 
 DIAGRAMS_MK := ${SOURCEDIR}/diagrams.mk
 DIAGRAMS    := $(MAKE) -f "${DIAGRAMS_MK}" SOURCE=${SOURCEDIR}
+FCSTMS_MK   := ${SOURCEDIR}/fcstms.mk
+FCSTMS      := $(MAKE) -f "${FCSTMS_MK}" SOURCE=${SOURCEDIR}
 GRAPHVIZ_MK := ${SOURCEDIR}/graphviz.mk
 GRAPHVIZ    := $(MAKE) -f "${GRAPHVIZ_MK}" SOURCE=${SOURCEDIR}
 DEMOS_MK    := ${SOURCEDIR}/demos.mk
@@ -33,6 +35,7 @@ pip:
 
 build:
 	@$(DIAGRAMS) build
+	@$(FCSTMS) build
 	@$(GRAPHVIZ) build
 	@$(DEMOS) build
 	@$(NOTEBOOK) build
@@ -41,6 +44,7 @@ all: build
 
 clean:
 	@$(DIAGRAMS) clean
+	@$(FCSTMS) clean
 	@$(GRAPHVIZ) clean
 	@$(DEMOS) clean
 	@$(NOTEBOOK) clean

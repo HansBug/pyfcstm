@@ -1,4 +1,4 @@
-.PHONY: docs test unittest resource antlr antlr_build
+.PHONY: docs test unittest resource antlr antlr_build build package clean
 
 PYTHON := $(shell which python)
 

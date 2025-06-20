@@ -95,6 +95,11 @@ setup(
         'Typing :: Typed',
         'Natural Language :: English'
     ],
+    entry_points={
+        'console_scripts': [
+            'pyfcstm=pyfcstm.entry:pyfcstmcli'
+        ]
+    },
     project_urls={
         'Homepage': 'https://github.com/hansbug/pyfcstm',
         'Documentation': 'https://hansbug.github.io/pyfcstm/',

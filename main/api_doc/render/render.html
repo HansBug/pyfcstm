@@ -116,27 +116,21 @@ languages and formats based on template configurations.</p>
 <li><p>Other files: Will be copied directly to the output directory</p></li>
 </ul>
 </dd>
-<dt>Configuration File (config.yaml) Structure:</dt><dd><ul>
-<li><p>expr_styles: Dictionary defining expression rendering styles
-- default: Default style configuration (will use ‘dsl’ as base_lang if not specified)
-- <code class="docutils literal notranslate"><span class="pre">[style_name]</span></code>: Additional named styles</p>
-<blockquote>
-<div><ul class="simple">
-<li><p>base_lang: Base language style (‘dsl’, ‘c’, ‘cpp’, ‘python’)</p></li>
-<li><p>[additional options]: Extra rendering options for the style</p></li>
+<dt>Configuration File (config.yaml) Structure:</dt><dd><ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">expr_styles</span></code>: Dictionary defining expression rendering styles
+- <code class="docutils literal notranslate"><span class="pre">default</span></code>: Default style configuration (will use ‘dsl’ as base_lang if not specified)</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">[style_name]</span></code>: Additional named styles
+- base_lang: Base language style (‘dsl’, ‘c’, ‘cpp’, ‘python’)
+- [additional options]: Extra rendering options for the style</p></li>
 </ul>
-</div></blockquote>
 </li>
-<li><p>globals: Dictionary of global variables to be added to the Jinja2 environment
-Each entry can be:
-- <code class="docutils literal notranslate"><span class="pre">type:</span> <span class="pre">template</span></code>: A template renderer function</p>
-<blockquote>
-<div><ul class="simple">
-<li><p>params: List[str], means the parameter list of this template rendering function, e.g. <code class="docutils literal notranslate"><span class="pre">['a',</span> <span class="pre">'b']</span></code>.</p></li>
-<li><p>template: str, means the Jinja2-format text render template, e.g. <code class="docutils literal notranslate"><span class="pre">{{</span> <span class="pre">a</span> <span class="pre">+</span> <span class="pre">b</span> <span class="pre">*</span> <span class="pre">2</span> <span class="pre">}}</span></code>.</p></li>
-</ul>
-</div></blockquote>
-<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">globals</span></code>: Dictionary of global variables to be added to the Jinja2 environment
+Each entry can be:</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">type:</span> <span class="pre">template</span></code>: A template renderer function
+- params: List[str], means the parameter list of this template rendering function, e.g. <code class="docutils literal notranslate"><span class="pre">['a',</span> <span class="pre">'b']</span></code>.
+- template: str, means the Jinja2-format text render template, e.g. <code class="docutils literal notranslate"><span class="pre">{{</span> <span class="pre">a</span> <span class="pre">+</span> <span class="pre">b</span> <span class="pre">*</span> <span class="pre">2</span> <span class="pre">}}</span></code>.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">type:</span> <span class="pre">import</span></code>: An imported object
 - from: str, means the import position, e.g. <cite>math.sin</cite>.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">type:</span> <span class="pre">value</span></code>: A direct value
@@ -144,11 +138,11 @@ Each entry can be:
 <li><p>Other values (e.g. <code class="docutils literal notranslate"><span class="pre">1</span></code>, <code class="docutils literal notranslate"><span class="pre">'Hello</span> <span class="pre">World'</span></code>) means directly this value itself.</p></li>
 </ul>
 </li>
-<li><p>filters: Dictionary of filter functions to be added to the Jinja2 environment
+<li><p><code class="docutils literal notranslate"><span class="pre">filters</span></code>: Dictionary of filter functions to be added to the Jinja2 environment
 (Same format as globals)</p></li>
-<li><p>tests: Dictionary of test functions to be added to the Jinja2 environment
+<li><p><code class="docutils literal notranslate"><span class="pre">tests</span></code>: Dictionary of test functions to be added to the Jinja2 environment
 (Same format as globals)</p></li>
-<li><p>ignores: List of file patterns to ignore (using gitignore syntax, e.g. <code class="docutils literal notranslate"><span class="pre">.git</span></code>, <code class="docutils literal notranslate"><span class="pre">*.md</span></code>, etc)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ignores</span></code>: List of file patterns to ignore (using gitignore syntax, e.g. <code class="docutils literal notranslate"><span class="pre">.git</span></code>, <code class="docutils literal notranslate"><span class="pre">*.md</span></code>, etc)</p></li>
 </ul>
 </dd>
 <dt>Expression Rendering:</dt><dd><p>The expr_styles configuration allows customizing how expressions are rendered in different

@@ -102,13 +102,15 @@
 <span class="sd">    - Other files: Will be copied directly to the output directory</span>
 
 <span class="sd">Configuration File (config.yaml) Structure:</span>
-<span class="sd">    - expr_styles: Dictionary defining expression rendering styles</span>
-<span class="sd">      - default: Default style configuration (will use &#39;dsl&#39; as base_lang if not specified)</span>
+<span class="sd">    - ``expr_styles``: Dictionary defining expression rendering styles</span>
+<span class="sd">      - ``default``: Default style configuration (will use &#39;dsl&#39; as base_lang if not specified)</span>
+
 <span class="sd">      - ``[style_name]``: Additional named styles</span>
 <span class="sd">        - base_lang: Base language style (&#39;dsl&#39;, &#39;c&#39;, &#39;cpp&#39;, &#39;python&#39;)</span>
 <span class="sd">        - [additional options]: Extra rendering options for the style</span>
-<span class="sd">    - globals: Dictionary of global variables to be added to the Jinja2 environment</span>
+<span class="sd">    - ``globals``: Dictionary of global variables to be added to the Jinja2 environment</span>
 <span class="sd">      Each entry can be:</span>
+
 <span class="sd">      - ``type: template``: A template renderer function</span>
 <span class="sd">        - params: List[str], means the parameter list of this template rendering function, e.g. ``[&#39;a&#39;, &#39;b&#39;]``.</span>
 <span class="sd">        - template: str, means the Jinja2-format text render template, e.g. ``{{ a + b * 2 }}``.</span>
@@ -117,11 +119,14 @@
 <span class="sd">      - ``type: value``: A direct value</span>
 <span class="sd">        - value: Any, means any possible value, e.g. ``1``, ``&#39;Hello World&#39;``.</span>
 <span class="sd">      - Other values (e.g. ``1``, ``&#39;Hello World&#39;``) means directly this value itself.</span>
-<span class="sd">    - filters: Dictionary of filter functions to be added to the Jinja2 environment</span>
+
+<span class="sd">    - ``filters``: Dictionary of filter functions to be added to the Jinja2 environment</span>
 <span class="sd">      (Same format as globals)</span>
-<span class="sd">    - tests: Dictionary of test functions to be added to the Jinja2 environment</span>
+
+<span class="sd">    - ``tests``: Dictionary of test functions to be added to the Jinja2 environment</span>
 <span class="sd">      (Same format as globals)</span>
-<span class="sd">    - ignores: List of file patterns to ignore (using gitignore syntax, e.g. ``.git``, ``*.md``, etc)</span>
+
+<span class="sd">    - ``ignores``: List of file patterns to ignore (using gitignore syntax, e.g. ``.git``, ``*.md``, etc)</span>
 
 <span class="sd">Expression Rendering:</span>
 <span class="sd">    The expr_styles configuration allows customizing how expressions are rendered in different</span>

@@ -115,7 +115,7 @@ class StateMachineCodeRenderer:
                 elif os.path.islink(dst_file):
                     os.unlink(dst_file)
                 else:
-                    warnings.warn(f'Unable to clean file {dst_file!r}.')
+                    warnings.warn(f'Unable to clean file {dst_file!r}.')  # pragma: no cover
 
         for rel_file, fn_op in self._file_mappings.items():
             dst_file = os.path.join(output_dir, rel_file)

@@ -49,7 +49,7 @@ def file_compare(file1, file2):
 def dir_compare(dir1, dir2):
     files1 = sorted(walk_files(dir1))
     files2 = sorted(walk_files(dir2))
-    assert files1 == files2
+    assert files1 == files2, f'File list of {dir1!r}:\n{files1!r}\n\nFile list of {dir2!r}:\n{files2}'
 
     for file in files1:
         file_compare(os.path.join(dir1, file), os.path.join(dir2, file))

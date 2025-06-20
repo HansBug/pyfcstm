@@ -10,7 +10,8 @@ __TITLE__ = 'pyfcstm'
 __VERSION__ = '0.0.1'
 
 #: Short description of the project, will be included in ``setup.py``.
-__DESCRIPTION__ = 'Module with state machine model support'
+__DESCRIPTION__ = ('A Python framework for parsing finite state machine DSL and '
+                   'generating executable code in multiple target languages.')
 
 #: Author of this project.
 __AUTHOR__ = 'HansBug'

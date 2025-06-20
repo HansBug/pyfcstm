@@ -23,7 +23,7 @@
 [![Contributors](https://img.shields.io/github/contributors/hansbug/pyfcstm)](https://github.com/hansbug/pyfcstm/graphs/contributors)
 [![GitHub license](https://img.shields.io/github/license/hansbug/pyfcstm)](https://github.com/hansbug/pyfcstm/blob/master/LICENSE)
 
-Some bullshit, still WIP.
+A Python framework for parsing finite state machine DSL and generating executable code in multiple target languages.
 
 ```python
 from pyfcstm.dsl import parse_with_grammar_entry

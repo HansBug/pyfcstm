@@ -1194,6 +1194,7 @@ fabric.properties
 .python-version
 /docs/build
 /public
+/docs/source/**/*.fcstm.puml
 /docs/source/**/*.puml.svg
 /docs/source/**/*.puml.png
 /docs/source/**/*.gv.svg

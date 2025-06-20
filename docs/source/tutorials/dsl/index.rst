@@ -617,8 +617,6 @@ The parser provides detailed error messages for common mistakes:
 - Type mismatches in operations
 - Structural inconsistencies
 
-**PlantUML Diagram Placeholder: Validation Process Flow**
-
 Advanced Patterns and Best Practices
 ----------------------------------------------------
 

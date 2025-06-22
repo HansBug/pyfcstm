@@ -63,6 +63,9 @@ __all__ = [
     'DuringStatement',
     'DuringOperations',
     'DuringAbstractFunction',
+    'DuringAspectStatement',
+    'DuringAspectOperations',
+    'DuringAspectAbstractFunction',
 ]
 
 from typing import List, Union, Optional
@@ -957,11 +960,20 @@ class StateDefinition(ASTNode):
         >>> state_with_trans = StateDefinition("idle", [], [trans], [], [], [])
     """
     name: str
-    substates: List['StateDefinition']
-    transitions: List[TransitionDefinition]
-    enters: List['EnterStatement']
-    durings: List['DuringStatement']
-    exits: List['ExitStatement']
+    substates: List['StateDefinition'] = None
+    transitions: List[TransitionDefinition] = None
+    enters: List['EnterStatement'] = None
+    durings: List['DuringStatement'] = None
+    exits: List['ExitStatement'] = None
+    during_aspects: List['DuringAspectStatement'] = None
+
+    def __post_init__(self):
+        self.substates = self.substates or []
+        self.transitions = self.transitions or []
+        self.enters = self.enters or []
+        self.durings = self.durings or []
+        self.exits = self.exits or []
+        self.during_aspects = self.during_aspects or []
 
     def __str__(self):
         """
@@ -1373,6 +1385,124 @@ class DuringAbstractFunction(DuringStatement):
                     print(f'during {self.aspect} abstract', file=f, end='')
                 else:
                     print(f'during abstract', file=f, end='')
+
+            if self.doc is not None:
+                print(' /*', file=f)
+                print(indent(self.doc, prefix='    '), file=f)
+                print('*/', file=f, end='')
+            else:
+                print(';', file=f, end='')
+
+            return f.getvalue()
+
+
+@dataclass
+class DuringAspectStatement(ASTNode):
+    """
+    Abstract base class for during statements in the state machine DSL.
+
+    During aspect statements define actions to be performed while in a state.
+
+    :rtype: DuringAspectStatement
+    """
+    pass
+
+
+@dataclass
+class DuringAspectOperations(DuringAspectStatement):
+    """
+    Represents a block of operations to perform while in a state.
+
+    :param aspect: Optional aspect name (e.g., "entry", "do", "exit")
+    :type aspect: Optional[str]
+    :param operations: List of operation assignments
+    :type operations: List[OperationAssignment]
+
+    :rtype: DuringAspectOperations
+
+    Example::
+
+        >>> op = OperationAssignment("counter", BinaryOp(Name("counter"), "+", Integer("1")))
+        >>> during_ops = DuringAspectOperations("do", [op])
+        >>> print(str(during_ops))
+        during do {
+            counter = counter + 1;
+        }
+    """
+    aspect: Optional[str]
+    operations: List[OperationAssignment]
+    name: Optional[str] = None
+
+    def __str__(self):
+        """
+        Convert the during operations to their string representation.
+
+        :return: String representation of the during operations
+        :rtype: str
+        """
+        with io.StringIO() as f:
+            if self.name:
+                if self.aspect:
+                    print(f'>> during {self.aspect} {self.name} {{', file=f)
+                else:
+                    print(f'>> during {self.name} {{', file=f)
+            else:
+                if self.aspect:
+                    print(f'>> during {self.aspect} {{', file=f)
+                else:
+                    print(f'>> during {{', file=f)
+            for operation in self.operations:
+                print(f'    {operation}', file=f)
+            print('}', file=f, end='')
+            return f.getvalue()
+
+
+@dataclass
+class DuringAspectAbstractFunction(DuringAspectStatement):
+    """
+    Represents an abstract function to call while in a state.
+
+    Abstract functions are placeholders for implementation-specific behavior.
+
+    :param name: Optional name of the function
+    :type name: Optional[str]
+    :param aspect: Optional aspect name (e.g., "entry", "do", "exit")
+    :type aspect: Optional[str]
+    :param doc: Optional documentation for the function
+    :type doc: Optional[str]
+
+    :rtype: DuringAspectAbstractFunction
+
+    Example::
+
+        >>> during_func = DuringAspectAbstractFunction("processData", "do", "Process incoming data")
+        >>> print(str(during_func))
+        during do abstract processData /*
+            Process incoming data
+        */
+    """
+    name: Optional[str]
+    aspect: Optional[str]
+    doc: Optional[str]
+
+    def __str__(self):
+        """
+        Convert the during abstract function to its string representation.
+
+        :return: String representation of the during abstract function
+        :rtype: str
+        """
+        with io.StringIO() as f:
+            if self.name:
+                if self.aspect:
+                    print(f'>> during {self.aspect} abstract {self.name}', file=f, end='')
+                else:
+                    print(f'>> during abstract {self.name}', file=f, end='')
+            else:
+                if self.aspect:
+                    print(f'>> during {self.aspect} abstract', file=f, end='')
+                else:
+                    print(f'>> during abstract', file=f, end='')
 
             if self.doc is not None:
                 print(' /*', file=f)

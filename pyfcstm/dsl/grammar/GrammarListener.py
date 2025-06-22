@@ -137,6 +137,30 @@ class GrammarListener(ParseTreeListener):
     def exitDuringAbstractFunc(self, ctx: GrammarParser.DuringAbstractFuncContext):
         pass
 
+    # Enter a parse tree produced by GrammarParser#duringAspectOperations.
+    def enterDuringAspectOperations(
+        self, ctx: GrammarParser.DuringAspectOperationsContext
+    ):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#duringAspectOperations.
+    def exitDuringAspectOperations(
+        self, ctx: GrammarParser.DuringAspectOperationsContext
+    ):
+        pass
+
+    # Enter a parse tree produced by GrammarParser#duringAspectAbstractFunc.
+    def enterDuringAspectAbstractFunc(
+        self, ctx: GrammarParser.DuringAspectAbstractFuncContext
+    ):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#duringAspectAbstractFunc.
+    def exitDuringAspectAbstractFunc(
+        self, ctx: GrammarParser.DuringAspectAbstractFuncContext
+    ):
+        pass
+
     # Enter a parse tree produced by GrammarParser#operation_assignment.
     def enterOperation_assignment(self, ctx: GrammarParser.Operation_assignmentContext):
         pass

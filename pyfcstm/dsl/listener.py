@@ -307,6 +307,8 @@ class GrammarParseListener(GrammarListener):
             self.nodes[ctx] = self.nodes[ctx.during_definition()]
         elif ctx.exit_definition():
             self.nodes[ctx] = self.nodes[ctx.exit_definition()]
+        elif ctx.during_aspect_definition():
+            self.nodes[ctx] = self.nodes[ctx.during_aspect_definition()]
 
     def exitOperation_assignment(self, ctx: GrammarParser.Operation_assignmentContext):
         super().exitOperation_assignment(ctx)
@@ -364,3 +366,19 @@ class GrammarParseListener(GrammarListener):
             self.nodes[ctx] = self.nodes[ctx.num_expression()]
         elif ctx.cond_expression():
             self.nodes[ctx] = self.nodes[ctx.cond_expression()]
+
+    def exitDuringAspectOperations(self, ctx: GrammarParser.DuringAspectOperationsContext):
+        super().exitDuringAspectOperations(ctx)
+        self.nodes[ctx] = DuringAspectOperations(
+            name=ctx.func_name.text if ctx.func_name else None,
+            aspect=ctx.aspect.text if ctx.aspect else None,
+            operations=[self.nodes[item] for item in ctx.operational_statement() if item in self.nodes]
+        )
+
+    def exitDuringAspectAbstractFunc(self, ctx: GrammarParser.DuringAspectAbstractFuncContext):
+        super().exitDuringAspectAbstractFunc(ctx)
+        self.nodes[ctx] = DuringAspectAbstractFunction(
+            name=ctx.func_name.text if ctx.func_name else None,
+            aspect=ctx.aspect.text if ctx.aspect else None,
+            doc=format_multiline_comment(ctx.raw_doc.text) if ctx.raw_doc else None,
+        )

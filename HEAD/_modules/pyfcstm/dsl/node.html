@@ -153,6 +153,9 @@
     <span class="s1">&#39;DuringStatement&#39;</span><span class="p">,</span>
     <span class="s1">&#39;DuringOperations&#39;</span><span class="p">,</span>
     <span class="s1">&#39;DuringAbstractFunction&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;DuringAspectStatement&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;DuringAspectOperations&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;DuringAspectAbstractFunction&#39;</span><span class="p">,</span>
 <span class="p">]</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">List</span><span class="p">,</span> <span class="n">Union</span><span class="p">,</span> <span class="n">Optional</span>
@@ -1208,11 +1211,20 @@
 <span class="sd">        &gt;&gt;&gt; state_with_trans = StateDefinition(&quot;idle&quot;, [], [trans], [], [], [])</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">name</span><span class="p">:</span> <span class="nb">str</span>
-    <span class="n">substates</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="s1">&#39;StateDefinition&#39;</span><span class="p">]</span>
-    <span class="n">transitions</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">TransitionDefinition</span><span class="p">]</span>
-    <span class="n">enters</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="s1">&#39;EnterStatement&#39;</span><span class="p">]</span>
-    <span class="n">durings</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="s1">&#39;DuringStatement&#39;</span><span class="p">]</span>
-    <span class="n">exits</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="s1">&#39;ExitStatement&#39;</span><span class="p">]</span>
+    <span class="n">substates</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="s1">&#39;StateDefinition&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">transitions</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">TransitionDefinition</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">enters</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="s1">&#39;EnterStatement&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">durings</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="s1">&#39;DuringStatement&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">exits</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="s1">&#39;ExitStatement&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">during_aspects</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="s1">&#39;DuringAspectStatement&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">__post_init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">substates</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">substates</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">transitions</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transitions</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">enters</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">enters</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">durings</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">durings</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">exits</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">exits</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">during_aspects</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">during_aspects</span> <span class="ow">or</span> <span class="p">[]</span>
 
 <div class="viewcode-block" id="StateDefinition.__str__">
 <a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.StateDefinition.__str__">[docs]</a>
@@ -1235,6 +1247,8 @@
                     <span class="nb">print</span><span class="p">(</span><span class="n">indent</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">during_item</span><span class="p">),</span> <span class="n">prefix</span><span class="o">=</span><span class="s1">&#39;    &#39;</span><span class="p">),</span> <span class="n">file</span><span class="o">=</span><span class="n">sf</span><span class="p">)</span>
                 <span class="k">for</span> <span class="n">exit_item</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">exits</span><span class="p">:</span>
                     <span class="nb">print</span><span class="p">(</span><span class="n">indent</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">exit_item</span><span class="p">),</span> <span class="n">prefix</span><span class="o">=</span><span class="s1">&#39;    &#39;</span><span class="p">),</span> <span class="n">file</span><span class="o">=</span><span class="n">sf</span><span class="p">)</span>
+                <span class="k">for</span> <span class="n">during_aspect_item</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">during_aspects</span><span class="p">:</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="n">indent</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">during_aspect_item</span><span class="p">),</span> <span class="n">prefix</span><span class="o">=</span><span class="s1">&#39;    &#39;</span><span class="p">),</span> <span class="n">file</span><span class="o">=</span><span class="n">sf</span><span class="p">)</span>
                 <span class="k">for</span> <span class="n">substate</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">substates</span><span class="p">:</span>
                     <span class="nb">print</span><span class="p">(</span><span class="n">indent</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">substate</span><span class="p">),</span> <span class="n">prefix</span><span class="o">=</span><span class="s1">&#39;    &#39;</span><span class="p">),</span> <span class="n">file</span><span class="o">=</span><span class="n">sf</span><span class="p">)</span>
                 <span class="k">for</span> <span class="n">transition</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">transitions</span><span class="p">:</span>
@@ -1694,6 +1708,124 @@
             <span class="k">return</span> <span class="n">f</span><span class="o">.</span><span class="n">getvalue</span><span class="p">()</span></div>
 </div>
 
+
+
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">DuringAspectStatement</span><span class="p">(</span><span class="n">ASTNode</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Abstract base class for during statements in the state machine DSL.</span>
+
+<span class="sd">    During aspect statements define actions to be performed while in a state.</span>
+
+<span class="sd">    :rtype: DuringAspectStatement</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">pass</span>
+
+
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">DuringAspectOperations</span><span class="p">(</span><span class="n">DuringAspectStatement</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Represents a block of operations to perform while in a state.</span>
+
+<span class="sd">    :param aspect: Optional aspect name (e.g., &quot;entry&quot;, &quot;do&quot;, &quot;exit&quot;)</span>
+<span class="sd">    :type aspect: Optional[str]</span>
+<span class="sd">    :param operations: List of operation assignments</span>
+<span class="sd">    :type operations: List[OperationAssignment]</span>
+
+<span class="sd">    :rtype: DuringAspectOperations</span>
+
+<span class="sd">    Example::</span>
+
+<span class="sd">        &gt;&gt;&gt; op = OperationAssignment(&quot;counter&quot;, BinaryOp(Name(&quot;counter&quot;), &quot;+&quot;, Integer(&quot;1&quot;)))</span>
+<span class="sd">        &gt;&gt;&gt; during_ops = DuringAspectOperations(&quot;do&quot;, [op])</span>
+<span class="sd">        &gt;&gt;&gt; print(str(during_ops))</span>
+<span class="sd">        during do {</span>
+<span class="sd">            counter = counter + 1;</span>
+<span class="sd">        }</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">aspect</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
+    <span class="n">operations</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">OperationAssignment</span><span class="p">]</span>
+    <span class="n">name</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Convert the during operations to their string representation.</span>
+
+<span class="sd">        :return: String representation of the during operations</span>
+<span class="sd">        :rtype: str</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="n">io</span><span class="o">.</span><span class="n">StringIO</span><span class="p">()</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">:</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">aspect</span><span class="p">:</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;&gt;&gt; during </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">aspect</span><span class="si">}</span><span class="s1"> </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s1"> </span><span class="se">{{</span><span class="s1">&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;&gt;&gt; during </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s1"> </span><span class="se">{{</span><span class="s1">&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">aspect</span><span class="p">:</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;&gt;&gt; during </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">aspect</span><span class="si">}</span><span class="s1"> </span><span class="se">{{</span><span class="s1">&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;&gt;&gt; during </span><span class="se">{{</span><span class="s1">&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">operation</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">operations</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;    </span><span class="si">{</span><span class="n">operation</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;}&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">f</span><span class="o">.</span><span class="n">getvalue</span><span class="p">()</span>
+
+
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">DuringAspectAbstractFunction</span><span class="p">(</span><span class="n">DuringAspectStatement</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Represents an abstract function to call while in a state.</span>
+
+<span class="sd">    Abstract functions are placeholders for implementation-specific behavior.</span>
+
+<span class="sd">    :param name: Optional name of the function</span>
+<span class="sd">    :type name: Optional[str]</span>
+<span class="sd">    :param aspect: Optional aspect name (e.g., &quot;entry&quot;, &quot;do&quot;, &quot;exit&quot;)</span>
+<span class="sd">    :type aspect: Optional[str]</span>
+<span class="sd">    :param doc: Optional documentation for the function</span>
+<span class="sd">    :type doc: Optional[str]</span>
+
+<span class="sd">    :rtype: DuringAspectAbstractFunction</span>
+
+<span class="sd">    Example::</span>
+
+<span class="sd">        &gt;&gt;&gt; during_func = DuringAspectAbstractFunction(&quot;processData&quot;, &quot;do&quot;, &quot;Process incoming data&quot;)</span>
+<span class="sd">        &gt;&gt;&gt; print(str(during_func))</span>
+<span class="sd">        during do abstract processData /*</span>
+<span class="sd">            Process incoming data</span>
+<span class="sd">        */</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">name</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
+    <span class="n">aspect</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
+    <span class="n">doc</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Convert the during abstract function to its string representation.</span>
+
+<span class="sd">        :return: String representation of the during abstract function</span>
+<span class="sd">        :rtype: str</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="n">io</span><span class="o">.</span><span class="n">StringIO</span><span class="p">()</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">:</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">aspect</span><span class="p">:</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;&gt;&gt; during </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">aspect</span><span class="si">}</span><span class="s1"> abstract </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;&gt;&gt; during abstract </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">aspect</span><span class="p">:</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;&gt;&gt; during </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">aspect</span><span class="si">}</span><span class="s1"> abstract&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;&gt;&gt; during abstract&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">doc</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="s1">&#39; /*&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">)</span>
+                <span class="nb">print</span><span class="p">(</span><span class="n">indent</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">doc</span><span class="p">,</span> <span class="n">prefix</span><span class="o">=</span><span class="s1">&#39;    &#39;</span><span class="p">),</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">)</span>
+                <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;*/&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;;&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+
+            <span class="k">return</span> <span class="n">f</span><span class="o">.</span><span class="n">getvalue</span><span class="p">()</span>
 </pre></div>
 
 

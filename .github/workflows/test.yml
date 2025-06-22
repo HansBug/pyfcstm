@@ -75,7 +75,7 @@ jobs:
         if: ${{ env.OS_NAME == 'Windows' }}
         shell: bash
         run: |
-#          choco install tree cloc wget curl make zip
+          # choco install tree cloc wget curl make zip
           choco install tree cloc wget curl make
           choco install 7zip winrar  # unrar should be added
       - name: Set up system dependences on MacOS

@@ -436,6 +436,18 @@ class State(AstExportable, PlantUMLExportable):
             retval.append(None)
         return retval
 
+    def list_on_enters(self, is_abstract: Optional[bool] = None, with_ids: bool = False) -> List[OnStage]:
+        retval = []
+        for id_, item in enumerate(self.on_enters, 1):
+            if (is_abstract is not None and
+                    ((item.is_abstract and not is_abstract) or (not item.is_abstract and is_abstract))):
+                continue
+            if with_ids:
+                retval.append((id_, item))
+            else:
+                retval.append(item)
+        return retval
+
     @property
     def abstract_on_enters(self) -> List[OnStage]:
         """
@@ -444,7 +456,7 @@ class State(AstExportable, PlantUMLExportable):
         :return: List of abstract enter actions
         :rtype: List[OnStage]
         """
-        return [item for item in self.on_enters if item.is_abstract]
+        return self.list_on_enters(is_abstract=True, with_ids=False)
 
     @property
     def non_abstract_on_enters(self) -> List[OnStage]:
@@ -454,7 +466,23 @@ class State(AstExportable, PlantUMLExportable):
         :return: List of non-abstract enter actions
         :rtype: List[OnStage]
         """
-        return [item for item in self.on_enters if not item.is_abstract]
+        return self.list_on_enters(is_abstract=False, with_ids=False)
+
+    def list_on_durings(self, is_abstract: Optional[bool] = None, aspect: Optional[str] = None,
+                        with_ids: bool = False) -> List[OnStage]:
+        retval = []
+        for id_, item in enumerate(self.on_durings, 1):
+            if (is_abstract is not None and
+                    ((item.is_abstract and not is_abstract) or (not item.is_abstract and is_abstract))):
+                continue
+            if aspect is not None and item.aspect != aspect:
+                continue
+
+            if with_ids:
+                retval.append((id_, item))
+            else:
+                retval.append(item)
+        return retval
 
     @property
     def abstract_on_durings(self) -> List[OnStage]:
@@ -464,7 +492,7 @@ class State(AstExportable, PlantUMLExportable):
         :return: List of abstract during actions
         :rtype: List[OnStage]
         """
-        return [item for item in self.on_durings if item.is_abstract]
+        return self.list_on_durings(is_abstract=True, with_ids=False)
 
     @property
     def non_abstract_on_durings(self) -> List[OnStage]:
@@ -474,7 +502,19 @@ class State(AstExportable, PlantUMLExportable):
         :return: List of non-abstract during actions
         :rtype: List[OnStage]
         """
-        return [item for item in self.on_durings if not item.is_abstract]
+        return self.list_on_durings(is_abstract=False, with_ids=False)
+
+    def list_on_exits(self, is_abstract: Optional[bool] = None, with_ids: bool = False) -> List[OnStage]:
+        retval = []
+        for id_, item in enumerate(self.on_exits, 1):
+            if (is_abstract is not None and
+                    ((item.is_abstract and not is_abstract) or (not item.is_abstract and is_abstract))):
+                continue
+            if with_ids:
+                retval.append((id_, item))
+            else:
+                retval.append(item)
+        return retval
 
     @property
     def abstract_on_exits(self) -> List[OnStage]:
@@ -484,7 +524,7 @@ class State(AstExportable, PlantUMLExportable):
         :return: List of abstract exit actions
         :rtype: List[OnStage]
         """
-        return [item for item in self.on_exits if item.is_abstract]
+        return self.list_on_exits(is_abstract=True, with_ids=False)
 
     @property
     def non_abstract_on_exits(self) -> List[OnStage]:
@@ -494,7 +534,7 @@ class State(AstExportable, PlantUMLExportable):
         :return: List of non-abstract exit actions
         :rtype: List[OnStage]
         """
-        return [item for item in self.on_exits if not item.is_abstract]
+        return self.list_on_exits(is_abstract=False, with_ids=False)
 
     @classmethod
     def transition_to_ast_node(cls, self: Optional['State'], transition: Transition):

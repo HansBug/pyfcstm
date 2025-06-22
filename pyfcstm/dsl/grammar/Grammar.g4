@@ -22,19 +22,19 @@ transition_definition
     ;
 
 enter_definition
-    : 'enter' '{' operational_statement* '}'                        # enterOperations
+    : 'enter' (func_name=ID)? '{' operational_statement* '}'        # enterOperations
     | 'enter' 'abstract' func_name=ID ';'                           # enterAbstractFunc
     | 'enter' 'abstract' (func_name=ID)? raw_doc=MULTILINE_COMMENT  # enterAbstractFunc
     ;
 
 exit_definition
-    : 'exit' '{' operational_statement* '}'                        # exitOperations
+    : 'exit' (func_name=ID)? '{' operational_statement* '}'        # exitOperations
     | 'exit' 'abstract' func_name=ID ';'                           # exitAbstractFunc
     | 'exit' 'abstract' (func_name=ID)? raw_doc=MULTILINE_COMMENT  # exitAbstractFunc
     ;
 
 during_definition
-    : 'during' aspect=('before'|'after')? '{' operational_statement* '}'                        # duringOperations
+    : 'during' aspect=('before'|'after')? (func_name=ID)? '{' operational_statement* '}'        # duringOperations
     | 'during' aspect=('before'|'after')? 'abstract' func_name=ID ';'                           # duringAbstractFunc
     | 'during' aspect=('before'|'after')? 'abstract' (func_name=ID)? raw_doc=MULTILINE_COMMENT  # duringAbstractFunc
     ;

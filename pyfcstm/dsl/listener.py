@@ -318,7 +318,8 @@ class GrammarParseListener(GrammarListener):
     def exitEnterOperations(self, ctx: GrammarParser.EnterOperationsContext):
         super().exitEnterOperations(ctx)
         self.nodes[ctx] = EnterOperations(
-            operations=[self.nodes[item] for item in ctx.operational_statement() if item in self.nodes]
+            name=ctx.func_name.text if ctx.func_name else None,
+            operations=[self.nodes[item] for item in ctx.operational_statement() if item in self.nodes],
         )
 
     def exitEnterAbstractFunc(self, ctx: GrammarParser.EnterAbstractFuncContext):
@@ -331,6 +332,7 @@ class GrammarParseListener(GrammarListener):
     def exitExitOperations(self, ctx: GrammarParser.ExitOperationsContext):
         super().exitExitOperations(ctx)
         self.nodes[ctx] = ExitOperations(
+            name=ctx.func_name.text if ctx.func_name else None,
             operations=[self.nodes[item] for item in ctx.operational_statement() if item in self.nodes]
         )
 
@@ -344,6 +346,7 @@ class GrammarParseListener(GrammarListener):
     def exitDuringOperations(self, ctx: GrammarParser.DuringOperationsContext):
         super().exitDuringOperations(ctx)
         self.nodes[ctx] = DuringOperations(
+            name=ctx.func_name.text if ctx.func_name else None,
             aspect=ctx.aspect.text if ctx.aspect else None,
             operations=[self.nodes[item] for item in ctx.operational_statement() if item in self.nodes]
         )

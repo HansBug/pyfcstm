@@ -1097,6 +1097,7 @@ class EnterOperations(EnterStatement):
         }
     """
     operations: List[OperationAssignment]
+    name: Optional[str] = None
 
     def __str__(self):
         """
@@ -1106,7 +1107,10 @@ class EnterOperations(EnterStatement):
         :rtype: str
         """
         with io.StringIO() as f:
-            print('enter {', file=f)
+            if self.name:
+                print(f'enter {self.name} {{', file=f)
+            else:
+                print(f'enter {{', file=f)
             for operation in self.operations:
                 print(f'    {operation}', file=f)
             print('}', file=f, end='')
@@ -1193,6 +1197,7 @@ class ExitOperations(ExitStatement):
         }
     """
     operations: List[OperationAssignment]
+    name: Optional[str] = None
 
     def __str__(self):
         """
@@ -1202,7 +1207,11 @@ class ExitOperations(ExitStatement):
         :rtype: str
         """
         with io.StringIO() as f:
-            print('exit {', file=f)
+            if self.name:
+                print(f'exit {self.name} {{', file=f)
+            else:
+                print(f'exit {{', file=f)
+
             for operation in self.operations:
                 print(f'    {operation}', file=f)
             print('}', file=f, end='')
@@ -1292,6 +1301,7 @@ class DuringOperations(DuringStatement):
     """
     aspect: Optional[str]
     operations: List[OperationAssignment]
+    name: Optional[str] = None
 
     def __str__(self):
         """
@@ -1301,10 +1311,16 @@ class DuringOperations(DuringStatement):
         :rtype: str
         """
         with io.StringIO() as f:
-            if self.aspect:
-                print(f'during {self.aspect} {{', file=f)
+            if self.name:
+                if self.aspect:
+                    print(f'during {self.aspect} {self.name} {{', file=f)
+                else:
+                    print(f'during {self.name} {{', file=f)
             else:
-                print(f'during {{', file=f)
+                if self.aspect:
+                    print(f'during {self.aspect} {{', file=f)
+                else:
+                    print(f'during {{', file=f)
             for operation in self.operations:
                 print(f'    {operation}', file=f)
             print('}', file=f, end='')

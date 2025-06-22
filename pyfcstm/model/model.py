@@ -218,6 +218,7 @@ class OnStage(AstExportable):
                 )
             else:
                 return dsl_nodes.EnterOperations(
+                    name=self.name,
                     operations=[item.to_ast_node() for item in self.operations],
                 )
 
@@ -230,6 +231,7 @@ class OnStage(AstExportable):
                 )
             else:
                 return dsl_nodes.DuringOperations(
+                    name=self.name,
                     aspect=self.aspect,
                     operations=[item.to_ast_node() for item in self.operations],
                 )
@@ -242,6 +244,7 @@ class OnStage(AstExportable):
                 )
             else:
                 return dsl_nodes.ExitOperations(
+                    name=self.name,
                     operations=[item.to_ast_node() for item in self.operations],
                 )
         else:
@@ -838,7 +841,7 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                 on_enters.append(OnStage(
                     stage='enter',
                     aspect=None,
-                    name=None,
+                    name=enter_item.name,
                     doc=None,
                     operations=enter_operations,
                 ))
@@ -877,7 +880,7 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                 on_durings.append(OnStage(
                     stage='during',
                     aspect=during_item.aspect,
-                    name=None,
+                    name=during_item.name,
                     doc=None,
                     operations=during_operations,
                 ))
@@ -909,7 +912,7 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                 on_exits.append(OnStage(
                     stage='exit',
                     aspect=None,
-                    name=None,
+                    name=exit_item.name,
                     doc=None,
                     operations=exit_operations,
                 ))

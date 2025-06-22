@@ -51,7 +51,7 @@ setup(
     url='https://github.com/hansbug/pyfcstm',
 
     # environment
-    python_requires=">=3.8",
+    python_requires=">=3.7",
     install_requires=requirements,
     tests_require=group_requirements['test'],
     extras_require=group_requirements,

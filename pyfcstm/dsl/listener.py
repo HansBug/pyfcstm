@@ -290,7 +290,10 @@ class GrammarParseListener(GrammarListener):
 
     def exitChain_id(self, ctx: GrammarParser.Chain_idContext):
         super().exitChain_id(ctx)
-        self.nodes[ctx] = ChainID(path=list(map(str, ctx.ID())))
+        self.nodes[ctx] = ChainID(
+            path=list(map(str, ctx.ID())),
+            is_absolute=bool(ctx.isabs),
+        )
 
     def exitOperational_statement(self, ctx: GrammarParser.Operational_statementContext):
         super().exitOperational_statement(ctx)

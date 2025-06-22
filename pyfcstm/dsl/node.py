@@ -114,6 +114,7 @@ class ChainID(Identifier):
         'state1.event'
     """
     path: List[str]
+    is_absolute: bool = False
 
     def __str__(self):
         """
@@ -122,7 +123,10 @@ class ChainID(Identifier):
         :return: String representation of the chained identifier
         :rtype: str
         """
-        return '.'.join(self.path)
+        pth = '.'.join(self.path)
+        if self.is_absolute:
+            pth = f'/{pth}'
+        return pth
 
 
 @dataclass
@@ -905,9 +909,10 @@ class TransitionDefinition(ASTNode):
             print('[*]' if self.to_state is EXIT_STATE else self.to_state, file=sf, end='')
 
             if self.event_id is not None:
-                if (self.from_state is INIT_STATE and len(self.event_id.path) == 1) or \
-                        (self.from_state is not INIT_STATE and len(self.event_id.path) == 2 and
-                         self.event_id.path[0] == self.from_state):
+                if not self.event_id.is_absolute and \
+                        ((self.from_state is INIT_STATE and len(self.event_id.path) == 1) or
+                         (self.from_state is not INIT_STATE and len(self.event_id.path) == 2 and
+                          self.event_id.path[0] == self.from_state)):
                     print(f' :: {self.event_id.path[-1]}', file=sf, end='')
                 else:
                     print(f' : {self.event_id}', file=sf, end='')

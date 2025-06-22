@@ -139,7 +139,7 @@ bool_literal
 
 math_const: 'pi' | 'E' | 'tau';
 
-chain_id: ID ('.' ID)*;
+chain_id: isabs='/'? ID ('.' ID)*;
 
 FLOAT: [0-9]+'.'[0-9]* ([eE][+-]?[0-9]+)?
      | '.'[0-9]+ ([eE][+-]?[0-9]+)?

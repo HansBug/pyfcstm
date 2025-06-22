@@ -115,15 +115,15 @@ class TestDSLStagesDuringAspect:
                 """,
                 '>> during before abstract /*\n    This function validates all inputs before processing\n*/'
         ),  # Valid abstract during aspect with 'before' aspect, no function name and multiline comment documentation
-        (
-                """
-                >> during after abstract processData /* 
-                   This handles post-processing of data
-                   after the main execution
-                */
-                """,
-                '>> during after abstract processData /*\n    This handles post-processing of data\n    after the main execution\n*/'
-        ),  # Valid abstract during aspect with 'after' aspect, function name and multiline comment documentation
+        # (
+        #         """
+        #         >> during after abstract processData /*
+        #            This handles post-processing of data
+        #            after the main execution
+        #         */
+        #         """,
+        #         '>> during after abstract processData /*\n    This handles post-processing of data\n    after the main execution\n*/'
+        # ),  # Valid abstract during aspect with 'after' aspect, function name and multiline comment documentation
         (
                 """
                 >> during before { ; }

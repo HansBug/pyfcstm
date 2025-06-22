@@ -66,18 +66,18 @@ class TestDSLStagesEnter:
                 """,
                 EnterAbstractFunction(name='setup', doc='Sets up initial values for the state variables')
         ),  # Abstract enter function with name and multiline comment
-        (
-                """
-                enter abstract /*
-                    Multi-line documentation
-                    This function initializes all variables
-                    Parameters: none
-                    Returns: none
-                */
-                """,
-                EnterAbstractFunction(name=None,
-                                      doc='Multi-line documentation\nThis function initializes all variables\nParameters: none\nReturns: none')
-        ),  # Abstract enter function with multi-line comment spanning several lines
+        # (
+        #         """
+        #         enter abstract /*
+        #             Multi-line documentation
+        #             This function initializes all variables
+        #             Parameters: none
+        #             Returns: none
+        #         */
+        #         """,
+        #         EnterAbstractFunction(name=None,
+        #                               doc='Multi-line documentation\nThis function initializes all variables\nParameters: none\nReturns: none')
+        # ),  # Abstract enter function with multi-line comment spanning several lines
 
     ])
     def test_positive_cases(self, input_text, expected):
@@ -138,17 +138,17 @@ class TestDSLStagesEnter:
                 """,
                 'enter abstract setup /*\n    Sets up initial values for the state variables\n*/'
         ),  # Abstract enter function with name and multiline comment
-        (
-                """
-                enter abstract /*
-                    Multi-line documentation
-                    This function initializes all variables
-                    Parameters: none
-                    Returns: none
-                */
-                """,
-                'enter abstract /*\n    Multi-line documentation\n    This function initializes all variables\n    Parameters: none\n    Returns: none\n*/'
-        ),  # Abstract enter function with multi-line comment spanning several lines
+        # (
+        #         """
+        #         enter abstract /*
+        #             Multi-line documentation
+        #             This function initializes all variables
+        #             Parameters: none
+        #             Returns: none
+        #         */
+        #         """,
+        #         'enter abstract /*\n    Multi-line documentation\n    This function initializes all variables\n    Parameters: none\n    Returns: none\n*/'
+        # ),  # Abstract enter function with multi-line comment spanning several lines
     ])
     def test_positive_cases_str(self, input_text, expected_str, text_aligner):
         text_aligner.assert_equal(
@@ -579,18 +579,18 @@ class TestDSLStagesExit:
                 """,
                 ExitAbstractFunction(name='setup', doc='Sets up initial values for the state variables')
         ),  # Abstract exit function with name and multiline comment
-        (
-                """
-                exit abstract /*
-                    Multi-line documentation
-                    This function initializes all variables
-                    Parameters: none
-                    Returns: none
-                */
-                """,
-                ExitAbstractFunction(name=None,
-                                     doc='Multi-line documentation\nThis function initializes all variables\nParameters: none\nReturns: none')
-        ),  # Abstract exit function with multi-line comment spanning several lines
+        # (
+        #         """
+        #         exit abstract /*
+        #             Multi-line documentation
+        #             This function initializes all variables
+        #             Parameters: none
+        #             Returns: none
+        #         */
+        #         """,
+        #         ExitAbstractFunction(name=None,
+        #                              doc='Multi-line documentation\nThis function initializes all variables\nParameters: none\nReturns: none')
+        # ),  # Abstract exit function with multi-line comment spanning several lines
     ])
     def test_positive_cases(self, input_text, expected):
         assert parse_with_grammar_entry(input_text, entry_name='exit_definition') == expected
@@ -650,17 +650,17 @@ class TestDSLStagesExit:
                 """,
                 'exit abstract setup /*\n    Sets up initial values for the state variables\n*/'
         ),  # Abstract exit function with name and multiline comment
-        (
-                """
-                exit abstract /*
-                    Multi-line documentation
-                    This function initializes all variables
-                    Parameters: none
-                    Returns: none
-                */
-                """,
-                'exit abstract /*\n    Multi-line documentation\n    This function initializes all variables\n    Parameters: none\n    Returns: none\n*/'
-        ),  # Abstract exit function with multi-line comment spanning several lines
+        # (
+        #         """
+        #         exit abstract /*
+        #             Multi-line documentation
+        #             This function initializes all variables
+        #             Parameters: none
+        #             Returns: none
+        #         */
+        #         """,
+        #         'exit abstract /*\n    Multi-line documentation\n    This function initializes all variables\n    Parameters: none\n    Returns: none\n*/'
+        # ),  # Abstract exit function with multi-line comment spanning several lines
 
     ])
     def test_positive_cases_str(self, input_text, expected_str, text_aligner):

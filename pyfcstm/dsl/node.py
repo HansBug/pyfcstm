@@ -994,6 +994,8 @@ class StateDefinition(ASTNode):
                     print(indent(str(during_item), prefix='    '), file=sf)
                 for exit_item in self.exits:
                     print(indent(str(exit_item), prefix='    '), file=sf)
+                for during_aspect_item in self.during_aspects:
+                    print(indent(str(during_aspect_item), prefix='    '), file=sf)
                 for substate in self.substates:
                     print(indent(str(substate), prefix='    '), file=sf)
                 for transition in self.transitions:

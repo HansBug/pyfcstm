@@ -30,6 +30,7 @@ __all__ = [
     'Event',
     'Transition',
     'OnStage',
+    'OnAspect',
     'State',
     'VarDefine',
     'StateMachine',
@@ -202,6 +203,10 @@ class OnStage(AstExportable):
         """
         return self.name is not None or self.doc is not None
 
+    @property
+    def is_aspect(self) -> bool:
+        return False
+
     def to_ast_node(self) -> Union[dsl_nodes.EnterStatement, dsl_nodes.DuringStatement, dsl_nodes.ExitStatement]:
         """
         Convert this OnStage to an appropriate AST node based on the stage.
@@ -252,6 +257,47 @@ class OnStage(AstExportable):
 
 
 @dataclass
+class OnAspect(AstExportable):
+    stage: str
+    aspect: Optional[str]
+    name: Optional[str]
+    doc: Optional[str]
+    operations: List[Operation]
+
+    @property
+    def is_abstract(self) -> bool:
+        """
+        Check if this is an abstract function declaration.
+
+        :return: True if this is an abstract function, False otherwise
+        :rtype: bool
+        """
+        return self.name is not None or self.doc is not None
+
+    @property
+    def is_aspect(self) -> bool:
+        return True
+
+    def to_ast_node(self) -> Union[dsl_nodes.DuringAspectStatement]:
+        if self.stage == 'during':
+            if self.name or self.doc is not None:
+                return dsl_nodes.DuringAspectAbstractFunction(
+                    name=self.name,
+                    aspect=self.aspect,
+                    doc=self.doc,
+                )
+            else:
+                return dsl_nodes.DuringAspectOperations(
+                    name=self.name,
+                    aspect=self.aspect,
+                    operations=[item.to_ast_node() for item in self.operations],
+                )
+
+        else:
+            raise ValueError(f'Unknown aspect - {self.stage!r}.')  # pragma: no cover
+
+
+@dataclass
 class State(AstExportable, PlantUMLExportable):
     """
     Represents a state in a hierarchical state machine.
@@ -288,6 +334,7 @@ class State(AstExportable, PlantUMLExportable):
     on_enters: List[OnStage]
     on_durings: List[OnStage]
     on_exits: List[OnStage]
+    on_during_aspects: List[OnAspect]
     parent_ref: Optional[weakref.ReferenceType] = None
     substate_name_to_id: Dict[str, int] = None
 
@@ -436,7 +483,8 @@ class State(AstExportable, PlantUMLExportable):
             retval.append(None)
         return retval
 
-    def list_on_enters(self, is_abstract: Optional[bool] = None, with_ids: bool = False) -> List[OnStage]:
+    def list_on_enters(self, is_abstract: Optional[bool] = None, with_ids: bool = False) \
+            -> List[Union[Tuple[int, OnStage], OnStage]]:
         retval = []
         for id_, item in enumerate(self.on_enters, 1):
             if (is_abstract is not None and
@@ -469,7 +517,7 @@ class State(AstExportable, PlantUMLExportable):
         return self.list_on_enters(is_abstract=False, with_ids=False)
 
     def list_on_durings(self, is_abstract: Optional[bool] = None, aspect: Optional[str] = None,
-                        with_ids: bool = False) -> List[OnStage]:
+                        with_ids: bool = False) -> List[Union[Tuple[int, OnStage], OnStage]]:
         retval = []
         for id_, item in enumerate(self.on_durings, 1):
             if (is_abstract is not None and
@@ -504,7 +552,8 @@ class State(AstExportable, PlantUMLExportable):
         """
         return self.list_on_durings(is_abstract=False, with_ids=False)
 
-    def list_on_exits(self, is_abstract: Optional[bool] = None, with_ids: bool = False) -> List[OnStage]:
+    def list_on_exits(self, is_abstract: Optional[bool] = None, with_ids: bool = False) \
+            -> List[Union[Tuple[int, OnStage], OnStage]]:
         retval = []
         for id_, item in enumerate(self.on_exits, 1):
             if (is_abstract is not None and
@@ -535,6 +584,79 @@ class State(AstExportable, PlantUMLExportable):
         :rtype: List[OnStage]
         """
         return self.list_on_exits(is_abstract=False, with_ids=False)
+
+    def list_on_during_aspects(self, is_abstract: Optional[bool] = None, aspect: Optional[str] = None,
+                               with_ids: bool = False) -> List[Union[Tuple[int, OnAspect], OnAspect]]:
+        retval = []
+        for id_, item in enumerate(self.on_during_aspects, 1):
+            if (is_abstract is not None and
+                    ((item.is_abstract and not is_abstract) or (not item.is_abstract and is_abstract))):
+                continue
+            if aspect is not None and item.aspect != aspect:
+                continue
+
+            if with_ids:
+                retval.append((id_, item))
+            else:
+                retval.append(item)
+        return retval
+
+    @property
+    def abstract_on_during_aspects(self) -> List[OnAspect]:
+        """
+        Get all abstract during actions.
+
+        :return: List of abstract during actions
+        :rtype: List[OnAspect]
+        """
+        return self.list_on_during_aspects(is_abstract=True, with_ids=False)
+
+    @property
+    def non_abstract_on_during_aspects(self) -> List[OnAspect]:
+        """
+        Get all non-abstract during actions.
+
+        :return: List of non-abstract during actions
+        :rtype: List[OnAspect]
+        """
+        return self.list_on_during_aspects(is_abstract=False, with_ids=False)
+
+    def iter_on_during_before_aspect_recursively(self, is_abstract: Optional[bool] = None, with_ids: bool = False) \
+            -> List[Union[Tuple[int, 'State', Union[OnAspect, OnStage]], Tuple['State', Union[OnAspect, OnStage]]]]:
+        if self.parent is not None:
+            yield from self.parent.iter_on_during_before_aspect_recursively(is_abstract=is_abstract, with_ids=with_ids)
+        if with_ids:
+            for id_, item in self.list_on_during_aspects(is_abstract=is_abstract, aspect='before', with_ids=with_ids):
+                yield id_, self, item
+        else:
+            for item in self.list_on_during_aspects(is_abstract=is_abstract, aspect='before', with_ids=with_ids):
+                yield self, item
+
+    def iter_on_during_after_aspect_recursively(self, is_abstract: Optional[bool] = None, with_ids: bool = False) \
+            -> List[Union[Tuple[int, 'State', Union[OnAspect, OnStage]], Tuple['State', Union[OnAspect, OnStage]]]]:
+        if with_ids:
+            for id_, item in self.list_on_during_aspects(is_abstract=is_abstract, aspect='after', with_ids=with_ids):
+                yield id_, self, item
+        else:
+            for item in self.list_on_during_aspects(is_abstract=is_abstract, aspect='after', with_ids=with_ids):
+                yield self, item
+        if self.parent is not None:
+            yield from self.parent.iter_on_during_after_aspect_recursively(is_abstract=is_abstract, with_ids=with_ids)
+
+    def iter_on_during_aspect_recursively(self, is_abstract: Optional[bool] = None, with_ids: bool = False) \
+            -> List[Union[Tuple[int, 'State', Union[OnAspect, OnStage]], Tuple['State', Union[OnAspect, OnStage]]]]:
+        yield from self.iter_on_during_before_aspect_recursively(is_abstract=is_abstract, with_ids=with_ids)
+        if with_ids:
+            for id_, item in self.list_on_durings(is_abstract=is_abstract, aspect=None, with_ids=with_ids):
+                yield id_, self, item
+        else:
+            for item in self.list_on_durings(is_abstract=is_abstract, aspect=None, with_ids=with_ids):
+                yield self, item
+        yield from self.iter_on_during_after_aspect_recursively(is_abstract=is_abstract, with_ids=with_ids)
+
+    def list_on_during_aspect_recursively(self, is_abstract: Optional[bool] = None, with_ids: bool = False) \
+            -> List[Union[Tuple[int, 'State', Union[OnAspect, OnStage]], Tuple['State', Union[OnAspect, OnStage]]]]:
+        return list(self.iter_on_during_aspect_recursively(is_abstract, with_ids))
 
     @classmethod
     def transition_to_ast_node(cls, self: Optional['State'], transition: Transition):
@@ -592,6 +714,7 @@ class State(AstExportable, PlantUMLExportable):
             enters=[item.to_ast_node() for item in self.on_enters],
             durings=[item.to_ast_node() for item in self.on_durings],
             exits=[item.to_ast_node() for item in self.on_exits],
+            during_aspects=[item.to_ast_node() for item in self.on_during_aspects],
         )
 
     def to_plantuml(self) -> str:
@@ -965,6 +1088,38 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                     operations=[],
                 ))
 
+        on_during_aspects = []
+        for during_aspect_item in node.during_aspects:
+            if isinstance(during_aspect_item, dsl_nodes.DuringAspectOperations):
+                during_operations = []
+                for op_item in during_aspect_item.operations:
+                    operation_val = parse_expr_node_to_expr(op_item.expr)
+                    unknown_vars = []
+                    for var in operation_val.list_variables():
+                        if var.name not in d_defines:
+                            unknown_vars.append(var.name)
+                    if op_item.name not in d_defines and op_item.name not in unknown_vars:
+                        unknown_vars.append(op_item.name)
+                    if unknown_vars:
+                        raise SyntaxError(
+                            f'Unknown during operation variable {", ".join(unknown_vars)} in transition:\n{during_aspect_item}')
+                    during_operations.append(Operation(var_name=op_item.name, expr=operation_val))
+                on_during_aspects.append(OnAspect(
+                    stage='during',
+                    aspect=during_aspect_item.aspect,
+                    name=during_aspect_item.name,
+                    doc=None,
+                    operations=during_operations,
+                ))
+            elif isinstance(during_aspect_item, dsl_nodes.DuringAspectAbstractFunction):
+                on_during_aspects.append(OnAspect(
+                    stage='during',
+                    aspect=during_aspect_item.aspect,
+                    name=during_aspect_item.name,
+                    doc=during_aspect_item.doc,
+                    operations=[],
+                ))
+
         my_state = State(
             name=node.name,
             path=current_path,
@@ -974,6 +1129,7 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
             on_enters=on_enters,
             on_durings=on_durings,
             on_exits=on_exits,
+            on_during_aspects=on_during_aspects,
             parent_ref=None,
         )
         for _, substate in d_substates.items():

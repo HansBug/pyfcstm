@@ -244,6 +244,8 @@ class GrammarParseListener(GrammarListener):
                      if item in self.nodes and isinstance(self.nodes[item], DuringStatement)],
             exits=[self.nodes[item] for item in ctx.state_inner_statement()
                    if item in self.nodes and isinstance(self.nodes[item], ExitStatement)],
+            during_aspects=[self.nodes[item] for item in ctx.state_inner_statement()
+                            if item in self.nodes and isinstance(self.nodes[item], DuringAspectStatement)],
         )
 
     def exitEntryTransitionDefinition(self, ctx: GrammarParser.EntryTransitionDefinitionContext):

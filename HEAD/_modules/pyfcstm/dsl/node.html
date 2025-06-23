@@ -139,11 +139,13 @@
     <span class="s1">&#39;Operation&#39;</span><span class="p">,</span>
     <span class="s1">&#39;Condition&#39;</span><span class="p">,</span>
     <span class="s1">&#39;TransitionDefinition&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;ForceTransitionDefinition&#39;</span><span class="p">,</span>
     <span class="s1">&#39;StateDefinition&#39;</span><span class="p">,</span>
     <span class="s1">&#39;OperationAssignment&#39;</span><span class="p">,</span>
     <span class="s1">&#39;StateMachineDSLProgram&#39;</span><span class="p">,</span>
     <span class="s1">&#39;INIT_STATE&#39;</span><span class="p">,</span>
     <span class="s1">&#39;EXIT_STATE&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;ALL&#39;</span><span class="p">,</span>
     <span class="s1">&#39;EnterStatement&#39;</span><span class="p">,</span>
     <span class="s1">&#39;EnterOperations&#39;</span><span class="p">,</span>
     <span class="s1">&#39;EnterAbstractFunction&#39;</span><span class="p">,</span>
@@ -1101,6 +1103,8 @@
 <span class="sd">This is used to define transitions to the final pseudo-state.</span>
 <span class="sd">&quot;&quot;&quot;</span>
 
+<span class="n">ALL</span> <span class="o">=</span> <span class="n">_StateSingletonMark</span><span class="p">(</span><span class="s1">&#39;ALL&#39;</span><span class="p">)</span>
+
 
 <div class="viewcode-block" id="TransitionDefinition">
 <a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.TransitionDefinition">[docs]</a>
@@ -1179,6 +1183,35 @@
 
 
 
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">ForceTransitionDefinition</span><span class="p">(</span><span class="n">ASTNode</span><span class="p">):</span>
+    <span class="n">from_state</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">_StateSingletonMark</span><span class="p">]</span>
+    <span class="n">to_state</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">_StateSingletonMark</span><span class="p">]</span>
+    <span class="n">event_id</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">ChainID</span><span class="p">]</span>
+    <span class="n">condition_expr</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Expr</span><span class="p">]</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">with</span> <span class="n">io</span><span class="o">.</span><span class="n">StringIO</span><span class="p">()</span> <span class="k">as</span> <span class="n">sf</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;! &#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sf</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;*&#39;</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">from_state</span> <span class="ow">is</span> <span class="n">ALL</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">from_state</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sf</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s1">&#39; -&gt; &#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sf</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;[*]&#39;</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">to_state</span> <span class="ow">is</span> <span class="n">EXIT_STATE</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">to_state</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sf</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">event_id</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">event_id</span><span class="o">.</span><span class="n">is_absolute</span> <span class="ow">and</span> \
+                        <span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">from_state</span> <span class="ow">is</span> <span class="n">ALL</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">event_id</span><span class="o">.</span><span class="n">path</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">)</span> <span class="ow">or</span>
+                         <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">from_state</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">ALL</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">event_id</span><span class="o">.</span><span class="n">path</span><span class="p">)</span> <span class="o">==</span> <span class="mi">2</span> <span class="ow">and</span>
+                          <span class="bp">self</span><span class="o">.</span><span class="n">event_id</span><span class="o">.</span><span class="n">path</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">from_state</span><span class="p">)):</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39; :: </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">event_id</span><span class="o">.</span><span class="n">path</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sf</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39; : </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">event_id</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sf</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">condition_expr</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39; : if [</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">condition_expr</span><span class="si">}</span><span class="s1">]&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sf</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+
+            <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;;&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sf</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">sf</span><span class="o">.</span><span class="n">getvalue</span><span class="p">()</span>
+
+
 <div class="viewcode-block" id="StateDefinition">
 <a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.StateDefinition">[docs]</a>
 <span class="nd">@dataclass</span>
@@ -1222,10 +1255,12 @@
     <span class="n">durings</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="s1">&#39;DuringStatement&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="n">exits</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="s1">&#39;ExitStatement&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="n">during_aspects</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="s1">&#39;DuringAspectStatement&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">force_transitions</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="s1">&#39;ForceTransitionDefinition&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">__post_init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">substates</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">substates</span> <span class="ow">or</span> <span class="p">[]</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">transitions</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transitions</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">force_transitions</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">force_transitions</span> <span class="ow">or</span> <span class="p">[]</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">enters</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">enters</span> <span class="ow">or</span> <span class="p">[]</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">durings</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">durings</span> <span class="ow">or</span> <span class="p">[]</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">exits</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">exits</span> <span class="ow">or</span> <span class="p">[]</span>

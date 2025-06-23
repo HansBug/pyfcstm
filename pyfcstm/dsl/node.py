@@ -1449,15 +1449,9 @@ class DuringAspectOperations(DuringAspectStatement):
         """
         with io.StringIO() as f:
             if self.name:
-                if self.aspect:
-                    print(f'>> during {self.aspect} {self.name} {{', file=f)
-                else:
-                    print(f'>> during {self.name} {{', file=f)
+                print(f'>> during {self.aspect} {self.name} {{', file=f)
             else:
-                if self.aspect:
-                    print(f'>> during {self.aspect} {{', file=f)
-                else:
-                    print(f'>> during {{', file=f)
+                print(f'>> during {self.aspect} {{', file=f)
             for operation in self.operations:
                 print(f'    {operation}', file=f)
             print('}', file=f, end='')
@@ -1489,7 +1483,7 @@ class DuringAspectAbstractFunction(DuringAspectStatement):
         */
     """
     name: Optional[str]
-    aspect: Optional[str]
+    aspect: str
     doc: Optional[str]
 
     def __str__(self):
@@ -1501,15 +1495,9 @@ class DuringAspectAbstractFunction(DuringAspectStatement):
         """
         with io.StringIO() as f:
             if self.name:
-                if self.aspect:
-                    print(f'>> during {self.aspect} abstract {self.name}', file=f, end='')
-                else:
-                    print(f'>> during abstract {self.name}', file=f, end='')
+                print(f'>> during {self.aspect} abstract {self.name}', file=f, end='')
             else:
-                if self.aspect:
-                    print(f'>> during {self.aspect} abstract', file=f, end='')
-                else:
-                    print(f'>> during abstract', file=f, end='')
+                print(f'>> during {self.aspect} abstract', file=f, end='')
 
             if self.doc is not None:
                 print(' /*', file=f)

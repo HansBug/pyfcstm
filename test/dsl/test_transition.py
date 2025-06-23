@@ -100,6 +100,38 @@ class TestDSLTransition:
                                   OperationAssignment(name='a', expr=UFunc(func='sqrt', expr=Name(name='b'))),
                                   OperationAssignment(name='e', expr=Integer(raw='40'))])),
         # Exit transition with multiple effect actions
+        (
+                """
+                A -> B : /XXX;
+                """,
+                TransitionDefinition(from_state='A', to_state='B', event_id=ChainID(path=['XXX'], is_absolute=True),
+                                     condition_expr=None, post_operations=[])
+        ),  # absolute event path
+        (
+                """
+                A -> B : /XXX effect { x = 1; }
+                """,
+                TransitionDefinition(from_state='A', to_state='B', event_id=ChainID(path=['XXX'], is_absolute=True),
+                                     condition_expr=None,
+                                     post_operations=[OperationAssignment(name='x', expr=Integer(raw='1'))])
+        ),  # absolute event path with effect
+        (
+                """
+                A -> B : /XXX.YYY;
+                """,
+                TransitionDefinition(from_state='A', to_state='B',
+                                     event_id=ChainID(path=['XXX', 'YYY'], is_absolute=True), condition_expr=None,
+                                     post_operations=[])
+        ),  # absolute event path with chain
+        (
+                """
+                A -> B : /XXX.YYY.ZZZ effect { x = 1; }
+                """,
+                TransitionDefinition(from_state='A', to_state='B',
+                                     event_id=ChainID(path=['XXX', 'YYY', 'ZZZ'], is_absolute=True),
+                                     condition_expr=None,
+                                     post_operations=[OperationAssignment(name='x', expr=Integer(raw='1'))])
+        ),  # absolute event path with chain and effect
     ])
     def test_positive_cases(self, input_text, expected):
         assert parse_with_grammar_entry(input_text, entry_name='transition_definition') == expected
@@ -133,6 +165,30 @@ class TestDSLTransition:
         # Exit transition with complex condition
         ('StateG -> [*] effect { a = sqrt(b); e = 40; }', 'StateG -> [*] effect {\n    a = sqrt(b);\n    e = 40;\n}'),
         # Exit transition with multiple effect actions
+        (
+                """
+                A -> B : /XXX;
+                """,
+                'A -> B : /XXX;'
+        ),  # absolute event path
+        (
+                """
+                A -> B : /XXX effect { x = 1; }
+                """,
+                'A -> B : /XXX effect {\n    x = 1;\n}'
+        ),  # absolute event path with effect
+        (
+                """
+                A -> B : /XXX.YYY;
+                """,
+                'A -> B : /XXX.YYY;'
+        ),  # absolute event path with chain
+        (
+                """
+                A -> B : /XXX.YYY.ZZZ effect { x = 1; }
+                """,
+                'A -> B : /XXX.YYY.ZZZ effect {\n    x = 1;\n}'
+        ),  # absolute event path with chain and effect
     ])
     def test_positive_cases_str(self, input_text, expected_str, text_aligner):
         text_aligner.assert_equal(
@@ -166,6 +222,16 @@ class TestDSLTransition:
         ('StateDD -> StateEE effect { a = ; };',),  # Missing expression in effect action
         ('[*] -> StateFFA: if x > 10] effect { a = 5; };',),  # Missing opening bracket in condition
         ('StateGG -> [*]: chain10: if [x > 10 effect { a = 5; };',),  # Missing closing bracket in condition
+        (
+                """
+                A -> B :: /XXX;
+                """,
+        ),  # absolute event path with ::, error
+        (
+                """
+                A -> B : / effect { x = 1; }
+                """,
+        ),  # absolute event path with effect and empty absolute path, error
     ])
     def test_negative_cases(self, input_text):
         with pytest.raises(GrammarParseError) as ei:

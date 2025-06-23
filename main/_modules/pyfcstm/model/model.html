@@ -103,7 +103,6 @@
 <span class="sd">- Abstract function declarations</span>
 <span class="sd">- Variable definitions</span>
 <span class="sd">&quot;&quot;&quot;</span>
-
 <span class="kn">import</span><span class="w"> </span><span class="nn">io</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">weakref</span>
@@ -1098,17 +1097,92 @@
 
     <span class="n">root_state</span> <span class="o">=</span> <span class="n">_recursive_build_states</span><span class="p">(</span><span class="n">dnode</span><span class="o">.</span><span class="n">root_state</span><span class="p">,</span> <span class="n">current_path</span><span class="o">=</span><span class="p">())</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">_recursive_finish_states</span><span class="p">(</span><span class="n">node</span><span class="p">:</span> <span class="n">dsl_nodes</span><span class="o">.</span><span class="n">StateDefinition</span><span class="p">,</span> <span class="n">current_state</span><span class="p">:</span> <span class="n">State</span><span class="p">,</span> <span class="n">current_path</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_recursive_finish_states</span><span class="p">(</span><span class="n">node</span><span class="p">:</span> <span class="n">dsl_nodes</span><span class="o">.</span><span class="n">StateDefinition</span><span class="p">,</span> <span class="n">current_state</span><span class="p">:</span> <span class="n">State</span><span class="p">,</span> <span class="n">current_path</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
+                                 <span class="n">force_transitions</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">dsl_nodes</span><span class="o">.</span><span class="n">ForceTransitionDefinition</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
         <span class="n">current_path</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">((</span><span class="o">*</span><span class="n">current_path</span><span class="p">,</span> <span class="n">current_state</span><span class="o">.</span><span class="n">name</span><span class="p">))</span>
+        <span class="n">force_transitions</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">force_transitions</span> <span class="ow">or</span> <span class="p">[])</span>
 
+        <span class="n">force_transition_tuples_to_inherit</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">f_transnode</span> <span class="ow">in</span> <span class="p">[</span><span class="o">*</span><span class="n">force_transitions</span><span class="p">,</span> <span class="o">*</span><span class="n">node</span><span class="o">.</span><span class="n">force_transitions</span><span class="p">]:</span>
+            <span class="k">if</span> <span class="n">f_transnode</span><span class="o">.</span><span class="n">from_state</span> <span class="o">==</span> <span class="n">dsl_nodes</span><span class="o">.</span><span class="n">ALL</span><span class="p">:</span>
+                <span class="n">from_state</span> <span class="o">=</span> <span class="n">dsl_nodes</span><span class="o">.</span><span class="n">ALL</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">from_state</span> <span class="o">=</span> <span class="n">f_transnode</span><span class="o">.</span><span class="n">from_state</span>
+                <span class="k">if</span> <span class="n">from_state</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">current_state</span><span class="o">.</span><span class="n">substates</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="ne">SyntaxError</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;Unknown from state </span><span class="si">{</span><span class="n">from_state</span><span class="si">!r}</span><span class="s1"> of force transition:</span><span class="se">\n</span><span class="si">{</span><span class="n">f_transnode</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">f_transnode</span><span class="o">.</span><span class="n">to_state</span> <span class="ow">is</span> <span class="n">dsl_nodes</span><span class="o">.</span><span class="n">EXIT_STATE</span><span class="p">:</span>
+                <span class="n">to_state</span> <span class="o">=</span> <span class="n">dsl_nodes</span><span class="o">.</span><span class="n">EXIT_STATE</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">to_state</span> <span class="o">=</span> <span class="n">f_transnode</span><span class="o">.</span><span class="n">to_state</span>
+                <span class="k">if</span> <span class="n">to_state</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">current_state</span><span class="o">.</span><span class="n">substates</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="ne">SyntaxError</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;Unknown to state </span><span class="si">{</span><span class="n">to_state</span><span class="si">!r}</span><span class="s1"> of force transition:</span><span class="se">\n</span><span class="si">{</span><span class="n">f_transnode</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
+
+            <span class="n">my_event_id</span><span class="p">,</span> <span class="n">trans_event</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span>
+            <span class="k">if</span> <span class="n">f_transnode</span><span class="o">.</span><span class="n">event_id</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">my_event_id</span> <span class="o">=</span> <span class="n">f_transnode</span><span class="o">.</span><span class="n">event_id</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">my_event_id</span><span class="o">.</span><span class="n">is_absolute</span><span class="p">:</span>
+                    <span class="n">my_event_id</span> <span class="o">=</span> <span class="n">dsl_nodes</span><span class="o">.</span><span class="n">ChainID</span><span class="p">(</span>
+                        <span class="n">path</span><span class="o">=</span><span class="p">[</span><span class="o">*</span><span class="n">current_state</span><span class="o">.</span><span class="n">path</span><span class="p">[</span><span class="mi">1</span><span class="p">:],</span> <span class="o">*</span><span class="n">my_event_id</span><span class="o">.</span><span class="n">path</span><span class="p">],</span>
+                        <span class="n">is_absolute</span><span class="o">=</span><span class="kc">True</span>
+                    <span class="p">)</span>
+                <span class="n">start_state</span> <span class="o">=</span> <span class="n">root_state</span>
+                <span class="n">base_path</span> <span class="o">=</span> <span class="p">(</span><span class="n">root_state</span><span class="o">.</span><span class="n">name</span><span class="p">,)</span>
+                <span class="k">for</span> <span class="n">seg</span> <span class="ow">in</span> <span class="n">my_event_id</span><span class="o">.</span><span class="n">path</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]:</span>
+                    <span class="k">if</span> <span class="n">seg</span> <span class="ow">in</span> <span class="n">start_state</span><span class="o">.</span><span class="n">substates</span><span class="p">:</span>
+                        <span class="n">start_state</span> <span class="o">=</span> <span class="n">start_state</span><span class="o">.</span><span class="n">substates</span><span class="p">[</span><span class="n">seg</span><span class="p">]</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="k">raise</span> <span class="ne">SyntaxError</span><span class="p">(</span>
+                            <span class="sa">f</span><span class="s1">&#39;Cannot find state </span><span class="si">{</span><span class="s2">&quot;.&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">((</span><span class="o">*</span><span class="n">base_path</span><span class="p">,</span><span class="w"> </span><span class="o">*</span><span class="n">my_event_id</span><span class="o">.</span><span class="n">path</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]))</span><span class="si">}</span><span class="s1"> for transition:</span><span class="se">\n</span><span class="si">{</span><span class="n">f_transnode</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
+
+                <span class="n">suffix_name</span> <span class="o">=</span> <span class="n">my_event_id</span><span class="o">.</span><span class="n">path</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+                <span class="k">if</span> <span class="n">suffix_name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">start_state</span><span class="o">.</span><span class="n">events</span><span class="p">:</span>
+                    <span class="n">start_state</span><span class="o">.</span><span class="n">events</span><span class="p">[</span><span class="n">suffix_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">Event</span><span class="p">(</span>
+                        <span class="n">name</span><span class="o">=</span><span class="n">suffix_name</span><span class="p">,</span>
+                        <span class="n">state_path</span><span class="o">=</span><span class="n">start_state</span><span class="o">.</span><span class="n">path</span><span class="p">,</span>
+                    <span class="p">)</span>
+                <span class="n">trans_event</span> <span class="o">=</span> <span class="n">start_state</span><span class="o">.</span><span class="n">events</span><span class="p">[</span><span class="n">suffix_name</span><span class="p">]</span>
+
+            <span class="n">condition_expr</span><span class="p">,</span> <span class="n">guard</span> <span class="o">=</span> <span class="n">f_transnode</span><span class="o">.</span><span class="n">condition_expr</span><span class="p">,</span> <span class="kc">None</span>
+            <span class="k">if</span> <span class="n">f_transnode</span><span class="o">.</span><span class="n">condition_expr</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">guard</span> <span class="o">=</span> <span class="n">parse_expr_node_to_expr</span><span class="p">(</span><span class="n">f_transnode</span><span class="o">.</span><span class="n">condition_expr</span><span class="p">)</span>
+                <span class="n">unknown_vars</span> <span class="o">=</span> <span class="p">[]</span>
+                <span class="k">for</span> <span class="n">var</span> <span class="ow">in</span> <span class="n">guard</span><span class="o">.</span><span class="n">list_variables</span><span class="p">():</span>
+                    <span class="k">if</span> <span class="n">var</span><span class="o">.</span><span class="n">name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">d_defines</span><span class="p">:</span>
+                        <span class="n">unknown_vars</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">var</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">unknown_vars</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="ne">SyntaxError</span><span class="p">(</span>
+                        <span class="sa">f</span><span class="s1">&#39;Unknown guard variable </span><span class="si">{</span><span class="s2">&quot;, &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">unknown_vars</span><span class="p">)</span><span class="si">}</span><span class="s1"> in force transition:</span><span class="se">\n</span><span class="si">{</span><span class="n">f_transnode</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
+
+            <span class="n">force_transition_tuples_to_inherit</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="p">(</span><span class="n">from_state</span><span class="p">,</span> <span class="n">to_state</span><span class="p">,</span> <span class="n">my_event_id</span><span class="p">,</span> <span class="n">trans_event</span><span class="p">,</span> <span class="n">condition_expr</span><span class="p">,</span> <span class="n">guard</span><span class="p">))</span>
+
+        <span class="n">transitions</span> <span class="o">=</span> <span class="n">current_state</span><span class="o">.</span><span class="n">transitions</span>
         <span class="k">for</span> <span class="n">subnode</span> <span class="ow">in</span> <span class="n">node</span><span class="o">.</span><span class="n">substates</span><span class="p">:</span>
+            <span class="n">_inner_force_transitions</span> <span class="o">=</span> <span class="p">[</span><span class="o">*</span><span class="n">force_transitions</span><span class="p">]</span>
+            <span class="k">for</span> <span class="n">from_state</span><span class="p">,</span> <span class="n">to_state</span><span class="p">,</span> <span class="n">my_event_id</span><span class="p">,</span> <span class="n">trans_event</span><span class="p">,</span> <span class="n">condition_expr</span><span class="p">,</span> <span class="n">guard</span> <span class="ow">in</span> <span class="n">force_transition_tuples_to_inherit</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">from_state</span> <span class="ow">is</span> <span class="n">dsl_nodes</span><span class="o">.</span><span class="n">ALL</span> <span class="ow">or</span> <span class="n">from_state</span> <span class="o">==</span> <span class="n">subnode</span><span class="o">.</span><span class="n">name</span><span class="p">:</span>
+                    <span class="n">transitions</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">Transition</span><span class="p">(</span>
+                        <span class="n">from_state</span><span class="o">=</span><span class="n">subnode</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
+                        <span class="n">to_state</span><span class="o">=</span><span class="n">to_state</span><span class="p">,</span>
+                        <span class="n">event</span><span class="o">=</span><span class="n">trans_event</span><span class="p">,</span>
+                        <span class="n">guard</span><span class="o">=</span><span class="n">guard</span><span class="p">,</span>
+                        <span class="n">effects</span><span class="o">=</span><span class="p">[],</span>
+                    <span class="p">))</span>
+                    <span class="n">_inner_force_transitions</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">dsl_nodes</span><span class="o">.</span><span class="n">ForceTransitionDefinition</span><span class="p">(</span>
+                        <span class="n">from_state</span><span class="o">=</span><span class="n">dsl_nodes</span><span class="o">.</span><span class="n">ALL</span><span class="p">,</span>
+                        <span class="n">to_state</span><span class="o">=</span><span class="n">dsl_nodes</span><span class="o">.</span><span class="n">EXIT_STATE</span><span class="p">,</span>
+                        <span class="n">event_id</span><span class="o">=</span><span class="n">my_event_id</span><span class="p">,</span>
+                        <span class="n">condition_expr</span><span class="o">=</span><span class="n">condition_expr</span><span class="p">,</span>
+                    <span class="p">))</span>
+
             <span class="n">_recursive_finish_states</span><span class="p">(</span>
                 <span class="n">node</span><span class="o">=</span><span class="n">subnode</span><span class="p">,</span>
                 <span class="n">current_state</span><span class="o">=</span><span class="n">current_state</span><span class="o">.</span><span class="n">substates</span><span class="p">[</span><span class="n">subnode</span><span class="o">.</span><span class="n">name</span><span class="p">],</span>
                 <span class="n">current_path</span><span class="o">=</span><span class="n">current_path</span><span class="p">,</span>
+                <span class="n">force_transitions</span><span class="o">=</span><span class="n">_inner_force_transitions</span><span class="p">,</span>
             <span class="p">)</span>
 
-        <span class="n">transitions</span> <span class="o">=</span> <span class="n">current_state</span><span class="o">.</span><span class="n">transitions</span>
         <span class="n">has_entry_trans</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="k">for</span> <span class="n">transnode</span> <span class="ow">in</span> <span class="n">node</span><span class="o">.</span><span class="n">transitions</span><span class="p">:</span>
             <span class="k">if</span> <span class="n">transnode</span><span class="o">.</span><span class="n">from_state</span> <span class="ow">is</span> <span class="n">dsl_nodes</span><span class="o">.</span><span class="n">INIT_STATE</span><span class="p">:</span>

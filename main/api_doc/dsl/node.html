@@ -163,6 +163,10 @@
 <li class="toctree-l4"><a class="reference internal" href="#pyfcstm.dsl.node.TransitionDefinition"><code class="docutils literal notranslate"><span class="pre">TransitionDefinition</span></code></a></li>
 </ul>
 </li>
+<li class="toctree-l3"><a class="reference internal" href="#forcetransitiondefinition">ForceTransitionDefinition</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#pyfcstm.dsl.node.ForceTransitionDefinition"><code class="docutils literal notranslate"><span class="pre">ForceTransitionDefinition</span></code></a></li>
+</ul>
+</li>
 <li class="toctree-l3"><a class="reference internal" href="#statedefinition">StateDefinition</a><ul>
 <li class="toctree-l4"><a class="reference internal" href="#pyfcstm.dsl.node.StateDefinition"><code class="docutils literal notranslate"><span class="pre">StateDefinition</span></code></a></li>
 </ul>
@@ -211,6 +215,18 @@
 <li class="toctree-l4"><a class="reference internal" href="#pyfcstm.dsl.node.DuringAbstractFunction"><code class="docutils literal notranslate"><span class="pre">DuringAbstractFunction</span></code></a></li>
 </ul>
 </li>
+<li class="toctree-l3"><a class="reference internal" href="#duringaspectstatement">DuringAspectStatement</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#pyfcstm.dsl.node.DuringAspectStatement"><code class="docutils literal notranslate"><span class="pre">DuringAspectStatement</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#duringaspectoperations">DuringAspectOperations</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#pyfcstm.dsl.node.DuringAspectOperations"><code class="docutils literal notranslate"><span class="pre">DuringAspectOperations</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#duringaspectabstractfunction">DuringAspectAbstractFunction</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#pyfcstm.dsl.node.DuringAspectAbstractFunction"><code class="docutils literal notranslate"><span class="pre">DuringAspectAbstractFunction</span></code></a></li>
+</ul>
+</li>
 <li class="toctree-l3"><a class="reference internal" href="#init-state">INIT_STATE</a><ul>
 <li class="toctree-l4"><a class="reference internal" href="#pyfcstm.dsl.node.INIT_STATE"><code class="docutils literal notranslate"><span class="pre">INIT_STATE</span></code></a></li>
 </ul>
@@ -219,11 +235,16 @@
 <li class="toctree-l4"><a class="reference internal" href="#pyfcstm.dsl.node.EXIT_STATE"><code class="docutils literal notranslate"><span class="pre">EXIT_STATE</span></code></a></li>
 </ul>
 </li>
+<li class="toctree-l3"><a class="reference internal" href="#all">ALL</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#pyfcstm.dsl.node.ALL"><code class="docutils literal notranslate"><span class="pre">ALL</span></code></a></li>
+</ul>
+</li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="parse.html">pyfcstm.dsl.parse</a></li>
 </ul>
 </li>
+<li class="toctree-l1"><a class="reference internal" href="../entry/index.html">pyfcstm.entry</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../model/index.html">pyfcstm.model</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../render/index.html">pyfcstm.render</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../utils/index.html">pyfcstm.utils</a></li>
@@ -384,23 +405,6 @@ booleans, or predefined constants.</p>
 </dl>
 </dd></dl>
 
-<dl class="py method">
-<dt class="sig sig-object py" id="pyfcstm.dsl.node.Literal._value">
-<span class="sig-name descname"><span class="pre">_value</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/pyfcstm/dsl/node.html#Literal._value"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.dsl.node.Literal._value" title="Link to this definition"></a></dt>
-<dd><p>Internal method to evaluate the literal’s value.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Returns<span class="colon">:</span></dt>
-<dd class="field-odd"><p>The evaluated value of the literal</p>
-</dd>
-<dt class="field-even">Return type<span class="colon">:</span></dt>
-<dd class="field-even"><p>Any</p>
-</dd>
-<dt class="field-odd">Raises<span class="colon">:</span></dt>
-<dd class="field-odd"><p><strong>NotImplementedError</strong> – This method must be implemented by subclasses</p>
-</dd>
-</dl>
-</dd></dl>
-
 <dl class="py property">
 <dt class="sig sig-object py" id="pyfcstm.dsl.node.Literal.value">
 <em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">value</span></span><a class="headerlink" href="#pyfcstm.dsl.node.Literal.value" title="Link to this definition"></a></dt>
@@ -445,15 +449,29 @@ booleans, or predefined constants.</p>
 </dd></dl>
 
 <dl class="py method">
-<dt class="sig sig-object py" id="pyfcstm.dsl.node.Boolean._value">
-<span class="sig-name descname"><span class="pre">_value</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/pyfcstm/dsl/node.html#Boolean._value"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.dsl.node.Boolean._value" title="Link to this definition"></a></dt>
-<dd><p>Convert the raw string to a boolean value.</p>
+<dt class="sig sig-object py" id="pyfcstm.dsl.node.Boolean.__str__">
+<span class="sig-name descname"><span class="pre">__str__</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#pyfcstm.dsl.node.Boolean.__str__" title="Link to this definition"></a></dt>
+<dd><p>Convert the literal to its string representation.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Returns<span class="colon">:</span></dt>
-<dd class="field-odd"><p>The boolean value</p>
+<dd class="field-odd"><p>String representation of the literal’s value</p>
 </dd>
 <dt class="field-even">Return type<span class="colon">:</span></dt>
-<dd class="field-even"><p>bool</p>
+<dd class="field-even"><p>str</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="pyfcstm.dsl.node.Boolean.value">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">value</span></span><a class="headerlink" href="#pyfcstm.dsl.node.Boolean.value" title="Link to this definition"></a></dt>
+<dd><p>Get the actual value of the literal.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>The evaluated value of the literal</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>Any</p>
 </dd>
 </dl>
 </dd></dl>
@@ -481,16 +499,16 @@ booleans, or predefined constants.</p>
 <span class="go">42</span>
 </pre></div>
 </div>
-<dl class="py method">
-<dt class="sig sig-object py" id="pyfcstm.dsl.node.Integer._value">
-<span class="sig-name descname"><span class="pre">_value</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/pyfcstm/dsl/node.html#Integer._value"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.dsl.node.Integer._value" title="Link to this definition"></a></dt>
-<dd><p>Convert the raw string to an integer value.</p>
+<dl class="py property">
+<dt class="sig sig-object py" id="pyfcstm.dsl.node.Integer.value">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">value</span></span><a class="headerlink" href="#pyfcstm.dsl.node.Integer.value" title="Link to this definition"></a></dt>
+<dd><p>Get the actual value of the literal.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Returns<span class="colon">:</span></dt>
-<dd class="field-odd"><p>The integer value</p>
+<dd class="field-odd"><p>The evaluated value of the literal</p>
 </dd>
 <dt class="field-even">Return type<span class="colon">:</span></dt>
-<dd class="field-even"><p>int</p>
+<dd class="field-even"><p>Any</p>
 </dd>
 </dl>
 </dd></dl>
@@ -532,16 +550,16 @@ booleans, or predefined constants.</p>
 </dl>
 </dd></dl>
 
-<dl class="py method">
-<dt class="sig sig-object py" id="pyfcstm.dsl.node.HexInt._value">
-<span class="sig-name descname"><span class="pre">_value</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/pyfcstm/dsl/node.html#HexInt._value"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.dsl.node.HexInt._value" title="Link to this definition"></a></dt>
-<dd><p>Convert the raw hexadecimal string to an integer value.</p>
+<dl class="py property">
+<dt class="sig sig-object py" id="pyfcstm.dsl.node.HexInt.value">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">value</span></span><a class="headerlink" href="#pyfcstm.dsl.node.HexInt.value" title="Link to this definition"></a></dt>
+<dd><p>Get the actual value of the literal.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Returns<span class="colon">:</span></dt>
-<dd class="field-odd"><p>The integer value</p>
+<dd class="field-odd"><p>The evaluated value of the literal</p>
 </dd>
 <dt class="field-even">Return type<span class="colon">:</span></dt>
-<dd class="field-even"><p>int</p>
+<dd class="field-even"><p>Any</p>
 </dd>
 </dl>
 </dd></dl>
@@ -583,16 +601,16 @@ booleans, or predefined constants.</p>
 </dl>
 </dd></dl>
 
-<dl class="py method">
-<dt class="sig sig-object py" id="pyfcstm.dsl.node.Float._value">
-<span class="sig-name descname"><span class="pre">_value</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/pyfcstm/dsl/node.html#Float._value"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.dsl.node.Float._value" title="Link to this definition"></a></dt>
-<dd><p>Convert the raw string to a float value.</p>
+<dl class="py property">
+<dt class="sig sig-object py" id="pyfcstm.dsl.node.Float.value">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">value</span></span><a class="headerlink" href="#pyfcstm.dsl.node.Float.value" title="Link to this definition"></a></dt>
+<dd><p>Get the actual value of the literal.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Returns<span class="colon">:</span></dt>
-<dd class="field-odd"><p>The float value</p>
+<dd class="field-odd"><p>The evaluated value of the literal</p>
 </dd>
 <dt class="field-even">Return type<span class="colon">:</span></dt>
-<dd class="field-even"><p>float</p>
+<dd class="field-even"><p>Any</p>
 </dd>
 </dl>
 </dd></dl>
@@ -634,16 +652,16 @@ booleans, or predefined constants.</p>
 </dl>
 </dd></dl>
 
-<dl class="py method">
-<dt class="sig sig-object py" id="pyfcstm.dsl.node.Constant._value">
-<span class="sig-name descname"><span class="pre">_value</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/pyfcstm/dsl/node.html#Constant._value"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.dsl.node.Constant._value" title="Link to this definition"></a></dt>
-<dd><p>Get the value of the named constant.</p>
+<dl class="py property">
+<dt class="sig sig-object py" id="pyfcstm.dsl.node.Constant.value">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">value</span></span><a class="headerlink" href="#pyfcstm.dsl.node.Constant.value" title="Link to this definition"></a></dt>
+<dd><p>Get the actual value of the literal.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Returns<span class="colon">:</span></dt>
-<dd class="field-odd"><p>The constant’s value</p>
+<dd class="field-odd"><p>The evaluated value of the literal</p>
 </dd>
 <dt class="field-even">Return type<span class="colon">:</span></dt>
-<dd class="field-even"><p>float</p>
+<dd class="field-even"><p>Any</p>
 </dd>
 </dl>
 </dd></dl>
@@ -1258,11 +1276,56 @@ to events and conditions.</p>
 </dd></dl>
 
 </section>
+<section id="forcetransitiondefinition">
+<h2>ForceTransitionDefinition<a class="headerlink" href="#forcetransitiondefinition" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="pyfcstm.dsl.node.ForceTransitionDefinition">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pyfcstm.dsl.node.</span></span><span class="sig-name descname"><span class="pre">ForceTransitionDefinition</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">from_state</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">_StateSingletonMark</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">to_state</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">_StateSingletonMark</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">event_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#pyfcstm.dsl.node.ChainID" title="pyfcstm.dsl.node.ChainID"><span class="pre">ChainID</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">condition_expr</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#pyfcstm.dsl.node.Expr" title="pyfcstm.dsl.node.Expr"><span class="pre">Expr</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/pyfcstm/dsl/node.html#ForceTransitionDefinition"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.dsl.node.ForceTransitionDefinition" title="Link to this definition"></a></dt>
+<dd><p>Represents a forced transition definition in the state machine DSL.</p>
+<p>Forced transitions override normal transitions and are used for special cases
+like error handling or interrupts.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>from_state</strong> (<em>Union</em><em>[</em><em>str</em><em>, </em><em>_StateSingletonMark</em><em>]</em>) – The source state name or ALL singleton</p></li>
+<li><p><strong>to_state</strong> (<em>Union</em><em>[</em><em>str</em><em>, </em><em>_StateSingletonMark</em><em>]</em>) – The target state name or EXIT_STATE singleton</p></li>
+<li><p><strong>event_id</strong> (<em>Optional</em><em>[</em><a class="reference internal" href="#pyfcstm.dsl.node.ChainID" title="pyfcstm.dsl.node.ChainID"><em>ChainID</em></a><em>]</em>) – Optional event identifier that triggers the transition</p></li>
+<li><p><strong>condition_expr</strong> (<em>Optional</em><em>[</em><a class="reference internal" href="#pyfcstm.dsl.node.Expr" title="pyfcstm.dsl.node.Expr"><em>Expr</em></a><em>]</em>) – Optional condition expression that must be true for the transition</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference internal" href="#pyfcstm.dsl.node.ForceTransitionDefinition" title="pyfcstm.dsl.node.ForceTransitionDefinition">ForceTransitionDefinition</a></p>
+</dd>
+</dl>
+<p>Example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="c1"># Force transition from any state to &quot;error&quot; state</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">force_trans</span> <span class="o">=</span> <span class="n">ForceTransitionDefinition</span><span class="p">(</span><span class="n">ALL</span><span class="p">,</span> <span class="s2">&quot;error&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="nb">str</span><span class="p">(</span><span class="n">force_trans</span><span class="p">)</span>
+<span class="go">&#39;! * -&gt; error;&#39;</span>
+</pre></div>
+</div>
+<dl class="py method">
+<dt class="sig sig-object py" id="pyfcstm.dsl.node.ForceTransitionDefinition.__str__">
+<span class="sig-name descname"><span class="pre">__str__</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/pyfcstm/dsl/node.html#ForceTransitionDefinition.__str__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.dsl.node.ForceTransitionDefinition.__str__" title="Link to this definition"></a></dt>
+<dd><p>Convert the force transition definition to its string representation.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>String representation of the force transition definition</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>str</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</section>
 <section id="statedefinition">
 <h2>StateDefinition<a class="headerlink" href="#statedefinition" title="Link to this heading"></a></h2>
 <dl class="py class">
 <dt class="sig sig-object py" id="pyfcstm.dsl.node.StateDefinition">
-<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pyfcstm.dsl.node.</span></span><span class="sig-name descname"><span class="pre">StateDefinition</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">substates</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#pyfcstm.dsl.node.StateDefinition" title="pyfcstm.dsl.node.StateDefinition"><span class="pre">StateDefinition</span></a><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">transitions</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#pyfcstm.dsl.node.TransitionDefinition" title="pyfcstm.dsl.node.TransitionDefinition"><span class="pre">TransitionDefinition</span></a><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">enters</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#pyfcstm.dsl.node.EnterStatement" title="pyfcstm.dsl.node.EnterStatement"><span class="pre">EnterStatement</span></a><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">durings</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#pyfcstm.dsl.node.DuringStatement" title="pyfcstm.dsl.node.DuringStatement"><span class="pre">DuringStatement</span></a><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">exits</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#pyfcstm.dsl.node.ExitStatement" title="pyfcstm.dsl.node.ExitStatement"><span class="pre">ExitStatement</span></a><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">during_aspects</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">DuringAspectStatement</span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">force_transitions</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">ForceTransitionDefinition</span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/pyfcstm/dsl/node.html#StateDefinition"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.dsl.node.StateDefinition" title="Link to this definition"></a></dt>
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pyfcstm.dsl.node.</span></span><span class="sig-name descname"><span class="pre">StateDefinition</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">substates</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#pyfcstm.dsl.node.StateDefinition" title="pyfcstm.dsl.node.StateDefinition"><span class="pre">StateDefinition</span></a><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">transitions</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#pyfcstm.dsl.node.TransitionDefinition" title="pyfcstm.dsl.node.TransitionDefinition"><span class="pre">TransitionDefinition</span></a><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">enters</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#pyfcstm.dsl.node.EnterStatement" title="pyfcstm.dsl.node.EnterStatement"><span class="pre">EnterStatement</span></a><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">durings</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#pyfcstm.dsl.node.DuringStatement" title="pyfcstm.dsl.node.DuringStatement"><span class="pre">DuringStatement</span></a><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">exits</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#pyfcstm.dsl.node.ExitStatement" title="pyfcstm.dsl.node.ExitStatement"><span class="pre">ExitStatement</span></a><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">during_aspects</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#pyfcstm.dsl.node.DuringAspectStatement" title="pyfcstm.dsl.node.DuringAspectStatement"><span class="pre">DuringAspectStatement</span></a><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">force_transitions</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#pyfcstm.dsl.node.ForceTransitionDefinition" title="pyfcstm.dsl.node.ForceTransitionDefinition"><span class="pre">ForceTransitionDefinition</span></a><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/pyfcstm/dsl/node.html#StateDefinition"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.dsl.node.StateDefinition" title="Link to this definition"></a></dt>
 <dd><p>Represents a state definition in the state machine DSL.</p>
 <p>States are the fundamental building blocks of state machines, containing
 transitions, substates, and actions to be performed on entry, during, and exit.</p>
@@ -1693,6 +1756,109 @@ the entire state machine hierarchy.</p>
 </dd></dl>
 
 </section>
+<section id="duringaspectstatement">
+<h2>DuringAspectStatement<a class="headerlink" href="#duringaspectstatement" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="pyfcstm.dsl.node.DuringAspectStatement">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pyfcstm.dsl.node.</span></span><span class="sig-name descname"><span class="pre">DuringAspectStatement</span></span><a class="reference internal" href="../../_modules/pyfcstm/dsl/node.html#DuringAspectStatement"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.dsl.node.DuringAspectStatement" title="Link to this definition"></a></dt>
+<dd><p>Abstract base class for during aspect statements in the state machine DSL.</p>
+<p>During aspect statements define aspect-specific actions to be performed while in a state.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="#pyfcstm.dsl.node.DuringAspectStatement" title="pyfcstm.dsl.node.DuringAspectStatement">DuringAspectStatement</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+<section id="duringaspectoperations">
+<h2>DuringAspectOperations<a class="headerlink" href="#duringaspectoperations" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="pyfcstm.dsl.node.DuringAspectOperations">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pyfcstm.dsl.node.</span></span><span class="sig-name descname"><span class="pre">DuringAspectOperations</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">aspect</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">operations</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#pyfcstm.dsl.node.OperationAssignment" title="pyfcstm.dsl.node.OperationAssignment"><span class="pre">OperationAssignment</span></a><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/pyfcstm/dsl/node.html#DuringAspectOperations"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.dsl.node.DuringAspectOperations" title="Link to this definition"></a></dt>
+<dd><p>Represents a block of aspect-specific operations to perform while in a state.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>aspect</strong> (<em>str</em>) – The aspect name (e.g., “entry”, “do”, “exit”)</p></li>
+<li><p><strong>operations</strong> (<em>List</em><em>[</em><a class="reference internal" href="#pyfcstm.dsl.node.OperationAssignment" title="pyfcstm.dsl.node.OperationAssignment"><em>OperationAssignment</em></a><em>]</em>) – List of operation assignments</p></li>
+<li><p><strong>name</strong> (<em>Optional</em><em>[</em><em>str</em><em>]</em>) – Optional name for the operation block</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference internal" href="#pyfcstm.dsl.node.DuringAspectOperations" title="pyfcstm.dsl.node.DuringAspectOperations">DuringAspectOperations</a></p>
+</dd>
+</dl>
+<p>Example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">op</span> <span class="o">=</span> <span class="n">OperationAssignment</span><span class="p">(</span><span class="s2">&quot;counter&quot;</span><span class="p">,</span> <span class="n">BinaryOp</span><span class="p">(</span><span class="n">Name</span><span class="p">(</span><span class="s2">&quot;counter&quot;</span><span class="p">),</span> <span class="s2">&quot;+&quot;</span><span class="p">,</span> <span class="n">Integer</span><span class="p">(</span><span class="s2">&quot;1&quot;</span><span class="p">)))</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">during_ops</span> <span class="o">=</span> <span class="n">DuringAspectOperations</span><span class="p">(</span><span class="s2">&quot;before&quot;</span><span class="p">,</span> <span class="p">[</span><span class="n">op</span><span class="p">])</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="nb">print</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">during_ops</span><span class="p">))</span>
+<span class="go">&gt;&gt; during before {</span>
+<span class="go">    counter = counter + 1;</span>
+<span class="go">}</span>
+</pre></div>
+</div>
+<dl class="py method">
+<dt class="sig sig-object py" id="pyfcstm.dsl.node.DuringAspectOperations.__str__">
+<span class="sig-name descname"><span class="pre">__str__</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/pyfcstm/dsl/node.html#DuringAspectOperations.__str__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.dsl.node.DuringAspectOperations.__str__" title="Link to this definition"></a></dt>
+<dd><p>Convert the during aspect operations to their string representation.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>String representation of the during aspect operations</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>str</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+<section id="duringaspectabstractfunction">
+<h2>DuringAspectAbstractFunction<a class="headerlink" href="#duringaspectabstractfunction" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="pyfcstm.dsl.node.DuringAspectAbstractFunction">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pyfcstm.dsl.node.</span></span><span class="sig-name descname"><span class="pre">DuringAspectAbstractFunction</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">aspect</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">doc</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/pyfcstm/dsl/node.html#DuringAspectAbstractFunction"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.dsl.node.DuringAspectAbstractFunction" title="Link to this definition"></a></dt>
+<dd><p>Represents an abstract function to call for a specific aspect while in a state.</p>
+<p>Abstract functions are placeholders for implementation-specific behavior.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>name</strong> (<em>Optional</em><em>[</em><em>str</em><em>]</em>) – Optional name of the function</p></li>
+<li><p><strong>aspect</strong> (<em>str</em>) – The aspect name (e.g., “before”, “after”)</p></li>
+<li><p><strong>doc</strong> (<em>Optional</em><em>[</em><em>str</em><em>]</em>) – Optional documentation for the function</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference internal" href="#pyfcstm.dsl.node.DuringAspectAbstractFunction" title="pyfcstm.dsl.node.DuringAspectAbstractFunction">DuringAspectAbstractFunction</a></p>
+</dd>
+</dl>
+<p>Example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">during_func</span> <span class="o">=</span> <span class="n">DuringAspectAbstractFunction</span><span class="p">(</span><span class="s2">&quot;processData&quot;</span><span class="p">,</span> <span class="s2">&quot;before&quot;</span><span class="p">,</span> <span class="s2">&quot;Process incoming data&quot;</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="nb">print</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">during_func</span><span class="p">))</span>
+<span class="go">&gt;&gt; during before abstract processData /*</span>
+<span class="go">    Process incoming data</span>
+<span class="go">*/</span>
+</pre></div>
+</div>
+<dl class="py method">
+<dt class="sig sig-object py" id="pyfcstm.dsl.node.DuringAspectAbstractFunction.__str__">
+<span class="sig-name descname"><span class="pre">__str__</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/pyfcstm/dsl/node.html#DuringAspectAbstractFunction.__str__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.dsl.node.DuringAspectAbstractFunction.__str__" title="Link to this definition"></a></dt>
+<dd><p>Convert the during aspect abstract function to its string representation.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>String representation of the during aspect abstract function</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>str</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</section>
 <section id="init-state">
 <h2>INIT_STATE<a class="headerlink" href="#init-state" title="Link to this heading"></a></h2>
 <dl class="py data">
@@ -1710,6 +1876,16 @@ the entire state machine hierarchy.</p>
 <span class="sig-prename descclassname"><span class="pre">pyfcstm.dsl.node.</span></span><span class="sig-name descname"><span class="pre">EXIT_STATE</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">EXIT_STATE</span></em><a class="headerlink" href="#pyfcstm.dsl.node.EXIT_STATE" title="Link to this definition"></a></dt>
 <dd><p>Special singleton marker representing the exit state in a state machine.</p>
 <p>This is used to define transitions to the final pseudo-state.</p>
+</dd></dl>
+
+</section>
+<section id="all">
+<h2>ALL<a class="headerlink" href="#all" title="Link to this heading"></a></h2>
+<dl class="py data">
+<dt class="sig sig-object py" id="pyfcstm.dsl.node.ALL">
+<span class="sig-prename descclassname"><span class="pre">pyfcstm.dsl.node.</span></span><span class="sig-name descname"><span class="pre">ALL</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">ALL</span></em><a class="headerlink" href="#pyfcstm.dsl.node.ALL" title="Link to this definition"></a></dt>
+<dd><p>Special singleton marker representing all states in a state machine.</p>
+<p>This is used to define transitions or actions that apply to all states.</p>
 </dd></dl>
 
 </section>

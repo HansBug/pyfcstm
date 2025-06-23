@@ -30,6 +30,7 @@ Overview
 
     api_doc/config/index
     api_doc/dsl/index
+    api_doc/entry/index
     api_doc/model/index
     api_doc/render/index
     api_doc/utils/index

@@ -56,6 +56,7 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../api_doc/config/index.html">pyfcstm.config</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../api_doc/dsl/index.html">pyfcstm.dsl</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api_doc/entry/index.html">pyfcstm.entry</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../api_doc/model/index.html">pyfcstm.model</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../api_doc/render/index.html">pyfcstm.render</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../api_doc/utils/index.html">pyfcstm.utils</a></li>
@@ -92,11 +93,13 @@
 <span class="sd">State machine module for parsing and representing hierarchical state machines.</span>
 
 <span class="sd">This module provides classes and functions for working with state machines, including:</span>
+
 <span class="sd">- Representation of states, transitions, events, and operations</span>
 <span class="sd">- Parsing state machine DSL nodes into state machine objects</span>
 <span class="sd">- Exporting state machines to AST nodes and PlantUML diagrams</span>
 
 <span class="sd">The module implements a hierarchical state machine model with support for:</span>
+
 <span class="sd">- Nested states</span>
 <span class="sd">- Entry, during, and exit actions</span>
 <span class="sd">- Guards and effects on transitions</span>
@@ -314,6 +317,12 @@
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">is_aspect</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Check if this is an aspect-oriented action.</span>
+
+<span class="sd">        :return: False for OnStage instances (always)</span>
+<span class="sd">        :rtype: bool</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="kc">False</span>
 
 <div class="viewcode-block" id="OnStage.to_ast_node">
@@ -369,8 +378,27 @@
 
 
 
+<div class="viewcode-block" id="OnAspect">
+<a class="viewcode-back" href="../../../api_doc/model/model.html#pyfcstm.model.model.OnAspect">[docs]</a>
 <span class="nd">@dataclass</span>
 <span class="k">class</span><span class="w"> </span><span class="nc">OnAspect</span><span class="p">(</span><span class="n">AstExportable</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Represents an aspect-oriented action that occurs during a specific stage of a state&#39;s lifecycle.</span>
+
+<span class="sd">    OnAspect is specifically used for aspect-oriented programming features in the state machine,</span>
+<span class="sd">    allowing actions to be defined that apply across multiple states.</span>
+
+<span class="sd">    :param stage: The lifecycle stage (currently only supports &#39;during&#39;)</span>
+<span class="sd">    :type stage: str</span>
+<span class="sd">    :param aspect: Specifies if the action occurs &#39;before&#39; or &#39;after&#39; substates</span>
+<span class="sd">    :type aspect: Optional[str]</span>
+<span class="sd">    :param name: For abstract functions, the name of the function</span>
+<span class="sd">    :type name: Optional[str]</span>
+<span class="sd">    :param doc: For abstract functions, the documentation string</span>
+<span class="sd">    :type doc: Optional[str]</span>
+<span class="sd">    :param operations: For concrete actions, the list of operations to execute</span>
+<span class="sd">    :type operations: List[Operation]</span>
+<span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">stage</span><span class="p">:</span> <span class="nb">str</span>
     <span class="n">aspect</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
     <span class="n">name</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
@@ -389,9 +417,24 @@
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">is_aspect</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Check if this is an aspect-oriented action.</span>
+
+<span class="sd">        :return: True for OnAspect instances (always)</span>
+<span class="sd">        :rtype: bool</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="kc">True</span>
 
+<div class="viewcode-block" id="OnAspect.to_ast_node">
+<a class="viewcode-back" href="../../../api_doc/model/model.html#pyfcstm.model.model.OnAspect.to_ast_node">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">to_ast_node</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Union</span><span class="p">[</span><span class="n">dsl_nodes</span><span class="o">.</span><span class="n">DuringAspectStatement</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Convert this OnAspect to an appropriate AST node based on the stage.</span>
+
+<span class="sd">        :return: A during aspect statement AST node</span>
+<span class="sd">        :rtype: Union[dsl_nodes.DuringAspectStatement]</span>
+<span class="sd">        :raises ValueError: If the stage is not &#39;during&#39;</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">stage</span> <span class="o">==</span> <span class="s1">&#39;during&#39;</span><span class="p">:</span>
             <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">doc</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="k">return</span> <span class="n">dsl_nodes</span><span class="o">.</span><span class="n">DuringAspectAbstractFunction</span><span class="p">(</span>
@@ -407,7 +450,9 @@
                 <span class="p">)</span>
 
         <span class="k">else</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;Unknown aspect - </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">stage</span><span class="si">!r}</span><span class="s1">.&#39;</span><span class="p">)</span>  <span class="c1"># pragma: no cover</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;Unknown aspect - </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">stage</span><span class="si">!r}</span><span class="s1">.&#39;</span><span class="p">)</span>  <span class="c1"># pragma: no cover</span></div>
+</div>
+
 
 
 <div class="viewcode-block" id="State">
@@ -436,6 +481,8 @@
 <span class="sd">    :type on_durings: List[OnStage]</span>
 <span class="sd">    :param on_exits: List of actions to execute when exiting the state</span>
 <span class="sd">    :type on_exits: List[OnStage]</span>
+<span class="sd">    :param on_during_aspects: List of aspect-oriented actions for the during stage</span>
+<span class="sd">    :type on_during_aspects: List[OnAspect]</span>
 <span class="sd">    :param parent_ref: Weak reference to the parent state</span>
 <span class="sd">    :type parent_ref: Optional[weakref.ReferenceType]</span>
 <span class="sd">    :param substate_name_to_id: Dictionary mapping substate names to numeric IDs</span>
@@ -604,8 +651,20 @@
             <span class="n">retval</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="kc">None</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">retval</span>
 
+<div class="viewcode-block" id="State.list_on_enters">
+<a class="viewcode-back" href="../../../api_doc/model/model.html#pyfcstm.model.model.State.list_on_enters">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">list_on_enters</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">is_abstract</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">bool</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">with_ids</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> \
             <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">OnStage</span><span class="p">],</span> <span class="n">OnStage</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Get a list of enter actions, optionally filtered by abstract status and with IDs.</span>
+
+<span class="sd">        :param is_abstract: If provided, filter to only abstract (True) or non-abstract (False) actions</span>
+<span class="sd">        :type is_abstract: Optional[bool]</span>
+<span class="sd">        :param with_ids: Whether to include numeric IDs with the actions</span>
+<span class="sd">        :type with_ids: bool</span>
+<span class="sd">        :return: List of enter actions, optionally with IDs</span>
+<span class="sd">        :rtype: List[Union[Tuple[int, OnStage], OnStage]]</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">retval</span> <span class="o">=</span> <span class="p">[]</span>
         <span class="k">for</span> <span class="n">id_</span><span class="p">,</span> <span class="n">item</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">on_enters</span><span class="p">,</span> <span class="mi">1</span><span class="p">):</span>
             <span class="k">if</span> <span class="p">(</span><span class="n">is_abstract</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span>
@@ -615,7 +674,8 @@
                 <span class="n">retval</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">id_</span><span class="p">,</span> <span class="n">item</span><span class="p">))</span>
             <span class="k">else</span><span class="p">:</span>
                 <span class="n">retval</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">item</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">retval</span>
+        <span class="k">return</span> <span class="n">retval</span></div>
+
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">abstract_on_enters</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">OnStage</span><span class="p">]:</span>
@@ -637,8 +697,22 @@
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">list_on_enters</span><span class="p">(</span><span class="n">is_abstract</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">with_ids</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
 
+<div class="viewcode-block" id="State.list_on_durings">
+<a class="viewcode-back" href="../../../api_doc/model/model.html#pyfcstm.model.model.State.list_on_durings">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">list_on_durings</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">is_abstract</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">bool</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">aspect</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
                         <span class="n">with_ids</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">OnStage</span><span class="p">],</span> <span class="n">OnStage</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Get a list of during actions, optionally filtered by abstract status, aspect, and with IDs.</span>
+
+<span class="sd">        :param is_abstract: If provided, filter to only abstract (True) or non-abstract (False) actions</span>
+<span class="sd">        :type is_abstract: Optional[bool]</span>
+<span class="sd">        :param aspect: If provided, filter to only actions with the given aspect (&#39;before&#39; or &#39;after&#39;)</span>
+<span class="sd">        :type aspect: Optional[str]</span>
+<span class="sd">        :param with_ids: Whether to include numeric IDs with the actions</span>
+<span class="sd">        :type with_ids: bool</span>
+<span class="sd">        :return: List of during actions, optionally with IDs</span>
+<span class="sd">        :rtype: List[Union[Tuple[int, OnStage], OnStage]]</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">retval</span> <span class="o">=</span> <span class="p">[]</span>
         <span class="k">for</span> <span class="n">id_</span><span class="p">,</span> <span class="n">item</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">on_durings</span><span class="p">,</span> <span class="mi">1</span><span class="p">):</span>
             <span class="k">if</span> <span class="p">(</span><span class="n">is_abstract</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span>
@@ -651,7 +725,8 @@
                 <span class="n">retval</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">id_</span><span class="p">,</span> <span class="n">item</span><span class="p">))</span>
             <span class="k">else</span><span class="p">:</span>
                 <span class="n">retval</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">item</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">retval</span>
+        <span class="k">return</span> <span class="n">retval</span></div>
+
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">abstract_on_durings</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">OnStage</span><span class="p">]:</span>
@@ -673,8 +748,20 @@
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">list_on_durings</span><span class="p">(</span><span class="n">is_abstract</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">with_ids</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
 
+<div class="viewcode-block" id="State.list_on_exits">
+<a class="viewcode-back" href="../../../api_doc/model/model.html#pyfcstm.model.model.State.list_on_exits">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">list_on_exits</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">is_abstract</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">bool</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">with_ids</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> \
             <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">OnStage</span><span class="p">],</span> <span class="n">OnStage</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Get a list of exit actions, optionally filtered by abstract status and with IDs.</span>
+
+<span class="sd">        :param is_abstract: If provided, filter to only abstract (True) or non-abstract (False) actions</span>
+<span class="sd">        :type is_abstract: Optional[bool]</span>
+<span class="sd">        :param with_ids: Whether to include numeric IDs with the actions</span>
+<span class="sd">        :type with_ids: bool</span>
+<span class="sd">        :return: List of exit actions, optionally with IDs</span>
+<span class="sd">        :rtype: List[Union[Tuple[int, OnStage], OnStage]]</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">retval</span> <span class="o">=</span> <span class="p">[]</span>
         <span class="k">for</span> <span class="n">id_</span><span class="p">,</span> <span class="n">item</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">on_exits</span><span class="p">,</span> <span class="mi">1</span><span class="p">):</span>
             <span class="k">if</span> <span class="p">(</span><span class="n">is_abstract</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span>
@@ -684,7 +771,8 @@
                 <span class="n">retval</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">id_</span><span class="p">,</span> <span class="n">item</span><span class="p">))</span>
             <span class="k">else</span><span class="p">:</span>
                 <span class="n">retval</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">item</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">retval</span>
+        <span class="k">return</span> <span class="n">retval</span></div>
+
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">abstract_on_exits</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">OnStage</span><span class="p">]:</span>
@@ -706,8 +794,22 @@
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">list_on_exits</span><span class="p">(</span><span class="n">is_abstract</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">with_ids</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
 
+<div class="viewcode-block" id="State.list_on_during_aspects">
+<a class="viewcode-back" href="../../../api_doc/model/model.html#pyfcstm.model.model.State.list_on_during_aspects">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">list_on_during_aspects</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">is_abstract</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">bool</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">aspect</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
                                <span class="n">with_ids</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">OnAspect</span><span class="p">],</span> <span class="n">OnAspect</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Get a list of during aspect actions, optionally filtered by abstract status, aspect, and with IDs.</span>
+
+<span class="sd">        :param is_abstract: If provided, filter to only abstract (True) or non-abstract (False) actions</span>
+<span class="sd">        :type is_abstract: Optional[bool]</span>
+<span class="sd">        :param aspect: If provided, filter to only actions with the given aspect (&#39;before&#39; or &#39;after&#39;)</span>
+<span class="sd">        :type aspect: Optional[str]</span>
+<span class="sd">        :param with_ids: Whether to include numeric IDs with the actions</span>
+<span class="sd">        :type with_ids: bool</span>
+<span class="sd">        :return: List of during aspect actions, optionally with IDs</span>
+<span class="sd">        :rtype: List[Union[Tuple[int, OnAspect], OnAspect]]</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">retval</span> <span class="o">=</span> <span class="p">[]</span>
         <span class="k">for</span> <span class="n">id_</span><span class="p">,</span> <span class="n">item</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">on_during_aspects</span><span class="p">,</span> <span class="mi">1</span><span class="p">):</span>
             <span class="k">if</span> <span class="p">(</span><span class="n">is_abstract</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span>
@@ -720,14 +822,15 @@
                 <span class="n">retval</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">id_</span><span class="p">,</span> <span class="n">item</span><span class="p">))</span>
             <span class="k">else</span><span class="p">:</span>
                 <span class="n">retval</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">item</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">retval</span>
+        <span class="k">return</span> <span class="n">retval</span></div>
+
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">abstract_on_during_aspects</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">OnAspect</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Get all abstract during actions.</span>
+<span class="sd">        Get all abstract during aspect actions.</span>
 
-<span class="sd">        :return: List of abstract during actions</span>
+<span class="sd">        :return: List of abstract during aspect actions</span>
 <span class="sd">        :rtype: List[OnAspect]</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">list_on_during_aspects</span><span class="p">(</span><span class="n">is_abstract</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">with_ids</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
@@ -735,15 +838,30 @@
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">non_abstract_on_during_aspects</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">OnAspect</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Get all non-abstract during actions.</span>
+<span class="sd">        Get all non-abstract during aspect actions.</span>
 
-<span class="sd">        :return: List of non-abstract during actions</span>
+<span class="sd">        :return: List of non-abstract during aspect actions</span>
 <span class="sd">        :rtype: List[OnAspect]</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">list_on_during_aspects</span><span class="p">(</span><span class="n">is_abstract</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">with_ids</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
 
+<div class="viewcode-block" id="State.iter_on_during_before_aspect_recursively">
+<a class="viewcode-back" href="../../../api_doc/model/model.html#pyfcstm.model.model.State.iter_on_during_before_aspect_recursively">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">iter_on_during_before_aspect_recursively</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">is_abstract</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">bool</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">with_ids</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> \
             <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="s1">&#39;State&#39;</span><span class="p">,</span> <span class="n">Union</span><span class="p">[</span><span class="n">OnAspect</span><span class="p">,</span> <span class="n">OnStage</span><span class="p">]],</span> <span class="n">Tuple</span><span class="p">[</span><span class="s1">&#39;State&#39;</span><span class="p">,</span> <span class="n">Union</span><span class="p">[</span><span class="n">OnAspect</span><span class="p">,</span> <span class="n">OnStage</span><span class="p">]]]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Recursively iterate through &#39;before&#39; aspect during actions from parent states to this state.</span>
+
+<span class="sd">        This method traverses the state hierarchy from the root state to this state,</span>
+<span class="sd">        yielding all &#39;before&#39; aspect during actions along the way.</span>
+
+<span class="sd">        :param is_abstract: If provided, filter to only abstract (True) or non-abstract (False) actions</span>
+<span class="sd">        :type is_abstract: Optional[bool]</span>
+<span class="sd">        :param with_ids: Whether to include numeric IDs with the actions</span>
+<span class="sd">        :type with_ids: bool</span>
+<span class="sd">        :yield: Tuples of (state, action) or (id, state, action) if with_ids is True</span>
+<span class="sd">        :rtype: List[Union[Tuple[int, &#39;State&#39;, Union[OnAspect, OnStage]], Tuple[&#39;State&#39;, Union[OnAspect, OnStage]]]]</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">parent</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">yield from</span> <span class="bp">self</span><span class="o">.</span><span class="n">parent</span><span class="o">.</span><span class="n">iter_on_during_before_aspect_recursively</span><span class="p">(</span><span class="n">is_abstract</span><span class="o">=</span><span class="n">is_abstract</span><span class="p">,</span> <span class="n">with_ids</span><span class="o">=</span><span class="n">with_ids</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">with_ids</span><span class="p">:</span>
@@ -751,10 +869,26 @@
                 <span class="k">yield</span> <span class="n">id_</span><span class="p">,</span> <span class="bp">self</span><span class="p">,</span> <span class="n">item</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">list_on_during_aspects</span><span class="p">(</span><span class="n">is_abstract</span><span class="o">=</span><span class="n">is_abstract</span><span class="p">,</span> <span class="n">aspect</span><span class="o">=</span><span class="s1">&#39;before&#39;</span><span class="p">,</span> <span class="n">with_ids</span><span class="o">=</span><span class="n">with_ids</span><span class="p">):</span>
-                <span class="k">yield</span> <span class="bp">self</span><span class="p">,</span> <span class="n">item</span>
+                <span class="k">yield</span> <span class="bp">self</span><span class="p">,</span> <span class="n">item</span></div>
 
+
+<div class="viewcode-block" id="State.iter_on_during_after_aspect_recursively">
+<a class="viewcode-back" href="../../../api_doc/model/model.html#pyfcstm.model.model.State.iter_on_during_after_aspect_recursively">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">iter_on_during_after_aspect_recursively</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">is_abstract</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">bool</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">with_ids</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> \
             <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="s1">&#39;State&#39;</span><span class="p">,</span> <span class="n">Union</span><span class="p">[</span><span class="n">OnAspect</span><span class="p">,</span> <span class="n">OnStage</span><span class="p">]],</span> <span class="n">Tuple</span><span class="p">[</span><span class="s1">&#39;State&#39;</span><span class="p">,</span> <span class="n">Union</span><span class="p">[</span><span class="n">OnAspect</span><span class="p">,</span> <span class="n">OnStage</span><span class="p">]]]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Recursively iterate through &#39;after&#39; aspect during actions from this state to the root state.</span>
+
+<span class="sd">        This method traverses the state hierarchy from this state to the root state,</span>
+<span class="sd">        yielding all &#39;after&#39; aspect during actions along the way.</span>
+
+<span class="sd">        :param is_abstract: If provided, filter to only abstract (True) or non-abstract (False) actions</span>
+<span class="sd">        :type is_abstract: Optional[bool]</span>
+<span class="sd">        :param with_ids: Whether to include numeric IDs with the actions</span>
+<span class="sd">        :type with_ids: bool</span>
+<span class="sd">        :yield: Tuples of (state, action) or (id, state, action) if with_ids is True</span>
+<span class="sd">        :rtype: List[Union[Tuple[int, &#39;State&#39;, Union[OnAspect, OnStage]], Tuple[&#39;State&#39;, Union[OnAspect, OnStage]]]]</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="n">with_ids</span><span class="p">:</span>
             <span class="k">for</span> <span class="n">id_</span><span class="p">,</span> <span class="n">item</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">list_on_during_aspects</span><span class="p">(</span><span class="n">is_abstract</span><span class="o">=</span><span class="n">is_abstract</span><span class="p">,</span> <span class="n">aspect</span><span class="o">=</span><span class="s1">&#39;after&#39;</span><span class="p">,</span> <span class="n">with_ids</span><span class="o">=</span><span class="n">with_ids</span><span class="p">):</span>
                 <span class="k">yield</span> <span class="n">id_</span><span class="p">,</span> <span class="bp">self</span><span class="p">,</span> <span class="n">item</span>
@@ -762,10 +896,29 @@
             <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">list_on_during_aspects</span><span class="p">(</span><span class="n">is_abstract</span><span class="o">=</span><span class="n">is_abstract</span><span class="p">,</span> <span class="n">aspect</span><span class="o">=</span><span class="s1">&#39;after&#39;</span><span class="p">,</span> <span class="n">with_ids</span><span class="o">=</span><span class="n">with_ids</span><span class="p">):</span>
                 <span class="k">yield</span> <span class="bp">self</span><span class="p">,</span> <span class="n">item</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">parent</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">yield from</span> <span class="bp">self</span><span class="o">.</span><span class="n">parent</span><span class="o">.</span><span class="n">iter_on_during_after_aspect_recursively</span><span class="p">(</span><span class="n">is_abstract</span><span class="o">=</span><span class="n">is_abstract</span><span class="p">,</span> <span class="n">with_ids</span><span class="o">=</span><span class="n">with_ids</span><span class="p">)</span>
+            <span class="k">yield from</span> <span class="bp">self</span><span class="o">.</span><span class="n">parent</span><span class="o">.</span><span class="n">iter_on_during_after_aspect_recursively</span><span class="p">(</span><span class="n">is_abstract</span><span class="o">=</span><span class="n">is_abstract</span><span class="p">,</span> <span class="n">with_ids</span><span class="o">=</span><span class="n">with_ids</span><span class="p">)</span></div>
 
+
+<div class="viewcode-block" id="State.iter_on_during_aspect_recursively">
+<a class="viewcode-back" href="../../../api_doc/model/model.html#pyfcstm.model.model.State.iter_on_during_aspect_recursively">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">iter_on_during_aspect_recursively</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">is_abstract</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">bool</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">with_ids</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> \
             <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="s1">&#39;State&#39;</span><span class="p">,</span> <span class="n">Union</span><span class="p">[</span><span class="n">OnAspect</span><span class="p">,</span> <span class="n">OnStage</span><span class="p">]],</span> <span class="n">Tuple</span><span class="p">[</span><span class="s1">&#39;State&#39;</span><span class="p">,</span> <span class="n">Union</span><span class="p">[</span><span class="n">OnAspect</span><span class="p">,</span> <span class="n">OnStage</span><span class="p">]]]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Recursively iterate through all during actions in the proper execution order.</span>
+
+<span class="sd">        This method yields actions in the following order:</span>
+
+<span class="sd">        1. &#39;Before&#39; aspect actions from root state to this state</span>
+<span class="sd">        2. Regular during actions for this state</span>
+<span class="sd">        3. &#39;After&#39; aspect actions from this state to root state</span>
+
+<span class="sd">        :param is_abstract: If provided, filter to only abstract (True) or non-abstract (False) actions</span>
+<span class="sd">        :type is_abstract: Optional[bool]</span>
+<span class="sd">        :param with_ids: Whether to include numeric IDs with the actions</span>
+<span class="sd">        :type with_ids: bool</span>
+<span class="sd">        :yield: Tuples of (state, action) or (id, state, action) if with_ids is True</span>
+<span class="sd">        :rtype: List[Union[Tuple[int, &#39;State&#39;, Union[OnAspect, OnStage]], Tuple[&#39;State&#39;, Union[OnAspect, OnStage]]]]</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">yield from</span> <span class="bp">self</span><span class="o">.</span><span class="n">iter_on_during_before_aspect_recursively</span><span class="p">(</span><span class="n">is_abstract</span><span class="o">=</span><span class="n">is_abstract</span><span class="p">,</span> <span class="n">with_ids</span><span class="o">=</span><span class="n">with_ids</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">with_ids</span><span class="p">:</span>
             <span class="k">for</span> <span class="n">id_</span><span class="p">,</span> <span class="n">item</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">list_on_durings</span><span class="p">(</span><span class="n">is_abstract</span><span class="o">=</span><span class="n">is_abstract</span><span class="p">,</span> <span class="n">aspect</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">with_ids</span><span class="o">=</span><span class="n">with_ids</span><span class="p">):</span>
@@ -773,12 +926,30 @@
         <span class="k">else</span><span class="p">:</span>
             <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">list_on_durings</span><span class="p">(</span><span class="n">is_abstract</span><span class="o">=</span><span class="n">is_abstract</span><span class="p">,</span> <span class="n">aspect</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">with_ids</span><span class="o">=</span><span class="n">with_ids</span><span class="p">):</span>
                 <span class="k">yield</span> <span class="bp">self</span><span class="p">,</span> <span class="n">item</span>
-        <span class="k">yield from</span> <span class="bp">self</span><span class="o">.</span><span class="n">iter_on_during_after_aspect_recursively</span><span class="p">(</span><span class="n">is_abstract</span><span class="o">=</span><span class="n">is_abstract</span><span class="p">,</span> <span class="n">with_ids</span><span class="o">=</span><span class="n">with_ids</span><span class="p">)</span>
+        <span class="k">yield from</span> <span class="bp">self</span><span class="o">.</span><span class="n">iter_on_during_after_aspect_recursively</span><span class="p">(</span><span class="n">is_abstract</span><span class="o">=</span><span class="n">is_abstract</span><span class="p">,</span> <span class="n">with_ids</span><span class="o">=</span><span class="n">with_ids</span><span class="p">)</span></div>
 
+
+<div class="viewcode-block" id="State.list_on_during_aspect_recursively">
+<a class="viewcode-back" href="../../../api_doc/model/model.html#pyfcstm.model.model.State.list_on_during_aspect_recursively">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">list_on_during_aspect_recursively</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">is_abstract</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">bool</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">with_ids</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> \
             <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="s1">&#39;State&#39;</span><span class="p">,</span> <span class="n">Union</span><span class="p">[</span><span class="n">OnAspect</span><span class="p">,</span> <span class="n">OnStage</span><span class="p">]],</span> <span class="n">Tuple</span><span class="p">[</span><span class="s1">&#39;State&#39;</span><span class="p">,</span> <span class="n">Union</span><span class="p">[</span><span class="n">OnAspect</span><span class="p">,</span> <span class="n">OnStage</span><span class="p">]]]]:</span>
-        <span class="k">return</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">iter_on_during_aspect_recursively</span><span class="p">(</span><span class="n">is_abstract</span><span class="p">,</span> <span class="n">with_ids</span><span class="p">))</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Get a list of all during actions in the proper execution order.</span>
 
+<span class="sd">        This is a convenience method that collects the results of iter_on_during_aspect_recursively.</span>
+
+<span class="sd">        :param is_abstract: If provided, filter to only abstract (True) or non-abstract (False) actions</span>
+<span class="sd">        :type is_abstract: Optional[bool]</span>
+<span class="sd">        :param with_ids: Whether to include numeric IDs with the actions</span>
+<span class="sd">        :type with_ids: bool</span>
+<span class="sd">        :return: List of during actions in execution order</span>
+<span class="sd">        :rtype: List[Union[Tuple[int, &#39;State&#39;, Union[OnAspect, OnStage]], Tuple[&#39;State&#39;, Union[OnAspect, OnStage]]]]</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">iter_on_during_aspect_recursively</span><span class="p">(</span><span class="n">is_abstract</span><span class="p">,</span> <span class="n">with_ids</span><span class="p">))</span></div>
+
+
+<div class="viewcode-block" id="State.transition_to_ast_node">
+<a class="viewcode-back" href="../../../api_doc/model/model.html#pyfcstm.model.model.State.transition_to_ast_node">[docs]</a>
     <span class="nd">@classmethod</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">transition_to_ast_node</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="bp">self</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="s1">&#39;State&#39;</span><span class="p">],</span> <span class="n">transition</span><span class="p">:</span> <span class="n">Transition</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
@@ -815,7 +986,8 @@
                 <span class="n">item</span><span class="o">.</span><span class="n">to_ast_node</span><span class="p">()</span>
                 <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">transition</span><span class="o">.</span><span class="n">effects</span>
             <span class="p">]</span>
-        <span class="p">)</span>
+        <span class="p">)</span></div>
+
 
 <div class="viewcode-block" id="State.to_transition_ast_node">
 <a class="viewcode-back" href="../../../api_doc/model/model.html#pyfcstm.model.model.State.to_transition_ast_node">[docs]</a>
@@ -918,6 +1090,7 @@
 <span class="sd">        Iterate through this state and all its substates recursively.</span>
 
 <span class="sd">        :yield: Each state in the hierarchy, starting with this one</span>
+<span class="sd">        :rtype: Iterator[&#39;State&#39;]</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">yield</span> <span class="bp">self</span>
         <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">substate</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">substates</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
@@ -1040,6 +1213,7 @@
 <span class="sd">        Iterate through all states in the state machine.</span>
 
 <span class="sd">        :yield: Each state in the hierarchy</span>
+<span class="sd">        :rtype: Iterator[State]</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">yield from</span> <span class="bp">self</span><span class="o">.</span><span class="n">root_state</span><span class="o">.</span><span class="n">walk_states</span><span class="p">()</span></div>
 </div>

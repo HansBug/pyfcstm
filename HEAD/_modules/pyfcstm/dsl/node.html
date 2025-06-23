@@ -56,6 +56,7 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../api_doc/config/index.html">pyfcstm.config</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../api_doc/dsl/index.html">pyfcstm.dsl</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api_doc/entry/index.html">pyfcstm.entry</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../api_doc/model/index.html">pyfcstm.model</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../api_doc/render/index.html">pyfcstm.render</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../api_doc/utils/index.html">pyfcstm.utils</a></li>
@@ -276,8 +277,6 @@
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_value</span><span class="p">()</span>
 
-<div class="viewcode-block" id="Literal._value">
-<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.Literal._value">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">_value</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Internal method to evaluate the literal&#39;s value.</span>
@@ -286,8 +285,7 @@
 <span class="sd">        :rtype: Any</span>
 <span class="sd">        :raises NotImplementedError: This method must be implemented by subclasses</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">raise</span> <span class="ne">NotImplementedError</span>  <span class="c1"># pragma: no cover</span></div>
-
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span>  <span class="c1"># pragma: no cover</span>
 
 <div class="viewcode-block" id="Literal.__str__">
 <a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.Literal.__str__">[docs]</a>
@@ -322,8 +320,6 @@
 <span class="sd">        42</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
-<div class="viewcode-block" id="Integer._value">
-<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.Integer._value">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">_value</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Convert the raw string to an integer value.</span>
@@ -332,7 +328,6 @@
 <span class="sd">        :rtype: int</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">raw</span><span class="p">)</span></div>
-</div>
 
 
 
@@ -355,8 +350,6 @@
 <span class="sd">        255</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
-<div class="viewcode-block" id="HexInt._value">
-<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.HexInt._value">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">_value</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Convert the raw hexadecimal string to an integer value.</span>
@@ -364,8 +357,7 @@
 <span class="sd">        :return: The integer value</span>
 <span class="sd">        :rtype: int</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">raw</span><span class="p">,</span> <span class="mi">16</span><span class="p">)</span></div>
-
+        <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">raw</span><span class="p">,</span> <span class="mi">16</span><span class="p">)</span>
 
 <div class="viewcode-block" id="HexInt.__str__">
 <a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.HexInt.__str__">[docs]</a>
@@ -400,8 +392,6 @@
 <span class="sd">        3.14</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
-<div class="viewcode-block" id="Float._value">
-<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.Float._value">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">_value</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Convert the raw string to a float value.</span>
@@ -409,8 +399,7 @@
 <span class="sd">        :return: The float value</span>
 <span class="sd">        :rtype: float</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">raw</span><span class="p">)</span></div>
-
+        <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">raw</span><span class="p">)</span>
 
 <div class="viewcode-block" id="Float.__str__">
 <a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.Float.__str__">[docs]</a>
@@ -454,8 +443,6 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">raw</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">raw</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span></div>
 
 
-<div class="viewcode-block" id="Boolean._value">
-<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.Boolean._value">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">_value</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Convert the raw string to a boolean value.</span>
@@ -464,7 +451,6 @@
 <span class="sd">        :rtype: bool</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">raw</span><span class="p">)</span></div>
-</div>
 
 
 
@@ -492,8 +478,6 @@
         <span class="s1">&#39;tau&#39;</span><span class="p">:</span> <span class="n">math</span><span class="o">.</span><span class="n">tau</span><span class="p">,</span>
     <span class="p">}</span>
 
-<div class="viewcode-block" id="Constant._value">
-<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.Constant._value">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">_value</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Get the value of the named constant.</span>
@@ -501,8 +485,7 @@
 <span class="sd">        :return: The constant&#39;s value</span>
 <span class="sd">        :rtype: float</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">__KNOWN_CONSTANTS__</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">raw</span><span class="p">]</span></div>
-
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">__KNOWN_CONSTANTS__</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">raw</span><span class="p">]</span>
 
 <div class="viewcode-block" id="Constant.__str__">
 <a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.Constant.__str__">[docs]</a>
@@ -1104,6 +1087,11 @@
 <span class="sd">&quot;&quot;&quot;</span>
 
 <span class="n">ALL</span> <span class="o">=</span> <span class="n">_StateSingletonMark</span><span class="p">(</span><span class="s1">&#39;ALL&#39;</span><span class="p">)</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Special singleton marker representing all states in a state machine.</span>
+
+<span class="sd">This is used to define transitions or actions that apply to all states.</span>
+<span class="sd">&quot;&quot;&quot;</span>
 
 
 <div class="viewcode-block" id="TransitionDefinition">
@@ -1183,14 +1171,48 @@
 
 
 
+<div class="viewcode-block" id="ForceTransitionDefinition">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.ForceTransitionDefinition">[docs]</a>
 <span class="nd">@dataclass</span>
 <span class="k">class</span><span class="w"> </span><span class="nc">ForceTransitionDefinition</span><span class="p">(</span><span class="n">ASTNode</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Represents a forced transition definition in the state machine DSL.</span>
+
+<span class="sd">    Forced transitions override normal transitions and are used for special cases</span>
+<span class="sd">    like error handling or interrupts.</span>
+
+<span class="sd">    :param from_state: The source state name or ALL singleton</span>
+<span class="sd">    :type from_state: Union[str, _StateSingletonMark]</span>
+<span class="sd">    :param to_state: The target state name or EXIT_STATE singleton</span>
+<span class="sd">    :type to_state: Union[str, _StateSingletonMark]</span>
+<span class="sd">    :param event_id: Optional event identifier that triggers the transition</span>
+<span class="sd">    :type event_id: Optional[ChainID]</span>
+<span class="sd">    :param condition_expr: Optional condition expression that must be true for the transition</span>
+<span class="sd">    :type condition_expr: Optional[Expr]</span>
+
+<span class="sd">    :rtype: ForceTransitionDefinition</span>
+
+<span class="sd">    Example::</span>
+
+<span class="sd">        &gt;&gt;&gt; # Force transition from any state to &quot;error&quot; state</span>
+<span class="sd">        &gt;&gt;&gt; force_trans = ForceTransitionDefinition(ALL, &quot;error&quot;, None, None)</span>
+<span class="sd">        &gt;&gt;&gt; str(force_trans)</span>
+<span class="sd">        &#39;! * -&gt; error;&#39;</span>
+<span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">from_state</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">_StateSingletonMark</span><span class="p">]</span>
     <span class="n">to_state</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">_StateSingletonMark</span><span class="p">]</span>
     <span class="n">event_id</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">ChainID</span><span class="p">]</span>
     <span class="n">condition_expr</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Expr</span><span class="p">]</span>
 
+<div class="viewcode-block" id="ForceTransitionDefinition.__str__">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.ForceTransitionDefinition.__str__">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Convert the force transition definition to its string representation.</span>
+
+<span class="sd">        :return: String representation of the force transition definition</span>
+<span class="sd">        :rtype: str</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">with</span> <span class="n">io</span><span class="o">.</span><span class="n">StringIO</span><span class="p">()</span> <span class="k">as</span> <span class="n">sf</span><span class="p">:</span>
             <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;! &#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sf</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
             <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;*&#39;</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">from_state</span> <span class="ow">is</span> <span class="n">ALL</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">from_state</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sf</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
@@ -1209,7 +1231,9 @@
                 <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39; : if [</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">condition_expr</span><span class="si">}</span><span class="s1">]&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sf</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
 
             <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;;&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sf</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
-            <span class="k">return</span> <span class="n">sf</span><span class="o">.</span><span class="n">getvalue</span><span class="p">()</span>
+            <span class="k">return</span> <span class="n">sf</span><span class="o">.</span><span class="n">getvalue</span><span class="p">()</span></div>
+</div>
+
 
 
 <div class="viewcode-block" id="StateDefinition">
@@ -1750,48 +1774,57 @@
 
 
 
+<div class="viewcode-block" id="DuringAspectStatement">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.DuringAspectStatement">[docs]</a>
 <span class="nd">@dataclass</span>
 <span class="k">class</span><span class="w"> </span><span class="nc">DuringAspectStatement</span><span class="p">(</span><span class="n">ASTNode</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Abstract base class for during statements in the state machine DSL.</span>
+<span class="sd">    Abstract base class for during aspect statements in the state machine DSL.</span>
 
-<span class="sd">    During aspect statements define actions to be performed while in a state.</span>
+<span class="sd">    During aspect statements define aspect-specific actions to be performed while in a state.</span>
 
 <span class="sd">    :rtype: DuringAspectStatement</span>
 <span class="sd">    &quot;&quot;&quot;</span>
-    <span class="k">pass</span>
+    <span class="k">pass</span></div>
 
 
+
+<div class="viewcode-block" id="DuringAspectOperations">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.DuringAspectOperations">[docs]</a>
 <span class="nd">@dataclass</span>
 <span class="k">class</span><span class="w"> </span><span class="nc">DuringAspectOperations</span><span class="p">(</span><span class="n">DuringAspectStatement</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Represents a block of operations to perform while in a state.</span>
+<span class="sd">    Represents a block of aspect-specific operations to perform while in a state.</span>
 
-<span class="sd">    :param aspect: Optional aspect name (e.g., &quot;entry&quot;, &quot;do&quot;, &quot;exit&quot;)</span>
-<span class="sd">    :type aspect: Optional[str]</span>
+<span class="sd">    :param aspect: The aspect name (e.g., &quot;entry&quot;, &quot;do&quot;, &quot;exit&quot;)</span>
+<span class="sd">    :type aspect: str</span>
 <span class="sd">    :param operations: List of operation assignments</span>
 <span class="sd">    :type operations: List[OperationAssignment]</span>
+<span class="sd">    :param name: Optional name for the operation block</span>
+<span class="sd">    :type name: Optional[str]</span>
 
 <span class="sd">    :rtype: DuringAspectOperations</span>
 
 <span class="sd">    Example::</span>
 
 <span class="sd">        &gt;&gt;&gt; op = OperationAssignment(&quot;counter&quot;, BinaryOp(Name(&quot;counter&quot;), &quot;+&quot;, Integer(&quot;1&quot;)))</span>
-<span class="sd">        &gt;&gt;&gt; during_ops = DuringAspectOperations(&quot;do&quot;, [op])</span>
+<span class="sd">        &gt;&gt;&gt; during_ops = DuringAspectOperations(&quot;before&quot;, [op])</span>
 <span class="sd">        &gt;&gt;&gt; print(str(during_ops))</span>
-<span class="sd">        during do {</span>
+<span class="sd">        &gt;&gt; during before {</span>
 <span class="sd">            counter = counter + 1;</span>
 <span class="sd">        }</span>
 <span class="sd">    &quot;&quot;&quot;</span>
-    <span class="n">aspect</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
+    <span class="n">aspect</span><span class="p">:</span> <span class="nb">str</span>
     <span class="n">operations</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">OperationAssignment</span><span class="p">]</span>
     <span class="n">name</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
 
+<div class="viewcode-block" id="DuringAspectOperations.__str__">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.DuringAspectOperations.__str__">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Convert the during operations to their string representation.</span>
+<span class="sd">        Convert the during aspect operations to their string representation.</span>
 
-<span class="sd">        :return: String representation of the during operations</span>
+<span class="sd">        :return: String representation of the during aspect operations</span>
 <span class="sd">        :rtype: str</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">with</span> <span class="n">io</span><span class="o">.</span><span class="n">StringIO</span><span class="p">()</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
@@ -1802,20 +1835,24 @@
             <span class="k">for</span> <span class="n">operation</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">operations</span><span class="p">:</span>
                 <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;    </span><span class="si">{</span><span class="n">operation</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">)</span>
             <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;}&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
-            <span class="k">return</span> <span class="n">f</span><span class="o">.</span><span class="n">getvalue</span><span class="p">()</span>
+            <span class="k">return</span> <span class="n">f</span><span class="o">.</span><span class="n">getvalue</span><span class="p">()</span></div>
+</div>
 
 
+
+<div class="viewcode-block" id="DuringAspectAbstractFunction">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.DuringAspectAbstractFunction">[docs]</a>
 <span class="nd">@dataclass</span>
 <span class="k">class</span><span class="w"> </span><span class="nc">DuringAspectAbstractFunction</span><span class="p">(</span><span class="n">DuringAspectStatement</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Represents an abstract function to call while in a state.</span>
+<span class="sd">    Represents an abstract function to call for a specific aspect while in a state.</span>
 
 <span class="sd">    Abstract functions are placeholders for implementation-specific behavior.</span>
 
 <span class="sd">    :param name: Optional name of the function</span>
 <span class="sd">    :type name: Optional[str]</span>
-<span class="sd">    :param aspect: Optional aspect name (e.g., &quot;entry&quot;, &quot;do&quot;, &quot;exit&quot;)</span>
-<span class="sd">    :type aspect: Optional[str]</span>
+<span class="sd">    :param aspect: The aspect name (e.g., &quot;before&quot;, &quot;after&quot;)</span>
+<span class="sd">    :type aspect: str</span>
 <span class="sd">    :param doc: Optional documentation for the function</span>
 <span class="sd">    :type doc: Optional[str]</span>
 
@@ -1823,9 +1860,9 @@
 
 <span class="sd">    Example::</span>
 
-<span class="sd">        &gt;&gt;&gt; during_func = DuringAspectAbstractFunction(&quot;processData&quot;, &quot;do&quot;, &quot;Process incoming data&quot;)</span>
+<span class="sd">        &gt;&gt;&gt; during_func = DuringAspectAbstractFunction(&quot;processData&quot;, &quot;before&quot;, &quot;Process incoming data&quot;)</span>
 <span class="sd">        &gt;&gt;&gt; print(str(during_func))</span>
-<span class="sd">        during do abstract processData /*</span>
+<span class="sd">        &gt;&gt; during before abstract processData /*</span>
 <span class="sd">            Process incoming data</span>
 <span class="sd">        */</span>
 <span class="sd">    &quot;&quot;&quot;</span>
@@ -1833,11 +1870,13 @@
     <span class="n">aspect</span><span class="p">:</span> <span class="nb">str</span>
     <span class="n">doc</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
 
+<div class="viewcode-block" id="DuringAspectAbstractFunction.__str__">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.DuringAspectAbstractFunction.__str__">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Convert the during abstract function to its string representation.</span>
+<span class="sd">        Convert the during aspect abstract function to its string representation.</span>
 
-<span class="sd">        :return: String representation of the during abstract function</span>
+<span class="sd">        :return: String representation of the during aspect abstract function</span>
 <span class="sd">        :rtype: str</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">with</span> <span class="n">io</span><span class="o">.</span><span class="n">StringIO</span><span class="p">()</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
@@ -1853,7 +1892,9 @@
             <span class="k">else</span><span class="p">:</span>
                 <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;;&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
 
-            <span class="k">return</span> <span class="n">f</span><span class="o">.</span><span class="n">getvalue</span><span class="p">()</span>
+            <span class="k">return</span> <span class="n">f</span><span class="o">.</span><span class="n">getvalue</span><span class="p">()</span></div>
+</div>
+
 </pre></div>
 
 

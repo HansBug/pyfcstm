@@ -13,7 +13,6 @@ The module implements a hierarchical state machine model with support for:
 - Abstract function declarations
 - Variable definitions
 """
-
 import io
 import json
 import weakref
@@ -946,17 +945,92 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
 
     root_state = _recursive_build_states(dnode.root_state, current_path=())
 
-    def _recursive_finish_states(node: dsl_nodes.StateDefinition, current_state: State, current_path: Tuple[str, ...]):
+    def _recursive_finish_states(node: dsl_nodes.StateDefinition, current_state: State, current_path: Tuple[str, ...],
+                                 force_transitions: List[dsl_nodes.ForceTransitionDefinition] = None):
         current_path = tuple((*current_path, current_state.name))
+        force_transitions = list(force_transitions or [])
 
+        force_transition_tuples_to_inherit = []
+        for f_transnode in [*force_transitions, *node.force_transitions]:
+            if f_transnode.from_state == dsl_nodes.ALL:
+                from_state = dsl_nodes.ALL
+            else:
+                from_state = f_transnode.from_state
+                if from_state not in current_state.substates:
+                    raise SyntaxError(f'Unknown from state {from_state!r} of force transition:\n{f_transnode}')
+
+            if f_transnode.to_state is dsl_nodes.EXIT_STATE:
+                to_state = dsl_nodes.EXIT_STATE
+            else:
+                to_state = f_transnode.to_state
+                if to_state not in current_state.substates:
+                    raise SyntaxError(f'Unknown to state {to_state!r} of force transition:\n{f_transnode}')
+
+            my_event_id, trans_event = None, None
+            if f_transnode.event_id is not None:
+                my_event_id = f_transnode.event_id
+                if not my_event_id.is_absolute:
+                    my_event_id = dsl_nodes.ChainID(
+                        path=[*current_state.path[1:], *my_event_id.path],
+                        is_absolute=True
+                    )
+                start_state = root_state
+                base_path = (root_state.name,)
+                for seg in my_event_id.path[:-1]:
+                    if seg in start_state.substates:
+                        start_state = start_state.substates[seg]
+                    else:
+                        raise SyntaxError(
+                            f'Cannot find state {".".join((*base_path, *my_event_id.path[:-1]))} for transition:\n{f_transnode}')
+
+                suffix_name = my_event_id.path[-1]
+                if suffix_name not in start_state.events:
+                    start_state.events[suffix_name] = Event(
+                        name=suffix_name,
+                        state_path=start_state.path,
+                    )
+                trans_event = start_state.events[suffix_name]
+
+            condition_expr, guard = f_transnode.condition_expr, None
+            if f_transnode.condition_expr is not None:
+                guard = parse_expr_node_to_expr(f_transnode.condition_expr)
+                unknown_vars = []
+                for var in guard.list_variables():
+                    if var.name not in d_defines:
+                        unknown_vars.append(var.name)
+                if unknown_vars:
+                    raise SyntaxError(
+                        f'Unknown guard variable {", ".join(unknown_vars)} in force transition:\n{f_transnode}')
+
+            force_transition_tuples_to_inherit.append(
+                (from_state, to_state, my_event_id, trans_event, condition_expr, guard))
+
+        transitions = current_state.transitions
         for subnode in node.substates:
+            _inner_force_transitions = [*force_transitions]
+            for from_state, to_state, my_event_id, trans_event, condition_expr, guard in force_transition_tuples_to_inherit:
+                if from_state is dsl_nodes.ALL or from_state == subnode.name:
+                    transitions.append(Transition(
+                        from_state=subnode.name,
+                        to_state=to_state,
+                        event=trans_event,
+                        guard=guard,
+                        effects=[],
+                    ))
+                    _inner_force_transitions.append(dsl_nodes.ForceTransitionDefinition(
+                        from_state=dsl_nodes.ALL,
+                        to_state=dsl_nodes.EXIT_STATE,
+                        event_id=my_event_id,
+                        condition_expr=condition_expr,
+                    ))
+
             _recursive_finish_states(
                 node=subnode,
                 current_state=current_state.substates[subnode.name],
                 current_path=current_path,
+                force_transitions=_inner_force_transitions,
             )
 
-        transitions = current_state.transitions
         has_entry_trans = False
         for transnode in node.transitions:
             if transnode.from_state is dsl_nodes.INIT_STATE:

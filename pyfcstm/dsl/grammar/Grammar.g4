@@ -21,6 +21,13 @@ transition_definition
     | from_state=ID '->' '[*]' (|'::' from_id=ID|':' chain_id|':' 'if' '[' cond_expression ']') (';'|'effect' '{' operational_statement* '}')        # exitTransitionDefinition
     ;
 
+transition_force_definition
+    : '!' from_state=ID '->' to_state=ID (|'::' from_id=ID|':' chain_id|':' 'if' '[' cond_expression ']') ';'  # normalForceTransitionDefinition
+    | '!' from_state=ID '->' '[*]' (|'::' from_id=ID|':' chain_id|':' 'if' '[' cond_expression ']') ';'        # exitForceTransitionDefinition
+    | '!' '*' '->' to_state=ID (|('::'|':') chain_id|':' 'if' '[' cond_expression ']') ';'                     # normalAllForceTransitionDefinition
+    | '!' '*' '->' '[*]' (|('::'|':') chain_id|':' 'if' '[' cond_expression ']') ';'                           # exitAllForceTransitionDefinition
+    ;
+
 enter_definition
     : 'enter' (func_name=ID)? '{' operational_statement* '}'        # enterOperations
     | 'enter' 'abstract' func_name=ID ';'                           # enterAbstractFunc
@@ -55,6 +62,7 @@ operational_statement
 state_inner_statement
     : state_definition
     | transition_definition
+    | transition_force_definition
     | enter_definition
     | during_definition
     | exit_definition

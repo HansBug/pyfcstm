@@ -49,11 +49,13 @@ __all__ = [
     'Operation',
     'Condition',
     'TransitionDefinition',
+    'ForceTransitionDefinition',
     'StateDefinition',
     'OperationAssignment',
     'StateMachineDSLProgram',
     'INIT_STATE',
     'EXIT_STATE',
+    'ALL',
     'EnterStatement',
     'EnterOperations',
     'EnterAbstractFunction',
@@ -858,6 +860,8 @@ Special singleton marker representing the exit state in a state machine.
 This is used to define transitions to the final pseudo-state.
 """
 
+ALL = _StateSingletonMark('ALL')
+
 
 @dataclass
 class TransitionDefinition(ASTNode):
@@ -931,6 +935,35 @@ class TransitionDefinition(ASTNode):
 
 
 @dataclass
+class ForceTransitionDefinition(ASTNode):
+    from_state: Union[str, _StateSingletonMark]
+    to_state: Union[str, _StateSingletonMark]
+    event_id: Optional[ChainID]
+    condition_expr: Optional[Expr]
+
+    def __str__(self):
+        with io.StringIO() as sf:
+            print('! ', file=sf, end='')
+            print('*' if self.from_state is ALL else self.from_state, file=sf, end='')
+            print(' -> ', file=sf, end='')
+            print('[*]' if self.to_state is EXIT_STATE else self.to_state, file=sf, end='')
+
+            if self.event_id is not None:
+                if not self.event_id.is_absolute and \
+                        ((self.from_state is ALL and len(self.event_id.path) == 1) or
+                         (self.from_state is not ALL and len(self.event_id.path) == 2 and
+                          self.event_id.path[0] == self.from_state)):
+                    print(f' :: {self.event_id.path[-1]}', file=sf, end='')
+                else:
+                    print(f' : {self.event_id}', file=sf, end='')
+            elif self.condition_expr is not None:
+                print(f' : if [{self.condition_expr}]', file=sf, end='')
+
+            print(';', file=sf, end='')
+            return sf.getvalue()
+
+
+@dataclass
 class StateDefinition(ASTNode):
     """
     Represents a state definition in the state machine DSL.
@@ -971,10 +1004,12 @@ class StateDefinition(ASTNode):
     durings: List['DuringStatement'] = None
     exits: List['ExitStatement'] = None
     during_aspects: List['DuringAspectStatement'] = None
+    force_transitions: List['ForceTransitionDefinition'] = None
 
     def __post_init__(self):
         self.substates = self.substates or []
         self.transitions = self.transitions or []
+        self.force_transitions = self.force_transitions or []
         self.enters = self.enters or []
         self.durings = self.durings or []
         self.exits = self.exits or []

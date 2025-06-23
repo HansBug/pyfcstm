@@ -246,6 +246,8 @@ class GrammarParseListener(GrammarListener):
                    if item in self.nodes and isinstance(self.nodes[item], ExitStatement)],
             during_aspects=[self.nodes[item] for item in ctx.state_inner_statement()
                             if item in self.nodes and isinstance(self.nodes[item], DuringAspectStatement)],
+            force_transitions=[self.nodes[item] for item in ctx.state_inner_statement()
+                               if item in self.nodes and isinstance(self.nodes[item], ForceTransitionDefinition)],
         )
 
     def exitEntryTransitionDefinition(self, ctx: GrammarParser.EntryTransitionDefinitionContext):
@@ -314,6 +316,8 @@ class GrammarParseListener(GrammarListener):
             self.nodes[ctx] = self.nodes[ctx.exit_definition()]
         elif ctx.during_aspect_definition():
             self.nodes[ctx] = self.nodes[ctx.during_aspect_definition()]
+        elif ctx.transition_force_definition():
+            self.nodes[ctx] = self.nodes[ctx.transition_force_definition()]
 
     def exitOperation_assignment(self, ctx: GrammarParser.Operation_assignmentContext):
         super().exitOperation_assignment(ctx)
@@ -386,4 +390,51 @@ class GrammarParseListener(GrammarListener):
             name=ctx.func_name.text if ctx.func_name else None,
             aspect=ctx.aspect.text if ctx.aspect else None,
             doc=format_multiline_comment(ctx.raw_doc.text) if ctx.raw_doc else None,
+        )
+
+    def exitNormalForceTransitionDefinition(self, ctx: GrammarParser.NormalForceTransitionDefinitionContext):
+        super().exitNormalForceTransitionDefinition(ctx)
+        event_id = None
+        if ctx.chain_id():
+            event_id = self.nodes[ctx.chain_id()]
+        elif ctx.from_id:
+            event_id = ChainID([ctx.from_state.text, ctx.from_id.text])
+        self.nodes[ctx] = ForceTransitionDefinition(
+            from_state=ctx.from_state.text,
+            to_state=ctx.to_state.text,
+            event_id=event_id,
+            condition_expr=self.nodes[ctx.cond_expression()] if ctx.cond_expression() else None,
+        )
+
+    def exitExitForceTransitionDefinition(self, ctx: GrammarParser.ExitForceTransitionDefinitionContext):
+        super().exitExitForceTransitionDefinition(ctx)
+        event_id = None
+        if ctx.chain_id():
+            event_id = self.nodes[ctx.chain_id()]
+        elif ctx.from_id:
+            event_id = ChainID([ctx.from_state.text, ctx.from_id.text])
+        self.nodes[ctx] = ForceTransitionDefinition(
+            from_state=ctx.from_state.text,
+            to_state=EXIT_STATE,
+            event_id=event_id,
+            condition_expr=self.nodes[ctx.cond_expression()] if ctx.cond_expression() else None,
+        )
+
+    def exitNormalAllForceTransitionDefinition(self, ctx: GrammarParser.NormalAllForceTransitionDefinitionContext):
+        super().exitNormalAllForceTransitionDefinition(ctx)
+        self.nodes[ctx] = ForceTransitionDefinition(
+            from_state=ALL,
+            to_state=ctx.to_state.text,
+            event_id=self.nodes[ctx.chain_id()] if ctx.chain_id() else None,
+            condition_expr=self.nodes[ctx.cond_expression()] if ctx.cond_expression() else None,
+        )
+
+    def exitExitAllForceTransitionDefinition(self, ctx: GrammarParser.ExitAllForceTransitionDefinitionContext):
+        super().exitExitAllForceTransitionDefinition(ctx)
+        # print(self.nodes[ctx.chain_id()] if ctx.chain_id() else None)
+        self.nodes[ctx] = ForceTransitionDefinition(
+            from_state=ALL,
+            to_state=EXIT_STATE,
+            event_id=self.nodes[ctx.chain_id()] if ctx.chain_id() else None,
+            condition_expr=self.nodes[ctx.cond_expression()] if ctx.cond_expression() else None,
         )

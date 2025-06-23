@@ -89,6 +89,54 @@ class GrammarListener(ParseTreeListener):
     ):
         pass
 
+    # Enter a parse tree produced by GrammarParser#normalForceTransitionDefinition.
+    def enterNormalForceTransitionDefinition(
+        self, ctx: GrammarParser.NormalForceTransitionDefinitionContext
+    ):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#normalForceTransitionDefinition.
+    def exitNormalForceTransitionDefinition(
+        self, ctx: GrammarParser.NormalForceTransitionDefinitionContext
+    ):
+        pass
+
+    # Enter a parse tree produced by GrammarParser#exitForceTransitionDefinition.
+    def enterExitForceTransitionDefinition(
+        self, ctx: GrammarParser.ExitForceTransitionDefinitionContext
+    ):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#exitForceTransitionDefinition.
+    def exitExitForceTransitionDefinition(
+        self, ctx: GrammarParser.ExitForceTransitionDefinitionContext
+    ):
+        pass
+
+    # Enter a parse tree produced by GrammarParser#normalAllForceTransitionDefinition.
+    def enterNormalAllForceTransitionDefinition(
+        self, ctx: GrammarParser.NormalAllForceTransitionDefinitionContext
+    ):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#normalAllForceTransitionDefinition.
+    def exitNormalAllForceTransitionDefinition(
+        self, ctx: GrammarParser.NormalAllForceTransitionDefinitionContext
+    ):
+        pass
+
+    # Enter a parse tree produced by GrammarParser#exitAllForceTransitionDefinition.
+    def enterExitAllForceTransitionDefinition(
+        self, ctx: GrammarParser.ExitAllForceTransitionDefinitionContext
+    ):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#exitAllForceTransitionDefinition.
+    def exitExitAllForceTransitionDefinition(
+        self, ctx: GrammarParser.ExitAllForceTransitionDefinitionContext
+    ):
+        pass
+
     # Enter a parse tree produced by GrammarParser#enterOperations.
     def enterEnterOperations(self, ctx: GrammarParser.EnterOperationsContext):
         pass

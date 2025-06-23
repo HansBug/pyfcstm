@@ -329,12 +329,12 @@ class State(AstExportable, PlantUMLExportable):
     name: str
     path: Tuple[str, ...]
     substates: Dict[str, 'State']
-    events: Dict[str, Event]
-    transitions: List[Transition]
-    on_enters: List[OnStage]
-    on_durings: List[OnStage]
-    on_exits: List[OnStage]
-    on_during_aspects: List[OnAspect]
+    events: Dict[str, Event] = None
+    transitions: List[Transition] = None
+    on_enters: List[OnStage] = None
+    on_durings: List[OnStage] = None
+    on_exits: List[OnStage] = None
+    on_during_aspects: List[OnAspect] = None
     parent_ref: Optional[weakref.ReferenceType] = None
     substate_name_to_id: Dict[str, int] = None
 
@@ -342,6 +342,12 @@ class State(AstExportable, PlantUMLExportable):
         """
         Initialize the substate_name_to_id dictionary after instance creation.
         """
+        self.events = self.events or {}
+        self.transitions = self.transitions or []
+        self.on_enters = self.on_enters or []
+        self.on_durings = self.on_durings or []
+        self.on_exits = self.on_exits or []
+        self.on_during_aspects = self.on_during_aspects or []
         self.substate_name_to_id = {name: i for i, (name, _) in enumerate(self.substates.items())}
 
     @property
@@ -671,14 +677,24 @@ class State(AstExportable, PlantUMLExportable):
         :rtype: dsl_nodes.TransitionDefinition
         """
         if self:
-            cur_path_length = len(self.path)
+            cur_path = self.path
         else:
-            cur_path_length = 0
+            cur_path = ()
+
+        if transition.event:
+            if len(transition.event.path) > len(cur_path) and transition.event.path[:len(cur_path)] == cur_path:
+                # is relative path
+                event_id = dsl_nodes.ChainID(path=list(transition.event.path[len(cur_path):]), is_absolute=False)
+            else:
+                # use absolute path
+                event_id = dsl_nodes.ChainID(path=list(transition.event.path), is_absolute=True)
+        else:
+            event_id = None
+
         return dsl_nodes.TransitionDefinition(
             from_state=transition.from_state,
             to_state=transition.to_state,
-            event_id=dsl_nodes.ChainID(
-                path=list(transition.event.path[cur_path_length:])) if transition.event is not None else None,
+            event_id=event_id,
             condition_expr=transition.guard.to_ast_node() if transition.guard is not None else None,
             post_operations=[
                 item.to_ast_node()
@@ -917,8 +933,29 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
             else:
                 raise SyntaxError(f'Duplicate state name in namespace {".".join(current_path)!r}:\n{subnode}')
 
-        d_events = {}
-        transitions = []
+        my_state = State(
+            name=node.name,
+            path=current_path,
+            substates=d_substates,
+        )
+        for _, substate in d_substates.items():
+            substate.parent = my_state
+        return my_state
+
+    root_state = _recursive_build_states(dnode.root_state, current_path=())
+    _fake_root_state = State(name='<fake>', path=(), substates={root_state.name: root_state})
+
+    def _recursive_finish_states(node: dsl_nodes.StateDefinition, current_state: State, current_path: Tuple[str, ...]):
+        current_path = tuple((*current_path, current_state.name))
+
+        for subnode in node.substates:
+            _recursive_finish_states(
+                node=subnode,
+                current_state=current_state.substates[subnode.name],
+                current_path=current_path,
+            )
+
+        transitions = current_state.transitions
         has_entry_trans = False
         for transnode in node.transitions:
             if transnode.from_state is dsl_nodes.INIT_STATE:
@@ -926,29 +963,37 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                 has_entry_trans = True
             else:
                 from_state = transnode.from_state
-                if from_state not in d_substates:
+                if from_state not in current_state.substates:
                     raise SyntaxError(f'Unknown from state {from_state!r} of transition:\n{transnode}')
 
             if transnode.to_state is dsl_nodes.EXIT_STATE:
                 to_state = dsl_nodes.EXIT_STATE
             else:
                 to_state = transnode.to_state
-                if to_state not in d_substates:
+                if to_state not in current_state.substates:
                     raise SyntaxError(f'Unknown to state {to_state!r} of transition:\n{transnode}')
 
             trans_event, guard = None, None
             if transnode.event_id is not None:
-                cur_substates, cur_events = d_substates, d_events
+                if transnode.event_id.is_absolute:
+                    start_state = _fake_root_state
+                else:
+                    start_state = current_state
                 for seg in transnode.event_id.path[:-1]:
-                    cur_substates, cur_events = cur_substates[seg].substates, cur_substates[seg].events
+                    if seg in start_state.substates:
+                        start_state = start_state.substates[seg]
+                    else:
+                        raise SyntaxError(
+                            f'Cannot find state {".".join(transnode.event_id.path[:-1])} for transition:\n{transnode}.')
 
                 suffix_name = transnode.event_id.path[-1]
-                if suffix_name not in cur_substates:
-                    cur_events[suffix_name] = Event(
+                if suffix_name not in start_state.events:
+                    start_state.events[suffix_name] = Event(
                         name=suffix_name,
-                        state_path=tuple((*current_path, *transnode.event_id.path[:-1]))
+                        state_path=start_state.path,
                     )
-                trans_event = cur_events[suffix_name]
+                trans_event = start_state.events[suffix_name]
+
             if transnode.condition_expr is not None:
                 guard = parse_expr_node_to_expr(transnode.condition_expr)
                 unknown_vars = []
@@ -981,11 +1026,11 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
             )
             transitions.append(transition)
 
-        if d_substates and not has_entry_trans:
+        if current_state.substates and not has_entry_trans:
             raise SyntaxError(
                 f'At least 1 entry transition should be assigned in non-leaf state {node.name!r}:\n{node}')
 
-        on_enters = []
+        on_enters = current_state.on_enters
         for enter_item in node.enters:
             if isinstance(enter_item, dsl_nodes.EnterOperations):
                 enter_operations = []
@@ -1017,12 +1062,12 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                     operations=[],
                 ))
 
-        on_durings = []
+        on_durings = current_state.on_durings
         for during_item in node.durings:
-            if not d_substates and during_item.aspect is not None:
+            if not current_state.substates and during_item.aspect is not None:
                 raise SyntaxError(
                     f'For leaf state {node.name!r}, during cannot assign aspect {during_item.aspect!r}:\n{during_item}')
-            if d_substates and during_item.aspect is None:
+            if current_state.substates and during_item.aspect is None:
                 raise SyntaxError(
                     f'For composite state {node.name!r}, during must assign aspect to either \'before\' or \'after\':\n{during_item}')
 
@@ -1056,7 +1101,7 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                     operations=[],
                 ))
 
-        on_exits = []
+        on_exits = current_state.on_exits
         for exit_item in node.exits:
             if isinstance(exit_item, dsl_nodes.ExitOperations):
                 exit_operations = []
@@ -1088,7 +1133,7 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                     operations=[],
                 ))
 
-        on_during_aspects = []
+        on_during_aspects = current_state.on_during_aspects
         for during_aspect_item in node.during_aspects:
             if isinstance(during_aspect_item, dsl_nodes.DuringAspectOperations):
                 during_operations = []
@@ -1120,25 +1165,10 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                     operations=[],
                 ))
 
-        my_state = State(
-            name=node.name,
-            path=current_path,
-            substates=d_substates,
-            events=d_events,
-            transitions=transitions,
-            on_enters=on_enters,
-            on_durings=on_durings,
-            on_exits=on_exits,
-            on_during_aspects=on_during_aspects,
-            parent_ref=None,
-        )
-        for _, substate in d_substates.items():
-            substate.parent = my_state
-        for transition in transitions:
-            transition.parent = my_state
-        return my_state
+        for transition in current_state.transitions:
+            transition.parent = current_state
 
-    root_state = _recursive_build_states(dnode.root_state, current_path=())
+    _recursive_finish_states(dnode.root_state, current_state=root_state, current_path=())
     return StateMachine(
         defines=d_defines,
         root_state=root_state,

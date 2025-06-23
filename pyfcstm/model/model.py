@@ -2,11 +2,13 @@
 State machine module for parsing and representing hierarchical state machines.
 
 This module provides classes and functions for working with state machines, including:
+
 - Representation of states, transitions, events, and operations
 - Parsing state machine DSL nodes into state machine objects
 - Exporting state machines to AST nodes and PlantUML diagrams
 
 The module implements a hierarchical state machine model with support for:
+
 - Nested states
 - Entry, during, and exit actions
 - Guards and effects on transitions
@@ -204,6 +206,12 @@ class OnStage(AstExportable):
 
     @property
     def is_aspect(self) -> bool:
+        """
+        Check if this is an aspect-oriented action.
+
+        :return: False for OnStage instances (always)
+        :rtype: bool
+        """
         return False
 
     def to_ast_node(self) -> Union[dsl_nodes.EnterStatement, dsl_nodes.DuringStatement, dsl_nodes.ExitStatement]:
@@ -257,6 +265,23 @@ class OnStage(AstExportable):
 
 @dataclass
 class OnAspect(AstExportable):
+    """
+    Represents an aspect-oriented action that occurs during a specific stage of a state's lifecycle.
+
+    OnAspect is specifically used for aspect-oriented programming features in the state machine,
+    allowing actions to be defined that apply across multiple states.
+
+    :param stage: The lifecycle stage (currently only supports 'during')
+    :type stage: str
+    :param aspect: Specifies if the action occurs 'before' or 'after' substates
+    :type aspect: Optional[str]
+    :param name: For abstract functions, the name of the function
+    :type name: Optional[str]
+    :param doc: For abstract functions, the documentation string
+    :type doc: Optional[str]
+    :param operations: For concrete actions, the list of operations to execute
+    :type operations: List[Operation]
+    """
     stage: str
     aspect: Optional[str]
     name: Optional[str]
@@ -275,9 +300,22 @@ class OnAspect(AstExportable):
 
     @property
     def is_aspect(self) -> bool:
+        """
+        Check if this is an aspect-oriented action.
+
+        :return: True for OnAspect instances (always)
+        :rtype: bool
+        """
         return True
 
     def to_ast_node(self) -> Union[dsl_nodes.DuringAspectStatement]:
+        """
+        Convert this OnAspect to an appropriate AST node based on the stage.
+
+        :return: A during aspect statement AST node
+        :rtype: Union[dsl_nodes.DuringAspectStatement]
+        :raises ValueError: If the stage is not 'during'
+        """
         if self.stage == 'during':
             if self.name or self.doc is not None:
                 return dsl_nodes.DuringAspectAbstractFunction(
@@ -320,6 +358,8 @@ class State(AstExportable, PlantUMLExportable):
     :type on_durings: List[OnStage]
     :param on_exits: List of actions to execute when exiting the state
     :type on_exits: List[OnStage]
+    :param on_during_aspects: List of aspect-oriented actions for the during stage
+    :type on_during_aspects: List[OnAspect]
     :param parent_ref: Weak reference to the parent state
     :type parent_ref: Optional[weakref.ReferenceType]
     :param substate_name_to_id: Dictionary mapping substate names to numeric IDs
@@ -490,6 +530,16 @@ class State(AstExportable, PlantUMLExportable):
 
     def list_on_enters(self, is_abstract: Optional[bool] = None, with_ids: bool = False) \
             -> List[Union[Tuple[int, OnStage], OnStage]]:
+        """
+        Get a list of enter actions, optionally filtered by abstract status and with IDs.
+
+        :param is_abstract: If provided, filter to only abstract (True) or non-abstract (False) actions
+        :type is_abstract: Optional[bool]
+        :param with_ids: Whether to include numeric IDs with the actions
+        :type with_ids: bool
+        :return: List of enter actions, optionally with IDs
+        :rtype: List[Union[Tuple[int, OnStage], OnStage]]
+        """
         retval = []
         for id_, item in enumerate(self.on_enters, 1):
             if (is_abstract is not None and
@@ -523,6 +573,18 @@ class State(AstExportable, PlantUMLExportable):
 
     def list_on_durings(self, is_abstract: Optional[bool] = None, aspect: Optional[str] = None,
                         with_ids: bool = False) -> List[Union[Tuple[int, OnStage], OnStage]]:
+        """
+        Get a list of during actions, optionally filtered by abstract status, aspect, and with IDs.
+
+        :param is_abstract: If provided, filter to only abstract (True) or non-abstract (False) actions
+        :type is_abstract: Optional[bool]
+        :param aspect: If provided, filter to only actions with the given aspect ('before' or 'after')
+        :type aspect: Optional[str]
+        :param with_ids: Whether to include numeric IDs with the actions
+        :type with_ids: bool
+        :return: List of during actions, optionally with IDs
+        :rtype: List[Union[Tuple[int, OnStage], OnStage]]
+        """
         retval = []
         for id_, item in enumerate(self.on_durings, 1):
             if (is_abstract is not None and
@@ -559,6 +621,16 @@ class State(AstExportable, PlantUMLExportable):
 
     def list_on_exits(self, is_abstract: Optional[bool] = None, with_ids: bool = False) \
             -> List[Union[Tuple[int, OnStage], OnStage]]:
+        """
+        Get a list of exit actions, optionally filtered by abstract status and with IDs.
+
+        :param is_abstract: If provided, filter to only abstract (True) or non-abstract (False) actions
+        :type is_abstract: Optional[bool]
+        :param with_ids: Whether to include numeric IDs with the actions
+        :type with_ids: bool
+        :return: List of exit actions, optionally with IDs
+        :rtype: List[Union[Tuple[int, OnStage], OnStage]]
+        """
         retval = []
         for id_, item in enumerate(self.on_exits, 1):
             if (is_abstract is not None and
@@ -592,6 +664,18 @@ class State(AstExportable, PlantUMLExportable):
 
     def list_on_during_aspects(self, is_abstract: Optional[bool] = None, aspect: Optional[str] = None,
                                with_ids: bool = False) -> List[Union[Tuple[int, OnAspect], OnAspect]]:
+        """
+        Get a list of during aspect actions, optionally filtered by abstract status, aspect, and with IDs.
+
+        :param is_abstract: If provided, filter to only abstract (True) or non-abstract (False) actions
+        :type is_abstract: Optional[bool]
+        :param aspect: If provided, filter to only actions with the given aspect ('before' or 'after')
+        :type aspect: Optional[str]
+        :param with_ids: Whether to include numeric IDs with the actions
+        :type with_ids: bool
+        :return: List of during aspect actions, optionally with IDs
+        :rtype: List[Union[Tuple[int, OnAspect], OnAspect]]
+        """
         retval = []
         for id_, item in enumerate(self.on_during_aspects, 1):
             if (is_abstract is not None and
@@ -609,9 +693,9 @@ class State(AstExportable, PlantUMLExportable):
     @property
     def abstract_on_during_aspects(self) -> List[OnAspect]:
         """
-        Get all abstract during actions.
+        Get all abstract during aspect actions.
 
-        :return: List of abstract during actions
+        :return: List of abstract during aspect actions
         :rtype: List[OnAspect]
         """
         return self.list_on_during_aspects(is_abstract=True, with_ids=False)
@@ -619,15 +703,28 @@ class State(AstExportable, PlantUMLExportable):
     @property
     def non_abstract_on_during_aspects(self) -> List[OnAspect]:
         """
-        Get all non-abstract during actions.
+        Get all non-abstract during aspect actions.
 
-        :return: List of non-abstract during actions
+        :return: List of non-abstract during aspect actions
         :rtype: List[OnAspect]
         """
         return self.list_on_during_aspects(is_abstract=False, with_ids=False)
 
     def iter_on_during_before_aspect_recursively(self, is_abstract: Optional[bool] = None, with_ids: bool = False) \
             -> List[Union[Tuple[int, 'State', Union[OnAspect, OnStage]], Tuple['State', Union[OnAspect, OnStage]]]]:
+        """
+        Recursively iterate through 'before' aspect during actions from parent states to this state.
+
+        This method traverses the state hierarchy from the root state to this state,
+        yielding all 'before' aspect during actions along the way.
+
+        :param is_abstract: If provided, filter to only abstract (True) or non-abstract (False) actions
+        :type is_abstract: Optional[bool]
+        :param with_ids: Whether to include numeric IDs with the actions
+        :type with_ids: bool
+        :yield: Tuples of (state, action) or (id, state, action) if with_ids is True
+        :rtype: List[Union[Tuple[int, 'State', Union[OnAspect, OnStage]], Tuple['State', Union[OnAspect, OnStage]]]]
+        """
         if self.parent is not None:
             yield from self.parent.iter_on_during_before_aspect_recursively(is_abstract=is_abstract, with_ids=with_ids)
         if with_ids:
@@ -639,6 +736,19 @@ class State(AstExportable, PlantUMLExportable):
 
     def iter_on_during_after_aspect_recursively(self, is_abstract: Optional[bool] = None, with_ids: bool = False) \
             -> List[Union[Tuple[int, 'State', Union[OnAspect, OnStage]], Tuple['State', Union[OnAspect, OnStage]]]]:
+        """
+        Recursively iterate through 'after' aspect during actions from this state to the root state.
+
+        This method traverses the state hierarchy from this state to the root state,
+        yielding all 'after' aspect during actions along the way.
+
+        :param is_abstract: If provided, filter to only abstract (True) or non-abstract (False) actions
+        :type is_abstract: Optional[bool]
+        :param with_ids: Whether to include numeric IDs with the actions
+        :type with_ids: bool
+        :yield: Tuples of (state, action) or (id, state, action) if with_ids is True
+        :rtype: List[Union[Tuple[int, 'State', Union[OnAspect, OnStage]], Tuple['State', Union[OnAspect, OnStage]]]]
+        """
         if with_ids:
             for id_, item in self.list_on_during_aspects(is_abstract=is_abstract, aspect='after', with_ids=with_ids):
                 yield id_, self, item
@@ -650,6 +760,22 @@ class State(AstExportable, PlantUMLExportable):
 
     def iter_on_during_aspect_recursively(self, is_abstract: Optional[bool] = None, with_ids: bool = False) \
             -> List[Union[Tuple[int, 'State', Union[OnAspect, OnStage]], Tuple['State', Union[OnAspect, OnStage]]]]:
+        """
+        Recursively iterate through all during actions in the proper execution order.
+
+        This method yields actions in the following order:
+
+        1. 'Before' aspect actions from root state to this state
+        2. Regular during actions for this state
+        3. 'After' aspect actions from this state to root state
+
+        :param is_abstract: If provided, filter to only abstract (True) or non-abstract (False) actions
+        :type is_abstract: Optional[bool]
+        :param with_ids: Whether to include numeric IDs with the actions
+        :type with_ids: bool
+        :yield: Tuples of (state, action) or (id, state, action) if with_ids is True
+        :rtype: List[Union[Tuple[int, 'State', Union[OnAspect, OnStage]], Tuple['State', Union[OnAspect, OnStage]]]]
+        """
         yield from self.iter_on_during_before_aspect_recursively(is_abstract=is_abstract, with_ids=with_ids)
         if with_ids:
             for id_, item in self.list_on_durings(is_abstract=is_abstract, aspect=None, with_ids=with_ids):
@@ -661,6 +787,18 @@ class State(AstExportable, PlantUMLExportable):
 
     def list_on_during_aspect_recursively(self, is_abstract: Optional[bool] = None, with_ids: bool = False) \
             -> List[Union[Tuple[int, 'State', Union[OnAspect, OnStage]], Tuple['State', Union[OnAspect, OnStage]]]]:
+        """
+        Get a list of all during actions in the proper execution order.
+
+        This is a convenience method that collects the results of iter_on_during_aspect_recursively.
+
+        :param is_abstract: If provided, filter to only abstract (True) or non-abstract (False) actions
+        :type is_abstract: Optional[bool]
+        :param with_ids: Whether to include numeric IDs with the actions
+        :type with_ids: bool
+        :return: List of during actions in execution order
+        :rtype: List[Union[Tuple[int, 'State', Union[OnAspect, OnStage]], Tuple['State', Union[OnAspect, OnStage]]]]
+        """
         return list(self.iter_on_during_aspect_recursively(is_abstract, with_ids))
 
     @classmethod
@@ -791,6 +929,7 @@ class State(AstExportable, PlantUMLExportable):
         Iterate through this state and all its substates recursively.
 
         :yield: Each state in the hierarchy, starting with this one
+        :rtype: Iterator['State']
         """
         yield self
         for _, substate in self.substates.items():
@@ -892,6 +1031,7 @@ class StateMachine(AstExportable, PlantUMLExportable):
         Iterate through all states in the state machine.
 
         :yield: Each state in the hierarchy
+        :rtype: Iterator[State]
         """
         yield from self.root_state.walk_states()
 

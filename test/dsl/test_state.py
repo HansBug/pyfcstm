@@ -134,6 +134,33 @@ class TestDSLTransition:
              TransitionDefinition(from_state='S2', to_state='S3', event_id=None, condition_expr=None,
                                   post_operations=[])], enters=[], durings=[], exits=[])),
         # Composite state with empty statements between valid statements
+        (
+                """
+                state X {
+                    >> during after X {
+                        y = 0;
+                    }
+                    >> during before {
+                        x = 1;
+                        y = x + 1;
+                    }
+                    >> during after abstract T;
+                    >> during before abstract TF /* this is a line */
+                }
+                """,
+                StateDefinition(name='X', substates=[], transitions=[], enters=[], durings=[], exits=[],
+                                during_aspects=[DuringAspectOperations(aspect='after', operations=[
+                                    OperationAssignment(name='y', expr=Integer(raw='0'))], name='X'),
+                                                DuringAspectOperations(aspect='before', operations=[
+                                                    OperationAssignment(name='x', expr=Integer(raw='1')),
+                                                    OperationAssignment(name='y',
+                                                                        expr=BinaryOp(expr1=Name(name='x'), op='+',
+                                                                                      expr2=Integer(raw='1')))],
+                                                                       name=None),
+                                                DuringAspectAbstractFunction(name='T', aspect='after', doc=None),
+                                                DuringAspectAbstractFunction(name='TF', aspect='before',
+                                                                             doc='this is a line')])
+        ),  # test for during aspects
     ])
     def test_positive_cases(self, input_text, expected):
         assert parse_with_grammar_entry(input_text, entry_name='state_definition') == expected
@@ -183,6 +210,22 @@ class TestDSLTransition:
         ('state S1 { ; state S2; ; S2 -> S3; ; }',
          'state S1 {\n    state S2;\n    S2 -> S3;\n}'),
         # Composite state with empty statements between valid statements
+        (
+                """
+                state X {
+                    >> during after X {
+                        y = 0;
+                    }
+                    >> during before {
+                        x = 1;
+                        y = x + 1;
+                    }
+                    >> during after abstract T;
+                    >> during before abstract TF /* this is a line */
+                }
+                """,
+                'state X {\n    >> during after X {\n        y = 0;\n    }\n    >> during before {\n        x = 1;\n        y = x + 1;\n    }\n    >> during after abstract T;\n    >> during before abstract TF /*\n        this is a line\n    */\n}'
+        ),  # test for during aspects
     ])
     def test_positive_cases_str(self, input_text, expected_str, text_aligner):
         text_aligner.assert_equal(

@@ -989,7 +989,7 @@ class StateDefinition(ASTNode):
         """
         with io.StringIO() as sf:
             if not self.substates and not self.transitions and \
-                    not self.enters and not self.durings and not self.exits:
+                    not self.enters and not self.durings and not self.exits and not self.during_aspects:
                 print(f'state {self.name};', file=sf, end='')
             else:
                 print(f'state {self.name} {{', file=sf)

@@ -687,7 +687,7 @@ class State(AstExportable, PlantUMLExportable):
                 event_id = dsl_nodes.ChainID(path=list(transition.event.path[len(cur_path):]), is_absolute=False)
             else:
                 # use absolute path
-                event_id = dsl_nodes.ChainID(path=list(transition.event.path), is_absolute=True)
+                event_id = dsl_nodes.ChainID(path=list(transition.event.path[1:]), is_absolute=True)
         else:
             event_id = None
 
@@ -943,7 +943,6 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
         return my_state
 
     root_state = _recursive_build_states(dnode.root_state, current_path=())
-    _fake_root_state = State(name='<fake>', path=(), substates={root_state.name: root_state})
 
     def _recursive_finish_states(node: dsl_nodes.StateDefinition, current_state: State, current_path: Tuple[str, ...]):
         current_path = tuple((*current_path, current_state.name))
@@ -976,7 +975,7 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
             trans_event, guard = None, None
             if transnode.event_id is not None:
                 if transnode.event_id.is_absolute:
-                    start_state = _fake_root_state
+                    start_state = root_state
                 else:
                     start_state = current_state
                 for seg in transnode.event_id.path[:-1]:

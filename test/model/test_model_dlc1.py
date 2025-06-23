@@ -426,7 +426,6 @@ class TestModelModelDLC1:
 
     def test_list_on_during_aspect_recursively_with_ids(self, red):
         lst = red.list_on_during_aspect_recursively(with_ids=True)
-        lst = red.list_on_during_aspect_recursively(with_ids=True)
         assert len(lst) == 5
         assert lst[0][0] == 1
         assert lst[0][1].name == 'TrafficLight'

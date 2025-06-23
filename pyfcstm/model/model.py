@@ -780,6 +780,8 @@ class State(AstExportable, PlantUMLExportable):
                         print(during_item.to_ast_node(), file=tf)
                     for exit_item in self.on_exits:
                         print(exit_item.to_ast_node(), file=tf)
+                    for during_aspect_item in self.on_during_aspects:
+                        print(during_aspect_item.to_ast_node(), file=tf)
                     text = json.dumps(tf.getvalue().rstrip()).strip("\"")
                     print(f'{self.name} : {text}', file=sf, end='')
 

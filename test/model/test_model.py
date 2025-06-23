@@ -1164,3 +1164,61 @@ class TestModelModel:
             expect=expected_plantuml_code,
             actual=demo_model_1.to_plantuml(),
         )
+
+    def test_parse_unknown_non_abstract_during_aspect_variable(self):
+        ast_node = parse_with_grammar_entry("""
+        def int a = 0;
+        def int b = 2;
+        state LX {
+            state LX1 {
+                >> during before {
+                    a = b + a * 2;
+                    b = a + c;
+                }
+            }
+            state LX2;
+
+            [*] -> LX1 : if [a == 0];
+            LX1 -> [*] effect {
+                a = b + 3;
+                b = a * (b + 2);
+            };
+        }
+        """, entry_name='state_machine_dsl')
+
+        with pytest.raises(SyntaxError) as ei:
+            parse_dsl_node_to_state_machine(ast_node)
+
+        err = ei.value
+        assert isinstance(err, SyntaxError)
+        assert "Unknown during aspect variable c in transition:" in err.msg
+        assert "b = a + c;" in err.msg
+
+    def test_parse_unknown_non_abstract_during_aspect_variable_set(self):
+        ast_node = parse_with_grammar_entry("""
+        def int a = 0;
+        def int b = 2;
+        state LX {
+            state LX1 {
+                >> during before {
+                    a = b + a * 2;
+                    c = a + 2;
+                }
+            }
+            state LX2;
+
+            [*] -> LX1 : if [a == 0];
+            LX1 -> [*] effect {
+                a = b + 3;
+                b = a * (b + 2);
+            };
+        }
+        """, entry_name='state_machine_dsl')
+
+        with pytest.raises(SyntaxError) as ei:
+            parse_dsl_node_to_state_machine(ast_node)
+
+        err = ei.value
+        assert isinstance(err, SyntaxError)
+        assert "Unknown during aspect variable c in transition:" in err.msg
+        assert "c = a + 2;" in err.msg

@@ -1148,7 +1148,7 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                         unknown_vars.append(op_item.name)
                     if unknown_vars:
                         raise SyntaxError(
-                            f'Unknown during operation variable {", ".join(unknown_vars)} in transition:\n{during_aspect_item}')
+                            f'Unknown during aspect variable {", ".join(unknown_vars)} in transition:\n{during_aspect_item}')
                     during_operations.append(Operation(var_name=op_item.name, expr=operation_val))
                 on_during_aspects.append(OnAspect(
                     stage='during',

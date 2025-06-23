@@ -978,14 +978,16 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
             if transnode.event_id is not None:
                 if transnode.event_id.is_absolute:
                     start_state = root_state
+                    base_path = (root_state.name,)
                 else:
                     start_state = current_state
+                    base_path = current_state.path
                 for seg in transnode.event_id.path[:-1]:
                     if seg in start_state.substates:
                         start_state = start_state.substates[seg]
                     else:
                         raise SyntaxError(
-                            f'Cannot find state {".".join(transnode.event_id.path[:-1])} for transition:\n{transnode}.')
+                            f'Cannot find state {".".join((*base_path, *transnode.event_id.path[:-1]))} for transition:\n{transnode}')
 
                 suffix_name = transnode.event_id.path[-1]
                 if suffix_name not in start_state.events:

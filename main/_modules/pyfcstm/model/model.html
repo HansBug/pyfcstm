@@ -445,12 +445,12 @@
     <span class="n">name</span><span class="p">:</span> <span class="nb">str</span>
     <span class="n">path</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span>
     <span class="n">substates</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="s1">&#39;State&#39;</span><span class="p">]</span>
-    <span class="n">events</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Event</span><span class="p">]</span>
-    <span class="n">transitions</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Transition</span><span class="p">]</span>
-    <span class="n">on_enters</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">OnStage</span><span class="p">]</span>
-    <span class="n">on_durings</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">OnStage</span><span class="p">]</span>
-    <span class="n">on_exits</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">OnStage</span><span class="p">]</span>
-    <span class="n">on_during_aspects</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">OnAspect</span><span class="p">]</span>
+    <span class="n">events</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Event</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">transitions</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Transition</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">on_enters</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">OnStage</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">on_durings</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">OnStage</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">on_exits</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">OnStage</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">on_during_aspects</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">OnAspect</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="n">parent_ref</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">weakref</span><span class="o">.</span><span class="n">ReferenceType</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="n">substate_name_to_id</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
 
@@ -458,6 +458,12 @@
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Initialize the substate_name_to_id dictionary after instance creation.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">events</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">events</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">transitions</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transitions</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">on_enters</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">on_enters</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">on_durings</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">on_durings</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">on_exits</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">on_exits</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">on_during_aspects</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">on_during_aspects</span> <span class="ow">or</span> <span class="p">[]</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">substate_name_to_id</span> <span class="o">=</span> <span class="p">{</span><span class="n">name</span><span class="p">:</span> <span class="n">i</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">_</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">substates</span><span class="o">.</span><span class="n">items</span><span class="p">())}</span>
 
     <span class="nd">@property</span>
@@ -787,14 +793,24 @@
 <span class="sd">        :rtype: dsl_nodes.TransitionDefinition</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="bp">self</span><span class="p">:</span>
-            <span class="n">cur_path_length</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">path</span><span class="p">)</span>
+            <span class="n">cur_path</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">path</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="n">cur_path_length</span> <span class="o">=</span> <span class="mi">0</span>
+            <span class="n">cur_path</span> <span class="o">=</span> <span class="p">()</span>
+
+        <span class="k">if</span> <span class="n">transition</span><span class="o">.</span><span class="n">event</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">transition</span><span class="o">.</span><span class="n">event</span><span class="o">.</span><span class="n">path</span><span class="p">)</span> <span class="o">&gt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">cur_path</span><span class="p">)</span> <span class="ow">and</span> <span class="n">transition</span><span class="o">.</span><span class="n">event</span><span class="o">.</span><span class="n">path</span><span class="p">[:</span><span class="nb">len</span><span class="p">(</span><span class="n">cur_path</span><span class="p">)]</span> <span class="o">==</span> <span class="n">cur_path</span><span class="p">:</span>
+                <span class="c1"># is relative path</span>
+                <span class="n">event_id</span> <span class="o">=</span> <span class="n">dsl_nodes</span><span class="o">.</span><span class="n">ChainID</span><span class="p">(</span><span class="n">path</span><span class="o">=</span><span class="nb">list</span><span class="p">(</span><span class="n">transition</span><span class="o">.</span><span class="n">event</span><span class="o">.</span><span class="n">path</span><span class="p">[</span><span class="nb">len</span><span class="p">(</span><span class="n">cur_path</span><span class="p">):]),</span> <span class="n">is_absolute</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="c1"># use absolute path</span>
+                <span class="n">event_id</span> <span class="o">=</span> <span class="n">dsl_nodes</span><span class="o">.</span><span class="n">ChainID</span><span class="p">(</span><span class="n">path</span><span class="o">=</span><span class="nb">list</span><span class="p">(</span><span class="n">transition</span><span class="o">.</span><span class="n">event</span><span class="o">.</span><span class="n">path</span><span class="p">[</span><span class="mi">1</span><span class="p">:]),</span> <span class="n">is_absolute</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">event_id</span> <span class="o">=</span> <span class="kc">None</span>
+
         <span class="k">return</span> <span class="n">dsl_nodes</span><span class="o">.</span><span class="n">TransitionDefinition</span><span class="p">(</span>
             <span class="n">from_state</span><span class="o">=</span><span class="n">transition</span><span class="o">.</span><span class="n">from_state</span><span class="p">,</span>
             <span class="n">to_state</span><span class="o">=</span><span class="n">transition</span><span class="o">.</span><span class="n">to_state</span><span class="p">,</span>
-            <span class="n">event_id</span><span class="o">=</span><span class="n">dsl_nodes</span><span class="o">.</span><span class="n">ChainID</span><span class="p">(</span>
-                <span class="n">path</span><span class="o">=</span><span class="nb">list</span><span class="p">(</span><span class="n">transition</span><span class="o">.</span><span class="n">event</span><span class="o">.</span><span class="n">path</span><span class="p">[</span><span class="n">cur_path_length</span><span class="p">:]))</span> <span class="k">if</span> <span class="n">transition</span><span class="o">.</span><span class="n">event</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="n">event_id</span><span class="o">=</span><span class="n">event_id</span><span class="p">,</span>
             <span class="n">condition_expr</span><span class="o">=</span><span class="n">transition</span><span class="o">.</span><span class="n">guard</span><span class="o">.</span><span class="n">to_ast_node</span><span class="p">()</span> <span class="k">if</span> <span class="n">transition</span><span class="o">.</span><span class="n">guard</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
             <span class="n">post_operations</span><span class="o">=</span><span class="p">[</span>
                 <span class="n">item</span><span class="o">.</span><span class="n">to_ast_node</span><span class="p">()</span>
@@ -1069,8 +1085,28 @@
             <span class="k">else</span><span class="p">:</span>
                 <span class="k">raise</span> <span class="ne">SyntaxError</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;Duplicate state name in namespace </span><span class="si">{</span><span class="s2">&quot;.&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">current_path</span><span class="p">)</span><span class="si">!r}</span><span class="s1">:</span><span class="se">\n</span><span class="si">{</span><span class="n">subnode</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
 
-        <span class="n">d_events</span> <span class="o">=</span> <span class="p">{}</span>
-        <span class="n">transitions</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">my_state</span> <span class="o">=</span> <span class="n">State</span><span class="p">(</span>
+            <span class="n">name</span><span class="o">=</span><span class="n">node</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
+            <span class="n">path</span><span class="o">=</span><span class="n">current_path</span><span class="p">,</span>
+            <span class="n">substates</span><span class="o">=</span><span class="n">d_substates</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">substate</span> <span class="ow">in</span> <span class="n">d_substates</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">substate</span><span class="o">.</span><span class="n">parent</span> <span class="o">=</span> <span class="n">my_state</span>
+        <span class="k">return</span> <span class="n">my_state</span>
+
+    <span class="n">root_state</span> <span class="o">=</span> <span class="n">_recursive_build_states</span><span class="p">(</span><span class="n">dnode</span><span class="o">.</span><span class="n">root_state</span><span class="p">,</span> <span class="n">current_path</span><span class="o">=</span><span class="p">())</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_recursive_finish_states</span><span class="p">(</span><span class="n">node</span><span class="p">:</span> <span class="n">dsl_nodes</span><span class="o">.</span><span class="n">StateDefinition</span><span class="p">,</span> <span class="n">current_state</span><span class="p">:</span> <span class="n">State</span><span class="p">,</span> <span class="n">current_path</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]):</span>
+        <span class="n">current_path</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">((</span><span class="o">*</span><span class="n">current_path</span><span class="p">,</span> <span class="n">current_state</span><span class="o">.</span><span class="n">name</span><span class="p">))</span>
+
+        <span class="k">for</span> <span class="n">subnode</span> <span class="ow">in</span> <span class="n">node</span><span class="o">.</span><span class="n">substates</span><span class="p">:</span>
+            <span class="n">_recursive_finish_states</span><span class="p">(</span>
+                <span class="n">node</span><span class="o">=</span><span class="n">subnode</span><span class="p">,</span>
+                <span class="n">current_state</span><span class="o">=</span><span class="n">current_state</span><span class="o">.</span><span class="n">substates</span><span class="p">[</span><span class="n">subnode</span><span class="o">.</span><span class="n">name</span><span class="p">],</span>
+                <span class="n">current_path</span><span class="o">=</span><span class="n">current_path</span><span class="p">,</span>
+            <span class="p">)</span>
+
+        <span class="n">transitions</span> <span class="o">=</span> <span class="n">current_state</span><span class="o">.</span><span class="n">transitions</span>
         <span class="n">has_entry_trans</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="k">for</span> <span class="n">transnode</span> <span class="ow">in</span> <span class="n">node</span><span class="o">.</span><span class="n">transitions</span><span class="p">:</span>
             <span class="k">if</span> <span class="n">transnode</span><span class="o">.</span><span class="n">from_state</span> <span class="ow">is</span> <span class="n">dsl_nodes</span><span class="o">.</span><span class="n">INIT_STATE</span><span class="p">:</span>
@@ -1078,29 +1114,37 @@
                 <span class="n">has_entry_trans</span> <span class="o">=</span> <span class="kc">True</span>
             <span class="k">else</span><span class="p">:</span>
                 <span class="n">from_state</span> <span class="o">=</span> <span class="n">transnode</span><span class="o">.</span><span class="n">from_state</span>
-                <span class="k">if</span> <span class="n">from_state</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">d_substates</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">from_state</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">current_state</span><span class="o">.</span><span class="n">substates</span><span class="p">:</span>
                     <span class="k">raise</span> <span class="ne">SyntaxError</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;Unknown from state </span><span class="si">{</span><span class="n">from_state</span><span class="si">!r}</span><span class="s1"> of transition:</span><span class="se">\n</span><span class="si">{</span><span class="n">transnode</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
 
             <span class="k">if</span> <span class="n">transnode</span><span class="o">.</span><span class="n">to_state</span> <span class="ow">is</span> <span class="n">dsl_nodes</span><span class="o">.</span><span class="n">EXIT_STATE</span><span class="p">:</span>
                 <span class="n">to_state</span> <span class="o">=</span> <span class="n">dsl_nodes</span><span class="o">.</span><span class="n">EXIT_STATE</span>
             <span class="k">else</span><span class="p">:</span>
                 <span class="n">to_state</span> <span class="o">=</span> <span class="n">transnode</span><span class="o">.</span><span class="n">to_state</span>
-                <span class="k">if</span> <span class="n">to_state</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">d_substates</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">to_state</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">current_state</span><span class="o">.</span><span class="n">substates</span><span class="p">:</span>
                     <span class="k">raise</span> <span class="ne">SyntaxError</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;Unknown to state </span><span class="si">{</span><span class="n">to_state</span><span class="si">!r}</span><span class="s1"> of transition:</span><span class="se">\n</span><span class="si">{</span><span class="n">transnode</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
 
             <span class="n">trans_event</span><span class="p">,</span> <span class="n">guard</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span>
             <span class="k">if</span> <span class="n">transnode</span><span class="o">.</span><span class="n">event_id</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="n">cur_substates</span><span class="p">,</span> <span class="n">cur_events</span> <span class="o">=</span> <span class="n">d_substates</span><span class="p">,</span> <span class="n">d_events</span>
+                <span class="k">if</span> <span class="n">transnode</span><span class="o">.</span><span class="n">event_id</span><span class="o">.</span><span class="n">is_absolute</span><span class="p">:</span>
+                    <span class="n">start_state</span> <span class="o">=</span> <span class="n">root_state</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">start_state</span> <span class="o">=</span> <span class="n">current_state</span>
                 <span class="k">for</span> <span class="n">seg</span> <span class="ow">in</span> <span class="n">transnode</span><span class="o">.</span><span class="n">event_id</span><span class="o">.</span><span class="n">path</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]:</span>
-                    <span class="n">cur_substates</span><span class="p">,</span> <span class="n">cur_events</span> <span class="o">=</span> <span class="n">cur_substates</span><span class="p">[</span><span class="n">seg</span><span class="p">]</span><span class="o">.</span><span class="n">substates</span><span class="p">,</span> <span class="n">cur_substates</span><span class="p">[</span><span class="n">seg</span><span class="p">]</span><span class="o">.</span><span class="n">events</span>
+                    <span class="k">if</span> <span class="n">seg</span> <span class="ow">in</span> <span class="n">start_state</span><span class="o">.</span><span class="n">substates</span><span class="p">:</span>
+                        <span class="n">start_state</span> <span class="o">=</span> <span class="n">start_state</span><span class="o">.</span><span class="n">substates</span><span class="p">[</span><span class="n">seg</span><span class="p">]</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="k">raise</span> <span class="ne">SyntaxError</span><span class="p">(</span>
+                            <span class="sa">f</span><span class="s1">&#39;Cannot find state </span><span class="si">{</span><span class="s2">&quot;.&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">transnode</span><span class="o">.</span><span class="n">event_id</span><span class="o">.</span><span class="n">path</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span><span class="si">}</span><span class="s1"> for transition:</span><span class="se">\n</span><span class="si">{</span><span class="n">transnode</span><span class="si">}</span><span class="s1">.&#39;</span><span class="p">)</span>
 
                 <span class="n">suffix_name</span> <span class="o">=</span> <span class="n">transnode</span><span class="o">.</span><span class="n">event_id</span><span class="o">.</span><span class="n">path</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
-                <span class="k">if</span> <span class="n">suffix_name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">cur_substates</span><span class="p">:</span>
-                    <span class="n">cur_events</span><span class="p">[</span><span class="n">suffix_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">Event</span><span class="p">(</span>
+                <span class="k">if</span> <span class="n">suffix_name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">start_state</span><span class="o">.</span><span class="n">events</span><span class="p">:</span>
+                    <span class="n">start_state</span><span class="o">.</span><span class="n">events</span><span class="p">[</span><span class="n">suffix_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">Event</span><span class="p">(</span>
                         <span class="n">name</span><span class="o">=</span><span class="n">suffix_name</span><span class="p">,</span>
-                        <span class="n">state_path</span><span class="o">=</span><span class="nb">tuple</span><span class="p">((</span><span class="o">*</span><span class="n">current_path</span><span class="p">,</span> <span class="o">*</span><span class="n">transnode</span><span class="o">.</span><span class="n">event_id</span><span class="o">.</span><span class="n">path</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]))</span>
+                        <span class="n">state_path</span><span class="o">=</span><span class="n">start_state</span><span class="o">.</span><span class="n">path</span><span class="p">,</span>
                     <span class="p">)</span>
-                <span class="n">trans_event</span> <span class="o">=</span> <span class="n">cur_events</span><span class="p">[</span><span class="n">suffix_name</span><span class="p">]</span>
+                <span class="n">trans_event</span> <span class="o">=</span> <span class="n">start_state</span><span class="o">.</span><span class="n">events</span><span class="p">[</span><span class="n">suffix_name</span><span class="p">]</span>
+
             <span class="k">if</span> <span class="n">transnode</span><span class="o">.</span><span class="n">condition_expr</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="n">guard</span> <span class="o">=</span> <span class="n">parse_expr_node_to_expr</span><span class="p">(</span><span class="n">transnode</span><span class="o">.</span><span class="n">condition_expr</span><span class="p">)</span>
                 <span class="n">unknown_vars</span> <span class="o">=</span> <span class="p">[]</span>
@@ -1133,11 +1177,11 @@
             <span class="p">)</span>
             <span class="n">transitions</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">transition</span><span class="p">)</span>
 
-        <span class="k">if</span> <span class="n">d_substates</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">has_entry_trans</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">current_state</span><span class="o">.</span><span class="n">substates</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">has_entry_trans</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">SyntaxError</span><span class="p">(</span>
                 <span class="sa">f</span><span class="s1">&#39;At least 1 entry transition should be assigned in non-leaf state </span><span class="si">{</span><span class="n">node</span><span class="o">.</span><span class="n">name</span><span class="si">!r}</span><span class="s1">:</span><span class="se">\n</span><span class="si">{</span><span class="n">node</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
 
-        <span class="n">on_enters</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">on_enters</span> <span class="o">=</span> <span class="n">current_state</span><span class="o">.</span><span class="n">on_enters</span>
         <span class="k">for</span> <span class="n">enter_item</span> <span class="ow">in</span> <span class="n">node</span><span class="o">.</span><span class="n">enters</span><span class="p">:</span>
             <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">enter_item</span><span class="p">,</span> <span class="n">dsl_nodes</span><span class="o">.</span><span class="n">EnterOperations</span><span class="p">):</span>
                 <span class="n">enter_operations</span> <span class="o">=</span> <span class="p">[]</span>
@@ -1169,12 +1213,12 @@
                     <span class="n">operations</span><span class="o">=</span><span class="p">[],</span>
                 <span class="p">))</span>
 
-        <span class="n">on_durings</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">on_durings</span> <span class="o">=</span> <span class="n">current_state</span><span class="o">.</span><span class="n">on_durings</span>
         <span class="k">for</span> <span class="n">during_item</span> <span class="ow">in</span> <span class="n">node</span><span class="o">.</span><span class="n">durings</span><span class="p">:</span>
-            <span class="k">if</span> <span class="ow">not</span> <span class="n">d_substates</span> <span class="ow">and</span> <span class="n">during_item</span><span class="o">.</span><span class="n">aspect</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">current_state</span><span class="o">.</span><span class="n">substates</span> <span class="ow">and</span> <span class="n">during_item</span><span class="o">.</span><span class="n">aspect</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="k">raise</span> <span class="ne">SyntaxError</span><span class="p">(</span>
                     <span class="sa">f</span><span class="s1">&#39;For leaf state </span><span class="si">{</span><span class="n">node</span><span class="o">.</span><span class="n">name</span><span class="si">!r}</span><span class="s1">, during cannot assign aspect </span><span class="si">{</span><span class="n">during_item</span><span class="o">.</span><span class="n">aspect</span><span class="si">!r}</span><span class="s1">:</span><span class="se">\n</span><span class="si">{</span><span class="n">during_item</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
-            <span class="k">if</span> <span class="n">d_substates</span> <span class="ow">and</span> <span class="n">during_item</span><span class="o">.</span><span class="n">aspect</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">current_state</span><span class="o">.</span><span class="n">substates</span> <span class="ow">and</span> <span class="n">during_item</span><span class="o">.</span><span class="n">aspect</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="k">raise</span> <span class="ne">SyntaxError</span><span class="p">(</span>
                     <span class="sa">f</span><span class="s1">&#39;For composite state </span><span class="si">{</span><span class="n">node</span><span class="o">.</span><span class="n">name</span><span class="si">!r}</span><span class="s1">, during must assign aspect to either </span><span class="se">\&#39;</span><span class="s1">before</span><span class="se">\&#39;</span><span class="s1"> or </span><span class="se">\&#39;</span><span class="s1">after</span><span class="se">\&#39;</span><span class="s1">:</span><span class="se">\n</span><span class="si">{</span><span class="n">during_item</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
 
@@ -1208,7 +1252,7 @@
                     <span class="n">operations</span><span class="o">=</span><span class="p">[],</span>
                 <span class="p">))</span>
 
-        <span class="n">on_exits</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">on_exits</span> <span class="o">=</span> <span class="n">current_state</span><span class="o">.</span><span class="n">on_exits</span>
         <span class="k">for</span> <span class="n">exit_item</span> <span class="ow">in</span> <span class="n">node</span><span class="o">.</span><span class="n">exits</span><span class="p">:</span>
             <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">exit_item</span><span class="p">,</span> <span class="n">dsl_nodes</span><span class="o">.</span><span class="n">ExitOperations</span><span class="p">):</span>
                 <span class="n">exit_operations</span> <span class="o">=</span> <span class="p">[]</span>
@@ -1240,7 +1284,7 @@
                     <span class="n">operations</span><span class="o">=</span><span class="p">[],</span>
                 <span class="p">))</span>
 
-        <span class="n">on_during_aspects</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">on_during_aspects</span> <span class="o">=</span> <span class="n">current_state</span><span class="o">.</span><span class="n">on_during_aspects</span>
         <span class="k">for</span> <span class="n">during_aspect_item</span> <span class="ow">in</span> <span class="n">node</span><span class="o">.</span><span class="n">during_aspects</span><span class="p">:</span>
             <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">during_aspect_item</span><span class="p">,</span> <span class="n">dsl_nodes</span><span class="o">.</span><span class="n">DuringAspectOperations</span><span class="p">):</span>
                 <span class="n">during_operations</span> <span class="o">=</span> <span class="p">[]</span>
@@ -1272,25 +1316,10 @@
                     <span class="n">operations</span><span class="o">=</span><span class="p">[],</span>
                 <span class="p">))</span>
 
-        <span class="n">my_state</span> <span class="o">=</span> <span class="n">State</span><span class="p">(</span>
-            <span class="n">name</span><span class="o">=</span><span class="n">node</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
-            <span class="n">path</span><span class="o">=</span><span class="n">current_path</span><span class="p">,</span>
-            <span class="n">substates</span><span class="o">=</span><span class="n">d_substates</span><span class="p">,</span>
-            <span class="n">events</span><span class="o">=</span><span class="n">d_events</span><span class="p">,</span>
-            <span class="n">transitions</span><span class="o">=</span><span class="n">transitions</span><span class="p">,</span>
-            <span class="n">on_enters</span><span class="o">=</span><span class="n">on_enters</span><span class="p">,</span>
-            <span class="n">on_durings</span><span class="o">=</span><span class="n">on_durings</span><span class="p">,</span>
-            <span class="n">on_exits</span><span class="o">=</span><span class="n">on_exits</span><span class="p">,</span>
-            <span class="n">on_during_aspects</span><span class="o">=</span><span class="n">on_during_aspects</span><span class="p">,</span>
-            <span class="n">parent_ref</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-        <span class="p">)</span>
-        <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">substate</span> <span class="ow">in</span> <span class="n">d_substates</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-            <span class="n">substate</span><span class="o">.</span><span class="n">parent</span> <span class="o">=</span> <span class="n">my_state</span>
-        <span class="k">for</span> <span class="n">transition</span> <span class="ow">in</span> <span class="n">transitions</span><span class="p">:</span>
-            <span class="n">transition</span><span class="o">.</span><span class="n">parent</span> <span class="o">=</span> <span class="n">my_state</span>
-        <span class="k">return</span> <span class="n">my_state</span>
+        <span class="k">for</span> <span class="n">transition</span> <span class="ow">in</span> <span class="n">current_state</span><span class="o">.</span><span class="n">transitions</span><span class="p">:</span>
+            <span class="n">transition</span><span class="o">.</span><span class="n">parent</span> <span class="o">=</span> <span class="n">current_state</span>
 
-    <span class="n">root_state</span> <span class="o">=</span> <span class="n">_recursive_build_states</span><span class="p">(</span><span class="n">dnode</span><span class="o">.</span><span class="n">root_state</span><span class="p">,</span> <span class="n">current_path</span><span class="o">=</span><span class="p">())</span>
+    <span class="n">_recursive_finish_states</span><span class="p">(</span><span class="n">dnode</span><span class="o">.</span><span class="n">root_state</span><span class="p">,</span> <span class="n">current_state</span><span class="o">=</span><span class="n">root_state</span><span class="p">,</span> <span class="n">current_path</span><span class="o">=</span><span class="p">())</span>
     <span class="k">return</span> <span class="n">StateMachine</span><span class="p">(</span>
         <span class="n">defines</span><span class="o">=</span><span class="n">d_defines</span><span class="p">,</span>
         <span class="n">root_state</span><span class="o">=</span><span class="n">root_state</span><span class="p">,</span>

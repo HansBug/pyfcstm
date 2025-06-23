@@ -24,7 +24,7 @@ ChainID
 ----------------------------------------------------------
 
 .. autoclass:: ChainID
-    :members: __str__
+    :members: path, is_absolute, __str__
 
 
 Expr
@@ -38,84 +38,84 @@ Literal
 ----------------------------------------------------------
 
 .. autoclass:: Literal
-    :members: value, _value, __str__
+    :members: raw, value, __str__
 
 
 Boolean
 ----------------------------------------------------------
 
 .. autoclass:: Boolean
-    :members: __post_init__, _value
+    :members: raw, value, __str__, __post_init__
 
 
 Integer
 ----------------------------------------------------------
 
 .. autoclass:: Integer
-    :members: _value
+    :members: raw, value
 
 
 HexInt
 ----------------------------------------------------------
 
 .. autoclass:: HexInt
-    :members: _value, __str__
+    :members: raw, value, __str__
 
 
 Float
 ----------------------------------------------------------
 
 .. autoclass:: Float
-    :members: _value, __str__
+    :members: raw, value, __str__
 
 
 Constant
 ----------------------------------------------------------
 
 .. autoclass:: Constant
-    :members: _value, __str__
+    :members: raw, value, __str__
 
 
 Name
 ----------------------------------------------------------
 
 .. autoclass:: Name
-    :members: __str__
+    :members: name, __str__
 
 
 Paren
 ----------------------------------------------------------
 
 .. autoclass:: Paren
-    :members: __str__
+    :members: expr, __str__
 
 
 UnaryOp
 ----------------------------------------------------------
 
 .. autoclass:: UnaryOp
-    :members: __post_init__, __str__
+    :members: op, expr, __str__, __post_init__
 
 
 BinaryOp
 ----------------------------------------------------------
 
 .. autoclass:: BinaryOp
-    :members: __post_init__, __str__
+    :members: expr1, op, expr2, __str__, __post_init__
 
 
 ConditionalOp
 ----------------------------------------------------------
 
 .. autoclass:: ConditionalOp
-    :members: __str__
+    :members: cond, value_true, value_false, __str__
 
 
 UFunc
 ----------------------------------------------------------
 
 .. autoclass:: UFunc
-    :members: __str__
+    :members: func, expr, __str__
 
 
 Statement
@@ -129,77 +129,84 @@ ConstantDefinition
 ----------------------------------------------------------
 
 .. autoclass:: ConstantDefinition
-    :members: __str__
+    :members: name, expr, __str__
 
 
 InitialAssignment
 ----------------------------------------------------------
 
 .. autoclass:: InitialAssignment
-    :members: __str__
+    :members: name, expr, __str__
 
 
 DefAssignment
 ----------------------------------------------------------
 
 .. autoclass:: DefAssignment
-    :members: __str__
+    :members: name, type, expr, __str__
 
 
 OperationalDeprecatedAssignment
 ----------------------------------------------------------
 
 .. autoclass:: OperationalDeprecatedAssignment
-    :members: __str__
+    :members: name, expr, __str__
 
 
 Preamble
 ----------------------------------------------------------
 
 .. autoclass:: Preamble
-    :members: __str__
+    :members: stats, __str__
 
 
 Operation
 ----------------------------------------------------------
 
 .. autoclass:: Operation
-    :members: __str__
+    :members: stats, __str__
 
 
 Condition
 ----------------------------------------------------------
 
 .. autoclass:: Condition
-    :members: __str__
+    :members: expr, __str__
 
 
 TransitionDefinition
 ----------------------------------------------------------
 
 .. autoclass:: TransitionDefinition
-    :members: __str__
+    :members: from_state, to_state, event_id, condition_expr, post_operations, __str__
+
+
+ForceTransitionDefinition
+----------------------------------------------------------
+
+.. autoclass:: ForceTransitionDefinition
+    :members: from_state, to_state, event_id, condition_expr, __str__
 
 
 StateDefinition
 ----------------------------------------------------------
 
 .. autoclass:: StateDefinition
-    :members: __str__
+    :members: name, substates, transitions, enters, durings, exits, during_aspects, force_transitions, __str__, __post_init__
 
 
 OperationAssignment
 ----------------------------------------------------------
 
 .. autoclass:: OperationAssignment
-    :members: __str__
+    :members: name, expr, __str__
 
 
 StateMachineDSLProgram
 ----------------------------------------------------------
 
 .. autoclass:: StateMachineDSLProgram
-    :members: __str__
+    :members: definitions, root_state, __str__
 
 
 EnterStatement
@@ -213,14 +220,14 @@ EnterOperations
 ----------------------------------------------------------
 
 .. autoclass:: EnterOperations
-    :members: __str__
+    :members: operations, name, __str__
 
 
 EnterAbstractFunction
 ----------------------------------------------------------
 
 .. autoclass:: EnterAbstractFunction
-    :members: __str__
+    :members: name, doc, __str__
 
 
 ExitStatement
@@ -234,14 +241,14 @@ ExitOperations
 ----------------------------------------------------------
 
 .. autoclass:: ExitOperations
-    :members: __str__
+    :members: operations, name, __str__
 
 
 ExitAbstractFunction
 ----------------------------------------------------------
 
 .. autoclass:: ExitAbstractFunction
-    :members: __str__
+    :members: name, doc, __str__
 
 
 DuringStatement
@@ -255,14 +262,35 @@ DuringOperations
 ----------------------------------------------------------
 
 .. autoclass:: DuringOperations
-    :members: __str__
+    :members: aspect, operations, name, __str__
 
 
 DuringAbstractFunction
 ----------------------------------------------------------
 
 .. autoclass:: DuringAbstractFunction
-    :members: __str__
+    :members: name, aspect, doc, __str__
+
+
+DuringAspectStatement
+----------------------------------------------------------
+
+.. autoclass:: DuringAspectStatement
+    :members:
+
+
+DuringAspectOperations
+----------------------------------------------------------
+
+.. autoclass:: DuringAspectOperations
+    :members: aspect, operations, name, __str__
+
+
+DuringAspectAbstractFunction
+----------------------------------------------------------
+
+.. autoclass:: DuringAspectAbstractFunction
+    :members: name, aspect, doc, __str__
 
 
 INIT_STATE
@@ -275,3 +303,9 @@ EXIT_STATE
 ----------------------------------------------------------
 
 .. autodata:: EXIT_STATE
+
+
+ALL
+----------------------------------------------------------
+
+.. autodata:: ALL

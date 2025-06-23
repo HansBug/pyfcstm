@@ -861,6 +861,11 @@ This is used to define transitions to the final pseudo-state.
 """
 
 ALL = _StateSingletonMark('ALL')
+"""
+Special singleton marker representing all states in a state machine.
+
+This is used to define transitions or actions that apply to all states.
+"""
 
 
 @dataclass
@@ -936,12 +941,42 @@ class TransitionDefinition(ASTNode):
 
 @dataclass
 class ForceTransitionDefinition(ASTNode):
+    """
+    Represents a forced transition definition in the state machine DSL.
+
+    Forced transitions override normal transitions and are used for special cases
+    like error handling or interrupts.
+
+    :param from_state: The source state name or ALL singleton
+    :type from_state: Union[str, _StateSingletonMark]
+    :param to_state: The target state name or EXIT_STATE singleton
+    :type to_state: Union[str, _StateSingletonMark]
+    :param event_id: Optional event identifier that triggers the transition
+    :type event_id: Optional[ChainID]
+    :param condition_expr: Optional condition expression that must be true for the transition
+    :type condition_expr: Optional[Expr]
+
+    :rtype: ForceTransitionDefinition
+
+    Example::
+
+        >>> # Force transition from any state to "error" state
+        >>> force_trans = ForceTransitionDefinition(ALL, "error", None, None)
+        >>> str(force_trans)
+        '! * -> error;'
+    """
     from_state: Union[str, _StateSingletonMark]
     to_state: Union[str, _StateSingletonMark]
     event_id: Optional[ChainID]
     condition_expr: Optional[Expr]
 
     def __str__(self):
+        """
+        Convert the force transition definition to its string representation.
+
+        :return: String representation of the force transition definition
+        :rtype: str
+        """
         with io.StringIO() as sf:
             print('! ', file=sf, end='')
             print('*' if self.from_state is ALL else self.from_state, file=sf, end='')
@@ -1441,9 +1476,9 @@ class DuringAbstractFunction(DuringStatement):
 @dataclass
 class DuringAspectStatement(ASTNode):
     """
-    Abstract base class for during statements in the state machine DSL.
+    Abstract base class for during aspect statements in the state machine DSL.
 
-    During aspect statements define actions to be performed while in a state.
+    During aspect statements define aspect-specific actions to be performed while in a state.
 
     :rtype: DuringAspectStatement
     """
@@ -1453,33 +1488,35 @@ class DuringAspectStatement(ASTNode):
 @dataclass
 class DuringAspectOperations(DuringAspectStatement):
     """
-    Represents a block of operations to perform while in a state.
+    Represents a block of aspect-specific operations to perform while in a state.
 
-    :param aspect: Optional aspect name (e.g., "entry", "do", "exit")
-    :type aspect: Optional[str]
+    :param aspect: The aspect name (e.g., "entry", "do", "exit")
+    :type aspect: str
     :param operations: List of operation assignments
     :type operations: List[OperationAssignment]
+    :param name: Optional name for the operation block
+    :type name: Optional[str]
 
     :rtype: DuringAspectOperations
 
     Example::
 
         >>> op = OperationAssignment("counter", BinaryOp(Name("counter"), "+", Integer("1")))
-        >>> during_ops = DuringAspectOperations("do", [op])
+        >>> during_ops = DuringAspectOperations("before", [op])
         >>> print(str(during_ops))
-        during do {
+        >> during before {
             counter = counter + 1;
         }
     """
-    aspect: Optional[str]
+    aspect: str
     operations: List[OperationAssignment]
     name: Optional[str] = None
 
     def __str__(self):
         """
-        Convert the during operations to their string representation.
+        Convert the during aspect operations to their string representation.
 
-        :return: String representation of the during operations
+        :return: String representation of the during aspect operations
         :rtype: str
         """
         with io.StringIO() as f:
@@ -1496,14 +1533,14 @@ class DuringAspectOperations(DuringAspectStatement):
 @dataclass
 class DuringAspectAbstractFunction(DuringAspectStatement):
     """
-    Represents an abstract function to call while in a state.
+    Represents an abstract function to call for a specific aspect while in a state.
 
     Abstract functions are placeholders for implementation-specific behavior.
 
     :param name: Optional name of the function
     :type name: Optional[str]
-    :param aspect: Optional aspect name (e.g., "entry", "do", "exit")
-    :type aspect: Optional[str]
+    :param aspect: The aspect name (e.g., "before", "after")
+    :type aspect: str
     :param doc: Optional documentation for the function
     :type doc: Optional[str]
 
@@ -1511,9 +1548,9 @@ class DuringAspectAbstractFunction(DuringAspectStatement):
 
     Example::
 
-        >>> during_func = DuringAspectAbstractFunction("processData", "do", "Process incoming data")
+        >>> during_func = DuringAspectAbstractFunction("processData", "before", "Process incoming data")
         >>> print(str(during_func))
-        during do abstract processData /*
+        >> during before abstract processData /*
             Process incoming data
         */
     """
@@ -1523,9 +1560,9 @@ class DuringAspectAbstractFunction(DuringAspectStatement):
 
     def __str__(self):
         """
-        Convert the during abstract function to its string representation.
+        Convert the during aspect abstract function to its string representation.
 
-        :return: String representation of the during abstract function
+        :return: String representation of the during aspect abstract function
         :rtype: str
         """
         with io.StringIO() as f:

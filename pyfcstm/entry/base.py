@@ -119,7 +119,7 @@ def command_wrap():
             except BaseException as err:
                 click.secho('Unexpected error found when running pyfcstm!', fg='red', file=sys.stderr)
                 print_exception(err, partial(click.secho, fg='red', file=sys.stderr))
-                sys.exit(0x1)
+                click.get_current_context().exit(1)
 
         return _new_func
 

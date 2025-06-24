@@ -233,7 +233,7 @@
             <span class="k">except</span> <span class="ne">BaseException</span> <span class="k">as</span> <span class="n">err</span><span class="p">:</span>
                 <span class="n">click</span><span class="o">.</span><span class="n">secho</span><span class="p">(</span><span class="s1">&#39;Unexpected error found when running pyfcstm!&#39;</span><span class="p">,</span> <span class="n">fg</span><span class="o">=</span><span class="s1">&#39;red&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
                 <span class="n">print_exception</span><span class="p">(</span><span class="n">err</span><span class="p">,</span> <span class="n">partial</span><span class="p">(</span><span class="n">click</span><span class="o">.</span><span class="n">secho</span><span class="p">,</span> <span class="n">fg</span><span class="o">=</span><span class="s1">&#39;red&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">))</span>
-                <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="mh">0x1</span><span class="p">)</span>
+                <span class="n">click</span><span class="o">.</span><span class="n">get_current_context</span><span class="p">()</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
 
         <span class="k">return</span> <span class="n">_new_func</span>
 

@@ -1222,3 +1222,4 @@ fabric.properties
 /venv*
 junit.xml
 /antlr-*.jar
+!/pyfcstm/template/*/*.yaml

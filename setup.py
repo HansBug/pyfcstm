@@ -46,8 +46,8 @@ setup(
     long_description_content_type='text/markdown',
     author=meta['__AUTHOR__'],
     author_email=meta['__AUTHOR_EMAIL__'],
-    license='Apache License, Version 2.0',
-    keywords='huggingface, download, upload, batch processing, data processing, machine learning, ai',
+    license='GNU Lesser General Public License v3 (LGPLv3)',
+    keywords='state-machine, code-generation, compiler, template-engine, modelling',
     url='https://github.com/hansbug/pyfcstm',
 
     # environment
@@ -62,9 +62,11 @@ setup(
         'Intended Audience :: Developers',
         'Intended Audience :: Science/Research',
         'Intended Audience :: Information Technology',
+        'Intended Audience :: Manufacturing',
+        'Intended Audience :: System Administrators',
 
         # License
-        'License :: OSI Approved :: MIT License',
+        'License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)',
 
         # Programming Language
         'Programming Language :: Python',
@@ -85,11 +87,23 @@ setup(
 
         # Technical Topics
         'Topic :: Scientific/Engineering',
-        'Topic :: Scientific/Engineering :: Artificial Intelligence',
+        'Topic :: Scientific/Engineering :: Mathematics',
+        'Topic :: Scientific/Engineering :: Visualization',
+        'Topic :: Software Development',
         'Topic :: Software Development :: Libraries',
         'Topic :: Software Development :: Libraries :: Python Modules',
-        'Topic :: Internet :: File Transfer Protocol (FTP)',
+        'Topic :: Software Development :: Code Generators',
+        'Topic :: Software Development :: Compilers',
+        'Topic :: Software Development :: Interpreters',
+        'Topic :: Software Development :: Pre-processors',
+        'Topic :: Software Development :: Build Tools',
+        'Topic :: Text Processing',
+        'Topic :: Text Processing :: Linguistic',
+        'Topic :: Text Processing :: Markup',
+        'Topic :: System :: Systems Administration',
+        'Topic :: System :: Monitoring',
         'Topic :: Utilities',
+        'Topic :: Documentation',
 
         # Data Processing Features
         'Typing :: Typed',

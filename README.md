@@ -25,12 +25,28 @@
 
 A Python framework for parsing finite state machine DSL and generating executable code in multiple target languages.
 
+## Installation
+
+You can simply install it with `pip` command line from the official PyPI site.
+
+```shell
+pip install pyfcstm
+```
+
+For more information about installation, you can refer
+to [Installation Documentation](https://hansbug.github.io/pyfcstm/main/tutorials/installation/index.html).
+
+## How To Use It
+
+You can use this with pythonic API.
+
 ```python
 from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model.model import parse_dsl_node_to_state_machine
 from pyfcstm.render import StateMachineCodeRenderer
 
 if __name__ == '__main__':
+    # Load AST Node From DSL Code
     ast_node = parse_with_grammar_entry("""
     def int a = 0;
     def int b = 0x0;
@@ -92,12 +108,13 @@ if __name__ == '__main__':
         Idle -> [*];
     }
     """, entry_name='state_machine_dsl')
+    # Load DSL Model From DSL AST Node
     model = parse_dsl_node_to_state_machine(ast_node)
 
+    # Load Template Directory
     renderer = StateMachineCodeRenderer(
-        # template_dir='test_template',
         template_dir='../fsm_generation_template'
     )
+    # Render to Given Directory Via Template Directory
     renderer.render(model, 'test_output_x')
-
 ```

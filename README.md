@@ -39,6 +39,107 @@ to [Installation Documentation](https://hansbug.github.io/pyfcstm/main/tutorials
 
 ## How To Use It
 
+### Use With CLI
+
+You can use this with CLI command
+
+```shell
+pyfcstm --help
+```
+
+* Generate Plantuml Code For Visualization
+
+```shell
+pyfcstm plantuml -i test_dsl_code.fcstm
+```
+
+Here is a simple code example, you can try this out
+
+```
+def int a = 0;
+def int b = 0x0;
+def int round_count = 0;  // define variables
+state TrafficLight {
+    >> during before {
+        a = 0;
+    }
+    >> during before abstract FFT;
+    >> during before abstract TTT;
+    >> during after {
+        a = 0xff;
+        b = 0x1;
+    }
+
+    !InService -> [*] :: Error;
+
+    state InService {
+        enter {
+            a = 0;
+            b = 0;
+            round_count = 0;
+        }
+
+        enter abstract InServiceAbstractEnter /*
+            Abstract Operation When Entering State 'InService'
+            TODO: Should be Implemented In Generated Code Framework
+        */
+
+        // for non-leaf state, either 'before' or 'after' aspect keyword should be used for during block
+        during before abstract InServiceBeforeEnterChild /*
+            Abstract Operation Before Entering Child States of State 'InService'
+            TODO: Should be Implemented In Generated Code Framework
+        */
+
+        during after abstract InServiceAfterEnterChild /*
+            Abstract Operation After Entering Child States of State 'InService'
+            TODO: Should be Implemented In Generated Code Framework
+        */
+
+        exit abstract InServiceAbstractExit /*
+            Abstract Operation When Leaving State 'InService'
+            TODO: Should be Implemented In Generated Code Framework
+        */
+
+        state Red {
+            during {  // no aspect keywords ('before', 'after') should be used for during block of leaf state
+                a = 0x1 << 2;
+            }
+        }
+        state Yellow;
+        state Green;
+        [*] -> Red :: Start effect {
+            b = 0x1;
+        };
+        Red -> Green effect {
+            b = 0x3;
+        };
+        Green -> Yellow effect {
+            b = 0x2;
+        };
+        Yellow -> Red : if [a >= 10] effect {
+            b = 0x1;
+            round_count = round_count + 1;
+        };
+        Green -> Yellow : /Idle.E2;
+        Yellow -> Yellow : /E2;
+    }
+    state Idle;
+
+    [*] -> InService;
+    InService -> Idle :: Maintain;
+    Idle -> Idle :: E2;
+    Idle -> [*];
+}
+```
+
+* Generate Code With Given Template
+
+```shell
+pyfcstm generate -i test_dsl_code.fcstm -t template_dir/ -o generated_code_dir/
+```
+
+### Use With Pythonic API
+
 You can use this with pythonic API.
 
 ```python
@@ -119,3 +220,6 @@ if __name__ == '__main__':
     # Render to Given Directory Via Template Directory
     renderer.render(model, 'test_output_x')
 ```
+
+For more information about this DSL,
+see: [PyFCSTM DSL Syntax Tutorial](https://hansbug.github.io/pyfcstm/main/tutorials/dsl/index.html).

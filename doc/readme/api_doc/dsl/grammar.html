@@ -1,0 +1,198 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>pyfcstm.dsl.grammar &mdash; pyfcstm 0.0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/custom.css?v=c9d0a6ec" />
+
+  
+      <script src="../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../_static/documentation_options.js?v=d45e8c67"></script>
+      <script src="../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <link rel="next" title="pyfcstm.dsl.error" href="error.html" />
+    <link rel="prev" title="pyfcstm.dsl" href="index.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            pyfcstm
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../tutorials/installation/index.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../tutorials/quick_start/index.html">Quick Start</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../tutorials/dsl/index.html">PyFCSTM DSL Syntax Tutorial</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Information</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../information/environment.result.html">Run Environment Information</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">API Documentation</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../config/index.html">pyfcstm.config</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="index.html">pyfcstm.dsl</a><ul class="current">
+<li class="toctree-l2 current"><a class="current reference internal" href="#">pyfcstm.dsl.grammar</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#grammarlexer">GrammarLexer</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#pyfcstm.dsl.grammar.GrammarLexer"><code class="docutils literal notranslate"><span class="pre">GrammarLexer</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#grammarlistener">GrammarListener</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#pyfcstm.dsl.grammar.GrammarListener"><code class="docutils literal notranslate"><span class="pre">GrammarListener</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#grammarparser">GrammarParser</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#pyfcstm.dsl.grammar.GrammarParser"><code class="docutils literal notranslate"><span class="pre">GrammarParser</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="error.html">pyfcstm.dsl.error</a></li>
+<li class="toctree-l2"><a class="reference internal" href="listener.html">pyfcstm.dsl.listener</a></li>
+<li class="toctree-l2"><a class="reference internal" href="node.html">pyfcstm.dsl.node</a></li>
+<li class="toctree-l2"><a class="reference internal" href="parse.html">pyfcstm.dsl.parse</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../entry/index.html">pyfcstm.entry</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../model/index.html">pyfcstm.model</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../render/index.html">pyfcstm.render</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../utils/index.html">pyfcstm.utils</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">pyfcstm</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="index.html">pyfcstm.dsl</a></li>
+      <li class="breadcrumb-item active">pyfcstm.dsl.grammar</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../../_sources/api_doc/dsl/grammar.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+    
+    
+  <section id="pyfcstm-dsl-grammar">
+<h1>pyfcstm.dsl.grammar<a class="headerlink" href="#pyfcstm-dsl-grammar" title="Link to this heading"></a></h1>
+<p>These are all auto-generated code created by ANTLR.</p>
+<section id="grammarlexer">
+<span id="module-pyfcstm.dsl.grammar"></span><h2>GrammarLexer<a class="headerlink" href="#grammarlexer" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="pyfcstm.dsl.grammar.GrammarLexer">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pyfcstm.dsl.grammar.</span></span><span class="sig-name descname"><span class="pre">GrammarLexer</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">input=None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">output:</span> <span class="pre">~typing.TextIO</span> <span class="pre">=</span> <span class="pre">&lt;_io.TextIOWrapper</span> <span class="pre">name='&lt;stdout&gt;'</span> <span class="pre">mode='w'</span> <span class="pre">encoding='utf-8'&gt;</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/pyfcstm/dsl/grammar/GrammarLexer.html#GrammarLexer"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.dsl.grammar.GrammarLexer" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</section>
+<section id="grammarlistener">
+<h2>GrammarListener<a class="headerlink" href="#grammarlistener" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="pyfcstm.dsl.grammar.GrammarListener">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pyfcstm.dsl.grammar.</span></span><span class="sig-name descname"><span class="pre">GrammarListener</span></span><a class="reference internal" href="../../_modules/pyfcstm/dsl/grammar/GrammarListener.html#GrammarListener"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.dsl.grammar.GrammarListener" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</section>
+<section id="grammarparser">
+<h2>GrammarParser<a class="headerlink" href="#grammarparser" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="pyfcstm.dsl.grammar.GrammarParser">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pyfcstm.dsl.grammar.</span></span><span class="sig-name descname"><span class="pre">GrammarParser</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">input:</span> <span class="pre">~antlr4.BufferedTokenStream.TokenStream</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">output:</span> <span class="pre">~typing.TextIO</span> <span class="pre">=</span> <span class="pre">&lt;_io.TextIOWrapper</span> <span class="pre">name='&lt;stdout&gt;'</span> <span class="pre">mode='w'</span> <span class="pre">encoding='utf-8'&gt;</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/pyfcstm/dsl/grammar/GrammarParser.html#GrammarParser"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.dsl.grammar.GrammarParser" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</section>
+</section>
+
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="index.html" class="btn btn-neutral float-left" title="pyfcstm.dsl" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="error.html" class="btn btn-neutral float-right" title="pyfcstm.dsl.error" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, HansBug.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  
+    <div class="rst-versions" data-toggle="rst-versions" role="note" aria-label="versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    <span class="fa fa-book"> Other Versions</span>
+    v: doc/readme
+    <span class="fa fa-caret-down"></span>
+  </span>
+        <div class="rst-other-versions">
+                <dl>
+                    <dt>Tags</dt>
+                        <dd><a href="../../../../v0.0.1/api_doc/dsl/grammar.html">v0.0.1</a></dd>
+                </dl>
+                <dl>
+                    <dt>Branches</dt>
+                        <dd><a href="grammar.html">doc/readme</a></dd>
+                        <dd><a href="../../../../HEAD/api_doc/dsl/grammar.html">HEAD</a></dd>
+                        <dd><a href="../../../../dev/encoding/api_doc/dsl/grammar.html">dev/encoding</a></dd>
+                        <dd><a href="../../../../main/api_doc/dsl/grammar.html">main</a></dd>
+                        <dd><a href="../../../../old_design/index.html">old_design</a></dd>
+                </dl>
+        </div>
+    </div><script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

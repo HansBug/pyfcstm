@@ -17,7 +17,7 @@ def get_cn_cases():
 
 @pytest.fixture()
 def cn_expected_text():
-    return pathlib.Path(get_testfile('cncode_expected.c')).read_text()
+    return pathlib.Path(get_testfile('cncode_expected.c')).read_text(encoding='utf-8')
 
 
 def get_zh_cases():
@@ -29,7 +29,7 @@ def get_zh_cases():
 
 @pytest.fixture()
 def zh_expected_text():
-    return pathlib.Path(get_testfile('zhcode_expected.c')).read_text()
+    return pathlib.Path(get_testfile('zhcode_expected.c')).read_text(encoding='utf-8')
 
 
 @pytest.mark.unittest

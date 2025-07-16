@@ -1,0 +1,407 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>pyfcstm.dsl.error &mdash; pyfcstm 0.0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/custom.css?v=c9d0a6ec" />
+
+  
+      <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../_static/documentation_options.js?v=d45e8c67"></script>
+      <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            pyfcstm
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorials/installation/index.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorials/quick_start/index.html">Quick Start</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorials/dsl/index.html">PyFCSTM DSL Syntax Tutorial</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Information</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../information/environment.result.html">Run Environment Information</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">API Documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../api_doc/config/index.html">pyfcstm.config</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api_doc/dsl/index.html">pyfcstm.dsl</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api_doc/entry/index.html">pyfcstm.entry</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api_doc/model/index.html">pyfcstm.model</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api_doc/render/index.html">pyfcstm.render</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api_doc/utils/index.html">pyfcstm.utils</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">pyfcstm</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">pyfcstm.dsl.error</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+    
+    
+  <h1>Source code for pyfcstm.dsl.error</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">ANTLR Error Collection and Handling Module</span>
+
+<span class="sd">This module provides functionality for collecting and handling errors during ANTLR parsing processes.</span>
+<span class="sd">It implements a custom error listener that accumulates errors instead of throwing them immediately,</span>
+<span class="sd">allowing for comprehensive error reporting after the parsing is complete.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">List</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">antlr4</span><span class="w"> </span><span class="kn">import</span> <span class="n">CommonTokenStream</span><span class="p">,</span> <span class="n">Token</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">antlr4.error.ErrorListener</span><span class="w"> </span><span class="kn">import</span> <span class="n">ErrorListener</span>
+
+
+<div class="viewcode-block" id="GrammarItemError">
+<a class="viewcode-back" href="../../../api_doc/dsl/error.html#pyfcstm.dsl.error.GrammarItemError">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">GrammarItemError</span><span class="p">(</span><span class="ne">Exception</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Base class for all grammar-related errors.</span>
+
+<span class="sd">    This class serves as the parent class for specific grammar error types,</span>
+<span class="sd">    providing a common interface for error handling in the grammar parsing system.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">pass</span></div>
+
+
+
+<div class="viewcode-block" id="SyntaxFailError">
+<a class="viewcode-back" href="../../../api_doc/dsl/error.html#pyfcstm.dsl.error.SyntaxFailError">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">SyntaxFailError</span><span class="p">(</span><span class="n">GrammarItemError</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Error raised when a syntax error is encountered during parsing.</span>
+
+<span class="sd">    :param line: The line number where the error occurred</span>
+<span class="sd">    :type line: int</span>
+<span class="sd">    :param column: The column number where the error occurred</span>
+<span class="sd">    :type column: int</span>
+<span class="sd">    :param offending_symbol_text: The text of the problematic symbol</span>
+<span class="sd">    :type offending_symbol_text: str</span>
+<span class="sd">    :param msg: The error message</span>
+<span class="sd">    :type msg: str</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">line</span><span class="p">,</span> <span class="n">column</span><span class="p">,</span> <span class="n">offending_symbol_text</span><span class="p">,</span> <span class="n">msg</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">line</span> <span class="o">=</span> <span class="n">line</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">column</span> <span class="o">=</span> <span class="n">column</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">offending_symbol_text</span> <span class="o">=</span> <span class="n">offending_symbol_text</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">msg</span> <span class="o">=</span> <span class="n">msg</span>
+        <span class="n">ctx_info</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;, near &#39;</span><span class="si">{</span><span class="n">offending_symbol_text</span><span class="si">}</span><span class="s2">&#39;&quot;</span> <span class="k">if</span> <span class="n">offending_symbol_text</span> <span class="k">else</span> <span class="s2">&quot;&quot;</span>
+        <span class="n">error_msg</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;Syntax error at line </span><span class="si">{</span><span class="n">line</span><span class="si">}</span><span class="s2">, column </span><span class="si">{</span><span class="n">column</span><span class="si">}{</span><span class="n">ctx_info</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">msg</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">error_msg</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="AmbiguityError">
+<a class="viewcode-back" href="../../../api_doc/dsl/error.html#pyfcstm.dsl.error.AmbiguityError">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">AmbiguityError</span><span class="p">(</span><span class="n">GrammarItemError</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Error raised when grammar ambiguity is detected.</span>
+
+<span class="sd">    :param input_range: The range of input text where ambiguity was detected</span>
+<span class="sd">    :type input_range: str</span>
+<span class="sd">    :param start_index: The starting index of the ambiguous section</span>
+<span class="sd">    :type start_index: int</span>
+<span class="sd">    :param stop_index: The ending index of the ambiguous section</span>
+<span class="sd">    :type stop_index: int</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">input_range</span><span class="p">,</span> <span class="n">start_index</span><span class="p">,</span> <span class="n">stop_index</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">input_range</span> <span class="o">=</span> <span class="n">input_range</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">start_index</span> <span class="o">=</span> <span class="n">start_index</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">stop_index</span> <span class="o">=</span> <span class="n">stop_index</span>
+        <span class="n">error_msg</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;Grammar ambiguity at input &#39;</span><span class="si">{</span><span class="n">input_range</span><span class="si">}</span><span class="s2">&#39; (from index </span><span class="si">{</span><span class="n">start_index</span><span class="si">}</span><span class="s2"> to </span><span class="si">{</span><span class="n">stop_index</span><span class="si">}</span><span class="s2">).&quot;</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">error_msg</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="FullContextAttemptError">
+<a class="viewcode-back" href="../../../api_doc/dsl/error.html#pyfcstm.dsl.error.FullContextAttemptError">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">FullContextAttemptError</span><span class="p">(</span><span class="n">GrammarItemError</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Error raised when the parser attempts full context interpretation.</span>
+
+<span class="sd">    :param input_range: The range of input text where full context attempt occurred</span>
+<span class="sd">    :type input_range: str</span>
+<span class="sd">    :param start_index: The starting index of the affected section</span>
+<span class="sd">    :type start_index: int</span>
+<span class="sd">    :param stop_index: The ending index of the affected section</span>
+<span class="sd">    :type stop_index: int</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">input_range</span><span class="p">,</span> <span class="n">start_index</span><span class="p">,</span> <span class="n">stop_index</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">input_range</span> <span class="o">=</span> <span class="n">input_range</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">start_index</span> <span class="o">=</span> <span class="n">start_index</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">stop_index</span> <span class="o">=</span> <span class="n">stop_index</span>
+        <span class="n">error_msg</span> <span class="o">=</span> <span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Parser attempting full context interpretation at input &#39;</span><span class="si">{</span><span class="n">input_range</span><span class="si">}</span><span class="s2">&#39; &quot;</span>
+                     <span class="sa">f</span><span class="s2">&quot;(from index </span><span class="si">{</span><span class="n">start_index</span><span class="si">}</span><span class="s2"> to </span><span class="si">{</span><span class="n">stop_index</span><span class="si">}</span><span class="s2">).&quot;</span><span class="p">)</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">error_msg</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="ContextSensitivityError">
+<a class="viewcode-back" href="../../../api_doc/dsl/error.html#pyfcstm.dsl.error.ContextSensitivityError">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">ContextSensitivityError</span><span class="p">(</span><span class="n">GrammarItemError</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Error raised when context sensitivity is detected.</span>
+
+<span class="sd">    :param input_range: The range of input text where context sensitivity was detected</span>
+<span class="sd">    :type input_range: str</span>
+<span class="sd">    :param start_index: The starting index of the sensitive section</span>
+<span class="sd">    :type start_index: int</span>
+<span class="sd">    :param stop_index: The ending index of the sensitive section</span>
+<span class="sd">    :type stop_index: int</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">input_range</span><span class="p">,</span> <span class="n">start_index</span><span class="p">,</span> <span class="n">stop_index</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">input_range</span> <span class="o">=</span> <span class="n">input_range</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">start_index</span> <span class="o">=</span> <span class="n">start_index</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">stop_index</span> <span class="o">=</span> <span class="n">stop_index</span>
+        <span class="n">error_msg</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;Context sensitivity at input &#39;</span><span class="si">{</span><span class="n">input_range</span><span class="si">}</span><span class="s2">&#39; (from index </span><span class="si">{</span><span class="n">start_index</span><span class="si">}</span><span class="s2"> to </span><span class="si">{</span><span class="n">stop_index</span><span class="si">}</span><span class="s2">).&quot;</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">error_msg</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="UnfinishedParsingError">
+<a class="viewcode-back" href="../../../api_doc/dsl/error.html#pyfcstm.dsl.error.UnfinishedParsingError">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">UnfinishedParsingError</span><span class="p">(</span><span class="n">GrammarItemError</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lineno</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lineno</span> <span class="o">=</span> <span class="n">lineno</span>
+        <span class="n">error_msg</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;Failed to completely parse input text, unparsed content at position </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">lineno</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">error_msg</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="GrammarParseError">
+<a class="viewcode-back" href="../../../api_doc/dsl/error.html#pyfcstm.dsl.error.GrammarParseError">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">GrammarParseError</span><span class="p">(</span><span class="ne">Exception</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Exception raised when one or more grammar parsing errors are encountered.</span>
+
+<span class="sd">    :param errors: List of grammar-related errors that occurred during parsing</span>
+<span class="sd">    :type errors: List[GrammarItemError]</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">errors</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">GrammarItemError</span><span class="p">]):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">errors</span> <span class="o">=</span> <span class="n">errors</span>
+        <span class="n">error_report</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">linesep</span><span class="o">.</span><span class="n">join</span><span class="p">([</span><span class="sa">f</span><span class="s2">&quot;Error </span><span class="si">{</span><span class="n">i</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mi">1</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">error</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">error</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">errors</span><span class="p">)])</span>
+        <span class="n">error_message</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;Found </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">errors</span><span class="p">)</span><span class="si">}</span><span class="s2"> errors during parsing:</span><span class="si">{</span><span class="n">os</span><span class="o">.</span><span class="n">linesep</span><span class="si">}{</span><span class="n">error_report</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">error_message</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="CollectingErrorListener">
+<a class="viewcode-back" href="../../../api_doc/dsl/error.html#pyfcstm.dsl.error.CollectingErrorListener">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">CollectingErrorListener</span><span class="p">(</span><span class="n">ErrorListener</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    A custom ANTLR error listener that collects errors during parsing.</span>
+
+<span class="sd">    This class extends ANTLR&#39;s ErrorListener to provide comprehensive error collection</span>
+<span class="sd">    and reporting functionality. Instead of immediately throwing exceptions, it</span>
+<span class="sd">    accumulates errors and can report them collectively.</span>
+
+<span class="sd">    :ivar errors: List storing all encountered error messages</span>
+<span class="sd">    :type errors: list[GrammarItemError]</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Initialize the error listener with an empty error collection.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">errors</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">GrammarItemError</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+
+<div class="viewcode-block" id="CollectingErrorListener.syntaxError">
+<a class="viewcode-back" href="../../../api_doc/dsl/error.html#pyfcstm.dsl.error.CollectingErrorListener.syntaxError">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">syntaxError</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">recognizer</span><span class="p">,</span> <span class="n">offendingSymbol</span><span class="p">,</span> <span class="n">line</span><span class="p">,</span> <span class="n">column</span><span class="p">,</span> <span class="n">msg</span><span class="p">,</span> <span class="n">e</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Handle and collect syntax errors encountered during parsing.</span>
+
+<span class="sd">        :param recognizer: The parser that encountered the error</span>
+<span class="sd">        :param offendingSymbol: The problematic input symbol</span>
+<span class="sd">        :param line: Line number where the error occurred</span>
+<span class="sd">        :param column: Column number where the error occurred</span>
+<span class="sd">        :param msg: The error message</span>
+<span class="sd">        :param e: The exception that was raised</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">offending_text</span> <span class="o">=</span> <span class="n">offendingSymbol</span><span class="o">.</span><span class="n">text</span> <span class="k">if</span> <span class="n">offendingSymbol</span> <span class="k">else</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">errors</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">SyntaxFailError</span><span class="p">(</span><span class="n">line</span><span class="p">,</span> <span class="n">column</span><span class="p">,</span> <span class="n">offending_text</span><span class="p">,</span> <span class="n">msg</span><span class="p">))</span></div>
+
+
+<div class="viewcode-block" id="CollectingErrorListener.reportAmbiguity">
+<a class="viewcode-back" href="../../../api_doc/dsl/error.html#pyfcstm.dsl.error.CollectingErrorListener.reportAmbiguity">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">reportAmbiguity</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">recognizer</span><span class="p">,</span> <span class="n">dfa</span><span class="p">,</span> <span class="n">startIndex</span><span class="p">,</span> <span class="n">stopIndex</span><span class="p">,</span> <span class="n">exact</span><span class="p">,</span> <span class="n">ambigAlts</span><span class="p">,</span> <span class="n">configs</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Handle and collect grammar ambiguity issues.</span>
+
+<span class="sd">        :param recognizer: The parser that encountered the ambiguity</span>
+<span class="sd">        :param dfa: The DFA being processed</span>
+<span class="sd">        :param startIndex: Starting index of the ambiguous input</span>
+<span class="sd">        :param stopIndex: Ending index of the ambiguous input</span>
+<span class="sd">        :param exact: Whether the ambiguity is exact</span>
+<span class="sd">        :param ambigAlts: The ambiguous alternatives</span>
+<span class="sd">        :param configs: The ATN configurations</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">tokens</span> <span class="o">=</span> <span class="n">recognizer</span><span class="o">.</span><span class="n">getTokenStream</span><span class="p">()</span>
+        <span class="n">input_range</span> <span class="o">=</span> <span class="n">tokens</span><span class="o">.</span><span class="n">getText</span><span class="p">(</span><span class="n">startIndex</span><span class="p">,</span> <span class="n">stopIndex</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">errors</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">AmbiguityError</span><span class="p">(</span><span class="n">input_range</span><span class="p">,</span> <span class="n">startIndex</span><span class="p">,</span> <span class="n">stopIndex</span><span class="p">))</span></div>
+
+
+<div class="viewcode-block" id="CollectingErrorListener.reportAttemptingFullContext">
+<a class="viewcode-back" href="../../../api_doc/dsl/error.html#pyfcstm.dsl.error.CollectingErrorListener.reportAttemptingFullContext">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">reportAttemptingFullContext</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">recognizer</span><span class="p">,</span> <span class="n">dfa</span><span class="p">,</span> <span class="n">startIndex</span><span class="p">,</span> <span class="n">stopIndex</span><span class="p">,</span> <span class="n">conflictingAlts</span><span class="p">,</span> <span class="n">configs</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Handle and collect full context parsing attempts.</span>
+
+<span class="sd">        :param recognizer: The parser attempting full context</span>
+<span class="sd">        :param dfa: The DFA being processed</span>
+<span class="sd">        :param startIndex: Starting index of the affected input</span>
+<span class="sd">        :param stopIndex: Ending index of the affected input</span>
+<span class="sd">        :param conflictingAlts: The conflicting alternatives</span>
+<span class="sd">        :param configs: The ATN configurations</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">tokens</span> <span class="o">=</span> <span class="n">recognizer</span><span class="o">.</span><span class="n">getTokenStream</span><span class="p">()</span>
+        <span class="n">input_range</span> <span class="o">=</span> <span class="n">tokens</span><span class="o">.</span><span class="n">getText</span><span class="p">(</span><span class="n">startIndex</span><span class="p">,</span> <span class="n">stopIndex</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">errors</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">FullContextAttemptError</span><span class="p">(</span><span class="n">input_range</span><span class="p">,</span> <span class="n">startIndex</span><span class="p">,</span> <span class="n">stopIndex</span><span class="p">))</span></div>
+
+
+<div class="viewcode-block" id="CollectingErrorListener.reportContextSensitivity">
+<a class="viewcode-back" href="../../../api_doc/dsl/error.html#pyfcstm.dsl.error.CollectingErrorListener.reportContextSensitivity">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">reportContextSensitivity</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">recognizer</span><span class="p">,</span> <span class="n">dfa</span><span class="p">,</span> <span class="n">startIndex</span><span class="p">,</span> <span class="n">stopIndex</span><span class="p">,</span> <span class="n">prediction</span><span class="p">,</span> <span class="n">configs</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Handle and collect context sensitivity issues.</span>
+
+<span class="sd">        :param recognizer: The parser that encountered the sensitivity</span>
+<span class="sd">        :param dfa: The DFA being processed</span>
+<span class="sd">        :param startIndex: Starting index of the sensitive input</span>
+<span class="sd">        :param stopIndex: Ending index of the sensitive input</span>
+<span class="sd">        :param prediction: The predicted alternative</span>
+<span class="sd">        :param configs: The ATN configurations</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">tokens</span> <span class="o">=</span> <span class="n">recognizer</span><span class="o">.</span><span class="n">getTokenStream</span><span class="p">()</span>
+        <span class="n">input_range</span> <span class="o">=</span> <span class="n">tokens</span><span class="o">.</span><span class="n">getText</span><span class="p">(</span><span class="n">startIndex</span><span class="p">,</span> <span class="n">stopIndex</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">errors</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">ContextSensitivityError</span><span class="p">(</span><span class="n">input_range</span><span class="p">,</span> <span class="n">startIndex</span><span class="p">,</span> <span class="n">stopIndex</span><span class="p">))</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">check_unfinished_parsing_error</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">stream</span><span class="p">:</span> <span class="n">CommonTokenStream</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">stream</span><span class="o">.</span><span class="n">LA</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span> <span class="o">!=</span> <span class="n">Token</span><span class="o">.</span><span class="n">EOF</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">errors</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">UnfinishedParsingError</span><span class="p">(</span><span class="n">lineno</span><span class="o">=</span><span class="n">stream</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">stream</span><span class="o">.</span><span class="n">index</span><span class="p">)</span><span class="o">.</span><span class="n">line</span><span class="p">))</span>
+
+<div class="viewcode-block" id="CollectingErrorListener.check_errors">
+<a class="viewcode-back" href="../../../api_doc/dsl/error.html#pyfcstm.dsl.error.CollectingErrorListener.check_errors">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">check_errors</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Check for collected errors and raise an exception if any exist.</span>
+
+<span class="sd">        This method should be called after parsing is complete to verify if any</span>
+<span class="sd">        errors were encountered during the process.</span>
+
+<span class="sd">        :raises GrammarParseError: If any errors were collected during parsing, with detailed error messages</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">errors</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">GrammarParseError</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">errors</span><span class="p">)</span></div>
+</div>
+
+</pre></div>
+
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, HansBug.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  
+    <div class="rst-versions" data-toggle="rst-versions" role="note" aria-label="versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    <span class="fa fa-book"> Other Versions</span>
+    v: dev/encoding
+    <span class="fa fa-caret-down"></span>
+  </span>
+        <div class="rst-other-versions">
+                <dl>
+                    <dt>Tags</dt>
+                        <dd><a href="../../../../../v0.0.1/index.html">v0.0.1</a></dd>
+                </dl>
+                <dl>
+                    <dt>Branches</dt>
+                        <dd><a href="error.html">dev/encoding</a></dd>
+                        <dd><a href="../../../../../HEAD/index.html">HEAD</a></dd>
+                        <dd><a href="../../../../../main/index.html">main</a></dd>
+                        <dd><a href="../../../../../old_design/index.html">old_design</a></dd>
+                </dl>
+        </div>
+    </div><script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

@@ -1223,3 +1223,4 @@ fabric.properties
 junit.xml
 /antlr-*.jar
 !/pyfcstm/template/*/*.yaml
+/pyfcstm/template

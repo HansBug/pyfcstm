@@ -14,6 +14,7 @@ from .base import CONTEXT_SETTINGS
 from ..dsl import parse_with_grammar_entry
 from ..model import parse_dsl_node_to_state_machine
 from ..render import StateMachineCodeRenderer
+from ..utils import auto_decode
 
 
 def _add_generate_subcommand(cli: click.Group) -> click.Group:
@@ -67,7 +68,7 @@ def _add_generate_subcommand(cli: click.Group) -> click.Group:
 
         :return: None
         """
-        code = pathlib.Path(input_code_file).read_text()
+        code = auto_decode(pathlib.Path(input_code_file).read_bytes())
         ast_node = parse_with_grammar_entry(code, entry_name='state_machine_dsl')
         model = parse_dsl_node_to_state_machine(ast_node)
 

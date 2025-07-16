@@ -73,7 +73,7 @@ def auto_decode(data: Union[bytes, bytearray]) -> str:
 
     Example::
 
-        >>> text_bytes = b'\xc4\xe3\xba\xc3'  # "你好" in GBK encoding
+        >>> text_bytes = b'\\xc4\\xe3\\xba\\xc3'  # "你好" in GBK encoding
         >>> auto_decode(text_bytes)
         '你好'
     """

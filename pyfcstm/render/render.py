@@ -65,6 +65,7 @@ from .expr import create_expr_render_template, fn_expr_render, _KNOWN_STYLES
 from .func import process_item_to_object
 from ..dsl import node as dsl_nodes
 from ..model import StateMachine
+from ..utils import auto_decode
 
 
 class StateMachineCodeRenderer:
@@ -209,7 +210,7 @@ class StateMachineCodeRenderer:
         :raises jinja2.exceptions.TemplateError: If there's an error in the template
         :raises IOError: If there's an error reading or writing files
         """
-        tp = self.env.from_string(pathlib.Path(template_file).read_text())
+        tp = self.env.from_string(auto_decode(pathlib.Path(template_file).read_bytes()))
         if os.path.dirname(output_file):
             os.makedirs(os.path.dirname(self.config_file), exist_ok=True)
         os.makedirs(os.path.dirname(output_file), exist_ok=True)

@@ -13,6 +13,7 @@ import click
 from .base import CONTEXT_SETTINGS
 from ..dsl import parse_with_grammar_entry
 from ..model import parse_dsl_node_to_state_machine
+from ..utils import auto_decode
 
 
 def _add_plantuml_subcommand(cli: click.Group) -> click.Group:
@@ -55,7 +56,7 @@ def _add_plantuml_subcommand(cli: click.Group) -> click.Group:
         :param output_file: Path to the output file for PlantUML code (stdout if None)
         :type output_file: str or None
         """
-        code = pathlib.Path(input_code_file).read_text()
+        code = auto_decode(pathlib.Path(input_code_file).read_bytes())
         ast_node = parse_with_grammar_entry(code, entry_name='state_machine_dsl')
         model = parse_dsl_node_to_state_machine(ast_node)
         if output_file is not None:

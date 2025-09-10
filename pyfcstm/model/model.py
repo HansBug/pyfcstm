@@ -1147,7 +1147,7 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
 
         transitions = current_state.transitions
         for subnode in node.substates:
-            _inner_force_transitions = [*force_transitions]
+            _inner_force_transitions = []
             for from_state, to_state, my_event_id, trans_event, condition_expr, guard in force_transition_tuples_to_inherit:
                 if from_state is dsl_nodes.ALL or from_state == subnode.name:
                     transitions.append(Transition(

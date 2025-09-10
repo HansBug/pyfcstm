@@ -479,7 +479,6 @@ class TestModelModelDLC2:
 
     def test_transitions_for_root_state_1(self, root_state_1):
         lst = root_state_1.transitions
-        lst = root_state_1.transitions
         assert len(lst) == 8
         assert lst[0].from_state == 'InService'
         assert lst[0].to_state == dsl_nodes.EXIT_STATE

@@ -1,0 +1,258 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>pyfcstm.utils.validate &mdash; pyfcstm 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/custom.css?v=c9d0a6ec" />
+
+  
+      <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../_static/documentation_options.js?v=01f34227"></script>
+      <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            pyfcstm
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorials/installation/index.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorials/quick_start/index.html">Quick Start</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorials/dsl/index.html">PyFCSTM DSL Syntax Tutorial</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Information</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../information/environment.result.html">Run Environment Information</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">API Documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../api_doc/config/index.html">pyfcstm.config</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api_doc/dsl/index.html">pyfcstm.dsl</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api_doc/entry/index.html">pyfcstm.entry</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api_doc/model/index.html">pyfcstm.model</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api_doc/render/index.html">pyfcstm.render</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api_doc/utils/index.html">pyfcstm.utils</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">pyfcstm</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">pyfcstm.utils.validate</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+    
+    
+  <h1>Source code for pyfcstm.utils.validate</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">This module provides a validation framework for model validation in Python.</span>
+<span class="sd">It includes base classes and exceptions for implementing validation rules and handling validation errors.</span>
+<span class="sd">The framework supports collecting multiple validation errors and provides a clean interface for validation.</span>
+
+<span class="sd">Usage:</span>
+<span class="sd">    &gt;&gt;&gt; class MyModel(IValidatable):</span>
+<span class="sd">    ...     def _my_validator_function(self):</span>
+<span class="sd">    ...         ...</span>
+<span class="sd">    ...</span>
+<span class="sd">    ...     __validators__ = [my_validator_function]</span>
+<span class="sd">    ...</span>
+<span class="sd">    ...     def __init__(self, data):</span>
+<span class="sd">    ...         self.data = data</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">List</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">hbutils.string</span><span class="w"> </span><span class="kn">import</span> <span class="n">plural_word</span>
+
+
+<div class="viewcode-block" id="ValidationError">
+<a class="viewcode-back" href="../../../api_doc/utils/validate.html#pyfcstm.utils.validate.ValidationError">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">ValidationError</span><span class="p">(</span><span class="ne">Exception</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Base exception class for validation errors.</span>
+
+<span class="sd">    This exception should be raised when a single validation rule fails.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">pass</span></div>
+
+
+
+<div class="viewcode-block" id="ModelValidationError">
+<a class="viewcode-back" href="../../../api_doc/utils/validate.html#pyfcstm.utils.validate.ModelValidationError">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">ModelValidationError</span><span class="p">(</span><span class="ne">Exception</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Exception class for aggregating multiple validation errors.</span>
+
+<span class="sd">    This exception contains a list of ValidationError instances and formats them</span>
+<span class="sd">    into a readable error message.</span>
+
+<span class="sd">    :param errors: List of validation errors that occurred</span>
+<span class="sd">    :type errors: List[ValidationError]</span>
+
+<span class="sd">    :ivar errors: Stored validation errors</span>
+<span class="sd">    :type errors: List[ValidationError]</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">errors</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">ValidationError</span><span class="p">]):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;Model validation error, </span><span class="si">{</span><span class="n">plural_word</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">errors</span><span class="p">),</span><span class="w"> </span><span class="s1">&#39;error&#39;</span><span class="p">)</span><span class="si">}</span><span class="s2"> in total:</span><span class="si">{</span><span class="n">os</span><span class="o">.</span><span class="n">linesep</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">os</span><span class="o">.</span><span class="n">linesep</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="k">lambda</span><span class="w"> </span><span class="n">x</span><span class="p">:</span><span class="w"> </span><span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">}</span><span class="s1">. </span><span class="si">{</span><span class="n">x</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">,</span><span class="w"> </span><span class="nb">enumerate</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="nb">repr</span><span class="p">,</span><span class="w"> </span><span class="n">errors</span><span class="p">),</span><span class="w"> </span><span class="n">start</span><span class="o">=</span><span class="mi">1</span><span class="p">)))</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">errors</span> <span class="o">=</span> <span class="n">errors</span></div>
+
+
+
+<div class="viewcode-block" id="IValidatable">
+<a class="viewcode-back" href="../../../api_doc/utils/validate.html#pyfcstm.utils.validate.IValidatable">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">IValidatable</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Interface class for implementing validatable objects.</span>
+
+<span class="sd">    Classes inheriting from IValidatable should define their validation rules</span>
+<span class="sd">    in the __validators__ class variable as a list of validator functions.</span>
+<span class="sd">    Each validator function should take the instance as parameter and raise</span>
+<span class="sd">    ValidationError if validation fails.</span>
+
+<span class="sd">    :cvar __validators__: List of validator functions to be applied</span>
+<span class="sd">    :type __validators__: List[callable]</span>
+
+<span class="sd">    Usage:</span>
+<span class="sd">        &gt;&gt;&gt; class MyModel(IValidatable):</span>
+<span class="sd">        ...     def _my_validator_function(self):</span>
+<span class="sd">        ...         ...</span>
+<span class="sd">        ...</span>
+<span class="sd">        ...     __validators__ = [my_validator_function]</span>
+<span class="sd">        ...     </span>
+<span class="sd">        &gt;&gt;&gt; model = MyModel()</span>
+<span class="sd">        &gt;&gt;&gt; model.validate()  # Raises ModelValidationError if validation fails</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">__validators__</span> <span class="o">=</span> <span class="p">[]</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_validate_for_errors</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">ValidationError</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Execute all validators and collect validation errors.</span>
+
+<span class="sd">        :return: List of validation errors that occurred</span>
+<span class="sd">        :rtype: List[ValidationError]</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">errors</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">validator</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">__validators__</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">validator</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+            <span class="k">except</span> <span class="n">ValidationError</span> <span class="k">as</span> <span class="n">err</span><span class="p">:</span>
+                <span class="n">errors</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">err</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">errors</span>
+
+<div class="viewcode-block" id="IValidatable.validate">
+<a class="viewcode-back" href="../../../api_doc/utils/validate.html#pyfcstm.utils.validate.IValidatable.validate">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">validate</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Validate the object using all registered validators.</span>
+
+<span class="sd">        :raises ModelValidationError: If any validation errors occur</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">errors</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_for_errors</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">errors</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">ModelValidationError</span><span class="p">(</span><span class="n">errors</span><span class="p">)</span></div>
+</div>
+
+</pre></div>
+
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, HansBug.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  
+    <div class="rst-versions" data-toggle="rst-versions" role="note" aria-label="versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    <span class="fa fa-book"> Other Versions</span>
+    v: dev/fix_dup
+    <span class="fa fa-caret-down"></span>
+  </span>
+        <div class="rst-other-versions">
+                <dl>
+                    <dt>Tags</dt>
+                        <dd><a href="../../../../../v0.0.1/index.html">v0.0.1</a></dd>
+                        <dd><a href="../../../../../v0.1.0/index.html">v0.1.0</a></dd>
+                </dl>
+                <dl>
+                    <dt>Branches</dt>
+                        <dd><a href="validate.html">dev/fix_dup</a></dd>
+                        <dd><a href="../../../../../HEAD/index.html">HEAD</a></dd>
+                        <dd><a href="../../../../encoding/index.html">dev/encoding</a></dd>
+                        <dd><a href="../../../../../main/index.html">main</a></dd>
+                        <dd><a href="../../../../../old_design/index.html">old_design</a></dd>
+                </dl>
+        </div>
+    </div><script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

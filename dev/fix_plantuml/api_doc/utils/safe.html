@@ -113,11 +113,15 @@
 <p>This module provides functionality to convert sequences of strings into safe, 
 underscore-separated identifiers. It’s particularly useful for generating 
 consistent naming conventions from potentially inconsistent input strings.</p>
+<p>The main use case is to take a collection of string segments that may use
+different naming conventions (CamelCase, snake_case, kebab-case, etc.) and
+normalize them into a consistent, safe identifier format using underscores
+as separators.</p>
 <section id="sequence-safe">
 <h2>sequence_safe<a class="headerlink" href="#sequence-safe" title="Link to this heading"></a></h2>
 <dl class="py function">
 <dt class="sig sig-object py" id="pyfcstm.utils.safe.sequence_safe">
-<span class="sig-prename descclassname"><span class="pre">pyfcstm.utils.safe.</span></span><span class="sig-name descname"><span class="pre">sequence_safe</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">segments</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Sequence</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">str</span></span></span><a class="reference internal" href="../../_modules/pyfcstm/utils/safe.html#sequence_safe"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.utils.safe.sequence_safe" title="Link to this definition"></a></dt>
+<span class="sig-prename descclassname"><span class="pre">pyfcstm.utils.safe.</span></span><span class="sig-name descname"><span class="pre">sequence_safe</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">segments</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Iterable</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">str</span></span></span><a class="reference internal" href="../../_modules/pyfcstm/utils/safe.html#sequence_safe"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.utils.safe.sequence_safe" title="Link to this definition"></a></dt>
 <dd><p>Convert a sequence of strings into a safe underscore-separated identifier.</p>
 <p>This function takes a sequence of strings, converts each to underscore format,
 normalizes multiple consecutive underscores to single underscores, and joins
@@ -125,7 +129,7 @@ them with double underscores (‘__’). This is useful for creating consistent
 identifiers from potentially inconsistent input strings.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><p><strong>segments</strong> (<em>Sequence</em><em>[</em><em>str</em><em>]</em>) – A sequence of strings to be converted into a safe identifier.</p>
+<dd class="field-odd"><p><strong>segments</strong> (<em>Iterable</em><em>[</em><em>str</em><em>]</em>) – A sequence of strings to be converted into a safe identifier.</p>
 </dd>
 <dt class="field-even">Returns<span class="colon">:</span></dt>
 <dd class="field-even"><p>A safe underscore-separated identifier string.</p>

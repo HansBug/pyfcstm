@@ -95,17 +95,22 @@
 <span class="sd">This module provides functionality to convert sequences of strings into safe, </span>
 <span class="sd">underscore-separated identifiers. It&#39;s particularly useful for generating </span>
 <span class="sd">consistent naming conventions from potentially inconsistent input strings.</span>
+
+<span class="sd">The main use case is to take a collection of string segments that may use</span>
+<span class="sd">different naming conventions (CamelCase, snake_case, kebab-case, etc.) and</span>
+<span class="sd">normalize them into a consistent, safe identifier format using underscores</span>
+<span class="sd">as separators.</span>
 <span class="sd">&quot;&quot;&quot;</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">Sequence</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Iterable</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">hbutils.string</span><span class="w"> </span><span class="kn">import</span> <span class="n">underscore</span>
 
 
 <div class="viewcode-block" id="sequence_safe">
 <a class="viewcode-back" href="../../../api_doc/utils/safe.html#pyfcstm.utils.safe.sequence_safe">[docs]</a>
-<span class="k">def</span><span class="w"> </span><span class="nf">sequence_safe</span><span class="p">(</span><span class="n">segments</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">sequence_safe</span><span class="p">(</span><span class="n">segments</span><span class="p">:</span> <span class="n">Iterable</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Convert a sequence of strings into a safe underscore-separated identifier.</span>
 
@@ -115,7 +120,7 @@
 <span class="sd">    identifiers from potentially inconsistent input strings.</span>
 
 <span class="sd">    :param segments: A sequence of strings to be converted into a safe identifier.</span>
-<span class="sd">    :type segments: Sequence[str]</span>
+<span class="sd">    :type segments: Iterable[str]</span>
 
 <span class="sd">    :return: A safe underscore-separated identifier string.</span>
 <span class="sd">    :rtype: str</span>

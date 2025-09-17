@@ -13,6 +13,7 @@ pyfcstm.utils
     doc
     jinja2
     json
+    safe
     text
     validate
 

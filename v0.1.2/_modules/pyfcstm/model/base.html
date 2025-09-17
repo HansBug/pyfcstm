@@ -1,0 +1,207 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>pyfcstm.model.base &mdash; pyfcstm 0.1.2 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/custom.css?v=c9d0a6ec" />
+
+  
+      <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../_static/documentation_options.js?v=92734c54"></script>
+      <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            pyfcstm
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorials/installation/index.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorials/quick_start/index.html">Quick Start</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorials/dsl/index.html">PyFCSTM DSL Syntax Tutorial</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Information</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../information/environment.result.html">Run Environment Information</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">API Documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../api_doc/config/index.html">pyfcstm.config</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api_doc/dsl/index.html">pyfcstm.dsl</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api_doc/entry/index.html">pyfcstm.entry</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api_doc/model/index.html">pyfcstm.model</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api_doc/render/index.html">pyfcstm.render</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api_doc/utils/index.html">pyfcstm.utils</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">pyfcstm</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">pyfcstm.model.base</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+    
+    
+  <h1>Source code for pyfcstm.model.base</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Module for defining exportable interfaces for AST and PlantUML formats.</span>
+
+<span class="sd">This module provides abstract base classes that define interfaces for objects</span>
+<span class="sd">that can be exported to Abstract Syntax Tree (AST) nodes or PlantUML diagram</span>
+<span class="sd">representations.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">..dsl</span><span class="w"> </span><span class="kn">import</span> <span class="n">node</span> <span class="k">as</span> <span class="n">dsl_nodes</span>
+
+
+<div class="viewcode-block" id="AstExportable">
+<a class="viewcode-back" href="../../../api_doc/model/base.html#pyfcstm.model.base.AstExportable">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">AstExportable</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Abstract base class for objects that can be exported to AST nodes.</span>
+
+<span class="sd">    Classes that inherit from this interface should implement the to_ast_node</span>
+<span class="sd">    method to convert themselves into appropriate AST node representations.</span>
+
+<span class="sd">    :raises NotImplementedError: If the subclass does not implement the to_ast_node method.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="AstExportable.to_ast_node">
+<a class="viewcode-back" href="../../../api_doc/model/base.html#pyfcstm.model.base.AstExportable.to_ast_node">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">to_ast_node</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">dsl_nodes</span><span class="o">.</span><span class="n">ASTNode</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Convert the object to an AST node representation.</span>
+
+<span class="sd">        :return: An AST node representing this object</span>
+<span class="sd">        :rtype: dsl_nodes.ASTNode</span>
+<span class="sd">        :raises NotImplementedError: This is an abstract method that must be implemented by subclasses</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span>  <span class="c1"># pragma: no cover</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="PlantUMLExportable">
+<a class="viewcode-back" href="../../../api_doc/model/base.html#pyfcstm.model.base.PlantUMLExportable">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">PlantUMLExportable</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Abstract base class for objects that can be exported to PlantUML format.</span>
+
+<span class="sd">    Classes that inherit from this interface should implement the to_plantuml</span>
+<span class="sd">    method to convert themselves into PlantUML diagram syntax.</span>
+
+<span class="sd">    :raises NotImplementedError: If the subclass does not implement the to_plantuml method.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="PlantUMLExportable.to_plantuml">
+<a class="viewcode-back" href="../../../api_doc/model/base.html#pyfcstm.model.base.PlantUMLExportable.to_plantuml">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">to_plantuml</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Convert the object to a PlantUML diagram representation.</span>
+
+<span class="sd">        :return: A string containing PlantUML syntax representing this object</span>
+<span class="sd">        :rtype: str</span>
+<span class="sd">        :raises NotImplementedError: This is an abstract method that must be implemented by subclasses</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span>  <span class="c1"># pragma: no cover</span></div>
+</div>
+
+</pre></div>
+
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, HansBug.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  
+    <div class="rst-versions" data-toggle="rst-versions" role="note" aria-label="versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    <span class="fa fa-book"> Other Versions</span>
+    v: v0.1.2
+    <span class="fa fa-caret-down"></span>
+  </span>
+        <div class="rst-other-versions">
+                <dl>
+                    <dt>Tags</dt>
+                        <dd><a href="../../../../v0.0.1/index.html">v0.0.1</a></dd>
+                        <dd><a href="../../../../v0.1.0/index.html">v0.1.0</a></dd>
+                        <dd><a href="../../../../v0.1.1/index.html">v0.1.1</a></dd>
+                        <dd><a href="base.html">v0.1.2</a></dd>
+                </dl>
+                <dl>
+                    <dt>Branches</dt>
+                        <dd><a href="../../../../HEAD/index.html">HEAD</a></dd>
+                        <dd><a href="../../../../main/index.html">main</a></dd>
+                        <dd><a href="../../../../old_design/index.html">old_design</a></dd>
+                </dl>
+        </div>
+    </div><script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

@@ -38,6 +38,8 @@ __all__ = [
     'parse_dsl_node_to_state_machine',
 ]
 
+from ..utils import sequence_safe
+
 
 @dataclass
 class Operation(AstExportable):
@@ -877,18 +879,27 @@ class State(AstExportable, PlantUMLExportable):
         :return: PlantUML representation of the state
         :rtype: str
         """
+
+        def _name_safe(sub_state: Optional[str] = None):
+            subpath = [*self.path]
+            if sub_state is not None:
+                subpath.append(sub_state)
+            return sequence_safe(subpath)
+
         with io.StringIO() as sf:
             if self.is_leaf_state:
-                print(f'state {self.name}', file=sf, end='')
+                print(f'state {json.dumps(self.name)} as {_name_safe()}', file=sf, end='')
             else:
-                print(f'state {self.name} {{', file=sf)
+                print(f'state {json.dumps(self.name)} as {_name_safe()} {{', file=sf)
                 for state in self.substates.values():
                     print(indent(state.to_plantuml(), prefix='    '), file=sf)
                 for trans in self.transitions:
                     with io.StringIO() as tf:
-                        print('[*]' if trans.from_state is dsl_nodes.INIT_STATE else trans.from_state, file=tf, end='')
+                        print('[*]' if trans.from_state is dsl_nodes.INIT_STATE
+                              else _name_safe(trans.from_state), file=tf, end='')
                         print(' --> ', file=tf, end='')
-                        print('[*]' if trans.to_state is dsl_nodes.EXIT_STATE else trans.to_state, file=tf, end='')
+                        print('[*]' if trans.to_state is dsl_nodes.EXIT_STATE
+                              else _name_safe(trans.to_state), file=tf, end='')
 
                         if trans.event is not None:
                             print(f' : {".".join(list(trans.event.path[len(self.path):]))}', file=tf, end='')
@@ -920,7 +931,7 @@ class State(AstExportable, PlantUMLExportable):
                     for during_aspect_item in self.on_during_aspects:
                         print(during_aspect_item.to_ast_node(), file=tf)
                     text = json.dumps(tf.getvalue().rstrip()).strip("\"")
-                    print(f'{self.name} : {text}', file=sf, end='')
+                    print(f'{_name_safe()} : {text}', file=sf, end='')
 
             return sf.getvalue()
 
@@ -1021,8 +1032,8 @@ class StateMachine(AstExportable, PlantUMLExportable):
                 print('end note', file=sf)
                 print('', file=sf)
             print(self.root_state.to_plantuml(), file=sf)
-            print(f'[*] --> {self.root_state.name}', file=sf)
-            print(f'{self.root_state.name} --> [*]', file=sf)
+            print(f'[*] --> {sequence_safe(self.root_state.path)}', file=sf)
+            print(f'{sequence_safe(self.root_state.path)} --> [*]', file=sf)
             print('@enduml', file=sf, end='')
             return sf.getvalue()
 

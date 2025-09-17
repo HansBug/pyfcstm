@@ -1,0 +1,212 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>pyfcstm.utils.decode &mdash; pyfcstm 0.1.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/custom.css?v=c9d0a6ec" />
+
+  
+      <script src="../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../_static/documentation_options.js?v=a58bc63e"></script>
+      <script src="../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <link rel="next" title="pyfcstm.utils.doc" href="doc.html" />
+    <link rel="prev" title="pyfcstm.utils" href="index.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            pyfcstm
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../tutorials/installation/index.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../tutorials/quick_start/index.html">Quick Start</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../tutorials/dsl/index.html">PyFCSTM DSL Syntax Tutorial</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Information</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../information/environment.result.html">Run Environment Information</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">API Documentation</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../config/index.html">pyfcstm.config</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../dsl/index.html">pyfcstm.dsl</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../entry/index.html">pyfcstm.entry</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../model/index.html">pyfcstm.model</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../render/index.html">pyfcstm.render</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="index.html">pyfcstm.utils</a><ul class="current">
+<li class="toctree-l2 current"><a class="current reference internal" href="#">pyfcstm.utils.decode</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#auto-decode">auto_decode</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#pyfcstm.utils.decode.auto_decode"><code class="docutils literal notranslate"><span class="pre">auto_decode()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="doc.html">pyfcstm.utils.doc</a></li>
+<li class="toctree-l2"><a class="reference internal" href="jinja2.html">pyfcstm.utils.jinja2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="json.html">pyfcstm.utils.json</a></li>
+<li class="toctree-l2"><a class="reference internal" href="safe.html">pyfcstm.utils.safe</a></li>
+<li class="toctree-l2"><a class="reference internal" href="text.html">pyfcstm.utils.text</a></li>
+<li class="toctree-l2"><a class="reference internal" href="validate.html">pyfcstm.utils.validate</a></li>
+</ul>
+</li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">pyfcstm</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="index.html">pyfcstm.utils</a></li>
+      <li class="breadcrumb-item active">pyfcstm.utils.decode</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../../_sources/api_doc/utils/decode.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+    
+    
+  <section id="module-pyfcstm.utils.decode">
+<span id="pyfcstm-utils-decode"></span><h1>pyfcstm.utils.decode<a class="headerlink" href="#module-pyfcstm.utils.decode" title="Link to this heading"></a></h1>
+<p>Utilities for automatic text decoding with a focus on Chinese encodings.</p>
+<p>This module provides functionality to automatically detect and decode text data
+from various encodings, with special emphasis on Chinese character encodings.
+It includes a comprehensive list of Chinese encodings commonly used on Windows
+systems and a robust auto-detection mechanism that tries multiple encodings
+until successful decoding is achieved.</p>
+<section id="auto-decode">
+<h2>auto_decode<a class="headerlink" href="#auto-decode" title="Link to this heading"></a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="pyfcstm.utils.decode.auto_decode">
+<span class="sig-prename descclassname"><span class="pre">pyfcstm.utils.decode.</span></span><span class="sig-name descname"><span class="pre">auto_decode</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bytes</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">bytearray</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">str</span></span></span><a class="reference internal" href="../../_modules/pyfcstm/utils/decode.html#auto_decode"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.utils.decode.auto_decode" title="Link to this definition"></a></dt>
+<dd><p>Automatically decode bytes data by trying multiple encodings.</p>
+<p>This function attempts to decode the input data using multiple encodings in the following order:</p>
+<ol class="arabic simple">
+<li><p>The encoding detected by chardet</p></li>
+<li><p>Common Chinese encodings used in Windows</p></li>
+<li><p>The default system encoding</p></li>
+</ol>
+<p>The function tries each encoding until successful decoding is achieved. If all
+encodings fail, it raises the UnicodeDecodeError from the encoding that managed
+to decode the most characters before failing.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>data</strong> (<em>Union</em><em>[</em><em>bytes</em><em>, </em><em>bytearray</em><em>]</em>) – The bytes data to decode</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The decoded string</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>str</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>UnicodeDecodeError</strong> – If the data cannot be decoded with any of the attempted encodings</p>
+</dd>
+</dl>
+<p>Example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">text_bytes</span> <span class="o">=</span> <span class="sa">b</span><span class="s1">&#39;</span><span class="se">\xc4\xe3\xba\xc3</span><span class="s1">&#39;</span>  <span class="c1"># &quot;你好&quot; in GBK encoding</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">auto_decode</span><span class="p">(</span><span class="n">text_bytes</span><span class="p">)</span>
+<span class="go">&#39;你好&#39;</span>
+</pre></div>
+</div>
+</dd></dl>
+
+</section>
+</section>
+
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="index.html" class="btn btn-neutral float-left" title="pyfcstm.utils" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="doc.html" class="btn btn-neutral float-right" title="pyfcstm.utils.doc" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, HansBug.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  
+    <div class="rst-versions" data-toggle="rst-versions" role="note" aria-label="versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    <span class="fa fa-book"> Other Versions</span>
+    v: dev/fix_plantuml
+    <span class="fa fa-caret-down"></span>
+  </span>
+        <div class="rst-other-versions">
+                <dl>
+                    <dt>Tags</dt>
+                        <dd><a href="../../../../v0.0.1/index.html">v0.0.1</a></dd>
+                        <dd><a href="../../../../v0.1.0/api_doc/utils/decode.html">v0.1.0</a></dd>
+                        <dd><a href="../../../../v0.1.1/api_doc/utils/decode.html">v0.1.1</a></dd>
+                </dl>
+                <dl>
+                    <dt>Branches</dt>
+                        <dd><a href="decode.html">dev/fix_plantuml</a></dd>
+                        <dd><a href="../../../../HEAD/api_doc/utils/decode.html">HEAD</a></dd>
+                        <dd><a href="../../../../main/api_doc/utils/decode.html">main</a></dd>
+                        <dd><a href="../../../../old_design/index.html">old_design</a></dd>
+                </dl>
+        </div>
+    </div><script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

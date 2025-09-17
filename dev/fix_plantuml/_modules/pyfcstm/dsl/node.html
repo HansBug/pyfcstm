@@ -1,0 +1,1950 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>pyfcstm.dsl.node &mdash; pyfcstm 0.1.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/custom.css?v=c9d0a6ec" />
+
+  
+      <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../_static/documentation_options.js?v=a58bc63e"></script>
+      <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            pyfcstm
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorials/installation/index.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorials/quick_start/index.html">Quick Start</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorials/dsl/index.html">PyFCSTM DSL Syntax Tutorial</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Information</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../information/environment.result.html">Run Environment Information</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">API Documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../api_doc/config/index.html">pyfcstm.config</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api_doc/dsl/index.html">pyfcstm.dsl</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api_doc/entry/index.html">pyfcstm.entry</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api_doc/model/index.html">pyfcstm.model</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api_doc/render/index.html">pyfcstm.render</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api_doc/utils/index.html">pyfcstm.utils</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">pyfcstm</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">pyfcstm.dsl.node</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+    
+    
+  <h1>Source code for pyfcstm.dsl.node</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">State Machine DSL AST Module</span>
+
+<span class="sd">This module defines the Abstract Syntax Tree (AST) classes for a State Machine Domain Specific Language.</span>
+<span class="sd">It provides a comprehensive set of classes to represent various elements of state machines including:</span>
+
+<span class="sd">- States and transitions</span>
+<span class="sd">- Expressions and operations</span>
+<span class="sd">- Conditions and assignments</span>
+<span class="sd">- Event handling with enter, during, and exit actions</span>
+
+<span class="sd">The AST classes enable parsing, manipulation, and generation of state machine definitions</span>
+<span class="sd">in a structured way, supporting both simple and hierarchical state machines.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">io</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">ABC</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">textwrap</span><span class="w"> </span><span class="kn">import</span> <span class="n">indent</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">hbutils.design</span><span class="w"> </span><span class="kn">import</span> <span class="n">SingletonMark</span>
+
+<span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="s1">&#39;ASTNode&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;Identifier&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;ChainID&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;Expr&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;Literal&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;Boolean&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;Integer&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;HexInt&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;Float&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;Constant&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;Name&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;Paren&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;UnaryOp&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;BinaryOp&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;ConditionalOp&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;UFunc&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;Statement&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;ConstantDefinition&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;InitialAssignment&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;DefAssignment&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;OperationalDeprecatedAssignment&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;Preamble&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;Operation&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;Condition&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;TransitionDefinition&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;ForceTransitionDefinition&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;StateDefinition&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;OperationAssignment&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;StateMachineDSLProgram&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;INIT_STATE&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;EXIT_STATE&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;ALL&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;EnterStatement&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;EnterOperations&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;EnterAbstractFunction&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;ExitStatement&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;ExitOperations&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;ExitAbstractFunction&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;DuringStatement&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;DuringOperations&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;DuringAbstractFunction&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;DuringAspectStatement&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;DuringAspectOperations&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;DuringAspectAbstractFunction&#39;</span><span class="p">,</span>
+<span class="p">]</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">List</span><span class="p">,</span> <span class="n">Union</span><span class="p">,</span> <span class="n">Optional</span>
+
+
+<div class="viewcode-block" id="ASTNode">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.ASTNode">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">ASTNode</span><span class="p">(</span><span class="n">ABC</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Abstract base class for all AST nodes in the state machine DSL.</span>
+
+<span class="sd">    This class serves as the foundation for all nodes in the Abstract Syntax Tree,</span>
+<span class="sd">    providing a common type for all elements in the state machine definition.</span>
+
+<span class="sd">    :rtype: ASTNode</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">pass</span></div>
+
+
+
+<div class="viewcode-block" id="Identifier">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.Identifier">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Identifier</span><span class="p">(</span><span class="n">ASTNode</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Abstract base class for identifiers in the state machine DSL.</span>
+
+<span class="sd">    Identifiers are used to reference variables, states, and other named elements</span>
+<span class="sd">    in the state machine definition.</span>
+
+<span class="sd">    :rtype: Identifier</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">pass</span></div>
+
+
+
+<div class="viewcode-block" id="ChainID">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.ChainID">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">ChainID</span><span class="p">(</span><span class="n">Identifier</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Represents a chained identifier (e.g., a.b.c) in the state machine DSL.</span>
+
+<span class="sd">    :param path: List of string components that make up the chained identifier</span>
+<span class="sd">    :type path: List[str]</span>
+
+<span class="sd">    :rtype: ChainID</span>
+
+<span class="sd">    Example::</span>
+
+<span class="sd">        &gt;&gt;&gt; chain_id = ChainID([&#39;state1&#39;, &#39;event&#39;])</span>
+<span class="sd">        &gt;&gt;&gt; str(chain_id)</span>
+<span class="sd">        &#39;state1.event&#39;</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">path</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
+    <span class="n">is_absolute</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+
+<div class="viewcode-block" id="ChainID.__str__">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.ChainID.__str__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Convert the ChainID to its string representation.</span>
+
+<span class="sd">        :return: String representation of the chained identifier</span>
+<span class="sd">        :rtype: str</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">pth</span> <span class="o">=</span> <span class="s1">&#39;.&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">path</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">is_absolute</span><span class="p">:</span>
+            <span class="n">pth</span> <span class="o">=</span> <span class="sa">f</span><span class="s1">&#39;/</span><span class="si">{</span><span class="n">pth</span><span class="si">}</span><span class="s1">&#39;</span>
+        <span class="k">return</span> <span class="n">pth</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="Expr">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.Expr">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Expr</span><span class="p">(</span><span class="n">ASTNode</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Abstract base class for expressions in the state machine DSL.</span>
+
+<span class="sd">    Expressions represent computations that produce values, which can be used in</span>
+<span class="sd">    conditions, assignments, and other contexts within the state machine.</span>
+
+<span class="sd">    :rtype: Expr</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">pass</span></div>
+
+
+
+<div class="viewcode-block" id="Literal">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.Literal">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Literal</span><span class="p">(</span><span class="n">Expr</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Base class for literal values in expressions.</span>
+
+<span class="sd">    Literal values are constants directly expressed in the code, such as numbers,</span>
+<span class="sd">    booleans, or predefined constants.</span>
+
+<span class="sd">    :param raw: The raw string representation of the literal</span>
+<span class="sd">    :type raw: str</span>
+
+<span class="sd">    :rtype: Literal</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">raw</span><span class="p">:</span> <span class="nb">str</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">value</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Get the actual value of the literal.</span>
+
+<span class="sd">        :return: The evaluated value of the literal</span>
+<span class="sd">        :rtype: Any</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_value</span><span class="p">()</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_value</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Internal method to evaluate the literal&#39;s value.</span>
+
+<span class="sd">        :return: The evaluated value of the literal</span>
+<span class="sd">        :rtype: Any</span>
+<span class="sd">        :raises NotImplementedError: This method must be implemented by subclasses</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span>  <span class="c1"># pragma: no cover</span>
+
+<div class="viewcode-block" id="Literal.__str__">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.Literal.__str__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Convert the literal to its string representation.</span>
+
+<span class="sd">        :return: String representation of the literal&#39;s value</span>
+<span class="sd">        :rtype: str</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_value</span><span class="p">())</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="Integer">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.Integer">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Integer</span><span class="p">(</span><span class="n">Literal</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Represents an integer literal in the state machine DSL.</span>
+
+<span class="sd">    :param raw: The raw string representation of the integer</span>
+<span class="sd">    :type raw: str</span>
+
+<span class="sd">    :rtype: Integer</span>
+
+<span class="sd">    Example::</span>
+
+<span class="sd">        &gt;&gt;&gt; int_val = Integer(&quot;42&quot;)</span>
+<span class="sd">        &gt;&gt;&gt; int_val.value</span>
+<span class="sd">        42</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_value</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Convert the raw string to an integer value.</span>
+
+<span class="sd">        :return: The integer value</span>
+<span class="sd">        :rtype: int</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">raw</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="HexInt">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.HexInt">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">HexInt</span><span class="p">(</span><span class="n">Literal</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Represents a hexadecimal integer literal in the state machine DSL.</span>
+
+<span class="sd">    :param raw: The raw string representation of the hexadecimal integer (e.g., &quot;0xFF&quot;)</span>
+<span class="sd">    :type raw: str</span>
+
+<span class="sd">    :rtype: HexInt</span>
+
+<span class="sd">    Example::</span>
+
+<span class="sd">        &gt;&gt;&gt; hex_val = HexInt(&quot;0xFF&quot;)</span>
+<span class="sd">        &gt;&gt;&gt; hex_val.value</span>
+<span class="sd">        255</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_value</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Convert the raw hexadecimal string to an integer value.</span>
+
+<span class="sd">        :return: The integer value</span>
+<span class="sd">        :rtype: int</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">raw</span><span class="p">,</span> <span class="mi">16</span><span class="p">)</span>
+
+<div class="viewcode-block" id="HexInt.__str__">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.HexInt.__str__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Convert the hexadecimal integer to its string representation.</span>
+
+<span class="sd">        :return: Lowercase string representation of the hexadecimal value</span>
+<span class="sd">        :rtype: str</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">raw</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="Float">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.Float">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Float</span><span class="p">(</span><span class="n">Literal</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Represents a floating-point literal in the state machine DSL.</span>
+
+<span class="sd">    :param raw: The raw string representation of the float</span>
+<span class="sd">    :type raw: str</span>
+
+<span class="sd">    :rtype: Float</span>
+
+<span class="sd">    Example::</span>
+
+<span class="sd">        &gt;&gt;&gt; float_val = Float(&quot;3.14&quot;)</span>
+<span class="sd">        &gt;&gt;&gt; float_val.value</span>
+<span class="sd">        3.14</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_value</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Convert the raw string to a float value.</span>
+
+<span class="sd">        :return: The float value</span>
+<span class="sd">        :rtype: float</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">raw</span><span class="p">)</span>
+
+<div class="viewcode-block" id="Float.__str__">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.Float.__str__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Convert the float to its string representation.</span>
+
+<span class="sd">        :return: String representation of the float</span>
+<span class="sd">        :rtype: str</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">raw</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="Boolean">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.Boolean">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Boolean</span><span class="p">(</span><span class="n">Literal</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Represents a boolean literal in the state machine DSL.</span>
+
+<span class="sd">    :param raw: The raw string representation of the boolean (&quot;true&quot; or &quot;false&quot;)</span>
+<span class="sd">    :type raw: str</span>
+
+<span class="sd">    :rtype: Boolean</span>
+
+<span class="sd">    Example::</span>
+
+<span class="sd">        &gt;&gt;&gt; bool_val = Boolean(&quot;true&quot;)</span>
+<span class="sd">        &gt;&gt;&gt; bool_val.value</span>
+<span class="sd">        True</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="Boolean.__post_init__">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.Boolean.__post_init__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">__post_init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Normalize the raw value to lowercase after initialization.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">raw</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">raw</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_value</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Convert the raw string to a boolean value.</span>
+
+<span class="sd">        :return: The boolean value</span>
+<span class="sd">        :rtype: bool</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">raw</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="Constant">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.Constant">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Constant</span><span class="p">(</span><span class="n">Literal</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Represents a named mathematical constant in the state machine DSL.</span>
+
+<span class="sd">    :param raw: The name of the constant (e.g., &quot;pi&quot;, &quot;E&quot;)</span>
+<span class="sd">    :type raw: str</span>
+
+<span class="sd">    :rtype: Constant</span>
+
+<span class="sd">    Example::</span>
+
+<span class="sd">        &gt;&gt;&gt; pi_const = Constant(&quot;pi&quot;)</span>
+<span class="sd">        &gt;&gt;&gt; pi_const.value</span>
+<span class="sd">        3.141592653589793</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">__KNOWN_CONSTANTS__</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s1">&#39;E&#39;</span><span class="p">:</span> <span class="n">math</span><span class="o">.</span><span class="n">e</span><span class="p">,</span>
+        <span class="s1">&#39;pi&#39;</span><span class="p">:</span> <span class="n">math</span><span class="o">.</span><span class="n">pi</span><span class="p">,</span>
+        <span class="s1">&#39;tau&#39;</span><span class="p">:</span> <span class="n">math</span><span class="o">.</span><span class="n">tau</span><span class="p">,</span>
+    <span class="p">}</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_value</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Get the value of the named constant.</span>
+
+<span class="sd">        :return: The constant&#39;s value</span>
+<span class="sd">        :rtype: float</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">__KNOWN_CONSTANTS__</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">raw</span><span class="p">]</span>
+
+<div class="viewcode-block" id="Constant.__str__">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.Constant.__str__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Convert the constant to its string representation.</span>
+
+<span class="sd">        :return: The name of the constant</span>
+<span class="sd">        :rtype: str</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">raw</span><span class="si">}</span><span class="s1">&#39;</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="Name">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.Name">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Name</span><span class="p">(</span><span class="n">Expr</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Represents a named reference in the state machine DSL.</span>
+
+<span class="sd">    Names are used to reference variables, states, or other named elements.</span>
+
+<span class="sd">    :param name: The identifier name</span>
+<span class="sd">    :type name: str</span>
+
+<span class="sd">    :rtype: Name</span>
+
+<span class="sd">    Example::</span>
+
+<span class="sd">        &gt;&gt;&gt; var_name = Name(&quot;counter&quot;)</span>
+<span class="sd">        &gt;&gt;&gt; str(var_name)</span>
+<span class="sd">        &#39;counter&#39;</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span>
+
+<div class="viewcode-block" id="Name.__str__">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.Name.__str__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Convert the name to its string representation.</span>
+
+<span class="sd">        :return: The name as a string</span>
+<span class="sd">        :rtype: str</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="Paren">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.Paren">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Paren</span><span class="p">(</span><span class="n">Expr</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Represents a parenthesized expression in the state machine DSL.</span>
+
+<span class="sd">    Parentheses are used to control the order of operations in expressions.</span>
+
+<span class="sd">    :param expr: The expression within the parentheses</span>
+<span class="sd">    :type expr: Expr</span>
+
+<span class="sd">    :rtype: Paren</span>
+
+<span class="sd">    Example::</span>
+
+<span class="sd">        &gt;&gt;&gt; inner_expr = BinaryOp(Name(&quot;a&quot;), &quot;+&quot;, Name(&quot;b&quot;))</span>
+<span class="sd">        &gt;&gt;&gt; paren_expr = Paren(inner_expr)</span>
+<span class="sd">        &gt;&gt;&gt; str(paren_expr)</span>
+<span class="sd">        &#39;(a + b)&#39;</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">expr</span><span class="p">:</span> <span class="n">Expr</span>
+
+<div class="viewcode-block" id="Paren.__str__">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.Paren.__str__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Convert the parenthesized expression to its string representation.</span>
+
+<span class="sd">        :return: The expression surrounded by parentheses</span>
+<span class="sd">        :rtype: str</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s1">&#39;(</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">expr</span><span class="si">}</span><span class="s1">)&#39;</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="UnaryOp">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.UnaryOp">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">UnaryOp</span><span class="p">(</span><span class="n">Expr</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Represents a unary operation in the state machine DSL.</span>
+
+<span class="sd">    Unary operations apply a single operator to an expression.</span>
+
+<span class="sd">    :param op: The unary operator (e.g., &quot;!&quot;, &quot;not&quot;, &quot;-&quot;)</span>
+<span class="sd">    :type op: str</span>
+<span class="sd">    :param expr: The expression to which the operator is applied</span>
+<span class="sd">    :type expr: Expr</span>
+
+<span class="sd">    :rtype: UnaryOp</span>
+
+<span class="sd">    Example::</span>
+
+<span class="sd">        &gt;&gt;&gt; not_expr = UnaryOp(&quot;not&quot;, Name(&quot;condition&quot;))</span>
+<span class="sd">        &gt;&gt;&gt; str(not_expr)</span>
+<span class="sd">        &#39;!condition&#39;</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">__aliases__</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s1">&#39;not&#39;</span><span class="p">:</span> <span class="s1">&#39;!&#39;</span><span class="p">,</span>
+    <span class="p">}</span>
+
+    <span class="n">op</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">expr</span><span class="p">:</span> <span class="n">Expr</span>
+
+<div class="viewcode-block" id="UnaryOp.__post_init__">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.UnaryOp.__post_init__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">__post_init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Replace any operator aliases with their canonical form.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">op</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">__aliases__</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">op</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">op</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="UnaryOp.__str__">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.UnaryOp.__str__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Convert the unary operation to its string representation.</span>
+
+<span class="sd">        :return: String representation of the unary operation</span>
+<span class="sd">        :rtype: str</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">op</span><span class="si">}{</span><span class="bp">self</span><span class="o">.</span><span class="n">expr</span><span class="si">}</span><span class="s1">&#39;</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="BinaryOp">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.BinaryOp">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">BinaryOp</span><span class="p">(</span><span class="n">Expr</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Represents a binary operation in the state machine DSL.</span>
+
+<span class="sd">    Binary operations apply an operator to two expressions.</span>
+
+<span class="sd">    :param expr1: The left-hand expression</span>
+<span class="sd">    :type expr1: Expr</span>
+<span class="sd">    :param op: The binary operator (e.g., &quot;+&quot;, &quot;-&quot;, &quot;and&quot;, &quot;or&quot;)</span>
+<span class="sd">    :type op: str</span>
+<span class="sd">    :param expr2: The right-hand expression</span>
+<span class="sd">    :type expr2: Expr</span>
+
+<span class="sd">    :rtype: BinaryOp</span>
+
+<span class="sd">    Example::</span>
+
+<span class="sd">        &gt;&gt;&gt; add_expr = BinaryOp(Name(&quot;a&quot;), &quot;+&quot;, Name(&quot;b&quot;))</span>
+<span class="sd">        &gt;&gt;&gt; str(add_expr)</span>
+<span class="sd">        &#39;a + b&#39;</span>
+<span class="sd">        &gt;&gt;&gt; and_expr = BinaryOp(Name(&quot;x&quot;), &quot;and&quot;, Name(&quot;y&quot;))</span>
+<span class="sd">        &gt;&gt;&gt; str(and_expr)</span>
+<span class="sd">        &#39;x &amp;&amp; y&#39;</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">__aliases__</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s1">&#39;and&#39;</span><span class="p">:</span> <span class="s1">&#39;&amp;&amp;&#39;</span><span class="p">,</span>
+        <span class="s1">&#39;or&#39;</span><span class="p">:</span> <span class="s1">&#39;||&#39;</span><span class="p">,</span>
+    <span class="p">}</span>
+
+    <span class="n">expr1</span><span class="p">:</span> <span class="n">Expr</span>
+    <span class="n">op</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">expr2</span><span class="p">:</span> <span class="n">Expr</span>
+
+<div class="viewcode-block" id="BinaryOp.__post_init__">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.BinaryOp.__post_init__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">__post_init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Replace any operator aliases with their canonical form.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">op</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">__aliases__</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">op</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">op</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="BinaryOp.__str__">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.BinaryOp.__str__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Convert the binary operation to its string representation.</span>
+
+<span class="sd">        :return: String representation of the binary operation</span>
+<span class="sd">        :rtype: str</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">expr1</span><span class="si">}</span><span class="s1"> </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">op</span><span class="si">}</span><span class="s1"> </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">expr2</span><span class="si">}</span><span class="s1">&#39;</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="ConditionalOp">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.ConditionalOp">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">ConditionalOp</span><span class="p">(</span><span class="n">Expr</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Represents a conditional (ternary) operation in the state machine DSL.</span>
+
+<span class="sd">    The conditional operation evaluates a condition and returns one of two expressions</span>
+<span class="sd">    based on whether the condition is true or false.</span>
+
+<span class="sd">    :param cond: The condition expression</span>
+<span class="sd">    :type cond: Expr</span>
+<span class="sd">    :param value_true: The expression to evaluate if the condition is true</span>
+<span class="sd">    :type value_true: Expr</span>
+<span class="sd">    :param value_false: The expression to evaluate if the condition is false</span>
+<span class="sd">    :type value_false: Expr</span>
+
+<span class="sd">    :rtype: ConditionalOp</span>
+
+<span class="sd">    Example::</span>
+
+<span class="sd">        &gt;&gt;&gt; cond_op = ConditionalOp(Name(&quot;x&quot;), Integer(&quot;1&quot;), Integer(&quot;0&quot;))</span>
+<span class="sd">        &gt;&gt;&gt; str(cond_op)</span>
+<span class="sd">        &#39;(x) ? 1 : 0&#39;</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">cond</span><span class="p">:</span> <span class="n">Expr</span>
+    <span class="n">value_true</span><span class="p">:</span> <span class="n">Expr</span>
+    <span class="n">value_false</span><span class="p">:</span> <span class="n">Expr</span>
+
+<div class="viewcode-block" id="ConditionalOp.__str__">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.ConditionalOp.__str__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Convert the conditional operation to its string representation.</span>
+
+<span class="sd">        :return: String representation of the conditional operation</span>
+<span class="sd">        :rtype: str</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s1">&#39;(</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">cond</span><span class="si">}</span><span class="s1">) ? </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">value_true</span><span class="si">}</span><span class="s1"> : </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">value_false</span><span class="si">}</span><span class="s1">&#39;</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="UFunc">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.UFunc">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">UFunc</span><span class="p">(</span><span class="n">Expr</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Represents a unary function call in the state machine DSL.</span>
+
+<span class="sd">    Unary functions apply a named function to a single expression.</span>
+
+<span class="sd">    :param func: The function name</span>
+<span class="sd">    :type func: str</span>
+<span class="sd">    :param expr: The expression to which the function is applied</span>
+<span class="sd">    :type expr: Expr</span>
+
+<span class="sd">    :rtype: UFunc</span>
+
+<span class="sd">    Example::</span>
+
+<span class="sd">        &gt;&gt;&gt; func_call = UFunc(&quot;abs&quot;, Name(&quot;x&quot;))</span>
+<span class="sd">        &gt;&gt;&gt; str(func_call)</span>
+<span class="sd">        &#39;abs(x)&#39;</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">func</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">expr</span><span class="p">:</span> <span class="n">Expr</span>
+
+<div class="viewcode-block" id="UFunc.__str__">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.UFunc.__str__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Convert the function call to its string representation.</span>
+
+<span class="sd">        :return: String representation of the function call</span>
+<span class="sd">        :rtype: str</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">func</span><span class="si">}</span><span class="s1">(</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">expr</span><span class="si">}</span><span class="s1">)&#39;</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="Statement">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.Statement">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Statement</span><span class="p">(</span><span class="n">ASTNode</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Abstract base class for statements in the state machine DSL.</span>
+
+<span class="sd">    Statements represent actions or declarations in the state machine definition.</span>
+
+<span class="sd">    :rtype: Statement</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">pass</span></div>
+
+
+
+<div class="viewcode-block" id="ConstantDefinition">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.ConstantDefinition">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">ConstantDefinition</span><span class="p">(</span><span class="n">Statement</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Represents a constant definition statement in the state machine DSL.</span>
+
+<span class="sd">    :param name: The name of the constant</span>
+<span class="sd">    :type name: str</span>
+<span class="sd">    :param expr: The expression defining the constant&#39;s value</span>
+<span class="sd">    :type expr: Expr</span>
+
+<span class="sd">    :rtype: ConstantDefinition</span>
+
+<span class="sd">    Example::</span>
+
+<span class="sd">        &gt;&gt;&gt; const_def = ConstantDefinition(&quot;MAX_COUNT&quot;, Integer(&quot;100&quot;))</span>
+<span class="sd">        &gt;&gt;&gt; str(const_def)</span>
+<span class="sd">        &#39;MAX_COUNT = 100;&#39;</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">expr</span><span class="p">:</span> <span class="n">Expr</span>
+
+<div class="viewcode-block" id="ConstantDefinition.__str__">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.ConstantDefinition.__str__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Convert the constant definition to its string representation.</span>
+
+<span class="sd">        :return: String representation of the constant definition</span>
+<span class="sd">        :rtype: str</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s1"> = </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">expr</span><span class="si">}</span><span class="s1">;&#39;</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="InitialAssignment">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.InitialAssignment">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">InitialAssignment</span><span class="p">(</span><span class="n">Statement</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Represents an initial assignment statement in the state machine DSL.</span>
+
+<span class="sd">    Initial assignments are used to set initial values for variables.</span>
+
+<span class="sd">    :param name: The name of the variable</span>
+<span class="sd">    :type name: str</span>
+<span class="sd">    :param expr: The expression defining the variable&#39;s initial value</span>
+<span class="sd">    :type expr: Expr</span>
+
+<span class="sd">    :rtype: InitialAssignment</span>
+
+<span class="sd">    Example::</span>
+
+<span class="sd">        &gt;&gt;&gt; init_assign = InitialAssignment(&quot;counter&quot;, Integer(&quot;0&quot;))</span>
+<span class="sd">        &gt;&gt;&gt; str(init_assign)</span>
+<span class="sd">        &#39;counter := 0;&#39;</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">expr</span><span class="p">:</span> <span class="n">Expr</span>
+
+<div class="viewcode-block" id="InitialAssignment.__str__">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.InitialAssignment.__str__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Convert the initial assignment to its string representation.</span>
+
+<span class="sd">        :return: String representation of the initial assignment</span>
+<span class="sd">        :rtype: str</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s1"> := </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">expr</span><span class="si">}</span><span class="s1">;&#39;</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="DefAssignment">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.DefAssignment">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">DefAssignment</span><span class="p">(</span><span class="n">Statement</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Represents a definition assignment statement in the state machine DSL.</span>
+
+<span class="sd">    Definition assignments are used to declare and initialize typed variables.</span>
+
+<span class="sd">    :param name: The name of the variable</span>
+<span class="sd">    :type name: str</span>
+<span class="sd">    :param type: The type of the variable</span>
+<span class="sd">    :type type: str</span>
+<span class="sd">    :param expr: The expression defining the variable&#39;s value</span>
+<span class="sd">    :type expr: Expr</span>
+
+<span class="sd">    :rtype: DefAssignment</span>
+
+<span class="sd">    Example::</span>
+
+<span class="sd">        &gt;&gt;&gt; def_assign = DefAssignment(&quot;counter&quot;, &quot;int&quot;, Integer(&quot;0&quot;))</span>
+<span class="sd">        &gt;&gt;&gt; str(def_assign)</span>
+<span class="sd">        &#39;def int counter = 0;&#39;</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="nb">type</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">expr</span><span class="p">:</span> <span class="n">Expr</span>
+
+<div class="viewcode-block" id="DefAssignment.__str__">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.DefAssignment.__str__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Convert the definition assignment to its string representation.</span>
+
+<span class="sd">        :return: String representation of the definition assignment</span>
+<span class="sd">        :rtype: str</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s1">&#39;def </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">type</span><span class="si">}</span><span class="s1"> </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s1"> = </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">expr</span><span class="si">}</span><span class="s1">;&#39;</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="OperationalDeprecatedAssignment">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.OperationalDeprecatedAssignment">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">OperationalDeprecatedAssignment</span><span class="p">(</span><span class="n">Statement</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Represents a deprecated form of operational assignment in the state machine DSL.</span>
+
+<span class="sd">    :param name: The name of the variable</span>
+<span class="sd">    :type name: str</span>
+<span class="sd">    :param expr: The expression defining the variable&#39;s value</span>
+<span class="sd">    :type expr: Expr</span>
+
+<span class="sd">    :rtype: OperationalDeprecatedAssignment</span>
+
+<span class="sd">    Example::</span>
+
+<span class="sd">        &gt;&gt;&gt; op_assign = OperationalDeprecatedAssignment(&quot;counter&quot;, BinaryOp(Name(&quot;counter&quot;), &quot;+&quot;, Integer(&quot;1&quot;)))</span>
+<span class="sd">        &gt;&gt;&gt; str(op_assign)</span>
+<span class="sd">        &#39;counter := counter + 1;&#39;</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">expr</span><span class="p">:</span> <span class="n">Expr</span>
+
+<div class="viewcode-block" id="OperationalDeprecatedAssignment.__str__">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.OperationalDeprecatedAssignment.__str__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Convert the operational deprecated assignment to its string representation.</span>
+
+<span class="sd">        :return: String representation of the operational deprecated assignment</span>
+<span class="sd">        :rtype: str</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s1"> := </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">expr</span><span class="si">}</span><span class="s1">;&#39;</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="Condition">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.Condition">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Condition</span><span class="p">(</span><span class="n">ASTNode</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Represents a condition in the state machine DSL.</span>
+
+<span class="sd">    Conditions are used in transitions and other contexts to determine when actions should occur.</span>
+
+<span class="sd">    :param expr: The expression defining the condition</span>
+<span class="sd">    :type expr: Expr</span>
+
+<span class="sd">    :rtype: Condition</span>
+
+<span class="sd">    Example::</span>
+
+<span class="sd">        &gt;&gt;&gt; cond = Condition(BinaryOp(Name(&quot;counter&quot;), &quot;&gt;=&quot;, Integer(&quot;10&quot;)))</span>
+<span class="sd">        &gt;&gt;&gt; str(cond)</span>
+<span class="sd">        &#39;counter &gt;= 10&#39;</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">expr</span><span class="p">:</span> <span class="n">Expr</span>
+
+<div class="viewcode-block" id="Condition.__str__">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.Condition.__str__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Convert the condition to its string representation.</span>
+
+<span class="sd">        :return: String representation of the condition</span>
+<span class="sd">        :rtype: str</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">expr</span><span class="si">}</span><span class="s1">&#39;</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="Preamble">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.Preamble">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Preamble</span><span class="p">(</span><span class="n">ASTNode</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Represents a preamble section in the state machine DSL.</span>
+
+<span class="sd">    The preamble contains constant definitions and initial assignments that set up</span>
+<span class="sd">    the state machine&#39;s environment.</span>
+
+<span class="sd">    :param stats: List of statements in the preamble</span>
+<span class="sd">    :type stats: List[Union[ConstantDefinition, InitialAssignment]]</span>
+
+<span class="sd">    :rtype: Preamble</span>
+
+<span class="sd">    Example::</span>
+
+<span class="sd">        &gt;&gt;&gt; const_def = ConstantDefinition(&quot;MAX&quot;, Integer(&quot;100&quot;))</span>
+<span class="sd">        &gt;&gt;&gt; init_assign = InitialAssignment(&quot;counter&quot;, Integer(&quot;0&quot;))</span>
+<span class="sd">        &gt;&gt;&gt; preamble = Preamble([const_def, init_assign])</span>
+<span class="sd">        &gt;&gt;&gt; print(str(preamble))</span>
+<span class="sd">        MAX = 100;</span>
+<span class="sd">        counter := 0;</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">stats</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="n">ConstantDefinition</span><span class="p">,</span> <span class="n">InitialAssignment</span><span class="p">]]</span>
+
+<div class="viewcode-block" id="Preamble.__str__">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.Preamble.__str__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Convert the preamble to its string representation.</span>
+
+<span class="sd">        :return: String representation of the preamble</span>
+<span class="sd">        :rtype: str</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">os</span><span class="o">.</span><span class="n">linesep</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">stats</span><span class="p">))</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="Operation">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.Operation">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Operation</span><span class="p">(</span><span class="n">ASTNode</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Represents an operation block in the state machine DSL.</span>
+
+<span class="sd">    Operations are sequences of assignments that modify the state machine&#39;s variables.</span>
+
+<span class="sd">    :param stats: List of operational assignments</span>
+<span class="sd">    :type stats: List[OperationalDeprecatedAssignment]</span>
+
+<span class="sd">    :rtype: Operation</span>
+
+<span class="sd">    Example::</span>
+
+<span class="sd">        &gt;&gt;&gt; op1 = OperationalDeprecatedAssignment(&quot;counter&quot;, BinaryOp(Name(&quot;counter&quot;), &quot;+&quot;, Integer(&quot;1&quot;)))</span>
+<span class="sd">        &gt;&gt;&gt; op2 = OperationalDeprecatedAssignment(&quot;flag&quot;, Boolean(&quot;true&quot;))</span>
+<span class="sd">        &gt;&gt;&gt; operation = Operation([op1, op2])</span>
+<span class="sd">        &gt;&gt;&gt; print(str(operation))</span>
+<span class="sd">        counter := counter + 1;</span>
+<span class="sd">        flag := true;</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">stats</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">OperationalDeprecatedAssignment</span><span class="p">]</span>
+
+<div class="viewcode-block" id="Operation.__str__">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.Operation.__str__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Convert the operation to its string representation.</span>
+
+<span class="sd">        :return: String representation of the operation</span>
+<span class="sd">        :rtype: str</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">os</span><span class="o">.</span><span class="n">linesep</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">stats</span><span class="p">))</span></div>
+</div>
+
+
+
+<span class="k">class</span><span class="w"> </span><span class="nc">_StateSingletonMark</span><span class="p">(</span><span class="n">SingletonMark</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    A singleton marker class for special states in the state machine DSL.</span>
+
+<span class="sd">    :param mark: The marker name</span>
+<span class="sd">    :type mark: str</span>
+
+<span class="sd">    :rtype: _StateSingletonMark</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Convert the singleton mark to its string representation.</span>
+
+<span class="sd">        :return: The marker name</span>
+<span class="sd">        :rtype: str</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">mark</span>
+
+
+<span class="n">INIT_STATE</span> <span class="o">=</span> <span class="n">_StateSingletonMark</span><span class="p">(</span><span class="s1">&#39;INIT_STATE&#39;</span><span class="p">)</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Special singleton marker representing the initial state in a state machine.</span>
+
+<span class="sd">This is used to define transitions from the initial pseudo-state.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="n">EXIT_STATE</span> <span class="o">=</span> <span class="n">_StateSingletonMark</span><span class="p">(</span><span class="s1">&#39;EXIT_STATE&#39;</span><span class="p">)</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Special singleton marker representing the exit state in a state machine.</span>
+
+<span class="sd">This is used to define transitions to the final pseudo-state.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="n">ALL</span> <span class="o">=</span> <span class="n">_StateSingletonMark</span><span class="p">(</span><span class="s1">&#39;ALL&#39;</span><span class="p">)</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Special singleton marker representing all states in a state machine.</span>
+
+<span class="sd">This is used to define transitions or actions that apply to all states.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+
+<div class="viewcode-block" id="TransitionDefinition">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.TransitionDefinition">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">TransitionDefinition</span><span class="p">(</span><span class="n">ASTNode</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Represents a transition definition in the state machine DSL.</span>
+
+<span class="sd">    Transitions define how the state machine moves from one state to another in response</span>
+<span class="sd">    to events and conditions.</span>
+
+<span class="sd">    :param from_state: The source state name or INIT_STATE singleton</span>
+<span class="sd">    :type from_state: Union[str, _StateSingletonMark]</span>
+<span class="sd">    :param to_state: The target state name or EXIT_STATE singleton</span>
+<span class="sd">    :type to_state: Union[str, _StateSingletonMark]</span>
+<span class="sd">    :param event_id: Optional event identifier that triggers the transition</span>
+<span class="sd">    :type event_id: Optional[ChainID]</span>
+<span class="sd">    :param condition_expr: Optional condition expression that must be true for the transition</span>
+<span class="sd">    :type condition_expr: Optional[Expr]</span>
+<span class="sd">    :param post_operations: List of operations to perform after the transition</span>
+<span class="sd">    :type post_operations: List[OperationAssignment]</span>
+
+<span class="sd">    :rtype: TransitionDefinition</span>
+
+<span class="sd">    Example::</span>
+
+<span class="sd">        &gt;&gt;&gt; # Transition from initial state to &quot;idle&quot; state</span>
+<span class="sd">        &gt;&gt;&gt; init_trans = TransitionDefinition(INIT_STATE, &quot;idle&quot;, None, None, [])</span>
+<span class="sd">        &gt;&gt;&gt; # Transition from &quot;idle&quot; to &quot;active&quot; on &quot;start&quot; event</span>
+<span class="sd">        &gt;&gt;&gt; event_trans = TransitionDefinition(&quot;idle&quot;, &quot;active&quot;, ChainID([&quot;idle&quot;, &quot;start&quot;]), None, [])</span>
+<span class="sd">        &gt;&gt;&gt; # Transition with condition and operations</span>
+<span class="sd">        &gt;&gt;&gt; op = OperationAssignment(&quot;counter&quot;, Integer(&quot;0&quot;))</span>
+<span class="sd">        &gt;&gt;&gt; cond_trans = TransitionDefinition(&quot;active&quot;, &quot;idle&quot;, None, BinaryOp(Name(&quot;counter&quot;), &quot;&gt;&quot;, Integer(&quot;10&quot;)), [op])</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">from_state</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">_StateSingletonMark</span><span class="p">]</span>
+    <span class="n">to_state</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">_StateSingletonMark</span><span class="p">]</span>
+    <span class="n">event_id</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">ChainID</span><span class="p">]</span>
+    <span class="n">condition_expr</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Expr</span><span class="p">]</span>
+    <span class="n">post_operations</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="s1">&#39;OperationAssignment&#39;</span><span class="p">]</span>
+
+<div class="viewcode-block" id="TransitionDefinition.__str__">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.TransitionDefinition.__str__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Convert the transition definition to its string representation.</span>
+
+<span class="sd">        :return: String representation of the transition definition</span>
+<span class="sd">        :rtype: str</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="n">io</span><span class="o">.</span><span class="n">StringIO</span><span class="p">()</span> <span class="k">as</span> <span class="n">sf</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;[*]&#39;</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">from_state</span> <span class="ow">is</span> <span class="n">INIT_STATE</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">from_state</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sf</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s1">&#39; -&gt; &#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sf</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;[*]&#39;</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">to_state</span> <span class="ow">is</span> <span class="n">EXIT_STATE</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">to_state</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sf</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">event_id</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">event_id</span><span class="o">.</span><span class="n">is_absolute</span> <span class="ow">and</span> \
+                        <span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">from_state</span> <span class="ow">is</span> <span class="n">INIT_STATE</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">event_id</span><span class="o">.</span><span class="n">path</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">)</span> <span class="ow">or</span>
+                         <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">from_state</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">INIT_STATE</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">event_id</span><span class="o">.</span><span class="n">path</span><span class="p">)</span> <span class="o">==</span> <span class="mi">2</span> <span class="ow">and</span>
+                          <span class="bp">self</span><span class="o">.</span><span class="n">event_id</span><span class="o">.</span><span class="n">path</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">from_state</span><span class="p">)):</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39; :: </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">event_id</span><span class="o">.</span><span class="n">path</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sf</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39; : </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">event_id</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sf</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">condition_expr</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39; : if [</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">condition_expr</span><span class="si">}</span><span class="s1">]&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sf</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">post_operations</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="s1">&#39; effect {&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sf</span><span class="p">)</span>
+                <span class="k">for</span> <span class="n">operation</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">post_operations</span><span class="p">:</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;    </span><span class="si">{</span><span class="n">operation</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sf</span><span class="p">)</span>
+                <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;}&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sf</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;;&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sf</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+
+            <span class="k">return</span> <span class="n">sf</span><span class="o">.</span><span class="n">getvalue</span><span class="p">()</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="ForceTransitionDefinition">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.ForceTransitionDefinition">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">ForceTransitionDefinition</span><span class="p">(</span><span class="n">ASTNode</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Represents a forced transition definition in the state machine DSL.</span>
+
+<span class="sd">    Forced transitions override normal transitions and are used for special cases</span>
+<span class="sd">    like error handling or interrupts.</span>
+
+<span class="sd">    :param from_state: The source state name or ALL singleton</span>
+<span class="sd">    :type from_state: Union[str, _StateSingletonMark]</span>
+<span class="sd">    :param to_state: The target state name or EXIT_STATE singleton</span>
+<span class="sd">    :type to_state: Union[str, _StateSingletonMark]</span>
+<span class="sd">    :param event_id: Optional event identifier that triggers the transition</span>
+<span class="sd">    :type event_id: Optional[ChainID]</span>
+<span class="sd">    :param condition_expr: Optional condition expression that must be true for the transition</span>
+<span class="sd">    :type condition_expr: Optional[Expr]</span>
+
+<span class="sd">    :rtype: ForceTransitionDefinition</span>
+
+<span class="sd">    Example::</span>
+
+<span class="sd">        &gt;&gt;&gt; # Force transition from any state to &quot;error&quot; state</span>
+<span class="sd">        &gt;&gt;&gt; force_trans = ForceTransitionDefinition(ALL, &quot;error&quot;, None, None)</span>
+<span class="sd">        &gt;&gt;&gt; str(force_trans)</span>
+<span class="sd">        &#39;! * -&gt; error;&#39;</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">from_state</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">_StateSingletonMark</span><span class="p">]</span>
+    <span class="n">to_state</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">_StateSingletonMark</span><span class="p">]</span>
+    <span class="n">event_id</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">ChainID</span><span class="p">]</span>
+    <span class="n">condition_expr</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Expr</span><span class="p">]</span>
+
+<div class="viewcode-block" id="ForceTransitionDefinition.__str__">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.ForceTransitionDefinition.__str__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Convert the force transition definition to its string representation.</span>
+
+<span class="sd">        :return: String representation of the force transition definition</span>
+<span class="sd">        :rtype: str</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="n">io</span><span class="o">.</span><span class="n">StringIO</span><span class="p">()</span> <span class="k">as</span> <span class="n">sf</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;! &#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sf</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;*&#39;</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">from_state</span> <span class="ow">is</span> <span class="n">ALL</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">from_state</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sf</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s1">&#39; -&gt; &#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sf</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;[*]&#39;</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">to_state</span> <span class="ow">is</span> <span class="n">EXIT_STATE</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">to_state</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sf</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">event_id</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">event_id</span><span class="o">.</span><span class="n">is_absolute</span> <span class="ow">and</span> \
+                        <span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">from_state</span> <span class="ow">is</span> <span class="n">ALL</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">event_id</span><span class="o">.</span><span class="n">path</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">)</span> <span class="ow">or</span>
+                         <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">from_state</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">ALL</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">event_id</span><span class="o">.</span><span class="n">path</span><span class="p">)</span> <span class="o">==</span> <span class="mi">2</span> <span class="ow">and</span>
+                          <span class="bp">self</span><span class="o">.</span><span class="n">event_id</span><span class="o">.</span><span class="n">path</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">from_state</span><span class="p">)):</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39; :: </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">event_id</span><span class="o">.</span><span class="n">path</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sf</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39; : </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">event_id</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sf</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">condition_expr</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39; : if [</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">condition_expr</span><span class="si">}</span><span class="s1">]&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sf</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+
+            <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;;&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sf</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">sf</span><span class="o">.</span><span class="n">getvalue</span><span class="p">()</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="StateDefinition">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.StateDefinition">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">StateDefinition</span><span class="p">(</span><span class="n">ASTNode</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Represents a state definition in the state machine DSL.</span>
+
+<span class="sd">    States are the fundamental building blocks of state machines, containing</span>
+<span class="sd">    transitions, substates, and actions to be performed on entry, during, and exit.</span>
+
+<span class="sd">    :param name: The name of the state</span>
+<span class="sd">    :type name: str</span>
+<span class="sd">    :param substates: List of nested state definitions</span>
+<span class="sd">    :type substates: List[StateDefinition]</span>
+<span class="sd">    :param transitions: List of transitions from this state</span>
+<span class="sd">    :type transitions: List[TransitionDefinition]</span>
+<span class="sd">    :param enters: List of actions to perform when entering the state</span>
+<span class="sd">    :type enters: List[EnterStatement]</span>
+<span class="sd">    :param durings: List of actions to perform while in the state</span>
+<span class="sd">    :type durings: List[DuringStatement]</span>
+<span class="sd">    :param exits: List of actions to perform when exiting the state</span>
+<span class="sd">    :type exits: List[ExitStatement]</span>
+
+<span class="sd">    :rtype: StateDefinition</span>
+
+<span class="sd">    Example::</span>
+
+<span class="sd">        &gt;&gt;&gt; # Simple state with no internal elements</span>
+<span class="sd">        &gt;&gt;&gt; simple_state = StateDefinition(&quot;idle&quot;, [], [], [], [], [])</span>
+<span class="sd">        &gt;&gt;&gt; str(simple_state)</span>
+<span class="sd">        &#39;state idle;&#39;</span>
+
+<span class="sd">        &gt;&gt;&gt; # State with transitions</span>
+<span class="sd">        &gt;&gt;&gt; trans = TransitionDefinition(&quot;idle&quot;, &quot;active&quot;, ChainID([&quot;idle&quot;, &quot;start&quot;]), None, [])</span>
+<span class="sd">        &gt;&gt;&gt; state_with_trans = StateDefinition(&quot;idle&quot;, [], [trans], [], [], [])</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">substates</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="s1">&#39;StateDefinition&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">transitions</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">TransitionDefinition</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">enters</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="s1">&#39;EnterStatement&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">durings</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="s1">&#39;DuringStatement&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">exits</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="s1">&#39;ExitStatement&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">during_aspects</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="s1">&#39;DuringAspectStatement&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">force_transitions</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="s1">&#39;ForceTransitionDefinition&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">__post_init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">substates</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">substates</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">transitions</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transitions</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">force_transitions</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">force_transitions</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">enters</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">enters</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">durings</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">durings</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">exits</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">exits</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">during_aspects</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">during_aspects</span> <span class="ow">or</span> <span class="p">[]</span>
+
+<div class="viewcode-block" id="StateDefinition.__str__">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.StateDefinition.__str__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Convert the state definition to its string representation.</span>
+
+<span class="sd">        :return: String representation of the state definition</span>
+<span class="sd">        :rtype: str</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="n">io</span><span class="o">.</span><span class="n">StringIO</span><span class="p">()</span> <span class="k">as</span> <span class="n">sf</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">substates</span> <span class="ow">and</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">transitions</span> <span class="ow">and</span> \
+                    <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">enters</span> <span class="ow">and</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">durings</span> <span class="ow">and</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">exits</span> <span class="ow">and</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">during_aspects</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;state </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s1">;&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sf</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;state </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s1"> </span><span class="se">{{</span><span class="s1">&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sf</span><span class="p">)</span>
+                <span class="k">for</span> <span class="n">enter_item</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">enters</span><span class="p">:</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="n">indent</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">enter_item</span><span class="p">),</span> <span class="n">prefix</span><span class="o">=</span><span class="s1">&#39;    &#39;</span><span class="p">),</span> <span class="n">file</span><span class="o">=</span><span class="n">sf</span><span class="p">)</span>
+                <span class="k">for</span> <span class="n">during_item</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">durings</span><span class="p">:</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="n">indent</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">during_item</span><span class="p">),</span> <span class="n">prefix</span><span class="o">=</span><span class="s1">&#39;    &#39;</span><span class="p">),</span> <span class="n">file</span><span class="o">=</span><span class="n">sf</span><span class="p">)</span>
+                <span class="k">for</span> <span class="n">exit_item</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">exits</span><span class="p">:</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="n">indent</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">exit_item</span><span class="p">),</span> <span class="n">prefix</span><span class="o">=</span><span class="s1">&#39;    &#39;</span><span class="p">),</span> <span class="n">file</span><span class="o">=</span><span class="n">sf</span><span class="p">)</span>
+                <span class="k">for</span> <span class="n">during_aspect_item</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">during_aspects</span><span class="p">:</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="n">indent</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">during_aspect_item</span><span class="p">),</span> <span class="n">prefix</span><span class="o">=</span><span class="s1">&#39;    &#39;</span><span class="p">),</span> <span class="n">file</span><span class="o">=</span><span class="n">sf</span><span class="p">)</span>
+                <span class="k">for</span> <span class="n">substate</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">substates</span><span class="p">:</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="n">indent</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">substate</span><span class="p">),</span> <span class="n">prefix</span><span class="o">=</span><span class="s1">&#39;    &#39;</span><span class="p">),</span> <span class="n">file</span><span class="o">=</span><span class="n">sf</span><span class="p">)</span>
+                <span class="k">for</span> <span class="n">transition</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">transitions</span><span class="p">:</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="n">indent</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">transition</span><span class="p">),</span> <span class="n">prefix</span><span class="o">=</span><span class="s1">&#39;    &#39;</span><span class="p">),</span> <span class="n">file</span><span class="o">=</span><span class="n">sf</span><span class="p">)</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;</span><span class="se">}}</span><span class="s1">&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sf</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+
+            <span class="k">return</span> <span class="n">sf</span><span class="o">.</span><span class="n">getvalue</span><span class="p">()</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="OperationAssignment">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.OperationAssignment">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">OperationAssignment</span><span class="p">(</span><span class="n">Statement</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Represents an operation assignment in the state machine DSL.</span>
+
+<span class="sd">    Operation assignments are used to modify variables during transitions or state actions.</span>
+
+<span class="sd">    :param name: The name of the variable</span>
+<span class="sd">    :type name: str</span>
+<span class="sd">    :param expr: The expression defining the new value</span>
+<span class="sd">    :type expr: Expr</span>
+
+<span class="sd">    :rtype: OperationAssignment</span>
+
+<span class="sd">    Example::</span>
+
+<span class="sd">        &gt;&gt;&gt; op_assign = OperationAssignment(&quot;counter&quot;, BinaryOp(Name(&quot;counter&quot;), &quot;+&quot;, Integer(&quot;1&quot;)))</span>
+<span class="sd">        &gt;&gt;&gt; str(op_assign)</span>
+<span class="sd">        &#39;counter = counter + 1;&#39;</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">expr</span><span class="p">:</span> <span class="n">Expr</span>
+
+<div class="viewcode-block" id="OperationAssignment.__str__">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.OperationAssignment.__str__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Convert the operation assignment to its string representation.</span>
+
+<span class="sd">        :return: String representation of the operation assignment</span>
+<span class="sd">        :rtype: str</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s1"> = </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">expr</span><span class="si">}</span><span class="s1">;&#39;</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="StateMachineDSLProgram">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.StateMachineDSLProgram">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">StateMachineDSLProgram</span><span class="p">(</span><span class="n">ASTNode</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Represents a complete state machine DSL program.</span>
+
+<span class="sd">    A program consists of variable definitions and a root state that contains</span>
+<span class="sd">    the entire state machine hierarchy.</span>
+
+<span class="sd">    :param definitions: List of variable definitions</span>
+<span class="sd">    :type definitions: List[DefAssignment]</span>
+<span class="sd">    :param root_state: The root state of the state machine</span>
+<span class="sd">    :type root_state: StateDefinition</span>
+
+<span class="sd">    :rtype: StateMachineDSLProgram</span>
+
+<span class="sd">    Example::</span>
+
+<span class="sd">        &gt;&gt;&gt; def_var = DefAssignment(&quot;counter&quot;, &quot;int&quot;, Integer(&quot;0&quot;))</span>
+<span class="sd">        &gt;&gt;&gt; root = StateDefinition(&quot;root&quot;, [], [], [], [], [])</span>
+<span class="sd">        &gt;&gt;&gt; program = StateMachineDSLProgram([def_var], root)</span>
+<span class="sd">        &gt;&gt;&gt; print(str(program))</span>
+<span class="sd">        def int counter = 0;</span>
+<span class="sd">        state root;</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">definitions</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">DefAssignment</span><span class="p">]</span>
+    <span class="n">root_state</span><span class="p">:</span> <span class="n">StateDefinition</span>
+
+<div class="viewcode-block" id="StateMachineDSLProgram.__str__">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.StateMachineDSLProgram.__str__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Convert the state machine program to its string representation.</span>
+
+<span class="sd">        :return: String representation of the state machine program</span>
+<span class="sd">        :rtype: str</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="n">io</span><span class="o">.</span><span class="n">StringIO</span><span class="p">()</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">definition</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">definitions</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="n">definition</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">root_state</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">f</span><span class="o">.</span><span class="n">getvalue</span><span class="p">()</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="EnterStatement">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.EnterStatement">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">EnterStatement</span><span class="p">(</span><span class="n">ASTNode</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Abstract base class for enter statements in the state machine DSL.</span>
+
+<span class="sd">    Enter statements define actions to be performed when entering a state.</span>
+
+<span class="sd">    :rtype: EnterStatement</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">pass</span></div>
+
+
+
+<div class="viewcode-block" id="EnterOperations">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.EnterOperations">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">EnterOperations</span><span class="p">(</span><span class="n">EnterStatement</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Represents a block of operations to perform when entering a state.</span>
+
+<span class="sd">    :param operations: List of operation assignments</span>
+<span class="sd">    :type operations: List[OperationAssignment]</span>
+
+<span class="sd">    :rtype: EnterOperations</span>
+
+<span class="sd">    Example::</span>
+
+<span class="sd">        &gt;&gt;&gt; op = OperationAssignment(&quot;counter&quot;, Integer(&quot;0&quot;))</span>
+<span class="sd">        &gt;&gt;&gt; enter_ops = EnterOperations([op])</span>
+<span class="sd">        &gt;&gt;&gt; print(str(enter_ops))</span>
+<span class="sd">        enter {</span>
+<span class="sd">            counter = 0;</span>
+<span class="sd">        }</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">operations</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">OperationAssignment</span><span class="p">]</span>
+    <span class="n">name</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+
+<div class="viewcode-block" id="EnterOperations.__str__">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.EnterOperations.__str__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Convert the enter operations to their string representation.</span>
+
+<span class="sd">        :return: String representation of the enter operations</span>
+<span class="sd">        :rtype: str</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="n">io</span><span class="o">.</span><span class="n">StringIO</span><span class="p">()</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;enter </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s1"> </span><span class="se">{{</span><span class="s1">&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;enter </span><span class="se">{{</span><span class="s1">&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">operation</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">operations</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;    </span><span class="si">{</span><span class="n">operation</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;}&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">f</span><span class="o">.</span><span class="n">getvalue</span><span class="p">()</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="EnterAbstractFunction">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.EnterAbstractFunction">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">EnterAbstractFunction</span><span class="p">(</span><span class="n">EnterStatement</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Represents an abstract function to call when entering a state.</span>
+
+<span class="sd">    Abstract functions are placeholders for implementation-specific behavior.</span>
+
+<span class="sd">    :param name: Optional name of the function</span>
+<span class="sd">    :type name: Optional[str]</span>
+<span class="sd">    :param doc: Optional documentation for the function</span>
+<span class="sd">    :type doc: Optional[str]</span>
+
+<span class="sd">    :rtype: EnterAbstractFunction</span>
+
+<span class="sd">    Example::</span>
+
+<span class="sd">        &gt;&gt;&gt; enter_func = EnterAbstractFunction(&quot;initState&quot;, &quot;Initialize the state&quot;)</span>
+<span class="sd">        &gt;&gt;&gt; print(str(enter_func))</span>
+<span class="sd">        enter abstract initState /*</span>
+<span class="sd">            Initialize the state</span>
+<span class="sd">        */</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">name</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
+    <span class="n">doc</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
+
+<div class="viewcode-block" id="EnterAbstractFunction.__str__">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.EnterAbstractFunction.__str__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Convert the enter abstract function to its string representation.</span>
+
+<span class="sd">        :return: String representation of the enter abstract function</span>
+<span class="sd">        :rtype: str</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="n">io</span><span class="o">.</span><span class="n">StringIO</span><span class="p">()</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;enter abstract </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;enter abstract&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">doc</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="s1">&#39; /*&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">)</span>
+                <span class="nb">print</span><span class="p">(</span><span class="n">indent</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">doc</span><span class="p">,</span> <span class="n">prefix</span><span class="o">=</span><span class="s1">&#39;    &#39;</span><span class="p">),</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">)</span>
+                <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;*/&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;;&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+
+            <span class="k">return</span> <span class="n">f</span><span class="o">.</span><span class="n">getvalue</span><span class="p">()</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="ExitStatement">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.ExitStatement">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">ExitStatement</span><span class="p">(</span><span class="n">ASTNode</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Abstract base class for exit statements in the state machine DSL.</span>
+
+<span class="sd">    Exit statements define actions to be performed when exiting a state.</span>
+
+<span class="sd">    :rtype: ExitStatement</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">pass</span></div>
+
+
+
+<div class="viewcode-block" id="ExitOperations">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.ExitOperations">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">ExitOperations</span><span class="p">(</span><span class="n">ExitStatement</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Represents a block of operations to perform when exiting a state.</span>
+
+<span class="sd">    :param operations: List of operation assignments</span>
+<span class="sd">    :type operations: List[OperationAssignment]</span>
+
+<span class="sd">    :rtype: ExitOperations</span>
+
+<span class="sd">    Example::</span>
+
+<span class="sd">        &gt;&gt;&gt; op = OperationAssignment(&quot;active&quot;, Boolean(&quot;false&quot;))</span>
+<span class="sd">        &gt;&gt;&gt; exit_ops = ExitOperations([op])</span>
+<span class="sd">        &gt;&gt;&gt; print(str(exit_ops))</span>
+<span class="sd">        exit {</span>
+<span class="sd">            active = false;</span>
+<span class="sd">        }</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">operations</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">OperationAssignment</span><span class="p">]</span>
+    <span class="n">name</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+
+<div class="viewcode-block" id="ExitOperations.__str__">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.ExitOperations.__str__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Convert the exit operations to their string representation.</span>
+
+<span class="sd">        :return: String representation of the exit operations</span>
+<span class="sd">        :rtype: str</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="n">io</span><span class="o">.</span><span class="n">StringIO</span><span class="p">()</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;exit </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s1"> </span><span class="se">{{</span><span class="s1">&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;exit </span><span class="se">{{</span><span class="s1">&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">)</span>
+
+            <span class="k">for</span> <span class="n">operation</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">operations</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;    </span><span class="si">{</span><span class="n">operation</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;}&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">f</span><span class="o">.</span><span class="n">getvalue</span><span class="p">()</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="ExitAbstractFunction">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.ExitAbstractFunction">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">ExitAbstractFunction</span><span class="p">(</span><span class="n">ExitStatement</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Represents an abstract function to call when exiting a state.</span>
+
+<span class="sd">    Abstract functions are placeholders for implementation-specific behavior.</span>
+
+<span class="sd">    :param name: Optional name of the function</span>
+<span class="sd">    :type name: Optional[str]</span>
+<span class="sd">    :param doc: Optional documentation for the function</span>
+<span class="sd">    :type doc: Optional[str]</span>
+
+<span class="sd">    :rtype: ExitAbstractFunction</span>
+
+<span class="sd">    Example::</span>
+
+<span class="sd">        &gt;&gt;&gt; exit_func = ExitAbstractFunction(&quot;cleanupState&quot;, &quot;Clean up resources&quot;)</span>
+<span class="sd">        &gt;&gt;&gt; print(str(exit_func))</span>
+<span class="sd">        exit abstract cleanupState /*</span>
+<span class="sd">            Clean up resources</span>
+<span class="sd">        */</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">name</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
+    <span class="n">doc</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
+
+<div class="viewcode-block" id="ExitAbstractFunction.__str__">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.ExitAbstractFunction.__str__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Convert the exit abstract function to its string representation.</span>
+
+<span class="sd">        :return: String representation of the exit abstract function</span>
+<span class="sd">        :rtype: str</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="n">io</span><span class="o">.</span><span class="n">StringIO</span><span class="p">()</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;exit abstract </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;exit abstract&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">doc</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="s1">&#39; /*&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">)</span>
+                <span class="nb">print</span><span class="p">(</span><span class="n">indent</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">doc</span><span class="p">,</span> <span class="n">prefix</span><span class="o">=</span><span class="s1">&#39;    &#39;</span><span class="p">),</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">)</span>
+                <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;*/&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;;&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+
+            <span class="k">return</span> <span class="n">f</span><span class="o">.</span><span class="n">getvalue</span><span class="p">()</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="DuringStatement">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.DuringStatement">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">DuringStatement</span><span class="p">(</span><span class="n">ASTNode</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Abstract base class for during statements in the state machine DSL.</span>
+
+<span class="sd">    During statements define actions to be performed while in a state.</span>
+
+<span class="sd">    :rtype: DuringStatement</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">pass</span></div>
+
+
+
+<div class="viewcode-block" id="DuringOperations">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.DuringOperations">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">DuringOperations</span><span class="p">(</span><span class="n">DuringStatement</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Represents a block of operations to perform while in a state.</span>
+
+<span class="sd">    :param aspect: Optional aspect name (e.g., &quot;entry&quot;, &quot;do&quot;, &quot;exit&quot;)</span>
+<span class="sd">    :type aspect: Optional[str]</span>
+<span class="sd">    :param operations: List of operation assignments</span>
+<span class="sd">    :type operations: List[OperationAssignment]</span>
+
+<span class="sd">    :rtype: DuringOperations</span>
+
+<span class="sd">    Example::</span>
+
+<span class="sd">        &gt;&gt;&gt; op = OperationAssignment(&quot;counter&quot;, BinaryOp(Name(&quot;counter&quot;), &quot;+&quot;, Integer(&quot;1&quot;)))</span>
+<span class="sd">        &gt;&gt;&gt; during_ops = DuringOperations(&quot;do&quot;, [op])</span>
+<span class="sd">        &gt;&gt;&gt; print(str(during_ops))</span>
+<span class="sd">        during do {</span>
+<span class="sd">            counter = counter + 1;</span>
+<span class="sd">        }</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">aspect</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
+    <span class="n">operations</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">OperationAssignment</span><span class="p">]</span>
+    <span class="n">name</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+
+<div class="viewcode-block" id="DuringOperations.__str__">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.DuringOperations.__str__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Convert the during operations to their string representation.</span>
+
+<span class="sd">        :return: String representation of the during operations</span>
+<span class="sd">        :rtype: str</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="n">io</span><span class="o">.</span><span class="n">StringIO</span><span class="p">()</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">:</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">aspect</span><span class="p">:</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;during </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">aspect</span><span class="si">}</span><span class="s1"> </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s1"> </span><span class="se">{{</span><span class="s1">&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;during </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s1"> </span><span class="se">{{</span><span class="s1">&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">aspect</span><span class="p">:</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;during </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">aspect</span><span class="si">}</span><span class="s1"> </span><span class="se">{{</span><span class="s1">&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;during </span><span class="se">{{</span><span class="s1">&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">operation</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">operations</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;    </span><span class="si">{</span><span class="n">operation</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;}&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">f</span><span class="o">.</span><span class="n">getvalue</span><span class="p">()</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="DuringAbstractFunction">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.DuringAbstractFunction">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">DuringAbstractFunction</span><span class="p">(</span><span class="n">DuringStatement</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Represents an abstract function to call while in a state.</span>
+
+<span class="sd">    Abstract functions are placeholders for implementation-specific behavior.</span>
+
+<span class="sd">    :param name: Optional name of the function</span>
+<span class="sd">    :type name: Optional[str]</span>
+<span class="sd">    :param aspect: Optional aspect name (e.g., &quot;entry&quot;, &quot;do&quot;, &quot;exit&quot;)</span>
+<span class="sd">    :type aspect: Optional[str]</span>
+<span class="sd">    :param doc: Optional documentation for the function</span>
+<span class="sd">    :type doc: Optional[str]</span>
+
+<span class="sd">    :rtype: DuringAbstractFunction</span>
+
+<span class="sd">    Example::</span>
+
+<span class="sd">        &gt;&gt;&gt; during_func = DuringAbstractFunction(&quot;processData&quot;, &quot;do&quot;, &quot;Process incoming data&quot;)</span>
+<span class="sd">        &gt;&gt;&gt; print(str(during_func))</span>
+<span class="sd">        during do abstract processData /*</span>
+<span class="sd">            Process incoming data</span>
+<span class="sd">        */</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">name</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
+    <span class="n">aspect</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
+    <span class="n">doc</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
+
+<div class="viewcode-block" id="DuringAbstractFunction.__str__">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.DuringAbstractFunction.__str__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Convert the during abstract function to its string representation.</span>
+
+<span class="sd">        :return: String representation of the during abstract function</span>
+<span class="sd">        :rtype: str</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="n">io</span><span class="o">.</span><span class="n">StringIO</span><span class="p">()</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">:</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">aspect</span><span class="p">:</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;during </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">aspect</span><span class="si">}</span><span class="s1"> abstract </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;during abstract </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">aspect</span><span class="p">:</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;during </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">aspect</span><span class="si">}</span><span class="s1"> abstract&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;during abstract&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">doc</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="s1">&#39; /*&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">)</span>
+                <span class="nb">print</span><span class="p">(</span><span class="n">indent</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">doc</span><span class="p">,</span> <span class="n">prefix</span><span class="o">=</span><span class="s1">&#39;    &#39;</span><span class="p">),</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">)</span>
+                <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;*/&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;;&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+
+            <span class="k">return</span> <span class="n">f</span><span class="o">.</span><span class="n">getvalue</span><span class="p">()</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="DuringAspectStatement">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.DuringAspectStatement">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">DuringAspectStatement</span><span class="p">(</span><span class="n">ASTNode</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Abstract base class for during aspect statements in the state machine DSL.</span>
+
+<span class="sd">    During aspect statements define aspect-specific actions to be performed while in a state.</span>
+
+<span class="sd">    :rtype: DuringAspectStatement</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">pass</span></div>
+
+
+
+<div class="viewcode-block" id="DuringAspectOperations">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.DuringAspectOperations">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">DuringAspectOperations</span><span class="p">(</span><span class="n">DuringAspectStatement</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Represents a block of aspect-specific operations to perform while in a state.</span>
+
+<span class="sd">    :param aspect: The aspect name (e.g., &quot;entry&quot;, &quot;do&quot;, &quot;exit&quot;)</span>
+<span class="sd">    :type aspect: str</span>
+<span class="sd">    :param operations: List of operation assignments</span>
+<span class="sd">    :type operations: List[OperationAssignment]</span>
+<span class="sd">    :param name: Optional name for the operation block</span>
+<span class="sd">    :type name: Optional[str]</span>
+
+<span class="sd">    :rtype: DuringAspectOperations</span>
+
+<span class="sd">    Example::</span>
+
+<span class="sd">        &gt;&gt;&gt; op = OperationAssignment(&quot;counter&quot;, BinaryOp(Name(&quot;counter&quot;), &quot;+&quot;, Integer(&quot;1&quot;)))</span>
+<span class="sd">        &gt;&gt;&gt; during_ops = DuringAspectOperations(&quot;before&quot;, [op])</span>
+<span class="sd">        &gt;&gt;&gt; print(str(during_ops))</span>
+<span class="sd">        &gt;&gt; during before {</span>
+<span class="sd">            counter = counter + 1;</span>
+<span class="sd">        }</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">aspect</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">operations</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">OperationAssignment</span><span class="p">]</span>
+    <span class="n">name</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+
+<div class="viewcode-block" id="DuringAspectOperations.__str__">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.DuringAspectOperations.__str__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Convert the during aspect operations to their string representation.</span>
+
+<span class="sd">        :return: String representation of the during aspect operations</span>
+<span class="sd">        :rtype: str</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="n">io</span><span class="o">.</span><span class="n">StringIO</span><span class="p">()</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;&gt;&gt; during </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">aspect</span><span class="si">}</span><span class="s1"> </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s1"> </span><span class="se">{{</span><span class="s1">&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;&gt;&gt; during </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">aspect</span><span class="si">}</span><span class="s1"> </span><span class="se">{{</span><span class="s1">&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">operation</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">operations</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;    </span><span class="si">{</span><span class="n">operation</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;}&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">f</span><span class="o">.</span><span class="n">getvalue</span><span class="p">()</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="DuringAspectAbstractFunction">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.DuringAspectAbstractFunction">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">DuringAspectAbstractFunction</span><span class="p">(</span><span class="n">DuringAspectStatement</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Represents an abstract function to call for a specific aspect while in a state.</span>
+
+<span class="sd">    Abstract functions are placeholders for implementation-specific behavior.</span>
+
+<span class="sd">    :param name: Optional name of the function</span>
+<span class="sd">    :type name: Optional[str]</span>
+<span class="sd">    :param aspect: The aspect name (e.g., &quot;before&quot;, &quot;after&quot;)</span>
+<span class="sd">    :type aspect: str</span>
+<span class="sd">    :param doc: Optional documentation for the function</span>
+<span class="sd">    :type doc: Optional[str]</span>
+
+<span class="sd">    :rtype: DuringAspectAbstractFunction</span>
+
+<span class="sd">    Example::</span>
+
+<span class="sd">        &gt;&gt;&gt; during_func = DuringAspectAbstractFunction(&quot;processData&quot;, &quot;before&quot;, &quot;Process incoming data&quot;)</span>
+<span class="sd">        &gt;&gt;&gt; print(str(during_func))</span>
+<span class="sd">        &gt;&gt; during before abstract processData /*</span>
+<span class="sd">            Process incoming data</span>
+<span class="sd">        */</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">name</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
+    <span class="n">aspect</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">doc</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
+
+<div class="viewcode-block" id="DuringAspectAbstractFunction.__str__">
+<a class="viewcode-back" href="../../../api_doc/dsl/node.html#pyfcstm.dsl.node.DuringAspectAbstractFunction.__str__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Convert the during aspect abstract function to its string representation.</span>
+
+<span class="sd">        :return: String representation of the during aspect abstract function</span>
+<span class="sd">        :rtype: str</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="n">io</span><span class="o">.</span><span class="n">StringIO</span><span class="p">()</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;&gt;&gt; during </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">aspect</span><span class="si">}</span><span class="s1"> abstract </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;&gt;&gt; during </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">aspect</span><span class="si">}</span><span class="s1"> abstract&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">doc</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="s1">&#39; /*&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">)</span>
+                <span class="nb">print</span><span class="p">(</span><span class="n">indent</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">doc</span><span class="p">,</span> <span class="n">prefix</span><span class="o">=</span><span class="s1">&#39;    &#39;</span><span class="p">),</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">)</span>
+                <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;*/&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;;&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">f</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+
+            <span class="k">return</span> <span class="n">f</span><span class="o">.</span><span class="n">getvalue</span><span class="p">()</span></div>
+</div>
+
+</pre></div>
+
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, HansBug.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  
+    <div class="rst-versions" data-toggle="rst-versions" role="note" aria-label="versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    <span class="fa fa-book"> Other Versions</span>
+    v: dev/fix_plantuml
+    <span class="fa fa-caret-down"></span>
+  </span>
+        <div class="rst-other-versions">
+                <dl>
+                    <dt>Tags</dt>
+                        <dd><a href="../../../../../v0.0.1/index.html">v0.0.1</a></dd>
+                        <dd><a href="../../../../../v0.1.0/index.html">v0.1.0</a></dd>
+                        <dd><a href="../../../../../v0.1.1/index.html">v0.1.1</a></dd>
+                </dl>
+                <dl>
+                    <dt>Branches</dt>
+                        <dd><a href="node.html">dev/fix_plantuml</a></dd>
+                        <dd><a href="../../../../../HEAD/index.html">HEAD</a></dd>
+                        <dd><a href="../../../../../main/index.html">main</a></dd>
+                        <dd><a href="../../../../../old_design/index.html">old_design</a></dd>
+                </dl>
+        </div>
+    </div><script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

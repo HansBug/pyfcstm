@@ -1,0 +1,439 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>pyfcstm.render.render &mdash; pyfcstm 0.1.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/custom.css?v=c9d0a6ec" />
+
+  
+      <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../_static/documentation_options.js?v=a58bc63e"></script>
+      <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            pyfcstm
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorials/installation/index.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorials/quick_start/index.html">Quick Start</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorials/dsl/index.html">PyFCSTM DSL Syntax Tutorial</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Information</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../information/environment.result.html">Run Environment Information</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">API Documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../api_doc/config/index.html">pyfcstm.config</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api_doc/dsl/index.html">pyfcstm.dsl</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api_doc/entry/index.html">pyfcstm.entry</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api_doc/model/index.html">pyfcstm.model</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api_doc/render/index.html">pyfcstm.render</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api_doc/utils/index.html">pyfcstm.utils</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">pyfcstm</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">pyfcstm.render.render</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+    
+    
+  <h1>Source code for pyfcstm.render.render</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">State Machine Code Renderer Module</span>
+
+<span class="sd">This module provides functionality for rendering state machine models into code using templates.</span>
+<span class="sd">It uses Jinja2 templating engine to transform state machine models into various programming</span>
+<span class="sd">languages and formats based on template configurations.</span>
+
+<span class="sd">Template Directory Structure:</span>
+<span class="sd">    The template directory should contain:</span>
+
+<span class="sd">    - ``config.yaml``: Configuration file for the renderer</span>
+<span class="sd">    - ``*.j2`` files: Jinja2 templates that will be rendered</span>
+<span class="sd">    - Other files: Will be copied directly to the output directory</span>
+
+<span class="sd">Configuration File (config.yaml) Structure:</span>
+<span class="sd">    - ``expr_styles``: Dictionary defining expression rendering styles</span>
+<span class="sd">      - ``default``: Default style configuration (will use &#39;dsl&#39; as base_lang if not specified)</span>
+
+<span class="sd">      - ``[style_name]``: Additional named styles</span>
+<span class="sd">        - base_lang: Base language style (&#39;dsl&#39;, &#39;c&#39;, &#39;cpp&#39;, &#39;python&#39;)</span>
+<span class="sd">        - [additional options]: Extra rendering options for the style</span>
+<span class="sd">    - ``globals``: Dictionary of global variables to be added to the Jinja2 environment</span>
+<span class="sd">      Each entry can be:</span>
+
+<span class="sd">      - ``type: template``: A template renderer function</span>
+<span class="sd">        - params: List[str], means the parameter list of this template rendering function, e.g. ``[&#39;a&#39;, &#39;b&#39;]``.</span>
+<span class="sd">        - template: str, means the Jinja2-format text render template, e.g. ``{{ a + b * 2 }}``.</span>
+<span class="sd">      - ``type: import``: An imported object</span>
+<span class="sd">        - from: str, means the import position, e.g. `math.sin`.</span>
+<span class="sd">      - ``type: value``: A direct value</span>
+<span class="sd">        - value: Any, means any possible value, e.g. ``1``, ``&#39;Hello World&#39;``.</span>
+<span class="sd">      - Other values (e.g. ``1``, ``&#39;Hello World&#39;``) means directly this value itself.</span>
+
+<span class="sd">    - ``filters``: Dictionary of filter functions to be added to the Jinja2 environment</span>
+<span class="sd">      (Same format as globals)</span>
+
+<span class="sd">    - ``tests``: Dictionary of test functions to be added to the Jinja2 environment</span>
+<span class="sd">      (Same format as globals)</span>
+
+<span class="sd">    - ``ignores``: List of file patterns to ignore (using gitignore syntax, e.g. ``.git``, ``*.md``, etc)</span>
+
+<span class="sd">Expression Rendering:</span>
+<span class="sd">    The expr_styles configuration allows customizing how expressions are rendered in different</span>
+<span class="sd">    language styles. The base_lang determines the starting template set, which can be extended</span>
+<span class="sd">    or overridden with additional configuration.</span>
+
+<span class="sd">    And you can use these pre-defined styles in ``expr_render`` function/filter in the template.</span>
+<span class="sd">    When use ``{{ expression | expr_render }}`` it will use ``default`` style to render your expression.</span>
+<span class="sd">    When use ``{{ expression | expr_render(style=&#39;c&#39;) }}`` it will use ``c`` style to render your expression.</span>
+
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">copy</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">os.path</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pathlib</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">shutil</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">warnings</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">functools</span><span class="w"> </span><span class="kn">import</span> <span class="n">partial</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">Callable</span><span class="p">,</span> <span class="n">Union</span><span class="p">,</span> <span class="n">Any</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">pathspec</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">yaml</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">.env</span><span class="w"> </span><span class="kn">import</span> <span class="n">create_env</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.expr</span><span class="w"> </span><span class="kn">import</span> <span class="n">create_expr_render_template</span><span class="p">,</span> <span class="n">fn_expr_render</span><span class="p">,</span> <span class="n">_KNOWN_STYLES</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.func</span><span class="w"> </span><span class="kn">import</span> <span class="n">process_item_to_object</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">..dsl</span><span class="w"> </span><span class="kn">import</span> <span class="n">node</span> <span class="k">as</span> <span class="n">dsl_nodes</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">..model</span><span class="w"> </span><span class="kn">import</span> <span class="n">StateMachine</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">..utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">auto_decode</span>
+
+
+<div class="viewcode-block" id="StateMachineCodeRenderer">
+<a class="viewcode-back" href="../../../api_doc/render/render.html#pyfcstm.render.render.StateMachineCodeRenderer">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">StateMachineCodeRenderer</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Renderer for generating code from state machine models using templates.</span>
+
+<span class="sd">    This class handles the rendering of state machine models into code using</span>
+<span class="sd">    Jinja2 templates. It supports custom expression styles, global functions,</span>
+<span class="sd">    filters, and tests through a configuration file.</span>
+
+<span class="sd">    :param template_dir: Directory containing the templates and configuration</span>
+<span class="sd">    :type template_dir: str</span>
+
+<span class="sd">    :param config_file: Name of the configuration file within the template directory</span>
+<span class="sd">    :type config_file: str, default: &#39;config.yaml&#39;</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="StateMachineCodeRenderer.__init__">
+<a class="viewcode-back" href="../../../api_doc/render/render.html#pyfcstm.render.render.StateMachineCodeRenderer.__init__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">template_dir</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">config_file</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s1">&#39;config.yaml&#39;</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Initialize the StateMachineCodeRenderer.</span>
+
+<span class="sd">        :param template_dir: Directory containing the templates and configuration</span>
+<span class="sd">        :type template_dir: str</span>
+
+<span class="sd">        :param config_file: Name of the configuration file within the template directory</span>
+<span class="sd">        :type config_file: str, default: &#39;config.yaml&#39;</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">template_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="n">template_dir</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">config_file</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">template_dir</span><span class="p">,</span> <span class="n">config_file</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">env</span> <span class="o">=</span> <span class="n">create_env</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_ignore_patterns</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;.git&#39;</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_prepare_for_configs</span><span class="p">()</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_path_spec</span> <span class="o">=</span> <span class="n">pathspec</span><span class="o">.</span><span class="n">PathSpec</span><span class="o">.</span><span class="n">from_lines</span><span class="p">(</span>
+            <span class="n">pathspec</span><span class="o">.</span><span class="n">patterns</span><span class="o">.</span><span class="n">GitWildMatchPattern</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ignore_patterns</span>
+        <span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_file_mappings</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Callable</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_prepare_for_file_mapping</span><span class="p">()</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_prepare_for_configs</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Load and process the configuration file.</span>
+
+<span class="sd">        This method reads the configuration file, sets up expression rendering styles,</span>
+<span class="sd">        and registers globals, filters, and tests in the Jinja2 environment.</span>
+
+<span class="sd">        :raises FileNotFoundError: If the configuration file does not exist</span>
+<span class="sd">        :raises yaml.YAMLError: If the configuration file contains invalid YAML</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">config_file</span><span class="p">,</span> <span class="s1">&#39;r&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="n">config_info</span> <span class="o">=</span> <span class="n">yaml</span><span class="o">.</span><span class="n">safe_load</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
+
+        <span class="n">expr_styles</span> <span class="o">=</span> <span class="n">config_info</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s1">&#39;expr_styles&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">expr_styles</span><span class="p">[</span><span class="s1">&#39;default&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">expr_styles</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;default&#39;</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{</span><span class="s1">&#39;base_lang&#39;</span><span class="p">:</span> <span class="s1">&#39;dsl&#39;</span><span class="p">}</span>
+        <span class="n">d_templates</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">_KNOWN_STYLES</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">style_name</span><span class="p">,</span> <span class="n">expr_style</span> <span class="ow">in</span> <span class="n">expr_styles</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">lang_style</span> <span class="o">=</span> <span class="n">expr_style</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s1">&#39;base_lang&#39;</span><span class="p">)</span>
+            <span class="n">d_templates</span><span class="p">[</span><span class="n">style_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">create_expr_render_template</span><span class="p">(</span>
+                <span class="n">lang_style</span><span class="o">=</span><span class="n">lang_style</span><span class="p">,</span>
+                <span class="n">ext_configs</span><span class="o">=</span><span class="n">expr_style</span><span class="p">,</span>
+            <span class="p">)</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">_fn_expr_render</span><span class="p">(</span><span class="n">node</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">dsl_nodes</span><span class="o">.</span><span class="n">Expr</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="n">style</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s1">&#39;default&#39;</span><span class="p">):</span>
+<span class="w">            </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">            Render an expression node using the specified style.</span>
+
+<span class="sd">            :param node: The expression node to render</span>
+<span class="sd">            :type node: Union[float, int, dict, dsl_nodes.Expr, Any]</span>
+
+<span class="sd">            :param style: The expression rendering style to use</span>
+<span class="sd">            :type style: str, default: &#39;default&#39;</span>
+
+<span class="sd">            :return: The rendered expression as a string</span>
+<span class="sd">            :rtype: str</span>
+<span class="sd">            &quot;&quot;&quot;</span>
+            <span class="k">return</span> <span class="n">fn_expr_render</span><span class="p">(</span>
+                <span class="n">node</span><span class="o">=</span><span class="n">node</span><span class="p">,</span>
+                <span class="n">templates</span><span class="o">=</span><span class="n">d_templates</span><span class="p">[</span><span class="n">style</span><span class="p">],</span>
+                <span class="n">env</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="p">,</span>
+            <span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">globals</span><span class="p">[</span><span class="s1">&#39;expr_render&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">_fn_expr_render</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">filters</span><span class="p">[</span><span class="s1">&#39;expr_render&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">_fn_expr_render</span>
+
+        <span class="n">globals_</span> <span class="o">=</span> <span class="n">config_info</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s1">&#39;globals&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">globals_</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">globals</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">process_item_to_object</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">env</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="p">)</span>
+        <span class="n">filters_</span> <span class="o">=</span> <span class="n">config_info</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s1">&#39;filters&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">filters_</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">filters</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">process_item_to_object</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">env</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="p">)</span>
+        <span class="n">tests</span> <span class="o">=</span> <span class="n">config_info</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s1">&#39;tests&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">tests</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">tests</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">process_item_to_object</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">env</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="p">)</span>
+
+        <span class="n">ignores</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">config_info</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s1">&#39;ignores&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[])</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_ignore_patterns</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">ignores</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_prepare_for_file_mapping</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Prepare file mappings for rendering or copying.</span>
+
+<span class="sd">        This method walks through the template directory and creates mappings for:</span>
+<span class="sd">        - .j2 files: Will be rendered using Jinja2</span>
+<span class="sd">        - Other files: Will be copied directly to the output directory</span>
+
+<span class="sd">        Files matching the ignore patterns will be excluded.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">for</span> <span class="n">root</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">files</span> <span class="ow">in</span> <span class="n">os</span><span class="o">.</span><span class="n">walk</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">template_dir</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">file</span> <span class="ow">in</span> <span class="n">files</span><span class="p">:</span>
+                <span class="n">_</span><span class="p">,</span> <span class="n">ext</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">splitext</span><span class="p">(</span><span class="n">file</span><span class="p">)</span>
+                <span class="n">current_file</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">root</span><span class="p">,</span> <span class="n">file</span><span class="p">))</span>
+                <span class="n">rel_file</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">relpath</span><span class="p">(</span><span class="n">current_file</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">template_dir</span><span class="p">)</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_path_spec</span><span class="o">.</span><span class="n">match_file</span><span class="p">(</span><span class="n">rel_file</span><span class="p">):</span>
+                    <span class="k">continue</span>
+                <span class="k">if</span> <span class="n">ext</span> <span class="o">==</span> <span class="s1">&#39;.j2&#39;</span><span class="p">:</span>
+                    <span class="n">rel_file</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">splitext</span><span class="p">(</span><span class="n">rel_file</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_file_mappings</span><span class="p">[</span><span class="n">rel_file</span><span class="p">]</span> <span class="o">=</span> <span class="n">partial</span><span class="p">(</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">render_one_file</span><span class="p">,</span>
+                        <span class="n">template_file</span><span class="o">=</span><span class="n">current_file</span><span class="p">,</span>
+                    <span class="p">)</span>
+                <span class="k">elif</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">samefile</span><span class="p">(</span><span class="n">current_file</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">config_file</span><span class="p">):</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_file_mappings</span><span class="p">[</span><span class="n">rel_file</span><span class="p">]</span> <span class="o">=</span> <span class="n">partial</span><span class="p">(</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">copy_one_file</span><span class="p">,</span>
+                        <span class="n">src_file</span><span class="o">=</span><span class="n">current_file</span><span class="p">,</span>
+                    <span class="p">)</span>
+
+<div class="viewcode-block" id="StateMachineCodeRenderer.render_one_file">
+<a class="viewcode-back" href="../../../api_doc/render/render.html#pyfcstm.render.render.StateMachineCodeRenderer.render_one_file">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">render_one_file</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">model</span><span class="p">:</span> <span class="n">StateMachine</span><span class="p">,</span> <span class="n">output_file</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">template_file</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Render a single template file.</span>
+
+<span class="sd">        :param model: The state machine model to render</span>
+<span class="sd">        :type model: StateMachine</span>
+
+<span class="sd">        :param output_file: Path to the output file</span>
+<span class="sd">        :type output_file: str</span>
+
+<span class="sd">        :param template_file: Path to the template file</span>
+<span class="sd">        :type template_file: str</span>
+
+<span class="sd">        :raises jinja2.exceptions.TemplateError: If there&#39;s an error in the template</span>
+<span class="sd">        :raises IOError: If there&#39;s an error reading or writing files</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">tp</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">from_string</span><span class="p">(</span><span class="n">auto_decode</span><span class="p">(</span><span class="n">pathlib</span><span class="o">.</span><span class="n">Path</span><span class="p">(</span><span class="n">template_file</span><span class="p">)</span><span class="o">.</span><span class="n">read_bytes</span><span class="p">()))</span>
+        <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">output_file</span><span class="p">):</span>
+            <span class="n">os</span><span class="o">.</span><span class="n">makedirs</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">config_file</span><span class="p">),</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">makedirs</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">output_file</span><span class="p">),</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">output_file</span><span class="p">,</span> <span class="s1">&#39;w&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">tp</span><span class="o">.</span><span class="n">render</span><span class="p">(</span><span class="n">model</span><span class="o">=</span><span class="n">model</span><span class="p">))</span></div>
+
+
+<div class="viewcode-block" id="StateMachineCodeRenderer.copy_one_file">
+<a class="viewcode-back" href="../../../api_doc/render/render.html#pyfcstm.render.render.StateMachineCodeRenderer.copy_one_file">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">copy_one_file</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">model</span><span class="p">:</span> <span class="n">StateMachine</span><span class="p">,</span> <span class="n">output_file</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">src_file</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Copy a single file to the output directory.</span>
+
+<span class="sd">        :param model: The state machine model (unused in this method)</span>
+<span class="sd">        :type model: StateMachine</span>
+
+<span class="sd">        :param output_file: Path to the output file</span>
+<span class="sd">        :type output_file: str</span>
+
+<span class="sd">        :param src_file: Path to the source file</span>
+<span class="sd">        :type src_file: str</span>
+
+<span class="sd">        :raises IOError: If there&#39;s an error copying the file</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">_</span> <span class="o">=</span> <span class="n">model</span>
+        <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">output_file</span><span class="p">):</span>
+            <span class="n">os</span><span class="o">.</span><span class="n">makedirs</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">config_file</span><span class="p">),</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">shutil</span><span class="o">.</span><span class="n">copyfile</span><span class="p">(</span><span class="n">src_file</span><span class="p">,</span> <span class="n">output_file</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="StateMachineCodeRenderer.render">
+<a class="viewcode-back" href="../../../api_doc/render/render.html#pyfcstm.render.render.StateMachineCodeRenderer.render">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">render</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">model</span><span class="p">:</span> <span class="n">StateMachine</span><span class="p">,</span> <span class="n">output_dir</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">clear_previous_directory</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Render the state machine model to the output directory.</span>
+
+<span class="sd">        This method processes all template files and copies all other files</span>
+<span class="sd">        from the template directory to the output directory according to the</span>
+<span class="sd">        configured mappings.</span>
+
+<span class="sd">        :param model: The state machine model to render</span>
+<span class="sd">        :type model: StateMachine</span>
+
+<span class="sd">        :param output_dir: Directory where the rendered files will be placed</span>
+<span class="sd">        :type output_dir: str</span>
+
+<span class="sd">        :param clear_previous_directory: Whether to clear the output directory before rendering</span>
+<span class="sd">        :type clear_previous_directory: bool, default: False</span>
+
+<span class="sd">        :raises IOError: If there&#39;s an error accessing or writing to the output directory</span>
+
+<span class="sd">        Example::</span>
+
+<span class="sd">            &gt;&gt;&gt; renderer = StateMachineCodeRenderer(&#39;./templates&#39;)</span>
+<span class="sd">            &gt;&gt;&gt; renderer.render(my_state_machine, &#39;./output&#39;, clear_previous_directory=True)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">output_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="n">output_dir</span><span class="p">)</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">makedirs</span><span class="p">(</span><span class="n">output_dir</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">clear_previous_directory</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">file</span> <span class="ow">in</span> <span class="n">os</span><span class="o">.</span><span class="n">listdir</span><span class="p">(</span><span class="n">output_dir</span><span class="p">):</span>
+                <span class="n">dst_file</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">output_dir</span><span class="p">,</span> <span class="n">file</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isfile</span><span class="p">(</span><span class="n">dst_file</span><span class="p">):</span>
+                    <span class="n">os</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">dst_file</span><span class="p">)</span>
+                <span class="k">elif</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isdir</span><span class="p">(</span><span class="n">dst_file</span><span class="p">):</span>
+                    <span class="n">shutil</span><span class="o">.</span><span class="n">rmtree</span><span class="p">(</span><span class="n">dst_file</span><span class="p">)</span>
+                <span class="k">elif</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">islink</span><span class="p">(</span><span class="n">dst_file</span><span class="p">):</span>
+                    <span class="n">os</span><span class="o">.</span><span class="n">unlink</span><span class="p">(</span><span class="n">dst_file</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;Unable to clean file </span><span class="si">{</span><span class="n">dst_file</span><span class="si">!r}</span><span class="s1">.&#39;</span><span class="p">)</span>  <span class="c1"># pragma: no cover</span>
+
+        <span class="k">for</span> <span class="n">rel_file</span><span class="p">,</span> <span class="n">fn_op</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_file_mappings</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">dst_file</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">output_dir</span><span class="p">,</span> <span class="n">rel_file</span><span class="p">)</span>
+            <span class="n">fn_op</span><span class="p">(</span><span class="n">model</span><span class="o">=</span><span class="n">model</span><span class="p">,</span> <span class="n">output_file</span><span class="o">=</span><span class="n">dst_file</span><span class="p">)</span></div>
+</div>
+
+</pre></div>
+
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, HansBug.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  
+    <div class="rst-versions" data-toggle="rst-versions" role="note" aria-label="versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    <span class="fa fa-book"> Other Versions</span>
+    v: dev/fix_plantuml
+    <span class="fa fa-caret-down"></span>
+  </span>
+        <div class="rst-other-versions">
+                <dl>
+                    <dt>Tags</dt>
+                        <dd><a href="../../../../../v0.0.1/index.html">v0.0.1</a></dd>
+                        <dd><a href="../../../../../v0.1.0/index.html">v0.1.0</a></dd>
+                        <dd><a href="../../../../../v0.1.1/index.html">v0.1.1</a></dd>
+                </dl>
+                <dl>
+                    <dt>Branches</dt>
+                        <dd><a href="render.html">dev/fix_plantuml</a></dd>
+                        <dd><a href="../../../../../HEAD/index.html">HEAD</a></dd>
+                        <dd><a href="../../../../../main/index.html">main</a></dd>
+                        <dd><a href="../../../../../old_design/index.html">old_design</a></dd>
+                </dl>
+        </div>
+    </div><script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

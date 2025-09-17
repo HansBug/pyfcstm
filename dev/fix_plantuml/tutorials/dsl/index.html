@@ -1,0 +1,943 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PyFCSTM DSL Syntax Tutorial &mdash; pyfcstm 0.1.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/custom.css?v=c9d0a6ec" />
+
+  
+      <script src="../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../_static/documentation_options.js?v=a58bc63e"></script>
+      <script src="../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <link rel="next" title="Run Environment Information" href="../../information/environment.result.html" />
+    <link rel="prev" title="Quick Start" href="../quick_start/index.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            pyfcstm
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../installation/index.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quick_start/index.html">Quick Start</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">PyFCSTM DSL Syntax Tutorial</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#overview">Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#language-structure">Language Structure</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#program-organization">Program Organization</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#variable-definitions">Variable Definitions</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#syntax">Syntax</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#correct-usage">Correct Usage</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#semantic-rules">Semantic Rules</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#common-errors">Common Errors</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#state-definitions">State Definitions</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#syntax-types">Syntax Types</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#leaf-states">Leaf States</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#composite-states">Composite States</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#id1">Semantic Rules</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#id2">Common Errors</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#transition-definitions">Transition Definitions</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#transition-types">Transition Types</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#entry-transitions">Entry Transitions</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#normal-transitions">Normal Transitions</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#exit-transitions">Exit Transitions</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#chain-identifiers">Chain Identifiers</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#id3">Semantic Rules</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#id4">Common Errors</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#expression-system">Expression System</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#expression-hierarchy">Expression Hierarchy</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#literal-values">Literal Values</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#operators">Operators</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#mathematical-functions">Mathematical Functions</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#conditional-expressions">Conditional Expressions</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#id5">Semantic Rules</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#id6">Common Errors</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#lifecycle-actions">Lifecycle Actions</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#action-types">Action Types</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#enter-actions">Enter Actions</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#during-actions">During Actions</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#exit-actions">Exit Actions</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#id7">Semantic Rules</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#id8">Common Errors</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#lifecycle-flows-of-state-machine">Lifecycle Flows of State Machine</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#operational-statements">Operational Statements</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#assignment-types">Assignment Types</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#id9">Correct Usage</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#id10">Semantic Rules</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#id11">Common Errors</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#comments-and-documentation">Comments and Documentation</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#comment-styles">Comment Styles</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#documentation-best-practices">Documentation Best Practices</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#semantic-validation-rules">Semantic Validation Rules</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#comprehensive-validation">Comprehensive Validation</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#error-handling">Error Handling</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#advanced-patterns-and-best-practices">Advanced Patterns and Best Practices</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#hierarchical-state-organization">Hierarchical State Organization</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#event-driven-transitions">Event-Driven Transitions</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#conditional-logic-patterns">Conditional Logic Patterns</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#resource-management">Resource Management</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#integration-with-code-generation">Integration with Code Generation</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#ast-export-interface">AST Export Interface</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#plantuml-export">PlantUML Export</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#notes">Notes</a></li>
+</ul>
+</li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Information</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../information/environment.result.html">Run Environment Information</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">API Documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../api_doc/config/index.html">pyfcstm.config</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../api_doc/dsl/index.html">pyfcstm.dsl</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../api_doc/entry/index.html">pyfcstm.entry</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../api_doc/model/index.html">pyfcstm.model</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../api_doc/render/index.html">pyfcstm.render</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../api_doc/utils/index.html">pyfcstm.utils</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">pyfcstm</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">PyFCSTM DSL Syntax Tutorial</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../../_sources/tutorials/dsl/index.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+    
+    
+  <section id="pyfcstm-dsl-syntax-tutorial">
+<h1>PyFCSTM DSL Syntax Tutorial<a class="headerlink" href="#pyfcstm-dsl-syntax-tutorial" title="Link to this heading"></a></h1>
+<section id="overview">
+<h2>Overview<a class="headerlink" href="#overview" title="Link to this heading"></a></h2>
+<p>The PyFCSTM Domain Specific Language (DSL) provides a comprehensive syntax for defining hierarchical finite state machines with expressions, conditions, and lifecycle actions. This tutorial covers all language constructs, semantic rules, and best practices for writing correct DSL programs.</p>
+</section>
+<section id="language-structure">
+<h2>Language Structure<a class="headerlink" href="#language-structure" title="Link to this heading"></a></h2>
+<section id="program-organization">
+<h3>Program Organization<a class="headerlink" href="#program-organization" title="Link to this heading"></a></h3>
+<p>A complete DSL program consists of optional variable definitions followed by a single root state definition:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">program</span> <span class="p">:</span><span class="o">:=</span> <span class="n">def_assignment</span><span class="o">*</span> <span class="n">state_definition</span> <span class="n">EOF</span>
+</pre></div>
+</div>
+<p>The top-level structure ensures every state machine has exactly one root state that may contain nested substates and transitions.</p>
+</section>
+</section>
+<section id="variable-definitions">
+<h2>Variable Definitions<a class="headerlink" href="#variable-definitions" title="Link to this heading"></a></h2>
+<section id="syntax">
+<h3>Syntax<a class="headerlink" href="#syntax" title="Link to this heading"></a></h3>
+<p>Variable definitions declare typed variables with initial values using the <code class="docutils literal notranslate"><span class="pre">def</span></code> keyword:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">def_assignment</span> <span class="p">:</span><span class="o">:=</span> <span class="s1">&#39;def&#39;</span> <span class="p">(</span><span class="s1">&#39;int&#39;</span><span class="o">|</span><span class="s1">&#39;float&#39;</span><span class="p">)</span> <span class="n">ID</span> <span class="s1">&#39;=&#39;</span> <span class="n">init_expression</span> <span class="s1">&#39;;&#39;</span>
+</pre></div>
+</div>
+</section>
+<section id="correct-usage">
+<h3>Correct Usage<a class="headerlink" href="#correct-usage" title="Link to this heading"></a></h3>
+<p><strong>Integer Variables:</strong></p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">def</span> <span class="pre">int</span> <span class="pre">counter</span> <span class="pre">=</span> <span class="pre">0;</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">def</span> <span class="pre">int</span> <span class="pre">max_attempts</span> <span class="pre">=</span> <span class="pre">5;</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">def</span> <span class="pre">int</span> <span class="pre">flags</span> <span class="pre">=</span> <span class="pre">0xFF;</span></code></p></li>
+</ul>
+<p><strong>Float Variables:</strong></p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">def</span> <span class="pre">float</span> <span class="pre">temperature</span> <span class="pre">=</span> <span class="pre">25.5;</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">def</span> <span class="pre">float</span> <span class="pre">pi_value</span> <span class="pre">=</span> <span class="pre">pi;</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">def</span> <span class="pre">float</span> <span class="pre">ratio</span> <span class="pre">=</span> <span class="pre">3.14</span> <span class="pre">*</span> <span class="pre">2;</span></code></p></li>
+</ul>
+</section>
+<section id="semantic-rules">
+<h3>Semantic Rules<a class="headerlink" href="#semantic-rules" title="Link to this heading"></a></h3>
+<p>Variable definitions must follow these semantic constraints:</p>
+<ol class="arabic simple">
+<li><p><strong>Unique Names</strong>: Each variable name must be unique within the program scope</p></li>
+<li><p><strong>Type Consistency</strong>: Initial expressions must evaluate to values compatible with the declared type</p></li>
+<li><p><strong>Expression Validity</strong>: Initial expressions can only reference mathematical constants and literals</p></li>
+</ol>
+</section>
+<section id="common-errors">
+<h3>Common Errors<a class="headerlink" href="#common-errors" title="Link to this heading"></a></h3>
+<p><strong>Incorrect Usage:</strong></p>
+<ul class="simple">
+<li><p>Duplicate definitions: <code class="docutils literal notranslate"><span class="pre">def</span> <span class="pre">int</span> <span class="pre">x</span> <span class="pre">=</span> <span class="pre">1;</span> <span class="pre">def</span> <span class="pre">float</span> <span class="pre">x</span> <span class="pre">=</span> <span class="pre">2.0;</span></code> (semantic error)</p></li>
+<li><p>Undefined references: <code class="docutils literal notranslate"><span class="pre">def</span> <span class="pre">int</span> <span class="pre">y</span> <span class="pre">=</span> <span class="pre">unknown_var;</span></code> (semantic error)</p></li>
+<li><p>Type mismatches: Variables must use appropriate types for their intended values</p></li>
+</ul>
+</section>
+</section>
+<section id="state-definitions">
+<h2>State Definitions<a class="headerlink" href="#state-definitions" title="Link to this heading"></a></h2>
+<section id="syntax-types">
+<h3>Syntax Types<a class="headerlink" href="#syntax-types" title="Link to this heading"></a></h3>
+<p>The DSL supports two types of state definitions:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">state_definition</span> <span class="p">:</span><span class="o">:=</span> <span class="n">leafStateDefinition</span> <span class="o">|</span> <span class="n">compositeStateDefinition</span>
+<span class="n">leafStateDefinition</span> <span class="p">:</span><span class="o">:=</span> <span class="s1">&#39;state&#39;</span> <span class="n">ID</span> <span class="s1">&#39;;&#39;</span>
+<span class="n">compositeStateDefinition</span> <span class="p">:</span><span class="o">:=</span> <span class="s1">&#39;state&#39;</span> <span class="n">ID</span> <span class="s1">&#39;{&#39;</span> <span class="n">state_inner_statement</span><span class="o">*</span> <span class="s1">&#39;}&#39;</span>
+</pre></div>
+</div>
+</section>
+<section id="leaf-states">
+<h3>Leaf States<a class="headerlink" href="#leaf-states" title="Link to this heading"></a></h3>
+<p>Leaf states represent terminal states with no internal structure:</p>
+<p><strong>Correct Usage:</strong></p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">state</span> <span class="pre">Idle;</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">state</span> <span class="pre">Running;</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">state</span> <span class="pre">Error;</span></code></p></li>
+</ul>
+<p>Leaf states are the simplest form and typically represent final operational states.</p>
+</section>
+<section id="composite-states">
+<h3>Composite States<a class="headerlink" href="#composite-states" title="Link to this heading"></a></h3>
+<p>Composite states contain nested substates, transitions, and lifecycle actions:</p>
+<p><strong>Correct Usage:</strong></p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">state</span> <span class="n">Machine</span> <span class="p">{</span>
+    <span class="n">state</span> <span class="n">Off</span><span class="p">;</span>
+    <span class="n">state</span> <span class="n">On</span> <span class="p">{</span>
+        <span class="n">state</span> <span class="n">Slow</span><span class="p">;</span>
+        <span class="n">state</span> <span class="n">Fast</span><span class="p">;</span>
+    <span class="p">}</span>
+
+    <span class="p">[</span><span class="o">*</span><span class="p">]</span> <span class="o">-&gt;</span> <span class="n">Off</span><span class="p">;</span>
+    <span class="n">Off</span> <span class="o">-&gt;</span> <span class="n">On</span><span class="p">:</span> <span class="k">if</span> <span class="p">[</span><span class="n">power_switch</span> <span class="o">==</span> <span class="mi">1</span><span class="p">];</span>
+    <span class="n">On</span> <span class="o">-&gt;</span> <span class="n">Off</span><span class="p">:</span> <span class="k">if</span> <span class="p">[</span><span class="n">power_switch</span> <span class="o">==</span> <span class="mi">0</span><span class="p">];</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</section>
+<section id="id1">
+<h3>Semantic Rules<a class="headerlink" href="#id1" title="Link to this heading"></a></h3>
+<p>State definitions must adhere to these semantic constraints:</p>
+<ol class="arabic simple">
+<li><p><strong>Unique Names</strong>: State names must be unique within their containing scope</p></li>
+<li><p><strong>Entry Transitions</strong>: Composite states must have at least one entry transition (<code class="docutils literal notranslate"><span class="pre">[*]</span> <span class="pre">-&gt;</span> <span class="pre">state</span></code>)</p></li>
+<li><p><strong>State References</strong>: All transition targets must reference existing states</p></li>
+<li><p><strong>Hierarchical Consistency</strong>: Nested states follow proper parent-child relationships</p></li>
+</ol>
+</section>
+<section id="id2">
+<h3>Common Errors<a class="headerlink" href="#id2" title="Link to this heading"></a></h3>
+<p><strong>Incorrect Usage:</strong></p>
+<ul class="simple">
+<li><p>Missing entry transitions in composite states (semantic error)</p></li>
+<li><p>Duplicate state names within the same scope (semantic error)</p></li>
+<li><p>Self-referential state hierarchies (structural error)</p></li>
+</ul>
+</section>
+</section>
+<section id="transition-definitions">
+<h2>Transition Definitions<a class="headerlink" href="#transition-definitions" title="Link to this heading"></a></h2>
+<section id="transition-types">
+<h3>Transition Types<a class="headerlink" href="#transition-types" title="Link to this heading"></a></h3>
+<p>The DSL supports three types of transitions with distinct syntax patterns:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">transition_definition</span> <span class="p">:</span><span class="o">:=</span> <span class="n">entryTransitionDefinition</span> <span class="o">|</span> <span class="n">normalTransitionDefinition</span> <span class="o">|</span> <span class="n">exitTransitionDefinition</span>
+</pre></div>
+</div>
+</section>
+<section id="entry-transitions">
+<h3>Entry Transitions<a class="headerlink" href="#entry-transitions" title="Link to this heading"></a></h3>
+<p>Entry transitions define the initial state when entering a composite state:</p>
+<p><strong>Syntax:</strong> <code class="docutils literal notranslate"><span class="pre">[*]</span> <span class="pre">-&gt;</span> <span class="pre">target_state</span> <span class="pre">[:</span> <span class="pre">chain_id|::</span> <span class="pre">event_name]</span> <span class="pre">[if</span> <span class="pre">[condition]]</span> <span class="pre">[effect</span> <span class="pre">{</span> <span class="pre">operations</span> <span class="pre">}]</span> <span class="pre">';'</span></code></p>
+<p><strong>Correct Usage:</strong></p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">[*]</span> <span class="pre">-&gt;</span> <span class="pre">Idle;</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">[*]</span> <span class="pre">-&gt;</span> <span class="pre">Running:</span> <span class="pre">startup_event;</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">[*]</span> <span class="pre">-&gt;</span> <span class="pre">Active:</span> <span class="pre">if</span> <span class="pre">[initialized</span> <span class="pre">==</span> <span class="pre">0x1];</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">[*]</span> <span class="pre">-&gt;</span> <span class="pre">Ready</span> <span class="pre">effect</span> <span class="pre">{</span> <span class="pre">counter</span> <span class="pre">=</span> <span class="pre">0;</span> <span class="pre">}</span></code></p></li>
+</ul>
+</section>
+<section id="normal-transitions">
+<h3>Normal Transitions<a class="headerlink" href="#normal-transitions" title="Link to this heading"></a></h3>
+<p>Normal transitions connect two named states:</p>
+<p><strong>Syntax:</strong> <code class="docutils literal notranslate"><span class="pre">from_state</span> <span class="pre">-&gt;</span> <span class="pre">to_state</span> <span class="pre">[:</span> <span class="pre">chain_id|::</span> <span class="pre">event_name]</span> <span class="pre">[if</span> <span class="pre">[condition]]</span> <span class="pre">[effect</span> <span class="pre">{</span> <span class="pre">operations</span> <span class="pre">}]</span> <span class="pre">';'</span></code></p>
+<p><strong>Correct Usage:</strong></p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">Idle</span> <span class="pre">-&gt;</span> <span class="pre">Running;</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">Slow</span> <span class="pre">-&gt;</span> <span class="pre">Fast</span> <span class="pre">:</span> <span class="pre">speed_up;</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">Slow</span> <span class="pre">-&gt;</span> <span class="pre">Fast</span> <span class="pre">::</span> <span class="pre">speed_up;</span></code> (this is different from the above one, will explain it later)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">Active</span> <span class="pre">-&gt;</span> <span class="pre">Inactive:</span> <span class="pre">if</span> <span class="pre">[timeout</span> <span class="pre">&gt;</span> <span class="pre">100];</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">Processing</span> <span class="pre">-&gt;</span> <span class="pre">Complete</span> <span class="pre">effect</span> <span class="pre">{</span> <span class="pre">result</span> <span class="pre">=</span> <span class="pre">output;</span> <span class="pre">}</span></code></p></li>
+</ul>
+</section>
+<section id="exit-transitions">
+<h3>Exit Transitions<a class="headerlink" href="#exit-transitions" title="Link to this heading"></a></h3>
+<p>Exit transitions define how to leave a composite state:</p>
+<p><strong>Syntax:</strong> <code class="docutils literal notranslate"><span class="pre">from_state</span> <span class="pre">-&gt;</span> <span class="pre">[*]</span> <span class="pre">[:</span> <span class="pre">chain_id|::</span> <span class="pre">event_name]</span> <span class="pre">[if</span> <span class="pre">[condition]]</span> <span class="pre">[effect</span> <span class="pre">{</span> <span class="pre">operations</span> <span class="pre">}]</span> <span class="pre">';'</span></code></p>
+<p><strong>Correct Usage:</strong></p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">Error</span> <span class="pre">-&gt;</span> <span class="pre">[*];</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">Complete</span> <span class="pre">-&gt;</span> <span class="pre">[*]:</span> <span class="pre">finish_event;</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">Running</span> <span class="pre">-&gt;</span> <span class="pre">[*]:</span> <span class="pre">if</span> <span class="pre">[shutdown_requested];</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">Active</span> <span class="pre">-&gt;</span> <span class="pre">[*]</span> <span class="pre">effect</span> <span class="pre">{</span> <span class="pre">cleanup_flag</span> <span class="pre">=</span> <span class="pre">0x1;</span> <span class="pre">}</span></code></p></li>
+</ul>
+</section>
+<section id="chain-identifiers">
+<h3>Chain Identifiers<a class="headerlink" href="#chain-identifiers" title="Link to this heading"></a></h3>
+<p>Chain identifiers provide hierarchical event naming using dot notation:</p>
+<p><strong>Correct Usage:</strong></p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">State1</span> <span class="pre">-&gt;</span> <span class="pre">State2:</span> <span class="pre">event_name;</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">Parent</span> <span class="pre">-&gt;</span> <span class="pre">Child:</span> <span class="pre">parent.child.event;</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">Active</span> <span class="pre">-&gt;</span> <span class="pre">Idle:</span> <span class="pre">system.shutdown.requested;</span></code></p></li>
+</ul>
+<p>It’s worth noting that when using:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">state</span> <span class="n">Root</span> <span class="p">{</span>
+    <span class="p">[</span><span class="o">*</span><span class="p">]</span> <span class="o">-&gt;</span> <span class="n">A</span><span class="p">;</span>
+    <span class="n">A</span> <span class="o">-&gt;</span> <span class="n">B</span> <span class="p">:</span> <span class="n">E</span><span class="p">;</span>
+    <span class="n">B</span> <span class="o">-&gt;</span> <span class="n">C</span> <span class="p">:</span> <span class="n">E</span><span class="p">;</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>This means that the events triggering both <code class="docutils literal notranslate"><span class="pre">A</span> <span class="pre">-&gt;</span> <span class="pre">B</span></code> and <code class="docutils literal notranslate"><span class="pre">B</span> <span class="pre">-&gt;</span> <span class="pre">C</span></code> transitions will be the same event, specifically the event E under the Root namespace, i.e., <code class="docutils literal notranslate"><span class="pre">Root.E</span></code>. If you wish to distinguish between these two events, meaning you don’t want to trigger two different transitions based on the same event, you should write:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">state</span> <span class="n">Root</span> <span class="p">{</span>
+    <span class="p">[</span><span class="o">*</span><span class="p">]</span> <span class="o">-&gt;</span> <span class="n">A</span><span class="p">;</span>
+    <span class="n">A</span> <span class="o">-&gt;</span> <span class="n">B</span> <span class="p">:</span> <span class="n">A</span><span class="o">.</span><span class="n">E</span><span class="p">;</span>
+    <span class="n">B</span> <span class="o">-&gt;</span> <span class="n">C</span> <span class="p">:</span> <span class="n">B</span><span class="o">.</span><span class="n">E</span><span class="p">;</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>In this case, the two events are using <code class="docutils literal notranslate"><span class="pre">Root.A.E</span></code> and <code class="docutils literal notranslate"><span class="pre">Root.B.E</span></code> respectively, achieving the distinction.</p>
+<p>Additionally, to simplify this expression, we provide an extra syntactic sugar:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">state</span> <span class="n">Root</span> <span class="p">{</span>
+    <span class="p">[</span><span class="o">*</span><span class="p">]</span> <span class="o">-&gt;</span> <span class="n">A</span><span class="p">;</span>
+    <span class="n">A</span> <span class="o">-&gt;</span> <span class="n">B</span> <span class="p">::</span> <span class="n">E</span><span class="p">;</span>
+    <span class="n">B</span> <span class="o">-&gt;</span> <span class="n">C</span> <span class="p">::</span> <span class="n">E</span><span class="p">;</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>When using the <code class="docutils literal notranslate"><span class="pre">::</span></code> symbol, it means using the event under the namespace of the source state, so this syntax sugar expression is completely equivalent to the method above. Specifically, for <code class="docutils literal notranslate"><span class="pre">[*]</span> <span class="pre">-&gt;</span> <span class="pre">A</span></code>, using the <code class="docutils literal notranslate"><span class="pre">::</span></code> symbol is equivalent to using <code class="docutils literal notranslate"><span class="pre">:</span></code>.</p>
+</section>
+<section id="id3">
+<h3>Semantic Rules<a class="headerlink" href="#id3" title="Link to this heading"></a></h3>
+<p>Transitions must satisfy these semantic constraints:</p>
+<ol class="arabic simple">
+<li><p><strong>State Existence</strong>: Both source and target states must exist in the current scope</p></li>
+<li><p><strong>Variable Validity</strong>: All variables in conditions and effects must be declared</p></li>
+<li><p><strong>Expression Types</strong>: Guard conditions must evaluate to boolean values</p></li>
+<li><p><strong>Entry Requirements</strong>: Composite states require at least one entry transition</p></li>
+</ol>
+</section>
+<section id="id4">
+<h3>Common Errors<a class="headerlink" href="#id4" title="Link to this heading"></a></h3>
+<p><strong>Incorrect Usage:</strong></p>
+<ul class="simple">
+<li><p>References to undefined states (semantic error)</p></li>
+<li><p>Missing entry transitions for composite states (semantic error)</p></li>
+<li><p>Invalid variable references in conditions or effects (semantic error)</p></li>
+<li><p>Malformed chain identifiers with invalid dot notation (syntax error)</p></li>
+</ul>
+</section>
+</section>
+<section id="expression-system">
+<h2>Expression System<a class="headerlink" href="#expression-system" title="Link to this heading"></a></h2>
+<section id="expression-hierarchy">
+<h3>Expression Hierarchy<a class="headerlink" href="#expression-hierarchy" title="Link to this heading"></a></h3>
+<p>The DSL supports comprehensive expression types for mathematical and logical operations:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">init_expression</span> <span class="p">:</span><span class="o">:=</span> <span class="n">conditional_expression</span>
+<span class="n">num_expression</span> <span class="p">:</span><span class="o">:=</span> <span class="n">conditional_expression</span>
+<span class="n">cond_expression</span> <span class="p">:</span><span class="o">:=</span> <span class="n">conditional_expression</span>
+</pre></div>
+</div>
+</section>
+<section id="literal-values">
+<h3>Literal Values<a class="headerlink" href="#literal-values" title="Link to this heading"></a></h3>
+<p><strong>Integer Literals:</strong></p>
+<ul class="simple">
+<li><p>Decimal: <code class="docutils literal notranslate"><span class="pre">42</span></code>, <code class="docutils literal notranslate"><span class="pre">0</span></code>, <code class="docutils literal notranslate"><span class="pre">123</span></code></p></li>
+<li><p>Hexadecimal: <code class="docutils literal notranslate"><span class="pre">0xFF</span></code>, <code class="docutils literal notranslate"><span class="pre">0x2A</span></code>, <code class="docutils literal notranslate"><span class="pre">0x100</span></code></p></li>
+</ul>
+<p><strong>Float Literals:</strong></p>
+<ul class="simple">
+<li><p>Standard: <code class="docutils literal notranslate"><span class="pre">3.14</span></code>, <code class="docutils literal notranslate"><span class="pre">2.5</span></code>, <code class="docutils literal notranslate"><span class="pre">0.1</span></code></p></li>
+<li><p>Scientific: <code class="docutils literal notranslate"><span class="pre">1e6</span></code>, <code class="docutils literal notranslate"><span class="pre">2.5e-3</span></code>, <code class="docutils literal notranslate"><span class="pre">1E10</span></code></p></li>
+<li><p>Mathematical constants: <code class="docutils literal notranslate"><span class="pre">pi</span></code>, <code class="docutils literal notranslate"><span class="pre">E</span></code>, <code class="docutils literal notranslate"><span class="pre">tau</span></code></p></li>
+</ul>
+<p><strong>Boolean Literals:</strong></p>
+<ul class="simple">
+<li><p>True values: <code class="docutils literal notranslate"><span class="pre">true</span></code>, <code class="docutils literal notranslate"><span class="pre">True</span></code>, <code class="docutils literal notranslate"><span class="pre">TRUE</span></code></p></li>
+<li><p>False values: <code class="docutils literal notranslate"><span class="pre">false</span></code>, <code class="docutils literal notranslate"><span class="pre">False</span></code>, <code class="docutils literal notranslate"><span class="pre">FALSE</span></code></p></li>
+</ul>
+</section>
+<section id="operators">
+<h3>Operators<a class="headerlink" href="#operators" title="Link to this heading"></a></h3>
+<p><strong>Arithmetic Operators (by precedence):</strong></p>
+<ol class="arabic simple">
+<li><p>Parentheses: <code class="docutils literal notranslate"><span class="pre">()</span></code></p></li>
+<li><p>Unary: <code class="docutils literal notranslate"><span class="pre">+</span></code>, <code class="docutils literal notranslate"><span class="pre">-</span></code></p></li>
+<li><p>Power: <code class="docutils literal notranslate"><span class="pre">**</span></code></p></li>
+<li><p>Multiplication/Division: <code class="docutils literal notranslate"><span class="pre">*</span></code>, <code class="docutils literal notranslate"><span class="pre">/</span></code>, <code class="docutils literal notranslate"><span class="pre">%</span></code></p></li>
+<li><p>Addition/Subtraction: <code class="docutils literal notranslate"><span class="pre">+</span></code>, <code class="docutils literal notranslate"><span class="pre">-</span></code></p></li>
+</ol>
+<p><strong>Comparison Operators:</strong></p>
+<ul class="simple">
+<li><p>Relational: <code class="docutils literal notranslate"><span class="pre">&lt;</span></code>, <code class="docutils literal notranslate"><span class="pre">&gt;</span></code>, <code class="docutils literal notranslate"><span class="pre">&lt;=</span></code>, <code class="docutils literal notranslate"><span class="pre">&gt;=</span></code></p></li>
+<li><p>Equality: <code class="docutils literal notranslate"><span class="pre">==</span></code>, <code class="docutils literal notranslate"><span class="pre">!=</span></code></p></li>
+</ul>
+<p><strong>Logical Operators:</strong></p>
+<ul class="simple">
+<li><p>Unary: <code class="docutils literal notranslate"><span class="pre">!</span></code>, <code class="docutils literal notranslate"><span class="pre">not</span></code></p></li>
+<li><p>Binary: <code class="docutils literal notranslate"><span class="pre">&amp;&amp;</span></code>, <code class="docutils literal notranslate"><span class="pre">||</span></code>, <code class="docutils literal notranslate"><span class="pre">and</span></code>, <code class="docutils literal notranslate"><span class="pre">or</span></code></p></li>
+</ul>
+<p><strong>Bitwise Operators:</strong></p>
+<ul class="simple">
+<li><p>Bitwise: <code class="docutils literal notranslate"><span class="pre">&amp;</span></code>, <code class="docutils literal notranslate"><span class="pre">|</span></code>, <code class="docutils literal notranslate"><span class="pre">^</span></code></p></li>
+<li><p>Shift: <code class="docutils literal notranslate"><span class="pre">&lt;&lt;</span></code>, <code class="docutils literal notranslate"><span class="pre">&gt;&gt;</span></code></p></li>
+</ul>
+</section>
+<section id="mathematical-functions">
+<h3>Mathematical Functions<a class="headerlink" href="#mathematical-functions" title="Link to this heading"></a></h3>
+<p>The DSL provides extensive mathematical function support:</p>
+<p><strong>Trigonometric Functions:</strong></p>
+<ul class="simple">
+<li><p>Basic: <code class="docutils literal notranslate"><span class="pre">sin(x)</span></code>, <code class="docutils literal notranslate"><span class="pre">cos(x)</span></code>, <code class="docutils literal notranslate"><span class="pre">tan(x)</span></code></p></li>
+<li><p>Inverse: <code class="docutils literal notranslate"><span class="pre">asin(x)</span></code>, <code class="docutils literal notranslate"><span class="pre">acos(x)</span></code>, <code class="docutils literal notranslate"><span class="pre">atan(x)</span></code></p></li>
+<li><p>Hyperbolic: <code class="docutils literal notranslate"><span class="pre">sinh(x)</span></code>, <code class="docutils literal notranslate"><span class="pre">cosh(x)</span></code>, <code class="docutils literal notranslate"><span class="pre">tanh(x)</span></code></p></li>
+</ul>
+<p><strong>Exponential and Logarithmic:</strong></p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">exp(x)</span></code>, <code class="docutils literal notranslate"><span class="pre">log(x)</span></code>, <code class="docutils literal notranslate"><span class="pre">log10(x)</span></code>, <code class="docutils literal notranslate"><span class="pre">log2(x)</span></code></p></li>
+</ul>
+<p><strong>Other Mathematical Functions:</strong></p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">sqrt(x)</span></code>, <code class="docutils literal notranslate"><span class="pre">abs(x)</span></code>, <code class="docutils literal notranslate"><span class="pre">ceil(x)</span></code>, <code class="docutils literal notranslate"><span class="pre">floor(x)</span></code>, <code class="docutils literal notranslate"><span class="pre">round(x)</span></code></p></li>
+</ul>
+</section>
+<section id="conditional-expressions">
+<h3>Conditional Expressions<a class="headerlink" href="#conditional-expressions" title="Link to this heading"></a></h3>
+<p>Conditional expressions use ternary operator syntax:</p>
+<p><strong>Syntax:</strong> <code class="docutils literal notranslate"><span class="pre">(condition)</span> <span class="pre">?</span> <span class="pre">true_value</span> <span class="pre">:</span> <span class="pre">false_value</span></code></p>
+<p><strong>Correct Usage:</strong></p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">(x</span> <span class="pre">&gt;</span> <span class="pre">0)</span> <span class="pre">?</span> <span class="pre">1</span> <span class="pre">:</span> <span class="pre">-1</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">(temperature</span> <span class="pre">&gt;</span> <span class="pre">25.0)</span> <span class="pre">?</span> <span class="pre">&quot;hot&quot;</span> <span class="pre">:</span> <span class="pre">&quot;cold&quot;</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">(count</span> <span class="pre">==</span> <span class="pre">0)</span> <span class="pre">?</span> <span class="pre">initial_value</span> <span class="pre">:</span> <span class="pre">current_value</span></code></p></li>
+</ul>
+<p>It is worth noting that you must use a <code class="docutils literal notranslate"><span class="pre">()</span></code> outside the condition explicitly. This is quite different from common coding languages.</p>
+</section>
+<section id="id5">
+<h3>Semantic Rules<a class="headerlink" href="#id5" title="Link to this heading"></a></h3>
+<p>Expressions must follow these semantic constraints:</p>
+<ol class="arabic simple">
+<li><p><strong>Variable Declarations</strong>: All referenced variables must be declared</p></li>
+<li><p><strong>Type Consistency</strong>: Operations must be performed on compatible types</p></li>
+<li><p><strong>Function Arguments</strong>: Mathematical functions require appropriate argument types</p></li>
+<li><p><strong>Boolean Context</strong>: Conditional guards must evaluate to boolean values</p></li>
+</ol>
+</section>
+<section id="id6">
+<h3>Common Errors<a class="headerlink" href="#id6" title="Link to this heading"></a></h3>
+<p><strong>Incorrect Usage:</strong></p>
+<ul class="simple">
+<li><p>Undefined variable references (semantic error)</p></li>
+<li><p>Type mismatches in operations (semantic error)</p></li>
+<li><p>Invalid function arguments (semantic error)</p></li>
+<li><p>Malformed conditional expressions (syntax error)</p></li>
+</ul>
+</section>
+</section>
+<section id="lifecycle-actions">
+<h2>Lifecycle Actions<a class="headerlink" href="#lifecycle-actions" title="Link to this heading"></a></h2>
+<section id="action-types">
+<h3>Action Types<a class="headerlink" href="#action-types" title="Link to this heading"></a></h3>
+<p>States support three lifecycle phases with corresponding action definitions:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">enter_definition</span> <span class="p">:</span><span class="o">:=</span> <span class="n">enterOperations</span> <span class="o">|</span> <span class="n">enterAbstractFunc</span>
+<span class="n">during_definition</span> <span class="p">:</span><span class="o">:=</span> <span class="n">duringOperations</span> <span class="o">|</span> <span class="n">duringAbstractFunc</span>
+<span class="n">exit_definition</span> <span class="p">:</span><span class="o">:=</span> <span class="n">exitOperations</span> <span class="o">|</span> <span class="n">exitAbstractFunc</span>
+</pre></div>
+</div>
+</section>
+<section id="enter-actions">
+<h3>Enter Actions<a class="headerlink" href="#enter-actions" title="Link to this heading"></a></h3>
+<p>Enter actions execute when a state is entered:</p>
+<p><strong>Concrete Operations:</strong></p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">enter</span> <span class="p">{</span>
+    <span class="n">counter</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+    <span class="n">status_flag</span> <span class="o">=</span> <span class="mh">0x1</span><span class="p">;</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p><strong>Abstract Functions:</strong></p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">enter</span> <span class="n">abstract</span> <span class="n">initialize_system</span><span class="p">;</span>
+<span class="n">enter</span> <span class="n">abstract</span> <span class="n">setup_resources</span> <span class="o">/*</span>
+    <span class="n">Initialize</span> <span class="n">system</span> <span class="n">resources</span>
+<span class="o">*/</span>
+</pre></div>
+</div>
+<p>It is worth noting that the <code class="docutils literal notranslate"><span class="pre">/*</span> <span class="pre">xxx</span> <span class="pre">*/</span></code> part of the abstract enter function is a part of the enter declaration, and it can be reflected in the code generation stage.</p>
+</section>
+<section id="during-actions">
+<h3>During Actions<a class="headerlink" href="#during-actions" title="Link to this heading"></a></h3>
+<p>During actions execute while a state is active, with optional aspects for composite states:</p>
+<p><strong>Before Aspect (Composite States Only):</strong></p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">during</span> <span class="n">before</span> <span class="p">{</span>
+    <span class="n">update_counters</span> <span class="o">=</span> <span class="n">update_counters</span> <span class="o">+</span> <span class="mi">1</span><span class="p">;</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p><strong>After Aspect (Composite States Only):</strong></p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">during</span> <span class="n">after</span> <span class="p">{</span>
+    <span class="n">cleanup_temporary</span> <span class="o">=</span> <span class="mh">0x1</span><span class="p">;</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p><strong>Regular During Actions (Leaf State Only):</strong></p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">during</span> <span class="p">{</span>
+    <span class="n">heartbeat_counter</span> <span class="o">=</span> <span class="n">heartbeat_counter</span> <span class="o">+</span> <span class="mi">1</span><span class="p">;</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p><strong>Abstract During Actions:</strong></p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">during</span> <span class="n">abstract</span> <span class="n">abstract_during</span><span class="p">;</span>
+<span class="n">during</span> <span class="n">abstract</span> <span class="n">abstract_during_with_comment</span> <span class="o">/*</span>
+    <span class="n">This</span> <span class="ow">is</span> <span class="n">the</span> <span class="n">comment</span>
+<span class="o">*/</span>
+</pre></div>
+</div>
+<p>It is worth noting that the <code class="docutils literal notranslate"><span class="pre">/*</span> <span class="pre">xxx</span> <span class="pre">*/</span></code> part of the abstract during function is a part of the during declaration, and it can be reflected in the code generation stage.</p>
+</section>
+<section id="exit-actions">
+<h3>Exit Actions<a class="headerlink" href="#exit-actions" title="Link to this heading"></a></h3>
+<p>Exit actions execute when leaving a state:</p>
+<p><strong>Concrete Operations:</strong></p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">exit</span> <span class="p">{</span>
+    <span class="n">save_state</span> <span class="o">=</span> <span class="n">current_value</span><span class="p">;</span>
+    <span class="n">cleanup_flag</span> <span class="o">=</span> <span class="mh">0x1</span><span class="p">;</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p><strong>Abstract Functions:</strong></p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">exit</span> <span class="n">abstract</span> <span class="n">cleanup_resources</span><span class="p">;</span>
+<span class="n">exit</span> <span class="n">abstract</span> <span class="n">finalize_operations</span> <span class="o">/*</span>
+    <span class="n">Clean</span> <span class="n">up</span> <span class="n">before</span> <span class="n">exit</span>
+<span class="o">*/</span>
+</pre></div>
+</div>
+<p>It is worth noting that the <code class="docutils literal notranslate"><span class="pre">/*</span> <span class="pre">xxx</span> <span class="pre">*/</span></code> part of the abstract exit function is a part of the exit declaration, and it can be reflected in the code generation stage.</p>
+</section>
+<section id="id7">
+<h3>Semantic Rules<a class="headerlink" href="#id7" title="Link to this heading"></a></h3>
+<p>Lifecycle actions must adhere to these constraints:</p>
+<ol class="arabic simple">
+<li><p><strong>Variable Validity</strong>: All referenced variables must be declared</p></li>
+<li><p><strong>Aspect Restrictions</strong>: <code class="docutils literal notranslate"><span class="pre">before</span></code> and <code class="docutils literal notranslate"><span class="pre">after</span></code> aspects only apply to composite states</p></li>
+<li><p><strong>Assignment Targets</strong>: Only declared variables can be assigned values</p></li>
+<li><p><strong>Expression Types</strong>: Assignment expressions must be type-compatible</p></li>
+</ol>
+</section>
+<section id="id8">
+<h3>Common Errors<a class="headerlink" href="#id8" title="Link to this heading"></a></h3>
+<p><strong>Incorrect Usage:</strong></p>
+<ul class="simple">
+<li><p>Undefined variable assignments (semantic error)</p></li>
+<li><p>Invalid aspect usage on leaf states (semantic error)</p></li>
+<li><p>Type mismatches in assignments (semantic error)</p></li>
+<li><p>Malformed abstract function declarations (syntax error)</p></li>
+</ul>
+</section>
+<section id="lifecycle-flows-of-state-machine">
+<h3>Lifecycle Flows of State Machine<a class="headerlink" href="#lifecycle-flows-of-state-machine" title="Link to this heading"></a></h3>
+<table class="docutils align-center">
+<colgroup>
+<col style="width: 55.0%" />
+<col style="width: 45.0%" />
+</colgroup>
+<tbody>
+<tr class="row-odd"><td><figure class="align-center">
+<a class="reference internal image-reference" href="../../_images/composite_state_lifecycle.puml.svg"><img alt="Lifecycle of Composite States" src="../../_images/composite_state_lifecycle.puml.svg" style="width: 100%;" />
+</a>
+</figure>
+</td>
+<td><figure class="align-center">
+<a class="reference internal image-reference" href="../../_images/leaf_state_lifecycle.puml.svg"><img alt="Lifecycle of Leaf States" src="../../_images/leaf_state_lifecycle.puml.svg" style="width: 100%;" />
+</a>
+</figure>
+</td>
+</tr>
+</tbody>
+</table>
+</section>
+</section>
+<section id="operational-statements">
+<h2>Operational Statements<a class="headerlink" href="#operational-statements" title="Link to this heading"></a></h2>
+<section id="assignment-types">
+<h3>Assignment Types<a class="headerlink" href="#assignment-types" title="Link to this heading"></a></h3>
+<p>The DSL supports different assignment contexts with distinct operators:</p>
+<p><strong>Operation Assignment:</strong></p>
+<ul class="simple">
+<li><p>Syntax: <code class="docutils literal notranslate"><span class="pre">variable</span> <span class="pre">=</span> <span class="pre">expression;</span></code></p></li>
+<li><p>Usage: Standard assignment in effect blocks and lifecycle actions</p></li>
+</ul>
+</section>
+<section id="id9">
+<h3>Correct Usage<a class="headerlink" href="#id9" title="Link to this heading"></a></h3>
+<p><strong>In Effect Blocks:</strong></p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">State1</span> <span class="o">-&gt;</span> <span class="n">State2</span> <span class="n">effect</span> <span class="p">{</span>
+    <span class="n">counter</span> <span class="o">=</span> <span class="n">counter</span> <span class="o">+</span> <span class="mi">1</span><span class="p">;</span>
+    <span class="n">status</span> <span class="o">=</span> <span class="mi">1</span><span class="p">;</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="n">sin</span><span class="p">(</span><span class="n">angle</span><span class="p">)</span> <span class="o">*</span> <span class="n">radius</span><span class="p">;</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p><strong>In Lifecycle Actions:</strong></p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">enter</span> <span class="p">{</span>
+    <span class="n">initialization_flag</span> <span class="o">=</span> <span class="mh">0x1</span><span class="p">;</span>
+    <span class="n">start_time</span> <span class="o">=</span> <span class="n">current_time</span><span class="p">;</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</section>
+<section id="id10">
+<h3>Semantic Rules<a class="headerlink" href="#id10" title="Link to this heading"></a></h3>
+<p>Operational statements must satisfy:</p>
+<ol class="arabic simple">
+<li><p><strong>Variable Existence</strong>: Target variables must be declared</p></li>
+<li><p><strong>Expression Validity</strong>: Right-hand expressions must be well-formed</p></li>
+<li><p><strong>Type Compatibility</strong>: Assignments must respect variable types</p></li>
+<li><p><strong>Scope Validity</strong>: Variables must be accessible in the current context</p></li>
+</ol>
+</section>
+<section id="id11">
+<h3>Common Errors<a class="headerlink" href="#id11" title="Link to this heading"></a></h3>
+<p><strong>Incorrect Usage:</strong></p>
+<ul class="simple">
+<li><p>Assignment to undeclared variables (semantic error)</p></li>
+<li><p>Type mismatches in assignments (semantic error)</p></li>
+<li><p>Invalid expression syntax on right-hand side (syntax error)</p></li>
+</ul>
+</section>
+</section>
+<section id="comments-and-documentation">
+<h2>Comments and Documentation<a class="headerlink" href="#comments-and-documentation" title="Link to this heading"></a></h2>
+<section id="comment-styles">
+<h3>Comment Styles<a class="headerlink" href="#comment-styles" title="Link to this heading"></a></h3>
+<p>The DSL supports multiple comment formats for documentation:</p>
+<p><strong>Line Comments:</strong></p>
+<ul class="simple">
+<li><p>C++ style: <code class="docutils literal notranslate"><span class="pre">//</span> <span class="pre">This</span> <span class="pre">is</span> <span class="pre">a</span> <span class="pre">comment</span></code></p></li>
+<li><p>Python style: <code class="docutils literal notranslate"><span class="pre">#</span> <span class="pre">This</span> <span class="pre">is</span> <span class="pre">also</span> <span class="pre">a</span> <span class="pre">comment</span></code></p></li>
+</ul>
+</section>
+<section id="documentation-best-practices">
+<h3>Documentation Best Practices<a class="headerlink" href="#documentation-best-practices" title="Link to this heading"></a></h3>
+<p>Comments should be used to:</p>
+<ul class="simple">
+<li><p>Explain complex state machine logic</p></li>
+<li><p>Document variable purposes and constraints</p></li>
+<li><p>Clarify transition conditions and effects</p></li>
+<li><p>Provide context for abstract function implementations</p></li>
+</ul>
+</section>
+</section>
+<section id="semantic-validation-rules">
+<h2>Semantic Validation Rules<a class="headerlink" href="#semantic-validation-rules" title="Link to this heading"></a></h2>
+<section id="comprehensive-validation">
+<h3>Comprehensive Validation<a class="headerlink" href="#comprehensive-validation" title="Link to this heading"></a></h3>
+<p>The DSL parser performs extensive semantic validation during the parsing process:</p>
+<p><strong>Variable Validation:</strong></p>
+<ol class="arabic simple">
+<li><p>Unique variable names across the program</p></li>
+<li><p>All referenced variables must be declared</p></li>
+<li><p>Type consistency in assignments and expressions</p></li>
+</ol>
+<p><strong>State Validation:</strong></p>
+<ol class="arabic simple">
+<li><p>Unique state names within each scope</p></li>
+<li><p>Valid state references in all transitions</p></li>
+<li><p>Required entry transitions for composite states</p></li>
+</ol>
+<p><strong>Expression Validation:</strong></p>
+<ol class="arabic simple">
+<li><p>Well-formed mathematical and logical expressions</p></li>
+<li><p>Valid function calls with appropriate arguments</p></li>
+<li><p>Proper operator precedence and associativity</p></li>
+</ol>
+<p><strong>Structural Validation:</strong></p>
+<ol class="arabic simple">
+<li><p>Proper nesting of composite states</p></li>
+<li><p>Valid lifecycle action placement</p></li>
+<li><p>Correct transition connectivity</p></li>
+</ol>
+</section>
+<section id="error-handling">
+<h3>Error Handling<a class="headerlink" href="#error-handling" title="Link to this heading"></a></h3>
+<p>The parser provides detailed error messages for common mistakes:</p>
+<p><strong>Syntax Errors:</strong></p>
+<ul class="simple">
+<li><p>Malformed expressions and statements</p></li>
+<li><p>Missing punctuation and keywords</p></li>
+<li><p>Invalid token sequences</p></li>
+</ul>
+<p><strong>Semantic Errors:</strong></p>
+<ul class="simple">
+<li><p>Undefined variable or state references</p></li>
+<li><p>Type mismatches in operations</p></li>
+<li><p>Structural inconsistencies</p></li>
+</ul>
+</section>
+</section>
+<section id="advanced-patterns-and-best-practices">
+<h2>Advanced Patterns and Best Practices<a class="headerlink" href="#advanced-patterns-and-best-practices" title="Link to this heading"></a></h2>
+<section id="hierarchical-state-organization">
+<h3>Hierarchical State Organization<a class="headerlink" href="#hierarchical-state-organization" title="Link to this heading"></a></h3>
+<p>Organize complex state machines using hierarchical decomposition:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">state</span> <span class="n">SystemController</span> <span class="p">{</span>
+    <span class="n">state</span> <span class="n">PowerManagement</span> <span class="p">{</span>
+        <span class="n">state</span> <span class="n">LowPower</span><span class="p">;</span>
+        <span class="n">state</span> <span class="n">NormalPower</span><span class="p">;</span>
+        <span class="n">state</span> <span class="n">HighPower</span><span class="p">;</span>
+    <span class="p">}</span>
+
+    <span class="n">state</span> <span class="n">OperationalMode</span> <span class="p">{</span>
+        <span class="n">state</span> <span class="n">Idle</span><span class="p">;</span>
+        <span class="n">state</span> <span class="n">Processing</span> <span class="p">{</span>
+            <span class="n">state</span> <span class="n">DataInput</span><span class="p">;</span>
+            <span class="n">state</span> <span class="n">Computation</span><span class="p">;</span>
+            <span class="n">state</span> <span class="n">OutputGeneration</span><span class="p">;</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</section>
+<section id="event-driven-transitions">
+<h3>Event-Driven Transitions<a class="headerlink" href="#event-driven-transitions" title="Link to this heading"></a></h3>
+<p>Use chain identifiers to create clear event hierarchies:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">ProcessingState</span> <span class="o">-&gt;</span> <span class="n">IdleState</span><span class="p">:</span> <span class="n">user</span><span class="o">.</span><span class="n">input</span><span class="o">.</span><span class="n">complete</span><span class="p">;</span>
+<span class="n">IdleState</span> <span class="o">-&gt;</span> <span class="n">ProcessingState</span><span class="p">:</span> <span class="n">system</span><span class="o">.</span><span class="n">timer</span><span class="o">.</span><span class="n">expired</span><span class="p">;</span>
+<span class="n">ErrorState</span> <span class="o">-&gt;</span> <span class="n">RecoveryState</span><span class="p">:</span> <span class="n">error</span><span class="o">.</span><span class="n">recovery</span><span class="o">.</span><span class="n">initiated</span><span class="p">;</span>
+</pre></div>
+</div>
+</section>
+<section id="conditional-logic-patterns">
+<h3>Conditional Logic Patterns<a class="headerlink" href="#conditional-logic-patterns" title="Link to this heading"></a></h3>
+<p>Implement complex decision logic using conditional expressions:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">Active</span> <span class="o">-&gt;</span> <span class="n">Standby</span><span class="p">:</span> <span class="k">if</span> <span class="p">[(</span><span class="n">battery_level</span> <span class="o">&lt;</span> <span class="mi">20</span><span class="p">)</span> <span class="o">&amp;&amp;</span> <span class="p">(</span><span class="n">charging_state</span> <span class="o">==</span> <span class="mh">0x0</span><span class="p">)];</span>
+<span class="n">Normal</span> <span class="o">-&gt;</span> <span class="n">Emergency</span><span class="p">:</span> <span class="k">if</span> <span class="p">[</span><span class="n">temperature</span> <span class="o">&gt;</span> <span class="n">critical_temp</span> <span class="o">||</span> <span class="n">pressure</span> <span class="o">&gt;</span> <span class="n">max_pressure</span><span class="p">];</span>
+</pre></div>
+</div>
+</section>
+<section id="resource-management">
+<h3>Resource Management<a class="headerlink" href="#resource-management" title="Link to this heading"></a></h3>
+<p>Use lifecycle actions for proper resource management:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">state</span> <span class="n">ResourceManager</span> <span class="p">{</span>
+    <span class="n">enter</span> <span class="p">{</span>
+        <span class="n">resource_count</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+        <span class="n">allocation_flag</span> <span class="o">=</span> <span class="mh">0x1</span><span class="p">;</span>
+    <span class="p">}</span>
+
+    <span class="n">during</span> <span class="p">{</span>
+        <span class="n">heartbeat_counter</span> <span class="o">=</span> <span class="n">heartbeat_counter</span> <span class="o">+</span> <span class="mi">1</span><span class="p">;</span>
+    <span class="p">}</span>
+
+    <span class="n">exit</span> <span class="p">{</span>
+        <span class="n">cleanup_flag</span> <span class="o">=</span> <span class="mh">0x1</span><span class="p">;</span>
+        <span class="n">resource_count</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="integration-with-code-generation">
+<h2>Integration with Code Generation<a class="headerlink" href="#integration-with-code-generation" title="Link to this heading"></a></h2>
+<section id="ast-export-interface">
+<h3>AST Export Interface<a class="headerlink" href="#ast-export-interface" title="Link to this heading"></a></h3>
+<p>All DSL constructs implement the AST export interface for code generation:</p>
+<p>The parsed DSL programs can be converted back to AST nodes for code generation and analysis purposes. This enables round-trip conversion and integration with various target platforms.</p>
+</section>
+<section id="plantuml-export">
+<h3>PlantUML Export<a class="headerlink" href="#plantuml-export" title="Link to this heading"></a></h3>
+<p>State machines can be exported to PlantUML format for visualization:</p>
+<p>The PlantUML export provides graphical representation of state machine structure, transitions, and relationships, facilitating documentation and design review processes.</p>
+<p>Here is a full example of FCSTM model DSL code</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="linenos"> 1</span><span class="k">def</span><span class="w"> </span><span class="nf">int</span> <span class="n">a</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+<span class="linenos"> 2</span><span class="k">def</span><span class="w"> </span><span class="nf">int</span> <span class="n">b</span> <span class="o">=</span> <span class="mh">0x0</span><span class="p">;</span>
+<span class="linenos"> 3</span><span class="k">def</span><span class="w"> </span><span class="nf">int</span> <span class="n">round_count</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+<span class="linenos"> 4</span><span class="n">state</span> <span class="n">TrafficLight</span> <span class="p">{</span>
+<span class="linenos"> 5</span>    <span class="n">state</span> <span class="n">InService</span> <span class="p">{</span>
+<span class="linenos"> 6</span>        <span class="n">enter</span> <span class="p">{</span>
+<span class="linenos"> 7</span>            <span class="n">a</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+<span class="linenos"> 8</span>            <span class="n">b</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+<span class="linenos"> 9</span>            <span class="n">round_count</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+<span class="linenos">10</span>        <span class="p">}</span>
+<span class="linenos">11</span>        <span class="n">enter</span> <span class="n">abstract</span> <span class="n">InServiceAbstractEnter</span> <span class="o">/*</span>
+<span class="linenos">12</span>            <span class="n">Abstract</span> <span class="n">Operation</span> <span class="n">When</span> <span class="n">Entering</span> <span class="n">State</span> <span class="s1">&#39;InService&#39;</span>
+<span class="linenos">13</span>            <span class="n">TODO</span><span class="p">:</span> <span class="n">Should</span> <span class="n">be</span> <span class="n">Implemented</span> <span class="n">In</span> <span class="n">Generated</span> <span class="n">Code</span> <span class="n">Framework</span>
+<span class="linenos">14</span>        <span class="o">*/</span>
+<span class="linenos">15</span>        <span class="n">during</span> <span class="n">before</span> <span class="n">abstract</span> <span class="n">InServiceBeforeEnterChild</span> <span class="o">/*</span>
+<span class="linenos">16</span>            <span class="n">Abstract</span> <span class="n">Operation</span> <span class="n">Before</span> <span class="n">Entering</span> <span class="n">Child</span> <span class="n">States</span> <span class="n">of</span> <span class="n">State</span> <span class="s1">&#39;InService&#39;</span>
+<span class="linenos">17</span>            <span class="n">TODO</span><span class="p">:</span> <span class="n">Should</span> <span class="n">be</span> <span class="n">Implemented</span> <span class="n">In</span> <span class="n">Generated</span> <span class="n">Code</span> <span class="n">Framework</span>
+<span class="linenos">18</span>        <span class="o">*/</span>
+<span class="linenos">19</span>        <span class="n">during</span> <span class="n">after</span> <span class="n">abstract</span> <span class="n">InServiceAfterEnterChild</span> <span class="o">/*</span>
+<span class="linenos">20</span>            <span class="n">Abstract</span> <span class="n">Operation</span> <span class="n">After</span> <span class="n">Entering</span> <span class="n">Child</span> <span class="n">States</span> <span class="n">of</span> <span class="n">State</span> <span class="s1">&#39;InService&#39;</span>
+<span class="linenos">21</span>            <span class="n">TODO</span><span class="p">:</span> <span class="n">Should</span> <span class="n">be</span> <span class="n">Implemented</span> <span class="n">In</span> <span class="n">Generated</span> <span class="n">Code</span> <span class="n">Framework</span>
+<span class="linenos">22</span>        <span class="o">*/</span>
+<span class="linenos">23</span>        <span class="n">exit</span> <span class="n">abstract</span> <span class="n">InServiceAbstractExit</span> <span class="o">/*</span>
+<span class="linenos">24</span>            <span class="n">Abstract</span> <span class="n">Operation</span> <span class="n">When</span> <span class="n">Leaving</span> <span class="n">State</span> <span class="s1">&#39;InService&#39;</span>
+<span class="linenos">25</span>            <span class="n">TODO</span><span class="p">:</span> <span class="n">Should</span> <span class="n">be</span> <span class="n">Implemented</span> <span class="n">In</span> <span class="n">Generated</span> <span class="n">Code</span> <span class="n">Framework</span>
+<span class="linenos">26</span>        <span class="o">*/</span>
+<span class="linenos">27</span>        <span class="n">state</span> <span class="n">Red</span> <span class="p">{</span>
+<span class="linenos">28</span>            <span class="n">during</span> <span class="p">{</span>
+<span class="linenos">29</span>                <span class="n">a</span> <span class="o">=</span> <span class="mh">0x1</span> <span class="o">&lt;&lt;</span> <span class="mi">2</span><span class="p">;</span>
+<span class="linenos">30</span>            <span class="p">}</span>
+<span class="linenos">31</span>        <span class="p">}</span>
+<span class="linenos">32</span>        <span class="n">state</span> <span class="n">Yellow</span><span class="p">;</span>
+<span class="linenos">33</span>        <span class="n">state</span> <span class="n">Green</span><span class="p">;</span>
+<span class="linenos">34</span>        <span class="p">[</span><span class="o">*</span><span class="p">]</span> <span class="o">-&gt;</span> <span class="n">Red</span> <span class="p">::</span> <span class="n">Start</span> <span class="n">effect</span> <span class="p">{</span>
+<span class="linenos">35</span>            <span class="n">b</span> <span class="o">=</span> <span class="mh">0x1</span><span class="p">;</span>
+<span class="linenos">36</span>        <span class="p">}</span>
+<span class="linenos">37</span>        <span class="n">Red</span> <span class="o">-&gt;</span> <span class="n">Green</span> <span class="n">effect</span> <span class="p">{</span>
+<span class="linenos">38</span>            <span class="n">b</span> <span class="o">=</span> <span class="mh">0x3</span><span class="p">;</span>
+<span class="linenos">39</span>        <span class="p">}</span>
+<span class="linenos">40</span>        <span class="n">Green</span> <span class="o">-&gt;</span> <span class="n">Yellow</span> <span class="n">effect</span> <span class="p">{</span>
+<span class="linenos">41</span>            <span class="n">b</span> <span class="o">=</span> <span class="mh">0x2</span><span class="p">;</span>
+<span class="linenos">42</span>        <span class="p">}</span>
+<span class="linenos">43</span>        <span class="n">Yellow</span> <span class="o">-&gt;</span> <span class="n">Red</span> <span class="p">:</span> <span class="k">if</span> <span class="p">[</span><span class="n">a</span> <span class="o">&gt;=</span> <span class="mi">10</span><span class="p">]</span> <span class="n">effect</span> <span class="p">{</span>
+<span class="linenos">44</span>            <span class="n">b</span> <span class="o">=</span> <span class="mh">0x1</span><span class="p">;</span>
+<span class="linenos">45</span>            <span class="n">round_count</span> <span class="o">=</span> <span class="n">round_count</span> <span class="o">+</span> <span class="mi">1</span><span class="p">;</span>
+<span class="linenos">46</span>        <span class="p">}</span>
+<span class="linenos">47</span>    <span class="p">}</span>
+<span class="linenos">48</span>    <span class="n">state</span> <span class="n">Idle</span><span class="p">;</span>
+<span class="linenos">49</span>    <span class="p">[</span><span class="o">*</span><span class="p">]</span> <span class="o">-&gt;</span> <span class="n">InService</span><span class="p">;</span>
+<span class="linenos">50</span>    <span class="n">InService</span> <span class="o">-&gt;</span> <span class="n">Idle</span> <span class="p">::</span> <span class="n">Maintain</span><span class="p">;</span>
+<span class="linenos">51</span>    <span class="n">Idle</span> <span class="o">-&gt;</span> <span class="p">[</span><span class="o">*</span><span class="p">];</span>
+<span class="linenos">52</span><span class="p">}</span>
+</pre></div>
+</div>
+<p>It can be exported to PlantUML code, and get visualized as the following</p>
+<figure class="align-center">
+<a class="reference internal image-reference" href="../../_images/example.fcstm.puml.svg"><img alt="PlantUML of DSL Example" src="../../_images/example.fcstm.puml.svg" style="width: 70%;" />
+</a>
+</figure>
+</section>
+</section>
+<section id="notes">
+<h2>Notes<a class="headerlink" href="#notes" title="Link to this heading"></a></h2>
+<p>This tutorial provides comprehensive coverage of the PyFCSTM DSL syntax based on the ANTLR grammar definition, AST node types, semantic validation rules, and extensive test cases. The language supports hierarchical state machines with rich expression capabilities, lifecycle management, and comprehensive validation to ensure correct state machine definitions.</p>
+<p>For implementation details, refer to the grammar definition, parsing pipeline, and model system documentation. The test suite provides additional examples and validation patterns for complex use cases.</p>
+</section>
+</section>
+
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="../quick_start/index.html" class="btn btn-neutral float-left" title="Quick Start" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="../../information/environment.result.html" class="btn btn-neutral float-right" title="Run Environment Information" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, HansBug.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  
+    <div class="rst-versions" data-toggle="rst-versions" role="note" aria-label="versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    <span class="fa fa-book"> Other Versions</span>
+    v: dev/fix_plantuml
+    <span class="fa fa-caret-down"></span>
+  </span>
+        <div class="rst-other-versions">
+                <dl>
+                    <dt>Tags</dt>
+                        <dd><a href="../../../../v0.0.1/tutorials/dsl/index.html">v0.0.1</a></dd>
+                        <dd><a href="../../../../v0.1.0/tutorials/dsl/index.html">v0.1.0</a></dd>
+                        <dd><a href="../../../../v0.1.1/tutorials/dsl/index.html">v0.1.1</a></dd>
+                </dl>
+                <dl>
+                    <dt>Branches</dt>
+                        <dd><a href="index.html">dev/fix_plantuml</a></dd>
+                        <dd><a href="../../../../HEAD/tutorials/dsl/index.html">HEAD</a></dd>
+                        <dd><a href="../../../../main/tutorials/dsl/index.html">main</a></dd>
+                        <dd><a href="../../../../old_design/index.html">old_design</a></dd>
+                </dl>
+        </div>
+    </div><script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

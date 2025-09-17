@@ -119,73 +119,73 @@ defines {
 }
 end note
 
-state LX {
-    state LX1 {
-        state LX11
-        LX11 : enter abstract LX11Enter;\\nenter abstract /*\\n    This is X\\n*/\\nduring abstract LX11During;\\nduring {\\n    b = 2 << 3;\\n    b = b + -1;\\n}\\nexit abstract LX11Exit;
-        state LX12
-        state LX13
-        state LX14
-        [*] --> LX11
-        LX11 --> LX12 : LX11.E1
-        LX12 --> LX13 : LX12.E1
-        LX12 --> LX14 : LX12.E2
-        LX13 --> [*] : LX13.E1
+state "LX" as lx {
+    state "LX1" as lx__lx1 {
+        state "LX11" as lx__lx1__lx11
+        lx__lx1__lx11 : enter abstract LX11Enter;\\nenter abstract /*\\n    This is X\\n*/\\nduring abstract LX11During;\\nduring {\\n    b = 2 << 3;\\n    b = b + -1;\\n}\\nexit abstract LX11Exit;
+        state "LX12" as lx__lx1__lx12
+        state "LX13" as lx__lx1__lx13
+        state "LX14" as lx__lx1__lx14
+        [*] --> lx__lx1__lx11
+        lx__lx1__lx11 --> lx__lx1__lx12 : LX11.E1
+        lx__lx1__lx12 --> lx__lx1__lx13 : LX12.E1
+        lx__lx1__lx12 --> lx__lx1__lx14 : LX12.E2
+        lx__lx1__lx13 --> [*] : LX13.E1
         note on link
         effect {
             a = 2;
         }
         end note
-        LX13 --> [*] : LX13.E2
+        lx__lx1__lx13 --> [*] : LX13.E2
         note on link
         effect {
             a = 3;
         }
         end note
-        LX13 --> LX14 : LX13.E3
-        LX13 --> LX14 : LX13.E4
-        LX14 --> LX12 : LX14.E1
-        LX14 --> [*] : LX14.E2
+        lx__lx1__lx13 --> lx__lx1__lx14 : LX13.E3
+        lx__lx1__lx13 --> lx__lx1__lx14 : LX13.E4
+        lx__lx1__lx14 --> lx__lx1__lx12 : LX14.E1
+        lx__lx1__lx14 --> [*] : LX14.E2
         note on link
         effect {
             a = 1;
         }
         end note
     }
-    LX1 : during before abstract BeforeLX1Enter;\\nduring after abstract AfterLX1Enter /*\\n    this is the comment line\\n*/\\nduring before {\\n    b = 1 + 2;\\n}\\nduring after {\\n    b = 3 - 2;\\n    b = 3 + 2 + a;\\n}
-    state LX2 {
-        state LX21 {
-            state LX211
-            state LX212
-            [*] --> LX211 : a == 2
-            [*] --> LX212 : a == 3
-            LX211 --> [*] : LX211.E1
+    lx__lx1 : during before abstract BeforeLX1Enter;\\nduring after abstract AfterLX1Enter /*\\n    this is the comment line\\n*/\\nduring before {\\n    b = 1 + 2;\\n}\\nduring after {\\n    b = 3 - 2;\\n    b = 3 + 2 + a;\\n}
+    state "LX2" as lx__lx2 {
+        state "LX21" as lx__lx2__lx21 {
+            state "LX211" as lx__lx2__lx21__lx211
+            state "LX212" as lx__lx2__lx21__lx212
+            [*] --> lx__lx2__lx21__lx211 : a == 2
+            [*] --> lx__lx2__lx21__lx212 : a == 3
+            lx__lx2__lx21__lx211 --> [*] : LX211.E1
             note on link
             effect {
                 a = 1;
             }
             end note
-            LX211 --> LX212 : LX211.E2
-            LX212 --> [*] : LX212.E1
+            lx__lx2__lx21__lx211 --> lx__lx2__lx21__lx212 : LX211.E2
+            lx__lx2__lx21__lx212 --> [*] : LX212.E1
             note on link
             effect {
                 a = 1;
             }
             end note
-            LX212 --> LX211 : E2
+            lx__lx2__lx21__lx212 --> lx__lx2__lx21__lx211 : E2
         }
-        [*] --> LX21
-        LX21 --> [*] : a == 1
+        [*] --> lx__lx2__lx21
+        lx__lx2__lx21 --> [*] : a == 1
     }
-    [*] --> LX1
-    [*] --> LX2 : EEE
-    LX1 --> LX2 : a == 2 || a == 3
-    LX1 --> LX1 : a == 1
-    LX2 --> LX1 : a == 1
+    [*] --> lx__lx1
+    [*] --> lx__lx2 : EEE
+    lx__lx1 --> lx__lx2 : a == 2 || a == 3
+    lx__lx1 --> lx__lx1 : a == 1
+    lx__lx2 --> lx__lx1 : a == 1
 }
-LX : enter {\\n    b = 0 + b;\\n    b = 3 + a * (2 + b);\\n}\\nexit {\\n    b = 0;\\n    b = a << 2;\\n}
-[*] --> LX
-LX --> [*]
+lx : enter {\\n    b = 0 + b;\\n    b = 3 + a * (2 + b);\\n}\\nexit {\\n    b = 0;\\n    b = a << 2;\\n}
+[*] --> lx
+lx --> [*]
 @enduml
     """).strip()
 

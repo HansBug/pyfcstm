@@ -1,0 +1,1107 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>pyfcstm.model.model &mdash; pyfcstm 0.1.3 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/custom.css?v=c9d0a6ec" />
+
+  
+      <script src="../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../_static/documentation_options.js?v=360bc84d"></script>
+      <script src="../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <link rel="next" title="pyfcstm.render" href="../render/index.html" />
+    <link rel="prev" title="pyfcstm.model.expr" href="expr.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            pyfcstm
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../tutorials/installation/index.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../tutorials/quick_start/index.html">Quick Start</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../tutorials/dsl/index.html">PyFCSTM DSL Syntax Tutorial</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Information</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../information/environment.result.html">Run Environment Information</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">API Documentation</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../config/index.html">pyfcstm.config</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../dsl/index.html">pyfcstm.dsl</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../entry/index.html">pyfcstm.entry</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="index.html">pyfcstm.model</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="base.html">pyfcstm.model.base</a></li>
+<li class="toctree-l2"><a class="reference internal" href="expr.html">pyfcstm.model.expr</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">pyfcstm.model.model</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#operation">Operation</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#pyfcstm.model.model.Operation"><code class="docutils literal notranslate"><span class="pre">Operation</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#event">Event</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#pyfcstm.model.model.Event"><code class="docutils literal notranslate"><span class="pre">Event</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#transition">Transition</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#pyfcstm.model.model.Transition"><code class="docutils literal notranslate"><span class="pre">Transition</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#onstage">OnStage</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#pyfcstm.model.model.OnStage"><code class="docutils literal notranslate"><span class="pre">OnStage</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#onaspect">OnAspect</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#pyfcstm.model.model.OnAspect"><code class="docutils literal notranslate"><span class="pre">OnAspect</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#state">State</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#pyfcstm.model.model.State"><code class="docutils literal notranslate"><span class="pre">State</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#vardefine">VarDefine</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#pyfcstm.model.model.VarDefine"><code class="docutils literal notranslate"><span class="pre">VarDefine</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#statemachine">StateMachine</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#pyfcstm.model.model.StateMachine"><code class="docutils literal notranslate"><span class="pre">StateMachine</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#parse-dsl-node-to-state-machine">parse_dsl_node_to_state_machine</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#pyfcstm.model.model.parse_dsl_node_to_state_machine"><code class="docutils literal notranslate"><span class="pre">parse_dsl_node_to_state_machine()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../render/index.html">pyfcstm.render</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../utils/index.html">pyfcstm.utils</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">pyfcstm</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="index.html">pyfcstm.model</a></li>
+      <li class="breadcrumb-item active">pyfcstm.model.model</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../../_sources/api_doc/model/model.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+    
+    
+  <section id="module-pyfcstm.model.model">
+<span id="pyfcstm-model-model"></span><h1>pyfcstm.model.model<a class="headerlink" href="#module-pyfcstm.model.model" title="Link to this heading"></a></h1>
+<p>State machine module for parsing and representing hierarchical state machines.</p>
+<p>This module provides classes and functions for working with state machines, including:</p>
+<ul class="simple">
+<li><p>Representation of states, transitions, events, and operations</p></li>
+<li><p>Parsing state machine DSL nodes into state machine objects</p></li>
+<li><p>Exporting state machines to AST nodes and PlantUML diagrams</p></li>
+</ul>
+<p>The module implements a hierarchical state machine model with support for:</p>
+<ul class="simple">
+<li><p>Nested states</p></li>
+<li><p>Entry, during, and exit actions</p></li>
+<li><p>Guards and effects on transitions</p></li>
+<li><p>Abstract function declarations</p></li>
+<li><p>Variable definitions</p></li>
+</ul>
+<section id="operation">
+<h2>Operation<a class="headerlink" href="#operation" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="pyfcstm.model.model.Operation">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pyfcstm.model.model.</span></span><span class="sig-name descname"><span class="pre">Operation</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">var_name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">expr</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="expr.html#pyfcstm.model.expr.Expr" title="pyfcstm.model.expr.Expr"><span class="pre">Expr</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/pyfcstm/model/model.html#Operation"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.model.model.Operation" title="Link to this definition"></a></dt>
+<dd><p>Represents an operation that assigns a value to a variable.</p>
+<p>An operation consists of a variable name and an expression that will be
+assigned to the variable when the operation is executed.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>var_name</strong> (<em>str</em>) – The name of the variable to assign to</p></li>
+<li><p><strong>expr</strong> (<a class="reference internal" href="../dsl/node.html#pyfcstm.dsl.node.Expr" title="pyfcstm.dsl.node.Expr"><em>Expr</em></a>) – The expression to evaluate and assign to the variable</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="pyfcstm.model.model.Operation.to_ast_node">
+<span class="sig-name descname"><span class="pre">to_ast_node</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="../dsl/node.html#pyfcstm.dsl.node.OperationAssignment" title="pyfcstm.dsl.node.OperationAssignment"><span class="pre">OperationAssignment</span></a></span></span><a class="reference internal" href="../../_modules/pyfcstm/model/model.html#Operation.to_ast_node"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.model.model.Operation.to_ast_node" title="Link to this definition"></a></dt>
+<dd><p>Convert this operation to an AST node.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>An operation assignment AST node</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>dsl_nodes.OperationAssignment</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyfcstm.model.model.Operation.var_name_to_ast_node">
+<span class="sig-name descname"><span class="pre">var_name_to_ast_node</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="../dsl/node.html#pyfcstm.dsl.node.Name" title="pyfcstm.dsl.node.Name"><span class="pre">Name</span></a></span></span><a class="reference internal" href="../../_modules/pyfcstm/model/model.html#Operation.var_name_to_ast_node"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.model.model.Operation.var_name_to_ast_node" title="Link to this definition"></a></dt>
+<dd><p>Convert the variable name to an AST node.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>A name AST node</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>dsl_nodes.Name</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+<section id="event">
+<h2>Event<a class="headerlink" href="#event" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="pyfcstm.model.model.Event">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pyfcstm.model.model.</span></span><span class="sig-name descname"><span class="pre">Event</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">state_path</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/pyfcstm/model/model.html#Event"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.model.model.Event" title="Link to this definition"></a></dt>
+<dd><p>Represents an event that can trigger state transitions.</p>
+<p>An event has a name and is associated with a specific state path in the
+state machine hierarchy.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>name</strong> (<em>str</em>) – The name of the event</p></li>
+<li><p><strong>state_path</strong> (<em>Tuple</em><em>[</em><em>str</em><em>, </em><em>...</em><em>]</em>) – The path to the state that owns this event</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py property">
+<dt class="sig sig-object py" id="pyfcstm.model.model.Event.path">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">path</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#pyfcstm.model.model.Event.path" title="Link to this definition"></a></dt>
+<dd><p>Get the full path of the event including the state path and event name.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>The full path to the event</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>Tuple[str, …]</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+<section id="transition">
+<h2>Transition<a class="headerlink" href="#transition" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="pyfcstm.model.model.Transition">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pyfcstm.model.model.</span></span><span class="sig-name descname"><span class="pre">Transition</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">from_state</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">_StateSingletonMark</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">to_state</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">_StateSingletonMark</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">event</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#pyfcstm.model.model.Event" title="pyfcstm.model.model.Event"><span class="pre">Event</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">guard</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="expr.html#pyfcstm.model.expr.Expr" title="pyfcstm.model.expr.Expr"><span class="pre">Expr</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">effects</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#pyfcstm.model.model.Operation" title="pyfcstm.model.model.Operation"><span class="pre">Operation</span></a><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">parent_ref</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ReferenceType</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/pyfcstm/model/model.html#Transition"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.model.model.Transition" title="Link to this definition"></a></dt>
+<dd><p>Represents a transition between states in a state machine.</p>
+<p>A transition defines how the state machine moves from one state to another,
+potentially triggered by an event, guarded by a condition, and with effects
+that execute when the transition occurs.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>from_state</strong> (<em>Union</em><em>[</em><em>str</em><em>, </em><em>dsl_nodes._StateSingletonMark</em><em>]</em>) – The source state name or special state marker</p></li>
+<li><p><strong>to_state</strong> (<em>Union</em><em>[</em><em>str</em><em>, </em><em>dsl_nodes._StateSingletonMark</em><em>]</em>) – The target state name or special state marker</p></li>
+<li><p><strong>event</strong> (<em>Optional</em><em>[</em><a class="reference internal" href="#pyfcstm.model.model.Event" title="pyfcstm.model.model.Event"><em>Event</em></a><em>]</em>) – The event that triggers this transition, if any</p></li>
+<li><p><strong>guard</strong> (<em>Optional</em><em>[</em><a class="reference internal" href="../dsl/node.html#pyfcstm.dsl.node.Expr" title="pyfcstm.dsl.node.Expr"><em>Expr</em></a><em>]</em>) – The condition that must be true for the transition to occur, if any</p></li>
+<li><p><strong>effects</strong> (<em>List</em><em>[</em><a class="reference internal" href="#pyfcstm.model.model.Operation" title="pyfcstm.model.model.Operation"><em>Operation</em></a><em>]</em>) – Operations to execute when the transition occurs</p></li>
+<li><p><strong>parent_ref</strong> (<em>Optional</em><em>[</em><em>weakref.ReferenceType</em><em>]</em>) – Weak reference to the parent state</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py property">
+<dt class="sig sig-object py" id="pyfcstm.model.model.Transition.parent">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">parent</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference internal" href="#pyfcstm.model.model.State" title="pyfcstm.model.model.State"><span class="pre">State</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></em><a class="headerlink" href="#pyfcstm.model.model.Transition.parent" title="Link to this definition"></a></dt>
+<dd><p>Get the parent state of this transition.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>The parent state or None if no parent is set</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>Optional[‘State’]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyfcstm.model.model.Transition.to_ast_node">
+<span class="sig-name descname"><span class="pre">to_ast_node</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="../dsl/node.html#pyfcstm.dsl.node.TransitionDefinition" title="pyfcstm.dsl.node.TransitionDefinition"><span class="pre">TransitionDefinition</span></a></span></span><a class="reference internal" href="../../_modules/pyfcstm/model/model.html#Transition.to_ast_node"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.model.model.Transition.to_ast_node" title="Link to this definition"></a></dt>
+<dd><p>Convert this transition to an AST node.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>A transition definition AST node</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>dsl_nodes.TransitionDefinition</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+<section id="onstage">
+<h2>OnStage<a class="headerlink" href="#onstage" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="pyfcstm.model.model.OnStage">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pyfcstm.model.model.</span></span><span class="sig-name descname"><span class="pre">OnStage</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">stage</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">aspect</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">doc</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">operations</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#pyfcstm.model.model.Operation" title="pyfcstm.model.model.Operation"><span class="pre">Operation</span></a><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/pyfcstm/model/model.html#OnStage"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.model.model.OnStage" title="Link to this definition"></a></dt>
+<dd><p>Represents an action that occurs during a specific stage of a state’s lifecycle.</p>
+<p>OnStage can represent enter, during, or exit actions, and can be either concrete
+operations or abstract function declarations.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>stage</strong> (<em>str</em>) – The lifecycle stage (‘enter’, ‘during’, or ‘exit’)</p></li>
+<li><p><strong>aspect</strong> (<em>Optional</em><em>[</em><em>str</em><em>]</em>) – For ‘during’ actions in composite states, specifies if the action occurs ‘before’ or ‘after’ substates</p></li>
+<li><p><strong>name</strong> (<em>Optional</em><em>[</em><em>str</em><em>]</em>) – For abstract functions, the name of the function</p></li>
+<li><p><strong>doc</strong> (<em>Optional</em><em>[</em><em>str</em><em>]</em>) – For abstract functions, the documentation string</p></li>
+<li><p><strong>operations</strong> (<em>List</em><em>[</em><a class="reference internal" href="#pyfcstm.model.model.Operation" title="pyfcstm.model.model.Operation"><em>Operation</em></a><em>]</em>) – For concrete actions, the list of operations to execute</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py property">
+<dt class="sig sig-object py" id="pyfcstm.model.model.OnStage.is_abstract">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">is_abstract</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">bool</span></em><a class="headerlink" href="#pyfcstm.model.model.OnStage.is_abstract" title="Link to this definition"></a></dt>
+<dd><p>Check if this is an abstract function declaration.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>True if this is an abstract function, False otherwise</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="pyfcstm.model.model.OnStage.is_aspect">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">is_aspect</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">bool</span></em><a class="headerlink" href="#pyfcstm.model.model.OnStage.is_aspect" title="Link to this definition"></a></dt>
+<dd><p>Check if this is an aspect-oriented action.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>False for OnStage instances (always)</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyfcstm.model.model.OnStage.to_ast_node">
+<span class="sig-name descname"><span class="pre">to_ast_node</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="../dsl/node.html#pyfcstm.dsl.node.EnterStatement" title="pyfcstm.dsl.node.EnterStatement"><span class="pre">EnterStatement</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference internal" href="../dsl/node.html#pyfcstm.dsl.node.DuringStatement" title="pyfcstm.dsl.node.DuringStatement"><span class="pre">DuringStatement</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference internal" href="../dsl/node.html#pyfcstm.dsl.node.ExitStatement" title="pyfcstm.dsl.node.ExitStatement"><span class="pre">ExitStatement</span></a></span></span><a class="reference internal" href="../../_modules/pyfcstm/model/model.html#OnStage.to_ast_node"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.model.model.OnStage.to_ast_node" title="Link to this definition"></a></dt>
+<dd><p>Convert this OnStage to an appropriate AST node based on the stage.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>An enter, during, or exit statement AST node</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>Union[dsl_nodes.EnterStatement, dsl_nodes.DuringStatement, dsl_nodes.ExitStatement]</p>
+</dd>
+<dt class="field-odd">Raises<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>ValueError</strong> – If the stage is not one of ‘enter’, ‘during’, or ‘exit’</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+<section id="onaspect">
+<h2>OnAspect<a class="headerlink" href="#onaspect" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="pyfcstm.model.model.OnAspect">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pyfcstm.model.model.</span></span><span class="sig-name descname"><span class="pre">OnAspect</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">stage</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">aspect</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">doc</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">operations</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#pyfcstm.model.model.Operation" title="pyfcstm.model.model.Operation"><span class="pre">Operation</span></a><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/pyfcstm/model/model.html#OnAspect"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.model.model.OnAspect" title="Link to this definition"></a></dt>
+<dd><p>Represents an aspect-oriented action that occurs during a specific stage of a state’s lifecycle.</p>
+<p>OnAspect is specifically used for aspect-oriented programming features in the state machine,
+allowing actions to be defined that apply across multiple states.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>stage</strong> (<em>str</em>) – The lifecycle stage (currently only supports ‘during’)</p></li>
+<li><p><strong>aspect</strong> (<em>Optional</em><em>[</em><em>str</em><em>]</em>) – Specifies if the action occurs ‘before’ or ‘after’ substates</p></li>
+<li><p><strong>name</strong> (<em>Optional</em><em>[</em><em>str</em><em>]</em>) – For abstract functions, the name of the function</p></li>
+<li><p><strong>doc</strong> (<em>Optional</em><em>[</em><em>str</em><em>]</em>) – For abstract functions, the documentation string</p></li>
+<li><p><strong>operations</strong> (<em>List</em><em>[</em><a class="reference internal" href="#pyfcstm.model.model.Operation" title="pyfcstm.model.model.Operation"><em>Operation</em></a><em>]</em>) – For concrete actions, the list of operations to execute</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py property">
+<dt class="sig sig-object py" id="pyfcstm.model.model.OnAspect.is_abstract">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">is_abstract</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">bool</span></em><a class="headerlink" href="#pyfcstm.model.model.OnAspect.is_abstract" title="Link to this definition"></a></dt>
+<dd><p>Check if this is an abstract function declaration.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>True if this is an abstract function, False otherwise</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="pyfcstm.model.model.OnAspect.is_aspect">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">is_aspect</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">bool</span></em><a class="headerlink" href="#pyfcstm.model.model.OnAspect.is_aspect" title="Link to this definition"></a></dt>
+<dd><p>Check if this is an aspect-oriented action.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>True for OnAspect instances (always)</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyfcstm.model.model.OnAspect.to_ast_node">
+<span class="sig-name descname"><span class="pre">to_ast_node</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="../dsl/node.html#pyfcstm.dsl.node.DuringAspectStatement" title="pyfcstm.dsl.node.DuringAspectStatement"><span class="pre">DuringAspectStatement</span></a></span></span><a class="reference internal" href="../../_modules/pyfcstm/model/model.html#OnAspect.to_ast_node"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.model.model.OnAspect.to_ast_node" title="Link to this definition"></a></dt>
+<dd><p>Convert this OnAspect to an appropriate AST node based on the stage.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>A during aspect statement AST node</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>Union[dsl_nodes.DuringAspectStatement]</p>
+</dd>
+<dt class="field-odd">Raises<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>ValueError</strong> – If the stage is not ‘during’</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+<section id="state">
+<h2>State<a class="headerlink" href="#state" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="pyfcstm.model.model.State">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pyfcstm.model.model.</span></span><span class="sig-name descname"><span class="pre">State</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">path</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">substates</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference internal" href="#pyfcstm.model.model.State" title="pyfcstm.model.model.State"><span class="pre">State</span></a><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">events</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference internal" href="#pyfcstm.model.model.Event" title="pyfcstm.model.model.Event"><span class="pre">Event</span></a><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">transitions</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#pyfcstm.model.model.Transition" title="pyfcstm.model.model.Transition"><span class="pre">Transition</span></a><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">on_enters</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#pyfcstm.model.model.OnStage" title="pyfcstm.model.model.OnStage"><span class="pre">OnStage</span></a><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">on_durings</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#pyfcstm.model.model.OnStage" title="pyfcstm.model.model.OnStage"><span class="pre">OnStage</span></a><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">on_exits</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#pyfcstm.model.model.OnStage" title="pyfcstm.model.model.OnStage"><span class="pre">OnStage</span></a><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">on_during_aspects</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#pyfcstm.model.model.OnAspect" title="pyfcstm.model.model.OnAspect"><span class="pre">OnAspect</span></a><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">parent_ref</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ReferenceType</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">substate_name_to_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">int</span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/pyfcstm/model/model.html#State"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.model.model.State" title="Link to this definition"></a></dt>
+<dd><p>Represents a state in a hierarchical state machine.</p>
+<p>A state can contain substates, transitions between those substates, and actions
+that execute on enter, during, or exit of the state.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>name</strong> (<em>str</em>) – The name of the state</p></li>
+<li><p><strong>path</strong> (<em>Tuple</em><em>[</em><em>str</em><em>, </em><em>...</em><em>]</em>) – The full path to this state in the hierarchy</p></li>
+<li><p><strong>substates</strong> (<em>Dict</em><em>[</em><em>str</em><em>, </em><em>'State'</em><em>]</em>) – Dictionary mapping substate names to State objects</p></li>
+<li><p><strong>events</strong> (<em>Dict</em><em>[</em><em>str</em><em>, </em><a class="reference internal" href="#pyfcstm.model.model.Event" title="pyfcstm.model.model.Event"><em>Event</em></a><em>]</em>) – Dictionary mapping event names to Event objects</p></li>
+<li><p><strong>transitions</strong> (<em>List</em><em>[</em><a class="reference internal" href="#pyfcstm.model.model.Transition" title="pyfcstm.model.model.Transition"><em>Transition</em></a><em>]</em>) – List of transitions between substates</p></li>
+<li><p><strong>on_enters</strong> (<em>List</em><em>[</em><a class="reference internal" href="#pyfcstm.model.model.OnStage" title="pyfcstm.model.model.OnStage"><em>OnStage</em></a><em>]</em>) – List of actions to execute when entering the state</p></li>
+<li><p><strong>on_durings</strong> (<em>List</em><em>[</em><a class="reference internal" href="#pyfcstm.model.model.OnStage" title="pyfcstm.model.model.OnStage"><em>OnStage</em></a><em>]</em>) – List of actions to execute while in the state</p></li>
+<li><p><strong>on_exits</strong> (<em>List</em><em>[</em><a class="reference internal" href="#pyfcstm.model.model.OnStage" title="pyfcstm.model.model.OnStage"><em>OnStage</em></a><em>]</em>) – List of actions to execute when exiting the state</p></li>
+<li><p><strong>on_during_aspects</strong> (<em>List</em><em>[</em><a class="reference internal" href="#pyfcstm.model.model.OnAspect" title="pyfcstm.model.model.OnAspect"><em>OnAspect</em></a><em>]</em>) – List of aspect-oriented actions for the during stage</p></li>
+<li><p><strong>parent_ref</strong> (<em>Optional</em><em>[</em><em>weakref.ReferenceType</em><em>]</em>) – Weak reference to the parent state</p></li>
+<li><p><strong>substate_name_to_id</strong> (<em>Dict</em><em>[</em><em>str</em><em>, </em><em>int</em><em>]</em>) – Dictionary mapping substate names to numeric IDs</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py property">
+<dt class="sig sig-object py" id="pyfcstm.model.model.State.abstract_on_during_aspects">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">abstract_on_during_aspects</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#pyfcstm.model.model.OnAspect" title="pyfcstm.model.model.OnAspect"><span class="pre">OnAspect</span></a><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#pyfcstm.model.model.State.abstract_on_during_aspects" title="Link to this definition"></a></dt>
+<dd><p>Get all abstract during aspect actions.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>List of abstract during aspect actions</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>List[<a class="reference internal" href="#pyfcstm.model.model.OnAspect" title="pyfcstm.model.model.OnAspect">OnAspect</a>]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="pyfcstm.model.model.State.abstract_on_durings">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">abstract_on_durings</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#pyfcstm.model.model.OnStage" title="pyfcstm.model.model.OnStage"><span class="pre">OnStage</span></a><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#pyfcstm.model.model.State.abstract_on_durings" title="Link to this definition"></a></dt>
+<dd><p>Get all abstract during actions.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>List of abstract during actions</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>List[<a class="reference internal" href="#pyfcstm.model.model.OnStage" title="pyfcstm.model.model.OnStage">OnStage</a>]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="pyfcstm.model.model.State.abstract_on_enters">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">abstract_on_enters</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#pyfcstm.model.model.OnStage" title="pyfcstm.model.model.OnStage"><span class="pre">OnStage</span></a><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#pyfcstm.model.model.State.abstract_on_enters" title="Link to this definition"></a></dt>
+<dd><p>Get all abstract enter actions.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>List of abstract enter actions</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>List[<a class="reference internal" href="#pyfcstm.model.model.OnStage" title="pyfcstm.model.model.OnStage">OnStage</a>]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="pyfcstm.model.model.State.abstract_on_exits">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">abstract_on_exits</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#pyfcstm.model.model.OnStage" title="pyfcstm.model.model.OnStage"><span class="pre">OnStage</span></a><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#pyfcstm.model.model.State.abstract_on_exits" title="Link to this definition"></a></dt>
+<dd><p>Get all abstract exit actions.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>List of abstract exit actions</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>List[<a class="reference internal" href="#pyfcstm.model.model.OnStage" title="pyfcstm.model.model.OnStage">OnStage</a>]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="pyfcstm.model.model.State.is_leaf_state">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">is_leaf_state</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">bool</span></em><a class="headerlink" href="#pyfcstm.model.model.State.is_leaf_state" title="Link to this definition"></a></dt>
+<dd><p>Check if this state is a leaf state (has no substates).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>True if this is a leaf state, False otherwise</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="pyfcstm.model.model.State.is_root_state">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">is_root_state</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">bool</span></em><a class="headerlink" href="#pyfcstm.model.model.State.is_root_state" title="Link to this definition"></a></dt>
+<dd><p>Check if this state is the root state (has no parent).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>True if this is the root state, False otherwise</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyfcstm.model.model.State.iter_on_during_after_aspect_recursively">
+<span class="sig-name descname"><span class="pre">iter_on_during_after_aspect_recursively</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">is_abstract</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">with_ids</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference internal" href="#pyfcstm.model.model.State" title="pyfcstm.model.model.State"><span class="pre">State</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference internal" href="#pyfcstm.model.model.OnAspect" title="pyfcstm.model.model.OnAspect"><span class="pre">OnAspect</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference internal" href="#pyfcstm.model.model.OnStage" title="pyfcstm.model.model.OnStage"><span class="pre">OnStage</span></a><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#pyfcstm.model.model.State" title="pyfcstm.model.model.State"><span class="pre">State</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference internal" href="#pyfcstm.model.model.OnAspect" title="pyfcstm.model.model.OnAspect"><span class="pre">OnAspect</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference internal" href="#pyfcstm.model.model.OnStage" title="pyfcstm.model.model.OnStage"><span class="pre">OnStage</span></a><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../../_modules/pyfcstm/model/model.html#State.iter_on_during_after_aspect_recursively"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.model.model.State.iter_on_during_after_aspect_recursively" title="Link to this definition"></a></dt>
+<dd><p>Recursively iterate through ‘after’ aspect during actions from this state to the root state.</p>
+<p>This method traverses the state hierarchy from this state to the root state,
+yielding all ‘after’ aspect during actions along the way.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>is_abstract</strong> (<em>Optional</em><em>[</em><em>bool</em><em>]</em>) – If provided, filter to only abstract (True) or non-abstract (False) actions</p></li>
+<li><p><strong>with_ids</strong> (<em>bool</em>) – Whether to include numeric IDs with the actions</p></li>
+</ul>
+</dd>
+<dt class="field-even">Yield<span class="colon">:</span></dt>
+<dd class="field-even"><p>Tuples of (state, action) or (id, state, action) if with_ids is True</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>List[Union[Tuple[int, ‘State’, Union[<a class="reference internal" href="#pyfcstm.model.model.OnAspect" title="pyfcstm.model.model.OnAspect">OnAspect</a>, <a class="reference internal" href="#pyfcstm.model.model.OnStage" title="pyfcstm.model.model.OnStage">OnStage</a>]], Tuple[‘State’, Union[<a class="reference internal" href="#pyfcstm.model.model.OnAspect" title="pyfcstm.model.model.OnAspect">OnAspect</a>, <a class="reference internal" href="#pyfcstm.model.model.OnStage" title="pyfcstm.model.model.OnStage">OnStage</a>]]]]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyfcstm.model.model.State.iter_on_during_aspect_recursively">
+<span class="sig-name descname"><span class="pre">iter_on_during_aspect_recursively</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">is_abstract</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">with_ids</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference internal" href="#pyfcstm.model.model.State" title="pyfcstm.model.model.State"><span class="pre">State</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference internal" href="#pyfcstm.model.model.OnAspect" title="pyfcstm.model.model.OnAspect"><span class="pre">OnAspect</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference internal" href="#pyfcstm.model.model.OnStage" title="pyfcstm.model.model.OnStage"><span class="pre">OnStage</span></a><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#pyfcstm.model.model.State" title="pyfcstm.model.model.State"><span class="pre">State</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference internal" href="#pyfcstm.model.model.OnAspect" title="pyfcstm.model.model.OnAspect"><span class="pre">OnAspect</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference internal" href="#pyfcstm.model.model.OnStage" title="pyfcstm.model.model.OnStage"><span class="pre">OnStage</span></a><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../../_modules/pyfcstm/model/model.html#State.iter_on_during_aspect_recursively"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.model.model.State.iter_on_during_aspect_recursively" title="Link to this definition"></a></dt>
+<dd><p>Recursively iterate through all during actions in the proper execution order.</p>
+<p>This method yields actions in the following order:</p>
+<ol class="arabic simple">
+<li><p>‘Before’ aspect actions from root state to this state</p></li>
+<li><p>Regular during actions for this state</p></li>
+<li><p>‘After’ aspect actions from this state to root state</p></li>
+</ol>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>is_abstract</strong> (<em>Optional</em><em>[</em><em>bool</em><em>]</em>) – If provided, filter to only abstract (True) or non-abstract (False) actions</p></li>
+<li><p><strong>with_ids</strong> (<em>bool</em>) – Whether to include numeric IDs with the actions</p></li>
+</ul>
+</dd>
+<dt class="field-even">Yield<span class="colon">:</span></dt>
+<dd class="field-even"><p>Tuples of (state, action) or (id, state, action) if with_ids is True</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>List[Union[Tuple[int, ‘State’, Union[<a class="reference internal" href="#pyfcstm.model.model.OnAspect" title="pyfcstm.model.model.OnAspect">OnAspect</a>, <a class="reference internal" href="#pyfcstm.model.model.OnStage" title="pyfcstm.model.model.OnStage">OnStage</a>]], Tuple[‘State’, Union[<a class="reference internal" href="#pyfcstm.model.model.OnAspect" title="pyfcstm.model.model.OnAspect">OnAspect</a>, <a class="reference internal" href="#pyfcstm.model.model.OnStage" title="pyfcstm.model.model.OnStage">OnStage</a>]]]]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyfcstm.model.model.State.iter_on_during_before_aspect_recursively">
+<span class="sig-name descname"><span class="pre">iter_on_during_before_aspect_recursively</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">is_abstract</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">with_ids</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference internal" href="#pyfcstm.model.model.State" title="pyfcstm.model.model.State"><span class="pre">State</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference internal" href="#pyfcstm.model.model.OnAspect" title="pyfcstm.model.model.OnAspect"><span class="pre">OnAspect</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference internal" href="#pyfcstm.model.model.OnStage" title="pyfcstm.model.model.OnStage"><span class="pre">OnStage</span></a><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#pyfcstm.model.model.State" title="pyfcstm.model.model.State"><span class="pre">State</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference internal" href="#pyfcstm.model.model.OnAspect" title="pyfcstm.model.model.OnAspect"><span class="pre">OnAspect</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference internal" href="#pyfcstm.model.model.OnStage" title="pyfcstm.model.model.OnStage"><span class="pre">OnStage</span></a><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../../_modules/pyfcstm/model/model.html#State.iter_on_during_before_aspect_recursively"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.model.model.State.iter_on_during_before_aspect_recursively" title="Link to this definition"></a></dt>
+<dd><p>Recursively iterate through ‘before’ aspect during actions from parent states to this state.</p>
+<p>This method traverses the state hierarchy from the root state to this state,
+yielding all ‘before’ aspect during actions along the way.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>is_abstract</strong> (<em>Optional</em><em>[</em><em>bool</em><em>]</em>) – If provided, filter to only abstract (True) or non-abstract (False) actions</p></li>
+<li><p><strong>with_ids</strong> (<em>bool</em>) – Whether to include numeric IDs with the actions</p></li>
+</ul>
+</dd>
+<dt class="field-even">Yield<span class="colon">:</span></dt>
+<dd class="field-even"><p>Tuples of (state, action) or (id, state, action) if with_ids is True</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>List[Union[Tuple[int, ‘State’, Union[<a class="reference internal" href="#pyfcstm.model.model.OnAspect" title="pyfcstm.model.model.OnAspect">OnAspect</a>, <a class="reference internal" href="#pyfcstm.model.model.OnStage" title="pyfcstm.model.model.OnStage">OnStage</a>]], Tuple[‘State’, Union[<a class="reference internal" href="#pyfcstm.model.model.OnAspect" title="pyfcstm.model.model.OnAspect">OnAspect</a>, <a class="reference internal" href="#pyfcstm.model.model.OnStage" title="pyfcstm.model.model.OnStage">OnStage</a>]]]]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyfcstm.model.model.State.list_on_during_aspect_recursively">
+<span class="sig-name descname"><span class="pre">list_on_during_aspect_recursively</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">is_abstract</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">with_ids</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference internal" href="#pyfcstm.model.model.State" title="pyfcstm.model.model.State"><span class="pre">State</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference internal" href="#pyfcstm.model.model.OnAspect" title="pyfcstm.model.model.OnAspect"><span class="pre">OnAspect</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference internal" href="#pyfcstm.model.model.OnStage" title="pyfcstm.model.model.OnStage"><span class="pre">OnStage</span></a><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#pyfcstm.model.model.State" title="pyfcstm.model.model.State"><span class="pre">State</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference internal" href="#pyfcstm.model.model.OnAspect" title="pyfcstm.model.model.OnAspect"><span class="pre">OnAspect</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference internal" href="#pyfcstm.model.model.OnStage" title="pyfcstm.model.model.OnStage"><span class="pre">OnStage</span></a><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../../_modules/pyfcstm/model/model.html#State.list_on_during_aspect_recursively"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.model.model.State.list_on_during_aspect_recursively" title="Link to this definition"></a></dt>
+<dd><p>Get a list of all during actions in the proper execution order.</p>
+<p>This is a convenience method that collects the results of iter_on_during_aspect_recursively.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>is_abstract</strong> (<em>Optional</em><em>[</em><em>bool</em><em>]</em>) – If provided, filter to only abstract (True) or non-abstract (False) actions</p></li>
+<li><p><strong>with_ids</strong> (<em>bool</em>) – Whether to include numeric IDs with the actions</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>List of during actions in execution order</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>List[Union[Tuple[int, ‘State’, Union[<a class="reference internal" href="#pyfcstm.model.model.OnAspect" title="pyfcstm.model.model.OnAspect">OnAspect</a>, <a class="reference internal" href="#pyfcstm.model.model.OnStage" title="pyfcstm.model.model.OnStage">OnStage</a>]], Tuple[‘State’, Union[<a class="reference internal" href="#pyfcstm.model.model.OnAspect" title="pyfcstm.model.model.OnAspect">OnAspect</a>, <a class="reference internal" href="#pyfcstm.model.model.OnStage" title="pyfcstm.model.model.OnStage">OnStage</a>]]]]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyfcstm.model.model.State.list_on_during_aspects">
+<span class="sig-name descname"><span class="pre">list_on_during_aspects</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">is_abstract</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">aspect</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">with_ids</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference internal" href="#pyfcstm.model.model.OnAspect" title="pyfcstm.model.model.OnAspect"><span class="pre">OnAspect</span></a><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference internal" href="#pyfcstm.model.model.OnAspect" title="pyfcstm.model.model.OnAspect"><span class="pre">OnAspect</span></a><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../../_modules/pyfcstm/model/model.html#State.list_on_during_aspects"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.model.model.State.list_on_during_aspects" title="Link to this definition"></a></dt>
+<dd><p>Get a list of during aspect actions, optionally filtered by abstract status, aspect, and with IDs.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>is_abstract</strong> (<em>Optional</em><em>[</em><em>bool</em><em>]</em>) – If provided, filter to only abstract (True) or non-abstract (False) actions</p></li>
+<li><p><strong>aspect</strong> (<em>Optional</em><em>[</em><em>str</em><em>]</em>) – If provided, filter to only actions with the given aspect (‘before’ or ‘after’)</p></li>
+<li><p><strong>with_ids</strong> (<em>bool</em>) – Whether to include numeric IDs with the actions</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>List of during aspect actions, optionally with IDs</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>List[Union[Tuple[int, <a class="reference internal" href="#pyfcstm.model.model.OnAspect" title="pyfcstm.model.model.OnAspect">OnAspect</a>], <a class="reference internal" href="#pyfcstm.model.model.OnAspect" title="pyfcstm.model.model.OnAspect">OnAspect</a>]]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyfcstm.model.model.State.list_on_durings">
+<span class="sig-name descname"><span class="pre">list_on_durings</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">is_abstract</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">aspect</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">with_ids</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference internal" href="#pyfcstm.model.model.OnStage" title="pyfcstm.model.model.OnStage"><span class="pre">OnStage</span></a><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference internal" href="#pyfcstm.model.model.OnStage" title="pyfcstm.model.model.OnStage"><span class="pre">OnStage</span></a><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../../_modules/pyfcstm/model/model.html#State.list_on_durings"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.model.model.State.list_on_durings" title="Link to this definition"></a></dt>
+<dd><p>Get a list of during actions, optionally filtered by abstract status, aspect, and with IDs.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>is_abstract</strong> (<em>Optional</em><em>[</em><em>bool</em><em>]</em>) – If provided, filter to only abstract (True) or non-abstract (False) actions</p></li>
+<li><p><strong>aspect</strong> (<em>Optional</em><em>[</em><em>str</em><em>]</em>) – If provided, filter to only actions with the given aspect (‘before’ or ‘after’)</p></li>
+<li><p><strong>with_ids</strong> (<em>bool</em>) – Whether to include numeric IDs with the actions</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>List of during actions, optionally with IDs</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>List[Union[Tuple[int, <a class="reference internal" href="#pyfcstm.model.model.OnStage" title="pyfcstm.model.model.OnStage">OnStage</a>], <a class="reference internal" href="#pyfcstm.model.model.OnStage" title="pyfcstm.model.model.OnStage">OnStage</a>]]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyfcstm.model.model.State.list_on_enters">
+<span class="sig-name descname"><span class="pre">list_on_enters</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">is_abstract</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">with_ids</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference internal" href="#pyfcstm.model.model.OnStage" title="pyfcstm.model.model.OnStage"><span class="pre">OnStage</span></a><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference internal" href="#pyfcstm.model.model.OnStage" title="pyfcstm.model.model.OnStage"><span class="pre">OnStage</span></a><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../../_modules/pyfcstm/model/model.html#State.list_on_enters"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.model.model.State.list_on_enters" title="Link to this definition"></a></dt>
+<dd><p>Get a list of enter actions, optionally filtered by abstract status and with IDs.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>is_abstract</strong> (<em>Optional</em><em>[</em><em>bool</em><em>]</em>) – If provided, filter to only abstract (True) or non-abstract (False) actions</p></li>
+<li><p><strong>with_ids</strong> (<em>bool</em>) – Whether to include numeric IDs with the actions</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>List of enter actions, optionally with IDs</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>List[Union[Tuple[int, <a class="reference internal" href="#pyfcstm.model.model.OnStage" title="pyfcstm.model.model.OnStage">OnStage</a>], <a class="reference internal" href="#pyfcstm.model.model.OnStage" title="pyfcstm.model.model.OnStage">OnStage</a>]]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyfcstm.model.model.State.list_on_exits">
+<span class="sig-name descname"><span class="pre">list_on_exits</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">is_abstract</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">with_ids</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference internal" href="#pyfcstm.model.model.OnStage" title="pyfcstm.model.model.OnStage"><span class="pre">OnStage</span></a><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference internal" href="#pyfcstm.model.model.OnStage" title="pyfcstm.model.model.OnStage"><span class="pre">OnStage</span></a><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../../_modules/pyfcstm/model/model.html#State.list_on_exits"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.model.model.State.list_on_exits" title="Link to this definition"></a></dt>
+<dd><p>Get a list of exit actions, optionally filtered by abstract status and with IDs.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>is_abstract</strong> (<em>Optional</em><em>[</em><em>bool</em><em>]</em>) – If provided, filter to only abstract (True) or non-abstract (False) actions</p></li>
+<li><p><strong>with_ids</strong> (<em>bool</em>) – Whether to include numeric IDs with the actions</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>List of exit actions, optionally with IDs</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>List[Union[Tuple[int, <a class="reference internal" href="#pyfcstm.model.model.OnStage" title="pyfcstm.model.model.OnStage">OnStage</a>], <a class="reference internal" href="#pyfcstm.model.model.OnStage" title="pyfcstm.model.model.OnStage">OnStage</a>]]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="pyfcstm.model.model.State.non_abstract_on_during_aspects">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">non_abstract_on_during_aspects</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#pyfcstm.model.model.OnAspect" title="pyfcstm.model.model.OnAspect"><span class="pre">OnAspect</span></a><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#pyfcstm.model.model.State.non_abstract_on_during_aspects" title="Link to this definition"></a></dt>
+<dd><p>Get all non-abstract during aspect actions.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>List of non-abstract during aspect actions</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>List[<a class="reference internal" href="#pyfcstm.model.model.OnAspect" title="pyfcstm.model.model.OnAspect">OnAspect</a>]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="pyfcstm.model.model.State.non_abstract_on_durings">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">non_abstract_on_durings</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#pyfcstm.model.model.OnStage" title="pyfcstm.model.model.OnStage"><span class="pre">OnStage</span></a><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#pyfcstm.model.model.State.non_abstract_on_durings" title="Link to this definition"></a></dt>
+<dd><p>Get all non-abstract during actions.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>List of non-abstract during actions</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>List[<a class="reference internal" href="#pyfcstm.model.model.OnStage" title="pyfcstm.model.model.OnStage">OnStage</a>]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="pyfcstm.model.model.State.non_abstract_on_enters">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">non_abstract_on_enters</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#pyfcstm.model.model.OnStage" title="pyfcstm.model.model.OnStage"><span class="pre">OnStage</span></a><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#pyfcstm.model.model.State.non_abstract_on_enters" title="Link to this definition"></a></dt>
+<dd><p>Get all non-abstract enter actions.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>List of non-abstract enter actions</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>List[<a class="reference internal" href="#pyfcstm.model.model.OnStage" title="pyfcstm.model.model.OnStage">OnStage</a>]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="pyfcstm.model.model.State.non_abstract_on_exits">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">non_abstract_on_exits</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#pyfcstm.model.model.OnStage" title="pyfcstm.model.model.OnStage"><span class="pre">OnStage</span></a><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#pyfcstm.model.model.State.non_abstract_on_exits" title="Link to this definition"></a></dt>
+<dd><p>Get all non-abstract exit actions.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>List of non-abstract exit actions</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>List[<a class="reference internal" href="#pyfcstm.model.model.OnStage" title="pyfcstm.model.model.OnStage">OnStage</a>]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="pyfcstm.model.model.State.parent">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">parent</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference internal" href="#pyfcstm.model.model.State" title="pyfcstm.model.model.State"><span class="pre">State</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></em><a class="headerlink" href="#pyfcstm.model.model.State.parent" title="Link to this definition"></a></dt>
+<dd><p>Get the parent state of this state.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>The parent state or None if this is the root state</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>Optional[‘State’]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyfcstm.model.model.State.to_ast_node">
+<span class="sig-name descname"><span class="pre">to_ast_node</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="../dsl/node.html#pyfcstm.dsl.node.StateDefinition" title="pyfcstm.dsl.node.StateDefinition"><span class="pre">StateDefinition</span></a></span></span><a class="reference internal" href="../../_modules/pyfcstm/model/model.html#State.to_ast_node"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.model.model.State.to_ast_node" title="Link to this definition"></a></dt>
+<dd><p>Convert this state to an AST node.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>A state definition AST node</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>dsl_nodes.StateDefinition</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyfcstm.model.model.State.to_plantuml">
+<span class="sig-name descname"><span class="pre">to_plantuml</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">str</span></span></span><a class="reference internal" href="../../_modules/pyfcstm/model/model.html#State.to_plantuml"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.model.model.State.to_plantuml" title="Link to this definition"></a></dt>
+<dd><p>Convert this state to PlantUML notation.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>PlantUML representation of the state</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>str</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyfcstm.model.model.State.to_transition_ast_node">
+<span class="sig-name descname"><span class="pre">to_transition_ast_node</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">transition</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#pyfcstm.model.model.Transition" title="pyfcstm.model.model.Transition"><span class="pre">Transition</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="../dsl/node.html#pyfcstm.dsl.node.TransitionDefinition" title="pyfcstm.dsl.node.TransitionDefinition"><span class="pre">TransitionDefinition</span></a></span></span><a class="reference internal" href="../../_modules/pyfcstm/model/model.html#State.to_transition_ast_node"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.model.model.State.to_transition_ast_node" title="Link to this definition"></a></dt>
+<dd><p>Convert a transition to an AST node in the context of this state.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>transition</strong> (<a class="reference internal" href="#pyfcstm.model.model.Transition" title="pyfcstm.model.model.Transition"><em>Transition</em></a>) – The transition to convert</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A transition definition AST node</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>dsl_nodes.TransitionDefinition</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyfcstm.model.model.State.transition_to_ast_node">
+<em class="property"><span class="pre">classmethod</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">transition_to_ast_node</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#pyfcstm.model.model.State" title="pyfcstm.model.model.State"><span class="pre">State</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">transition</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#pyfcstm.model.model.Transition" title="pyfcstm.model.model.Transition"><span class="pre">Transition</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="../dsl/node.html#pyfcstm.dsl.node.TransitionDefinition" title="pyfcstm.dsl.node.TransitionDefinition"><span class="pre">TransitionDefinition</span></a></span></span><a class="reference internal" href="../../_modules/pyfcstm/model/model.html#State.transition_to_ast_node"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.model.model.State.transition_to_ast_node" title="Link to this definition"></a></dt>
+<dd><p>Convert a transition to an AST node, considering the context of its parent state.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>self</strong> (<em>Optional</em><em>[</em><em>'State'</em><em>]</em>) – The parent state, or None</p></li>
+<li><p><strong>transition</strong> (<a class="reference internal" href="#pyfcstm.model.model.Transition" title="pyfcstm.model.model.Transition"><em>Transition</em></a>) – The transition to convert</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A transition definition AST node</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>dsl_nodes.TransitionDefinition</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="pyfcstm.model.model.State.transitions_entering_children">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">transitions_entering_children</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#pyfcstm.model.model.Transition" title="pyfcstm.model.model.Transition"><span class="pre">Transition</span></a><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#pyfcstm.model.model.State.transitions_entering_children" title="Link to this definition"></a></dt>
+<dd><p>Get all transitions that start from the initial state (INIT_STATE).</p>
+<p>These are the transitions that define the initial substate when entering this state.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>List of transitions from INIT_STATE</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>List[<a class="reference internal" href="#pyfcstm.model.model.Transition" title="pyfcstm.model.model.Transition">Transition</a>]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="pyfcstm.model.model.State.transitions_entering_children_simplified">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">transitions_entering_children_simplified</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#pyfcstm.model.model.Transition" title="pyfcstm.model.model.Transition"><span class="pre">Transition</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#pyfcstm.model.model.State.transitions_entering_children_simplified" title="Link to this definition"></a></dt>
+<dd><p>Get a simplified list of transitions entering child states.</p>
+<p>If there’s a default transition (no event or guard), only include that one.
+Otherwise include all transitions and add None at the end.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>List of transitions, possibly with None at the end</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>List[Optional[<a class="reference internal" href="#pyfcstm.model.model.Transition" title="pyfcstm.model.model.Transition">Transition</a>]]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="pyfcstm.model.model.State.transitions_from">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">transitions_from</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#pyfcstm.model.model.Transition" title="pyfcstm.model.model.Transition"><span class="pre">Transition</span></a><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#pyfcstm.model.model.State.transitions_from" title="Link to this definition"></a></dt>
+<dd><p>Get all transitions that start from this state.</p>
+<p>For non-root states, these are transitions in the parent state where this state
+is the source. For the root state, a synthetic transition to EXIT_STATE is returned.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>List of transitions from this state</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>List[<a class="reference internal" href="#pyfcstm.model.model.Transition" title="pyfcstm.model.model.Transition">Transition</a>]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="pyfcstm.model.model.State.transitions_to">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">transitions_to</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#pyfcstm.model.model.Transition" title="pyfcstm.model.model.Transition"><span class="pre">Transition</span></a><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#pyfcstm.model.model.State.transitions_to" title="Link to this definition"></a></dt>
+<dd><p>Get all transitions that end at this state.</p>
+<p>For non-root states, these are transitions in the parent state where this state
+is the target. For the root state, a synthetic transition from INIT_STATE is returned.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>List of transitions to this state</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>List[<a class="reference internal" href="#pyfcstm.model.model.Transition" title="pyfcstm.model.model.Transition">Transition</a>]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyfcstm.model.model.State.walk_states">
+<span class="sig-name descname"><span class="pre">walk_states</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/pyfcstm/model/model.html#State.walk_states"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.model.model.State.walk_states" title="Link to this definition"></a></dt>
+<dd><p>Iterate through this state and all its substates recursively.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Yield<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Each state in the hierarchy, starting with this one</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>Iterator[‘State’]</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+<section id="vardefine">
+<h2>VarDefine<a class="headerlink" href="#vardefine" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="pyfcstm.model.model.VarDefine">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pyfcstm.model.model.</span></span><span class="sig-name descname"><span class="pre">VarDefine</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">type</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">init</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="expr.html#pyfcstm.model.expr.Expr" title="pyfcstm.model.expr.Expr"><span class="pre">Expr</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/pyfcstm/model/model.html#VarDefine"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.model.model.VarDefine" title="Link to this definition"></a></dt>
+<dd><p>Represents a variable definition in a state machine.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>name</strong> (<em>str</em>) – The name of the variable</p></li>
+<li><p><strong>type</strong> (<em>str</em>) – The type of the variable</p></li>
+<li><p><strong>init</strong> (<a class="reference internal" href="../dsl/node.html#pyfcstm.dsl.node.Expr" title="pyfcstm.dsl.node.Expr"><em>Expr</em></a>) – The initial value expression</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="pyfcstm.model.model.VarDefine.name_ast_node">
+<span class="sig-name descname"><span class="pre">name_ast_node</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="../dsl/node.html#pyfcstm.dsl.node.Name" title="pyfcstm.dsl.node.Name"><span class="pre">Name</span></a></span></span><a class="reference internal" href="../../_modules/pyfcstm/model/model.html#VarDefine.name_ast_node"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.model.model.VarDefine.name_ast_node" title="Link to this definition"></a></dt>
+<dd><p>Convert the variable name to an AST node.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>A name AST node</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>dsl_nodes.Name</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyfcstm.model.model.VarDefine.to_ast_node">
+<span class="sig-name descname"><span class="pre">to_ast_node</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="../dsl/node.html#pyfcstm.dsl.node.DefAssignment" title="pyfcstm.dsl.node.DefAssignment"><span class="pre">DefAssignment</span></a></span></span><a class="reference internal" href="../../_modules/pyfcstm/model/model.html#VarDefine.to_ast_node"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.model.model.VarDefine.to_ast_node" title="Link to this definition"></a></dt>
+<dd><p>Convert this variable definition to an AST node.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>A definition assignment AST node</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>dsl_nodes.DefAssignment</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+<section id="statemachine">
+<h2>StateMachine<a class="headerlink" href="#statemachine" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="pyfcstm.model.model.StateMachine">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pyfcstm.model.model.</span></span><span class="sig-name descname"><span class="pre">StateMachine</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">defines</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference internal" href="#pyfcstm.model.model.VarDefine" title="pyfcstm.model.model.VarDefine"><span class="pre">VarDefine</span></a><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">root_state</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#pyfcstm.model.model.State" title="pyfcstm.model.model.State"><span class="pre">State</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/pyfcstm/model/model.html#StateMachine"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.model.model.StateMachine" title="Link to this definition"></a></dt>
+<dd><p>Represents a complete state machine with variable definitions and a root state.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>defines</strong> (<em>Dict</em><em>[</em><em>str</em><em>, </em><a class="reference internal" href="#pyfcstm.model.model.VarDefine" title="pyfcstm.model.model.VarDefine"><em>VarDefine</em></a><em>]</em>) – Dictionary mapping variable names to their definitions</p></li>
+<li><p><strong>root_state</strong> (<a class="reference internal" href="#pyfcstm.model.model.State" title="pyfcstm.model.model.State"><em>State</em></a>) – The root state of the state machine</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="pyfcstm.model.model.StateMachine.to_ast_node">
+<span class="sig-name descname"><span class="pre">to_ast_node</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="../dsl/node.html#pyfcstm.dsl.node.StateMachineDSLProgram" title="pyfcstm.dsl.node.StateMachineDSLProgram"><span class="pre">StateMachineDSLProgram</span></a></span></span><a class="reference internal" href="../../_modules/pyfcstm/model/model.html#StateMachine.to_ast_node"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.model.model.StateMachine.to_ast_node" title="Link to this definition"></a></dt>
+<dd><p>Convert this state machine to an AST node.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>A state machine DSL program AST node</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>dsl_nodes.StateMachineDSLProgram</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyfcstm.model.model.StateMachine.to_plantuml">
+<span class="sig-name descname"><span class="pre">to_plantuml</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">str</span></span></span><a class="reference internal" href="../../_modules/pyfcstm/model/model.html#StateMachine.to_plantuml"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.model.model.StateMachine.to_plantuml" title="Link to this definition"></a></dt>
+<dd><p>Convert this state machine to PlantUML notation.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>PlantUML representation of the state machine</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>str</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pyfcstm.model.model.StateMachine.walk_states">
+<span class="sig-name descname"><span class="pre">walk_states</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/pyfcstm/model/model.html#StateMachine.walk_states"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.model.model.StateMachine.walk_states" title="Link to this definition"></a></dt>
+<dd><p>Iterate through all states in the state machine.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Yield<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Each state in the hierarchy</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>Iterator[<a class="reference internal" href="#pyfcstm.model.model.State" title="pyfcstm.model.model.State">State</a>]</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+<section id="parse-dsl-node-to-state-machine">
+<h2>parse_dsl_node_to_state_machine<a class="headerlink" href="#parse-dsl-node-to-state-machine" title="Link to this heading"></a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="pyfcstm.model.model.parse_dsl_node_to_state_machine">
+<span class="sig-prename descclassname"><span class="pre">pyfcstm.model.model.</span></span><span class="sig-name descname"><span class="pre">parse_dsl_node_to_state_machine</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">dnode</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="../dsl/node.html#pyfcstm.dsl.node.StateMachineDSLProgram" title="pyfcstm.dsl.node.StateMachineDSLProgram"><span class="pre">StateMachineDSLProgram</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#pyfcstm.model.model.StateMachine" title="pyfcstm.model.model.StateMachine"><span class="pre">StateMachine</span></a></span></span><a class="reference internal" href="../../_modules/pyfcstm/model/model.html#parse_dsl_node_to_state_machine"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.model.model.parse_dsl_node_to_state_machine" title="Link to this definition"></a></dt>
+<dd><p>Parse a state machine DSL program AST node into a StateMachine object.</p>
+<p>This function validates the state machine structure and builds a complete
+StateMachine object with all states, transitions, events, and variable definitions.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>dnode</strong> (<em>dsl_nodes.StateMachineDSLProgram</em>) – The state machine DSL program AST node to parse</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The parsed state machine</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="#pyfcstm.model.model.StateMachine" title="pyfcstm.model.model.StateMachine">StateMachine</a></p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>SyntaxError</strong> – If there are syntax errors in the state machine definition,
+such as duplicate variable definitions, unknown states in
+transitions, missing entry transitions, etc.</p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+</section>
+
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="expr.html" class="btn btn-neutral float-left" title="pyfcstm.model.expr" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="../render/index.html" class="btn btn-neutral float-right" title="pyfcstm.render" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, HansBug.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  
+    <div class="rst-versions" data-toggle="rst-versions" role="note" aria-label="versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    <span class="fa fa-book"> Other Versions</span>
+    v: v0.1.3
+    <span class="fa fa-caret-down"></span>
+  </span>
+        <div class="rst-other-versions">
+                <dl>
+                    <dt>Tags</dt>
+                        <dd><a href="../../../v0.0.1/api_doc/model/model.html">v0.0.1</a></dd>
+                        <dd><a href="../../../v0.1.0/api_doc/model/model.html">v0.1.0</a></dd>
+                        <dd><a href="../../../v0.1.1/api_doc/model/model.html">v0.1.1</a></dd>
+                        <dd><a href="../../../v0.1.2/api_doc/model/model.html">v0.1.2</a></dd>
+                        <dd><a href="model.html">v0.1.3</a></dd>
+                </dl>
+                <dl>
+                    <dt>Branches</dt>
+                        <dd><a href="../../../HEAD/api_doc/model/model.html">HEAD</a></dd>
+                        <dd><a href="../../../main/api_doc/model/model.html">main</a></dd>
+                        <dd><a href="../../../old_design/index.html">old_design</a></dd>
+                </dl>
+        </div>
+    </div><script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

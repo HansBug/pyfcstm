@@ -1,0 +1,303 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>pyfcstm.dsl.parse &mdash; pyfcstm 0.1.2 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/custom.css?v=c9d0a6ec" />
+
+  
+      <script src="../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../_static/documentation_options.js?v=92734c54"></script>
+      <script src="../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <link rel="next" title="pyfcstm.entry" href="../entry/index.html" />
+    <link rel="prev" title="pyfcstm.dsl.node" href="node.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            pyfcstm
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../tutorials/installation/index.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../tutorials/quick_start/index.html">Quick Start</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../tutorials/dsl/index.html">PyFCSTM DSL Syntax Tutorial</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Information</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../information/environment.result.html">Run Environment Information</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">API Documentation</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../config/index.html">pyfcstm.config</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="index.html">pyfcstm.dsl</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="grammar.html">pyfcstm.dsl.grammar</a></li>
+<li class="toctree-l2"><a class="reference internal" href="error.html">pyfcstm.dsl.error</a></li>
+<li class="toctree-l2"><a class="reference internal" href="listener.html">pyfcstm.dsl.listener</a></li>
+<li class="toctree-l2"><a class="reference internal" href="node.html">pyfcstm.dsl.node</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">pyfcstm.dsl.parse</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#parse-with-grammar-entry">parse_with_grammar_entry</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#pyfcstm.dsl.parse.parse_with_grammar_entry"><code class="docutils literal notranslate"><span class="pre">parse_with_grammar_entry()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#parse-condition">parse_condition</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#pyfcstm.dsl.parse.parse_condition"><code class="docutils literal notranslate"><span class="pre">parse_condition()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#parse-preamble">parse_preamble</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#pyfcstm.dsl.parse.parse_preamble"><code class="docutils literal notranslate"><span class="pre">parse_preamble()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#parse-operation">parse_operation</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#pyfcstm.dsl.parse.parse_operation"><code class="docutils literal notranslate"><span class="pre">parse_operation()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../entry/index.html">pyfcstm.entry</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../model/index.html">pyfcstm.model</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../render/index.html">pyfcstm.render</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../utils/index.html">pyfcstm.utils</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">pyfcstm</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="index.html">pyfcstm.dsl</a></li>
+      <li class="breadcrumb-item active">pyfcstm.dsl.parse</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../../_sources/api_doc/dsl/parse.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+    
+    
+  <section id="module-pyfcstm.dsl.parse">
+<span id="pyfcstm-dsl-parse"></span><h1>pyfcstm.dsl.parse<a class="headerlink" href="#module-pyfcstm.dsl.parse" title="Link to this heading"></a></h1>
+<p>Grammar parsing module for processing and interpreting grammar-based input text.</p>
+<p>This module provides functions to parse input text according to grammar rules defined
+in the GrammarParser. It uses ANTLR4 for lexical analysis and parsing, and provides
+specialized functions for parsing different grammar elements like conditions, preambles,
+and operations.</p>
+<section id="parse-with-grammar-entry">
+<h2>parse_with_grammar_entry<a class="headerlink" href="#parse-with-grammar-entry" title="Link to this heading"></a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="pyfcstm.dsl.parse.parse_with_grammar_entry">
+<span class="sig-prename descclassname"><span class="pre">pyfcstm.dsl.parse.</span></span><span class="sig-name descname"><span class="pre">parse_with_grammar_entry</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">input_text</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">entry_name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">force_finished</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/pyfcstm/dsl/parse.html#parse_with_grammar_entry"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.dsl.parse.parse_with_grammar_entry" title="Link to this definition"></a></dt>
+<dd><p>Parse input text using a specified grammar entry point.</p>
+<p>This function allows parsing with any entry point in the grammar by name.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>input_text</strong> (<em>str</em>) – The text to parse</p></li>
+<li><p><strong>entry_name</strong> (<em>str</em>) – The name of the grammar rule to use as entry point</p></li>
+<li><p><strong>force_finished</strong> (<em>bool</em>) – Whether to check if parsing consumed all input</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The parsed node representation of the input</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>object</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p>Various parsing errors if the input doesn’t match the grammar</p>
+</dd>
+</dl>
+<p>Example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">result</span> <span class="o">=</span> <span class="n">parse_with_grammar_entry</span><span class="p">(</span><span class="s2">&quot;x &gt; 5&quot;</span><span class="p">,</span> <span class="s2">&quot;condition&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</dd></dl>
+
+</section>
+<section id="parse-condition">
+<h2>parse_condition<a class="headerlink" href="#parse-condition" title="Link to this heading"></a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="pyfcstm.dsl.parse.parse_condition">
+<span class="sig-prename descclassname"><span class="pre">pyfcstm.dsl.parse.</span></span><span class="sig-name descname"><span class="pre">parse_condition</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">input_text</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/pyfcstm/dsl/parse.html#parse_condition"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.dsl.parse.parse_condition" title="Link to this definition"></a></dt>
+<dd><p>Parse input text as a condition expression.</p>
+<p>This function specifically parses conditional expressions according to
+the grammar’s condition rule.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>input_text</strong> (<em>str</em>) – The condition text to parse</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The parsed condition node</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>object</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p>Various parsing errors if the input doesn’t match the condition grammar</p>
+</dd>
+</dl>
+<p>Example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">condition_node</span> <span class="o">=</span> <span class="n">parse_condition</span><span class="p">(</span><span class="s2">&quot;x &gt; 5 &amp;&amp; y &lt; 10&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</dd></dl>
+
+</section>
+<section id="parse-preamble">
+<h2>parse_preamble<a class="headerlink" href="#parse-preamble" title="Link to this heading"></a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="pyfcstm.dsl.parse.parse_preamble">
+<span class="sig-prename descclassname"><span class="pre">pyfcstm.dsl.parse.</span></span><span class="sig-name descname"><span class="pre">parse_preamble</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">input_text</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/pyfcstm/dsl/parse.html#parse_preamble"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.dsl.parse.parse_preamble" title="Link to this definition"></a></dt>
+<dd><p>Parse input text as a preamble program.</p>
+<p>This function specifically parses preamble programs according to
+the grammar’s preamble_program rule.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>input_text</strong> (<em>str</em>) – The preamble program text to parse</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The parsed preamble program node</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>object</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p>Various parsing errors if the input doesn’t match the preamble grammar</p>
+</dd>
+</dl>
+<p>Example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">preamble_node</span> <span class="o">=</span> <span class="n">parse_preamble</span><span class="p">(</span><span class="s2">&quot;x = 10;&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</dd></dl>
+
+</section>
+<section id="parse-operation">
+<h2>parse_operation<a class="headerlink" href="#parse-operation" title="Link to this heading"></a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="pyfcstm.dsl.parse.parse_operation">
+<span class="sig-prename descclassname"><span class="pre">pyfcstm.dsl.parse.</span></span><span class="sig-name descname"><span class="pre">parse_operation</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">input_text</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/pyfcstm/dsl/parse.html#parse_operation"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pyfcstm.dsl.parse.parse_operation" title="Link to this definition"></a></dt>
+<dd><p>Parse input text as an operation program.</p>
+<p>This function specifically parses operation programs according to
+the grammar’s operation_program rule.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>input_text</strong> (<em>str</em>) – The operation program text to parse</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The parsed operation program node</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>object</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p>Various parsing errors if the input doesn’t match the operation grammar</p>
+</dd>
+</dl>
+<p>Example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">operation_node</span> <span class="o">=</span> <span class="n">parse_operation</span><span class="p">(</span><span class="s2">&quot;x := 10;&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</dd></dl>
+
+</section>
+</section>
+
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="node.html" class="btn btn-neutral float-left" title="pyfcstm.dsl.node" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="../entry/index.html" class="btn btn-neutral float-right" title="pyfcstm.entry" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, HansBug.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  
+    <div class="rst-versions" data-toggle="rst-versions" role="note" aria-label="versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    <span class="fa fa-book"> Other Versions</span>
+    v: dev/fix_plantuml
+    <span class="fa fa-caret-down"></span>
+  </span>
+        <div class="rst-other-versions">
+                <dl>
+                    <dt>Tags</dt>
+                        <dd><a href="../../../../v0.0.1/api_doc/dsl/parse.html">v0.0.1</a></dd>
+                        <dd><a href="../../../../v0.1.0/api_doc/dsl/parse.html">v0.1.0</a></dd>
+                        <dd><a href="../../../../v0.1.1/api_doc/dsl/parse.html">v0.1.1</a></dd>
+                        <dd><a href="../../../../v0.1.2/api_doc/dsl/parse.html">v0.1.2</a></dd>
+                </dl>
+                <dl>
+                    <dt>Branches</dt>
+                        <dd><a href="parse.html">dev/fix_plantuml</a></dd>
+                        <dd><a href="../../../../HEAD/api_doc/dsl/parse.html">HEAD</a></dd>
+                        <dd><a href="../../../../main/api_doc/dsl/parse.html">main</a></dd>
+                        <dd><a href="../../../../old_design/index.html">old_design</a></dd>
+                </dl>
+        </div>
+    </div><script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

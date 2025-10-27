@@ -116,7 +116,7 @@ setup(
     },
     project_urls={
         'Homepage': 'https://github.com/hansbug/pyfcstm',
-        'Documentation': 'https://hansbug.github.io/pyfcstm/',
+        'Documentation': 'https://pyfcstm.readthedocs.io/',
         'Source': 'https://github.com/hansbug/pyfcstm',
         'Download': 'https://pypi.org/project/pyfcstm/#files',
         'Bug Reports': 'https://github.com/hansbug/pyfcstm/issues',

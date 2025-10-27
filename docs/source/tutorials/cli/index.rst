@@ -10,6 +10,7 @@ Installation Methods
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 1. **pip Installation** (Recommended):
+
    .. code-block:: bash
 
       pip install pyfcstm
@@ -17,6 +18,7 @@ Installation Methods
    After installation, you can use the ``pyfcstm`` command directly.
 
 2. **Module Execution**:
+
    .. code-block:: bash
 
       python -m pyfcstm

@@ -17,3 +17,4 @@ ipykernel>=6.15
 py-cpuinfo>=8.0.0
 click>=7.0.0
 pandas
+sphinxcontrib-svg2pdfconverter

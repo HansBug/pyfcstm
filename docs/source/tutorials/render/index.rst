@@ -24,7 +24,7 @@ System Architecture Overview
 
 The following diagram illustrates the complete architecture of the state machine code generation system, showing how different components interact to transform DSL definitions into executable code:
 
-.. figure:: architecture.puml.svg
+.. figure:: architecture.puml.*
    :width: 100%
    :align: center
    :alt: Architecture of Rendering System
@@ -64,7 +64,7 @@ Detailed Rendering Flow Analysis
 
 The rendering process follows a systematic workflow that ensures consistent and reliable code generation:
 
-.. figure:: render_flow.puml.svg
+.. figure:: render_flow.puml.*
    :width: 80%
    :align: center
    :alt: Flow Chart of Rendering
@@ -76,7 +76,7 @@ Core Component Interaction
 
 Understanding how the core components interact is crucial for extending or customizing the system:
 
-.. figure:: core_component.puml.svg
+.. figure:: core_component.puml.*
    :width: 100%
    :align: center
    :alt: Core Component Interation
@@ -310,7 +310,7 @@ Object Relationship Model
 
 The state machine model follows a hierarchical object structure that mirrors the state machine's logical organization:
 
-.. figure:: model.puml.svg
+.. figure:: model.puml.*
    :width: 100%
    :align: center
    :alt: Object Relationship Model

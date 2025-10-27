@@ -1,4 +1,4 @@
-pyfcstm Command Line Guide
+PyFCSTM Command Line Guide
 ===============================================
 
 pyfcstm is a state machine DSL tool that provides a command-line interface for state machine code conversion and generation.

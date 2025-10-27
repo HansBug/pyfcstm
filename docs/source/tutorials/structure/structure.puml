@@ -1,0 +1,71 @@
+@startuml
+skinparam componentStyle rectangle
+skinparam nodesep 10
+skinparam ranksep 20
+
+package "Foundation Layer" {
+    [pyfcstm.utils] as utils
+    [pyfcstm.config] as config
+}
+
+package "Core Layer" {
+    [pyfcstm.dsl] as dsl
+    [pyfcstm.model] as model
+}
+
+package "Application Layer" {
+    [pyfcstm.entry] as entry
+    [pyfcstm.render] as render
+}
+
+package "Extension Layer" {
+    [pyfcstm.template] as template
+}
+
+utils --> dsl
+utils --> model
+utils --> render
+config --> dsl
+config --> model
+config --> entry
+config --> render
+
+dsl --> model
+model --> render
+model --> entry
+
+render --> entry
+template --> render
+
+note right of utils
+    Utility functions
+    for file handling,
+    text processing,
+    validation, etc.
+end note
+
+note right of dsl
+    DSL parsing and
+    AST construction
+    with ANTLR4
+end note
+
+note right of model
+    State machine
+    modeling and
+    expression system
+end note
+
+note right of render
+    Template-based
+    code generation
+    with Jinja2
+end note
+
+note right of entry
+    CLI interface
+    for user interaction
+    and command execution
+end note
+
+@enduml

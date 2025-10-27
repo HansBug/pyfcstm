@@ -36,6 +36,9 @@ prod:
 	@cp main_page.html "$(BUILDDIR)/html/index.html"
 	@touch "$(BUILDDIR)/html/.nojekyll"
 
+doc_clean:
+	@$(SPHINXBUILD) -M clean "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) $(O)
+
 clean:
 	@$(ALL) clean
 	@$(SPHINXBUILD) -M clean "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) $(O)

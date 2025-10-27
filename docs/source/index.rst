@@ -11,7 +11,7 @@ Overview
     :caption: Tutorials
 
     tutorials/installation/index
-    tutorials/quick_start/index
+    tutorials/structure/index
     tutorials/dsl/index
     tutorials/render/index
     tutorials/cli/index

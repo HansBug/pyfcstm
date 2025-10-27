@@ -22,12 +22,14 @@ Why Use a Template System?
 System Architecture Overview
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+The following diagram illustrates the complete architecture of the state machine code generation system, showing how different components interact to transform DSL definitions into executable code:
+
 .. figure:: architecture.puml.svg
    :width: 100%
    :align: center
    :alt: Architecture of Rendering System
 
-
+This architecture demonstrates the clear separation between input processing, template rendering, and output generation, providing a modular and extensible foundation for code generation.
 
 Template System Architecture Details
 --------------------------------------------------------
@@ -35,7 +37,7 @@ Template System Architecture Details
 Template Directory Structure Principle
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-The template directory follows a flexible "convention over configuration" principle:
+The template directory follows a flexible "convention over configuration" principle that balances structure with flexibility:
 
 .. code-block:: text
 
@@ -55,23 +57,31 @@ The template directory follows a flexible "convention over configuration" princi
 - Other files are "static resources" copied directly to target locations
 - Directory structure is completely preserved in output, ensuring project structure consistency
 
+This structure allows for both dynamic template processing and static resource management within the same framework.
+
 Detailed Rendering Flow Analysis
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The rendering process follows a systematic workflow that ensures consistent and reliable code generation:
 
 .. figure:: render_flow.puml.svg
    :width: 80%
    :align: center
    :alt: Flow Chart of Rendering
 
+This flowchart details the step-by-step process from template loading to final output generation, highlighting the key decision points and processing stages.
 
 Core Component Interaction
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Understanding how the core components interact is crucial for extending or customizing the system:
 
 .. figure:: core_component.puml.svg
    :width: 100%
    :align: center
    :alt: Core Component Interation
 
+This diagram shows the relationships between major system components and how data flows between them during the rendering process.
 
 Configuration File Deep Analysis
 --------------------------------------------------------
@@ -79,7 +89,7 @@ Configuration File Deep Analysis
 Expression Styles (expr_styles) Principle
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-The expression style system is a multi-layer template inheritance system:
+The expression style system provides a powerful mechanism for customizing how expressions are rendered across different programming languages:
 
 .. code-block:: yaml
 
@@ -98,10 +108,12 @@ The expression style system is a multi-layer template inheritance system:
 - Can override rendering rules for specific node types
 - Supports operator-level fine-grained control
 
+This inheritance system allows for creating specialized rendering styles while maintaining consistency across similar language families.
+
 Global Variable System
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Global variables are available everywhere in templates, supporting three definition methods:
+Global variables provide a way to define reusable values and functions that are accessible throughout all templates:
 
 .. code-block:: yaml
 
@@ -127,10 +139,12 @@ Global variables are available everywhere in templates, supporting three definit
 
 **Lifecycle**: Global variables are created when Jinja2 environment initializes and remain unchanged throughout the rendering process.
 
+The four definition methods provide flexibility for different use cases, from simple constants to complex template functions.
+
 Filter System Principle
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Filters are essentially functions that can be called in templates using the pipe symbol ``|``:
+Filters transform data within templates and are essential for data formatting and manipulation:
 
 .. code-block:: jinja
 
@@ -144,10 +158,12 @@ Filters are essentially functions that can be called in templates using the pipe
 - Can accept additional parameters
 - Return processed value for continued use in templates
 
+Filters enable clean separation of data transformation logic from presentation logic in templates.
+
 Ignore Rules System
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Ignore rules use gitignore pattern matching:
+The ignore system prevents unnecessary files from being processed or copied to the output directory:
 
 .. code-block:: yaml
 
@@ -159,11 +175,15 @@ Ignore rules use gitignore pattern matching:
 
 **Matching Principle**: Uses pathspec library to implement the same pattern matching algorithm as git.
 
+This system ensures that version control files, temporary files, and other non-essential files don't clutter the generated output.
+
 Template Syntax Deep Analysis
 --------------------------------------------------------
 
 Variable Output Mechanism
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Variable output is the fundamental building block of template rendering:
 
 .. code-block:: jinja
 
@@ -183,11 +203,15 @@ Variable Output Mechanism
 
 **Rendering Principle**: Jinja2 automatically resolves variable paths during rendering, accessing object attributes according to Python's attribute lookup rules.
 
+These syntax patterns provide flexible access to the state machine model's data structure.
+
 Control Structure Details
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Conditional Statements
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Conditional statements enable dynamic content generation based on the state machine's structure:
 
 .. code-block:: jinja
 
@@ -210,8 +234,12 @@ Conditional Statements
      {{ variable }}
    {% endif %}
 
+These conditional patterns allow templates to adapt their output based on the specific characteristics of each state.
+
 Loop Iteration
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Loop constructs enable processing collections of states, transitions, and other model elements:
 
 .. code-block:: jinja
 
@@ -233,11 +261,15 @@ Loop Iteration
      {{ item }}
    {% endfor %}
 
+The loop variable provides access to iteration metadata, enabling sophisticated loop control and formatting.
+
 Template Inheritance and Inclusion
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Macro Definitions (Functional Templates)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Macros provide reusable template components that can be parameterized:
 
 .. code-block:: jinja
 
@@ -253,8 +285,12 @@ Macro Definitions (Functional Templates)
    {# Use macro #}
    {{ render_state(model.root_state) }}
 
+This recursive macro demonstrates how complex rendering logic can be encapsulated and reused.
+
 File Inclusion
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+File inclusion enables modular template design and code reuse:
 
 .. code-block:: jinja
 
@@ -264,23 +300,30 @@ File Inclusion
    {# Dynamic inclusion #}
    {% include template_name %}
 
+Inclusion mechanisms support both static and dynamic template composition patterns.
+
 State Machine Model Objects Detailed
 --------------------------------------------------------
 
 Object Relationship Model
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+The state machine model follows a hierarchical object structure that mirrors the state machine's logical organization:
+
 .. figure:: model.puml.svg
    :width: 100%
    :align: center
    :alt: Object Relationship Model
 
+This class diagram illustrates the key objects and their relationships within the state machine model.
 
 State Object Detailed API
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Attribute Access
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+State objects provide comprehensive attribute access for template rendering:
 
 .. code-block:: jinja
 
@@ -294,8 +337,12 @@ Attribute Access
    {{ state.is_root_state }}     {# Is root state #}
    {{ state.parent.name }}       {# Parent state name #}
 
+These attributes provide access to both the state's identity and its position within the state hierarchy.
+
 Collection Access Methods
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Collection methods enable iteration over state relationships and components:
 
 .. code-block:: jinja
 
@@ -319,8 +366,12 @@ Collection Access Methods
      // Transitions to this state
    {% endfor %}
 
+These collection access patterns support both internal and external state relationships.
+
 Action Query Methods
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Action queries provide access to state lifecycle behaviors and transitions:
 
 .. code-block:: jinja
 
@@ -339,9 +390,12 @@ Action Query Methods
      // Exit action {{ id }}
    {% endfor %}
 
+The filtering capabilities allow templates to target specific types of actions based on their characteristics.
+
 Transition Object Detailed API
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Transition objects encapsulate the logic for moving between states:
 
 .. code-block:: jinja
 
@@ -367,15 +421,15 @@ Transition Object Detailed API
      {% endfor %}
    {% endfor %}
 
+This comprehensive API supports rendering both simple and complex transition logic.
+
 Expression Rendering System
 -----------------------------------------------------------------
-
 
 Expression Type Support
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-
-The system supports multiple expression types:
+The expression rendering system supports a wide range of expression types commonly found in state machine definitions:
 
 .. code-block:: jinja
 
@@ -397,12 +451,15 @@ The system supports multiple expression types:
    {# Conditional expressions #}
    {{ (condition ? value1 : value2) | expr_render }}
 
+This comprehensive expression support enables accurate rendering of complex state machine logic.
+
 Multi-language Style Support
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-
 C Language Style
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The C language style adapts expressions to C syntax and conventions:
 
 .. code-block:: jinja
 
@@ -414,8 +471,12 @@ C Language Style
 - Boolean values converted to 1/0
 - Power operations converted to pow() function calls
 
+This style ensures generated C code follows language-specific conventions and limitations.
+
 Python Style
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The Python style renders expressions using Python syntax and idioms:
 
 .. code-block:: jinja
 
@@ -427,8 +488,12 @@ Python Style
 - Function calls use math module
 - Supports Python ternary expression syntax
 
+This style is particularly useful for generating Python code or for debugging purposes.
+
 DSL Style
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The DSL style preserves the original domain-specific language syntax:
 
 .. code-block:: jinja
 
@@ -438,11 +503,12 @@ DSL Style
 - Maintains original DSL syntax
 - Used for debugging and documentation generation
 
+This style is valuable for verifying that expressions are correctly parsed from the original DSL.
+
 Custom Expression Rendering
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-
-Add custom rendering rules in configuration file:
+Custom expression rendering enables adaptation to specialized requirements or domain-specific conventions:
 
 .. code-block:: yaml
 
@@ -453,13 +519,15 @@ Add custom rendering rules in configuration file:
        UFunc(sqrt): 'SQRT({{ node.expr | expr_render }})'
        Name: 'vars.{{ node.name }}'
 
+This customization capability allows the system to adapt to various coding standards and platform requirements.
+
 Practical Examples: Complete Template Analysis
 -----------------------------------------------------------------
-
 
 State Variable Declaration Template
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+This template demonstrates how state variables are declared in the generated code:
 
 .. code-block:: jinja
 
@@ -476,9 +544,12 @@ State Variable Declaration Template
    CST_FSM_Para_Base FSM_Root_SubState1_L2;  // Root.SubState1
    CST_FSM_Para_Base FSM_Root_SubState2_L2;  // Root.SubState2
 
+This pattern ensures each state has a corresponding variable with a unique, meaningful identifier.
+
 State Entry Function Template
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Entry functions handle state initialization and setup logic:
 
 .. code-block:: jinja
 
@@ -499,9 +570,12 @@ State Entry Function Template
 3. Call all entry actions of that state within the function
 4. Use naming conventions to ensure unique function names
 
+This approach ensures consistent entry behavior across all states while maintaining clear separation of concerns.
+
 Transition Processing Template
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Transition processing handles the logic for moving between states based on events and conditions:
 
 .. code-block:: jinja
 
@@ -532,16 +606,18 @@ Transition Processing Template
 - With guard: Evaluate guard expression
 - Unconditional: Execute transition directly
 
+This pattern handles the full range of transition types, from simple unconditional transitions to complex conditional ones.
+
 Advanced Techniques and Best Practices
 -----------------------------------------------------------------
-
 
 Template Debugging Techniques
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-
 Output Debug Information
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Debug output helps identify issues during template development and troubleshooting:
 
 .. code-block:: jinja
 
@@ -555,8 +631,12 @@ Output Debug Information
    // Debug Information: {{ state | tojson }}
    {% endif %}
 
+These techniques provide visibility into template execution and data state during development.
+
 Using Temporary Comments
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Temporary comments enable controlled testing and incremental development:
 
 .. code-block:: jinja
 
@@ -567,12 +647,15 @@ Using Temporary Comments
        {% endfor %}
    {% endif %}
 
+This approach is particularly useful for isolating issues or testing alternative implementations.
+
 Performance Optimization
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-
 Avoid Repeated Calculations
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Optimizing calculation patterns can significantly improve template rendering performance:
 
 .. code-block:: jinja
 
@@ -587,8 +670,12 @@ Avoid Repeated Calculations
        {% if is_leaf %}...{% endif %}
    {% endfor %}
 
+This optimization reduces redundant computations, especially important for complex state machines.
+
 Use Caching
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Caching expensive operations improves performance for complex template logic:
 
 .. code-block:: jinja
 
@@ -598,12 +685,15 @@ Use Caching
        // Use cached result
    {% endfor %}
 
+Caching is particularly beneficial for recursive operations or complex data transformations.
+
 Template Maintenance
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-
 Modular Design
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Modular design promotes reuse and maintainability across template code:
 
 .. code-block:: jinja
 
@@ -616,8 +706,12 @@ Modular Design
        // State rendering logic
    {% endmacro %}
 
+This approach encapsulates common patterns and reduces code duplication.
+
 Configuration File Organization
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Well-organized configuration improves maintainability and discoverability:
 
 .. code-block:: yaml
 
@@ -639,13 +733,15 @@ Configuration File Organization
      rendering:
        expr_render: ...
 
+Functional grouping makes it easier to locate and modify related configuration items.
+
 Common Issues and Solutions
 -----------------------------------------------------------------
-
 
 Template Syntax Errors
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Proper syntax is essential for successful template rendering:
 
 **Problem**: ``TemplateSyntaxError: unexpected '%'``
 
@@ -665,9 +761,12 @@ Template Syntax Errors
        {{ variable }}
    {% endif %}
 
+Careful attention to tag matching and nesting prevents these common syntax issues.
+
 Undefined Variable Errors
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Safe variable access patterns prevent runtime errors:
 
 **Problem**: ``UndefinedError: 'variable' is undefined``
 
@@ -683,9 +782,12 @@ Undefined Variable Errors
        {{ default_value }}
    {% endif %}
 
+Defensive programming practices ensure templates handle missing data gracefully.
+
 Performance Issues
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Optimization strategies address rendering performance concerns:
 
 **Problem**: Template rendering too slow
 
@@ -695,9 +797,12 @@ Performance Issues
 - Use cache variables for repeatedly used results
 - Optimize state machine model, avoid deep nesting
 
+Performance optimization focuses on reducing computational complexity and redundant operations.
+
 Custom Functions Not Working
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Proper configuration ensures custom functions work as expected:
 
 **Problem**: Custom global functions or filters not taking effect
 
@@ -707,13 +812,15 @@ Custom Functions Not Working
 2. Verify function parameters match
 3. Confirm functions are defined in correct scope
 
+Systematic troubleshooting addresses the most common configuration issues.
+
 Extension Development Guide
 -----------------------------------------------------------------
-
 
 Adding New Expression Styles
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Creating custom expression styles enables language-specific adaptations:
 
 1. Define new style in configuration file:
 
@@ -730,9 +837,12 @@ Adding New Expression Styles
 
    {{ expression | expr_render(style='my_custom_style') }}
 
+This extension mechanism supports adaptation to specialized requirements or new programming languages.
+
 Creating Custom Filters
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Custom filters extend template transformation capabilities:
 
 1. Define in configuration file:
 
@@ -750,11 +860,12 @@ Creating Custom Filters
 
    {{ state.name | my_custom_filter('PREFIX') }}
 
+Filters provide reusable data transformation logic that can be applied throughout templates.
+
 Integrating External Tools
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-
-Can integrate external Python functions through import type:
+External integration extends system capabilities with existing libraries and tools:
 
 .. code-block:: yaml
 
@@ -766,9 +877,10 @@ Can integrate external Python functions through import type:
        type: import
        from: json.dumps
 
+This integration approach leverages the rich Python ecosystem within template rendering.
+
 Summary
 -----------------------------------------------------------------
-
 
 Through this tutorial, you should have gained a deep understanding of all aspects of the state machine code generator template system:
 

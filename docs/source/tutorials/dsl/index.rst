@@ -496,12 +496,12 @@ Lifecycle Flows of State Machine
    :widths: 55 45
    :align: center
 
-   * - .. figure:: composite_state_lifecycle.puml.*
+   * - .. figure:: composite_state_lifecycle.puml.svg
           :width: 100%
           :align: center
           :alt: Lifecycle of Composite States
 
-     - .. figure:: leaf_state_lifecycle.puml.*
+     - .. figure:: leaf_state_lifecycle.puml.svg
           :width: 100%
           :align: center
           :alt: Lifecycle of Leaf States
@@ -728,7 +728,7 @@ Here is a full example of FCSTM model DSL code
 
 It can be exported to PlantUML code, and get visualized as the following
 
-.. figure:: example.fcstm.puml.*
+.. figure:: example.fcstm.puml.svg
    :width: 70%
    :align: center
    :alt: PlantUML of DSL Example

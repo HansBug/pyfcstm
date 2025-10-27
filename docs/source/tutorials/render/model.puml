@@ -1,0 +1,51 @@
+@startuml
+class StateMachine {
+  - defines: Dict[str, VarDefine]
+  - root_state: State
+  + to_ast_node()
+  + to_plantuml()
+  + walk_states()
+}
+
+class State {
+  - name: str
+  - path: Tuple[str, ...]
+  - substates: Dict[str, State]
+  - transitions: List[Transition]
+  - parent: State
+  + is_leaf_state: bool
+  + is_root_state: bool
+  + transitions_from: List[Transition]
+  + walk_states()
+}
+
+class Transition {
+  - from_state: str
+  - to_state: str
+  - event: Event
+  - guard: Expr
+  - effects: List[Operation]
+}
+
+class Event {
+  - name: str
+  - state_path: Tuple[str, ...]
+}
+
+class Operation {
+  - var_name: str
+  - expr: Expr
+}
+
+StateMachine *-- State : root_state
+State *-- State : substates
+State *-- Transition : transitions
+Transition --> Event : event
+Transition --> Operation : effects
+
+note right of State
+  State objects form a tree structure,
+  supporting hierarchical state machine modeling
+end note
+
+@enduml

@@ -161,12 +161,12 @@ class Transition(AstExportable):
         else:
             self.parent_ref = weakref.ref(new_parent)
 
-    def to_ast_node(self) -> dsl_nodes.ASTNode:
+    def to_ast_node(self) -> dsl_nodes.TransitionDefinition:
         """
         Convert this transition to an AST node.
 
         :return: A transition definition AST node
-        :rtype: dsl_nodes.ASTNode
+        :rtype: dsl_nodes.TransitionDefinition
         """
         return State.transition_to_ast_node(self.parent, self)
 
@@ -804,7 +804,7 @@ class State(AstExportable, PlantUMLExportable):
         return list(self.iter_on_during_aspect_recursively(is_abstract, with_ids))
 
     @classmethod
-    def transition_to_ast_node(cls, self: Optional['State'], transition: Transition):
+    def transition_to_ast_node(cls, self: Optional['State'], transition: Transition) -> dsl_nodes.TransitionDefinition:
         """
         Convert a transition to an AST node, considering the context of its parent state.
 
@@ -901,8 +901,9 @@ class State(AstExportable, PlantUMLExportable):
                         print('[*]' if trans.to_state is dsl_nodes.EXIT_STATE
                               else _name_safe(trans.to_state), file=tf, end='')
 
+                        trans_node: dsl_nodes.TransitionDefinition = trans.to_ast_node()
                         if trans.event is not None:
-                            print(f' : {".".join(list(trans.event.path[len(self.path):]))}', file=tf, end='')
+                            print(f' : {trans_node.event_id}', file=tf, end='')
                         elif trans.guard is not None:
                             print(f' : {trans.guard.to_ast_node()}', file=tf, end='')
 

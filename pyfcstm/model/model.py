@@ -195,16 +195,7 @@ class OnStage(AstExportable):
     name: Optional[str]
     doc: Optional[str]
     operations: List[Operation]
-
-    @property
-    def is_abstract(self) -> bool:
-        """
-        Check if this is an abstract function declaration.
-
-        :return: True if this is an abstract function, False otherwise
-        :rtype: bool
-        """
-        return self.name is not None or self.doc is not None
+    is_abstract: bool
 
     @property
     def is_aspect(self) -> bool:
@@ -225,7 +216,7 @@ class OnStage(AstExportable):
         :raises ValueError: If the stage is not one of 'enter', 'during', or 'exit'
         """
         if self.stage == 'enter':
-            if self.name or self.doc is not None:
+            if self.is_abstract:
                 return dsl_nodes.EnterAbstractFunction(
                     name=self.name,
                     doc=self.doc,
@@ -237,7 +228,7 @@ class OnStage(AstExportable):
                 )
 
         elif self.stage == 'during':
-            if self.name or self.doc is not None:
+            if self.is_abstract:
                 return dsl_nodes.DuringAbstractFunction(
                     name=self.name,
                     aspect=self.aspect,
@@ -251,7 +242,7 @@ class OnStage(AstExportable):
                 )
 
         elif self.stage == 'exit':
-            if self.name or self.doc is not None:
+            if self.is_abstract:
                 return dsl_nodes.ExitAbstractFunction(
                     name=self.name,
                     doc=self.doc,
@@ -289,16 +280,7 @@ class OnAspect(AstExportable):
     name: Optional[str]
     doc: Optional[str]
     operations: List[Operation]
-
-    @property
-    def is_abstract(self) -> bool:
-        """
-        Check if this is an abstract function declaration.
-
-        :return: True if this is an abstract function, False otherwise
-        :rtype: bool
-        """
-        return self.name is not None or self.doc is not None
+    is_abstract: bool
 
     @property
     def is_aspect(self) -> bool:
@@ -319,7 +301,7 @@ class OnAspect(AstExportable):
         :raises ValueError: If the stage is not 'during'
         """
         if self.stage == 'during':
-            if self.name or self.doc is not None:
+            if self.is_abstract:
                 return dsl_nodes.DuringAspectAbstractFunction(
                     name=self.name,
                     aspect=self.aspect,
@@ -1281,6 +1263,7 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                     name=enter_item.name,
                     doc=None,
                     operations=enter_operations,
+                    is_abstract=False,
                 ))
             elif isinstance(enter_item, dsl_nodes.EnterAbstractFunction):
                 on_enters.append(OnStage(
@@ -1289,6 +1272,7 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                     name=enter_item.name,
                     doc=enter_item.doc,
                     operations=[],
+                    is_abstract=True,
                 ))
 
         on_durings = current_state.on_durings
@@ -1320,6 +1304,7 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                     name=during_item.name,
                     doc=None,
                     operations=during_operations,
+                    is_abstract=False,
                 ))
             elif isinstance(during_item, dsl_nodes.DuringAbstractFunction):
                 on_durings.append(OnStage(
@@ -1328,6 +1313,7 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                     name=during_item.name,
                     doc=during_item.doc,
                     operations=[],
+                    is_abstract=True,
                 ))
 
         on_exits = current_state.on_exits
@@ -1352,6 +1338,7 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                     name=exit_item.name,
                     doc=None,
                     operations=exit_operations,
+                    is_abstract=False,
                 ))
             elif isinstance(exit_item, dsl_nodes.ExitAbstractFunction):
                 on_exits.append(OnStage(
@@ -1360,6 +1347,7 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                     name=exit_item.name,
                     doc=exit_item.doc,
                     operations=[],
+                    is_abstract=True,
                 ))
 
         on_during_aspects = current_state.on_during_aspects
@@ -1384,6 +1372,7 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                     name=during_aspect_item.name,
                     doc=None,
                     operations=during_operations,
+                    is_abstract=False,
                 ))
             elif isinstance(during_aspect_item, dsl_nodes.DuringAspectAbstractFunction):
                 on_during_aspects.append(OnAspect(
@@ -1392,6 +1381,7 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                     name=during_aspect_item.name,
                     doc=during_aspect_item.doc,
                     operations=[],
+                    is_abstract=True,
                 ))
 
         for transition in current_state.transitions:

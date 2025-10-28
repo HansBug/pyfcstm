@@ -53,6 +53,12 @@ class Operation(AstExportable):
     :type var_name: str
     :param expr: The expression to evaluate and assign to the variable
     :type expr: Expr
+
+    Example::
+
+        >>> op = Operation(var_name="counter", expr=some_expr)
+        >>> op.var_name
+        'counter'
     """
     var_name: str
     expr: Expr
@@ -91,6 +97,12 @@ class Event:
     :type name: str
     :param state_path: The path to the state that owns this event
     :type state_path: Tuple[str, ...]
+
+    Example::
+
+        >>> event = Event(name="button_pressed", state_path=("root", "idle"))
+        >>> event.path
+        ('root', 'idle', 'button_pressed')
     """
     name: str
     state_path: Tuple[str, ...]
@@ -127,6 +139,16 @@ class Transition(AstExportable):
     :type effects: List[Operation]
     :param parent_ref: Weak reference to the parent state
     :type parent_ref: Optional[weakref.ReferenceType]
+
+    Example::
+
+        >>> transition = Transition(
+        ...     from_state="idle",
+        ...     to_state="active",
+        ...     event=None,
+        ...     guard=None,
+        ...     effects=[]
+        ... )
     """
     from_state: Union[str, dsl_nodes._StateSingletonMark]
     to_state: Union[str, dsl_nodes._StateSingletonMark]
@@ -189,6 +211,19 @@ class OnStage(AstExportable):
     :type doc: Optional[str]
     :param operations: For concrete actions, the list of operations to execute
     :type operations: List[Operation]
+    :param is_abstract: Whether this is an abstract function declaration
+    :type is_abstract: bool
+
+    Example::
+
+        >>> on_enter = OnStage(
+        ...     stage="enter",
+        ...     aspect=None,
+        ...     name="init_counter",
+        ...     doc=None,
+        ...     operations=[],
+        ...     is_abstract=False
+        ... )
     """
     stage: str
     aspect: Optional[str]
@@ -274,6 +309,19 @@ class OnAspect(AstExportable):
     :type doc: Optional[str]
     :param operations: For concrete actions, the list of operations to execute
     :type operations: List[Operation]
+    :param is_abstract: Whether this is an abstract function declaration
+    :type is_abstract: bool
+
+    Example::
+
+        >>> aspect = OnAspect(
+        ...     stage="during",
+        ...     aspect="before",
+        ...     name="log_entry",
+        ...     doc=None,
+        ...     operations=[],
+        ...     is_abstract=True
+        ... )
     """
     stage: str
     aspect: Optional[str]
@@ -348,6 +396,16 @@ class State(AstExportable, PlantUMLExportable):
     :type parent_ref: Optional[weakref.ReferenceType]
     :param substate_name_to_id: Dictionary mapping substate names to numeric IDs
     :type substate_name_to_id: Dict[str, int]
+
+    Example::
+
+        >>> state = State(
+        ...     name="idle",
+        ...     path=("root", "idle"),
+        ...     substates={}
+        ... )
+        >>> state.is_leaf_state
+        True
     """
     name: str
     path: Tuple[str, ...]
@@ -941,6 +999,12 @@ class VarDefine(AstExportable):
     :type type: str
     :param init: The initial value expression
     :type init: Expr
+
+    Example::
+
+        >>> var_def = VarDefine(name="counter", type="int", init=some_expr)
+        >>> var_def.name
+        'counter'
     """
     name: str
     type: str
@@ -978,6 +1042,12 @@ class StateMachine(AstExportable, PlantUMLExportable):
     :type defines: Dict[str, VarDefine]
     :param root_state: The root state of the state machine
     :type root_state: State
+
+    Example::
+
+        >>> sm = StateMachine(defines={}, root_state=some_state)
+        >>> list(sm.walk_states())  # Get all states in the machine
+        [...]
     """
     defines: Dict[str, VarDefine]
     root_state: State
@@ -1046,6 +1116,13 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
     :raises SyntaxError: If there are syntax errors in the state machine definition,
                          such as duplicate variable definitions, unknown states in
                          transitions, missing entry transitions, etc.
+
+    Example::
+
+        >>> # Assuming you have a parsed DSL node
+        >>> state_machine = parse_dsl_node_to_state_machine(dsl_program_node)
+        >>> state_machine.root_state.name
+        'root'
     """
     d_defines = {}
     for def_item in dnode.definitions:

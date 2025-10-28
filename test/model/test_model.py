@@ -342,12 +342,20 @@ class TestModelModel:
                 Operation(var_name='b', expr=BinaryOp(x=Integer(value=3), op='+',
                                                       y=BinaryOp(x=Variable(name='a'), op='*',
                                                                  y=BinaryOp(x=Integer(value=2), op='+',
-                                                                            y=Variable(name='b')))))])]
+                                                                            y=Variable(name='b')))))
+            ],
+                    is_abstract=False,
+                    )
+        ]
         assert root_state_1.on_durings == []
         assert root_state_1.on_exits == [
             OnStage(stage='exit', aspect=None, name=None, doc=None,
                     operations=[Operation(var_name='b', expr=Integer(value=0)), Operation(var_name='b', expr=BinaryOp(
-                        x=Variable(name='a'), op='<<', y=Integer(value=2)))])]
+                        x=Variable(name='a'), op='<<', y=Integer(value=2)))
+                                ],
+                    is_abstract=False,
+                    )
+        ]
 
         assert root_state_1.abstract_on_enters == []
         assert root_state_1.non_abstract_on_enters == root_state_1.on_enters

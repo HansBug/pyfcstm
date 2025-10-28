@@ -230,45 +230,51 @@ class TestModelModelDLC1:
     def test_on_during_aspects(self, root_state_1):
         assert root_state_1.on_during_aspects == [
             OnAspect(stage='during', aspect='before', name=None, doc=None,
-                     operations=[Operation(var_name='a', expr=Integer(value=0))]),
-            OnAspect(stage='during', aspect='before', name='FFT', doc=None, operations=[]),
-            OnAspect(stage='during', aspect='before', name='TTT', doc='this is the line', operations=[]),
+                     operations=[Operation(var_name='a', expr=Integer(value=0))],
+                     is_abstract=False),
+            OnAspect(stage='during', aspect='before', name='FFT', doc=None, operations=[], is_abstract=True),
+            OnAspect(stage='during', aspect='before', name='TTT', doc='this is the line', operations=[],
+                     is_abstract=True),
             OnAspect(stage='during', aspect='after', name=None, doc=None,
                      operations=[Operation(var_name='a', expr=Integer(value=255)),
-                                 Operation(var_name='b', expr=Integer(value=1))])
+                                 Operation(var_name='b', expr=Integer(value=1))],
+                     is_abstract=False)
         ]
 
     def test_list_on_during_aspects(self, root_state_1):
         assert root_state_1.list_on_during_aspects() == [
             OnAspect(stage='during', aspect='before', name=None, doc=None,
-                     operations=[Operation(var_name='a', expr=Integer(value=0))]),
-            OnAspect(stage='during', aspect='before', name='FFT', doc=None, operations=[]),
-            OnAspect(stage='during', aspect='before', name='TTT', doc='this is the line', operations=[]),
+                     operations=[Operation(var_name='a', expr=Integer(value=0))], is_abstract=False),
+            OnAspect(stage='during', aspect='before', name='FFT', doc=None, operations=[], is_abstract=True),
+            OnAspect(stage='during', aspect='before', name='TTT', doc='this is the line', operations=[],
+                     is_abstract=True),
             OnAspect(stage='during', aspect='after', name=None, doc=None,
                      operations=[Operation(var_name='a', expr=Integer(value=255)),
-                                 Operation(var_name='b', expr=Integer(value=1))])
+                                 Operation(var_name='b', expr=Integer(value=1))], is_abstract=False)
         ]
         assert root_state_1.list_on_during_aspects(is_abstract=True) == [
-            OnAspect(stage='during', aspect='before', name='FFT', doc=None, operations=[]),
-            OnAspect(stage='during', aspect='before', name='TTT', doc='this is the line', operations=[]),
+            OnAspect(stage='during', aspect='before', name='FFT', doc=None, operations=[], is_abstract=True),
+            OnAspect(stage='during', aspect='before', name='TTT', doc='this is the line', operations=[],
+                     is_abstract=True),
         ]
         assert root_state_1.list_on_during_aspects(is_abstract=False) == [
             OnAspect(stage='during', aspect='before', name=None, doc=None,
-                     operations=[Operation(var_name='a', expr=Integer(value=0))]),
+                     operations=[Operation(var_name='a', expr=Integer(value=0))], is_abstract=False),
             OnAspect(stage='during', aspect='after', name=None, doc=None,
                      operations=[Operation(var_name='a', expr=Integer(value=255)),
-                                 Operation(var_name='b', expr=Integer(value=1))])
+                                 Operation(var_name='b', expr=Integer(value=1))], is_abstract=False)
         ]
         assert root_state_1.list_on_during_aspects(aspect='before') == [
             OnAspect(stage='during', aspect='before', name=None, doc=None,
-                     operations=[Operation(var_name='a', expr=Integer(value=0))]),
-            OnAspect(stage='during', aspect='before', name='FFT', doc=None, operations=[]),
-            OnAspect(stage='during', aspect='before', name='TTT', doc='this is the line', operations=[]),
+                     operations=[Operation(var_name='a', expr=Integer(value=0))], is_abstract=False),
+            OnAspect(stage='during', aspect='before', name='FFT', doc=None, operations=[], is_abstract=True),
+            OnAspect(stage='during', aspect='before', name='TTT', doc='this is the line', operations=[],
+                     is_abstract=True),
         ]
         assert root_state_1.list_on_during_aspects(aspect='after') == [
             OnAspect(stage='during', aspect='after', name=None, doc=None,
                      operations=[Operation(var_name='a', expr=Integer(value=255)),
-                                 Operation(var_name='b', expr=Integer(value=1))])
+                                 Operation(var_name='b', expr=Integer(value=1))], is_abstract=False)
         ]
 
     def test_transition_dlcs(self, transition_1, transition_2, transition_3):

@@ -960,7 +960,7 @@ class State(AstExportable, PlantUMLExportable):
                     print(indent(trans_text, prefix='    '), file=sf)
                 print(f'}}', file=sf, end='')
 
-            if self.on_enters or self.on_durings or self.on_exits:
+            if self.on_enters or self.on_durings or self.on_exits or self.on_during_aspects:
                 print('', file=sf)
                 with io.StringIO() as tf:
                     for enter_item in self.on_enters:

@@ -7,7 +7,7 @@ Overview:
 __TITLE__ = 'pyfcstm'
 
 #: Version of this project.
-__VERSION__ = '0.1.5'
+__VERSION__ = '0.1.6'
 
 #: Short description of the project, will be included in ``setup.py``.
 __DESCRIPTION__ = ('A Python framework for parsing finite state machine DSL and '

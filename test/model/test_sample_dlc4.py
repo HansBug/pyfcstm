@@ -153,7 +153,7 @@ class TestModelStateL1:
     def test_state_l1(self, state_l1):
         assert state_l1.name == "L1"
         assert state_l1.path == ("L1",)
-        assert set(state_l1.substates.keys()) == {"L11", "L12"}
+        assert sorted(state_l1.substates.keys()) == ["L11", "L12"]
         assert state_l1.events == {}
         assert len(state_l1.transitions) == 3
         assert state_l1.transitions[0].from_state == "L11"
@@ -607,7 +607,7 @@ class TestModelStateL1:
     def test_state_l1_l11(self, state_l1_l11):
         assert state_l1_l11.name == "L11"
         assert state_l1_l11.path == ("L1", "L11")
-        assert set(state_l1_l11.substates.keys()) == {"L112", "L111", "L113"}
+        assert sorted(state_l1_l11.substates.keys()) == ["L111", "L112", "L113"]
         assert state_l1_l11.events == {"E1": Event(name="E1", state_path=("L1", "L11"))}
         assert len(state_l1_l11.transitions) == 8
         assert state_l1_l11.transitions[0].from_state == "L111"
@@ -1066,7 +1066,7 @@ class TestModelStateL1:
     def test_state_l1_l11_l111(self, state_l1_l11_l111):
         assert state_l1_l11_l111.name == "L111"
         assert state_l1_l11_l111.path == ("L1", "L11", "L111")
-        assert set(state_l1_l11_l111.substates.keys()) == {"L1112", "L1111", "L1113"}
+        assert sorted(state_l1_l11_l111.substates.keys()) == ["L1111", "L1112", "L1113"]
         assert state_l1_l11_l111.events == {
             "E1": Event(name="E1", state_path=("L1", "L11", "L111")),
             "E2": Event(name="E2", state_path=("L1", "L11", "L111")),
@@ -1492,11 +1492,11 @@ class TestModelStateL1:
     def test_state_l1_l11_l111_l1111(self, state_l1_l11_l111_l1111):
         assert state_l1_l11_l111_l1111.name == "L1111"
         assert state_l1_l11_l111_l1111.path == ("L1", "L11", "L111", "L1111")
-        assert set(state_l1_l11_l111_l1111.substates.keys()) == {
-            "L11113",
-            "L11112",
+        assert sorted(state_l1_l11_l111_l1111.substates.keys()) == [
             "L11111",
-        }
+            "L11112",
+            "L11113",
+        ]
         assert state_l1_l11_l111_l1111.events == {
             "E1": Event(name="E1", state_path=("L1", "L11", "L111", "L1111")),
             "E2": Event(name="E2", state_path=("L1", "L11", "L111", "L1111")),
@@ -1864,7 +1864,7 @@ class TestModelStateL1:
             "L1111",
             "L11111",
         )
-        assert set(state_l1_l11_l111_l1111_l11111.substates.keys()) == set()
+        assert sorted(state_l1_l11_l111_l1111_l11111.substates.keys()) == []
         assert state_l1_l11_l111_l1111_l11111.events == {
             "E1": Event(name="E1", state_path=("L1", "L11", "L111", "L1111", "L11111")),
             "E2": Event(name="E2", state_path=("L1", "L11", "L111", "L1111", "L11111")),
@@ -1994,6 +1994,17 @@ class TestModelStateL1:
             is_pseudo=False,
         )
 
+    def test_state_l1_l11_l111_l1111_l11111_during_aspect(
+        self, state_l1_l11_l111_l1111_l11111
+    ):
+        lst = state_l1_l11_l111_l1111_l11111.list_on_during_aspect_recursively()
+        assert lst == []
+
+        lst = state_l1_l11_l111_l1111_l11111.list_on_during_aspect_recursively(
+            with_ids=True
+        )
+        assert lst == []
+
     def test_state_l1_l11_l111_l1111_l11112(self, state_l1_l11_l111_l1111_l11112):
         assert state_l1_l11_l111_l1111_l11112.name == "L11112"
         assert state_l1_l11_l111_l1111_l11112.path == (
@@ -2003,7 +2014,7 @@ class TestModelStateL1:
             "L1111",
             "L11112",
         )
-        assert set(state_l1_l11_l111_l1111_l11112.substates.keys()) == set()
+        assert sorted(state_l1_l11_l111_l1111_l11112.substates.keys()) == []
         assert state_l1_l11_l111_l1111_l11112.events == {
             "E1": Event(name="E1", state_path=("L1", "L11", "L111", "L1111", "L11112"))
         }
@@ -2117,6 +2128,17 @@ class TestModelStateL1:
             is_pseudo=False,
         )
 
+    def test_state_l1_l11_l111_l1111_l11112_during_aspect(
+        self, state_l1_l11_l111_l1111_l11112
+    ):
+        lst = state_l1_l11_l111_l1111_l11112.list_on_during_aspect_recursively()
+        assert lst == []
+
+        lst = state_l1_l11_l111_l1111_l11112.list_on_during_aspect_recursively(
+            with_ids=True
+        )
+        assert lst == []
+
     def test_state_l1_l11_l111_l1111_l11113(self, state_l1_l11_l111_l1111_l11113):
         assert state_l1_l11_l111_l1111_l11113.name == "L11113"
         assert state_l1_l11_l111_l1111_l11113.path == (
@@ -2126,7 +2148,7 @@ class TestModelStateL1:
             "L1111",
             "L11113",
         )
-        assert set(state_l1_l11_l111_l1111_l11113.substates.keys()) == set()
+        assert sorted(state_l1_l11_l111_l1111_l11113.substates.keys()) == []
         assert state_l1_l11_l111_l1111_l11113.events == {
             "E1": Event(name="E1", state_path=("L1", "L11", "L111", "L1111", "L11113"))
         }
@@ -2240,10 +2262,21 @@ class TestModelStateL1:
             is_pseudo=False,
         )
 
+    def test_state_l1_l11_l111_l1111_l11113_during_aspect(
+        self, state_l1_l11_l111_l1111_l11113
+    ):
+        lst = state_l1_l11_l111_l1111_l11113.list_on_during_aspect_recursively()
+        assert lst == []
+
+        lst = state_l1_l11_l111_l1111_l11113.list_on_during_aspect_recursively(
+            with_ids=True
+        )
+        assert lst == []
+
     def test_state_l1_l11_l111_l1112(self, state_l1_l11_l111_l1112):
         assert state_l1_l11_l111_l1112.name == "L1112"
         assert state_l1_l11_l111_l1112.path == ("L1", "L11", "L111", "L1112")
-        assert set(state_l1_l11_l111_l1112.substates.keys()) == set()
+        assert sorted(state_l1_l11_l111_l1112.substates.keys()) == []
         assert state_l1_l11_l111_l1112.events == {
             "E1": Event(name="E1", state_path=("L1", "L11", "L111", "L1112"))
         }
@@ -2331,10 +2364,17 @@ class TestModelStateL1:
             is_pseudo=False,
         )
 
+    def test_state_l1_l11_l111_l1112_during_aspect(self, state_l1_l11_l111_l1112):
+        lst = state_l1_l11_l111_l1112.list_on_during_aspect_recursively()
+        assert lst == []
+
+        lst = state_l1_l11_l111_l1112.list_on_during_aspect_recursively(with_ids=True)
+        assert lst == []
+
     def test_state_l1_l11_l111_l1113(self, state_l1_l11_l111_l1113):
         assert state_l1_l11_l111_l1113.name == "L1113"
         assert state_l1_l11_l111_l1113.path == ("L1", "L11", "L111", "L1113")
-        assert set(state_l1_l11_l111_l1113.substates.keys()) == set()
+        assert sorted(state_l1_l11_l111_l1113.substates.keys()) == []
         assert state_l1_l11_l111_l1113.events == {
             "E1": Event(name="E1", state_path=("L1", "L11", "L111", "L1113"))
         }
@@ -2422,10 +2462,17 @@ class TestModelStateL1:
             is_pseudo=False,
         )
 
+    def test_state_l1_l11_l111_l1113_during_aspect(self, state_l1_l11_l111_l1113):
+        lst = state_l1_l11_l111_l1113.list_on_during_aspect_recursively()
+        assert lst == []
+
+        lst = state_l1_l11_l111_l1113.list_on_during_aspect_recursively(with_ids=True)
+        assert lst == []
+
     def test_state_l1_l11_l112(self, state_l1_l11_l112):
         assert state_l1_l11_l112.name == "L112"
         assert state_l1_l11_l112.path == ("L1", "L11", "L112")
-        assert set(state_l1_l11_l112.substates.keys()) == set()
+        assert sorted(state_l1_l11_l112.substates.keys()) == []
         assert state_l1_l11_l112.events == {
             "E1": Event(name="E1", state_path=("L1", "L11", "L112"))
         }
@@ -2497,10 +2544,17 @@ class TestModelStateL1:
             is_pseudo=False,
         )
 
+    def test_state_l1_l11_l112_during_aspect(self, state_l1_l11_l112):
+        lst = state_l1_l11_l112.list_on_during_aspect_recursively()
+        assert lst == []
+
+        lst = state_l1_l11_l112.list_on_during_aspect_recursively(with_ids=True)
+        assert lst == []
+
     def test_state_l1_l11_l113(self, state_l1_l11_l113):
         assert state_l1_l11_l113.name == "L113"
         assert state_l1_l11_l113.path == ("L1", "L11", "L113")
-        assert set(state_l1_l11_l113.substates.keys()) == set()
+        assert sorted(state_l1_l11_l113.substates.keys()) == []
         assert state_l1_l11_l113.events == {
             "E1": Event(name="E1", state_path=("L1", "L11", "L113"))
         }
@@ -2572,10 +2626,17 @@ class TestModelStateL1:
             is_pseudo=False,
         )
 
+    def test_state_l1_l11_l113_during_aspect(self, state_l1_l11_l113):
+        lst = state_l1_l11_l113.list_on_during_aspect_recursively()
+        assert lst == []
+
+        lst = state_l1_l11_l113.list_on_during_aspect_recursively(with_ids=True)
+        assert lst == []
+
     def test_state_l1_l12(self, state_l1_l12):
         assert state_l1_l12.name == "L12"
         assert state_l1_l12.path == ("L1", "L12")
-        assert set(state_l1_l12.substates.keys()) == set()
+        assert sorted(state_l1_l12.substates.keys()) == []
         assert state_l1_l12.events == {}
         assert state_l1_l12.transitions == []
         assert state_l1_l12.on_enters == []
@@ -2624,6 +2685,13 @@ class TestModelStateL1:
             force_transitions=[],
             is_pseudo=False,
         )
+
+    def test_state_l1_l12_during_aspect(self, state_l1_l12):
+        lst = state_l1_l12.list_on_during_aspect_recursively()
+        assert lst == []
+
+        lst = state_l1_l12.list_on_during_aspect_recursively(with_ids=True)
+        assert lst == []
 
     def test_to_ast_node_str(self, model, text_aligner):
         text_aligner.assert_equal(

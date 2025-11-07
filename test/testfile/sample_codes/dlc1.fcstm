@@ -1,0 +1,66 @@
+def int a = 0;
+def int b = 0 * 0;
+def int round_count = 0;
+state TrafficLight {
+    >> during before {
+        a = 0;
+    }
+    >> during before abstract FFT;
+    >> during before abstract TTT /*
+        this is the line
+    */
+    >> during after {
+        a = 255;
+        b = 1;
+    }
+    state InService {
+        enter {
+            a = 0;
+            b = 0;
+            round_count = 0;
+        }
+        enter abstract InServiceAbstractEnter /*
+            Abstract Operation When Entering State 'InService'
+            TODO: Should be Implemented In Generated Code Framework
+        */
+        during before abstract InServiceBeforeEnterChild /*
+            Abstract Operation Before Entering Child States of State 'InService'
+            TODO: Should be Implemented In Generated Code Framework
+        */
+        during after abstract InServiceAfterEnterChild /*
+            Abstract Operation After Entering Child States of State 'InService'
+            TODO: Should be Implemented In Generated Code Framework
+        */
+        exit abstract InServiceAbstractExit /*
+            Abstract Operation When Leaving State 'InService'
+            TODO: Should be Implemented In Generated Code Framework
+        */
+        state Red {
+            during {
+                a = 1 << 2;
+            }
+        }
+        state Yellow;
+        state Green;
+        [*] -> Red :: Start effect {
+            b = 1;
+        }
+        Red -> Green effect {
+            b = 3;
+        }
+        Green -> Yellow effect {
+            b = 2;
+        }
+        Yellow -> Red : if [a >= 10] effect {
+            b = 1;
+            round_count = round_count + 1;
+        }
+        Green -> Yellow : /Idle.E2;
+        Yellow -> Yellow : /E2;
+    }
+    state Idle;
+    [*] -> InService;
+    InService -> Idle :: Maintain;
+    Idle -> Idle :: E2;
+    Idle -> [*];
+}

@@ -89,7 +89,7 @@ class TestModelStateL1:
     def test_state_l1(self, state_l1):
         assert state_l1.name == "L1"
         assert state_l1.path == ("L1",)
-        assert set(state_l1.substates.keys()) == {"L2"}
+        assert sorted(state_l1.substates.keys()) == ["L2"]
         assert state_l1.events == {}
         assert len(state_l1.transitions) == 2
         assert state_l1.transitions[0].from_state == INIT_STATE
@@ -352,7 +352,7 @@ class TestModelStateL1:
     def test_state_l1_l2(self, state_l1_l2):
         assert state_l1_l2.name == "L2"
         assert state_l1_l2.path == ("L1", "L2")
-        assert set(state_l1_l2.substates.keys()) == {"L21", "L22"}
+        assert sorted(state_l1_l2.substates.keys()) == ["L21", "L22"]
         assert state_l1_l2.events == {}
         assert len(state_l1_l2.transitions) == 3
         assert state_l1_l2.transitions[0].from_state == INIT_STATE
@@ -547,7 +547,7 @@ class TestModelStateL1:
     def test_state_l1_l2_l21(self, state_l1_l2_l21):
         assert state_l1_l2_l21.name == "L21"
         assert state_l1_l2_l21.path == ("L1", "L2", "L21")
-        assert set(state_l1_l2_l21.substates.keys()) == set()
+        assert sorted(state_l1_l2_l21.substates.keys()) == []
         assert state_l1_l2_l21.events == {
             "E1": Event(name="E1", state_path=("L1", "L2", "L21"))
         }
@@ -608,10 +608,17 @@ class TestModelStateL1:
             is_pseudo=True,
         )
 
+    def test_state_l1_l2_l21_during_aspect(self, state_l1_l2_l21):
+        lst = state_l1_l2_l21.list_on_during_aspect_recursively()
+        assert lst == []
+
+        lst = state_l1_l2_l21.list_on_during_aspect_recursively(with_ids=True)
+        assert lst == []
+
     def test_state_l1_l2_l22(self, state_l1_l2_l22):
         assert state_l1_l2_l22.name == "L22"
         assert state_l1_l2_l22.path == ("L1", "L2", "L22")
-        assert set(state_l1_l2_l22.substates.keys()) == set()
+        assert sorted(state_l1_l2_l22.substates.keys()) == []
         assert state_l1_l2_l22.events == {
             "E1": Event(name="E1", state_path=("L1", "L2", "L22"))
         }
@@ -672,6 +679,105 @@ class TestModelStateL1:
             during_aspects=[],
             force_transitions=[],
             is_pseudo=False,
+        )
+
+    def test_state_l1_l2_l22_during_aspect(self, state_l1_l2_l22):
+        lst = state_l1_l2_l22.list_on_during_aspect_recursively()
+        assert len(lst) == 4
+        st, on_stage = lst[0]
+        assert st.name == "L1"
+        assert st.path == ("L1",)
+        assert on_stage == OnAspect(
+            stage="during",
+            aspect="before",
+            name="user_B",
+            doc=None,
+            operations=[],
+            is_abstract=True,
+        )
+        st, on_stage = lst[1]
+        assert st.name == "L1"
+        assert st.path == ("L1",)
+        assert on_stage == OnAspect(
+            stage="during",
+            aspect="before",
+            name="user_A",
+            doc=None,
+            operations=[],
+            is_abstract=True,
+        )
+        st, on_stage = lst[2]
+        assert st.name == "L2"
+        assert st.path == ("L1", "L2")
+        assert on_stage == OnAspect(
+            stage="during",
+            aspect="before",
+            name="user_B",
+            doc=None,
+            operations=[],
+            is_abstract=True,
+        )
+        st, on_stage = lst[3]
+        assert st.name == "L2"
+        assert st.path == ("L1", "L2")
+        assert on_stage == OnAspect(
+            stage="during",
+            aspect="before",
+            name="user_A",
+            doc=None,
+            operations=[],
+            is_abstract=True,
+        )
+
+        lst = state_l1_l2_l22.list_on_during_aspect_recursively(with_ids=True)
+        assert len(lst) == 4
+        id_, st, on_stage = lst[0]
+        assert id_ == 1
+        assert st.name == "L1"
+        assert st.path == ("L1",)
+        assert on_stage == OnAspect(
+            stage="during",
+            aspect="before",
+            name="user_B",
+            doc=None,
+            operations=[],
+            is_abstract=True,
+        )
+        id_, st, on_stage = lst[1]
+        assert id_ == 2
+        assert st.name == "L1"
+        assert st.path == ("L1",)
+        assert on_stage == OnAspect(
+            stage="during",
+            aspect="before",
+            name="user_A",
+            doc=None,
+            operations=[],
+            is_abstract=True,
+        )
+        id_, st, on_stage = lst[2]
+        assert id_ == 1
+        assert st.name == "L2"
+        assert st.path == ("L1", "L2")
+        assert on_stage == OnAspect(
+            stage="during",
+            aspect="before",
+            name="user_B",
+            doc=None,
+            operations=[],
+            is_abstract=True,
+        )
+        id_, st, on_stage = lst[3]
+        assert id_ == 2
+        assert st.name == "L2"
+        assert st.path == ("L1", "L2")
+        assert on_stage == OnAspect(
+            stage="during",
+            aspect="before",
+            name="user_A",
+            doc=None,
+            operations=[],
+            is_abstract=True,
         )
 
     def test_to_ast_node_str(self, model, text_aligner):

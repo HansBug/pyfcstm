@@ -115,7 +115,7 @@ def sample_generation_to_file(code: str, test_file: str):
                     print(f'        assert {_state_name(state)}.{field_name}.name == {obj.name!r}', file=tf)
                     print(f'        assert {_state_name(state)}.{field_name}.path == {obj.path!r}', file=tf)
                 elif field_name == 'substates':
-                    print(f'        assert set({_state_name(state)}.{field_name}.keys()) == {set(obj.keys())!r}',
+                    print(f'        assert sorted({_state_name(state)}.{field_name}.keys()) == {sorted(obj.keys())!r}',
                           file=tf)
                 elif (field_name == 'transitions' or field_name.startswith('transitions_')) and obj:
                     print(f'        assert len({_state_name(state)}.{field_name}) == {len(obj)!r}', file=tf)
@@ -149,6 +149,39 @@ def sample_generation_to_file(code: str, test_file: str):
             print(f'        ast_node = {_state_name(state)}.to_ast_node()', file=tf)
             print(f'        assert ast_node == {_to_ast_node(repr(ast_node))}', file=tf)
             print(f'', file=tf)
+
+            if state.is_leaf_state:
+                print(f'    def test_{_state_name(state)}_during_aspect(self, {_state_name(state)}):', file=tf)
+
+                print(f'        lst = {_state_name(state)}.list_on_during_aspect_recursively()', file=tf)
+                lst = state.list_on_during_aspect_recursively()
+                if not lst:
+                    print(f'        assert lst == {lst!r}', file=tf)
+                else:
+                    print(f'        assert len(lst) == {len(lst)!r}', file=tf)
+                    for j, lst_item in enumerate(lst):
+                        st, on_stage = lst_item
+                        print(f'        st, on_stage = lst[{j!r}]', file=tf)
+                        print(f'        assert st.name == {st.name!r}', file=tf)
+                        print(f'        assert st.path == {st.path!r}', file=tf)
+                        print(f'        assert on_stage == {on_stage!r}', file=tf)
+                print(f'', file=tf)
+
+                print(f'        lst = {_state_name(state)}.list_on_during_aspect_recursively(with_ids=True)', file=tf)
+                lst = state.list_on_during_aspect_recursively(with_ids=True)
+                if not lst:
+                    print(f'        assert lst == {lst!r}', file=tf)
+                else:
+                    print(f'        assert len(lst) == {len(lst)!r}', file=tf)
+                    for j, lst_item in enumerate(lst):
+                        id_, st, on_stage = lst_item
+                        print(f'        id_, st, on_stage = lst[{j!r}]', file=tf)
+                        print(f'        assert id_ == {id_!r}', file=tf)
+                        print(f'        assert st.name == {st.name!r}', file=tf)
+                        print(f'        assert st.path == {st.path!r}', file=tf)
+                        print(f'        assert on_stage == {on_stage!r}', file=tf)
+
+                print(f'', file=tf)
 
         print(f'    def test_to_ast_node_str(self, model, text_aligner):', file=tf)
         print(f'        text_aligner.assert_equal(', file=tf)

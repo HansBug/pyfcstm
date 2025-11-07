@@ -1163,7 +1163,7 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
             is_pseudo=bool(node.is_pseudo),
         )
         if my_state.is_pseudo and not my_state.is_leaf_state:
-            raise SyntaxError(f'Pseudo state {".".join(current_path)!r} must be a leaf state:\n{node}')
+            raise SyntaxError(f'Pseudo state {".".join(current_path)} must be a leaf state:\n{node}')
         for _, substate in d_substates.items():
             substate.parent = my_state
         return my_state

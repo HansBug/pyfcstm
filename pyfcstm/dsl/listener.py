@@ -228,6 +228,7 @@ class GrammarParseListener(GrammarListener):
             enters=[],
             durings=[],
             exits=[],
+            is_pseudo=bool(ctx.pseudo),
         )
 
     def exitCompositeStateDefinition(self, ctx: GrammarParser.CompositeStateDefinitionContext):
@@ -248,6 +249,7 @@ class GrammarParseListener(GrammarListener):
                             if item in self.nodes and isinstance(self.nodes[item], DuringAspectStatement)],
             force_transitions=[self.nodes[item] for item in ctx.state_inner_statement()
                                if item in self.nodes and isinstance(self.nodes[item], ForceTransitionDefinition)],
+            is_pseudo=bool(ctx.pseudo),
         )
 
     def exitEntryTransitionDefinition(self, ctx: GrammarParser.EntryTransitionDefinitionContext):

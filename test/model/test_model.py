@@ -178,6 +178,7 @@ def transition_7(root_state_1):
 def expected_plantuml_code():
     return textwrap.dedent("""
 @startuml
+hide empty description
 note as DefinitionNote
 defines {
     def int a = 0;

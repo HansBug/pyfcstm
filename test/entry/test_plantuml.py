@@ -112,6 +112,7 @@ def input_code_file():
 def expected_plantuml_code():
     return textwrap.dedent("""
 @startuml
+hide empty description
 note as DefinitionNote
 defines {
     def int a = 0;

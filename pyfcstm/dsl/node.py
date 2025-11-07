@@ -1040,6 +1040,7 @@ class StateDefinition(ASTNode):
     exits: List['ExitStatement'] = None
     during_aspects: List['DuringAspectStatement'] = None
     force_transitions: List['ForceTransitionDefinition'] = None
+    is_pseudo: bool = False
 
     def __post_init__(self):
         self.substates = self.substates or []
@@ -1060,9 +1061,9 @@ class StateDefinition(ASTNode):
         with io.StringIO() as sf:
             if not self.substates and not self.transitions and \
                     not self.enters and not self.durings and not self.exits and not self.during_aspects:
-                print(f'state {self.name};', file=sf, end='')
+                print(f'{"pseudo " if self.is_pseudo else ""}state {self.name};', file=sf, end='')
             else:
-                print(f'state {self.name} {{', file=sf)
+                print(f'{"pseudo " if self.is_pseudo else ""}state {self.name} {{', file=sf)
                 for enter_item in self.enters:
                     print(indent(str(enter_item), prefix='    '), file=sf)
                 for during_item in self.durings:

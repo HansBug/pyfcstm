@@ -418,6 +418,7 @@ class State(AstExportable, PlantUMLExportable):
     on_during_aspects: List[OnAspect] = None
     parent_ref: Optional[weakref.ReferenceType] = None
     substate_name_to_id: Dict[str, int] = None
+    is_pseudo: bool = False
 
     def __post_init__(self):
         """
@@ -818,14 +819,16 @@ class State(AstExportable, PlantUMLExportable):
         :yield: Tuples of (state, action) or (id, state, action) if with_ids is True
         :rtype: List[Union[Tuple[int, 'State', Union[OnAspect, OnStage]], Tuple['State', Union[OnAspect, OnStage]]]]
         """
-        yield from self.iter_on_during_before_aspect_recursively(is_abstract=is_abstract, with_ids=with_ids)
+        if not self.is_pseudo:
+            yield from self.iter_on_during_before_aspect_recursively(is_abstract=is_abstract, with_ids=with_ids)
         if with_ids:
             for id_, item in self.list_on_durings(is_abstract=is_abstract, aspect=None, with_ids=with_ids):
                 yield id_, self, item
         else:
             for item in self.list_on_durings(is_abstract=is_abstract, aspect=None, with_ids=with_ids):
                 yield self, item
-        yield from self.iter_on_during_after_aspect_recursively(is_abstract=is_abstract, with_ids=with_ids)
+        if not self.is_pseudo:
+            yield from self.iter_on_during_after_aspect_recursively(is_abstract=is_abstract, with_ids=with_ids)
 
     def list_on_during_aspect_recursively(self, is_abstract: Optional[bool] = None, with_ids: bool = False) \
             -> List[Union[Tuple[int, 'State', Union[OnAspect, OnStage]], Tuple['State', Union[OnAspect, OnStage]]]]:
@@ -910,6 +913,7 @@ class State(AstExportable, PlantUMLExportable):
             durings=[item.to_ast_node() for item in self.on_durings],
             exits=[item.to_ast_node() for item in self.on_exits],
             during_aspects=[item.to_ast_node() for item in self.on_during_aspects],
+            is_pseudo=bool(self.is_pseudo),
         )
 
     def to_plantuml(self) -> str:
@@ -926,11 +930,17 @@ class State(AstExportable, PlantUMLExportable):
                 subpath.append(sub_state)
             return sequence_safe(subpath)
 
+        state_style_marks = []
+        if self.is_pseudo:
+            state_style_marks.append('line.dotted')
+        # if self.is_leaf_state and not self.is_pseudo:
+        #     state_style_marks.append('line.bold')
+        state_style_mark_str = " #" + ";".join(state_style_marks) if state_style_marks else ""
         with io.StringIO() as sf:
             if self.is_leaf_state:
-                print(f'state {json.dumps(self.name)} as {_name_safe()}', file=sf, end='')
+                print(f'state {json.dumps(self.name)} as {_name_safe()}{state_style_mark_str}', file=sf, end='')
             else:
-                print(f'state {json.dumps(self.name)} as {_name_safe()} {{', file=sf)
+                print(f'state {json.dumps(self.name)} as {_name_safe()}{state_style_mark_str} {{', file=sf)
                 for state in self.substates.values():
                     print(indent(state.to_plantuml(), prefix='    '), file=sf)
                 for trans in self.transitions:
@@ -1076,6 +1086,7 @@ class StateMachine(AstExportable, PlantUMLExportable):
         """
         with io.StringIO() as sf:
             print('@startuml', file=sf)
+            print('hide empty description', file=sf)
             if self.defines:
                 print('note as DefinitionNote', file=sf)
                 print('defines {', file=sf)
@@ -1149,7 +1160,10 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
             name=node.name,
             path=current_path,
             substates=d_substates,
+            is_pseudo=bool(node.is_pseudo),
         )
+        if my_state.is_pseudo and not my_state.is_leaf_state:
+            raise SyntaxError(f'Pseudo state {".".join(current_path)!r} must be a leaf state:\n{node}')
         for _, substate in d_substates.items():
             substate.parent = my_state
         return my_state

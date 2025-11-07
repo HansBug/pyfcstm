@@ -7,7 +7,8 @@ from pyfcstm.model.model import *
 @pytest.mark.unittest
 class TestModelModelDLC5:
     def test_non_leaf_pseudo_state(self):
-        ast_node = parse_with_grammar_entry("""
+        ast_node = parse_with_grammar_entry(
+            """
         def int a = 0;
         def int b = 2;
         state LX {
@@ -32,7 +33,9 @@ class TestModelModelDLC5:
             };
             LX1 -> LX1 : LX2.E2;
         }
-        """, entry_name='state_machine_dsl')
+        """,
+            entry_name="state_machine_dsl",
+        )
 
         with pytest.raises(SyntaxError) as ei:
             parse_dsl_node_to_state_machine(ast_node)

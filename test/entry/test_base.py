@@ -22,7 +22,7 @@ def cli_runner():
 
 @pytest.fixture
 def mock_click_secho():
-    with patch('click.secho') as mock:
+    with patch("click.secho") as mock:
         yield mock
 
 
@@ -31,12 +31,16 @@ class TestClickExceptions:
     def test_click_warning_exception(self, mock_click_secho):
         exception = ClickWarningException("Test warning")
         exception.show()
-        mock_click_secho.assert_called_once_with("Test warning", fg='yellow', file=sys.stderr)
+        mock_click_secho.assert_called_once_with(
+            "Test warning", fg="yellow", file=sys.stderr
+        )
 
     def test_click_error_exception(self, mock_click_secho):
         exception = ClickErrorException("Test error")
         exception.show()
-        mock_click_secho.assert_called_once_with("Test error", fg='red', file=sys.stderr)
+        mock_click_secho.assert_called_once_with(
+            "Test error", fg="red", file=sys.stderr
+        )
 
     def test_print_exception(self, capsys):
         try:
@@ -143,7 +147,7 @@ class TestClickExceptions:
 
     def test_print_exception_custom_print_2(self):
         custom_output = StringIO()
-        custom_print = lambda x: custom_output.write(x + '\n')
+        custom_print = lambda x: custom_output.write(x + "\n")
 
         try:
             raise ValueError("Test error")

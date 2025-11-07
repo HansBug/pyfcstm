@@ -13,9 +13,10 @@ from test.testings import get_testfile, dir_compare, walk_files
 @pytest.fixture()
 def input_code_file():
     with TemporaryDirectory() as td:
-        code_file = os.path.join(td, 'code.fcstm')
-        with open(code_file, 'w') as f:
-            print(textwrap.dedent("""
+        code_file = os.path.join(td, "code.fcstm")
+        with open(code_file, "w") as f:
+            print(
+                textwrap.dedent("""
     def int a = 0;
     def int b = 0x0;
     def int round_count = 0;  // define variables
@@ -75,46 +76,77 @@ def input_code_file():
         InService -> Idle :: Maintain;
         Idle -> [*];
     }
-    """).strip(), file=f)
+    """).strip(),
+                file=f,
+            )
 
         yield code_file
 
 
 @pytest.mark.unittest
 class TestEntryGenerate:
-    @pytest.mark.parametrize(['template_name', 'result_name'], [
-        ('template_1', 'template_1_result'),
-        ('template_1_with_static_file', 'template_1_with_static_file_result'),
-        ('template_1_with_ignore', 'template_1_with_ignore_result'),
-    ])
+    @pytest.mark.parametrize(
+        ["template_name", "result_name"],
+        [
+            ("template_1", "template_1_result"),
+            ("template_1_with_static_file", "template_1_with_static_file_result"),
+            ("template_1_with_ignore", "template_1_with_ignore_result"),
+        ],
+    )
     def test_actual_render(self, template_name, result_name, input_code_file):
         template_dir = os.path.abspath(get_testfile(template_name))
         expected_result_dir = os.path.abspath(get_testfile(result_name))
 
         with TemporaryDirectory() as td:
-            result = simulate_entry(pyfcstmcli, [
-                'pyfcstm', 'generate', '-i', input_code_file, '-t', template_dir, '-o', td,
-            ])
+            result = simulate_entry(
+                pyfcstmcli,
+                [
+                    "pyfcstm",
+                    "generate",
+                    "-i",
+                    input_code_file,
+                    "-t",
+                    template_dir,
+                    "-o",
+                    td,
+                ],
+            )
             assert result.exitcode == 0
             dir_compare(expected_result_dir, td)
 
-    @pytest.mark.parametrize(['template_name', 'result_name'], [
-        ('template_1', 'template_1_result'),
-        ('template_1_with_static_file', 'template_1_with_static_file_result'),
-        ('template_1_with_ignore', 'template_1_with_ignore_result'),
-    ])
-    def test_actual_render_with_clear(self, template_name, result_name, input_code_file):
+    @pytest.mark.parametrize(
+        ["template_name", "result_name"],
+        [
+            ("template_1", "template_1_result"),
+            ("template_1_with_static_file", "template_1_with_static_file_result"),
+            ("template_1_with_ignore", "template_1_with_ignore_result"),
+        ],
+    )
+    def test_actual_render_with_clear(
+        self, template_name, result_name, input_code_file
+    ):
         template_dir = os.path.abspath(get_testfile(template_name))
         expected_result_dir = os.path.abspath(get_testfile(result_name))
 
         with TemporaryDirectory() as td:
-            for file in walk_files(get_testfile('.')):
+            for file in walk_files(get_testfile(".")):
                 dst_file = os.path.join(td, file)
                 os.makedirs(os.path.dirname(dst_file), exist_ok=True)
                 shutil.copyfile(get_testfile(file), dst_file)
 
-            result = simulate_entry(pyfcstmcli, [
-                'pyfcstm', 'generate', '-i', input_code_file, '-t', template_dir, '-o', td, '--clear',
-            ])
+            result = simulate_entry(
+                pyfcstmcli,
+                [
+                    "pyfcstm",
+                    "generate",
+                    "-i",
+                    input_code_file,
+                    "-t",
+                    template_dir,
+                    "-o",
+                    td,
+                    "--clear",
+                ],
+            )
             assert result.exitcode == 0
             dir_compare(expected_result_dir, td)

@@ -50,7 +50,7 @@ class TestIJsonOp:
                 return mock_json_data
 
         TestClass().to_json(temp_file)
-        with open(temp_file, 'r') as f:
+        with open(temp_file, "r") as f:
             assert json.load(f) == mock_json_data
 
     def test_to_yaml(self, temp_file, mock_json_data):
@@ -59,7 +59,7 @@ class TestIJsonOp:
                 return mock_json_data
 
         TestClass().to_yaml(temp_file)
-        with open(temp_file, 'r') as f:
+        with open(temp_file, "r") as f:
             assert yaml.safe_load(f) == mock_json_data
 
     def test_from_json_success(self):
@@ -85,8 +85,8 @@ class TestIJsonOp:
             def _from_json(cls, data):
                 return cls()
 
-        with patch('builtins.open', mock_open(read_data=json.dumps(mock_json_data))):
-            assert isinstance(TestClass.read_json('fake_file.json'), TestClass)
+        with patch("builtins.open", mock_open(read_data=json.dumps(mock_json_data))):
+            assert isinstance(TestClass.read_json("fake_file.json"), TestClass)
 
     def test_read_yaml(self, mock_json_data):
         class TestClass(IJsonOp):
@@ -94,5 +94,5 @@ class TestIJsonOp:
             def _from_json(cls, data):
                 return cls()
 
-        with patch('builtins.open', mock_open(read_data=yaml.dump(mock_json_data))):
-            assert isinstance(TestClass.read_yaml('fake_file.yaml'), TestClass)
+        with patch("builtins.open", mock_open(read_data=yaml.dump(mock_json_data))):
+            assert isinstance(TestClass.read_yaml("fake_file.yaml"), TestClass)

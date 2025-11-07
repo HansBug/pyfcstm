@@ -974,13 +974,13 @@ class State(AstExportable, PlantUMLExportable):
                 print('', file=sf)
                 with io.StringIO() as tf:
                     for enter_item in self.on_enters:
-                        print(enter_item.to_ast_node(), file=tf)
+                        print(enter_item.to_ast_node(), end='\n', file=tf)
                     for during_item in self.on_durings:
-                        print(during_item.to_ast_node(), file=tf)
+                        print(during_item.to_ast_node(), end='\n', file=tf)
                     for exit_item in self.on_exits:
-                        print(exit_item.to_ast_node(), file=tf)
+                        print(exit_item.to_ast_node(), end='\n', file=tf)
                     for during_aspect_item in self.on_during_aspects:
-                        print(during_aspect_item.to_ast_node(), file=tf)
+                        print(during_aspect_item.to_ast_node(), end='\n', file=tf)
                     text = json.dumps(tf.getvalue().rstrip()).strip("\"")
                     print(f'{_name_safe()} : {text}', file=sf, end='')
 

@@ -25,6 +25,13 @@ ANTLR_VERSION ?= 4.9.3
 ANTLR_GRAMMAR_DIR  := ${SRC_DIR}/dsl/grammar
 ANTLR_GRAMMAR_FILE := ${ANTLR_GRAMMAR_DIR}/Grammar.g4
 
+# Sample test generation related variables
+SAMPLE_CODES_DIR := ${TESTFILE_DIR}/sample_codes
+MODEL_TEST_DIR   := ${TEST_DIR}/model
+SAMPLE_DSL_FILES := $(shell find ${SAMPLE_CODES_DIR} -name "*.fcstm" 2>/dev/null)
+SAMPLE_TEST_FILES := $(patsubst ${SAMPLE_CODES_DIR}/%.fcstm,${MODEL_TEST_DIR}/test_sample_%.py,${SAMPLE_DSL_FILES})
+
+
 package:
 	$(PYTHON) -m build --sdist --wheel --outdir ${DIST_DIR}
 build:
@@ -61,3 +68,13 @@ antlr_build:
 	java -jar antlr-${ANTLR_VERSION}.jar -Dlanguage=Python3 ${ANTLR_GRAMMAR_FILE}
 	ruff format ${ANTLR_GRAMMAR_DIR}
 
+# Generate sample test files
+sample: ${SAMPLE_TEST_FILES}
+
+${MODEL_TEST_DIR}/test_sample_%.py: ${SAMPLE_CODES_DIR}/%.fcstm
+	@mkdir -p ${MODEL_TEST_DIR}
+	$(PYTHON) sample_test_generator.py -i $< -o $@
+	ruff format $@
+
+sample_clean:
+	rm -f ${SAMPLE_TEST_FILES}

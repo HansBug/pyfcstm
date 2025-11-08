@@ -1,0 +1,26 @@
+def int Event  = 0;
+
+state LX
+{
+    [*] -> LX2;
+    !*->ERROR :: E1;
+
+    enter {}
+    enter abstract act1;
+
+    state LX2{
+        [*] -> start;
+         state start {
+            [*] -> LX4;
+            state LX4 {
+                [*] -> LX5;
+                state LX5;
+            }
+         }
+    }
+
+
+    state ERROR
+    {}
+    ERROR ->[*];
+}

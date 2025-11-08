@@ -9,7 +9,6 @@ def mock_uuid4(monkeypatch):
     original_uuid4 = uuid.uuid4
 
     def _mocked_uuid4():
-
         bytes_ = bytes([random.randint(0, 255) for _ in range(16)])
         return uuid.UUID(bytes=bytes_, version=4)
 

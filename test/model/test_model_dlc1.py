@@ -10,7 +10,8 @@ from pyfcstm.model.model import *
 
 @pytest.fixture()
 def demo_model_1():
-    ast_node = parse_with_grammar_entry("""
+    ast_node = parse_with_grammar_entry(
+        """
     def int a = 0;
     def int b = 0x0 * 0;
     def int round_count = 0;  // define variables
@@ -83,7 +84,9 @@ def demo_model_1():
         Idle -> Idle :: E2;
         Idle -> [*];
     }
-    """, entry_name='state_machine_dsl')
+    """,
+        entry_name="state_machine_dsl",
+    )
     model = parse_dsl_node_to_state_machine(ast_node)
     return model
 
@@ -95,27 +98,27 @@ def root_state_1(demo_model_1):
 
 @pytest.fixture()
 def in_service(root_state_1):
-    return root_state_1.substates['InService']
+    return root_state_1.substates["InService"]
 
 
 @pytest.fixture()
 def idle(root_state_1):
-    return root_state_1.substates['Idle']
+    return root_state_1.substates["Idle"]
 
 
 @pytest.fixture()
 def red(in_service):
-    return in_service.substates['Red']
+    return in_service.substates["Red"]
 
 
 @pytest.fixture()
 def yellow(in_service):
-    return in_service.substates['Yellow']
+    return in_service.substates["Yellow"]
 
 
 @pytest.fixture()
 def green(in_service):
-    return in_service.substates['Green']
+    return in_service.substates["Green"]
 
 
 @pytest.fixture()
@@ -209,101 +212,226 @@ state TrafficLight {
 class TestModelModelDLC1:
     def test_model_basic(self, demo_model_1):
         assert demo_model_1.defines == {
-            'a': VarDefine(name='a', type='int', init=Integer(value=0)),
-            'b': VarDefine(name='b', type='int', init=BinaryOp(x=Integer(value=0), op='*', y=Integer(value=0))),
-            'round_count': VarDefine(name='round_count', type='int', init=Integer(value=0))}
+            "a": VarDefine(name="a", type="int", init=Integer(value=0)),
+            "b": VarDefine(
+                name="b",
+                type="int",
+                init=BinaryOp(x=Integer(value=0), op="*", y=Integer(value=0)),
+            ),
+            "round_count": VarDefine(
+                name="round_count", type="int", init=Integer(value=0)
+            ),
+        }
 
-        assert demo_model_1.root_state.name == 'TrafficLight'
-        assert demo_model_1.root_state.path == ('TrafficLight',)
+        assert demo_model_1.root_state.name == "TrafficLight"
+        assert demo_model_1.root_state.path == ("TrafficLight",)
 
     def test_model_to_ast_node(self, demo_model_1):
         ast_node = demo_model_1.to_ast_node()
         assert ast_node.definitions == [
-            dsl_nodes.DefAssignment(name='a', type='int', expr=dsl_nodes.Integer(raw='0')),
-            dsl_nodes.DefAssignment(name='b', type='int',
-                                    expr=dsl_nodes.BinaryOp(expr1=dsl_nodes.Integer(raw='0'), op='*',
-                                                            expr2=dsl_nodes.Integer(raw='0'))),
-            dsl_nodes.DefAssignment(name='round_count', type='int', expr=dsl_nodes.Integer(raw='0'))
+            dsl_nodes.DefAssignment(
+                name="a", type="int", expr=dsl_nodes.Integer(raw="0")
+            ),
+            dsl_nodes.DefAssignment(
+                name="b",
+                type="int",
+                expr=dsl_nodes.BinaryOp(
+                    expr1=dsl_nodes.Integer(raw="0"),
+                    op="*",
+                    expr2=dsl_nodes.Integer(raw="0"),
+                ),
+            ),
+            dsl_nodes.DefAssignment(
+                name="round_count", type="int", expr=dsl_nodes.Integer(raw="0")
+            ),
         ]
         assert ast_node.root_state.name == "TrafficLight"
 
     def test_on_during_aspects(self, root_state_1):
         assert root_state_1.on_during_aspects == [
-            OnAspect(stage='during', aspect='before', name=None, doc=None,
-                     operations=[Operation(var_name='a', expr=Integer(value=0))],
-                     is_abstract=False),
-            OnAspect(stage='during', aspect='before', name='FFT', doc=None, operations=[], is_abstract=True),
-            OnAspect(stage='during', aspect='before', name='TTT', doc='this is the line', operations=[],
-                     is_abstract=True),
-            OnAspect(stage='during', aspect='after', name=None, doc=None,
-                     operations=[Operation(var_name='a', expr=Integer(value=255)),
-                                 Operation(var_name='b', expr=Integer(value=1))],
-                     is_abstract=False)
+            OnAspect(
+                stage="during",
+                aspect="before",
+                name=None,
+                doc=None,
+                operations=[Operation(var_name="a", expr=Integer(value=0))],
+                is_abstract=False,
+            ),
+            OnAspect(
+                stage="during",
+                aspect="before",
+                name="FFT",
+                doc=None,
+                operations=[],
+                is_abstract=True,
+            ),
+            OnAspect(
+                stage="during",
+                aspect="before",
+                name="TTT",
+                doc="this is the line",
+                operations=[],
+                is_abstract=True,
+            ),
+            OnAspect(
+                stage="during",
+                aspect="after",
+                name=None,
+                doc=None,
+                operations=[
+                    Operation(var_name="a", expr=Integer(value=255)),
+                    Operation(var_name="b", expr=Integer(value=1)),
+                ],
+                is_abstract=False,
+            ),
         ]
 
     def test_list_on_during_aspects(self, root_state_1):
         assert root_state_1.list_on_during_aspects() == [
-            OnAspect(stage='during', aspect='before', name=None, doc=None,
-                     operations=[Operation(var_name='a', expr=Integer(value=0))], is_abstract=False),
-            OnAspect(stage='during', aspect='before', name='FFT', doc=None, operations=[], is_abstract=True),
-            OnAspect(stage='during', aspect='before', name='TTT', doc='this is the line', operations=[],
-                     is_abstract=True),
-            OnAspect(stage='during', aspect='after', name=None, doc=None,
-                     operations=[Operation(var_name='a', expr=Integer(value=255)),
-                                 Operation(var_name='b', expr=Integer(value=1))], is_abstract=False)
+            OnAspect(
+                stage="during",
+                aspect="before",
+                name=None,
+                doc=None,
+                operations=[Operation(var_name="a", expr=Integer(value=0))],
+                is_abstract=False,
+            ),
+            OnAspect(
+                stage="during",
+                aspect="before",
+                name="FFT",
+                doc=None,
+                operations=[],
+                is_abstract=True,
+            ),
+            OnAspect(
+                stage="during",
+                aspect="before",
+                name="TTT",
+                doc="this is the line",
+                operations=[],
+                is_abstract=True,
+            ),
+            OnAspect(
+                stage="during",
+                aspect="after",
+                name=None,
+                doc=None,
+                operations=[
+                    Operation(var_name="a", expr=Integer(value=255)),
+                    Operation(var_name="b", expr=Integer(value=1)),
+                ],
+                is_abstract=False,
+            ),
         ]
         assert root_state_1.list_on_during_aspects(is_abstract=True) == [
-            OnAspect(stage='during', aspect='before', name='FFT', doc=None, operations=[], is_abstract=True),
-            OnAspect(stage='during', aspect='before', name='TTT', doc='this is the line', operations=[],
-                     is_abstract=True),
+            OnAspect(
+                stage="during",
+                aspect="before",
+                name="FFT",
+                doc=None,
+                operations=[],
+                is_abstract=True,
+            ),
+            OnAspect(
+                stage="during",
+                aspect="before",
+                name="TTT",
+                doc="this is the line",
+                operations=[],
+                is_abstract=True,
+            ),
         ]
         assert root_state_1.list_on_during_aspects(is_abstract=False) == [
-            OnAspect(stage='during', aspect='before', name=None, doc=None,
-                     operations=[Operation(var_name='a', expr=Integer(value=0))], is_abstract=False),
-            OnAspect(stage='during', aspect='after', name=None, doc=None,
-                     operations=[Operation(var_name='a', expr=Integer(value=255)),
-                                 Operation(var_name='b', expr=Integer(value=1))], is_abstract=False)
+            OnAspect(
+                stage="during",
+                aspect="before",
+                name=None,
+                doc=None,
+                operations=[Operation(var_name="a", expr=Integer(value=0))],
+                is_abstract=False,
+            ),
+            OnAspect(
+                stage="during",
+                aspect="after",
+                name=None,
+                doc=None,
+                operations=[
+                    Operation(var_name="a", expr=Integer(value=255)),
+                    Operation(var_name="b", expr=Integer(value=1)),
+                ],
+                is_abstract=False,
+            ),
         ]
-        assert root_state_1.list_on_during_aspects(aspect='before') == [
-            OnAspect(stage='during', aspect='before', name=None, doc=None,
-                     operations=[Operation(var_name='a', expr=Integer(value=0))], is_abstract=False),
-            OnAspect(stage='during', aspect='before', name='FFT', doc=None, operations=[], is_abstract=True),
-            OnAspect(stage='during', aspect='before', name='TTT', doc='this is the line', operations=[],
-                     is_abstract=True),
+        assert root_state_1.list_on_during_aspects(aspect="before") == [
+            OnAspect(
+                stage="during",
+                aspect="before",
+                name=None,
+                doc=None,
+                operations=[Operation(var_name="a", expr=Integer(value=0))],
+                is_abstract=False,
+            ),
+            OnAspect(
+                stage="during",
+                aspect="before",
+                name="FFT",
+                doc=None,
+                operations=[],
+                is_abstract=True,
+            ),
+            OnAspect(
+                stage="during",
+                aspect="before",
+                name="TTT",
+                doc="this is the line",
+                operations=[],
+                is_abstract=True,
+            ),
         ]
-        assert root_state_1.list_on_during_aspects(aspect='after') == [
-            OnAspect(stage='during', aspect='after', name=None, doc=None,
-                     operations=[Operation(var_name='a', expr=Integer(value=255)),
-                                 Operation(var_name='b', expr=Integer(value=1))], is_abstract=False)
+        assert root_state_1.list_on_during_aspects(aspect="after") == [
+            OnAspect(
+                stage="during",
+                aspect="after",
+                name=None,
+                doc=None,
+                operations=[
+                    Operation(var_name="a", expr=Integer(value=255)),
+                    Operation(var_name="b", expr=Integer(value=1)),
+                ],
+                is_abstract=False,
+            )
         ]
 
     def test_transition_dlcs(self, transition_1, transition_2, transition_3):
-        assert transition_1.from_state == 'Idle'
-        assert transition_1.to_state == 'Idle'
-        assert transition_1.event.name == 'E2'
-        assert transition_1.event.state_path == ('TrafficLight', 'Idle')
-        assert transition_1.event.path == ('TrafficLight', 'Idle', 'E2')
+        assert transition_1.from_state == "Idle"
+        assert transition_1.to_state == "Idle"
+        assert transition_1.event.name == "E2"
+        assert transition_1.event.state_path == ("TrafficLight", "Idle")
+        assert transition_1.event.path == ("TrafficLight", "Idle", "E2")
 
-        assert transition_2.from_state == 'Green'
-        assert transition_2.to_state == 'Yellow'
-        assert transition_2.event.name == 'E2'
-        assert transition_2.event.state_path == ('TrafficLight', 'Idle')
-        assert transition_2.event.path == ('TrafficLight', 'Idle', 'E2')
+        assert transition_2.from_state == "Green"
+        assert transition_2.to_state == "Yellow"
+        assert transition_2.event.name == "E2"
+        assert transition_2.event.state_path == ("TrafficLight", "Idle")
+        assert transition_2.event.path == ("TrafficLight", "Idle", "E2")
 
-        assert transition_3.from_state == 'Yellow'
-        assert transition_3.to_state == 'Yellow'
-        assert transition_3.event.name == 'E2'
-        assert transition_3.event.state_path == ('TrafficLight',)
-        assert transition_3.event.path == ('TrafficLight', 'E2')
+        assert transition_3.from_state == "Yellow"
+        assert transition_3.to_state == "Yellow"
+        assert transition_3.event.name == "E2"
+        assert transition_3.event.state_path == ("TrafficLight",)
+        assert transition_3.event.path == ("TrafficLight", "E2")
 
-    def test_to_ast_node_to_str(self, demo_model_1, expected_to_str_result, text_aligner):
+    def test_to_ast_node_to_str(
+        self, demo_model_1, expected_to_str_result, text_aligner
+    ):
         text_aligner.assert_equal(
-            expect=expected_to_str_result,
-            actual=str(demo_model_1.to_ast_node())
+            expect=expected_to_str_result, actual=str(demo_model_1.to_ast_node())
         )
 
     def test_parse_unknown_state_for_event(self):
-        ast_node = parse_with_grammar_entry("""
+        ast_node = parse_with_grammar_entry(
+            """
         def int a = 0;
         def int b = 2;
         state LX {
@@ -322,7 +450,9 @@ class TestModelModelDLC1:
             };
             LX1 -> LX1 : LX3.E2;
         }
-        """, entry_name='state_machine_dsl')
+        """,
+            entry_name="state_machine_dsl",
+        )
 
         with pytest.raises(SyntaxError) as ei:
             parse_dsl_node_to_state_machine(ast_node)
@@ -333,7 +463,8 @@ class TestModelModelDLC1:
         assert "LX1 -> LX1 : LX3.E2;" in err.msg
 
     def test_parse_unknown_state_for_event_abs(self):
-        ast_node = parse_with_grammar_entry("""
+        ast_node = parse_with_grammar_entry(
+            """
         def int a = 0;
         def int b = 2;
         state LX {
@@ -352,7 +483,9 @@ class TestModelModelDLC1:
             };
             LX1 -> LX1 : /LX1.LXXX.E2;
         }
-        """, entry_name='state_machine_dsl')
+        """,
+            entry_name="state_machine_dsl",
+        )
 
         with pytest.raises(SyntaxError) as ei:
             parse_dsl_node_to_state_machine(ast_node)
@@ -365,43 +498,43 @@ class TestModelModelDLC1:
     def test_list_on_during_aspect_recursively(self, red):
         lst = red.list_on_during_aspect_recursively()
         assert len(lst) == 5
-        assert lst[0][0].name == 'TrafficLight'
-        assert lst[0][0].path == ('TrafficLight',)
+        assert lst[0][0].name == "TrafficLight"
+        assert lst[0][0].path == ("TrafficLight",)
         assert lst[0][1].name == None
-        assert lst[0][1].stage == 'during'
-        assert lst[0][1].aspect == 'before'
+        assert lst[0][1].stage == "during"
+        assert lst[0][1].aspect == "before"
         assert not lst[0][1].is_abstract
         assert lst[0][1].is_aspect
 
-        assert lst[1][0].name == 'TrafficLight'
-        assert lst[1][0].path == ('TrafficLight',)
-        assert lst[1][1].name == 'FFT'
-        assert lst[1][1].stage == 'during'
-        assert lst[1][1].aspect == 'before'
+        assert lst[1][0].name == "TrafficLight"
+        assert lst[1][0].path == ("TrafficLight",)
+        assert lst[1][1].name == "FFT"
+        assert lst[1][1].stage == "during"
+        assert lst[1][1].aspect == "before"
         assert lst[1][1].is_abstract
         assert lst[1][1].is_aspect
 
-        assert lst[2][0].name == 'TrafficLight'
-        assert lst[2][0].path == ('TrafficLight',)
-        assert lst[2][1].name == 'TTT'
-        assert lst[2][1].stage == 'during'
-        assert lst[2][1].aspect == 'before'
+        assert lst[2][0].name == "TrafficLight"
+        assert lst[2][0].path == ("TrafficLight",)
+        assert lst[2][1].name == "TTT"
+        assert lst[2][1].stage == "during"
+        assert lst[2][1].aspect == "before"
         assert lst[2][1].is_abstract
         assert lst[2][1].is_aspect
 
-        assert lst[3][0].name == 'Red'
-        assert lst[3][0].path == ('TrafficLight', 'InService', 'Red')
+        assert lst[3][0].name == "Red"
+        assert lst[3][0].path == ("TrafficLight", "InService", "Red")
         assert lst[3][1].name == None
-        assert lst[3][1].stage == 'during'
+        assert lst[3][1].stage == "during"
         assert lst[3][1].aspect is None
         assert not lst[3][1].is_abstract
         assert not lst[3][1].is_aspect
 
-        assert lst[4][0].name == 'TrafficLight'
-        assert lst[4][0].path == ('TrafficLight',)
+        assert lst[4][0].name == "TrafficLight"
+        assert lst[4][0].path == ("TrafficLight",)
         assert lst[4][1].name == None
-        assert lst[4][1].stage == 'during'
-        assert lst[4][1].aspect == 'after'
+        assert lst[4][1].stage == "during"
+        assert lst[4][1].aspect == "after"
         assert not lst[4][1].is_abstract
         assert lst[4][1].is_aspect
 
@@ -434,47 +567,47 @@ class TestModelModelDLC1:
         lst = red.list_on_during_aspect_recursively(with_ids=True)
         assert len(lst) == 5
         assert lst[0][0] == 1
-        assert lst[0][1].name == 'TrafficLight'
-        assert lst[0][1].path == ('TrafficLight',)
+        assert lst[0][1].name == "TrafficLight"
+        assert lst[0][1].path == ("TrafficLight",)
         assert lst[0][2].name == None
-        assert lst[0][2].stage == 'during'
-        assert lst[0][2].aspect == 'before'
+        assert lst[0][2].stage == "during"
+        assert lst[0][2].aspect == "before"
         assert not lst[0][2].is_abstract
         assert lst[0][2].is_aspect
 
         assert lst[1][0] == 2
-        assert lst[1][1].name == 'TrafficLight'
-        assert lst[1][1].path == ('TrafficLight',)
-        assert lst[1][2].name == 'FFT'
-        assert lst[1][2].stage == 'during'
-        assert lst[1][2].aspect == 'before'
+        assert lst[1][1].name == "TrafficLight"
+        assert lst[1][1].path == ("TrafficLight",)
+        assert lst[1][2].name == "FFT"
+        assert lst[1][2].stage == "during"
+        assert lst[1][2].aspect == "before"
         assert lst[1][2].is_abstract
         assert lst[1][2].is_aspect
 
         assert lst[2][0] == 3
-        assert lst[2][1].name == 'TrafficLight'
-        assert lst[2][1].path == ('TrafficLight',)
-        assert lst[2][2].name == 'TTT'
-        assert lst[2][2].stage == 'during'
-        assert lst[2][2].aspect == 'before'
+        assert lst[2][1].name == "TrafficLight"
+        assert lst[2][1].path == ("TrafficLight",)
+        assert lst[2][2].name == "TTT"
+        assert lst[2][2].stage == "during"
+        assert lst[2][2].aspect == "before"
         assert lst[2][2].is_abstract
         assert lst[2][2].is_aspect
 
         assert lst[3][0] == 1
-        assert lst[3][1].name == 'Red'
-        assert lst[3][1].path == ('TrafficLight', 'InService', 'Red')
+        assert lst[3][1].name == "Red"
+        assert lst[3][1].path == ("TrafficLight", "InService", "Red")
         assert lst[3][2].name == None
-        assert lst[3][2].stage == 'during'
+        assert lst[3][2].stage == "during"
         assert lst[3][2].aspect is None
         assert not lst[3][2].is_abstract
         assert not lst[3][2].is_aspect
 
         assert lst[4][0] == 4
-        assert lst[4][1].name == 'TrafficLight'
-        assert lst[4][1].path == ('TrafficLight',)
+        assert lst[4][1].name == "TrafficLight"
+        assert lst[4][1].path == ("TrafficLight",)
         assert lst[4][2].name == None
-        assert lst[4][2].stage == 'during'
-        assert lst[4][2].aspect == 'after'
+        assert lst[4][2].stage == "during"
+        assert lst[4][2].aspect == "after"
         assert not lst[4][2].is_abstract
         assert lst[4][2].is_aspect
 
@@ -507,15 +640,15 @@ class TestModelModelDLC1:
     def test_abstract_on_during_aspects(self, root_state_1):
         lst = root_state_1.abstract_on_during_aspects
         assert len(lst) == 2
-        assert lst[0].name == 'FFT'
-        assert lst[0].stage == 'during'
-        assert lst[0].aspect == 'before'
+        assert lst[0].name == "FFT"
+        assert lst[0].stage == "during"
+        assert lst[0].aspect == "before"
         assert lst[0].is_abstract
         assert lst[0].is_aspect
 
-        assert lst[1].name == 'TTT'
-        assert lst[1].stage == 'during'
-        assert lst[1].aspect == 'before'
+        assert lst[1].name == "TTT"
+        assert lst[1].stage == "during"
+        assert lst[1].aspect == "before"
         assert lst[1].is_abstract
         assert lst[1].is_aspect
 
@@ -547,21 +680,23 @@ class TestModelModelDLC1:
         lst = root_state_1.non_abstract_on_during_aspects
         assert len(lst) == 2
         assert lst[0].name == None
-        assert lst[0].stage == 'during'
-        assert lst[0].aspect == 'before'
+        assert lst[0].stage == "during"
+        assert lst[0].aspect == "before"
         assert not lst[0].is_abstract
         assert lst[0].is_aspect
         assert lst[0].to_ast_node().operations == [
-            dsl_nodes.OperationAssignment(name='a', expr=dsl_nodes.Integer(raw='0'))]
+            dsl_nodes.OperationAssignment(name="a", expr=dsl_nodes.Integer(raw="0"))
+        ]
 
         assert lst[1].name == None
-        assert lst[1].stage == 'during'
-        assert lst[1].aspect == 'after'
+        assert lst[1].stage == "during"
+        assert lst[1].aspect == "after"
         assert not lst[1].is_abstract
         assert lst[1].is_aspect
         assert lst[1].to_ast_node().operations == [
-            dsl_nodes.OperationAssignment(name='a', expr=dsl_nodes.Integer(raw='255')),
-            dsl_nodes.OperationAssignment(name='b', expr=dsl_nodes.Integer(raw='1'))]
+            dsl_nodes.OperationAssignment(name="a", expr=dsl_nodes.Integer(raw="255")),
+            dsl_nodes.OperationAssignment(name="b", expr=dsl_nodes.Integer(raw="1")),
+        ]
 
         # print(f'lst = root_state_1.non_abstract_on_during_aspects')
         # print(f'assert len(lst) == {len(lst)}')

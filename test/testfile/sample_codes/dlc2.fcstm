@@ -1,0 +1,42 @@
+def int a = 0;
+def int b = 0x0;
+def int round_count = 0;  // define variables
+state TrafficLight {
+    !InService -> [*] :: ServiceError;
+    !Idle -> InService :: GiveUpThinking;
+    !* -> [*] :: GodDamnFuckUp; 
+    state InService {
+        state Red;
+        state Yellow;
+        state Green;
+        [*] -> Red :: Start effect {
+            b = 0x1;
+        };
+        Red -> Green effect {
+            b = 0x3;
+        };
+        Green -> Yellow effect {
+            b = 0x2;
+        };
+        Yellow -> Red : if [a >= 10] effect {
+            b = 0x1;
+            round_count = round_count + 1;
+        };
+        Green -> Yellow : /Idle.E2;
+        Yellow -> Yellow : /E2;
+    }
+    state Idle {
+        state ToBe;
+        state NotToBe;
+        
+        [*] -> ToBe;
+        ToBe -> NotToBe :: E1;
+        NotToBe -> ToBe :: E1;
+        NotToBe -> [*] :: E2;
+    }
+    
+    [*] -> InService;
+    InService -> Idle :: Maintain;
+    Idle -> Idle :: E2;
+    Idle -> [*];
+}

@@ -39,14 +39,18 @@ def expected_formatted_doc_2():
 
 @pytest.mark.unittest
 class TestFormatMultilineComment:
-    def test_basic_formatting(self, sample_raw_doc, expected_formatted_doc, text_aligner):
+    def test_basic_formatting(
+            self, sample_raw_doc, expected_formatted_doc, text_aligner
+    ):
         result = format_multiline_comment(sample_raw_doc)
         text_aligner.assert_equal(
             expect=expected_formatted_doc,
             actual=result,
         )
 
-    def test_basic_formatting_2(self, sample_raw_doc_2, expected_formatted_doc_2, text_aligner):
+    def test_basic_formatting_2(
+            self, sample_raw_doc_2, expected_formatted_doc_2, text_aligner
+    ):
         result = format_multiline_comment(sample_raw_doc_2)
         text_aligner.assert_equal(
             expect=expected_formatted_doc_2,
@@ -82,10 +86,7 @@ class TestFormatMultilineComment:
         """
         expected = "Extra\n    Whitespace"
         result = format_multiline_comment(raw_doc)
-        text_aligner.assert_equal(
-            expect=expected,
-            actual=result
-        )
+        text_aligner.assert_equal(expect=expected, actual=result)
 
     def test_empty_lines_removal(self):
         raw_doc = """
@@ -99,10 +100,11 @@ class TestFormatMultilineComment:
         result = format_multiline_comment(raw_doc)
         assert result == expected
 
-    @patch('os.linesep', '\r\n')
+    @patch("os.linesep", "\r\n")
+    @patch.dict('os.environ', {'UNITTEST': ''})
     def test_different_line_separator(self, sample_raw_doc):
         result = format_multiline_comment(sample_raw_doc)
-        assert '\r\n' in result
+        assert "\r\n" in result
 
     def test_unicode_characters(self):
         raw_doc = "/* Unicode: áéíóú */"

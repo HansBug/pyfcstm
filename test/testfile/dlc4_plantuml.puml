@@ -1,4 +1,5 @@
 @startuml
+hide empty description
 state "L1" as l1 {
     state "L11" as l1__l11 {
         state "L111" as l1__l11__l111 {

@@ -12,9 +12,10 @@ from pyfcstm.entry import pyfcstmcli
 @pytest.fixture()
 def input_code_file():
     with TemporaryDirectory() as td:
-        code_file = os.path.join(td, 'code.fcstm')
-        with open(code_file, 'w') as f:
-            print(textwrap.dedent("""
+        code_file = os.path.join(td, "code.fcstm")
+        with open(code_file, "w") as f:
+            print(
+                textwrap.dedent("""
     def int a = 0;
     def int b = 0x2 | 0x5;
 
@@ -103,7 +104,9 @@ def input_code_file():
         LX1 -> LX1 : if [a == 0x1];
         LX2 -> LX1 : if [a == 0x1];
     }
-    """).strip(), file=f)
+    """).strip(),
+                file=f,
+            )
 
         yield code_file
 
@@ -112,6 +115,7 @@ def input_code_file():
 def expected_plantuml_code():
     return textwrap.dedent("""
 @startuml
+hide empty description
 note as DefinitionNote
 defines {
     def int a = 0;
@@ -192,24 +196,42 @@ lx --> [*]
 
 @pytest.mark.unittest
 class TestEntryPlantuml:
-    def test_simple_plantuml_to_stdout(self, input_code_file, expected_plantuml_code, text_aligner):
-        result = simulate_entry(pyfcstmcli, [
-            'pyfcstm', 'plantuml', '-i', input_code_file,
-        ])
+    def test_simple_plantuml_to_stdout(
+        self, input_code_file, expected_plantuml_code, text_aligner
+    ):
+        result = simulate_entry(
+            pyfcstmcli,
+            [
+                "pyfcstm",
+                "plantuml",
+                "-i",
+                input_code_file,
+            ],
+        )
         assert result.exitcode == 0
         text_aligner.assert_equal(
             expect=expected_plantuml_code,
             actual=result.stdout,
         )
 
-    def test_simple_plantuml_to_file(self, input_code_file, expected_plantuml_code, text_aligner):
+    def test_simple_plantuml_to_file(
+        self, input_code_file, expected_plantuml_code, text_aligner
+    ):
         with isolated_directory():
-            result = simulate_entry(pyfcstmcli, [
-                'pyfcstm', 'plantuml', '-i', input_code_file, '-o', 'output_code.plantuml'
-            ])
+            result = simulate_entry(
+                pyfcstmcli,
+                [
+                    "pyfcstm",
+                    "plantuml",
+                    "-i",
+                    input_code_file,
+                    "-o",
+                    "output_code.plantuml",
+                ],
+            )
             assert result.exitcode == 0
 
             text_aligner.assert_equal(
                 expect=expected_plantuml_code,
-                actual=pathlib.Path('output_code.plantuml').read_text(),
+                actual=pathlib.Path("output_code.plantuml").read_text(),
             )

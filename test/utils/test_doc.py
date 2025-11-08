@@ -40,7 +40,7 @@ def expected_formatted_doc_2():
 @pytest.mark.unittest
 class TestFormatMultilineComment:
     def test_basic_formatting(
-        self, sample_raw_doc, expected_formatted_doc, text_aligner
+            self, sample_raw_doc, expected_formatted_doc, text_aligner
     ):
         result = format_multiline_comment(sample_raw_doc)
         text_aligner.assert_equal(
@@ -49,7 +49,7 @@ class TestFormatMultilineComment:
         )
 
     def test_basic_formatting_2(
-        self, sample_raw_doc_2, expected_formatted_doc_2, text_aligner
+            self, sample_raw_doc_2, expected_formatted_doc_2, text_aligner
     ):
         result = format_multiline_comment(sample_raw_doc_2)
         text_aligner.assert_equal(
@@ -101,6 +101,7 @@ class TestFormatMultilineComment:
         assert result == expected
 
     @patch("os.linesep", "\r\n")
+    @patch.dict('os.environ', {'UNITTEST': ''})
     def test_different_line_separator(self, sample_raw_doc):
         result = format_multiline_comment(sample_raw_doc)
         assert "\r\n" in result

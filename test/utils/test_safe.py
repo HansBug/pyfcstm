@@ -80,7 +80,7 @@ class TestSequenceSafe:
         assert "__" in result
 
     def test_segments_with_multiple_underscores(
-        self, segments_with_multiple_underscores
+            self, segments_with_multiple_underscores
     ):
         result = sequence_safe(segments_with_multiple_underscores)
         assert "___" not in result
@@ -109,8 +109,8 @@ class TestSequenceSafe:
     def test_regex_substitution_multiple_underscores(self):
         segments = ["test"]
         with patch(
-            "pyfcstm.utils.safe.underscore",
-            return_value="test___multiple____underscores",
+                "pyfcstm.utils.safe.underscore",
+                return_value="test___multiple____underscores",
         ):
             result = sequence_safe(segments)
             assert result == "test_multiple_underscores"
@@ -118,7 +118,7 @@ class TestSequenceSafe:
     def test_regex_substitution_single_underscore(self):
         segments = ["test"]
         with patch(
-            "pyfcstm.utils.safe.underscore", return_value="test_single_underscore"
+                "pyfcstm.utils.safe.underscore", return_value="test_single_underscore"
         ):
             result = sequence_safe(segments)
             assert result == "test_single_underscore"

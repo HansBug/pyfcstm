@@ -38,7 +38,7 @@ def zh_expected_text():
 class TestUtilsDecode:
     @pytest.mark.parametrize(["code_file"], [(file,) for file in get_cn_cases()])
     def test_auto_decode_for_simplified_chinese(
-        self, code_file, cn_expected_text, text_aligner
+            self, code_file, cn_expected_text, text_aligner
     ):
         actual_text = auto_decode(pathlib.Path(code_file).read_bytes())
         text_aligner.assert_equal(
@@ -48,7 +48,7 @@ class TestUtilsDecode:
 
     @pytest.mark.parametrize(["code_file"], [(file,) for file in get_zh_cases()])
     def test_auto_decode_for_traditional_chinese(
-        self, code_file, zh_expected_text, text_aligner
+            self, code_file, zh_expected_text, text_aligner
     ):
         actual_text = auto_decode(pathlib.Path(code_file).read_bytes())
         text_aligner.assert_equal(

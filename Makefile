@@ -73,7 +73,7 @@ sample: ${SAMPLE_TEST_FILES}
 
 ${MODEL_TEST_DIR}/test_sample_%.py: ${SAMPLE_CODES_DIR}/%.fcstm
 	@mkdir -p ${MODEL_TEST_DIR}
-	$(PYTHON) sample_test_generator.py -i $< -o $@
+	UNITTEST=1 $(PYTHON) sample_test_generator.py -i $< -o $@
 	ruff format $@
 
 sample_clean:

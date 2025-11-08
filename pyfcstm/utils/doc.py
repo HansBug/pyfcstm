@@ -59,6 +59,6 @@ def format_multiline_comment(raw_doc):
     lines = lines[:i + 1]
 
     # Use textwrap.dedent to align indentation
-    formatted_text = textwrap.dedent(os.linesep.join(map(str.rstrip, lines)))
-
+    linesep = '\n' if os.environ.get('UNITTEST') else os.linesep
+    formatted_text = textwrap.dedent(linesep.join(map(str.rstrip, lines)))
     return formatted_text

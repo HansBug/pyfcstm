@@ -33,14 +33,14 @@ developing embedded systems, protocol implementations, and complex control logic
 
 pyfcstm aims to provide a complete solution from conceptual design to code implementation. Its core strengths include:
 
-| Feature                         | Description                                                                                                                           | Advantage                                                                                                      | Documentation Pointer                                 |
-|:--------------------------------|:--------------------------------------------------------------------------------------------------------------------------------------|:---------------------------------------------------------------------------------------------------------------|:------------------------------------------------------|
-| **FSM DSL**                     | A concise and readable DSL syntax for defining states, nesting, transitions, events, conditions, and effects.                         | Focus on state machine logic, not programming language details.                                                | [DSL Syntax Tutorial [1]](#ref-1)                     |
-| **Hierarchical State Machines** | Supports **nested states** and **composite state** lifecycles (`enter`, `during`, `exit`).                                            | Capable of modeling complex real-time systems and protocols, enhancing maintainability.                        | [DSL Syntax Tutorial - State Definitions [1]](#ref-1) |
-| **Expression System**           | Built-in mathematical and logical expression parser supporting variable definition, conditional guards, and state effects (`effect`). | Allows defining the state machine's internal data and behavior at the DSL level.                               | [DSL Syntax Tutorial - Expression System [1]](#ref-1) |
-| **Templated Code Generation**   | Based on the **Jinja2** template engine, rendering the state machine model into target code (e.g., C/C++, Python, Rust).              | Extremely high flexibility, supporting code generation for virtually any programming language.                 | [Template Tutorial [2]](#ref-2)                       |
-| **Cross-Language Support**      | Easily enables state machine code generation for embedded or high-performance languages like **C/C++** through the template system.   | Suitable for scenarios where state machine logic needs to be deployed across different platforms or languages. | [Template Tutorial - Expression Styles [2]](#ref-2)   |
-| **PlantUML Integration**        | Directly converts DSL files into **PlantUML** code for generating state diagram visualizations.                                       | Facilitates design review and documentation generation.                                                        | [CLI Guide - plantuml [3]](#ref-3)                    |
+| Feature                         | Description                                                                                                                           | Advantage                                                                                                      | Documentation Pointer                                                                                       |
+|:--------------------------------|:--------------------------------------------------------------------------------------------------------------------------------------|:---------------------------------------------------------------------------------------------------------------|:------------------------------------------------------------------------------------------------------------|
+| **FSM DSL**                     | A concise and readable DSL syntax for defining states, nesting, transitions, events, conditions, and effects.                         | Focus on state machine logic, not programming language details.                                                | [DSL Syntax Tutorial](https://hansbug.github.io/pyfcstm/main/tutorials/dsl/index.html)                      |
+| **Hierarchical State Machines** | Supports **nested states** and **composite state** lifecycles (`enter`, `during`, `exit`).                                            | Capable of modeling complex real-time systems and protocols, enhancing maintainability.                        | [DSL Syntax Tutorial - State Definitions](https://hansbug.github.io/pyfcstm/main/tutorials/dsl/index.html)  |
+| **Expression System**           | Built-in mathematical and logical expression parser supporting variable definition, conditional guards, and state effects (`effect`). | Allows defining the state machine's internal data and behavior at the DSL level.                               | [DSL Syntax Tutorial - Expression System](https://hansbug.github.io/pyfcstm/main/tutorials/dsl/index.html)  |
+| **Templated Code Generation**   | Based on the **Jinja2** template engine, rendering the state machine model into target code (e.g., C/C++, Python, Rust).              | Extremely high flexibility, supporting code generation for virtually any programming language.                 | [Template Tutorial](https://hansbug.github.io/pyfcstm/main/tutorials/render/index.html)                     |
+| **Cross-Language Support**      | Easily enables state machine code generation for embedded or high-performance languages like **C/C++** through the template system.   | Suitable for scenarios where state machine logic needs to be deployed across different platforms or languages. | [Template Tutorial - Expression Styles](https://hansbug.github.io/pyfcstm/main/tutorials/render/index.html) |
+| **PlantUML Integration**        | Directly converts DSL files into **PlantUML** code for generating state diagram visualizations.                                       | Facilitates design review and documentation generation.                                                        | [CLI Guide - plantuml](https://hansbug.github.io/pyfcstm/main/tutorials/cli/index.html)                     |
 
 ## Installation
 
@@ -50,7 +50,9 @@ You can easily install pyfcstm using the `pip` command line from the official Py
 pip install pyfcstm
 ```
 
-**More Information**: Please refer to the [Installation Documentation [4]](#ref-4) for detailed steps and environment
+**More Information**: Please refer to
+the [Installation Documentation](https://hansbug.github.io/pyfcstm/main/tutorials/installation/index.html) for
+detailed steps and environment
 checks.
 
 ## Quick Start
@@ -217,19 +219,19 @@ state TrafficLight {
 
 The pyfcstm DSL syntax is inspired by UML Statecharts and supports the following key elements:
 
-| Element                 | Keyword                   | Description                                                                                                                            | Example                         | Documentation Pointer                |
-|:------------------------|:--------------------------|:---------------------------------------------------------------------------------------------------------------------------------------|:--------------------------------|:-------------------------------------|
-| **Variable Definition** | `def int/float`           | Defines integer or float variables for the state machine's internal data.                                                              | `def int counter = 0;`          | [Variable Definitions [1]](#ref-1)   |
-| **State**               | `state`                   | Defines a state, supporting **Leaf States** and **Composite States** (nesting).                                                        | `state Running { ... }`         | [State Definitions [1]](#ref-1)      |
-| **Transition**          | `->`                      | Defines transitions between states, supporting **Entry** (`[*]`) and **Exit** (`[*]`) transitions.                                     | `Red -> Green;`                 | [Transition Definitions [1]](#ref-1) |
-| **Forced Transition**   | `!`                       | Defines a forced transition, which bypasses the source state's `exit` action.                                                          | `!InService -> [*] :: Error;`   | [Transition Definitions [1]](#ref-1) |
-| **Event**               | `::` or `:`               | The event that triggers a transition, supporting **Local Events** (`::`) and **Global Events** (`:` or `/`).                           | `Red -> Green :: Timer;`        | [Transition Definitions [1]](#ref-1) |
-| **Guard Condition**     | `if [...]`                | A condition that must be true for the transition to occur.                                                                             | `Yellow -> Red : if [a >= 10];` | [Expression System [1]](#ref-1)      |
-| **Effect**              | `effect { ... }`          | Operations (variable assignments) executed when the transition occurs.                                                                 | `effect { b = 0x1; }`           | [Operational Statements [1]](#ref-1) |
-| **Lifecycle Actions**   | `enter`, `during`, `exit` | Actions executed when a state is entered, active, or exited.                                                                           | `enter { a = 0; }`              | [Lifecycle Actions [1]](#ref-1)      |
-| **Abstract Action**     | `abstract`                | Declares an abstract function that must be implemented in the generated code framework.                                                | `enter abstract Init;`          | [Lifecycle Actions [1]](#ref-1)      |
-| **Aspect Action**       | `>> during`               | Special `during` action for composite states, executed **before** (`before`) or **after** (`after`) the leaf state's `during` actions. | `>> during before { ... }`      | [Lifecycle Actions [1]](#ref-1)      |
-| **Pseudo State**        | `pseudo state`            | Special leaf state that will not apply the aspect actions of the ancestor states.                                                      | `pseudo state LeafState;`       | [Pseudo States [1]](#ref-1)          |
+| Element                 | Keyword                   | Description                                                                                                                            | Example                         | Documentation Pointer                                                                     |
+|:------------------------|:--------------------------|:---------------------------------------------------------------------------------------------------------------------------------------|:--------------------------------|:------------------------------------------------------------------------------------------|
+| **Variable Definition** | `def int/float`           | Defines integer or float variables for the state machine's internal data.                                                              | `def int counter = 0;`          | [Variable Definitions](https://hansbug.github.io/pyfcstm/main/tutorials/dsl/index.html)   |
+| **State**               | `state`                   | Defines a state, supporting **Leaf States** and **Composite States** (nesting).                                                        | `state Running { ... }`         | [State Definitions](https://hansbug.github.io/pyfcstm/main/tutorials/dsl/index.html)      |
+| **Transition**          | `->`                      | Defines transitions between states, supporting **Entry** (`[*]`) and **Exit** (`[*]`) transitions.                                     | `Red -> Green;`                 | [Transition Definitions](https://hansbug.github.io/pyfcstm/main/tutorials/dsl/index.html) |
+| **Forced Transition**   | `!`                       | Defines a forced transition, which bypasses the source state's `exit` action.                                                          | `!InService -> [*] :: Error;`   | [Transition Definitions](https://hansbug.github.io/pyfcstm/main/tutorials/dsl/index.html) |
+| **Event**               | `::` or `:`               | The event that triggers a transition, supporting **Local Events** (`::`) and **Global Events** (`:` or `/`).                           | `Red -> Green :: Timer;`        | [Transition Definitions](https://hansbug.github.io/pyfcstm/main/tutorials/dsl/index.html) |
+| **Guard Condition**     | `if [...]`                | A condition that must be true for the transition to occur.                                                                             | `Yellow -> Red : if [a >= 10];` | [Expression System](https://hansbug.github.io/pyfcstm/main/tutorials/dsl/index.html)      |
+| **Effect**              | `effect { ... }`          | Operations (variable assignments) executed when the transition occurs.                                                                 | `effect { b = 0x1; }`           | [Operational Statements](https://hansbug.github.io/pyfcstm/main/tutorials/dsl/index.html) |
+| **Lifecycle Actions**   | `enter`, `during`, `exit` | Actions executed when a state is entered, active, or exited.                                                                           | `enter { a = 0; }`              | [Lifecycle Actions](https://hansbug.github.io/pyfcstm/main/tutorials/dsl/index.html)      |
+| **Abstract Action**     | `abstract`                | Declares an abstract function that must be implemented in the generated code framework.                                                | `enter abstract Init;`          | [Lifecycle Actions](https://hansbug.github.io/pyfcstm/main/tutorials/dsl/index.html)      |
+| **Aspect Action**       | `>> during`               | Special `during` action for composite states, executed **before** (`before`) or **after** (`after`) the leaf state's `during` actions. | `>> during before { ... }`      | [Lifecycle Actions](https://hansbug.github.io/pyfcstm/main/tutorials/dsl/index.html)      |
+| **Pseudo State**        | `pseudo state`            | Special leaf state that will not apply the aspect actions of the ancestor states.                                                      | `pseudo state LeafState;`       | [Pseudo States](https://hansbug.github.io/pyfcstm/main/tutorials/dsl/index.html)          |
 
 ### Key DSL Concepts
 
@@ -269,7 +271,9 @@ template_directory/
 └── ...                  # Directory structure is preserved
 ```
 
-**More Information**: See [Template System Architecture Details [2]](#ref-2) for a deep dive into the structure.
+**More Information**:
+See [Template System Architecture Details](https://hansbug.github.io/pyfcstm/main/tutorials/render/index.html) for a
+deep dive into the structure.
 
 ### Core Configuration (`config.yaml`)
 
@@ -285,7 +289,9 @@ The `config.yaml` file is the "brain" of the template system, defining:
 4. **`ignores`**: Defines files or directories to be ignored during the code generation process, using `pathspec` for
    git-like pattern matching.
 
-**More Information**: See [Configuration File Deep Analysis [2]](#ref-2) for detailed configuration options.
+**More Information**:
+See [Configuration File Deep Analysis](https://hansbug.github.io/pyfcstm/main/tutorials/render/index.html) for detailed
+configuration options.
 
 ### Template Rendering
 
@@ -316,7 +322,9 @@ void {{ state.name }}_enter() {
 {% endfor %}
 ```
 
-**More Information**: Please refer to the [Template Syntax Deep Analysis [2]](#ref-2) for a comprehensive guide on
+**More Information**: Please refer to
+the [Template Syntax Deep Analysis](https://hansbug.github.io/pyfcstm/main/tutorials/render/index.html) for a
+comprehensive guide on
 template development.
 
 ## Contribution & Support
@@ -331,13 +339,3 @@ pyfcstm is an open-source project, and contributions in all forms are welcome:
 **Documentation**: [https://pyfcstm.readthedocs.io/](https://pyfcstm.readthedocs.io/)
 **Source Code**: [https://github.com/HansBug/pyfcstm](https://github.com/HansBug/pyfcstm)
 **License**: [MIT License](https://github.com/hansbug/pyfcstm/blob/master/LICENSE)
-
----
-*Generated by Manus AI*
-
-## References
-
-[1] [PyFCSTM DSL Syntax Tutorial](https://hansbug.github.io/pyfcstm/main/tutorials/dsl/index.html)
-[2] [State Machine Code Generator Template Tutorial](https://hansbug.github.io/pyfcstm/main/tutorials/render/index.html)
-[3] [PyFCSTM Command Line Guide](https://hansbug.github.io/pyfcstm/main/tutorials/cli/index.html)
-[4] [Installation Documentation](https://hansbug.github.io/pyfcstm/main/tutorials/installation/index.html)

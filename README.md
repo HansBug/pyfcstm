@@ -338,5 +338,7 @@ pyfcstm is an open-source project, and contributions in all forms are welcome:
 * **Suggest Features**: Feel free to discuss any feature suggestions or improvement ideas in the Issues section.
 
 **Documentation**: [https://pyfcstm.readthedocs.io/](https://pyfcstm.readthedocs.io/)
+
 **Source Code**: [https://github.com/HansBug/pyfcstm](https://github.com/HansBug/pyfcstm)
+
 **License**: [MIT License](https://github.com/hansbug/pyfcstm/blob/master/LICENSE)

@@ -20,6 +20,7 @@ import os
 from abc import ABC
 from dataclasses import dataclass
 from textwrap import indent
+from typing import List, Union, Optional
 
 from hbutils.design import SingletonMark
 
@@ -74,8 +75,6 @@ __all__ = [
     'DuringAspectRefFunction',
 ]
 
-from typing import List, Union, Optional
-
 
 @dataclass
 class ASTNode(ABC):
@@ -110,6 +109,8 @@ class ChainID(Identifier):
 
     :param path: List of string components that make up the chained identifier
     :type path: List[str]
+    :param is_absolute: Whether the identifier is absolute (starts with /)
+    :type is_absolute: bool
 
     :rtype: ChainID
 
@@ -122,7 +123,7 @@ class ChainID(Identifier):
     path: List[str]
     is_absolute: bool = False
 
-    def __str__(self):
+    def __str__(self) -> str:
         """
         Convert the ChainID to its string representation.
 
@@ -183,7 +184,7 @@ class Literal(Expr):
         """
         raise NotImplementedError  # pragma: no cover
 
-    def __str__(self):
+    def __str__(self) -> str:
         """
         Convert the literal to its string representation.
 
@@ -210,7 +211,7 @@ class Integer(Literal):
         42
     """
 
-    def _value(self):
+    def _value(self) -> int:
         """
         Convert the raw string to an integer value.
 
@@ -237,7 +238,7 @@ class HexInt(Literal):
         255
     """
 
-    def _value(self):
+    def _value(self) -> int:
         """
         Convert the raw hexadecimal string to an integer value.
 
@@ -246,7 +247,7 @@ class HexInt(Literal):
         """
         return int(self.raw, 16)
 
-    def __str__(self):
+    def __str__(self) -> str:
         """
         Convert the hexadecimal integer to its string representation.
 
@@ -273,7 +274,7 @@ class Float(Literal):
         3.14
     """
 
-    def _value(self):
+    def _value(self) -> float:
         """
         Convert the raw string to a float value.
 
@@ -282,7 +283,7 @@ class Float(Literal):
         """
         return float(self.raw)
 
-    def __str__(self):
+    def __str__(self) -> str:
         """
         Convert the float to its string representation.
 
@@ -315,7 +316,7 @@ class Boolean(Literal):
         """
         self.raw = self.raw.lower()
 
-    def _value(self):
+    def _value(self) -> bool:
         """
         Convert the raw string to a boolean value.
 
@@ -347,7 +348,7 @@ class Constant(Literal):
         'tau': math.tau,
     }
 
-    def _value(self):
+    def _value(self) -> float:
         """
         Get the value of the named constant.
 
@@ -356,7 +357,7 @@ class Constant(Literal):
         """
         return self.__KNOWN_CONSTANTS__[self.raw]
 
-    def __str__(self):
+    def __str__(self) -> str:
         """
         Convert the constant to its string representation.
 
@@ -386,7 +387,7 @@ class Name(Expr):
     """
     name: str
 
-    def __str__(self):
+    def __str__(self) -> str:
         """
         Convert the name to its string representation.
 
@@ -417,7 +418,7 @@ class Paren(Expr):
     """
     expr: Expr
 
-    def __str__(self):
+    def __str__(self) -> str:
         """
         Convert the parenthesized expression to its string representation.
 
@@ -460,7 +461,7 @@ class UnaryOp(Expr):
         """
         self.op = self.__aliases__.get(self.op, self.op)
 
-    def __str__(self):
+    def __str__(self) -> str:
         """
         Convert the unary operation to its string representation.
 
@@ -510,7 +511,7 @@ class BinaryOp(Expr):
         """
         self.op = self.__aliases__.get(self.op, self.op)
 
-    def __str__(self):
+    def __str__(self) -> str:
         """
         Convert the binary operation to its string representation.
 
@@ -547,7 +548,7 @@ class ConditionalOp(Expr):
     value_true: Expr
     value_false: Expr
 
-    def __str__(self):
+    def __str__(self) -> str:
         """
         Convert the conditional operation to its string representation.
 
@@ -580,7 +581,7 @@ class UFunc(Expr):
     func: str
     expr: Expr
 
-    def __str__(self):
+    def __str__(self) -> str:
         """
         Convert the function call to its string representation.
 
@@ -623,7 +624,7 @@ class ConstantDefinition(Statement):
     name: str
     expr: Expr
 
-    def __str__(self):
+    def __str__(self) -> str:
         """
         Convert the constant definition to its string representation.
 
@@ -656,7 +657,7 @@ class InitialAssignment(Statement):
     name: str
     expr: Expr
 
-    def __str__(self):
+    def __str__(self) -> str:
         """
         Convert the initial assignment to its string representation.
 
@@ -692,7 +693,7 @@ class DefAssignment(Statement):
     type: str
     expr: Expr
 
-    def __str__(self):
+    def __str__(self) -> str:
         """
         Convert the definition assignment to its string representation.
 
@@ -723,7 +724,7 @@ class OperationalDeprecatedAssignment(Statement):
     name: str
     expr: Expr
 
-    def __str__(self):
+    def __str__(self) -> str:
         """
         Convert the operational deprecated assignment to its string representation.
 
@@ -753,7 +754,7 @@ class Condition(ASTNode):
     """
     expr: Expr
 
-    def __str__(self):
+    def __str__(self) -> str:
         """
         Convert the condition to its string representation.
 
@@ -787,7 +788,7 @@ class Preamble(ASTNode):
     """
     stats: List[Union[ConstantDefinition, InitialAssignment]]
 
-    def __str__(self):
+    def __str__(self) -> str:
         """
         Convert the preamble to its string representation.
 
@@ -820,7 +821,7 @@ class Operation(ASTNode):
     """
     stats: List[OperationalDeprecatedAssignment]
 
-    def __str__(self):
+    def __str__(self) -> str:
         """
         Convert the operation to its string representation.
 
@@ -840,7 +841,7 @@ class _StateSingletonMark(SingletonMark):
     :rtype: _StateSingletonMark
     """
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         """
         Convert the singleton mark to its string representation.
 
@@ -909,7 +910,7 @@ class TransitionDefinition(ASTNode):
     condition_expr: Optional[Expr]
     post_operations: List['OperationAssignment']
 
-    def __str__(self):
+    def __str__(self) -> str:
         """
         Convert the transition definition to its string representation.
 
@@ -974,7 +975,7 @@ class ForceTransitionDefinition(ASTNode):
     event_id: Optional[ChainID]
     condition_expr: Optional[Expr]
 
-    def __str__(self):
+    def __str__(self) -> str:
         """
         Convert the force transition definition to its string representation.
 
@@ -1022,6 +1023,12 @@ class StateDefinition(ASTNode):
     :type durings: List[DuringStatement]
     :param exits: List of actions to perform when exiting the state
     :type exits: List[ExitStatement]
+    :param during_aspects: List of aspect-specific actions to perform while in the state
+    :type during_aspects: List[DuringAspectStatement]
+    :param force_transitions: List of forced transitions from this state
+    :type force_transitions: List[ForceTransitionDefinition]
+    :param is_pseudo: Whether this is a pseudo state
+    :type is_pseudo: bool
 
     :rtype: StateDefinition
 
@@ -1047,6 +1054,9 @@ class StateDefinition(ASTNode):
     is_pseudo: bool = False
 
     def __post_init__(self):
+        """
+        Initialize default empty lists for optional parameters.
+        """
         self.substates = self.substates or []
         self.transitions = self.transitions or []
         self.force_transitions = self.force_transitions or []
@@ -1055,7 +1065,7 @@ class StateDefinition(ASTNode):
         self.exits = self.exits or []
         self.during_aspects = self.during_aspects or []
 
-    def __str__(self):
+    def __str__(self) -> str:
         """
         Convert the state definition to its string representation.
 
@@ -1108,7 +1118,7 @@ class OperationAssignment(Statement):
     name: str
     expr: Expr
 
-    def __str__(self):
+    def __str__(self) -> str:
         """
         Convert the operation assignment to its string representation.
 
@@ -1145,7 +1155,7 @@ class StateMachineDSLProgram(ASTNode):
     definitions: List[DefAssignment]
     root_state: StateDefinition
 
-    def __str__(self):
+    def __str__(self) -> str:
         """
         Convert the state machine program to its string representation.
 
@@ -1178,6 +1188,8 @@ class EnterOperations(EnterStatement):
 
     :param operations: List of operation assignments
     :type operations: List[OperationAssignment]
+    :param name: Optional name for the operation block
+    :type name: Optional[str]
 
     :rtype: EnterOperations
 
@@ -1193,7 +1205,7 @@ class EnterOperations(EnterStatement):
     operations: List[OperationAssignment]
     name: Optional[str] = None
 
-    def __str__(self):
+    def __str__(self) -> str:
         """
         Convert the enter operations to their string representation.
 
@@ -1236,7 +1248,7 @@ class EnterAbstractFunction(EnterStatement):
     name: Optional[str]
     doc: Optional[str]
 
-    def __str__(self):
+    def __str__(self) -> str:
         """
         Convert the enter abstract function to its string representation.
 
@@ -1261,10 +1273,34 @@ class EnterAbstractFunction(EnterStatement):
 
 @dataclass
 class EnterRefFunction(EnterStatement):
+    """
+    Represents a reference function to call when entering a state.
+
+    Reference functions point to existing functions defined elsewhere.
+
+    :param name: Optional name of the function
+    :type name: Optional[str]
+    :param ref: Chain identifier referencing the function
+    :type ref: ChainID
+
+    :rtype: EnterRefFunction
+
+    Example::
+
+        >>> ref_func = EnterRefFunction("init", ChainID(["common", "initialize"]))
+        >>> str(ref_func)
+        'enter init ref common.initialize;'
+    """
     name: Optional[str]
     ref: ChainID
 
     def __str__(self) -> str:
+        """
+        Convert the enter reference function to its string representation.
+
+        :return: String representation of the enter reference function
+        :rtype: str
+        """
         if self.name:
             return f'enter {self.name} ref {self.ref};'
         else:
@@ -1290,6 +1326,8 @@ class ExitOperations(ExitStatement):
 
     :param operations: List of operation assignments
     :type operations: List[OperationAssignment]
+    :param name: Optional name for the operation block
+    :type name: Optional[str]
 
     :rtype: ExitOperations
 
@@ -1305,7 +1343,7 @@ class ExitOperations(ExitStatement):
     operations: List[OperationAssignment]
     name: Optional[str] = None
 
-    def __str__(self):
+    def __str__(self) -> str:
         """
         Convert the exit operations to their string representation.
 
@@ -1349,7 +1387,7 @@ class ExitAbstractFunction(ExitStatement):
     name: Optional[str]
     doc: Optional[str]
 
-    def __str__(self):
+    def __str__(self) -> str:
         """
         Convert the exit abstract function to its string representation.
 
@@ -1374,10 +1412,34 @@ class ExitAbstractFunction(ExitStatement):
 
 @dataclass
 class ExitRefFunction(ExitStatement):
+    """
+    Represents a reference function to call when exiting a state.
+
+    Reference functions point to existing functions defined elsewhere.
+
+    :param name: Optional name of the function
+    :type name: Optional[str]
+    :param ref: Chain identifier referencing the function
+    :type ref: ChainID
+
+    :rtype: ExitRefFunction
+
+    Example::
+
+        >>> ref_func = ExitRefFunction("cleanup", ChainID(["common", "cleanup"]))
+        >>> str(ref_func)
+        'exit cleanup ref common.cleanup;'
+    """
     name: Optional[str]
     ref: ChainID
 
     def __str__(self) -> str:
+        """
+        Convert the exit reference function to its string representation.
+
+        :return: String representation of the exit reference function
+        :rtype: str
+        """
         if self.name:
             return f'exit {self.name} ref {self.ref};'
         else:
@@ -1405,6 +1467,8 @@ class DuringOperations(DuringStatement):
     :type aspect: Optional[str]
     :param operations: List of operation assignments
     :type operations: List[OperationAssignment]
+    :param name: Optional name for the operation block
+    :type name: Optional[str]
 
     :rtype: DuringOperations
 
@@ -1421,7 +1485,7 @@ class DuringOperations(DuringStatement):
     operations: List[OperationAssignment]
     name: Optional[str] = None
 
-    def __str__(self):
+    def __str__(self) -> str:
         """
         Convert the during operations to their string representation.
 
@@ -1473,7 +1537,7 @@ class DuringAbstractFunction(DuringStatement):
     aspect: Optional[str]
     doc: Optional[str]
 
-    def __str__(self):
+    def __str__(self) -> str:
         """
         Convert the during abstract function to its string representation.
 
@@ -1504,11 +1568,37 @@ class DuringAbstractFunction(DuringStatement):
 
 @dataclass
 class DuringRefFunction(DuringStatement):
+    """
+    Represents a reference function to call while in a state.
+
+    Reference functions point to existing functions defined elsewhere.
+
+    :param name: Optional name of the function
+    :type name: Optional[str]
+    :param aspect: Optional aspect name (e.g., "entry", "do", "exit")
+    :type aspect: Optional[str]
+    :param ref: Chain identifier referencing the function
+    :type ref: ChainID
+
+    :rtype: DuringRefFunction
+
+    Example::
+
+        >>> ref_func = DuringRefFunction("process", "do", ChainID(["common", "process"]))
+        >>> str(ref_func)
+        'during do process ref common.process;'
+    """
     name: Optional[str]
     aspect: Optional[str]
     ref: ChainID
 
     def __str__(self) -> str:
+        """
+        Convert the during reference function to its string representation.
+
+        :return: String representation of the during reference function
+        :rtype: str
+        """
         if self.name:
             if self.aspect:
                 return f'during {self.aspect} {self.name} ref {self.ref};'
@@ -1538,7 +1628,7 @@ class DuringAspectOperations(DuringAspectStatement):
     """
     Represents a block of aspect-specific operations to perform while in a state.
 
-    :param aspect: The aspect name (e.g., "entry", "do", "exit")
+    :param aspect: The aspect name (e.g., "before", "after")
     :type aspect: str
     :param operations: List of operation assignments
     :type operations: List[OperationAssignment]
@@ -1560,7 +1650,7 @@ class DuringAspectOperations(DuringAspectStatement):
     operations: List[OperationAssignment]
     name: Optional[str] = None
 
-    def __str__(self):
+    def __str__(self) -> str:
         """
         Convert the during aspect operations to their string representation.
 
@@ -1606,7 +1696,7 @@ class DuringAspectAbstractFunction(DuringAspectStatement):
     aspect: str
     doc: Optional[str]
 
-    def __str__(self):
+    def __str__(self) -> str:
         """
         Convert the during aspect abstract function to its string representation.
 
@@ -1631,11 +1721,37 @@ class DuringAspectAbstractFunction(DuringAspectStatement):
 
 @dataclass
 class DuringAspectRefFunction(DuringAspectStatement):
+    """
+    Represents a reference function to call for a specific aspect while in a state.
+
+    Reference functions point to existing functions defined elsewhere.
+
+    :param name: Optional name of the function
+    :type name: Optional[str]
+    :param aspect: The aspect name (e.g., "before", "after")
+    :type aspect: str
+    :param ref: Chain identifier referencing the function
+    :type ref: ChainID
+
+    :rtype: DuringAspectRefFunction
+
+    Example::
+
+        >>> ref_func = DuringAspectRefFunction("process", "before", ChainID(["common", "process"]))
+        >>> str(ref_func)
+        '>> during process ref common.process;'
+    """
     name: Optional[str]
     aspect: str
     ref: ChainID
 
     def __str__(self) -> str:
+        """
+        Convert the during aspect reference function to its string representation.
+
+        :return: String representation of the during aspect reference function
+        :rtype: str
+        """
         if self.name:
             return f'>> during {self.name} ref {self.ref};'
         else:

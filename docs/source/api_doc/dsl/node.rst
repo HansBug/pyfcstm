@@ -230,6 +230,13 @@ EnterAbstractFunction
     :members: name, doc, __str__
 
 
+EnterRefFunction
+----------------------------------------------------------
+
+.. autoclass:: EnterRefFunction
+    :members: name, ref, __str__
+
+
 ExitStatement
 ----------------------------------------------------------
 
@@ -249,6 +256,13 @@ ExitAbstractFunction
 
 .. autoclass:: ExitAbstractFunction
     :members: name, doc, __str__
+
+
+ExitRefFunction
+----------------------------------------------------------
+
+.. autoclass:: ExitRefFunction
+    :members: name, ref, __str__
 
 
 DuringStatement
@@ -272,6 +286,13 @@ DuringAbstractFunction
     :members: name, aspect, doc, __str__
 
 
+DuringRefFunction
+----------------------------------------------------------
+
+.. autoclass:: DuringRefFunction
+    :members: name, aspect, ref, __str__
+
+
 DuringAspectStatement
 ----------------------------------------------------------
 
@@ -291,6 +312,13 @@ DuringAspectAbstractFunction
 
 .. autoclass:: DuringAspectAbstractFunction
     :members: name, aspect, doc, __str__
+
+
+DuringAspectRefFunction
+----------------------------------------------------------
+
+.. autoclass:: DuringAspectRefFunction
+    :members: name, aspect, ref, __str__
 
 
 INIT_STATE

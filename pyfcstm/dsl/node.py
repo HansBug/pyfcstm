@@ -59,15 +59,19 @@ __all__ = [
     'EnterStatement',
     'EnterOperations',
     'EnterAbstractFunction',
+    'EnterRefFunction',
     'ExitStatement',
     'ExitOperations',
     'ExitAbstractFunction',
+    'ExitRefFunction',
     'DuringStatement',
     'DuringOperations',
     'DuringAbstractFunction',
+    'DuringRefFunction',
     'DuringAspectStatement',
     'DuringAspectOperations',
     'DuringAspectAbstractFunction',
+    'DuringAspectRefFunction',
 ]
 
 from typing import List, Union, Optional
@@ -1256,6 +1260,18 @@ class EnterAbstractFunction(EnterStatement):
 
 
 @dataclass
+class EnterRefFunction(EnterStatement):
+    name: Optional[str]
+    ref: ChainID
+
+    def __str__(self) -> str:
+        if self.name:
+            return f'enter {self.name} ref {self.ref};'
+        else:
+            return f'enter ref {self.ref};'
+
+
+@dataclass
 class ExitStatement(ASTNode):
     """
     Abstract base class for exit statements in the state machine DSL.
@@ -1354,6 +1370,18 @@ class ExitAbstractFunction(ExitStatement):
                 print(';', file=f, end='')
 
             return f.getvalue()
+
+
+@dataclass
+class ExitRefFunction(ExitStatement):
+    name: Optional[str]
+    ref: ChainID
+
+    def __str__(self) -> str:
+        if self.name:
+            return f'exit {self.name} ref {self.ref};'
+        else:
+            return f'exit ref {self.ref};'
 
 
 @dataclass
@@ -1475,6 +1503,25 @@ class DuringAbstractFunction(DuringStatement):
 
 
 @dataclass
+class DuringRefFunction(DuringStatement):
+    name: Optional[str]
+    aspect: Optional[str]
+    ref: ChainID
+
+    def __str__(self) -> str:
+        if self.name:
+            if self.aspect:
+                return f'during {self.aspect} {self.name} ref {self.ref};'
+            else:
+                return f'during {self.name} ref {self.ref};'
+        else:
+            if self.aspect:
+                return f'during {self.aspect} ref {self.ref};'
+            else:
+                return f'during ref {self.ref};'
+
+
+@dataclass
 class DuringAspectStatement(ASTNode):
     """
     Abstract base class for during aspect statements in the state machine DSL.
@@ -1580,3 +1627,16 @@ class DuringAspectAbstractFunction(DuringAspectStatement):
                 print(';', file=f, end='')
 
             return f.getvalue()
+
+
+@dataclass
+class DuringAspectRefFunction(DuringAspectStatement):
+    name: Optional[str]
+    aspect: str
+    ref: ChainID
+
+    def __str__(self) -> str:
+        if self.name:
+            return f'>> during {self.name} ref {self.ref};'
+        else:
+            return f'>> during ref {self.ref};'

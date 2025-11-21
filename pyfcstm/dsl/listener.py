@@ -342,6 +342,13 @@ class GrammarParseListener(GrammarListener):
             doc=format_multiline_comment(ctx.raw_doc.text) if ctx.raw_doc else None,
         )
 
+    def exitEnterRefFunc(self, ctx: GrammarParser.EnterRefFuncContext):
+        super().exitEnterRefFunc(ctx)
+        self.nodes[ctx] = EnterRefFunction(
+            name=ctx.func_name.text if ctx.func_name else None,
+            ref=self.nodes[ctx.chain_id()],
+        )
+
     def exitExitOperations(self, ctx: GrammarParser.ExitOperationsContext):
         super().exitExitOperations(ctx)
         self.nodes[ctx] = ExitOperations(
@@ -354,6 +361,13 @@ class GrammarParseListener(GrammarListener):
         self.nodes[ctx] = ExitAbstractFunction(
             name=ctx.func_name.text if ctx.func_name else None,
             doc=format_multiline_comment(ctx.raw_doc.text) if ctx.raw_doc else None,
+        )
+
+    def exitExitRefFunc(self, ctx: GrammarParser.ExitRefFuncContext):
+        super().exitExitRefFunc(ctx)
+        self.nodes[ctx] = ExitRefFunction(
+            name=ctx.func_name.text if ctx.func_name else None,
+            ref=self.nodes[ctx.chain_id()],
         )
 
     def exitDuringOperations(self, ctx: GrammarParser.DuringOperationsContext):
@@ -370,6 +384,14 @@ class GrammarParseListener(GrammarListener):
             name=ctx.func_name.text if ctx.func_name else None,
             aspect=ctx.aspect.text if ctx.aspect else None,
             doc=format_multiline_comment(ctx.raw_doc.text) if ctx.raw_doc else None,
+        )
+
+    def exitDuringRefFunc(self, ctx: GrammarParser.DuringRefFuncContext):
+        super().exitDuringRefFunc(ctx)
+        self.nodes[ctx] = DuringRefFunction(
+            name=ctx.func_name.text if ctx.func_name else None,
+            aspect=ctx.aspect.text if ctx.aspect else None,
+            ref=self.nodes[ctx.chain_id()],
         )
 
     def exitGeneric_expression(self, ctx: GrammarParser.Generic_expressionContext):
@@ -392,6 +414,14 @@ class GrammarParseListener(GrammarListener):
             name=ctx.func_name.text if ctx.func_name else None,
             aspect=ctx.aspect.text if ctx.aspect else None,
             doc=format_multiline_comment(ctx.raw_doc.text) if ctx.raw_doc else None,
+        )
+
+    def exitDuringAspectRefFunc(self, ctx: GrammarParser.DuringAspectRefFuncContext):
+        super().exitDuringAspectRefFunc(ctx)
+        self.nodes[ctx] = DuringAspectRefFunction(
+            name=ctx.func_name.text if ctx.func_name else None,
+            aspect=ctx.aspect.text if ctx.aspect else None,
+            ref=self.nodes[ctx.chain_id()],
         )
 
     def exitNormalForceTransitionDefinition(self, ctx: GrammarParser.NormalForceTransitionDefinitionContext):

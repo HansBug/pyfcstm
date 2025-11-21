@@ -153,6 +153,14 @@ class GrammarListener(ParseTreeListener):
     def exitEnterAbstractFunc(self, ctx: GrammarParser.EnterAbstractFuncContext):
         pass
 
+    # Enter a parse tree produced by GrammarParser#enterRefFunc.
+    def enterEnterRefFunc(self, ctx: GrammarParser.EnterRefFuncContext):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#enterRefFunc.
+    def exitEnterRefFunc(self, ctx: GrammarParser.EnterRefFuncContext):
+        pass
+
     # Enter a parse tree produced by GrammarParser#exitOperations.
     def enterExitOperations(self, ctx: GrammarParser.ExitOperationsContext):
         pass
@@ -169,6 +177,14 @@ class GrammarListener(ParseTreeListener):
     def exitExitAbstractFunc(self, ctx: GrammarParser.ExitAbstractFuncContext):
         pass
 
+    # Enter a parse tree produced by GrammarParser#exitRefFunc.
+    def enterExitRefFunc(self, ctx: GrammarParser.ExitRefFuncContext):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#exitRefFunc.
+    def exitExitRefFunc(self, ctx: GrammarParser.ExitRefFuncContext):
+        pass
+
     # Enter a parse tree produced by GrammarParser#duringOperations.
     def enterDuringOperations(self, ctx: GrammarParser.DuringOperationsContext):
         pass
@@ -183,6 +199,14 @@ class GrammarListener(ParseTreeListener):
 
     # Exit a parse tree produced by GrammarParser#duringAbstractFunc.
     def exitDuringAbstractFunc(self, ctx: GrammarParser.DuringAbstractFuncContext):
+        pass
+
+    # Enter a parse tree produced by GrammarParser#duringRefFunc.
+    def enterDuringRefFunc(self, ctx: GrammarParser.DuringRefFuncContext):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#duringRefFunc.
+    def exitDuringRefFunc(self, ctx: GrammarParser.DuringRefFuncContext):
         pass
 
     # Enter a parse tree produced by GrammarParser#duringAspectOperations.
@@ -207,6 +231,14 @@ class GrammarListener(ParseTreeListener):
     def exitDuringAspectAbstractFunc(
         self, ctx: GrammarParser.DuringAspectAbstractFuncContext
     ):
+        pass
+
+    # Enter a parse tree produced by GrammarParser#duringAspectRefFunc.
+    def enterDuringAspectRefFunc(self, ctx: GrammarParser.DuringAspectRefFuncContext):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#duringAspectRefFunc.
+    def exitDuringAspectRefFunc(self, ctx: GrammarParser.DuringAspectRefFuncContext):
         pass
 
     # Enter a parse tree produced by GrammarParser#operation_assignment.

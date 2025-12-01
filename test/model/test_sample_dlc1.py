@@ -207,6 +207,7 @@ class TestModelStateTrafficLight:
                 doc=None,
                 operations=[],
                 is_abstract=True,
+                state_path=("TrafficLight", "FFT"),
             ),
             "TTT": OnAspect(
                 stage="during",
@@ -215,6 +216,7 @@ class TestModelStateTrafficLight:
                 doc="this is the line",
                 operations=[],
                 is_abstract=True,
+                state_path=("TrafficLight", "TTT"),
             ),
         }
         assert state_trafficlight.on_enters == []
@@ -228,6 +230,7 @@ class TestModelStateTrafficLight:
                 doc=None,
                 operations=[Operation(var_name="a", expr=Integer(value=0))],
                 is_abstract=False,
+                state_path=("TrafficLight", None),
             ),
             OnAspect(
                 stage="during",
@@ -236,6 +239,7 @@ class TestModelStateTrafficLight:
                 doc=None,
                 operations=[],
                 is_abstract=True,
+                state_path=("TrafficLight", "FFT"),
             ),
             OnAspect(
                 stage="during",
@@ -244,6 +248,7 @@ class TestModelStateTrafficLight:
                 doc="this is the line",
                 operations=[],
                 is_abstract=True,
+                state_path=("TrafficLight", "TTT"),
             ),
             OnAspect(
                 stage="during",
@@ -255,6 +260,7 @@ class TestModelStateTrafficLight:
                     Operation(var_name="b", expr=Integer(value=1)),
                 ],
                 is_abstract=False,
+                state_path=("TrafficLight", None),
             ),
         ]
         assert state_trafficlight.parent_ref is None
@@ -268,6 +274,7 @@ class TestModelStateTrafficLight:
                 doc=None,
                 operations=[],
                 is_abstract=True,
+                state_path=("TrafficLight", "FFT"),
             ),
             OnAspect(
                 stage="during",
@@ -276,6 +283,7 @@ class TestModelStateTrafficLight:
                 doc="this is the line",
                 operations=[],
                 is_abstract=True,
+                state_path=("TrafficLight", "TTT"),
             ),
         ]
         assert state_trafficlight.abstract_on_durings == []
@@ -291,6 +299,7 @@ class TestModelStateTrafficLight:
                 doc=None,
                 operations=[Operation(var_name="a", expr=Integer(value=0))],
                 is_abstract=False,
+                state_path=("TrafficLight", None),
             ),
             OnAspect(
                 stage="during",
@@ -302,6 +311,7 @@ class TestModelStateTrafficLight:
                     Operation(var_name="b", expr=Integer(value=1)),
                 ],
                 is_abstract=False,
+                state_path=("TrafficLight", None),
             ),
         ]
         assert state_trafficlight.non_abstract_on_durings == []
@@ -739,6 +749,7 @@ class TestModelStateTrafficLight:
                 doc="Abstract Operation When Entering State 'InService'\nTODO: Should be Implemented In Generated Code Framework",
                 operations=[],
                 is_abstract=True,
+                state_path=("TrafficLight", "InService", "InServiceAbstractEnter"),
             ),
             "InServiceBeforeEnterChild": OnStage(
                 stage="during",
@@ -747,6 +758,7 @@ class TestModelStateTrafficLight:
                 doc="Abstract Operation Before Entering Child States of State 'InService'\nTODO: Should be Implemented In Generated Code Framework",
                 operations=[],
                 is_abstract=True,
+                state_path=("TrafficLight", "InService", "InServiceBeforeEnterChild"),
             ),
             "InServiceAfterEnterChild": OnStage(
                 stage="during",
@@ -755,6 +767,7 @@ class TestModelStateTrafficLight:
                 doc="Abstract Operation After Entering Child States of State 'InService'\nTODO: Should be Implemented In Generated Code Framework",
                 operations=[],
                 is_abstract=True,
+                state_path=("TrafficLight", "InService", "InServiceAfterEnterChild"),
             ),
             "InServiceAbstractExit": OnStage(
                 stage="exit",
@@ -763,6 +776,7 @@ class TestModelStateTrafficLight:
                 doc="Abstract Operation When Leaving State 'InService'\nTODO: Should be Implemented In Generated Code Framework",
                 operations=[],
                 is_abstract=True,
+                state_path=("TrafficLight", "InService", "InServiceAbstractExit"),
             ),
         }
         assert state_trafficlight_inservice.on_enters == [
@@ -777,6 +791,7 @@ class TestModelStateTrafficLight:
                     Operation(var_name="round_count", expr=Integer(value=0)),
                 ],
                 is_abstract=False,
+                state_path=("TrafficLight", "InService", None),
             ),
             OnStage(
                 stage="enter",
@@ -785,6 +800,7 @@ class TestModelStateTrafficLight:
                 doc="Abstract Operation When Entering State 'InService'\nTODO: Should be Implemented In Generated Code Framework",
                 operations=[],
                 is_abstract=True,
+                state_path=("TrafficLight", "InService", "InServiceAbstractEnter"),
             ),
         ]
         assert state_trafficlight_inservice.on_durings == [
@@ -795,6 +811,7 @@ class TestModelStateTrafficLight:
                 doc="Abstract Operation Before Entering Child States of State 'InService'\nTODO: Should be Implemented In Generated Code Framework",
                 operations=[],
                 is_abstract=True,
+                state_path=("TrafficLight", "InService", "InServiceBeforeEnterChild"),
             ),
             OnStage(
                 stage="during",
@@ -803,6 +820,7 @@ class TestModelStateTrafficLight:
                 doc="Abstract Operation After Entering Child States of State 'InService'\nTODO: Should be Implemented In Generated Code Framework",
                 operations=[],
                 is_abstract=True,
+                state_path=("TrafficLight", "InService", "InServiceAfterEnterChild"),
             ),
         ]
         assert state_trafficlight_inservice.on_exits == [
@@ -813,6 +831,7 @@ class TestModelStateTrafficLight:
                 doc="Abstract Operation When Leaving State 'InService'\nTODO: Should be Implemented In Generated Code Framework",
                 operations=[],
                 is_abstract=True,
+                state_path=("TrafficLight", "InService", "InServiceAbstractExit"),
             )
         ]
         assert state_trafficlight_inservice.on_during_aspects == []
@@ -833,6 +852,7 @@ class TestModelStateTrafficLight:
                 doc="Abstract Operation Before Entering Child States of State 'InService'\nTODO: Should be Implemented In Generated Code Framework",
                 operations=[],
                 is_abstract=True,
+                state_path=("TrafficLight", "InService", "InServiceBeforeEnterChild"),
             ),
             OnStage(
                 stage="during",
@@ -841,6 +861,7 @@ class TestModelStateTrafficLight:
                 doc="Abstract Operation After Entering Child States of State 'InService'\nTODO: Should be Implemented In Generated Code Framework",
                 operations=[],
                 is_abstract=True,
+                state_path=("TrafficLight", "InService", "InServiceAfterEnterChild"),
             ),
         ]
         assert state_trafficlight_inservice.abstract_on_enters == [
@@ -851,6 +872,7 @@ class TestModelStateTrafficLight:
                 doc="Abstract Operation When Entering State 'InService'\nTODO: Should be Implemented In Generated Code Framework",
                 operations=[],
                 is_abstract=True,
+                state_path=("TrafficLight", "InService", "InServiceAbstractEnter"),
             )
         ]
         assert state_trafficlight_inservice.abstract_on_exits == [
@@ -861,6 +883,7 @@ class TestModelStateTrafficLight:
                 doc="Abstract Operation When Leaving State 'InService'\nTODO: Should be Implemented In Generated Code Framework",
                 operations=[],
                 is_abstract=True,
+                state_path=("TrafficLight", "InService", "InServiceAbstractExit"),
             )
         ]
         assert not state_trafficlight_inservice.is_leaf_state
@@ -879,6 +902,7 @@ class TestModelStateTrafficLight:
                     Operation(var_name="round_count", expr=Integer(value=0)),
                 ],
                 is_abstract=False,
+                state_path=("TrafficLight", "InService", None),
             )
         ]
         assert state_trafficlight_inservice.non_abstract_on_exits == []
@@ -1179,6 +1203,7 @@ class TestModelStateTrafficLight:
                     )
                 ],
                 is_abstract=False,
+                state_path=("TrafficLight", "InService", "Red", None),
             )
         ]
         assert state_trafficlight_inservice_red.on_exits == []
@@ -1210,6 +1235,7 @@ class TestModelStateTrafficLight:
                     )
                 ],
                 is_abstract=False,
+                state_path=("TrafficLight", "InService", "Red", None),
             )
         ]
         assert state_trafficlight_inservice_red.non_abstract_on_enters == []
@@ -1335,6 +1361,7 @@ class TestModelStateTrafficLight:
             doc=None,
             operations=[Operation(var_name="a", expr=Integer(value=0))],
             is_abstract=False,
+            state_path=("TrafficLight", None),
         )
         st, on_stage = lst[1]
         assert st.name == "TrafficLight"
@@ -1346,6 +1373,7 @@ class TestModelStateTrafficLight:
             doc=None,
             operations=[],
             is_abstract=True,
+            state_path=("TrafficLight", "FFT"),
         )
         st, on_stage = lst[2]
         assert st.name == "TrafficLight"
@@ -1357,6 +1385,7 @@ class TestModelStateTrafficLight:
             doc="this is the line",
             operations=[],
             is_abstract=True,
+            state_path=("TrafficLight", "TTT"),
         )
         st, on_stage = lst[3]
         assert st.name == "Red"
@@ -1373,6 +1402,7 @@ class TestModelStateTrafficLight:
                 )
             ],
             is_abstract=False,
+            state_path=("TrafficLight", "InService", "Red", None),
         )
         st, on_stage = lst[4]
         assert st.name == "TrafficLight"
@@ -1387,6 +1417,7 @@ class TestModelStateTrafficLight:
                 Operation(var_name="b", expr=Integer(value=1)),
             ],
             is_abstract=False,
+            state_path=("TrafficLight", None),
         )
 
         lst = state_trafficlight_inservice_red.list_on_during_aspect_recursively(
@@ -1404,6 +1435,7 @@ class TestModelStateTrafficLight:
             doc=None,
             operations=[Operation(var_name="a", expr=Integer(value=0))],
             is_abstract=False,
+            state_path=("TrafficLight", None),
         )
         id_, st, on_stage = lst[1]
         assert id_ == 2
@@ -1416,6 +1448,7 @@ class TestModelStateTrafficLight:
             doc=None,
             operations=[],
             is_abstract=True,
+            state_path=("TrafficLight", "FFT"),
         )
         id_, st, on_stage = lst[2]
         assert id_ == 3
@@ -1428,6 +1461,7 @@ class TestModelStateTrafficLight:
             doc="this is the line",
             operations=[],
             is_abstract=True,
+            state_path=("TrafficLight", "TTT"),
         )
         id_, st, on_stage = lst[3]
         assert id_ == 1
@@ -1445,6 +1479,7 @@ class TestModelStateTrafficLight:
                 )
             ],
             is_abstract=False,
+            state_path=("TrafficLight", "InService", "Red", None),
         )
         id_, st, on_stage = lst[4]
         assert id_ == 4
@@ -1460,6 +1495,7 @@ class TestModelStateTrafficLight:
                 Operation(var_name="b", expr=Integer(value=1)),
             ],
             is_abstract=False,
+            state_path=("TrafficLight", None),
         )
 
     def test_state_trafficlight_inservice_yellow(
@@ -1646,6 +1682,7 @@ class TestModelStateTrafficLight:
             doc=None,
             operations=[Operation(var_name="a", expr=Integer(value=0))],
             is_abstract=False,
+            state_path=("TrafficLight", None),
         )
         st, on_stage = lst[1]
         assert st.name == "TrafficLight"
@@ -1657,6 +1694,7 @@ class TestModelStateTrafficLight:
             doc=None,
             operations=[],
             is_abstract=True,
+            state_path=("TrafficLight", "FFT"),
         )
         st, on_stage = lst[2]
         assert st.name == "TrafficLight"
@@ -1668,6 +1706,7 @@ class TestModelStateTrafficLight:
             doc="this is the line",
             operations=[],
             is_abstract=True,
+            state_path=("TrafficLight", "TTT"),
         )
         st, on_stage = lst[3]
         assert st.name == "TrafficLight"
@@ -1682,6 +1721,7 @@ class TestModelStateTrafficLight:
                 Operation(var_name="b", expr=Integer(value=1)),
             ],
             is_abstract=False,
+            state_path=("TrafficLight", None),
         )
 
         lst = state_trafficlight_inservice_yellow.list_on_during_aspect_recursively(
@@ -1699,6 +1739,7 @@ class TestModelStateTrafficLight:
             doc=None,
             operations=[Operation(var_name="a", expr=Integer(value=0))],
             is_abstract=False,
+            state_path=("TrafficLight", None),
         )
         id_, st, on_stage = lst[1]
         assert id_ == 2
@@ -1711,6 +1752,7 @@ class TestModelStateTrafficLight:
             doc=None,
             operations=[],
             is_abstract=True,
+            state_path=("TrafficLight", "FFT"),
         )
         id_, st, on_stage = lst[2]
         assert id_ == 3
@@ -1723,6 +1765,7 @@ class TestModelStateTrafficLight:
             doc="this is the line",
             operations=[],
             is_abstract=True,
+            state_path=("TrafficLight", "TTT"),
         )
         id_, st, on_stage = lst[3]
         assert id_ == 4
@@ -1738,6 +1781,7 @@ class TestModelStateTrafficLight:
                 Operation(var_name="b", expr=Integer(value=1)),
             ],
             is_abstract=False,
+            state_path=("TrafficLight", None),
         )
 
     def test_state_trafficlight_inservice_green(
@@ -1876,6 +1920,7 @@ class TestModelStateTrafficLight:
             doc=None,
             operations=[Operation(var_name="a", expr=Integer(value=0))],
             is_abstract=False,
+            state_path=("TrafficLight", None),
         )
         st, on_stage = lst[1]
         assert st.name == "TrafficLight"
@@ -1887,6 +1932,7 @@ class TestModelStateTrafficLight:
             doc=None,
             operations=[],
             is_abstract=True,
+            state_path=("TrafficLight", "FFT"),
         )
         st, on_stage = lst[2]
         assert st.name == "TrafficLight"
@@ -1898,6 +1944,7 @@ class TestModelStateTrafficLight:
             doc="this is the line",
             operations=[],
             is_abstract=True,
+            state_path=("TrafficLight", "TTT"),
         )
         st, on_stage = lst[3]
         assert st.name == "TrafficLight"
@@ -1912,6 +1959,7 @@ class TestModelStateTrafficLight:
                 Operation(var_name="b", expr=Integer(value=1)),
             ],
             is_abstract=False,
+            state_path=("TrafficLight", None),
         )
 
         lst = state_trafficlight_inservice_green.list_on_during_aspect_recursively(
@@ -1929,6 +1977,7 @@ class TestModelStateTrafficLight:
             doc=None,
             operations=[Operation(var_name="a", expr=Integer(value=0))],
             is_abstract=False,
+            state_path=("TrafficLight", None),
         )
         id_, st, on_stage = lst[1]
         assert id_ == 2
@@ -1941,6 +1990,7 @@ class TestModelStateTrafficLight:
             doc=None,
             operations=[],
             is_abstract=True,
+            state_path=("TrafficLight", "FFT"),
         )
         id_, st, on_stage = lst[2]
         assert id_ == 3
@@ -1953,6 +2003,7 @@ class TestModelStateTrafficLight:
             doc="this is the line",
             operations=[],
             is_abstract=True,
+            state_path=("TrafficLight", "TTT"),
         )
         id_, st, on_stage = lst[3]
         assert id_ == 4
@@ -1968,6 +2019,7 @@ class TestModelStateTrafficLight:
                 Operation(var_name="b", expr=Integer(value=1)),
             ],
             is_abstract=False,
+            state_path=("TrafficLight", None),
         )
 
     def test_state_trafficlight_idle(self, state_trafficlight_idle):
@@ -2090,6 +2142,7 @@ class TestModelStateTrafficLight:
             doc=None,
             operations=[Operation(var_name="a", expr=Integer(value=0))],
             is_abstract=False,
+            state_path=("TrafficLight", None),
         )
         st, on_stage = lst[1]
         assert st.name == "TrafficLight"
@@ -2101,6 +2154,7 @@ class TestModelStateTrafficLight:
             doc=None,
             operations=[],
             is_abstract=True,
+            state_path=("TrafficLight", "FFT"),
         )
         st, on_stage = lst[2]
         assert st.name == "TrafficLight"
@@ -2112,6 +2166,7 @@ class TestModelStateTrafficLight:
             doc="this is the line",
             operations=[],
             is_abstract=True,
+            state_path=("TrafficLight", "TTT"),
         )
         st, on_stage = lst[3]
         assert st.name == "TrafficLight"
@@ -2126,6 +2181,7 @@ class TestModelStateTrafficLight:
                 Operation(var_name="b", expr=Integer(value=1)),
             ],
             is_abstract=False,
+            state_path=("TrafficLight", None),
         )
 
         lst = state_trafficlight_idle.list_on_during_aspect_recursively(with_ids=True)
@@ -2141,6 +2197,7 @@ class TestModelStateTrafficLight:
             doc=None,
             operations=[Operation(var_name="a", expr=Integer(value=0))],
             is_abstract=False,
+            state_path=("TrafficLight", None),
         )
         id_, st, on_stage = lst[1]
         assert id_ == 2
@@ -2153,6 +2210,7 @@ class TestModelStateTrafficLight:
             doc=None,
             operations=[],
             is_abstract=True,
+            state_path=("TrafficLight", "FFT"),
         )
         id_, st, on_stage = lst[2]
         assert id_ == 3
@@ -2165,6 +2223,7 @@ class TestModelStateTrafficLight:
             doc="this is the line",
             operations=[],
             is_abstract=True,
+            state_path=("TrafficLight", "TTT"),
         )
         id_, st, on_stage = lst[3]
         assert id_ == 4
@@ -2180,6 +2239,7 @@ class TestModelStateTrafficLight:
                 Operation(var_name="b", expr=Integer(value=1)),
             ],
             is_abstract=False,
+            state_path=("TrafficLight", None),
         )
 
     def test_to_ast_node_str(self, model, text_aligner):

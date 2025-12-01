@@ -135,6 +135,7 @@ class TestModelStateLx:
                 doc=None,
                 operations=[],
                 is_abstract=True,
+                state_path=("LX", "act1"),
             )
         }
         assert state_lx.on_enters == [
@@ -145,6 +146,7 @@ class TestModelStateLx:
                 doc=None,
                 operations=[],
                 is_abstract=False,
+                state_path=("LX", None),
             ),
             OnStage(
                 stage="enter",
@@ -153,6 +155,7 @@ class TestModelStateLx:
                 doc=None,
                 operations=[],
                 is_abstract=True,
+                state_path=("LX", "act1"),
             ),
         ]
         assert state_lx.on_durings == []
@@ -171,6 +174,7 @@ class TestModelStateLx:
                 doc=None,
                 operations=[],
                 is_abstract=True,
+                state_path=("LX", "act1"),
             )
         ]
         assert state_lx.abstract_on_exits == []
@@ -186,6 +190,7 @@ class TestModelStateLx:
                 doc=None,
                 operations=[],
                 is_abstract=False,
+                state_path=("LX", None),
             )
         ]
         assert state_lx.non_abstract_on_exits == []

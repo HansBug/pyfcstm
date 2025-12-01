@@ -394,6 +394,7 @@ class TestModelModel:
                     ),
                 ],
                 is_abstract=False,
+                state_path=('LX', None),
             )
         ]
         assert root_state_1.on_durings == []
@@ -413,6 +414,7 @@ class TestModelModel:
                     ),
                 ],
                 is_abstract=False,
+                state_path=('LX', None),
             )
         ]
 

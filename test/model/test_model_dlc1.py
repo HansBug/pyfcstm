@@ -256,6 +256,7 @@ class TestModelModelDLC1:
                 doc=None,
                 operations=[Operation(var_name="a", expr=Integer(value=0))],
                 is_abstract=False,
+                state_path=('TrafficLight', None),
             ),
             OnAspect(
                 stage="during",
@@ -264,6 +265,7 @@ class TestModelModelDLC1:
                 doc=None,
                 operations=[],
                 is_abstract=True,
+                state_path=('TrafficLight', 'FFT'),
             ),
             OnAspect(
                 stage="during",
@@ -272,6 +274,7 @@ class TestModelModelDLC1:
                 doc="this is the line",
                 operations=[],
                 is_abstract=True,
+                state_path=('TrafficLight', 'TTT'),
             ),
             OnAspect(
                 stage="during",
@@ -283,6 +286,7 @@ class TestModelModelDLC1:
                     Operation(var_name="b", expr=Integer(value=1)),
                 ],
                 is_abstract=False,
+                state_path=('TrafficLight', None),
             ),
         ]
 
@@ -295,6 +299,7 @@ class TestModelModelDLC1:
                 doc=None,
                 operations=[Operation(var_name="a", expr=Integer(value=0))],
                 is_abstract=False,
+                state_path=('TrafficLight', None),
             ),
             OnAspect(
                 stage="during",
@@ -303,6 +308,7 @@ class TestModelModelDLC1:
                 doc=None,
                 operations=[],
                 is_abstract=True,
+                state_path=('TrafficLight', 'FFT'),
             ),
             OnAspect(
                 stage="during",
@@ -311,6 +317,7 @@ class TestModelModelDLC1:
                 doc="this is the line",
                 operations=[],
                 is_abstract=True,
+                state_path=('TrafficLight', 'TTT'),
             ),
             OnAspect(
                 stage="during",
@@ -322,6 +329,7 @@ class TestModelModelDLC1:
                     Operation(var_name="b", expr=Integer(value=1)),
                 ],
                 is_abstract=False,
+                state_path=('TrafficLight', None),
             ),
         ]
         assert root_state_1.list_on_during_aspects(is_abstract=True) == [
@@ -332,6 +340,7 @@ class TestModelModelDLC1:
                 doc=None,
                 operations=[],
                 is_abstract=True,
+                state_path=('TrafficLight', 'FFT'),
             ),
             OnAspect(
                 stage="during",
@@ -340,6 +349,7 @@ class TestModelModelDLC1:
                 doc="this is the line",
                 operations=[],
                 is_abstract=True,
+                state_path=('TrafficLight', 'TTT'),
             ),
         ]
         assert root_state_1.list_on_during_aspects(is_abstract=False) == [
@@ -350,6 +360,7 @@ class TestModelModelDLC1:
                 doc=None,
                 operations=[Operation(var_name="a", expr=Integer(value=0))],
                 is_abstract=False,
+                state_path=('TrafficLight', None),
             ),
             OnAspect(
                 stage="during",
@@ -361,6 +372,7 @@ class TestModelModelDLC1:
                     Operation(var_name="b", expr=Integer(value=1)),
                 ],
                 is_abstract=False,
+                state_path=('TrafficLight', None),
             ),
         ]
         assert root_state_1.list_on_during_aspects(aspect="before") == [
@@ -371,6 +383,7 @@ class TestModelModelDLC1:
                 doc=None,
                 operations=[Operation(var_name="a", expr=Integer(value=0))],
                 is_abstract=False,
+                state_path=('TrafficLight', None),
             ),
             OnAspect(
                 stage="during",
@@ -379,6 +392,7 @@ class TestModelModelDLC1:
                 doc=None,
                 operations=[],
                 is_abstract=True,
+                state_path=('TrafficLight', 'FFT'),
             ),
             OnAspect(
                 stage="during",
@@ -387,6 +401,7 @@ class TestModelModelDLC1:
                 doc="this is the line",
                 operations=[],
                 is_abstract=True,
+                state_path=('TrafficLight', 'TTT'),
             ),
         ]
         assert root_state_1.list_on_during_aspects(aspect="after") == [
@@ -400,6 +415,7 @@ class TestModelModelDLC1:
                     Operation(var_name="b", expr=Integer(value=1)),
                 ],
                 is_abstract=False,
+                state_path=('TrafficLight', None),
             )
         ]
 
@@ -423,7 +439,7 @@ class TestModelModelDLC1:
         assert transition_3.event.path == ("TrafficLight", "E2")
 
     def test_to_ast_node_to_str(
-        self, demo_model_1, expected_to_str_result, text_aligner
+            self, demo_model_1, expected_to_str_result, text_aligner
     ):
         text_aligner.assert_equal(
             expect=expected_to_str_result, actual=str(demo_model_1.to_ast_node())

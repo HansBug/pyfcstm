@@ -231,6 +231,7 @@ class OnStage(AstExportable):
     doc: Optional[str]
     operations: List[Operation]
     is_abstract: bool
+    state_path: Tuple[Optional[str], ...]
 
     @property
     def is_aspect(self) -> bool:
@@ -329,6 +330,7 @@ class OnAspect(AstExportable):
     doc: Optional[str]
     operations: List[Operation]
     is_abstract: bool
+    state_path: Tuple[Optional[str], ...]
 
     @property
     def is_aspect(self) -> bool:
@@ -1189,6 +1191,7 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                     doc=None,
                     operations=enter_operations,
                     is_abstract=False,
+                    state_path=(*current_path, enter_item.name),
                 )
             elif isinstance(enter_item, dsl_nodes.EnterAbstractFunction):
                 on_stage = OnStage(
@@ -1198,6 +1201,7 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                     doc=enter_item.doc,
                     operations=[],
                     is_abstract=True,
+                    state_path=(*current_path, enter_item.name),
                 )
             # TODO: add part of enter ref function
             # elif isinstance(enter_item, dsl_nodes.EnterRefFunction):
@@ -1244,6 +1248,7 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                     doc=None,
                     operations=during_operations,
                     is_abstract=False,
+                    state_path=(*current_path, during_item.name),
                 )
             elif isinstance(during_item, dsl_nodes.DuringAbstractFunction):
                 on_stage = OnStage(
@@ -1253,6 +1258,7 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                     doc=during_item.doc,
                     operations=[],
                     is_abstract=True,
+                    state_path=(*current_path, during_item.name),
                 )
             # TODO: add part of during ref function
 
@@ -1287,6 +1293,7 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                     doc=None,
                     operations=exit_operations,
                     is_abstract=False,
+                    state_path=(*current_path, exit_item.name),
                 )
             elif isinstance(exit_item, dsl_nodes.ExitAbstractFunction):
                 on_stage = OnStage(
@@ -1296,6 +1303,7 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                     doc=exit_item.doc,
                     operations=[],
                     is_abstract=True,
+                    state_path=(*current_path, exit_item.name),
                 )
             # TODO: add part of exit ref function
 
@@ -1330,6 +1338,7 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                     doc=None,
                     operations=during_operations,
                     is_abstract=False,
+                    state_path=(*current_path, during_aspect_item.name),
                 )
             elif isinstance(during_aspect_item, dsl_nodes.DuringAspectAbstractFunction):
                 on_aspect = OnAspect(
@@ -1339,6 +1348,7 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                     doc=during_aspect_item.doc,
                     operations=[],
                     is_abstract=True,
+                    state_path=(*current_path, during_aspect_item.name),
                 )
             # TODO: add part of during aspect ref function
 

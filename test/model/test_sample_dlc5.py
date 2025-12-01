@@ -114,6 +114,7 @@ class TestModelStateL1:
                 doc=None,
                 operations=[],
                 is_abstract=True,
+                state_path=("L1", "mock"),
             ),
             "user_B": OnAspect(
                 stage="during",
@@ -122,6 +123,7 @@ class TestModelStateL1:
                 doc=None,
                 operations=[],
                 is_abstract=True,
+                state_path=("L1", "user_B"),
             ),
             "user_A": OnAspect(
                 stage="during",
@@ -130,6 +132,7 @@ class TestModelStateL1:
                 doc=None,
                 operations=[],
                 is_abstract=True,
+                state_path=("L1", "user_A"),
             ),
         }
         assert state_l1.on_enters == []
@@ -141,6 +144,7 @@ class TestModelStateL1:
                 doc=None,
                 operations=[Operation(var_name="a", expr=Integer(value=1))],
                 is_abstract=False,
+                state_path=("L1", None),
             ),
             OnStage(
                 stage="during",
@@ -149,6 +153,7 @@ class TestModelStateL1:
                 doc=None,
                 operations=[],
                 is_abstract=True,
+                state_path=("L1", "mock"),
             ),
         ]
         assert state_l1.on_exits == []
@@ -160,6 +165,7 @@ class TestModelStateL1:
                 doc=None,
                 operations=[],
                 is_abstract=True,
+                state_path=("L1", "user_B"),
             ),
             OnAspect(
                 stage="during",
@@ -168,6 +174,7 @@ class TestModelStateL1:
                 doc=None,
                 operations=[],
                 is_abstract=True,
+                state_path=("L1", "user_A"),
             ),
         ]
         assert state_l1.parent_ref is None
@@ -181,6 +188,7 @@ class TestModelStateL1:
                 doc=None,
                 operations=[],
                 is_abstract=True,
+                state_path=("L1", "user_B"),
             ),
             OnAspect(
                 stage="during",
@@ -189,6 +197,7 @@ class TestModelStateL1:
                 doc=None,
                 operations=[],
                 is_abstract=True,
+                state_path=("L1", "user_A"),
             ),
         ]
         assert state_l1.abstract_on_durings == [
@@ -199,6 +208,7 @@ class TestModelStateL1:
                 doc=None,
                 operations=[],
                 is_abstract=True,
+                state_path=("L1", "mock"),
             )
         ]
         assert state_l1.abstract_on_enters == []
@@ -214,6 +224,7 @@ class TestModelStateL1:
                 doc=None,
                 operations=[Operation(var_name="a", expr=Integer(value=1))],
                 is_abstract=False,
+                state_path=("L1", None),
             )
         ]
         assert state_l1.non_abstract_on_enters == []
@@ -414,6 +425,7 @@ class TestModelStateL1:
                 doc=None,
                 operations=[],
                 is_abstract=True,
+                state_path=("L1", "L2", "user_B"),
             ),
             "user_A": OnAspect(
                 stage="during",
@@ -422,6 +434,7 @@ class TestModelStateL1:
                 doc=None,
                 operations=[],
                 is_abstract=True,
+                state_path=("L1", "L2", "user_A"),
             ),
         }
         assert state_l1_l2.on_enters == []
@@ -435,6 +448,7 @@ class TestModelStateL1:
                 doc=None,
                 operations=[],
                 is_abstract=True,
+                state_path=("L1", "L2", "user_B"),
             ),
             OnAspect(
                 stage="during",
@@ -443,6 +457,7 @@ class TestModelStateL1:
                 doc=None,
                 operations=[],
                 is_abstract=True,
+                state_path=("L1", "L2", "user_A"),
             ),
         ]
         assert state_l1_l2.parent_ref().name == "L1"
@@ -457,6 +472,7 @@ class TestModelStateL1:
                 doc=None,
                 operations=[],
                 is_abstract=True,
+                state_path=("L1", "L2", "user_B"),
             ),
             OnAspect(
                 stage="during",
@@ -465,6 +481,7 @@ class TestModelStateL1:
                 doc=None,
                 operations=[],
                 is_abstract=True,
+                state_path=("L1", "L2", "user_A"),
             ),
         ]
         assert state_l1_l2.abstract_on_durings == []
@@ -740,6 +757,7 @@ class TestModelStateL1:
             doc=None,
             operations=[],
             is_abstract=True,
+            state_path=("L1", "user_B"),
         )
         st, on_stage = lst[1]
         assert st.name == "L1"
@@ -751,6 +769,7 @@ class TestModelStateL1:
             doc=None,
             operations=[],
             is_abstract=True,
+            state_path=("L1", "user_A"),
         )
         st, on_stage = lst[2]
         assert st.name == "L2"
@@ -762,6 +781,7 @@ class TestModelStateL1:
             doc=None,
             operations=[],
             is_abstract=True,
+            state_path=("L1", "L2", "user_B"),
         )
         st, on_stage = lst[3]
         assert st.name == "L2"
@@ -773,6 +793,7 @@ class TestModelStateL1:
             doc=None,
             operations=[],
             is_abstract=True,
+            state_path=("L1", "L2", "user_A"),
         )
 
         lst = state_l1_l2_l22.list_on_during_aspect_recursively(with_ids=True)
@@ -788,6 +809,7 @@ class TestModelStateL1:
             doc=None,
             operations=[],
             is_abstract=True,
+            state_path=("L1", "user_B"),
         )
         id_, st, on_stage = lst[1]
         assert id_ == 2
@@ -800,6 +822,7 @@ class TestModelStateL1:
             doc=None,
             operations=[],
             is_abstract=True,
+            state_path=("L1", "user_A"),
         )
         id_, st, on_stage = lst[2]
         assert id_ == 1
@@ -812,6 +835,7 @@ class TestModelStateL1:
             doc=None,
             operations=[],
             is_abstract=True,
+            state_path=("L1", "L2", "user_B"),
         )
         id_, st, on_stage = lst[3]
         assert id_ == 2
@@ -824,6 +848,7 @@ class TestModelStateL1:
             doc=None,
             operations=[],
             is_abstract=True,
+            state_path=("L1", "L2", "user_A"),
         )
 
     def test_to_ast_node_str(self, model, text_aligner):

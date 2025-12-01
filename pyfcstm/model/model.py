@@ -232,6 +232,12 @@ class OnStage(AstExportable):
     operations: List[Operation]
     is_abstract: bool
     state_path: Tuple[Optional[str], ...]
+    ref: Union['OnStage', 'OnAspect', None] = None
+    ref_state_path: Optional[Tuple[str, ...]] = None
+
+    @property
+    def is_ref(self) -> bool:
+        return bool(self.ref)
 
     @property
     def is_aspect(self) -> bool:
@@ -257,6 +263,16 @@ class OnStage(AstExportable):
                     name=self.name,
                     doc=self.doc,
                 )
+            elif self.is_ref:
+                spath = self.state_path[:-1]
+                if self.ref_state_path[:len(spath)] == spath:
+                    ref = dsl_nodes.ChainID(path=self.ref_state_path[len(spath):], is_absolute=False)
+                else:
+                    ref = dsl_nodes.ChainID(path=self.ref_state_path[1:], is_absolute=True)
+                return dsl_nodes.EnterRefFunction(
+                    name=self.name,
+                    ref=ref
+                )
             else:
                 return dsl_nodes.EnterOperations(
                     name=self.name,
@@ -270,6 +286,17 @@ class OnStage(AstExportable):
                     aspect=self.aspect,
                     doc=self.doc,
                 )
+            elif self.is_ref:
+                spath = self.state_path[:-1]
+                if self.ref_state_path[:len(spath)] == spath:
+                    ref = dsl_nodes.ChainID(path=self.ref_state_path[len(spath):], is_absolute=False)
+                else:
+                    ref = dsl_nodes.ChainID(path=self.ref_state_path[1:], is_absolute=True)
+                return dsl_nodes.DuringRefFunction(
+                    name=self.name,
+                    aspect=self.aspect,
+                    ref=ref
+                )
             else:
                 return dsl_nodes.DuringOperations(
                     name=self.name,
@@ -282,6 +309,16 @@ class OnStage(AstExportable):
                 return dsl_nodes.ExitAbstractFunction(
                     name=self.name,
                     doc=self.doc,
+                )
+            elif self.is_ref:
+                spath = self.state_path[:-1]
+                if self.ref_state_path[:len(spath)] == spath:
+                    ref = dsl_nodes.ChainID(path=self.ref_state_path[len(spath):], is_absolute=False)
+                else:
+                    ref = dsl_nodes.ChainID(path=self.ref_state_path[1:], is_absolute=True)
+                return dsl_nodes.ExitRefFunction(
+                    name=self.name,
+                    ref=ref
                 )
             else:
                 return dsl_nodes.ExitOperations(
@@ -331,6 +368,12 @@ class OnAspect(AstExportable):
     operations: List[Operation]
     is_abstract: bool
     state_path: Tuple[Optional[str], ...]
+    ref: Union['OnStage', 'OnAspect', None] = None
+    ref_state_path: Optional[Tuple[str, ...]] = None
+
+    @property
+    def is_ref(self) -> bool:
+        return bool(self.ref)
 
     @property
     def is_aspect(self) -> bool:
@@ -357,6 +400,17 @@ class OnAspect(AstExportable):
                     aspect=self.aspect,
                     doc=self.doc,
                 )
+            elif self.is_ref:
+                spath = self.state_path[:-1]
+                if self.ref_state_path[:len(spath)] == spath:
+                    ref = dsl_nodes.ChainID(path=self.ref_state_path[len(spath):], is_absolute=False)
+                else:
+                    ref = dsl_nodes.ChainID(path=self.ref_state_path[1:], is_absolute=True)
+                return dsl_nodes.DuringAspectRefFunction(
+                    name=self.name,
+                    aspect=self.aspect,
+                    ref=ref
+                )
             else:
                 return dsl_nodes.DuringAspectOperations(
                     name=self.name,
@@ -366,12 +420,6 @@ class OnAspect(AstExportable):
 
         else:
             raise ValueError(f'Unknown aspect - {self.stage!r}.')  # pragma: no cover
-
-
-@dataclass
-class FunctionPlaceholder:
-    name: str
-    ref: dsl_nodes.ChainID
 
 
 @dataclass
@@ -1192,6 +1240,8 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                     operations=enter_operations,
                     is_abstract=False,
                     state_path=(*current_path, enter_item.name),
+                    ref=None,
+                    ref_state_path=None,
                 )
             elif isinstance(enter_item, dsl_nodes.EnterAbstractFunction):
                 on_stage = OnStage(
@@ -1202,13 +1252,25 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                     operations=[],
                     is_abstract=True,
                     state_path=(*current_path, enter_item.name),
+                    ref=None,
+                    ref_state_path=None,
                 )
-            # TODO: add part of enter ref function
-            # elif isinstance(enter_item, dsl_nodes.EnterRefFunction):
-            #     on_stage = FunctionPlaceholder(
-            #         name=enter_item.name,
-            #         ref=enter_item.ref,
-            #     )
+            elif isinstance(enter_item, dsl_nodes.EnterRefFunction):
+                on_stage = OnStage(
+                    stage='enter',
+                    aspect=None,
+                    name=enter_item.name,
+                    doc=None,
+                    operations=[],
+                    is_abstract=False,
+                    state_path=(*current_path, enter_item.name),
+                    # TODO: add part of enter ref function
+                    ref=None,
+                    ref_state_path=(
+                        *((dnode.root_state.name,) if enter_item.ref.is_absolute else current_path),
+                        *enter_item.ref.path
+                    ),
+                )
 
             if on_stage is not None:
                 if on_stage.name:
@@ -1249,6 +1311,8 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                     operations=during_operations,
                     is_abstract=False,
                     state_path=(*current_path, during_item.name),
+                    ref=None,
+                    ref_state_path=None,
                 )
             elif isinstance(during_item, dsl_nodes.DuringAbstractFunction):
                 on_stage = OnStage(
@@ -1259,8 +1323,25 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                     operations=[],
                     is_abstract=True,
                     state_path=(*current_path, during_item.name),
+                    ref=None,
+                    ref_state_path=None,
                 )
-            # TODO: add part of during ref function
+            elif isinstance(during_item, dsl_nodes.DuringRefFunction):
+                on_stage = OnStage(
+                    stage='during',
+                    aspect=during_item.aspect,
+                    name=during_item.name,
+                    doc=None,
+                    operations=[],
+                    is_abstract=False,
+                    state_path=(*current_path, during_item.name),
+                    # TODO: add part of during ref function
+                    ref=None,
+                    ref_state_path=(
+                        *((dnode.root_state.name,) if during_item.ref.is_absolute else current_path),
+                        *during_item.ref.path
+                    ),
+                )
 
             if on_stage is not None:
                 if on_stage.name:
@@ -1294,6 +1375,8 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                     operations=exit_operations,
                     is_abstract=False,
                     state_path=(*current_path, exit_item.name),
+                    ref=None,
+                    ref_state_path=None,
                 )
             elif isinstance(exit_item, dsl_nodes.ExitAbstractFunction):
                 on_stage = OnStage(
@@ -1304,8 +1387,25 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                     operations=[],
                     is_abstract=True,
                     state_path=(*current_path, exit_item.name),
+                    ref=None,
+                    ref_state_path=None,
                 )
-            # TODO: add part of exit ref function
+            elif isinstance(exit_item, dsl_nodes.ExitRefFunction):
+                on_stage = OnStage(
+                    stage='exit',
+                    aspect=None,
+                    name=exit_item.name,
+                    doc=None,
+                    operations=[],
+                    is_abstract=False,
+                    state_path=(*current_path, exit_item.name),
+                    # TODO: add part of exit ref function
+                    ref=None,
+                    ref_state_path=(
+                        *((dnode.root_state.name,) if exit_item.ref.is_absolute else current_path),
+                        *exit_item.ref.path
+                    ),
+                )
 
             if on_stage is not None:
                 if on_stage.name:
@@ -1339,6 +1439,8 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                     operations=during_operations,
                     is_abstract=False,
                     state_path=(*current_path, during_aspect_item.name),
+                    ref=None,
+                    ref_state_path=None,
                 )
             elif isinstance(during_aspect_item, dsl_nodes.DuringAspectAbstractFunction):
                 on_aspect = OnAspect(
@@ -1349,8 +1451,25 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                     operations=[],
                     is_abstract=True,
                     state_path=(*current_path, during_aspect_item.name),
+                    ref=None,
+                    ref_state_path=None,
                 )
-            # TODO: add part of during aspect ref function
+            elif isinstance(during_aspect_item, dsl_nodes.DuringAspectRefFunction):
+                on_aspect = OnAspect(
+                    stage='during',
+                    aspect=during_aspect_item.aspect,
+                    name=during_aspect_item.name,
+                    doc=None,
+                    operations=[],
+                    is_abstract=False,
+                    state_path=(*current_path, during_aspect_item.name),
+                    # TODO: add part of during aspect ref function
+                    ref=None,
+                    ref_state_path=(
+                        *((dnode.root_state.name,) if during_aspect_item.ref.is_absolute else current_path),
+                        *during_aspect_item.ref.path
+                    ),
+                )
 
             if on_aspect is not None:
                 if on_aspect.name:
@@ -1539,6 +1658,27 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
         if current_state.substates and not has_entry_trans:
             raise SyntaxError(
                 f'At least 1 entry transition should be assigned in non-leaf state {node.name!r}:\n{node}')
+
+        for func_item in [
+            *current_state.on_enters,
+            *current_state.on_durings,
+            *current_state.on_exits,
+            *current_state.on_during_aspects,
+        ]:
+            if func_item.ref_state_path is not None:
+                state = root_state
+                for i, segment in enumerate(func_item.ref_state_path[1:-1], start=1):
+                    if segment not in state.substates:
+                        raise SyntaxError(f'Cannot find state {".".join(func_item.ref_state_path[:i + 1])} '
+                                          f'under state {".".join(func_item.ref_state_path[:i])}, '
+                                          f'so cannot resolve reference {".".join(func_item.ref_state_path)} of function: {func_item.to_ast_node()}.')
+                    state = state.substates[segment]
+
+                segment = func_item.ref_state_path[-1]
+                if segment not in state.named_functions:
+                    raise SyntaxError(f'Cannot find named function {segment!r} under state:\n{state.to_ast_node()}')
+                func_item.ref = state.named_functions[segment]
+                assert func_item.ref.state_path == func_item.ref_state_path
 
         for transition in current_state.transitions:
             transition.parent = current_state

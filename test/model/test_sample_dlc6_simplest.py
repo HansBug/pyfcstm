@@ -28,6 +28,8 @@ state L1
     >> during before abstract user_B;
     >> during before abstract user_A;
 
+    enter ref L2.user_B;
+
     state L2
     {
         [*]->L21;
@@ -36,6 +38,8 @@ state L1
 
         >>during before abstract user_B;
         >>during before abstract user_A;
+
+        exit inner_mock ref /mock;
 
         pseudo state L21;
         state L22;
@@ -141,7 +145,29 @@ class TestModelStateL1:
                 ref_state_path=None,
             ),
         }
-        assert state_l1.on_enters == []
+        assert state_l1.on_enters == [
+            OnStage(
+                stage="enter",
+                aspect=None,
+                name=None,
+                doc=None,
+                operations=[],
+                is_abstract=False,
+                state_path=("L1", None),
+                ref=OnAspect(
+                    stage="during",
+                    aspect="before",
+                    name="user_B",
+                    doc=None,
+                    operations=[],
+                    is_abstract=True,
+                    state_path=("L1", "L2", "user_B"),
+                    ref=None,
+                    ref_state_path=None,
+                ),
+                ref_state_path=("L1", "L2", "user_B"),
+            )
+        ]
         assert state_l1.on_durings == [
             OnStage(
                 stage="during",
@@ -249,7 +275,29 @@ class TestModelStateL1:
                 ref_state_path=None,
             )
         ]
-        assert state_l1.non_abstract_on_enters == []
+        assert state_l1.non_abstract_on_enters == [
+            OnStage(
+                stage="enter",
+                aspect=None,
+                name=None,
+                doc=None,
+                operations=[],
+                is_abstract=False,
+                state_path=("L1", None),
+                ref=OnAspect(
+                    stage="during",
+                    aspect="before",
+                    name="user_B",
+                    doc=None,
+                    operations=[],
+                    is_abstract=True,
+                    state_path=("L1", "L2", "user_B"),
+                    ref=None,
+                    ref_state_path=None,
+                ),
+                ref_state_path=("L1", "L2", "user_B"),
+            )
+        ]
         assert state_l1.non_abstract_on_exits == []
         assert state_l1.parent is None
         assert len(state_l1.transitions_entering_children) == 1
@@ -351,7 +399,12 @@ class TestModelStateL1:
                     ],
                     enters=[],
                     durings=[],
-                    exits=[],
+                    exits=[
+                        dsl_nodes.ExitRefFunction(
+                            name="inner_mock",
+                            ref=dsl_nodes.ChainID(path=("mock",), is_absolute=True),
+                        )
+                    ],
                     during_aspects=[
                         dsl_nodes.DuringAspectAbstractFunction(
                             name="user_B", aspect="before", doc=None
@@ -380,7 +433,12 @@ class TestModelStateL1:
                     post_operations=[],
                 ),
             ],
-            enters=[],
+            enters=[
+                dsl_nodes.EnterRefFunction(
+                    name=None,
+                    ref=dsl_nodes.ChainID(path=("L2", "user_B"), is_absolute=False),
+                )
+            ],
             durings=[
                 dsl_nodes.DuringOperations(
                     aspect="before",
@@ -440,6 +498,27 @@ class TestModelStateL1:
         assert state_l1_l2.transitions[2].parent_ref().name == "L2"
         assert state_l1_l2.transitions[2].parent_ref().path == ("L1", "L2")
         assert state_l1_l2.named_functions == {
+            "inner_mock": OnStage(
+                stage="exit",
+                aspect=None,
+                name="inner_mock",
+                doc=None,
+                operations=[],
+                is_abstract=False,
+                state_path=("L1", "L2", "inner_mock"),
+                ref=OnStage(
+                    stage="during",
+                    aspect="before",
+                    name="mock",
+                    doc=None,
+                    operations=[],
+                    is_abstract=True,
+                    state_path=("L1", "mock"),
+                    ref=None,
+                    ref_state_path=None,
+                ),
+                ref_state_path=("L1", "mock"),
+            ),
             "user_B": OnAspect(
                 stage="during",
                 aspect="before",
@@ -465,7 +544,29 @@ class TestModelStateL1:
         }
         assert state_l1_l2.on_enters == []
         assert state_l1_l2.on_durings == []
-        assert state_l1_l2.on_exits == []
+        assert state_l1_l2.on_exits == [
+            OnStage(
+                stage="exit",
+                aspect=None,
+                name="inner_mock",
+                doc=None,
+                operations=[],
+                is_abstract=False,
+                state_path=("L1", "L2", "inner_mock"),
+                ref=OnStage(
+                    stage="during",
+                    aspect="before",
+                    name="mock",
+                    doc=None,
+                    operations=[],
+                    is_abstract=True,
+                    state_path=("L1", "mock"),
+                    ref=None,
+                    ref_state_path=None,
+                ),
+                ref_state_path=("L1", "mock"),
+            )
+        ]
         assert state_l1_l2.on_during_aspects == [
             OnAspect(
                 stage="during",
@@ -526,7 +627,29 @@ class TestModelStateL1:
         assert state_l1_l2.non_abstract_on_during_aspects == []
         assert state_l1_l2.non_abstract_on_durings == []
         assert state_l1_l2.non_abstract_on_enters == []
-        assert state_l1_l2.non_abstract_on_exits == []
+        assert state_l1_l2.non_abstract_on_exits == [
+            OnStage(
+                stage="exit",
+                aspect=None,
+                name="inner_mock",
+                doc=None,
+                operations=[],
+                is_abstract=False,
+                state_path=("L1", "L2", "inner_mock"),
+                ref=OnStage(
+                    stage="during",
+                    aspect="before",
+                    name="mock",
+                    doc=None,
+                    operations=[],
+                    is_abstract=True,
+                    state_path=("L1", "mock"),
+                    ref=None,
+                    ref_state_path=None,
+                ),
+                ref_state_path=("L1", "mock"),
+            )
+        ]
         assert state_l1_l2.parent.name == "L1"
         assert state_l1_l2.parent.path == ("L1",)
         assert len(state_l1_l2.transitions_entering_children) == 1
@@ -626,7 +749,12 @@ class TestModelStateL1:
             ],
             enters=[],
             durings=[],
-            exits=[],
+            exits=[
+                dsl_nodes.ExitRefFunction(
+                    name="inner_mock",
+                    ref=dsl_nodes.ChainID(path=("mock",), is_absolute=True),
+                )
+            ],
             during_aspects=[
                 dsl_nodes.DuringAspectAbstractFunction(
                     name="user_B", aspect="before", doc=None
@@ -906,6 +1034,7 @@ class TestModelStateL1:
             expect=textwrap.dedent("""
 def int a = 0;
 state L1 {
+    enter ref L2.user_B;
     during before {
         a = 1;
     }
@@ -913,6 +1042,7 @@ state L1 {
     >> during before abstract user_B;
     >> during before abstract user_A;
     state L2 {
+        exit inner_mock ref /mock;
         >> during before abstract user_B;
         >> during before abstract user_A;
         pseudo state L21;
@@ -947,11 +1077,11 @@ state "L1" as l1 {
         l1__l2__l21 --> l1__l2__l22 : L21.E1
         l1__l2__l22 --> [*] : L22.E1
     }
-    l1__l2 : >> during before abstract user_B;\\n>> during before abstract user_A;
+    l1__l2 : exit inner_mock ref /mock;\\n>> during before abstract user_B;\\n>> during before abstract user_A;
     [*] --> l1__l2
     l1__l2 --> [*]
 }
-l1 : during before {\\n    a = 1;\\n}\\nduring before abstract mock;\\n>> during before abstract user_B;\\n>> during before abstract user_A;
+l1 : enter ref L2.user_B;\\nduring before {\\n    a = 1;\\n}\\nduring before abstract mock;\\n>> during before abstract user_B;\\n>> during before abstract user_A;
 [*] --> l1
 l1 --> [*]
 @enduml

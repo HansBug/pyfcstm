@@ -179,6 +179,7 @@ class TestModelStateL1:
         assert state_l1.transitions[2].effects == []
         assert state_l1.transitions[2].parent_ref().name == "L1"
         assert state_l1.transitions[2].parent_ref().path == ("L1",)
+        assert state_l1.named_functions == {}
         assert state_l1.on_enters == []
         assert state_l1.on_durings == []
         assert state_l1.on_exits == []
@@ -680,6 +681,7 @@ class TestModelStateL1:
         assert state_l1_l11.transitions[7].effects == []
         assert state_l1_l11.transitions[7].parent_ref().name == "L11"
         assert state_l1_l11.transitions[7].parent_ref().path == ("L1", "L11")
+        assert state_l1_l11.named_functions == {}
         assert state_l1_l11.on_enters == []
         assert state_l1_l11.on_durings == []
         assert state_l1_l11.on_exits == []
@@ -1174,6 +1176,7 @@ class TestModelStateL1:
             "L11",
             "L111",
         )
+        assert state_l1_l11_l111.named_functions == {}
         assert state_l1_l11_l111.on_enters == []
         assert state_l1_l11_l111.on_durings == []
         assert state_l1_l11_l111.on_exits == []
@@ -1612,6 +1615,7 @@ class TestModelStateL1:
             "L111",
             "L1111",
         )
+        assert state_l1_l11_l111_l1111.named_functions == {}
         assert state_l1_l11_l111_l1111.on_enters == []
         assert state_l1_l11_l111_l1111.on_durings == []
         assert state_l1_l11_l111_l1111.on_exits == []
@@ -1870,6 +1874,7 @@ class TestModelStateL1:
             "E2": Event(name="E2", state_path=("L1", "L11", "L111", "L1111", "L11111")),
         }
         assert state_l1_l11_l111_l1111_l11111.transitions == []
+        assert state_l1_l11_l111_l1111_l11111.named_functions == {}
         assert state_l1_l11_l111_l1111_l11111.on_enters == []
         assert state_l1_l11_l111_l1111_l11111.on_durings == []
         assert state_l1_l11_l111_l1111_l11111.on_exits == []
@@ -2019,6 +2024,7 @@ class TestModelStateL1:
             "E1": Event(name="E1", state_path=("L1", "L11", "L111", "L1111", "L11112"))
         }
         assert state_l1_l11_l111_l1111_l11112.transitions == []
+        assert state_l1_l11_l111_l1111_l11112.named_functions == {}
         assert state_l1_l11_l111_l1111_l11112.on_enters == []
         assert state_l1_l11_l111_l1111_l11112.on_durings == []
         assert state_l1_l11_l111_l1111_l11112.on_exits == []
@@ -2153,6 +2159,7 @@ class TestModelStateL1:
             "E1": Event(name="E1", state_path=("L1", "L11", "L111", "L1111", "L11113"))
         }
         assert state_l1_l11_l111_l1111_l11113.transitions == []
+        assert state_l1_l11_l111_l1111_l11113.named_functions == {}
         assert state_l1_l11_l111_l1111_l11113.on_enters == []
         assert state_l1_l11_l111_l1111_l11113.on_durings == []
         assert state_l1_l11_l111_l1111_l11113.on_exits == []
@@ -2281,6 +2288,7 @@ class TestModelStateL1:
             "E1": Event(name="E1", state_path=("L1", "L11", "L111", "L1112"))
         }
         assert state_l1_l11_l111_l1112.transitions == []
+        assert state_l1_l11_l111_l1112.named_functions == {}
         assert state_l1_l11_l111_l1112.on_enters == []
         assert state_l1_l11_l111_l1112.on_durings == []
         assert state_l1_l11_l111_l1112.on_exits == []
@@ -2379,6 +2387,7 @@ class TestModelStateL1:
             "E1": Event(name="E1", state_path=("L1", "L11", "L111", "L1113"))
         }
         assert state_l1_l11_l111_l1113.transitions == []
+        assert state_l1_l11_l111_l1113.named_functions == {}
         assert state_l1_l11_l111_l1113.on_enters == []
         assert state_l1_l11_l111_l1113.on_durings == []
         assert state_l1_l11_l111_l1113.on_exits == []
@@ -2477,6 +2486,7 @@ class TestModelStateL1:
             "E1": Event(name="E1", state_path=("L1", "L11", "L112"))
         }
         assert state_l1_l11_l112.transitions == []
+        assert state_l1_l11_l112.named_functions == {}
         assert state_l1_l11_l112.on_enters == []
         assert state_l1_l11_l112.on_durings == []
         assert state_l1_l11_l112.on_exits == []
@@ -2559,6 +2569,7 @@ class TestModelStateL1:
             "E1": Event(name="E1", state_path=("L1", "L11", "L113"))
         }
         assert state_l1_l11_l113.transitions == []
+        assert state_l1_l11_l113.named_functions == {}
         assert state_l1_l11_l113.on_enters == []
         assert state_l1_l11_l113.on_durings == []
         assert state_l1_l11_l113.on_exits == []
@@ -2639,6 +2650,7 @@ class TestModelStateL1:
         assert sorted(state_l1_l12.substates.keys()) == []
         assert state_l1_l12.events == {}
         assert state_l1_l12.transitions == []
+        assert state_l1_l12.named_functions == {}
         assert state_l1_l12.on_enters == []
         assert state_l1_l12.on_durings == []
         assert state_l1_l12.on_exits == []

@@ -106,6 +106,32 @@ class TestModelStateL1:
         assert state_l1.transitions[1].effects == []
         assert state_l1.transitions[1].parent_ref().name == "L1"
         assert state_l1.transitions[1].parent_ref().path == ("L1",)
+        assert state_l1.named_functions == {
+            "mock": OnStage(
+                stage="during",
+                aspect="before",
+                name="mock",
+                doc=None,
+                operations=[],
+                is_abstract=True,
+            ),
+            "user_B": OnAspect(
+                stage="during",
+                aspect="before",
+                name="user_B",
+                doc=None,
+                operations=[],
+                is_abstract=True,
+            ),
+            "user_A": OnAspect(
+                stage="during",
+                aspect="before",
+                name="user_A",
+                doc=None,
+                operations=[],
+                is_abstract=True,
+            ),
+        }
         assert state_l1.on_enters == []
         assert state_l1.on_durings == [
             OnStage(
@@ -380,6 +406,24 @@ class TestModelStateL1:
         assert state_l1_l2.transitions[2].effects == []
         assert state_l1_l2.transitions[2].parent_ref().name == "L2"
         assert state_l1_l2.transitions[2].parent_ref().path == ("L1", "L2")
+        assert state_l1_l2.named_functions == {
+            "user_B": OnAspect(
+                stage="during",
+                aspect="before",
+                name="user_B",
+                doc=None,
+                operations=[],
+                is_abstract=True,
+            ),
+            "user_A": OnAspect(
+                stage="during",
+                aspect="before",
+                name="user_A",
+                doc=None,
+                operations=[],
+                is_abstract=True,
+            ),
+        }
         assert state_l1_l2.on_enters == []
         assert state_l1_l2.on_durings == []
         assert state_l1_l2.on_exits == []
@@ -552,6 +596,7 @@ class TestModelStateL1:
             "E1": Event(name="E1", state_path=("L1", "L2", "L21"))
         }
         assert state_l1_l2_l21.transitions == []
+        assert state_l1_l2_l21.named_functions == {}
         assert state_l1_l2_l21.on_enters == []
         assert state_l1_l2_l21.on_durings == []
         assert state_l1_l2_l21.on_exits == []
@@ -623,6 +668,7 @@ class TestModelStateL1:
             "E1": Event(name="E1", state_path=("L1", "L2", "L22"))
         }
         assert state_l1_l2_l22.transitions == []
+        assert state_l1_l2_l22.named_functions == {}
         assert state_l1_l2_l22.on_enters == []
         assert state_l1_l2_l22.on_durings == []
         assert state_l1_l2_l22.on_exits == []

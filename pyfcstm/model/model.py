@@ -418,7 +418,7 @@ class State(AstExportable, PlantUMLExportable):
     substates: Dict[str, 'State']
     events: Dict[str, Event] = None
     transitions: List[Transition] = None
-    functions: Dict[str, Union[OnStage, OnAspect]] = None
+    named_functions: Dict[str, Union[OnStage, OnAspect]] = None
     on_enters: List[OnStage] = None
     on_durings: List[OnStage] = None
     on_exits: List[OnStage] = None
@@ -433,7 +433,7 @@ class State(AstExportable, PlantUMLExportable):
         """
         self.events = self.events or {}
         self.transitions = self.transitions or []
-        self.functions = self.functions or {}
+        self.named_functions = self.named_functions or {}
         self.on_enters = self.on_enters or []
         self.on_durings = self.on_durings or []
         self.on_exits = self.on_exits or []
@@ -1164,7 +1164,7 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
             else:
                 raise SyntaxError(f'Duplicate state name in namespace {".".join(current_path)!r}:\n{subnode}')
 
-        functions = {}
+        named_functions = {}
         on_enters = []
         for enter_item in node.enters:
             on_stage = None
@@ -1199,12 +1199,18 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                     operations=[],
                     is_abstract=True,
                 )
+            # TODO: add part of enter ref function
+            # elif isinstance(enter_item, dsl_nodes.EnterRefFunction):
+            #     on_stage = FunctionPlaceholder(
+            #         name=enter_item.name,
+            #         ref=enter_item.ref,
+            #     )
 
             if on_stage is not None:
                 if on_stage.name:
-                    if on_stage.name in functions:
+                    if on_stage.name in named_functions:
                         raise SyntaxError(f'Duplicate function name {on_stage.name!r} in state:\n{node}')
-                    functions[on_stage.name] = on_stage
+                    named_functions[on_stage.name] = on_stage
                 on_enters.append(on_stage)
 
         on_durings = []
@@ -1248,12 +1254,13 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                     operations=[],
                     is_abstract=True,
                 )
+            # TODO: add part of during ref function
 
             if on_stage is not None:
                 if on_stage.name:
-                    if on_stage.name in functions:
+                    if on_stage.name in named_functions:
                         raise SyntaxError(f'Duplicate function name {on_stage.name!r} in state:\n{node}')
-                    functions[on_stage.name] = on_stage
+                    named_functions[on_stage.name] = on_stage
                 on_durings.append(on_stage)
 
         on_exits = []
@@ -1290,12 +1297,13 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                     operations=[],
                     is_abstract=True,
                 )
+            # TODO: add part of exit ref function
 
             if on_stage is not None:
                 if on_stage.name:
-                    if on_stage.name in functions:
+                    if on_stage.name in named_functions:
                         raise SyntaxError(f'Duplicate function name {on_stage.name!r} in state:\n{node}')
-                    functions[on_stage.name] = on_stage
+                    named_functions[on_stage.name] = on_stage
                 on_exits.append(on_stage)
 
         on_during_aspects = []
@@ -1332,12 +1340,13 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                     operations=[],
                     is_abstract=True,
                 )
+            # TODO: add part of during aspect ref function
 
             if on_aspect is not None:
                 if on_aspect.name:
-                    if on_aspect.name in functions:
+                    if on_aspect.name in named_functions:
                         raise SyntaxError(f'Duplicate function name {on_aspect.name!r} in state:\n{node}')
-                    functions[on_aspect.name] = on_aspect
+                    named_functions[on_aspect.name] = on_aspect
                 on_during_aspects.append(on_aspect)
 
         my_state = State(
@@ -1349,7 +1358,7 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
             on_durings=on_durings,
             on_exits=on_exits,
             on_during_aspects=on_during_aspects,
-            functions=functions,
+            named_functions=named_functions,
         )
         if my_state.is_pseudo and not my_state.is_leaf_state:
             raise SyntaxError(f'Pseudo state {".".join(current_path)} must be a leaf state:\n{node}')

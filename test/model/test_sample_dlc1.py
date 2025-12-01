@@ -199,6 +199,24 @@ class TestModelStateTrafficLight:
         assert state_trafficlight.transitions[3].effects == []
         assert state_trafficlight.transitions[3].parent_ref().name == "TrafficLight"
         assert state_trafficlight.transitions[3].parent_ref().path == ("TrafficLight",)
+        assert state_trafficlight.named_functions == {
+            "FFT": OnAspect(
+                stage="during",
+                aspect="before",
+                name="FFT",
+                doc=None,
+                operations=[],
+                is_abstract=True,
+            ),
+            "TTT": OnAspect(
+                stage="during",
+                aspect="before",
+                name="TTT",
+                doc="this is the line",
+                operations=[],
+                is_abstract=True,
+            ),
+        }
         assert state_trafficlight.on_enters == []
         assert state_trafficlight.on_durings == []
         assert state_trafficlight.on_exits == []
@@ -713,6 +731,40 @@ class TestModelStateTrafficLight:
             "TrafficLight",
             "InService",
         )
+        assert state_trafficlight_inservice.named_functions == {
+            "InServiceAbstractEnter": OnStage(
+                stage="enter",
+                aspect=None,
+                name="InServiceAbstractEnter",
+                doc="Abstract Operation When Entering State 'InService'\nTODO: Should be Implemented In Generated Code Framework",
+                operations=[],
+                is_abstract=True,
+            ),
+            "InServiceBeforeEnterChild": OnStage(
+                stage="during",
+                aspect="before",
+                name="InServiceBeforeEnterChild",
+                doc="Abstract Operation Before Entering Child States of State 'InService'\nTODO: Should be Implemented In Generated Code Framework",
+                operations=[],
+                is_abstract=True,
+            ),
+            "InServiceAfterEnterChild": OnStage(
+                stage="during",
+                aspect="after",
+                name="InServiceAfterEnterChild",
+                doc="Abstract Operation After Entering Child States of State 'InService'\nTODO: Should be Implemented In Generated Code Framework",
+                operations=[],
+                is_abstract=True,
+            ),
+            "InServiceAbstractExit": OnStage(
+                stage="exit",
+                aspect=None,
+                name="InServiceAbstractExit",
+                doc="Abstract Operation When Leaving State 'InService'\nTODO: Should be Implemented In Generated Code Framework",
+                operations=[],
+                is_abstract=True,
+            ),
+        }
         assert state_trafficlight_inservice.on_enters == [
             OnStage(
                 stage="enter",
@@ -1112,6 +1164,7 @@ class TestModelStateTrafficLight:
         assert sorted(state_trafficlight_inservice_red.substates.keys()) == []
         assert state_trafficlight_inservice_red.events == {}
         assert state_trafficlight_inservice_red.transitions == []
+        assert state_trafficlight_inservice_red.named_functions == {}
         assert state_trafficlight_inservice_red.on_enters == []
         assert state_trafficlight_inservice_red.on_durings == [
             OnStage(
@@ -1421,6 +1474,7 @@ class TestModelStateTrafficLight:
         assert sorted(state_trafficlight_inservice_yellow.substates.keys()) == []
         assert state_trafficlight_inservice_yellow.events == {}
         assert state_trafficlight_inservice_yellow.transitions == []
+        assert state_trafficlight_inservice_yellow.named_functions == {}
         assert state_trafficlight_inservice_yellow.on_enters == []
         assert state_trafficlight_inservice_yellow.on_durings == []
         assert state_trafficlight_inservice_yellow.on_exits == []
@@ -1698,6 +1752,7 @@ class TestModelStateTrafficLight:
         assert sorted(state_trafficlight_inservice_green.substates.keys()) == []
         assert state_trafficlight_inservice_green.events == {}
         assert state_trafficlight_inservice_green.transitions == []
+        assert state_trafficlight_inservice_green.named_functions == {}
         assert state_trafficlight_inservice_green.on_enters == []
         assert state_trafficlight_inservice_green.on_durings == []
         assert state_trafficlight_inservice_green.on_exits == []
@@ -1923,6 +1978,7 @@ class TestModelStateTrafficLight:
             "E2": Event(name="E2", state_path=("TrafficLight", "Idle"))
         }
         assert state_trafficlight_idle.transitions == []
+        assert state_trafficlight_idle.named_functions == {}
         assert state_trafficlight_idle.on_enters == []
         assert state_trafficlight_idle.on_durings == []
         assert state_trafficlight_idle.on_exits == []

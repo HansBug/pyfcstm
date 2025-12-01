@@ -127,6 +127,16 @@ class TestModelStateLx:
         assert state_lx.transitions[3].effects == []
         assert state_lx.transitions[3].parent_ref().name == "LX"
         assert state_lx.transitions[3].parent_ref().path == ("LX",)
+        assert state_lx.named_functions == {
+            "act1": OnStage(
+                stage="enter",
+                aspect=None,
+                name="act1",
+                doc=None,
+                operations=[],
+                is_abstract=True,
+            )
+        }
         assert state_lx.on_enters == [
             OnStage(
                 stage="enter",
@@ -393,6 +403,7 @@ class TestModelStateLx:
         assert state_lx_lx2.transitions[1].effects == []
         assert state_lx_lx2.transitions[1].parent_ref().name == "LX2"
         assert state_lx_lx2.transitions[1].parent_ref().path == ("LX", "LX2")
+        assert state_lx_lx2.named_functions == {}
         assert state_lx_lx2.on_enters == []
         assert state_lx_lx2.on_durings == []
         assert state_lx_lx2.on_exits == []
@@ -588,6 +599,7 @@ class TestModelStateLx:
             "LX2",
             "start",
         )
+        assert state_lx_lx2_start.named_functions == {}
         assert state_lx_lx2_start.on_enters == []
         assert state_lx_lx2_start.on_durings == []
         assert state_lx_lx2_start.on_exits == []
@@ -769,6 +781,7 @@ class TestModelStateLx:
             "start",
             "LX4",
         )
+        assert state_lx_lx2_start_lx4.named_functions == {}
         assert state_lx_lx2_start_lx4.on_enters == []
         assert state_lx_lx2_start_lx4.on_durings == []
         assert state_lx_lx2_start_lx4.on_exits == []
@@ -911,6 +924,7 @@ class TestModelStateLx:
         assert sorted(state_lx_lx2_start_lx4_lx5.substates.keys()) == []
         assert state_lx_lx2_start_lx4_lx5.events == {}
         assert state_lx_lx2_start_lx4_lx5.transitions == []
+        assert state_lx_lx2_start_lx4_lx5.named_functions == {}
         assert state_lx_lx2_start_lx4_lx5.on_enters == []
         assert state_lx_lx2_start_lx4_lx5.on_durings == []
         assert state_lx_lx2_start_lx4_lx5.on_exits == []
@@ -1003,6 +1017,7 @@ class TestModelStateLx:
         assert sorted(state_lx_error.substates.keys()) == []
         assert state_lx_error.events == {}
         assert state_lx_error.transitions == []
+        assert state_lx_error.named_functions == {}
         assert state_lx_error.on_enters == []
         assert state_lx_error.on_durings == []
         assert state_lx_error.on_exits == []

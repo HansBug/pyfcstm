@@ -4,10 +4,11 @@ import pathlib
 import re
 import textwrap
 
+from hbutils.reflection import nested_for
 from hbutils.string import titleize
 
 from pyfcstm.dsl import parse_with_grammar_entry
-from pyfcstm.model.model import parse_dsl_node_to_state_machine, State
+from pyfcstm.model.model import parse_dsl_node_to_state_machine, State, OnStage, OnAspect
 
 
 def _name_safe(name_text):
@@ -139,7 +140,105 @@ def sample_generation_to_file(code: str, test_file: str):
                                         file=tf)
                         else:
                             print(f'        assert {_state_name(state)}.{field_name}[{j}] is None', file=tf)
+                elif obj and isinstance(obj, dict) and isinstance(list(obj.values())[0], (OnStage, OnAspect)):
+                    print(f'        assert sorted({_state_name(state)}.{field_name}.keys()) == {sorted(obj.keys())}',
+                          file=tf)
+                    for oskey, obj_item in obj.items():
+                        for os_field_name in [
+                            *map(lambda x: x.name, dataclasses.fields(obj_item)),
+                            *get_properties(obj_item),
+                        ]:
+                            obj_item_v = getattr(obj_item, os_field_name)
+                            if isinstance(obj_item_v, type(None)):
+                                print(
+                                    f'        assert {_state_name(state)}.{field_name}[{oskey!r}].{os_field_name} is None',
+                                    file=tf)
+                            elif isinstance(obj_item_v, bool):
+                                if obj_item_v:
+                                    print(
+                                        f'        assert {_state_name(state)}.{field_name}[{oskey!r}].{os_field_name}',
+                                        file=tf)
+                                else:
+                                    print(
+                                        f'        assert not {_state_name(state)}.{field_name}[{oskey!r}].{os_field_name}',
+                                        file=tf)
+                            elif os_field_name == 'parent':
+                                print(
+                                    f'        assert {_state_name(state)}.{field_name}[{oskey!r}].{os_field_name}.name == {obj_item_v.name!r}',
+                                    file=tf)
+                                print(
+                                    f'        assert {_state_name(state)}.{field_name}[{oskey!r}].{os_field_name}.path == {obj_item_v.path!r}',
+                                    file=tf)
+                            elif os_field_name == 'parent_ref':
+                                print(
+                                    f'        assert {_state_name(state)}.{field_name}[{oskey!r}].{os_field_name}().name == {obj_item_v().name!r}',
+                                    file=tf)
+                                print(
+                                    f'        assert {_state_name(state)}.{field_name}[{oskey!r}].{os_field_name}().path == {obj_item_v().path!r}',
+                                    file=tf)
+                            elif os_field_name == 'ref':
+                                print(
+                                    f'        assert {_state_name(state)}.{field_name}[{oskey!r}].{os_field_name}.name == {obj_item_v.name!r}',
+                                    file=tf)
+                                print(
+                                    f'        assert {_state_name(state)}.{field_name}[{oskey!r}].{os_field_name}.aspect == {obj_item_v.aspect!r}',
+                                    file=tf)
+                                print(
+                                    f'        assert {_state_name(state)}.{field_name}[{oskey!r}].{os_field_name}.state_path == {obj_item_v.state_path!r}',
+                                    file=tf)
+                            else:
+                                print(
+                                    f'        assert {_state_name(state)}.{field_name}[{oskey!r}].{os_field_name} == {obj_item_v!r}',
+                                    file=tf)
 
+                elif obj and isinstance(obj, (list, tuple)) and isinstance(obj[0], (OnStage, OnAspect)):
+                    print(f'        assert len({_state_name(state)}.{field_name}) == {len(obj)}', file=tf)
+                    for osi, obj_item in enumerate(obj):
+                        for os_field_name in [
+                            *map(lambda x: x.name, dataclasses.fields(obj_item)),
+                            *get_properties(obj_item),
+                        ]:
+                            obj_item_v = getattr(obj_item, os_field_name)
+                            if isinstance(obj_item_v, type(None)):
+                                print(
+                                    f'        assert {_state_name(state)}.{field_name}[{osi}].{os_field_name} is None',
+                                    file=tf)
+                            elif isinstance(obj_item_v, bool):
+                                if obj_item_v:
+                                    print(f'        assert {_state_name(state)}.{field_name}[{osi}].{os_field_name}',
+                                          file=tf)
+                                else:
+                                    print(
+                                        f'        assert not {_state_name(state)}.{field_name}[{osi}].{os_field_name}',
+                                        file=tf)
+                            elif os_field_name == 'parent':
+                                print(
+                                    f'        assert {_state_name(state)}.{field_name}[{osi}].{os_field_name}.name == {obj_item_v.name!r}',
+                                    file=tf)
+                                print(
+                                    f'        assert {_state_name(state)}.{field_name}[{osi}].{os_field_name}.path == {obj_item_v.path!r}',
+                                    file=tf)
+                            elif os_field_name == 'parent_ref':
+                                print(
+                                    f'        assert {_state_name(state)}.{field_name}[{osi}].{os_field_name}().name == {obj_item_v().name!r}',
+                                    file=tf)
+                                print(
+                                    f'        assert {_state_name(state)}.{field_name}[{osi}].{os_field_name}().path == {obj_item_v().path!r}',
+                                    file=tf)
+                            elif os_field_name == 'ref':
+                                print(
+                                    f'        assert {_state_name(state)}.{field_name}[{osi}].{os_field_name}.name == {obj_item_v.name!r}',
+                                    file=tf)
+                                print(
+                                    f'        assert {_state_name(state)}.{field_name}[{osi}].{os_field_name}.aspect == {obj_item_v.aspect!r}',
+                                    file=tf)
+                                print(
+                                    f'        assert {_state_name(state)}.{field_name}[{osi}].{os_field_name}.state_path == {obj_item_v.state_path!r}',
+                                    file=tf)
+                            else:
+                                print(
+                                    f'        assert {_state_name(state)}.{field_name}[{osi}].{os_field_name} == {obj_item_v!r}',
+                                    file=tf)
                 else:
                     print(f'        assert {_state_name(state)}.{field_name} == {obj!r}', file=tf)
             print(f'', file=tf)
@@ -150,8 +249,85 @@ def sample_generation_to_file(code: str, test_file: str):
             print(f'        assert ast_node == {_to_ast_node(repr(ast_node))}', file=tf)
             print(f'', file=tf)
 
+            print(f'    def test_{_state_name(state)}_during_aspects(self, {_state_name(state)}):',
+                  file=tf)
+
+            for is_abstract, aspect in nested_for([None, False, True], [None, 'before', 'after']):
+                if is_abstract is not None and aspect is not None:
+                    print(
+                        f'        lst = {_state_name(state)}.list_on_during_aspects(is_abstract={is_abstract!r}, aspect={aspect!r})',
+                        file=tf)
+                elif is_abstract is not None:
+                    print(
+                        f'        lst = {_state_name(state)}.list_on_during_aspects(is_abstract={is_abstract!r})',
+                        file=tf)
+                elif aspect is not None:
+                    print(
+                        f'        lst = {_state_name(state)}.list_on_during_aspects(aspect={aspect!r})', file=tf)
+                else:
+                    print(f'        lst = {_state_name(state)}.list_on_during_aspects()', file=tf)
+                lst = state.list_on_during_aspects(is_abstract=is_abstract, aspect=aspect)
+                if not lst:
+                    print(f'        assert lst == {lst!r}', file=tf)
+                else:
+                    print(f'        assert len(lst) == {len(lst)!r}', file=tf)
+                    for j, lst_item in enumerate(lst):
+                        on_stage = lst_item
+                        print(f'        on_stage = lst[{j!r}]', file=tf)
+                        # print(f'        assert st.name == {st.name!r}', file=tf)
+                        # print(f'        assert st.path == {st.path!r}', file=tf)
+                        # print(f'        assert on_stage == {on_stage!r}', file=tf)
+                        for os_field_name in [
+                            *map(lambda x: x.name, dataclasses.fields(on_stage)),
+                            *get_properties(on_stage),
+                        ]:
+                            on_stage_v = getattr(on_stage, os_field_name)
+                            if isinstance(on_stage_v, type(None)):
+                                print(
+                                    f'        assert on_stage.{os_field_name} is None',
+                                    file=tf)
+                            elif isinstance(on_stage_v, bool):
+                                if on_stage_v:
+                                    print(f'        assert on_stage.{os_field_name}',
+                                          file=tf)
+                                else:
+                                    print(
+                                        f'        assert not on_stage.{os_field_name}',
+                                        file=tf)
+                            elif os_field_name == 'parent':
+                                print(
+                                    f'        assert on_stage.{os_field_name}.name == {on_stage_v.name!r}',
+                                    file=tf)
+                                print(
+                                    f'        assert on_stage.{os_field_name}.path == {on_stage_v.path!r}',
+                                    file=tf)
+                            elif os_field_name == 'parent_ref':
+                                print(
+                                    f'        assert on_stage.{os_field_name}().name == {on_stage_v().name!r}',
+                                    file=tf)
+                                print(
+                                    f'        assert on_stage.{os_field_name}().path == {on_stage_v().path!r}',
+                                    file=tf)
+                            elif os_field_name == 'ref':
+                                print(
+                                    f'        assert on_stage.{os_field_name}.name == {obj_item_v.name!r}',
+                                    file=tf)
+                                print(
+                                    f'        assert on_stage.{os_field_name}.aspect == {obj_item_v.aspect!r}',
+                                    file=tf)
+                                print(
+                                    f'        assert on_stage.{os_field_name}.state_path == {obj_item_v.state_path!r}',
+                                    file=tf)
+                            else:
+                                print(
+                                    f'        assert on_stage.{os_field_name} == {on_stage_v!r}',
+                                    file=tf)
+
+                print(f'', file=tf)
+
             if state.is_leaf_state:
-                print(f'    def test_{_state_name(state)}_during_aspect(self, {_state_name(state)}):', file=tf)
+                print(f'    def test_{_state_name(state)}_during_aspect_recursively(self, {_state_name(state)}):',
+                      file=tf)
 
                 print(f'        lst = {_state_name(state)}.list_on_during_aspect_recursively()', file=tf)
                 lst = state.list_on_during_aspect_recursively()
@@ -164,7 +340,53 @@ def sample_generation_to_file(code: str, test_file: str):
                         print(f'        st, on_stage = lst[{j!r}]', file=tf)
                         print(f'        assert st.name == {st.name!r}', file=tf)
                         print(f'        assert st.path == {st.path!r}', file=tf)
-                        print(f'        assert on_stage == {on_stage!r}', file=tf)
+                        # print(f'        assert on_stage == {on_stage!r}', file=tf)
+                        for os_field_name in [
+                            *map(lambda x: x.name, dataclasses.fields(on_stage)),
+                            *get_properties(on_stage),
+                        ]:
+                            on_stage_v = getattr(on_stage, os_field_name)
+                            if isinstance(on_stage_v, type(None)):
+                                print(
+                                    f'        assert on_stage.{os_field_name} is None',
+                                    file=tf)
+                            elif isinstance(on_stage_v, bool):
+                                if on_stage_v:
+                                    print(f'        assert on_stage.{os_field_name}',
+                                          file=tf)
+                                else:
+                                    print(
+                                        f'        assert not on_stage.{os_field_name}',
+                                        file=tf)
+                            elif os_field_name == 'parent':
+                                print(
+                                    f'        assert on_stage.{os_field_name}.name == {on_stage_v.name!r}',
+                                    file=tf)
+                                print(
+                                    f'        assert on_stage.{os_field_name}.path == {on_stage_v.path!r}',
+                                    file=tf)
+                            elif os_field_name == 'parent_ref':
+                                print(
+                                    f'        assert on_stage.{os_field_name}().name == {on_stage_v().name!r}',
+                                    file=tf)
+                                print(
+                                    f'        assert on_stage.{os_field_name}().path == {on_stage_v().path!r}',
+                                    file=tf)
+                            elif os_field_name == 'ref':
+                                print(
+                                    f'        assert on_stage.{os_field_name}.name == {obj_item_v.name!r}',
+                                    file=tf)
+                                print(
+                                    f'        assert on_stage.{os_field_name}.aspect == {obj_item_v.aspect!r}',
+                                    file=tf)
+                                print(
+                                    f'        assert on_stage.{os_field_name}.state_path == {obj_item_v.state_path!r}',
+                                    file=tf)
+                            else:
+                                print(
+                                    f'        assert on_stage.{os_field_name} == {on_stage_v!r}',
+                                    file=tf)
+
                 print(f'', file=tf)
 
                 print(f'        lst = {_state_name(state)}.list_on_during_aspect_recursively(with_ids=True)', file=tf)
@@ -179,7 +401,52 @@ def sample_generation_to_file(code: str, test_file: str):
                         print(f'        assert id_ == {id_!r}', file=tf)
                         print(f'        assert st.name == {st.name!r}', file=tf)
                         print(f'        assert st.path == {st.path!r}', file=tf)
-                        print(f'        assert on_stage == {on_stage!r}', file=tf)
+                        # print(f'        assert on_stage == {on_stage!r}', file=tf)
+                        for os_field_name in [
+                            *map(lambda x: x.name, dataclasses.fields(on_stage)),
+                            *get_properties(on_stage),
+                        ]:
+                            on_stage_v = getattr(on_stage, os_field_name)
+                            if isinstance(on_stage_v, type(None)):
+                                print(
+                                    f'        assert on_stage.{os_field_name} is None',
+                                    file=tf)
+                            elif isinstance(on_stage_v, bool):
+                                if on_stage_v:
+                                    print(f'        assert on_stage.{os_field_name}',
+                                          file=tf)
+                                else:
+                                    print(
+                                        f'        assert not on_stage.{os_field_name}',
+                                        file=tf)
+                            elif os_field_name == 'parent':
+                                print(
+                                    f'        assert on_stage.{os_field_name}.name == {on_stage_v.name!r}',
+                                    file=tf)
+                                print(
+                                    f'        assert on_stage.{os_field_name}.path == {on_stage_v.path!r}',
+                                    file=tf)
+                            elif os_field_name == 'parent_ref':
+                                print(
+                                    f'        assert on_stage.{os_field_name}().name == {on_stage_v().name!r}',
+                                    file=tf)
+                                print(
+                                    f'        assert on_stage.{os_field_name}().path == {on_stage_v().path!r}',
+                                    file=tf)
+                            elif os_field_name == 'ref':
+                                print(
+                                    f'        assert on_stage.{os_field_name}.name == {obj_item_v.name!r}',
+                                    file=tf)
+                                print(
+                                    f'        assert on_stage.{os_field_name}.aspect == {obj_item_v.aspect!r}',
+                                    file=tf)
+                                print(
+                                    f'        assert on_stage.{os_field_name}.state_path == {obj_item_v.state_path!r}',
+                                    file=tf)
+                            else:
+                                print(
+                                    f'        assert on_stage.{os_field_name} == {on_stage_v!r}',
+                                    file=tf)
 
                 print(f'', file=tf)
 

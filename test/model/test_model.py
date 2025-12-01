@@ -336,16 +336,16 @@ class TestModelModel:
 
         assert len(root_state_1.transitions_entering_children) == 2
         assert (
-            root_state_1.transitions_entering_children[0].from_state
-            == dsl_nodes.INIT_STATE
+                root_state_1.transitions_entering_children[0].from_state
+                == dsl_nodes.INIT_STATE
         )
         assert root_state_1.transitions_entering_children[0].to_state == "LX1"
         assert root_state_1.transitions_entering_children[0].event is None
         assert root_state_1.transitions_entering_children[0].guard is None
         assert root_state_1.transitions_entering_children[0].parent is root_state_1
         assert (
-            root_state_1.transitions_entering_children[1].from_state
-            == dsl_nodes.INIT_STATE
+                root_state_1.transitions_entering_children[1].from_state
+                == dsl_nodes.INIT_STATE
         )
         assert root_state_1.transitions_entering_children[1].to_state == "LX2"
         assert root_state_1.transitions_entering_children[1].event is not None
@@ -354,69 +354,74 @@ class TestModelModel:
 
         assert len(root_state_1.transitions_entering_children_simplified) == 1
         assert (
-            root_state_1.transitions_entering_children_simplified[0].from_state
-            == dsl_nodes.INIT_STATE
+                root_state_1.transitions_entering_children_simplified[0].from_state
+                == dsl_nodes.INIT_STATE
         )
         assert (
-            root_state_1.transitions_entering_children_simplified[0].to_state == "LX1"
+                root_state_1.transitions_entering_children_simplified[0].to_state == "LX1"
         )
         assert root_state_1.transitions_entering_children_simplified[0].event is None
         assert root_state_1.transitions_entering_children_simplified[0].guard is None
         assert (
-            root_state_1.transitions_entering_children_simplified[0].parent
-            is root_state_1
+                root_state_1.transitions_entering_children_simplified[0].parent
+                is root_state_1
         )
 
-        assert root_state_1.on_enters == [
-            OnStage(
-                stage="enter",
-                aspect=None,
-                name=None,
-                doc=None,
-                operations=[
-                    Operation(
-                        var_name="b",
-                        expr=BinaryOp(x=Integer(value=0), op="+", y=Variable(name="b")),
-                    ),
-                    Operation(
-                        var_name="b",
-                        expr=BinaryOp(
-                            x=Integer(value=3),
-                            op="+",
-                            y=BinaryOp(
-                                x=Variable(name="a"),
-                                op="*",
-                                y=BinaryOp(
-                                    x=Integer(value=2), op="+", y=Variable(name="b")
-                                ),
-                            ),
+        assert len(root_state_1.on_enters) == 1
+        assert root_state_1.on_enters[0].stage == 'enter'
+        assert root_state_1.on_enters[0].aspect is None
+        assert root_state_1.on_enters[0].name is None
+        assert root_state_1.on_enters[0].doc is None
+        assert root_state_1.on_enters[0].operations == [
+            Operation(
+                var_name="b",
+                expr=BinaryOp(x=Integer(value=0), op="+", y=Variable(name="b")),
+            ),
+            Operation(
+                var_name="b",
+                expr=BinaryOp(
+                    x=Integer(value=3),
+                    op="+",
+                    y=BinaryOp(
+                        x=Variable(name="a"),
+                        op="*",
+                        y=BinaryOp(
+                            x=Integer(value=2), op="+", y=Variable(name="b")
                         ),
                     ),
-                ],
-                is_abstract=False,
-                state_path=('LX', None),
-            )
+                ),
+            ),
         ]
+        assert not root_state_1.on_enters[0].is_abstract
+        assert root_state_1.on_enters[0].state_path == ('LX', None)
+        assert root_state_1.on_enters[0].ref_state_path is None
+        assert root_state_1.on_enters[0].ref is None
+        assert root_state_1.on_enters[0].parent.name == 'LX'
+        assert root_state_1.on_enters[0].parent.path == ('LX',)
+        assert root_state_1.on_enters[0].parent_ref().name == 'LX'
+        assert root_state_1.on_enters[0].parent_ref().path == ('LX',)
+
         assert root_state_1.on_durings == []
-        assert root_state_1.on_exits == [
-            OnStage(
-                stage="exit",
-                aspect=None,
-                name=None,
-                doc=None,
-                operations=[
-                    Operation(var_name="b", expr=Integer(value=0)),
-                    Operation(
-                        var_name="b",
-                        expr=BinaryOp(
-                            x=Variable(name="a"), op="<<", y=Integer(value=2)
-                        ),
-                    ),
-                ],
-                is_abstract=False,
-                state_path=('LX', None),
-            )
+        assert len(root_state_1.on_exits) == 1
+        assert root_state_1.on_exits[0].stage == 'exit'
+        assert root_state_1.on_exits[0].aspect is None
+        assert root_state_1.on_exits[0].name is None
+        assert root_state_1.on_exits[0].doc is None
+        assert root_state_1.on_exits[0].operations == [
+            Operation(var_name="b", expr=Integer(value=0)),
+            Operation(
+                var_name="b",
+                expr=BinaryOp(
+                    x=Variable(name="a"), op="<<", y=Integer(value=2)
+                ),
+            ),
         ]
+        assert not root_state_1.on_exits[0].is_abstract
+        assert root_state_1.on_exits[0].state_path == ('LX', None)
+        assert root_state_1.on_exits[0].parent.name == 'LX'
+        assert root_state_1.on_exits[0].parent.path == ('LX',)
+        assert root_state_1.on_exits[0].parent_ref().name == 'LX'
+        assert root_state_1.on_exits[0].parent_ref().path == ('LX',)
 
         assert root_state_1.abstract_on_enters == []
         assert root_state_1.non_abstract_on_enters == root_state_1.on_enters
@@ -471,7 +476,7 @@ class TestModelModel:
         assert operation_2.var_name_to_ast_node() == dsl_nodes.Name(name="b")
 
     def test_walk_states(
-        self, demo_model_1, root_state_1, state_LX_LX1, state_LX_LX1_LX11
+            self, demo_model_1, root_state_1, state_LX_LX1, state_LX_LX1_LX11
     ):
         assert [state.path for state in demo_model_1.walk_states()] == [
             ("LX",),
@@ -677,8 +682,8 @@ class TestModelModel:
 
         assert len(state_LX_LX1.transitions_entering_children) == 1
         assert (
-            state_LX_LX1.transitions_entering_children[0].from_state
-            == dsl_nodes.INIT_STATE
+                state_LX_LX1.transitions_entering_children[0].from_state
+                == dsl_nodes.INIT_STATE
         )
         assert state_LX_LX1.transitions_entering_children[0].to_state == "LX11"
         assert state_LX_LX1.transitions_entering_children[0].event is None
@@ -688,20 +693,20 @@ class TestModelModel:
 
         assert len(state_LX_LX1.transitions_entering_children_simplified) == 1
         assert (
-            state_LX_LX1.transitions_entering_children_simplified[0].from_state
-            == dsl_nodes.INIT_STATE
+                state_LX_LX1.transitions_entering_children_simplified[0].from_state
+                == dsl_nodes.INIT_STATE
         )
         assert (
-            state_LX_LX1.transitions_entering_children_simplified[0].to_state == "LX11"
+                state_LX_LX1.transitions_entering_children_simplified[0].to_state == "LX11"
         )
         assert state_LX_LX1.transitions_entering_children_simplified[0].event is None
         assert state_LX_LX1.transitions_entering_children_simplified[0].guard is None
         assert (
-            len(state_LX_LX1.transitions_entering_children_simplified[0].effects) == 0
+                len(state_LX_LX1.transitions_entering_children_simplified[0].effects) == 0
         )
         assert (
-            state_LX_LX1.transitions_entering_children_simplified[0].parent
-            is state_LX_LX1
+                state_LX_LX1.transitions_entering_children_simplified[0].parent
+                is state_LX_LX1
         )
 
     def test_state_LX_LX1_LX11(self, state_LX_LX1_LX11):
@@ -771,16 +776,16 @@ class TestModelModel:
         #         print(f'assert state_LX_LX1_LX11.transitions_to[{i}] is None')
 
     def test_transitions(
-        self,
-        transition_1,
-        transition_2,
-        transition_3,
-        transition_4,
-        transition_5,
-        transition_6,
-        transition_7,
-        root_state_1,
-        state_LX_LX1,
+            self,
+            transition_1,
+            transition_2,
+            transition_3,
+            transition_4,
+            transition_5,
+            transition_6,
+            transition_7,
+            root_state_1,
+            state_LX_LX1,
     ):
         assert transition_1.from_state == dsl_nodes.INIT_STATE
         assert transition_1.to_state == "LX"
@@ -1086,8 +1091,8 @@ class TestModelModel:
         err = ei.value
         assert isinstance(err, SyntaxError)
         assert (
-            "At least 1 entry transition should be assigned in non-leaf state 'LX':"
-            in err.msg
+                "At least 1 entry transition should be assigned in non-leaf state 'LX':"
+                in err.msg
         )
         assert "state LX {" in err.msg
 
@@ -1186,8 +1191,8 @@ class TestModelModel:
         err = ei.value
         assert isinstance(err, SyntaxError)
         assert (
-            "For composite state 'LX', during must assign aspect to either 'before' or 'after':"
-            in err.msg
+                "For composite state 'LX', during must assign aspect to either 'before' or 'after':"
+                in err.msg
         )
         assert "during {" in err.msg
         assert "b = a + b;" in err.msg

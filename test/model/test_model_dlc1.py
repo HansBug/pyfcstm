@@ -248,176 +248,404 @@ class TestModelModelDLC1:
         assert ast_node.root_state.name == "TrafficLight"
 
     def test_on_during_aspects(self, root_state_1):
-        assert root_state_1.on_during_aspects == [
-            OnAspect(
-                stage="during",
-                aspect="before",
-                name=None,
-                doc=None,
-                operations=[Operation(var_name="a", expr=Integer(value=0))],
-                is_abstract=False,
-                state_path=('TrafficLight', None),
-            ),
-            OnAspect(
-                stage="during",
-                aspect="before",
-                name="FFT",
-                doc=None,
-                operations=[],
-                is_abstract=True,
-                state_path=('TrafficLight', 'FFT'),
-            ),
-            OnAspect(
-                stage="during",
-                aspect="before",
-                name="TTT",
-                doc="this is the line",
-                operations=[],
-                is_abstract=True,
-                state_path=('TrafficLight', 'TTT'),
-            ),
-            OnAspect(
-                stage="during",
-                aspect="after",
-                name=None,
-                doc=None,
-                operations=[
-                    Operation(var_name="a", expr=Integer(value=255)),
-                    Operation(var_name="b", expr=Integer(value=1)),
-                ],
-                is_abstract=False,
-                state_path=('TrafficLight', None),
-            ),
+        assert len(root_state_1.on_during_aspects) == 4
+        assert root_state_1.on_during_aspects[0].stage == "during"
+        assert root_state_1.on_during_aspects[0].aspect == "before"
+        assert root_state_1.on_during_aspects[0].name is None
+        assert root_state_1.on_during_aspects[0].doc is None
+        assert root_state_1.on_during_aspects[0].operations == [
+            Operation(var_name="a", expr=Integer(value=0))
         ]
+        assert not root_state_1.on_during_aspects[0].is_abstract
+        assert root_state_1.on_during_aspects[0].state_path == (
+            "TrafficLight",
+            None,
+        )
+        assert root_state_1.on_during_aspects[0].ref is None
+        assert root_state_1.on_during_aspects[0].ref_state_path is None
+        assert (
+                root_state_1.on_during_aspects[0].parent_ref().name == "TrafficLight"
+        )
+        assert root_state_1.on_during_aspects[0].parent_ref().path == (
+            "TrafficLight",
+        )
+        assert root_state_1.on_during_aspects[0].is_aspect
+        assert not root_state_1.on_during_aspects[0].is_ref
+        assert root_state_1.on_during_aspects[0].parent.name == "TrafficLight"
+        assert root_state_1.on_during_aspects[0].parent.path == ("TrafficLight",)
+        assert root_state_1.on_during_aspects[1].stage == "during"
+        assert root_state_1.on_during_aspects[1].aspect == "before"
+        assert root_state_1.on_during_aspects[1].name == "FFT"
+        assert root_state_1.on_during_aspects[1].doc is None
+        assert root_state_1.on_during_aspects[1].operations == []
+        assert root_state_1.on_during_aspects[1].is_abstract
+        assert root_state_1.on_during_aspects[1].state_path == (
+            "TrafficLight",
+            "FFT",
+        )
+        assert root_state_1.on_during_aspects[1].ref is None
+        assert root_state_1.on_during_aspects[1].ref_state_path is None
+        assert (
+                root_state_1.on_during_aspects[1].parent_ref().name == "TrafficLight"
+        )
+        assert root_state_1.on_during_aspects[1].parent_ref().path == (
+            "TrafficLight",
+        )
+        assert root_state_1.on_during_aspects[1].is_aspect
+        assert not root_state_1.on_during_aspects[1].is_ref
+        assert root_state_1.on_during_aspects[1].parent.name == "TrafficLight"
+        assert root_state_1.on_during_aspects[1].parent.path == ("TrafficLight",)
+        assert root_state_1.on_during_aspects[2].stage == "during"
+        assert root_state_1.on_during_aspects[2].aspect == "before"
+        assert root_state_1.on_during_aspects[2].name == "TTT"
+        assert root_state_1.on_during_aspects[2].doc == "this is the line"
+        assert root_state_1.on_during_aspects[2].operations == []
+        assert root_state_1.on_during_aspects[2].is_abstract
+        assert root_state_1.on_during_aspects[2].state_path == (
+            "TrafficLight",
+            "TTT",
+        )
+        assert root_state_1.on_during_aspects[2].ref is None
+        assert root_state_1.on_during_aspects[2].ref_state_path is None
+        assert (
+                root_state_1.on_during_aspects[2].parent_ref().name == "TrafficLight"
+        )
+        assert root_state_1.on_during_aspects[2].parent_ref().path == (
+            "TrafficLight",
+        )
+        assert root_state_1.on_during_aspects[2].is_aspect
+        assert not root_state_1.on_during_aspects[2].is_ref
+        assert root_state_1.on_during_aspects[2].parent.name == "TrafficLight"
+        assert root_state_1.on_during_aspects[2].parent.path == ("TrafficLight",)
+        assert root_state_1.on_during_aspects[3].stage == "during"
+        assert root_state_1.on_during_aspects[3].aspect == "after"
+        assert root_state_1.on_during_aspects[3].name is None
+        assert root_state_1.on_during_aspects[3].doc is None
+        assert root_state_1.on_during_aspects[3].operations == [
+            Operation(var_name="a", expr=Integer(value=255)),
+            Operation(var_name="b", expr=Integer(value=1)),
+        ]
+        assert not root_state_1.on_during_aspects[3].is_abstract
+        assert root_state_1.on_during_aspects[3].state_path == (
+            "TrafficLight",
+            None,
+        )
+        assert root_state_1.on_during_aspects[3].ref is None
+        assert root_state_1.on_during_aspects[3].ref_state_path is None
+        assert (
+                root_state_1.on_during_aspects[3].parent_ref().name == "TrafficLight"
+        )
+        assert root_state_1.on_during_aspects[3].parent_ref().path == (
+            "TrafficLight",
+        )
+        assert root_state_1.on_during_aspects[3].is_aspect
+        assert not root_state_1.on_during_aspects[3].is_ref
+        assert root_state_1.on_during_aspects[3].parent.name == "TrafficLight"
+        assert root_state_1.on_during_aspects[3].parent.path == ("TrafficLight",)
 
     def test_list_on_during_aspects(self, root_state_1):
-        assert root_state_1.list_on_during_aspects() == [
-            OnAspect(
-                stage="during",
-                aspect="before",
-                name=None,
-                doc=None,
-                operations=[Operation(var_name="a", expr=Integer(value=0))],
-                is_abstract=False,
-                state_path=('TrafficLight', None),
-            ),
-            OnAspect(
-                stage="during",
-                aspect="before",
-                name="FFT",
-                doc=None,
-                operations=[],
-                is_abstract=True,
-                state_path=('TrafficLight', 'FFT'),
-            ),
-            OnAspect(
-                stage="during",
-                aspect="before",
-                name="TTT",
-                doc="this is the line",
-                operations=[],
-                is_abstract=True,
-                state_path=('TrafficLight', 'TTT'),
-            ),
-            OnAspect(
-                stage="during",
-                aspect="after",
-                name=None,
-                doc=None,
-                operations=[
-                    Operation(var_name="a", expr=Integer(value=255)),
-                    Operation(var_name="b", expr=Integer(value=1)),
-                ],
-                is_abstract=False,
-                state_path=('TrafficLight', None),
-            ),
+        lst = root_state_1.list_on_during_aspects()
+        assert len(lst) == 4
+        on_stage = lst[0]
+        assert on_stage.stage == "during"
+        assert on_stage.aspect == "before"
+        assert on_stage.name is None
+        assert on_stage.doc is None
+        assert on_stage.operations == [Operation(var_name="a", expr=Integer(value=0))]
+        assert not on_stage.is_abstract
+        assert on_stage.state_path == ("TrafficLight", None)
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "TrafficLight"
+        assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "TrafficLight"
+        assert on_stage.parent.path == ("TrafficLight",)
+        on_stage = lst[1]
+        assert on_stage.stage == "during"
+        assert on_stage.aspect == "before"
+        assert on_stage.name == "FFT"
+        assert on_stage.doc is None
+        assert on_stage.operations == []
+        assert on_stage.is_abstract
+        assert on_stage.state_path == ("TrafficLight", "FFT")
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "TrafficLight"
+        assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "TrafficLight"
+        assert on_stage.parent.path == ("TrafficLight",)
+        on_stage = lst[2]
+        assert on_stage.stage == "during"
+        assert on_stage.aspect == "before"
+        assert on_stage.name == "TTT"
+        assert on_stage.doc == "this is the line"
+        assert on_stage.operations == []
+        assert on_stage.is_abstract
+        assert on_stage.state_path == ("TrafficLight", "TTT")
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "TrafficLight"
+        assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "TrafficLight"
+        assert on_stage.parent.path == ("TrafficLight",)
+        on_stage = lst[3]
+        assert on_stage.stage == "during"
+        assert on_stage.aspect == "after"
+        assert on_stage.name is None
+        assert on_stage.doc is None
+        assert on_stage.operations == [
+            Operation(var_name="a", expr=Integer(value=255)),
+            Operation(var_name="b", expr=Integer(value=1)),
         ]
-        assert root_state_1.list_on_during_aspects(is_abstract=True) == [
-            OnAspect(
-                stage="during",
-                aspect="before",
-                name="FFT",
-                doc=None,
-                operations=[],
-                is_abstract=True,
-                state_path=('TrafficLight', 'FFT'),
-            ),
-            OnAspect(
-                stage="during",
-                aspect="before",
-                name="TTT",
-                doc="this is the line",
-                operations=[],
-                is_abstract=True,
-                state_path=('TrafficLight', 'TTT'),
-            ),
+        assert not on_stage.is_abstract
+        assert on_stage.state_path == ("TrafficLight", None)
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "TrafficLight"
+        assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "TrafficLight"
+        assert on_stage.parent.path == ("TrafficLight",)
+
+        lst = root_state_1.list_on_during_aspects(aspect="before")
+        assert len(lst) == 3
+        on_stage = lst[0]
+        assert on_stage.stage == "during"
+        assert on_stage.aspect == "before"
+        assert on_stage.name is None
+        assert on_stage.doc is None
+        assert on_stage.operations == [Operation(var_name="a", expr=Integer(value=0))]
+        assert not on_stage.is_abstract
+        assert on_stage.state_path == ("TrafficLight", None)
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "TrafficLight"
+        assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "TrafficLight"
+        assert on_stage.parent.path == ("TrafficLight",)
+        on_stage = lst[1]
+        assert on_stage.stage == "during"
+        assert on_stage.aspect == "before"
+        assert on_stage.name == "FFT"
+        assert on_stage.doc is None
+        assert on_stage.operations == []
+        assert on_stage.is_abstract
+        assert on_stage.state_path == ("TrafficLight", "FFT")
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "TrafficLight"
+        assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "TrafficLight"
+        assert on_stage.parent.path == ("TrafficLight",)
+        on_stage = lst[2]
+        assert on_stage.stage == "during"
+        assert on_stage.aspect == "before"
+        assert on_stage.name == "TTT"
+        assert on_stage.doc == "this is the line"
+        assert on_stage.operations == []
+        assert on_stage.is_abstract
+        assert on_stage.state_path == ("TrafficLight", "TTT")
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "TrafficLight"
+        assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "TrafficLight"
+        assert on_stage.parent.path == ("TrafficLight",)
+
+        lst = root_state_1.list_on_during_aspects(aspect="after")
+        assert len(lst) == 1
+        on_stage = lst[0]
+        assert on_stage.stage == "during"
+        assert on_stage.aspect == "after"
+        assert on_stage.name is None
+        assert on_stage.doc is None
+        assert on_stage.operations == [
+            Operation(var_name="a", expr=Integer(value=255)),
+            Operation(var_name="b", expr=Integer(value=1)),
         ]
-        assert root_state_1.list_on_during_aspects(is_abstract=False) == [
-            OnAspect(
-                stage="during",
-                aspect="before",
-                name=None,
-                doc=None,
-                operations=[Operation(var_name="a", expr=Integer(value=0))],
-                is_abstract=False,
-                state_path=('TrafficLight', None),
-            ),
-            OnAspect(
-                stage="during",
-                aspect="after",
-                name=None,
-                doc=None,
-                operations=[
-                    Operation(var_name="a", expr=Integer(value=255)),
-                    Operation(var_name="b", expr=Integer(value=1)),
-                ],
-                is_abstract=False,
-                state_path=('TrafficLight', None),
-            ),
+        assert not on_stage.is_abstract
+        assert on_stage.state_path == ("TrafficLight", None)
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "TrafficLight"
+        assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "TrafficLight"
+        assert on_stage.parent.path == ("TrafficLight",)
+
+        lst = root_state_1.list_on_during_aspects(is_abstract=False)
+        assert len(lst) == 2
+        on_stage = lst[0]
+        assert on_stage.stage == "during"
+        assert on_stage.aspect == "before"
+        assert on_stage.name is None
+        assert on_stage.doc is None
+        assert on_stage.operations == [Operation(var_name="a", expr=Integer(value=0))]
+        assert not on_stage.is_abstract
+        assert on_stage.state_path == ("TrafficLight", None)
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "TrafficLight"
+        assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "TrafficLight"
+        assert on_stage.parent.path == ("TrafficLight",)
+        on_stage = lst[1]
+        assert on_stage.stage == "during"
+        assert on_stage.aspect == "after"
+        assert on_stage.name is None
+        assert on_stage.doc is None
+        assert on_stage.operations == [
+            Operation(var_name="a", expr=Integer(value=255)),
+            Operation(var_name="b", expr=Integer(value=1)),
         ]
-        assert root_state_1.list_on_during_aspects(aspect="before") == [
-            OnAspect(
-                stage="during",
-                aspect="before",
-                name=None,
-                doc=None,
-                operations=[Operation(var_name="a", expr=Integer(value=0))],
-                is_abstract=False,
-                state_path=('TrafficLight', None),
-            ),
-            OnAspect(
-                stage="during",
-                aspect="before",
-                name="FFT",
-                doc=None,
-                operations=[],
-                is_abstract=True,
-                state_path=('TrafficLight', 'FFT'),
-            ),
-            OnAspect(
-                stage="during",
-                aspect="before",
-                name="TTT",
-                doc="this is the line",
-                operations=[],
-                is_abstract=True,
-                state_path=('TrafficLight', 'TTT'),
-            ),
+        assert not on_stage.is_abstract
+        assert on_stage.state_path == ("TrafficLight", None)
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "TrafficLight"
+        assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "TrafficLight"
+        assert on_stage.parent.path == ("TrafficLight",)
+
+        lst = root_state_1.list_on_during_aspects(
+            is_abstract=False, aspect="before"
+        )
+        assert len(lst) == 1
+        on_stage = lst[0]
+        assert on_stage.stage == "during"
+        assert on_stage.aspect == "before"
+        assert on_stage.name is None
+        assert on_stage.doc is None
+        assert on_stage.operations == [Operation(var_name="a", expr=Integer(value=0))]
+        assert not on_stage.is_abstract
+        assert on_stage.state_path == ("TrafficLight", None)
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "TrafficLight"
+        assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "TrafficLight"
+        assert on_stage.parent.path == ("TrafficLight",)
+
+        lst = root_state_1.list_on_during_aspects(
+            is_abstract=False, aspect="after"
+        )
+        assert len(lst) == 1
+        on_stage = lst[0]
+        assert on_stage.stage == "during"
+        assert on_stage.aspect == "after"
+        assert on_stage.name is None
+        assert on_stage.doc is None
+        assert on_stage.operations == [
+            Operation(var_name="a", expr=Integer(value=255)),
+            Operation(var_name="b", expr=Integer(value=1)),
         ]
-        assert root_state_1.list_on_during_aspects(aspect="after") == [
-            OnAspect(
-                stage="during",
-                aspect="after",
-                name=None,
-                doc=None,
-                operations=[
-                    Operation(var_name="a", expr=Integer(value=255)),
-                    Operation(var_name="b", expr=Integer(value=1)),
-                ],
-                is_abstract=False,
-                state_path=('TrafficLight', None),
-            )
-        ]
+        assert not on_stage.is_abstract
+        assert on_stage.state_path == ("TrafficLight", None)
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "TrafficLight"
+        assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "TrafficLight"
+        assert on_stage.parent.path == ("TrafficLight",)
+
+        lst = root_state_1.list_on_during_aspects(is_abstract=True)
+        assert len(lst) == 2
+        on_stage = lst[0]
+        assert on_stage.stage == "during"
+        assert on_stage.aspect == "before"
+        assert on_stage.name == "FFT"
+        assert on_stage.doc is None
+        assert on_stage.operations == []
+        assert on_stage.is_abstract
+        assert on_stage.state_path == ("TrafficLight", "FFT")
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "TrafficLight"
+        assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "TrafficLight"
+        assert on_stage.parent.path == ("TrafficLight",)
+        on_stage = lst[1]
+        assert on_stage.stage == "during"
+        assert on_stage.aspect == "before"
+        assert on_stage.name == "TTT"
+        assert on_stage.doc == "this is the line"
+        assert on_stage.operations == []
+        assert on_stage.is_abstract
+        assert on_stage.state_path == ("TrafficLight", "TTT")
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "TrafficLight"
+        assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "TrafficLight"
+        assert on_stage.parent.path == ("TrafficLight",)
+
+        lst = root_state_1.list_on_during_aspects(
+            is_abstract=True, aspect="before"
+        )
+        assert len(lst) == 2
+        on_stage = lst[0]
+        assert on_stage.stage == "during"
+        assert on_stage.aspect == "before"
+        assert on_stage.name == "FFT"
+        assert on_stage.doc is None
+        assert on_stage.operations == []
+        assert on_stage.is_abstract
+        assert on_stage.state_path == ("TrafficLight", "FFT")
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "TrafficLight"
+        assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "TrafficLight"
+        assert on_stage.parent.path == ("TrafficLight",)
+        on_stage = lst[1]
+        assert on_stage.stage == "during"
+        assert on_stage.aspect == "before"
+        assert on_stage.name == "TTT"
+        assert on_stage.doc == "this is the line"
+        assert on_stage.operations == []
+        assert on_stage.is_abstract
+        assert on_stage.state_path == ("TrafficLight", "TTT")
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "TrafficLight"
+        assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "TrafficLight"
+        assert on_stage.parent.path == ("TrafficLight",)
+
+        lst = root_state_1.list_on_during_aspects(
+            is_abstract=True, aspect="after"
+        )
+        assert lst == []
 
     def test_transition_dlcs(self, transition_1, transition_2, transition_3):
         assert transition_1.from_state == "Idle"

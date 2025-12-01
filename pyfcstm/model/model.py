@@ -234,6 +234,33 @@ class OnStage(AstExportable):
     state_path: Tuple[Optional[str], ...]
     ref: Union['OnStage', 'OnAspect', None] = None
     ref_state_path: Optional[Tuple[str, ...]] = None
+    parent_ref: Optional[weakref.ReferenceType] = None
+
+    @property
+    def parent(self) -> Optional['State']:
+        """
+        Get the parent state of this transition.
+
+        :return: The parent state or None if no parent is set
+        :rtype: Optional['State']
+        """
+        if self.parent_ref is None:
+            return None
+        else:
+            return self.parent_ref()
+
+    @parent.setter
+    def parent(self, new_parent: Optional['State']):
+        """
+        Set the parent state of this transition.
+
+        :param new_parent: The new parent state or None to clear the parent
+        :type new_parent: Optional['State']
+        """
+        if new_parent is None:
+            self.parent_ref = None  # pragma: no cover
+        else:
+            self.parent_ref = weakref.ref(new_parent)
 
     @property
     def is_ref(self) -> bool:
@@ -266,9 +293,9 @@ class OnStage(AstExportable):
             elif self.is_ref:
                 spath = self.state_path[:-1]
                 if self.ref_state_path[:len(spath)] == spath:
-                    ref = dsl_nodes.ChainID(path=self.ref_state_path[len(spath):], is_absolute=False)
+                    ref = dsl_nodes.ChainID(path=list(self.ref_state_path[len(spath):]), is_absolute=False)
                 else:
-                    ref = dsl_nodes.ChainID(path=self.ref_state_path[1:], is_absolute=True)
+                    ref = dsl_nodes.ChainID(path=list(self.ref_state_path[1:]), is_absolute=True)
                 return dsl_nodes.EnterRefFunction(
                     name=self.name,
                     ref=ref
@@ -289,9 +316,9 @@ class OnStage(AstExportable):
             elif self.is_ref:
                 spath = self.state_path[:-1]
                 if self.ref_state_path[:len(spath)] == spath:
-                    ref = dsl_nodes.ChainID(path=self.ref_state_path[len(spath):], is_absolute=False)
+                    ref = dsl_nodes.ChainID(path=list(self.ref_state_path[len(spath):]), is_absolute=False)
                 else:
-                    ref = dsl_nodes.ChainID(path=self.ref_state_path[1:], is_absolute=True)
+                    ref = dsl_nodes.ChainID(path=list(self.ref_state_path[1:]), is_absolute=True)
                 return dsl_nodes.DuringRefFunction(
                     name=self.name,
                     aspect=self.aspect,
@@ -313,9 +340,9 @@ class OnStage(AstExportable):
             elif self.is_ref:
                 spath = self.state_path[:-1]
                 if self.ref_state_path[:len(spath)] == spath:
-                    ref = dsl_nodes.ChainID(path=self.ref_state_path[len(spath):], is_absolute=False)
+                    ref = dsl_nodes.ChainID(path=list(self.ref_state_path[len(spath):]), is_absolute=False)
                 else:
-                    ref = dsl_nodes.ChainID(path=self.ref_state_path[1:], is_absolute=True)
+                    ref = dsl_nodes.ChainID(path=list(self.ref_state_path[1:]), is_absolute=True)
                 return dsl_nodes.ExitRefFunction(
                     name=self.name,
                     ref=ref
@@ -370,6 +397,33 @@ class OnAspect(AstExportable):
     state_path: Tuple[Optional[str], ...]
     ref: Union['OnStage', 'OnAspect', None] = None
     ref_state_path: Optional[Tuple[str, ...]] = None
+    parent_ref: Optional[weakref.ReferenceType] = None
+
+    @property
+    def parent(self) -> Optional['State']:
+        """
+        Get the parent state of this transition.
+
+        :return: The parent state or None if no parent is set
+        :rtype: Optional['State']
+        """
+        if self.parent_ref is None:
+            return None
+        else:
+            return self.parent_ref()
+
+    @parent.setter
+    def parent(self, new_parent: Optional['State']):
+        """
+        Set the parent state of this transition.
+
+        :param new_parent: The new parent state or None to clear the parent
+        :type new_parent: Optional['State']
+        """
+        if new_parent is None:
+            self.parent_ref = None  # pragma: no cover
+        else:
+            self.parent_ref = weakref.ref(new_parent)
 
     @property
     def is_ref(self) -> bool:
@@ -403,9 +457,9 @@ class OnAspect(AstExportable):
             elif self.is_ref:
                 spath = self.state_path[:-1]
                 if self.ref_state_path[:len(spath)] == spath:
-                    ref = dsl_nodes.ChainID(path=self.ref_state_path[len(spath):], is_absolute=False)
+                    ref = dsl_nodes.ChainID(path=list(self.ref_state_path[len(spath):]), is_absolute=False)
                 else:
-                    ref = dsl_nodes.ChainID(path=self.ref_state_path[1:], is_absolute=True)
+                    ref = dsl_nodes.ChainID(path=list(self.ref_state_path[1:]), is_absolute=True)
                 return dsl_nodes.DuringAspectRefFunction(
                     name=self.name,
                     aspect=self.aspect,
@@ -1491,6 +1545,8 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
         )
         if my_state.is_pseudo and not my_state.is_leaf_state:
             raise SyntaxError(f'Pseudo state {".".join(current_path)} must be a leaf state:\n{node}')
+        for func_item in [*my_state.on_enters, *my_state.on_durings, *my_state.on_exits, *my_state.on_during_aspects]:
+            func_item.parent = my_state
         for _, substate in d_substates.items():
             substate.parent = my_state
         return my_state

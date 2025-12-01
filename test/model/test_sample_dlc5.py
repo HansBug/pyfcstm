@@ -106,149 +106,191 @@ class TestModelStateL1:
         assert state_l1.transitions[1].effects == []
         assert state_l1.transitions[1].parent_ref().name == "L1"
         assert state_l1.transitions[1].parent_ref().path == ("L1",)
-        assert state_l1.named_functions == {
-            "mock": OnStage(
-                stage="during",
-                aspect="before",
-                name="mock",
-                doc=None,
-                operations=[],
-                is_abstract=True,
-                state_path=("L1", "mock"),
-                ref=None,
-                ref_state_path=None,
-            ),
-            "user_B": OnAspect(
-                stage="during",
-                aspect="before",
-                name="user_B",
-                doc=None,
-                operations=[],
-                is_abstract=True,
-                state_path=("L1", "user_B"),
-                ref=None,
-                ref_state_path=None,
-            ),
-            "user_A": OnAspect(
-                stage="during",
-                aspect="before",
-                name="user_A",
-                doc=None,
-                operations=[],
-                is_abstract=True,
-                state_path=("L1", "user_A"),
-                ref=None,
-                ref_state_path=None,
-            ),
-        }
+        assert sorted(state_l1.named_functions.keys()) == ["mock", "user_A", "user_B"]
+        assert state_l1.named_functions["mock"].stage == "during"
+        assert state_l1.named_functions["mock"].aspect == "before"
+        assert state_l1.named_functions["mock"].name == "mock"
+        assert state_l1.named_functions["mock"].doc is None
+        assert state_l1.named_functions["mock"].operations == []
+        assert state_l1.named_functions["mock"].is_abstract
+        assert state_l1.named_functions["mock"].state_path == ("L1", "mock")
+        assert state_l1.named_functions["mock"].ref is None
+        assert state_l1.named_functions["mock"].ref_state_path is None
+        assert state_l1.named_functions["mock"].parent_ref().name == "L1"
+        assert state_l1.named_functions["mock"].parent_ref().path == ("L1",)
+        assert not state_l1.named_functions["mock"].is_aspect
+        assert not state_l1.named_functions["mock"].is_ref
+        assert state_l1.named_functions["mock"].parent.name == "L1"
+        assert state_l1.named_functions["mock"].parent.path == ("L1",)
+        assert state_l1.named_functions["user_B"].stage == "during"
+        assert state_l1.named_functions["user_B"].aspect == "before"
+        assert state_l1.named_functions["user_B"].name == "user_B"
+        assert state_l1.named_functions["user_B"].doc is None
+        assert state_l1.named_functions["user_B"].operations == []
+        assert state_l1.named_functions["user_B"].is_abstract
+        assert state_l1.named_functions["user_B"].state_path == ("L1", "user_B")
+        assert state_l1.named_functions["user_B"].ref is None
+        assert state_l1.named_functions["user_B"].ref_state_path is None
+        assert state_l1.named_functions["user_B"].parent_ref().name == "L1"
+        assert state_l1.named_functions["user_B"].parent_ref().path == ("L1",)
+        assert state_l1.named_functions["user_B"].is_aspect
+        assert not state_l1.named_functions["user_B"].is_ref
+        assert state_l1.named_functions["user_B"].parent.name == "L1"
+        assert state_l1.named_functions["user_B"].parent.path == ("L1",)
+        assert state_l1.named_functions["user_A"].stage == "during"
+        assert state_l1.named_functions["user_A"].aspect == "before"
+        assert state_l1.named_functions["user_A"].name == "user_A"
+        assert state_l1.named_functions["user_A"].doc is None
+        assert state_l1.named_functions["user_A"].operations == []
+        assert state_l1.named_functions["user_A"].is_abstract
+        assert state_l1.named_functions["user_A"].state_path == ("L1", "user_A")
+        assert state_l1.named_functions["user_A"].ref is None
+        assert state_l1.named_functions["user_A"].ref_state_path is None
+        assert state_l1.named_functions["user_A"].parent_ref().name == "L1"
+        assert state_l1.named_functions["user_A"].parent_ref().path == ("L1",)
+        assert state_l1.named_functions["user_A"].is_aspect
+        assert not state_l1.named_functions["user_A"].is_ref
+        assert state_l1.named_functions["user_A"].parent.name == "L1"
+        assert state_l1.named_functions["user_A"].parent.path == ("L1",)
         assert state_l1.on_enters == []
-        assert state_l1.on_durings == [
-            OnStage(
-                stage="during",
-                aspect="before",
-                name=None,
-                doc=None,
-                operations=[Operation(var_name="a", expr=Integer(value=1))],
-                is_abstract=False,
-                state_path=("L1", None),
-                ref=None,
-                ref_state_path=None,
-            ),
-            OnStage(
-                stage="during",
-                aspect="before",
-                name="mock",
-                doc=None,
-                operations=[],
-                is_abstract=True,
-                state_path=("L1", "mock"),
-                ref=None,
-                ref_state_path=None,
-            ),
+        assert len(state_l1.on_durings) == 2
+        assert state_l1.on_durings[0].stage == "during"
+        assert state_l1.on_durings[0].aspect == "before"
+        assert state_l1.on_durings[0].name is None
+        assert state_l1.on_durings[0].doc is None
+        assert state_l1.on_durings[0].operations == [
+            Operation(var_name="a", expr=Integer(value=1))
         ]
+        assert not state_l1.on_durings[0].is_abstract
+        assert state_l1.on_durings[0].state_path == ("L1", None)
+        assert state_l1.on_durings[0].ref is None
+        assert state_l1.on_durings[0].ref_state_path is None
+        assert state_l1.on_durings[0].parent_ref().name == "L1"
+        assert state_l1.on_durings[0].parent_ref().path == ("L1",)
+        assert not state_l1.on_durings[0].is_aspect
+        assert not state_l1.on_durings[0].is_ref
+        assert state_l1.on_durings[0].parent.name == "L1"
+        assert state_l1.on_durings[0].parent.path == ("L1",)
+        assert state_l1.on_durings[1].stage == "during"
+        assert state_l1.on_durings[1].aspect == "before"
+        assert state_l1.on_durings[1].name == "mock"
+        assert state_l1.on_durings[1].doc is None
+        assert state_l1.on_durings[1].operations == []
+        assert state_l1.on_durings[1].is_abstract
+        assert state_l1.on_durings[1].state_path == ("L1", "mock")
+        assert state_l1.on_durings[1].ref is None
+        assert state_l1.on_durings[1].ref_state_path is None
+        assert state_l1.on_durings[1].parent_ref().name == "L1"
+        assert state_l1.on_durings[1].parent_ref().path == ("L1",)
+        assert not state_l1.on_durings[1].is_aspect
+        assert not state_l1.on_durings[1].is_ref
+        assert state_l1.on_durings[1].parent.name == "L1"
+        assert state_l1.on_durings[1].parent.path == ("L1",)
         assert state_l1.on_exits == []
-        assert state_l1.on_during_aspects == [
-            OnAspect(
-                stage="during",
-                aspect="before",
-                name="user_B",
-                doc=None,
-                operations=[],
-                is_abstract=True,
-                state_path=("L1", "user_B"),
-                ref=None,
-                ref_state_path=None,
-            ),
-            OnAspect(
-                stage="during",
-                aspect="before",
-                name="user_A",
-                doc=None,
-                operations=[],
-                is_abstract=True,
-                state_path=("L1", "user_A"),
-                ref=None,
-                ref_state_path=None,
-            ),
-        ]
+        assert len(state_l1.on_during_aspects) == 2
+        assert state_l1.on_during_aspects[0].stage == "during"
+        assert state_l1.on_during_aspects[0].aspect == "before"
+        assert state_l1.on_during_aspects[0].name == "user_B"
+        assert state_l1.on_during_aspects[0].doc is None
+        assert state_l1.on_during_aspects[0].operations == []
+        assert state_l1.on_during_aspects[0].is_abstract
+        assert state_l1.on_during_aspects[0].state_path == ("L1", "user_B")
+        assert state_l1.on_during_aspects[0].ref is None
+        assert state_l1.on_during_aspects[0].ref_state_path is None
+        assert state_l1.on_during_aspects[0].parent_ref().name == "L1"
+        assert state_l1.on_during_aspects[0].parent_ref().path == ("L1",)
+        assert state_l1.on_during_aspects[0].is_aspect
+        assert not state_l1.on_during_aspects[0].is_ref
+        assert state_l1.on_during_aspects[0].parent.name == "L1"
+        assert state_l1.on_during_aspects[0].parent.path == ("L1",)
+        assert state_l1.on_during_aspects[1].stage == "during"
+        assert state_l1.on_during_aspects[1].aspect == "before"
+        assert state_l1.on_during_aspects[1].name == "user_A"
+        assert state_l1.on_during_aspects[1].doc is None
+        assert state_l1.on_during_aspects[1].operations == []
+        assert state_l1.on_during_aspects[1].is_abstract
+        assert state_l1.on_during_aspects[1].state_path == ("L1", "user_A")
+        assert state_l1.on_during_aspects[1].ref is None
+        assert state_l1.on_during_aspects[1].ref_state_path is None
+        assert state_l1.on_during_aspects[1].parent_ref().name == "L1"
+        assert state_l1.on_during_aspects[1].parent_ref().path == ("L1",)
+        assert state_l1.on_during_aspects[1].is_aspect
+        assert not state_l1.on_during_aspects[1].is_ref
+        assert state_l1.on_during_aspects[1].parent.name == "L1"
+        assert state_l1.on_during_aspects[1].parent.path == ("L1",)
         assert state_l1.parent_ref is None
         assert state_l1.substate_name_to_id == {"L2": 0}
         assert not state_l1.is_pseudo
-        assert state_l1.abstract_on_during_aspects == [
-            OnAspect(
-                stage="during",
-                aspect="before",
-                name="user_B",
-                doc=None,
-                operations=[],
-                is_abstract=True,
-                state_path=("L1", "user_B"),
-                ref=None,
-                ref_state_path=None,
-            ),
-            OnAspect(
-                stage="during",
-                aspect="before",
-                name="user_A",
-                doc=None,
-                operations=[],
-                is_abstract=True,
-                state_path=("L1", "user_A"),
-                ref=None,
-                ref_state_path=None,
-            ),
-        ]
-        assert state_l1.abstract_on_durings == [
-            OnStage(
-                stage="during",
-                aspect="before",
-                name="mock",
-                doc=None,
-                operations=[],
-                is_abstract=True,
-                state_path=("L1", "mock"),
-                ref=None,
-                ref_state_path=None,
-            )
-        ]
+        assert len(state_l1.abstract_on_during_aspects) == 2
+        assert state_l1.abstract_on_during_aspects[0].stage == "during"
+        assert state_l1.abstract_on_during_aspects[0].aspect == "before"
+        assert state_l1.abstract_on_during_aspects[0].name == "user_B"
+        assert state_l1.abstract_on_during_aspects[0].doc is None
+        assert state_l1.abstract_on_during_aspects[0].operations == []
+        assert state_l1.abstract_on_during_aspects[0].is_abstract
+        assert state_l1.abstract_on_during_aspects[0].state_path == ("L1", "user_B")
+        assert state_l1.abstract_on_during_aspects[0].ref is None
+        assert state_l1.abstract_on_during_aspects[0].ref_state_path is None
+        assert state_l1.abstract_on_during_aspects[0].parent_ref().name == "L1"
+        assert state_l1.abstract_on_during_aspects[0].parent_ref().path == ("L1",)
+        assert state_l1.abstract_on_during_aspects[0].is_aspect
+        assert not state_l1.abstract_on_during_aspects[0].is_ref
+        assert state_l1.abstract_on_during_aspects[0].parent.name == "L1"
+        assert state_l1.abstract_on_during_aspects[0].parent.path == ("L1",)
+        assert state_l1.abstract_on_during_aspects[1].stage == "during"
+        assert state_l1.abstract_on_during_aspects[1].aspect == "before"
+        assert state_l1.abstract_on_during_aspects[1].name == "user_A"
+        assert state_l1.abstract_on_during_aspects[1].doc is None
+        assert state_l1.abstract_on_during_aspects[1].operations == []
+        assert state_l1.abstract_on_during_aspects[1].is_abstract
+        assert state_l1.abstract_on_during_aspects[1].state_path == ("L1", "user_A")
+        assert state_l1.abstract_on_during_aspects[1].ref is None
+        assert state_l1.abstract_on_during_aspects[1].ref_state_path is None
+        assert state_l1.abstract_on_during_aspects[1].parent_ref().name == "L1"
+        assert state_l1.abstract_on_during_aspects[1].parent_ref().path == ("L1",)
+        assert state_l1.abstract_on_during_aspects[1].is_aspect
+        assert not state_l1.abstract_on_during_aspects[1].is_ref
+        assert state_l1.abstract_on_during_aspects[1].parent.name == "L1"
+        assert state_l1.abstract_on_during_aspects[1].parent.path == ("L1",)
+        assert len(state_l1.abstract_on_durings) == 1
+        assert state_l1.abstract_on_durings[0].stage == "during"
+        assert state_l1.abstract_on_durings[0].aspect == "before"
+        assert state_l1.abstract_on_durings[0].name == "mock"
+        assert state_l1.abstract_on_durings[0].doc is None
+        assert state_l1.abstract_on_durings[0].operations == []
+        assert state_l1.abstract_on_durings[0].is_abstract
+        assert state_l1.abstract_on_durings[0].state_path == ("L1", "mock")
+        assert state_l1.abstract_on_durings[0].ref is None
+        assert state_l1.abstract_on_durings[0].ref_state_path is None
+        assert state_l1.abstract_on_durings[0].parent_ref().name == "L1"
+        assert state_l1.abstract_on_durings[0].parent_ref().path == ("L1",)
+        assert not state_l1.abstract_on_durings[0].is_aspect
+        assert not state_l1.abstract_on_durings[0].is_ref
+        assert state_l1.abstract_on_durings[0].parent.name == "L1"
+        assert state_l1.abstract_on_durings[0].parent.path == ("L1",)
         assert state_l1.abstract_on_enters == []
         assert state_l1.abstract_on_exits == []
         assert not state_l1.is_leaf_state
         assert state_l1.is_root_state
         assert state_l1.non_abstract_on_during_aspects == []
-        assert state_l1.non_abstract_on_durings == [
-            OnStage(
-                stage="during",
-                aspect="before",
-                name=None,
-                doc=None,
-                operations=[Operation(var_name="a", expr=Integer(value=1))],
-                is_abstract=False,
-                state_path=("L1", None),
-                ref=None,
-                ref_state_path=None,
-            )
+        assert len(state_l1.non_abstract_on_durings) == 1
+        assert state_l1.non_abstract_on_durings[0].stage == "during"
+        assert state_l1.non_abstract_on_durings[0].aspect == "before"
+        assert state_l1.non_abstract_on_durings[0].name is None
+        assert state_l1.non_abstract_on_durings[0].doc is None
+        assert state_l1.non_abstract_on_durings[0].operations == [
+            Operation(var_name="a", expr=Integer(value=1))
         ]
+        assert not state_l1.non_abstract_on_durings[0].is_abstract
+        assert state_l1.non_abstract_on_durings[0].state_path == ("L1", None)
+        assert state_l1.non_abstract_on_durings[0].ref is None
+        assert state_l1.non_abstract_on_durings[0].ref_state_path is None
+        assert state_l1.non_abstract_on_durings[0].parent_ref().name == "L1"
+        assert state_l1.non_abstract_on_durings[0].parent_ref().path == ("L1",)
+        assert not state_l1.non_abstract_on_durings[0].is_aspect
+        assert not state_l1.non_abstract_on_durings[0].is_ref
+        assert state_l1.non_abstract_on_durings[0].parent.name == "L1"
+        assert state_l1.non_abstract_on_durings[0].parent.path == ("L1",)
         assert state_l1.non_abstract_on_enters == []
         assert state_l1.non_abstract_on_exits == []
         assert state_l1.parent is None
@@ -408,6 +450,162 @@ class TestModelStateL1:
             is_pseudo=False,
         )
 
+    def test_state_l1_during_aspects(self, state_l1):
+        lst = state_l1.list_on_during_aspects()
+        assert len(lst) == 2
+        on_stage = lst[0]
+        assert on_stage.stage == "during"
+        assert on_stage.aspect == "before"
+        assert on_stage.name == "user_B"
+        assert on_stage.doc is None
+        assert on_stage.operations == []
+        assert on_stage.is_abstract
+        assert on_stage.state_path == ("L1", "user_B")
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "L1"
+        assert on_stage.parent_ref().path == ("L1",)
+        assert on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "L1"
+        assert on_stage.parent.path == ("L1",)
+        on_stage = lst[1]
+        assert on_stage.stage == "during"
+        assert on_stage.aspect == "before"
+        assert on_stage.name == "user_A"
+        assert on_stage.doc is None
+        assert on_stage.operations == []
+        assert on_stage.is_abstract
+        assert on_stage.state_path == ("L1", "user_A")
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "L1"
+        assert on_stage.parent_ref().path == ("L1",)
+        assert on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "L1"
+        assert on_stage.parent.path == ("L1",)
+
+        lst = state_l1.list_on_during_aspects(aspect="before")
+        assert len(lst) == 2
+        on_stage = lst[0]
+        assert on_stage.stage == "during"
+        assert on_stage.aspect == "before"
+        assert on_stage.name == "user_B"
+        assert on_stage.doc is None
+        assert on_stage.operations == []
+        assert on_stage.is_abstract
+        assert on_stage.state_path == ("L1", "user_B")
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "L1"
+        assert on_stage.parent_ref().path == ("L1",)
+        assert on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "L1"
+        assert on_stage.parent.path == ("L1",)
+        on_stage = lst[1]
+        assert on_stage.stage == "during"
+        assert on_stage.aspect == "before"
+        assert on_stage.name == "user_A"
+        assert on_stage.doc is None
+        assert on_stage.operations == []
+        assert on_stage.is_abstract
+        assert on_stage.state_path == ("L1", "user_A")
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "L1"
+        assert on_stage.parent_ref().path == ("L1",)
+        assert on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "L1"
+        assert on_stage.parent.path == ("L1",)
+
+        lst = state_l1.list_on_during_aspects(aspect="after")
+        assert lst == []
+
+        lst = state_l1.list_on_during_aspects(is_abstract=False)
+        assert lst == []
+
+        lst = state_l1.list_on_during_aspects(is_abstract=False, aspect="before")
+        assert lst == []
+
+        lst = state_l1.list_on_during_aspects(is_abstract=False, aspect="after")
+        assert lst == []
+
+        lst = state_l1.list_on_during_aspects(is_abstract=True)
+        assert len(lst) == 2
+        on_stage = lst[0]
+        assert on_stage.stage == "during"
+        assert on_stage.aspect == "before"
+        assert on_stage.name == "user_B"
+        assert on_stage.doc is None
+        assert on_stage.operations == []
+        assert on_stage.is_abstract
+        assert on_stage.state_path == ("L1", "user_B")
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "L1"
+        assert on_stage.parent_ref().path == ("L1",)
+        assert on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "L1"
+        assert on_stage.parent.path == ("L1",)
+        on_stage = lst[1]
+        assert on_stage.stage == "during"
+        assert on_stage.aspect == "before"
+        assert on_stage.name == "user_A"
+        assert on_stage.doc is None
+        assert on_stage.operations == []
+        assert on_stage.is_abstract
+        assert on_stage.state_path == ("L1", "user_A")
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "L1"
+        assert on_stage.parent_ref().path == ("L1",)
+        assert on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "L1"
+        assert on_stage.parent.path == ("L1",)
+
+        lst = state_l1.list_on_during_aspects(is_abstract=True, aspect="before")
+        assert len(lst) == 2
+        on_stage = lst[0]
+        assert on_stage.stage == "during"
+        assert on_stage.aspect == "before"
+        assert on_stage.name == "user_B"
+        assert on_stage.doc is None
+        assert on_stage.operations == []
+        assert on_stage.is_abstract
+        assert on_stage.state_path == ("L1", "user_B")
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "L1"
+        assert on_stage.parent_ref().path == ("L1",)
+        assert on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "L1"
+        assert on_stage.parent.path == ("L1",)
+        on_stage = lst[1]
+        assert on_stage.stage == "during"
+        assert on_stage.aspect == "before"
+        assert on_stage.name == "user_A"
+        assert on_stage.doc is None
+        assert on_stage.operations == []
+        assert on_stage.is_abstract
+        assert on_stage.state_path == ("L1", "user_A")
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "L1"
+        assert on_stage.parent_ref().path == ("L1",)
+        assert on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "L1"
+        assert on_stage.parent.path == ("L1",)
+
+        lst = state_l1.list_on_during_aspects(is_abstract=True, aspect="after")
+        assert lst == []
+
     def test_state_l1_l2(self, state_l1_l2):
         assert state_l1_l2.name == "L2"
         assert state_l1_l2.path == ("L1", "L2")
@@ -439,85 +637,128 @@ class TestModelStateL1:
         assert state_l1_l2.transitions[2].effects == []
         assert state_l1_l2.transitions[2].parent_ref().name == "L2"
         assert state_l1_l2.transitions[2].parent_ref().path == ("L1", "L2")
-        assert state_l1_l2.named_functions == {
-            "user_B": OnAspect(
-                stage="during",
-                aspect="before",
-                name="user_B",
-                doc=None,
-                operations=[],
-                is_abstract=True,
-                state_path=("L1", "L2", "user_B"),
-                ref=None,
-                ref_state_path=None,
-            ),
-            "user_A": OnAspect(
-                stage="during",
-                aspect="before",
-                name="user_A",
-                doc=None,
-                operations=[],
-                is_abstract=True,
-                state_path=("L1", "L2", "user_A"),
-                ref=None,
-                ref_state_path=None,
-            ),
-        }
+        assert sorted(state_l1_l2.named_functions.keys()) == ["user_A", "user_B"]
+        assert state_l1_l2.named_functions["user_B"].stage == "during"
+        assert state_l1_l2.named_functions["user_B"].aspect == "before"
+        assert state_l1_l2.named_functions["user_B"].name == "user_B"
+        assert state_l1_l2.named_functions["user_B"].doc is None
+        assert state_l1_l2.named_functions["user_B"].operations == []
+        assert state_l1_l2.named_functions["user_B"].is_abstract
+        assert state_l1_l2.named_functions["user_B"].state_path == (
+            "L1",
+            "L2",
+            "user_B",
+        )
+        assert state_l1_l2.named_functions["user_B"].ref is None
+        assert state_l1_l2.named_functions["user_B"].ref_state_path is None
+        assert state_l1_l2.named_functions["user_B"].parent_ref().name == "L2"
+        assert state_l1_l2.named_functions["user_B"].parent_ref().path == ("L1", "L2")
+        assert state_l1_l2.named_functions["user_B"].is_aspect
+        assert not state_l1_l2.named_functions["user_B"].is_ref
+        assert state_l1_l2.named_functions["user_B"].parent.name == "L2"
+        assert state_l1_l2.named_functions["user_B"].parent.path == ("L1", "L2")
+        assert state_l1_l2.named_functions["user_A"].stage == "during"
+        assert state_l1_l2.named_functions["user_A"].aspect == "before"
+        assert state_l1_l2.named_functions["user_A"].name == "user_A"
+        assert state_l1_l2.named_functions["user_A"].doc is None
+        assert state_l1_l2.named_functions["user_A"].operations == []
+        assert state_l1_l2.named_functions["user_A"].is_abstract
+        assert state_l1_l2.named_functions["user_A"].state_path == (
+            "L1",
+            "L2",
+            "user_A",
+        )
+        assert state_l1_l2.named_functions["user_A"].ref is None
+        assert state_l1_l2.named_functions["user_A"].ref_state_path is None
+        assert state_l1_l2.named_functions["user_A"].parent_ref().name == "L2"
+        assert state_l1_l2.named_functions["user_A"].parent_ref().path == ("L1", "L2")
+        assert state_l1_l2.named_functions["user_A"].is_aspect
+        assert not state_l1_l2.named_functions["user_A"].is_ref
+        assert state_l1_l2.named_functions["user_A"].parent.name == "L2"
+        assert state_l1_l2.named_functions["user_A"].parent.path == ("L1", "L2")
         assert state_l1_l2.on_enters == []
         assert state_l1_l2.on_durings == []
         assert state_l1_l2.on_exits == []
-        assert state_l1_l2.on_during_aspects == [
-            OnAspect(
-                stage="during",
-                aspect="before",
-                name="user_B",
-                doc=None,
-                operations=[],
-                is_abstract=True,
-                state_path=("L1", "L2", "user_B"),
-                ref=None,
-                ref_state_path=None,
-            ),
-            OnAspect(
-                stage="during",
-                aspect="before",
-                name="user_A",
-                doc=None,
-                operations=[],
-                is_abstract=True,
-                state_path=("L1", "L2", "user_A"),
-                ref=None,
-                ref_state_path=None,
-            ),
-        ]
+        assert len(state_l1_l2.on_during_aspects) == 2
+        assert state_l1_l2.on_during_aspects[0].stage == "during"
+        assert state_l1_l2.on_during_aspects[0].aspect == "before"
+        assert state_l1_l2.on_during_aspects[0].name == "user_B"
+        assert state_l1_l2.on_during_aspects[0].doc is None
+        assert state_l1_l2.on_during_aspects[0].operations == []
+        assert state_l1_l2.on_during_aspects[0].is_abstract
+        assert state_l1_l2.on_during_aspects[0].state_path == ("L1", "L2", "user_B")
+        assert state_l1_l2.on_during_aspects[0].ref is None
+        assert state_l1_l2.on_during_aspects[0].ref_state_path is None
+        assert state_l1_l2.on_during_aspects[0].parent_ref().name == "L2"
+        assert state_l1_l2.on_during_aspects[0].parent_ref().path == ("L1", "L2")
+        assert state_l1_l2.on_during_aspects[0].is_aspect
+        assert not state_l1_l2.on_during_aspects[0].is_ref
+        assert state_l1_l2.on_during_aspects[0].parent.name == "L2"
+        assert state_l1_l2.on_during_aspects[0].parent.path == ("L1", "L2")
+        assert state_l1_l2.on_during_aspects[1].stage == "during"
+        assert state_l1_l2.on_during_aspects[1].aspect == "before"
+        assert state_l1_l2.on_during_aspects[1].name == "user_A"
+        assert state_l1_l2.on_during_aspects[1].doc is None
+        assert state_l1_l2.on_during_aspects[1].operations == []
+        assert state_l1_l2.on_during_aspects[1].is_abstract
+        assert state_l1_l2.on_during_aspects[1].state_path == ("L1", "L2", "user_A")
+        assert state_l1_l2.on_during_aspects[1].ref is None
+        assert state_l1_l2.on_during_aspects[1].ref_state_path is None
+        assert state_l1_l2.on_during_aspects[1].parent_ref().name == "L2"
+        assert state_l1_l2.on_during_aspects[1].parent_ref().path == ("L1", "L2")
+        assert state_l1_l2.on_during_aspects[1].is_aspect
+        assert not state_l1_l2.on_during_aspects[1].is_ref
+        assert state_l1_l2.on_during_aspects[1].parent.name == "L2"
+        assert state_l1_l2.on_during_aspects[1].parent.path == ("L1", "L2")
         assert state_l1_l2.parent_ref().name == "L1"
         assert state_l1_l2.parent_ref().path == ("L1",)
         assert state_l1_l2.substate_name_to_id == {"L21": 0, "L22": 1}
         assert not state_l1_l2.is_pseudo
-        assert state_l1_l2.abstract_on_during_aspects == [
-            OnAspect(
-                stage="during",
-                aspect="before",
-                name="user_B",
-                doc=None,
-                operations=[],
-                is_abstract=True,
-                state_path=("L1", "L2", "user_B"),
-                ref=None,
-                ref_state_path=None,
-            ),
-            OnAspect(
-                stage="during",
-                aspect="before",
-                name="user_A",
-                doc=None,
-                operations=[],
-                is_abstract=True,
-                state_path=("L1", "L2", "user_A"),
-                ref=None,
-                ref_state_path=None,
-            ),
-        ]
+        assert len(state_l1_l2.abstract_on_during_aspects) == 2
+        assert state_l1_l2.abstract_on_during_aspects[0].stage == "during"
+        assert state_l1_l2.abstract_on_during_aspects[0].aspect == "before"
+        assert state_l1_l2.abstract_on_during_aspects[0].name == "user_B"
+        assert state_l1_l2.abstract_on_during_aspects[0].doc is None
+        assert state_l1_l2.abstract_on_during_aspects[0].operations == []
+        assert state_l1_l2.abstract_on_during_aspects[0].is_abstract
+        assert state_l1_l2.abstract_on_during_aspects[0].state_path == (
+            "L1",
+            "L2",
+            "user_B",
+        )
+        assert state_l1_l2.abstract_on_during_aspects[0].ref is None
+        assert state_l1_l2.abstract_on_during_aspects[0].ref_state_path is None
+        assert state_l1_l2.abstract_on_during_aspects[0].parent_ref().name == "L2"
+        assert state_l1_l2.abstract_on_during_aspects[0].parent_ref().path == (
+            "L1",
+            "L2",
+        )
+        assert state_l1_l2.abstract_on_during_aspects[0].is_aspect
+        assert not state_l1_l2.abstract_on_during_aspects[0].is_ref
+        assert state_l1_l2.abstract_on_during_aspects[0].parent.name == "L2"
+        assert state_l1_l2.abstract_on_during_aspects[0].parent.path == ("L1", "L2")
+        assert state_l1_l2.abstract_on_during_aspects[1].stage == "during"
+        assert state_l1_l2.abstract_on_during_aspects[1].aspect == "before"
+        assert state_l1_l2.abstract_on_during_aspects[1].name == "user_A"
+        assert state_l1_l2.abstract_on_during_aspects[1].doc is None
+        assert state_l1_l2.abstract_on_during_aspects[1].operations == []
+        assert state_l1_l2.abstract_on_during_aspects[1].is_abstract
+        assert state_l1_l2.abstract_on_during_aspects[1].state_path == (
+            "L1",
+            "L2",
+            "user_A",
+        )
+        assert state_l1_l2.abstract_on_during_aspects[1].ref is None
+        assert state_l1_l2.abstract_on_during_aspects[1].ref_state_path is None
+        assert state_l1_l2.abstract_on_during_aspects[1].parent_ref().name == "L2"
+        assert state_l1_l2.abstract_on_during_aspects[1].parent_ref().path == (
+            "L1",
+            "L2",
+        )
+        assert state_l1_l2.abstract_on_during_aspects[1].is_aspect
+        assert not state_l1_l2.abstract_on_during_aspects[1].is_ref
+        assert state_l1_l2.abstract_on_during_aspects[1].parent.name == "L2"
+        assert state_l1_l2.abstract_on_during_aspects[1].parent.path == ("L1", "L2")
         assert state_l1_l2.abstract_on_durings == []
         assert state_l1_l2.abstract_on_enters == []
         assert state_l1_l2.abstract_on_exits == []
@@ -639,6 +880,162 @@ class TestModelStateL1:
             is_pseudo=False,
         )
 
+    def test_state_l1_l2_during_aspects(self, state_l1_l2):
+        lst = state_l1_l2.list_on_during_aspects()
+        assert len(lst) == 2
+        on_stage = lst[0]
+        assert on_stage.stage == "during"
+        assert on_stage.aspect == "before"
+        assert on_stage.name == "user_B"
+        assert on_stage.doc is None
+        assert on_stage.operations == []
+        assert on_stage.is_abstract
+        assert on_stage.state_path == ("L1", "L2", "user_B")
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "L2"
+        assert on_stage.parent_ref().path == ("L1", "L2")
+        assert on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "L2"
+        assert on_stage.parent.path == ("L1", "L2")
+        on_stage = lst[1]
+        assert on_stage.stage == "during"
+        assert on_stage.aspect == "before"
+        assert on_stage.name == "user_A"
+        assert on_stage.doc is None
+        assert on_stage.operations == []
+        assert on_stage.is_abstract
+        assert on_stage.state_path == ("L1", "L2", "user_A")
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "L2"
+        assert on_stage.parent_ref().path == ("L1", "L2")
+        assert on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "L2"
+        assert on_stage.parent.path == ("L1", "L2")
+
+        lst = state_l1_l2.list_on_during_aspects(aspect="before")
+        assert len(lst) == 2
+        on_stage = lst[0]
+        assert on_stage.stage == "during"
+        assert on_stage.aspect == "before"
+        assert on_stage.name == "user_B"
+        assert on_stage.doc is None
+        assert on_stage.operations == []
+        assert on_stage.is_abstract
+        assert on_stage.state_path == ("L1", "L2", "user_B")
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "L2"
+        assert on_stage.parent_ref().path == ("L1", "L2")
+        assert on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "L2"
+        assert on_stage.parent.path == ("L1", "L2")
+        on_stage = lst[1]
+        assert on_stage.stage == "during"
+        assert on_stage.aspect == "before"
+        assert on_stage.name == "user_A"
+        assert on_stage.doc is None
+        assert on_stage.operations == []
+        assert on_stage.is_abstract
+        assert on_stage.state_path == ("L1", "L2", "user_A")
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "L2"
+        assert on_stage.parent_ref().path == ("L1", "L2")
+        assert on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "L2"
+        assert on_stage.parent.path == ("L1", "L2")
+
+        lst = state_l1_l2.list_on_during_aspects(aspect="after")
+        assert lst == []
+
+        lst = state_l1_l2.list_on_during_aspects(is_abstract=False)
+        assert lst == []
+
+        lst = state_l1_l2.list_on_during_aspects(is_abstract=False, aspect="before")
+        assert lst == []
+
+        lst = state_l1_l2.list_on_during_aspects(is_abstract=False, aspect="after")
+        assert lst == []
+
+        lst = state_l1_l2.list_on_during_aspects(is_abstract=True)
+        assert len(lst) == 2
+        on_stage = lst[0]
+        assert on_stage.stage == "during"
+        assert on_stage.aspect == "before"
+        assert on_stage.name == "user_B"
+        assert on_stage.doc is None
+        assert on_stage.operations == []
+        assert on_stage.is_abstract
+        assert on_stage.state_path == ("L1", "L2", "user_B")
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "L2"
+        assert on_stage.parent_ref().path == ("L1", "L2")
+        assert on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "L2"
+        assert on_stage.parent.path == ("L1", "L2")
+        on_stage = lst[1]
+        assert on_stage.stage == "during"
+        assert on_stage.aspect == "before"
+        assert on_stage.name == "user_A"
+        assert on_stage.doc is None
+        assert on_stage.operations == []
+        assert on_stage.is_abstract
+        assert on_stage.state_path == ("L1", "L2", "user_A")
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "L2"
+        assert on_stage.parent_ref().path == ("L1", "L2")
+        assert on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "L2"
+        assert on_stage.parent.path == ("L1", "L2")
+
+        lst = state_l1_l2.list_on_during_aspects(is_abstract=True, aspect="before")
+        assert len(lst) == 2
+        on_stage = lst[0]
+        assert on_stage.stage == "during"
+        assert on_stage.aspect == "before"
+        assert on_stage.name == "user_B"
+        assert on_stage.doc is None
+        assert on_stage.operations == []
+        assert on_stage.is_abstract
+        assert on_stage.state_path == ("L1", "L2", "user_B")
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "L2"
+        assert on_stage.parent_ref().path == ("L1", "L2")
+        assert on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "L2"
+        assert on_stage.parent.path == ("L1", "L2")
+        on_stage = lst[1]
+        assert on_stage.stage == "during"
+        assert on_stage.aspect == "before"
+        assert on_stage.name == "user_A"
+        assert on_stage.doc is None
+        assert on_stage.operations == []
+        assert on_stage.is_abstract
+        assert on_stage.state_path == ("L1", "L2", "user_A")
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "L2"
+        assert on_stage.parent_ref().path == ("L1", "L2")
+        assert on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "L2"
+        assert on_stage.parent.path == ("L1", "L2")
+
+        lst = state_l1_l2.list_on_during_aspects(is_abstract=True, aspect="after")
+        assert lst == []
+
     def test_state_l1_l2_l21(self, state_l1_l2_l21):
         assert state_l1_l2_l21.name == "L21"
         assert state_l1_l2_l21.path == ("L1", "L2", "L21")
@@ -704,7 +1101,35 @@ class TestModelStateL1:
             is_pseudo=True,
         )
 
-    def test_state_l1_l2_l21_during_aspect(self, state_l1_l2_l21):
+    def test_state_l1_l2_l21_during_aspects(self, state_l1_l2_l21):
+        lst = state_l1_l2_l21.list_on_during_aspects()
+        assert lst == []
+
+        lst = state_l1_l2_l21.list_on_during_aspects(aspect="before")
+        assert lst == []
+
+        lst = state_l1_l2_l21.list_on_during_aspects(aspect="after")
+        assert lst == []
+
+        lst = state_l1_l2_l21.list_on_during_aspects(is_abstract=False)
+        assert lst == []
+
+        lst = state_l1_l2_l21.list_on_during_aspects(is_abstract=False, aspect="before")
+        assert lst == []
+
+        lst = state_l1_l2_l21.list_on_during_aspects(is_abstract=False, aspect="after")
+        assert lst == []
+
+        lst = state_l1_l2_l21.list_on_during_aspects(is_abstract=True)
+        assert lst == []
+
+        lst = state_l1_l2_l21.list_on_during_aspects(is_abstract=True, aspect="before")
+        assert lst == []
+
+        lst = state_l1_l2_l21.list_on_during_aspects(is_abstract=True, aspect="after")
+        assert lst == []
+
+    def test_state_l1_l2_l21_during_aspect_recursively(self, state_l1_l2_l21):
         lst = state_l1_l2_l21.list_on_during_aspect_recursively()
         assert lst == []
 
@@ -778,65 +1203,109 @@ class TestModelStateL1:
             is_pseudo=False,
         )
 
-    def test_state_l1_l2_l22_during_aspect(self, state_l1_l2_l22):
+    def test_state_l1_l2_l22_during_aspects(self, state_l1_l2_l22):
+        lst = state_l1_l2_l22.list_on_during_aspects()
+        assert lst == []
+
+        lst = state_l1_l2_l22.list_on_during_aspects(aspect="before")
+        assert lst == []
+
+        lst = state_l1_l2_l22.list_on_during_aspects(aspect="after")
+        assert lst == []
+
+        lst = state_l1_l2_l22.list_on_during_aspects(is_abstract=False)
+        assert lst == []
+
+        lst = state_l1_l2_l22.list_on_during_aspects(is_abstract=False, aspect="before")
+        assert lst == []
+
+        lst = state_l1_l2_l22.list_on_during_aspects(is_abstract=False, aspect="after")
+        assert lst == []
+
+        lst = state_l1_l2_l22.list_on_during_aspects(is_abstract=True)
+        assert lst == []
+
+        lst = state_l1_l2_l22.list_on_during_aspects(is_abstract=True, aspect="before")
+        assert lst == []
+
+        lst = state_l1_l2_l22.list_on_during_aspects(is_abstract=True, aspect="after")
+        assert lst == []
+
+    def test_state_l1_l2_l22_during_aspect_recursively(self, state_l1_l2_l22):
         lst = state_l1_l2_l22.list_on_during_aspect_recursively()
         assert len(lst) == 4
         st, on_stage = lst[0]
         assert st.name == "L1"
         assert st.path == ("L1",)
-        assert on_stage == OnAspect(
-            stage="during",
-            aspect="before",
-            name="user_B",
-            doc=None,
-            operations=[],
-            is_abstract=True,
-            state_path=("L1", "user_B"),
-            ref=None,
-            ref_state_path=None,
-        )
+        assert on_stage.stage == "during"
+        assert on_stage.aspect == "before"
+        assert on_stage.name == "user_B"
+        assert on_stage.doc is None
+        assert on_stage.operations == []
+        assert on_stage.is_abstract
+        assert on_stage.state_path == ("L1", "user_B")
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "L1"
+        assert on_stage.parent_ref().path == ("L1",)
+        assert on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "L1"
+        assert on_stage.parent.path == ("L1",)
         st, on_stage = lst[1]
         assert st.name == "L1"
         assert st.path == ("L1",)
-        assert on_stage == OnAspect(
-            stage="during",
-            aspect="before",
-            name="user_A",
-            doc=None,
-            operations=[],
-            is_abstract=True,
-            state_path=("L1", "user_A"),
-            ref=None,
-            ref_state_path=None,
-        )
+        assert on_stage.stage == "during"
+        assert on_stage.aspect == "before"
+        assert on_stage.name == "user_A"
+        assert on_stage.doc is None
+        assert on_stage.operations == []
+        assert on_stage.is_abstract
+        assert on_stage.state_path == ("L1", "user_A")
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "L1"
+        assert on_stage.parent_ref().path == ("L1",)
+        assert on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "L1"
+        assert on_stage.parent.path == ("L1",)
         st, on_stage = lst[2]
         assert st.name == "L2"
         assert st.path == ("L1", "L2")
-        assert on_stage == OnAspect(
-            stage="during",
-            aspect="before",
-            name="user_B",
-            doc=None,
-            operations=[],
-            is_abstract=True,
-            state_path=("L1", "L2", "user_B"),
-            ref=None,
-            ref_state_path=None,
-        )
+        assert on_stage.stage == "during"
+        assert on_stage.aspect == "before"
+        assert on_stage.name == "user_B"
+        assert on_stage.doc is None
+        assert on_stage.operations == []
+        assert on_stage.is_abstract
+        assert on_stage.state_path == ("L1", "L2", "user_B")
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "L2"
+        assert on_stage.parent_ref().path == ("L1", "L2")
+        assert on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "L2"
+        assert on_stage.parent.path == ("L1", "L2")
         st, on_stage = lst[3]
         assert st.name == "L2"
         assert st.path == ("L1", "L2")
-        assert on_stage == OnAspect(
-            stage="during",
-            aspect="before",
-            name="user_A",
-            doc=None,
-            operations=[],
-            is_abstract=True,
-            state_path=("L1", "L2", "user_A"),
-            ref=None,
-            ref_state_path=None,
-        )
+        assert on_stage.stage == "during"
+        assert on_stage.aspect == "before"
+        assert on_stage.name == "user_A"
+        assert on_stage.doc is None
+        assert on_stage.operations == []
+        assert on_stage.is_abstract
+        assert on_stage.state_path == ("L1", "L2", "user_A")
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "L2"
+        assert on_stage.parent_ref().path == ("L1", "L2")
+        assert on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "L2"
+        assert on_stage.parent.path == ("L1", "L2")
 
         lst = state_l1_l2_l22.list_on_during_aspect_recursively(with_ids=True)
         assert len(lst) == 4
@@ -844,62 +1313,78 @@ class TestModelStateL1:
         assert id_ == 1
         assert st.name == "L1"
         assert st.path == ("L1",)
-        assert on_stage == OnAspect(
-            stage="during",
-            aspect="before",
-            name="user_B",
-            doc=None,
-            operations=[],
-            is_abstract=True,
-            state_path=("L1", "user_B"),
-            ref=None,
-            ref_state_path=None,
-        )
+        assert on_stage.stage == "during"
+        assert on_stage.aspect == "before"
+        assert on_stage.name == "user_B"
+        assert on_stage.doc is None
+        assert on_stage.operations == []
+        assert on_stage.is_abstract
+        assert on_stage.state_path == ("L1", "user_B")
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "L1"
+        assert on_stage.parent_ref().path == ("L1",)
+        assert on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "L1"
+        assert on_stage.parent.path == ("L1",)
         id_, st, on_stage = lst[1]
         assert id_ == 2
         assert st.name == "L1"
         assert st.path == ("L1",)
-        assert on_stage == OnAspect(
-            stage="during",
-            aspect="before",
-            name="user_A",
-            doc=None,
-            operations=[],
-            is_abstract=True,
-            state_path=("L1", "user_A"),
-            ref=None,
-            ref_state_path=None,
-        )
+        assert on_stage.stage == "during"
+        assert on_stage.aspect == "before"
+        assert on_stage.name == "user_A"
+        assert on_stage.doc is None
+        assert on_stage.operations == []
+        assert on_stage.is_abstract
+        assert on_stage.state_path == ("L1", "user_A")
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "L1"
+        assert on_stage.parent_ref().path == ("L1",)
+        assert on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "L1"
+        assert on_stage.parent.path == ("L1",)
         id_, st, on_stage = lst[2]
         assert id_ == 1
         assert st.name == "L2"
         assert st.path == ("L1", "L2")
-        assert on_stage == OnAspect(
-            stage="during",
-            aspect="before",
-            name="user_B",
-            doc=None,
-            operations=[],
-            is_abstract=True,
-            state_path=("L1", "L2", "user_B"),
-            ref=None,
-            ref_state_path=None,
-        )
+        assert on_stage.stage == "during"
+        assert on_stage.aspect == "before"
+        assert on_stage.name == "user_B"
+        assert on_stage.doc is None
+        assert on_stage.operations == []
+        assert on_stage.is_abstract
+        assert on_stage.state_path == ("L1", "L2", "user_B")
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "L2"
+        assert on_stage.parent_ref().path == ("L1", "L2")
+        assert on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "L2"
+        assert on_stage.parent.path == ("L1", "L2")
         id_, st, on_stage = lst[3]
         assert id_ == 2
         assert st.name == "L2"
         assert st.path == ("L1", "L2")
-        assert on_stage == OnAspect(
-            stage="during",
-            aspect="before",
-            name="user_A",
-            doc=None,
-            operations=[],
-            is_abstract=True,
-            state_path=("L1", "L2", "user_A"),
-            ref=None,
-            ref_state_path=None,
-        )
+        assert on_stage.stage == "during"
+        assert on_stage.aspect == "before"
+        assert on_stage.name == "user_A"
+        assert on_stage.doc is None
+        assert on_stage.operations == []
+        assert on_stage.is_abstract
+        assert on_stage.state_path == ("L1", "L2", "user_A")
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "L2"
+        assert on_stage.parent_ref().path == ("L1", "L2")
+        assert on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "L2"
+        assert on_stage.parent.path == ("L1", "L2")
 
     def test_to_ast_node_str(self, model, text_aligner):
         text_aligner.assert_equal(

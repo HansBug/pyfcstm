@@ -127,43 +127,53 @@ class TestModelStateLx:
         assert state_lx.transitions[3].effects == []
         assert state_lx.transitions[3].parent_ref().name == "LX"
         assert state_lx.transitions[3].parent_ref().path == ("LX",)
-        assert state_lx.named_functions == {
-            "act1": OnStage(
-                stage="enter",
-                aspect=None,
-                name="act1",
-                doc=None,
-                operations=[],
-                is_abstract=True,
-                state_path=("LX", "act1"),
-                ref=None,
-                ref_state_path=None,
-            )
-        }
-        assert state_lx.on_enters == [
-            OnStage(
-                stage="enter",
-                aspect=None,
-                name=None,
-                doc=None,
-                operations=[],
-                is_abstract=False,
-                state_path=("LX", None),
-                ref=None,
-                ref_state_path=None,
-            ),
-            OnStage(
-                stage="enter",
-                aspect=None,
-                name="act1",
-                doc=None,
-                operations=[],
-                is_abstract=True,
-                state_path=("LX", "act1"),
-                ref=None,
-                ref_state_path=None,
-            ),
-        ]
+        assert sorted(state_lx.named_functions.keys()) == ["act1"]
+        assert state_lx.named_functions["act1"].stage == "enter"
+        assert state_lx.named_functions["act1"].aspect is None
+        assert state_lx.named_functions["act1"].name == "act1"
+        assert state_lx.named_functions["act1"].doc is None
+        assert state_lx.named_functions["act1"].operations == []
+        assert state_lx.named_functions["act1"].is_abstract
+        assert state_lx.named_functions["act1"].state_path == ("LX", "act1")
+        assert state_lx.named_functions["act1"].ref is None
+        assert state_lx.named_functions["act1"].ref_state_path is None
+        assert state_lx.named_functions["act1"].parent_ref().name == "LX"
+        assert state_lx.named_functions["act1"].parent_ref().path == ("LX",)
+        assert not state_lx.named_functions["act1"].is_aspect
+        assert not state_lx.named_functions["act1"].is_ref
+        assert state_lx.named_functions["act1"].parent.name == "LX"
+        assert state_lx.named_functions["act1"].parent.path == ("LX",)
+        assert len(state_lx.on_enters) == 2
+        assert state_lx.on_enters[0].stage == "enter"
+        assert state_lx.on_enters[0].aspect is None
+        assert state_lx.on_enters[0].name is None
+        assert state_lx.on_enters[0].doc is None
+        assert state_lx.on_enters[0].operations == []
+        assert not state_lx.on_enters[0].is_abstract
+        assert state_lx.on_enters[0].state_path == ("LX", None)
+        assert state_lx.on_enters[0].ref is None
+        assert state_lx.on_enters[0].ref_state_path is None
+        assert state_lx.on_enters[0].parent_ref().name == "LX"
+        assert state_lx.on_enters[0].parent_ref().path == ("LX",)
+        assert not state_lx.on_enters[0].is_aspect
+        assert not state_lx.on_enters[0].is_ref
+        assert state_lx.on_enters[0].parent.name == "LX"
+        assert state_lx.on_enters[0].parent.path == ("LX",)
+        assert state_lx.on_enters[1].stage == "enter"
+        assert state_lx.on_enters[1].aspect is None
+        assert state_lx.on_enters[1].name == "act1"
+        assert state_lx.on_enters[1].doc is None
+        assert state_lx.on_enters[1].operations == []
+        assert state_lx.on_enters[1].is_abstract
+        assert state_lx.on_enters[1].state_path == ("LX", "act1")
+        assert state_lx.on_enters[1].ref is None
+        assert state_lx.on_enters[1].ref_state_path is None
+        assert state_lx.on_enters[1].parent_ref().name == "LX"
+        assert state_lx.on_enters[1].parent_ref().path == ("LX",)
+        assert not state_lx.on_enters[1].is_aspect
+        assert not state_lx.on_enters[1].is_ref
+        assert state_lx.on_enters[1].parent.name == "LX"
+        assert state_lx.on_enters[1].parent.path == ("LX",)
         assert state_lx.on_durings == []
         assert state_lx.on_exits == []
         assert state_lx.on_during_aspects == []
@@ -172,37 +182,43 @@ class TestModelStateLx:
         assert not state_lx.is_pseudo
         assert state_lx.abstract_on_during_aspects == []
         assert state_lx.abstract_on_durings == []
-        assert state_lx.abstract_on_enters == [
-            OnStage(
-                stage="enter",
-                aspect=None,
-                name="act1",
-                doc=None,
-                operations=[],
-                is_abstract=True,
-                state_path=("LX", "act1"),
-                ref=None,
-                ref_state_path=None,
-            )
-        ]
+        assert len(state_lx.abstract_on_enters) == 1
+        assert state_lx.abstract_on_enters[0].stage == "enter"
+        assert state_lx.abstract_on_enters[0].aspect is None
+        assert state_lx.abstract_on_enters[0].name == "act1"
+        assert state_lx.abstract_on_enters[0].doc is None
+        assert state_lx.abstract_on_enters[0].operations == []
+        assert state_lx.abstract_on_enters[0].is_abstract
+        assert state_lx.abstract_on_enters[0].state_path == ("LX", "act1")
+        assert state_lx.abstract_on_enters[0].ref is None
+        assert state_lx.abstract_on_enters[0].ref_state_path is None
+        assert state_lx.abstract_on_enters[0].parent_ref().name == "LX"
+        assert state_lx.abstract_on_enters[0].parent_ref().path == ("LX",)
+        assert not state_lx.abstract_on_enters[0].is_aspect
+        assert not state_lx.abstract_on_enters[0].is_ref
+        assert state_lx.abstract_on_enters[0].parent.name == "LX"
+        assert state_lx.abstract_on_enters[0].parent.path == ("LX",)
         assert state_lx.abstract_on_exits == []
         assert not state_lx.is_leaf_state
         assert state_lx.is_root_state
         assert state_lx.non_abstract_on_during_aspects == []
         assert state_lx.non_abstract_on_durings == []
-        assert state_lx.non_abstract_on_enters == [
-            OnStage(
-                stage="enter",
-                aspect=None,
-                name=None,
-                doc=None,
-                operations=[],
-                is_abstract=False,
-                state_path=("LX", None),
-                ref=None,
-                ref_state_path=None,
-            )
-        ]
+        assert len(state_lx.non_abstract_on_enters) == 1
+        assert state_lx.non_abstract_on_enters[0].stage == "enter"
+        assert state_lx.non_abstract_on_enters[0].aspect is None
+        assert state_lx.non_abstract_on_enters[0].name is None
+        assert state_lx.non_abstract_on_enters[0].doc is None
+        assert state_lx.non_abstract_on_enters[0].operations == []
+        assert not state_lx.non_abstract_on_enters[0].is_abstract
+        assert state_lx.non_abstract_on_enters[0].state_path == ("LX", None)
+        assert state_lx.non_abstract_on_enters[0].ref is None
+        assert state_lx.non_abstract_on_enters[0].ref_state_path is None
+        assert state_lx.non_abstract_on_enters[0].parent_ref().name == "LX"
+        assert state_lx.non_abstract_on_enters[0].parent_ref().path == ("LX",)
+        assert not state_lx.non_abstract_on_enters[0].is_aspect
+        assert not state_lx.non_abstract_on_enters[0].is_ref
+        assert state_lx.non_abstract_on_enters[0].parent.name == "LX"
+        assert state_lx.non_abstract_on_enters[0].parent.path == ("LX",)
         assert state_lx.non_abstract_on_exits == []
         assert state_lx.parent is None
         assert len(state_lx.transitions_entering_children) == 1
@@ -398,6 +414,34 @@ class TestModelStateLx:
             is_pseudo=False,
         )
 
+    def test_state_lx_during_aspects(self, state_lx):
+        lst = state_lx.list_on_during_aspects()
+        assert lst == []
+
+        lst = state_lx.list_on_during_aspects(aspect="before")
+        assert lst == []
+
+        lst = state_lx.list_on_during_aspects(aspect="after")
+        assert lst == []
+
+        lst = state_lx.list_on_during_aspects(is_abstract=False)
+        assert lst == []
+
+        lst = state_lx.list_on_during_aspects(is_abstract=False, aspect="before")
+        assert lst == []
+
+        lst = state_lx.list_on_during_aspects(is_abstract=False, aspect="after")
+        assert lst == []
+
+        lst = state_lx.list_on_during_aspects(is_abstract=True)
+        assert lst == []
+
+        lst = state_lx.list_on_during_aspects(is_abstract=True, aspect="before")
+        assert lst == []
+
+        lst = state_lx.list_on_during_aspects(is_abstract=True, aspect="after")
+        assert lst == []
+
     def test_state_lx_lx2(self, state_lx_lx2):
         assert state_lx_lx2.name == "LX2"
         assert state_lx_lx2.path == ("LX", "LX2")
@@ -584,6 +628,34 @@ class TestModelStateLx:
             is_pseudo=False,
         )
 
+    def test_state_lx_lx2_during_aspects(self, state_lx_lx2):
+        lst = state_lx_lx2.list_on_during_aspects()
+        assert lst == []
+
+        lst = state_lx_lx2.list_on_during_aspects(aspect="before")
+        assert lst == []
+
+        lst = state_lx_lx2.list_on_during_aspects(aspect="after")
+        assert lst == []
+
+        lst = state_lx_lx2.list_on_during_aspects(is_abstract=False)
+        assert lst == []
+
+        lst = state_lx_lx2.list_on_during_aspects(is_abstract=False, aspect="before")
+        assert lst == []
+
+        lst = state_lx_lx2.list_on_during_aspects(is_abstract=False, aspect="after")
+        assert lst == []
+
+        lst = state_lx_lx2.list_on_during_aspects(is_abstract=True)
+        assert lst == []
+
+        lst = state_lx_lx2.list_on_during_aspects(is_abstract=True, aspect="before")
+        assert lst == []
+
+        lst = state_lx_lx2.list_on_during_aspects(is_abstract=True, aspect="after")
+        assert lst == []
+
     def test_state_lx_lx2_start(self, state_lx_lx2_start):
         assert state_lx_lx2_start.name == "start"
         assert state_lx_lx2_start.path == ("LX", "LX2", "start")
@@ -764,6 +836,42 @@ class TestModelStateLx:
             is_pseudo=False,
         )
 
+    def test_state_lx_lx2_start_during_aspects(self, state_lx_lx2_start):
+        lst = state_lx_lx2_start.list_on_during_aspects()
+        assert lst == []
+
+        lst = state_lx_lx2_start.list_on_during_aspects(aspect="before")
+        assert lst == []
+
+        lst = state_lx_lx2_start.list_on_during_aspects(aspect="after")
+        assert lst == []
+
+        lst = state_lx_lx2_start.list_on_during_aspects(is_abstract=False)
+        assert lst == []
+
+        lst = state_lx_lx2_start.list_on_during_aspects(
+            is_abstract=False, aspect="before"
+        )
+        assert lst == []
+
+        lst = state_lx_lx2_start.list_on_during_aspects(
+            is_abstract=False, aspect="after"
+        )
+        assert lst == []
+
+        lst = state_lx_lx2_start.list_on_during_aspects(is_abstract=True)
+        assert lst == []
+
+        lst = state_lx_lx2_start.list_on_during_aspects(
+            is_abstract=True, aspect="before"
+        )
+        assert lst == []
+
+        lst = state_lx_lx2_start.list_on_during_aspects(
+            is_abstract=True, aspect="after"
+        )
+        assert lst == []
+
     def test_state_lx_lx2_start_lx4(self, state_lx_lx2_start_lx4):
         assert state_lx_lx2_start_lx4.name == "LX4"
         assert state_lx_lx2_start_lx4.path == ("LX", "LX2", "start", "LX4")
@@ -933,6 +1041,42 @@ class TestModelStateLx:
             is_pseudo=False,
         )
 
+    def test_state_lx_lx2_start_lx4_during_aspects(self, state_lx_lx2_start_lx4):
+        lst = state_lx_lx2_start_lx4.list_on_during_aspects()
+        assert lst == []
+
+        lst = state_lx_lx2_start_lx4.list_on_during_aspects(aspect="before")
+        assert lst == []
+
+        lst = state_lx_lx2_start_lx4.list_on_during_aspects(aspect="after")
+        assert lst == []
+
+        lst = state_lx_lx2_start_lx4.list_on_during_aspects(is_abstract=False)
+        assert lst == []
+
+        lst = state_lx_lx2_start_lx4.list_on_during_aspects(
+            is_abstract=False, aspect="before"
+        )
+        assert lst == []
+
+        lst = state_lx_lx2_start_lx4.list_on_during_aspects(
+            is_abstract=False, aspect="after"
+        )
+        assert lst == []
+
+        lst = state_lx_lx2_start_lx4.list_on_during_aspects(is_abstract=True)
+        assert lst == []
+
+        lst = state_lx_lx2_start_lx4.list_on_during_aspects(
+            is_abstract=True, aspect="before"
+        )
+        assert lst == []
+
+        lst = state_lx_lx2_start_lx4.list_on_during_aspects(
+            is_abstract=True, aspect="after"
+        )
+        assert lst == []
+
     def test_state_lx_lx2_start_lx4_lx5(self, state_lx_lx2_start_lx4_lx5):
         assert state_lx_lx2_start_lx4_lx5.name == "LX5"
         assert state_lx_lx2_start_lx4_lx5.path == ("LX", "LX2", "start", "LX4", "LX5")
@@ -1017,7 +1161,47 @@ class TestModelStateLx:
             is_pseudo=False,
         )
 
-    def test_state_lx_lx2_start_lx4_lx5_during_aspect(self, state_lx_lx2_start_lx4_lx5):
+    def test_state_lx_lx2_start_lx4_lx5_during_aspects(
+        self, state_lx_lx2_start_lx4_lx5
+    ):
+        lst = state_lx_lx2_start_lx4_lx5.list_on_during_aspects()
+        assert lst == []
+
+        lst = state_lx_lx2_start_lx4_lx5.list_on_during_aspects(aspect="before")
+        assert lst == []
+
+        lst = state_lx_lx2_start_lx4_lx5.list_on_during_aspects(aspect="after")
+        assert lst == []
+
+        lst = state_lx_lx2_start_lx4_lx5.list_on_during_aspects(is_abstract=False)
+        assert lst == []
+
+        lst = state_lx_lx2_start_lx4_lx5.list_on_during_aspects(
+            is_abstract=False, aspect="before"
+        )
+        assert lst == []
+
+        lst = state_lx_lx2_start_lx4_lx5.list_on_during_aspects(
+            is_abstract=False, aspect="after"
+        )
+        assert lst == []
+
+        lst = state_lx_lx2_start_lx4_lx5.list_on_during_aspects(is_abstract=True)
+        assert lst == []
+
+        lst = state_lx_lx2_start_lx4_lx5.list_on_during_aspects(
+            is_abstract=True, aspect="before"
+        )
+        assert lst == []
+
+        lst = state_lx_lx2_start_lx4_lx5.list_on_during_aspects(
+            is_abstract=True, aspect="after"
+        )
+        assert lst == []
+
+    def test_state_lx_lx2_start_lx4_lx5_during_aspect_recursively(
+        self, state_lx_lx2_start_lx4_lx5
+    ):
         lst = state_lx_lx2_start_lx4_lx5.list_on_during_aspect_recursively()
         assert lst == []
 
@@ -1107,7 +1291,35 @@ class TestModelStateLx:
             is_pseudo=False,
         )
 
-    def test_state_lx_error_during_aspect(self, state_lx_error):
+    def test_state_lx_error_during_aspects(self, state_lx_error):
+        lst = state_lx_error.list_on_during_aspects()
+        assert lst == []
+
+        lst = state_lx_error.list_on_during_aspects(aspect="before")
+        assert lst == []
+
+        lst = state_lx_error.list_on_during_aspects(aspect="after")
+        assert lst == []
+
+        lst = state_lx_error.list_on_during_aspects(is_abstract=False)
+        assert lst == []
+
+        lst = state_lx_error.list_on_during_aspects(is_abstract=False, aspect="before")
+        assert lst == []
+
+        lst = state_lx_error.list_on_during_aspects(is_abstract=False, aspect="after")
+        assert lst == []
+
+        lst = state_lx_error.list_on_during_aspects(is_abstract=True)
+        assert lst == []
+
+        lst = state_lx_error.list_on_during_aspects(is_abstract=True, aspect="before")
+        assert lst == []
+
+        lst = state_lx_error.list_on_during_aspects(is_abstract=True, aspect="after")
+        assert lst == []
+
+    def test_state_lx_error_during_aspect_recursively(self, state_lx_error):
         lst = state_lx_error.list_on_during_aspect_recursively()
         assert lst == []
 

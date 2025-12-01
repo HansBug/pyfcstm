@@ -367,6 +367,12 @@ class OnAspect(AstExportable):
 
 
 @dataclass
+class FunctionPlaceholder:
+    name: str
+    ref: dsl_nodes.ChainID
+
+
+@dataclass
 class State(AstExportable, PlantUMLExportable):
     """
     Represents a state in a hierarchical state machine.
@@ -412,6 +418,7 @@ class State(AstExportable, PlantUMLExportable):
     substates: Dict[str, 'State']
     events: Dict[str, Event] = None
     transitions: List[Transition] = None
+    functions: Dict[str, Union[OnStage, OnAspect]] = None
     on_enters: List[OnStage] = None
     on_durings: List[OnStage] = None
     on_exits: List[OnStage] = None
@@ -426,6 +433,7 @@ class State(AstExportable, PlantUMLExportable):
         """
         self.events = self.events or {}
         self.transitions = self.transitions or []
+        self.functions = self.functions or {}
         self.on_enters = self.on_enters or []
         self.on_durings = self.on_durings or []
         self.on_exits = self.on_exits or []
@@ -1156,11 +1164,192 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
             else:
                 raise SyntaxError(f'Duplicate state name in namespace {".".join(current_path)!r}:\n{subnode}')
 
+        functions = {}
+        on_enters = []
+        for enter_item in node.enters:
+            on_stage = None
+            if isinstance(enter_item, dsl_nodes.EnterOperations):
+                enter_operations = []
+                for op_item in enter_item.operations:
+                    operation_val = parse_expr_node_to_expr(op_item.expr)
+                    unknown_vars = []
+                    for var in operation_val.list_variables():
+                        if var.name not in d_defines:
+                            unknown_vars.append(var.name)
+                    if op_item.name not in d_defines and op_item.name not in unknown_vars:
+                        unknown_vars.append(op_item.name)
+                    if unknown_vars:
+                        raise SyntaxError(
+                            f'Unknown enter operation variable {", ".join(unknown_vars)} in transition:\n{enter_item}')
+                    enter_operations.append(Operation(var_name=op_item.name, expr=operation_val))
+                on_stage = OnStage(
+                    stage='enter',
+                    aspect=None,
+                    name=enter_item.name,
+                    doc=None,
+                    operations=enter_operations,
+                    is_abstract=False,
+                )
+            elif isinstance(enter_item, dsl_nodes.EnterAbstractFunction):
+                on_stage = OnStage(
+                    stage='enter',
+                    aspect=None,
+                    name=enter_item.name,
+                    doc=enter_item.doc,
+                    operations=[],
+                    is_abstract=True,
+                )
+
+            if on_stage is not None:
+                if on_stage.name:
+                    if on_stage.name in functions:
+                        raise SyntaxError(f'Duplicate function name {on_stage.name!r} in state:\n{node}')
+                    functions[on_stage.name] = on_stage
+                on_enters.append(on_stage)
+
+        on_durings = []
+        for during_item in node.durings:
+            if not d_substates and during_item.aspect is not None:
+                raise SyntaxError(
+                    f'For leaf state {node.name!r}, during cannot assign aspect {during_item.aspect!r}:\n{during_item}')
+            if d_substates and during_item.aspect is None:
+                raise SyntaxError(
+                    f'For composite state {node.name!r}, during must assign aspect to either \'before\' or \'after\':\n{during_item}')
+
+            on_stage = None
+            if isinstance(during_item, dsl_nodes.DuringOperations):
+                during_operations = []
+                for op_item in during_item.operations:
+                    operation_val = parse_expr_node_to_expr(op_item.expr)
+                    unknown_vars = []
+                    for var in operation_val.list_variables():
+                        if var.name not in d_defines:
+                            unknown_vars.append(var.name)
+                    if op_item.name not in d_defines and op_item.name not in unknown_vars:
+                        unknown_vars.append(op_item.name)
+                    if unknown_vars:
+                        raise SyntaxError(
+                            f'Unknown during operation variable {", ".join(unknown_vars)} in transition:\n{during_item}')
+                    during_operations.append(Operation(var_name=op_item.name, expr=operation_val))
+                on_stage = OnStage(
+                    stage='during',
+                    aspect=during_item.aspect,
+                    name=during_item.name,
+                    doc=None,
+                    operations=during_operations,
+                    is_abstract=False,
+                )
+            elif isinstance(during_item, dsl_nodes.DuringAbstractFunction):
+                on_stage = OnStage(
+                    stage='during',
+                    aspect=during_item.aspect,
+                    name=during_item.name,
+                    doc=during_item.doc,
+                    operations=[],
+                    is_abstract=True,
+                )
+
+            if on_stage is not None:
+                if on_stage.name:
+                    if on_stage.name in functions:
+                        raise SyntaxError(f'Duplicate function name {on_stage.name!r} in state:\n{node}')
+                    functions[on_stage.name] = on_stage
+                on_durings.append(on_stage)
+
+        on_exits = []
+        for exit_item in node.exits:
+            on_stage = None
+            if isinstance(exit_item, dsl_nodes.ExitOperations):
+                exit_operations = []
+                for op_item in exit_item.operations:
+                    operation_val = parse_expr_node_to_expr(op_item.expr)
+                    unknown_vars = []
+                    for var in operation_val.list_variables():
+                        if var.name not in d_defines:
+                            unknown_vars.append(var.name)
+                    if op_item.name not in d_defines and op_item.name not in unknown_vars:
+                        unknown_vars.append(op_item.name)
+                    if unknown_vars:
+                        raise SyntaxError(
+                            f'Unknown exit operation variable {", ".join(unknown_vars)} in transition:\n{exit_item}')
+                    exit_operations.append(Operation(var_name=op_item.name, expr=operation_val))
+                on_stage = OnStage(
+                    stage='exit',
+                    aspect=None,
+                    name=exit_item.name,
+                    doc=None,
+                    operations=exit_operations,
+                    is_abstract=False,
+                )
+            elif isinstance(exit_item, dsl_nodes.ExitAbstractFunction):
+                on_stage = OnStage(
+                    stage='exit',
+                    aspect=None,
+                    name=exit_item.name,
+                    doc=exit_item.doc,
+                    operations=[],
+                    is_abstract=True,
+                )
+
+            if on_stage is not None:
+                if on_stage.name:
+                    if on_stage.name in functions:
+                        raise SyntaxError(f'Duplicate function name {on_stage.name!r} in state:\n{node}')
+                    functions[on_stage.name] = on_stage
+                on_exits.append(on_stage)
+
+        on_during_aspects = []
+        for during_aspect_item in node.during_aspects:
+            on_aspect = None
+            if isinstance(during_aspect_item, dsl_nodes.DuringAspectOperations):
+                during_operations = []
+                for op_item in during_aspect_item.operations:
+                    operation_val = parse_expr_node_to_expr(op_item.expr)
+                    unknown_vars = []
+                    for var in operation_val.list_variables():
+                        if var.name not in d_defines:
+                            unknown_vars.append(var.name)
+                    if op_item.name not in d_defines and op_item.name not in unknown_vars:
+                        unknown_vars.append(op_item.name)
+                    if unknown_vars:
+                        raise SyntaxError(
+                            f'Unknown during aspect variable {", ".join(unknown_vars)} in transition:\n{during_aspect_item}')
+                    during_operations.append(Operation(var_name=op_item.name, expr=operation_val))
+                on_aspect = OnAspect(
+                    stage='during',
+                    aspect=during_aspect_item.aspect,
+                    name=during_aspect_item.name,
+                    doc=None,
+                    operations=during_operations,
+                    is_abstract=False,
+                )
+            elif isinstance(during_aspect_item, dsl_nodes.DuringAspectAbstractFunction):
+                on_aspect = OnAspect(
+                    stage='during',
+                    aspect=during_aspect_item.aspect,
+                    name=during_aspect_item.name,
+                    doc=during_aspect_item.doc,
+                    operations=[],
+                    is_abstract=True,
+                )
+
+            if on_aspect is not None:
+                if on_aspect.name:
+                    if on_aspect.name in functions:
+                        raise SyntaxError(f'Duplicate function name {on_aspect.name!r} in state:\n{node}')
+                    functions[on_aspect.name] = on_aspect
+                on_during_aspects.append(on_aspect)
+
         my_state = State(
             name=node.name,
             path=current_path,
             substates=d_substates,
             is_pseudo=bool(node.is_pseudo),
+            on_enters=on_enters,
+            on_durings=on_durings,
+            on_exits=on_exits,
+            on_during_aspects=on_during_aspects,
+            functions=functions,
         )
         if my_state.is_pseudo and not my_state.is_leaf_state:
             raise SyntaxError(f'Pseudo state {".".join(current_path)} must be a leaf state:\n{node}')
@@ -1331,149 +1520,6 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
         if current_state.substates and not has_entry_trans:
             raise SyntaxError(
                 f'At least 1 entry transition should be assigned in non-leaf state {node.name!r}:\n{node}')
-
-        on_enters = current_state.on_enters
-        for enter_item in node.enters:
-            if isinstance(enter_item, dsl_nodes.EnterOperations):
-                enter_operations = []
-                for op_item in enter_item.operations:
-                    operation_val = parse_expr_node_to_expr(op_item.expr)
-                    unknown_vars = []
-                    for var in operation_val.list_variables():
-                        if var.name not in d_defines:
-                            unknown_vars.append(var.name)
-                    if op_item.name not in d_defines and op_item.name not in unknown_vars:
-                        unknown_vars.append(op_item.name)
-                    if unknown_vars:
-                        raise SyntaxError(
-                            f'Unknown enter operation variable {", ".join(unknown_vars)} in transition:\n{enter_item}')
-                    enter_operations.append(Operation(var_name=op_item.name, expr=operation_val))
-                on_enters.append(OnStage(
-                    stage='enter',
-                    aspect=None,
-                    name=enter_item.name,
-                    doc=None,
-                    operations=enter_operations,
-                    is_abstract=False,
-                ))
-            elif isinstance(enter_item, dsl_nodes.EnterAbstractFunction):
-                on_enters.append(OnStage(
-                    stage='enter',
-                    aspect=None,
-                    name=enter_item.name,
-                    doc=enter_item.doc,
-                    operations=[],
-                    is_abstract=True,
-                ))
-
-        on_durings = current_state.on_durings
-        for during_item in node.durings:
-            if not current_state.substates and during_item.aspect is not None:
-                raise SyntaxError(
-                    f'For leaf state {node.name!r}, during cannot assign aspect {during_item.aspect!r}:\n{during_item}')
-            if current_state.substates and during_item.aspect is None:
-                raise SyntaxError(
-                    f'For composite state {node.name!r}, during must assign aspect to either \'before\' or \'after\':\n{during_item}')
-
-            if isinstance(during_item, dsl_nodes.DuringOperations):
-                during_operations = []
-                for op_item in during_item.operations:
-                    operation_val = parse_expr_node_to_expr(op_item.expr)
-                    unknown_vars = []
-                    for var in operation_val.list_variables():
-                        if var.name not in d_defines:
-                            unknown_vars.append(var.name)
-                    if op_item.name not in d_defines and op_item.name not in unknown_vars:
-                        unknown_vars.append(op_item.name)
-                    if unknown_vars:
-                        raise SyntaxError(
-                            f'Unknown during operation variable {", ".join(unknown_vars)} in transition:\n{during_item}')
-                    during_operations.append(Operation(var_name=op_item.name, expr=operation_val))
-                on_durings.append(OnStage(
-                    stage='during',
-                    aspect=during_item.aspect,
-                    name=during_item.name,
-                    doc=None,
-                    operations=during_operations,
-                    is_abstract=False,
-                ))
-            elif isinstance(during_item, dsl_nodes.DuringAbstractFunction):
-                on_durings.append(OnStage(
-                    stage='during',
-                    aspect=during_item.aspect,
-                    name=during_item.name,
-                    doc=during_item.doc,
-                    operations=[],
-                    is_abstract=True,
-                ))
-
-        on_exits = current_state.on_exits
-        for exit_item in node.exits:
-            if isinstance(exit_item, dsl_nodes.ExitOperations):
-                exit_operations = []
-                for op_item in exit_item.operations:
-                    operation_val = parse_expr_node_to_expr(op_item.expr)
-                    unknown_vars = []
-                    for var in operation_val.list_variables():
-                        if var.name not in d_defines:
-                            unknown_vars.append(var.name)
-                    if op_item.name not in d_defines and op_item.name not in unknown_vars:
-                        unknown_vars.append(op_item.name)
-                    if unknown_vars:
-                        raise SyntaxError(
-                            f'Unknown exit operation variable {", ".join(unknown_vars)} in transition:\n{exit_item}')
-                    exit_operations.append(Operation(var_name=op_item.name, expr=operation_val))
-                on_exits.append(OnStage(
-                    stage='exit',
-                    aspect=None,
-                    name=exit_item.name,
-                    doc=None,
-                    operations=exit_operations,
-                    is_abstract=False,
-                ))
-            elif isinstance(exit_item, dsl_nodes.ExitAbstractFunction):
-                on_exits.append(OnStage(
-                    stage='exit',
-                    aspect=None,
-                    name=exit_item.name,
-                    doc=exit_item.doc,
-                    operations=[],
-                    is_abstract=True,
-                ))
-
-        on_during_aspects = current_state.on_during_aspects
-        for during_aspect_item in node.during_aspects:
-            if isinstance(during_aspect_item, dsl_nodes.DuringAspectOperations):
-                during_operations = []
-                for op_item in during_aspect_item.operations:
-                    operation_val = parse_expr_node_to_expr(op_item.expr)
-                    unknown_vars = []
-                    for var in operation_val.list_variables():
-                        if var.name not in d_defines:
-                            unknown_vars.append(var.name)
-                    if op_item.name not in d_defines and op_item.name not in unknown_vars:
-                        unknown_vars.append(op_item.name)
-                    if unknown_vars:
-                        raise SyntaxError(
-                            f'Unknown during aspect variable {", ".join(unknown_vars)} in transition:\n{during_aspect_item}')
-                    during_operations.append(Operation(var_name=op_item.name, expr=operation_val))
-                on_during_aspects.append(OnAspect(
-                    stage='during',
-                    aspect=during_aspect_item.aspect,
-                    name=during_aspect_item.name,
-                    doc=None,
-                    operations=during_operations,
-                    is_abstract=False,
-                ))
-            elif isinstance(during_aspect_item, dsl_nodes.DuringAspectAbstractFunction):
-                on_during_aspects.append(OnAspect(
-                    stage='during',
-                    aspect=during_aspect_item.aspect,
-                    name=during_aspect_item.name,
-                    doc=during_aspect_item.doc,
-                    operations=[],
-                    is_abstract=True,
-                ))
 
         for transition in current_state.transitions:
             transition.parent = current_state

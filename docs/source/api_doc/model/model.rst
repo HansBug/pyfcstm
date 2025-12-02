@@ -32,14 +32,14 @@ OnStage
 ----------------------------------------------------------
 
 .. autoclass:: OnStage
-    :members: stage,aspect,name,doc,operations,is_abstract,is_aspect,to_ast_node
+    :members: stage,aspect,name,doc,operations,is_abstract,is_aspect,is_ref,parent,to_ast_node
 
 
 OnAspect
 ----------------------------------------------------------
 
 .. autoclass:: OnAspect
-    :members: stage,aspect,name,doc,operations,is_abstract,is_aspect,to_ast_node
+    :members: stage,aspect,name,doc,operations,is_abstract,is_aspect,is_ref,parent,to_ast_node
 
 
 State

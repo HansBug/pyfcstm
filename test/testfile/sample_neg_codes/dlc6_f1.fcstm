@@ -1,0 +1,10 @@
+state L1 {
+    [*] -> L21;
+    L21 -> L22;
+
+    state L21 {
+        enter F1 {}
+        enter F1 {}
+    }
+    state L22;
+}

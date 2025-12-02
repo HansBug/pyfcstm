@@ -1,0 +1,41 @@
+def int x = 0;
+def int y = 0;
+state L1 {
+
+    enter abstract F1;
+    during before F12 {
+        x = 0x1;
+    };
+    during after abstract F13;
+    exit F1x ref F1;
+
+    [*] -> L21;
+    L21 -> L22 : if [x > 0];
+
+    >> during before ref L21.F1;
+    >> during after ref L22.F1;
+
+
+    state L21 {
+        enter F1 {
+            x = 0;
+            y = y + 1;
+        }
+
+        >> during after ref /F1x;
+
+        exit ref /F1x;
+    }
+
+    state L22 {
+        exit F1 {
+            x = x + 1;
+            y = 0;
+        }
+
+        enter ref /F1x;
+        during ref /F1x;
+        during ref F1;
+        exit ref /F1;
+    }
+}

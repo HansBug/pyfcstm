@@ -32,24 +32,28 @@ enter_definition
     : 'enter' (func_name=ID)? '{' operational_statement* '}'        # enterOperations
     | 'enter' 'abstract' func_name=ID ';'                           # enterAbstractFunc
     | 'enter' 'abstract' (func_name=ID)? raw_doc=MULTILINE_COMMENT  # enterAbstractFunc
+    | 'enter' (func_name=ID)? 'ref' chain_id ';'                    # enterRefFunc
     ;
 
 exit_definition
     : 'exit' (func_name=ID)? '{' operational_statement* '}'        # exitOperations
     | 'exit' 'abstract' func_name=ID ';'                           # exitAbstractFunc
     | 'exit' 'abstract' (func_name=ID)? raw_doc=MULTILINE_COMMENT  # exitAbstractFunc
+    | 'exit' (func_name=ID)? 'ref' chain_id ';'                    # exitRefFunc
     ;
 
 during_definition
     : 'during' aspect=('before'|'after')? (func_name=ID)? '{' operational_statement* '}'        # duringOperations
     | 'during' aspect=('before'|'after')? 'abstract' func_name=ID ';'                           # duringAbstractFunc
     | 'during' aspect=('before'|'after')? 'abstract' (func_name=ID)? raw_doc=MULTILINE_COMMENT  # duringAbstractFunc
+    | 'during' aspect=('before'|'after')? (func_name=ID)? 'ref' chain_id ';'                    # duringRefFunc
     ;
 
 during_aspect_definition
     : '>>' 'during' aspect=('before'|'after') (func_name=ID)? '{' operational_statement* '}'        # duringAspectOperations
     | '>>' 'during' aspect=('before'|'after') 'abstract' func_name=ID ';'                           # duringAspectAbstractFunc
     | '>>' 'during' aspect=('before'|'after') 'abstract' (func_name=ID)? raw_doc=MULTILINE_COMMENT  # duringAspectAbstractFunc
+    | '>>' 'during' aspect=('before'|'after') (func_name=ID)? 'ref' chain_id ';'                    # duringAspectRefFunc
     ;
 
 operation_assignment: ID '=' num_expression ';';

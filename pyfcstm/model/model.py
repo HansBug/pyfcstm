@@ -213,6 +213,14 @@ class OnStage(AstExportable):
     :type operations: List[Operation]
     :param is_abstract: Whether this is an abstract function declaration
     :type is_abstract: bool
+    :param state_path: The path to the state that owns this action
+    :type state_path: Tuple[Optional[str], ...]
+    :param ref: Reference to another OnStage or OnAspect for function references
+    :type ref: Union['OnStage', 'OnAspect', None]
+    :param ref_state_path: The path to the referenced state for function references
+    :type ref_state_path: Optional[Tuple[str, ...]]
+    :param parent_ref: Weak reference to the parent state
+    :type parent_ref: Optional[weakref.ReferenceType]
 
     Example::
 
@@ -222,7 +230,8 @@ class OnStage(AstExportable):
         ...     name="init_counter",
         ...     doc=None,
         ...     operations=[],
-        ...     is_abstract=False
+        ...     is_abstract=False,
+        ...     state_path=("root", "init_counter")
         ... )
     """
     stage: str
@@ -231,6 +240,46 @@ class OnStage(AstExportable):
     doc: Optional[str]
     operations: List[Operation]
     is_abstract: bool
+    state_path: Tuple[Optional[str], ...]
+    ref: Union['OnStage', 'OnAspect', None] = None
+    ref_state_path: Optional[Tuple[str, ...]] = None
+    parent_ref: Optional[weakref.ReferenceType] = None
+
+    @property
+    def parent(self) -> Optional['State']:
+        """
+        Get the parent state of this action.
+
+        :return: The parent state or None if no parent is set
+        :rtype: Optional['State']
+        """
+        if self.parent_ref is None:
+            return None  # pragma: no cover
+        else:
+            return self.parent_ref()
+
+    @parent.setter
+    def parent(self, new_parent: Optional['State']):
+        """
+        Set the parent state of this action.
+
+        :param new_parent: The new parent state or None to clear the parent
+        :type new_parent: Optional['State']
+        """
+        if new_parent is None:
+            self.parent_ref = None  # pragma: no cover
+        else:
+            self.parent_ref = weakref.ref(new_parent)
+
+    @property
+    def is_ref(self) -> bool:
+        """
+        Check if this action is a reference to another function.
+
+        :return: True if this is a reference, False otherwise
+        :rtype: bool
+        """
+        return bool(self.ref)
 
     @property
     def is_aspect(self) -> bool:
@@ -256,6 +305,16 @@ class OnStage(AstExportable):
                     name=self.name,
                     doc=self.doc,
                 )
+            elif self.is_ref:
+                spath = self.state_path[:-1]
+                if self.ref_state_path[:len(spath)] == spath:
+                    ref = dsl_nodes.ChainID(path=list(self.ref_state_path[len(spath):]), is_absolute=False)
+                else:
+                    ref = dsl_nodes.ChainID(path=list(self.ref_state_path[1:]), is_absolute=True)
+                return dsl_nodes.EnterRefFunction(
+                    name=self.name,
+                    ref=ref
+                )
             else:
                 return dsl_nodes.EnterOperations(
                     name=self.name,
@@ -269,6 +328,17 @@ class OnStage(AstExportable):
                     aspect=self.aspect,
                     doc=self.doc,
                 )
+            elif self.is_ref:
+                spath = self.state_path[:-1]
+                if self.ref_state_path[:len(spath)] == spath:
+                    ref = dsl_nodes.ChainID(path=list(self.ref_state_path[len(spath):]), is_absolute=False)
+                else:
+                    ref = dsl_nodes.ChainID(path=list(self.ref_state_path[1:]), is_absolute=True)
+                return dsl_nodes.DuringRefFunction(
+                    name=self.name,
+                    aspect=self.aspect,
+                    ref=ref
+                )
             else:
                 return dsl_nodes.DuringOperations(
                     name=self.name,
@@ -281,6 +351,16 @@ class OnStage(AstExportable):
                 return dsl_nodes.ExitAbstractFunction(
                     name=self.name,
                     doc=self.doc,
+                )
+            elif self.is_ref:
+                spath = self.state_path[:-1]
+                if self.ref_state_path[:len(spath)] == spath:
+                    ref = dsl_nodes.ChainID(path=list(self.ref_state_path[len(spath):]), is_absolute=False)
+                else:
+                    ref = dsl_nodes.ChainID(path=list(self.ref_state_path[1:]), is_absolute=True)
+                return dsl_nodes.ExitRefFunction(
+                    name=self.name,
+                    ref=ref
                 )
             else:
                 return dsl_nodes.ExitOperations(
@@ -311,6 +391,14 @@ class OnAspect(AstExportable):
     :type operations: List[Operation]
     :param is_abstract: Whether this is an abstract function declaration
     :type is_abstract: bool
+    :param state_path: The path to the state that owns this action
+    :type state_path: Tuple[Optional[str], ...]
+    :param ref: Reference to another OnStage or OnAspect for function references
+    :type ref: Union['OnStage', 'OnAspect', None]
+    :param ref_state_path: The path to the referenced state for function references
+    :type ref_state_path: Optional[Tuple[str, ...]]
+    :param parent_ref: Weak reference to the parent state
+    :type parent_ref: Optional[weakref.ReferenceType]
 
     Example::
 
@@ -320,7 +408,8 @@ class OnAspect(AstExportable):
         ...     name="log_entry",
         ...     doc=None,
         ...     operations=[],
-        ...     is_abstract=True
+        ...     is_abstract=True,
+        ...     state_path=("root", "log_entry")
         ... )
     """
     stage: str
@@ -329,6 +418,46 @@ class OnAspect(AstExportable):
     doc: Optional[str]
     operations: List[Operation]
     is_abstract: bool
+    state_path: Tuple[Optional[str], ...]
+    ref: Union['OnStage', 'OnAspect', None] = None
+    ref_state_path: Optional[Tuple[str, ...]] = None
+    parent_ref: Optional[weakref.ReferenceType] = None
+
+    @property
+    def parent(self) -> Optional['State']:
+        """
+        Get the parent state of this aspect action.
+
+        :return: The parent state or None if no parent is set
+        :rtype: Optional['State']
+        """
+        if self.parent_ref is None:
+            return None  # pragma: no cover
+        else:
+            return self.parent_ref()
+
+    @parent.setter
+    def parent(self, new_parent: Optional['State']):
+        """
+        Set the parent state of this aspect action.
+
+        :param new_parent: The new parent state or None to clear the parent
+        :type new_parent: Optional['State']
+        """
+        if new_parent is None:
+            self.parent_ref = None  # pragma: no cover
+        else:
+            self.parent_ref = weakref.ref(new_parent)
+
+    @property
+    def is_ref(self) -> bool:
+        """
+        Check if this action is a reference to another function.
+
+        :return: True if this is a reference, False otherwise
+        :rtype: bool
+        """
+        return bool(self.ref)
 
     @property
     def is_aspect(self) -> bool:
@@ -354,6 +483,17 @@ class OnAspect(AstExportable):
                     name=self.name,
                     aspect=self.aspect,
                     doc=self.doc,
+                )
+            elif self.is_ref:
+                spath = self.state_path[:-1]
+                if self.ref_state_path[:len(spath)] == spath:
+                    ref = dsl_nodes.ChainID(path=list(self.ref_state_path[len(spath):]), is_absolute=False)
+                else:
+                    ref = dsl_nodes.ChainID(path=list(self.ref_state_path[1:]), is_absolute=True)
+                return dsl_nodes.DuringAspectRefFunction(
+                    name=self.name,
+                    aspect=self.aspect,
+                    ref=ref
                 )
             else:
                 return dsl_nodes.DuringAspectOperations(
@@ -384,6 +524,8 @@ class State(AstExportable, PlantUMLExportable):
     :type events: Dict[str, Event]
     :param transitions: List of transitions between substates
     :type transitions: List[Transition]
+    :param named_functions: Dictionary mapping function names to their implementations
+    :type named_functions: Dict[str, Union[OnStage, OnAspect]]
     :param on_enters: List of actions to execute when entering the state
     :type on_enters: List[OnStage]
     :param on_durings: List of actions to execute while in the state
@@ -396,6 +538,8 @@ class State(AstExportable, PlantUMLExportable):
     :type parent_ref: Optional[weakref.ReferenceType]
     :param substate_name_to_id: Dictionary mapping substate names to numeric IDs
     :type substate_name_to_id: Dict[str, int]
+    :param is_pseudo: Whether this is a pseudo state
+    :type is_pseudo: bool
 
     Example::
 
@@ -412,6 +556,7 @@ class State(AstExportable, PlantUMLExportable):
     substates: Dict[str, 'State']
     events: Dict[str, Event] = None
     transitions: List[Transition] = None
+    named_functions: Dict[str, Union[OnStage, OnAspect]] = None
     on_enters: List[OnStage] = None
     on_durings: List[OnStage] = None
     on_exits: List[OnStage] = None
@@ -422,10 +567,11 @@ class State(AstExportable, PlantUMLExportable):
 
     def __post_init__(self):
         """
-        Initialize the substate_name_to_id dictionary after instance creation.
+        Initialize default values for optional fields after instance creation.
         """
         self.events = self.events or {}
         self.transitions = self.transitions or []
+        self.named_functions = self.named_functions or {}
         self.on_enters = self.on_enters or []
         self.on_durings = self.on_durings or []
         self.on_exits = self.on_exits or []
@@ -1156,14 +1302,284 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
             else:
                 raise SyntaxError(f'Duplicate state name in namespace {".".join(current_path)!r}:\n{subnode}')
 
+        named_functions = {}
+        on_enters = []
+        for enter_item in node.enters:
+            on_stage = None
+            if isinstance(enter_item, dsl_nodes.EnterOperations):
+                enter_operations = []
+                for op_item in enter_item.operations:
+                    operation_val = parse_expr_node_to_expr(op_item.expr)
+                    unknown_vars = []
+                    for var in operation_val.list_variables():
+                        if var.name not in d_defines:
+                            unknown_vars.append(var.name)
+                    if op_item.name not in d_defines and op_item.name not in unknown_vars:
+                        unknown_vars.append(op_item.name)
+                    if unknown_vars:
+                        raise SyntaxError(
+                            f'Unknown enter operation variable {", ".join(unknown_vars)} in transition:\n{enter_item}')
+                    enter_operations.append(Operation(var_name=op_item.name, expr=operation_val))
+                on_stage = OnStage(
+                    stage='enter',
+                    aspect=None,
+                    name=enter_item.name,
+                    doc=None,
+                    operations=enter_operations,
+                    is_abstract=False,
+                    state_path=(*current_path, enter_item.name),
+                    ref=None,
+                    ref_state_path=None,
+                )
+            elif isinstance(enter_item, dsl_nodes.EnterAbstractFunction):
+                on_stage = OnStage(
+                    stage='enter',
+                    aspect=None,
+                    name=enter_item.name,
+                    doc=enter_item.doc,
+                    operations=[],
+                    is_abstract=True,
+                    state_path=(*current_path, enter_item.name),
+                    ref=None,
+                    ref_state_path=None,
+                )
+            elif isinstance(enter_item, dsl_nodes.EnterRefFunction):
+                on_stage = OnStage(
+                    stage='enter',
+                    aspect=None,
+                    name=enter_item.name,
+                    doc=None,
+                    operations=[],
+                    is_abstract=False,
+                    state_path=(*current_path, enter_item.name),
+                    ref=None,
+                    ref_state_path=(
+                        *((dnode.root_state.name,) if enter_item.ref.is_absolute else current_path),
+                        *enter_item.ref.path
+                    ),
+                )
+
+            if on_stage is not None:
+                if on_stage.name:
+                    if on_stage.name in named_functions:
+                        raise SyntaxError(f'Duplicate function name {on_stage.name!r} in state:\n{node}')
+                    named_functions[on_stage.name] = on_stage
+                on_enters.append(on_stage)
+
+        on_durings = []
+        for during_item in node.durings:
+            if not d_substates and during_item.aspect is not None:
+                raise SyntaxError(
+                    f'For leaf state {node.name!r}, during cannot assign aspect {during_item.aspect!r}:\n{during_item}')
+            if d_substates and during_item.aspect is None:
+                raise SyntaxError(
+                    f'For composite state {node.name!r}, during must assign aspect to either \'before\' or \'after\':\n{during_item}')
+
+            on_stage = None
+            if isinstance(during_item, dsl_nodes.DuringOperations):
+                during_operations = []
+                for op_item in during_item.operations:
+                    operation_val = parse_expr_node_to_expr(op_item.expr)
+                    unknown_vars = []
+                    for var in operation_val.list_variables():
+                        if var.name not in d_defines:
+                            unknown_vars.append(var.name)
+                    if op_item.name not in d_defines and op_item.name not in unknown_vars:
+                        unknown_vars.append(op_item.name)
+                    if unknown_vars:
+                        raise SyntaxError(
+                            f'Unknown during operation variable {", ".join(unknown_vars)} in transition:\n{during_item}')
+                    during_operations.append(Operation(var_name=op_item.name, expr=operation_val))
+                on_stage = OnStage(
+                    stage='during',
+                    aspect=during_item.aspect,
+                    name=during_item.name,
+                    doc=None,
+                    operations=during_operations,
+                    is_abstract=False,
+                    state_path=(*current_path, during_item.name),
+                    ref=None,
+                    ref_state_path=None,
+                )
+            elif isinstance(during_item, dsl_nodes.DuringAbstractFunction):
+                on_stage = OnStage(
+                    stage='during',
+                    aspect=during_item.aspect,
+                    name=during_item.name,
+                    doc=during_item.doc,
+                    operations=[],
+                    is_abstract=True,
+                    state_path=(*current_path, during_item.name),
+                    ref=None,
+                    ref_state_path=None,
+                )
+            elif isinstance(during_item, dsl_nodes.DuringRefFunction):
+                on_stage = OnStage(
+                    stage='during',
+                    aspect=during_item.aspect,
+                    name=during_item.name,
+                    doc=None,
+                    operations=[],
+                    is_abstract=False,
+                    state_path=(*current_path, during_item.name),
+                    # TODO: add part of during ref function
+                    ref=None,
+                    ref_state_path=(
+                        *((dnode.root_state.name,) if during_item.ref.is_absolute else current_path),
+                        *during_item.ref.path
+                    ),
+                )
+
+            if on_stage is not None:
+                if on_stage.name:
+                    if on_stage.name in named_functions:
+                        raise SyntaxError(f'Duplicate function name {on_stage.name!r} in state:\n{node}')
+                    named_functions[on_stage.name] = on_stage
+                on_durings.append(on_stage)
+
+        on_exits = []
+        for exit_item in node.exits:
+            on_stage = None
+            if isinstance(exit_item, dsl_nodes.ExitOperations):
+                exit_operations = []
+                for op_item in exit_item.operations:
+                    operation_val = parse_expr_node_to_expr(op_item.expr)
+                    unknown_vars = []
+                    for var in operation_val.list_variables():
+                        if var.name not in d_defines:
+                            unknown_vars.append(var.name)
+                    if op_item.name not in d_defines and op_item.name not in unknown_vars:
+                        unknown_vars.append(op_item.name)
+                    if unknown_vars:
+                        raise SyntaxError(
+                            f'Unknown exit operation variable {", ".join(unknown_vars)} in transition:\n{exit_item}')
+                    exit_operations.append(Operation(var_name=op_item.name, expr=operation_val))
+                on_stage = OnStage(
+                    stage='exit',
+                    aspect=None,
+                    name=exit_item.name,
+                    doc=None,
+                    operations=exit_operations,
+                    is_abstract=False,
+                    state_path=(*current_path, exit_item.name),
+                    ref=None,
+                    ref_state_path=None,
+                )
+            elif isinstance(exit_item, dsl_nodes.ExitAbstractFunction):
+                on_stage = OnStage(
+                    stage='exit',
+                    aspect=None,
+                    name=exit_item.name,
+                    doc=exit_item.doc,
+                    operations=[],
+                    is_abstract=True,
+                    state_path=(*current_path, exit_item.name),
+                    ref=None,
+                    ref_state_path=None,
+                )
+            elif isinstance(exit_item, dsl_nodes.ExitRefFunction):
+                on_stage = OnStage(
+                    stage='exit',
+                    aspect=None,
+                    name=exit_item.name,
+                    doc=None,
+                    operations=[],
+                    is_abstract=False,
+                    state_path=(*current_path, exit_item.name),
+                    # TODO: add part of exit ref function
+                    ref=None,
+                    ref_state_path=(
+                        *((dnode.root_state.name,) if exit_item.ref.is_absolute else current_path),
+                        *exit_item.ref.path
+                    ),
+                )
+
+            if on_stage is not None:
+                if on_stage.name:
+                    if on_stage.name in named_functions:
+                        raise SyntaxError(f'Duplicate function name {on_stage.name!r} in state:\n{node}')
+                    named_functions[on_stage.name] = on_stage
+                on_exits.append(on_stage)
+
+        on_during_aspects = []
+        for during_aspect_item in node.during_aspects:
+            on_aspect = None
+            if isinstance(during_aspect_item, dsl_nodes.DuringAspectOperations):
+                during_operations = []
+                for op_item in during_aspect_item.operations:
+                    operation_val = parse_expr_node_to_expr(op_item.expr)
+                    unknown_vars = []
+                    for var in operation_val.list_variables():
+                        if var.name not in d_defines:
+                            unknown_vars.append(var.name)
+                    if op_item.name not in d_defines and op_item.name not in unknown_vars:
+                        unknown_vars.append(op_item.name)
+                    if unknown_vars:
+                        raise SyntaxError(
+                            f'Unknown during aspect variable {", ".join(unknown_vars)} in transition:\n{during_aspect_item}')
+                    during_operations.append(Operation(var_name=op_item.name, expr=operation_val))
+                on_aspect = OnAspect(
+                    stage='during',
+                    aspect=during_aspect_item.aspect,
+                    name=during_aspect_item.name,
+                    doc=None,
+                    operations=during_operations,
+                    is_abstract=False,
+                    state_path=(*current_path, during_aspect_item.name),
+                    ref=None,
+                    ref_state_path=None,
+                )
+            elif isinstance(during_aspect_item, dsl_nodes.DuringAspectAbstractFunction):
+                on_aspect = OnAspect(
+                    stage='during',
+                    aspect=during_aspect_item.aspect,
+                    name=during_aspect_item.name,
+                    doc=during_aspect_item.doc,
+                    operations=[],
+                    is_abstract=True,
+                    state_path=(*current_path, during_aspect_item.name),
+                    ref=None,
+                    ref_state_path=None,
+                )
+            elif isinstance(during_aspect_item, dsl_nodes.DuringAspectRefFunction):
+                on_aspect = OnAspect(
+                    stage='during',
+                    aspect=during_aspect_item.aspect,
+                    name=during_aspect_item.name,
+                    doc=None,
+                    operations=[],
+                    is_abstract=False,
+                    state_path=(*current_path, during_aspect_item.name),
+                    # TODO: add part of during aspect ref function
+                    ref=None,
+                    ref_state_path=(
+                        *((dnode.root_state.name,) if during_aspect_item.ref.is_absolute else current_path),
+                        *during_aspect_item.ref.path
+                    ),
+                )
+
+            if on_aspect is not None:
+                if on_aspect.name:
+                    if on_aspect.name in named_functions:
+                        raise SyntaxError(f'Duplicate function name {on_aspect.name!r} in state:\n{node}')
+                    named_functions[on_aspect.name] = on_aspect
+                on_during_aspects.append(on_aspect)
+
         my_state = State(
             name=node.name,
             path=current_path,
             substates=d_substates,
             is_pseudo=bool(node.is_pseudo),
+            on_enters=on_enters,
+            on_durings=on_durings,
+            on_exits=on_exits,
+            on_during_aspects=on_during_aspects,
+            named_functions=named_functions,
         )
         if my_state.is_pseudo and not my_state.is_leaf_state:
             raise SyntaxError(f'Pseudo state {".".join(current_path)} must be a leaf state:\n{node}')
+        for func_item in [*my_state.on_enters, *my_state.on_durings, *my_state.on_exits, *my_state.on_during_aspects]:
+            func_item.parent = my_state
         for _, substate in d_substates.items():
             substate.parent = my_state
         return my_state
@@ -1332,148 +1748,26 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
             raise SyntaxError(
                 f'At least 1 entry transition should be assigned in non-leaf state {node.name!r}:\n{node}')
 
-        on_enters = current_state.on_enters
-        for enter_item in node.enters:
-            if isinstance(enter_item, dsl_nodes.EnterOperations):
-                enter_operations = []
-                for op_item in enter_item.operations:
-                    operation_val = parse_expr_node_to_expr(op_item.expr)
-                    unknown_vars = []
-                    for var in operation_val.list_variables():
-                        if var.name not in d_defines:
-                            unknown_vars.append(var.name)
-                    if op_item.name not in d_defines and op_item.name not in unknown_vars:
-                        unknown_vars.append(op_item.name)
-                    if unknown_vars:
-                        raise SyntaxError(
-                            f'Unknown enter operation variable {", ".join(unknown_vars)} in transition:\n{enter_item}')
-                    enter_operations.append(Operation(var_name=op_item.name, expr=operation_val))
-                on_enters.append(OnStage(
-                    stage='enter',
-                    aspect=None,
-                    name=enter_item.name,
-                    doc=None,
-                    operations=enter_operations,
-                    is_abstract=False,
-                ))
-            elif isinstance(enter_item, dsl_nodes.EnterAbstractFunction):
-                on_enters.append(OnStage(
-                    stage='enter',
-                    aspect=None,
-                    name=enter_item.name,
-                    doc=enter_item.doc,
-                    operations=[],
-                    is_abstract=True,
-                ))
+        for func_item in [
+            *current_state.on_enters,
+            *current_state.on_durings,
+            *current_state.on_exits,
+            *current_state.on_during_aspects,
+        ]:
+            if func_item.ref_state_path is not None:
+                state = root_state
+                for i, segment in enumerate(func_item.ref_state_path[1:-1], start=1):
+                    if segment not in state.substates:
+                        raise SyntaxError(f'Cannot find state {".".join(func_item.ref_state_path[:i + 1])} '
+                                          f'under state {".".join(func_item.ref_state_path[:i])}, '
+                                          f'so cannot resolve reference {".".join(func_item.ref_state_path)!r}.')
+                    state = state.substates[segment]
 
-        on_durings = current_state.on_durings
-        for during_item in node.durings:
-            if not current_state.substates and during_item.aspect is not None:
-                raise SyntaxError(
-                    f'For leaf state {node.name!r}, during cannot assign aspect {during_item.aspect!r}:\n{during_item}')
-            if current_state.substates and during_item.aspect is None:
-                raise SyntaxError(
-                    f'For composite state {node.name!r}, during must assign aspect to either \'before\' or \'after\':\n{during_item}')
-
-            if isinstance(during_item, dsl_nodes.DuringOperations):
-                during_operations = []
-                for op_item in during_item.operations:
-                    operation_val = parse_expr_node_to_expr(op_item.expr)
-                    unknown_vars = []
-                    for var in operation_val.list_variables():
-                        if var.name not in d_defines:
-                            unknown_vars.append(var.name)
-                    if op_item.name not in d_defines and op_item.name not in unknown_vars:
-                        unknown_vars.append(op_item.name)
-                    if unknown_vars:
-                        raise SyntaxError(
-                            f'Unknown during operation variable {", ".join(unknown_vars)} in transition:\n{during_item}')
-                    during_operations.append(Operation(var_name=op_item.name, expr=operation_val))
-                on_durings.append(OnStage(
-                    stage='during',
-                    aspect=during_item.aspect,
-                    name=during_item.name,
-                    doc=None,
-                    operations=during_operations,
-                    is_abstract=False,
-                ))
-            elif isinstance(during_item, dsl_nodes.DuringAbstractFunction):
-                on_durings.append(OnStage(
-                    stage='during',
-                    aspect=during_item.aspect,
-                    name=during_item.name,
-                    doc=during_item.doc,
-                    operations=[],
-                    is_abstract=True,
-                ))
-
-        on_exits = current_state.on_exits
-        for exit_item in node.exits:
-            if isinstance(exit_item, dsl_nodes.ExitOperations):
-                exit_operations = []
-                for op_item in exit_item.operations:
-                    operation_val = parse_expr_node_to_expr(op_item.expr)
-                    unknown_vars = []
-                    for var in operation_val.list_variables():
-                        if var.name not in d_defines:
-                            unknown_vars.append(var.name)
-                    if op_item.name not in d_defines and op_item.name not in unknown_vars:
-                        unknown_vars.append(op_item.name)
-                    if unknown_vars:
-                        raise SyntaxError(
-                            f'Unknown exit operation variable {", ".join(unknown_vars)} in transition:\n{exit_item}')
-                    exit_operations.append(Operation(var_name=op_item.name, expr=operation_val))
-                on_exits.append(OnStage(
-                    stage='exit',
-                    aspect=None,
-                    name=exit_item.name,
-                    doc=None,
-                    operations=exit_operations,
-                    is_abstract=False,
-                ))
-            elif isinstance(exit_item, dsl_nodes.ExitAbstractFunction):
-                on_exits.append(OnStage(
-                    stage='exit',
-                    aspect=None,
-                    name=exit_item.name,
-                    doc=exit_item.doc,
-                    operations=[],
-                    is_abstract=True,
-                ))
-
-        on_during_aspects = current_state.on_during_aspects
-        for during_aspect_item in node.during_aspects:
-            if isinstance(during_aspect_item, dsl_nodes.DuringAspectOperations):
-                during_operations = []
-                for op_item in during_aspect_item.operations:
-                    operation_val = parse_expr_node_to_expr(op_item.expr)
-                    unknown_vars = []
-                    for var in operation_val.list_variables():
-                        if var.name not in d_defines:
-                            unknown_vars.append(var.name)
-                    if op_item.name not in d_defines and op_item.name not in unknown_vars:
-                        unknown_vars.append(op_item.name)
-                    if unknown_vars:
-                        raise SyntaxError(
-                            f'Unknown during aspect variable {", ".join(unknown_vars)} in transition:\n{during_aspect_item}')
-                    during_operations.append(Operation(var_name=op_item.name, expr=operation_val))
-                on_during_aspects.append(OnAspect(
-                    stage='during',
-                    aspect=during_aspect_item.aspect,
-                    name=during_aspect_item.name,
-                    doc=None,
-                    operations=during_operations,
-                    is_abstract=False,
-                ))
-            elif isinstance(during_aspect_item, dsl_nodes.DuringAspectAbstractFunction):
-                on_during_aspects.append(OnAspect(
-                    stage='during',
-                    aspect=during_aspect_item.aspect,
-                    name=during_aspect_item.name,
-                    doc=during_aspect_item.doc,
-                    operations=[],
-                    is_abstract=True,
-                ))
+                segment = func_item.ref_state_path[-1]
+                if segment not in state.named_functions:
+                    raise SyntaxError(f'Cannot find named function {segment!r} under state:\n{state.to_ast_node()}')
+                func_item.ref = state.named_functions[segment]
+                assert func_item.ref.state_path == func_item.ref_state_path
 
         for transition in current_state.transitions:
             transition.parent = current_state

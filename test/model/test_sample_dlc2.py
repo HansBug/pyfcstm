@@ -206,6 +206,7 @@ class TestModelStateTrafficLight:
         assert state_trafficlight.transitions[7].effects == []
         assert state_trafficlight.transitions[7].parent_ref().name == "TrafficLight"
         assert state_trafficlight.transitions[7].parent_ref().path == ("TrafficLight",)
+        assert state_trafficlight.named_functions == {}
         assert state_trafficlight.on_enters == []
         assert state_trafficlight.on_durings == []
         assert state_trafficlight.on_exits == []
@@ -644,6 +645,42 @@ class TestModelStateTrafficLight:
             is_pseudo=False,
         )
 
+    def test_state_trafficlight_during_aspects(self, state_trafficlight):
+        lst = state_trafficlight.list_on_during_aspects()
+        assert lst == []
+
+        lst = state_trafficlight.list_on_during_aspects(aspect="before")
+        assert lst == []
+
+        lst = state_trafficlight.list_on_during_aspects(aspect="after")
+        assert lst == []
+
+        lst = state_trafficlight.list_on_during_aspects(is_abstract=False)
+        assert lst == []
+
+        lst = state_trafficlight.list_on_during_aspects(
+            is_abstract=False, aspect="before"
+        )
+        assert lst == []
+
+        lst = state_trafficlight.list_on_during_aspects(
+            is_abstract=False, aspect="after"
+        )
+        assert lst == []
+
+        lst = state_trafficlight.list_on_during_aspects(is_abstract=True)
+        assert lst == []
+
+        lst = state_trafficlight.list_on_during_aspects(
+            is_abstract=True, aspect="before"
+        )
+        assert lst == []
+
+        lst = state_trafficlight.list_on_during_aspects(
+            is_abstract=True, aspect="after"
+        )
+        assert lst == []
+
     def test_state_trafficlight_inservice(self, state_trafficlight_inservice):
         assert state_trafficlight_inservice.name == "InService"
         assert state_trafficlight_inservice.path == ("TrafficLight", "InService")
@@ -842,6 +879,7 @@ class TestModelStateTrafficLight:
             "TrafficLight",
             "InService",
         )
+        assert state_trafficlight_inservice.named_functions == {}
         assert state_trafficlight_inservice.on_enters == []
         assert state_trafficlight_inservice.on_durings == []
         assert state_trafficlight_inservice.on_exits == []
@@ -1186,6 +1224,44 @@ class TestModelStateTrafficLight:
             is_pseudo=False,
         )
 
+    def test_state_trafficlight_inservice_during_aspects(
+        self, state_trafficlight_inservice
+    ):
+        lst = state_trafficlight_inservice.list_on_during_aspects()
+        assert lst == []
+
+        lst = state_trafficlight_inservice.list_on_during_aspects(aspect="before")
+        assert lst == []
+
+        lst = state_trafficlight_inservice.list_on_during_aspects(aspect="after")
+        assert lst == []
+
+        lst = state_trafficlight_inservice.list_on_during_aspects(is_abstract=False)
+        assert lst == []
+
+        lst = state_trafficlight_inservice.list_on_during_aspects(
+            is_abstract=False, aspect="before"
+        )
+        assert lst == []
+
+        lst = state_trafficlight_inservice.list_on_during_aspects(
+            is_abstract=False, aspect="after"
+        )
+        assert lst == []
+
+        lst = state_trafficlight_inservice.list_on_during_aspects(is_abstract=True)
+        assert lst == []
+
+        lst = state_trafficlight_inservice.list_on_during_aspects(
+            is_abstract=True, aspect="before"
+        )
+        assert lst == []
+
+        lst = state_trafficlight_inservice.list_on_during_aspects(
+            is_abstract=True, aspect="after"
+        )
+        assert lst == []
+
     def test_state_trafficlight_inservice_red(self, state_trafficlight_inservice_red):
         assert state_trafficlight_inservice_red.name == "Red"
         assert state_trafficlight_inservice_red.path == (
@@ -1196,6 +1272,7 @@ class TestModelStateTrafficLight:
         assert sorted(state_trafficlight_inservice_red.substates.keys()) == []
         assert state_trafficlight_inservice_red.events == {}
         assert state_trafficlight_inservice_red.transitions == []
+        assert state_trafficlight_inservice_red.named_functions == {}
         assert state_trafficlight_inservice_red.on_enters == []
         assert state_trafficlight_inservice_red.on_durings == []
         assert state_trafficlight_inservice_red.on_exits == []
@@ -1340,7 +1417,45 @@ class TestModelStateTrafficLight:
             is_pseudo=False,
         )
 
-    def test_state_trafficlight_inservice_red_during_aspect(
+    def test_state_trafficlight_inservice_red_during_aspects(
+        self, state_trafficlight_inservice_red
+    ):
+        lst = state_trafficlight_inservice_red.list_on_during_aspects()
+        assert lst == []
+
+        lst = state_trafficlight_inservice_red.list_on_during_aspects(aspect="before")
+        assert lst == []
+
+        lst = state_trafficlight_inservice_red.list_on_during_aspects(aspect="after")
+        assert lst == []
+
+        lst = state_trafficlight_inservice_red.list_on_during_aspects(is_abstract=False)
+        assert lst == []
+
+        lst = state_trafficlight_inservice_red.list_on_during_aspects(
+            is_abstract=False, aspect="before"
+        )
+        assert lst == []
+
+        lst = state_trafficlight_inservice_red.list_on_during_aspects(
+            is_abstract=False, aspect="after"
+        )
+        assert lst == []
+
+        lst = state_trafficlight_inservice_red.list_on_during_aspects(is_abstract=True)
+        assert lst == []
+
+        lst = state_trafficlight_inservice_red.list_on_during_aspects(
+            is_abstract=True, aspect="before"
+        )
+        assert lst == []
+
+        lst = state_trafficlight_inservice_red.list_on_during_aspects(
+            is_abstract=True, aspect="after"
+        )
+        assert lst == []
+
+    def test_state_trafficlight_inservice_red_during_aspect_recursively(
         self, state_trafficlight_inservice_red
     ):
         lst = state_trafficlight_inservice_red.list_on_during_aspect_recursively()
@@ -1363,6 +1478,7 @@ class TestModelStateTrafficLight:
         assert sorted(state_trafficlight_inservice_yellow.substates.keys()) == []
         assert state_trafficlight_inservice_yellow.events == {}
         assert state_trafficlight_inservice_yellow.transitions == []
+        assert state_trafficlight_inservice_yellow.named_functions == {}
         assert state_trafficlight_inservice_yellow.on_enters == []
         assert state_trafficlight_inservice_yellow.on_durings == []
         assert state_trafficlight_inservice_yellow.on_exits == []
@@ -1559,7 +1675,51 @@ class TestModelStateTrafficLight:
             is_pseudo=False,
         )
 
-    def test_state_trafficlight_inservice_yellow_during_aspect(
+    def test_state_trafficlight_inservice_yellow_during_aspects(
+        self, state_trafficlight_inservice_yellow
+    ):
+        lst = state_trafficlight_inservice_yellow.list_on_during_aspects()
+        assert lst == []
+
+        lst = state_trafficlight_inservice_yellow.list_on_during_aspects(
+            aspect="before"
+        )
+        assert lst == []
+
+        lst = state_trafficlight_inservice_yellow.list_on_during_aspects(aspect="after")
+        assert lst == []
+
+        lst = state_trafficlight_inservice_yellow.list_on_during_aspects(
+            is_abstract=False
+        )
+        assert lst == []
+
+        lst = state_trafficlight_inservice_yellow.list_on_during_aspects(
+            is_abstract=False, aspect="before"
+        )
+        assert lst == []
+
+        lst = state_trafficlight_inservice_yellow.list_on_during_aspects(
+            is_abstract=False, aspect="after"
+        )
+        assert lst == []
+
+        lst = state_trafficlight_inservice_yellow.list_on_during_aspects(
+            is_abstract=True
+        )
+        assert lst == []
+
+        lst = state_trafficlight_inservice_yellow.list_on_during_aspects(
+            is_abstract=True, aspect="before"
+        )
+        assert lst == []
+
+        lst = state_trafficlight_inservice_yellow.list_on_during_aspects(
+            is_abstract=True, aspect="after"
+        )
+        assert lst == []
+
+    def test_state_trafficlight_inservice_yellow_during_aspect_recursively(
         self, state_trafficlight_inservice_yellow
     ):
         lst = state_trafficlight_inservice_yellow.list_on_during_aspect_recursively()
@@ -1582,6 +1742,7 @@ class TestModelStateTrafficLight:
         assert sorted(state_trafficlight_inservice_green.substates.keys()) == []
         assert state_trafficlight_inservice_green.events == {}
         assert state_trafficlight_inservice_green.transitions == []
+        assert state_trafficlight_inservice_green.named_functions == {}
         assert state_trafficlight_inservice_green.on_enters == []
         assert state_trafficlight_inservice_green.on_durings == []
         assert state_trafficlight_inservice_green.on_exits == []
@@ -1728,7 +1889,49 @@ class TestModelStateTrafficLight:
             is_pseudo=False,
         )
 
-    def test_state_trafficlight_inservice_green_during_aspect(
+    def test_state_trafficlight_inservice_green_during_aspects(
+        self, state_trafficlight_inservice_green
+    ):
+        lst = state_trafficlight_inservice_green.list_on_during_aspects()
+        assert lst == []
+
+        lst = state_trafficlight_inservice_green.list_on_during_aspects(aspect="before")
+        assert lst == []
+
+        lst = state_trafficlight_inservice_green.list_on_during_aspects(aspect="after")
+        assert lst == []
+
+        lst = state_trafficlight_inservice_green.list_on_during_aspects(
+            is_abstract=False
+        )
+        assert lst == []
+
+        lst = state_trafficlight_inservice_green.list_on_during_aspects(
+            is_abstract=False, aspect="before"
+        )
+        assert lst == []
+
+        lst = state_trafficlight_inservice_green.list_on_during_aspects(
+            is_abstract=False, aspect="after"
+        )
+        assert lst == []
+
+        lst = state_trafficlight_inservice_green.list_on_during_aspects(
+            is_abstract=True
+        )
+        assert lst == []
+
+        lst = state_trafficlight_inservice_green.list_on_during_aspects(
+            is_abstract=True, aspect="before"
+        )
+        assert lst == []
+
+        lst = state_trafficlight_inservice_green.list_on_during_aspects(
+            is_abstract=True, aspect="after"
+        )
+        assert lst == []
+
+    def test_state_trafficlight_inservice_green_during_aspect_recursively(
         self, state_trafficlight_inservice_green
     ):
         lst = state_trafficlight_inservice_green.list_on_during_aspect_recursively()
@@ -1844,6 +2047,7 @@ class TestModelStateTrafficLight:
             "TrafficLight",
             "Idle",
         )
+        assert state_trafficlight_idle.named_functions == {}
         assert state_trafficlight_idle.on_enters == []
         assert state_trafficlight_idle.on_durings == []
         assert state_trafficlight_idle.on_exits == []
@@ -2107,6 +2311,42 @@ class TestModelStateTrafficLight:
             is_pseudo=False,
         )
 
+    def test_state_trafficlight_idle_during_aspects(self, state_trafficlight_idle):
+        lst = state_trafficlight_idle.list_on_during_aspects()
+        assert lst == []
+
+        lst = state_trafficlight_idle.list_on_during_aspects(aspect="before")
+        assert lst == []
+
+        lst = state_trafficlight_idle.list_on_during_aspects(aspect="after")
+        assert lst == []
+
+        lst = state_trafficlight_idle.list_on_during_aspects(is_abstract=False)
+        assert lst == []
+
+        lst = state_trafficlight_idle.list_on_during_aspects(
+            is_abstract=False, aspect="before"
+        )
+        assert lst == []
+
+        lst = state_trafficlight_idle.list_on_during_aspects(
+            is_abstract=False, aspect="after"
+        )
+        assert lst == []
+
+        lst = state_trafficlight_idle.list_on_during_aspects(is_abstract=True)
+        assert lst == []
+
+        lst = state_trafficlight_idle.list_on_during_aspects(
+            is_abstract=True, aspect="before"
+        )
+        assert lst == []
+
+        lst = state_trafficlight_idle.list_on_during_aspects(
+            is_abstract=True, aspect="after"
+        )
+        assert lst == []
+
     def test_state_trafficlight_idle_tobe(self, state_trafficlight_idle_tobe):
         assert state_trafficlight_idle_tobe.name == "ToBe"
         assert state_trafficlight_idle_tobe.path == ("TrafficLight", "Idle", "ToBe")
@@ -2115,6 +2355,7 @@ class TestModelStateTrafficLight:
             "E1": Event(name="E1", state_path=("TrafficLight", "Idle", "ToBe"))
         }
         assert state_trafficlight_idle_tobe.transitions == []
+        assert state_trafficlight_idle_tobe.named_functions == {}
         assert state_trafficlight_idle_tobe.on_enters == []
         assert state_trafficlight_idle_tobe.on_durings == []
         assert state_trafficlight_idle_tobe.on_exits == []
@@ -2234,7 +2475,45 @@ class TestModelStateTrafficLight:
             is_pseudo=False,
         )
 
-    def test_state_trafficlight_idle_tobe_during_aspect(
+    def test_state_trafficlight_idle_tobe_during_aspects(
+        self, state_trafficlight_idle_tobe
+    ):
+        lst = state_trafficlight_idle_tobe.list_on_during_aspects()
+        assert lst == []
+
+        lst = state_trafficlight_idle_tobe.list_on_during_aspects(aspect="before")
+        assert lst == []
+
+        lst = state_trafficlight_idle_tobe.list_on_during_aspects(aspect="after")
+        assert lst == []
+
+        lst = state_trafficlight_idle_tobe.list_on_during_aspects(is_abstract=False)
+        assert lst == []
+
+        lst = state_trafficlight_idle_tobe.list_on_during_aspects(
+            is_abstract=False, aspect="before"
+        )
+        assert lst == []
+
+        lst = state_trafficlight_idle_tobe.list_on_during_aspects(
+            is_abstract=False, aspect="after"
+        )
+        assert lst == []
+
+        lst = state_trafficlight_idle_tobe.list_on_during_aspects(is_abstract=True)
+        assert lst == []
+
+        lst = state_trafficlight_idle_tobe.list_on_during_aspects(
+            is_abstract=True, aspect="before"
+        )
+        assert lst == []
+
+        lst = state_trafficlight_idle_tobe.list_on_during_aspects(
+            is_abstract=True, aspect="after"
+        )
+        assert lst == []
+
+    def test_state_trafficlight_idle_tobe_during_aspect_recursively(
         self, state_trafficlight_idle_tobe
     ):
         lst = state_trafficlight_idle_tobe.list_on_during_aspect_recursively()
@@ -2258,6 +2537,7 @@ class TestModelStateTrafficLight:
             "E2": Event(name="E2", state_path=("TrafficLight", "Idle", "NotToBe")),
         }
         assert state_trafficlight_idle_nottobe.transitions == []
+        assert state_trafficlight_idle_nottobe.named_functions == {}
         assert state_trafficlight_idle_nottobe.on_enters == []
         assert state_trafficlight_idle_nottobe.on_durings == []
         assert state_trafficlight_idle_nottobe.on_exits == []
@@ -2396,7 +2676,45 @@ class TestModelStateTrafficLight:
             is_pseudo=False,
         )
 
-    def test_state_trafficlight_idle_nottobe_during_aspect(
+    def test_state_trafficlight_idle_nottobe_during_aspects(
+        self, state_trafficlight_idle_nottobe
+    ):
+        lst = state_trafficlight_idle_nottobe.list_on_during_aspects()
+        assert lst == []
+
+        lst = state_trafficlight_idle_nottobe.list_on_during_aspects(aspect="before")
+        assert lst == []
+
+        lst = state_trafficlight_idle_nottobe.list_on_during_aspects(aspect="after")
+        assert lst == []
+
+        lst = state_trafficlight_idle_nottobe.list_on_during_aspects(is_abstract=False)
+        assert lst == []
+
+        lst = state_trafficlight_idle_nottobe.list_on_during_aspects(
+            is_abstract=False, aspect="before"
+        )
+        assert lst == []
+
+        lst = state_trafficlight_idle_nottobe.list_on_during_aspects(
+            is_abstract=False, aspect="after"
+        )
+        assert lst == []
+
+        lst = state_trafficlight_idle_nottobe.list_on_during_aspects(is_abstract=True)
+        assert lst == []
+
+        lst = state_trafficlight_idle_nottobe.list_on_during_aspects(
+            is_abstract=True, aspect="before"
+        )
+        assert lst == []
+
+        lst = state_trafficlight_idle_nottobe.list_on_during_aspects(
+            is_abstract=True, aspect="after"
+        )
+        assert lst == []
+
+    def test_state_trafficlight_idle_nottobe_during_aspect_recursively(
         self, state_trafficlight_idle_nottobe
     ):
         lst = state_trafficlight_idle_nottobe.list_on_during_aspect_recursively()

@@ -179,6 +179,7 @@ class TestModelStateL1:
         assert state_l1.transitions[2].effects == []
         assert state_l1.transitions[2].parent_ref().name == "L1"
         assert state_l1.transitions[2].parent_ref().path == ("L1",)
+        assert state_l1.named_functions == {}
         assert state_l1.on_enters == []
         assert state_l1.on_durings == []
         assert state_l1.on_exits == []
@@ -604,6 +605,34 @@ class TestModelStateL1:
             is_pseudo=False,
         )
 
+    def test_state_l1_during_aspects(self, state_l1):
+        lst = state_l1.list_on_during_aspects()
+        assert lst == []
+
+        lst = state_l1.list_on_during_aspects(aspect="before")
+        assert lst == []
+
+        lst = state_l1.list_on_during_aspects(aspect="after")
+        assert lst == []
+
+        lst = state_l1.list_on_during_aspects(is_abstract=False)
+        assert lst == []
+
+        lst = state_l1.list_on_during_aspects(is_abstract=False, aspect="before")
+        assert lst == []
+
+        lst = state_l1.list_on_during_aspects(is_abstract=False, aspect="after")
+        assert lst == []
+
+        lst = state_l1.list_on_during_aspects(is_abstract=True)
+        assert lst == []
+
+        lst = state_l1.list_on_during_aspects(is_abstract=True, aspect="before")
+        assert lst == []
+
+        lst = state_l1.list_on_during_aspects(is_abstract=True, aspect="after")
+        assert lst == []
+
     def test_state_l1_l11(self, state_l1_l11):
         assert state_l1_l11.name == "L11"
         assert state_l1_l11.path == ("L1", "L11")
@@ -680,6 +709,7 @@ class TestModelStateL1:
         assert state_l1_l11.transitions[7].effects == []
         assert state_l1_l11.transitions[7].parent_ref().name == "L11"
         assert state_l1_l11.transitions[7].parent_ref().path == ("L1", "L11")
+        assert state_l1_l11.named_functions == {}
         assert state_l1_l11.on_enters == []
         assert state_l1_l11.on_durings == []
         assert state_l1_l11.on_exits == []
@@ -1063,6 +1093,34 @@ class TestModelStateL1:
             is_pseudo=False,
         )
 
+    def test_state_l1_l11_during_aspects(self, state_l1_l11):
+        lst = state_l1_l11.list_on_during_aspects()
+        assert lst == []
+
+        lst = state_l1_l11.list_on_during_aspects(aspect="before")
+        assert lst == []
+
+        lst = state_l1_l11.list_on_during_aspects(aspect="after")
+        assert lst == []
+
+        lst = state_l1_l11.list_on_during_aspects(is_abstract=False)
+        assert lst == []
+
+        lst = state_l1_l11.list_on_during_aspects(is_abstract=False, aspect="before")
+        assert lst == []
+
+        lst = state_l1_l11.list_on_during_aspects(is_abstract=False, aspect="after")
+        assert lst == []
+
+        lst = state_l1_l11.list_on_during_aspects(is_abstract=True)
+        assert lst == []
+
+        lst = state_l1_l11.list_on_during_aspects(is_abstract=True, aspect="before")
+        assert lst == []
+
+        lst = state_l1_l11.list_on_during_aspects(is_abstract=True, aspect="after")
+        assert lst == []
+
     def test_state_l1_l11_l111(self, state_l1_l11_l111):
         assert state_l1_l11_l111.name == "L111"
         assert state_l1_l11_l111.path == ("L1", "L11", "L111")
@@ -1174,6 +1232,7 @@ class TestModelStateL1:
             "L11",
             "L111",
         )
+        assert state_l1_l11_l111.named_functions == {}
         assert state_l1_l11_l111.on_enters == []
         assert state_l1_l11_l111.on_durings == []
         assert state_l1_l11_l111.on_exits == []
@@ -1489,6 +1548,40 @@ class TestModelStateL1:
             is_pseudo=False,
         )
 
+    def test_state_l1_l11_l111_during_aspects(self, state_l1_l11_l111):
+        lst = state_l1_l11_l111.list_on_during_aspects()
+        assert lst == []
+
+        lst = state_l1_l11_l111.list_on_during_aspects(aspect="before")
+        assert lst == []
+
+        lst = state_l1_l11_l111.list_on_during_aspects(aspect="after")
+        assert lst == []
+
+        lst = state_l1_l11_l111.list_on_during_aspects(is_abstract=False)
+        assert lst == []
+
+        lst = state_l1_l11_l111.list_on_during_aspects(
+            is_abstract=False, aspect="before"
+        )
+        assert lst == []
+
+        lst = state_l1_l11_l111.list_on_during_aspects(
+            is_abstract=False, aspect="after"
+        )
+        assert lst == []
+
+        lst = state_l1_l11_l111.list_on_during_aspects(is_abstract=True)
+        assert lst == []
+
+        lst = state_l1_l11_l111.list_on_during_aspects(
+            is_abstract=True, aspect="before"
+        )
+        assert lst == []
+
+        lst = state_l1_l11_l111.list_on_during_aspects(is_abstract=True, aspect="after")
+        assert lst == []
+
     def test_state_l1_l11_l111_l1111(self, state_l1_l11_l111_l1111):
         assert state_l1_l11_l111_l1111.name == "L1111"
         assert state_l1_l11_l111_l1111.path == ("L1", "L11", "L111", "L1111")
@@ -1612,6 +1705,7 @@ class TestModelStateL1:
             "L111",
             "L1111",
         )
+        assert state_l1_l11_l111_l1111.named_functions == {}
         assert state_l1_l11_l111_l1111.on_enters == []
         assert state_l1_l11_l111_l1111.on_durings == []
         assert state_l1_l11_l111_l1111.on_exits == []
@@ -1855,6 +1949,42 @@ class TestModelStateL1:
             is_pseudo=False,
         )
 
+    def test_state_l1_l11_l111_l1111_during_aspects(self, state_l1_l11_l111_l1111):
+        lst = state_l1_l11_l111_l1111.list_on_during_aspects()
+        assert lst == []
+
+        lst = state_l1_l11_l111_l1111.list_on_during_aspects(aspect="before")
+        assert lst == []
+
+        lst = state_l1_l11_l111_l1111.list_on_during_aspects(aspect="after")
+        assert lst == []
+
+        lst = state_l1_l11_l111_l1111.list_on_during_aspects(is_abstract=False)
+        assert lst == []
+
+        lst = state_l1_l11_l111_l1111.list_on_during_aspects(
+            is_abstract=False, aspect="before"
+        )
+        assert lst == []
+
+        lst = state_l1_l11_l111_l1111.list_on_during_aspects(
+            is_abstract=False, aspect="after"
+        )
+        assert lst == []
+
+        lst = state_l1_l11_l111_l1111.list_on_during_aspects(is_abstract=True)
+        assert lst == []
+
+        lst = state_l1_l11_l111_l1111.list_on_during_aspects(
+            is_abstract=True, aspect="before"
+        )
+        assert lst == []
+
+        lst = state_l1_l11_l111_l1111.list_on_during_aspects(
+            is_abstract=True, aspect="after"
+        )
+        assert lst == []
+
     def test_state_l1_l11_l111_l1111_l11111(self, state_l1_l11_l111_l1111_l11111):
         assert state_l1_l11_l111_l1111_l11111.name == "L11111"
         assert state_l1_l11_l111_l1111_l11111.path == (
@@ -1870,6 +2000,7 @@ class TestModelStateL1:
             "E2": Event(name="E2", state_path=("L1", "L11", "L111", "L1111", "L11111")),
         }
         assert state_l1_l11_l111_l1111_l11111.transitions == []
+        assert state_l1_l11_l111_l1111_l11111.named_functions == {}
         assert state_l1_l11_l111_l1111_l11111.on_enters == []
         assert state_l1_l11_l111_l1111_l11111.on_durings == []
         assert state_l1_l11_l111_l1111_l11111.on_exits == []
@@ -1994,7 +2125,45 @@ class TestModelStateL1:
             is_pseudo=False,
         )
 
-    def test_state_l1_l11_l111_l1111_l11111_during_aspect(
+    def test_state_l1_l11_l111_l1111_l11111_during_aspects(
+        self, state_l1_l11_l111_l1111_l11111
+    ):
+        lst = state_l1_l11_l111_l1111_l11111.list_on_during_aspects()
+        assert lst == []
+
+        lst = state_l1_l11_l111_l1111_l11111.list_on_during_aspects(aspect="before")
+        assert lst == []
+
+        lst = state_l1_l11_l111_l1111_l11111.list_on_during_aspects(aspect="after")
+        assert lst == []
+
+        lst = state_l1_l11_l111_l1111_l11111.list_on_during_aspects(is_abstract=False)
+        assert lst == []
+
+        lst = state_l1_l11_l111_l1111_l11111.list_on_during_aspects(
+            is_abstract=False, aspect="before"
+        )
+        assert lst == []
+
+        lst = state_l1_l11_l111_l1111_l11111.list_on_during_aspects(
+            is_abstract=False, aspect="after"
+        )
+        assert lst == []
+
+        lst = state_l1_l11_l111_l1111_l11111.list_on_during_aspects(is_abstract=True)
+        assert lst == []
+
+        lst = state_l1_l11_l111_l1111_l11111.list_on_during_aspects(
+            is_abstract=True, aspect="before"
+        )
+        assert lst == []
+
+        lst = state_l1_l11_l111_l1111_l11111.list_on_during_aspects(
+            is_abstract=True, aspect="after"
+        )
+        assert lst == []
+
+    def test_state_l1_l11_l111_l1111_l11111_during_aspect_recursively(
         self, state_l1_l11_l111_l1111_l11111
     ):
         lst = state_l1_l11_l111_l1111_l11111.list_on_during_aspect_recursively()
@@ -2019,6 +2188,7 @@ class TestModelStateL1:
             "E1": Event(name="E1", state_path=("L1", "L11", "L111", "L1111", "L11112"))
         }
         assert state_l1_l11_l111_l1111_l11112.transitions == []
+        assert state_l1_l11_l111_l1111_l11112.named_functions == {}
         assert state_l1_l11_l111_l1111_l11112.on_enters == []
         assert state_l1_l11_l111_l1111_l11112.on_durings == []
         assert state_l1_l11_l111_l1111_l11112.on_exits == []
@@ -2128,7 +2298,45 @@ class TestModelStateL1:
             is_pseudo=False,
         )
 
-    def test_state_l1_l11_l111_l1111_l11112_during_aspect(
+    def test_state_l1_l11_l111_l1111_l11112_during_aspects(
+        self, state_l1_l11_l111_l1111_l11112
+    ):
+        lst = state_l1_l11_l111_l1111_l11112.list_on_during_aspects()
+        assert lst == []
+
+        lst = state_l1_l11_l111_l1111_l11112.list_on_during_aspects(aspect="before")
+        assert lst == []
+
+        lst = state_l1_l11_l111_l1111_l11112.list_on_during_aspects(aspect="after")
+        assert lst == []
+
+        lst = state_l1_l11_l111_l1111_l11112.list_on_during_aspects(is_abstract=False)
+        assert lst == []
+
+        lst = state_l1_l11_l111_l1111_l11112.list_on_during_aspects(
+            is_abstract=False, aspect="before"
+        )
+        assert lst == []
+
+        lst = state_l1_l11_l111_l1111_l11112.list_on_during_aspects(
+            is_abstract=False, aspect="after"
+        )
+        assert lst == []
+
+        lst = state_l1_l11_l111_l1111_l11112.list_on_during_aspects(is_abstract=True)
+        assert lst == []
+
+        lst = state_l1_l11_l111_l1111_l11112.list_on_during_aspects(
+            is_abstract=True, aspect="before"
+        )
+        assert lst == []
+
+        lst = state_l1_l11_l111_l1111_l11112.list_on_during_aspects(
+            is_abstract=True, aspect="after"
+        )
+        assert lst == []
+
+    def test_state_l1_l11_l111_l1111_l11112_during_aspect_recursively(
         self, state_l1_l11_l111_l1111_l11112
     ):
         lst = state_l1_l11_l111_l1111_l11112.list_on_during_aspect_recursively()
@@ -2153,6 +2361,7 @@ class TestModelStateL1:
             "E1": Event(name="E1", state_path=("L1", "L11", "L111", "L1111", "L11113"))
         }
         assert state_l1_l11_l111_l1111_l11113.transitions == []
+        assert state_l1_l11_l111_l1111_l11113.named_functions == {}
         assert state_l1_l11_l111_l1111_l11113.on_enters == []
         assert state_l1_l11_l111_l1111_l11113.on_durings == []
         assert state_l1_l11_l111_l1111_l11113.on_exits == []
@@ -2262,7 +2471,45 @@ class TestModelStateL1:
             is_pseudo=False,
         )
 
-    def test_state_l1_l11_l111_l1111_l11113_during_aspect(
+    def test_state_l1_l11_l111_l1111_l11113_during_aspects(
+        self, state_l1_l11_l111_l1111_l11113
+    ):
+        lst = state_l1_l11_l111_l1111_l11113.list_on_during_aspects()
+        assert lst == []
+
+        lst = state_l1_l11_l111_l1111_l11113.list_on_during_aspects(aspect="before")
+        assert lst == []
+
+        lst = state_l1_l11_l111_l1111_l11113.list_on_during_aspects(aspect="after")
+        assert lst == []
+
+        lst = state_l1_l11_l111_l1111_l11113.list_on_during_aspects(is_abstract=False)
+        assert lst == []
+
+        lst = state_l1_l11_l111_l1111_l11113.list_on_during_aspects(
+            is_abstract=False, aspect="before"
+        )
+        assert lst == []
+
+        lst = state_l1_l11_l111_l1111_l11113.list_on_during_aspects(
+            is_abstract=False, aspect="after"
+        )
+        assert lst == []
+
+        lst = state_l1_l11_l111_l1111_l11113.list_on_during_aspects(is_abstract=True)
+        assert lst == []
+
+        lst = state_l1_l11_l111_l1111_l11113.list_on_during_aspects(
+            is_abstract=True, aspect="before"
+        )
+        assert lst == []
+
+        lst = state_l1_l11_l111_l1111_l11113.list_on_during_aspects(
+            is_abstract=True, aspect="after"
+        )
+        assert lst == []
+
+    def test_state_l1_l11_l111_l1111_l11113_during_aspect_recursively(
         self, state_l1_l11_l111_l1111_l11113
     ):
         lst = state_l1_l11_l111_l1111_l11113.list_on_during_aspect_recursively()
@@ -2281,6 +2528,7 @@ class TestModelStateL1:
             "E1": Event(name="E1", state_path=("L1", "L11", "L111", "L1112"))
         }
         assert state_l1_l11_l111_l1112.transitions == []
+        assert state_l1_l11_l111_l1112.named_functions == {}
         assert state_l1_l11_l111_l1112.on_enters == []
         assert state_l1_l11_l111_l1112.on_durings == []
         assert state_l1_l11_l111_l1112.on_exits == []
@@ -2364,7 +2612,45 @@ class TestModelStateL1:
             is_pseudo=False,
         )
 
-    def test_state_l1_l11_l111_l1112_during_aspect(self, state_l1_l11_l111_l1112):
+    def test_state_l1_l11_l111_l1112_during_aspects(self, state_l1_l11_l111_l1112):
+        lst = state_l1_l11_l111_l1112.list_on_during_aspects()
+        assert lst == []
+
+        lst = state_l1_l11_l111_l1112.list_on_during_aspects(aspect="before")
+        assert lst == []
+
+        lst = state_l1_l11_l111_l1112.list_on_during_aspects(aspect="after")
+        assert lst == []
+
+        lst = state_l1_l11_l111_l1112.list_on_during_aspects(is_abstract=False)
+        assert lst == []
+
+        lst = state_l1_l11_l111_l1112.list_on_during_aspects(
+            is_abstract=False, aspect="before"
+        )
+        assert lst == []
+
+        lst = state_l1_l11_l111_l1112.list_on_during_aspects(
+            is_abstract=False, aspect="after"
+        )
+        assert lst == []
+
+        lst = state_l1_l11_l111_l1112.list_on_during_aspects(is_abstract=True)
+        assert lst == []
+
+        lst = state_l1_l11_l111_l1112.list_on_during_aspects(
+            is_abstract=True, aspect="before"
+        )
+        assert lst == []
+
+        lst = state_l1_l11_l111_l1112.list_on_during_aspects(
+            is_abstract=True, aspect="after"
+        )
+        assert lst == []
+
+    def test_state_l1_l11_l111_l1112_during_aspect_recursively(
+        self, state_l1_l11_l111_l1112
+    ):
         lst = state_l1_l11_l111_l1112.list_on_during_aspect_recursively()
         assert lst == []
 
@@ -2379,6 +2665,7 @@ class TestModelStateL1:
             "E1": Event(name="E1", state_path=("L1", "L11", "L111", "L1113"))
         }
         assert state_l1_l11_l111_l1113.transitions == []
+        assert state_l1_l11_l111_l1113.named_functions == {}
         assert state_l1_l11_l111_l1113.on_enters == []
         assert state_l1_l11_l111_l1113.on_durings == []
         assert state_l1_l11_l111_l1113.on_exits == []
@@ -2462,7 +2749,45 @@ class TestModelStateL1:
             is_pseudo=False,
         )
 
-    def test_state_l1_l11_l111_l1113_during_aspect(self, state_l1_l11_l111_l1113):
+    def test_state_l1_l11_l111_l1113_during_aspects(self, state_l1_l11_l111_l1113):
+        lst = state_l1_l11_l111_l1113.list_on_during_aspects()
+        assert lst == []
+
+        lst = state_l1_l11_l111_l1113.list_on_during_aspects(aspect="before")
+        assert lst == []
+
+        lst = state_l1_l11_l111_l1113.list_on_during_aspects(aspect="after")
+        assert lst == []
+
+        lst = state_l1_l11_l111_l1113.list_on_during_aspects(is_abstract=False)
+        assert lst == []
+
+        lst = state_l1_l11_l111_l1113.list_on_during_aspects(
+            is_abstract=False, aspect="before"
+        )
+        assert lst == []
+
+        lst = state_l1_l11_l111_l1113.list_on_during_aspects(
+            is_abstract=False, aspect="after"
+        )
+        assert lst == []
+
+        lst = state_l1_l11_l111_l1113.list_on_during_aspects(is_abstract=True)
+        assert lst == []
+
+        lst = state_l1_l11_l111_l1113.list_on_during_aspects(
+            is_abstract=True, aspect="before"
+        )
+        assert lst == []
+
+        lst = state_l1_l11_l111_l1113.list_on_during_aspects(
+            is_abstract=True, aspect="after"
+        )
+        assert lst == []
+
+    def test_state_l1_l11_l111_l1113_during_aspect_recursively(
+        self, state_l1_l11_l111_l1113
+    ):
         lst = state_l1_l11_l111_l1113.list_on_during_aspect_recursively()
         assert lst == []
 
@@ -2477,6 +2802,7 @@ class TestModelStateL1:
             "E1": Event(name="E1", state_path=("L1", "L11", "L112"))
         }
         assert state_l1_l11_l112.transitions == []
+        assert state_l1_l11_l112.named_functions == {}
         assert state_l1_l11_l112.on_enters == []
         assert state_l1_l11_l112.on_durings == []
         assert state_l1_l11_l112.on_exits == []
@@ -2544,7 +2870,41 @@ class TestModelStateL1:
             is_pseudo=False,
         )
 
-    def test_state_l1_l11_l112_during_aspect(self, state_l1_l11_l112):
+    def test_state_l1_l11_l112_during_aspects(self, state_l1_l11_l112):
+        lst = state_l1_l11_l112.list_on_during_aspects()
+        assert lst == []
+
+        lst = state_l1_l11_l112.list_on_during_aspects(aspect="before")
+        assert lst == []
+
+        lst = state_l1_l11_l112.list_on_during_aspects(aspect="after")
+        assert lst == []
+
+        lst = state_l1_l11_l112.list_on_during_aspects(is_abstract=False)
+        assert lst == []
+
+        lst = state_l1_l11_l112.list_on_during_aspects(
+            is_abstract=False, aspect="before"
+        )
+        assert lst == []
+
+        lst = state_l1_l11_l112.list_on_during_aspects(
+            is_abstract=False, aspect="after"
+        )
+        assert lst == []
+
+        lst = state_l1_l11_l112.list_on_during_aspects(is_abstract=True)
+        assert lst == []
+
+        lst = state_l1_l11_l112.list_on_during_aspects(
+            is_abstract=True, aspect="before"
+        )
+        assert lst == []
+
+        lst = state_l1_l11_l112.list_on_during_aspects(is_abstract=True, aspect="after")
+        assert lst == []
+
+    def test_state_l1_l11_l112_during_aspect_recursively(self, state_l1_l11_l112):
         lst = state_l1_l11_l112.list_on_during_aspect_recursively()
         assert lst == []
 
@@ -2559,6 +2919,7 @@ class TestModelStateL1:
             "E1": Event(name="E1", state_path=("L1", "L11", "L113"))
         }
         assert state_l1_l11_l113.transitions == []
+        assert state_l1_l11_l113.named_functions == {}
         assert state_l1_l11_l113.on_enters == []
         assert state_l1_l11_l113.on_durings == []
         assert state_l1_l11_l113.on_exits == []
@@ -2626,7 +2987,41 @@ class TestModelStateL1:
             is_pseudo=False,
         )
 
-    def test_state_l1_l11_l113_during_aspect(self, state_l1_l11_l113):
+    def test_state_l1_l11_l113_during_aspects(self, state_l1_l11_l113):
+        lst = state_l1_l11_l113.list_on_during_aspects()
+        assert lst == []
+
+        lst = state_l1_l11_l113.list_on_during_aspects(aspect="before")
+        assert lst == []
+
+        lst = state_l1_l11_l113.list_on_during_aspects(aspect="after")
+        assert lst == []
+
+        lst = state_l1_l11_l113.list_on_during_aspects(is_abstract=False)
+        assert lst == []
+
+        lst = state_l1_l11_l113.list_on_during_aspects(
+            is_abstract=False, aspect="before"
+        )
+        assert lst == []
+
+        lst = state_l1_l11_l113.list_on_during_aspects(
+            is_abstract=False, aspect="after"
+        )
+        assert lst == []
+
+        lst = state_l1_l11_l113.list_on_during_aspects(is_abstract=True)
+        assert lst == []
+
+        lst = state_l1_l11_l113.list_on_during_aspects(
+            is_abstract=True, aspect="before"
+        )
+        assert lst == []
+
+        lst = state_l1_l11_l113.list_on_during_aspects(is_abstract=True, aspect="after")
+        assert lst == []
+
+    def test_state_l1_l11_l113_during_aspect_recursively(self, state_l1_l11_l113):
         lst = state_l1_l11_l113.list_on_during_aspect_recursively()
         assert lst == []
 
@@ -2639,6 +3034,7 @@ class TestModelStateL1:
         assert sorted(state_l1_l12.substates.keys()) == []
         assert state_l1_l12.events == {}
         assert state_l1_l12.transitions == []
+        assert state_l1_l12.named_functions == {}
         assert state_l1_l12.on_enters == []
         assert state_l1_l12.on_durings == []
         assert state_l1_l12.on_exits == []
@@ -2686,7 +3082,35 @@ class TestModelStateL1:
             is_pseudo=False,
         )
 
-    def test_state_l1_l12_during_aspect(self, state_l1_l12):
+    def test_state_l1_l12_during_aspects(self, state_l1_l12):
+        lst = state_l1_l12.list_on_during_aspects()
+        assert lst == []
+
+        lst = state_l1_l12.list_on_during_aspects(aspect="before")
+        assert lst == []
+
+        lst = state_l1_l12.list_on_during_aspects(aspect="after")
+        assert lst == []
+
+        lst = state_l1_l12.list_on_during_aspects(is_abstract=False)
+        assert lst == []
+
+        lst = state_l1_l12.list_on_during_aspects(is_abstract=False, aspect="before")
+        assert lst == []
+
+        lst = state_l1_l12.list_on_during_aspects(is_abstract=False, aspect="after")
+        assert lst == []
+
+        lst = state_l1_l12.list_on_during_aspects(is_abstract=True)
+        assert lst == []
+
+        lst = state_l1_l12.list_on_during_aspects(is_abstract=True, aspect="before")
+        assert lst == []
+
+        lst = state_l1_l12.list_on_during_aspects(is_abstract=True, aspect="after")
+        assert lst == []
+
+    def test_state_l1_l12_during_aspect_recursively(self, state_l1_l12):
         lst = state_l1_l12.list_on_during_aspect_recursively()
         assert lst == []
 

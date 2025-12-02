@@ -1,0 +1,33 @@
+def int a  = 0;
+
+state L1
+{
+    [*]->L2;
+    L2->[*];
+
+    during before
+    {
+        a = 1;
+    }
+
+    during before abstract mock;
+    >> during before abstract user_B;
+    >> during before abstract user_A;
+
+    enter ref L2.user_B;
+
+    state L2
+    {
+        [*]->L21;
+        L21->L22 :: E1;
+        L22->[*] :: E1;
+
+        >>during before abstract user_B;
+        >>during before abstract user_A;
+
+        exit inner_mock ref /mock;
+
+        pseudo state L21;
+        state L22;
+    }
+}

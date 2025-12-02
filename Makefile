@@ -17,8 +17,6 @@ RANGE_DIR      ?= .
 RANGE_TEST_DIR := ${TEST_DIR}/${RANGE_DIR}
 RANGE_SRC_DIR  := ${SRC_DIR}/${RANGE_DIR}
 
-GAMES ?= arknights fgo genshin girlsfrontline azurlane
-
 COV_TYPES ?= xml term-missing
 
 ANTLR_VERSION ?= 4.9.3
@@ -26,10 +24,13 @@ ANTLR_GRAMMAR_DIR  := ${SRC_DIR}/dsl/grammar
 ANTLR_GRAMMAR_FILE := ${ANTLR_GRAMMAR_DIR}/Grammar.g4
 
 # Sample test generation related variables
-SAMPLE_CODES_DIR := ${TESTFILE_DIR}/sample_codes
 MODEL_TEST_DIR   := ${TEST_DIR}/model
+SAMPLE_CODES_DIR := ${TESTFILE_DIR}/sample_codes
 SAMPLE_DSL_FILES := $(shell find ${SAMPLE_CODES_DIR} -name "*.fcstm" 2>/dev/null)
 SAMPLE_TEST_FILES := $(patsubst ${SAMPLE_CODES_DIR}/%.fcstm,${MODEL_TEST_DIR}/test_sample_%.py,${SAMPLE_DSL_FILES})
+SAMPLE_NEG_CODES_DIR := ${TESTFILE_DIR}/sample_neg_codes
+SAMPLE_NEG_DSL_FILES := $(shell find ${SAMPLE_NEG_CODES_DIR} -name "*.fcstm" 2>/dev/null)
+SAMPLE_NEG_TEST_FILES := $(patsubst ${SAMPLE_NEG_CODES_DIR}/%.fcstm,${MODEL_TEST_DIR}/test_sample_neg_%.py,${SAMPLE_NEG_DSL_FILES})
 
 
 package:
@@ -69,12 +70,18 @@ antlr_build:
 	ruff format ${ANTLR_GRAMMAR_DIR}
 
 # Generate sample test files
-sample: ${SAMPLE_TEST_FILES}
+sample: ${SAMPLE_TEST_FILES} ${SAMPLE_NEG_TEST_FILES}
 
 ${MODEL_TEST_DIR}/test_sample_%.py: ${SAMPLE_CODES_DIR}/%.fcstm
 	@mkdir -p ${MODEL_TEST_DIR}
 	UNITTEST=1 $(PYTHON) sample_test_generator.py -i $< -o $@
 	ruff format $@
 
+${MODEL_TEST_DIR}/test_sample_neg_%.py: ${SAMPLE_NEG_CODES_DIR}/%.fcstm
+	@mkdir -p ${MODEL_TEST_DIR}
+	UNITTEST=1 $(PYTHON) sample_test_neg_generator.py -i $< -o $@
+	ruff format $@
+
 sample_clean:
-	rm -f ${SAMPLE_TEST_FILES}
+	rm -rf ${SAMPLE_TEST_FILES}
+	rm -rf ${SAMPLE_NEG_TEST_FILES}

@@ -28,6 +28,8 @@ state L1
     >> during before abstract user_B;
     >> during before abstract user_A;
 
+    enter ref L2.user_B;
+
     state L2
     {
         [*]->L21;
@@ -36,6 +38,8 @@ state L1
 
         >>during before abstract user_B;
         >>during before abstract user_A;
+
+        exit inner_mock ref /mock;
 
         pseudo state L21;
         state L22;
@@ -152,7 +156,24 @@ class TestModelStateL1:
         assert not state_l1.named_functions["user_A"].is_ref
         assert state_l1.named_functions["user_A"].parent.name == "L1"
         assert state_l1.named_functions["user_A"].parent.path == ("L1",)
-        assert state_l1.on_enters == []
+        assert len(state_l1.on_enters) == 1
+        assert state_l1.on_enters[0].stage == "enter"
+        assert state_l1.on_enters[0].aspect is None
+        assert state_l1.on_enters[0].name is None
+        assert state_l1.on_enters[0].doc is None
+        assert state_l1.on_enters[0].operations == []
+        assert not state_l1.on_enters[0].is_abstract
+        assert state_l1.on_enters[0].state_path == ("L1", None)
+        assert state_l1.on_enters[0].ref.name == "user_B"
+        assert state_l1.on_enters[0].ref.aspect == "before"
+        assert state_l1.on_enters[0].ref.state_path == ("L1", "L2", "user_B")
+        assert state_l1.on_enters[0].ref_state_path == ("L1", "L2", "user_B")
+        assert state_l1.on_enters[0].parent_ref().name == "L1"
+        assert state_l1.on_enters[0].parent_ref().path == ("L1",)
+        assert not state_l1.on_enters[0].is_aspect
+        assert state_l1.on_enters[0].is_ref
+        assert state_l1.on_enters[0].parent.name == "L1"
+        assert state_l1.on_enters[0].parent.path == ("L1",)
         assert len(state_l1.on_durings) == 2
         assert state_l1.on_durings[0].stage == "during"
         assert state_l1.on_durings[0].aspect == "before"
@@ -291,7 +312,32 @@ class TestModelStateL1:
         assert not state_l1.non_abstract_on_durings[0].is_ref
         assert state_l1.non_abstract_on_durings[0].parent.name == "L1"
         assert state_l1.non_abstract_on_durings[0].parent.path == ("L1",)
-        assert state_l1.non_abstract_on_enters == []
+        assert len(state_l1.non_abstract_on_enters) == 1
+        assert state_l1.non_abstract_on_enters[0].stage == "enter"
+        assert state_l1.non_abstract_on_enters[0].aspect is None
+        assert state_l1.non_abstract_on_enters[0].name is None
+        assert state_l1.non_abstract_on_enters[0].doc is None
+        assert state_l1.non_abstract_on_enters[0].operations == []
+        assert not state_l1.non_abstract_on_enters[0].is_abstract
+        assert state_l1.non_abstract_on_enters[0].state_path == ("L1", None)
+        assert state_l1.non_abstract_on_enters[0].ref.name == "user_B"
+        assert state_l1.non_abstract_on_enters[0].ref.aspect == "before"
+        assert state_l1.non_abstract_on_enters[0].ref.state_path == (
+            "L1",
+            "L2",
+            "user_B",
+        )
+        assert state_l1.non_abstract_on_enters[0].ref_state_path == (
+            "L1",
+            "L2",
+            "user_B",
+        )
+        assert state_l1.non_abstract_on_enters[0].parent_ref().name == "L1"
+        assert state_l1.non_abstract_on_enters[0].parent_ref().path == ("L1",)
+        assert not state_l1.non_abstract_on_enters[0].is_aspect
+        assert state_l1.non_abstract_on_enters[0].is_ref
+        assert state_l1.non_abstract_on_enters[0].parent.name == "L1"
+        assert state_l1.non_abstract_on_enters[0].parent.path == ("L1",)
         assert state_l1.non_abstract_on_exits == []
         assert state_l1.parent is None
         assert len(state_l1.transitions_entering_children) == 1
@@ -393,7 +439,12 @@ class TestModelStateL1:
                     ],
                     enters=[],
                     durings=[],
-                    exits=[],
+                    exits=[
+                        dsl_nodes.ExitRefFunction(
+                            name="inner_mock",
+                            ref=dsl_nodes.ChainID(path=["mock"], is_absolute=True),
+                        )
+                    ],
                     during_aspects=[
                         dsl_nodes.DuringAspectAbstractFunction(
                             name="user_B", aspect="before", doc=None
@@ -422,7 +473,12 @@ class TestModelStateL1:
                     post_operations=[],
                 ),
             ],
-            enters=[],
+            enters=[
+                dsl_nodes.EnterRefFunction(
+                    name=None,
+                    ref=dsl_nodes.ChainID(path=["L2", "user_B"], is_absolute=False),
+                )
+            ],
             durings=[
                 dsl_nodes.DuringOperations(
                     aspect="before",
@@ -637,7 +693,41 @@ class TestModelStateL1:
         assert state_l1_l2.transitions[2].effects == []
         assert state_l1_l2.transitions[2].parent_ref().name == "L2"
         assert state_l1_l2.transitions[2].parent_ref().path == ("L1", "L2")
-        assert sorted(state_l1_l2.named_functions.keys()) == ["user_A", "user_B"]
+        assert sorted(state_l1_l2.named_functions.keys()) == [
+            "inner_mock",
+            "user_A",
+            "user_B",
+        ]
+        assert state_l1_l2.named_functions["inner_mock"].stage == "exit"
+        assert state_l1_l2.named_functions["inner_mock"].aspect is None
+        assert state_l1_l2.named_functions["inner_mock"].name == "inner_mock"
+        assert state_l1_l2.named_functions["inner_mock"].doc is None
+        assert state_l1_l2.named_functions["inner_mock"].operations == []
+        assert not state_l1_l2.named_functions["inner_mock"].is_abstract
+        assert state_l1_l2.named_functions["inner_mock"].state_path == (
+            "L1",
+            "L2",
+            "inner_mock",
+        )
+        assert state_l1_l2.named_functions["inner_mock"].ref.name == "mock"
+        assert state_l1_l2.named_functions["inner_mock"].ref.aspect == "before"
+        assert state_l1_l2.named_functions["inner_mock"].ref.state_path == (
+            "L1",
+            "mock",
+        )
+        assert state_l1_l2.named_functions["inner_mock"].ref_state_path == (
+            "L1",
+            "mock",
+        )
+        assert state_l1_l2.named_functions["inner_mock"].parent_ref().name == "L2"
+        assert state_l1_l2.named_functions["inner_mock"].parent_ref().path == (
+            "L1",
+            "L2",
+        )
+        assert not state_l1_l2.named_functions["inner_mock"].is_aspect
+        assert state_l1_l2.named_functions["inner_mock"].is_ref
+        assert state_l1_l2.named_functions["inner_mock"].parent.name == "L2"
+        assert state_l1_l2.named_functions["inner_mock"].parent.path == ("L1", "L2")
         assert state_l1_l2.named_functions["user_B"].stage == "during"
         assert state_l1_l2.named_functions["user_B"].aspect == "before"
         assert state_l1_l2.named_functions["user_B"].name == "user_B"
@@ -678,7 +768,24 @@ class TestModelStateL1:
         assert state_l1_l2.named_functions["user_A"].parent.path == ("L1", "L2")
         assert state_l1_l2.on_enters == []
         assert state_l1_l2.on_durings == []
-        assert state_l1_l2.on_exits == []
+        assert len(state_l1_l2.on_exits) == 1
+        assert state_l1_l2.on_exits[0].stage == "exit"
+        assert state_l1_l2.on_exits[0].aspect is None
+        assert state_l1_l2.on_exits[0].name == "inner_mock"
+        assert state_l1_l2.on_exits[0].doc is None
+        assert state_l1_l2.on_exits[0].operations == []
+        assert not state_l1_l2.on_exits[0].is_abstract
+        assert state_l1_l2.on_exits[0].state_path == ("L1", "L2", "inner_mock")
+        assert state_l1_l2.on_exits[0].ref.name == "mock"
+        assert state_l1_l2.on_exits[0].ref.aspect == "before"
+        assert state_l1_l2.on_exits[0].ref.state_path == ("L1", "mock")
+        assert state_l1_l2.on_exits[0].ref_state_path == ("L1", "mock")
+        assert state_l1_l2.on_exits[0].parent_ref().name == "L2"
+        assert state_l1_l2.on_exits[0].parent_ref().path == ("L1", "L2")
+        assert not state_l1_l2.on_exits[0].is_aspect
+        assert state_l1_l2.on_exits[0].is_ref
+        assert state_l1_l2.on_exits[0].parent.name == "L2"
+        assert state_l1_l2.on_exits[0].parent.path == ("L1", "L2")
         assert len(state_l1_l2.on_during_aspects) == 2
         assert state_l1_l2.on_during_aspects[0].stage == "during"
         assert state_l1_l2.on_during_aspects[0].aspect == "before"
@@ -767,7 +874,28 @@ class TestModelStateL1:
         assert state_l1_l2.non_abstract_on_during_aspects == []
         assert state_l1_l2.non_abstract_on_durings == []
         assert state_l1_l2.non_abstract_on_enters == []
-        assert state_l1_l2.non_abstract_on_exits == []
+        assert len(state_l1_l2.non_abstract_on_exits) == 1
+        assert state_l1_l2.non_abstract_on_exits[0].stage == "exit"
+        assert state_l1_l2.non_abstract_on_exits[0].aspect is None
+        assert state_l1_l2.non_abstract_on_exits[0].name == "inner_mock"
+        assert state_l1_l2.non_abstract_on_exits[0].doc is None
+        assert state_l1_l2.non_abstract_on_exits[0].operations == []
+        assert not state_l1_l2.non_abstract_on_exits[0].is_abstract
+        assert state_l1_l2.non_abstract_on_exits[0].state_path == (
+            "L1",
+            "L2",
+            "inner_mock",
+        )
+        assert state_l1_l2.non_abstract_on_exits[0].ref.name == "mock"
+        assert state_l1_l2.non_abstract_on_exits[0].ref.aspect == "before"
+        assert state_l1_l2.non_abstract_on_exits[0].ref.state_path == ("L1", "mock")
+        assert state_l1_l2.non_abstract_on_exits[0].ref_state_path == ("L1", "mock")
+        assert state_l1_l2.non_abstract_on_exits[0].parent_ref().name == "L2"
+        assert state_l1_l2.non_abstract_on_exits[0].parent_ref().path == ("L1", "L2")
+        assert not state_l1_l2.non_abstract_on_exits[0].is_aspect
+        assert state_l1_l2.non_abstract_on_exits[0].is_ref
+        assert state_l1_l2.non_abstract_on_exits[0].parent.name == "L2"
+        assert state_l1_l2.non_abstract_on_exits[0].parent.path == ("L1", "L2")
         assert state_l1_l2.parent.name == "L1"
         assert state_l1_l2.parent.path == ("L1",)
         assert len(state_l1_l2.transitions_entering_children) == 1
@@ -867,7 +995,12 @@ class TestModelStateL1:
             ],
             enters=[],
             durings=[],
-            exits=[],
+            exits=[
+                dsl_nodes.ExitRefFunction(
+                    name="inner_mock",
+                    ref=dsl_nodes.ChainID(path=["mock"], is_absolute=True),
+                )
+            ],
             during_aspects=[
                 dsl_nodes.DuringAspectAbstractFunction(
                     name="user_B", aspect="before", doc=None
@@ -1391,6 +1524,7 @@ class TestModelStateL1:
             expect=textwrap.dedent("""
 def int a = 0;
 state L1 {
+    enter ref L2.user_B;
     during before {
         a = 1;
     }
@@ -1398,6 +1532,7 @@ state L1 {
     >> during before abstract user_B;
     >> during before abstract user_A;
     state L2 {
+        exit inner_mock ref /mock;
         >> during before abstract user_B;
         >> during before abstract user_A;
         pseudo state L21;
@@ -1432,11 +1567,11 @@ state "L1" as l1 {
         l1__l2__l21 --> l1__l2__l22 : L21.E1
         l1__l2__l22 --> [*] : L22.E1
     }
-    l1__l2 : >> during before abstract user_B;\\n>> during before abstract user_A;
+    l1__l2 : exit inner_mock ref /mock;\\n>> during before abstract user_B;\\n>> during before abstract user_A;
     [*] --> l1__l2
     l1__l2 --> [*]
 }
-l1 : during before {\\n    a = 1;\\n}\\nduring before abstract mock;\\n>> during before abstract user_B;\\n>> during before abstract user_A;
+l1 : enter ref L2.user_B;\\nduring before {\\n    a = 1;\\n}\\nduring before abstract mock;\\n>> during before abstract user_B;\\n>> during before abstract user_A;
 [*] --> l1
 l1 --> [*]
 @enduml

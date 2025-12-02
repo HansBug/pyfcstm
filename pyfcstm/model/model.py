@@ -213,6 +213,14 @@ class OnStage(AstExportable):
     :type operations: List[Operation]
     :param is_abstract: Whether this is an abstract function declaration
     :type is_abstract: bool
+    :param state_path: The path to the state that owns this action
+    :type state_path: Tuple[Optional[str], ...]
+    :param ref: Reference to another OnStage or OnAspect for function references
+    :type ref: Union['OnStage', 'OnAspect', None]
+    :param ref_state_path: The path to the referenced state for function references
+    :type ref_state_path: Optional[Tuple[str, ...]]
+    :param parent_ref: Weak reference to the parent state
+    :type parent_ref: Optional[weakref.ReferenceType]
 
     Example::
 
@@ -222,7 +230,8 @@ class OnStage(AstExportable):
         ...     name="init_counter",
         ...     doc=None,
         ...     operations=[],
-        ...     is_abstract=False
+        ...     is_abstract=False,
+        ...     state_path=("root", "init_counter")
         ... )
     """
     stage: str
@@ -239,7 +248,7 @@ class OnStage(AstExportable):
     @property
     def parent(self) -> Optional['State']:
         """
-        Get the parent state of this transition.
+        Get the parent state of this action.
 
         :return: The parent state or None if no parent is set
         :rtype: Optional['State']
@@ -252,7 +261,7 @@ class OnStage(AstExportable):
     @parent.setter
     def parent(self, new_parent: Optional['State']):
         """
-        Set the parent state of this transition.
+        Set the parent state of this action.
 
         :param new_parent: The new parent state or None to clear the parent
         :type new_parent: Optional['State']
@@ -264,6 +273,12 @@ class OnStage(AstExportable):
 
     @property
     def is_ref(self) -> bool:
+        """
+        Check if this action is a reference to another function.
+
+        :return: True if this is a reference, False otherwise
+        :rtype: bool
+        """
         return bool(self.ref)
 
     @property
@@ -376,6 +391,14 @@ class OnAspect(AstExportable):
     :type operations: List[Operation]
     :param is_abstract: Whether this is an abstract function declaration
     :type is_abstract: bool
+    :param state_path: The path to the state that owns this action
+    :type state_path: Tuple[Optional[str], ...]
+    :param ref: Reference to another OnStage or OnAspect for function references
+    :type ref: Union['OnStage', 'OnAspect', None]
+    :param ref_state_path: The path to the referenced state for function references
+    :type ref_state_path: Optional[Tuple[str, ...]]
+    :param parent_ref: Weak reference to the parent state
+    :type parent_ref: Optional[weakref.ReferenceType]
 
     Example::
 
@@ -385,7 +408,8 @@ class OnAspect(AstExportable):
         ...     name="log_entry",
         ...     doc=None,
         ...     operations=[],
-        ...     is_abstract=True
+        ...     is_abstract=True,
+        ...     state_path=("root", "log_entry")
         ... )
     """
     stage: str
@@ -402,7 +426,7 @@ class OnAspect(AstExportable):
     @property
     def parent(self) -> Optional['State']:
         """
-        Get the parent state of this transition.
+        Get the parent state of this aspect action.
 
         :return: The parent state or None if no parent is set
         :rtype: Optional['State']
@@ -415,7 +439,7 @@ class OnAspect(AstExportable):
     @parent.setter
     def parent(self, new_parent: Optional['State']):
         """
-        Set the parent state of this transition.
+        Set the parent state of this aspect action.
 
         :param new_parent: The new parent state or None to clear the parent
         :type new_parent: Optional['State']
@@ -427,6 +451,12 @@ class OnAspect(AstExportable):
 
     @property
     def is_ref(self) -> bool:
+        """
+        Check if this action is a reference to another function.
+
+        :return: True if this is a reference, False otherwise
+        :rtype: bool
+        """
         return bool(self.ref)
 
     @property
@@ -494,6 +524,8 @@ class State(AstExportable, PlantUMLExportable):
     :type events: Dict[str, Event]
     :param transitions: List of transitions between substates
     :type transitions: List[Transition]
+    :param named_functions: Dictionary mapping function names to their implementations
+    :type named_functions: Dict[str, Union[OnStage, OnAspect]]
     :param on_enters: List of actions to execute when entering the state
     :type on_enters: List[OnStage]
     :param on_durings: List of actions to execute while in the state
@@ -506,6 +538,8 @@ class State(AstExportable, PlantUMLExportable):
     :type parent_ref: Optional[weakref.ReferenceType]
     :param substate_name_to_id: Dictionary mapping substate names to numeric IDs
     :type substate_name_to_id: Dict[str, int]
+    :param is_pseudo: Whether this is a pseudo state
+    :type is_pseudo: bool
 
     Example::
 
@@ -533,7 +567,7 @@ class State(AstExportable, PlantUMLExportable):
 
     def __post_init__(self):
         """
-        Initialize the substate_name_to_id dictionary after instance creation.
+        Initialize default values for optional fields after instance creation.
         """
         self.events = self.events or {}
         self.transitions = self.transitions or []

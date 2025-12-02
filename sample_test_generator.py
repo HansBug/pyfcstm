@@ -310,13 +310,13 @@ def sample_generation_to_file(code: str, test_file: str):
                                     file=tf)
                             elif os_field_name == 'ref':
                                 print(
-                                    f'        assert on_stage.{os_field_name}.name == {obj_item_v.name!r}',
+                                    f'        assert on_stage.{os_field_name}.name == {on_stage_v.name!r}',
                                     file=tf)
                                 print(
-                                    f'        assert on_stage.{os_field_name}.aspect == {obj_item_v.aspect!r}',
+                                    f'        assert on_stage.{os_field_name}.aspect == {on_stage_v.aspect!r}',
                                     file=tf)
                                 print(
-                                    f'        assert on_stage.{os_field_name}.state_path == {obj_item_v.state_path!r}',
+                                    f'        assert on_stage.{os_field_name}.state_path == {on_stage_v.state_path!r}',
                                     file=tf)
                             else:
                                 print(
@@ -374,13 +374,13 @@ def sample_generation_to_file(code: str, test_file: str):
                                     file=tf)
                             elif os_field_name == 'ref':
                                 print(
-                                    f'        assert on_stage.{os_field_name}.name == {obj_item_v.name!r}',
+                                    f'        assert on_stage.{os_field_name}.name == {on_stage_v.name!r}',
                                     file=tf)
                                 print(
-                                    f'        assert on_stage.{os_field_name}.aspect == {obj_item_v.aspect!r}',
+                                    f'        assert on_stage.{os_field_name}.aspect == {on_stage_v.aspect!r}',
                                     file=tf)
                                 print(
-                                    f'        assert on_stage.{os_field_name}.state_path == {obj_item_v.state_path!r}',
+                                    f'        assert on_stage.{os_field_name}.state_path == {on_stage_v.state_path!r}',
                                     file=tf)
                             else:
                                 print(
@@ -435,13 +435,13 @@ def sample_generation_to_file(code: str, test_file: str):
                                     file=tf)
                             elif os_field_name == 'ref':
                                 print(
-                                    f'        assert on_stage.{os_field_name}.name == {obj_item_v.name!r}',
+                                    f'        assert on_stage.{os_field_name}.name == {on_stage_v.name!r}',
                                     file=tf)
                                 print(
-                                    f'        assert on_stage.{os_field_name}.aspect == {obj_item_v.aspect!r}',
+                                    f'        assert on_stage.{os_field_name}.aspect == {on_stage_v.aspect!r}',
                                     file=tf)
                                 print(
-                                    f'        assert on_stage.{os_field_name}.state_path == {obj_item_v.state_path!r}',
+                                    f'        assert on_stage.{os_field_name}.state_path == {on_stage_v.state_path!r}',
                                     file=tf)
                             else:
                                 print(

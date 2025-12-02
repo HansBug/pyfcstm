@@ -254,7 +254,7 @@ class OnStage(AstExportable):
         :rtype: Optional['State']
         """
         if self.parent_ref is None:
-            return None
+            return None  # pragma: no cover
         else:
             return self.parent_ref()
 
@@ -432,7 +432,7 @@ class OnAspect(AstExportable):
         :rtype: Optional['State']
         """
         if self.parent_ref is None:
-            return None
+            return None  # pragma: no cover
         else:
             return self.parent_ref()
 

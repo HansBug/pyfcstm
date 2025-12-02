@@ -1352,7 +1352,6 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                     operations=[],
                     is_abstract=False,
                     state_path=(*current_path, enter_item.name),
-                    # TODO: add part of enter ref function
                     ref=None,
                     ref_state_path=(
                         *((dnode.root_state.name,) if enter_item.ref.is_absolute else current_path),
@@ -1761,7 +1760,7 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                     if segment not in state.substates:
                         raise SyntaxError(f'Cannot find state {".".join(func_item.ref_state_path[:i + 1])} '
                                           f'under state {".".join(func_item.ref_state_path[:i])}, '
-                                          f'so cannot resolve reference {".".join(func_item.ref_state_path)} of function: {func_item.to_ast_node()}.')
+                                          f'so cannot resolve reference {".".join(func_item.ref_state_path)!r}.')
                     state = state.substates[segment]
 
                 segment = func_item.ref_state_path[-1]

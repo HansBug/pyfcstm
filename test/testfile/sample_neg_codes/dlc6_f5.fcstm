@@ -1,0 +1,12 @@
+state L1 {
+    [*] -> L21;
+    L21 -> L22;
+
+
+    enter ref L23.F1;
+
+    state L21 {
+        enter F1 {}
+    }
+    state L22;
+}

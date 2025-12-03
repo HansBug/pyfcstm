@@ -798,6 +798,34 @@ class TestModelStateTrafficLight:
             is_pseudo=False,
         )
 
+    def test_state_trafficlight_list_on_enters(self, state_trafficlight):
+        lst = state_trafficlight.list_on_enters()
+        assert lst == []
+
+        lst = state_trafficlight.list_on_enters(with_ids=False)
+        assert lst == []
+
+        lst = state_trafficlight.list_on_enters(with_ids=True)
+        assert lst == []
+
+        lst = state_trafficlight.list_on_enters(is_abstract=False)
+        assert lst == []
+
+        lst = state_trafficlight.list_on_enters(is_abstract=False, with_ids=False)
+        assert lst == []
+
+        lst = state_trafficlight.list_on_enters(is_abstract=False, with_ids=True)
+        assert lst == []
+
+        lst = state_trafficlight.list_on_enters(is_abstract=True)
+        assert lst == []
+
+        lst = state_trafficlight.list_on_enters(is_abstract=True, with_ids=False)
+        assert lst == []
+
+        lst = state_trafficlight.list_on_enters(is_abstract=True, with_ids=True)
+        assert lst == []
+
     def test_state_trafficlight_during_aspects(self, state_trafficlight):
         lst = state_trafficlight.list_on_during_aspects()
         assert len(lst) == 4
@@ -2120,6 +2148,306 @@ class TestModelStateTrafficLight:
             is_pseudo=False,
         )
 
+    def test_state_trafficlight_inservice_list_on_enters(
+        self, state_trafficlight_inservice
+    ):
+        lst = state_trafficlight_inservice.list_on_enters()
+        assert len(lst) == 2
+        on_stage = lst[0]
+        assert on_stage.stage == "enter"
+        assert on_stage.aspect is None
+        assert on_stage.name is None
+        assert on_stage.doc is None
+        assert on_stage.operations == [
+            Operation(var_name="a", expr=Integer(value=0)),
+            Operation(var_name="b", expr=Integer(value=0)),
+            Operation(var_name="round_count", expr=Integer(value=0)),
+        ]
+        assert not on_stage.is_abstract
+        assert on_stage.state_path == ("TrafficLight", "InService", None)
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "InService"
+        assert on_stage.parent_ref().path == ("TrafficLight", "InService")
+        assert not on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "InService"
+        assert on_stage.parent.path == ("TrafficLight", "InService")
+        on_stage = lst[1]
+        assert on_stage.stage == "enter"
+        assert on_stage.aspect is None
+        assert on_stage.name == "InServiceAbstractEnter"
+        assert (
+            on_stage.doc
+            == "Abstract Operation When Entering State 'InService'\nTODO: Should be Implemented In Generated Code Framework"
+        )
+        assert on_stage.operations == []
+        assert on_stage.is_abstract
+        assert on_stage.state_path == (
+            "TrafficLight",
+            "InService",
+            "InServiceAbstractEnter",
+        )
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "InService"
+        assert on_stage.parent_ref().path == ("TrafficLight", "InService")
+        assert not on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "InService"
+        assert on_stage.parent.path == ("TrafficLight", "InService")
+
+        lst = state_trafficlight_inservice.list_on_enters(with_ids=False)
+        assert len(lst) == 2
+        on_stage = lst[0]
+        assert on_stage.stage == "enter"
+        assert on_stage.aspect is None
+        assert on_stage.name is None
+        assert on_stage.doc is None
+        assert on_stage.operations == [
+            Operation(var_name="a", expr=Integer(value=0)),
+            Operation(var_name="b", expr=Integer(value=0)),
+            Operation(var_name="round_count", expr=Integer(value=0)),
+        ]
+        assert not on_stage.is_abstract
+        assert on_stage.state_path == ("TrafficLight", "InService", None)
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "InService"
+        assert on_stage.parent_ref().path == ("TrafficLight", "InService")
+        assert not on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "InService"
+        assert on_stage.parent.path == ("TrafficLight", "InService")
+        on_stage = lst[1]
+        assert on_stage.stage == "enter"
+        assert on_stage.aspect is None
+        assert on_stage.name == "InServiceAbstractEnter"
+        assert (
+            on_stage.doc
+            == "Abstract Operation When Entering State 'InService'\nTODO: Should be Implemented In Generated Code Framework"
+        )
+        assert on_stage.operations == []
+        assert on_stage.is_abstract
+        assert on_stage.state_path == (
+            "TrafficLight",
+            "InService",
+            "InServiceAbstractEnter",
+        )
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "InService"
+        assert on_stage.parent_ref().path == ("TrafficLight", "InService")
+        assert not on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "InService"
+        assert on_stage.parent.path == ("TrafficLight", "InService")
+
+        lst = state_trafficlight_inservice.list_on_enters(with_ids=True)
+        assert len(lst) == 2
+        id_, on_stage = lst[0]
+        assert id_ == 1
+        assert on_stage.stage == "enter"
+        assert on_stage.aspect is None
+        assert on_stage.name is None
+        assert on_stage.doc is None
+        assert on_stage.operations == [
+            Operation(var_name="a", expr=Integer(value=0)),
+            Operation(var_name="b", expr=Integer(value=0)),
+            Operation(var_name="round_count", expr=Integer(value=0)),
+        ]
+        assert not on_stage.is_abstract
+        assert on_stage.state_path == ("TrafficLight", "InService", None)
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "InService"
+        assert on_stage.parent_ref().path == ("TrafficLight", "InService")
+        assert not on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "InService"
+        assert on_stage.parent.path == ("TrafficLight", "InService")
+        id_, on_stage = lst[1]
+        assert id_ == 2
+        assert on_stage.stage == "enter"
+        assert on_stage.aspect is None
+        assert on_stage.name == "InServiceAbstractEnter"
+        assert (
+            on_stage.doc
+            == "Abstract Operation When Entering State 'InService'\nTODO: Should be Implemented In Generated Code Framework"
+        )
+        assert on_stage.operations == []
+        assert on_stage.is_abstract
+        assert on_stage.state_path == (
+            "TrafficLight",
+            "InService",
+            "InServiceAbstractEnter",
+        )
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "InService"
+        assert on_stage.parent_ref().path == ("TrafficLight", "InService")
+        assert not on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "InService"
+        assert on_stage.parent.path == ("TrafficLight", "InService")
+
+        lst = state_trafficlight_inservice.list_on_enters(is_abstract=False)
+        assert len(lst) == 1
+        on_stage = lst[0]
+        assert on_stage.stage == "enter"
+        assert on_stage.aspect is None
+        assert on_stage.name is None
+        assert on_stage.doc is None
+        assert on_stage.operations == [
+            Operation(var_name="a", expr=Integer(value=0)),
+            Operation(var_name="b", expr=Integer(value=0)),
+            Operation(var_name="round_count", expr=Integer(value=0)),
+        ]
+        assert not on_stage.is_abstract
+        assert on_stage.state_path == ("TrafficLight", "InService", None)
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "InService"
+        assert on_stage.parent_ref().path == ("TrafficLight", "InService")
+        assert not on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "InService"
+        assert on_stage.parent.path == ("TrafficLight", "InService")
+
+        lst = state_trafficlight_inservice.list_on_enters(
+            is_abstract=False, with_ids=False
+        )
+        assert len(lst) == 1
+        on_stage = lst[0]
+        assert on_stage.stage == "enter"
+        assert on_stage.aspect is None
+        assert on_stage.name is None
+        assert on_stage.doc is None
+        assert on_stage.operations == [
+            Operation(var_name="a", expr=Integer(value=0)),
+            Operation(var_name="b", expr=Integer(value=0)),
+            Operation(var_name="round_count", expr=Integer(value=0)),
+        ]
+        assert not on_stage.is_abstract
+        assert on_stage.state_path == ("TrafficLight", "InService", None)
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "InService"
+        assert on_stage.parent_ref().path == ("TrafficLight", "InService")
+        assert not on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "InService"
+        assert on_stage.parent.path == ("TrafficLight", "InService")
+
+        lst = state_trafficlight_inservice.list_on_enters(
+            is_abstract=False, with_ids=True
+        )
+        assert len(lst) == 1
+        id_, on_stage = lst[0]
+        assert id_ == 1
+        assert on_stage.stage == "enter"
+        assert on_stage.aspect is None
+        assert on_stage.name is None
+        assert on_stage.doc is None
+        assert on_stage.operations == [
+            Operation(var_name="a", expr=Integer(value=0)),
+            Operation(var_name="b", expr=Integer(value=0)),
+            Operation(var_name="round_count", expr=Integer(value=0)),
+        ]
+        assert not on_stage.is_abstract
+        assert on_stage.state_path == ("TrafficLight", "InService", None)
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "InService"
+        assert on_stage.parent_ref().path == ("TrafficLight", "InService")
+        assert not on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "InService"
+        assert on_stage.parent.path == ("TrafficLight", "InService")
+
+        lst = state_trafficlight_inservice.list_on_enters(is_abstract=True)
+        assert len(lst) == 1
+        on_stage = lst[0]
+        assert on_stage.stage == "enter"
+        assert on_stage.aspect is None
+        assert on_stage.name == "InServiceAbstractEnter"
+        assert (
+            on_stage.doc
+            == "Abstract Operation When Entering State 'InService'\nTODO: Should be Implemented In Generated Code Framework"
+        )
+        assert on_stage.operations == []
+        assert on_stage.is_abstract
+        assert on_stage.state_path == (
+            "TrafficLight",
+            "InService",
+            "InServiceAbstractEnter",
+        )
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "InService"
+        assert on_stage.parent_ref().path == ("TrafficLight", "InService")
+        assert not on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "InService"
+        assert on_stage.parent.path == ("TrafficLight", "InService")
+
+        lst = state_trafficlight_inservice.list_on_enters(
+            is_abstract=True, with_ids=False
+        )
+        assert len(lst) == 1
+        on_stage = lst[0]
+        assert on_stage.stage == "enter"
+        assert on_stage.aspect is None
+        assert on_stage.name == "InServiceAbstractEnter"
+        assert (
+            on_stage.doc
+            == "Abstract Operation When Entering State 'InService'\nTODO: Should be Implemented In Generated Code Framework"
+        )
+        assert on_stage.operations == []
+        assert on_stage.is_abstract
+        assert on_stage.state_path == (
+            "TrafficLight",
+            "InService",
+            "InServiceAbstractEnter",
+        )
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "InService"
+        assert on_stage.parent_ref().path == ("TrafficLight", "InService")
+        assert not on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "InService"
+        assert on_stage.parent.path == ("TrafficLight", "InService")
+
+        lst = state_trafficlight_inservice.list_on_enters(
+            is_abstract=True, with_ids=True
+        )
+        assert len(lst) == 1
+        id_, on_stage = lst[0]
+        assert id_ == 2
+        assert on_stage.stage == "enter"
+        assert on_stage.aspect is None
+        assert on_stage.name == "InServiceAbstractEnter"
+        assert (
+            on_stage.doc
+            == "Abstract Operation When Entering State 'InService'\nTODO: Should be Implemented In Generated Code Framework"
+        )
+        assert on_stage.operations == []
+        assert on_stage.is_abstract
+        assert on_stage.state_path == (
+            "TrafficLight",
+            "InService",
+            "InServiceAbstractEnter",
+        )
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "InService"
+        assert on_stage.parent_ref().path == ("TrafficLight", "InService")
+        assert not on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "InService"
+        assert on_stage.parent.path == ("TrafficLight", "InService")
+
     def test_state_trafficlight_inservice_during_aspects(
         self, state_trafficlight_inservice
     ):
@@ -2374,6 +2702,44 @@ class TestModelStateTrafficLight:
             force_transitions=[],
             is_pseudo=False,
         )
+
+    def test_state_trafficlight_inservice_red_list_on_enters(
+        self, state_trafficlight_inservice_red
+    ):
+        lst = state_trafficlight_inservice_red.list_on_enters()
+        assert lst == []
+
+        lst = state_trafficlight_inservice_red.list_on_enters(with_ids=False)
+        assert lst == []
+
+        lst = state_trafficlight_inservice_red.list_on_enters(with_ids=True)
+        assert lst == []
+
+        lst = state_trafficlight_inservice_red.list_on_enters(is_abstract=False)
+        assert lst == []
+
+        lst = state_trafficlight_inservice_red.list_on_enters(
+            is_abstract=False, with_ids=False
+        )
+        assert lst == []
+
+        lst = state_trafficlight_inservice_red.list_on_enters(
+            is_abstract=False, with_ids=True
+        )
+        assert lst == []
+
+        lst = state_trafficlight_inservice_red.list_on_enters(is_abstract=True)
+        assert lst == []
+
+        lst = state_trafficlight_inservice_red.list_on_enters(
+            is_abstract=True, with_ids=False
+        )
+        assert lst == []
+
+        lst = state_trafficlight_inservice_red.list_on_enters(
+            is_abstract=True, with_ids=True
+        )
+        assert lst == []
 
     def test_state_trafficlight_inservice_red_during_aspects(
         self, state_trafficlight_inservice_red
@@ -2794,6 +3160,44 @@ class TestModelStateTrafficLight:
             is_pseudo=False,
         )
 
+    def test_state_trafficlight_inservice_yellow_list_on_enters(
+        self, state_trafficlight_inservice_yellow
+    ):
+        lst = state_trafficlight_inservice_yellow.list_on_enters()
+        assert lst == []
+
+        lst = state_trafficlight_inservice_yellow.list_on_enters(with_ids=False)
+        assert lst == []
+
+        lst = state_trafficlight_inservice_yellow.list_on_enters(with_ids=True)
+        assert lst == []
+
+        lst = state_trafficlight_inservice_yellow.list_on_enters(is_abstract=False)
+        assert lst == []
+
+        lst = state_trafficlight_inservice_yellow.list_on_enters(
+            is_abstract=False, with_ids=False
+        )
+        assert lst == []
+
+        lst = state_trafficlight_inservice_yellow.list_on_enters(
+            is_abstract=False, with_ids=True
+        )
+        assert lst == []
+
+        lst = state_trafficlight_inservice_yellow.list_on_enters(is_abstract=True)
+        assert lst == []
+
+        lst = state_trafficlight_inservice_yellow.list_on_enters(
+            is_abstract=True, with_ids=False
+        )
+        assert lst == []
+
+        lst = state_trafficlight_inservice_yellow.list_on_enters(
+            is_abstract=True, with_ids=True
+        )
+        assert lst == []
+
     def test_state_trafficlight_inservice_yellow_during_aspects(
         self, state_trafficlight_inservice_yellow
     ):
@@ -3124,6 +3528,44 @@ class TestModelStateTrafficLight:
             is_pseudo=False,
         )
 
+    def test_state_trafficlight_inservice_green_list_on_enters(
+        self, state_trafficlight_inservice_green
+    ):
+        lst = state_trafficlight_inservice_green.list_on_enters()
+        assert lst == []
+
+        lst = state_trafficlight_inservice_green.list_on_enters(with_ids=False)
+        assert lst == []
+
+        lst = state_trafficlight_inservice_green.list_on_enters(with_ids=True)
+        assert lst == []
+
+        lst = state_trafficlight_inservice_green.list_on_enters(is_abstract=False)
+        assert lst == []
+
+        lst = state_trafficlight_inservice_green.list_on_enters(
+            is_abstract=False, with_ids=False
+        )
+        assert lst == []
+
+        lst = state_trafficlight_inservice_green.list_on_enters(
+            is_abstract=False, with_ids=True
+        )
+        assert lst == []
+
+        lst = state_trafficlight_inservice_green.list_on_enters(is_abstract=True)
+        assert lst == []
+
+        lst = state_trafficlight_inservice_green.list_on_enters(
+            is_abstract=True, with_ids=False
+        )
+        assert lst == []
+
+        lst = state_trafficlight_inservice_green.list_on_enters(
+            is_abstract=True, with_ids=True
+        )
+        assert lst == []
+
     def test_state_trafficlight_inservice_green_during_aspects(
         self, state_trafficlight_inservice_green
     ):
@@ -3437,6 +3879,34 @@ class TestModelStateTrafficLight:
             force_transitions=[],
             is_pseudo=False,
         )
+
+    def test_state_trafficlight_idle_list_on_enters(self, state_trafficlight_idle):
+        lst = state_trafficlight_idle.list_on_enters()
+        assert lst == []
+
+        lst = state_trafficlight_idle.list_on_enters(with_ids=False)
+        assert lst == []
+
+        lst = state_trafficlight_idle.list_on_enters(with_ids=True)
+        assert lst == []
+
+        lst = state_trafficlight_idle.list_on_enters(is_abstract=False)
+        assert lst == []
+
+        lst = state_trafficlight_idle.list_on_enters(is_abstract=False, with_ids=False)
+        assert lst == []
+
+        lst = state_trafficlight_idle.list_on_enters(is_abstract=False, with_ids=True)
+        assert lst == []
+
+        lst = state_trafficlight_idle.list_on_enters(is_abstract=True)
+        assert lst == []
+
+        lst = state_trafficlight_idle.list_on_enters(is_abstract=True, with_ids=False)
+        assert lst == []
+
+        lst = state_trafficlight_idle.list_on_enters(is_abstract=True, with_ids=True)
+        assert lst == []
 
     def test_state_trafficlight_idle_during_aspects(self, state_trafficlight_idle):
         lst = state_trafficlight_idle.list_on_during_aspects()

@@ -645,6 +645,34 @@ class TestModelStateTrafficLight:
             is_pseudo=False,
         )
 
+    def test_state_trafficlight_list_on_enters(self, state_trafficlight):
+        lst = state_trafficlight.list_on_enters()
+        assert lst == []
+
+        lst = state_trafficlight.list_on_enters(with_ids=False)
+        assert lst == []
+
+        lst = state_trafficlight.list_on_enters(with_ids=True)
+        assert lst == []
+
+        lst = state_trafficlight.list_on_enters(is_abstract=False)
+        assert lst == []
+
+        lst = state_trafficlight.list_on_enters(is_abstract=False, with_ids=False)
+        assert lst == []
+
+        lst = state_trafficlight.list_on_enters(is_abstract=False, with_ids=True)
+        assert lst == []
+
+        lst = state_trafficlight.list_on_enters(is_abstract=True)
+        assert lst == []
+
+        lst = state_trafficlight.list_on_enters(is_abstract=True, with_ids=False)
+        assert lst == []
+
+        lst = state_trafficlight.list_on_enters(is_abstract=True, with_ids=True)
+        assert lst == []
+
     def test_state_trafficlight_during_aspects(self, state_trafficlight):
         lst = state_trafficlight.list_on_during_aspects()
         assert lst == []
@@ -1224,6 +1252,44 @@ class TestModelStateTrafficLight:
             is_pseudo=False,
         )
 
+    def test_state_trafficlight_inservice_list_on_enters(
+        self, state_trafficlight_inservice
+    ):
+        lst = state_trafficlight_inservice.list_on_enters()
+        assert lst == []
+
+        lst = state_trafficlight_inservice.list_on_enters(with_ids=False)
+        assert lst == []
+
+        lst = state_trafficlight_inservice.list_on_enters(with_ids=True)
+        assert lst == []
+
+        lst = state_trafficlight_inservice.list_on_enters(is_abstract=False)
+        assert lst == []
+
+        lst = state_trafficlight_inservice.list_on_enters(
+            is_abstract=False, with_ids=False
+        )
+        assert lst == []
+
+        lst = state_trafficlight_inservice.list_on_enters(
+            is_abstract=False, with_ids=True
+        )
+        assert lst == []
+
+        lst = state_trafficlight_inservice.list_on_enters(is_abstract=True)
+        assert lst == []
+
+        lst = state_trafficlight_inservice.list_on_enters(
+            is_abstract=True, with_ids=False
+        )
+        assert lst == []
+
+        lst = state_trafficlight_inservice.list_on_enters(
+            is_abstract=True, with_ids=True
+        )
+        assert lst == []
+
     def test_state_trafficlight_inservice_during_aspects(
         self, state_trafficlight_inservice
     ):
@@ -1416,6 +1482,44 @@ class TestModelStateTrafficLight:
             force_transitions=[],
             is_pseudo=False,
         )
+
+    def test_state_trafficlight_inservice_red_list_on_enters(
+        self, state_trafficlight_inservice_red
+    ):
+        lst = state_trafficlight_inservice_red.list_on_enters()
+        assert lst == []
+
+        lst = state_trafficlight_inservice_red.list_on_enters(with_ids=False)
+        assert lst == []
+
+        lst = state_trafficlight_inservice_red.list_on_enters(with_ids=True)
+        assert lst == []
+
+        lst = state_trafficlight_inservice_red.list_on_enters(is_abstract=False)
+        assert lst == []
+
+        lst = state_trafficlight_inservice_red.list_on_enters(
+            is_abstract=False, with_ids=False
+        )
+        assert lst == []
+
+        lst = state_trafficlight_inservice_red.list_on_enters(
+            is_abstract=False, with_ids=True
+        )
+        assert lst == []
+
+        lst = state_trafficlight_inservice_red.list_on_enters(is_abstract=True)
+        assert lst == []
+
+        lst = state_trafficlight_inservice_red.list_on_enters(
+            is_abstract=True, with_ids=False
+        )
+        assert lst == []
+
+        lst = state_trafficlight_inservice_red.list_on_enters(
+            is_abstract=True, with_ids=True
+        )
+        assert lst == []
 
     def test_state_trafficlight_inservice_red_during_aspects(
         self, state_trafficlight_inservice_red
@@ -1675,6 +1779,44 @@ class TestModelStateTrafficLight:
             is_pseudo=False,
         )
 
+    def test_state_trafficlight_inservice_yellow_list_on_enters(
+        self, state_trafficlight_inservice_yellow
+    ):
+        lst = state_trafficlight_inservice_yellow.list_on_enters()
+        assert lst == []
+
+        lst = state_trafficlight_inservice_yellow.list_on_enters(with_ids=False)
+        assert lst == []
+
+        lst = state_trafficlight_inservice_yellow.list_on_enters(with_ids=True)
+        assert lst == []
+
+        lst = state_trafficlight_inservice_yellow.list_on_enters(is_abstract=False)
+        assert lst == []
+
+        lst = state_trafficlight_inservice_yellow.list_on_enters(
+            is_abstract=False, with_ids=False
+        )
+        assert lst == []
+
+        lst = state_trafficlight_inservice_yellow.list_on_enters(
+            is_abstract=False, with_ids=True
+        )
+        assert lst == []
+
+        lst = state_trafficlight_inservice_yellow.list_on_enters(is_abstract=True)
+        assert lst == []
+
+        lst = state_trafficlight_inservice_yellow.list_on_enters(
+            is_abstract=True, with_ids=False
+        )
+        assert lst == []
+
+        lst = state_trafficlight_inservice_yellow.list_on_enters(
+            is_abstract=True, with_ids=True
+        )
+        assert lst == []
+
     def test_state_trafficlight_inservice_yellow_during_aspects(
         self, state_trafficlight_inservice_yellow
     ):
@@ -1888,6 +2030,44 @@ class TestModelStateTrafficLight:
             force_transitions=[],
             is_pseudo=False,
         )
+
+    def test_state_trafficlight_inservice_green_list_on_enters(
+        self, state_trafficlight_inservice_green
+    ):
+        lst = state_trafficlight_inservice_green.list_on_enters()
+        assert lst == []
+
+        lst = state_trafficlight_inservice_green.list_on_enters(with_ids=False)
+        assert lst == []
+
+        lst = state_trafficlight_inservice_green.list_on_enters(with_ids=True)
+        assert lst == []
+
+        lst = state_trafficlight_inservice_green.list_on_enters(is_abstract=False)
+        assert lst == []
+
+        lst = state_trafficlight_inservice_green.list_on_enters(
+            is_abstract=False, with_ids=False
+        )
+        assert lst == []
+
+        lst = state_trafficlight_inservice_green.list_on_enters(
+            is_abstract=False, with_ids=True
+        )
+        assert lst == []
+
+        lst = state_trafficlight_inservice_green.list_on_enters(is_abstract=True)
+        assert lst == []
+
+        lst = state_trafficlight_inservice_green.list_on_enters(
+            is_abstract=True, with_ids=False
+        )
+        assert lst == []
+
+        lst = state_trafficlight_inservice_green.list_on_enters(
+            is_abstract=True, with_ids=True
+        )
+        assert lst == []
 
     def test_state_trafficlight_inservice_green_during_aspects(
         self, state_trafficlight_inservice_green
@@ -2311,6 +2491,34 @@ class TestModelStateTrafficLight:
             is_pseudo=False,
         )
 
+    def test_state_trafficlight_idle_list_on_enters(self, state_trafficlight_idle):
+        lst = state_trafficlight_idle.list_on_enters()
+        assert lst == []
+
+        lst = state_trafficlight_idle.list_on_enters(with_ids=False)
+        assert lst == []
+
+        lst = state_trafficlight_idle.list_on_enters(with_ids=True)
+        assert lst == []
+
+        lst = state_trafficlight_idle.list_on_enters(is_abstract=False)
+        assert lst == []
+
+        lst = state_trafficlight_idle.list_on_enters(is_abstract=False, with_ids=False)
+        assert lst == []
+
+        lst = state_trafficlight_idle.list_on_enters(is_abstract=False, with_ids=True)
+        assert lst == []
+
+        lst = state_trafficlight_idle.list_on_enters(is_abstract=True)
+        assert lst == []
+
+        lst = state_trafficlight_idle.list_on_enters(is_abstract=True, with_ids=False)
+        assert lst == []
+
+        lst = state_trafficlight_idle.list_on_enters(is_abstract=True, with_ids=True)
+        assert lst == []
+
     def test_state_trafficlight_idle_during_aspects(self, state_trafficlight_idle):
         lst = state_trafficlight_idle.list_on_during_aspects()
         assert lst == []
@@ -2474,6 +2682,44 @@ class TestModelStateTrafficLight:
             force_transitions=[],
             is_pseudo=False,
         )
+
+    def test_state_trafficlight_idle_tobe_list_on_enters(
+        self, state_trafficlight_idle_tobe
+    ):
+        lst = state_trafficlight_idle_tobe.list_on_enters()
+        assert lst == []
+
+        lst = state_trafficlight_idle_tobe.list_on_enters(with_ids=False)
+        assert lst == []
+
+        lst = state_trafficlight_idle_tobe.list_on_enters(with_ids=True)
+        assert lst == []
+
+        lst = state_trafficlight_idle_tobe.list_on_enters(is_abstract=False)
+        assert lst == []
+
+        lst = state_trafficlight_idle_tobe.list_on_enters(
+            is_abstract=False, with_ids=False
+        )
+        assert lst == []
+
+        lst = state_trafficlight_idle_tobe.list_on_enters(
+            is_abstract=False, with_ids=True
+        )
+        assert lst == []
+
+        lst = state_trafficlight_idle_tobe.list_on_enters(is_abstract=True)
+        assert lst == []
+
+        lst = state_trafficlight_idle_tobe.list_on_enters(
+            is_abstract=True, with_ids=False
+        )
+        assert lst == []
+
+        lst = state_trafficlight_idle_tobe.list_on_enters(
+            is_abstract=True, with_ids=True
+        )
+        assert lst == []
 
     def test_state_trafficlight_idle_tobe_during_aspects(
         self, state_trafficlight_idle_tobe
@@ -2675,6 +2921,44 @@ class TestModelStateTrafficLight:
             force_transitions=[],
             is_pseudo=False,
         )
+
+    def test_state_trafficlight_idle_nottobe_list_on_enters(
+        self, state_trafficlight_idle_nottobe
+    ):
+        lst = state_trafficlight_idle_nottobe.list_on_enters()
+        assert lst == []
+
+        lst = state_trafficlight_idle_nottobe.list_on_enters(with_ids=False)
+        assert lst == []
+
+        lst = state_trafficlight_idle_nottobe.list_on_enters(with_ids=True)
+        assert lst == []
+
+        lst = state_trafficlight_idle_nottobe.list_on_enters(is_abstract=False)
+        assert lst == []
+
+        lst = state_trafficlight_idle_nottobe.list_on_enters(
+            is_abstract=False, with_ids=False
+        )
+        assert lst == []
+
+        lst = state_trafficlight_idle_nottobe.list_on_enters(
+            is_abstract=False, with_ids=True
+        )
+        assert lst == []
+
+        lst = state_trafficlight_idle_nottobe.list_on_enters(is_abstract=True)
+        assert lst == []
+
+        lst = state_trafficlight_idle_nottobe.list_on_enters(
+            is_abstract=True, with_ids=False
+        )
+        assert lst == []
+
+        lst = state_trafficlight_idle_nottobe.list_on_enters(
+            is_abstract=True, with_ids=True
+        )
+        assert lst == []
 
     def test_state_trafficlight_idle_nottobe_during_aspects(
         self, state_trafficlight_idle_nottobe

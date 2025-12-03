@@ -249,9 +249,86 @@ def sample_generation_to_file(code: str, test_file: str):
             print(f'        assert ast_node == {_to_ast_node(repr(ast_node))}', file=tf)
             print(f'', file=tf)
 
+            print(f'    def test_{_state_name(state)}_list_on_enters(self, {_state_name(state)}):', file=tf)
+            for is_abstract, with_ids in nested_for([None, False, True], [None, False, True]):
+                if is_abstract is not None and with_ids is not None:
+                    print(
+                        f'        lst = {_state_name(state)}.list_on_enters(is_abstract={is_abstract!r}, with_ids={with_ids!r})',
+                        file=tf)
+                elif is_abstract is not None:
+                    print(
+                        f'        lst = {_state_name(state)}.list_on_enters(is_abstract={is_abstract!r})',
+                        file=tf)
+                elif with_ids is not None:
+                    print(
+                        f'        lst = {_state_name(state)}.list_on_enters(with_ids={with_ids!r})', file=tf)
+                else:
+                    print(f'        lst = {_state_name(state)}.list_on_enters()', file=tf)
+
+                lst = state.list_on_enters(is_abstract=is_abstract, with_ids=with_ids)
+                if not lst:
+                    print(f'        assert lst == {lst!r}', file=tf)
+                else:
+                    print(f'        assert len(lst) == {len(lst)!r}', file=tf)
+                    for lst_item_id, lst_item in enumerate(lst):
+                        if isinstance(lst_item, tuple):
+                            id_, on_stage = lst_item
+                            print(f'        id_, on_stage = lst[{lst_item_id!r}]', file=tf)
+                            print(f'        assert id_ == {id_!r}', file=tf)
+                        else:
+                            on_stage = lst_item
+                            print(f'        on_stage = lst[{lst_item_id!r}]', file=tf)
+
+                        for os_field_name in [
+                            *map(lambda x: x.name, dataclasses.fields(on_stage)),
+                            *get_properties(on_stage),
+                        ]:
+                            on_stage_v = getattr(on_stage, os_field_name)
+                            if isinstance(on_stage_v, type(None)):
+                                print(
+                                    f'        assert on_stage.{os_field_name} is None',
+                                    file=tf)
+                            elif isinstance(on_stage_v, bool):
+                                if on_stage_v:
+                                    print(f'        assert on_stage.{os_field_name}',
+                                          file=tf)
+                                else:
+                                    print(
+                                        f'        assert not on_stage.{os_field_name}',
+                                        file=tf)
+                            elif os_field_name == 'parent':
+                                print(
+                                    f'        assert on_stage.{os_field_name}.name == {on_stage_v.name!r}',
+                                    file=tf)
+                                print(
+                                    f'        assert on_stage.{os_field_name}.path == {on_stage_v.path!r}',
+                                    file=tf)
+                            elif os_field_name == 'parent_ref':
+                                print(
+                                    f'        assert on_stage.{os_field_name}().name == {on_stage_v().name!r}',
+                                    file=tf)
+                                print(
+                                    f'        assert on_stage.{os_field_name}().path == {on_stage_v().path!r}',
+                                    file=tf)
+                            elif os_field_name == 'ref':
+                                print(
+                                    f'        assert on_stage.{os_field_name}.name == {on_stage_v.name!r}',
+                                    file=tf)
+                                print(
+                                    f'        assert on_stage.{os_field_name}.aspect == {on_stage_v.aspect!r}',
+                                    file=tf)
+                                print(
+                                    f'        assert on_stage.{os_field_name}.state_path == {on_stage_v.state_path!r}',
+                                    file=tf)
+                            else:
+                                print(
+                                    f'        assert on_stage.{os_field_name} == {on_stage_v!r}',
+                                    file=tf)
+
+                print(f'', file=tf)
+
             print(f'    def test_{_state_name(state)}_during_aspects(self, {_state_name(state)}):',
                   file=tf)
-
             for is_abstract, aspect in nested_for([None, False, True], [None, 'before', 'after']):
                 if is_abstract is not None and aspect is not None:
                     print(

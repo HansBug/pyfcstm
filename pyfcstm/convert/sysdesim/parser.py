@@ -98,13 +98,18 @@ class SysDesimParser:
         )
 
     def parse_transition(self, element: _Element):
+        triggers = element.xpath('trigger', namespaces=self.namespaces)
         return Transition(
             id=element.get(self._get_key('id', 'xmi')),
             type=element.get(self._get_key('type', 'xmi')),
             name=element.get(self._get_key('name')),
             source=element.get(self._get_key('source')),
             target=element.get(self._get_key('target')),
+            event_trigger=self.parse_event_trigger(triggers[0]) if triggers else None,
         )
+
+    def parse_event_trigger(self, element: _Element):
+        return element.get(self._get_key('event'))
 
     def parse_state(self, element: _Element):
         return State(

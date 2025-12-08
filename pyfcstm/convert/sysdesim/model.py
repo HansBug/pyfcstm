@@ -47,12 +47,14 @@ class Region(XMIObject):
 class Transition(XMIObject):
     source: str
     target: str
+    event_trigger: Optional[str]
 
 
 @dataclass
 class State(XMIObject):
     regions: List['Region']
 
+    @property
     def is_pseudo(self) -> bool:
         return self.type == 'uml:Pseudostate'
 

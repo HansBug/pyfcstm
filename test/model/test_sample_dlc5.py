@@ -450,6 +450,34 @@ class TestModelStateL1:
             is_pseudo=False,
         )
 
+    def test_state_l1_list_on_enters(self, state_l1):
+        lst = state_l1.list_on_enters()
+        assert lst == []
+
+        lst = state_l1.list_on_enters(with_ids=False)
+        assert lst == []
+
+        lst = state_l1.list_on_enters(with_ids=True)
+        assert lst == []
+
+        lst = state_l1.list_on_enters(is_abstract=False)
+        assert lst == []
+
+        lst = state_l1.list_on_enters(is_abstract=False, with_ids=False)
+        assert lst == []
+
+        lst = state_l1.list_on_enters(is_abstract=False, with_ids=True)
+        assert lst == []
+
+        lst = state_l1.list_on_enters(is_abstract=True)
+        assert lst == []
+
+        lst = state_l1.list_on_enters(is_abstract=True, with_ids=False)
+        assert lst == []
+
+        lst = state_l1.list_on_enters(is_abstract=True, with_ids=True)
+        assert lst == []
+
     def test_state_l1_during_aspects(self, state_l1):
         lst = state_l1.list_on_during_aspects()
         assert len(lst) == 2
@@ -880,6 +908,34 @@ class TestModelStateL1:
             is_pseudo=False,
         )
 
+    def test_state_l1_l2_list_on_enters(self, state_l1_l2):
+        lst = state_l1_l2.list_on_enters()
+        assert lst == []
+
+        lst = state_l1_l2.list_on_enters(with_ids=False)
+        assert lst == []
+
+        lst = state_l1_l2.list_on_enters(with_ids=True)
+        assert lst == []
+
+        lst = state_l1_l2.list_on_enters(is_abstract=False)
+        assert lst == []
+
+        lst = state_l1_l2.list_on_enters(is_abstract=False, with_ids=False)
+        assert lst == []
+
+        lst = state_l1_l2.list_on_enters(is_abstract=False, with_ids=True)
+        assert lst == []
+
+        lst = state_l1_l2.list_on_enters(is_abstract=True)
+        assert lst == []
+
+        lst = state_l1_l2.list_on_enters(is_abstract=True, with_ids=False)
+        assert lst == []
+
+        lst = state_l1_l2.list_on_enters(is_abstract=True, with_ids=True)
+        assert lst == []
+
     def test_state_l1_l2_during_aspects(self, state_l1_l2):
         lst = state_l1_l2.list_on_during_aspects()
         assert len(lst) == 2
@@ -1101,6 +1157,34 @@ class TestModelStateL1:
             is_pseudo=True,
         )
 
+    def test_state_l1_l2_l21_list_on_enters(self, state_l1_l2_l21):
+        lst = state_l1_l2_l21.list_on_enters()
+        assert lst == []
+
+        lst = state_l1_l2_l21.list_on_enters(with_ids=False)
+        assert lst == []
+
+        lst = state_l1_l2_l21.list_on_enters(with_ids=True)
+        assert lst == []
+
+        lst = state_l1_l2_l21.list_on_enters(is_abstract=False)
+        assert lst == []
+
+        lst = state_l1_l2_l21.list_on_enters(is_abstract=False, with_ids=False)
+        assert lst == []
+
+        lst = state_l1_l2_l21.list_on_enters(is_abstract=False, with_ids=True)
+        assert lst == []
+
+        lst = state_l1_l2_l21.list_on_enters(is_abstract=True)
+        assert lst == []
+
+        lst = state_l1_l2_l21.list_on_enters(is_abstract=True, with_ids=False)
+        assert lst == []
+
+        lst = state_l1_l2_l21.list_on_enters(is_abstract=True, with_ids=True)
+        assert lst == []
+
     def test_state_l1_l2_l21_during_aspects(self, state_l1_l2_l21):
         lst = state_l1_l2_l21.list_on_during_aspects()
         assert lst == []
@@ -1202,6 +1286,34 @@ class TestModelStateL1:
             force_transitions=[],
             is_pseudo=False,
         )
+
+    def test_state_l1_l2_l22_list_on_enters(self, state_l1_l2_l22):
+        lst = state_l1_l2_l22.list_on_enters()
+        assert lst == []
+
+        lst = state_l1_l2_l22.list_on_enters(with_ids=False)
+        assert lst == []
+
+        lst = state_l1_l2_l22.list_on_enters(with_ids=True)
+        assert lst == []
+
+        lst = state_l1_l2_l22.list_on_enters(is_abstract=False)
+        assert lst == []
+
+        lst = state_l1_l2_l22.list_on_enters(is_abstract=False, with_ids=False)
+        assert lst == []
+
+        lst = state_l1_l2_l22.list_on_enters(is_abstract=False, with_ids=True)
+        assert lst == []
+
+        lst = state_l1_l2_l22.list_on_enters(is_abstract=True)
+        assert lst == []
+
+        lst = state_l1_l2_l22.list_on_enters(is_abstract=True, with_ids=False)
+        assert lst == []
+
+        lst = state_l1_l2_l22.list_on_enters(is_abstract=True, with_ids=True)
+        assert lst == []
 
     def test_state_l1_l2_l22_during_aspects(self, state_l1_l2_l22):
         lst = state_l1_l2_l22.list_on_during_aspects()

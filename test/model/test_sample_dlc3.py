@@ -414,6 +414,230 @@ class TestModelStateLx:
             is_pseudo=False,
         )
 
+    def test_state_lx_list_on_enters(self, state_lx):
+        lst = state_lx.list_on_enters()
+        assert len(lst) == 2
+        on_stage = lst[0]
+        assert on_stage.stage == "enter"
+        assert on_stage.aspect is None
+        assert on_stage.name is None
+        assert on_stage.doc is None
+        assert on_stage.operations == []
+        assert not on_stage.is_abstract
+        assert on_stage.state_path == ("LX", None)
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "LX"
+        assert on_stage.parent_ref().path == ("LX",)
+        assert not on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "LX"
+        assert on_stage.parent.path == ("LX",)
+        on_stage = lst[1]
+        assert on_stage.stage == "enter"
+        assert on_stage.aspect is None
+        assert on_stage.name == "act1"
+        assert on_stage.doc is None
+        assert on_stage.operations == []
+        assert on_stage.is_abstract
+        assert on_stage.state_path == ("LX", "act1")
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "LX"
+        assert on_stage.parent_ref().path == ("LX",)
+        assert not on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "LX"
+        assert on_stage.parent.path == ("LX",)
+
+        lst = state_lx.list_on_enters(with_ids=False)
+        assert len(lst) == 2
+        on_stage = lst[0]
+        assert on_stage.stage == "enter"
+        assert on_stage.aspect is None
+        assert on_stage.name is None
+        assert on_stage.doc is None
+        assert on_stage.operations == []
+        assert not on_stage.is_abstract
+        assert on_stage.state_path == ("LX", None)
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "LX"
+        assert on_stage.parent_ref().path == ("LX",)
+        assert not on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "LX"
+        assert on_stage.parent.path == ("LX",)
+        on_stage = lst[1]
+        assert on_stage.stage == "enter"
+        assert on_stage.aspect is None
+        assert on_stage.name == "act1"
+        assert on_stage.doc is None
+        assert on_stage.operations == []
+        assert on_stage.is_abstract
+        assert on_stage.state_path == ("LX", "act1")
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "LX"
+        assert on_stage.parent_ref().path == ("LX",)
+        assert not on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "LX"
+        assert on_stage.parent.path == ("LX",)
+
+        lst = state_lx.list_on_enters(with_ids=True)
+        assert len(lst) == 2
+        id_, on_stage = lst[0]
+        assert id_ == 1
+        assert on_stage.stage == "enter"
+        assert on_stage.aspect is None
+        assert on_stage.name is None
+        assert on_stage.doc is None
+        assert on_stage.operations == []
+        assert not on_stage.is_abstract
+        assert on_stage.state_path == ("LX", None)
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "LX"
+        assert on_stage.parent_ref().path == ("LX",)
+        assert not on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "LX"
+        assert on_stage.parent.path == ("LX",)
+        id_, on_stage = lst[1]
+        assert id_ == 2
+        assert on_stage.stage == "enter"
+        assert on_stage.aspect is None
+        assert on_stage.name == "act1"
+        assert on_stage.doc is None
+        assert on_stage.operations == []
+        assert on_stage.is_abstract
+        assert on_stage.state_path == ("LX", "act1")
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "LX"
+        assert on_stage.parent_ref().path == ("LX",)
+        assert not on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "LX"
+        assert on_stage.parent.path == ("LX",)
+
+        lst = state_lx.list_on_enters(is_abstract=False)
+        assert len(lst) == 1
+        on_stage = lst[0]
+        assert on_stage.stage == "enter"
+        assert on_stage.aspect is None
+        assert on_stage.name is None
+        assert on_stage.doc is None
+        assert on_stage.operations == []
+        assert not on_stage.is_abstract
+        assert on_stage.state_path == ("LX", None)
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "LX"
+        assert on_stage.parent_ref().path == ("LX",)
+        assert not on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "LX"
+        assert on_stage.parent.path == ("LX",)
+
+        lst = state_lx.list_on_enters(is_abstract=False, with_ids=False)
+        assert len(lst) == 1
+        on_stage = lst[0]
+        assert on_stage.stage == "enter"
+        assert on_stage.aspect is None
+        assert on_stage.name is None
+        assert on_stage.doc is None
+        assert on_stage.operations == []
+        assert not on_stage.is_abstract
+        assert on_stage.state_path == ("LX", None)
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "LX"
+        assert on_stage.parent_ref().path == ("LX",)
+        assert not on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "LX"
+        assert on_stage.parent.path == ("LX",)
+
+        lst = state_lx.list_on_enters(is_abstract=False, with_ids=True)
+        assert len(lst) == 1
+        id_, on_stage = lst[0]
+        assert id_ == 1
+        assert on_stage.stage == "enter"
+        assert on_stage.aspect is None
+        assert on_stage.name is None
+        assert on_stage.doc is None
+        assert on_stage.operations == []
+        assert not on_stage.is_abstract
+        assert on_stage.state_path == ("LX", None)
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "LX"
+        assert on_stage.parent_ref().path == ("LX",)
+        assert not on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "LX"
+        assert on_stage.parent.path == ("LX",)
+
+        lst = state_lx.list_on_enters(is_abstract=True)
+        assert len(lst) == 1
+        on_stage = lst[0]
+        assert on_stage.stage == "enter"
+        assert on_stage.aspect is None
+        assert on_stage.name == "act1"
+        assert on_stage.doc is None
+        assert on_stage.operations == []
+        assert on_stage.is_abstract
+        assert on_stage.state_path == ("LX", "act1")
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "LX"
+        assert on_stage.parent_ref().path == ("LX",)
+        assert not on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "LX"
+        assert on_stage.parent.path == ("LX",)
+
+        lst = state_lx.list_on_enters(is_abstract=True, with_ids=False)
+        assert len(lst) == 1
+        on_stage = lst[0]
+        assert on_stage.stage == "enter"
+        assert on_stage.aspect is None
+        assert on_stage.name == "act1"
+        assert on_stage.doc is None
+        assert on_stage.operations == []
+        assert on_stage.is_abstract
+        assert on_stage.state_path == ("LX", "act1")
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "LX"
+        assert on_stage.parent_ref().path == ("LX",)
+        assert not on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "LX"
+        assert on_stage.parent.path == ("LX",)
+
+        lst = state_lx.list_on_enters(is_abstract=True, with_ids=True)
+        assert len(lst) == 1
+        id_, on_stage = lst[0]
+        assert id_ == 2
+        assert on_stage.stage == "enter"
+        assert on_stage.aspect is None
+        assert on_stage.name == "act1"
+        assert on_stage.doc is None
+        assert on_stage.operations == []
+        assert on_stage.is_abstract
+        assert on_stage.state_path == ("LX", "act1")
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "LX"
+        assert on_stage.parent_ref().path == ("LX",)
+        assert not on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "LX"
+        assert on_stage.parent.path == ("LX",)
+
     def test_state_lx_during_aspects(self, state_lx):
         lst = state_lx.list_on_during_aspects()
         assert lst == []
@@ -628,6 +852,34 @@ class TestModelStateLx:
             is_pseudo=False,
         )
 
+    def test_state_lx_lx2_list_on_enters(self, state_lx_lx2):
+        lst = state_lx_lx2.list_on_enters()
+        assert lst == []
+
+        lst = state_lx_lx2.list_on_enters(with_ids=False)
+        assert lst == []
+
+        lst = state_lx_lx2.list_on_enters(with_ids=True)
+        assert lst == []
+
+        lst = state_lx_lx2.list_on_enters(is_abstract=False)
+        assert lst == []
+
+        lst = state_lx_lx2.list_on_enters(is_abstract=False, with_ids=False)
+        assert lst == []
+
+        lst = state_lx_lx2.list_on_enters(is_abstract=False, with_ids=True)
+        assert lst == []
+
+        lst = state_lx_lx2.list_on_enters(is_abstract=True)
+        assert lst == []
+
+        lst = state_lx_lx2.list_on_enters(is_abstract=True, with_ids=False)
+        assert lst == []
+
+        lst = state_lx_lx2.list_on_enters(is_abstract=True, with_ids=True)
+        assert lst == []
+
     def test_state_lx_lx2_during_aspects(self, state_lx_lx2):
         lst = state_lx_lx2.list_on_during_aspects()
         assert lst == []
@@ -836,6 +1088,34 @@ class TestModelStateLx:
             is_pseudo=False,
         )
 
+    def test_state_lx_lx2_start_list_on_enters(self, state_lx_lx2_start):
+        lst = state_lx_lx2_start.list_on_enters()
+        assert lst == []
+
+        lst = state_lx_lx2_start.list_on_enters(with_ids=False)
+        assert lst == []
+
+        lst = state_lx_lx2_start.list_on_enters(with_ids=True)
+        assert lst == []
+
+        lst = state_lx_lx2_start.list_on_enters(is_abstract=False)
+        assert lst == []
+
+        lst = state_lx_lx2_start.list_on_enters(is_abstract=False, with_ids=False)
+        assert lst == []
+
+        lst = state_lx_lx2_start.list_on_enters(is_abstract=False, with_ids=True)
+        assert lst == []
+
+        lst = state_lx_lx2_start.list_on_enters(is_abstract=True)
+        assert lst == []
+
+        lst = state_lx_lx2_start.list_on_enters(is_abstract=True, with_ids=False)
+        assert lst == []
+
+        lst = state_lx_lx2_start.list_on_enters(is_abstract=True, with_ids=True)
+        assert lst == []
+
     def test_state_lx_lx2_start_during_aspects(self, state_lx_lx2_start):
         lst = state_lx_lx2_start.list_on_during_aspects()
         assert lst == []
@@ -1041,6 +1321,34 @@ class TestModelStateLx:
             is_pseudo=False,
         )
 
+    def test_state_lx_lx2_start_lx4_list_on_enters(self, state_lx_lx2_start_lx4):
+        lst = state_lx_lx2_start_lx4.list_on_enters()
+        assert lst == []
+
+        lst = state_lx_lx2_start_lx4.list_on_enters(with_ids=False)
+        assert lst == []
+
+        lst = state_lx_lx2_start_lx4.list_on_enters(with_ids=True)
+        assert lst == []
+
+        lst = state_lx_lx2_start_lx4.list_on_enters(is_abstract=False)
+        assert lst == []
+
+        lst = state_lx_lx2_start_lx4.list_on_enters(is_abstract=False, with_ids=False)
+        assert lst == []
+
+        lst = state_lx_lx2_start_lx4.list_on_enters(is_abstract=False, with_ids=True)
+        assert lst == []
+
+        lst = state_lx_lx2_start_lx4.list_on_enters(is_abstract=True)
+        assert lst == []
+
+        lst = state_lx_lx2_start_lx4.list_on_enters(is_abstract=True, with_ids=False)
+        assert lst == []
+
+        lst = state_lx_lx2_start_lx4.list_on_enters(is_abstract=True, with_ids=True)
+        assert lst == []
+
     def test_state_lx_lx2_start_lx4_during_aspects(self, state_lx_lx2_start_lx4):
         lst = state_lx_lx2_start_lx4.list_on_during_aspects()
         assert lst == []
@@ -1160,6 +1468,42 @@ class TestModelStateLx:
             force_transitions=[],
             is_pseudo=False,
         )
+
+    def test_state_lx_lx2_start_lx4_lx5_list_on_enters(
+        self, state_lx_lx2_start_lx4_lx5
+    ):
+        lst = state_lx_lx2_start_lx4_lx5.list_on_enters()
+        assert lst == []
+
+        lst = state_lx_lx2_start_lx4_lx5.list_on_enters(with_ids=False)
+        assert lst == []
+
+        lst = state_lx_lx2_start_lx4_lx5.list_on_enters(with_ids=True)
+        assert lst == []
+
+        lst = state_lx_lx2_start_lx4_lx5.list_on_enters(is_abstract=False)
+        assert lst == []
+
+        lst = state_lx_lx2_start_lx4_lx5.list_on_enters(
+            is_abstract=False, with_ids=False
+        )
+        assert lst == []
+
+        lst = state_lx_lx2_start_lx4_lx5.list_on_enters(
+            is_abstract=False, with_ids=True
+        )
+        assert lst == []
+
+        lst = state_lx_lx2_start_lx4_lx5.list_on_enters(is_abstract=True)
+        assert lst == []
+
+        lst = state_lx_lx2_start_lx4_lx5.list_on_enters(
+            is_abstract=True, with_ids=False
+        )
+        assert lst == []
+
+        lst = state_lx_lx2_start_lx4_lx5.list_on_enters(is_abstract=True, with_ids=True)
+        assert lst == []
 
     def test_state_lx_lx2_start_lx4_lx5_during_aspects(
         self, state_lx_lx2_start_lx4_lx5
@@ -1290,6 +1634,34 @@ class TestModelStateLx:
             force_transitions=[],
             is_pseudo=False,
         )
+
+    def test_state_lx_error_list_on_enters(self, state_lx_error):
+        lst = state_lx_error.list_on_enters()
+        assert lst == []
+
+        lst = state_lx_error.list_on_enters(with_ids=False)
+        assert lst == []
+
+        lst = state_lx_error.list_on_enters(with_ids=True)
+        assert lst == []
+
+        lst = state_lx_error.list_on_enters(is_abstract=False)
+        assert lst == []
+
+        lst = state_lx_error.list_on_enters(is_abstract=False, with_ids=False)
+        assert lst == []
+
+        lst = state_lx_error.list_on_enters(is_abstract=False, with_ids=True)
+        assert lst == []
+
+        lst = state_lx_error.list_on_enters(is_abstract=True)
+        assert lst == []
+
+        lst = state_lx_error.list_on_enters(is_abstract=True, with_ids=False)
+        assert lst == []
+
+        lst = state_lx_error.list_on_enters(is_abstract=True, with_ids=True)
+        assert lst == []
 
     def test_state_lx_error_during_aspects(self, state_lx_error):
         lst = state_lx_error.list_on_during_aspects()

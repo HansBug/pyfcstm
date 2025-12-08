@@ -600,6 +600,132 @@ class TestModelStateL1:
             is_pseudo=False,
         )
 
+    def test_state_l1_list_on_enters(self, state_l1):
+        lst = state_l1.list_on_enters()
+        assert len(lst) == 1
+        on_stage = lst[0]
+        assert on_stage.stage == "enter"
+        assert on_stage.aspect is None
+        assert on_stage.name == "F1"
+        assert on_stage.doc is None
+        assert on_stage.operations == []
+        assert on_stage.is_abstract
+        assert on_stage.state_path == ("L1", "F1")
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "L1"
+        assert on_stage.parent_ref().path == ("L1",)
+        assert not on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "L1"
+        assert on_stage.parent.path == ("L1",)
+
+        lst = state_l1.list_on_enters(with_ids=False)
+        assert len(lst) == 1
+        on_stage = lst[0]
+        assert on_stage.stage == "enter"
+        assert on_stage.aspect is None
+        assert on_stage.name == "F1"
+        assert on_stage.doc is None
+        assert on_stage.operations == []
+        assert on_stage.is_abstract
+        assert on_stage.state_path == ("L1", "F1")
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "L1"
+        assert on_stage.parent_ref().path == ("L1",)
+        assert not on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "L1"
+        assert on_stage.parent.path == ("L1",)
+
+        lst = state_l1.list_on_enters(with_ids=True)
+        assert len(lst) == 1
+        id_, on_stage = lst[0]
+        assert id_ == 1
+        assert on_stage.stage == "enter"
+        assert on_stage.aspect is None
+        assert on_stage.name == "F1"
+        assert on_stage.doc is None
+        assert on_stage.operations == []
+        assert on_stage.is_abstract
+        assert on_stage.state_path == ("L1", "F1")
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "L1"
+        assert on_stage.parent_ref().path == ("L1",)
+        assert not on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "L1"
+        assert on_stage.parent.path == ("L1",)
+
+        lst = state_l1.list_on_enters(is_abstract=False)
+        assert lst == []
+
+        lst = state_l1.list_on_enters(is_abstract=False, with_ids=False)
+        assert lst == []
+
+        lst = state_l1.list_on_enters(is_abstract=False, with_ids=True)
+        assert lst == []
+
+        lst = state_l1.list_on_enters(is_abstract=True)
+        assert len(lst) == 1
+        on_stage = lst[0]
+        assert on_stage.stage == "enter"
+        assert on_stage.aspect is None
+        assert on_stage.name == "F1"
+        assert on_stage.doc is None
+        assert on_stage.operations == []
+        assert on_stage.is_abstract
+        assert on_stage.state_path == ("L1", "F1")
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "L1"
+        assert on_stage.parent_ref().path == ("L1",)
+        assert not on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "L1"
+        assert on_stage.parent.path == ("L1",)
+
+        lst = state_l1.list_on_enters(is_abstract=True, with_ids=False)
+        assert len(lst) == 1
+        on_stage = lst[0]
+        assert on_stage.stage == "enter"
+        assert on_stage.aspect is None
+        assert on_stage.name == "F1"
+        assert on_stage.doc is None
+        assert on_stage.operations == []
+        assert on_stage.is_abstract
+        assert on_stage.state_path == ("L1", "F1")
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "L1"
+        assert on_stage.parent_ref().path == ("L1",)
+        assert not on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "L1"
+        assert on_stage.parent.path == ("L1",)
+
+        lst = state_l1.list_on_enters(is_abstract=True, with_ids=True)
+        assert len(lst) == 1
+        id_, on_stage = lst[0]
+        assert id_ == 1
+        assert on_stage.stage == "enter"
+        assert on_stage.aspect is None
+        assert on_stage.name == "F1"
+        assert on_stage.doc is None
+        assert on_stage.operations == []
+        assert on_stage.is_abstract
+        assert on_stage.state_path == ("L1", "F1")
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "L1"
+        assert on_stage.parent_ref().path == ("L1",)
+        assert not on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "L1"
+        assert on_stage.parent.path == ("L1",)
+
     def test_state_l1_during_aspects(self, state_l1):
         lst = state_l1.list_on_during_aspects()
         assert len(lst) == 2
@@ -1008,6 +1134,168 @@ class TestModelStateL1:
             force_transitions=[],
             is_pseudo=False,
         )
+
+    def test_state_l1_l21_list_on_enters(self, state_l1_l21):
+        lst = state_l1_l21.list_on_enters()
+        assert len(lst) == 1
+        on_stage = lst[0]
+        assert on_stage.stage == "enter"
+        assert on_stage.aspect is None
+        assert on_stage.name == "F1"
+        assert on_stage.doc is None
+        assert on_stage.operations == [
+            Operation(var_name="x", expr=Integer(value=0)),
+            Operation(
+                var_name="y",
+                expr=BinaryOp(x=Variable(name="y"), op="+", y=Integer(value=1)),
+            ),
+        ]
+        assert not on_stage.is_abstract
+        assert on_stage.state_path == ("L1", "L21", "F1")
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "L21"
+        assert on_stage.parent_ref().path == ("L1", "L21")
+        assert not on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "L21"
+        assert on_stage.parent.path == ("L1", "L21")
+
+        lst = state_l1_l21.list_on_enters(with_ids=False)
+        assert len(lst) == 1
+        on_stage = lst[0]
+        assert on_stage.stage == "enter"
+        assert on_stage.aspect is None
+        assert on_stage.name == "F1"
+        assert on_stage.doc is None
+        assert on_stage.operations == [
+            Operation(var_name="x", expr=Integer(value=0)),
+            Operation(
+                var_name="y",
+                expr=BinaryOp(x=Variable(name="y"), op="+", y=Integer(value=1)),
+            ),
+        ]
+        assert not on_stage.is_abstract
+        assert on_stage.state_path == ("L1", "L21", "F1")
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "L21"
+        assert on_stage.parent_ref().path == ("L1", "L21")
+        assert not on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "L21"
+        assert on_stage.parent.path == ("L1", "L21")
+
+        lst = state_l1_l21.list_on_enters(with_ids=True)
+        assert len(lst) == 1
+        id_, on_stage = lst[0]
+        assert id_ == 1
+        assert on_stage.stage == "enter"
+        assert on_stage.aspect is None
+        assert on_stage.name == "F1"
+        assert on_stage.doc is None
+        assert on_stage.operations == [
+            Operation(var_name="x", expr=Integer(value=0)),
+            Operation(
+                var_name="y",
+                expr=BinaryOp(x=Variable(name="y"), op="+", y=Integer(value=1)),
+            ),
+        ]
+        assert not on_stage.is_abstract
+        assert on_stage.state_path == ("L1", "L21", "F1")
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "L21"
+        assert on_stage.parent_ref().path == ("L1", "L21")
+        assert not on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "L21"
+        assert on_stage.parent.path == ("L1", "L21")
+
+        lst = state_l1_l21.list_on_enters(is_abstract=False)
+        assert len(lst) == 1
+        on_stage = lst[0]
+        assert on_stage.stage == "enter"
+        assert on_stage.aspect is None
+        assert on_stage.name == "F1"
+        assert on_stage.doc is None
+        assert on_stage.operations == [
+            Operation(var_name="x", expr=Integer(value=0)),
+            Operation(
+                var_name="y",
+                expr=BinaryOp(x=Variable(name="y"), op="+", y=Integer(value=1)),
+            ),
+        ]
+        assert not on_stage.is_abstract
+        assert on_stage.state_path == ("L1", "L21", "F1")
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "L21"
+        assert on_stage.parent_ref().path == ("L1", "L21")
+        assert not on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "L21"
+        assert on_stage.parent.path == ("L1", "L21")
+
+        lst = state_l1_l21.list_on_enters(is_abstract=False, with_ids=False)
+        assert len(lst) == 1
+        on_stage = lst[0]
+        assert on_stage.stage == "enter"
+        assert on_stage.aspect is None
+        assert on_stage.name == "F1"
+        assert on_stage.doc is None
+        assert on_stage.operations == [
+            Operation(var_name="x", expr=Integer(value=0)),
+            Operation(
+                var_name="y",
+                expr=BinaryOp(x=Variable(name="y"), op="+", y=Integer(value=1)),
+            ),
+        ]
+        assert not on_stage.is_abstract
+        assert on_stage.state_path == ("L1", "L21", "F1")
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "L21"
+        assert on_stage.parent_ref().path == ("L1", "L21")
+        assert not on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "L21"
+        assert on_stage.parent.path == ("L1", "L21")
+
+        lst = state_l1_l21.list_on_enters(is_abstract=False, with_ids=True)
+        assert len(lst) == 1
+        id_, on_stage = lst[0]
+        assert id_ == 1
+        assert on_stage.stage == "enter"
+        assert on_stage.aspect is None
+        assert on_stage.name == "F1"
+        assert on_stage.doc is None
+        assert on_stage.operations == [
+            Operation(var_name="x", expr=Integer(value=0)),
+            Operation(
+                var_name="y",
+                expr=BinaryOp(x=Variable(name="y"), op="+", y=Integer(value=1)),
+            ),
+        ]
+        assert not on_stage.is_abstract
+        assert on_stage.state_path == ("L1", "L21", "F1")
+        assert on_stage.ref is None
+        assert on_stage.ref_state_path is None
+        assert on_stage.parent_ref().name == "L21"
+        assert on_stage.parent_ref().path == ("L1", "L21")
+        assert not on_stage.is_aspect
+        assert not on_stage.is_ref
+        assert on_stage.parent.name == "L21"
+        assert on_stage.parent.path == ("L1", "L21")
+
+        lst = state_l1_l21.list_on_enters(is_abstract=True)
+        assert lst == []
+
+        lst = state_l1_l21.list_on_enters(is_abstract=True, with_ids=False)
+        assert lst == []
+
+        lst = state_l1_l21.list_on_enters(is_abstract=True, with_ids=True)
+        assert lst == []
 
     def test_state_l1_l21_during_aspects(self, state_l1_l21):
         lst = state_l1_l21.list_on_during_aspects()
@@ -1542,6 +1830,144 @@ class TestModelStateL1:
             force_transitions=[],
             is_pseudo=False,
         )
+
+    def test_state_l1_l22_list_on_enters(self, state_l1_l22):
+        lst = state_l1_l22.list_on_enters()
+        assert len(lst) == 1
+        on_stage = lst[0]
+        assert on_stage.stage == "enter"
+        assert on_stage.aspect is None
+        assert on_stage.name is None
+        assert on_stage.doc is None
+        assert on_stage.operations == []
+        assert not on_stage.is_abstract
+        assert on_stage.state_path == ("L1", "L22", None)
+        assert on_stage.ref.name == "F1x"
+        assert on_stage.ref.aspect == None
+        assert on_stage.ref.state_path == ("L1", "F1x")
+        assert on_stage.ref_state_path == ("L1", "F1x")
+        assert on_stage.parent_ref().name == "L22"
+        assert on_stage.parent_ref().path == ("L1", "L22")
+        assert not on_stage.is_aspect
+        assert on_stage.is_ref
+        assert on_stage.parent.name == "L22"
+        assert on_stage.parent.path == ("L1", "L22")
+
+        lst = state_l1_l22.list_on_enters(with_ids=False)
+        assert len(lst) == 1
+        on_stage = lst[0]
+        assert on_stage.stage == "enter"
+        assert on_stage.aspect is None
+        assert on_stage.name is None
+        assert on_stage.doc is None
+        assert on_stage.operations == []
+        assert not on_stage.is_abstract
+        assert on_stage.state_path == ("L1", "L22", None)
+        assert on_stage.ref.name == "F1x"
+        assert on_stage.ref.aspect == None
+        assert on_stage.ref.state_path == ("L1", "F1x")
+        assert on_stage.ref_state_path == ("L1", "F1x")
+        assert on_stage.parent_ref().name == "L22"
+        assert on_stage.parent_ref().path == ("L1", "L22")
+        assert not on_stage.is_aspect
+        assert on_stage.is_ref
+        assert on_stage.parent.name == "L22"
+        assert on_stage.parent.path == ("L1", "L22")
+
+        lst = state_l1_l22.list_on_enters(with_ids=True)
+        assert len(lst) == 1
+        id_, on_stage = lst[0]
+        assert id_ == 1
+        assert on_stage.stage == "enter"
+        assert on_stage.aspect is None
+        assert on_stage.name is None
+        assert on_stage.doc is None
+        assert on_stage.operations == []
+        assert not on_stage.is_abstract
+        assert on_stage.state_path == ("L1", "L22", None)
+        assert on_stage.ref.name == "F1x"
+        assert on_stage.ref.aspect == None
+        assert on_stage.ref.state_path == ("L1", "F1x")
+        assert on_stage.ref_state_path == ("L1", "F1x")
+        assert on_stage.parent_ref().name == "L22"
+        assert on_stage.parent_ref().path == ("L1", "L22")
+        assert not on_stage.is_aspect
+        assert on_stage.is_ref
+        assert on_stage.parent.name == "L22"
+        assert on_stage.parent.path == ("L1", "L22")
+
+        lst = state_l1_l22.list_on_enters(is_abstract=False)
+        assert len(lst) == 1
+        on_stage = lst[0]
+        assert on_stage.stage == "enter"
+        assert on_stage.aspect is None
+        assert on_stage.name is None
+        assert on_stage.doc is None
+        assert on_stage.operations == []
+        assert not on_stage.is_abstract
+        assert on_stage.state_path == ("L1", "L22", None)
+        assert on_stage.ref.name == "F1x"
+        assert on_stage.ref.aspect == None
+        assert on_stage.ref.state_path == ("L1", "F1x")
+        assert on_stage.ref_state_path == ("L1", "F1x")
+        assert on_stage.parent_ref().name == "L22"
+        assert on_stage.parent_ref().path == ("L1", "L22")
+        assert not on_stage.is_aspect
+        assert on_stage.is_ref
+        assert on_stage.parent.name == "L22"
+        assert on_stage.parent.path == ("L1", "L22")
+
+        lst = state_l1_l22.list_on_enters(is_abstract=False, with_ids=False)
+        assert len(lst) == 1
+        on_stage = lst[0]
+        assert on_stage.stage == "enter"
+        assert on_stage.aspect is None
+        assert on_stage.name is None
+        assert on_stage.doc is None
+        assert on_stage.operations == []
+        assert not on_stage.is_abstract
+        assert on_stage.state_path == ("L1", "L22", None)
+        assert on_stage.ref.name == "F1x"
+        assert on_stage.ref.aspect == None
+        assert on_stage.ref.state_path == ("L1", "F1x")
+        assert on_stage.ref_state_path == ("L1", "F1x")
+        assert on_stage.parent_ref().name == "L22"
+        assert on_stage.parent_ref().path == ("L1", "L22")
+        assert not on_stage.is_aspect
+        assert on_stage.is_ref
+        assert on_stage.parent.name == "L22"
+        assert on_stage.parent.path == ("L1", "L22")
+
+        lst = state_l1_l22.list_on_enters(is_abstract=False, with_ids=True)
+        assert len(lst) == 1
+        id_, on_stage = lst[0]
+        assert id_ == 1
+        assert on_stage.stage == "enter"
+        assert on_stage.aspect is None
+        assert on_stage.name is None
+        assert on_stage.doc is None
+        assert on_stage.operations == []
+        assert not on_stage.is_abstract
+        assert on_stage.state_path == ("L1", "L22", None)
+        assert on_stage.ref.name == "F1x"
+        assert on_stage.ref.aspect == None
+        assert on_stage.ref.state_path == ("L1", "F1x")
+        assert on_stage.ref_state_path == ("L1", "F1x")
+        assert on_stage.parent_ref().name == "L22"
+        assert on_stage.parent_ref().path == ("L1", "L22")
+        assert not on_stage.is_aspect
+        assert on_stage.is_ref
+        assert on_stage.parent.name == "L22"
+        assert on_stage.parent.path == ("L1", "L22")
+
+        lst = state_l1_l22.list_on_enters(is_abstract=True)
+        assert lst == []
+
+        lst = state_l1_l22.list_on_enters(is_abstract=True, with_ids=False)
+        assert lst == []
+
+        lst = state_l1_l22.list_on_enters(is_abstract=True, with_ids=True)
+        assert lst == []
 
     def test_state_l1_l22_during_aspects(self, state_l1_l22):
         lst = state_l1_l22.list_on_during_aspects()

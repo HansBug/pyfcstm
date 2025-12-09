@@ -1,0 +1,16 @@
+state Root{
+    event E1 named '事件1';
+    state state1 {
+        event E1 named 'S1 -> 事件1';
+    };
+    state state2;
+    pseudo state state3 {
+        event E2 named 'S3 -> 事件2';
+    };
+    state state4;
+
+    [*] -> state1 : E1;
+    state1 -> state2 :: E1;
+    state2 -> state3 : E1;
+    state3 -> state4 :: E2;
+}

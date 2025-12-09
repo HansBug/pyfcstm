@@ -159,7 +159,7 @@ class TestModelStateL1:
         assert state_l1.transitions[0].from_state == "L11"
         assert state_l1.transitions[0].to_state == EXIT_STATE
         assert state_l1.transitions[0].event == Event(
-            name="E1", state_path=("L1", "L11")
+            name="E1", state_path=("L1", "L11"), extra_name=None
         )
         assert state_l1.transitions[0].guard is None
         assert state_l1.transitions[0].effects == []
@@ -243,22 +243,44 @@ class TestModelStateL1:
         assert ast_node == dsl_nodes.StateDefinition(
             name="L1",
             extra_name=None,
+            events=[],
             substates=[
                 dsl_nodes.StateDefinition(
                     name="L11",
                     extra_name=None,
+                    events=[dsl_nodes.EventDefinition(name="E1", extra_name=None)],
                     substates=[
                         dsl_nodes.StateDefinition(
                             name="L111",
                             extra_name=None,
+                            events=[
+                                dsl_nodes.EventDefinition(name="E1", extra_name=None),
+                                dsl_nodes.EventDefinition(name="E2", extra_name=None),
+                            ],
                             substates=[
                                 dsl_nodes.StateDefinition(
                                     name="L1111",
                                     extra_name=None,
+                                    events=[
+                                        dsl_nodes.EventDefinition(
+                                            name="E1", extra_name=None
+                                        ),
+                                        dsl_nodes.EventDefinition(
+                                            name="E2", extra_name=None
+                                        ),
+                                    ],
                                     substates=[
                                         dsl_nodes.StateDefinition(
                                             name="L11111",
                                             extra_name=None,
+                                            events=[
+                                                dsl_nodes.EventDefinition(
+                                                    name="E1", extra_name=None
+                                                ),
+                                                dsl_nodes.EventDefinition(
+                                                    name="E2", extra_name=None
+                                                ),
+                                            ],
                                             substates=[],
                                             transitions=[],
                                             enters=[],
@@ -271,6 +293,11 @@ class TestModelStateL1:
                                         dsl_nodes.StateDefinition(
                                             name="L11112",
                                             extra_name=None,
+                                            events=[
+                                                dsl_nodes.EventDefinition(
+                                                    name="E1", extra_name=None
+                                                )
+                                            ],
                                             substates=[],
                                             transitions=[],
                                             enters=[],
@@ -283,6 +310,11 @@ class TestModelStateL1:
                                         dsl_nodes.StateDefinition(
                                             name="L11113",
                                             extra_name=None,
+                                            events=[
+                                                dsl_nodes.EventDefinition(
+                                                    name="E1", extra_name=None
+                                                )
+                                            ],
                                             substates=[],
                                             transitions=[],
                                             enters=[],
@@ -375,6 +407,11 @@ class TestModelStateL1:
                                 dsl_nodes.StateDefinition(
                                     name="L1112",
                                     extra_name=None,
+                                    events=[
+                                        dsl_nodes.EventDefinition(
+                                            name="E1", extra_name=None
+                                        )
+                                    ],
                                     substates=[],
                                     transitions=[],
                                     enters=[],
@@ -387,6 +424,11 @@ class TestModelStateL1:
                                 dsl_nodes.StateDefinition(
                                     name="L1113",
                                     extra_name=None,
+                                    events=[
+                                        dsl_nodes.EventDefinition(
+                                            name="E1", extra_name=None
+                                        )
+                                    ],
                                     substates=[],
                                     transitions=[],
                                     enters=[],
@@ -479,6 +521,9 @@ class TestModelStateL1:
                         dsl_nodes.StateDefinition(
                             name="L112",
                             extra_name=None,
+                            events=[
+                                dsl_nodes.EventDefinition(name="E1", extra_name=None)
+                            ],
                             substates=[],
                             transitions=[],
                             enters=[],
@@ -491,6 +536,9 @@ class TestModelStateL1:
                         dsl_nodes.StateDefinition(
                             name="L113",
                             extra_name=None,
+                            events=[
+                                dsl_nodes.EventDefinition(name="E1", extra_name=None)
+                            ],
                             substates=[],
                             transitions=[],
                             enters=[],
@@ -577,6 +625,7 @@ class TestModelStateL1:
                 dsl_nodes.StateDefinition(
                     name="L12",
                     extra_name=None,
+                    events=[],
                     substates=[],
                     transitions=[],
                     enters=[],
@@ -678,12 +727,14 @@ class TestModelStateL1:
         assert state_l1_l11.name == "L11"
         assert state_l1_l11.path == ("L1", "L11")
         assert sorted(state_l1_l11.substates.keys()) == ["L111", "L112", "L113"]
-        assert state_l1_l11.events == {"E1": Event(name="E1", state_path=("L1", "L11"))}
+        assert state_l1_l11.events == {
+            "E1": Event(name="E1", state_path=("L1", "L11"), extra_name=None)
+        }
         assert len(state_l1_l11.transitions) == 8
         assert state_l1_l11.transitions[0].from_state == "L111"
         assert state_l1_l11.transitions[0].to_state == EXIT_STATE
         assert state_l1_l11.transitions[0].event == Event(
-            name="E1", state_path=("L1", "L11")
+            name="E1", state_path=("L1", "L11"), extra_name=None
         )
         assert state_l1_l11.transitions[0].guard is None
         assert state_l1_l11.transitions[0].effects == []
@@ -692,7 +743,7 @@ class TestModelStateL1:
         assert state_l1_l11.transitions[1].from_state == "L112"
         assert state_l1_l11.transitions[1].to_state == EXIT_STATE
         assert state_l1_l11.transitions[1].event == Event(
-            name="E1", state_path=("L1", "L11")
+            name="E1", state_path=("L1", "L11"), extra_name=None
         )
         assert state_l1_l11.transitions[1].guard is None
         assert state_l1_l11.transitions[1].effects == []
@@ -701,7 +752,7 @@ class TestModelStateL1:
         assert state_l1_l11.transitions[2].from_state == "L113"
         assert state_l1_l11.transitions[2].to_state == EXIT_STATE
         assert state_l1_l11.transitions[2].event == Event(
-            name="E1", state_path=("L1", "L11")
+            name="E1", state_path=("L1", "L11"), extra_name=None
         )
         assert state_l1_l11.transitions[2].guard is None
         assert state_l1_l11.transitions[2].effects == []
@@ -717,7 +768,7 @@ class TestModelStateL1:
         assert state_l1_l11.transitions[4].from_state == "L111"
         assert state_l1_l11.transitions[4].to_state == "L112"
         assert state_l1_l11.transitions[4].event == Event(
-            name="E1", state_path=("L1", "L11", "L111")
+            name="E1", state_path=("L1", "L11", "L111"), extra_name=None
         )
         assert state_l1_l11.transitions[4].guard is None
         assert state_l1_l11.transitions[4].effects == []
@@ -726,7 +777,7 @@ class TestModelStateL1:
         assert state_l1_l11.transitions[5].from_state == "L111"
         assert state_l1_l11.transitions[5].to_state == "L113"
         assert state_l1_l11.transitions[5].event == Event(
-            name="E2", state_path=("L1", "L11", "L111")
+            name="E2", state_path=("L1", "L11", "L111"), extra_name=None
         )
         assert state_l1_l11.transitions[5].guard is None
         assert state_l1_l11.transitions[5].effects == []
@@ -735,7 +786,7 @@ class TestModelStateL1:
         assert state_l1_l11.transitions[6].from_state == "L112"
         assert state_l1_l11.transitions[6].to_state == EXIT_STATE
         assert state_l1_l11.transitions[6].event == Event(
-            name="E1", state_path=("L1", "L11", "L112")
+            name="E1", state_path=("L1", "L11", "L112"), extra_name=None
         )
         assert state_l1_l11.transitions[6].guard is None
         assert state_l1_l11.transitions[6].effects == []
@@ -744,7 +795,7 @@ class TestModelStateL1:
         assert state_l1_l11.transitions[7].from_state == "L113"
         assert state_l1_l11.transitions[7].to_state == EXIT_STATE
         assert state_l1_l11.transitions[7].event == Event(
-            name="E1", state_path=("L1", "L11", "L113")
+            name="E1", state_path=("L1", "L11", "L113"), extra_name=None
         )
         assert state_l1_l11.transitions[7].guard is None
         assert state_l1_l11.transitions[7].effects == []
@@ -805,7 +856,7 @@ class TestModelStateL1:
         assert state_l1_l11.transitions_from[0].from_state == "L11"
         assert state_l1_l11.transitions_from[0].to_state == EXIT_STATE
         assert state_l1_l11.transitions_from[0].event == Event(
-            name="E1", state_path=("L1", "L11")
+            name="E1", state_path=("L1", "L11"), extra_name=None
         )
         assert state_l1_l11.transitions_from[0].guard is None
         assert state_l1_l11.transitions_from[0].effects == []
@@ -825,18 +876,35 @@ class TestModelStateL1:
         assert ast_node == dsl_nodes.StateDefinition(
             name="L11",
             extra_name=None,
+            events=[dsl_nodes.EventDefinition(name="E1", extra_name=None)],
             substates=[
                 dsl_nodes.StateDefinition(
                     name="L111",
                     extra_name=None,
+                    events=[
+                        dsl_nodes.EventDefinition(name="E1", extra_name=None),
+                        dsl_nodes.EventDefinition(name="E2", extra_name=None),
+                    ],
                     substates=[
                         dsl_nodes.StateDefinition(
                             name="L1111",
                             extra_name=None,
+                            events=[
+                                dsl_nodes.EventDefinition(name="E1", extra_name=None),
+                                dsl_nodes.EventDefinition(name="E2", extra_name=None),
+                            ],
                             substates=[
                                 dsl_nodes.StateDefinition(
                                     name="L11111",
                                     extra_name=None,
+                                    events=[
+                                        dsl_nodes.EventDefinition(
+                                            name="E1", extra_name=None
+                                        ),
+                                        dsl_nodes.EventDefinition(
+                                            name="E2", extra_name=None
+                                        ),
+                                    ],
                                     substates=[],
                                     transitions=[],
                                     enters=[],
@@ -849,6 +917,11 @@ class TestModelStateL1:
                                 dsl_nodes.StateDefinition(
                                     name="L11112",
                                     extra_name=None,
+                                    events=[
+                                        dsl_nodes.EventDefinition(
+                                            name="E1", extra_name=None
+                                        )
+                                    ],
                                     substates=[],
                                     transitions=[],
                                     enters=[],
@@ -861,6 +934,11 @@ class TestModelStateL1:
                                 dsl_nodes.StateDefinition(
                                     name="L11113",
                                     extra_name=None,
+                                    events=[
+                                        dsl_nodes.EventDefinition(
+                                            name="E1", extra_name=None
+                                        )
+                                    ],
                                     substates=[],
                                     transitions=[],
                                     enters=[],
@@ -953,6 +1031,9 @@ class TestModelStateL1:
                         dsl_nodes.StateDefinition(
                             name="L1112",
                             extra_name=None,
+                            events=[
+                                dsl_nodes.EventDefinition(name="E1", extra_name=None)
+                            ],
                             substates=[],
                             transitions=[],
                             enters=[],
@@ -965,6 +1046,9 @@ class TestModelStateL1:
                         dsl_nodes.StateDefinition(
                             name="L1113",
                             extra_name=None,
+                            events=[
+                                dsl_nodes.EventDefinition(name="E1", extra_name=None)
+                            ],
                             substates=[],
                             transitions=[],
                             enters=[],
@@ -1057,6 +1141,7 @@ class TestModelStateL1:
                 dsl_nodes.StateDefinition(
                     name="L112",
                     extra_name=None,
+                    events=[dsl_nodes.EventDefinition(name="E1", extra_name=None)],
                     substates=[],
                     transitions=[],
                     enters=[],
@@ -1069,6 +1154,7 @@ class TestModelStateL1:
                 dsl_nodes.StateDefinition(
                     name="L113",
                     extra_name=None,
+                    events=[dsl_nodes.EventDefinition(name="E1", extra_name=None)],
                     substates=[],
                     transitions=[],
                     enters=[],
@@ -1206,14 +1292,14 @@ class TestModelStateL1:
         assert state_l1_l11_l111.path == ("L1", "L11", "L111")
         assert sorted(state_l1_l11_l111.substates.keys()) == ["L1111", "L1112", "L1113"]
         assert state_l1_l11_l111.events == {
-            "E1": Event(name="E1", state_path=("L1", "L11", "L111")),
-            "E2": Event(name="E2", state_path=("L1", "L11", "L111")),
+            "E1": Event(name="E1", state_path=("L1", "L11", "L111"), extra_name=None),
+            "E2": Event(name="E2", state_path=("L1", "L11", "L111"), extra_name=None),
         }
         assert len(state_l1_l11_l111.transitions) == 8
         assert state_l1_l11_l111.transitions[0].from_state == "L1111"
         assert state_l1_l11_l111.transitions[0].to_state == EXIT_STATE
         assert state_l1_l11_l111.transitions[0].event == Event(
-            name="E1", state_path=("L1", "L11")
+            name="E1", state_path=("L1", "L11"), extra_name=None
         )
         assert state_l1_l11_l111.transitions[0].guard is None
         assert state_l1_l11_l111.transitions[0].effects == []
@@ -1226,7 +1312,7 @@ class TestModelStateL1:
         assert state_l1_l11_l111.transitions[1].from_state == "L1112"
         assert state_l1_l11_l111.transitions[1].to_state == EXIT_STATE
         assert state_l1_l11_l111.transitions[1].event == Event(
-            name="E1", state_path=("L1", "L11")
+            name="E1", state_path=("L1", "L11"), extra_name=None
         )
         assert state_l1_l11_l111.transitions[1].guard is None
         assert state_l1_l11_l111.transitions[1].effects == []
@@ -1239,7 +1325,7 @@ class TestModelStateL1:
         assert state_l1_l11_l111.transitions[2].from_state == "L1113"
         assert state_l1_l11_l111.transitions[2].to_state == EXIT_STATE
         assert state_l1_l11_l111.transitions[2].event == Event(
-            name="E1", state_path=("L1", "L11")
+            name="E1", state_path=("L1", "L11"), extra_name=None
         )
         assert state_l1_l11_l111.transitions[2].guard is None
         assert state_l1_l11_l111.transitions[2].effects == []
@@ -1263,7 +1349,7 @@ class TestModelStateL1:
         assert state_l1_l11_l111.transitions[4].from_state == "L1111"
         assert state_l1_l11_l111.transitions[4].to_state == "L1112"
         assert state_l1_l11_l111.transitions[4].event == Event(
-            name="E1", state_path=("L1", "L11", "L111", "L1111")
+            name="E1", state_path=("L1", "L11", "L111", "L1111"), extra_name=None
         )
         assert state_l1_l11_l111.transitions[4].guard is None
         assert state_l1_l11_l111.transitions[4].effects == []
@@ -1276,7 +1362,7 @@ class TestModelStateL1:
         assert state_l1_l11_l111.transitions[5].from_state == "L1111"
         assert state_l1_l11_l111.transitions[5].to_state == "L1113"
         assert state_l1_l11_l111.transitions[5].event == Event(
-            name="E2", state_path=("L1", "L11", "L111", "L1111")
+            name="E2", state_path=("L1", "L11", "L111", "L1111"), extra_name=None
         )
         assert state_l1_l11_l111.transitions[5].guard is None
         assert state_l1_l11_l111.transitions[5].effects == []
@@ -1289,7 +1375,7 @@ class TestModelStateL1:
         assert state_l1_l11_l111.transitions[6].from_state == "L1112"
         assert state_l1_l11_l111.transitions[6].to_state == EXIT_STATE
         assert state_l1_l11_l111.transitions[6].event == Event(
-            name="E1", state_path=("L1", "L11", "L111", "L1112")
+            name="E1", state_path=("L1", "L11", "L111", "L1112"), extra_name=None
         )
         assert state_l1_l11_l111.transitions[6].guard is None
         assert state_l1_l11_l111.transitions[6].effects == []
@@ -1302,7 +1388,7 @@ class TestModelStateL1:
         assert state_l1_l11_l111.transitions[7].from_state == "L1113"
         assert state_l1_l11_l111.transitions[7].to_state == EXIT_STATE
         assert state_l1_l11_l111.transitions[7].event == Event(
-            name="E1", state_path=("L1", "L11", "L111", "L1113")
+            name="E1", state_path=("L1", "L11", "L111", "L1113"), extra_name=None
         )
         assert state_l1_l11_l111.transitions[7].guard is None
         assert state_l1_l11_l111.transitions[7].effects == []
@@ -1386,7 +1472,7 @@ class TestModelStateL1:
         assert state_l1_l11_l111.transitions_from[0].from_state == "L111"
         assert state_l1_l11_l111.transitions_from[0].to_state == EXIT_STATE
         assert state_l1_l11_l111.transitions_from[0].event == Event(
-            name="E1", state_path=("L1", "L11")
+            name="E1", state_path=("L1", "L11"), extra_name=None
         )
         assert state_l1_l11_l111.transitions_from[0].guard is None
         assert state_l1_l11_l111.transitions_from[0].effects == []
@@ -1395,7 +1481,7 @@ class TestModelStateL1:
         assert state_l1_l11_l111.transitions_from[1].from_state == "L111"
         assert state_l1_l11_l111.transitions_from[1].to_state == "L112"
         assert state_l1_l11_l111.transitions_from[1].event == Event(
-            name="E1", state_path=("L1", "L11", "L111")
+            name="E1", state_path=("L1", "L11", "L111"), extra_name=None
         )
         assert state_l1_l11_l111.transitions_from[1].guard is None
         assert state_l1_l11_l111.transitions_from[1].effects == []
@@ -1404,7 +1490,7 @@ class TestModelStateL1:
         assert state_l1_l11_l111.transitions_from[2].from_state == "L111"
         assert state_l1_l11_l111.transitions_from[2].to_state == "L113"
         assert state_l1_l11_l111.transitions_from[2].event == Event(
-            name="E2", state_path=("L1", "L11", "L111")
+            name="E2", state_path=("L1", "L11", "L111"), extra_name=None
         )
         assert state_l1_l11_l111.transitions_from[2].guard is None
         assert state_l1_l11_l111.transitions_from[2].effects == []
@@ -1424,14 +1510,26 @@ class TestModelStateL1:
         assert ast_node == dsl_nodes.StateDefinition(
             name="L111",
             extra_name=None,
+            events=[
+                dsl_nodes.EventDefinition(name="E1", extra_name=None),
+                dsl_nodes.EventDefinition(name="E2", extra_name=None),
+            ],
             substates=[
                 dsl_nodes.StateDefinition(
                     name="L1111",
                     extra_name=None,
+                    events=[
+                        dsl_nodes.EventDefinition(name="E1", extra_name=None),
+                        dsl_nodes.EventDefinition(name="E2", extra_name=None),
+                    ],
                     substates=[
                         dsl_nodes.StateDefinition(
                             name="L11111",
                             extra_name=None,
+                            events=[
+                                dsl_nodes.EventDefinition(name="E1", extra_name=None),
+                                dsl_nodes.EventDefinition(name="E2", extra_name=None),
+                            ],
                             substates=[],
                             transitions=[],
                             enters=[],
@@ -1444,6 +1542,9 @@ class TestModelStateL1:
                         dsl_nodes.StateDefinition(
                             name="L11112",
                             extra_name=None,
+                            events=[
+                                dsl_nodes.EventDefinition(name="E1", extra_name=None)
+                            ],
                             substates=[],
                             transitions=[],
                             enters=[],
@@ -1456,6 +1557,9 @@ class TestModelStateL1:
                         dsl_nodes.StateDefinition(
                             name="L11113",
                             extra_name=None,
+                            events=[
+                                dsl_nodes.EventDefinition(name="E1", extra_name=None)
+                            ],
                             substates=[],
                             transitions=[],
                             enters=[],
@@ -1548,6 +1652,7 @@ class TestModelStateL1:
                 dsl_nodes.StateDefinition(
                     name="L1112",
                     extra_name=None,
+                    events=[dsl_nodes.EventDefinition(name="E1", extra_name=None)],
                     substates=[],
                     transitions=[],
                     enters=[],
@@ -1560,6 +1665,7 @@ class TestModelStateL1:
                 dsl_nodes.StateDefinition(
                     name="L1113",
                     extra_name=None,
+                    events=[dsl_nodes.EventDefinition(name="E1", extra_name=None)],
                     substates=[],
                     transitions=[],
                     enters=[],
@@ -1707,14 +1813,18 @@ class TestModelStateL1:
             "L11113",
         ]
         assert state_l1_l11_l111_l1111.events == {
-            "E1": Event(name="E1", state_path=("L1", "L11", "L111", "L1111")),
-            "E2": Event(name="E2", state_path=("L1", "L11", "L111", "L1111")),
+            "E1": Event(
+                name="E1", state_path=("L1", "L11", "L111", "L1111"), extra_name=None
+            ),
+            "E2": Event(
+                name="E2", state_path=("L1", "L11", "L111", "L1111"), extra_name=None
+            ),
         }
         assert len(state_l1_l11_l111_l1111.transitions) == 8
         assert state_l1_l11_l111_l1111.transitions[0].from_state == "L11111"
         assert state_l1_l11_l111_l1111.transitions[0].to_state == EXIT_STATE
         assert state_l1_l11_l111_l1111.transitions[0].event == Event(
-            name="E1", state_path=("L1", "L11")
+            name="E1", state_path=("L1", "L11"), extra_name=None
         )
         assert state_l1_l11_l111_l1111.transitions[0].guard is None
         assert state_l1_l11_l111_l1111.transitions[0].effects == []
@@ -1728,7 +1838,7 @@ class TestModelStateL1:
         assert state_l1_l11_l111_l1111.transitions[1].from_state == "L11112"
         assert state_l1_l11_l111_l1111.transitions[1].to_state == EXIT_STATE
         assert state_l1_l11_l111_l1111.transitions[1].event == Event(
-            name="E1", state_path=("L1", "L11")
+            name="E1", state_path=("L1", "L11"), extra_name=None
         )
         assert state_l1_l11_l111_l1111.transitions[1].guard is None
         assert state_l1_l11_l111_l1111.transitions[1].effects == []
@@ -1742,7 +1852,7 @@ class TestModelStateL1:
         assert state_l1_l11_l111_l1111.transitions[2].from_state == "L11113"
         assert state_l1_l11_l111_l1111.transitions[2].to_state == EXIT_STATE
         assert state_l1_l11_l111_l1111.transitions[2].event == Event(
-            name="E1", state_path=("L1", "L11")
+            name="E1", state_path=("L1", "L11"), extra_name=None
         )
         assert state_l1_l11_l111_l1111.transitions[2].guard is None
         assert state_l1_l11_l111_l1111.transitions[2].effects == []
@@ -1768,7 +1878,9 @@ class TestModelStateL1:
         assert state_l1_l11_l111_l1111.transitions[4].from_state == "L11111"
         assert state_l1_l11_l111_l1111.transitions[4].to_state == "L11112"
         assert state_l1_l11_l111_l1111.transitions[4].event == Event(
-            name="E1", state_path=("L1", "L11", "L111", "L1111", "L11111")
+            name="E1",
+            state_path=("L1", "L11", "L111", "L1111", "L11111"),
+            extra_name=None,
         )
         assert state_l1_l11_l111_l1111.transitions[4].guard is None
         assert state_l1_l11_l111_l1111.transitions[4].effects == []
@@ -1782,7 +1894,9 @@ class TestModelStateL1:
         assert state_l1_l11_l111_l1111.transitions[5].from_state == "L11111"
         assert state_l1_l11_l111_l1111.transitions[5].to_state == "L11113"
         assert state_l1_l11_l111_l1111.transitions[5].event == Event(
-            name="E2", state_path=("L1", "L11", "L111", "L1111", "L11111")
+            name="E2",
+            state_path=("L1", "L11", "L111", "L1111", "L11111"),
+            extra_name=None,
         )
         assert state_l1_l11_l111_l1111.transitions[5].guard is None
         assert state_l1_l11_l111_l1111.transitions[5].effects == []
@@ -1796,7 +1910,9 @@ class TestModelStateL1:
         assert state_l1_l11_l111_l1111.transitions[6].from_state == "L11112"
         assert state_l1_l11_l111_l1111.transitions[6].to_state == EXIT_STATE
         assert state_l1_l11_l111_l1111.transitions[6].event == Event(
-            name="E1", state_path=("L1", "L11", "L111", "L1111", "L11112")
+            name="E1",
+            state_path=("L1", "L11", "L111", "L1111", "L11112"),
+            extra_name=None,
         )
         assert state_l1_l11_l111_l1111.transitions[6].guard is None
         assert state_l1_l11_l111_l1111.transitions[6].effects == []
@@ -1810,7 +1926,9 @@ class TestModelStateL1:
         assert state_l1_l11_l111_l1111.transitions[7].from_state == "L11113"
         assert state_l1_l11_l111_l1111.transitions[7].to_state == EXIT_STATE
         assert state_l1_l11_l111_l1111.transitions[7].event == Event(
-            name="E1", state_path=("L1", "L11", "L111", "L1111", "L11113")
+            name="E1",
+            state_path=("L1", "L11", "L111", "L1111", "L11113"),
+            extra_name=None,
         )
         assert state_l1_l11_l111_l1111.transitions[7].guard is None
         assert state_l1_l11_l111_l1111.transitions[7].effects == []
@@ -1904,7 +2022,7 @@ class TestModelStateL1:
         assert state_l1_l11_l111_l1111.transitions_from[0].from_state == "L1111"
         assert state_l1_l11_l111_l1111.transitions_from[0].to_state == EXIT_STATE
         assert state_l1_l11_l111_l1111.transitions_from[0].event == Event(
-            name="E1", state_path=("L1", "L11")
+            name="E1", state_path=("L1", "L11"), extra_name=None
         )
         assert state_l1_l11_l111_l1111.transitions_from[0].guard is None
         assert state_l1_l11_l111_l1111.transitions_from[0].effects == []
@@ -1917,7 +2035,7 @@ class TestModelStateL1:
         assert state_l1_l11_l111_l1111.transitions_from[1].from_state == "L1111"
         assert state_l1_l11_l111_l1111.transitions_from[1].to_state == "L1112"
         assert state_l1_l11_l111_l1111.transitions_from[1].event == Event(
-            name="E1", state_path=("L1", "L11", "L111", "L1111")
+            name="E1", state_path=("L1", "L11", "L111", "L1111"), extra_name=None
         )
         assert state_l1_l11_l111_l1111.transitions_from[1].guard is None
         assert state_l1_l11_l111_l1111.transitions_from[1].effects == []
@@ -1930,7 +2048,7 @@ class TestModelStateL1:
         assert state_l1_l11_l111_l1111.transitions_from[2].from_state == "L1111"
         assert state_l1_l11_l111_l1111.transitions_from[2].to_state == "L1113"
         assert state_l1_l11_l111_l1111.transitions_from[2].event == Event(
-            name="E2", state_path=("L1", "L11", "L111", "L1111")
+            name="E2", state_path=("L1", "L11", "L111", "L1111"), extra_name=None
         )
         assert state_l1_l11_l111_l1111.transitions_from[2].guard is None
         assert state_l1_l11_l111_l1111.transitions_from[2].effects == []
@@ -1958,10 +2076,18 @@ class TestModelStateL1:
         assert ast_node == dsl_nodes.StateDefinition(
             name="L1111",
             extra_name=None,
+            events=[
+                dsl_nodes.EventDefinition(name="E1", extra_name=None),
+                dsl_nodes.EventDefinition(name="E2", extra_name=None),
+            ],
             substates=[
                 dsl_nodes.StateDefinition(
                     name="L11111",
                     extra_name=None,
+                    events=[
+                        dsl_nodes.EventDefinition(name="E1", extra_name=None),
+                        dsl_nodes.EventDefinition(name="E2", extra_name=None),
+                    ],
                     substates=[],
                     transitions=[],
                     enters=[],
@@ -1974,6 +2100,7 @@ class TestModelStateL1:
                 dsl_nodes.StateDefinition(
                     name="L11112",
                     extra_name=None,
+                    events=[dsl_nodes.EventDefinition(name="E1", extra_name=None)],
                     substates=[],
                     transitions=[],
                     enters=[],
@@ -1986,6 +2113,7 @@ class TestModelStateL1:
                 dsl_nodes.StateDefinition(
                     name="L11113",
                     extra_name=None,
+                    events=[dsl_nodes.EventDefinition(name="E1", extra_name=None)],
                     substates=[],
                     transitions=[],
                     enters=[],
@@ -2145,8 +2273,16 @@ class TestModelStateL1:
         )
         assert sorted(state_l1_l11_l111_l1111_l11111.substates.keys()) == []
         assert state_l1_l11_l111_l1111_l11111.events == {
-            "E1": Event(name="E1", state_path=("L1", "L11", "L111", "L1111", "L11111")),
-            "E2": Event(name="E2", state_path=("L1", "L11", "L111", "L1111", "L11111")),
+            "E1": Event(
+                name="E1",
+                state_path=("L1", "L11", "L111", "L1111", "L11111"),
+                extra_name=None,
+            ),
+            "E2": Event(
+                name="E2",
+                state_path=("L1", "L11", "L111", "L1111", "L11111"),
+                extra_name=None,
+            ),
         }
         assert state_l1_l11_l111_l1111_l11111.transitions == []
         assert state_l1_l11_l111_l1111_l11111.named_functions == {}
@@ -2194,7 +2330,7 @@ class TestModelStateL1:
         assert state_l1_l11_l111_l1111_l11111.transitions_from[0].from_state == "L11111"
         assert state_l1_l11_l111_l1111_l11111.transitions_from[0].to_state == EXIT_STATE
         assert state_l1_l11_l111_l1111_l11111.transitions_from[0].event == Event(
-            name="E1", state_path=("L1", "L11")
+            name="E1", state_path=("L1", "L11"), extra_name=None
         )
         assert state_l1_l11_l111_l1111_l11111.transitions_from[0].guard is None
         assert state_l1_l11_l111_l1111_l11111.transitions_from[0].effects == []
@@ -2211,7 +2347,9 @@ class TestModelStateL1:
         assert state_l1_l11_l111_l1111_l11111.transitions_from[1].from_state == "L11111"
         assert state_l1_l11_l111_l1111_l11111.transitions_from[1].to_state == "L11112"
         assert state_l1_l11_l111_l1111_l11111.transitions_from[1].event == Event(
-            name="E1", state_path=("L1", "L11", "L111", "L1111", "L11111")
+            name="E1",
+            state_path=("L1", "L11", "L111", "L1111", "L11111"),
+            extra_name=None,
         )
         assert state_l1_l11_l111_l1111_l11111.transitions_from[1].guard is None
         assert state_l1_l11_l111_l1111_l11111.transitions_from[1].effects == []
@@ -2228,7 +2366,9 @@ class TestModelStateL1:
         assert state_l1_l11_l111_l1111_l11111.transitions_from[2].from_state == "L11111"
         assert state_l1_l11_l111_l1111_l11111.transitions_from[2].to_state == "L11113"
         assert state_l1_l11_l111_l1111_l11111.transitions_from[2].event == Event(
-            name="E2", state_path=("L1", "L11", "L111", "L1111", "L11111")
+            name="E2",
+            state_path=("L1", "L11", "L111", "L1111", "L11111"),
+            extra_name=None,
         )
         assert state_l1_l11_l111_l1111_l11111.transitions_from[2].guard is None
         assert state_l1_l11_l111_l1111_l11111.transitions_from[2].effects == []
@@ -2266,6 +2406,10 @@ class TestModelStateL1:
         assert ast_node == dsl_nodes.StateDefinition(
             name="L11111",
             extra_name=None,
+            events=[
+                dsl_nodes.EventDefinition(name="E1", extra_name=None),
+                dsl_nodes.EventDefinition(name="E2", extra_name=None),
+            ],
             substates=[],
             transitions=[],
             enters=[],
@@ -2374,7 +2518,11 @@ class TestModelStateL1:
         )
         assert sorted(state_l1_l11_l111_l1111_l11112.substates.keys()) == []
         assert state_l1_l11_l111_l1111_l11112.events == {
-            "E1": Event(name="E1", state_path=("L1", "L11", "L111", "L1111", "L11112"))
+            "E1": Event(
+                name="E1",
+                state_path=("L1", "L11", "L111", "L1111", "L11112"),
+                extra_name=None,
+            )
         }
         assert state_l1_l11_l111_l1111_l11112.transitions == []
         assert state_l1_l11_l111_l1111_l11112.named_functions == {}
@@ -2422,7 +2570,7 @@ class TestModelStateL1:
         assert state_l1_l11_l111_l1111_l11112.transitions_from[0].from_state == "L11112"
         assert state_l1_l11_l111_l1111_l11112.transitions_from[0].to_state == EXIT_STATE
         assert state_l1_l11_l111_l1111_l11112.transitions_from[0].event == Event(
-            name="E1", state_path=("L1", "L11")
+            name="E1", state_path=("L1", "L11"), extra_name=None
         )
         assert state_l1_l11_l111_l1111_l11112.transitions_from[0].guard is None
         assert state_l1_l11_l111_l1111_l11112.transitions_from[0].effects == []
@@ -2439,7 +2587,9 @@ class TestModelStateL1:
         assert state_l1_l11_l111_l1111_l11112.transitions_from[1].from_state == "L11112"
         assert state_l1_l11_l111_l1111_l11112.transitions_from[1].to_state == EXIT_STATE
         assert state_l1_l11_l111_l1111_l11112.transitions_from[1].event == Event(
-            name="E1", state_path=("L1", "L11", "L111", "L1111", "L11112")
+            name="E1",
+            state_path=("L1", "L11", "L111", "L1111", "L11112"),
+            extra_name=None,
         )
         assert state_l1_l11_l111_l1111_l11112.transitions_from[1].guard is None
         assert state_l1_l11_l111_l1111_l11112.transitions_from[1].effects == []
@@ -2457,7 +2607,9 @@ class TestModelStateL1:
         assert state_l1_l11_l111_l1111_l11112.transitions_to[0].from_state == "L11111"
         assert state_l1_l11_l111_l1111_l11112.transitions_to[0].to_state == "L11112"
         assert state_l1_l11_l111_l1111_l11112.transitions_to[0].event == Event(
-            name="E1", state_path=("L1", "L11", "L111", "L1111", "L11111")
+            name="E1",
+            state_path=("L1", "L11", "L111", "L1111", "L11111"),
+            extra_name=None,
         )
         assert state_l1_l11_l111_l1111_l11112.transitions_to[0].guard is None
         assert state_l1_l11_l111_l1111_l11112.transitions_to[0].effects == []
@@ -2479,6 +2631,7 @@ class TestModelStateL1:
         assert ast_node == dsl_nodes.StateDefinition(
             name="L11112",
             extra_name=None,
+            events=[dsl_nodes.EventDefinition(name="E1", extra_name=None)],
             substates=[],
             transitions=[],
             enters=[],
@@ -2587,7 +2740,11 @@ class TestModelStateL1:
         )
         assert sorted(state_l1_l11_l111_l1111_l11113.substates.keys()) == []
         assert state_l1_l11_l111_l1111_l11113.events == {
-            "E1": Event(name="E1", state_path=("L1", "L11", "L111", "L1111", "L11113"))
+            "E1": Event(
+                name="E1",
+                state_path=("L1", "L11", "L111", "L1111", "L11113"),
+                extra_name=None,
+            )
         }
         assert state_l1_l11_l111_l1111_l11113.transitions == []
         assert state_l1_l11_l111_l1111_l11113.named_functions == {}
@@ -2635,7 +2792,7 @@ class TestModelStateL1:
         assert state_l1_l11_l111_l1111_l11113.transitions_from[0].from_state == "L11113"
         assert state_l1_l11_l111_l1111_l11113.transitions_from[0].to_state == EXIT_STATE
         assert state_l1_l11_l111_l1111_l11113.transitions_from[0].event == Event(
-            name="E1", state_path=("L1", "L11")
+            name="E1", state_path=("L1", "L11"), extra_name=None
         )
         assert state_l1_l11_l111_l1111_l11113.transitions_from[0].guard is None
         assert state_l1_l11_l111_l1111_l11113.transitions_from[0].effects == []
@@ -2652,7 +2809,9 @@ class TestModelStateL1:
         assert state_l1_l11_l111_l1111_l11113.transitions_from[1].from_state == "L11113"
         assert state_l1_l11_l111_l1111_l11113.transitions_from[1].to_state == EXIT_STATE
         assert state_l1_l11_l111_l1111_l11113.transitions_from[1].event == Event(
-            name="E1", state_path=("L1", "L11", "L111", "L1111", "L11113")
+            name="E1",
+            state_path=("L1", "L11", "L111", "L1111", "L11113"),
+            extra_name=None,
         )
         assert state_l1_l11_l111_l1111_l11113.transitions_from[1].guard is None
         assert state_l1_l11_l111_l1111_l11113.transitions_from[1].effects == []
@@ -2670,7 +2829,9 @@ class TestModelStateL1:
         assert state_l1_l11_l111_l1111_l11113.transitions_to[0].from_state == "L11111"
         assert state_l1_l11_l111_l1111_l11113.transitions_to[0].to_state == "L11113"
         assert state_l1_l11_l111_l1111_l11113.transitions_to[0].event == Event(
-            name="E2", state_path=("L1", "L11", "L111", "L1111", "L11111")
+            name="E2",
+            state_path=("L1", "L11", "L111", "L1111", "L11111"),
+            extra_name=None,
         )
         assert state_l1_l11_l111_l1111_l11113.transitions_to[0].guard is None
         assert state_l1_l11_l111_l1111_l11113.transitions_to[0].effects == []
@@ -2692,6 +2853,7 @@ class TestModelStateL1:
         assert ast_node == dsl_nodes.StateDefinition(
             name="L11113",
             extra_name=None,
+            events=[dsl_nodes.EventDefinition(name="E1", extra_name=None)],
             substates=[],
             transitions=[],
             enters=[],
@@ -2794,7 +2956,9 @@ class TestModelStateL1:
         assert state_l1_l11_l111_l1112.path == ("L1", "L11", "L111", "L1112")
         assert sorted(state_l1_l11_l111_l1112.substates.keys()) == []
         assert state_l1_l11_l111_l1112.events == {
-            "E1": Event(name="E1", state_path=("L1", "L11", "L111", "L1112"))
+            "E1": Event(
+                name="E1", state_path=("L1", "L11", "L111", "L1112"), extra_name=None
+            )
         }
         assert state_l1_l11_l111_l1112.transitions == []
         assert state_l1_l11_l111_l1112.named_functions == {}
@@ -2830,7 +2994,7 @@ class TestModelStateL1:
         assert state_l1_l11_l111_l1112.transitions_from[0].from_state == "L1112"
         assert state_l1_l11_l111_l1112.transitions_from[0].to_state == EXIT_STATE
         assert state_l1_l11_l111_l1112.transitions_from[0].event == Event(
-            name="E1", state_path=("L1", "L11")
+            name="E1", state_path=("L1", "L11"), extra_name=None
         )
         assert state_l1_l11_l111_l1112.transitions_from[0].guard is None
         assert state_l1_l11_l111_l1112.transitions_from[0].effects == []
@@ -2843,7 +3007,7 @@ class TestModelStateL1:
         assert state_l1_l11_l111_l1112.transitions_from[1].from_state == "L1112"
         assert state_l1_l11_l111_l1112.transitions_from[1].to_state == EXIT_STATE
         assert state_l1_l11_l111_l1112.transitions_from[1].event == Event(
-            name="E1", state_path=("L1", "L11", "L111", "L1112")
+            name="E1", state_path=("L1", "L11", "L111", "L1112"), extra_name=None
         )
         assert state_l1_l11_l111_l1112.transitions_from[1].guard is None
         assert state_l1_l11_l111_l1112.transitions_from[1].effects == []
@@ -2857,7 +3021,7 @@ class TestModelStateL1:
         assert state_l1_l11_l111_l1112.transitions_to[0].from_state == "L1111"
         assert state_l1_l11_l111_l1112.transitions_to[0].to_state == "L1112"
         assert state_l1_l11_l111_l1112.transitions_to[0].event == Event(
-            name="E1", state_path=("L1", "L11", "L111", "L1111")
+            name="E1", state_path=("L1", "L11", "L111", "L1111"), extra_name=None
         )
         assert state_l1_l11_l111_l1112.transitions_to[0].guard is None
         assert state_l1_l11_l111_l1112.transitions_to[0].effects == []
@@ -2873,6 +3037,7 @@ class TestModelStateL1:
         assert ast_node == dsl_nodes.StateDefinition(
             name="L1112",
             extra_name=None,
+            events=[dsl_nodes.EventDefinition(name="E1", extra_name=None)],
             substates=[],
             transitions=[],
             enters=[],
@@ -2961,7 +3126,9 @@ class TestModelStateL1:
         assert state_l1_l11_l111_l1113.path == ("L1", "L11", "L111", "L1113")
         assert sorted(state_l1_l11_l111_l1113.substates.keys()) == []
         assert state_l1_l11_l111_l1113.events == {
-            "E1": Event(name="E1", state_path=("L1", "L11", "L111", "L1113"))
+            "E1": Event(
+                name="E1", state_path=("L1", "L11", "L111", "L1113"), extra_name=None
+            )
         }
         assert state_l1_l11_l111_l1113.transitions == []
         assert state_l1_l11_l111_l1113.named_functions == {}
@@ -2997,7 +3164,7 @@ class TestModelStateL1:
         assert state_l1_l11_l111_l1113.transitions_from[0].from_state == "L1113"
         assert state_l1_l11_l111_l1113.transitions_from[0].to_state == EXIT_STATE
         assert state_l1_l11_l111_l1113.transitions_from[0].event == Event(
-            name="E1", state_path=("L1", "L11")
+            name="E1", state_path=("L1", "L11"), extra_name=None
         )
         assert state_l1_l11_l111_l1113.transitions_from[0].guard is None
         assert state_l1_l11_l111_l1113.transitions_from[0].effects == []
@@ -3010,7 +3177,7 @@ class TestModelStateL1:
         assert state_l1_l11_l111_l1113.transitions_from[1].from_state == "L1113"
         assert state_l1_l11_l111_l1113.transitions_from[1].to_state == EXIT_STATE
         assert state_l1_l11_l111_l1113.transitions_from[1].event == Event(
-            name="E1", state_path=("L1", "L11", "L111", "L1113")
+            name="E1", state_path=("L1", "L11", "L111", "L1113"), extra_name=None
         )
         assert state_l1_l11_l111_l1113.transitions_from[1].guard is None
         assert state_l1_l11_l111_l1113.transitions_from[1].effects == []
@@ -3024,7 +3191,7 @@ class TestModelStateL1:
         assert state_l1_l11_l111_l1113.transitions_to[0].from_state == "L1111"
         assert state_l1_l11_l111_l1113.transitions_to[0].to_state == "L1113"
         assert state_l1_l11_l111_l1113.transitions_to[0].event == Event(
-            name="E2", state_path=("L1", "L11", "L111", "L1111")
+            name="E2", state_path=("L1", "L11", "L111", "L1111"), extra_name=None
         )
         assert state_l1_l11_l111_l1113.transitions_to[0].guard is None
         assert state_l1_l11_l111_l1113.transitions_to[0].effects == []
@@ -3040,6 +3207,7 @@ class TestModelStateL1:
         assert ast_node == dsl_nodes.StateDefinition(
             name="L1113",
             extra_name=None,
+            events=[dsl_nodes.EventDefinition(name="E1", extra_name=None)],
             substates=[],
             transitions=[],
             enters=[],
@@ -3128,7 +3296,7 @@ class TestModelStateL1:
         assert state_l1_l11_l112.path == ("L1", "L11", "L112")
         assert sorted(state_l1_l11_l112.substates.keys()) == []
         assert state_l1_l11_l112.events == {
-            "E1": Event(name="E1", state_path=("L1", "L11", "L112"))
+            "E1": Event(name="E1", state_path=("L1", "L11", "L112"), extra_name=None)
         }
         assert state_l1_l11_l112.transitions == []
         assert state_l1_l11_l112.named_functions == {}
@@ -3160,7 +3328,7 @@ class TestModelStateL1:
         assert state_l1_l11_l112.transitions_from[0].from_state == "L112"
         assert state_l1_l11_l112.transitions_from[0].to_state == EXIT_STATE
         assert state_l1_l11_l112.transitions_from[0].event == Event(
-            name="E1", state_path=("L1", "L11")
+            name="E1", state_path=("L1", "L11"), extra_name=None
         )
         assert state_l1_l11_l112.transitions_from[0].guard is None
         assert state_l1_l11_l112.transitions_from[0].effects == []
@@ -3169,7 +3337,7 @@ class TestModelStateL1:
         assert state_l1_l11_l112.transitions_from[1].from_state == "L112"
         assert state_l1_l11_l112.transitions_from[1].to_state == EXIT_STATE
         assert state_l1_l11_l112.transitions_from[1].event == Event(
-            name="E1", state_path=("L1", "L11", "L112")
+            name="E1", state_path=("L1", "L11", "L112"), extra_name=None
         )
         assert state_l1_l11_l112.transitions_from[1].guard is None
         assert state_l1_l11_l112.transitions_from[1].effects == []
@@ -3179,7 +3347,7 @@ class TestModelStateL1:
         assert state_l1_l11_l112.transitions_to[0].from_state == "L111"
         assert state_l1_l11_l112.transitions_to[0].to_state == "L112"
         assert state_l1_l11_l112.transitions_to[0].event == Event(
-            name="E1", state_path=("L1", "L11", "L111")
+            name="E1", state_path=("L1", "L11", "L111"), extra_name=None
         )
         assert state_l1_l11_l112.transitions_to[0].guard is None
         assert state_l1_l11_l112.transitions_to[0].effects == []
@@ -3191,6 +3359,7 @@ class TestModelStateL1:
         assert ast_node == dsl_nodes.StateDefinition(
             name="L112",
             extra_name=None,
+            events=[dsl_nodes.EventDefinition(name="E1", extra_name=None)],
             substates=[],
             transitions=[],
             enters=[],
@@ -3275,7 +3444,7 @@ class TestModelStateL1:
         assert state_l1_l11_l113.path == ("L1", "L11", "L113")
         assert sorted(state_l1_l11_l113.substates.keys()) == []
         assert state_l1_l11_l113.events == {
-            "E1": Event(name="E1", state_path=("L1", "L11", "L113"))
+            "E1": Event(name="E1", state_path=("L1", "L11", "L113"), extra_name=None)
         }
         assert state_l1_l11_l113.transitions == []
         assert state_l1_l11_l113.named_functions == {}
@@ -3307,7 +3476,7 @@ class TestModelStateL1:
         assert state_l1_l11_l113.transitions_from[0].from_state == "L113"
         assert state_l1_l11_l113.transitions_from[0].to_state == EXIT_STATE
         assert state_l1_l11_l113.transitions_from[0].event == Event(
-            name="E1", state_path=("L1", "L11")
+            name="E1", state_path=("L1", "L11"), extra_name=None
         )
         assert state_l1_l11_l113.transitions_from[0].guard is None
         assert state_l1_l11_l113.transitions_from[0].effects == []
@@ -3316,7 +3485,7 @@ class TestModelStateL1:
         assert state_l1_l11_l113.transitions_from[1].from_state == "L113"
         assert state_l1_l11_l113.transitions_from[1].to_state == EXIT_STATE
         assert state_l1_l11_l113.transitions_from[1].event == Event(
-            name="E1", state_path=("L1", "L11", "L113")
+            name="E1", state_path=("L1", "L11", "L113"), extra_name=None
         )
         assert state_l1_l11_l113.transitions_from[1].guard is None
         assert state_l1_l11_l113.transitions_from[1].effects == []
@@ -3326,7 +3495,7 @@ class TestModelStateL1:
         assert state_l1_l11_l113.transitions_to[0].from_state == "L111"
         assert state_l1_l11_l113.transitions_to[0].to_state == "L113"
         assert state_l1_l11_l113.transitions_to[0].event == Event(
-            name="E2", state_path=("L1", "L11", "L111")
+            name="E2", state_path=("L1", "L11", "L111"), extra_name=None
         )
         assert state_l1_l11_l113.transitions_to[0].guard is None
         assert state_l1_l11_l113.transitions_to[0].effects == []
@@ -3338,6 +3507,7 @@ class TestModelStateL1:
         assert ast_node == dsl_nodes.StateDefinition(
             name="L113",
             extra_name=None,
+            events=[dsl_nodes.EventDefinition(name="E1", extra_name=None)],
             substates=[],
             transitions=[],
             enters=[],
@@ -3463,6 +3633,7 @@ class TestModelStateL1:
         assert ast_node == dsl_nodes.StateDefinition(
             name="L12",
             extra_name=None,
+            events=[],
             substates=[],
             transitions=[],
             enters=[],
@@ -3543,9 +3714,18 @@ state L1 {
     state L11 {
         state L111 {
             state L1111 {
-                state L11111;
-                state L11112;
-                state L11113;
+                state L11111 {
+                    event E1;
+                    event E2;
+                }
+                state L11112 {
+                    event E1;
+                }
+                state L11113 {
+                    event E1;
+                }
+                event E1;
+                event E2;
                 L11111 -> [*] : /L11.E1;
                 L11112 -> [*] : /L11.E1;
                 L11113 -> [*] : /L11.E1;
@@ -3555,8 +3735,14 @@ state L1 {
                 L11112 -> [*] :: E1;
                 L11113 -> [*] :: E1;
             }
-            state L1112;
-            state L1113;
+            state L1112 {
+                event E1;
+            }
+            state L1113 {
+                event E1;
+            }
+            event E1;
+            event E2;
             L1111 -> [*] : /L11.E1;
             L1112 -> [*] : /L11.E1;
             L1113 -> [*] : /L11.E1;
@@ -3566,8 +3752,13 @@ state L1 {
             L1112 -> [*] :: E1;
             L1113 -> [*] :: E1;
         }
-        state L112;
-        state L113;
+        state L112 {
+            event E1;
+        }
+        state L113 {
+            event E1;
+        }
+        event E1;
         L111 -> [*] : E1;
         L112 -> [*] : E1;
         L113 -> [*] : E1;

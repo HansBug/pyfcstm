@@ -53,6 +53,7 @@ __all__ = [
     'ForceTransitionDefinition',
     'StateDefinition',
     'OperationAssignment',
+    'EventDefinition',
     'StateMachineDSLProgram',
     'INIT_STATE',
     'EXIT_STATE',
@@ -1047,6 +1048,7 @@ class StateDefinition(ASTNode):
     """
     name: str
     extra_name: Optional[str] = None
+    events: List['EventDefinition'] = None
     substates: List['StateDefinition'] = None
     transitions: List[TransitionDefinition] = None
     enters: List['EnterStatement'] = None
@@ -1060,6 +1062,7 @@ class StateDefinition(ASTNode):
         """
         Initialize default empty lists for optional parameters.
         """
+        self.events = self.events or []
         self.substates = self.substates or []
         self.transitions = self.transitions or []
         self.force_transitions = self.force_transitions or []
@@ -1097,6 +1100,8 @@ class StateDefinition(ASTNode):
                     print(indent(str(during_aspect_item), prefix='    '), file=sf)
                 for substate in self.substates:
                     print(indent(str(substate), prefix='    '), file=sf)
+                for event in self.events:
+                    print(indent(str(event), prefix='    '), file=sf)
                 for transition in self.transitions:
                     print(indent(str(transition), prefix='    '), file=sf)
                 print(f'}}', file=sf, end='')
@@ -1135,6 +1140,20 @@ class OperationAssignment(Statement):
         :rtype: str
         """
         return f'{self.name} = {self.expr};'
+
+
+@dataclass
+class EventDefinition(ASTNode):
+    name: str
+    extra_name: Optional[str] = None
+
+    def __str__(self):
+        with io.StringIO() as sf:
+            print(f'event {self.name}', file=sf, end='')
+            if self.extra_name is not None:
+                print(f' named {self.extra_name!r}', file=sf, end='')
+            print(';', file=sf, end='')
+            return sf.getvalue()
 
 
 @dataclass

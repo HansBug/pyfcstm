@@ -241,6 +241,14 @@ class GrammarListener(ParseTreeListener):
     def exitDuringAspectRefFunc(self, ctx: GrammarParser.DuringAspectRefFuncContext):
         pass
 
+    # Enter a parse tree produced by GrammarParser#event_definition.
+    def enterEvent_definition(self, ctx: GrammarParser.Event_definitionContext):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#event_definition.
+    def exitEvent_definition(self, ctx: GrammarParser.Event_definitionContext):
+        pass
+
     # Enter a parse tree produced by GrammarParser#operation_assignment.
     def enterOperation_assignment(self, ctx: GrammarParser.Operation_assignmentContext):
         pass

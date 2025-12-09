@@ -237,6 +237,8 @@ class GrammarParseListener(GrammarListener):
         self.nodes[ctx] = StateDefinition(
             name=str(ctx.ID()),
             extra_name=eval(ctx.extra_name.text) if ctx.extra_name else None,
+            events=[self.nodes[item] for item in ctx.state_inner_statement()
+                    if item in self.nodes and isinstance(self.nodes[item], EventDefinition)],
             substates=[self.nodes[item] for item in ctx.state_inner_statement()
                        if item in self.nodes and isinstance(self.nodes[item], StateDefinition)],
             transitions=[self.nodes[item] for item in ctx.state_inner_statement()
@@ -471,4 +473,11 @@ class GrammarParseListener(GrammarListener):
             to_state=EXIT_STATE,
             event_id=self.nodes[ctx.chain_id()] if ctx.chain_id() else None,
             condition_expr=self.nodes[ctx.cond_expression()] if ctx.cond_expression() else None,
+        )
+
+    def exitEvent_definition(self, ctx: GrammarParser.Event_definitionContext):
+        super().exitEvent_definition(ctx)
+        self.nodes[ctx] = EventDefinition(
+            name=ctx.event_name.text,
+            extra_name=eval(ctx.extra_name.text) if ctx.extra_name else None,
         )

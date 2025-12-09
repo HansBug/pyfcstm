@@ -459,10 +459,12 @@ class TestModelStateL1:
         assert ast_node == dsl_nodes.StateDefinition(
             name="L1",
             extra_name=None,
+            events=[],
             substates=[
                 dsl_nodes.StateDefinition(
                     name="L21",
                     extra_name=None,
+                    events=[],
                     substates=[],
                     transitions=[],
                     enters=[
@@ -503,6 +505,7 @@ class TestModelStateL1:
                 dsl_nodes.StateDefinition(
                     name="L22",
                     extra_name=None,
+                    events=[],
                     substates=[],
                     transitions=[],
                     enters=[
@@ -1104,6 +1107,7 @@ class TestModelStateL1:
         assert ast_node == dsl_nodes.StateDefinition(
             name="L21",
             extra_name=None,
+            events=[],
             substates=[],
             transitions=[],
             enters=[
@@ -1794,6 +1798,7 @@ class TestModelStateL1:
         assert ast_node == dsl_nodes.StateDefinition(
             name="L22",
             extra_name=None,
+            events=[],
             substates=[],
             transitions=[],
             enters=[

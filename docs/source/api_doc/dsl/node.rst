@@ -202,6 +202,13 @@ OperationAssignment
     :members: name, expr, __str__
 
 
+EventDefinition
+----------------------------------------------------------
+
+.. autoclass:: EventDefinition
+    :members: name, extra_name, __str__
+
+
 StateMachineDSLProgram
 ----------------------------------------------------------
 

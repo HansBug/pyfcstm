@@ -56,6 +56,8 @@ during_aspect_definition
     | '>>' 'during' aspect=('before'|'after') (func_name=ID)? 'ref' chain_id ';'                    # duringAspectRefFunc
     ;
 
+event_definition: 'event' event_name=ID ('named' extra_name=STRING)? ';';
+
 operation_assignment: ID '=' num_expression ';';
 
 operational_statement
@@ -71,6 +73,7 @@ state_inner_statement
     | during_definition
     | exit_definition
     | during_aspect_definition
+    | event_definition
     | ';'
     ;
 

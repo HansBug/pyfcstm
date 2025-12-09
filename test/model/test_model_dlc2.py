@@ -117,6 +117,9 @@ state TrafficLight {
         state Red;
         state Yellow;
         state Green;
+        event ServiceError;
+        event Start;
+        event Maintain;
         Red -> [*] : ServiceError;
         Red -> [*] : /GodDamnFuckUp;
         Yellow -> [*] : ServiceError;
@@ -140,8 +143,15 @@ state TrafficLight {
         Yellow -> Yellow : /E2;
     }
     state Idle {
-        state ToBe;
-        state NotToBe;
+        state ToBe {
+            event E1;
+        }
+        state NotToBe {
+            event E1;
+            event E2;
+        }
+        event GiveUpThinking;
+        event E2;
         ToBe -> [*] : GiveUpThinking;
         ToBe -> [*] : /GodDamnFuckUp;
         NotToBe -> [*] : GiveUpThinking;
@@ -151,6 +161,8 @@ state TrafficLight {
         NotToBe -> ToBe :: E1;
         NotToBe -> [*] :: E2;
     }
+    event GodDamnFuckUp;
+    event E2;
     InService -> [*] :: ServiceError;
     InService -> [*] : GodDamnFuckUp;
     Idle -> InService :: GiveUpThinking;
@@ -212,7 +224,7 @@ class TestModelModelDLC2:
         assert transition_3.event.path == ("TrafficLight", "E2")
 
     def test_to_ast_node_to_str(
-        self, demo_model_1, expected_to_str_result, text_aligner
+            self, demo_model_1, expected_to_str_result, text_aligner
     ):
         with open("test_t.txt", "w") as f:
             print(demo_model_1.to_ast_node(), file=f)

@@ -183,6 +183,8 @@ state TrafficLight {
         }
         state Yellow;
         state Green;
+        event Start;
+        event Maintain;
         [*] -> Red :: Start effect {
             b = 1;
         }
@@ -199,7 +201,10 @@ state TrafficLight {
         Green -> Yellow : /Idle.E2;
         Yellow -> Yellow : /E2;
     }
-    state Idle;
+    state Idle {
+        event E2;
+    }
+    event E2;
     [*] -> InService;
     InService -> Idle :: Maintain;
     Idle -> Idle :: E2;

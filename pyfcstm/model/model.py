@@ -97,6 +97,8 @@ class Event:
     :type name: str
     :param state_path: The path to the state that owns this event
     :type state_path: Tuple[str, ...]
+    :param extra_name: Optional extra name for display purposes
+    :type extra_name: Optional[str]
 
     Example::
 
@@ -106,6 +108,7 @@ class Event:
     """
     name: str
     state_path: Tuple[str, ...]
+    extra_name: Optional[str] = None
 
     @property
     def path(self) -> Tuple[str, ...]:
@@ -116,6 +119,18 @@ class Event:
         :rtype: Tuple[str, ...]
         """
         return tuple((*self.state_path, self.name))
+
+    def to_ast_node(self) -> dsl_nodes.EventDefinition:
+        """
+        Convert this event to an AST node.
+
+        :return: An event definition AST node
+        :rtype: dsl_nodes.EventDefinition
+        """
+        return dsl_nodes.EventDefinition(
+            name=self.name,
+            extra_name=self.extra_name,
+        )
 
 
 @dataclass
@@ -1054,10 +1069,8 @@ class State(AstExportable, PlantUMLExportable):
         return dsl_nodes.StateDefinition(
             name=self.name,
             extra_name=self.extra_name,
-            substates=[
-                substate.to_ast_node()
-                for _, substate in self.substates.items()
-            ],
+            events=[event.to_ast_node() for _, event in self.events.items()],
+            substates=[substate.to_ast_node() for _, substate in self.substates.items()],
             transitions=[self.to_transition_ast_node(trans) for trans in self.transitions],
             enters=[item.to_ast_node() for item in self.on_enters],
             durings=[item.to_ast_node() for item in self.on_durings],
@@ -1107,7 +1120,10 @@ class State(AstExportable, PlantUMLExportable):
 
                         trans_node: dsl_nodes.TransitionDefinition = trans.to_ast_node()
                         if trans.event is not None:
-                            print(f' : {trans_node.event_id}', file=tf, end='')
+                            if trans.event.extra_name is not None:
+                                print(f' : {trans.event.extra_name}({trans_node.event_id})', file=tf, end='')
+                            else:
+                                print(f' : {trans_node.event_id}', file=tf, end='')
                         elif trans.guard is not None:
                             print(f' : {trans.guard.to_ast_node()}', file=tf, end='')
 
@@ -1573,9 +1589,18 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                     named_functions[on_aspect.name] = on_aspect
                 on_during_aspects.append(on_aspect)
 
+        d_events = {}
+        for event in node.events:
+            d_events[event.name] = Event(
+                name=event.name,
+                extra_name=event.extra_name,
+                state_path=current_path,
+            )
+
         my_state = State(
             name=node.name,
             extra_name=node.extra_name,
+            events=d_events,
             path=current_path,
             substates=d_substates,
             is_pseudo=bool(node.is_pseudo),

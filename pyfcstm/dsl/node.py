@@ -1044,6 +1044,7 @@ class StateDefinition(ASTNode):
         >>> state_with_trans = StateDefinition("idle", [], [trans], [], [], [])
     """
     name: str
+    extra_name: Optional[str] = None
     substates: List['StateDefinition'] = None
     transitions: List[TransitionDefinition] = None
     enters: List['EnterStatement'] = None
@@ -1073,11 +1074,17 @@ class StateDefinition(ASTNode):
         :rtype: str
         """
         with io.StringIO() as sf:
+            if self.is_pseudo:
+                print('pseudo ', file=sf, end='')
+            print(f'state {self.name}', file=sf, end='')
+            if self.extra_name is not None:
+                print(f' named {self.extra_name!r}', file=sf, end='')
+
             if not self.substates and not self.transitions and \
                     not self.enters and not self.durings and not self.exits and not self.during_aspects:
-                print(f'{"pseudo " if self.is_pseudo else ""}state {self.name};', file=sf, end='')
+                print(f';', file=sf, end='')
             else:
-                print(f'{"pseudo " if self.is_pseudo else ""}state {self.name} {{', file=sf)
+                print(f' {{', file=sf)
                 for enter_item in self.enters:
                     print(indent(str(enter_item), prefix='    '), file=sf)
                 for during_item in self.durings:

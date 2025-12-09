@@ -62,6 +62,12 @@ jobs:
           - 'macos-14'
         python-version:
           - '3.7'
+        exclude:
+          - python-version: '3.7'
+            os: 'macos-14'
+        include:
+          - python-version: '3.8'
+            os: 'macos-14'
 
     steps:
       - name: Get system version for Linux

@@ -1525,6 +1525,74 @@ class TestDSLTransition:
                                          name=None)], exits=[], during_aspects=[], force_transitions=[],
                                     is_pseudo=False)
             ),  # Composite state with during operation and nested state
+
+            (
+                    """
+                    state MainState {
+                        event ButtonClick;
+                    }
+                    """,
+                    StateDefinition(name='MainState', extra_name=None,
+                                    events=[EventDefinition(name='ButtonClick', extra_name=None)], substates=[],
+                                    transitions=[], enters=[], durings=[], exits=[], during_aspects=[],
+                                    force_transitions=[], is_pseudo=False)
+            ),  # Basic composite state with simple event definition
+            (
+                    """
+                    state ProcessingState {
+                        event DataReceived named "Data Reception Event";
+                    }
+                    """,
+                    StateDefinition(name='ProcessingState', extra_name=None,
+                                    events=[EventDefinition(name='DataReceived', extra_name='Data Reception Event')],
+                                    substates=[], transitions=[], enters=[], durings=[], exits=[], during_aspects=[],
+                                    force_transitions=[], is_pseudo=False)
+            ),  # Composite state with named event definition
+            (
+                    """
+                    pseudo state ControllerState {
+                        event StartEvent;
+                        event StopEvent named "Stop Operation";
+                        event ResetEvent named "System Reset";
+                    }
+                    """,
+                    StateDefinition(name='ControllerState', extra_name=None,
+                                    events=[EventDefinition(name='StartEvent', extra_name=None),
+                                            EventDefinition(name='StopEvent', extra_name='Stop Operation'),
+                                            EventDefinition(name='ResetEvent', extra_name='System Reset')],
+                                    substates=[], transitions=[], enters=[], durings=[], exits=[], during_aspects=[],
+                                    force_transitions=[], is_pseudo=True)
+            ),  # Pseudo composite state with multiple events, mixed named usage
+            (
+                    """
+                    state WorkflowState named "Main Workflow" {
+                        event ProcessComplete named "Processing Completed";
+                        state SubState;
+                        event ErrorOccurred;
+                        enter { x = 10; }
+                    }
+                    """,
+                    StateDefinition(name='WorkflowState', extra_name='Main Workflow',
+                                    events=[EventDefinition(name='ProcessComplete', extra_name='Processing Completed'),
+                                            EventDefinition(name='ErrorOccurred', extra_name=None)], substates=[
+                            StateDefinition(name='SubState', extra_name=None, events=[], substates=[], transitions=[],
+                                            enters=[], durings=[], exits=[], during_aspects=[], force_transitions=[],
+                                            is_pseudo=False)], transitions=[], enters=[
+                            EnterOperations(operations=[OperationAssignment(name='x', expr=Integer(raw='10'))],
+                                            name=None)], durings=[], exits=[], during_aspects=[], force_transitions=[],
+                                    is_pseudo=False)
+            ),  # Complex composite state with events, substates, and enter definition
+            (
+                    """
+                    pseudo state AlertState named 'Alert Handler' {
+                        event WarningTriggered named 'Warning Event';
+                    }
+                    """,
+                    StateDefinition(name='AlertState', extra_name='Alert Handler',
+                                    events=[EventDefinition(name='WarningTriggered', extra_name='Warning Event')],
+                                    substates=[], transitions=[], enters=[], durings=[], exits=[], during_aspects=[],
+                                    force_transitions=[], is_pseudo=True)
+            ),  # Pseudo state with event using single quotes in named clause
         ],
     )
     def test_positive_cases(self, input_text, expected):
@@ -1908,6 +1976,52 @@ class TestDSLTransition:
                     """,
                     "state handler named 'Handler State' {\n    during {\n        y = 2;\n    }\n    state process named 'Process';\n}"
             ),  # Composite state with during operation and nested state
+
+            (
+                    """
+                    state MainState {
+                        event ButtonClick;
+                    }
+                    """,
+                    'state MainState {\n    event ButtonClick;\n}'
+            ),  # Basic composite state with simple event definition
+            (
+                    """
+                    state ProcessingState {
+                        event DataReceived named "Data Reception Event";
+                    }
+                    """,
+                    "state ProcessingState {\n    event DataReceived named 'Data Reception Event';\n}"
+            ),  # Composite state with named event definition
+            (
+                    """
+                    pseudo state ControllerState {
+                        event StartEvent;
+                        event StopEvent named "Stop Operation";
+                        event ResetEvent named "System Reset";
+                    }
+                    """,
+                    "pseudo state ControllerState {\n    event StartEvent;\n    event StopEvent named 'Stop Operation';\n    event ResetEvent named 'System Reset';\n}"
+            ),  # Pseudo composite state with multiple events, mixed named usage
+            (
+                    """
+                    state WorkflowState named "Main Workflow" {
+                        event ProcessComplete named "Processing Completed";
+                        state SubState;
+                        event ErrorOccurred;
+                        enter { x = 10; }
+                    }
+                    """,
+                    "state WorkflowState named 'Main Workflow' {\n    enter {\n        x = 10;\n    }\n    state SubState;\n    event ProcessComplete named 'Processing Completed';\n    event ErrorOccurred;\n}"
+            ),  # Complex composite state with events, substates, and enter definition
+            (
+                    """
+                    pseudo state AlertState named 'Alert Handler' {
+                        event WarningTriggered named 'Warning Event';
+                    }
+                    """,
+                    "pseudo state AlertState named 'Alert Handler' {\n    event WarningTriggered named 'Warning Event';\n}"
+            ),  # Pseudo state with event using single quotes in named clause
         ],
     )
     def test_positive_cases_str(self, input_text, expected_str, text_aligner):
@@ -2204,6 +2318,48 @@ class TestDSLTransition:
                     state broken named "Broken" { state }
                     """,
             ),  # Composite state with incomplete nested state
+
+            (
+                    """
+                    state SimpleState named "Simple" ;
+                    event SomeEvent;
+                    """,
+            ),  # Leaf state followed by event definition (not allowed in leaf state)
+            (
+                    """
+                    state ContainerState {
+                        event Missingsemicolon named "Bad Event"
+                    }
+                    """,
+            ),  # Event definition missing required semicolon
+            (
+                    """
+                    state BadState {
+                        event 123InvalidName;
+                    }
+                    """,
+            ),  # Event with invalid identifier starting with number
+            (
+                    """
+                    state IncompleteState {
+                        event;
+                    }
+                    """,
+            ),  # Event definition missing required event name
+            (
+                    """
+                    state BrokenState {
+                        event ValidName named "Unclosed string;
+                    }
+                    """,
+            ),  # Event definition with unclosed string in named clause
+            (
+                    """
+                    event GlobalEvent;
+                    state SomeState {
+                    }
+                    """,
+            ),  # Event definition outside of state context (not allowed at top level)
         ],
     )
     def test_negative_cases(self, input_text):

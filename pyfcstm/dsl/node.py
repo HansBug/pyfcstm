@@ -1085,7 +1085,7 @@ class StateDefinition(ASTNode):
             if self.extra_name is not None:
                 print(f' named {self.extra_name!r}', file=sf, end='')
 
-            if not self.substates and not self.transitions and \
+            if not self.substates and not self.transitions and not self.events and \
                     not self.enters and not self.durings and not self.exits and not self.during_aspects:
                 print(f';', file=sf, end='')
             else:

@@ -324,6 +324,8 @@ class GrammarParseListener(GrammarListener):
             self.nodes[ctx] = self.nodes[ctx.during_aspect_definition()]
         elif ctx.transition_force_definition():
             self.nodes[ctx] = self.nodes[ctx.transition_force_definition()]
+        elif ctx.event_definition():
+            self.nodes[ctx] = self.nodes[ctx.event_definition()]
 
     def exitOperation_assignment(self, ctx: GrammarParser.Operation_assignmentContext):
         super().exitOperation_assignment(ctx)

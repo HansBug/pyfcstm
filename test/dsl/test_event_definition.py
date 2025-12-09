@@ -410,6 +410,7 @@ class TestDSLEventDefinition:
             
                     """,
             ),  # Empty string
+
         ]
     )
     def test_negative_cases(self, input_text):

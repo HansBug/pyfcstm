@@ -563,6 +563,7 @@ class State(AstExportable, PlantUMLExportable):
     on_during_aspects: List[OnAspect] = None
     parent_ref: Optional[weakref.ReferenceType] = None
     substate_name_to_id: Dict[str, int] = None
+    extra_name: Optional[str] = None
     is_pseudo: bool = False
 
     def __post_init__(self):
@@ -1050,6 +1051,7 @@ class State(AstExportable, PlantUMLExportable):
         """
         return dsl_nodes.StateDefinition(
             name=self.name,
+            extra_name=self.extra_name,
             substates=[
                 substate.to_ast_node()
                 for _, substate in self.substates.items()
@@ -1083,10 +1085,13 @@ class State(AstExportable, PlantUMLExportable):
         #     state_style_marks.append('line.bold')
         state_style_mark_str = " #" + ";".join(state_style_marks) if state_style_marks else ""
         with io.StringIO() as sf:
-            if self.is_leaf_state:
-                print(f'state {json.dumps(self.name)} as {_name_safe()}{state_style_mark_str}', file=sf, end='')
+            if self.extra_name is not None:
+                shown_name = self.extra_name
             else:
-                print(f'state {json.dumps(self.name)} as {_name_safe()}{state_style_mark_str} {{', file=sf)
+                shown_name = self.name
+            print(f'state {json.dumps(shown_name)} as {_name_safe()}{state_style_mark_str}', file=sf, end='')
+            if not self.is_leaf_state:
+                print(f' {{', file=sf)
                 for state in self.substates.values():
                     print(indent(state.to_plantuml(), prefix='    '), file=sf)
                 for trans in self.transitions:
@@ -1567,6 +1572,7 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
 
         my_state = State(
             name=node.name,
+            extra_name=node.extra_name,
             path=current_path,
             substates=d_substates,
             is_pseudo=bool(node.is_pseudo),

@@ -349,6 +349,7 @@ class TestModelStateTrafficLight:
         assert state_trafficlight.on_during_aspects[3].parent.path == ("TrafficLight",)
         assert state_trafficlight.parent_ref is None
         assert state_trafficlight.substate_name_to_id == {"InService": 0, "Idle": 1}
+        assert state_trafficlight.extra_name is None
         assert not state_trafficlight.is_pseudo
         assert len(state_trafficlight.abstract_on_during_aspects) == 2
         assert state_trafficlight.abstract_on_during_aspects[0].stage == "during"
@@ -547,12 +548,15 @@ class TestModelStateTrafficLight:
         ast_node = state_trafficlight.to_ast_node()
         assert ast_node == dsl_nodes.StateDefinition(
             name="TrafficLight",
+            extra_name=None,
             substates=[
                 dsl_nodes.StateDefinition(
                     name="InService",
+                    extra_name=None,
                     substates=[
                         dsl_nodes.StateDefinition(
                             name="Red",
+                            extra_name=None,
                             substates=[],
                             transitions=[],
                             enters=[],
@@ -579,6 +583,7 @@ class TestModelStateTrafficLight:
                         ),
                         dsl_nodes.StateDefinition(
                             name="Yellow",
+                            extra_name=None,
                             substates=[],
                             transitions=[],
                             enters=[],
@@ -590,6 +595,7 @@ class TestModelStateTrafficLight:
                         ),
                         dsl_nodes.StateDefinition(
                             name="Green",
+                            extra_name=None,
                             substates=[],
                             transitions=[],
                             enters=[],
@@ -720,6 +726,7 @@ class TestModelStateTrafficLight:
                 ),
                 dsl_nodes.StateDefinition(
                     name="Idle",
+                    extra_name=None,
                     substates=[],
                     transitions=[],
                     enters=[],
@@ -1679,6 +1686,7 @@ class TestModelStateTrafficLight:
             "Yellow": 1,
             "Green": 2,
         }
+        assert state_trafficlight_inservice.extra_name is None
         assert not state_trafficlight_inservice.is_pseudo
         assert state_trafficlight_inservice.abstract_on_during_aspects == []
         assert len(state_trafficlight_inservice.abstract_on_durings) == 2
@@ -1983,9 +1991,11 @@ class TestModelStateTrafficLight:
         ast_node = state_trafficlight_inservice.to_ast_node()
         assert ast_node == dsl_nodes.StateDefinition(
             name="InService",
+            extra_name=None,
             substates=[
                 dsl_nodes.StateDefinition(
                     name="Red",
+                    extra_name=None,
                     substates=[],
                     transitions=[],
                     enters=[],
@@ -2012,6 +2022,7 @@ class TestModelStateTrafficLight:
                 ),
                 dsl_nodes.StateDefinition(
                     name="Yellow",
+                    extra_name=None,
                     substates=[],
                     transitions=[],
                     enters=[],
@@ -2023,6 +2034,7 @@ class TestModelStateTrafficLight:
                 ),
                 dsl_nodes.StateDefinition(
                     name="Green",
+                    extra_name=None,
                     substates=[],
                     transitions=[],
                     enters=[],
@@ -2540,6 +2552,7 @@ class TestModelStateTrafficLight:
             "InService",
         )
         assert state_trafficlight_inservice_red.substate_name_to_id == {}
+        assert state_trafficlight_inservice_red.extra_name is None
         assert not state_trafficlight_inservice_red.is_pseudo
         assert state_trafficlight_inservice_red.abstract_on_during_aspects == []
         assert state_trafficlight_inservice_red.abstract_on_durings == []
@@ -2678,6 +2691,7 @@ class TestModelStateTrafficLight:
         ast_node = state_trafficlight_inservice_red.to_ast_node()
         assert ast_node == dsl_nodes.StateDefinition(
             name="Red",
+            extra_name=None,
             substates=[],
             transitions=[],
             enters=[],
@@ -3014,6 +3028,7 @@ class TestModelStateTrafficLight:
             "InService",
         )
         assert state_trafficlight_inservice_yellow.substate_name_to_id == {}
+        assert state_trafficlight_inservice_yellow.extra_name is None
         assert not state_trafficlight_inservice_yellow.is_pseudo
         assert state_trafficlight_inservice_yellow.abstract_on_during_aspects == []
         assert state_trafficlight_inservice_yellow.abstract_on_durings == []
@@ -3150,6 +3165,7 @@ class TestModelStateTrafficLight:
         ast_node = state_trafficlight_inservice_yellow.to_ast_node()
         assert ast_node == dsl_nodes.StateDefinition(
             name="Yellow",
+            extra_name=None,
             substates=[],
             transitions=[],
             enters=[],
@@ -3430,6 +3446,7 @@ class TestModelStateTrafficLight:
             "InService",
         )
         assert state_trafficlight_inservice_green.substate_name_to_id == {}
+        assert state_trafficlight_inservice_green.extra_name is None
         assert not state_trafficlight_inservice_green.is_pseudo
         assert state_trafficlight_inservice_green.abstract_on_during_aspects == []
         assert state_trafficlight_inservice_green.abstract_on_durings == []
@@ -3518,6 +3535,7 @@ class TestModelStateTrafficLight:
         ast_node = state_trafficlight_inservice_green.to_ast_node()
         assert ast_node == dsl_nodes.StateDefinition(
             name="Green",
+            extra_name=None,
             substates=[],
             transitions=[],
             enters=[],
@@ -3789,6 +3807,7 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_idle.parent_ref().name == "TrafficLight"
         assert state_trafficlight_idle.parent_ref().path == ("TrafficLight",)
         assert state_trafficlight_idle.substate_name_to_id == {}
+        assert state_trafficlight_idle.extra_name is None
         assert not state_trafficlight_idle.is_pseudo
         assert state_trafficlight_idle.abstract_on_during_aspects == []
         assert state_trafficlight_idle.abstract_on_durings == []
@@ -3870,6 +3889,7 @@ class TestModelStateTrafficLight:
         ast_node = state_trafficlight_idle.to_ast_node()
         assert ast_node == dsl_nodes.StateDefinition(
             name="Idle",
+            extra_name=None,
             substates=[],
             transitions=[],
             enters=[],

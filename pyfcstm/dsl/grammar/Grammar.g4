@@ -11,8 +11,8 @@ state_machine_dsl: def_assignment* state_definition EOF;
 def_assignment: 'def' deftype=('int'|'float') ID '=' init_expression ';';
 
 state_definition
-    : pseudo='pseudo'? 'state' state_id=ID ';'                             # leafStateDefinition
-    | pseudo='pseudo'? 'state' state_id=ID '{' state_inner_statement* '}'  # compositeStateDefinition
+    : pseudo='pseudo'? 'state' state_id=ID ('named' extra_name=STRING)? ';'                             # leafStateDefinition
+    | pseudo='pseudo'? 'state' state_id=ID ('named' extra_name=STRING)? '{' state_inner_statement* '}'  # compositeStateDefinition
     ;
 
 transition_definition

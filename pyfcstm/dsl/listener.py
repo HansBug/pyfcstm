@@ -223,6 +223,7 @@ class GrammarParseListener(GrammarListener):
         super().exitLeafStateDefinition(ctx)
         self.nodes[ctx] = StateDefinition(
             name=str(ctx.ID()),
+            extra_name=eval(ctx.extra_name.text) if ctx.extra_name else None,
             substates=[],
             transitions=[],
             enters=[],
@@ -235,6 +236,7 @@ class GrammarParseListener(GrammarListener):
         super().exitCompositeStateDefinition(ctx)
         self.nodes[ctx] = StateDefinition(
             name=str(ctx.ID()),
+            extra_name=eval(ctx.extra_name.text) if ctx.extra_name else None,
             substates=[self.nodes[item] for item in ctx.state_inner_statement()
                        if item in self.nodes and isinstance(self.nodes[item], StateDefinition)],
             transitions=[self.nodes[item] for item in ctx.state_inner_statement()

@@ -220,6 +220,7 @@ class TestModelStateL1:
         assert state_l1.on_during_aspects[1].parent.path == ("L1",)
         assert state_l1.parent_ref is None
         assert state_l1.substate_name_to_id == {"L2": 0}
+        assert state_l1.extra_name is None
         assert not state_l1.is_pseudo
         assert len(state_l1.abstract_on_during_aspects) == 2
         assert state_l1.abstract_on_during_aspects[0].stage == "during"
@@ -337,12 +338,15 @@ class TestModelStateL1:
         ast_node = state_l1.to_ast_node()
         assert ast_node == dsl_nodes.StateDefinition(
             name="L1",
+            extra_name=None,
             substates=[
                 dsl_nodes.StateDefinition(
                     name="L2",
+                    extra_name=None,
                     substates=[
                         dsl_nodes.StateDefinition(
                             name="L21",
+                            extra_name=None,
                             substates=[],
                             transitions=[],
                             enters=[],
@@ -354,6 +358,7 @@ class TestModelStateL1:
                         ),
                         dsl_nodes.StateDefinition(
                             name="L22",
+                            extra_name=None,
                             substates=[],
                             transitions=[],
                             enters=[],
@@ -741,6 +746,7 @@ class TestModelStateL1:
         assert state_l1_l2.parent_ref().name == "L1"
         assert state_l1_l2.parent_ref().path == ("L1",)
         assert state_l1_l2.substate_name_to_id == {"L21": 0, "L22": 1}
+        assert state_l1_l2.extra_name is None
         assert not state_l1_l2.is_pseudo
         assert len(state_l1_l2.abstract_on_during_aspects) == 2
         assert state_l1_l2.abstract_on_during_aspects[0].stage == "during"
@@ -846,9 +852,11 @@ class TestModelStateL1:
         ast_node = state_l1_l2.to_ast_node()
         assert ast_node == dsl_nodes.StateDefinition(
             name="L2",
+            extra_name=None,
             substates=[
                 dsl_nodes.StateDefinition(
                     name="L21",
+                    extra_name=None,
                     substates=[],
                     transitions=[],
                     enters=[],
@@ -860,6 +868,7 @@ class TestModelStateL1:
                 ),
                 dsl_nodes.StateDefinition(
                     name="L22",
+                    extra_name=None,
                     substates=[],
                     transitions=[],
                     enters=[],
@@ -1108,6 +1117,7 @@ class TestModelStateL1:
         assert state_l1_l2_l21.parent_ref().name == "L2"
         assert state_l1_l2_l21.parent_ref().path == ("L1", "L2")
         assert state_l1_l2_l21.substate_name_to_id == {}
+        assert state_l1_l2_l21.extra_name is None
         assert state_l1_l2_l21.is_pseudo
         assert state_l1_l2_l21.abstract_on_during_aspects == []
         assert state_l1_l2_l21.abstract_on_durings == []
@@ -1147,6 +1157,7 @@ class TestModelStateL1:
         ast_node = state_l1_l2_l21.to_ast_node()
         assert ast_node == dsl_nodes.StateDefinition(
             name="L21",
+            extra_name=None,
             substates=[],
             transitions=[],
             enters=[],
@@ -1236,6 +1247,7 @@ class TestModelStateL1:
         assert state_l1_l2_l22.parent_ref().name == "L2"
         assert state_l1_l2_l22.parent_ref().path == ("L1", "L2")
         assert state_l1_l2_l22.substate_name_to_id == {}
+        assert state_l1_l2_l22.extra_name is None
         assert not state_l1_l2_l22.is_pseudo
         assert state_l1_l2_l22.abstract_on_during_aspects == []
         assert state_l1_l2_l22.abstract_on_durings == []
@@ -1277,6 +1289,7 @@ class TestModelStateL1:
         ast_node = state_l1_l2_l22.to_ast_node()
         assert ast_node == dsl_nodes.StateDefinition(
             name="L22",
+            extra_name=None,
             substates=[],
             transitions=[],
             enters=[],

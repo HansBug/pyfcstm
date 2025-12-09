@@ -288,6 +288,7 @@ class TestModelStateL1:
         assert state_l1.on_during_aspects[1].parent.path == ("L1",)
         assert state_l1.parent_ref is None
         assert state_l1.substate_name_to_id == {"L21": 0, "L22": 1}
+        assert state_l1.extra_name is None
         assert not state_l1.is_pseudo
         assert state_l1.abstract_on_during_aspects == []
         assert len(state_l1.abstract_on_durings) == 1
@@ -457,9 +458,11 @@ class TestModelStateL1:
         ast_node = state_l1.to_ast_node()
         assert ast_node == dsl_nodes.StateDefinition(
             name="L1",
+            extra_name=None,
             substates=[
                 dsl_nodes.StateDefinition(
                     name="L21",
+                    extra_name=None,
                     substates=[],
                     transitions=[],
                     enters=[
@@ -499,6 +502,7 @@ class TestModelStateL1:
                 ),
                 dsl_nodes.StateDefinition(
                     name="L22",
+                    extra_name=None,
                     substates=[],
                     transitions=[],
                     enters=[
@@ -988,6 +992,7 @@ class TestModelStateL1:
         assert state_l1_l21.parent_ref().name == "L1"
         assert state_l1_l21.parent_ref().path == ("L1",)
         assert state_l1_l21.substate_name_to_id == {}
+        assert state_l1_l21.extra_name is None
         assert not state_l1_l21.is_pseudo
         assert state_l1_l21.abstract_on_during_aspects == []
         assert state_l1_l21.abstract_on_durings == []
@@ -1098,6 +1103,7 @@ class TestModelStateL1:
         ast_node = state_l1_l21.to_ast_node()
         assert ast_node == dsl_nodes.StateDefinition(
             name="L21",
+            extra_name=None,
             substates=[],
             transitions=[],
             enters=[
@@ -1651,6 +1657,7 @@ class TestModelStateL1:
         assert state_l1_l22.parent_ref().name == "L1"
         assert state_l1_l22.parent_ref().path == ("L1",)
         assert state_l1_l22.substate_name_to_id == {}
+        assert state_l1_l22.extra_name is None
         assert not state_l1_l22.is_pseudo
         assert state_l1_l22.abstract_on_during_aspects == []
         assert state_l1_l22.abstract_on_durings == []
@@ -1786,6 +1793,7 @@ class TestModelStateL1:
         ast_node = state_l1_l22.to_ast_node()
         assert ast_node == dsl_nodes.StateDefinition(
             name="L22",
+            extra_name=None,
             substates=[],
             transitions=[],
             enters=[
@@ -2180,15 +2188,15 @@ state L1 {
     }
     during after abstract F13;
     exit F1x ref F1;
-    >> during ref L21.F1;
-    >> during ref L22.F1;
+    >> during before ref L21.F1;
+    >> during after ref L22.F1;
     state L21 {
         enter F1 {
             x = 0;
             y = y + 1;
         }
         exit ref /F1x;
-        >> during ref /F1x;
+        >> during after ref /F1x;
     }
     state L22 {
         enter ref /F1x;
@@ -2221,13 +2229,13 @@ end note
 
 state "L1" as l1 {
     state "L21" as l1__l21
-    l1__l21 : enter F1 {\\n    x = 0;\\n    y = y + 1;\\n}\\nexit ref /F1x;\\n>> during ref /F1x;
+    l1__l21 : enter F1 {\\n    x = 0;\\n    y = y + 1;\\n}\\nexit ref /F1x;\\n>> during after ref /F1x;
     state "L22" as l1__l22
     l1__l22 : enter ref /F1x;\\nduring ref /F1x;\\nduring ref F1;\\nexit F1 {\\n    x = x + 1;\\n    y = 0;\\n}\\nexit ref /F1;
     [*] --> l1__l21
     l1__l21 --> l1__l22 : x > 0
 }
-l1 : enter abstract F1;\\nduring before F12 {\\n    x = 1;\\n}\\nduring after abstract F13;\\nexit F1x ref F1;\\n>> during ref L21.F1;\\n>> during ref L22.F1;
+l1 : enter abstract F1;\\nduring before F12 {\\n    x = 1;\\n}\\nduring after abstract F13;\\nexit F1x ref F1;\\n>> during before ref L21.F1;\\n>> during after ref L22.F1;
 [*] --> l1
 l1 --> [*]
 @enduml

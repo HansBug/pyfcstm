@@ -20,7 +20,7 @@ import os
 from abc import ABC
 from dataclasses import dataclass
 from textwrap import indent
-from typing import List, Union, Optional
+from typing import List, Union, Optional, Any
 
 from hbutils.design import SingletonMark
 
@@ -165,7 +165,7 @@ class Literal(Expr):
     raw: str
 
     @property
-    def value(self):
+    def value(self) -> Any:
         """
         Get the actual value of the literal.
 
@@ -174,7 +174,7 @@ class Literal(Expr):
         """
         return self._value()
 
-    def _value(self):
+    def _value(self) -> Any:
         """
         Internal method to evaluate the literal's value.
 
@@ -1013,6 +1013,8 @@ class StateDefinition(ASTNode):
 
     :param name: The name of the state
     :type name: str
+    :param extra_name: Optional additional name for the state
+    :type extra_name: Optional[str]
     :param substates: List of nested state definitions
     :type substates: List[StateDefinition]
     :param transitions: List of transitions from this state
@@ -1044,6 +1046,7 @@ class StateDefinition(ASTNode):
         >>> state_with_trans = StateDefinition("idle", [], [trans], [], [], [])
     """
     name: str
+    extra_name: Optional[str] = None
     substates: List['StateDefinition'] = None
     transitions: List[TransitionDefinition] = None
     enters: List['EnterStatement'] = None
@@ -1073,11 +1076,17 @@ class StateDefinition(ASTNode):
         :rtype: str
         """
         with io.StringIO() as sf:
+            if self.is_pseudo:
+                print('pseudo ', file=sf, end='')
+            print(f'state {self.name}', file=sf, end='')
+            if self.extra_name is not None:
+                print(f' named {self.extra_name!r}', file=sf, end='')
+
             if not self.substates and not self.transitions and \
                     not self.enters and not self.durings and not self.exits and not self.during_aspects:
-                print(f'{"pseudo " if self.is_pseudo else ""}state {self.name};', file=sf, end='')
+                print(f';', file=sf, end='')
             else:
-                print(f'{"pseudo " if self.is_pseudo else ""}state {self.name} {{', file=sf)
+                print(f' {{', file=sf)
                 for enter_item in self.enters:
                     print(indent(str(enter_item), prefix='    '), file=sf)
                 for during_item in self.durings:
@@ -1739,7 +1748,7 @@ class DuringAspectRefFunction(DuringAspectStatement):
 
         >>> ref_func = DuringAspectRefFunction("process", "before", ChainID(["common", "process"]))
         >>> str(ref_func)
-        '>> during process ref common.process;'
+        '>> during before process ref common.process;'
     """
     name: Optional[str]
     aspect: str
@@ -1753,6 +1762,6 @@ class DuringAspectRefFunction(DuringAspectStatement):
         :rtype: str
         """
         if self.name:
-            return f'>> during {self.name} ref {self.ref};'
+            return f'>> during {self.aspect} {self.name} ref {self.ref};'
         else:
-            return f'>> during ref {self.ref};'
+            return f'>> during {self.aspect} ref {self.ref};'

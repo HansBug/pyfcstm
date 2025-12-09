@@ -1089,7 +1089,8 @@ class State(AstExportable, PlantUMLExportable):
                 shown_name = self.extra_name
             else:
                 shown_name = self.name
-            print(f'state {json.dumps(shown_name)} as {_name_safe()}{state_style_mark_str}', file=sf, end='')
+            print(f'state {json.dumps(shown_name, ensure_ascii=False)} as {_name_safe()}{state_style_mark_str}',
+                  file=sf, end='')
             if not self.is_leaf_state:
                 print(f' {{', file=sf)
                 for state in self.substates.values():

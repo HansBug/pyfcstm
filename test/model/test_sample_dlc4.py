@@ -186,6 +186,7 @@ class TestModelStateL1:
         assert state_l1.on_during_aspects == []
         assert state_l1.parent_ref is None
         assert state_l1.substate_name_to_id == {"L11": 0, "L12": 1}
+        assert state_l1.extra_name is None
         assert not state_l1.is_pseudo
         assert state_l1.abstract_on_during_aspects == []
         assert state_l1.abstract_on_durings == []
@@ -241,18 +242,23 @@ class TestModelStateL1:
         ast_node = state_l1.to_ast_node()
         assert ast_node == dsl_nodes.StateDefinition(
             name="L1",
+            extra_name=None,
             substates=[
                 dsl_nodes.StateDefinition(
                     name="L11",
+                    extra_name=None,
                     substates=[
                         dsl_nodes.StateDefinition(
                             name="L111",
+                            extra_name=None,
                             substates=[
                                 dsl_nodes.StateDefinition(
                                     name="L1111",
+                                    extra_name=None,
                                     substates=[
                                         dsl_nodes.StateDefinition(
                                             name="L11111",
+                                            extra_name=None,
                                             substates=[],
                                             transitions=[],
                                             enters=[],
@@ -264,6 +270,7 @@ class TestModelStateL1:
                                         ),
                                         dsl_nodes.StateDefinition(
                                             name="L11112",
+                                            extra_name=None,
                                             substates=[],
                                             transitions=[],
                                             enters=[],
@@ -275,6 +282,7 @@ class TestModelStateL1:
                                         ),
                                         dsl_nodes.StateDefinition(
                                             name="L11113",
+                                            extra_name=None,
                                             substates=[],
                                             transitions=[],
                                             enters=[],
@@ -366,6 +374,7 @@ class TestModelStateL1:
                                 ),
                                 dsl_nodes.StateDefinition(
                                     name="L1112",
+                                    extra_name=None,
                                     substates=[],
                                     transitions=[],
                                     enters=[],
@@ -377,6 +386,7 @@ class TestModelStateL1:
                                 ),
                                 dsl_nodes.StateDefinition(
                                     name="L1113",
+                                    extra_name=None,
                                     substates=[],
                                     transitions=[],
                                     enters=[],
@@ -468,6 +478,7 @@ class TestModelStateL1:
                         ),
                         dsl_nodes.StateDefinition(
                             name="L112",
+                            extra_name=None,
                             substates=[],
                             transitions=[],
                             enters=[],
@@ -479,6 +490,7 @@ class TestModelStateL1:
                         ),
                         dsl_nodes.StateDefinition(
                             name="L113",
+                            extra_name=None,
                             substates=[],
                             transitions=[],
                             enters=[],
@@ -564,6 +576,7 @@ class TestModelStateL1:
                 ),
                 dsl_nodes.StateDefinition(
                     name="L12",
+                    extra_name=None,
                     substates=[],
                     transitions=[],
                     enters=[],
@@ -745,6 +758,7 @@ class TestModelStateL1:
         assert state_l1_l11.parent_ref().name == "L1"
         assert state_l1_l11.parent_ref().path == ("L1",)
         assert state_l1_l11.substate_name_to_id == {"L111": 0, "L112": 1, "L113": 2}
+        assert state_l1_l11.extra_name is None
         assert not state_l1_l11.is_pseudo
         assert state_l1_l11.abstract_on_during_aspects == []
         assert state_l1_l11.abstract_on_durings == []
@@ -810,15 +824,19 @@ class TestModelStateL1:
         ast_node = state_l1_l11.to_ast_node()
         assert ast_node == dsl_nodes.StateDefinition(
             name="L11",
+            extra_name=None,
             substates=[
                 dsl_nodes.StateDefinition(
                     name="L111",
+                    extra_name=None,
                     substates=[
                         dsl_nodes.StateDefinition(
                             name="L1111",
+                            extra_name=None,
                             substates=[
                                 dsl_nodes.StateDefinition(
                                     name="L11111",
+                                    extra_name=None,
                                     substates=[],
                                     transitions=[],
                                     enters=[],
@@ -830,6 +848,7 @@ class TestModelStateL1:
                                 ),
                                 dsl_nodes.StateDefinition(
                                     name="L11112",
+                                    extra_name=None,
                                     substates=[],
                                     transitions=[],
                                     enters=[],
@@ -841,6 +860,7 @@ class TestModelStateL1:
                                 ),
                                 dsl_nodes.StateDefinition(
                                     name="L11113",
+                                    extra_name=None,
                                     substates=[],
                                     transitions=[],
                                     enters=[],
@@ -932,6 +952,7 @@ class TestModelStateL1:
                         ),
                         dsl_nodes.StateDefinition(
                             name="L1112",
+                            extra_name=None,
                             substates=[],
                             transitions=[],
                             enters=[],
@@ -943,6 +964,7 @@ class TestModelStateL1:
                         ),
                         dsl_nodes.StateDefinition(
                             name="L1113",
+                            extra_name=None,
                             substates=[],
                             transitions=[],
                             enters=[],
@@ -1034,6 +1056,7 @@ class TestModelStateL1:
                 ),
                 dsl_nodes.StateDefinition(
                     name="L112",
+                    extra_name=None,
                     substates=[],
                     transitions=[],
                     enters=[],
@@ -1045,6 +1068,7 @@ class TestModelStateL1:
                 ),
                 dsl_nodes.StateDefinition(
                     name="L113",
+                    extra_name=None,
                     substates=[],
                     transitions=[],
                     enters=[],
@@ -1300,6 +1324,7 @@ class TestModelStateL1:
             "L1112": 1,
             "L1113": 2,
         }
+        assert state_l1_l11_l111.extra_name is None
         assert not state_l1_l11_l111.is_pseudo
         assert state_l1_l11_l111.abstract_on_during_aspects == []
         assert state_l1_l11_l111.abstract_on_durings == []
@@ -1398,12 +1423,15 @@ class TestModelStateL1:
         ast_node = state_l1_l11_l111.to_ast_node()
         assert ast_node == dsl_nodes.StateDefinition(
             name="L111",
+            extra_name=None,
             substates=[
                 dsl_nodes.StateDefinition(
                     name="L1111",
+                    extra_name=None,
                     substates=[
                         dsl_nodes.StateDefinition(
                             name="L11111",
+                            extra_name=None,
                             substates=[],
                             transitions=[],
                             enters=[],
@@ -1415,6 +1443,7 @@ class TestModelStateL1:
                         ),
                         dsl_nodes.StateDefinition(
                             name="L11112",
+                            extra_name=None,
                             substates=[],
                             transitions=[],
                             enters=[],
@@ -1426,6 +1455,7 @@ class TestModelStateL1:
                         ),
                         dsl_nodes.StateDefinition(
                             name="L11113",
+                            extra_name=None,
                             substates=[],
                             transitions=[],
                             enters=[],
@@ -1517,6 +1547,7 @@ class TestModelStateL1:
                 ),
                 dsl_nodes.StateDefinition(
                     name="L1112",
+                    extra_name=None,
                     substates=[],
                     transitions=[],
                     enters=[],
@@ -1528,6 +1559,7 @@ class TestModelStateL1:
                 ),
                 dsl_nodes.StateDefinition(
                     name="L1113",
+                    extra_name=None,
                     substates=[],
                     transitions=[],
                     enters=[],
@@ -1801,6 +1833,7 @@ class TestModelStateL1:
             "L11112": 1,
             "L11113": 2,
         }
+        assert state_l1_l11_l111_l1111.extra_name is None
         assert not state_l1_l11_l111_l1111.is_pseudo
         assert state_l1_l11_l111_l1111.abstract_on_during_aspects == []
         assert state_l1_l11_l111_l1111.abstract_on_durings == []
@@ -1924,9 +1957,11 @@ class TestModelStateL1:
         ast_node = state_l1_l11_l111_l1111.to_ast_node()
         assert ast_node == dsl_nodes.StateDefinition(
             name="L1111",
+            extra_name=None,
             substates=[
                 dsl_nodes.StateDefinition(
                     name="L11111",
+                    extra_name=None,
                     substates=[],
                     transitions=[],
                     enters=[],
@@ -1938,6 +1973,7 @@ class TestModelStateL1:
                 ),
                 dsl_nodes.StateDefinition(
                     name="L11112",
+                    extra_name=None,
                     substates=[],
                     transitions=[],
                     enters=[],
@@ -1949,6 +1985,7 @@ class TestModelStateL1:
                 ),
                 dsl_nodes.StateDefinition(
                     name="L11113",
+                    extra_name=None,
                     substates=[],
                     transitions=[],
                     enters=[],
@@ -2125,6 +2162,7 @@ class TestModelStateL1:
             "L1111",
         )
         assert state_l1_l11_l111_l1111_l11111.substate_name_to_id == {}
+        assert state_l1_l11_l111_l1111_l11111.extra_name is None
         assert not state_l1_l11_l111_l1111_l11111.is_pseudo
         assert state_l1_l11_l111_l1111_l11111.abstract_on_during_aspects == []
         assert state_l1_l11_l111_l1111_l11111.abstract_on_durings == []
@@ -2227,6 +2265,7 @@ class TestModelStateL1:
         ast_node = state_l1_l11_l111_l1111_l11111.to_ast_node()
         assert ast_node == dsl_nodes.StateDefinition(
             name="L11111",
+            extra_name=None,
             substates=[],
             transitions=[],
             enters=[],
@@ -2351,6 +2390,7 @@ class TestModelStateL1:
             "L1111",
         )
         assert state_l1_l11_l111_l1111_l11112.substate_name_to_id == {}
+        assert state_l1_l11_l111_l1111_l11112.extra_name is None
         assert not state_l1_l11_l111_l1111_l11112.is_pseudo
         assert state_l1_l11_l111_l1111_l11112.abstract_on_during_aspects == []
         assert state_l1_l11_l111_l1111_l11112.abstract_on_durings == []
@@ -2438,6 +2478,7 @@ class TestModelStateL1:
         ast_node = state_l1_l11_l111_l1111_l11112.to_ast_node()
         assert ast_node == dsl_nodes.StateDefinition(
             name="L11112",
+            extra_name=None,
             substates=[],
             transitions=[],
             enters=[],
@@ -2562,6 +2603,7 @@ class TestModelStateL1:
             "L1111",
         )
         assert state_l1_l11_l111_l1111_l11113.substate_name_to_id == {}
+        assert state_l1_l11_l111_l1111_l11113.extra_name is None
         assert not state_l1_l11_l111_l1111_l11113.is_pseudo
         assert state_l1_l11_l111_l1111_l11113.abstract_on_during_aspects == []
         assert state_l1_l11_l111_l1111_l11113.abstract_on_durings == []
@@ -2649,6 +2691,7 @@ class TestModelStateL1:
         ast_node = state_l1_l11_l111_l1111_l11113.to_ast_node()
         assert ast_node == dsl_nodes.StateDefinition(
             name="L11113",
+            extra_name=None,
             substates=[],
             transitions=[],
             enters=[],
@@ -2762,6 +2805,7 @@ class TestModelStateL1:
         assert state_l1_l11_l111_l1112.parent_ref().name == "L111"
         assert state_l1_l11_l111_l1112.parent_ref().path == ("L1", "L11", "L111")
         assert state_l1_l11_l111_l1112.substate_name_to_id == {}
+        assert state_l1_l11_l111_l1112.extra_name is None
         assert not state_l1_l11_l111_l1112.is_pseudo
         assert state_l1_l11_l111_l1112.abstract_on_during_aspects == []
         assert state_l1_l11_l111_l1112.abstract_on_durings == []
@@ -2828,6 +2872,7 @@ class TestModelStateL1:
         ast_node = state_l1_l11_l111_l1112.to_ast_node()
         assert ast_node == dsl_nodes.StateDefinition(
             name="L1112",
+            extra_name=None,
             substates=[],
             transitions=[],
             enters=[],
@@ -2927,6 +2972,7 @@ class TestModelStateL1:
         assert state_l1_l11_l111_l1113.parent_ref().name == "L111"
         assert state_l1_l11_l111_l1113.parent_ref().path == ("L1", "L11", "L111")
         assert state_l1_l11_l111_l1113.substate_name_to_id == {}
+        assert state_l1_l11_l111_l1113.extra_name is None
         assert not state_l1_l11_l111_l1113.is_pseudo
         assert state_l1_l11_l111_l1113.abstract_on_during_aspects == []
         assert state_l1_l11_l111_l1113.abstract_on_durings == []
@@ -2993,6 +3039,7 @@ class TestModelStateL1:
         ast_node = state_l1_l11_l111_l1113.to_ast_node()
         assert ast_node == dsl_nodes.StateDefinition(
             name="L1113",
+            extra_name=None,
             substates=[],
             transitions=[],
             enters=[],
@@ -3092,6 +3139,7 @@ class TestModelStateL1:
         assert state_l1_l11_l112.parent_ref().name == "L11"
         assert state_l1_l11_l112.parent_ref().path == ("L1", "L11")
         assert state_l1_l11_l112.substate_name_to_id == {}
+        assert state_l1_l11_l112.extra_name is None
         assert not state_l1_l11_l112.is_pseudo
         assert state_l1_l11_l112.abstract_on_during_aspects == []
         assert state_l1_l11_l112.abstract_on_durings == []
@@ -3142,6 +3190,7 @@ class TestModelStateL1:
         ast_node = state_l1_l11_l112.to_ast_node()
         assert ast_node == dsl_nodes.StateDefinition(
             name="L112",
+            extra_name=None,
             substates=[],
             transitions=[],
             enters=[],
@@ -3237,6 +3286,7 @@ class TestModelStateL1:
         assert state_l1_l11_l113.parent_ref().name == "L11"
         assert state_l1_l11_l113.parent_ref().path == ("L1", "L11")
         assert state_l1_l11_l113.substate_name_to_id == {}
+        assert state_l1_l11_l113.extra_name is None
         assert not state_l1_l11_l113.is_pseudo
         assert state_l1_l11_l113.abstract_on_during_aspects == []
         assert state_l1_l11_l113.abstract_on_durings == []
@@ -3287,6 +3337,7 @@ class TestModelStateL1:
         ast_node = state_l1_l11_l113.to_ast_node()
         assert ast_node == dsl_nodes.StateDefinition(
             name="L113",
+            extra_name=None,
             substates=[],
             transitions=[],
             enters=[],
@@ -3380,6 +3431,7 @@ class TestModelStateL1:
         assert state_l1_l12.parent_ref().name == "L1"
         assert state_l1_l12.parent_ref().path == ("L1",)
         assert state_l1_l12.substate_name_to_id == {}
+        assert state_l1_l12.extra_name is None
         assert not state_l1_l12.is_pseudo
         assert state_l1_l12.abstract_on_during_aspects == []
         assert state_l1_l12.abstract_on_durings == []
@@ -3410,6 +3462,7 @@ class TestModelStateL1:
         ast_node = state_l1_l12.to_ast_node()
         assert ast_node == dsl_nodes.StateDefinition(
             name="L12",
+            extra_name=None,
             substates=[],
             transitions=[],
             enters=[],

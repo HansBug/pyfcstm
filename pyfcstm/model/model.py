@@ -20,7 +20,7 @@ import json
 import weakref
 from dataclasses import dataclass
 from textwrap import indent
-from typing import Optional, Union, List, Dict, Tuple
+from typing import Optional, Union, List, Dict, Tuple, Iterator
 
 from .base import AstExportable, PlantUMLExportable
 from .expr import Expr, parse_expr_node_to_expr
@@ -538,6 +538,8 @@ class State(AstExportable, PlantUMLExportable):
     :type parent_ref: Optional[weakref.ReferenceType]
     :param substate_name_to_id: Dictionary mapping substate names to numeric IDs
     :type substate_name_to_id: Dict[str, int]
+    :param extra_name: Optional extra name for display purposes
+    :type extra_name: Optional[str]
     :param is_pseudo: Whether this is a pseudo state
     :type is_pseudo: bool
 
@@ -901,7 +903,7 @@ class State(AstExportable, PlantUMLExportable):
         return self.list_on_during_aspects(is_abstract=False, with_ids=False)
 
     def iter_on_during_before_aspect_recursively(self, is_abstract: Optional[bool] = None, with_ids: bool = False) \
-            -> List[Union[Tuple[int, 'State', Union[OnAspect, OnStage]], Tuple['State', Union[OnAspect, OnStage]]]]:
+            -> Iterator[Union[Tuple[int, 'State', Union[OnAspect, OnStage]], Tuple['State', Union[OnAspect, OnStage]]]]:
         """
         Recursively iterate through 'before' aspect during actions from parent states to this state.
 
@@ -913,7 +915,7 @@ class State(AstExportable, PlantUMLExportable):
         :param with_ids: Whether to include numeric IDs with the actions
         :type with_ids: bool
         :yield: Tuples of (state, action) or (id, state, action) if with_ids is True
-        :rtype: List[Union[Tuple[int, 'State', Union[OnAspect, OnStage]], Tuple['State', Union[OnAspect, OnStage]]]]
+        :rtype: Iterator[Union[Tuple[int, 'State', Union[OnAspect, OnStage]], Tuple['State', Union[OnAspect, OnStage]]]]
         """
         if self.parent is not None:
             yield from self.parent.iter_on_during_before_aspect_recursively(is_abstract=is_abstract, with_ids=with_ids)
@@ -925,7 +927,7 @@ class State(AstExportable, PlantUMLExportable):
                 yield self, item
 
     def iter_on_during_after_aspect_recursively(self, is_abstract: Optional[bool] = None, with_ids: bool = False) \
-            -> List[Union[Tuple[int, 'State', Union[OnAspect, OnStage]], Tuple['State', Union[OnAspect, OnStage]]]]:
+            -> Iterator[Union[Tuple[int, 'State', Union[OnAspect, OnStage]], Tuple['State', Union[OnAspect, OnStage]]]]:
         """
         Recursively iterate through 'after' aspect during actions from this state to the root state.
 
@@ -937,7 +939,7 @@ class State(AstExportable, PlantUMLExportable):
         :param with_ids: Whether to include numeric IDs with the actions
         :type with_ids: bool
         :yield: Tuples of (state, action) or (id, state, action) if with_ids is True
-        :rtype: List[Union[Tuple[int, 'State', Union[OnAspect, OnStage]], Tuple['State', Union[OnAspect, OnStage]]]]
+        :rtype: Iterator[Union[Tuple[int, 'State', Union[OnAspect, OnStage]], Tuple['State', Union[OnAspect, OnStage]]]]
         """
         if with_ids:
             for id_, item in self.list_on_during_aspects(is_abstract=is_abstract, aspect='after', with_ids=with_ids):
@@ -949,7 +951,7 @@ class State(AstExportable, PlantUMLExportable):
             yield from self.parent.iter_on_during_after_aspect_recursively(is_abstract=is_abstract, with_ids=with_ids)
 
     def iter_on_during_aspect_recursively(self, is_abstract: Optional[bool] = None, with_ids: bool = False) \
-            -> List[Union[Tuple[int, 'State', Union[OnAspect, OnStage]], Tuple['State', Union[OnAspect, OnStage]]]]:
+            -> Iterator[Union[Tuple[int, 'State', Union[OnAspect, OnStage]], Tuple['State', Union[OnAspect, OnStage]]]]:
         """
         Recursively iterate through all during actions in the proper execution order.
 
@@ -964,7 +966,7 @@ class State(AstExportable, PlantUMLExportable):
         :param with_ids: Whether to include numeric IDs with the actions
         :type with_ids: bool
         :yield: Tuples of (state, action) or (id, state, action) if with_ids is True
-        :rtype: List[Union[Tuple[int, 'State', Union[OnAspect, OnStage]], Tuple['State', Union[OnAspect, OnStage]]]]
+        :rtype: Iterator[Union[Tuple[int, 'State', Union[OnAspect, OnStage]], Tuple['State', Union[OnAspect, OnStage]]]]
         """
         if not self.is_pseudo:
             yield from self.iter_on_during_before_aspect_recursively(is_abstract=is_abstract, with_ids=with_ids)
@@ -1138,7 +1140,7 @@ class State(AstExportable, PlantUMLExportable):
 
             return sf.getvalue()
 
-    def walk_states(self):
+    def walk_states(self) -> Iterator['State']:
         """
         Iterate through this state and all its substates recursively.
 
@@ -1253,7 +1255,7 @@ class StateMachine(AstExportable, PlantUMLExportable):
             print('@enduml', file=sf, end='')
             return sf.getvalue()
 
-    def walk_states(self):
+    def walk_states(self) -> Iterator[State]:
         """
         Iterate through all states in the state machine.
 

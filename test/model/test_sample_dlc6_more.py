@@ -2188,15 +2188,15 @@ state L1 {
     }
     during after abstract F13;
     exit F1x ref F1;
-    >> during ref L21.F1;
-    >> during ref L22.F1;
+    >> during before ref L21.F1;
+    >> during after ref L22.F1;
     state L21 {
         enter F1 {
             x = 0;
             y = y + 1;
         }
         exit ref /F1x;
-        >> during ref /F1x;
+        >> during after ref /F1x;
     }
     state L22 {
         enter ref /F1x;
@@ -2229,13 +2229,13 @@ end note
 
 state "L1" as l1 {
     state "L21" as l1__l21
-    l1__l21 : enter F1 {\\n    x = 0;\\n    y = y + 1;\\n}\\nexit ref /F1x;\\n>> during ref /F1x;
+    l1__l21 : enter F1 {\\n    x = 0;\\n    y = y + 1;\\n}\\nexit ref /F1x;\\n>> during after ref /F1x;
     state "L22" as l1__l22
     l1__l22 : enter ref /F1x;\\nduring ref /F1x;\\nduring ref F1;\\nexit F1 {\\n    x = x + 1;\\n    y = 0;\\n}\\nexit ref /F1;
     [*] --> l1__l21
     l1__l21 --> l1__l22 : x > 0
 }
-l1 : enter abstract F1;\\nduring before F12 {\\n    x = 1;\\n}\\nduring after abstract F13;\\nexit F1x ref F1;\\n>> during ref L21.F1;\\n>> during ref L22.F1;
+l1 : enter abstract F1;\\nduring before F12 {\\n    x = 1;\\n}\\nduring after abstract F13;\\nexit F1x ref F1;\\n>> during before ref L21.F1;\\n>> during after ref L22.F1;
 [*] --> l1
 l1 --> [*]
 @enduml

@@ -16,7 +16,7 @@ jobs:
         os:
           - 'ubuntu-22.04'
           - 'windows-2022'
-          - 'macos-13'
+          - 'macos-14'
         python-version:
           - '3.7'
           - '3.8'
@@ -25,6 +25,9 @@ jobs:
           - '3.11'
           - '3.12'
           - '3.13'
+        exclude:
+          - os: 'macos-14'
+            python-version: '3.7'
 
     steps:
       - name: Get system version for Linux
@@ -128,9 +131,15 @@ jobs:
         os:
           - 'ubuntu-22.04'
           - 'windows-2022'
-          - 'macos-13'
+          - 'macos-14'
         python-version:
           - '3.7'
+        exclude:
+          - os: 'macos-14'
+            python-version: '3.7'
+        include:
+          - os: 'macos-14'
+            python-version: '3.8'
 
     steps:
       - name: Get system version for Linux

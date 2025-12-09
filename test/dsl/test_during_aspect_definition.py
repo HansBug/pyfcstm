@@ -236,49 +236,49 @@ class TestDSLDuringAspectDefinition:
                     """
                     >> during before ref chain.id;
                     """,
-                    '>> during ref chain.id;'
+                    '>> during before ref chain.id;'
             ),  # During aspect with before timing and chain reference
             (
                     """
                     >> during after ref chain.id;
                     """,
-                    '>> during ref chain.id;'
+                    '>> during after ref chain.id;'
             ),  # During aspect with after timing and chain reference
             (
                     """
                     >> during before funcName ref chain.id;
                     """,
-                    '>> during funcName ref chain.id;'
+                    '>> during before funcName ref chain.id;'
             ),  # During aspect with before timing, function name and chain reference
             (
                     """
                     >> during after funcName ref chain.id;
                     """,
-                    '>> during funcName ref chain.id;'
+                    '>> during after funcName ref chain.id;'
             ),  # During aspect with after timing, function name and chain reference
             (
                     """
                     >> during before ref /absolute.chain.id;
                     """,
-                    '>> during ref /absolute.chain.id;'
+                    '>> during before ref /absolute.chain.id;'
             ),  # During aspect with before timing and absolute chain reference
             (
                     """
                     >> during after ref /absolute.chain.id;
                     """,
-                    '>> during ref /absolute.chain.id;'
+                    '>> during after ref /absolute.chain.id;'
             ),  # During aspect with after timing and absolute chain reference
             (
                     """
                     >> during before ref complex.nested.chain.id;
                     """,
-                    '>> during ref complex.nested.chain.id;'
+                    '>> during before ref complex.nested.chain.id;'
             ),  # During aspect with complex nested chain reference
             (
                     """
                     >> during after ref /root.complex.nested.chain;
                     """,
-                    '>> during ref /root.complex.nested.chain;'
+                    '>> during after ref /root.complex.nested.chain;'
             ),  # During aspect with absolute complex nested chain reference
             (
                     """

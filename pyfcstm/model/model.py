@@ -20,7 +20,7 @@ import json
 import weakref
 from dataclasses import dataclass
 from textwrap import indent
-from typing import Optional, Union, List, Dict, Tuple
+from typing import Optional, Union, List, Dict, Tuple, Iterator
 
 from .base import AstExportable, PlantUMLExportable
 from .expr import Expr, parse_expr_node_to_expr
@@ -97,6 +97,8 @@ class Event:
     :type name: str
     :param state_path: The path to the state that owns this event
     :type state_path: Tuple[str, ...]
+    :param extra_name: Optional extra name for display purposes
+    :type extra_name: Optional[str]
 
     Example::
 
@@ -106,6 +108,7 @@ class Event:
     """
     name: str
     state_path: Tuple[str, ...]
+    extra_name: Optional[str] = None
 
     @property
     def path(self) -> Tuple[str, ...]:
@@ -116,6 +119,18 @@ class Event:
         :rtype: Tuple[str, ...]
         """
         return tuple((*self.state_path, self.name))
+
+    def to_ast_node(self) -> dsl_nodes.EventDefinition:
+        """
+        Convert this event to an AST node.
+
+        :return: An event definition AST node
+        :rtype: dsl_nodes.EventDefinition
+        """
+        return dsl_nodes.EventDefinition(
+            name=self.name,
+            extra_name=self.extra_name,
+        )
 
 
 @dataclass
@@ -538,6 +553,8 @@ class State(AstExportable, PlantUMLExportable):
     :type parent_ref: Optional[weakref.ReferenceType]
     :param substate_name_to_id: Dictionary mapping substate names to numeric IDs
     :type substate_name_to_id: Dict[str, int]
+    :param extra_name: Optional extra name for display purposes
+    :type extra_name: Optional[str]
     :param is_pseudo: Whether this is a pseudo state
     :type is_pseudo: bool
 
@@ -563,6 +580,7 @@ class State(AstExportable, PlantUMLExportable):
     on_during_aspects: List[OnAspect] = None
     parent_ref: Optional[weakref.ReferenceType] = None
     substate_name_to_id: Dict[str, int] = None
+    extra_name: Optional[str] = None
     is_pseudo: bool = False
 
     def __post_init__(self):
@@ -900,7 +918,7 @@ class State(AstExportable, PlantUMLExportable):
         return self.list_on_during_aspects(is_abstract=False, with_ids=False)
 
     def iter_on_during_before_aspect_recursively(self, is_abstract: Optional[bool] = None, with_ids: bool = False) \
-            -> List[Union[Tuple[int, 'State', Union[OnAspect, OnStage]], Tuple['State', Union[OnAspect, OnStage]]]]:
+            -> Iterator[Union[Tuple[int, 'State', Union[OnAspect, OnStage]], Tuple['State', Union[OnAspect, OnStage]]]]:
         """
         Recursively iterate through 'before' aspect during actions from parent states to this state.
 
@@ -912,7 +930,7 @@ class State(AstExportable, PlantUMLExportable):
         :param with_ids: Whether to include numeric IDs with the actions
         :type with_ids: bool
         :yield: Tuples of (state, action) or (id, state, action) if with_ids is True
-        :rtype: List[Union[Tuple[int, 'State', Union[OnAspect, OnStage]], Tuple['State', Union[OnAspect, OnStage]]]]
+        :rtype: Iterator[Union[Tuple[int, 'State', Union[OnAspect, OnStage]], Tuple['State', Union[OnAspect, OnStage]]]]
         """
         if self.parent is not None:
             yield from self.parent.iter_on_during_before_aspect_recursively(is_abstract=is_abstract, with_ids=with_ids)
@@ -924,7 +942,7 @@ class State(AstExportable, PlantUMLExportable):
                 yield self, item
 
     def iter_on_during_after_aspect_recursively(self, is_abstract: Optional[bool] = None, with_ids: bool = False) \
-            -> List[Union[Tuple[int, 'State', Union[OnAspect, OnStage]], Tuple['State', Union[OnAspect, OnStage]]]]:
+            -> Iterator[Union[Tuple[int, 'State', Union[OnAspect, OnStage]], Tuple['State', Union[OnAspect, OnStage]]]]:
         """
         Recursively iterate through 'after' aspect during actions from this state to the root state.
 
@@ -936,7 +954,7 @@ class State(AstExportable, PlantUMLExportable):
         :param with_ids: Whether to include numeric IDs with the actions
         :type with_ids: bool
         :yield: Tuples of (state, action) or (id, state, action) if with_ids is True
-        :rtype: List[Union[Tuple[int, 'State', Union[OnAspect, OnStage]], Tuple['State', Union[OnAspect, OnStage]]]]
+        :rtype: Iterator[Union[Tuple[int, 'State', Union[OnAspect, OnStage]], Tuple['State', Union[OnAspect, OnStage]]]]
         """
         if with_ids:
             for id_, item in self.list_on_during_aspects(is_abstract=is_abstract, aspect='after', with_ids=with_ids):
@@ -948,7 +966,7 @@ class State(AstExportable, PlantUMLExportable):
             yield from self.parent.iter_on_during_after_aspect_recursively(is_abstract=is_abstract, with_ids=with_ids)
 
     def iter_on_during_aspect_recursively(self, is_abstract: Optional[bool] = None, with_ids: bool = False) \
-            -> List[Union[Tuple[int, 'State', Union[OnAspect, OnStage]], Tuple['State', Union[OnAspect, OnStage]]]]:
+            -> Iterator[Union[Tuple[int, 'State', Union[OnAspect, OnStage]], Tuple['State', Union[OnAspect, OnStage]]]]:
         """
         Recursively iterate through all during actions in the proper execution order.
 
@@ -963,7 +981,7 @@ class State(AstExportable, PlantUMLExportable):
         :param with_ids: Whether to include numeric IDs with the actions
         :type with_ids: bool
         :yield: Tuples of (state, action) or (id, state, action) if with_ids is True
-        :rtype: List[Union[Tuple[int, 'State', Union[OnAspect, OnStage]], Tuple['State', Union[OnAspect, OnStage]]]]
+        :rtype: Iterator[Union[Tuple[int, 'State', Union[OnAspect, OnStage]], Tuple['State', Union[OnAspect, OnStage]]]]
         """
         if not self.is_pseudo:
             yield from self.iter_on_during_before_aspect_recursively(is_abstract=is_abstract, with_ids=with_ids)
@@ -1050,10 +1068,9 @@ class State(AstExportable, PlantUMLExportable):
         """
         return dsl_nodes.StateDefinition(
             name=self.name,
-            substates=[
-                substate.to_ast_node()
-                for _, substate in self.substates.items()
-            ],
+            extra_name=self.extra_name,
+            events=[event.to_ast_node() for _, event in self.events.items()],
+            substates=[substate.to_ast_node() for _, substate in self.substates.items()],
             transitions=[self.to_transition_ast_node(trans) for trans in self.transitions],
             enters=[item.to_ast_node() for item in self.on_enters],
             durings=[item.to_ast_node() for item in self.on_durings],
@@ -1083,10 +1100,14 @@ class State(AstExportable, PlantUMLExportable):
         #     state_style_marks.append('line.bold')
         state_style_mark_str = " #" + ";".join(state_style_marks) if state_style_marks else ""
         with io.StringIO() as sf:
-            if self.is_leaf_state:
-                print(f'state {json.dumps(self.name)} as {_name_safe()}{state_style_mark_str}', file=sf, end='')
+            if self.extra_name is not None:
+                shown_name = self.extra_name
             else:
-                print(f'state {json.dumps(self.name)} as {_name_safe()}{state_style_mark_str} {{', file=sf)
+                shown_name = self.name
+            print(f'state {json.dumps(shown_name, ensure_ascii=False)} as {_name_safe()}{state_style_mark_str}',
+                  file=sf, end='')
+            if not self.is_leaf_state:
+                print(f' {{', file=sf)
                 for state in self.substates.values():
                     print(indent(state.to_plantuml(), prefix='    '), file=sf)
                 for trans in self.transitions:
@@ -1099,7 +1120,10 @@ class State(AstExportable, PlantUMLExportable):
 
                         trans_node: dsl_nodes.TransitionDefinition = trans.to_ast_node()
                         if trans.event is not None:
-                            print(f' : {trans_node.event_id}', file=tf, end='')
+                            if trans.event.extra_name is not None:
+                                print(f' : {trans.event.extra_name}({trans_node.event_id})', file=tf, end='')
+                            else:
+                                print(f' : {trans_node.event_id}', file=tf, end='')
                         elif trans.guard is not None:
                             print(f' : {trans.guard.to_ast_node()}', file=tf, end='')
 
@@ -1132,7 +1156,7 @@ class State(AstExportable, PlantUMLExportable):
 
             return sf.getvalue()
 
-    def walk_states(self):
+    def walk_states(self) -> Iterator['State']:
         """
         Iterate through this state and all its substates recursively.
 
@@ -1247,7 +1271,7 @@ class StateMachine(AstExportable, PlantUMLExportable):
             print('@enduml', file=sf, end='')
             return sf.getvalue()
 
-    def walk_states(self):
+    def walk_states(self) -> Iterator[State]:
         """
         Iterate through all states in the state machine.
 
@@ -1565,8 +1589,18 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                     named_functions[on_aspect.name] = on_aspect
                 on_during_aspects.append(on_aspect)
 
+        d_events = {}
+        for event in node.events:
+            d_events[event.name] = Event(
+                name=event.name,
+                extra_name=event.extra_name,
+                state_path=current_path,
+            )
+
         my_state = State(
             name=node.name,
+            extra_name=node.extra_name,
+            events=d_events,
             path=current_path,
             substates=d_substates,
             is_pseudo=bool(node.is_pseudo),

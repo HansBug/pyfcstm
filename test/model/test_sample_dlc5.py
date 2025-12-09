@@ -220,6 +220,7 @@ class TestModelStateL1:
         assert state_l1.on_during_aspects[1].parent.path == ("L1",)
         assert state_l1.parent_ref is None
         assert state_l1.substate_name_to_id == {"L2": 0}
+        assert state_l1.extra_name is None
         assert not state_l1.is_pseudo
         assert len(state_l1.abstract_on_during_aspects) == 2
         assert state_l1.abstract_on_during_aspects[0].stage == "during"
@@ -337,12 +338,20 @@ class TestModelStateL1:
         ast_node = state_l1.to_ast_node()
         assert ast_node == dsl_nodes.StateDefinition(
             name="L1",
+            extra_name=None,
+            events=[],
             substates=[
                 dsl_nodes.StateDefinition(
                     name="L2",
+                    extra_name=None,
+                    events=[],
                     substates=[
                         dsl_nodes.StateDefinition(
                             name="L21",
+                            extra_name=None,
+                            events=[
+                                dsl_nodes.EventDefinition(name="E1", extra_name=None)
+                            ],
                             substates=[],
                             transitions=[],
                             enters=[],
@@ -354,6 +363,10 @@ class TestModelStateL1:
                         ),
                         dsl_nodes.StateDefinition(
                             name="L22",
+                            extra_name=None,
+                            events=[
+                                dsl_nodes.EventDefinition(name="E1", extra_name=None)
+                            ],
                             substates=[],
                             transitions=[],
                             enters=[],
@@ -650,7 +663,7 @@ class TestModelStateL1:
         assert state_l1_l2.transitions[1].from_state == "L21"
         assert state_l1_l2.transitions[1].to_state == "L22"
         assert state_l1_l2.transitions[1].event == Event(
-            name="E1", state_path=("L1", "L2", "L21")
+            name="E1", state_path=("L1", "L2", "L21"), extra_name=None
         )
         assert state_l1_l2.transitions[1].guard is None
         assert state_l1_l2.transitions[1].effects == []
@@ -659,7 +672,7 @@ class TestModelStateL1:
         assert state_l1_l2.transitions[2].from_state == "L22"
         assert state_l1_l2.transitions[2].to_state == EXIT_STATE
         assert state_l1_l2.transitions[2].event == Event(
-            name="E1", state_path=("L1", "L2", "L22")
+            name="E1", state_path=("L1", "L2", "L22"), extra_name=None
         )
         assert state_l1_l2.transitions[2].guard is None
         assert state_l1_l2.transitions[2].effects == []
@@ -741,6 +754,7 @@ class TestModelStateL1:
         assert state_l1_l2.parent_ref().name == "L1"
         assert state_l1_l2.parent_ref().path == ("L1",)
         assert state_l1_l2.substate_name_to_id == {"L21": 0, "L22": 1}
+        assert state_l1_l2.extra_name is None
         assert not state_l1_l2.is_pseudo
         assert len(state_l1_l2.abstract_on_during_aspects) == 2
         assert state_l1_l2.abstract_on_during_aspects[0].stage == "during"
@@ -846,9 +860,13 @@ class TestModelStateL1:
         ast_node = state_l1_l2.to_ast_node()
         assert ast_node == dsl_nodes.StateDefinition(
             name="L2",
+            extra_name=None,
+            events=[],
             substates=[
                 dsl_nodes.StateDefinition(
                     name="L21",
+                    extra_name=None,
+                    events=[dsl_nodes.EventDefinition(name="E1", extra_name=None)],
                     substates=[],
                     transitions=[],
                     enters=[],
@@ -860,6 +878,8 @@ class TestModelStateL1:
                 ),
                 dsl_nodes.StateDefinition(
                     name="L22",
+                    extra_name=None,
+                    events=[dsl_nodes.EventDefinition(name="E1", extra_name=None)],
                     substates=[],
                     transitions=[],
                     enters=[],
@@ -1097,7 +1117,7 @@ class TestModelStateL1:
         assert state_l1_l2_l21.path == ("L1", "L2", "L21")
         assert sorted(state_l1_l2_l21.substates.keys()) == []
         assert state_l1_l2_l21.events == {
-            "E1": Event(name="E1", state_path=("L1", "L2", "L21"))
+            "E1": Event(name="E1", state_path=("L1", "L2", "L21"), extra_name=None)
         }
         assert state_l1_l2_l21.transitions == []
         assert state_l1_l2_l21.named_functions == {}
@@ -1108,6 +1128,7 @@ class TestModelStateL1:
         assert state_l1_l2_l21.parent_ref().name == "L2"
         assert state_l1_l2_l21.parent_ref().path == ("L1", "L2")
         assert state_l1_l2_l21.substate_name_to_id == {}
+        assert state_l1_l2_l21.extra_name is None
         assert state_l1_l2_l21.is_pseudo
         assert state_l1_l2_l21.abstract_on_during_aspects == []
         assert state_l1_l2_l21.abstract_on_durings == []
@@ -1128,7 +1149,7 @@ class TestModelStateL1:
         assert state_l1_l2_l21.transitions_from[0].from_state == "L21"
         assert state_l1_l2_l21.transitions_from[0].to_state == "L22"
         assert state_l1_l2_l21.transitions_from[0].event == Event(
-            name="E1", state_path=("L1", "L2", "L21")
+            name="E1", state_path=("L1", "L2", "L21"), extra_name=None
         )
         assert state_l1_l2_l21.transitions_from[0].guard is None
         assert state_l1_l2_l21.transitions_from[0].effects == []
@@ -1147,6 +1168,8 @@ class TestModelStateL1:
         ast_node = state_l1_l2_l21.to_ast_node()
         assert ast_node == dsl_nodes.StateDefinition(
             name="L21",
+            extra_name=None,
+            events=[dsl_nodes.EventDefinition(name="E1", extra_name=None)],
             substates=[],
             transitions=[],
             enters=[],
@@ -1225,7 +1248,7 @@ class TestModelStateL1:
         assert state_l1_l2_l22.path == ("L1", "L2", "L22")
         assert sorted(state_l1_l2_l22.substates.keys()) == []
         assert state_l1_l2_l22.events == {
-            "E1": Event(name="E1", state_path=("L1", "L2", "L22"))
+            "E1": Event(name="E1", state_path=("L1", "L2", "L22"), extra_name=None)
         }
         assert state_l1_l2_l22.transitions == []
         assert state_l1_l2_l22.named_functions == {}
@@ -1236,6 +1259,7 @@ class TestModelStateL1:
         assert state_l1_l2_l22.parent_ref().name == "L2"
         assert state_l1_l2_l22.parent_ref().path == ("L1", "L2")
         assert state_l1_l2_l22.substate_name_to_id == {}
+        assert state_l1_l2_l22.extra_name is None
         assert not state_l1_l2_l22.is_pseudo
         assert state_l1_l2_l22.abstract_on_during_aspects == []
         assert state_l1_l2_l22.abstract_on_durings == []
@@ -1256,7 +1280,7 @@ class TestModelStateL1:
         assert state_l1_l2_l22.transitions_from[0].from_state == "L22"
         assert state_l1_l2_l22.transitions_from[0].to_state == EXIT_STATE
         assert state_l1_l2_l22.transitions_from[0].event == Event(
-            name="E1", state_path=("L1", "L2", "L22")
+            name="E1", state_path=("L1", "L2", "L22"), extra_name=None
         )
         assert state_l1_l2_l22.transitions_from[0].guard is None
         assert state_l1_l2_l22.transitions_from[0].effects == []
@@ -1266,7 +1290,7 @@ class TestModelStateL1:
         assert state_l1_l2_l22.transitions_to[0].from_state == "L21"
         assert state_l1_l2_l22.transitions_to[0].to_state == "L22"
         assert state_l1_l2_l22.transitions_to[0].event == Event(
-            name="E1", state_path=("L1", "L2", "L21")
+            name="E1", state_path=("L1", "L2", "L21"), extra_name=None
         )
         assert state_l1_l2_l22.transitions_to[0].guard is None
         assert state_l1_l2_l22.transitions_to[0].effects == []
@@ -1277,6 +1301,8 @@ class TestModelStateL1:
         ast_node = state_l1_l2_l22.to_ast_node()
         assert ast_node == dsl_nodes.StateDefinition(
             name="L22",
+            extra_name=None,
+            events=[dsl_nodes.EventDefinition(name="E1", extra_name=None)],
             substates=[],
             transitions=[],
             enters=[],
@@ -1512,8 +1538,12 @@ state L1 {
     state L2 {
         >> during before abstract user_B;
         >> during before abstract user_A;
-        pseudo state L21;
-        state L22;
+        pseudo state L21 {
+            event E1;
+        }
+        state L22 {
+            event E1;
+        }
         [*] -> L21;
         L21 -> L22 :: E1;
         L22 -> [*] :: E1;

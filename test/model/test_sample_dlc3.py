@@ -97,18 +97,24 @@ class TestModelStateLx:
         assert state_lx.name == "LX"
         assert state_lx.path == ("LX",)
         assert sorted(state_lx.substates.keys()) == ["ERROR", "LX2"]
-        assert state_lx.events == {"E1": Event(name="E1", state_path=("LX",))}
+        assert state_lx.events == {
+            "E1": Event(name="E1", state_path=("LX",), extra_name=None)
+        }
         assert len(state_lx.transitions) == 4
         assert state_lx.transitions[0].from_state == "LX2"
         assert state_lx.transitions[0].to_state == "ERROR"
-        assert state_lx.transitions[0].event == Event(name="E1", state_path=("LX",))
+        assert state_lx.transitions[0].event == Event(
+            name="E1", state_path=("LX",), extra_name=None
+        )
         assert state_lx.transitions[0].guard is None
         assert state_lx.transitions[0].effects == []
         assert state_lx.transitions[0].parent_ref().name == "LX"
         assert state_lx.transitions[0].parent_ref().path == ("LX",)
         assert state_lx.transitions[1].from_state == "ERROR"
         assert state_lx.transitions[1].to_state == "ERROR"
-        assert state_lx.transitions[1].event == Event(name="E1", state_path=("LX",))
+        assert state_lx.transitions[1].event == Event(
+            name="E1", state_path=("LX",), extra_name=None
+        )
         assert state_lx.transitions[1].guard is None
         assert state_lx.transitions[1].effects == []
         assert state_lx.transitions[1].parent_ref().name == "LX"
@@ -179,6 +185,7 @@ class TestModelStateLx:
         assert state_lx.on_during_aspects == []
         assert state_lx.parent_ref is None
         assert state_lx.substate_name_to_id == {"LX2": 0, "ERROR": 1}
+        assert state_lx.extra_name is None
         assert not state_lx.is_pseudo
         assert state_lx.abstract_on_during_aspects == []
         assert state_lx.abstract_on_durings == []
@@ -264,18 +271,28 @@ class TestModelStateLx:
         ast_node = state_lx.to_ast_node()
         assert ast_node == dsl_nodes.StateDefinition(
             name="LX",
+            extra_name=None,
+            events=[dsl_nodes.EventDefinition(name="E1", extra_name=None)],
             substates=[
                 dsl_nodes.StateDefinition(
                     name="LX2",
+                    extra_name=None,
+                    events=[],
                     substates=[
                         dsl_nodes.StateDefinition(
                             name="start",
+                            extra_name=None,
+                            events=[],
                             substates=[
                                 dsl_nodes.StateDefinition(
                                     name="LX4",
+                                    extra_name=None,
+                                    events=[],
                                     substates=[
                                         dsl_nodes.StateDefinition(
                                             name="LX5",
+                                            extra_name=None,
+                                            events=[],
                                             substates=[],
                                             transitions=[],
                                             enters=[],
@@ -363,6 +380,8 @@ class TestModelStateLx:
                 ),
                 dsl_nodes.StateDefinition(
                     name="ERROR",
+                    extra_name=None,
+                    events=[],
                     substates=[],
                     transitions=[],
                     enters=[],
@@ -674,7 +693,9 @@ class TestModelStateLx:
         assert len(state_lx_lx2.transitions) == 2
         assert state_lx_lx2.transitions[0].from_state == "start"
         assert state_lx_lx2.transitions[0].to_state == EXIT_STATE
-        assert state_lx_lx2.transitions[0].event == Event(name="E1", state_path=("LX",))
+        assert state_lx_lx2.transitions[0].event == Event(
+            name="E1", state_path=("LX",), extra_name=None
+        )
         assert state_lx_lx2.transitions[0].guard is None
         assert state_lx_lx2.transitions[0].effects == []
         assert state_lx_lx2.transitions[0].parent_ref().name == "LX2"
@@ -694,6 +715,7 @@ class TestModelStateLx:
         assert state_lx_lx2.parent_ref().name == "LX"
         assert state_lx_lx2.parent_ref().path == ("LX",)
         assert state_lx_lx2.substate_name_to_id == {"start": 0}
+        assert state_lx_lx2.extra_name is None
         assert not state_lx_lx2.is_pseudo
         assert state_lx_lx2.abstract_on_during_aspects == []
         assert state_lx_lx2.abstract_on_durings == []
@@ -740,7 +762,7 @@ class TestModelStateLx:
         assert state_lx_lx2.transitions_from[0].from_state == "LX2"
         assert state_lx_lx2.transitions_from[0].to_state == "ERROR"
         assert state_lx_lx2.transitions_from[0].event == Event(
-            name="E1", state_path=("LX",)
+            name="E1", state_path=("LX",), extra_name=None
         )
         assert state_lx_lx2.transitions_from[0].guard is None
         assert state_lx_lx2.transitions_from[0].effects == []
@@ -759,15 +781,23 @@ class TestModelStateLx:
         ast_node = state_lx_lx2.to_ast_node()
         assert ast_node == dsl_nodes.StateDefinition(
             name="LX2",
+            extra_name=None,
+            events=[],
             substates=[
                 dsl_nodes.StateDefinition(
                     name="start",
+                    extra_name=None,
+                    events=[],
                     substates=[
                         dsl_nodes.StateDefinition(
                             name="LX4",
+                            extra_name=None,
+                            events=[],
                             substates=[
                                 dsl_nodes.StateDefinition(
                                     name="LX5",
+                                    extra_name=None,
+                                    events=[],
                                     substates=[],
                                     transitions=[],
                                     enters=[],
@@ -917,7 +947,7 @@ class TestModelStateLx:
         assert state_lx_lx2_start.transitions[0].from_state == "LX4"
         assert state_lx_lx2_start.transitions[0].to_state == EXIT_STATE
         assert state_lx_lx2_start.transitions[0].event == Event(
-            name="E1", state_path=("LX",)
+            name="E1", state_path=("LX",), extra_name=None
         )
         assert state_lx_lx2_start.transitions[0].guard is None
         assert state_lx_lx2_start.transitions[0].effects == []
@@ -946,6 +976,7 @@ class TestModelStateLx:
         assert state_lx_lx2_start.parent_ref().name == "LX2"
         assert state_lx_lx2_start.parent_ref().path == ("LX", "LX2")
         assert state_lx_lx2_start.substate_name_to_id == {"LX4": 0}
+        assert state_lx_lx2_start.extra_name is None
         assert not state_lx_lx2_start.is_pseudo
         assert state_lx_lx2_start.abstract_on_during_aspects == []
         assert state_lx_lx2_start.abstract_on_durings == []
@@ -1005,7 +1036,7 @@ class TestModelStateLx:
         assert state_lx_lx2_start.transitions_from[0].from_state == "start"
         assert state_lx_lx2_start.transitions_from[0].to_state == EXIT_STATE
         assert state_lx_lx2_start.transitions_from[0].event == Event(
-            name="E1", state_path=("LX",)
+            name="E1", state_path=("LX",), extra_name=None
         )
         assert state_lx_lx2_start.transitions_from[0].guard is None
         assert state_lx_lx2_start.transitions_from[0].effects == []
@@ -1024,12 +1055,18 @@ class TestModelStateLx:
         ast_node = state_lx_lx2_start.to_ast_node()
         assert ast_node == dsl_nodes.StateDefinition(
             name="start",
+            extra_name=None,
+            events=[],
             substates=[
                 dsl_nodes.StateDefinition(
                     name="LX4",
+                    extra_name=None,
+                    events=[],
                     substates=[
                         dsl_nodes.StateDefinition(
                             name="LX5",
+                            extra_name=None,
+                            events=[],
                             substates=[],
                             transitions=[],
                             enters=[],
@@ -1161,7 +1198,7 @@ class TestModelStateLx:
         assert state_lx_lx2_start_lx4.transitions[0].from_state == "LX5"
         assert state_lx_lx2_start_lx4.transitions[0].to_state == EXIT_STATE
         assert state_lx_lx2_start_lx4.transitions[0].event == Event(
-            name="E1", state_path=("LX",)
+            name="E1", state_path=("LX",), extra_name=None
         )
         assert state_lx_lx2_start_lx4.transitions[0].guard is None
         assert state_lx_lx2_start_lx4.transitions[0].effects == []
@@ -1192,6 +1229,7 @@ class TestModelStateLx:
         assert state_lx_lx2_start_lx4.parent_ref().name == "start"
         assert state_lx_lx2_start_lx4.parent_ref().path == ("LX", "LX2", "start")
         assert state_lx_lx2_start_lx4.substate_name_to_id == {"LX5": 0}
+        assert state_lx_lx2_start_lx4.extra_name is None
         assert not state_lx_lx2_start_lx4.is_pseudo
         assert state_lx_lx2_start_lx4.abstract_on_during_aspects == []
         assert state_lx_lx2_start_lx4.abstract_on_durings == []
@@ -1257,7 +1295,7 @@ class TestModelStateLx:
         assert state_lx_lx2_start_lx4.transitions_from[0].from_state == "LX4"
         assert state_lx_lx2_start_lx4.transitions_from[0].to_state == EXIT_STATE
         assert state_lx_lx2_start_lx4.transitions_from[0].event == Event(
-            name="E1", state_path=("LX",)
+            name="E1", state_path=("LX",), extra_name=None
         )
         assert state_lx_lx2_start_lx4.transitions_from[0].guard is None
         assert state_lx_lx2_start_lx4.transitions_from[0].effects == []
@@ -1284,9 +1322,13 @@ class TestModelStateLx:
         ast_node = state_lx_lx2_start_lx4.to_ast_node()
         assert ast_node == dsl_nodes.StateDefinition(
             name="LX4",
+            extra_name=None,
+            events=[],
             substates=[
                 dsl_nodes.StateDefinition(
                     name="LX5",
+                    extra_name=None,
+                    events=[],
                     substates=[],
                     transitions=[],
                     enters=[],
@@ -1404,6 +1446,7 @@ class TestModelStateLx:
             "LX4",
         )
         assert state_lx_lx2_start_lx4_lx5.substate_name_to_id == {}
+        assert state_lx_lx2_start_lx4_lx5.extra_name is None
         assert not state_lx_lx2_start_lx4_lx5.is_pseudo
         assert state_lx_lx2_start_lx4_lx5.abstract_on_during_aspects == []
         assert state_lx_lx2_start_lx4_lx5.abstract_on_durings == []
@@ -1430,7 +1473,7 @@ class TestModelStateLx:
         assert state_lx_lx2_start_lx4_lx5.transitions_from[0].from_state == "LX5"
         assert state_lx_lx2_start_lx4_lx5.transitions_from[0].to_state == EXIT_STATE
         assert state_lx_lx2_start_lx4_lx5.transitions_from[0].event == Event(
-            name="E1", state_path=("LX",)
+            name="E1", state_path=("LX",), extra_name=None
         )
         assert state_lx_lx2_start_lx4_lx5.transitions_from[0].guard is None
         assert state_lx_lx2_start_lx4_lx5.transitions_from[0].effects == []
@@ -1459,6 +1502,8 @@ class TestModelStateLx:
         ast_node = state_lx_lx2_start_lx4_lx5.to_ast_node()
         assert ast_node == dsl_nodes.StateDefinition(
             name="LX5",
+            extra_name=None,
+            events=[],
             substates=[],
             transitions=[],
             enters=[],
@@ -1568,6 +1613,7 @@ class TestModelStateLx:
         assert state_lx_error.parent_ref().name == "LX"
         assert state_lx_error.parent_ref().path == ("LX",)
         assert state_lx_error.substate_name_to_id == {}
+        assert state_lx_error.extra_name is None
         assert not state_lx_error.is_pseudo
         assert state_lx_error.abstract_on_during_aspects == []
         assert state_lx_error.abstract_on_durings == []
@@ -1588,7 +1634,7 @@ class TestModelStateLx:
         assert state_lx_error.transitions_from[0].from_state == "ERROR"
         assert state_lx_error.transitions_from[0].to_state == "ERROR"
         assert state_lx_error.transitions_from[0].event == Event(
-            name="E1", state_path=("LX",)
+            name="E1", state_path=("LX",), extra_name=None
         )
         assert state_lx_error.transitions_from[0].guard is None
         assert state_lx_error.transitions_from[0].effects == []
@@ -1605,7 +1651,7 @@ class TestModelStateLx:
         assert state_lx_error.transitions_to[0].from_state == "LX2"
         assert state_lx_error.transitions_to[0].to_state == "ERROR"
         assert state_lx_error.transitions_to[0].event == Event(
-            name="E1", state_path=("LX",)
+            name="E1", state_path=("LX",), extra_name=None
         )
         assert state_lx_error.transitions_to[0].guard is None
         assert state_lx_error.transitions_to[0].effects == []
@@ -1614,7 +1660,7 @@ class TestModelStateLx:
         assert state_lx_error.transitions_to[1].from_state == "ERROR"
         assert state_lx_error.transitions_to[1].to_state == "ERROR"
         assert state_lx_error.transitions_to[1].event == Event(
-            name="E1", state_path=("LX",)
+            name="E1", state_path=("LX",), extra_name=None
         )
         assert state_lx_error.transitions_to[1].guard is None
         assert state_lx_error.transitions_to[1].effects == []
@@ -1625,6 +1671,8 @@ class TestModelStateLx:
         ast_node = state_lx_error.to_ast_node()
         assert ast_node == dsl_nodes.StateDefinition(
             name="ERROR",
+            extra_name=None,
+            events=[],
             substates=[],
             transitions=[],
             enters=[],
@@ -1720,6 +1768,7 @@ state LX {
         [*] -> start;
     }
     state ERROR;
+    event E1;
     LX2 -> ERROR : E1;
     ERROR -> ERROR : E1;
     [*] -> LX2;

@@ -11,8 +11,8 @@ state_machine_dsl: def_assignment* state_definition EOF;
 def_assignment: 'def' deftype=('int'|'float') ID '=' init_expression ';';
 
 state_definition
-    : pseudo='pseudo'? 'state' state_id=ID ';'                             # leafStateDefinition
-    | pseudo='pseudo'? 'state' state_id=ID '{' state_inner_statement* '}'  # compositeStateDefinition
+    : pseudo='pseudo'? 'state' state_id=ID ('named' extra_name=STRING)? ';'                             # leafStateDefinition
+    | pseudo='pseudo'? 'state' state_id=ID ('named' extra_name=STRING)? '{' state_inner_statement* '}'  # compositeStateDefinition
     ;
 
 transition_definition
@@ -56,6 +56,8 @@ during_aspect_definition
     | '>>' 'during' aspect=('before'|'after') (func_name=ID)? 'ref' chain_id ';'                    # duringAspectRefFunc
     ;
 
+event_definition: 'event' event_name=ID ('named' extra_name=STRING)? ';';
+
 operation_assignment: ID '=' num_expression ';';
 
 operational_statement
@@ -71,6 +73,7 @@ state_inner_statement
     | during_definition
     | exit_definition
     | during_aspect_definition
+    | event_definition
     | ';'
     ;
 

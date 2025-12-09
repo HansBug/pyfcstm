@@ -13,6 +13,14 @@ def convert_state_machine_to_ast_node(state_machine: StateMachine, model: Model)
     substates, transitions = convert_region_to_ast_node(state_machine.regions[0], model)
     return dsl_node.StateDefinition(
         name='Root',
+        extra_name='<根状态>',
+        events=[
+            dsl_node.EventDefinition(
+                name=to_identifier(event.signal_object.name),
+                extra_name=event.signal_object.name or None,
+            ) for _, event in model.events.items()
+            if isinstance(event, SignalEvent)
+        ],
         substates=substates,
         transitions=transitions,
     )
@@ -23,6 +31,7 @@ def convert_state_to_ast_node(state: State, model: Model):
         substates, transitions = convert_region_to_ast_node(state.regions[0], model)
         return dsl_node.StateDefinition(
             name=_get_state_id(state),
+            extra_name=state.name or None,
             is_pseudo=state.is_pseudo,
             substates=substates,
             transitions=transitions,
@@ -30,6 +39,7 @@ def convert_state_to_ast_node(state: State, model: Model):
     else:
         return dsl_node.StateDefinition(
             name=_get_state_id(state),
+            extra_name=state.name or None,
             is_pseudo=state.is_pseudo,
         )
 

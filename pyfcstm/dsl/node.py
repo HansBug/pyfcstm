@@ -1016,6 +1016,8 @@ class StateDefinition(ASTNode):
     :type name: str
     :param extra_name: Optional additional name for the state
     :type extra_name: Optional[str]
+    :param events: List of events defined within this state
+    :type events: List[EventDefinition]
     :param substates: List of nested state definitions
     :type substates: List[StateDefinition]
     :param transitions: List of transitions from this state
@@ -1144,10 +1146,37 @@ class OperationAssignment(Statement):
 
 @dataclass
 class EventDefinition(ASTNode):
+    """
+    Represents an event definition in the state machine DSL.
+
+    Events are signals that can trigger transitions or other actions within the state machine.
+
+    :param name: The name of the event
+    :type name: str
+    :param extra_name: Optional additional name for the event
+    :type extra_name: Optional[str]
+
+    :rtype: EventDefinition
+
+    Example::
+
+        >>> event = EventDefinition("start")
+        >>> str(event)
+        'event start;'
+        >>> named_event = EventDefinition("start", "Start Event")
+        >>> str(named_event)
+        'event start named "Start Event";'
+    """
     name: str
     extra_name: Optional[str] = None
 
-    def __str__(self):
+    def __str__(self) -> str:
+        """
+        Convert the event definition to its string representation.
+
+        :return: String representation of the event definition
+        :rtype: str
+        """
         with io.StringIO() as sf:
             print(f'event {self.name}', file=sf, end='')
             if self.extra_name is not None:

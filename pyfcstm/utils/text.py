@@ -33,9 +33,10 @@ def normalize(input_string):
 
 def to_identifier(input_string, strict_mode: bool = True):
     """
-    Convert any string to a valid identifier format [0-9a-zA-Z_]+
+    Convert any string to a valid identifier format ``[0-9a-zA-Z_]+``
 
     Rules:
+
     1. Preserve all letters and numbers
     2. Convert spaces and special characters to underscores
     3. If strict_mode is True, ensure the first character is not a number (as identifiers typically cannot start with a number)

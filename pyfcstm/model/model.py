@@ -97,6 +97,8 @@ class Event:
     :type name: str
     :param state_path: The path to the state that owns this event
     :type state_path: Tuple[str, ...]
+    :param extra_name: Optional extra name for display purposes
+    :type extra_name: Optional[str]
 
     Example::
 
@@ -118,7 +120,13 @@ class Event:
         """
         return tuple((*self.state_path, self.name))
 
-    def to_ast_node(self):
+    def to_ast_node(self) -> dsl_nodes.EventDefinition:
+        """
+        Convert this event to an AST node.
+
+        :return: An event definition AST node
+        :rtype: dsl_nodes.EventDefinition
+        """
         return dsl_nodes.EventDefinition(
             name=self.name,
             extra_name=self.extra_name,

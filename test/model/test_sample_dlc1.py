@@ -427,6 +427,7 @@ class TestModelStateTrafficLight:
         )
         assert not state_trafficlight.is_leaf_state
         assert state_trafficlight.is_root_state
+        assert not state_trafficlight.is_stoppable
         assert len(state_trafficlight.non_abstract_on_during_aspects) == 2
         assert state_trafficlight.non_abstract_on_during_aspects[0].stage == "during"
         assert state_trafficlight.non_abstract_on_during_aspects[0].aspect == "before"
@@ -1886,6 +1887,7 @@ class TestModelStateTrafficLight:
         )
         assert not state_trafficlight_inservice.is_leaf_state
         assert not state_trafficlight_inservice.is_root_state
+        assert not state_trafficlight_inservice.is_stoppable
         assert state_trafficlight_inservice.non_abstract_on_during_aspects == []
         assert state_trafficlight_inservice.non_abstract_on_durings == []
         assert len(state_trafficlight_inservice.non_abstract_on_enters) == 1
@@ -2615,6 +2617,7 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice_red.init_transitions == []
         assert state_trafficlight_inservice_red.is_leaf_state
         assert not state_trafficlight_inservice_red.is_root_state
+        assert state_trafficlight_inservice_red.is_stoppable
         assert state_trafficlight_inservice_red.non_abstract_on_during_aspects == []
         assert len(state_trafficlight_inservice_red.non_abstract_on_durings) == 1
         assert (
@@ -3093,6 +3096,7 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice_yellow.init_transitions == []
         assert state_trafficlight_inservice_yellow.is_leaf_state
         assert not state_trafficlight_inservice_yellow.is_root_state
+        assert state_trafficlight_inservice_yellow.is_stoppable
         assert state_trafficlight_inservice_yellow.non_abstract_on_during_aspects == []
         assert state_trafficlight_inservice_yellow.non_abstract_on_durings == []
         assert state_trafficlight_inservice_yellow.non_abstract_on_enters == []
@@ -3513,6 +3517,7 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice_green.init_transitions == []
         assert state_trafficlight_inservice_green.is_leaf_state
         assert not state_trafficlight_inservice_green.is_root_state
+        assert state_trafficlight_inservice_green.is_stoppable
         assert state_trafficlight_inservice_green.non_abstract_on_during_aspects == []
         assert state_trafficlight_inservice_green.non_abstract_on_durings == []
         assert state_trafficlight_inservice_green.non_abstract_on_enters == []
@@ -3876,6 +3881,7 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_idle.init_transitions == []
         assert state_trafficlight_idle.is_leaf_state
         assert not state_trafficlight_idle.is_root_state
+        assert state_trafficlight_idle.is_stoppable
         assert state_trafficlight_idle.non_abstract_on_during_aspects == []
         assert state_trafficlight_idle.non_abstract_on_durings == []
         assert state_trafficlight_idle.non_abstract_on_enters == []

@@ -607,6 +607,10 @@ class State(AstExportable, PlantUMLExportable):
         return len(self.substates) == 0
 
     @property
+    def is_stoppable(self) -> bool:
+        return self.is_leaf_state and not self.is_pseudo
+
+    @property
     def parent(self) -> Optional['State']:
         """
         Get the parent state of this state.

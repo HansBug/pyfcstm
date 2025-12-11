@@ -216,6 +216,7 @@ class TestModelStateLx:
         assert state_lx.init_transitions[0].parent_ref().path == ("LX",)
         assert not state_lx.is_leaf_state
         assert state_lx.is_root_state
+        assert not state_lx.is_stoppable
         assert state_lx.non_abstract_on_during_aspects == []
         assert state_lx.non_abstract_on_durings == []
         assert len(state_lx.non_abstract_on_enters) == 1
@@ -739,6 +740,7 @@ class TestModelStateLx:
         assert state_lx_lx2.init_transitions[0].parent_ref().path == ("LX", "LX2")
         assert not state_lx_lx2.is_leaf_state
         assert not state_lx_lx2.is_root_state
+        assert not state_lx_lx2.is_stoppable
         assert state_lx_lx2.non_abstract_on_during_aspects == []
         assert state_lx_lx2.non_abstract_on_durings == []
         assert state_lx_lx2.non_abstract_on_enters == []
@@ -1012,6 +1014,7 @@ class TestModelStateLx:
         )
         assert not state_lx_lx2_start.is_leaf_state
         assert not state_lx_lx2_start.is_root_state
+        assert not state_lx_lx2_start.is_stoppable
         assert state_lx_lx2_start.non_abstract_on_during_aspects == []
         assert state_lx_lx2_start.non_abstract_on_durings == []
         assert state_lx_lx2_start.non_abstract_on_enters == []
@@ -1278,6 +1281,7 @@ class TestModelStateLx:
         )
         assert not state_lx_lx2_start_lx4.is_leaf_state
         assert not state_lx_lx2_start_lx4.is_root_state
+        assert not state_lx_lx2_start_lx4.is_stoppable
         assert state_lx_lx2_start_lx4.non_abstract_on_during_aspects == []
         assert state_lx_lx2_start_lx4.non_abstract_on_durings == []
         assert state_lx_lx2_start_lx4.non_abstract_on_enters == []
@@ -1496,6 +1500,7 @@ class TestModelStateLx:
         assert state_lx_lx2_start_lx4_lx5.init_transitions == []
         assert state_lx_lx2_start_lx4_lx5.is_leaf_state
         assert not state_lx_lx2_start_lx4_lx5.is_root_state
+        assert state_lx_lx2_start_lx4_lx5.is_stoppable
         assert state_lx_lx2_start_lx4_lx5.non_abstract_on_during_aspects == []
         assert state_lx_lx2_start_lx4_lx5.non_abstract_on_durings == []
         assert state_lx_lx2_start_lx4_lx5.non_abstract_on_enters == []
@@ -1664,6 +1669,7 @@ class TestModelStateLx:
         assert state_lx_error.init_transitions == []
         assert state_lx_error.is_leaf_state
         assert not state_lx_error.is_root_state
+        assert state_lx_error.is_stoppable
         assert state_lx_error.non_abstract_on_during_aspects == []
         assert state_lx_error.non_abstract_on_durings == []
         assert state_lx_error.non_abstract_on_enters == []

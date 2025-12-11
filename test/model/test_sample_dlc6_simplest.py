@@ -302,6 +302,7 @@ class TestModelStateL1:
         assert state_l1.init_transitions[0].parent_ref().path == ("L1",)
         assert not state_l1.is_leaf_state
         assert state_l1.is_root_state
+        assert not state_l1.is_stoppable
         assert state_l1.non_abstract_on_during_aspects == []
         assert len(state_l1.non_abstract_on_durings) == 1
         assert state_l1.non_abstract_on_durings[0].stage == "during"
@@ -1039,6 +1040,7 @@ class TestModelStateL1:
         assert state_l1_l2.init_transitions[0].parent_ref().path == ("L1", "L2")
         assert not state_l1_l2.is_leaf_state
         assert not state_l1_l2.is_root_state
+        assert not state_l1_l2.is_stoppable
         assert state_l1_l2.non_abstract_on_during_aspects == []
         assert state_l1_l2.non_abstract_on_durings == []
         assert state_l1_l2.non_abstract_on_enters == []
@@ -1396,6 +1398,7 @@ class TestModelStateL1:
         assert state_l1_l2_l21.init_transitions == []
         assert state_l1_l2_l21.is_leaf_state
         assert not state_l1_l2_l21.is_root_state
+        assert not state_l1_l2_l21.is_stoppable
         assert state_l1_l2_l21.non_abstract_on_during_aspects == []
         assert state_l1_l2_l21.non_abstract_on_durings == []
         assert state_l1_l2_l21.non_abstract_on_enters == []
@@ -1528,6 +1531,7 @@ class TestModelStateL1:
         assert state_l1_l2_l22.init_transitions == []
         assert state_l1_l2_l22.is_leaf_state
         assert not state_l1_l2_l22.is_root_state
+        assert state_l1_l2_l22.is_stoppable
         assert state_l1_l2_l22.non_abstract_on_during_aspects == []
         assert state_l1_l2_l22.non_abstract_on_durings == []
         assert state_l1_l2_l22.non_abstract_on_enters == []

@@ -324,8 +324,17 @@ class TestModelStateL1:
         assert state_l1.abstract_on_enters[0].parent.name == "L1"
         assert state_l1.abstract_on_enters[0].parent.path == ("L1",)
         assert state_l1.abstract_on_exits == []
+        assert len(state_l1.init_transitions) == 1
+        assert state_l1.init_transitions[0].from_state == INIT_STATE
+        assert state_l1.init_transitions[0].to_state == "L21"
+        assert state_l1.init_transitions[0].event is None
+        assert state_l1.init_transitions[0].guard is None
+        assert state_l1.init_transitions[0].effects == []
+        assert state_l1.init_transitions[0].parent_ref().name == "L1"
+        assert state_l1.init_transitions[0].parent_ref().path == ("L1",)
         assert not state_l1.is_leaf_state
         assert state_l1.is_root_state
+        assert not state_l1.is_stoppable
         assert len(state_l1.non_abstract_on_during_aspects) == 2
         assert state_l1.non_abstract_on_during_aspects[0].stage == "during"
         assert state_l1.non_abstract_on_during_aspects[0].aspect == "before"
@@ -1001,8 +1010,10 @@ class TestModelStateL1:
         assert state_l1_l21.abstract_on_durings == []
         assert state_l1_l21.abstract_on_enters == []
         assert state_l1_l21.abstract_on_exits == []
+        assert state_l1_l21.init_transitions == []
         assert state_l1_l21.is_leaf_state
         assert not state_l1_l21.is_root_state
+        assert state_l1_l21.is_stoppable
         assert len(state_l1_l21.non_abstract_on_during_aspects) == 1
         assert state_l1_l21.non_abstract_on_during_aspects[0].stage == "during"
         assert state_l1_l21.non_abstract_on_during_aspects[0].aspect == "after"
@@ -1667,8 +1678,10 @@ class TestModelStateL1:
         assert state_l1_l22.abstract_on_durings == []
         assert state_l1_l22.abstract_on_enters == []
         assert state_l1_l22.abstract_on_exits == []
+        assert state_l1_l22.init_transitions == []
         assert state_l1_l22.is_leaf_state
         assert not state_l1_l22.is_root_state
+        assert state_l1_l22.is_stoppable
         assert state_l1_l22.non_abstract_on_during_aspects == []
         assert len(state_l1_l22.non_abstract_on_durings) == 2
         assert state_l1_l22.non_abstract_on_durings[0].stage == "during"

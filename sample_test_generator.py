@@ -118,7 +118,8 @@ def sample_generation_to_file(code: str, test_file: str):
                 elif field_name == 'substates':
                     print(f'        assert sorted({_state_name(state)}.{field_name}.keys()) == {sorted(obj.keys())!r}',
                           file=tf)
-                elif (field_name == 'transitions' or field_name.startswith('transitions_')) and obj:
+                elif (field_name == 'transitions' or field_name.startswith('transitions_') or field_name.endswith(
+                        '_transitions')) and obj:
                     print(f'        assert len({_state_name(state)}.{field_name}) == {len(obj)!r}', file=tf)
                     # print(f'        assert {_state_name(state)}.{field_name} == {obj!r}', file=tf)
                     for j, transition in enumerate(obj):

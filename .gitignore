@@ -1224,3 +1224,4 @@ junit.xml
 /antlr-*.jar
 !/pyfcstm/template/*/*.yaml
 /pyfcstm/template
+*.cli_history

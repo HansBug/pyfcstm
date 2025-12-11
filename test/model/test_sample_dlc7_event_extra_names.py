@@ -139,6 +139,16 @@ class TestModelStateRoot:
         assert state_root.abstract_on_durings == []
         assert state_root.abstract_on_enters == []
         assert state_root.abstract_on_exits == []
+        assert len(state_root.init_transitions) == 1
+        assert state_root.init_transitions[0].from_state == INIT_STATE
+        assert state_root.init_transitions[0].to_state == "state1"
+        assert state_root.init_transitions[0].event == Event(
+            name="E1", state_path=("Root",), extra_name="事件1"
+        )
+        assert state_root.init_transitions[0].guard is None
+        assert state_root.init_transitions[0].effects == []
+        assert state_root.init_transitions[0].parent_ref().name == "Root"
+        assert state_root.init_transitions[0].parent_ref().path == ("Root",)
         assert not state_root.is_leaf_state
         assert state_root.is_root_state
         assert state_root.non_abstract_on_during_aspects == []
@@ -380,6 +390,7 @@ class TestModelStateRoot:
         assert state_root_state1.abstract_on_durings == []
         assert state_root_state1.abstract_on_enters == []
         assert state_root_state1.abstract_on_exits == []
+        assert state_root_state1.init_transitions == []
         assert state_root_state1.is_leaf_state
         assert not state_root_state1.is_root_state
         assert state_root_state1.non_abstract_on_during_aspects == []
@@ -517,6 +528,7 @@ class TestModelStateRoot:
         assert state_root_state2.abstract_on_durings == []
         assert state_root_state2.abstract_on_enters == []
         assert state_root_state2.abstract_on_exits == []
+        assert state_root_state2.init_transitions == []
         assert state_root_state2.is_leaf_state
         assert not state_root_state2.is_root_state
         assert state_root_state2.non_abstract_on_during_aspects == []
@@ -658,6 +670,7 @@ class TestModelStateRoot:
         assert state_root_state3.abstract_on_durings == []
         assert state_root_state3.abstract_on_enters == []
         assert state_root_state3.abstract_on_exits == []
+        assert state_root_state3.init_transitions == []
         assert state_root_state3.is_leaf_state
         assert not state_root_state3.is_root_state
         assert state_root_state3.non_abstract_on_during_aspects == []
@@ -795,6 +808,7 @@ class TestModelStateRoot:
         assert state_root_state4.abstract_on_durings == []
         assert state_root_state4.abstract_on_enters == []
         assert state_root_state4.abstract_on_exits == []
+        assert state_root_state4.init_transitions == []
         assert state_root_state4.is_leaf_state
         assert not state_root_state4.is_root_state
         assert state_root_state4.non_abstract_on_during_aspects == []

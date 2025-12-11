@@ -206,6 +206,14 @@ class TestModelStateLx:
         assert state_lx.abstract_on_enters[0].parent.name == "LX"
         assert state_lx.abstract_on_enters[0].parent.path == ("LX",)
         assert state_lx.abstract_on_exits == []
+        assert len(state_lx.init_transitions) == 1
+        assert state_lx.init_transitions[0].from_state == INIT_STATE
+        assert state_lx.init_transitions[0].to_state == "LX2"
+        assert state_lx.init_transitions[0].event is None
+        assert state_lx.init_transitions[0].guard is None
+        assert state_lx.init_transitions[0].effects == []
+        assert state_lx.init_transitions[0].parent_ref().name == "LX"
+        assert state_lx.init_transitions[0].parent_ref().path == ("LX",)
         assert not state_lx.is_leaf_state
         assert state_lx.is_root_state
         assert state_lx.non_abstract_on_during_aspects == []
@@ -721,6 +729,14 @@ class TestModelStateLx:
         assert state_lx_lx2.abstract_on_durings == []
         assert state_lx_lx2.abstract_on_enters == []
         assert state_lx_lx2.abstract_on_exits == []
+        assert len(state_lx_lx2.init_transitions) == 1
+        assert state_lx_lx2.init_transitions[0].from_state == INIT_STATE
+        assert state_lx_lx2.init_transitions[0].to_state == "start"
+        assert state_lx_lx2.init_transitions[0].event is None
+        assert state_lx_lx2.init_transitions[0].guard is None
+        assert state_lx_lx2.init_transitions[0].effects == []
+        assert state_lx_lx2.init_transitions[0].parent_ref().name == "LX2"
+        assert state_lx_lx2.init_transitions[0].parent_ref().path == ("LX", "LX2")
         assert not state_lx_lx2.is_leaf_state
         assert not state_lx_lx2.is_root_state
         assert state_lx_lx2.non_abstract_on_during_aspects == []
@@ -982,6 +998,18 @@ class TestModelStateLx:
         assert state_lx_lx2_start.abstract_on_durings == []
         assert state_lx_lx2_start.abstract_on_enters == []
         assert state_lx_lx2_start.abstract_on_exits == []
+        assert len(state_lx_lx2_start.init_transitions) == 1
+        assert state_lx_lx2_start.init_transitions[0].from_state == INIT_STATE
+        assert state_lx_lx2_start.init_transitions[0].to_state == "LX4"
+        assert state_lx_lx2_start.init_transitions[0].event is None
+        assert state_lx_lx2_start.init_transitions[0].guard is None
+        assert state_lx_lx2_start.init_transitions[0].effects == []
+        assert state_lx_lx2_start.init_transitions[0].parent_ref().name == "start"
+        assert state_lx_lx2_start.init_transitions[0].parent_ref().path == (
+            "LX",
+            "LX2",
+            "start",
+        )
         assert not state_lx_lx2_start.is_leaf_state
         assert not state_lx_lx2_start.is_root_state
         assert state_lx_lx2_start.non_abstract_on_during_aspects == []
@@ -1235,6 +1263,19 @@ class TestModelStateLx:
         assert state_lx_lx2_start_lx4.abstract_on_durings == []
         assert state_lx_lx2_start_lx4.abstract_on_enters == []
         assert state_lx_lx2_start_lx4.abstract_on_exits == []
+        assert len(state_lx_lx2_start_lx4.init_transitions) == 1
+        assert state_lx_lx2_start_lx4.init_transitions[0].from_state == INIT_STATE
+        assert state_lx_lx2_start_lx4.init_transitions[0].to_state == "LX5"
+        assert state_lx_lx2_start_lx4.init_transitions[0].event is None
+        assert state_lx_lx2_start_lx4.init_transitions[0].guard is None
+        assert state_lx_lx2_start_lx4.init_transitions[0].effects == []
+        assert state_lx_lx2_start_lx4.init_transitions[0].parent_ref().name == "LX4"
+        assert state_lx_lx2_start_lx4.init_transitions[0].parent_ref().path == (
+            "LX",
+            "LX2",
+            "start",
+            "LX4",
+        )
         assert not state_lx_lx2_start_lx4.is_leaf_state
         assert not state_lx_lx2_start_lx4.is_root_state
         assert state_lx_lx2_start_lx4.non_abstract_on_during_aspects == []
@@ -1452,6 +1493,7 @@ class TestModelStateLx:
         assert state_lx_lx2_start_lx4_lx5.abstract_on_durings == []
         assert state_lx_lx2_start_lx4_lx5.abstract_on_enters == []
         assert state_lx_lx2_start_lx4_lx5.abstract_on_exits == []
+        assert state_lx_lx2_start_lx4_lx5.init_transitions == []
         assert state_lx_lx2_start_lx4_lx5.is_leaf_state
         assert not state_lx_lx2_start_lx4_lx5.is_root_state
         assert state_lx_lx2_start_lx4_lx5.non_abstract_on_during_aspects == []
@@ -1619,6 +1661,7 @@ class TestModelStateLx:
         assert state_lx_error.abstract_on_durings == []
         assert state_lx_error.abstract_on_enters == []
         assert state_lx_error.abstract_on_exits == []
+        assert state_lx_error.init_transitions == []
         assert state_lx_error.is_leaf_state
         assert not state_lx_error.is_root_state
         assert state_lx_error.non_abstract_on_during_aspects == []

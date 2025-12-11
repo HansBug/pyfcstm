@@ -643,6 +643,14 @@ class State(AstExportable, PlantUMLExportable):
         return self.parent is None
 
     @property
+    def init_transitions(self) -> List[Transition]:
+        retval = []
+        for transition in self.transitions:
+            if transition.from_state == dsl_nodes.INIT_STATE:
+                retval.append(transition)
+        return retval
+
+    @property
     def transitions_from(self) -> List[Transition]:
         """
         Get all transitions that start from this state.

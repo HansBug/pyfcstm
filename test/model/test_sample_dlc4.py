@@ -192,6 +192,14 @@ class TestModelStateL1:
         assert state_l1.abstract_on_durings == []
         assert state_l1.abstract_on_enters == []
         assert state_l1.abstract_on_exits == []
+        assert len(state_l1.init_transitions) == 1
+        assert state_l1.init_transitions[0].from_state == INIT_STATE
+        assert state_l1.init_transitions[0].to_state == "L11"
+        assert state_l1.init_transitions[0].event is None
+        assert state_l1.init_transitions[0].guard is None
+        assert state_l1.init_transitions[0].effects == []
+        assert state_l1.init_transitions[0].parent_ref().name == "L1"
+        assert state_l1.init_transitions[0].parent_ref().path == ("L1",)
         assert not state_l1.is_leaf_state
         assert state_l1.is_root_state
         assert state_l1.non_abstract_on_during_aspects == []
@@ -815,6 +823,14 @@ class TestModelStateL1:
         assert state_l1_l11.abstract_on_durings == []
         assert state_l1_l11.abstract_on_enters == []
         assert state_l1_l11.abstract_on_exits == []
+        assert len(state_l1_l11.init_transitions) == 1
+        assert state_l1_l11.init_transitions[0].from_state == INIT_STATE
+        assert state_l1_l11.init_transitions[0].to_state == "L111"
+        assert state_l1_l11.init_transitions[0].event is None
+        assert state_l1_l11.init_transitions[0].guard is None
+        assert state_l1_l11.init_transitions[0].effects == []
+        assert state_l1_l11.init_transitions[0].parent_ref().name == "L11"
+        assert state_l1_l11.init_transitions[0].parent_ref().path == ("L1", "L11")
         assert not state_l1_l11.is_leaf_state
         assert not state_l1_l11.is_root_state
         assert state_l1_l11.non_abstract_on_during_aspects == []
@@ -1416,6 +1432,18 @@ class TestModelStateL1:
         assert state_l1_l11_l111.abstract_on_durings == []
         assert state_l1_l11_l111.abstract_on_enters == []
         assert state_l1_l11_l111.abstract_on_exits == []
+        assert len(state_l1_l11_l111.init_transitions) == 1
+        assert state_l1_l11_l111.init_transitions[0].from_state == INIT_STATE
+        assert state_l1_l11_l111.init_transitions[0].to_state == "L1111"
+        assert state_l1_l11_l111.init_transitions[0].event is None
+        assert state_l1_l11_l111.init_transitions[0].guard is None
+        assert state_l1_l11_l111.init_transitions[0].effects == []
+        assert state_l1_l11_l111.init_transitions[0].parent_ref().name == "L111"
+        assert state_l1_l11_l111.init_transitions[0].parent_ref().path == (
+            "L1",
+            "L11",
+            "L111",
+        )
         assert not state_l1_l11_l111.is_leaf_state
         assert not state_l1_l11_l111.is_root_state
         assert state_l1_l11_l111.non_abstract_on_during_aspects == []
@@ -1957,6 +1985,19 @@ class TestModelStateL1:
         assert state_l1_l11_l111_l1111.abstract_on_durings == []
         assert state_l1_l11_l111_l1111.abstract_on_enters == []
         assert state_l1_l11_l111_l1111.abstract_on_exits == []
+        assert len(state_l1_l11_l111_l1111.init_transitions) == 1
+        assert state_l1_l11_l111_l1111.init_transitions[0].from_state == INIT_STATE
+        assert state_l1_l11_l111_l1111.init_transitions[0].to_state == "L11111"
+        assert state_l1_l11_l111_l1111.init_transitions[0].event is None
+        assert state_l1_l11_l111_l1111.init_transitions[0].guard is None
+        assert state_l1_l11_l111_l1111.init_transitions[0].effects == []
+        assert state_l1_l11_l111_l1111.init_transitions[0].parent_ref().name == "L1111"
+        assert state_l1_l11_l111_l1111.init_transitions[0].parent_ref().path == (
+            "L1",
+            "L11",
+            "L111",
+            "L1111",
+        )
         assert not state_l1_l11_l111_l1111.is_leaf_state
         assert not state_l1_l11_l111_l1111.is_root_state
         assert state_l1_l11_l111_l1111.non_abstract_on_during_aspects == []
@@ -2304,6 +2345,7 @@ class TestModelStateL1:
         assert state_l1_l11_l111_l1111_l11111.abstract_on_durings == []
         assert state_l1_l11_l111_l1111_l11111.abstract_on_enters == []
         assert state_l1_l11_l111_l1111_l11111.abstract_on_exits == []
+        assert state_l1_l11_l111_l1111_l11111.init_transitions == []
         assert state_l1_l11_l111_l1111_l11111.is_leaf_state
         assert not state_l1_l11_l111_l1111_l11111.is_root_state
         assert state_l1_l11_l111_l1111_l11111.non_abstract_on_during_aspects == []
@@ -2544,6 +2586,7 @@ class TestModelStateL1:
         assert state_l1_l11_l111_l1111_l11112.abstract_on_durings == []
         assert state_l1_l11_l111_l1111_l11112.abstract_on_enters == []
         assert state_l1_l11_l111_l1111_l11112.abstract_on_exits == []
+        assert state_l1_l11_l111_l1111_l11112.init_transitions == []
         assert state_l1_l11_l111_l1111_l11112.is_leaf_state
         assert not state_l1_l11_l111_l1111_l11112.is_root_state
         assert state_l1_l11_l111_l1111_l11112.non_abstract_on_during_aspects == []
@@ -2766,6 +2809,7 @@ class TestModelStateL1:
         assert state_l1_l11_l111_l1111_l11113.abstract_on_durings == []
         assert state_l1_l11_l111_l1111_l11113.abstract_on_enters == []
         assert state_l1_l11_l111_l1111_l11113.abstract_on_exits == []
+        assert state_l1_l11_l111_l1111_l11113.init_transitions == []
         assert state_l1_l11_l111_l1111_l11113.is_leaf_state
         assert not state_l1_l11_l111_l1111_l11113.is_root_state
         assert state_l1_l11_l111_l1111_l11113.non_abstract_on_during_aspects == []
@@ -2975,6 +3019,7 @@ class TestModelStateL1:
         assert state_l1_l11_l111_l1112.abstract_on_durings == []
         assert state_l1_l11_l111_l1112.abstract_on_enters == []
         assert state_l1_l11_l111_l1112.abstract_on_exits == []
+        assert state_l1_l11_l111_l1112.init_transitions == []
         assert state_l1_l11_l111_l1112.is_leaf_state
         assert not state_l1_l11_l111_l1112.is_root_state
         assert state_l1_l11_l111_l1112.non_abstract_on_during_aspects == []
@@ -3145,6 +3190,7 @@ class TestModelStateL1:
         assert state_l1_l11_l111_l1113.abstract_on_durings == []
         assert state_l1_l11_l111_l1113.abstract_on_enters == []
         assert state_l1_l11_l111_l1113.abstract_on_exits == []
+        assert state_l1_l11_l111_l1113.init_transitions == []
         assert state_l1_l11_l111_l1113.is_leaf_state
         assert not state_l1_l11_l111_l1113.is_root_state
         assert state_l1_l11_l111_l1113.non_abstract_on_during_aspects == []
@@ -3313,6 +3359,7 @@ class TestModelStateL1:
         assert state_l1_l11_l112.abstract_on_durings == []
         assert state_l1_l11_l112.abstract_on_enters == []
         assert state_l1_l11_l112.abstract_on_exits == []
+        assert state_l1_l11_l112.init_transitions == []
         assert state_l1_l11_l112.is_leaf_state
         assert not state_l1_l11_l112.is_root_state
         assert state_l1_l11_l112.non_abstract_on_during_aspects == []
@@ -3461,6 +3508,7 @@ class TestModelStateL1:
         assert state_l1_l11_l113.abstract_on_durings == []
         assert state_l1_l11_l113.abstract_on_enters == []
         assert state_l1_l11_l113.abstract_on_exits == []
+        assert state_l1_l11_l113.init_transitions == []
         assert state_l1_l11_l113.is_leaf_state
         assert not state_l1_l11_l113.is_root_state
         assert state_l1_l11_l113.non_abstract_on_during_aspects == []
@@ -3607,6 +3655,7 @@ class TestModelStateL1:
         assert state_l1_l12.abstract_on_durings == []
         assert state_l1_l12.abstract_on_enters == []
         assert state_l1_l12.abstract_on_exits == []
+        assert state_l1_l12.init_transitions == []
         assert state_l1_l12.is_leaf_state
         assert not state_l1_l12.is_root_state
         assert state_l1_l12.non_abstract_on_during_aspects == []

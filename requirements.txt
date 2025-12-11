@@ -9,3 +9,4 @@ pathspec
 click>=8
 chardet
 lxml
+prompt_toolkit>=3

@@ -11,8 +11,9 @@ state_machine_dsl: def_assignment* state_definition EOF;
 def_assignment: 'def' deftype=('int'|'float') ID '=' init_expression ';';
 
 state_definition
-    : pseudo='pseudo'? 'state' state_id=ID ('named' extra_name=STRING)? ';'                             # leafStateDefinition
-    | pseudo='pseudo'? 'state' state_id=ID ('named' extra_name=STRING)? '{' state_inner_statement* '}'  # compositeStateDefinition
+    : pseudo='pseudo'? 'state' state_id=ID ('named' extra_name=STRING)? ';'                                           # leafStateDefinition
+    | pseudo='pseudo'? 'state' state_id=ID ('named' extra_name=STRING)? '{' state_inner_statement* '}'                # compositeStateDefinition
+    | pseudo='pseudo'? 'state' state_id=ID ('named' extra_name=STRING)? '{' state_region ('-'{3,} state_region)+ '}'  # compositeStateWithRegionDefinition
     ;
 
 transition_definition
@@ -76,6 +77,8 @@ state_inner_statement
     | event_definition
     | ';'
     ;
+
+state_region: state_inner_statement*;
 
 // basic configs for the previous design
 // for on_xxx operations

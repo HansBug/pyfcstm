@@ -483,3 +483,36 @@ class GrammarParseListener(GrammarListener):
             name=ctx.event_name.text,
             extra_name=eval(ctx.extra_name.text) if ctx.extra_name else None,
         )
+
+    def exitCompositeStateWithRegionDefinition(self, ctx: GrammarParser.CompositeStateWithRegionDefinitionContext):
+        super().exitCompositeStateWithRegionDefinition(ctx)
+        regions = [self.nodes[item] for item in ctx.state_region()
+                   if item in self.nodes and isinstance(self.nodes[item], StateRegionDefinition)]
+        regions = [item for item in regions if item]
+        self.nodes[ctx] = RegionedStateDefinition(
+            name=str(ctx.ID()),
+            extra_name=eval(ctx.extra_name.text) if ctx.extra_name else None,
+            regions=regions,
+            is_pseudo=bool(ctx.pseudo),
+        )
+
+    def exitState_region(self, ctx: GrammarParser.State_regionContext):
+        super().exitState_region(ctx)
+        self.nodes[ctx] = StateRegionDefinition(
+            events=[self.nodes[item] for item in ctx.state_inner_statement()
+                    if item in self.nodes and isinstance(self.nodes[item], EventDefinition)],
+            substates=[self.nodes[item] for item in ctx.state_inner_statement()
+                       if item in self.nodes and isinstance(self.nodes[item], StateDefinition)],
+            transitions=[self.nodes[item] for item in ctx.state_inner_statement()
+                         if item in self.nodes and isinstance(self.nodes[item], TransitionDefinition)],
+            enters=[self.nodes[item] for item in ctx.state_inner_statement()
+                    if item in self.nodes and isinstance(self.nodes[item], EnterStatement)],
+            durings=[self.nodes[item] for item in ctx.state_inner_statement()
+                     if item in self.nodes and isinstance(self.nodes[item], DuringStatement)],
+            exits=[self.nodes[item] for item in ctx.state_inner_statement()
+                   if item in self.nodes and isinstance(self.nodes[item], ExitStatement)],
+            during_aspects=[self.nodes[item] for item in ctx.state_inner_statement()
+                            if item in self.nodes and isinstance(self.nodes[item], DuringAspectStatement)],
+            force_transitions=[self.nodes[item] for item in ctx.state_inner_statement()
+                               if item in self.nodes and isinstance(self.nodes[item], ForceTransitionDefinition)],
+        )

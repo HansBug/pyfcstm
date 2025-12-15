@@ -18,7 +18,7 @@ Event
 ----------------------------------------------------------
 
 .. autoclass:: Event
-    :members: name,extra_name,state_path,path,to_ast_node
+    :members: name,state_path,extra_name,path,to_ast_node
 
 
 Transition
@@ -32,21 +32,21 @@ OnStage
 ----------------------------------------------------------
 
 .. autoclass:: OnStage
-    :members: stage,aspect,name,doc,operations,is_abstract,is_aspect,is_ref,parent,to_ast_node
+    :members: stage,aspect,name,doc,operations,is_abstract,state_path,ref,ref_state_path,parent_ref,parent,is_ref,is_aspect,to_ast_node
 
 
 OnAspect
 ----------------------------------------------------------
 
 .. autoclass:: OnAspect
-    :members: stage,aspect,name,doc,operations,is_abstract,is_aspect,is_ref,parent,to_ast_node
+    :members: stage,aspect,name,doc,operations,is_abstract,state_path,ref,ref_state_path,parent_ref,parent,is_ref,is_aspect,to_ast_node
 
 
 State
 ----------------------------------------------------------
 
 .. autoclass:: State
-    :members: events,is_leaf_state,parent,is_root_state,transitions_from,transitions_to,transitions_entering_children,transitions_entering_children_simplified,list_on_enters,abstract_on_enters,non_abstract_on_enters,list_on_durings,abstract_on_durings,non_abstract_on_durings,list_on_exits,abstract_on_exits,non_abstract_on_exits,list_on_during_aspects,abstract_on_during_aspects,non_abstract_on_during_aspects,iter_on_during_before_aspect_recursively,iter_on_during_after_aspect_recursively,iter_on_during_aspect_recursively,list_on_during_aspect_recursively,transition_to_ast_node,to_transition_ast_node,to_ast_node,to_plantuml,walk_states
+    :members: name,path,substates,events,transitions,named_functions,on_enters,on_durings,on_exits,on_during_aspects,parent_ref,substate_name_to_id,extra_name,is_pseudo,is_leaf_state,is_stoppable,parent,is_root_state,init_transitions,transitions_from,transitions_to,transitions_entering_children,transitions_entering_children_simplified,list_on_enters,abstract_on_enters,non_abstract_on_enters,list_on_durings,abstract_on_durings,non_abstract_on_durings,list_on_exits,abstract_on_exits,non_abstract_on_exits,list_on_during_aspects,abstract_on_during_aspects,non_abstract_on_during_aspects,iter_on_during_before_aspect_recursively,iter_on_during_after_aspect_recursively,iter_on_during_aspect_recursively,list_on_during_aspect_recursively,transition_to_ast_node,to_transition_ast_node,to_ast_node,to_plantuml,walk_states
 
 
 VarDefine
@@ -67,3 +67,5 @@ parse_dsl_node_to_state_machine
 ----------------------------------------------------------
 
 .. autofunction:: parse_dsl_node_to_state_machine
+
+

@@ -72,12 +72,12 @@ antlr_build:
 # Generate sample test files
 sample: ${SAMPLE_TEST_FILES} ${SAMPLE_NEG_TEST_FILES}
 
-${MODEL_TEST_DIR}/test_sample_%.py: ${SAMPLE_CODES_DIR}/%.fcstm
+${MODEL_TEST_DIR}/test_sample_%.py: ${SAMPLE_CODES_DIR}/%.fcstm sample_test_generator.py
 	@mkdir -p ${MODEL_TEST_DIR}
 	UNITTEST=1 $(PYTHON) sample_test_generator.py -i $< -o $@
 	ruff format $@
 
-${MODEL_TEST_DIR}/test_sample_neg_%.py: ${SAMPLE_NEG_CODES_DIR}/%.fcstm
+${MODEL_TEST_DIR}/test_sample_neg_%.py: ${SAMPLE_NEG_CODES_DIR}/%.fcstm sample_test_neg_generator.py
 	@mkdir -p ${MODEL_TEST_DIR}
 	UNITTEST=1 $(PYTHON) sample_test_neg_generator.py -i $< -o $@
 	ruff format $@

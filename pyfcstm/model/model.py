@@ -608,6 +608,12 @@ class State(AstExportable, PlantUMLExportable):
 
     @property
     def is_stoppable(self) -> bool:
+        """
+        Check if this state is stoppable (is a leaf state and not pseudo).
+
+        :return: True if this state is stoppable, False otherwise
+        :rtype: bool
+        """
         return self.is_leaf_state and not self.is_pseudo
 
     @property
@@ -648,6 +654,12 @@ class State(AstExportable, PlantUMLExportable):
 
     @property
     def init_transitions(self) -> List[Transition]:
+        """
+        Get all transitions that start from the initial state (INIT_STATE).
+
+        :return: List of transitions from INIT_STATE
+        :rtype: List[Transition]
+        """
         retval = []
         for transition in self.transitions:
             if transition.from_state == dsl_nodes.INIT_STATE:

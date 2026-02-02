@@ -125,26 +125,26 @@ def get_search_expr(model: StateMachine, src_state_path: str, dst_state_path: st
         head: SearchState = queue[f]
         if head.state.path == dst_state.path:
             dst_items.append(head)
+        else:
+            if (max_path_length is None or max_path_length > head.path_length) and \
+                    (max_cycle_length is None or max_cycle_length > head.cycle_length):
+                for transition in head.state.transitions_from:
+                    if transition.to_state == EXIT_STATE:
+                        continue
 
-        if (max_path_length is None or max_path_length > head.path_length) and \
-                (max_cycle_length is None or max_cycle_length > head.cycle_length):
-            for transition in head.state.transitions_from:
-                if transition.to_state == EXIT_STATE:
-                    continue
-
-                next_state = head.state.parent.substates[transition.to_state]
-                cons = head.constraints
-                if transition.guard:
-                    cons = [*cons, model_expr_to_z3_expr(transition.guard, head.variables)]
-                next_item = SearchState(
-                    state=next_state,
-                    path_length=head.path_length + 1,
-                    cycle_length=head.cycle_length + (1 if not next_state.is_pseudo else 0),
-                    pre_state=head,
-                    variables=operations_to_z3_vars(transition.effects, head.variables),
-                    constraints=cons,
-                )
-                queue.append(next_item)
+                    next_state = head.state.parent.substates[transition.to_state]
+                    cons = head.constraints
+                    if transition.guard:
+                        cons = [*cons, model_expr_to_z3_expr(transition.guard, head.variables)]
+                    next_item = SearchState(
+                        state=next_state,
+                        path_length=head.path_length + 1,
+                        cycle_length=head.cycle_length + (1 if not next_state.is_pseudo else 0),
+                        pre_state=head,
+                        variables=operations_to_z3_vars(transition.effects, head.variables),
+                        constraints=cons,
+                    )
+                    queue.append(next_item)
 
         f += 1
 
@@ -155,4 +155,5 @@ def get_search_expr(model: StateMachine, src_state_path: str, dst_state_path: st
     else:
         final_cons = Or(*(item.get_constraint() for item in dst_items))
 
-    return queue[0].variables, comprehensive_simplify(final_cons)
+    final_cons = comprehensive_simplify(final_cons)
+    return queue[0].variables, final_cons

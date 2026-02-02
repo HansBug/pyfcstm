@@ -35,7 +35,7 @@ class SolveResult:
     :param type: The result type, either 'sat' (satisfiable), 'unsat' (unsatisfiable), or 'undetermined'.
     :type type: Literal['sat', 'unsat', 'undetermined']
     :param values: Dictionary mapping variable names to their solved values, or None if unsat/undetermined.
-    :type values: Optional[Dict[str, Union[int, float]]]
+    :type values: Optional[Union[List[Dict[str, Union[int, float]]], Dict[str, Union[int, float]]]]
     """
     type: Literal['sat', 'unsat', 'undetermined']
     values: Optional[Union[List[Dict[str, Union[int, float]]], Dict[str, Union[int, float]]]]

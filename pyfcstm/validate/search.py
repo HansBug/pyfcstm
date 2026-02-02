@@ -7,6 +7,10 @@ The main components include:
 
 - SearchState: A dataclass representing a state during the search process
 - get_search_expr: Function to generate Z3 expressions for path constraints between states
+
+The module uses Z3 SMT solver to create and manipulate constraint expressions that represent
+the conditions under which a path from source to destination state is valid. This is useful
+for formal verification, test case generation, and reachability analysis of state machines.
 """
 
 from dataclasses import dataclass
@@ -54,7 +58,7 @@ def _and_constraints(constraints: List[ExprRef], empty_value: bool = True):
         return And(*constraints)
 
 
-def _or_constraints(constraints: List[ExprRef], empty_value: bool = True):
+def _or_constraints(constraints: List[ExprRef], empty_value: bool = False):
     """
     Combine a list of Z3 constraint expressions using logical OR.
     
@@ -66,15 +70,15 @@ def _or_constraints(constraints: List[ExprRef], empty_value: bool = True):
     
     :param constraints: List of Z3 constraint expressions to combine.
     :type constraints: List[ExprRef]
-    :param empty_value: The boolean value to return when constraints list is empty, defaults to True.
+    :param empty_value: The boolean value to return when constraints list is empty, defaults to False.
     :type empty_value: bool
     
     :return: Combined Z3 expression or boolean value.
     :rtype: ExprRef
     
     Example::
-        >>> _or_constraints([])  # Returns BoolVal(True)
-        True
+        >>> _or_constraints([])  # Returns BoolVal(False)
+        False
         >>> _or_constraints([expr1])  # Returns expr1
         expr1
         >>> _or_constraints([expr1, expr2])  # Returns Or(expr1, expr2)
@@ -178,13 +182,15 @@ def get_search_expr(model: StateMachine, src_state_path: str, dst_state_path: st
     :return: A tuple containing:
         - Dictionary of initial variable definitions (name -> Z3 expression)
         - Simplified Z3 expression representing all valid path constraints
-    :rtype: tuple[Dict[str, ExprRef], ExprRef]
+        - List of SearchState objects that reached the destination state
+    :rtype: tuple[Dict[str, ExprRef], ExprRef, List[SearchState]]
     
     Example::
         >>> model = StateMachine(...)
-        >>> variables, constraints = get_search_expr(model, 'state1', 'state2', max_path_length=10)
+        >>> variables, constraints, dst_items = get_search_expr(model, 'state1', 'state2', max_path_length=10)
         >>> # variables contains initial Z3 variables
         >>> # constraints is a Z3 expression that must be satisfied for a valid path
+        >>> # dst_items contains all search states that reached the destination
         >>> # Use Z3 solver to check satisfiability
         >>> from z3 import Solver
         >>> solver = Solver()

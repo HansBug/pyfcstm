@@ -1,6 +1,6 @@
 from typing import Dict, List
 
-from z3 import ExprRef, IntVal, RealVal, BoolVal, Not, And, Or, If
+from z3 import ExprRef, IntVal, RealVal, BoolVal, Not, And, Or, If, simplify, Then, Goal
 
 from ..model import Expr, Integer, Float, Boolean, Variable, UnaryOp, BinaryOp, ConditionalOp, UFunc, Operation
 
@@ -102,3 +102,34 @@ def to_z3_expr(x):
         return BoolVal(x)
     else:
         raise TypeError(f'Unknown value type - {x!r}')
+
+
+def comprehensive_simplify(expr):
+    """综合化简方案"""
+
+    # 第1步：基本化简
+    result = simplify(expr, algebraic=True)
+
+    # 第2步：使用高级策略
+    tactics = Then('simplify', 'ctx-simplify', 'propagate-values', 'solve-eqs')
+    goal = Goal()
+    goal.add(result)
+    try:
+        simplified_goals = tactics(goal)
+        if len(simplified_goals[0]) > 0:
+            result = And(*simplified_goals[0]) if len(simplified_goals[0]) > 1 else simplified_goals[0][0]
+    except:
+        pass
+
+    # # 第3步：模式匹配化简
+    # result = pattern_based_simplify(result)
+    #
+    # # 第4步：如果提供了变量，进行区间分析
+    # if variables:
+    #     for var in variables:
+    #         result = interval_based_simplify(result, var)
+
+    # 第5步：最终化简
+    result = simplify(result, algebraic=True)
+
+    return result

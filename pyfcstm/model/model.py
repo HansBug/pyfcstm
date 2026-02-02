@@ -17,6 +17,7 @@ The module implements a hierarchical state machine model with support for:
 """
 import io
 import json
+import re
 import weakref
 from dataclasses import dataclass
 from textwrap import indent
@@ -1303,6 +1304,13 @@ class StateMachine(AstExportable, PlantUMLExportable):
         :rtype: Iterator[State]
         """
         yield from self.root_state.walk_states()
+
+    def resolve_state(self, path: str) -> State:
+        segments = list(filter(bool, re.split(r'\.+', path)))
+        state = self.root_state
+        for segment in segments:
+            state = state.substates[segment]
+        return state
 
 
 def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> StateMachine:

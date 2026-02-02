@@ -1,3 +1,11 @@
+"""
+This module provides CLI functionality for validating and analyzing paths between states in a state machine.
+
+The module adds a 'validate' subcommand to the CLI that uses Z3 constraint solving to find valid
+paths from a source state to a destination state in a state machine defined using DSL. It supports
+various options for controlling path search parameters and displaying detailed constraint information.
+"""
+
 import pathlib
 
 import click
@@ -48,8 +56,8 @@ def _add_validate_subcommand(cli: click.Group) -> click.Group:
                   help='Show the generated Z3 constraint expressions.')
     @click.option('--show-variables', 'show_variables', is_flag=True,
                   help='Show the Z3 variable definitions.')
-    def validate(input_code_file, source_state, destination_state, max_path_length,
-                 max_cycle_length, max_solutions, show_constraints, show_variables):
+    def validate(input_code_file: str, source_state: str, destination_state: str, max_path_length: int,
+                 max_cycle_length: int, max_solutions: int, show_constraints: bool, show_variables: bool):
         """
         Validate and analyze paths between states in a state machine.
 
@@ -82,6 +90,12 @@ def _add_validate_subcommand(cli: click.Group) -> click.Group:
         :type show_variables: bool
 
         :return: None
+        :rtype: None
+
+        Example::
+
+            >>> # Command line usage:
+            >>> # validate -i model.dsl -s "start" -d "end" --show-constraints
         """
         try:
             # Parse the DSL code
@@ -143,7 +157,7 @@ def _add_validate_subcommand(cli: click.Group) -> click.Group:
                         click.echo("❌ Error: Could not find corresponding state item")
                         continue
 
-                    # Build the path
+                    # Build the path with search state information
                     path = []
                     current_item = state_item
                     while current_item:
@@ -151,19 +165,24 @@ def _add_validate_subcommand(cli: click.Group) -> click.Group:
                             name: z3_evaluate(expr, variables, solution)
                             for name, expr in current_item.variables.items()
                         }
-                        path.append(('.'.join(current_item.state.path), var_values))
+                        path.append((
+                            '.'.join(current_item.state.path),
+                            var_values,
+                            current_item.path_length,
+                            current_item.cycle_length
+                        ))
                         current_item = current_item.pre_state
 
                     path = path[::-1]  # Reverse to show from start to end
 
                     # Display the path beautifully
-                    for j, (state_path, var_values) in enumerate(path):
+                    for j, (state_path, var_values, path_len, cycle_len) in enumerate(path):
                         if j == 0:
-                            click.echo(f"🏁 START: {state_path}")
+                            click.echo(f"🏁 START: {state_path:<20} [Path: {path_len:2d}, Cycle: {cycle_len:2d}]")
                         elif j == len(path) - 1:
-                            click.echo(f"🎯 END:   {state_path}")
+                            click.echo(f"🎯 END:   {state_path:<20} [Path: {path_len:2d}, Cycle: {cycle_len:2d}]")
                         else:
-                            click.echo(f"📍 STEP:  {state_path}")
+                            click.echo(f"📍 STEP:  {state_path:<20} [Path: {path_len:2d}, Cycle: {cycle_len:2d}]")
 
                         if var_values:
                             for var_name, var_value in var_values.items():

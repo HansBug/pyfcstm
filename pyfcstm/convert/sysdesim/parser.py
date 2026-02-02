@@ -114,7 +114,7 @@ class SysDesimParser:
     def parse_state(self, element: _Element):
         return State(
             id=element.get(self._get_key('id', 'xmi')),
-            type=element.get(self._get_key('type', 'xmi')),
+            type=element.get(self._get_key('type', 'xmi')), # 确保这里读取了 type
             name=element.get(self._get_key('name')),
             regions=[self.parse_region(e) for e in element.xpath('region', namespaces=self.namespaces)],
         )

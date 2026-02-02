@@ -25,13 +25,14 @@ def _and_constraints(constraints: List[ExprRef], empty_value: bool = True):
     Combine a list of Z3 constraint expressions using logical AND.
     
     This helper function handles special cases:
+    
     - Empty list returns a boolean value specified by empty_value
     - Single constraint returns the constraint itself
     - Multiple constraints are combined with And()
     
     :param constraints: List of Z3 constraint expressions to combine.
     :type constraints: List[ExprRef]
-    :param empty_value: The boolean value to return when constraints list is empty.
+    :param empty_value: The boolean value to return when constraints list is empty, defaults to True.
     :type empty_value: bool
     
     :return: Combined Z3 expression or boolean value.
@@ -58,13 +59,14 @@ def _or_constraints(constraints: List[ExprRef], empty_value: bool = True):
     Combine a list of Z3 constraint expressions using logical OR.
     
     This helper function handles special cases:
+    
     - Empty list returns a boolean value specified by empty_value
     - Single constraint returns the constraint itself
     - Multiple constraints are combined with Or()
     
     :param constraints: List of Z3 constraint expressions to combine.
     :type constraints: List[ExprRef]
-    :param empty_value: The boolean value to return when constraints list is empty.
+    :param empty_value: The boolean value to return when constraints list is empty, defaults to True.
     :type empty_value: bool
     
     :return: Combined Z3 expression or boolean value.
@@ -93,6 +95,9 @@ class SearchState:
     
     This class encapsulates all information needed to track a state during path search,
     including the current state, path metrics, variable values, and accumulated constraints.
+    
+    The SearchState is used in breadth-first search to explore paths through a state machine,
+    maintaining the context needed to generate Z3 constraint expressions for each path.
     
     :param state: The current state in the state machine.
     :type state: State
@@ -165,9 +170,9 @@ def get_search_expr(model: StateMachine, src_state_path: str, dst_state_path: st
     :type src_state_path: str
     :param dst_state_path: The path string identifying the destination state.
     :type dst_state_path: str
-    :param max_path_length: Maximum number of transitions allowed in a path. None for unlimited.
+    :param max_path_length: Maximum number of transitions allowed in a path. None for unlimited, defaults to 20.
     :type max_path_length: Optional[int]
-    :param max_cycle_length: Maximum number of non-pseudo states allowed in a path.
+    :param max_cycle_length: Maximum number of non-pseudo states allowed in a path, defaults to 20.
     :type max_cycle_length: int
     
     :return: A tuple containing:

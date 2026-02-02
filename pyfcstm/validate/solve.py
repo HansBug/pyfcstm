@@ -30,25 +30,42 @@ except (ImportError, ModuleNotFoundError):
 @dataclass
 class SolveResult:
     """
-    Dataclass representing the result of solving Z3 constraints.
+    Dataclass for storing the results of Z3 constraint solving.
 
-    :param type: The result type, either 'sat' (satisfiable), 'unsat' (unsatisfiable), or 'undetermined'.
-    :type type: Literal['sat', 'unsat', 'undetermined']
-    :param solutions: Dictionary mapping variable names to their solved values, or None if unsat/undetermined.
-    :type solutions: Optional[Union[List[Dict[str, Union[int, float]]], Dict[str, Union[int, float]]]]
+    :ivar type: The result type of the solving attempt. Can be 'sat' (satisfiable),
+                'unsat' (unsatisfiable), or 'undetermined' (solver could not determine).
+    :vartype type: Literal['sat', 'unsat', 'undetermined']
+    :ivar solutions: A list of solution dictionaries, where each dictionary maps variable
+                     names to their concrete values. None if the constraint is unsatisfiable
+                     or undetermined.
+    :vartype solutions: Optional[List[Dict[str, Union[int, float, None]]]]
+
+    Example::
+        >>> result = SolveResult(type='sat', solutions=[{'x': 1, 'y': 2}])
+        >>> result.type
+        'sat'
+        >>> result.solutions
+        [{'x': 1, 'y': 2}]
     """
     type: Literal['sat', 'unsat', 'undetermined']
-    solutions: Optional[List[Dict[str, Union[int, float]]]]
+    solutions: Optional[List[Dict[str, Union[int, float, None]]]]
 
 
 def get_expr_type(expr: ExprRef) -> str:
     """
     Get the type of a Z3 expression as a string.
 
+    This function analyzes the sort (type) of a Z3 expression and returns a
+    human-readable string representation. It supports common Z3 sorts including
+    integers, reals, booleans, bit vectors, and arrays.
+
     :param expr: The Z3 expression to analyze.
     :type expr: ExprRef
 
     :return: A string describing the type of the expression (e.g., "Integer", "Real", "Boolean").
+             For bit vectors, returns "BitVector(n)" where n is the bit width.
+             For arrays, returns "Array(domain, range)" with the domain and range sorts.
+             For unknown types, returns "Unknown(sort)" with the sort information.
     :rtype: str
 
     Example::
@@ -59,6 +76,12 @@ def get_expr_type(expr: ExprRef) -> str:
         >>> y = z3.Real('y')
         >>> get_expr_type(y)
         'Real'
+        >>> b = z3.Bool('b')
+        >>> get_expr_type(b)
+        'Boolean'
+        >>> bv = z3.BitVec('bv', 8)
+        >>> get_expr_type(bv)
+        'BitVector(8)'
     """
     sort = expr.sort()
     sort_kind = sort.kind()
@@ -85,6 +108,10 @@ def is_concrete_value(expr: ExprRef) -> bool:
     constant value or a symbolic variable. It handles various Z3 types including 
     booleans, integers, reals, bit vectors, and strings.
 
+    A concrete value is one that can be directly evaluated to a constant without
+    requiring a model. For example, ``z3.IntVal(42)`` is concrete, while ``z3.Int('x')``
+    is symbolic.
+
     :param expr: The Z3 expression to check.
     :type expr: ExprRef
 
@@ -100,6 +127,10 @@ def is_concrete_value(expr: ExprRef) -> bool:
         True
         >>> is_concrete_value(z3.BoolVal(True))
         True
+        >>> is_concrete_value(z3.RealVal("3/2"))
+        True
+        >>> is_concrete_value(x + 1)  # Expression with symbolic variable
+        False
     """
     try:
         # Use different methods to check if it's a concrete value for different types
@@ -151,11 +182,19 @@ def z3_to_python(expr: ExprRef) -> Union[bool, int, float, str, Dict[str, Union[
     boolean, integer, real, bit vector, and string types. For bit vectors, it returns
     a dictionary containing multiple representations (unsigned, signed, hex, binary).
 
+    The expression must be a concrete value (not a symbolic variable). Use this function
+    after evaluating expressions in a Z3 model to extract concrete values.
+
     :param expr: The Z3 ExprRef object to convert.
     :type expr: ExprRef
 
     :return: The Python native type value. For bit vectors, returns a dictionary with
              'unsigned', 'signed', 'bit_size', 'hex', and 'binary' keys.
+             - For booleans: True or False
+             - For integers: int
+             - For reals: float
+             - For strings: str
+             - For bit vectors: Dict with keys 'unsigned', 'signed', 'bit_size', 'hex', 'binary'
     :rtype: Union[bool, int, float, str, Dict[str, Union[int, str]]]
 
     :raises ValueError: When the expression is symbolic or cannot be converted to a concrete value.
@@ -171,6 +210,8 @@ def z3_to_python(expr: ExprRef) -> Union[bool, int, float, str, Dict[str, Union[
         1.5
         >>> z3_to_python(z3.BitVecVal(255, 8))
         {'unsigned': 255, 'signed': -1, 'bit_size': 8, 'hex': '0xff', 'binary': '0b11111111'}
+        >>> z3_to_python(z3.StringVal("hello"))
+        'hello'
     """
 
     # First check if it's a concrete value (not a symbolic variable)
@@ -260,25 +301,36 @@ def z3_to_python(expr: ExprRef) -> Union[bool, int, float, str, Dict[str, Union[
 
 
 def solve_expr(constraint: ExprRef, variables: Dict[str, ExprRef],
-               max_solutions: Optional[int] = 1) -> SolveResult:
+               max_solutions: int = 1) -> SolveResult:
     """
     Solve Z3 constraints and extract variable values.
 
     This function creates a Z3 solver, adds the given constraint, and attempts to
-    find satisfying assignments for the specified variables. It returns a
-    :class:`SolveResult` object containing the result type and variable values.
+    find satisfying assignments for the specified variables. It can find multiple
+    solutions by iteratively excluding previously found solutions.
 
-    :param constraint: The Z3 constraint to solve.
+    The function uses a push/pop mechanism to preserve the solver state and can
+    find up to ``max_solutions`` different satisfying assignments. Each solution
+    is guaranteed to be different from all previous solutions.
+
+    :param constraint: The Z3 constraint to solve. This can be any Z3 boolean expression,
+                      including combinations of constraints using And, Or, Not, etc.
     :type constraint: ExprRef
     :param variables: Dictionary mapping variable names to their Z3 ExprRef objects.
+                     These are the variables whose values will be extracted from the model.
     :type variables: Dict[str, ExprRef]
-    :param max_solutions: Maximum number of solutions to find. If None, returns only one solution.
-                         If specified, attempts to find up to max_solutions different solutions.
-    :type max_solutions: Optional[int]
+    :param max_solutions: Maximum number of solutions to find. Defaults to 1.
+                         The function will attempt to find up to max_solutions different solutions.
+                         Set to a larger value to find multiple satisfying assignments.
+    :type max_solutions: int
 
     :return: A SolveResult object containing the solving result and variable values.
-             If max_solutions is None, values is a Dict[str, Union[int, float]].
-             If max_solutions is specified, values is a List[Dict[str, Union[int, float]]].
+             The solutions field is a List[Dict[str, Union[int, float]]] containing
+             up to max_solutions different satisfying assignments, or None if the
+             constraint is unsatisfiable or undetermined.
+             - type='sat': At least one solution was found
+             - type='unsat': No solution exists (only when no solutions found initially)
+             - type='undetermined': Solver could not determine satisfiability
     :rtype: SolveResult
 
     Example::
@@ -291,13 +343,20 @@ def solve_expr(constraint: ExprRef, variables: Dict[str, ExprRef],
         >>> result.type
         'sat'
         >>> result.solutions  # doctest: +SKIP
-        {'x': 1, 'y': 9}
+        [{'x': 1, 'y': 9}]
         >>> # Multiple solutions
         >>> result = solve_expr(constraint, {'x': x, 'y': y}, max_solutions=3)
         >>> result.type
         'sat'
         >>> len(result.solutions)  # doctest: +SKIP
         3
+        >>> # Unsatisfiable constraint
+        >>> unsat_constraint = z3.And(x > 10, x < 5)
+        >>> result = solve_expr(unsat_constraint, {'x': x})
+        >>> result.type
+        'unsat'
+        >>> result.solutions is None
+        True
     """
     solver = Solver()
     solver.push()  # Save current state
@@ -356,7 +415,6 @@ def solve_expr(constraint: ExprRef, variables: Dict[str, ExprRef],
             type=type_,
             solutions=solutions if type_ == 'sat' else None,
         )
-
 
     finally:
         solver.pop()  # Restore state

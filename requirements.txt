@@ -10,3 +10,4 @@ click>=8
 chardet
 lxml
 prompt_toolkit>=3
+z3-solver

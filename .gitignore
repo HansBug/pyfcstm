@@ -1226,3 +1226,4 @@ junit.xml
 /pyfcstm/template
 *.cli_history
 /*.puml
+/*.fcstm

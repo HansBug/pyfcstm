@@ -134,7 +134,7 @@ class SearchState:
             >>> constraint = search_state.get_constraint()
             >>> # Returns BoolVal(True) if no constraints, otherwise And(*constraints)
         """
-        return _and_constraints(self.constraints)
+        return _and_constraints(self.constraints, empty_value=True)
 
 
 def get_search_expr(model: StateMachine, src_state_path: str, dst_state_path: str,
@@ -237,6 +237,6 @@ def get_search_expr(model: StateMachine, src_state_path: str, dst_state_path: st
 
         f += 1
 
-    final_cons = _or_constraints([item.get_constraint() for item in dst_items])
+    final_cons = _or_constraints([item.get_constraint() for item in dst_items], empty_value=False)
     final_cons = comprehensive_simplify(final_cons)
-    return queue[0].variables, final_cons
+    return queue[0].variables, final_cons, dst_items

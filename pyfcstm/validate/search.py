@@ -11,12 +11,30 @@ The main components include:
 from dataclasses import dataclass
 from typing import List, Dict, Optional
 
-from z3 import ExprRef, BoolVal, And, Or
+from z3 import ExprRef, BoolVal, And, Or, Not
 
 from .define import def_numbers
 from .expr import model_expr_to_z3_expr, operations_to_z3_vars, comprehensive_simplify
 from ..dsl import EXIT_STATE
 from ..model import State, StateMachine
+
+
+def _and_constraints(constraints: List[ExprRef], empty_value: bool = True):
+    if not constraints:
+        return BoolVal(empty_value)
+    elif len(constraints) == 1:
+        return constraints[0]
+    else:
+        return And(*constraints)
+
+
+def _or_constraints(constraints: List[ExprRef], empty_value: bool = True):
+    if not constraints:
+        return BoolVal(empty_value)
+    elif len(constraints) == 1:
+        return constraints[0]
+    else:
+        return Or(*constraints)
 
 
 @dataclass
@@ -62,12 +80,7 @@ class SearchState:
             >>> constraint = search_state.get_constraint()
             >>> # Returns BoolVal(True) if no constraints, otherwise And(*constraints)
         """
-        if not self.constraints:
-            return BoolVal(True)
-        elif len(self.constraints) == 1:
-            return self.constraints[0]
-        else:
-            return And(*self.constraints)
+        return _and_constraints(self.constraints)
 
 
 def get_search_expr(model: StateMachine, src_state_path: str, dst_state_path: str,
@@ -128,32 +141,31 @@ def get_search_expr(model: StateMachine, src_state_path: str, dst_state_path: st
         else:
             if (max_path_length is None or max_path_length > head.path_length) and \
                     (max_cycle_length is None or max_cycle_length > head.cycle_length):
+                records_cons = []
                 for transition in head.state.transitions_from:
-                    if transition.to_state == EXIT_STATE:
-                        continue
-
-                    next_state = head.state.parent.substates[transition.to_state]
                     cons = head.constraints
                     if transition.guard:
                         cons = [*cons, model_expr_to_z3_expr(transition.guard, head.variables)]
-                    next_item = SearchState(
-                        state=next_state,
-                        path_length=head.path_length + 1,
-                        cycle_length=head.cycle_length + (1 if not next_state.is_pseudo else 0),
-                        pre_state=head,
-                        variables=operations_to_z3_vars(transition.effects, head.variables),
-                        constraints=cons,
-                    )
-                    queue.append(next_item)
+
+                    if transition.to_state == EXIT_STATE:
+                        pass
+                    else:
+                        next_state = head.state.parent.substates[transition.to_state]
+                        next_item = SearchState(
+                            state=next_state,
+                            path_length=head.path_length + 1,
+                            cycle_length=head.cycle_length + (1 if not next_state.is_pseudo else 0),
+                            pre_state=head,
+                            variables=operations_to_z3_vars(transition.effects, head.variables),
+                            constraints=[*cons, Not(_or_constraints(records_cons, empty_value=False))],
+                            # constraints=cons,
+                        )
+                        queue.append(next_item)
+
+                    records_cons.append(_and_constraints(cons))
 
         f += 1
 
-    if not dst_items:
-        final_cons = BoolVal(True)
-    elif len(dst_items) == 1:
-        final_cons = dst_items[0].get_constraint()
-    else:
-        final_cons = Or(*(item.get_constraint() for item in dst_items))
-
+    final_cons = _or_constraints([item.get_constraint() for item in dst_items])
     final_cons = comprehensive_simplify(final_cons)
     return queue[0].variables, final_cons

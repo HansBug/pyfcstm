@@ -77,4 +77,4 @@ def get_search_expr(model: StateMachine, src_state_path: str, dst_state_path: st
     else:
         final_cons = Or(*(item.get_constraint() for item in dst_items))
 
-    return comprehensive_simplify(final_cons)
+    return queue[0].variables, comprehensive_simplify(final_cons)

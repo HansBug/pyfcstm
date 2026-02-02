@@ -16,7 +16,7 @@ Main components:
 """
 
 from dataclasses import dataclass
-from typing import Union, Dict, Optional
+from typing import Union, Dict, Optional, List
 
 import z3
 from z3 import Solver, sat, ExprRef, unsat
@@ -38,7 +38,7 @@ class SolveResult:
     :type values: Optional[Dict[str, Union[int, float]]]
     """
     type: Literal['sat', 'unsat', 'undetermined']
-    values: Optional[Dict[str, Union[int, float]]]
+    values: Optional[Union[List[Dict[str, Union[int, float]]], Dict[str, Union[int, float]]]]
 
 
 def get_expr_type(expr: ExprRef) -> str:
@@ -259,20 +259,25 @@ def z3_to_python(expr: ExprRef) -> Union[bool, int, float, str, Dict[str, Union[
         )
 
 
-def solve_expr(constraint: ExprRef, variables: Dict[str, ExprRef]) -> SolveResult:
+def solve_expr(constraint: ExprRef, variables: Dict[str, ExprRef], max_solutions: Optional[int] = None) -> SolveResult:
     """
     Solve Z3 constraints and extract variable values.
 
     This function creates a Z3 solver, adds the given constraint, and attempts to
-    find a satisfying assignment for the specified variables. It returns a
+    find satisfying assignments for the specified variables. It returns a
     :class:`SolveResult` object containing the result type and variable values.
 
     :param constraint: The Z3 constraint to solve.
     :type constraint: ExprRef
     :param variables: Dictionary mapping variable names to their Z3 ExprRef objects.
     :type variables: Dict[str, ExprRef]
+    :param max_solutions: Maximum number of solutions to find. If None, returns only one solution.
+                         If specified, attempts to find up to max_solutions different solutions.
+    :type max_solutions: Optional[int]
 
     :return: A SolveResult object containing the solving result and variable values.
+             If max_solutions is None, values is a Dict[str, Union[int, float]].
+             If max_solutions is specified, values is a List[Dict[str, Union[int, float]]].
     :rtype: SolveResult
 
     Example::
@@ -280,36 +285,98 @@ def solve_expr(constraint: ExprRef, variables: Dict[str, ExprRef]) -> SolveResul
         >>> x = z3.Int('x')
         >>> y = z3.Int('y')
         >>> constraint = z3.And(x > 0, y > 0, x + y == 10)
+        >>> # Single solution
         >>> result = solve_expr(constraint, {'x': x, 'y': y})
         >>> result.type
         'sat'
         >>> result.values  # doctest: +SKIP
         {'x': 1, 'y': 9}
+        >>> # Multiple solutions
+        >>> result = solve_expr(constraint, {'x': x, 'y': y}, max_solutions=3)
+        >>> result.type
+        'sat'
+        >>> len(result.values)  # doctest: +SKIP
+        3
     """
     solver = Solver()
     solver.push()  # Save current state
     try:
         solver.add(constraint)
-        result = solver.check()
 
-        if result == sat:
-            model = solver.model()
-            values = {}
-            for name, v in variables.items():
-                val = model[v]
-                if val is not None:
-                    values[name] = z3_to_python(val)
+        if max_solutions is None:
+            # Single solution mode
+            result = solver.check()
+
+            if result == sat:
+                model = solver.model()
+                values = {}
+                for name, v in variables.items():
+                    val = model[v]
+                    if val is not None:
+                        values[name] = z3_to_python(val)
+                    else:
+                        values[name] = val
+
+                return SolveResult(
+                    type='sat',
+                    values=values
+                )
+            elif result == unsat:
+                return SolveResult(type='unsat', values=None)
+            else:
+                return SolveResult(type='undetermined', values=None)
+
+        else:
+            # Multiple solutions mode
+            solutions = []
+            type_: Literal['sat', 'unsat', 'undetermined'] = 'sat'
+
+            for _ in range(max_solutions):
+                result = solver.check()
+
+                if result == sat:
+                    type_ = 'sat'
+                    model = solver.model()
+                    values = {}
+
+                    # Extract variable values
+                    for name, v in variables.items():
+                        val = model[v]
+                        if val is not None:
+                            values[name] = z3_to_python(val)
+                        else:
+                            values[name] = val
+
+                    solutions.append(values)
+
+                    # Create constraint to exclude this solution
+                    # Build a constraint that negates the current assignment
+                    exclusion_constraints = []
+                    for name, v in variables.items():
+                        val = model[v]
+                        if val is not None:
+                            exclusion_constraints.append(v != val)
+
+                    if exclusion_constraints:
+                        # Add constraint to exclude this solution
+                        solver.add(z3.Or(exclusion_constraints))
+                    else:
+                        # If no variables to constrain, break to avoid infinite loop
+                        break
+
+                elif result == unsat:
+                    # No more solutions
+                    type_ = 'unsat'
+                    break
                 else:
-                    values[name] = val
+                    # Undetermined result
+                    type_ = 'undetermined'
+                    break
 
             return SolveResult(
-                type='sat',
-                values=values
+                type=type_,
+                values=solutions if type_ == 'sat' else None,
             )
-        elif result == unsat:
-            return SolveResult(type='unsat', values=None)
-        else:
-            return SolveResult(type='undetermined', values=None)
 
     finally:
         solver.pop()  # Restore state

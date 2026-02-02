@@ -34,11 +34,11 @@ class SolveResult:
 
     :param type: The result type, either 'sat' (satisfiable), 'unsat' (unsatisfiable), or 'undetermined'.
     :type type: Literal['sat', 'unsat', 'undetermined']
-    :param values: Dictionary mapping variable names to their solved values, or None if unsat/undetermined.
-    :type values: Optional[Union[List[Dict[str, Union[int, float]]], Dict[str, Union[int, float]]]]
+    :param solutions: Dictionary mapping variable names to their solved values, or None if unsat/undetermined.
+    :type solutions: Optional[Union[List[Dict[str, Union[int, float]]], Dict[str, Union[int, float]]]]
     """
     type: Literal['sat', 'unsat', 'undetermined']
-    values: Optional[Union[List[Dict[str, Union[int, float]]], Dict[str, Union[int, float]]]]
+    solutions: Optional[List[Dict[str, Union[int, float]]]]
 
 
 def get_expr_type(expr: ExprRef) -> str:
@@ -259,7 +259,8 @@ def z3_to_python(expr: ExprRef) -> Union[bool, int, float, str, Dict[str, Union[
         )
 
 
-def solve_expr(constraint: ExprRef, variables: Dict[str, ExprRef], max_solutions: Optional[int] = None) -> SolveResult:
+def solve_expr(constraint: ExprRef, variables: Dict[str, ExprRef],
+               max_solutions: Optional[int] = 1) -> SolveResult:
     """
     Solve Z3 constraints and extract variable values.
 
@@ -289,13 +290,13 @@ def solve_expr(constraint: ExprRef, variables: Dict[str, ExprRef], max_solutions
         >>> result = solve_expr(constraint, {'x': x, 'y': y})
         >>> result.type
         'sat'
-        >>> result.values  # doctest: +SKIP
+        >>> result.solutions  # doctest: +SKIP
         {'x': 1, 'y': 9}
         >>> # Multiple solutions
         >>> result = solve_expr(constraint, {'x': x, 'y': y}, max_solutions=3)
         >>> result.type
         'sat'
-        >>> len(result.values)  # doctest: +SKIP
+        >>> len(result.solutions)  # doctest: +SKIP
         3
     """
     solver = Solver()
@@ -303,13 +304,19 @@ def solve_expr(constraint: ExprRef, variables: Dict[str, ExprRef], max_solutions
     try:
         solver.add(constraint)
 
-        if max_solutions is None:
-            # Single solution mode
+        # Multiple solutions mode
+        solutions = []
+        type_: Literal['sat', 'unsat', 'undetermined'] = 'sat'
+
+        for _ in range(max_solutions):
             result = solver.check()
 
             if result == sat:
+                type_ = 'sat'
                 model = solver.model()
                 values = {}
+
+                # Extract variable values
                 for name, v in variables.items():
                     val = model[v]
                     if val is not None:
@@ -317,66 +324,39 @@ def solve_expr(constraint: ExprRef, variables: Dict[str, ExprRef], max_solutions
                     else:
                         values[name] = val
 
-                return SolveResult(
-                    type='sat',
-                    values=values
-                )
-            elif result == unsat:
-                return SolveResult(type='unsat', values=None)
-            else:
-                return SolveResult(type='undetermined', values=None)
+                solutions.append(values)
 
-        else:
-            # Multiple solutions mode
-            solutions = []
-            type_: Literal['sat', 'unsat', 'undetermined'] = 'sat'
+                # Create constraint to exclude this solution
+                # Build a constraint that negates the current assignment
+                exclusion_constraints = []
+                for name, v in variables.items():
+                    val = model[v]
+                    if val is not None:
+                        exclusion_constraints.append(v != val)
 
-            for _ in range(max_solutions):
-                result = solver.check()
-
-                if result == sat:
-                    type_ = 'sat'
-                    model = solver.model()
-                    values = {}
-
-                    # Extract variable values
-                    for name, v in variables.items():
-                        val = model[v]
-                        if val is not None:
-                            values[name] = z3_to_python(val)
-                        else:
-                            values[name] = val
-
-                    solutions.append(values)
-
-                    # Create constraint to exclude this solution
-                    # Build a constraint that negates the current assignment
-                    exclusion_constraints = []
-                    for name, v in variables.items():
-                        val = model[v]
-                        if val is not None:
-                            exclusion_constraints.append(v != val)
-
-                    if exclusion_constraints:
-                        # Add constraint to exclude this solution
-                        solver.add(z3.Or(exclusion_constraints))
-                    else:
-                        # If no variables to constrain, break to avoid infinite loop
-                        break
-
-                elif result == unsat:
-                    # No more solutions
-                    type_ = 'unsat'
-                    break
+                if exclusion_constraints:
+                    # Add constraint to exclude this solution
+                    solver.add(z3.Or(exclusion_constraints))
                 else:
-                    # Undetermined result
-                    type_ = 'undetermined'
+                    # If no variables to constrain, break to avoid infinite loop
                     break
 
-            return SolveResult(
-                type=type_,
-                values=solutions if type_ == 'sat' else None,
-            )
+            elif result == unsat:
+                # No more solutions
+                type_ = 'unsat'
+                break
+            else:
+                # Undetermined result
+                type_ = 'undetermined'
+                break
+
+        if solutions:
+            type_ = 'sat'
+        return SolveResult(
+            type=type_,
+            solutions=solutions if type_ == 'sat' else None,
+        )
+
 
     finally:
         solver.pop()  # Restore state

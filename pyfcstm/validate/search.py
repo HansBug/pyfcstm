@@ -4,6 +4,7 @@ for path constraints. It implements a breadth-first search algorithm to find all
 a source state to a destination state, considering transition guards and variable constraints.
 
 The main components include:
+
 - SearchState: A dataclass representing a state during the search process
 - get_search_expr: Function to generate Z3 expressions for path constraints between states
 """
@@ -20,6 +21,30 @@ from ..model import State, StateMachine
 
 
 def _and_constraints(constraints: List[ExprRef], empty_value: bool = True):
+    """
+    Combine a list of Z3 constraint expressions using logical AND.
+    
+    This helper function handles special cases:
+    - Empty list returns a boolean value specified by empty_value
+    - Single constraint returns the constraint itself
+    - Multiple constraints are combined with And()
+    
+    :param constraints: List of Z3 constraint expressions to combine.
+    :type constraints: List[ExprRef]
+    :param empty_value: The boolean value to return when constraints list is empty.
+    :type empty_value: bool
+    
+    :return: Combined Z3 expression or boolean value.
+    :rtype: ExprRef
+    
+    Example::
+        >>> _and_constraints([])  # Returns BoolVal(True)
+        True
+        >>> _and_constraints([expr1])  # Returns expr1
+        expr1
+        >>> _and_constraints([expr1, expr2])  # Returns And(expr1, expr2)
+        And(expr1, expr2)
+    """
     if not constraints:
         return BoolVal(empty_value)
     elif len(constraints) == 1:
@@ -29,6 +54,30 @@ def _and_constraints(constraints: List[ExprRef], empty_value: bool = True):
 
 
 def _or_constraints(constraints: List[ExprRef], empty_value: bool = True):
+    """
+    Combine a list of Z3 constraint expressions using logical OR.
+    
+    This helper function handles special cases:
+    - Empty list returns a boolean value specified by empty_value
+    - Single constraint returns the constraint itself
+    - Multiple constraints are combined with Or()
+    
+    :param constraints: List of Z3 constraint expressions to combine.
+    :type constraints: List[ExprRef]
+    :param empty_value: The boolean value to return when constraints list is empty.
+    :type empty_value: bool
+    
+    :return: Combined Z3 expression or boolean value.
+    :rtype: ExprRef
+    
+    Example::
+        >>> _or_constraints([])  # Returns BoolVal(True)
+        True
+        >>> _or_constraints([expr1])  # Returns expr1
+        expr1
+        >>> _or_constraints([expr1, expr2])  # Returns Or(expr1, expr2)
+        Or(expr1, expr2)
+    """
     if not constraints:
         return BoolVal(empty_value)
     elif len(constraints) == 1:
@@ -92,11 +141,23 @@ def get_search_expr(model: StateMachine, src_state_path: str, dst_state_path: st
     collecting all possible paths and their constraints. It returns the initial variable definitions
     and a Z3 expression representing the disjunction of all valid paths.
     
+    The search algorithm:
+    
+    1. Starts from the source state with initial variables
+    2. Explores all transitions from each state
+    3. Accumulates constraints from transition guards
+    4. Updates variables based on transition effects
+    5. Ensures mutual exclusivity of transitions from the same state
+    6. Stops when reaching the destination state or exceeding path limits
+    7. Combines all valid paths with logical OR
+    
     The search considers:
+    
     - Transition guards as additional constraints
     - Variable effects from transitions
     - Maximum path length and cycle length limits
     - Pseudo states (which don't count towards cycle length)
+    - Mutual exclusivity of transitions from the same state
     
     :param model: The state machine model to search within.
     :type model: StateMachine
@@ -119,6 +180,12 @@ def get_search_expr(model: StateMachine, src_state_path: str, dst_state_path: st
         >>> variables, constraints = get_search_expr(model, 'state1', 'state2', max_path_length=10)
         >>> # variables contains initial Z3 variables
         >>> # constraints is a Z3 expression that must be satisfied for a valid path
+        >>> # Use Z3 solver to check satisfiability
+        >>> from z3 import Solver
+        >>> solver = Solver()
+        >>> solver.add(constraints)
+        >>> if solver.check() == sat:
+        ...     print("Path exists:", solver.model())
     """
     src_state = model.resolve_state(src_state_path)
     dst_state = model.resolve_state(dst_state_path)
@@ -158,7 +225,6 @@ def get_search_expr(model: StateMachine, src_state_path: str, dst_state_path: st
                             pre_state=head,
                             variables=operations_to_z3_vars(transition.effects, head.variables),
                             constraints=[*cons, Not(_or_constraints(records_cons, empty_value=False))],
-                            # constraints=cons,
                         )
                         queue.append(next_item)
 

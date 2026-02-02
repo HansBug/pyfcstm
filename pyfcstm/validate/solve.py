@@ -1,3 +1,20 @@
+"""
+This module provides utilities for working with Z3 SMT solver expressions and converting them to Python native types.
+
+The module includes functionality for:
+- Determining Z3 expression types
+- Checking if expressions are concrete values
+- Converting Z3 expressions to Python native types
+- Solving Z3 constraints and extracting variable values
+
+Main components:
+- :class:`SolveResult`: Dataclass for storing constraint solving results
+- :func:`get_expr_type`: Get the type of a Z3 expression
+- :func:`is_concrete_value`: Check if a Z3 expression is a concrete value
+- :func:`z3_to_python`: Convert Z3 expressions to Python native types
+- :func:`solve_expr`: Solve Z3 constraints and extract variable values
+"""
+
 from dataclasses import dataclass
 from typing import Union, Dict, Optional
 
@@ -7,16 +24,42 @@ from z3 import Solver, sat, ExprRef, unsat
 try:
     from typing import Literal
 except (ImportError, ModuleNotFoundError):
-    from typing_extensions import List
+    from typing_extensions import Literal
 
 
 @dataclass
 class SolveResult:
+    """
+    Dataclass representing the result of solving Z3 constraints.
+
+    :param type: The result type, either 'sat' (satisfiable), 'unsat' (unsatisfiable), or 'undetermined'.
+    :type type: Literal['sat', 'unsat', 'undetermined']
+    :param values: Dictionary mapping variable names to their solved values, or None if unsat/undetermined.
+    :type values: Optional[Dict[str, Union[int, float]]]
+    """
     type: Literal['sat', 'unsat', 'undetermined']
     values: Optional[Dict[str, Union[int, float]]]
 
 
-def get_expr_type(expr):
+def get_expr_type(expr: ExprRef) -> str:
+    """
+    Get the type of a Z3 expression as a string.
+
+    :param expr: The Z3 expression to analyze.
+    :type expr: ExprRef
+
+    :return: A string describing the type of the expression (e.g., "Integer", "Real", "Boolean").
+    :rtype: str
+
+    Example::
+        >>> import z3
+        >>> x = z3.Int('x')
+        >>> get_expr_type(x)
+        'Integer'
+        >>> y = z3.Real('y')
+        >>> get_expr_type(y)
+        'Real'
+    """
     sort = expr.sort()
     sort_kind = sort.kind()
 
@@ -34,23 +77,43 @@ def get_expr_type(expr):
         return f"Unknown({sort})"
 
 
-def is_concrete_value(expr):
+def is_concrete_value(expr: ExprRef) -> bool:
     """
-    判断Z3表达式是否为具体值（而非符号变量）
+    Determine if a Z3 expression is a concrete value (rather than a symbolic variable).
+
+    This function checks whether the given Z3 expression represents a concrete, 
+    constant value or a symbolic variable. It handles various Z3 types including 
+    booleans, integers, reals, bit vectors, and strings.
+
+    :param expr: The Z3 expression to check.
+    :type expr: ExprRef
+
+    :return: True if the expression is a concrete value, False otherwise.
+    :rtype: bool
+
+    Example::
+        >>> import z3
+        >>> x = z3.Int('x')
+        >>> is_concrete_value(x)
+        False
+        >>> is_concrete_value(z3.IntVal(42))
+        True
+        >>> is_concrete_value(z3.BoolVal(True))
+        True
     """
     try:
-        # 对于不同类型，使用不同的方法判断是否为具体值
+        # Use different methods to check if it's a concrete value for different types
         if z3.is_bool(expr):
             return z3.is_true(expr) or z3.is_false(expr)
         elif z3.is_int(expr):
-            # 尝试获取整数值，如果成功说明是具体值
+            # Try to get integer value, success means it's a concrete value
             try:
                 expr.as_long()
                 return True
             except:
                 return False
         elif z3.is_real(expr):
-            # 尝试获取实数值
+            # Try to get real value
             try:
                 if expr.is_int():
                     expr.as_long()
@@ -61,14 +124,14 @@ def is_concrete_value(expr):
             except:
                 return False
         elif z3.is_bv(expr):
-            # 尝试获取位向量值
+            # Try to get bit vector value
             try:
                 expr.as_long()
                 return True
             except:
                 return False
         elif z3.is_string(expr):
-            # 尝试获取字符串值
+            # Try to get string value
             try:
                 expr.as_string()
                 return True
@@ -80,22 +143,37 @@ def is_concrete_value(expr):
         return False
 
 
-def z3_to_python(expr):
+def z3_to_python(expr: ExprRef) -> Union[bool, int, float, str, Dict[str, Union[int, str]]]:
     """
-    将Z3 ExprRef转换为Python原生类型
+    Convert a Z3 ExprRef to a Python native type.
 
-    Args:
-        expr: Z3 ExprRef对象
+    This function converts Z3 expressions to their Python equivalents. It supports
+    boolean, integer, real, bit vector, and string types. For bit vectors, it returns
+    a dictionary containing multiple representations (unsigned, signed, hex, binary).
 
-    Returns:
-        Python原生类型的值
+    :param expr: The Z3 ExprRef object to convert.
+    :type expr: ExprRef
 
-    Raises:
-        TypeError: 当类型不支持转换时
-        ValueError: 当值无法转换时
+    :return: The Python native type value. For bit vectors, returns a dictionary with
+             'unsigned', 'signed', 'bit_size', 'hex', and 'binary' keys.
+    :rtype: Union[bool, int, float, str, Dict[str, Union[int, str]]]
+
+    :raises ValueError: When the expression is symbolic or cannot be converted to a concrete value.
+    :raises TypeError: When the type is not supported for conversion (e.g., arrays).
+
+    Example::
+        >>> import z3
+        >>> z3_to_python(z3.IntVal(42))
+        42
+        >>> z3_to_python(z3.BoolVal(True))
+        True
+        >>> z3_to_python(z3.RealVal("3/2"))
+        1.5
+        >>> z3_to_python(z3.BitVecVal(255, 8))
+        {'unsigned': 255, 'signed': -1, 'bit_size': 8, 'hex': '0xff', 'binary': '0b11111111'}
     """
 
-    # 首先检查是否是具体的值（而不是符号变量）
+    # First check if it's a concrete value (not a symbolic variable)
     if not is_concrete_value(expr):
         raise ValueError(
             f"Cannot convert symbolic expression to Python native type.\n"
@@ -105,7 +183,7 @@ def z3_to_python(expr):
             f"You may need to evaluate this expression in a model first."
         )
 
-    # Boolean类型
+    # Boolean type
     if z3.is_bool(expr):
         if z3.is_true(expr):
             return True
@@ -114,29 +192,29 @@ def z3_to_python(expr):
         else:
             raise ValueError(f"Unknown boolean value: {expr}")
 
-        # Integer类型
+    # Integer type
     elif z3.is_int(expr):
         return expr.as_long()
 
-        # Real类型
+    # Real type
     elif z3.is_real(expr):
-        # Z3的实数可能是分数形式
+        # Z3 reals may be in fractional form
         if expr.is_int():
             return float(expr.as_long())
         else:
-            # 获取分数的分子和分母
+            # Get numerator and denominator of the fraction
             numerator = expr.numerator_as_long()
             denominator = expr.denominator_as_long()
             return float(numerator) / float(denominator)
 
-        # BitVector类型
+    # BitVector type
     elif z3.is_bv(expr):
         bit_size = expr.sort().size()
         value = expr.as_long()
 
-        # 检查是否为有符号数（如果最高位为1）
+        # Check if it's a signed number (if the highest bit is 1)
         if value >= (1 << (bit_size - 1)):
-            # 转换为有符号数
+            # Convert to signed number
             signed_value = value - (1 << bit_size)
             return {
                 'unsigned': value,
@@ -154,11 +232,11 @@ def z3_to_python(expr):
                 'binary': bin(value)
             }
 
-        # String类型
+    # String type
     elif z3.is_string(expr):
         return expr.as_string()
 
-        # Array类型 - 通常无法直接转换
+    # Array type - usually cannot be directly converted
     elif z3.is_array(expr):
         raise TypeError(
             f"Array types cannot be converted to Python native types.\n"
@@ -168,7 +246,7 @@ def z3_to_python(expr):
             f"Consider extracting specific array elements using model evaluation."
         )
 
-        # 其他不支持的类型
+    # Other unsupported types
     else:
         sort_kind = expr.sort().kind()
         raise TypeError(
@@ -181,9 +259,35 @@ def z3_to_python(expr):
         )
 
 
-def solve_expr(constraint, variables: Dict[str, ExprRef]):
+def solve_expr(constraint: ExprRef, variables: Dict[str, ExprRef]) -> SolveResult:
+    """
+    Solve Z3 constraints and extract variable values.
+
+    This function creates a Z3 solver, adds the given constraint, and attempts to
+    find a satisfying assignment for the specified variables. It returns a
+    :class:`SolveResult` object containing the result type and variable values.
+
+    :param constraint: The Z3 constraint to solve.
+    :type constraint: ExprRef
+    :param variables: Dictionary mapping variable names to their Z3 ExprRef objects.
+    :type variables: Dict[str, ExprRef]
+
+    :return: A SolveResult object containing the solving result and variable values.
+    :rtype: SolveResult
+
+    Example::
+        >>> import z3
+        >>> x = z3.Int('x')
+        >>> y = z3.Int('y')
+        >>> constraint = z3.And(x > 0, y > 0, x + y == 10)
+        >>> result = solve_expr(constraint, {'x': x, 'y': y})
+        >>> result.type
+        'sat'
+        >>> result.values  # doctest: +SKIP
+        {'x': 1, 'y': 9}
+    """
     solver = Solver()
-    solver.push()  # 保存当前状态
+    solver.push()  # Save current state
     try:
         solver.add(constraint)
         result = solver.check()
@@ -208,4 +312,4 @@ def solve_expr(constraint, variables: Dict[str, ExprRef]):
             return SolveResult(type='undetermined', values=None)
 
     finally:
-        solver.pop()  # 恢复状态
+        solver.pop()  # Restore state

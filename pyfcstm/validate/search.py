@@ -16,15 +16,16 @@ for formal verification, test case generation, and reachability analysis of stat
 from dataclasses import dataclass
 from typing import List, Dict, Optional
 
-from z3 import ExprRef, BoolVal, And, Or, Not
+import z3
+from hbutils.logging import tqdm
 
 from .define import def_numbers
-from .expr import model_expr_to_z3_expr, operations_to_z3_vars, comprehensive_simplify
+from .expr import model_expr_to_z3_expr, operations_to_z3_vars
 from ..dsl import EXIT_STATE
 from ..model import State, StateMachine
 
 
-def _and_constraints(constraints: List[ExprRef], empty_value: bool = True):
+def _and_constraints(constraints: List[z3.ExprRef], empty_value: bool = True):
     """
     Combine a list of Z3 constraint expressions using logical AND.
     
@@ -51,14 +52,14 @@ def _and_constraints(constraints: List[ExprRef], empty_value: bool = True):
         And(expr1, expr2)
     """
     if not constraints:
-        return BoolVal(empty_value)
+        return z3.BoolVal(empty_value)
     elif len(constraints) == 1:
         return constraints[0]
     else:
-        return And(*constraints)
+        return z3.And(*constraints)
 
 
-def _or_constraints(constraints: List[ExprRef], empty_value: bool = False):
+def _or_constraints(constraints: List[z3.ExprRef], empty_value: bool = False):
     """
     Combine a list of Z3 constraint expressions using logical OR.
     
@@ -85,11 +86,11 @@ def _or_constraints(constraints: List[ExprRef], empty_value: bool = False):
         Or(expr1, expr2)
     """
     if not constraints:
-        return BoolVal(empty_value)
+        return z3.BoolVal(empty_value)
     elif len(constraints) == 1:
         return constraints[0]
     else:
-        return Or(*constraints)
+        return z3.Or(*constraints)
 
 
 @dataclass
@@ -120,10 +121,10 @@ class SearchState:
     path_length: int
     cycle_length: int
     pre_state: Optional['SearchState']
-    variables: Dict[str, ExprRef]
-    constraints: List[ExprRef]
+    variables: Dict[str, z3.ExprRef]
+    constraints: List[z3.ExprRef]
 
-    def get_constraint(self) -> ExprRef:
+    def get_constraint(self) -> z3.ExprRef:
         """
         Get the combined constraint expression for this search state.
         
@@ -209,6 +210,7 @@ def get_search_expr(model: StateMachine, src_state_path: str, dst_state_path: st
         variables=def_numbers({name: def_item.type for name, def_item in model.defines.items()}),
         constraints=[],
     )
+    pg = tqdm(initial=0, desc=f'Search States: {".".join(src_state.path)} --> {".".join(dst_state.path)}')
     queue = [init]
     f = 0
     dst_items = []
@@ -235,14 +237,15 @@ def get_search_expr(model: StateMachine, src_state_path: str, dst_state_path: st
                             cycle_length=head.cycle_length + (1 if not next_state.is_pseudo else 0),
                             pre_state=head,
                             variables=operations_to_z3_vars(transition.effects, head.variables),
-                            constraints=[*cons, Not(_or_constraints(records_cons, empty_value=False))],
+                            constraints=[*cons, z3.Not(_or_constraints(records_cons, empty_value=False))],
                         )
                         queue.append(next_item)
+                        pg.update()
 
                     records_cons.append(_and_constraints(cons))
 
         f += 1
 
     final_cons = _or_constraints([item.get_constraint() for item in dst_items], empty_value=False)
-    final_cons = comprehensive_simplify(final_cons)
+    # final_cons = comprehensive_simplify(final_cons)
     return queue[0].variables, final_cons, dst_items

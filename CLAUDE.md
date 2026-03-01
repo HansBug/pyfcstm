@@ -4,11 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**pyfcstm** is a Python framework for parsing Finite State Machine (FSM) Domain-Specific Language (DSL) and generating executable code in multiple target languages. It focuses on modeling Hierarchical State Machines (Harel Statecharts) with a Jinja2-based templated code generation system.
+**pyfcstm** is a Python framework for parsing Finite State Machine (FSM) Domain-Specific Language (DSL) and generating
+executable code in multiple target languages. It focuses on modeling Hierarchical State Machines (Harel Statecharts)
+with a Jinja2-based templated code generation system.
 
 ## Common Commands
 
 ### Testing
+
 ```bash
 # Run all tests
 make unittest
@@ -27,6 +30,7 @@ make unittest WORKERS=4
 ```
 
 ### Building and Packaging
+
 ```bash
 # Build package (sdist and wheel)
 make package
@@ -39,6 +43,7 @@ make clean
 ```
 
 ### Documentation
+
 ```bash
 # Build documentation locally
 make docs
@@ -48,6 +53,7 @@ make pdocs
 ```
 
 ### ANTLR Grammar Development
+
 ```bash
 # Download ANTLR jar and setup (requires Java)
 make antlr
@@ -57,6 +63,7 @@ make antlr_build
 ```
 
 ### Sample Test Generation
+
 ```bash
 # Generate test files from sample DSL files
 make sample
@@ -66,6 +73,7 @@ make sample_clean
 ```
 
 ### CLI Usage
+
 ```bash
 # Generate PlantUML diagram from DSL
 pyfcstm plantuml -i input.fcstm -o output.puml
@@ -82,109 +90,122 @@ pyfcstm generate -i input.fcstm -t template_dir/ -o output_dir/ --clear
 ### Core Components
 
 **DSL Parsing Pipeline** (`pyfcstm/dsl/`)
+
 - `grammar/Grammar.g4`: ANTLR4 grammar definition for the FSM DSL syntax
-  - Defines lexer and parser rules for states, transitions, events, expressions
-  - Supports hierarchical state definitions with nested composite states
-  - Expression grammar includes numeric operations, bitwise operations, conditionals, and function calls
+    - Defines lexer and parser rules for states, transitions, events, expressions
+    - Supports hierarchical state definitions with nested composite states
+    - Expression grammar includes numeric operations, bitwise operations, conditionals, and function calls
 - `parse.py`: Entry point `parse_with_grammar_entry()` for parsing DSL code strings
 - `listener.py`: ANTLR listener that walks the parse tree and constructs AST nodes
-  - Implements visitor pattern for each grammar rule
-  - Handles state definitions, transitions, lifecycle actions, and expressions
+    - Implements visitor pattern for each grammar rule
+    - Handles state definitions, transitions, lifecycle actions, and expressions
 - `node.py`: AST node definitions (dataclasses) representing parsed DSL elements
-  - Includes nodes for states, transitions, operations, expressions, events
-  - Each node type has methods for exporting back to DSL or PlantUML format
+    - Includes nodes for states, transitions, operations, expressions, events
+    - Each node type has methods for exporting back to DSL or PlantUML format
 - `error.py`: DSL parsing error handling with detailed error messages
 
 **Model Layer** (`pyfcstm/model/`)
+
 - `model.py`: Core state machine model classes
-  - `StateMachine`: Root container with variables, states, and global events
-  - `State`: Represents states with parent/child relationships, lifecycle actions (enter/during/exit), and transitions
-  - `Transition`: Represents state transitions with source, target, event, guard conditions, and effects
-  - `Event`: Named events that trigger transitions with scoping (local `::` vs global `:` or `/`)
-  - `Operation`: Variable assignments executed during lifecycle actions or transition effects
-  - `VarDefine`: Variable definitions with type (int/float) and initial values
-  - `OnStage`/`OnAspect`: Lifecycle action containers for enter/during/exit behaviors
+    - `StateMachine`: Root container with variables, states, and global events
+    - `State`: Represents states with parent/child relationships, lifecycle actions (enter/during/exit), and transitions
+    - `Transition`: Represents state transitions with source, target, event, guard conditions, and effects
+    - `Event`: Named events that trigger transitions with scoping (local `::` vs global `:` or `/`)
+    - `Operation`: Variable assignments executed during lifecycle actions or transition effects
+    - `VarDefine`: Variable definitions with type (int/float) and initial values
+    - `OnStage`/`OnAspect`: Lifecycle action containers for enter/during/exit behaviors
 - `expr.py`: Expression system for variables, conditions, and effects
-  - Supports literals, variables, unary/binary operators, bitwise operations, function calls
-  - Conditional expressions with guards for transitions
-  - Expression tree structure that can be rendered to different target languages
+    - Supports literals, variables, unary/binary operators, bitwise operations, function calls
+    - Conditional expressions with guards for transitions
+    - Expression tree structure that can be rendered to different target languages
 - `base.py`: Base classes `AstExportable` and `PlantUMLExportable` for model components
 
-The model layer converts AST nodes from the parser into a structured, queryable state machine model with methods like `walk_states()` for traversal, `find_state()` for lookups, and export capabilities.
+The model layer converts AST nodes from the parser into a structured, queryable state machine model with methods like
+`walk_states()` for traversal, `find_state()` for lookups, and export capabilities.
 
 **Rendering Engine** (`pyfcstm/render/`)
-- `render.py`: Main `StateMachineCodeRenderer` class
-  - Loads template directory and `config.yaml` configuration
-  - Processes `.j2` Jinja2 templates with state machine model as context
-  - Copies static files directly to output directory
-  - Supports file ignoring via gitignore-style patterns
-- `env.py`: Jinja2 environment setup and configuration
-  - Creates sandboxed Jinja2 environment with custom globals, filters, and tests
-  - Configures template loader and rendering options
-- `expr.py`: Expression rendering for different target languages
-  - `create_expr_render_template()`: Creates language-specific expression renderers
-  - Supports multiple expression styles: `dsl`, `c`, `cpp`, `python`
-  - Converts DSL expressions to target language syntax (e.g., `&&` to `and` for Python)
-  - Available as `expr_render` filter in templates: `{{ expr | expr_render(style='c') }}`
-- `func.py`: Custom Jinja2 filters and functions
-  - `process_item_to_object()`: Converts config items to Python objects (imports, templates, values)
-  - Supports importing external Python functions into template context
 
-The rendering engine reads template directories with `config.yaml` and `.j2` files, then renders the state machine model into target code using Jinja2 templating with custom expression styles.
+- `render.py`: Main `StateMachineCodeRenderer` class
+    - Loads template directory and `config.yaml` configuration
+    - Processes `.j2` Jinja2 templates with state machine model as context
+    - Copies static files directly to output directory
+    - Supports file ignoring via gitignore-style patterns
+- `env.py`: Jinja2 environment setup and configuration
+    - Creates sandboxed Jinja2 environment with custom globals, filters, and tests
+    - Configures template loader and rendering options
+- `expr.py`: Expression rendering for different target languages
+    - `create_expr_render_template()`: Creates language-specific expression renderers
+    - Supports multiple expression styles: `dsl`, `c`, `cpp`, `python`
+    - Converts DSL expressions to target language syntax (e.g., `&&` to `and` for Python)
+    - Available as `expr_render` filter in templates: `{{ expr | expr_render(style='c') }}`
+- `func.py`: Custom Jinja2 filters and functions
+    - `process_item_to_object()`: Converts config items to Python objects (imports, templates, values)
+    - Supports importing external Python functions into template context
+
+The rendering engine reads template directories with `config.yaml` and `.j2` files, then renders the state machine model
+into target code using Jinja2 templating with custom expression styles.
 
 **Entry Points** (`pyfcstm/entry/`)
+
 - `cli.py`: Command-line interface implementation using Click framework
-  - Main entry point `pyfcstmcli()` registered as console script
+    - Main entry point `pyfcstmcli()` registered as console script
 - `plantuml.py`: PlantUML diagram generation from state machine models
-  - Converts DSL to `.puml` format for visualization
+    - Converts DSL to `.puml` format for visualization
 - `generate.py`: Template-based code generation
-  - Orchestrates parsing DSL, building model, and rendering with templates
+    - Orchestrates parsing DSL, building model, and rendering with templates
 - `dispatch.py`: Command dispatching logic for CLI subcommands
 
 **Configuration** (`pyfcstm/config/`)
+
 - `meta.py`: Package metadata (version, author, description)
-  - `__VERSION__`: Current package version
-  - `__TITLE__`: Package name ('pyfcstm')
-  - `__DESCRIPTION__`: Short package description
-  - `__AUTHOR__` and `__AUTHOR_EMAIL__`: Author information
-  - Used by `setup.py` for package distribution
+    - `__VERSION__`: Current package version
+    - `__TITLE__`: Package name ('pyfcstm')
+    - `__DESCRIPTION__`: Short package description
+    - `__AUTHOR__` and `__AUTHOR_EMAIL__`: Author information
+    - Used by `setup.py` for package distribution
 
 **Utilities** (`pyfcstm/utils/`)
+
 - `validate.py`: Validation framework for model validation
-  - `IValidatable`: Base class for validatable objects with `__validators__` list
-  - `ValidationError`: Exception for single validation rule failures
-  - `ModelValidationError`: Aggregates multiple validation errors
-  - Used throughout model layer to ensure structural integrity
+    - `IValidatable`: Base class for validatable objects with `__validators__` list
+    - `ValidationError`: Exception for single validation rule failures
+    - `ModelValidationError`: Aggregates multiple validation errors
+    - Used throughout model layer to ensure structural integrity
 - `text.py`: String normalization utilities
-  - `normalize()`: Converts strings to valid identifiers
-  - `to_identifier()`: Converts any string to `[0-9a-zA-Z_]+` format with strict mode
-  - Handles Unicode via `unidecode`, removes special characters, prevents consecutive underscores
+    - `normalize()`: Converts strings to valid identifiers
+    - `to_identifier()`: Converts any string to `[0-9a-zA-Z_]+` format with strict mode
+    - Handles Unicode via `unidecode`, removes special characters, prevents consecutive underscores
 - `doc.py`: Multiline comment formatting
-  - `format_multiline_comment()`: Cleans ANTLR4-parsed comments by removing `/* */` markers
-  - Normalizes indentation and whitespace for documentation text
+    - `format_multiline_comment()`: Cleans ANTLR4-parsed comments by removing `/* */` markers
+    - Normalizes indentation and whitespace for documentation text
 - `safe.py`: Safe identifier generation
-  - `sequence_safe()`: Converts string sequences to underscore-separated identifiers
-  - Normalizes different naming conventions (CamelCase, snake_case, kebab-case) to consistent format
+    - `sequence_safe()`: Converts string sequences to underscore-separated identifiers
+    - Normalizes different naming conventions (CamelCase, snake_case, kebab-case) to consistent format
 - `binary.py`: Binary file detection utilities
 - `decode.py`: Auto-decoding utilities with `auto_decode()` for handling various encodings
 - `jinja2.py`: Jinja2 environment utilities
-  - `add_builtins_to_env()`: Adds built-in functions to Jinja2 environment
-  - `add_settings_for_env()`: Configures Jinja2 environment settings
+    - `add_builtins_to_env()`: Adds built-in functions to Jinja2 environment
+    - `add_settings_for_env()`: Configures Jinja2 environment settings
 - `json.py`: JSON operation interface with `IJsonOp` for serialization
 
 ### Key Architectural Patterns
 
 **Three-Stage Pipeline**: DSL Text → AST Nodes → State Machine Model → Generated Code
 
-**Template System**: Uses Jinja2 with custom filters and expression styles defined in `config.yaml`. The `expr_styles` configuration enables cross-language expression rendering (e.g., DSL expressions can be rendered as C, Python, or other target languages).
+**Template System**: Uses Jinja2 with custom filters and expression styles defined in `config.yaml`. The `expr_styles`
+configuration enables cross-language expression rendering (e.g., DSL expressions can be rendered as C, Python, or other
+target languages).
 
-**Hierarchical State Machines**: Supports nested states with lifecycle actions (`enter`, `during`, `exit`) and aspect-oriented programming through `>> during before/after` actions that execute relative to child states.
+**Hierarchical State Machines**: Supports nested states with lifecycle actions (`enter`, `during`, `exit`) and
+aspect-oriented programming through `>> during before/after` actions that execute relative to child states.
 
-**Event Scoping**: Three event types - local events (`::` scoped to source state), global events (`:` or `/` scoped from root), and chain events (`:` scoped to parent).
+**Event Scoping**: Three event types - local events (`::` scoped to source state), global events (`:` or `/` scoped from
+root), and chain events (`:` scoped to parent).
 
 ## DSL Language Reference
 
-The pyfcstm DSL (`.fcstm` files) is a domain-specific language for defining hierarchical finite state machines. It combines state definitions, transitions, events, and expressions into a concise, readable format.
+The pyfcstm DSL (`.fcstm` files) is a domain-specific language for defining hierarchical finite state machines. It
+combines state definitions, transitions, events, and expressions into a concise, readable format.
 
 ### Variable Definitions
 
@@ -202,12 +223,14 @@ Supported types: `int`, `float`
 ### State Definitions
 
 **Leaf States** (no nested states):
+
 ```
 state Idle;                      // Simple leaf state
 state Running;                   // Another leaf state
 ```
 
 **Composite States** (with nested states):
+
 ```
 state Active {
     state Processing;
@@ -218,11 +241,13 @@ state Active {
 ```
 
 **Pseudo States** (leaf states that skip ancestor aspect actions):
+
 ```
 pseudo state SpecialState;       // Won't execute parent's >> during actions
 ```
 
 **Named States** (with display names for documentation):
+
 ```
 state Running named "System Running";
 state Error named "Error State";
@@ -231,6 +256,7 @@ state Error named "Error State";
 ### Transitions
 
 **Basic Transitions**:
+
 ```
 StateA -> StateB;                // Simple transition
 StateA -> StateB :: EventName;   // Transition with local event
@@ -238,6 +264,7 @@ StateA -> StateB : /GlobalEvent; // Transition with global event
 ```
 
 **Entry and Exit Transitions**:
+
 ```
 [*] -> InitialState;             // Entry transition (from pseudo-initial state)
 FinalState -> [*];               // Exit transition (to pseudo-final state)
@@ -245,6 +272,7 @@ FinalState -> [*];               // Exit transition (to pseudo-final state)
 ```
 
 **Forced Transitions** (bypass source state's exit action):
+
 ```
 !ErrorState -> [*] :: FatalError;     // Forced exit
 !Running -> SafeMode :: Emergency;    // Forced transition
@@ -252,6 +280,7 @@ FinalState -> [*];               // Exit transition (to pseudo-final state)
 ```
 
 **Transitions with Guard Conditions**:
+
 ```
 Idle -> Active : if [counter >= 10];
 Active -> Idle : if [temperature < 20.0];
@@ -259,6 +288,7 @@ StateA -> StateB : if [flags & 0x01];  // Bitwise operations
 ```
 
 **Transitions with Effects** (execute operations on transition):
+
 ```
 Idle -> Running effect {
     counter = 0;
@@ -271,6 +301,7 @@ Running -> Idle :: Stop effect {
 ```
 
 **Combined Guard and Effect**:
+
 ```
 StateA -> StateB : if [counter < 100] effect {
     counter = counter + 1;
@@ -280,18 +311,21 @@ StateA -> StateB : if [counter < 100] effect {
 ### Event Scoping
 
 **Local Events** (`::` - scoped to source state):
+
 ```
 StateA -> StateB :: LocalEvent;
 // Event is scoped as StateA.LocalEvent
 ```
 
 **Global Events** (`:` or `/` - scoped from root):
+
 ```
 StateA -> StateB : /GlobalEvent;
 // Event is scoped from root as GlobalEvent
 ```
 
 **Chain Events** (`:` - relative to parent):
+
 ```
 StateA -> StateB : Parent.ChildEvent;
 // Event is scoped relative to parent state
@@ -300,6 +334,7 @@ StateA -> StateB : Parent.ChildEvent;
 ### Lifecycle Actions
 
 **Enter Actions** (executed when entering a state):
+
 ```
 state Active {
     enter {
@@ -310,6 +345,7 @@ state Active {
 ```
 
 **During Actions** (executed while in a state):
+
 ```
 state Running {
     during {
@@ -319,6 +355,7 @@ state Running {
 ```
 
 **Exit Actions** (executed when leaving a state):
+
 ```
 state Active {
     exit {
@@ -328,6 +365,7 @@ state Active {
 ```
 
 **Aspect Actions for Composite States** (`before` or `after` child state actions):
+
 ```
 state Parent {
     // For composite states, specify before/after
@@ -348,6 +386,7 @@ state Parent {
 ```
 
 **Aspect Actions at Root Level** (`>>` - applies to all descendant states):
+
 ```
 state Root {
     >> during before {
@@ -401,6 +440,7 @@ state StateB {
 ### Expression System
 
 **Arithmetic Operators**:
+
 ```
 counter = 10 + 5;
 result = a * b - c / d;
@@ -409,6 +449,7 @@ modulo = value % 10;
 ```
 
 **Bitwise Operators**:
+
 ```
 flags = 0xFF & 0x0F;             // AND
 flags = flags | 0x01;            // OR
@@ -418,6 +459,7 @@ shifted = value >> 1;            // Right shift
 ```
 
 **Comparison Operators** (in guard conditions):
+
 ```
 StateA -> StateB : if [counter >= 10];
 StateA -> StateB : if [temp < 20.0];
@@ -426,6 +468,7 @@ StateA -> StateB : if [status != 0];
 ```
 
 **Logical Operators** (in guard conditions):
+
 ```
 StateA -> StateB : if [counter > 10 && temp < 30];
 StateA -> StateB : if [flag1 || flag2];
@@ -436,12 +479,14 @@ StateA -> StateB : if [not error_flag];              // 'not' keyword
 ```
 
 **Ternary Conditional Expressions**:
+
 ```
 result = (condition) ? value_if_true : value_if_false;
 counter = (temp > 25) ? 1 : 0;
 ```
 
 **Function Calls**:
+
 ```
 result = sin(angle);
 value = sqrt(x * x + y * y);
@@ -523,20 +568,84 @@ state System {
 ### Key DSL Concepts
 
 **Hierarchical State Execution Order**:
-1. Parent's `enter` action
-2. Child's `enter` action
-3. Parent's `during before` action (if composite)
-4. Child's `during` action
-5. Parent's `during after` action (if composite)
-6. Child's `exit` action
-7. Parent's `exit` action
+
+When a leaf state is active in a hierarchical state machine, the execution order follows a precise sequence that
+combines ancestor aspect actions with the leaf state's own actions. Here's a complete example:
+
+```
+def int log_counter = 0;
+
+state System {
+    >> during before {
+        log_counter = log_counter + 1;  // Executes for ALL leaf states
+    }
+
+    >> during after {
+        log_counter = log_counter + 100;  // Executes for ALL leaf states
+    }
+
+    state SubSystem {
+        during before {
+            log_counter = log_counter + 10;  // Executes for SubSystem's children
+        }
+
+        during after {
+            log_counter = log_counter + 1000;  // Executes for SubSystem's children
+        }
+
+        state Active {
+            during {
+                log_counter = log_counter + 50;  // Leaf state's own action
+            }
+        }
+
+        state Idle;
+
+        [*] -> Active;
+    }
+
+    [*] -> SubSystem;
+}
+```
+
+**Execution order when `System.SubSystem.Active` is the active leaf state**:
+
+1. **Entry Phase** (when entering the state hierarchy):
+    - `System` enter actions execute first
+    - `SubSystem` enter actions execute second
+    - `Active` enter actions execute last
+
+2. **During Phase** (while `Active` is active):
+    - `System >> during before` executes: `log_counter = log_counter + 1` → `log_counter = 1`
+    - `Active during` executes: `log_counter = log_counter + 50` → `log_counter = 51`
+    - `System >> during after` executes: `log_counter = log_counter + 100` → `log_counter = 151`
+    - Note: `SubSystem during before/after` do NOT execute during the leaf state's `during` phase. They only execute
+      when transitioning between child states.
+
+3. **Exit Phase** (when leaving the state hierarchy):
+    - `Active` exit actions execute first
+    - `SubSystem` exit actions execute second
+    - `System` exit actions execute last
+
+**Key Points**:
+
+- Aspect actions (`>> during before/after`) apply to all descendant leaf states and execute during the leaf's `during`
+  phase
+- Composite state actions (`during before/after`) only execute when transitioning between child states, NOT during a
+  leaf state's `during` phase
+- Execution flows from root to leaf for `before`, and leaf to root for `after`
+- Multiple actions at the same level execute in definition order
 
 **Aspect-Oriented Programming**:
+
 - `>> during before/after` actions provide cross-cutting concerns
-- Applied to all descendant states unless marked as `pseudo state`
+- Applied to all descendant leaf states unless marked as `pseudo state`
 - Enables separation of monitoring, logging, or validation logic
+- Aspect actions execute in hierarchical order (root to leaf) for `before`, and (leaf to root) for `after`
+- Multiple aspect actions at the same level execute in definition order
 
 **Event Namespace Resolution**:
+
 - `::` creates events in source state's namespace
 - `:` or `/` references events from root or parent namespaces
 - Enables hierarchical event organization and reuse
@@ -546,6 +655,7 @@ state System {
 ### ANTLR Grammar Modifications
 
 When modifying `pyfcstm/dsl/grammar/Grammar.g4`:
+
 1. Ensure Java is installed
 2. Run `make antlr` to download ANTLR jar (only needed once)
 3. Run `make antlr_build` to regenerate parser code
@@ -555,11 +665,13 @@ When modifying `pyfcstm/dsl/grammar/Grammar.g4`:
 ### Template Development
 
 Template directories must contain:
+
 - `config.yaml`: Defines `expr_styles`, `globals`, `filters`, and `ignores`
 - `.j2` files: Jinja2 templates with access to the state machine model
 - Static files: Copied directly to output (preserve directory structure)
 
 Key model objects in templates:
+
 - `model`: Root state machine object
 - `model.walk_states()`: Iterator over all states
 - `state.name`, `state.is_leaf_state`, `state.transitions`, `state.parent`
@@ -578,6 +690,7 @@ Use `{{ expr | expr_render(style='c') }}` to render expressions in target langua
 ### Dependencies
 
 Core runtime dependencies (see `requirements.txt`):
+
 - `antlr4-python3-runtime==4.9.3`: Parser runtime
 - `jinja2>=3`: Template engine
 - `pyyaml`: Configuration parsing

@@ -358,11 +358,12 @@ state System {
 
 **During Phase** (while `Active` is active):
 
-1. `SubSystem during before` executes: `log_counter = log_counter + 10` → `log_counter = 11`
-2. `System >> during before` executes: `log_counter = log_counter + 1` → `log_counter = 1`
-3. `Active during` executes: `log_counter = log_counter + 50` → `log_counter = 61`
-4. `System >> during after` executes: `log_counter = log_counter + 100` → `log_counter = 1161`
-5. `SubSystem during after` executes: `log_counter = log_counter + 1000` → `log_counter = 1061`
+1. `System >> during before` executes: `log_counter = log_counter + 1` → `log_counter = 1`
+2. `Active during` executes: `log_counter = log_counter + 50` → `log_counter = 51`
+3. `System >> during after` executes: `log_counter = log_counter + 100` → `log_counter = 151`
+
+Note: `SubSystem during before/after` do NOT execute during the leaf state's `during` phase. They only execute when
+transitioning between child states.
 
 **Exit Phase** (when leaving the state hierarchy):
 
@@ -372,8 +373,10 @@ state System {
 
 **Key Points**:
 
-- Aspect actions (`>> during before/after`) apply to all descendant leaf states
-- Composite state actions (`during before/after`) apply only to direct children
+- Aspect actions (`>> during before/after`) apply to all descendant leaf states and execute during the leaf's `during`
+  phase
+- Composite state actions (`during before/after`) only execute when transitioning between child states, NOT during a
+  leaf state's `during` phase
 - Execution flows from root to leaf for `before`, and leaf to root for `after`
 - Multiple actions at the same level execute in definition order
 

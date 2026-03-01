@@ -307,6 +307,76 @@ composite state's lifecycle actions (`enter`, `during`, `exit`) are executed rel
 The `>> during before/after` aspect actions provide a powerful mechanism for **Aspect-Oriented Programming (AOP)**
 within the state machine, enabling logic to be injected before or after the substate's transitions or actions.
 
+#### Action Execution Order
+
+When a leaf state is active in a hierarchical state machine, actions execute in a precise sequence. Here's a complete
+example:
+
+```
+def int log_counter = 0;
+
+state System {
+    >> during before {
+        log_counter = log_counter + 1;  // Executes for ALL leaf states
+    }
+
+    >> during after {
+        log_counter = log_counter + 100;  // Executes for ALL leaf states
+    }
+
+    state SubSystem {
+        during before {
+            log_counter = log_counter + 10;  // Executes for SubSystem's children
+        }
+
+        during after {
+            log_counter = log_counter + 1000;  // Executes for SubSystem's children
+        }
+
+        state Active {
+            during {
+                log_counter = log_counter + 50;  // Leaf state's own action
+            }
+        }
+
+        state Idle;
+
+        [*] -> Active;
+    }
+
+    [*] -> SubSystem;
+}
+```
+
+**Execution order when `System.SubSystem.Active` is the active leaf state**:
+
+**Entry Phase** (when entering the state hierarchy):
+
+1. `System` enter actions execute first
+2. `SubSystem` enter actions execute second
+3. `Active` enter actions execute last
+
+**During Phase** (while `Active` is active):
+
+1. `SubSystem during before` executes: `log_counter = log_counter + 10` → `log_counter = 11`
+2. `System >> during before` executes: `log_counter = log_counter + 1` → `log_counter = 1`
+3. `Active during` executes: `log_counter = log_counter + 50` → `log_counter = 61`
+4. `System >> during after` executes: `log_counter = log_counter + 100` → `log_counter = 1161`
+5. `SubSystem during after` executes: `log_counter = log_counter + 1000` → `log_counter = 1061`
+
+**Exit Phase** (when leaving the state hierarchy):
+
+1. `Active` exit actions execute first
+2. `SubSystem` exit actions execute second
+3. `System` exit actions execute last
+
+**Key Points**:
+
+- Aspect actions (`>> during before/after`) apply to all descendant leaf states
+- Composite state actions (`during before/after`) apply only to direct children
+- Execution flows from root to leaf for `before`, and leaf to root for `after`
+- Multiple actions at the same level execute in definition order
+
 #### Event Scoping
 
 Transitions can be triggered by events with different scopes:

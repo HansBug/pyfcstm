@@ -24,10 +24,25 @@
 [![Contributors](https://img.shields.io/github/contributors/hansbug/pyfcstm)](https://github.com/hansbug/pyfcstm/graphs/contributors)
 [![GitHub license](https://img.shields.io/github/license/hansbug/pyfcstm)](https://github.com/hansbug/pyfcstm/blob/master/LICENSE)
 
-**pyfcstm** is a powerful **Python framework** designed for parsing a **Finite State Machine (FSM) Domain-Specific
-Language (DSL)** and generating executable code in multiple target languages based on user-defined templates. It focuses
-on modeling **Hierarchical State Machines (Harel Statecharts)** and automating code generation, making it ideal for
-developing embedded systems, protocol implementations, and complex control logic.
+**pyfcstm** is a powerful **Python framework** for parsing **Finite State Machine (FSM) Domain-Specific Language (DSL)**
+and generating executable code in multiple target languages. It specializes in modeling **Hierarchical State Machines (
+Harel Statecharts)** with a flexible Jinja2-based template system, making it ideal for embedded systems, protocol
+implementations, game AI, workflow engines, and complex control logic.
+
+## Table of Contents
+
+- [Core Features](#core-features)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+    - [CLI Usage](#1-using-the-command-line-interface-cli)
+    - [Python API](#2-using-the-python-api)
+    - [Example DSL Code](#3-example-dsl-code-traffic-light-example)
+- [DSL Syntax Overview](#dsl-syntax-overview)
+- [Template System](#code-generation-template-system)
+- [Use Cases](#use-cases)
+- [Documentation](#documentation)
+- [Contributing](#contribution--support)
+- [License](#license)
 
 ## Core Features
 
@@ -44,16 +59,38 @@ pyfcstm aims to provide a complete solution from conceptual design to code imple
 
 ## Installation
 
-You can easily install pyfcstm using the `pip` command line from the official PyPI site:
+### Basic Installation
+
+Install pyfcstm from PyPI using pip:
 
 ```shell
 pip install pyfcstm
 ```
 
-**More Information**: Please refer to
+### Development Installation
+
+For development work, clone the repository and install with development dependencies:
+
+```shell
+git clone https://github.com/HansBug/pyfcstm.git
+cd pyfcstm
+pip install -r requirements.txt
+pip install -r requirements-dev.txt
+pip install -r requirements-test.txt
+```
+
+### Verify Installation
+
+After installation, verify that pyfcstm is working correctly:
+
+```shell
+pyfcstm --version
+pyfcstm --help
+```
+
+**More Information**: See
 the [Installation Documentation](https://pyfcstm.readthedocs.io/en/latest/tutorials/installation/index.html) for
-detailed steps and environment
-checks.
+detailed steps and environment requirements.
 
 ## Quick Start
 
@@ -89,48 +126,76 @@ pyfcstm generate -i test_dsl_code.fcstm -t template_dir/ -o generated_code_dir/
 
 ### 2. Using the Python API
 
-You can also use pyfcstm's core API directly within your Python projects for custom parsing and rendering workflows.
+You can integrate pyfcstm directly into your Python projects for custom parsing and rendering workflows.
+
+#### Basic API Usage
 
 ```python
 from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model.model import parse_dsl_node_to_state_machine
 from pyfcstm.render import StateMachineCodeRenderer
 
-# 1. Define or load the DSL code
+# 1. Load DSL code from file or string
+with open('state_machine.fcstm', 'r') as f:
+    dsl_code = f.read()
+
+# 2. Parse the DSL code to generate an Abstract Syntax Tree (AST)
+ast_node = parse_with_grammar_entry(dsl_code, entry_name='state_machine_dsl')
+
+# 3. Convert the AST into a State Machine Model
+model = parse_dsl_node_to_state_machine(ast_node)
+
+# 4. Initialize the renderer with your template directory
+renderer = StateMachineCodeRenderer(template_dir='./my_templates')
+
+# 5. Render the model to generate code
+renderer.render(model, output_dir='./generated_code')
+```
+
+#### Advanced API Usage
+
+```python
+from pyfcstm.dsl import parse_with_grammar_entry
+from pyfcstm.model.model import parse_dsl_node_to_state_machine
+
+# Parse DSL
 dsl_code = """
-def int a = 0;
-def int b = 0x0;
-def int round_count = 0;  // define variables
-state TrafficLight {
-    // ... state and transition definitions ...
-    state Red {
-        during {
-            a = 0x1 << 2;
-        }
-    }
-    state Yellow;
-    state Green;
-    [*] -> Red :: Start effect {
-        b = 0x1;
-    };
-    // ... more transitions ...
+def int counter = 0;
+state MyStateMachine {
+    state Idle;
+    state Active;
+    [*] -> Idle;
+    Idle -> Active :: Start;
 }
 """
 
-if __name__ == '__main__':
-    # 2. Parse the DSL code to generate an Abstract Syntax Tree (AST)
-    ast_node = parse_with_grammar_entry(dsl_code, entry_name='state_machine_dsl')
+ast_node = parse_with_grammar_entry(dsl_code, entry_name='state_machine_dsl')
+model = parse_dsl_node_to_state_machine(ast_node)
 
-    # 3. Convert the AST into a State Machine Model
-    model = parse_dsl_node_to_state_machine(ast_node)
+# Explore the model programmatically
+print(f"State machine name: {model.name}")
+print(f"Variables: {[var.name for var in model.variables]}")
 
-    # 4. Initialize the renderer and specify the template directory
-    renderer = StateMachineCodeRenderer(
-        template_dir='../fsm_generation_template'
-    )
+# Iterate through all states
+for state in model.walk_states():
+    print(f"State: {state.name}, Is leaf: {state.is_leaf_state}")
 
-    # 5. Render the model to generate code in the specified directory
-    renderer.render(model, 'test_output_x')
+    # Access transitions
+    for transition in state.transitions:
+        print(f"  Transition: {transition.from_state.name} -> {transition.to_state.name}")
+        if transition.event:
+            print(f"    Event: {transition.event.name}")
+        if transition.guard:
+            print(f"    Guard: {transition.guard}")
+
+# Export to PlantUML
+plantuml_code = model.export_to_plantuml()
+with open('diagram.puml', 'w') as f:
+    f.write(plantuml_code)
+
+# Export back to DSL
+dsl_export = model.export_to_dsl()
+print(dsl_export)
 ```
 
 ### 3. Example DSL Code (Traffic Light Example)
@@ -323,22 +388,65 @@ void {{ state.name }}_enter() {
 {% endfor %}
 ```
 
-**More Information**: Please refer to
-the [Template Syntax Deep Analysis](https://pyfcstm.readthedocs.io/en/latest/tutorials/render/index.html) for a
-comprehensive guide on
-template development.
+**More Information**:
+See [Template Syntax Deep Analysis](https://pyfcstm.readthedocs.io/en/latest/tutorials/render/index.html) for a
+comprehensive guide on template development.
+
+## Use Cases
+
+pyfcstm is designed for a wide range of applications where state machines are essential:
+
+### Embedded Systems
+
+- **Firmware Development**: Generate C/C++ code for microcontrollers and embedded devices
+- **Real-Time Systems**: Model complex control logic with hierarchical states and timing constraints
+- **Hardware State Machines**: Design and implement hardware control sequences
+
+### Protocol Implementation
+
+- **Network Protocols**: Implement TCP/IP, HTTP, WebSocket, or custom protocol state machines
+- **Communication Protocols**: Model serial communication, CAN bus, or industrial protocols
+- **Parser State Machines**: Build lexers and parsers for custom data formats
+
+### Game Development
+
+- **AI Behavior**: Create NPC behavior trees and decision-making systems
+- **Game State Management**: Manage game modes, menus, and gameplay states
+- **Animation Controllers**: Control character animations and transitions
+
+### Workflow Engines
+
+- **Business Process Automation**: Model approval workflows and business logic
+- **Task Orchestration**: Coordinate multi-step processes and dependencies
+- **State-Based Applications**: Build applications with complex state transitions
+
+### IoT and Robotics
+
+- **Robot Control**: Implement robot behavior and navigation logic
+- **Smart Device Logic**: Model IoT device states and interactions
+- **Sensor Fusion**: Coordinate multiple sensors and actuators
+
+## Documentation
+
+- **Full Documentation**: [https://pyfcstm.readthedocs.io/](https://pyfcstm.readthedocs.io/)
+- **DSL Syntax Tutorial**: [DSL Reference](https://pyfcstm.readthedocs.io/en/latest/tutorials/dsl/index.html)
+- **Template System Guide**: [Template Tutorial](https://pyfcstm.readthedocs.io/en/latest/tutorials/render/index.html)
+- **CLI Reference**: [CLI Guide](https://pyfcstm.readthedocs.io/en/latest/tutorials/cli/index.html)
+- **API Documentation**: [API Reference](https://pyfcstm.readthedocs.io/en/latest/api/index.html)
 
 ## Contribution & Support
 
-pyfcstm is an open-source project, and contributions in all forms are welcome:
+pyfcstm is an open-source project under the LGPLv3 license, and contributions are welcome:
 
-* **Report Bugs**: If you find any issues, please submit them
-  on [GitHub Issues](https://github.com/hansbug/pyfcstm/issues).
-* **Submit Pull Requests**: Code improvements, new features, or documentation updates are highly appreciated.
-* **Suggest Features**: Feel free to discuss any feature suggestions or improvement ideas in the Issues section.
-
-**Documentation**: [https://pyfcstm.readthedocs.io/](https://pyfcstm.readthedocs.io/)
+- **Report Bugs**: Submit issues on [GitHub Issues](https://github.com/hansbug/pyfcstm/issues)
+- **Submit Pull Requests**: See [CONTRIBUTING.md](https://github.com/hansbug/pyfcstm/blob/master/CONTRIBUTING.md) for
+  guidelines
+- **Suggest Features**: Discuss feature ideas in the Issues section
+- **Ask Questions**: Use GitHub Discussions or Issues for questions
 
 **Source Code**: [https://github.com/HansBug/pyfcstm](https://github.com/HansBug/pyfcstm)
 
-**License**: [MIT License](https://github.com/hansbug/pyfcstm/blob/master/LICENSE)
+## License
+
+This project is licensed under
+the [GNU Lesser General Public License v3 (LGPLv3)](https://github.com/hansbug/pyfcstm/blob/master/LICENSE).

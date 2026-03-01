@@ -309,76 +309,108 @@ within the state machine, enabling logic to be injected before or after the subs
 
 #### Action Execution Order
 
-When a leaf state is active in a hierarchical state machine, actions execute in a precise sequence. Here's a complete
-example:
+Understanding how actions execute in hierarchical state machines is crucial for building correct state machine logic.
+The execution order differs significantly between **leaf states** (states with no children) and **composite states** (
+states with children).
+
+Here's a complete example demonstrating the execution order:
 
 ```
 def int log_counter = 0;
 
 state System {
+    // Aspect actions with >> apply to ALL descendant leaf states
+    // These execute during the leaf state's "during" phase
     >> during before {
-        log_counter = log_counter + 1;  // Executes for ALL leaf states
+        log_counter = log_counter + 1;  // Executes for ALL leaf states (Active, Idle)
     }
 
     >> during after {
-        log_counter = log_counter + 100;  // Executes for ALL leaf states
+        log_counter = log_counter + 100;  // Executes for ALL leaf states (Active, Idle)
     }
 
     state SubSystem {
+        // Composite state actions (without >>) execute when entering/exiting child states
+        // during before: executes AFTER SubSystem.enter but BEFORE entering any child state
+        // during after: executes AFTER exiting from a child state but BEFORE SubSystem.exit
         during before {
-            log_counter = log_counter + 10;  // Executes for SubSystem's children
+            log_counter = log_counter + 10;  // Executes BEFORE entering child state (Active)
         }
 
         during after {
-            log_counter = log_counter + 1000;  // Executes for SubSystem's children
+            log_counter = log_counter + 1000;  // Executes AFTER exiting from child state (Active)
         }
 
         state Active {
+            // Leaf state's own during action
             during {
-                log_counter = log_counter + 50;  // Leaf state's own action
+                log_counter = log_counter + 50;  // Executes every cycle while Active is the current state
             }
         }
 
         state Idle;
 
         [*] -> Active;
+
+        Active -> Idle : if [log_counter >= 10000];  // Transition between child states
     }
 
     [*] -> SubSystem;
 }
 ```
 
-**Execution order when `System.SubSystem.Active` is the active leaf state**:
+**Complete Execution Order for `System.SubSystem.Active`**:
 
-**Entry Phase** (when entering the state hierarchy):
+When entering and executing the leaf state `System.SubSystem.Active`, the complete execution sequence is:
 
-1. `System` enter actions execute first
-2. `SubSystem` enter actions execute second
-3. `Active` enter actions execute last
+**Entry Phase** (entering the state hierarchy):
 
-**During Phase** (while `Active` is active):
+1. `System.enter` - Root state enter actions
+2. `SubSystem.enter` - Composite state enter actions
+3. `SubSystem.during before` - Composite state's before action (executes BEFORE entering child)
+4. `Active.enter` - Leaf state enter actions
 
-1. `System >> during before` executes: `log_counter = log_counter + 1` → `log_counter = 1`
-2. `Active during` executes: `log_counter = log_counter + 50` → `log_counter = 51`
-3. `System >> during after` executes: `log_counter = log_counter + 100` → `log_counter = 151`
+**During Phase** (each cycle while `Active` remains the active leaf state):
 
-Note: `SubSystem during before/after` do NOT execute during the leaf state's `during` phase. They only execute when
-transitioning between child states.
+1. `System >> during before` - Aspect action from root (executes for ALL leaf states)
+2. `Active.during` - Leaf state's own during action
+3. `System >> during after` - Aspect action from root (executes for ALL leaf states)
 
-**Exit Phase** (when leaving the state hierarchy):
+Note: `SubSystem.during before/after` do **NOT** execute during the leaf state's `during` phase.
 
-1. `Active` exit actions execute first
-2. `SubSystem` exit actions execute second
-3. `System` exit actions execute last
+**Exit Phase** (leaving the state hierarchy):
 
-**Key Points**:
+1. `Active.exit` - Leaf state exit actions
+2. `SubSystem.during after` - Composite state's after action (executes AFTER exiting from child)
+3. `SubSystem.exit` - Composite state exit actions
+4. `System.exit` - Root state exit actions
 
-- Aspect actions (`>> during before/after`) apply to all descendant leaf states and execute during the leaf's `during`
-  phase
-- Composite state actions (`during before/after`) only execute when transitioning between child states, NOT during a
-  leaf state's `during` phase
-- Execution flows from root to leaf for `before`, and leaf to root for `after`
-- Multiple actions at the same level execute in definition order
+**Key Concepts**:
+
+**Aspect Actions (`>> during before/after`)**:
+
+- Apply to **all descendant leaf states** in the hierarchy
+- Execute during the **leaf state's `during` phase** (every cycle)
+- Flow from root to leaf for `before`, leaf to root for `after`
+- Enable cross-cutting concerns like logging, monitoring, validation
+
+**Composite State Actions (`during before/after` without `>>`)**:
+
+- `during before`: Executes AFTER composite state's `enter` but BEFORE entering any child state
+- `during after`: Executes AFTER exiting from a child state but BEFORE composite state's `exit`
+- Do **NOT** execute during a leaf state's `during` phase
+- Used for setup/cleanup when entering/exiting the composite state hierarchy
+
+**Leaf State Actions (`during`)**:
+
+- Execute every cycle while the leaf state is active
+- Sandwiched between ancestor aspect `before` and `after` actions
+
+**Execution Flow Summary**:
+
+- **Entry**: `State.enter` → `State.during before` → `Child.enter`
+- **During** (each cycle): Aspect `>> during before` → Leaf `during` → Aspect `>> during after`
+- **Exit**: `Child.exit` → `State.during after` → `State.exit`
 
 #### Event Scoping
 

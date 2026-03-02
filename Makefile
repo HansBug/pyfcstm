@@ -62,9 +62,9 @@ unittest:
 docs:
 	$(MAKE) -C "${DOC_DIR}" build
 docs_en:
-	SPHINX_LANGUAGE=en $(MAKE) -C "${DOC_DIR}" build
+	READTHEDOCS_LANGUAGE=en $(MAKE) -C "${DOC_DIR}" build
 docs_zh:
-	SPHINX_LANGUAGE=zh $(MAKE) -C "${DOC_DIR}" build
+	READTHEDOCS_LANGUAGE=zh_CN $(MAKE) -C "${DOC_DIR}" build
 pdocs:
 	$(MAKE) -C "${DOC_DIR}" prod
 

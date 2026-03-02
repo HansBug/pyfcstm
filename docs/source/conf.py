@@ -126,8 +126,8 @@ templates_path = ['_templates']
 #
 # ReadTheDocs sets this automatically based on the project's language configuration.
 # For local builds, allow override via environment variable.
-SPHINX_LANGUAGE = os.environ.get('SPHINX_LANGUAGE', 'en')
-language = SPHINX_LANGUAGE
+READTHEDOCS_LANGUAGE = os.environ.get('READTHEDOCS_LANGUAGE', 'en')
+language = READTHEDOCS_LANGUAGE
 
 _source_index = os.path.join(_DOC_PATH, f'index_{language}.rst')
 _target_index = os.path.join(_DOC_PATH, 'index.rst')

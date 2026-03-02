@@ -764,3 +764,255 @@ Core runtime dependencies (see `requirements.txt`):
 - `pathspec`: Git-like pattern matching for ignores
 
 Development requires `ruff` for formatting (see `requirements-dev.txt`).
+
+### Documentation Editing
+
+The documentation system uses Sphinx with a sophisticated build pipeline that automatically generates derived resources from source files. Understanding this pipeline is critical to avoid editing generated files that will be overwritten.
+
+#### Documentation Structure
+
+Documentation source files are in `docs/source/` with the following organization:
+
+- `*.rst` files: ReStructuredText documentation pages
+- `*.md` files: Markdown documentation pages
+- `*.mk` files: Makefile fragments defining resource generation rules
+- `conf.py`: Sphinx configuration
+- Subdirectories: `tutorials/`, `information/`, `api_doc/`, etc.
+
+#### Resource Generation Pipeline
+
+The documentation build system uses multiple Makefile fragments (`*.mk`) to define generation rules for different resource types. These rules create a dependency chain where source files generate intermediate files, which in turn generate final output files.
+
+**CRITICAL RULE**: Always edit source files only. Never edit generated files directly, as they will be overwritten during the next build.
+
+#### Generation Rules by File Type
+
+**1. FSM DSL to Diagrams** (`fcstms.mk`)
+
+Source files with `.fcstm` extension generate PlantUML and image files:
+
+```
+*.fcstm → *.fcstm.puml → *.fcstm.puml.png
+                       → *.fcstm.puml.svg
+```
+
+- **Edit**: `*.fcstm` files only
+- **Generated** (do not edit): `*.fcstm.puml`, `*.fcstm.puml.png`, `*.fcstm.puml.svg`
+- **Commands**:
+  - `make -f docs/source/fcstms.mk SOURCE=docs/source build` - Generate all FSM diagrams
+  - `make -f docs/source/fcstms.mk SOURCE=docs/source clean` - Remove generated files
+
+**2. PlantUML to Images** (`diagrams.mk`)
+
+Standalone PlantUML files (not generated from `.fcstm`) generate image files:
+
+```
+*.puml → *.puml.png
+       → *.puml.svg
+```
+
+- **Edit**: `*.puml` files only (unless they have `.fcstm.puml` extension, which are generated)
+- **Generated** (do not edit): `*.puml.png`, `*.puml.svg`
+- **Commands**:
+  - `make -f docs/source/diagrams.mk SOURCE=docs/source build` - Generate PlantUML images
+  - `make -f docs/source/diagrams.mk SOURCE=docs/source clean` - Remove generated images
+
+**3. Graphviz to Images** (`graphviz.mk`)
+
+Graphviz DOT files generate image files:
+
+```
+*.gv → *.gv.png
+     → *.gv.svg
+```
+
+- **Edit**: `*.gv` files only
+- **Generated** (do not edit): `*.gv.png`, `*.gv.svg`
+- **Commands**:
+  - `make -f docs/source/graphviz.mk SOURCE=docs/source build` - Generate Graphviz images
+  - `make -f docs/source/graphviz.mk SOURCE=docs/source clean` - Remove generated images
+
+**4. Demo Scripts to Output** (`demos.mk`)
+
+Python and shell demo scripts generate output files:
+
+```
+*.demo.py → *.demo.py.txt
+*.demox.py → *.demox.py.txt + *.demox.py.err + *.demox.py.exitcode
+*.plot.py → *.plot.py.svg
+*.demo.sh → *.demo.sh.txt
+*.demox.sh → *.demox.sh.txt + *.demox.sh.err + *.demox.sh.exitcode
+```
+
+- **Edit**: `*.demo.py`, `*.demox.py`, `*.plot.py`, `*.demo.sh`, `*.demox.sh` files only
+- **Generated** (do not edit): `*.py.txt`, `*.py.err`, `*.py.exitcode`, `*.py.svg`, `*.sh.txt`, `*.sh.err`, `*.sh.exitcode`
+- **Commands**:
+  - `make -f docs/source/demos.mk SOURCE=docs/source build` - Run all demo scripts
+  - `make -f docs/source/demos.mk SOURCE=docs/source clean` - Remove generated outputs
+  - `make -f docs/source/demos.mk SOURCE=docs/source cleanplt` - Remove plot outputs only
+
+**5. Jupyter Notebooks** (`notebook.mk`)
+
+Jupyter notebooks generate executed versions:
+
+```
+*.ipynb → *.result.ipynb
+```
+
+- **Edit**: `*.ipynb` files only (with outputs cleared)
+- **Generated** (do not edit): `*.result.ipynb`
+- **Commands**:
+  - `make -f docs/source/notebook.mk SOURCE=docs/source build` - Execute notebooks
+  - `make -f docs/source/notebook.mk SOURCE=docs/source clean` - Remove executed notebooks and clear outputs
+
+#### Unified Build Commands
+
+The `all.mk` file orchestrates all generation rules. Use these commands from `docs/source/`:
+
+```bash
+# Generate all resources (diagrams, demos, notebooks, etc.)
+make -f all.mk build
+
+# Clean all generated resources
+make -f all.mk clean
+
+# Clean plot outputs only
+make -f all.mk cleanplt
+
+# Install documentation dependencies
+make -f all.mk pip
+```
+
+From the `docs/` directory, use the main Makefile:
+
+```bash
+# Build HTML documentation (includes resource generation)
+make html
+
+# Build production documentation with versioning
+make prod
+
+# Generate resources only (without building HTML)
+make contents
+
+# Clean generated resources only
+make clean
+
+# Clean Sphinx build output only
+make doc_clean
+
+# Clean plot outputs only
+make cleanplt
+```
+
+#### Documentation Editing Workflow
+
+**When editing documentation**:
+
+1. **Identify the source file type** - Check if the file you want to edit is a source or generated file
+2. **Edit source files only** - Never edit files with extensions like `.fcstm.puml`, `.puml.png`, `.py.txt`, etc.
+3. **Regenerate derived files** - After editing source files, run the appropriate build command
+4. **Verify changes** - Check that generated files reflect your source changes
+
+**Example workflow for FSM diagrams**:
+
+```bash
+# 1. Edit the source FSM DSL file
+vim docs/source/tutorials/example.fcstm
+
+# 2. Regenerate PlantUML and images
+make -f docs/source/fcstms.mk SOURCE=docs/source build
+
+# 3. Build documentation to see results
+cd docs && make html
+
+# 4. View in browser
+open build/html/index.html
+```
+
+**Example workflow for PlantUML diagrams**:
+
+```bash
+# 1. Check if .puml file is generated from .fcstm
+ls docs/source/tutorials/example.fcstm  # If exists, edit this instead!
+
+# 2. If no .fcstm exists, edit .puml directly
+vim docs/source/tutorials/example.puml
+
+# 3. Regenerate images
+make -f docs/source/diagrams.mk SOURCE=docs/source build
+
+# 4. Build documentation
+cd docs && make html
+```
+
+**Example workflow for demo scripts**:
+
+```bash
+# 1. Edit the demo script
+vim docs/source/tutorials/example.demo.py
+
+# 2. Regenerate output
+make -f docs/source/demos.mk SOURCE=docs/source build
+
+# 3. Build documentation
+cd docs && make html
+```
+
+#### Common Pitfalls
+
+**DO NOT**:
+
+- Edit `*.fcstm.puml` files - these are generated from `*.fcstm` files
+- Edit `*.puml.png` or `*.puml.svg` files - these are generated from `*.puml` or `*.fcstm` files
+- Edit `*.gv.png` or `*.gv.svg` files - these are generated from `*.gv` files
+- Edit `*.py.txt`, `*.py.err`, `*.py.exitcode` files - these are generated from demo scripts
+- Edit `*.result.ipynb` files - these are generated from `*.ipynb` files
+- Commit generated files without regenerating them from source
+
+**DO**:
+
+- Edit `*.fcstm` files for FSM state machines
+- Edit `*.puml` files only if no corresponding `*.fcstm` file exists
+- Edit `*.gv` files for Graphviz diagrams
+- Edit `*.demo.py`, `*.plot.py`, `*.demo.sh` files for demos
+- Edit `*.ipynb` files for notebooks (with outputs cleared)
+- Run `make contents` before committing documentation changes
+- Verify that generated files are up-to-date with source files
+
+#### File Extension Reference
+
+**Source files** (edit these):
+- `.fcstm` - FSM DSL source
+- `.puml` - PlantUML source (only if not generated from `.fcstm`)
+- `.gv` - Graphviz DOT source
+- `.demo.py`, `.demox.py`, `.plot.py` - Python demo scripts
+- `.demo.sh`, `.demox.sh` - Shell demo scripts
+- `.ipynb` - Jupyter notebooks
+- `.rst`, `.md` - Documentation text
+
+**Generated files** (never edit):
+- `.fcstm.puml` - Generated from `.fcstm`
+- `.fcstm.puml.png`, `.fcstm.puml.svg` - Generated from `.fcstm.puml`
+- `.puml.png`, `.puml.svg` - Generated from `.puml`
+- `.gv.png`, `.gv.svg` - Generated from `.gv`
+- `.py.txt`, `.py.err`, `.py.exitcode`, `.py.svg` - Generated from demo scripts
+- `.sh.txt`, `.sh.err`, `.sh.exitcode` - Generated from shell scripts
+- `.result.ipynb` - Generated from `.ipynb`
+
+#### Dependencies
+
+Documentation generation requires:
+
+- `sphinx` and `sphinx-multiversion` - Documentation builder
+- `plantumlcli` - PlantUML command-line tool (for diagram generation)
+- `pyfcstm` - This package (for `.fcstm` to `.puml` conversion)
+- `graphviz` (`dot` command) - Graphviz renderer
+- `jupyter` and `nbconvert` - Notebook execution
+
+Install with:
+
+```bash
+pip install -r requirements.txt
+pip install -r requirements-doc.txt
+```

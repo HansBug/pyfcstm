@@ -591,15 +591,21 @@ state System {
     }
 
     state SubSystem {
-        // Composite state actions (without >>) execute when entering/exiting child states
-        // during before: executes AFTER SubSystem.enter but BEFORE entering any child state
-        // during after: executes AFTER exiting from a child state but BEFORE SubSystem.exit
+        // Composite state actions (without >>) execute ONLY when entering/exiting the composite state
+        // CRITICAL: during before/after are NOT triggered during child-to-child transitions!
+
+        // during before: executes ONLY on [*] -> Child (entering composite state from parent)
+        //                AFTER SubSystem.enter but BEFORE Child.enter
+        //                NOT executed on Child1 -> Child2 transitions
         during before {
-            log_counter = log_counter + 10;  // Executes BEFORE entering child state (Active)
+            log_counter = log_counter + 10;  // Only when entering from parent: [*] -> Active
         }
 
+        // during after: executes ONLY on Child -> [*] (exiting composite state to parent)
+        //               AFTER Child.exit but BEFORE SubSystem.exit
+        //               NOT executed on Child1 -> Child2 transitions
         during after {
-            log_counter = log_counter + 1000;  // Executes AFTER exiting from child state (Active)
+            log_counter = log_counter + 1000;  // Only when exiting to parent: Idle -> [*]
         }
 
         state Active {
@@ -609,11 +615,16 @@ state System {
             }
         }
 
-        state Idle;
+        state Idle {
+            during {
+                log_counter = log_counter + 5;
+            }
+        }
 
-        [*] -> Active;
-
-        Active -> Idle : if [log_counter >= 10000];  // Transition between child states
+        [*] -> Active;                        // Triggers SubSystem.during before
+        Active -> Idle :: Pause;              // Does NOT trigger during before/after
+        Idle -> Active :: Resume;             // Does NOT trigger during before/after
+        Idle -> [*] :: Stop;                  // Triggers SubSystem.during after
     }
 
     [*] -> SubSystem;
@@ -622,27 +633,39 @@ state System {
 
 **Complete Execution Order for `System.SubSystem.Active`**:
 
-When entering and executing the leaf state `System.SubSystem.Active`, the complete execution sequence is:
+**Scenario 1: Initial Entry** (`System.[*] -> SubSystem -> [*] -> Active`)
 
-**Entry Phase** (entering the state hierarchy):
+**Entry Phase**:
 
 1. `System.enter` - Root state enter actions
 2. `SubSystem.enter` - Composite state enter actions
-3. `SubSystem.during before` - Composite state's before action (executes BEFORE entering child)
+3. `SubSystem.during before` - **Triggered** (because `[*] -> Active`)
 4. `Active.enter` - Leaf state enter actions
 
-**During Phase** (each cycle while `Active` remains the active leaf state):
+**During Phase** (each cycle while `Active` remains active):
 
-1. `System >> during before` - Aspect action from root (executes for ALL leaf states)
+1. `System >> during before` - Aspect action (executes for ALL leaf states)
 2. `Active.during` - Leaf state's own during action
-3. `System >> during after` - Aspect action from root (executes for ALL leaf states)
+3. `System >> during after` - Aspect action (executes for ALL leaf states)
 
-Note: `SubSystem.during before/after` do **NOT** execute during the leaf state's `during` phase.
+Note: `SubSystem.during before/after` do **NOT** execute during the `during` phase.
 
-**Exit Phase** (leaving the state hierarchy):
+**Scenario 2: Child-to-Child Transition** (`Active -> Idle :: Pause`)
+
+**Transition Sequence**:
 
 1. `Active.exit` - Leaf state exit actions
-2. `SubSystem.during after` - Composite state's after action (executes AFTER exiting from child)
+2. (Transition effect, if any)
+3. `Idle.enter` - Leaf state enter actions
+
+**CRITICAL**: `SubSystem.during before/after` are **NOT triggered** during child-to-child transitions!
+
+**Scenario 3: Exit from Composite State** (`Idle -> [*] :: Stop`)
+
+**Exit Phase**:
+
+1. `Idle.exit` - Leaf state exit actions
+2. `SubSystem.during after` - **Triggered** (because `Idle -> [*]`)
 3. `SubSystem.exit` - Composite state exit actions
 4. `System.exit` - Root state exit actions
 
@@ -657,10 +680,14 @@ Note: `SubSystem.during before/after` do **NOT** execute during the leaf state's
 
 **Composite State Actions (`during before/after` without `>>`)**:
 
-- `during before`: Executes AFTER composite state's `enter` but BEFORE entering any child state
-- `during after`: Executes AFTER exiting from a child state but BEFORE composite state's `exit`
+- `during before`: Executes **ONLY** when entering composite state from parent (`[*] -> Child`)
+    - Executes AFTER composite state's `enter` but BEFORE child state's `enter`
+    - **NOT triggered** during child-to-child transitions (`Child1 -> Child2`)
+- `during after`: Executes **ONLY** when exiting composite state to parent (`Child -> [*]`)
+    - Executes AFTER child state's `exit` but BEFORE composite state's `exit`
+    - **NOT triggered** during child-to-child transitions (`Child1 -> Child2`)
 - Do **NOT** execute during a leaf state's `during` phase
-- Used for setup/cleanup when entering/exiting the composite state hierarchy
+- Used for setup/cleanup when entering/exiting the composite state boundary
 
 **Leaf State Actions (`during`)**:
 
@@ -669,9 +696,10 @@ Note: `SubSystem.during before/after` do **NOT** execute during the leaf state's
 
 **Execution Flow Summary**:
 
-- **Entry**: `State.enter` → `State.during before` → `Child.enter`
+- **Entry** (from parent): `State.enter` → `State.during before` → `Child.enter`
 - **During** (each cycle): Aspect `>> during before` → Leaf `during` → Aspect `>> during after`
-- **Exit**: `Child.exit` → `State.during after` → `State.exit`
+- **Exit** (to parent): `Child.exit` → `State.during after` → `State.exit`
+- **Child-to-Child Transition**: `Child1.exit` → (transition effect) → `Child2.enter` (no `during before/after`)
 
 **Aspect-Oriented Programming**:
 

@@ -1,0 +1,56 @@
+// Hierarchical Execution Order Example
+// This example demonstrates how aspect actions execute in hierarchical state machines
+
+def int execution_log = 0;
+
+state HierarchyDemo {
+    // Root-level aspect actions apply to ALL descendant leaf states
+    >> during before {
+        execution_log = execution_log + 1000;  // Step 1: Root aspect before
+    }
+
+    >> during after {
+        execution_log = execution_log + 9000;  // Step 5: Root aspect after
+    }
+
+    state Parent {
+        // Composite state's during before/after execute ONLY on entry/exit
+        // NOT during child-to-child transitions!
+        during before {
+            execution_log = execution_log + 100;  // Only on [*] -> Child entry
+        }
+
+        during after {
+            execution_log = execution_log + 900;  // Only on Child -> [*] exit
+        }
+
+        // Parent-level aspect actions also apply to all descendant leaf states
+        >> during before {
+            execution_log = execution_log + 10;  // Step 2: Parent aspect before
+        }
+
+        >> during after {
+            execution_log = execution_log + 90;  // Step 4: Parent aspect after
+        }
+
+        state ChildA {
+            // Leaf state's during action
+            during {
+                execution_log = execution_log + 1;  // Step 3: Leaf during
+            }
+        }
+
+        state ChildB {
+            during {
+                execution_log = execution_log + 2;
+            }
+        }
+
+        [*] -> ChildA;
+        ChildA -> ChildB :: Switch;  // during before/after NOT triggered
+        ChildB -> [*] :: Exit;
+    }
+
+    [*] -> Parent;
+    Parent -> [*];
+}

@@ -1,0 +1,63 @@
+// Forced Transitions Example
+// This example demonstrates forced transitions - a syntactic sugar that
+// automatically expands to multiple normal transitions
+
+def int error_code = 0;
+def int recovery_attempts = 0;
+
+state System {
+    // Forced transitions - syntactic sugar that expands to multiple transitions
+    // These generate NORMAL transitions - exit actions WILL execute
+    ! * -> ErrorHandler :: CriticalError;     // From ANY state to ErrorHandler
+    !Running -> SafeMode :: EmergencyStop;   // From Running (and all its substates) to SafeMode
+
+    state Initializing {
+        exit {
+            // This exit action WILL execute when transitioning via CriticalError
+            error_code = 0;
+        }
+    }
+
+    state Running {
+        exit {
+            // This exit action WILL execute when transitioning
+            recovery_attempts = 0;
+        }
+
+        state Processing {
+            during {
+                error_code = error_code + 1;
+            }
+
+            exit {
+                // This exit action WILL also execute
+                error_code = 0;
+            }
+        }
+
+        state Waiting;
+
+        [*] -> Processing;
+        Processing -> Waiting :: Done;
+        Waiting -> Processing :: Continue;
+    }
+
+    state SafeMode {
+        enter {
+            recovery_attempts = recovery_attempts + 1;
+        }
+    }
+
+    state ErrorHandler {
+        enter {
+            // Handle critical error
+            recovery_attempts = 0;
+        }
+    }
+
+    [*] -> Initializing;
+    Initializing -> Running :: Start;
+    Running -> [*] :: Shutdown;
+    SafeMode -> Running :: Recovered;
+    ErrorHandler -> [*] :: FatalError;
+}

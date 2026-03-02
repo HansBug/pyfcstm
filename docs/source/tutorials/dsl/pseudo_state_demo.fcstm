@@ -1,0 +1,44 @@
+// Pseudo State Example
+// This example demonstrates the difference between normal and pseudo states
+
+def int aspect_counter = 0;
+
+state PseudoStateDemo {
+    // Aspect actions that apply to all descendant states
+    >> during before {
+        aspect_counter = aspect_counter + 1;
+    }
+
+    >> during after {
+        aspect_counter = aspect_counter + 100;
+    }
+
+    state NormalStates {
+        // Normal leaf state - WILL execute ancestor aspect actions
+        state RegularState {
+            during {
+                aspect_counter = aspect_counter + 10;
+            }
+        }
+
+        [*] -> RegularState;
+        RegularState -> [*];
+    }
+
+    state PseudoStates {
+        // Pseudo state - WILL NOT execute ancestor aspect actions
+        // Useful for special states that need to bypass aspect logic
+        pseudo state SpecialState {
+            during {
+                aspect_counter = aspect_counter + 10;
+            }
+        }
+
+        [*] -> SpecialState;
+        SpecialState -> [*];
+    }
+
+    [*] -> NormalStates;
+    NormalStates -> PseudoStates :: Switch;
+    PseudoStates -> [*];
+}

@@ -1,0 +1,77 @@
+// Event Scoping Complete Example
+// This example demonstrates all three event scoping mechanisms:
+// 1. Local events (::) - scoped to source state
+// 2. Chain events (:) - scoped to parent state
+// 3. Absolute events (/) - scoped to root state
+
+def int counter = 0;
+
+state System {
+    state ModuleA {
+        state A1 {
+            during {
+                counter = counter + 1;
+            }
+        }
+
+        state A2 {
+            during {
+                counter = counter + 2;
+            }
+        }
+
+        [*] -> A1;
+
+        // Local event :: - scoped to source state (A1)
+        // Equivalent to: A1 -> A2 : /System.ModuleA.A1.LocalEvent
+        A1 -> A2 :: LocalEvent;
+
+        // Chain event : - scoped to parent state (ModuleA)
+        // Equivalent to: A2 -> A1 : /System.ModuleA.ChainEvent
+        A2 -> A1 : ChainEvent;
+    }
+
+    state ModuleB {
+        state B1 {
+            during {
+                counter = counter + 10;
+            }
+        }
+
+        state B2 {
+            during {
+                counter = counter + 20;
+            }
+        }
+
+        [*] -> B1;
+
+        // Local event :: - scoped to source state (B1)
+        // Equivalent to: B1 -> B2 : /System.ModuleB.B1.LocalEvent
+        // This is DIFFERENT from ModuleA.A1.LocalEvent
+        B1 -> B2 :: LocalEvent;
+
+        // Chain event : - scoped to parent state (ModuleB)
+        // Equivalent to: B2 -> B1 : /System.ModuleB.ChainEvent
+        // This is DIFFERENT from ModuleA.ChainEvent
+        B2 -> B1 : ChainEvent;
+    }
+
+    state SharedTarget {
+        during {
+            counter = counter + 100;
+        }
+    }
+
+    [*] -> ModuleA;
+
+    // Absolute event / - scoped to root state (System)
+    // Both transitions use the SAME event: System.GlobalEvent
+    ModuleA -> SharedTarget : /GlobalEvent;
+    ModuleB -> SharedTarget : /GlobalEvent;
+
+    // Absolute event can also be used within nested states
+    // This allows cross-module communication
+    SharedTarget -> ModuleA : /ResetToA;
+    SharedTarget -> ModuleB : /ResetToB;
+}

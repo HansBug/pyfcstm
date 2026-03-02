@@ -1,0 +1,61 @@
+// Expression System Demonstration
+// This example showcases the comprehensive expression capabilities
+
+def int counter = 0;
+def int flags = 0xFF;
+def float temperature = 25.5;
+def float angle = 0.0;
+
+state ExpressionDemo {
+    state ArithmeticOps {
+        enter {
+            // Basic arithmetic
+            counter = 10 + 5 * 2;           // Result: 20 (precedence)
+            counter = (10 + 5) * 2;         // Result: 30 (parentheses)
+            counter = 2 ** 3;               // Result: 8 (power)
+            counter = 17 % 5;               // Result: 2 (modulo)
+        }
+    }
+
+    state BitwiseOps {
+        enter {
+            // Bitwise operations
+            flags = 0xFF & 0x0F;            // Result: 0x0F (AND)
+            flags = 0xF0 | 0x0F;            // Result: 0xFF (OR)
+            flags = 0xFF ^ 0x0F;            // Result: 0xF0 (XOR)
+            flags = 0x01 << 4;              // Result: 0x10 (left shift)
+            flags = 0x80 >> 2;              // Result: 0x20 (right shift)
+        }
+    }
+
+    state MathFunctions {
+        enter {
+            // Trigonometric functions
+            temperature = sin(angle) * 100.0;
+            temperature = cos(angle) + 1.0;
+            temperature = tan(angle);
+
+            // Other math functions
+            temperature = sqrt(16.0);        // Result: 4.0
+            temperature = abs(-5.5);         // Result: 5.5
+            temperature = ceil(3.2);         // Result: 4.0
+            temperature = floor(3.8);        // Result: 3.0
+            temperature = round(3.5);        // Result: 4.0
+        }
+    }
+
+    state ComplexExpr {
+        enter {
+            // Complex expressions combining multiple operations
+            counter = (10 + 5) * 2 - 3;      // Result: 27
+            flags = (0xFF & 0x0F) | 0x10;    // Result: 0x1F
+            temperature = sqrt(16.0) + 10.0; // Result: 14.0
+        }
+    }
+
+    [*] -> ArithmeticOps;
+    ArithmeticOps -> BitwiseOps :: Next;
+    BitwiseOps -> MathFunctions :: Next;
+    MathFunctions -> ComplexExpr :: Next;
+    ComplexExpr -> [*];
+}

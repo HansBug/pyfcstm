@@ -1,0 +1,247 @@
+// Real-World Example: Smart Thermostat Controller
+// This comprehensive example demonstrates a realistic state machine
+// for a smart thermostat with multiple operational modes
+
+// System variables
+def int current_temp = 20;          // Current temperature in Celsius
+def int target_temp = 22;           // Target temperature
+def int heating_power = 0;          // Heating power level (0-100)
+def int cooling_power = 0;          // Cooling power level (0-100)
+def int fan_speed = 0;              // Fan speed (0-3)
+def int error_code = 0;             // Error code for diagnostics
+def int runtime_hours = 0;          // Total runtime in hours
+def int maintenance_counter = 0;    // Maintenance cycle counter
+
+state ThermostatController {
+    // Global aspect actions for monitoring and logging
+    >> during before abstract LogSystemState /*
+        Log current system state for diagnostics.
+        Called before every state's during action.
+        TODO: Implement logging mechanism
+    */
+
+    >> during after abstract UpdateDisplay /*
+        Update user interface display.
+        Called after every state's during action.
+        TODO: Implement display update
+    */
+
+    state Initializing {
+        enter {
+            // Reset all system variables
+            heating_power = 0;
+            cooling_power = 0;
+            fan_speed = 0;
+            error_code = 0;
+        }
+
+        enter abstract SystemSelfTest /*
+            Perform hardware self-test on startup.
+            Check sensors, actuators, and communication.
+            TODO: Implement self-test procedure
+        */
+
+        exit {
+            maintenance_counter = 0;
+        }
+    }
+
+    state OperationalMode {
+        // Composite state lifecycle actions
+        during before {
+            // Executed when entering from Initializing
+            runtime_hours = runtime_hours + 1;
+        }
+
+        during after {
+            // Executed when exiting to Maintenance or Error
+            fan_speed = 0;
+        }
+
+        state Idle {
+            enter {
+                heating_power = 0;
+                cooling_power = 0;
+                fan_speed = 1;  // Low fan for circulation
+            }
+
+            during {
+                maintenance_counter = maintenance_counter + 1;
+            }
+        }
+
+        state Heating {
+            enter {
+                cooling_power = 0;
+                fan_speed = 2;
+            }
+
+            during {
+                // Proportional heating control
+                heating_power = (target_temp - current_temp) * 10;
+                maintenance_counter = maintenance_counter + 1;
+            }
+
+            exit {
+                heating_power = 0;
+            }
+        }
+
+        state Cooling {
+            enter {
+                heating_power = 0;
+                fan_speed = 3;
+            }
+
+            during {
+                // Proportional cooling control
+                cooling_power = (current_temp - target_temp) * 10;
+                maintenance_counter = maintenance_counter + 1;
+            }
+
+            exit {
+                cooling_power = 0;
+            }
+        }
+
+        state AutoMode {
+            // Automatic mode with intelligent switching
+            during before abstract AnalyzeEnvironment /*
+                Analyze environmental conditions.
+                TODO: Implement environment analysis
+            */
+
+            state AutoHeating {
+                during {
+                    heating_power = (target_temp - current_temp) * 10;
+                }
+            }
+
+            state AutoCooling {
+                during {
+                    cooling_power = (current_temp - target_temp) * 10;
+                }
+            }
+
+            state AutoIdle {
+                during {
+                    heating_power = 0;
+                    cooling_power = 0;
+                }
+            }
+
+            [*] -> AutoIdle;
+
+            // Automatic transitions based on temperature
+            AutoIdle -> AutoHeating : if [current_temp < target_temp - 2];
+            AutoIdle -> AutoCooling : if [current_temp > target_temp + 2];
+            AutoHeating -> AutoIdle : if [current_temp >= target_temp];
+            AutoCooling -> AutoIdle : if [current_temp <= target_temp];
+        }
+
+        [*] -> Idle;
+
+        // Mode transitions with guards
+        Idle -> Heating : if [current_temp < target_temp - 1] effect {
+            fan_speed = 2;
+        };
+
+        Idle -> Cooling : if [current_temp > target_temp + 1] effect {
+            fan_speed = 3;
+        };
+
+        Heating -> Idle : if [current_temp >= target_temp] effect {
+            fan_speed = 1;
+        };
+
+        Cooling -> Idle : if [current_temp <= target_temp] effect {
+            fan_speed = 1;
+        };
+
+        // Switch to auto mode
+        Idle -> AutoMode :: EnableAuto;
+        Heating -> AutoMode :: EnableAuto;
+        Cooling -> AutoMode :: EnableAuto;
+
+        // Exit auto mode
+        AutoMode -> Idle :: DisableAuto effect {
+            heating_power = 0;
+            cooling_power = 0;
+        };
+
+        // Emergency transitions
+        Heating -> Idle : if [heating_power > 100] effect {
+            error_code = 1;
+        };
+
+        Cooling -> Idle : if [cooling_power > 100] effect {
+            error_code = 2;
+        };
+    }
+
+    state Maintenance {
+        enter {
+            // Safe state for maintenance
+            heating_power = 0;
+            cooling_power = 0;
+            fan_speed = 0;
+        }
+
+        enter abstract EnterMaintenanceMode /*
+            Prepare system for maintenance.
+            Lock out user controls and disable actuators.
+            TODO: Implement maintenance mode entry
+        */
+
+        exit abstract ExitMaintenanceMode /*
+            Exit maintenance mode and restore normal operation.
+            TODO: Implement maintenance mode exit
+        */
+    }
+
+    state ErrorState {
+        enter {
+            // Emergency shutdown
+            heating_power = 0;
+            cooling_power = 0;
+            fan_speed = 0;
+        }
+
+        enter abstract LogError /*
+            Log error details for diagnostics.
+            TODO: Implement error logging
+        */
+
+        during abstract DiagnoseError /*
+            Attempt to diagnose and recover from error.
+            TODO: Implement error diagnosis
+        */
+    }
+
+    // Initial transition
+    [*] -> Initializing;
+
+    // Normal operation flow
+    Initializing -> OperationalMode : if [error_code == 0];
+
+    // Maintenance transitions
+    OperationalMode -> Maintenance :: MaintenanceRequest;
+    Maintenance -> OperationalMode :: MaintenanceComplete;
+
+    // Error handling
+    Initializing -> ErrorState : if [error_code != 0];
+    OperationalMode -> ErrorState : if [error_code != 0];
+    ErrorState -> Initializing :: Reset effect {
+        error_code = 0;
+    };
+
+    // Scheduled maintenance
+    OperationalMode -> Maintenance : if [maintenance_counter > 1000] effect {
+        maintenance_counter = 0;
+    };
+
+    // Shutdown
+    OperationalMode -> [*] :: Shutdown;
+    Maintenance -> [*] :: Shutdown;
+    ErrorState -> [*] :: ForcedShutdown;
+}

@@ -63,6 +63,8 @@ docs:
 	$(MAKE) -C "${DOC_DIR}" build
 pdocs:
 	$(MAKE) -C "${DOC_DIR}" prod
+docs_auto:
+	python remake_docs_via_llm.py -i "${RANGE_SRC_DIR}"
 
 antlr-${ANTLR_VERSION}.jar:
 	wget -O $@ https://www.antlr.org/download/antlr-${ANTLR_VERSION}-complete.jar

@@ -70,7 +70,7 @@ def add_builtins_to_env(env: jinja2.Environment) -> jinja2.Environment:
         env.filters['set'] = set
         env.filters['dict'] = dict
         env.filters['keys'] = lambda x: x.keys()
-        env.filters['values'] = lambda x: x.values()
+        env.filters['values'] = lambda x: x.solutions()
         env.filters['enumerate'] = enumerate
         env.filters['reversed'] = reversed
         env.filters['filter'] = lambda x, y: filter(y, x)

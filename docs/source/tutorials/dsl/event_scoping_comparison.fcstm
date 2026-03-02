@@ -1,0 +1,36 @@
+// Event Scoping Comparison Example
+// This example demonstrates the difference between : and :: event scoping
+
+def int counter = 0;
+
+state EventScopingDemo {
+    // Using : (chain event from parent/root)
+    state ChainEventExample {
+        state A;
+        state B;
+        state C;
+
+        [*] -> A;
+        // Both transitions use the SAME event: EventScopingDemo.SharedEvent
+        A -> B : SharedEvent;
+        B -> C : SharedEvent;
+    }
+
+    // Using :: (local event scoped to source state)
+    state LocalEventExample {
+        state X;
+        state Y;
+        state Z;
+
+        [*] -> X;
+        // Each transition uses DIFFERENT events:
+        // X -> Y uses LocalEventExample.X.LocalEvent
+        // Y -> Z uses LocalEventExample.Y.LocalEvent
+        X -> Y :: LocalEvent;
+        Y -> Z :: LocalEvent;
+    }
+
+    [*] -> ChainEventExample;
+    ChainEventExample -> LocalEventExample : /SwitchMode;
+    LocalEventExample -> [*];
+}

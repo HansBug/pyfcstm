@@ -1,0 +1,66 @@
+// Guard Conditions and Effects Example
+// This example demonstrates complex guard conditions and transition effects
+
+def int battery_level = 100;
+def int temperature = 25;
+def int error_count = 0;
+def int charging_state = 0;
+
+state PowerManagement {
+    state Normal {
+        during {
+            battery_level = battery_level - 1;
+        }
+    }
+
+    state LowPower {
+        enter {
+            error_count = 0;
+        }
+
+        during {
+            battery_level = battery_level - 0;  // No drain in low power
+        }
+    }
+
+    state Charging {
+        during {
+            battery_level = battery_level + 2;
+        }
+    }
+
+    state Critical {
+        enter {
+            error_count = error_count + 1;
+        }
+    }
+
+    [*] -> Normal;
+
+    // Simple guard condition
+    Normal -> LowPower : if [battery_level < 30];
+
+    // Complex guard with logical AND
+    Normal -> Critical : if [battery_level < 10 && charging_state == 0];
+
+    // Complex guard with logical OR
+    LowPower -> Critical : if [temperature > 80 || error_count > 5];
+
+    // Guard with comparison
+    Charging -> Normal : if [battery_level >= 90];
+
+    // Transition with effect block
+    Critical -> Charging effect {
+        charging_state = 1;
+        error_count = 0;
+        temperature = 25;
+    };
+
+    // Guard and effect combined
+    Charging -> Normal : if [battery_level >= 100] effect {
+        charging_state = 0;
+        battery_level = 100;
+    };
+
+    Critical -> [*] : if [error_count > 10];
+}

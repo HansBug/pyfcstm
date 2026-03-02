@@ -1,0 +1,71 @@
+// Abstract and Reference Actions Example
+// This example demonstrates abstract function declarations and action references
+
+def int init_flag = 0;
+def int cleanup_flag = 0;
+
+state AbstractReferenceDemo {
+    // Root-level abstract functions that can be referenced
+    enter abstract GlobalInit /*
+        Global initialization function.
+        TODO: Implement in generated code framework
+    */
+
+    exit abstract GlobalCleanup /*
+        Global cleanup function.
+        TODO: Implement in generated code framework
+    */
+
+    state BaseState {
+        // Abstract actions - must be implemented in generated code
+        enter abstract HardwareInit /*
+            Initialize hardware peripherals and sensors.
+            This function must be implemented in the target platform.
+            TODO: Implement in generated code framework
+        */
+
+        enter {
+            init_flag = 1;
+            cleanup_flag = 0;
+        }
+
+        exit abstract HardwareCleanup /*
+            Clean up hardware resources before exit.
+            TODO: Implement in generated code framework
+        */
+
+        exit {
+            cleanup_flag = 1;
+            init_flag = 0;
+        }
+    }
+
+    state DerivedState1 {
+        // Reference global abstract functions
+        enter ref /GlobalInit;
+        exit ref /GlobalCleanup;
+
+        // Can also have its own abstract actions
+        during abstract ProcessData /*
+            Process sensor data in DerivedState1.
+            TODO: Implement in generated code framework
+        */
+    }
+
+    state DerivedState2 {
+        // Can reference the same global functions
+        enter ref /GlobalInit;
+        exit ref /GlobalCleanup;
+
+        during abstract ProcessData /*
+            Process sensor data in DerivedState2.
+            Different implementation from DerivedState1.
+            TODO: Implement in generated code framework
+        */
+    }
+
+    [*] -> BaseState;
+    BaseState -> DerivedState1 :: Start;
+    DerivedState1 -> DerivedState2 :: Switch;
+    DerivedState2 -> [*];
+}

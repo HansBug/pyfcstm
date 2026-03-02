@@ -271,13 +271,57 @@ FinalState -> [*];               // Exit transition (to pseudo-final state)
 [*] -> InitialState :: Start;    // Entry with event
 ```
 
-**Forced Transitions** (bypass source state's exit action):
+**Forced Transitions** (syntactic sugar for multiple transitions):
 
 ```
-!ErrorState -> [*] :: FatalError;     // Forced exit
-!Running -> SafeMode :: Emergency;    // Forced transition
-!* -> ErrorHandler :: GlobalError;    // Forced from any state
+!ErrorState -> [*] :: FatalError;     // Expands to transition from ErrorState
+!Running -> SafeMode :: Emergency;    // Expands to transition from Running
+!* -> ErrorHandler :: GlobalError;    // Expands to transitions from ALL substates
 ```
+
+**How Forced Transitions Work:**
+
+Forced transitions are a **syntactic sugar** that expands during model construction to avoid repetitive code. They are **NOT** special transitions - they expand to normal transitions that execute exit actions normally.
+
+**Key Points:**
+
+1. **Syntactic Sugar**: Automatically generates multiple normal transitions
+2. **Wildcard Expansion**: `!*` creates transitions from all substates in the current scope
+3. **Event Sharing**: All expanded transitions share the **same event object**
+4. **Normal Execution**: Exit actions execute normally - these are regular transitions
+5. **Recursive Propagation**: Propagates to nested substates
+
+Example expansion:
+```
+state System {
+    ! * -> ErrorHandler :: CriticalError;
+
+    state Running {
+        state Processing;
+        state Waiting;
+    }
+    state Idle;
+}
+
+// Expands to:
+// Running -> ErrorHandler :: CriticalError;
+// Idle -> ErrorHandler :: CriticalError;
+// And inside Running:
+//   Processing -> [*] : /CriticalError;  (exit to parent)
+//   Waiting -> [*] : /CriticalError;     (exit to parent)
+// All transitions share the SAME CriticalError event object
+```
+
+**Key Limitations:**
+- Forced transitions **cannot** have effect blocks (syntax restriction)
+- Use the target state's enter action for initialization instead
+- Exit actions execute normally (not bypassed)
+
+**Use Cases:**
+- Avoid repetitive code when many states need the same transition
+- Error handling from multiple states
+- Emergency shutdown from all states
+- Timeout handling across multiple states
 
 **Transitions with Guard Conditions**:
 
@@ -310,26 +354,69 @@ StateA -> StateB : if [counter < 100] effect {
 
 ### Event Scoping
 
-**Local Events** (`::` - scoped to source state):
+The DSL provides **three event scoping mechanisms** to control event namespaces in hierarchical state machines:
+
+**1. Local Events** (`::` - scoped to source state):
 
 ```
 StateA -> StateB :: LocalEvent;
-// Event is scoped as StateA.LocalEvent
+// Event is scoped to source state: Parent.StateA.LocalEvent
+// Equivalent to: StateA -> StateB : /Parent.StateA.LocalEvent
 ```
 
-**Global Events** (`:` or `/` - scoped from root):
+Each source state gets its own event. Use when each transition needs a unique event.
+
+**2. Chain Events** (`:` - scoped to parent state):
+
+```
+StateA -> StateB : ChainEvent;
+// Event is scoped to parent state: Parent.ChainEvent
+// Equivalent to: StateA -> StateB : /Parent.ChainEvent
+```
+
+Multiple transitions in the same scope share the event. Use when coordinating sibling state transitions.
+
+**3. Absolute Events** (`/` - scoped to root state):
 
 ```
 StateA -> StateB : /GlobalEvent;
-// Event is scoped from root as GlobalEvent
+// Event is scoped to root state: Root.GlobalEvent
+// Already absolute - no conversion needed
 ```
 
-**Chain Events** (`:` - relative to parent):
+All transitions using the same absolute path share the event. Use for cross-module communication or global events.
+
+**Event Resolution Examples:**
 
 ```
-StateA -> StateB : Parent.ChildEvent;
-// Event is scoped relative to parent state
+state System {
+    state ModuleA {
+        state A1;
+        state A2;
+
+        [*] -> A1;
+        A1 -> A2 :: E;        // System.ModuleA.A1.E
+        A1 -> A2 : E;         // System.ModuleA.E
+        A1 -> A2 : /E;        // System.E
+    }
+
+    state ModuleB {
+        state B1;
+        state B2;
+
+        [*] -> B1;
+        B1 -> B2 :: E;        // System.ModuleB.B1.E (different from A1's)
+        B1 -> B2 : E;         // System.ModuleB.E (different from ModuleA's)
+        B1 -> B2 : /E;        // System.E (SAME as ModuleA's)
+    }
+}
 ```
+
+**Key Points:**
+- `::` creates state-specific events (avoid conflicts)
+- `:` creates parent-scoped events (share within scope)
+- `/` creates root-scoped events (share globally)
+- All three are equivalent to absolute paths with different starting points
 
 ### Lifecycle Actions
 

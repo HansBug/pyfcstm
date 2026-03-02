@@ -17,6 +17,7 @@
 # -- Project information -----------------------------------------------------
 
 import os
+import re
 import shutil
 import sys
 from datetime import datetime
@@ -128,6 +129,8 @@ templates_path = ['_templates']
 # For local builds, allow override via environment variable.
 READTHEDOCS_LANGUAGE = os.environ.get('READTHEDOCS_LANGUAGE', 'en')
 language = READTHEDOCS_LANGUAGE
+if 'zh' in re.split(r'[_-]+', language.lower()):
+    language = 'zh'
 
 _source_index = os.path.join(_DOC_PATH, f'index_{language}.rst')
 _target_index = os.path.join(_DOC_PATH, 'index.rst')

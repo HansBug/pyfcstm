@@ -122,12 +122,22 @@ templates_path = ['_templates']
 #
 # This is also used if you do content translation via gettext catalogs.
 # Usually you set "language" from the command line for these cases.
-language = None
+language = os.environ.get('READTHEDOCS_LANGUAGE', 'en')
+
+# Figure out which index file to use based on language
+if language == 'zh':
+    master_doc = 'index_zh'
+else:
+    master_doc = 'index'
 
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
 # This pattern also affects html_static_path and html_extra_path.
 exclude_patterns = []
+
+# Locale directories for internationalization
+locale_dirs = ['locale/']
+gettext_compact = False
 
 # -- Options for HTML output -------------------------------------------------
 
@@ -145,6 +155,28 @@ html_static_path = ['_static']
 html_css_files = [
     'css/custom.css',
 ]
+
+# Language-specific settings
+html_context = {
+    'display_github': True,
+    'github_user': 'hansbug',
+    'github_repo': 'pyfcstm',
+    'conf_py_path': '/docs/source/',
+}
+
+# Add language selector to the theme
+if language == 'zh':
+    html_context['language'] = 'zh_CN'
+    html_context['languages'] = [
+        ('English', '../en/'),
+        ('中文', '../zh/'),
+    ]
+else:
+    html_context['language'] = 'en'
+    html_context['languages'] = [
+        ('English', '../en/'),
+        ('中文', '../zh/'),
+    ]
 
 epub_title = project
 epub_exclude_files = ['search.html']

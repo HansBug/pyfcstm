@@ -1,4 +1,4 @@
-# Read the Docs configuration file
+# Read the Docs configuration file for Chinese
 # See https://docs.readthedocs.io/en/stable/config-file/v2.html for details
 
 # Required
@@ -22,10 +22,14 @@ build:
     - unrar
     - librsvg2-bin
     - gettext
+  jobs:
+    post_checkout:
+      - git fetch --unshallow || true
+    pre_build:
+      - export READTHEDOCS_LANGUAGE=zh
 
 formats:
   - pdf
-#  - epub
 
 # Build documentation in the "docs/" directory with Sphinx
 sphinx:

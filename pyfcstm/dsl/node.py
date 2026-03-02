@@ -74,6 +74,8 @@ __all__ = [
     'DuringAspectOperations',
     'DuringAspectAbstractFunction',
     'DuringAspectRefFunction',
+    'StateRegionDefinition',
+    'RegionedStateDefinition',
 ]
 
 
@@ -1813,3 +1815,85 @@ class DuringAspectRefFunction(DuringAspectStatement):
             return f'>> during {self.aspect} {self.name} ref {self.ref};'
         else:
             return f'>> during {self.aspect} ref {self.ref};'
+
+
+@dataclass
+class StateRegionDefinition(ASTNode):
+    events: List['EventDefinition'] = None
+    substates: List['StateDefinition'] = None
+    transitions: List[TransitionDefinition] = None
+    enters: List['EnterStatement'] = None
+    durings: List['DuringStatement'] = None
+    exits: List['ExitStatement'] = None
+    during_aspects: List['DuringAspectStatement'] = None
+    force_transitions: List['ForceTransitionDefinition'] = None
+
+    def __post_init__(self):
+        self.events = self.events or []
+        self.substates = self.substates or []
+        self.transitions = self.transitions or []
+        self.force_transitions = self.force_transitions or []
+        self.enters = self.enters or []
+        self.durings = self.durings or []
+        self.exits = self.exits or []
+        self.during_aspects = self.during_aspects or []
+
+    def __bool__(self) -> bool:
+        return bool(self.events or self.substates or self.transitions or self.force_transitions or self.enters or
+                    self.durings or self.exits or self.during_aspects)
+
+    def __str__(self) -> str:
+        with io.StringIO() as sf:
+            for enter_item in self.enters:
+                print(str(enter_item), file=sf)
+            for during_item in self.durings:
+                print(str(during_item), file=sf)
+            for exit_item in self.exits:
+                print(str(exit_item), file=sf)
+            for during_aspect_item in self.during_aspects:
+                print(str(during_aspect_item), file=sf)
+            for substate in self.substates:
+                print(str(substate), file=sf)
+            for event in self.events:
+                print(str(event), file=sf)
+            for transition in self.transitions:
+                print(str(transition), file=sf)
+
+            return sf.getvalue().rstrip()
+
+
+@dataclass
+class RegionedStateDefinition(ASTNode):
+    name: str
+    extra_name: Optional[str] = None
+    regions: List['StateRegionDefinition'] = None
+    is_pseudo: bool = False
+
+    def __post_init__(self):
+        self.regions = self.regions or []
+
+    def __str__(self) -> str:
+        """
+        Convert the state definition to its string representation.
+
+        :return: String representation of the state definition
+        :rtype: str
+        """
+        with io.StringIO() as sf:
+            if self.is_pseudo:
+                print('pseudo ', file=sf, end='')
+            print(f'state {self.name}', file=sf, end='')
+            if self.extra_name is not None:
+                print(f' named {self.extra_name!r}', file=sf, end='')
+
+            if not self.regions:
+                print(f';', file=sf, end='')
+            else:
+                print(f' {{', file=sf)
+                for region_id, region_item in enumerate(self.regions):
+                    if region_id > 0:
+                        print(indent('---', prefix='    '), file=sf)
+                    print(indent(str(region_item), prefix='    '), file=sf)
+                print(f'}}', file=sf, end='')
+
+            return sf.getvalue()

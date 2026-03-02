@@ -53,6 +53,18 @@ class GrammarListener(ParseTreeListener):
     ):
         pass
 
+    # Enter a parse tree produced by GrammarParser#compositeStateWithRegionDefinition.
+    def enterCompositeStateWithRegionDefinition(
+        self, ctx: GrammarParser.CompositeStateWithRegionDefinitionContext
+    ):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#compositeStateWithRegionDefinition.
+    def exitCompositeStateWithRegionDefinition(
+        self, ctx: GrammarParser.CompositeStateWithRegionDefinitionContext
+    ):
+        pass
+
     # Enter a parse tree produced by GrammarParser#entryTransitionDefinition.
     def enterEntryTransitionDefinition(
         self, ctx: GrammarParser.EntryTransitionDefinitionContext
@@ -279,6 +291,14 @@ class GrammarListener(ParseTreeListener):
     def exitState_inner_statement(
         self, ctx: GrammarParser.State_inner_statementContext
     ):
+        pass
+
+    # Enter a parse tree produced by GrammarParser#state_region.
+    def enterState_region(self, ctx: GrammarParser.State_regionContext):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#state_region.
+    def exitState_region(self, ctx: GrammarParser.State_regionContext):
         pass
 
     # Enter a parse tree produced by GrammarParser#operation_program.

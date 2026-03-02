@@ -20,7 +20,7 @@ NO_CONTENTS_BUILD = true
 # Catch-all target: route all unknown targets to Sphinx using the new
 # "make mode" option.  $(O) is meant as a shortcut for $(SPHINXOPTS).
 # Put it first so that "make" without argument is like "make help".
-.PHONY: help contents build html html_zh docs_zh prod clean sourcedir builddir Makefile
+.PHONY: help contents build html prod clean sourcedir builddir Makefile
 
 help:
 	@$(SPHINXBUILD) -M help "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) $(O)
@@ -31,10 +31,6 @@ build: html
 html: contents
 	@$(SPHINXBUILD) -M html "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) $(O)
 	@touch "$(BUILDDIR)/html/.nojekyll"
-html_zh: contents
-	@READTHEDOCS_LANGUAGE=zh $(SPHINXBUILD) -M html "$(SOURCEDIR)" "$(BUILDDIR)/html_zh" $(SPHINXOPTS) $(O)
-	@touch "$(BUILDDIR)/html_zh/.nojekyll"
-docs_zh: html_zh
 prod:
 	@NO_CONTENTS_BUILD='' $(SPHINXMULTIVERSION) "$(SOURCEDIR)" "$(BUILDDIR)/html" $(SPHINXOPTS) $(O)
 	@cp main_page.html "$(BUILDDIR)/html/index.html"

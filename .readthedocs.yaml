@@ -32,6 +32,10 @@ sphinx:
   configuration: docs/source/conf.py
   fail_on_warning: false
 
+# Localization support
+# Note: You need to configure translations in ReadTheDocs project settings
+# Go to Admin > Translations and add Chinese (Simplified) as a translation
+
 # Optionally, but recommended,
 # declare the Python requirements required to build your documentation
 # See https://docs.readthedocs.io/en/stable/guides/reproducible-builds.html

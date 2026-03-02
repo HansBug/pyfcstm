@@ -22,12 +22,6 @@
 
 .. toctree::
     :maxdepth: 2
-    :caption: 信息
-
-    information/environment.result
-
-.. toctree::
-    :maxdepth: 2
     :caption: API 文档
 
     api_doc/config/index

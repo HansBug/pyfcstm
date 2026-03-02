@@ -17,6 +17,7 @@
 # -- Project information -----------------------------------------------------
 
 import os
+import shutil
 import sys
 from datetime import datetime
 from subprocess import Popen
@@ -122,13 +123,20 @@ templates_path = ['_templates']
 #
 # This is also used if you do content translation via gettext catalogs.
 # Usually you set "language" from the command line for these cases.
-language = os.environ.get('READTHEDOCS_LANGUAGE', 'en')
+#
+# ReadTheDocs sets this automatically based on the project's language configuration.
+# For local builds, allow override via environment variable.
+SPHINX_LANGUAGE = os.environ.get('SPHINX_LANGUAGE', 'en')
+language = SPHINX_LANGUAGE
 
-# Figure out which index file to use based on language
-if language == 'zh':
-    master_doc = 'index_zh'
-else:
-    master_doc = 'index'
+_source_index = os.path.join(_DOC_PATH, f'index_{language}.rst')
+_target_index = os.path.join(_DOC_PATH, 'index.rst')
+if not os.path.exists(_source_index):
+    raise FileNotFoundError(f'Source index file not found: {_source_index!r}.')
+shutil.copyfile(_source_index, _target_index)
+
+# The master document is now index.rst, which is copied from index_<language>.rst
+master_doc = 'index'
 
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.

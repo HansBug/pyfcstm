@@ -22,12 +22,6 @@ Overview
 
 .. toctree::
     :maxdepth: 2
-    :caption: Information
-
-    information/environment.result
-
-.. toctree::
-    :maxdepth: 2
     :caption: API Documentation
 
     api_doc/config/index

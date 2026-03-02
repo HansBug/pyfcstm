@@ -1,12 +1,17 @@
 PyFCSTM DSL Syntax Tutorial
 ========================================
 
+.. contents:: Table of Contents
+   :local:
+   :depth: 3
+
 Overview
 ----------------------------------------------------
 
 The PyFCSTM Domain Specific Language (DSL) provides a comprehensive syntax for defining hierarchical finite state machines (Harel Statecharts) with expressions, conditions, and lifecycle actions. This tutorial covers all language constructs, semantic rules, execution models, and best practices for writing correct and efficient DSL programs.
 
-**What You'll Learn:**
+What You'll Learn
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 - Complete DSL syntax and grammar rules
 - How hierarchical state machines execute
@@ -29,14 +34,13 @@ A complete DSL program consists of optional variable definitions followed by a s
 
 The top-level structure ensures every state machine has exactly one root state that may contain nested substates and transitions.
 
-**How It Works:**
+.. note::
+   The parser processes your DSL file in multiple phases:
 
-The parser processes your DSL file in two phases:
-
-1. **Lexical Analysis**: Tokenizes the input into keywords, identifiers, operators, and literals
-2. **Syntactic Analysis**: Builds an Abstract Syntax Tree (AST) following the grammar rules
-3. **Semantic Validation**: Validates variable references, state names, and type consistency
-4. **Model Construction**: Converts the AST into an executable state machine model
+   1. **Lexical Analysis**: Tokenizes the input into keywords, identifiers, operators, and literals
+   2. **Syntactic Analysis**: Builds an Abstract Syntax Tree (AST) following the grammar rules
+   3. **Semantic Validation**: Validates variable references, state names, and type consistency
+   4. **Model Construction**: Converts the AST into an executable state machine model
 
 Variable Definitions
 ----------------------------------------------------
@@ -50,19 +54,18 @@ Variable definitions declare typed variables with initial values using the ``def
 
    def_assignment ::= 'def' ('int'|'float') ID '=' init_expression ';'
 
-**How It Works:**
+.. important::
+   Variables are global to the entire state machine and can be accessed from any state, transition, or expression. The DSL supports two primitive types:
 
-Variables are global to the entire state machine and can be accessed from any state, transition, or expression. The DSL supports two primitive types:
+   - **int**: 32-bit signed integers, supporting decimal (``42``), hexadecimal (``0xFF``), and binary (``0b1010``) literals
+   - **float**: Double-precision floating-point numbers, supporting standard (``3.14``) and scientific notation (``1e-6``)
 
-- **int**: 32-bit signed integers, supporting decimal (``42``), hexadecimal (``0xFF``), and binary (``0b1010``) literals
-- **float**: Double-precision floating-point numbers, supporting standard (``3.14``) and scientific notation (``1e-6``)
+   All variables must be initialized at declaration time. The initial expression can include:
 
-All variables must be initialized at declaration time. The initial expression can include:
-
-- Literal values (``0``, ``3.14``, ``0xFF``)
-- Mathematical constants (``pi``, ``E``, ``tau``)
-- Arithmetic expressions (``3.14 * 2``, ``10 + 5``)
-- Mathematical functions (``sin(0)``, ``sqrt(16)``)
+   - Literal values (``0``, ``3.14``, ``0xFF``)
+   - Mathematical constants (``pi``, ``E``, ``tau``)
+   - Arithmetic expressions (``3.14 * 2``, ``10 + 5``)
+   - Mathematical functions (``sin(0)``, ``sqrt(16)``)
 
 Correct Usage
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -117,12 +120,13 @@ Variable definitions must follow these semantic constraints:
 3. **Expression Validity**: Initial expressions can only reference mathematical constants and literals (not other variables)
 4. **Declaration Order**: Variables must be declared before the root state definition
 
-**Why These Rules?**
+.. tip::
+   **Why These Rules?**
 
-- **Unique Names**: Prevents ambiguity in variable references throughout the state machine
-- **Type Consistency**: Ensures type safety and prevents runtime errors in generated code
-- **Expression Validity**: Simplifies initialization and ensures deterministic startup state
-- **Declaration Order**: Maintains clear separation between data definitions and behavior definitions
+   - **Unique Names**: Prevents ambiguity in variable references throughout the state machine
+   - **Type Consistency**: Ensures type safety and prevents runtime errors in generated code
+   - **Expression Validity**: Simplifies initialization and ensures deterministic startup state
+   - **Declaration Order**: Maintains clear separation between data definitions and behavior definitions
 
 Common Errors
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -166,9 +170,8 @@ Common Errors
 State Definitions
 ----------------------------------------------------
 
-**How State Machines Work:**
-
-A finite state machine (FSM) is a computational model that can be in exactly one state at any given time. The machine transitions between states in response to events, executing actions during these transitions. Hierarchical state machines (Harel Statecharts) extend this concept by allowing states to contain nested substates, enabling modular and scalable designs.
+.. note::
+   A finite state machine (FSM) is a computational model that can be in exactly one state at any given time. The machine transitions between states in response to events, executing actions during these transitions. Hierarchical state machines (Harel Statecharts) extend this concept by allowing states to contain nested substates, enabling modular and scalable designs.
 
 Syntax Types
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -181,10 +184,11 @@ The DSL supports two fundamental types of state definitions:
    leafStateDefinition ::= ['pseudo'] 'state' ID [named STRING] ';'
    compositeStateDefinition ::= ['pseudo'] 'state' ID [named STRING] '{' state_inner_statement* '}'
 
-**Key Differences:**
+.. tip::
+   **Key Differences:**
 
-- **Leaf States**: Terminal states with no internal structure; represent atomic operational modes
-- **Composite States**: Container states with nested substates; represent hierarchical decomposition
+   - **Leaf States**: Terminal states with no internal structure; represent atomic operational modes
+   - **Composite States**: Container states with nested substates; represent hierarchical decomposition
 
 Leaf States
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -205,11 +209,12 @@ Leaf states represent terminal states with no internal structure. They are the f
    // Pseudo leaf state (skips ancestor aspect actions)
    pseudo state SpecialState;
 
-**When to Use Leaf States:**
+.. tip::
+   **When to Use Leaf States:**
 
-- Representing atomic operational modes (Idle, Running, Error)
-- Final states in a hierarchical decomposition
-- States with simple, non-decomposable behavior
+   - Representing atomic operational modes (Idle, Running, Error)
+   - Final states in a hierarchical decomposition
+   - States with simple, non-decomposable behavior
 
 **Annotated Example:**
 
@@ -254,13 +259,12 @@ Composite states contain nested substates, transitions, and lifecycle actions. T
        On -> Off : if [power_switch == 0];
    }
 
-**How Composite States Execute:**
+.. important::
+   When a composite state is active, exactly one of its child states is also active. This creates a hierarchical execution context:
 
-When a composite state is active, exactly one of its child states is also active. This creates a hierarchical execution context:
-
-1. **Entry**: When entering a composite state, the entry transition (``[*] -> ChildState``) determines which child becomes active
-2. **During**: While active, the composite state's ``during before/after`` actions execute around the child state's actions
-3. **Exit**: When leaving a composite state, the active child state exits first, then the composite state exits
+   1. **Entry**: When entering a composite state, the entry transition (``[*] -> ChildState``) determines which child becomes active
+   2. **During**: While active, the composite state's ``during before/after`` actions execute around the child state's actions
+   3. **Exit**: When leaving a composite state, the active child state exits first, then the composite state exits
 
 **Annotated Example:**
 
@@ -328,9 +332,8 @@ Pseudo states are special states (leaf or composite) that skip ancestor aspect a
    pseudo state StateName;
    pseudo state StateName { ... }
 
-**How It Works:**
-
-Normal states execute ancestor aspect actions (``>> during before/after``) defined in parent states. Pseudo states skip these aspect actions, providing a way to opt out of cross-cutting behaviors.
+.. note::
+   Normal states execute ancestor aspect actions (``>> during before/after``) defined in parent states. Pseudo states skip these aspect actions, providing a way to opt out of cross-cutting behaviors.
 
 **Comparison Example:**
 
@@ -354,11 +357,12 @@ When ``SpecialState`` (pseudo) is active:
 3. Root ``>> during after`` **SKIPPED**
 4. **Total increment per cycle**: 10
 
-**When to Use Pseudo States:**
+.. tip::
+   **When to Use Pseudo States:**
 
-- Implementing exception handlers that bypass normal monitoring
-- Creating special states for testing or debugging
-- Optimizing performance-critical states by skipping overhead
+   - Implementing exception handlers that bypass normal monitoring
+   - Creating special states for testing or debugging
+   - Optimizing performance-critical states by skipping overhead
 
 Named States
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -384,13 +388,14 @@ State definitions must adhere to these semantic constraints:
 4. **Hierarchical Consistency**: Nested states follow proper parent-child relationships
 5. **Aspect Restrictions**: ``during before/after`` (without ``>>``) only apply to composite states
 
-**Why These Rules?**
+.. tip::
+   **Why These Rules?**
 
-- **Unique Names**: Prevents ambiguity in transition targets and event scoping
-- **Entry Transitions**: Ensures deterministic behavior when entering composite states
-- **State References**: Prevents dangling transitions and ensures connectivity
-- **Hierarchical Consistency**: Maintains proper state machine structure
-- **Aspect Restrictions**: Enforces correct lifecycle semantics for leaf vs. composite states
+   - **Unique Names**: Prevents ambiguity in transition targets and event scoping
+   - **Entry Transitions**: Ensures deterministic behavior when entering composite states
+   - **State References**: Prevents dangling transitions and ensures connectivity
+   - **Hierarchical Consistency**: Maintains proper state machine structure
+   - **Aspect Restrictions**: Enforces correct lifecycle semantics for leaf vs. composite states
 
 Common Errors
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -462,15 +467,14 @@ Common Errors
 Transition Definitions
 ----------------------------------------------------
 
-**How Transitions Work:**
+.. note::
+   Transitions define how the state machine moves from one state to another in response to events or conditions. Each transition can have:
 
-Transitions define how the state machine moves from one state to another in response to events or conditions. Each transition can have:
-
-- **Source State**: The state from which the transition originates
-- **Target State**: The state to which the transition leads
-- **Event**: Optional trigger that activates the transition
-- **Guard Condition**: Optional boolean expression that must be true for the transition to fire
-- **Effect**: Optional actions executed during the transition
+   - **Source State**: The state from which the transition originates
+   - **Target State**: The state to which the transition leads
+   - **Event**: Optional trigger that activates the transition
+   - **Guard Condition**: Optional boolean expression that must be true for the transition to fire
+   - **Effect**: Optional actions executed during the transition
 
 Transition Types
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -502,9 +506,8 @@ Entry transitions define the initial state when entering a composite state. They
        status = 1;
    };
 
-**How It Works:**
-
-When a composite state is entered from outside, the entry transition determines which child state becomes active. The guard condition (if present) is evaluated, and if true, the effect (if present) is executed before entering the target state.
+.. note::
+   When a composite state is entered from outside, the entry transition determines which child state becomes active. The guard condition (if present) is evaluated, and if true, the effect (if present) is executed before entering the target state.
 
 Normal Transitions
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -529,13 +532,12 @@ Normal transitions connect two named states within the same scope.
        cleanup_flag = 1;
    };
 
-**How It Works:**
+.. note::
+   Normal transitions are evaluated during the "during" phase of the source state. When the event is triggered (if specified) and the guard condition is true (if specified), the transition fires:
 
-Normal transitions are evaluated during the "during" phase of the source state. When the event is triggered (if specified) and the guard condition is true (if specified), the transition fires:
-
-1. Source state's exit action executes
-2. Transition effect executes (if present)
-3. Target state's enter action executes
+   1. Source state's exit action executes
+   2. Transition effect executes (if present)
+   3. Target state's enter action executes
 
 Exit Transitions
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -558,9 +560,8 @@ Exit transitions define how to leave a composite state to its parent. They use t
        result = final_value;
    };
 
-**How It Works:**
-
-Exit transitions allow a child state to signal completion and return control to the parent state. The parent state can then transition to another state or exit itself.
+.. note::
+   Exit transitions allow a child state to signal completion and return control to the parent state. The parent state can then transition to another state or exit itself.
 
 Forced Transitions
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -583,28 +584,27 @@ Forced transitions are a **syntactic sugar** that automatically expands to multi
    // Forced exit from ALL substates
    ! * -> [*] [: chain_id|:: event_name] [if [condition]] ';'
 
-**How It Works:**
+.. important::
+   Forced transitions are a **syntactic sugar** that expands during model construction. When you write:
 
-Forced transitions are a **syntactic sugar** that expands during model construction. When you write:
+   .. code-block::
 
-.. code-block::
+      state Parent {
+          ! * -> ErrorHandler :: CriticalError;
 
-   state Parent {
-       ! * -> ErrorHandler :: CriticalError;
+          state Child1;
+          state Child2;
+      }
 
-       state Child1;
-       state Child2;
-   }
+   The parser automatically generates normal transitions from **all substates**:
 
-The parser automatically generates normal transitions from **all substates**:
+   .. code-block::
 
-.. code-block::
+      // Expanded transitions (generated automatically):
+      Child1 -> ErrorHandler :: CriticalError;
+      Child2 -> ErrorHandler :: CriticalError;
 
-   // Expanded transitions (generated automatically):
-   Child1 -> ErrorHandler :: CriticalError;
-   Child2 -> ErrorHandler :: CriticalError;
-
-**Important**: These are **normal transitions** - they execute exit actions just like any other transition.
+   **Important**: These are **normal transitions** - they execute exit actions just like any other transition.
 
 **Key Characteristics:**
 
@@ -615,7 +615,13 @@ The parser automatically generates normal transitions from **all substates**:
 5. **No Effect Blocks**: Forced transitions cannot have effect blocks (syntax limitation)
 6. **Normal Execution**: Exit actions execute normally - forced transitions are just regular transitions
 
-**Correct Usage:**
+.. tip::
+   **When to Use Forced Transitions:**
+
+   - **Avoid Repetitive Code**: Define one transition instead of many identical ones
+   - **Error Handling**: Transition from any state to error handler
+   - **Emergency Shutdown**: Transition from all states to shutdown state
+   - **Timeout Handling**: Handle timeouts uniformly across multiple states
 
 .. code-block::
 
@@ -699,13 +705,12 @@ All expanded transitions from a single forced transition definition share the **
    // C -> ErrorHandler :: CriticalError
    // When you trigger CriticalError, ALL matching transitions can fire
 
-**Important Notes:**
-
-1. **Normal Transitions**: Expanded transitions are normal transitions - exit actions execute
-2. **Event Sharing**: All expanded transitions share the same event object
-3. **No Effect Blocks**: Forced transitions cannot have effect blocks (use target state's enter action)
-4. **Scope Limitation**: ``! *`` applies to direct substates, but propagates recursively
-5. **Event Scoping**: Event scoping rules (``:`` vs ``::``) apply normally
+.. warning::
+   1. **Normal Transitions**: Expanded transitions are normal transitions - exit actions execute
+   2. **Event Sharing**: All expanded transitions share the same event object
+   3. **No Effect Blocks**: Forced transitions cannot have effect blocks (use target state's enter action)
+   4. **Scope Limitation**: ``! *`` applies to direct substates, but propagates recursively
+   5. **Event Scoping**: Event scoping rules (``:`` vs ``::``) apply normally
 
 **Common Errors:**
 
@@ -735,23 +740,22 @@ All expanded transitions from a single forced transition definition share the **
 Event Scoping: Understanding Event Namespaces
 ----------------------------------------------------
 
-**The Problem:**
+.. important::
+   In hierarchical state machines, events need a namespace to avoid naming conflicts. Consider this scenario:
 
-In hierarchical state machines, events need a namespace to avoid naming conflicts. Consider this scenario:
+   .. code-block::
 
-.. code-block::
+      state Root {
+          state A;
+          state B;
+          state C;
 
-   state Root {
-       state A;
-       state B;
-       state C;
+          [*] -> A;
+          A -> B : Event;  // Which Event?
+          B -> C : Event;  // Same Event or different?
+      }
 
-       [*] -> A;
-       A -> B : Event;  // Which Event?
-       B -> C : Event;  // Same Event or different?
-   }
-
-Should both transitions use the same event or different events? The DSL provides **three scoping mechanisms** to handle this.
+   Should both transitions use the same event or different events? The DSL provides **three scoping mechanisms** to handle this.
 
 Event Scoping Mechanisms
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -771,9 +775,8 @@ Local events use the ``::`` operator and are scoped to the **source state's name
 
 **Syntax:** ``StateA -> StateB :: EventName;``
 
-**How It Works:**
-
-The event is created in the source state's namespace. Each source state gets its own event.
+.. note::
+   The event is created in the source state's namespace. Each source state gets its own event.
 
 **Example:**
 
@@ -798,11 +801,12 @@ The event is created in the source state's namespace. Each source state gets its
    // B -> A :: E  is equivalent to:
    B -> A : /Root.B.E
 
-**When to Use:**
+.. tip::
+   **When to Use:**
 
-- Each transition needs its own unique event
-- Avoid naming conflicts between similar transitions
-- State-specific events that shouldn't be shared
+   - Each transition needs its own unique event
+   - Avoid naming conflicts between similar transitions
+   - State-specific events that shouldn't be shared
 
 Chain Events (`:` operator)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -811,9 +815,8 @@ Chain events use the ``:`` operator and are scoped to the **parent state's names
 
 **Syntax:** ``StateA -> StateB : EventName;``
 
-**How It Works:**
-
-The event is created in the parent state's namespace. Multiple transitions in the same scope can share the event.
+.. note::
+   The event is created in the parent state's namespace. Multiple transitions in the same scope can share the event.
 
 **Example:**
 
@@ -839,11 +842,12 @@ The event is created in the parent state's namespace. Multiple transitions in th
    // B -> C : E  is equivalent to:
    B -> C : /Root.E
 
-**When to Use:**
+.. tip::
+   **When to Use:**
 
-- Multiple transitions should respond to the same event
-- Coordinating transitions across sibling states
-- Shared events within a scope
+   - Multiple transitions should respond to the same event
+   - Coordinating transitions across sibling states
+   - Shared events within a scope
 
 Absolute Events (`/` prefix)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -852,9 +856,8 @@ Absolute events use the ``/`` prefix and are scoped to the **root state's namesp
 
 **Syntax:** ``StateA -> StateB : /EventName;`` or ``StateA -> StateB : /Path.To.EventName;``
 
-**How It Works:**
-
-The event path is resolved from the root state, allowing explicit control over event location.
+.. note::
+   The event path is resolved from the root state, allowing explicit control over event location.
 
 **Example:**
 
@@ -888,12 +891,13 @@ The event path is resolved from the root state, allowing explicit control over e
    A1 -> A2 : /GlobalEvent  // Root.GlobalEvent
    B1 -> B2 : /GlobalEvent  // Root.GlobalEvent (SAME event)
 
-**When to Use:**
+.. tip::
+   **When to Use:**
 
-- Cross-module communication
-- Global events that should be accessible from anywhere
-- Explicit control over event location
-- Avoiding ambiguity in deeply nested states
+   - Cross-module communication
+   - Global events that should be accessible from anywhere
+   - Explicit control over event location
+   - Avoiding ambiguity in deeply nested states
 
 Complete Comparison Example
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -950,34 +954,32 @@ Here's a comprehensive example demonstrating all three scoping mechanisms:
 3. **Absolute events** (``/``): All transitions share the same event
    - ``ModuleA -> Target : /GlobalEvent`` = ``ModuleB -> Target : /GlobalEvent``
 
-Nested Path Syntax
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.. seealso::
+   You can also use dot notation with absolute paths to reference events in specific states:
 
-You can also use dot notation with absolute paths to reference events in specific states:
+   .. code-block::
 
-.. code-block::
+      state Root {
+          state A {
+              state A1;
+              state A2;
 
-   state Root {
-       state A {
-           state A1;
-           state A2;
+              [*] -> A1;
+          }
 
-           [*] -> A1;
-       }
+          state B {
+              state B1;
+              state B2;
 
-       state B {
-           state B1;
-           state B2;
+              [*] -> B1;
+              // Reference event from A's namespace
+              B1 -> B2 : /A.SpecificEvent;  // Uses Root.A.SpecificEvent
+          }
 
-           [*] -> B1;
-           // Reference event from A's namespace
-           B1 -> B2 : /A.SpecificEvent;  // Uses Root.A.SpecificEvent
-       }
+          [*] -> A;
+      }
 
-       [*] -> A;
-   }
-
-This allows fine-grained control over event location in the hierarchy.
+   This allows fine-grained control over event location in the hierarchy.
 
 Guard Conditions and Effects
 ----------------------------------------------------
@@ -1287,13 +1289,14 @@ Operators
 Arithmetic vs Logical Expression Separation
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-**CRITICAL**: The fcstm DSL strictly separates arithmetic expressions (``num_expression``) from logical/boolean expressions (``cond_expression``). Unlike common high-level languages, you **cannot mix** arithmetic and logical operations freely.
+.. danger::
+   The fcstm DSL strictly separates arithmetic expressions (``num_expression``) from logical/boolean expressions (``cond_expression``). Unlike common high-level languages, you **cannot mix** arithmetic and logical operations freely.
 
-**Key Rules:**
+   **Key Rules:**
 
-1. **Assignments require arithmetic expressions** - You cannot assign boolean results directly
-2. **Guard conditions require boolean expressions** - You cannot use arithmetic values as conditions
-3. **Comparison operators bridge the two** - They take arithmetic operands and produce boolean results
+   1. **Assignments require arithmetic expressions** - You cannot assign boolean results directly
+   2. **Guard conditions require boolean expressions** - You cannot use arithmetic values as conditions
+   3. **Comparison operators bridge the two** - They take arithmetic operands and produce boolean results
 
 **Common Errors:**
 
@@ -1323,9 +1326,10 @@ Arithmetic vs Logical Expression Separation
    result = flags & 0x01;           // Valid: bitwise returns arithmetic value
    StateA -> StateB : if [(flags & 0x01) != 0];  // Valid: compare bitwise result
 
-**Why This Matters:**
+.. tip::
+   **Why This Matters:**
 
-This separation ensures type safety and prevents ambiguous expressions. In languages like C, ``if (x + 5)`` is valid (non-zero is true), but in fcstm DSL you must be explicit: ``if [x + 5 > 0]``. This makes state machine logic clearer and prevents subtle bugs.
+   This separation ensures type safety and prevents ambiguous expressions. In languages like C, ``if (x + 5)`` is valid (non-zero is true), but in fcstm DSL you must be explicit: ``if [x + 5 > 0]``. This makes state machine logic clearer and prevents subtle bugs.
 
 Mathematical Functions
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1377,7 +1381,8 @@ Conditional expressions use ternary operator syntax for inline conditional logic
 
 **Syntax:** ``(condition) ? true_value : false_value``
 
-**Important**: The condition MUST be enclosed in parentheses.
+.. important::
+   The condition MUST be enclosed in parentheses.
 
 **Examples:**
 
@@ -1400,13 +1405,14 @@ Conditional expressions use ternary operator syntax for inline conditional logic
 
 **Common Error:**
 
-.. code-block::
+.. warning::
+   .. code-block::
 
-   // ERROR: Missing parentheses around condition
-   result = x > 0 ? 1 : -1;  // Syntax error
+      // ERROR: Missing parentheses around condition
+      result = x > 0 ? 1 : -1;  // Syntax error
 
-   // CORRECT: Parentheses required
-   result = (x > 0) ? 1 : -1;
+      // CORRECT: Parentheses required
+      result = (x > 0) ? 1 : -1;
 
 Complete Expression Example
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1490,15 +1496,16 @@ Common Errors
 Lifecycle Actions
 ----------------------------------------------------
 
-**How Lifecycle Actions Work:**
+.. note::
+   **How Lifecycle Actions Work:**
 
-Lifecycle actions define behavior that executes at specific points in a state's lifetime:
+   Lifecycle actions define behavior that executes at specific points in a state's lifetime:
 
-- **Enter Actions**: Execute once when entering a state
-- **During Actions**: Execute repeatedly while a state is active
-- **Exit Actions**: Execute once when leaving a state
+   - **Enter Actions**: Execute once when entering a state
+   - **During Actions**: Execute repeatedly while a state is active
+   - **Exit Actions**: Execute once when leaving a state
 
-For composite states, lifecycle actions can have **aspects** (``before``/``after``) that control execution order relative to child states.
+   For composite states, lifecycle actions can have **aspects** (``before``/``after``) that control execution order relative to child states.
 
 Action Types
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1632,42 +1639,6 @@ Composite states MUST use ``before`` or ``after`` aspects:
        Child2 -> [*];
    }
 
-**Aspect Actions (``>>`` prefix):**
-
-Aspect actions apply to ALL descendant leaf states:
-
-.. code-block::
-
-   state Root {
-       // Executes before EVERY descendant leaf state's during action
-       >> during before {
-           global_counter = global_counter + 1;
-       }
-
-       // Executes after EVERY descendant leaf state's during action
-       >> during after {
-           global_counter = global_counter + 100;
-       }
-
-       state Child {
-           state GrandChild {
-               during {
-                   local_counter = local_counter + 10;
-               }
-           }
-
-           [*] -> GrandChild;
-       }
-
-       [*] -> Child;
-   }
-
-**Execution Order for GrandChild:**
-
-1. ``Root >> during before`` (``global_counter += 1``)
-2. ``GrandChild.during`` (``local_counter += 10``)
-3. ``Root >> during after`` (``global_counter += 100``)
-
 **Abstract During Actions:**
 
 .. code-block::
@@ -1748,6 +1719,45 @@ Exit actions execute when leaving a state to outside.
        exit ref BaseState.CommonCleanup;
    }
 
+Aspect Actions
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Aspect actions apply to **all descendant leaf states** using the ``>>`` prefix.
+
+**Syntax:**
+
+.. code-block::
+
+   state Root {
+       // Executes before EVERY descendant leaf state's during action
+       >> during before {
+           global_counter = global_counter + 1;
+       }
+
+       // Executes after EVERY descendant leaf state's during action
+       >> during after {
+           global_counter = global_counter + 100;
+       }
+
+       state Child {
+           state GrandChild {
+               during {
+                   local_counter = local_counter + 10;
+               }
+           }
+
+           [*] -> GrandChild;
+       }
+
+       [*] -> Child;
+   }
+
+**Execution Order for GrandChild:**
+
+1. ``Root >> during before`` (``global_counter += 1``)
+2. ``GrandChild.during`` (``local_counter += 10``)
+3. ``Root >> during after`` (``global_counter += 100``)
+
 Hierarchical Execution Order
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -1764,39 +1774,40 @@ Understanding execution order in hierarchical state machines is crucial. Here's 
    :align: center
    :alt: Hierarchical Execution Order
 
-**Execution Scenarios:**
+.. important::
+   **Execution Scenarios:**
 
-**Scenario 1: Initial Entry** (``HierarchyDemo -> Parent -> ChildA``)
+   **Scenario 1: Initial Entry** (``HierarchyDemo -> Parent -> ChildA``)
 
-1. ``HierarchyDemo.enter`` (if defined)
-2. ``Parent.enter`` (if defined)
-3. ``Parent.during before`` executes (``execution_log += 100``)
-4. ``ChildA.enter`` (if defined)
+   1. ``HierarchyDemo.enter`` (if defined)
+   2. ``Parent.enter`` (if defined)
+   3. ``Parent.during before`` executes (``execution_log += 100``)
+   4. ``ChildA.enter`` (if defined)
 
-**Scenario 2: During Phase** (while ``ChildA`` is active, each cycle)
+   **Scenario 2: During Phase** (while ``ChildA`` is active, each cycle)
 
-1. ``HierarchyDemo >> during before`` (``execution_log += 1000``)
-2. ``Parent >> during before`` (``execution_log += 10``)
-3. ``ChildA.during`` (``execution_log += 1``)
-4. ``Parent >> during after`` (``execution_log += 90``)
-5. ``HierarchyDemo >> during after`` (``execution_log += 9000``)
+   1. ``HierarchyDemo >> during before`` (``execution_log += 1000``)
+   2. ``Parent >> during before`` (``execution_log += 10``)
+   3. ``ChildA.during`` (``execution_log += 1``)
+   4. ``Parent >> during after`` (``execution_log += 90``)
+   5. ``HierarchyDemo >> during after`` (``execution_log += 9000``)
 
-**Total per cycle**: 10101
+   **Total per cycle**: 10101
 
-**Scenario 3: Child-to-Child Transition** (``ChildA -> ChildB :: Switch``)
+   **Scenario 3: Child-to-Child Transition** (``ChildA -> ChildB :: Switch``)
 
-1. ``ChildA.exit`` (if defined)
-2. Transition effect (if any)
-3. ``ChildB.enter`` (if defined)
+   1. ``ChildA.exit`` (if defined)
+   2. Transition effect (if any)
+   3. ``ChildB.enter`` (if defined)
 
-**CRITICAL**: ``Parent.during before/after`` are **NOT** executed!
+   **CRITICAL**: ``Parent.during before/after`` are **NOT** executed!
 
-**Scenario 4: Exit from Composite State** (``ChildB -> [*] :: Exit``)
+   **Scenario 4: Exit from Composite State** (``ChildB -> [*] :: Exit``)
 
-1. ``ChildB.exit`` (if defined)
-2. ``Parent.during after`` executes (``execution_log += 900``)
-3. ``Parent.exit`` (if defined)
-4. ``HierarchyDemo.exit`` (if defined)
+   1. ``ChildB.exit`` (if defined)
+   2. ``Parent.during after`` executes (``execution_log += 900``)
+   3. ``Parent.exit`` (if defined)
+   4. ``HierarchyDemo.exit`` (if defined)
 
 **Lifecycle Flow Diagrams:**
 
@@ -1841,49 +1852,51 @@ Lifecycle actions must adhere to these constraints:
 4. **Expression Types**: Assignment expressions must be type-compatible
 5. **Reference Validity**: Referenced actions must exist in the specified state
 
-**Why These Rules?**
+.. tip::
+   **Why These Rules?**
 
-- **Variable Validity**: Prevents undefined behavior
-- **Aspect Restrictions**: Enforces correct lifecycle semantics
-- **Assignment Targets**: Ensures all assignments are valid
-- **Expression Types**: Maintains type safety
-- **Reference Validity**: Prevents dangling references
+   - **Variable Validity**: Prevents undefined behavior
+   - **Aspect Restrictions**: Enforces correct lifecycle semantics
+   - **Assignment Targets**: Ensures all assignments are valid
+   - **Expression Types**: Maintains type safety
+   - **Reference Validity**: Prevents dangling references
 
 Common Errors
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-**Incorrect Usage:**
+.. warning::
+   **Incorrect Usage:**
 
-.. code-block::
+   .. code-block::
 
-   // ERROR: Undefined variable in action
-   state Example {
-       enter {
-           undefined_var = 10;  // Semantic error
-       }
-   }
+      // ERROR: Undefined variable in action
+      state Example {
+          enter {
+              undefined_var = 10;  // Semantic error
+          }
+      }
 
-   // ERROR: Aspect on leaf state
-   state LeafState {
-       during before {  // Semantic error: leaf states can't have aspects
-           x = 1;
-       }
-   }
+      // ERROR: Aspect on leaf state
+      state LeafState {
+          during before {  // Semantic error: leaf states can't have aspects
+              x = 1;
+          }
+      }
 
-   // ERROR: Plain during on composite state
-   state CompositeState {
-       state Child;
-       [*] -> Child;
+      // ERROR: Plain during on composite state
+      state CompositeState {
+          state Child;
+          [*] -> Child;
 
-       during {  // Semantic error: composite states need before/after
-           x = 1;
-       }
-   }
+          during {  // Semantic error: composite states need before/after
+              x = 1;
+          }
+      }
 
-   // ERROR: Invalid reference
-   state Example {
-       enter ref NonExistentState.Action;  // Semantic error
-   }
+      // ERROR: Invalid reference
+      state Example {
+          enter ref NonExistentState.Action;  // Semantic error
+      }
 
 **Correct Alternative:**
 
@@ -1942,15 +1955,16 @@ To demonstrate all DSL features in a realistic context, here's a comprehensive s
    :align: center
    :alt: Smart Thermostat State Machine
 
-**Key Design Patterns Demonstrated:**
+.. tip::
+   **Key Design Patterns Demonstrated:**
 
-1. **Hierarchical Decomposition**: ``OperationalMode`` contains multiple sub-modes (Idle, Heating, Cooling, AutoMode)
-2. **Aspect-Oriented Programming**: Global ``>> during before/after`` for logging and display updates
-3. **Proportional Control**: Heating/cooling power calculated based on temperature difference
-4. **Automatic Mode Switching**: ``AutoMode`` intelligently switches between heating, cooling, and idle
-5. **Error Handling**: Transitions to ``ErrorState`` on abnormal conditions
-6. **Maintenance Scheduling**: Automatic transition to maintenance after 1000 cycles
-7. **Abstract Functions**: Hardware-specific operations declared as abstract for platform implementation
+   1. **Hierarchical Decomposition**: ``OperationalMode`` contains multiple sub-modes (Idle, Heating, Cooling, AutoMode)
+   2. **Aspect-Oriented Programming**: Global ``>> during before/after`` for logging and display updates
+   3. **Proportional Control**: Heating/cooling power calculated based on temperature difference
+   4. **Automatic Mode Switching**: ``AutoMode`` intelligently switches between heating, cooling, and idle
+   5. **Error Handling**: Transitions to ``ErrorState`` on abnormal conditions
+   6. **Maintenance Scheduling**: Automatic transition to maintenance after 1000 cycles
+   7. **Abstract Functions**: Hardware-specific operations declared as abstract for platform implementation
 
 **Execution Flow Example:**
 
@@ -1968,9 +1982,6 @@ Starting from ``Initializing``:
    - ``Heating.during`` calculates proportional heating power
    - If ``current_temp >= target_temp``, transitions back to ``Idle``
 7. After 1000 cycles, transitions to ``Maintenance``
-
-Comments and Documentation
-----------------------------------------------------
 
 Comment Styles
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -2165,21 +2176,23 @@ This tutorial has covered the complete PyFCSTM DSL syntax, including:
 - **Reference Actions**: Reusing actions across states
 - **Comments**: Line and block comments for documentation
 
-**Key Concepts:**
+.. important::
+   **Key Concepts:**
 
-- **Hierarchical State Machines**: States can contain nested substates, enabling modular design
-- **Aspect-Oriented Programming**: ``>> during before/after`` actions apply to all descendant leaf states
-- **Composite State Lifecycle**: ``during before/after`` execute only on entry/exit, not during child-to-child transitions
-- **Event Namespacing**: Three scoping mechanisms (``::`` for local, ``:`` for chain, ``/`` for absolute)
-- **Event Resolution**: All event scoping mechanisms are equivalent to absolute paths with different starting points
-- **Semantic Validation**: Comprehensive validation ensures correct state machine definitions
+   - **Hierarchical State Machines**: States can contain nested substates, enabling modular design
+   - **Aspect-Oriented Programming**: ``>> during before/after`` actions apply to all descendant leaf states
+   - **Composite State Lifecycle**: ``during before/after`` execute only on entry/exit, not during child-to-child transitions
+   - **Event Namespacing**: Three scoping mechanisms (``::`` for local, ``:`` for chain, ``/`` for absolute)
+   - **Event Resolution**: All event scoping mechanisms are equivalent to absolute paths with different starting points
+   - **Semantic Validation**: Comprehensive validation ensures correct state machine definitions
 
-**Additional Resources:**
+.. seealso::
+   **Additional Resources:**
 
-- Grammar definition: ``pyfcstm/dsl/grammar/Grammar.g4``
-- Parser implementation: ``pyfcstm/dsl/parse.py``
-- Model system: ``pyfcstm/model/model.py``
-- Test suite: ``test/testfile/sample_codes/``
+   - Grammar definition: ``pyfcstm/dsl/grammar/Grammar.g4``
+   - Parser implementation: ``pyfcstm/dsl/parse.py``
+   - Model system: ``pyfcstm/model/model.py``
+   - Test suite: ``test/testfile/sample_codes/``
 
-For implementation details, refer to the grammar definition, parsing pipeline, and model system documentation. The test suite provides additional examples and validation patterns for complex use cases.
+   For implementation details, refer to the grammar definition, parsing pipeline, and model system documentation. The test suite provides additional examples and validation patterns for complex use cases.
 

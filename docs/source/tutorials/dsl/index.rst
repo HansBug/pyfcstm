@@ -1284,6 +1284,49 @@ Operators
    result = 2 ** (3 + 1);           // Result: 16
    result = 10 / (2 + 3);           // Result: 2
 
+Arithmetic vs Logical Expression Separation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**CRITICAL**: The fcstm DSL strictly separates arithmetic expressions (``num_expression``) from logical/boolean expressions (``cond_expression``). Unlike common high-level languages, you **cannot mix** arithmetic and logical operations freely.
+
+**Key Rules:**
+
+1. **Assignments require arithmetic expressions** - You cannot assign boolean results directly
+2. **Guard conditions require boolean expressions** - You cannot use arithmetic values as conditions
+3. **Comparison operators bridge the two** - They take arithmetic operands and produce boolean results
+
+**Common Errors:**
+
+.. code-block::
+
+   // ERROR: Cannot assign boolean expression to variable
+   result = (x > 10);               // Syntax error: boolean in arithmetic context
+   result = (flag1 && flag2);       // Syntax error: logical operation in assignment
+
+   // ERROR: Cannot use arithmetic expression as condition
+   StateA -> StateB : if [counter]; // Syntax error: arithmetic in boolean context
+   StateA -> StateB : if [x + 5];   // Syntax error: arithmetic in boolean context
+
+**Correct Usage:**
+
+.. code-block::
+
+   // Use ternary operator to convert boolean to arithmetic
+   result = (x > 10) ? 1 : 0;       // Valid: ternary returns arithmetic value
+   result = (flag1 && flag2) ? 1 : 0;  // Valid: converts boolean to int
+
+   // Use comparison operators in guard conditions
+   StateA -> StateB : if [counter > 0];    // Valid: comparison returns boolean
+   StateA -> StateB : if [x + 5 > 10];     // Valid: arithmetic in comparison
+
+   // Bitwise operations work in arithmetic context
+   result = flags & 0x01;           // Valid: bitwise returns arithmetic value
+   StateA -> StateB : if [(flags & 0x01) != 0];  // Valid: compare bitwise result
+
+**Why This Matters:**
+
+This separation ensures type safety and prevents ambiguous expressions. In languages like C, ``if (x + 5)`` is valid (non-zero is true), but in fcstm DSL you must be explicit: ``if [x + 5 > 0]``. This makes state machine logic clearer and prevents subtle bugs.
+
 Mathematical Functions
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

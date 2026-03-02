@@ -526,6 +526,8 @@ state StateB {
 
 ### Expression System
 
+**IMPORTANT**: The fcstm DSL strictly separates arithmetic expressions (`num_expression`) from logical/boolean expressions (`cond_expression`). Unlike common high-level languages, you cannot mix arithmetic and logical operations freely. Assignments require arithmetic expressions, guard conditions require boolean expressions, and comparison operators bridge the two by taking arithmetic operands and producing boolean results.
+
 **Arithmetic Operators**:
 
 ```
@@ -565,11 +567,25 @@ StateA -> StateB : if [flag1 or flag2];              // 'or' keyword
 StateA -> StateB : if [not error_flag];              // 'not' keyword
 ```
 
-**Ternary Conditional Expressions**:
+**Ternary Conditional Expressions** (converts boolean to arithmetic):
 
 ```
 result = (condition) ? value_if_true : value_if_false;
-counter = (temp > 25) ? 1 : 0;
+counter = (temp > 25) ? 1 : 0;   // Use ternary to convert boolean to int
+```
+
+**Common Errors**:
+
+```
+// ERROR: Cannot assign boolean to variable
+result = (x > 10);               // Syntax error
+
+// ERROR: Cannot use arithmetic as condition
+StateA -> StateB : if [counter]; // Syntax error
+
+// CORRECT: Use ternary or comparison
+result = (x > 10) ? 1 : 0;       // Valid
+StateA -> StateB : if [counter > 0];  // Valid
 ```
 
 **Function Calls**:

@@ -1,5 +1,5 @@
 pyfcstm.utils.validate
-===================================
+========================================================
 
 .. currentmodule:: pyfcstm.utils.validate
 
@@ -7,25 +7,22 @@ pyfcstm.utils.validate
 
 
 ValidationError
-----------------------------------------------------------
+-----------------------------------------------------
 
 .. autoclass:: ValidationError
-    :members:
-
 
 
 ModelValidationError
-----------------------------------------------------------
+-----------------------------------------------------
 
 .. autoclass:: ModelValidationError
-    :members:
-
+    :members: __init__
 
 
 IValidatable
-----------------------------------------------------------
+-----------------------------------------------------
 
 .. autoclass:: IValidatable
-    :members: validate
+    :members: validate,__validators__
 
 

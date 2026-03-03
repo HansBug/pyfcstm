@@ -1,0 +1,292 @@
+# LLM Configuration Example for pyfcstm
+#
+# This file demonstrates how to configure LLM providers and models for automated
+# documentation generation, TODO completion, and unit test generation.
+#
+# SETUP INSTRUCTIONS:
+# 1. Copy this file to .llmconfig.yaml (without .example)
+# 2. Replace placeholder API tokens with your actual credentials
+# 3. The .llmconfig.yaml file is gitignored to protect your credentials
+#
+# CONFIGURATION STRUCTURE:
+# - providers: Define API endpoints and authentication for each LLM provider
+# - models: Map model names to provider configurations
+# - Special keys:
+#   - __default__: Used when no model name is specified
+#   - __fallback__: Used when a requested model is not found
+#
+# ENVIRONMENT VARIABLE OVERRIDES:
+# You can override settings using environment variables:
+#   - LLM_BASE_URL: Override base_url
+#   - LLM_API_TOKEN: Override api_token
+#   - LLM_MODEL_NAME: Override model_name
+
+# ============================================================================
+# PROVIDER DEFINITIONS
+# ============================================================================
+# Define reusable provider configurations using YAML anchors (&name)
+# These can be referenced by models using aliases (*name)
+
+providers:
+  # --- International Providers ---
+
+  openai: &openai
+    base_url: https://api.openai.com/v1
+    api_token: sk-YOUR_OPENAI_API_KEY_HERE
+
+  anthropic: &anthropic
+    # Note: Anthropic uses a different API format, may need adapter
+    base_url: https://api.anthropic.com/v1
+    api_token: sk-ant-YOUR_ANTHROPIC_API_KEY_HERE
+
+  google_gemini: &google_gemini
+    base_url: https://generativelanguage.googleapis.com/v1beta/openai/
+    api_token: YOUR_GOOGLE_API_KEY_HERE
+
+  groq: &groq
+    # Groq provides ultra-fast inference
+    base_url: https://api.groq.com/openai/v1
+    api_token: gsk_YOUR_GROQ_API_KEY_HERE
+
+  mistral: &mistral
+    base_url: https://api.mistral.ai/v1
+    api_token: YOUR_MISTRAL_API_KEY_HERE
+
+  perplexity: &perplexity
+    base_url: https://api.perplexity.ai
+    api_token: pplx-YOUR_PERPLEXITY_API_KEY_HERE
+
+  openrouter: &openrouter
+    # OpenRouter provides access to multiple models through one API
+    base_url: https://openrouter.ai/api/v1
+    api_token: sk-or-v1-YOUR_OPENROUTER_API_KEY_HERE
+
+  # --- Chinese Providers ---
+
+  deepseek: &deepseek
+    # DeepSeek provides cost-effective models with strong coding capabilities
+    base_url: https://api.deepseek.com/v1
+    api_token: sk-YOUR_DEEPSEEK_API_KEY_HERE
+
+  aliyun_qwen: &aliyun_qwen
+    # Alibaba Cloud Qwen models
+    base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+    api_token: sk-YOUR_ALIYUN_API_KEY_HERE
+
+  baidu_qianfan: &baidu_qianfan
+    # Baidu Wenxin (ERNIE) models
+    base_url: https://qianfan.baidubce.com/v2
+    api_token: YOUR_BAIDU_ACCESS_TOKEN_HERE
+
+  zhipu_ai: &zhipu_ai
+    # Zhipu AI GLM models
+    base_url: https://open.bigmodel.cn/api/paas/v4/
+    api_token: YOUR_ZHIPU_API_KEY_HERE
+
+  moonshot_kimi: &moonshot_kimi
+    # Moonshot AI Kimi models
+    base_url: https://api.moonshot.cn/v1
+    api_token: sk-YOUR_MOONSHOT_API_KEY_HERE
+
+  volcengine_doubao: &volcengine_doubao
+    # ByteDance Doubao models (requires endpoint ID as model name)
+    base_url: https://ark.cn-beijing.volces.com/api/v3
+    api_token: YOUR_VOLCENGINE_API_KEY_HERE
+
+  yi_01: &yi_01
+    # 01.AI Yi models
+    base_url: https://api.yi.ai/v1
+    api_token: YOUR_YI_API_KEY_HERE
+
+  tencent_hunyuan: &tencent_hunyuan
+    # Tencent Hunyuan models
+    base_url: https://api.hunyuan.cloud.tencent.com/v1
+    api_token: YOUR_TENCENT_API_KEY_HERE
+
+# ============================================================================
+# MODEL CONFIGURATIONS
+# ============================================================================
+# Map model names to provider configurations
+# Use YAML merge (<<: *anchor) to inherit provider settings
+
+models:
+  # --- Default Model ---
+  # Used when no model name is specified in commands
+  __default__:
+    <<: *deepseek
+    model_name: deepseek-chat
+
+  # --- OpenAI Models ---
+  gpt-4o:
+    <<: *openai
+    model_name: gpt-4o
+
+  gpt-4o-mini:
+    <<: *openai
+    model_name: gpt-4o-mini
+
+  o1-preview:
+    <<: *openai
+    model_name: o1-preview
+
+  o1-mini:
+    <<: *openai
+    model_name: o1-mini
+
+  # --- Anthropic Models ---
+  claude-3-5-sonnet:
+    <<: *anthropic
+    model_name: claude-3-5-sonnet-20240620
+
+  claude-3-opus:
+    <<: *anthropic
+    model_name: claude-3-opus-20240229
+
+  # --- Google Gemini Models ---
+  gemini-1.5-pro:
+    <<: *google_gemini
+    model_name: gemini-1.5-pro
+
+  gemini-1.5-flash:
+    <<: *google_gemini
+    model_name: gemini-1.5-flash
+
+  # --- Groq Models (Ultra-fast) ---
+  llama-3.3-70b:
+    <<: *groq
+    model_name: llama-3.3-70b-versatile
+
+  mixtral-8x7b:
+    <<: *groq
+    model_name: mixtral-8x7b-32768
+
+  # --- DeepSeek Models ---
+  deepseek-chat:
+    <<: *deepseek
+    model_name: deepseek-chat
+
+  deepseek-coder:
+    <<: *deepseek
+    model_name: deepseek-coder
+
+  deepseek-reasoner:
+    <<: *deepseek
+    model_name: deepseek-reasoner
+
+  # --- Alibaba Qwen Models ---
+  qwen-max:
+    <<: *aliyun_qwen
+    model_name: qwen-max
+
+  qwen-plus:
+    <<: *aliyun_qwen
+    model_name: qwen-plus
+
+  qwen-turbo:
+    <<: *aliyun_qwen
+    model_name: qwen-turbo
+
+  # --- Baidu ERNIE Models ---
+  ernie-4.0:
+    <<: *baidu_qianfan
+    model_name: ernie-4.0-turbo-8k
+
+  # --- Zhipu GLM Models ---
+  glm-4-plus:
+    <<: *zhipu_ai
+    model_name: glm-4-plus
+
+  glm-4-flash:
+    <<: *zhipu_ai
+    model_name: glm-4-flash
+
+  # --- Moonshot Kimi Models ---
+  kimi-v1:
+    <<: *moonshot_kimi
+    model_name: moonshot-v1-128k
+
+  # --- ByteDance Doubao Models ---
+  doubao-pro:
+    <<: *volcengine_doubao
+    model_name: YOUR_ENDPOINT_ID_HERE  # Replace with your endpoint ID
+
+  # --- Yi Models ---
+  yi-lightning:
+    <<: *yi_01
+    model_name: yi-lightning
+
+  # --- Tencent Hunyuan Models ---
+  hunyuan-pro:
+    <<: *tencent_hunyuan
+    model_name: hunyuan-pro
+
+  # --- Fallback Model ---
+  # Used when a requested model is not found in the configuration
+  # Uncomment and configure if you want fallback behavior
+  # __fallback__:
+  #   <<: *openrouter
+  #   # model_name will be set to the requested model name automatically
+
+# ============================================================================
+# USAGE EXAMPLES
+# ============================================================================
+#
+# After configuring this file, you can use the following commands:
+#
+# Generate Python docstrings:
+#   make docs_auto                                    # Uses __default__ model
+#   make docs_auto AUTO_OPTIONS="--model-name gpt-4o" # Uses specific model
+#
+# Complete TODO comments:
+#   make todos_auto
+#   make todos_auto AUTO_OPTIONS="--model-name deepseek-coder"
+#
+# Generate unit tests:
+#   make tests_auto
+#   make tests_auto AUTO_OPTIONS="--model-name claude-3-5-sonnet"
+#
+# Custom parameters:
+#   make docs_auto AUTO_OPTIONS="--model-name gpt-4o --param max_tokens=200000 --timeout 300"
+#
+# Target specific directory:
+#   make docs_auto RANGE_DIR=model AUTO_OPTIONS="--model-name deepseek-chat"
+#
+# ============================================================================
+# SECURITY NOTES
+# ============================================================================
+#
+# - NEVER commit .llmconfig.yaml to version control (it's gitignored)
+# - Keep API tokens secure and rotate them regularly
+# - Use environment variables for CI/CD pipelines
+# - Different providers have different rate limits and pricing
+# - Some providers require additional authentication (OAuth, etc.)
+#
+# ============================================================================
+# PROVIDER-SPECIFIC NOTES
+# ============================================================================
+#
+# OpenAI:
+#   - Requires valid API key from platform.openai.com
+#   - Supports function calling and structured outputs
+#
+# DeepSeek:
+#   - Cost-effective for code generation tasks
+#   - deepseek-coder optimized for programming
+#   - deepseek-reasoner for complex reasoning tasks
+#
+# Groq:
+#   - Ultra-fast inference (10x+ faster than others)
+#   - Limited model selection but excellent for rapid iteration
+#
+# Alibaba Qwen:
+#   - Strong Chinese language support
+#   - qwen-max for best quality, qwen-turbo for speed
+#
+# ByteDance Doubao:
+#   - Requires endpoint ID instead of model name
+#   - Get endpoint ID from Volcengine console
+#
+# OpenRouter:
+#   - Access to 100+ models through single API
+#   - Useful as fallback provider
+#   - Pricing varies by model

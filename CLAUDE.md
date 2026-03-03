@@ -50,6 +50,20 @@ make docs
 
 # Build production documentation
 make pdocs
+
+# Generate RST documentation from Python source files
+make rst_auto
+
+# Generate RST for specific directory
+make rst_auto RANGE_DIR=model
+
+# LLM-based documentation generation (requires hbllmutils)
+make docs_auto              # Generate Python docstrings
+make todos_auto             # Complete TODO comments
+make tests_auto             # Generate unit tests
+
+# LLM options can be customized
+make docs_auto AUTO_OPTIONS="--model-name deepseek-V3 --param max_tokens=200000"
 ```
 
 ### ANTLR Grammar Development
@@ -826,7 +840,551 @@ Note: `SubSystem.during before/after` do **NOT** execute during the `during` pha
 - `:` or `/` references events from root or parent namespaces
 - Enables hierarchical event organization and reuse
 
+## Python Docstring Style Guide
+
+This project uses **reStructuredText (reST)** format for all Python docstrings, following PEP 257 conventions and Sphinx documentation standards. Consistency in documentation style is critical for maintainability and automated documentation generation.
+
+### Core Principles
+
+1. **Format**: Use reStructuredText (reST) markup exclusively
+2. **Completeness**: Document all public APIs (modules, classes, functions, methods)
+3. **Clarity**: Write for both users and maintainers—explain the "why" and "what"
+4. **Cross-references**: Use reST roles (`:class:`, `:func:`, `:mod:`) to link related components
+5. **Examples**: Include practical usage examples for most public APIs
+6. **Tone**: Professional, clear, and technical but accessible
+
+### Module-Level Docstrings
+
+Module docstrings should provide a comprehensive overview of the module's purpose and contents:
+
+```python
+"""
+Brief one-line description of the module.
+
+Longer description explaining the module's purpose, main capabilities,
+and how it fits into the larger system. Can span multiple paragraphs.
+
+The module contains the following main components:
+
+* :class:`ClassName` - Brief description of the class
+* :func:`function_name` - Brief description of the function
+* :data:`variable_name` - Brief description of module-level data
+
+.. note::
+   Additional notes about usage, requirements, or important caveats.
+
+Example::
+
+    >>> from module import something
+    >>> result = something()
+    >>> result
+    expected_output
+"""
+```
+
+**Real example from the codebase** ([pyfcstm/dsl/parse.py](pyfcstm/dsl/parse.py)):
+
+```python
+"""
+Grammar parsing utilities for the pyfcstm domain-specific language.
+
+This module provides helper functions for parsing grammar-based input text using
+ANTLR4-generated lexer/parser classes and a parse-tree listener that converts
+ANTLR parse trees into internal node objects.
+
+The module contains the following main components:
+
+* :func:`parse_with_grammar_entry` - Parse text using an arbitrary grammar entry rule.
+* :func:`parse_condition` - Parse a condition expression.
+* :func:`parse_preamble` - Parse a preamble program.
+
+.. note::
+   All parsing relies on the ANTLR4-generated classes from
+   :mod:`pyfcstm.dsl.grammar` and may raise :exc:`pyfcstm.dsl.error.GrammarParseError`
+   when input does not conform to the grammar.
+"""
+```
+
+### Class Docstrings
+
+Class docstrings document the class purpose, constructor parameters, and instance/class variables:
+
+```python
+class ClassName:
+    """
+    Brief one-line description of the class.
+
+    Longer explanation of the class purpose, responsibilities, and usage patterns.
+    Explain what the class represents and how it should be used.
+
+    :param param_name: Description of constructor parameter
+    :type param_name: ParamType
+    :param optional_param: Description, defaults to ``default_value``
+    :type optional_param: ParamType, optional
+
+    :ivar instance_var: Description of instance variable
+    :vartype instance_var: VarType
+    :ivar another_var: Description of another instance variable
+    :vartype another_var: AnotherType
+
+    :cvar class_var: Description of class variable
+    :type class_var: ClassVarType
+
+    Example::
+
+        >>> obj = ClassName(param_name=value)
+        >>> obj.method()
+        expected_result
+    """
+```
+
+**Real example from the codebase** ([pyfcstm/render/render.py](pyfcstm/render/render.py)):
+
+```python
+class StateMachineCodeRenderer:
+    """
+    Renderer for generating code from state machine models using templates.
+
+    This class handles rendering of state machine models into code by combining
+    a template directory with a configuration file. It creates a Jinja2
+    environment, registers expression rendering styles, and maps template files
+    to rendering operations or file copying operations.
+
+    :param template_dir: Directory containing the templates and configuration
+    :type template_dir: str
+    :param config_file: Name of the configuration file within the template directory,
+        defaults to ``'config.yaml'``
+    :type config_file: str, optional
+
+    :ivar template_dir: Absolute path to the template directory
+    :vartype template_dir: str
+    :ivar config_file: Absolute path to the configuration file
+    :vartype config_file: str
+    :ivar env: Jinja2 environment used for rendering
+    :vartype env: jinja2.Environment
+    :ivar _ignore_patterns: List of git-style ignore patterns
+    :vartype _ignore_patterns: List[str]
+
+    Example::
+
+        >>> renderer = StateMachineCodeRenderer('./templates')
+        >>> renderer.render(my_state_machine, './output', clear_previous_directory=True)
+    """
+```
+
+### Function and Method Docstrings
+
+Function/method docstrings follow this structure:
+
+```python
+def function_name(param1: Type1, param2: Type2, optional_param: Type3 = default) -> ReturnType:
+    """
+    Brief one-line description of what the function does.
+
+    Longer explanation of the function's behavior, algorithm, or important details.
+    Explain edge cases, assumptions, or non-obvious behavior.
+
+    :param param1: Description of the first parameter
+    :type param1: Type1
+    :param param2: Description of the second parameter
+    :type param2: Type2
+    :param optional_param: Description of optional parameter, defaults to ``default``
+    :type optional_param: Type3, optional
+    :return: Description of what is returned
+    :rtype: ReturnType
+    :raises ExceptionType: Description of when this exception is raised
+    :raises AnotherException: Description of another exception condition
+
+    Example::
+
+        >>> result = function_name(arg1, arg2)
+        >>> result
+        expected_output
+    """
+```
+
+**Real example from the codebase** ([pyfcstm/entry/generate.py](pyfcstm/entry/generate.py)):
+
+```python
+def generate(
+    input_code_file: str,
+    template_dir: str,
+    output_dir: str,
+    clear_directory: bool,
+) -> None:
+    """
+    Generate code from a state machine DSL file using templates.
+
+    This command reads the DSL file as bytes, decodes it with
+    :func:`pyfcstm.utils.auto_decode`, parses it with the grammar entry
+    ``state_machine_dsl``, converts the AST to a state machine model, and
+    renders output using :class:`pyfcstm.render.StateMachineCodeRenderer`.
+
+    :param input_code_file: Path to the input DSL code file.
+    :type input_code_file: str
+    :param template_dir: Path to the directory containing templates.
+    :type template_dir: str
+    :param output_dir: Path to the directory where generated code will be written.
+    :type output_dir: str
+    :param clear_directory: Whether to clear the output directory before rendering.
+    :type clear_directory: bool
+    :return: ``None``.
+    :rtype: None
+
+    :raises UnicodeDecodeError: If the input file cannot be decoded.
+    :raises pyfcstm.dsl.error.GrammarParseError: If DSL parsing fails.
+    :raises IOError: If reading the input file or writing output files fails.
+
+    Example::
+
+        $ pyfcstm generate -i ./machine.dsl -t ./templates -o ./out --clear
+    """
+```
+
+### Dataclass Docstrings
+
+Dataclasses document their fields using `:param:` and `:type:` tags:
+
+```python
+@dataclass
+class DataClassName:
+    """
+    Brief description of what this dataclass represents.
+
+    Longer explanation of the dataclass purpose and usage.
+
+    :param field1: Description of the first field
+    :type field1: Type1
+    :param field2: Description of the second field
+    :type field2: Type2
+
+    Example::
+
+        >>> obj = DataClassName(field1=value1, field2=value2)
+        >>> obj.field1
+        value1
+    """
+    field1: Type1
+    field2: Type2
+```
+
+**Real example from the codebase** ([pyfcstm/model/model.py](pyfcstm/model/model.py)):
+
+```python
+@dataclass
+class Operation(AstExportable):
+    """
+    Represents an operation that assigns a value to a variable.
+
+    An operation consists of a variable name and an expression that will be
+    assigned to the variable when the operation is executed.
+
+    :param var_name: The name of the variable to assign to
+    :type var_name: str
+    :param expr: The expression to evaluate and assign to the variable
+    :type expr: Expr
+
+    Example::
+
+        >>> op = Operation(var_name="counter", expr=some_expr)
+        >>> op.var_name
+        'counter'
+    """
+    var_name: str
+    expr: Expr
+```
+
+### Parameter Documentation Patterns
+
+**Required parameters**:
+```python
+:param param_name: Description of the parameter
+:type param_name: type_annotation
+```
+
+**Optional parameters with defaults**:
+```python
+:param param_name: Description, defaults to ``default_value``
+:type param_name: type_annotation, optional
+```
+
+**Note**: Use double backticks for inline code (`` ``default_value`` ``).
+
+### Return Value Documentation
+
+Always document both the description and type:
+
+```python
+:return: Description of what is returned
+:rtype: ReturnType
+```
+
+For functions returning `None`:
+```python
+:return: ``None``.
+:rtype: None
+```
+
+### Exception Documentation
+
+Document all exceptions that may be raised:
+
+```python
+:raises ExceptionType: Description of when this exception is raised
+:raises AnotherException: Description of another exception condition
+```
+
+Use fully qualified exception names when referencing custom exceptions:
+```python
+:raises pyfcstm.dsl.error.GrammarParseError: If DSL parsing fails.
+```
+
+### Cross-References and Markup
+
+Use reST roles to create hyperlinks in generated documentation:
+
+- **Classes**: `:class:`ClassName`` or `:class:`module.ClassName``
+- **Functions**: `:func:`function_name`` or `:func:`module.function_name``
+- **Methods**: `:meth:`method_name`` or `:meth:`Class.method_name``
+- **Modules**: `:mod:`module.name``
+- **Exceptions**: `:exc:`ExceptionType``
+- **Data/Variables**: `:data:`variable_name``
+- **Attributes**: `:attr:`attribute_name``
+
+**Example**:
+```python
+"""
+This function uses :class:`StateMachineCodeRenderer` to render templates.
+It calls :func:`parse_with_grammar_entry` from :mod:`pyfcstm.dsl.parse`
+and may raise :exc:`pyfcstm.dsl.error.GrammarParseError`.
+"""
+```
+
+### Examples in Docstrings
+
+Include practical examples using the `Example::` directive (note the double colon):
+
+```python
+Example::
+
+    >>> from pyfcstm.utils.text import normalize
+    >>> normalize("Hello World!")
+    'Hello_World'
+    >>> normalize("test-case")
+    'test_case'
+```
+
+For CLI examples, use shell syntax without `>>>`:
+
+```python
+Example::
+
+    $ pyfcstm plantuml -i input.fcstm -o output.puml
+    $ pyfcstm generate -i input.fcstm -t templates/ -o output/
+```
+
+### Special Directives
+
+Use reST directives for special content:
+
+**Notes**:
+```python
+.. note::
+   Important information or caveats about usage.
+```
+
+**Warnings**:
+```python
+.. warning::
+   Critical warnings about potential issues or dangers.
+```
+
+### Instance and Class Variables
+
+**Instance variables** (use `:ivar:` and `:vartype:`):
+```python
+:ivar variable_name: Description of the instance variable
+:vartype variable_name: VariableType
+```
+
+**Class variables** (use `:cvar:` and `:type:`):
+```python
+:cvar class_variable: Description of the class variable
+:type class_variable: ClassVariableType
+```
+
+### Common Patterns in pyfcstm
+
+**AST and Model Conversions**:
+```python
+def to_ast_node(self) -> dsl_nodes.ASTNode:
+    """
+    Convert this model object to an AST node representation.
+
+    :return: An AST node representing this object.
+    :rtype: pyfcstm.dsl.node.ASTNode
+    """
+```
+
+**State Machine Domain Concepts**:
+Use domain-specific terminology consistently: states, transitions, events, lifecycle actions, guards, effects, composite states, leaf states, aspect actions.
+
+**Template and Rendering Context**:
+Document Jinja2 template integration and expression rendering styles when relevant.
+
+### Checklist for Writing Docstrings
+
+When writing or reviewing docstrings, ensure:
+
+- [ ] Brief one-line summary at the top
+- [ ] Longer explanation if the function/class is non-trivial
+- [ ] All parameters documented with `:param:` and `:type:`
+- [ ] Return value documented with `:return:` and `:rtype:`
+- [ ] All exceptions documented with `:raises:`
+- [ ] Cross-references use reST roles (`:class:`, `:func:`, etc.)
+- [ ] Examples included for public APIs
+- [ ] Inline code uses double backticks (`` ``value`` ``)
+- [ ] Optional parameters marked with ``, optional`` in type
+- [ ] Default values shown in parameter description
+- [ ] Tone is professional and clear
+- [ ] No typos or grammatical errors
+
+### Anti-Patterns to Avoid
+
+**DON'T**:
+- Use Google-style or NumPy-style docstrings (use reST only)
+- Omit type information (always include `:type:` and `:rtype:`)
+- Use single backticks for inline code (use double backticks)
+- Write vague descriptions like "Does something" or "Helper function"
+- Forget to document exceptions
+- Use bare class/function names without reST roles
+- Include implementation details that may change
+- Write overly verbose documentation for trivial functions
+
+**DO**:
+- Follow the reST format consistently
+- Explain the "why" and "what", not just the "how"
+- Use cross-references to connect related components
+- Include practical examples
+- Keep descriptions concise but complete
+- Update docstrings when code changes
+
 ## Development Notes
+
+### LLM-Based Documentation Generation
+
+The project includes tools for automated documentation generation using Large Language Models (LLMs), migrated from the hbutils project.
+
+#### Overview
+
+The LLM documentation system provides:
+
+1. **RST Generation** - Automatically generate reStructuredText documentation from Python source files
+2. **Pydoc Generation** - Generate comprehensive Python docstrings using LLMs (requires `hbllmutils`)
+3. **TODO Completion** - Complete TODO comments in code using contextual analysis (requires `hbllmutils`)
+4. **Unit Test Generation** - Generate unit tests for Python modules (requires `hbllmutils`)
+
+#### Setup
+
+**For RST Generation Only** (no additional setup needed):
+- Uses standard dependencies already in `requirements.txt`
+- Scripts: `auto_rst.py` and `auto_rst_top_index.py`
+
+**For LLM-Based Features** (pydoc, todo, unittest):
+
+1. Install `hbllmutils`:
+   ```bash
+   pip install hbllmutils
+   ```
+
+2. Configure LLM API:
+   ```bash
+   cp .llmconfig.yaml.example .llmconfig.yaml
+   # Edit .llmconfig.yaml and add your API token
+   ```
+
+3. The `.llmconfig.yaml` file is gitignored to protect API credentials.
+
+#### Usage
+
+**RST Documentation Generation**:
+
+```bash
+# Generate RST for all Python files
+make rst_auto
+
+# Generate RST for specific directory
+make rst_auto RANGE_DIR=model
+
+# Generate top-level API index
+python auto_rst_top_index.py -i pyfcstm -o docs/source/api_doc.rst
+```
+
+**LLM-Based Documentation** (requires `hbllmutils`):
+
+```bash
+# Generate Python docstrings
+make docs_auto
+
+# Complete TODO comments
+make todos_auto
+
+# Generate unit tests
+make tests_auto
+
+# Customize LLM options
+make docs_auto AUTO_OPTIONS="--model-name deepseek-V3 --param max_tokens=200000"
+```
+
+#### File Structure
+
+```
+pyfcstm/
+├── auto_rst.py                    # RST generation from Python files
+├── auto_rst_top_index.py          # Top-level API index generation
+├── .llmconfig.yaml.example        # Example LLM configuration
+├── .llmconfig.yaml                # Your LLM configuration (gitignored)
+├── LLM_DOCS_README.md             # Detailed documentation
+└── docs/source/api_doc/           # Generated RST files
+```
+
+#### Key Features
+
+**RST Generation** (`auto_rst.py`):
+- Uses AST parsing to extract public members (classes, functions, variables)
+- Generates Sphinx directives (`automodule`, `autoclass`, `autofunction`, `autodata`)
+- Creates toctree navigation for packages
+- Handles `__init__.py` files specially to create package indexes
+
+**LLM-Based Generation** (via `hbllmutils`):
+- Analyzes code structure, imports, and dependencies
+- Generates contextually appropriate documentation/code
+- Validates generated code syntax with AST parsing
+- Supports multiple LLM providers (DeepSeek, OpenRouter, etc.)
+
+#### Configuration
+
+The `AUTO_OPTIONS` variable in the Makefile controls LLM behavior:
+
+```makefile
+AUTO_OPTIONS ?= --param max_tokens=400000 --no-ignore-module pyfcstm --model-name deepseek-chat
+```
+
+Common options:
+- `--param max_tokens=N` - Set maximum tokens for LLM response
+- `--model-name MODEL` - Specify LLM model to use
+- `--no-ignore-module pyfcstm` - Don't ignore pyfcstm imports in analysis
+- `--timeout SECONDS` - API request timeout (default: 210s)
+
+#### Best Practices
+
+1. **Start with RST Generation** - Generate RST files first to establish documentation structure
+2. **Review LLM Output** - Always review generated docstrings and code before committing
+3. **Incremental Updates** - Use `RANGE_DIR` to target specific modules for updates
+4. **Version Control** - Commit generated documentation separately from code changes
+5. **API Token Security** - Never commit `.llmconfig.yaml` to git
+
+For detailed information, see `LLM_DOCS_README.md`.
 
 ### ANTLR Grammar Modifications
 

@@ -1,5 +1,5 @@
 pyfcstm.config
-=====================
+========================================================
 
 .. currentmodule:: pyfcstm.config
 
@@ -10,3 +10,4 @@ pyfcstm.config
     :maxdepth: 3
 
     meta
+

@@ -1,21 +1,43 @@
 """
-This module provides a validation framework for model validation in Python.
-It includes base classes and exceptions for implementing validation rules and handling validation errors.
-The framework supports collecting multiple validation errors and provides a clean interface for validation.
+Validation framework utilities for model validation workflows.
 
-Usage:
+This module provides a lightweight validation framework for Python models. It
+defines base exceptions for validation failures and a mixin-style interface
+(:class:`IValidatable`) that allows classes to register validation rules and
+perform aggregated validation.
+
+The module contains the following main components:
+
+* :class:`ValidationError` - Exception for a single validation rule failure
+* :class:`ModelValidationError` - Aggregated exception for multiple failures
+* :class:`IValidatable` - Mixin interface for defining and running validators
+
+Example::
+
+    >>> from pyfcstm.utils.validate import IValidatable, ValidationError
+    >>>
     >>> class MyModel(IValidatable):
-    ...     def _my_validator_function(self):
-    ...         ...
+    ...     def __init__(self, value: int):
+    ...         self.value = value
     ...
-    ...     __validators__ = [my_validator_function]
+    ...     def _validate_positive(self) -> None:
+    ...         if self.value <= 0:
+    ...             raise ValidationError("Value must be positive.")
     ...
-    ...     def __init__(self, data):
-    ...         self.data = data
+    ...     __validators__ = [_validate_positive]
+    ...
+    >>> model = MyModel(1)
+    >>> model.validate()
+    >>> bad_model = MyModel(0)
+    >>> try:
+    ...     bad_model.validate()
+    ... except Exception as err:
+    ...     print(type(err).__name__)
+    ModelValidationError
 """
 
 import os
-from typing import List
+from typing import Callable, List
 
 from hbutils.string import plural_word
 
@@ -24,7 +46,15 @@ class ValidationError(Exception):
     """
     Base exception class for validation errors.
 
-    This exception should be raised when a single validation rule fails.
+    This exception should be raised when a single validation rule fails. It is
+    designed to be caught and collected by :class:`IValidatable`.
+
+    Example::
+
+        >>> raise ValidationError("Invalid value.")
+        Traceback (most recent call last):
+            ...
+        ValidationError: Invalid value.
     """
     pass
 
@@ -33,17 +63,23 @@ class ModelValidationError(Exception):
     """
     Exception class for aggregating multiple validation errors.
 
-    This exception contains a list of ValidationError instances and formats them
-    into a readable error message.
+    This exception contains a list of :class:`ValidationError` instances and
+    formats them into a readable error message.
 
     :param errors: List of validation errors that occurred
     :type errors: List[ValidationError]
 
     :ivar errors: Stored validation errors
-    :type errors: List[ValidationError]
+    :vartype errors: List[ValidationError]
+
+    Example::
+
+        >>> err = ModelValidationError([ValidationError("A"), ValidationError("B")])
+        >>> "2 errors" in str(err)
+        True
     """
 
-    def __init__(self, errors: List[ValidationError]):
+    def __init__(self, errors: List[ValidationError]) -> None:
         super().__init__(
             f"Model validation error, {plural_word(len(errors), 'error')} in total:{os.linesep}"
             f"{os.linesep.join(map(lambda x: f'{x[0]}. {x[1]}', enumerate(map(repr, errors), start=1)))}",
@@ -55,35 +91,44 @@ class IValidatable:
     """
     Interface class for implementing validatable objects.
 
-    Classes inheriting from IValidatable should define their validation rules
-    in the __validators__ class variable as a list of validator functions.
-    Each validator function should take the instance as parameter and raise
-    ValidationError if validation fails.
+    Classes inheriting from :class:`IValidatable` should define their validation
+    rules in the :attr:`__validators__` class variable as a list of validator
+    methods. Each validator should accept the instance as the sole parameter
+    and raise :class:`ValidationError` if the rule fails.
 
     :cvar __validators__: List of validator functions to be applied
-    :type __validators__: List[callable]
+    :type __validators__: List[Callable[["IValidatable"], None]]
 
-    Usage:
+    Example::
+
         >>> class MyModel(IValidatable):
-        ...     def _my_validator_function(self):
-        ...         ...
+        ...     def _validate_non_empty(self) -> None:
+        ...         if not getattr(self, "value", None):
+        ...             raise ValidationError("Value is empty.")
         ...
-        ...     __validators__ = [my_validator_function]
-        ...     
+        ...     __validators__ = [_validate_non_empty]
+        ...
         >>> model = MyModel()
-        >>> model.validate()  # Raises ModelValidationError if validation fails
+        >>> try:
+        ...     model.validate()
+        ... except ModelValidationError as err:
+        ...     isinstance(err.errors[0], ValidationError)
+        True
     """
 
-    __validators__ = []
+    __validators__: List[Callable[["IValidatable"], None]] = []
 
     def _validate_for_errors(self) -> List[ValidationError]:
         """
         Execute all validators and collect validation errors.
 
+        Each validator registered in :attr:`__validators__` is called with the
+        current instance. Any :class:`ValidationError` raised is collected.
+
         :return: List of validation errors that occurred
         :rtype: List[ValidationError]
         """
-        errors = []
+        errors: List[ValidationError] = []
         for validator in self.__validators__:
             try:
                 validator(self)
@@ -91,11 +136,25 @@ class IValidatable:
                 errors.append(err)
         return errors
 
-    def validate(self):
+    def validate(self) -> None:
         """
         Validate the object using all registered validators.
 
         :raises ModelValidationError: If any validation errors occur
+
+        Example::
+
+            >>> class MyModel(IValidatable):
+            ...     def _validate(self) -> None:
+            ...         raise ValidationError("Always invalid.")
+            ...
+            ...     __validators__ = [_validate]
+            ...
+            >>> try:
+            ...     MyModel().validate()
+            ... except ModelValidationError as err:
+            ...     len(err.errors)
+            1
         """
         errors = self._validate_for_errors()
         if errors:

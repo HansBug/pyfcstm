@@ -1,6 +1,5 @@
 pyfcstm.model.base
-=================================================
-
+========================================================
 
 .. currentmodule:: pyfcstm.model.base
 
@@ -8,14 +7,16 @@ pyfcstm.model.base
 
 
 AstExportable
-----------------------------------------------------------
+-----------------------------------------------------
 
 .. autoclass:: AstExportable
     :members: to_ast_node
 
 
 PlantUMLExportable
-----------------------------------------------------------
+-----------------------------------------------------
 
 .. autoclass:: PlantUMLExportable
     :members: to_plantuml
+
+

@@ -1,25 +1,46 @@
 """
-Expression handling module for mathematical expressions and operations.
+Expression handling utilities for mathematical expressions and evaluation.
 
-This module provides a comprehensive set of classes for representing and evaluating
-mathematical expressions. It includes support for basic data types (integers, floats, booleans),
-various operators (unary, binary, conditional), mathematical functions, and variables.
+This module defines an expression system used by the DSL layer to model, evaluate,
+and serialize mathematical expressions. Expressions are represented as an object
+tree with support for literals, variables, unary/binary/conditional operators,
+and unary mathematical functions. Each expression can be evaluated by supplying
+variable values, converted into DSL AST nodes, and inspected for variable usage.
 
-The expression system allows for:
+The module contains the following public components:
 
-- Building complex mathematical expressions
-- Evaluating expressions with variable substitution
-- Converting expressions to AST nodes
-- Analyzing expressions to extract variables
-- Handling operator precedence correctly
+* :class:`Expr` - Abstract base class for all expressions.
+* :class:`Integer` - Integer literal expression.
+* :class:`Float` - Floating-point literal expression with constant recognition.
+* :class:`Boolean` - Boolean literal expression.
+* :class:`Op` - Base class for operator expressions.
+* :class:`UnaryOp` - Unary operator expression.
+* :class:`BinaryOp` - Binary operator expression.
+* :class:`ConditionalOp` - Ternary conditional expression.
+* :class:`UFunc` - Unary mathematical function expression.
+* :class:`Variable` - Variable reference expression.
+* :func:`parse_expr_node_to_expr` - Convert DSL AST nodes to expression objects.
 
-All expression classes inherit from the base `Expr` class and implement the AstExportable interface.
+.. note::
+   Operator precedence is respected when converting to AST nodes. Parentheses
+   are inserted automatically to preserve evaluation order.
+
+Example::
+
+    >>> from pyfcstm.model.expr import Variable, Integer, BinaryOp, UFunc
+    >>> expr = BinaryOp(x=Variable("x"), op="+", y=Integer(2))
+    >>> expr(x=3)
+    5
+    >>> func_expr = UFunc(func="sqrt", x=Integer(9))
+    >>> func_expr()
+    3.0
+
 """
 
 import math
 import operator
 from dataclasses import dataclass
-from typing import Iterator
+from typing import Iterator, List, Any
 
 from .base import AstExportable
 from ..dsl import node as dsl_nodes
@@ -55,12 +76,14 @@ class Expr(AstExportable):
         """
         Iterate over direct sub-expressions of this expression.
 
+        Subclasses override this method to yield child expressions.
+
         :return: Iterator over sub-expressions
         :rtype: Iterator[Expr]
         """
         yield from []
 
-    def _iter_all_subs(self):
+    def _iter_all_subs(self) -> Iterator['Expr']:
         """
         Recursively iterate over all sub-expressions including this expression.
 
@@ -71,11 +94,14 @@ class Expr(AstExportable):
         for sub in self._iter_subs():
             yield from sub._iter_all_subs()
 
-    def list_variables(self):
+    def list_variables(self) -> List['Variable']:
         """
         List all unique variables used in this expression.
 
-        :return: List of unique Variable objects
+        Variables are identified by name, and the first occurrence of each name
+        is preserved in the returned list.
+
+        :return: List of unique :class:`Variable` objects
         :rtype: list[Variable]
         """
         vs, retval = set(), []
@@ -85,7 +111,7 @@ class Expr(AstExportable):
                 vs.add(item.name)
         return retval
 
-    def _call(self, **kwargs):
+    def _call(self, **kwargs: Any) -> Any:
         """
         Internal method to evaluate the expression with given variable values.
 
@@ -95,7 +121,7 @@ class Expr(AstExportable):
         """
         raise NotImplementedError  # pragma: no cover
 
-    def __call__(self, **kwargs):
+    def __call__(self, **kwargs: Any) -> Any:
         """
         Evaluate the expression with given variable values.
 
@@ -104,9 +130,11 @@ class Expr(AstExportable):
         """
         return self._call(**kwargs)
 
-    def __str__(self):
+    def __str__(self) -> str:
         """
         Get string representation of the expression.
+
+        The string representation is derived from the AST node serialization.
 
         :return: String representation
         :rtype: str
@@ -134,7 +162,7 @@ class Integer(Expr):
     """
     value: int
 
-    def _call(self, **kwargs):
+    def _call(self, **kwargs: Any) -> int:
         """
         Return the integer value.
 
@@ -164,7 +192,7 @@ class Float(Expr):
     """
     value: float
 
-    def _call(self, **kwargs):
+    def _call(self, **kwargs: Any) -> float:
         """
         Return the float value.
 
@@ -178,10 +206,11 @@ class Float(Expr):
         """
         Convert to a Float AST node or a Constant node for special values.
 
-        Recognizes mathematical constants like pi, e, and tau.
+        Recognizes mathematical constants like ``pi``, ``E``, and ``tau`` by
+        comparing the stored value with these constants.
 
         :return: Float or Constant AST node
-        :rtype: Union[dsl_nodes.Float, dsl_nodes.Constant]
+        :rtype: dsl_nodes.Expr
         """
         const_name = None
         if abs(self.value - math.pi) < 1e-10:
@@ -207,13 +236,13 @@ class Boolean(Expr):
     """
     value: bool
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """
         Ensure the value is a boolean.
         """
         self.value = bool(self.value)
 
-    def _call(self, **kwargs):
+    def _call(self, **kwargs: Any) -> bool:
         """
         Return the boolean value.
 
@@ -333,7 +362,7 @@ class Op(Expr):
     """
 
     @property
-    def op_mark(self):
+    def op_mark(self) -> str:
         """
         Get the operator mark for precedence lookup.
 
@@ -365,14 +394,14 @@ class BinaryOp(Op):
     op: str
     y: Expr
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """
         Normalize operator aliases.
         """
         self.op = self.__aliases__.get(self.op, self.op)
 
     @property
-    def op_mark(self):
+    def op_mark(self) -> str:
         """
         Get the operator mark for precedence lookup.
 
@@ -381,7 +410,7 @@ class BinaryOp(Op):
         """
         return self.op
 
-    def _iter_subs(self):
+    def _iter_subs(self) -> Iterator[Expr]:
         """
         Iterate over operands.
 
@@ -391,7 +420,7 @@ class BinaryOp(Op):
         yield self.x
         yield self.y
 
-    def _call(self, **kwargs):
+    def _call(self, **kwargs: Any) -> Any:
         """
         Evaluate the binary operation.
 
@@ -454,14 +483,14 @@ class UnaryOp(Op):
     op: str
     x: Expr
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """
         Normalize operator aliases.
         """
         self.op = self.__aliases__.get(self.op, self.op)
 
     @property
-    def op_mark(self):
+    def op_mark(self) -> str:
         """
         Get the operator mark for precedence lookup.
 
@@ -470,7 +499,7 @@ class UnaryOp(Op):
         """
         return f'unary{self.op}' if self.op in {'+', '-'} else self.op
 
-    def _iter_subs(self):
+    def _iter_subs(self) -> Iterator[Expr]:
         """
         Iterate over operands.
 
@@ -479,7 +508,7 @@ class UnaryOp(Op):
         """
         yield self.x
 
-    def _call(self, **kwargs):
+    def _call(self, **kwargs: Any) -> Any:
         """
         Evaluate the unary operation.
 
@@ -551,7 +580,7 @@ class UFunc(Expr):
     """
     Mathematical function expression.
 
-    Represents calls to mathematical functions like sin, cos, sqrt, etc.
+    Represents calls to mathematical functions like ``sin``, ``cos``, and ``sqrt``.
 
     :param func: Function name
     :type func: str
@@ -561,7 +590,7 @@ class UFunc(Expr):
     func: str
     x: Expr
 
-    def _iter_subs(self):
+    def _iter_subs(self) -> Iterator[Expr]:
         """
         Iterate over function arguments.
 
@@ -570,7 +599,7 @@ class UFunc(Expr):
         """
         yield self.x
 
-    def _call(self, **kwargs):
+    def _call(self, **kwargs: Any) -> Any:
         """
         Evaluate the function.
 
@@ -606,7 +635,7 @@ class ConditionalOp(Op):
     if_false: Expr
 
     @property
-    def op_mark(self):
+    def op_mark(self) -> str:
         """
         Get the operator mark for precedence lookup.
 
@@ -615,7 +644,7 @@ class ConditionalOp(Op):
         """
         return '?:'
 
-    def _iter_subs(self):
+    def _iter_subs(self) -> Iterator[Expr]:
         """
         Iterate over sub-expressions.
 
@@ -626,7 +655,7 @@ class ConditionalOp(Op):
         yield self.if_true
         yield self.if_false
 
-    def _call(self, **kwargs):
+    def _call(self, **kwargs: Any) -> Any:
         """
         Evaluate the conditional operation.
 
@@ -687,7 +716,7 @@ class Variable(Expr):
     """
     name: str
 
-    def _call(self, **kwargs):
+    def _call(self, **kwargs: Any) -> Any:
         """
         Lookup the variable value from kwargs.
 
@@ -709,9 +738,11 @@ class Variable(Expr):
 
 def parse_expr_node_to_expr(node: dsl_nodes.Expr) -> Expr:
     """
-    Parse an AST expression node into an Expr object.
+    Parse an AST expression node into an :class:`Expr` object.
 
-    This function converts DSL expression nodes into the corresponding expression objects.
+    This function converts DSL expression nodes into the corresponding expression
+    objects. Literal nodes become literal expressions, operators are mapped to
+    their corresponding expression classes, and parentheses are flattened.
 
     :param node: AST expression node
     :type node: dsl_nodes.Expr

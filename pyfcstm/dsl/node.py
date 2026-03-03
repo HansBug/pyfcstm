@@ -1,16 +1,42 @@
 """
-State Machine DSL AST Module
+State Machine DSL Abstract Syntax Tree (AST) Nodes.
 
-This module defines the Abstract Syntax Tree (AST) classes for a State Machine Domain Specific Language.
-It provides a comprehensive set of classes to represent various elements of state machines including:
+This module defines the Abstract Syntax Tree (AST) building blocks used by the
+State Machine Domain Specific Language (DSL). The classes provide a structured
+representation of DSL constructs such as states, transitions, expressions,
+and executable actions. Instances of these classes are typically produced by
+a parser and can be serialized back to DSL syntax via ``str()``.
 
-- States and transitions
-- Expressions and operations
-- Conditions and assignments
-- Event handling with enter, during, and exit actions
+The main public components include:
 
-The AST classes enable parsing, manipulation, and generation of state machine definitions
-in a structured way, supporting both simple and hierarchical state machines.
+* :class:`ASTNode` - Root base class for all AST nodes.
+* :class:`Expr` and :class:`Literal` families - Expression nodes and literals.
+* :class:`StateDefinition` - State declarations with nested structure.
+* :class:`TransitionDefinition` and :class:`ForceTransitionDefinition` - State transitions.
+* :class:`StateMachineDSLProgram` - Root program container.
+* Statement and action blocks such as :class:`OperationAssignment`,
+  :class:`EnterStatement`, :class:`ExitStatement`, and :class:`DuringStatement`.
+
+.. note::
+   The AST classes are data-only and focus on structure. There is no evaluation
+   or execution logic in this module.
+
+Example::
+
+    >>> from pyfcstm.dsl.node import (
+    ...     StateDefinition, TransitionDefinition, ChainID,
+    ...     StateMachineDSLProgram, DefAssignment, Integer
+    ... )
+    >>> def_var = DefAssignment("counter", "int", Integer("0"))
+    >>> trans = TransitionDefinition("idle", "active", ChainID(["idle", "start"]), None, [])
+    >>> root = StateDefinition("idle", transitions=[trans])
+    >>> program = StateMachineDSLProgram([def_var], root)
+    >>> print(program)
+    def int counter = 0;
+    state idle {
+        idle -> active :: start;
+    }
+
 """
 
 import io
@@ -82,8 +108,8 @@ class ASTNode(ABC):
     """
     Abstract base class for all AST nodes in the state machine DSL.
 
-    This class serves as the foundation for all nodes in the Abstract Syntax Tree,
-    providing a common type for all elements in the state machine definition.
+    This class provides a common ancestor for all nodes in the Abstract Syntax Tree,
+    making it convenient to type-check and traverse mixed node collections.
 
     :rtype: ASTNode
     """
@@ -106,11 +132,11 @@ class Identifier(ASTNode):
 @dataclass
 class ChainID(Identifier):
     """
-    Represents a chained identifier (e.g., a.b.c) in the state machine DSL.
+    Represents a chained identifier (e.g., ``a.b.c``) in the state machine DSL.
 
     :param path: List of string components that make up the chained identifier
     :type path: List[str]
-    :param is_absolute: Whether the identifier is absolute (starts with /)
+    :param is_absolute: Whether the identifier is absolute (starts with ``/``)
     :type is_absolute: bool
 
     :rtype: ChainID
@@ -120,13 +146,16 @@ class ChainID(Identifier):
         >>> chain_id = ChainID(['state1', 'event'])
         >>> str(chain_id)
         'state1.event'
+        >>> abs_id = ChainID(['root', 'event'], is_absolute=True)
+        >>> str(abs_id)
+        '/root.event'
     """
     path: List[str]
     is_absolute: bool = False
 
     def __str__(self) -> str:
         """
-        Convert the ChainID to its string representation.
+        Convert the :class:`ChainID` to its string representation.
 
         :return: String representation of the chained identifier
         :rtype: str
@@ -227,7 +256,7 @@ class HexInt(Literal):
     """
     Represents a hexadecimal integer literal in the state machine DSL.
 
-    :param raw: The raw string representation of the hexadecimal integer (e.g., "0xFF")
+    :param raw: The raw string representation of the hexadecimal integer (e.g., ``"0xFF"``)
     :type raw: str
 
     :rtype: HexInt
@@ -299,7 +328,7 @@ class Boolean(Literal):
     """
     Represents a boolean literal in the state machine DSL.
 
-    :param raw: The raw string representation of the boolean ("true" or "false")
+    :param raw: The raw string representation of the boolean (``"true"`` or ``"false"``)
     :type raw: str
 
     :rtype: Boolean
@@ -311,7 +340,7 @@ class Boolean(Literal):
         True
     """
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """
         Normalize the raw value to lowercase after initialization.
         """
@@ -332,7 +361,7 @@ class Constant(Literal):
     """
     Represents a named mathematical constant in the state machine DSL.
 
-    :param raw: The name of the constant (e.g., "pi", "E")
+    :param raw: The name of the constant (e.g., ``"pi"``, ``"E"``)
     :type raw: str
 
     :rtype: Constant
@@ -436,7 +465,7 @@ class UnaryOp(Expr):
 
     Unary operations apply a single operator to an expression.
 
-    :param op: The unary operator (e.g., "!", "not", "-")
+    :param op: The unary operator (e.g., ``"!"``, ``"not"``, ``"-"``)
     :type op: str
     :param expr: The expression to which the operator is applied
     :type expr: Expr
@@ -456,7 +485,7 @@ class UnaryOp(Expr):
     op: str
     expr: Expr
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """
         Replace any operator aliases with their canonical form.
         """
@@ -481,7 +510,7 @@ class BinaryOp(Expr):
 
     :param expr1: The left-hand expression
     :type expr1: Expr
-    :param op: The binary operator (e.g., "+", "-", "and", "or")
+    :param op: The binary operator (e.g., ``"+"``, ``"-"``, ``"and"``, ``"or"``)
     :type op: str
     :param expr2: The right-hand expression
     :type expr2: Expr
@@ -506,7 +535,7 @@ class BinaryOp(Expr):
     op: str
     expr2: Expr
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """
         Replace any operator aliases with their canonical form.
         """
@@ -718,7 +747,9 @@ class OperationalDeprecatedAssignment(Statement):
 
     Example::
 
-        >>> op_assign = OperationalDeprecatedAssignment("counter", BinaryOp(Name("counter"), "+", Integer("1")))
+        >>> op_assign = OperationalDeprecatedAssignment(
+        ...     "counter", BinaryOp(Name("counter"), "+", Integer("1"))
+        ... )
         >>> str(op_assign)
         'counter := counter + 1;'
     """
@@ -813,7 +844,9 @@ class Operation(ASTNode):
 
     Example::
 
-        >>> op1 = OperationalDeprecatedAssignment("counter", BinaryOp(Name("counter"), "+", Integer("1")))
+        >>> op1 = OperationalDeprecatedAssignment(
+        ...     "counter", BinaryOp(Name("counter"), "+", Integer("1"))
+        ... )
         >>> op2 = OperationalDeprecatedAssignment("flag", Boolean("true"))
         >>> operation = Operation([op1, op2])
         >>> print(str(operation))
@@ -882,9 +915,9 @@ class TransitionDefinition(ASTNode):
     Transitions define how the state machine moves from one state to another in response
     to events and conditions.
 
-    :param from_state: The source state name or INIT_STATE singleton
+    :param from_state: The source state name or :data:`INIT_STATE` singleton
     :type from_state: Union[str, _StateSingletonMark]
-    :param to_state: The target state name or EXIT_STATE singleton
+    :param to_state: The target state name or :data:`EXIT_STATE` singleton
     :type to_state: Union[str, _StateSingletonMark]
     :param event_id: Optional event identifier that triggers the transition
     :type event_id: Optional[ChainID]
@@ -897,13 +930,16 @@ class TransitionDefinition(ASTNode):
 
     Example::
 
-        >>> # Transition from initial state to "idle" state
         >>> init_trans = TransitionDefinition(INIT_STATE, "idle", None, None, [])
-        >>> # Transition from "idle" to "active" on "start" event
-        >>> event_trans = TransitionDefinition("idle", "active", ChainID(["idle", "start"]), None, [])
-        >>> # Transition with condition and operations
+        >>> event_trans = TransitionDefinition(
+        ...     "idle", "active", ChainID(["idle", "start"]), None, []
+        ... )
         >>> op = OperationAssignment("counter", Integer("0"))
-        >>> cond_trans = TransitionDefinition("active", "idle", None, BinaryOp(Name("counter"), ">", Integer("10")), [op])
+        >>> cond_trans = TransitionDefinition(
+        ...     "active", "idle", None,
+        ...     BinaryOp(Name("counter"), ">", Integer("10")),
+        ...     [op],
+        ... )
     """
     from_state: Union[str, _StateSingletonMark]
     to_state: Union[str, _StateSingletonMark]
@@ -953,9 +989,9 @@ class ForceTransitionDefinition(ASTNode):
     Forced transitions override normal transitions and are used for special cases
     like error handling or interrupts.
 
-    :param from_state: The source state name or ALL singleton
+    :param from_state: The source state name or :data:`ALL` singleton
     :type from_state: Union[str, _StateSingletonMark]
-    :param to_state: The target state name or EXIT_STATE singleton
+    :param to_state: The target state name or :data:`EXIT_STATE` singleton
     :type to_state: Union[str, _StateSingletonMark]
     :param event_id: Optional event identifier that triggers the transition
     :type event_id: Optional[ChainID]
@@ -966,7 +1002,6 @@ class ForceTransitionDefinition(ASTNode):
 
     Example::
 
-        >>> # Force transition from any state to "error" state
         >>> force_trans = ForceTransitionDefinition(ALL, "error", None, None)
         >>> str(force_trans)
         '! * -> error;'
@@ -1039,14 +1074,14 @@ class StateDefinition(ASTNode):
 
     Example::
 
-        >>> # Simple state with no internal elements
-        >>> simple_state = StateDefinition("idle", [], [], [], [], [])
+        >>> simple_state = StateDefinition("idle")
         >>> str(simple_state)
         'state idle;'
 
-        >>> # State with transitions
-        >>> trans = TransitionDefinition("idle", "active", ChainID(["idle", "start"]), None, [])
-        >>> state_with_trans = StateDefinition("idle", [], [trans], [], [], [])
+        >>> trans = TransitionDefinition(
+        ...     "idle", "active", ChainID(["idle", "start"]), None, []
+        ... )
+        >>> state_with_trans = StateDefinition("idle", transitions=[trans])
     """
     name: str
     extra_name: Optional[str] = None
@@ -1060,7 +1095,7 @@ class StateDefinition(ASTNode):
     force_transitions: List['ForceTransitionDefinition'] = None
     is_pseudo: bool = False
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """
         Initialize default empty lists for optional parameters.
         """
@@ -1127,7 +1162,9 @@ class OperationAssignment(Statement):
 
     Example::
 
-        >>> op_assign = OperationAssignment("counter", BinaryOp(Name("counter"), "+", Integer("1")))
+        >>> op_assign = OperationAssignment(
+        ...     "counter", BinaryOp(Name("counter"), "+", Integer("1"))
+        ... )
         >>> str(op_assign)
         'counter = counter + 1;'
     """
@@ -1203,7 +1240,7 @@ class StateMachineDSLProgram(ASTNode):
     Example::
 
         >>> def_var = DefAssignment("counter", "int", Integer("0"))
-        >>> root = StateDefinition("root", [], [], [], [], [])
+        >>> root = StateDefinition("root")
         >>> program = StateMachineDSLProgram([def_var], root)
         >>> print(str(program))
         def int counter = 0;
@@ -1520,7 +1557,7 @@ class DuringOperations(DuringStatement):
     """
     Represents a block of operations to perform while in a state.
 
-    :param aspect: Optional aspect name (e.g., "entry", "do", "exit")
+    :param aspect: Optional aspect name (e.g., ``"entry"``, ``"do"``, ``"exit"``)
     :type aspect: Optional[str]
     :param operations: List of operation assignments
     :type operations: List[OperationAssignment]
@@ -1575,7 +1612,7 @@ class DuringAbstractFunction(DuringStatement):
 
     :param name: Optional name of the function
     :type name: Optional[str]
-    :param aspect: Optional aspect name (e.g., "entry", "do", "exit")
+    :param aspect: Optional aspect name (e.g., ``"entry"``, ``"do"``, ``"exit"``)
     :type aspect: Optional[str]
     :param doc: Optional documentation for the function
     :type doc: Optional[str]
@@ -1632,7 +1669,7 @@ class DuringRefFunction(DuringStatement):
 
     :param name: Optional name of the function
     :type name: Optional[str]
-    :param aspect: Optional aspect name (e.g., "entry", "do", "exit")
+    :param aspect: Optional aspect name (e.g., ``"entry"``, ``"do"``, ``"exit"``)
     :type aspect: Optional[str]
     :param ref: Chain identifier referencing the function
     :type ref: ChainID
@@ -1685,7 +1722,7 @@ class DuringAspectOperations(DuringAspectStatement):
     """
     Represents a block of aspect-specific operations to perform while in a state.
 
-    :param aspect: The aspect name (e.g., "before", "after")
+    :param aspect: The aspect name (e.g., ``"before"``, ``"after"``)
     :type aspect: str
     :param operations: List of operation assignments
     :type operations: List[OperationAssignment]
@@ -1734,7 +1771,7 @@ class DuringAspectAbstractFunction(DuringAspectStatement):
 
     :param name: Optional name of the function
     :type name: Optional[str]
-    :param aspect: The aspect name (e.g., "before", "after")
+    :param aspect: The aspect name (e.g., ``"before"``, ``"after"``)
     :type aspect: str
     :param doc: Optional documentation for the function
     :type doc: Optional[str]
@@ -1743,7 +1780,9 @@ class DuringAspectAbstractFunction(DuringAspectStatement):
 
     Example::
 
-        >>> during_func = DuringAspectAbstractFunction("processData", "before", "Process incoming data")
+        >>> during_func = DuringAspectAbstractFunction(
+        ...     "processData", "before", "Process incoming data"
+        ... )
         >>> print(str(during_func))
         >> during before abstract processData /*
             Process incoming data
@@ -1785,7 +1824,7 @@ class DuringAspectRefFunction(DuringAspectStatement):
 
     :param name: Optional name of the function
     :type name: Optional[str]
-    :param aspect: The aspect name (e.g., "before", "after")
+    :param aspect: The aspect name (e.g., ``"before"``, ``"after"``)
     :type aspect: str
     :param ref: Chain identifier referencing the function
     :type ref: ChainID
@@ -1794,7 +1833,9 @@ class DuringAspectRefFunction(DuringAspectStatement):
 
     Example::
 
-        >>> ref_func = DuringAspectRefFunction("process", "before", ChainID(["common", "process"]))
+        >>> ref_func = DuringAspectRefFunction(
+        ...     "process", "before", ChainID(["common", "process"])
+        ... )
         >>> str(ref_func)
         '>> during before process ref common.process;'
     """

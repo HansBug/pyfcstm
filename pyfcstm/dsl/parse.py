@@ -1,11 +1,32 @@
 """
-Grammar parsing module for processing and interpreting grammar-based input text.
+Grammar parsing utilities for the pyfcstm domain-specific language.
 
-This module provides functions to parse input text according to grammar rules defined
-in the GrammarParser. It uses ANTLR4 for lexical analysis and parsing, and provides
-specialized functions for parsing different grammar elements like conditions, preambles,
-and operations.
+This module provides helper functions for parsing grammar-based input text using
+ANTLR4-generated lexer/parser classes and a parse-tree listener that converts
+ANTLR parse trees into internal node objects. It centralizes the parsing workflow
+for different grammar entry points and exposes convenience functions for parsing
+common DSL constructs such as conditions, preamble programs, and operation programs.
+
+The module contains the following main components:
+
+* :func:`parse_with_grammar_entry` - Parse text using an arbitrary grammar entry rule.
+* :func:`parse_condition` - Parse a condition expression.
+* :func:`parse_preamble` - Parse a preamble program.
+* :func:`parse_operation` - Parse an operation program.
+
+.. note::
+   All parsing relies on the ANTLR4-generated classes from
+   :mod:`pyfcstm.dsl.grammar` and may raise :exc:`pyfcstm.dsl.error.GrammarParseError`
+   when input does not conform to the grammar.
+
+Example::
+
+    >>> from pyfcstm.dsl.parse import parse_condition, parse_preamble
+    >>> condition = parse_condition("x > 5 && y < 10")
+    >>> preamble = parse_preamble("x := 10;")
 """
+
+from typing import Any, Callable
 
 from antlr4 import CommonTokenStream, InputStream, ParseTreeWalker
 
@@ -14,26 +35,31 @@ from .grammar import GrammarParser, GrammarLexer
 from .listener import GrammarParseListener
 
 
-def _parse_as_element(input_text, fn_element, force_finished: bool = True):
+def _parse_as_element(
+    input_text: str,
+    fn_element: Callable[[GrammarParser], Any],
+    force_finished: bool = True,
+) -> Any:
     """
-    Parse input text using the specified grammar element function.
+    Parse input text using a specified parser entry method.
 
-    This internal function handles the common parsing logic for all grammar elements,
-    including error handling and parse tree walking.
+    This internal helper consolidates the ANTLR parsing workflow:
+    it builds the lexer, parser, and parse tree, collects errors via
+    :class:`~pyfcstm.dsl.error.CollectingErrorListener`, and walks the parse
+    tree with :class:`~pyfcstm.dsl.listener.GrammarParseListener` to obtain
+    the resulting node for the root parse tree.
 
-    :param input_text: The text to parse
+    :param input_text: The text to parse.
     :type input_text: str
-
-    :param fn_element: The parser function to use for parsing
-    :type fn_element: callable
-
-    :param force_finished: Whether to check if parsing consumed all input
-    :type force_finished: bool
-
-    :return: The parsed node representation of the input
-    :rtype: object
-
-    :raises: Various parsing errors if the input doesn't match the grammar
+    :param fn_element: Parser method corresponding to the grammar entry rule.
+    :type fn_element: Callable[[GrammarParser], Any]
+    :param force_finished: Whether to enforce that parsing consumed all input,
+        defaults to ``True``.
+    :type force_finished: bool, optional
+    :return: Parsed node for the grammar entry.
+    :rtype: Any
+    :raises pyfcstm.dsl.error.GrammarParseError: If any parsing or lexical error
+        occurs, or if input is left unparsed when ``force_finished`` is ``True``.
     """
     error_listener = CollectingErrorListener()
 
@@ -58,25 +84,28 @@ def _parse_as_element(input_text, fn_element, force_finished: bool = True):
     return listener.nodes[parse_tree]
 
 
-def parse_with_grammar_entry(input_text: str, entry_name: str, force_finished: bool = True):
+def parse_with_grammar_entry(
+    input_text: str, entry_name: str, force_finished: bool = True
+) -> Any:
     """
     Parse input text using a specified grammar entry point.
 
-    This function allows parsing with any entry point in the grammar by name.
+    This function looks up a parser method on :class:`~pyfcstm.dsl.grammar.GrammarParser`
+    by name and parses the provided input text using that rule.
 
-    :param input_text: The text to parse
+    :param input_text: The text to parse.
     :type input_text: str
-
-    :param entry_name: The name of the grammar rule to use as entry point
+    :param entry_name: Name of the grammar rule to use as the entry point.
     :type entry_name: str
-
-    :param force_finished: Whether to check if parsing consumed all input
-    :type force_finished: bool
-
-    :return: The parsed node representation of the input
-    :rtype: object
-
-    :raises: Various parsing errors if the input doesn't match the grammar
+    :param force_finished: Whether to enforce that parsing consumed all input,
+        defaults to ``True``.
+    :type force_finished: bool, optional
+    :return: Parsed node for the grammar entry.
+    :rtype: Any
+    :raises AttributeError: If ``entry_name`` does not exist on
+        :class:`~pyfcstm.dsl.grammar.GrammarParser`.
+    :raises pyfcstm.dsl.error.GrammarParseError: If parsing fails or input is left
+        unparsed when ``force_finished`` is ``True``.
 
     Example::
 
@@ -85,71 +114,62 @@ def parse_with_grammar_entry(input_text: str, entry_name: str, force_finished: b
     return _parse_as_element(
         input_text=input_text,
         fn_element=getattr(GrammarParser, entry_name),
-        force_finished=force_finished
+        force_finished=force_finished,
     )
 
 
-def parse_condition(input_text: str):
+def parse_condition(input_text: str) -> Any:
     """
     Parse input text as a condition expression.
 
-    This function specifically parses conditional expressions according to
-    the grammar's condition rule.
+    This function uses the grammar's ``condition`` rule as the entry point.
 
-    :param input_text: The condition text to parse
+    :param input_text: The condition expression to parse.
     :type input_text: str
-
-    :return: The parsed condition node
-    :rtype: object
-
-    :raises: Various parsing errors if the input doesn't match the condition grammar
+    :return: Parsed condition node.
+    :rtype: Any
+    :raises pyfcstm.dsl.error.GrammarParseError: If parsing fails.
 
     Example::
 
         >>> condition_node = parse_condition("x > 5 && y < 10")
     """
-    return parse_with_grammar_entry(input_text, 'condition')
+    return parse_with_grammar_entry(input_text, "condition")
 
 
-def parse_preamble(input_text: str):
+def parse_preamble(input_text: str) -> Any:
     """
     Parse input text as a preamble program.
 
-    This function specifically parses preamble programs according to
-    the grammar's preamble_program rule.
+    This function uses the grammar's ``preamble_program`` rule as the entry point.
 
-    :param input_text: The preamble program text to parse
+    :param input_text: The preamble program text to parse.
     :type input_text: str
-
-    :return: The parsed preamble program node
-    :rtype: object
-
-    :raises: Various parsing errors if the input doesn't match the preamble grammar
+    :return: Parsed preamble program node.
+    :rtype: Any
+    :raises pyfcstm.dsl.error.GrammarParseError: If parsing fails.
 
     Example::
 
-        >>> preamble_node = parse_preamble("x = 10;")
+        >>> preamble_node = parse_preamble("x := 10;")
     """
-    return parse_with_grammar_entry(input_text, 'preamble_program')
+    return parse_with_grammar_entry(input_text, "preamble_program")
 
 
-def parse_operation(input_text: str):
+def parse_operation(input_text: str) -> Any:
     """
     Parse input text as an operation program.
 
-    This function specifically parses operation programs according to
-    the grammar's operation_program rule.
+    This function uses the grammar's ``operation_program`` rule as the entry point.
 
-    :param input_text: The operation program text to parse
+    :param input_text: The operation program text to parse.
     :type input_text: str
-
-    :return: The parsed operation program node
-    :rtype: object
-
-    :raises: Various parsing errors if the input doesn't match the operation grammar
+    :return: Parsed operation program node.
+    :rtype: Any
+    :raises pyfcstm.dsl.error.GrammarParseError: If parsing fails.
 
     Example::
 
         >>> operation_node = parse_operation("x := 10;")
     """
-    return parse_with_grammar_entry(input_text, 'operation_program')
+    return parse_with_grammar_entry(input_text, "operation_program")

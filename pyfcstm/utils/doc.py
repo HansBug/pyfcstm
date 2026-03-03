@@ -1,10 +1,26 @@
 """
-Provides functionality for formatting multiline comments in code.
+Multiline comment formatting utilities for extracted source documentation.
 
-This module contains utilities for cleaning and formatting multiline comments
-that have been parsed from source code, particularly those extracted by ANTLR4.
-It handles removing comment markers, aligning indentation, and cleaning up
-whitespace to produce readable documentation text.
+This module provides a single utility function used to clean and normalize
+multiline comments that are commonly extracted from source code by tools such
+as ANTLR4. It focuses on removing C-style comment delimiters, trimming
+unnecessary whitespace, and normalizing indentation to produce readable text.
+
+The module contains the following main components:
+
+* :func:`format_multiline_comment` - Normalize and clean multiline comment text
+
+.. note::
+   Line separators are normalized to ``'\\n'`` when the ``UNITTEST`` environment
+   variable is set, enabling deterministic behavior in test environments.
+
+Example::
+
+    >>> raw = \"\"\"/* Example
+    ...  *  multiline comment
+    ...  */\"\"\"
+    >>> format_multiline_comment(raw)
+    'Example\\nmultiline comment'
 """
 
 import os
@@ -12,19 +28,18 @@ import re
 import textwrap
 
 
-def format_multiline_comment(raw_doc):
+def format_multiline_comment(raw_doc: str) -> str:
     """
     Format multiline comments parsed by ANTLR4 by removing comment markers
     and aligning indentation.
 
-    This function takes a raw multiline comment (including /* */ markers) and
-    processes it to produce clean, properly formatted documentation text.
+    This function takes a raw multiline comment (including ``/* */`` markers)
+    and processes it to produce clean, properly formatted documentation text.
     It removes comment delimiters, trims unnecessary whitespace, and
     normalizes indentation.
 
-    :param raw_doc: Raw comment text including /* */ markers
+    :param raw_doc: Raw comment text including ``/* */`` markers
     :type raw_doc: str
-
     :return: Formatted comment text with markers removed and proper indentation
     :rtype: str
 

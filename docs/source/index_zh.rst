@@ -20,16 +20,7 @@
     :maxdepth: 2
     :caption: 最佳实践
 
-.. toctree::
-    :maxdepth: 2
-    :caption: API 文档
-
-    api_doc/config/index
-    api_doc/dsl/index
-    api_doc/entry/index
-    api_doc/model/index
-    api_doc/render/index
-    api_doc/utils/index
+.. include:: api_doc_zh.rst
 
 .. toctree::
     :maxdepth: 2

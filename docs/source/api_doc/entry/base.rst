@@ -1,51 +1,47 @@
 pyfcstm.entry.base
-===========================
+========================================================
 
 .. currentmodule:: pyfcstm.entry.base
 
 .. automodule:: pyfcstm.entry.base
 
 
-CONTEXT_SETTINGS
-----------------------------------------------------------
+CONTEXT\_SETTINGS
+-----------------------------------------------------
 
 .. autodata:: CONTEXT_SETTINGS
 
 
-
 ClickWarningException
-----------------------------------------------------------
+-----------------------------------------------------
 
 .. autoclass:: ClickWarningException
     :members: show
 
 
-
 ClickErrorException
-----------------------------------------------------------
+-----------------------------------------------------
 
 .. autoclass:: ClickErrorException
     :members: show
 
 
+KeyboardInterrupted
+-----------------------------------------------------
 
-print_exception
-----------------------------------------------------------
+.. autoclass:: KeyboardInterrupted
+    :members: __init__,exit_code
+
+
+print\_exception
+-----------------------------------------------------
 
 .. autofunction:: print_exception
 
 
-
-KeyboardInterrupted
-----------------------------------------------------------
-
-.. autoclass:: KeyboardInterrupted
-    :members: __init__
-
-
-
-command_wrap
-----------------------------------------------------------
+command\_wrap
+-----------------------------------------------------
 
 .. autofunction:: command_wrap
+
 

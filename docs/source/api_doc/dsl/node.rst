@@ -1,346 +1,345 @@
 pyfcstm.dsl.node
-=================================================
+========================================================
 
 .. currentmodule:: pyfcstm.dsl.node
 
 .. automodule:: pyfcstm.dsl.node
 
 
-ASTNode
-----------------------------------------------------------
+\_\_all\_\_
+-----------------------------------------------------
 
-.. autoclass:: ASTNode
-    :members:
+.. autodata:: __all__
 
 
-Identifier
-----------------------------------------------------------
-
-.. autoclass:: Identifier
-    :members:
-
-
-ChainID
-----------------------------------------------------------
-
-.. autoclass:: ChainID
-    :members: path, is_absolute, __str__
-
-
-Expr
-----------------------------------------------------------
-
-.. autoclass:: Expr
-    :members:
-
-
-Literal
-----------------------------------------------------------
-
-.. autoclass:: Literal
-    :members: raw, value, __str__
-
-
-Boolean
-----------------------------------------------------------
-
-.. autoclass:: Boolean
-    :members: raw, value, __str__, __post_init__
-
-
-Integer
-----------------------------------------------------------
-
-.. autoclass:: Integer
-    :members: raw, value
-
-
-HexInt
-----------------------------------------------------------
-
-.. autoclass:: HexInt
-    :members: raw, value, __str__
-
-
-Float
-----------------------------------------------------------
-
-.. autoclass:: Float
-    :members: raw, value, __str__
-
-
-Constant
-----------------------------------------------------------
-
-.. autoclass:: Constant
-    :members: raw, value, __str__
-
-
-Name
-----------------------------------------------------------
-
-.. autoclass:: Name
-    :members: name, __str__
-
-
-Paren
-----------------------------------------------------------
-
-.. autoclass:: Paren
-    :members: expr, __str__
-
-
-UnaryOp
-----------------------------------------------------------
-
-.. autoclass:: UnaryOp
-    :members: op, expr, __str__, __post_init__
-
-
-BinaryOp
-----------------------------------------------------------
-
-.. autoclass:: BinaryOp
-    :members: expr1, op, expr2, __str__, __post_init__
-
-
-ConditionalOp
-----------------------------------------------------------
-
-.. autoclass:: ConditionalOp
-    :members: cond, value_true, value_false, __str__
-
-
-UFunc
-----------------------------------------------------------
-
-.. autoclass:: UFunc
-    :members: func, expr, __str__
-
-
-Statement
-----------------------------------------------------------
-
-.. autoclass:: Statement
-    :members:
-
-
-ConstantDefinition
-----------------------------------------------------------
-
-.. autoclass:: ConstantDefinition
-    :members: name, expr, __str__
-
-
-InitialAssignment
-----------------------------------------------------------
-
-.. autoclass:: InitialAssignment
-    :members: name, expr, __str__
-
-
-DefAssignment
-----------------------------------------------------------
-
-.. autoclass:: DefAssignment
-    :members: name, type, expr, __str__
-
-
-OperationalDeprecatedAssignment
-----------------------------------------------------------
-
-.. autoclass:: OperationalDeprecatedAssignment
-    :members: name, expr, __str__
-
-
-Preamble
-----------------------------------------------------------
-
-.. autoclass:: Preamble
-    :members: stats, __str__
-
-
-Operation
-----------------------------------------------------------
-
-.. autoclass:: Operation
-    :members: stats, __str__
-
-
-Condition
-----------------------------------------------------------
-
-.. autoclass:: Condition
-    :members: expr, __str__
-
-
-TransitionDefinition
-----------------------------------------------------------
-
-.. autoclass:: TransitionDefinition
-    :members: from_state, to_state, event_id, condition_expr, post_operations, __str__
-
-
-ForceTransitionDefinition
-----------------------------------------------------------
-
-.. autoclass:: ForceTransitionDefinition
-    :members: from_state, to_state, event_id, condition_expr, __str__
-
-
-StateDefinition
-----------------------------------------------------------
-
-.. autoclass:: StateDefinition
-    :members: name, substates, transitions, enters, durings, exits, during_aspects, force_transitions, __str__, __post_init__
-
-
-OperationAssignment
-----------------------------------------------------------
-
-.. autoclass:: OperationAssignment
-    :members: name, expr, __str__
-
-
-EventDefinition
-----------------------------------------------------------
-
-.. autoclass:: EventDefinition
-    :members: name, extra_name, __str__
-
-
-StateMachineDSLProgram
-----------------------------------------------------------
-
-.. autoclass:: StateMachineDSLProgram
-    :members: definitions, root_state, __str__
-
-
-EnterStatement
-----------------------------------------------------------
-
-.. autoclass:: EnterStatement
-    :members:
-
-
-EnterOperations
-----------------------------------------------------------
-
-.. autoclass:: EnterOperations
-    :members: operations, name, __str__
-
-
-EnterAbstractFunction
-----------------------------------------------------------
-
-.. autoclass:: EnterAbstractFunction
-    :members: name, doc, __str__
-
-
-EnterRefFunction
-----------------------------------------------------------
-
-.. autoclass:: EnterRefFunction
-    :members: name, ref, __str__
-
-
-ExitStatement
-----------------------------------------------------------
-
-.. autoclass:: ExitStatement
-    :members:
-
-
-ExitOperations
-----------------------------------------------------------
-
-.. autoclass:: ExitOperations
-    :members: operations, name, __str__
-
-
-ExitAbstractFunction
-----------------------------------------------------------
-
-.. autoclass:: ExitAbstractFunction
-    :members: name, doc, __str__
-
-
-ExitRefFunction
-----------------------------------------------------------
-
-.. autoclass:: ExitRefFunction
-    :members: name, ref, __str__
-
-
-DuringStatement
-----------------------------------------------------------
-
-.. autoclass:: DuringStatement
-    :members:
-
-
-DuringOperations
-----------------------------------------------------------
-
-.. autoclass:: DuringOperations
-    :members: aspect, operations, name, __str__
-
-
-DuringAbstractFunction
-----------------------------------------------------------
-
-.. autoclass:: DuringAbstractFunction
-    :members: name, aspect, doc, __str__
-
-
-DuringRefFunction
-----------------------------------------------------------
-
-.. autoclass:: DuringRefFunction
-    :members: name, aspect, ref, __str__
-
-
-DuringAspectStatement
-----------------------------------------------------------
-
-.. autoclass:: DuringAspectStatement
-    :members:
-
-
-DuringAspectOperations
-----------------------------------------------------------
-
-.. autoclass:: DuringAspectOperations
-    :members: aspect, operations, name, __str__
-
-
-DuringAspectAbstractFunction
-----------------------------------------------------------
-
-.. autoclass:: DuringAspectAbstractFunction
-    :members: name, aspect, doc, __str__
-
-
-DuringAspectRefFunction
-----------------------------------------------------------
-
-.. autoclass:: DuringAspectRefFunction
-    :members: name, aspect, ref, __str__
-
-
-INIT_STATE
-----------------------------------------------------------
+INIT\_STATE
+-----------------------------------------------------
 
 .. autodata:: INIT_STATE
 
 
-EXIT_STATE
-----------------------------------------------------------
+EXIT\_STATE
+-----------------------------------------------------
 
 .. autodata:: EXIT_STATE
 
 
 ALL
-----------------------------------------------------------
+-----------------------------------------------------
 
 .. autodata:: ALL
+
+
+ASTNode
+-----------------------------------------------------
+
+.. autoclass:: ASTNode
+
+
+Identifier
+-----------------------------------------------------
+
+.. autoclass:: Identifier
+
+
+ChainID
+-----------------------------------------------------
+
+.. autoclass:: ChainID
+    :members: __str__,path,is_absolute
+
+
+Expr
+-----------------------------------------------------
+
+.. autoclass:: Expr
+
+
+Literal
+-----------------------------------------------------
+
+.. autoclass:: Literal
+    :members: value,__str__,raw
+
+
+Integer
+-----------------------------------------------------
+
+.. autoclass:: Integer
+
+
+HexInt
+-----------------------------------------------------
+
+.. autoclass:: HexInt
+    :members: __str__
+
+
+Float
+-----------------------------------------------------
+
+.. autoclass:: Float
+    :members: __str__
+
+
+Boolean
+-----------------------------------------------------
+
+.. autoclass:: Boolean
+    :members: __post_init__
+
+
+Constant
+-----------------------------------------------------
+
+.. autoclass:: Constant
+    :members: __str__,__KNOWN_CONSTANTS__
+
+
+Name
+-----------------------------------------------------
+
+.. autoclass:: Name
+    :members: __str__,name
+
+
+Paren
+-----------------------------------------------------
+
+.. autoclass:: Paren
+    :members: __str__,expr
+
+
+UnaryOp
+-----------------------------------------------------
+
+.. autoclass:: UnaryOp
+    :members: __post_init__,__str__,__aliases__,op,expr
+
+
+BinaryOp
+-----------------------------------------------------
+
+.. autoclass:: BinaryOp
+    :members: __post_init__,__str__,__aliases__,expr1,op,expr2
+
+
+ConditionalOp
+-----------------------------------------------------
+
+.. autoclass:: ConditionalOp
+    :members: __str__,cond,value_true,value_false
+
+
+UFunc
+-----------------------------------------------------
+
+.. autoclass:: UFunc
+    :members: __str__,func,expr
+
+
+Statement
+-----------------------------------------------------
+
+.. autoclass:: Statement
+
+
+ConstantDefinition
+-----------------------------------------------------
+
+.. autoclass:: ConstantDefinition
+    :members: __str__,name,expr
+
+
+InitialAssignment
+-----------------------------------------------------
+
+.. autoclass:: InitialAssignment
+    :members: __str__,name,expr
+
+
+DefAssignment
+-----------------------------------------------------
+
+.. autoclass:: DefAssignment
+    :members: __str__,name,type,expr
+
+
+OperationalDeprecatedAssignment
+-----------------------------------------------------
+
+.. autoclass:: OperationalDeprecatedAssignment
+    :members: __str__,name,expr
+
+
+Condition
+-----------------------------------------------------
+
+.. autoclass:: Condition
+    :members: __str__,expr
+
+
+Preamble
+-----------------------------------------------------
+
+.. autoclass:: Preamble
+    :members: __str__,stats
+
+
+Operation
+-----------------------------------------------------
+
+.. autoclass:: Operation
+    :members: __str__,stats
+
+
+TransitionDefinition
+-----------------------------------------------------
+
+.. autoclass:: TransitionDefinition
+    :members: __str__,from_state,to_state,event_id,condition_expr,post_operations
+
+
+ForceTransitionDefinition
+-----------------------------------------------------
+
+.. autoclass:: ForceTransitionDefinition
+    :members: __str__,from_state,to_state,event_id,condition_expr
+
+
+StateDefinition
+-----------------------------------------------------
+
+.. autoclass:: StateDefinition
+    :members: __post_init__,__str__,name,extra_name,events,substates,transitions,enters,durings,exits,during_aspects,force_transitions,is_pseudo
+
+
+OperationAssignment
+-----------------------------------------------------
+
+.. autoclass:: OperationAssignment
+    :members: __str__,name,expr
+
+
+EventDefinition
+-----------------------------------------------------
+
+.. autoclass:: EventDefinition
+    :members: __str__,name,extra_name
+
+
+StateMachineDSLProgram
+-----------------------------------------------------
+
+.. autoclass:: StateMachineDSLProgram
+    :members: __str__,definitions,root_state
+
+
+EnterStatement
+-----------------------------------------------------
+
+.. autoclass:: EnterStatement
+
+
+EnterOperations
+-----------------------------------------------------
+
+.. autoclass:: EnterOperations
+    :members: __str__,operations,name
+
+
+EnterAbstractFunction
+-----------------------------------------------------
+
+.. autoclass:: EnterAbstractFunction
+    :members: __str__,name,doc
+
+
+EnterRefFunction
+-----------------------------------------------------
+
+.. autoclass:: EnterRefFunction
+    :members: __str__,name,ref
+
+
+ExitStatement
+-----------------------------------------------------
+
+.. autoclass:: ExitStatement
+
+
+ExitOperations
+-----------------------------------------------------
+
+.. autoclass:: ExitOperations
+    :members: __str__,operations,name
+
+
+ExitAbstractFunction
+-----------------------------------------------------
+
+.. autoclass:: ExitAbstractFunction
+    :members: __str__,name,doc
+
+
+ExitRefFunction
+-----------------------------------------------------
+
+.. autoclass:: ExitRefFunction
+    :members: __str__,name,ref
+
+
+DuringStatement
+-----------------------------------------------------
+
+.. autoclass:: DuringStatement
+
+
+DuringOperations
+-----------------------------------------------------
+
+.. autoclass:: DuringOperations
+    :members: __str__,aspect,operations,name
+
+
+DuringAbstractFunction
+-----------------------------------------------------
+
+.. autoclass:: DuringAbstractFunction
+    :members: __str__,name,aspect,doc
+
+
+DuringRefFunction
+-----------------------------------------------------
+
+.. autoclass:: DuringRefFunction
+    :members: __str__,name,aspect,ref
+
+
+DuringAspectStatement
+-----------------------------------------------------
+
+.. autoclass:: DuringAspectStatement
+
+
+DuringAspectOperations
+-----------------------------------------------------
+
+.. autoclass:: DuringAspectOperations
+    :members: __str__,aspect,operations,name
+
+
+DuringAspectAbstractFunction
+-----------------------------------------------------
+
+.. autoclass:: DuringAspectAbstractFunction
+    :members: __str__,name,aspect,doc
+
+
+DuringAspectRefFunction
+-----------------------------------------------------
+
+.. autoclass:: DuringAspectRefFunction
+    :members: __str__,name,aspect,ref
+
+

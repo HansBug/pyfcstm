@@ -1,35 +1,32 @@
 pyfcstm.dsl.parse
-=================================================
-
+========================================================
 
 .. currentmodule:: pyfcstm.dsl.parse
 
 .. automodule:: pyfcstm.dsl.parse
 
 
-parse_with_grammar_entry
-----------------------------------------------------------
+parse\_with\_grammar\_entry
+-----------------------------------------------------
 
 .. autofunction:: parse_with_grammar_entry
 
 
-
-parse_condition
-----------------------------------------------------------
+parse\_condition
+-----------------------------------------------------
 
 .. autofunction:: parse_condition
 
 
-
-parse_preamble
-----------------------------------------------------------
+parse\_preamble
+-----------------------------------------------------
 
 .. autofunction:: parse_preamble
 
 
-
-parse_operation
-----------------------------------------------------------
+parse\_operation
+-----------------------------------------------------
 
 .. autofunction:: parse_operation
+
 

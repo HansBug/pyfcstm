@@ -1,5 +1,5 @@
 pyfcstm.entry
-=====================
+========================================================
 
 .. currentmodule:: pyfcstm.entry
 
@@ -10,5 +10,8 @@ pyfcstm.entry
     :maxdepth: 3
 
     base
+    cli
     dispatch
+    generate
+    plantuml
 

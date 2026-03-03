@@ -1,5 +1,5 @@
 pyfcstm.utils
-=====================
+========================================================
 
 .. currentmodule:: pyfcstm.utils
 
@@ -9,6 +9,7 @@ pyfcstm.utils
 .. toctree::
     :maxdepth: 3
 
+    binary
     decode
     doc
     jinja2

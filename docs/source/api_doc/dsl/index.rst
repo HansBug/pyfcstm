@@ -1,5 +1,5 @@
 pyfcstm.dsl
-=====================
+========================================================
 
 .. currentmodule:: pyfcstm.dsl
 
@@ -9,8 +9,8 @@ pyfcstm.dsl
 .. toctree::
     :maxdepth: 3
 
-    grammar
     error
+    grammar/index
     listener
     node
     parse

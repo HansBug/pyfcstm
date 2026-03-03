@@ -1,6 +1,5 @@
 pyfcstm.render.render
-=================================================
-
+========================================================
 
 .. currentmodule:: pyfcstm.render.render
 
@@ -8,9 +7,9 @@ pyfcstm.render.render
 
 
 StateMachineCodeRenderer
-----------------------------------------------------------
+-----------------------------------------------------
 
 .. autoclass:: StateMachineCodeRenderer
-    :members: __init__,render,render_one_file,copy_one_file
+    :members: __init__,render_one_file,copy_one_file,render
 
 

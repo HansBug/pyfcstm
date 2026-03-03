@@ -50,6 +50,20 @@ make docs
 
 # Build production documentation
 make pdocs
+
+# Generate RST documentation from Python source files
+make rst_auto
+
+# Generate RST for specific directory
+make rst_auto RANGE_DIR=model
+
+# LLM-based documentation generation (requires hbllmutils)
+make docs_auto              # Generate Python docstrings
+make todos_auto             # Complete TODO comments
+make tests_auto             # Generate unit tests
+
+# LLM options can be customized
+make docs_auto AUTO_OPTIONS="--model-name deepseek-V3 --param max_tokens=200000"
 ```
 
 ### ANTLR Grammar Development
@@ -827,6 +841,121 @@ Note: `SubSystem.during before/after` do **NOT** execute during the `during` pha
 - Enables hierarchical event organization and reuse
 
 ## Development Notes
+
+### LLM-Based Documentation Generation
+
+The project includes tools for automated documentation generation using Large Language Models (LLMs), migrated from the hbutils project.
+
+#### Overview
+
+The LLM documentation system provides:
+
+1. **RST Generation** - Automatically generate reStructuredText documentation from Python source files
+2. **Pydoc Generation** - Generate comprehensive Python docstrings using LLMs (requires `hbllmutils`)
+3. **TODO Completion** - Complete TODO comments in code using contextual analysis (requires `hbllmutils`)
+4. **Unit Test Generation** - Generate unit tests for Python modules (requires `hbllmutils`)
+
+#### Setup
+
+**For RST Generation Only** (no additional setup needed):
+- Uses standard dependencies already in `requirements.txt`
+- Scripts: `auto_rst.py` and `auto_rst_top_index.py`
+
+**For LLM-Based Features** (pydoc, todo, unittest):
+
+1. Install `hbllmutils`:
+   ```bash
+   pip install hbllmutils
+   ```
+
+2. Configure LLM API:
+   ```bash
+   cp .llmconfig.yaml.example .llmconfig.yaml
+   # Edit .llmconfig.yaml and add your API token
+   ```
+
+3. The `.llmconfig.yaml` file is gitignored to protect API credentials.
+
+#### Usage
+
+**RST Documentation Generation**:
+
+```bash
+# Generate RST for all Python files
+make rst_auto
+
+# Generate RST for specific directory
+make rst_auto RANGE_DIR=model
+
+# Generate top-level API index
+python auto_rst_top_index.py -i pyfcstm -o docs/source/api_doc.rst
+```
+
+**LLM-Based Documentation** (requires `hbllmutils`):
+
+```bash
+# Generate Python docstrings
+make docs_auto
+
+# Complete TODO comments
+make todos_auto
+
+# Generate unit tests
+make tests_auto
+
+# Customize LLM options
+make docs_auto AUTO_OPTIONS="--model-name deepseek-V3 --param max_tokens=200000"
+```
+
+#### File Structure
+
+```
+pyfcstm/
+├── auto_rst.py                    # RST generation from Python files
+├── auto_rst_top_index.py          # Top-level API index generation
+├── .llmconfig.yaml.example        # Example LLM configuration
+├── .llmconfig.yaml                # Your LLM configuration (gitignored)
+├── LLM_DOCS_README.md             # Detailed documentation
+└── docs/source/api_doc/           # Generated RST files
+```
+
+#### Key Features
+
+**RST Generation** (`auto_rst.py`):
+- Uses AST parsing to extract public members (classes, functions, variables)
+- Generates Sphinx directives (`automodule`, `autoclass`, `autofunction`, `autodata`)
+- Creates toctree navigation for packages
+- Handles `__init__.py` files specially to create package indexes
+
+**LLM-Based Generation** (via `hbllmutils`):
+- Analyzes code structure, imports, and dependencies
+- Generates contextually appropriate documentation/code
+- Validates generated code syntax with AST parsing
+- Supports multiple LLM providers (DeepSeek, OpenRouter, etc.)
+
+#### Configuration
+
+The `AUTO_OPTIONS` variable in the Makefile controls LLM behavior:
+
+```makefile
+AUTO_OPTIONS ?= --param max_tokens=400000 --no-ignore-module pyfcstm --model-name deepseek-chat
+```
+
+Common options:
+- `--param max_tokens=N` - Set maximum tokens for LLM response
+- `--model-name MODEL` - Specify LLM model to use
+- `--no-ignore-module pyfcstm` - Don't ignore pyfcstm imports in analysis
+- `--timeout SECONDS` - API request timeout (default: 210s)
+
+#### Best Practices
+
+1. **Start with RST Generation** - Generate RST files first to establish documentation structure
+2. **Review LLM Output** - Always review generated docstrings and code before committing
+3. **Incremental Updates** - Use `RANGE_DIR` to target specific modules for updates
+4. **Version Control** - Commit generated documentation separately from code changes
+5. **API Token Security** - Never commit `.llmconfig.yaml` to git
+
+For detailed information, see `LLM_DOCS_README.md`.
 
 ### ANTLR Grammar Modifications
 

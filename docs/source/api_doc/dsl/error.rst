@@ -1,5 +1,5 @@
 pyfcstm.dsl.error
-=================================================
+========================================================
 
 .. currentmodule:: pyfcstm.dsl.error
 
@@ -7,56 +7,57 @@ pyfcstm.dsl.error
 
 
 GrammarItemError
-----------------------------------------------------------
+-----------------------------------------------------
 
 .. autoclass:: GrammarItemError
-    :members:
 
 
 SyntaxFailError
-----------------------------------------------------------
+-----------------------------------------------------
 
 .. autoclass:: SyntaxFailError
-    :members:
+    :members: __init__
 
 
 AmbiguityError
-----------------------------------------------------------
+-----------------------------------------------------
 
 .. autoclass:: AmbiguityError
-    :members:
+    :members: __init__
 
 
 FullContextAttemptError
-----------------------------------------------------------
+-----------------------------------------------------
 
 .. autoclass:: FullContextAttemptError
-    :members:
+    :members: __init__
 
 
 ContextSensitivityError
-----------------------------------------------------------
+-----------------------------------------------------
 
 .. autoclass:: ContextSensitivityError
-    :members:
+    :members: __init__
 
 
 UnfinishedParsingError
-----------------------------------------------------------
+-----------------------------------------------------
 
 .. autoclass:: UnfinishedParsingError
-    :members:
+    :members: __init__
 
 
 GrammarParseError
-----------------------------------------------------------
+-----------------------------------------------------
 
 .. autoclass:: GrammarParseError
-    :members:
+    :members: __init__
 
 
 CollectingErrorListener
-----------------------------------------------------------
+-----------------------------------------------------
 
 .. autoclass:: CollectingErrorListener
-    :members: syntaxError, reportAmbiguity, reportAttemptingFullContext, reportContextSensitivity, check_unfinished_parsing_error, check_errors
+    :members: __init__,syntaxError,reportAmbiguity,reportAttemptingFullContext,reportContextSensitivity,check_unfinished_parsing_error,check_errors
+
+

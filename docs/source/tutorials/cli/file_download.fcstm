@@ -1,0 +1,79 @@
+def int retry_count = 0;
+def int error_code = 0;
+def int data_size = 0;
+def float progress = 0.0;
+
+state FileDownloadManager {
+    state Idle {
+        enter {
+            retry_count = 0;
+            error_code = 0;
+            data_size = 0;
+            progress = 0.0;
+        }
+    }
+
+    state Downloading {
+        state Connecting {
+            enter {
+                progress = 0.0;
+            }
+
+            during {
+                progress = progress + 0.1;
+            }
+        }
+
+        state Transferring {
+            during {
+                data_size = data_size + 1024;
+                progress = progress + 1.0;
+            }
+        }
+
+        state Paused {
+            enter {
+                error_code = 0;
+            }
+        }
+
+        [*] -> Connecting;
+        Connecting -> Transferring : if [progress >= 5.0];
+        Transferring -> Paused :: UserPause;
+        Paused -> Transferring :: UserResume;
+        Transferring -> [*] : if [progress >= 100.0];
+    }
+
+    state Retrying {
+        enter {
+            retry_count = retry_count + 1;
+            error_code = 0;
+        }
+    }
+
+    state Completed {
+        enter {
+            progress = 100.0;
+        }
+    }
+
+    state Failed {
+        enter {
+            error_code = 1;
+        }
+    }
+
+    [*] -> Idle;
+    Idle -> Downloading :: StartDownload;
+
+    Downloading -> Retrying : if [error_code != 0 && retry_count < 3];
+    Downloading -> Failed : if [error_code != 0 && retry_count >= 3];
+
+    Retrying -> Downloading : if [retry_count < 3];
+    Downloading -> Completed : if [progress >= 100.0];
+
+    Completed -> Idle :: Reset;
+    Failed -> Idle :: Reset;
+
+    !* -> Failed :: CriticalError;
+}

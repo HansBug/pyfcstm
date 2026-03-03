@@ -1,0 +1,45 @@
+{
+  "name": "fcstm-language-support",
+  "displayName": "FCSTM Language Support",
+  "description": "Syntax highlighting for FCSTM (Finite State Machine) DSL",
+  "version": "0.1.0",
+  "publisher": "pyfcstm",
+  "engines": {
+    "vscode": "^1.60.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "keywords": [
+    "fcstm",
+    "state machine",
+    "fsm",
+    "dsl"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hansbug/pyfcstm"
+  },
+  "contributes": {
+    "languages": [
+      {
+        "id": "fcstm",
+        "aliases": [
+          "FCSTM",
+          "fcstm"
+        ],
+        "extensions": [
+          ".fcstm"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "fcstm",
+        "scopeName": "source.fcstm",
+        "path": "./syntaxes/fcstm.tmLanguage.json"
+      }
+    ]
+  }
+}

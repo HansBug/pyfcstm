@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE language SYSTEM "https://resources.jetbrains.com/stardust/PlatformLangXmlSchemas/Language.dtd">
+<!--
+  FCSTM Language Definition for JetBrains IDEs
+
+  This file provides syntax highlighting for FCSTM (Finite State Machine) DSL
+  in JetBrains IDEs (IntelliJ IDEA, PyCharm, WebStorm, etc.)
+
+  Installation:
+  1. Copy this file to: <IDE_CONFIG>/filetypes/fcstm.xml
+  2. Restart the IDE
+
+  Based on the ANTLR grammar in Grammar.g4
+-->
+<language
+    name="FCSTM"
+    version="1.0"
+    extensions="fcstm"
+    mimeTypes="text/x-fcstm"
+    caseInsensitive="false">
+
+  <highlighting>
+    <!-- Keywords -->
+    <keywords keywords="state;pseudo;named;def;event;if" ignoreCase="false" />
+    <keywords2 keywords="enter;during;exit;before;after" ignoreCase="false" />
+    <keywords3 keywords="abstract;ref;effect" ignoreCase="false" />
+    <keywords4 keywords="int;float" ignoreCase="false" />
+
+    <!-- Comments -->
+    <lineComment value="//" />
+    <lineComment value="#" />
+    <blockCommentStart value="/*" />
+    <blockCommentEnd value="*/" />
+
+    <!-- Strings -->
+    <string value="DOUBLE_QUOTED" start="&quot;" end="&quot;" escape="\" />
+    <string value="SINGLE_QUOTED" start="'" end="'" escape="\" />
+
+    <!-- Numbers -->
+    <number value="HEX" pattern="0x[0-9a-fA-F]+" />
+    <number value="FLOAT" pattern="([0-9]+\.[0-9]*([eE][+-]?[0-9]+)?|\.[0-9]+([eE][+-]?[0-9]+)?|[0-9]+[eE][+-]?[0-9]+)" />
+    <number value="INTEGER" pattern="[0-9]+" />
+
+    <!-- Operators and special symbols -->
+    <!-- Multi-character operators must come before single-character ones -->
+    <operator value="-&gt;" />
+    <operator value="&gt;&gt;" />
+    <operator value="::" />
+    <operator value="**" />
+    <operator value="&lt;&lt;" />
+    <operator value="&lt;=" />
+    <operator value="&gt;=" />
+    <operator value="==" />
+    <operator value="!=" />
+    <operator value="&amp;&amp;" />
+    <operator value="||" />
+    <operator value="!" />
+    <operator value="+" />
+    <operator value="-" />
+    <operator value="*" />
+    <operator value="/" />
+    <operator value="%" />
+    <operator value="&amp;" />
+    <operator value="|" />
+    <operator value="^" />
+    <operator value="~" />
+    <operator value="&lt;" />
+    <operator value="&gt;" />
+    <operator value="=" />
+    <operator value="?" />
+
+    <!-- Brackets -->
+    <brackets>
+      <bracket open="{" close="}" />
+      <bracket open="[" close="]" />
+      <bracket open="(" close=")" />
+    </brackets>
+  </highlighting>
+
+  <extensionMap>
+    <mapping ext="fcstm" type="FCSTM" />
+  </extensionMap>
+</language>

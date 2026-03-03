@@ -86,6 +86,17 @@ if not os.environ.get("NO_CONTENTS_BUILD"):
 
 from pyfcstm.config.meta import __TITLE__, __AUTHOR__, __VERSION__
 
+# Register FCSTM Pygments lexer for syntax highlighting
+from pygments.lexers import get_lexer_by_name
+from pyfcstm.highlight.pygments_lexer import FcstmLexer
+from sphinx.highlighting import lexers
+
+# Register the lexer with Sphinx
+lexers['fcstm'] = FcstmLexer()
+lexers['fcsm'] = FcstmLexer()  # Alternative alias
+
+print("✓ FCSTM Pygments lexer registered successfully")
+
 project = __TITLE__
 copyright = '{year}, {author}'.format(year=datetime.now().year, author=__AUTHOR__)
 author = __AUTHOR__

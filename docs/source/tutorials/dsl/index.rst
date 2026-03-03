@@ -28,7 +28,7 @@ Program Organization
 
 A complete DSL program consists of optional variable definitions followed by a single root state definition:
 
-.. code-block::
+.. code-block:: fcstm
 
    program ::= def_assignment* state_definition EOF
 
@@ -50,7 +50,7 @@ Syntax
 
 Variable definitions declare typed variables with initial values using the ``def`` keyword:
 
-.. code-block::
+.. code-block:: fcstm
 
    def_assignment ::= 'def' ('int'|'float') ID '=' init_expression ';'
 
@@ -72,7 +72,7 @@ Correct Usage
 
 **Integer Variables:**
 
-.. code-block::
+.. code-block:: fcstm
 
    def int counter = 0;              // Simple initialization
    def int max_attempts = 5;         // Constant value
@@ -82,7 +82,7 @@ Correct Usage
 
 **Float Variables:**
 
-.. code-block::
+.. code-block:: fcstm
 
    def float temperature = 25.5;     // Decimal notation
    def float pi_value = pi;          // Mathematical constant
@@ -92,7 +92,7 @@ Correct Usage
 
 **Annotated Example:**
 
-.. code-block::
+.. code-block:: fcstm
 
    // System state variables
    def int system_state = 0;         // 0=init, 1=running, 2=error
@@ -133,7 +133,7 @@ Common Errors
 
 **Incorrect Usage:**
 
-.. code-block::
+.. code-block:: fcstm
 
    // ERROR: Duplicate variable names
    def int x = 1;
@@ -148,7 +148,7 @@ Common Errors
 
 **Correct Alternative:**
 
-.. code-block::
+.. code-block:: fcstm
 
    // Use unique names
    def int x_int = 1;
@@ -178,7 +178,7 @@ Syntax Types
 
 The DSL supports two fundamental types of state definitions:
 
-.. code-block::
+.. code-block:: fcstm
 
    state_definition ::= leafStateDefinition | compositeStateDefinition
    leafStateDefinition ::= ['pseudo'] 'state' ID [named STRING] ';'
@@ -197,7 +197,7 @@ Leaf states represent terminal states with no internal structure. They are the f
 
 **Correct Usage:**
 
-.. code-block::
+.. code-block:: fcstm
 
    state Idle;                      // Simple leaf state
    state Running;                   // Another leaf state
@@ -218,7 +218,7 @@ Leaf states represent terminal states with no internal structure. They are the f
 
 **Annotated Example:**
 
-.. code-block::
+.. code-block:: fcstm
 
    state TrafficLight {
        // Leaf states representing light colors
@@ -239,7 +239,7 @@ Composite states contain nested substates, transitions, and lifecycle actions. T
 
 **Correct Usage:**
 
-.. code-block::
+.. code-block:: fcstm
 
    state Machine {
        // Nested substates
@@ -268,7 +268,7 @@ Composite states contain nested substates, transitions, and lifecycle actions. T
 
 **Annotated Example:**
 
-.. code-block::
+.. code-block:: fcstm
 
    state PowerManagement {
        // Composite state lifecycle actions
@@ -327,7 +327,7 @@ Pseudo states are special states (leaf or composite) that skip ancestor aspect a
 
 **Syntax:**
 
-.. code-block::
+.. code-block:: fcstm
 
    pseudo state StateName;
    pseudo state StateName { ... }
@@ -338,7 +338,7 @@ Pseudo states are special states (leaf or composite) that skip ancestor aspect a
 **Comparison Example:**
 
 .. literalinclude:: pseudo_state_demo.fcstm
-    :language: python
+    :language: fcstm
     :linenos:
 
 **Execution Comparison:**
@@ -369,7 +369,7 @@ Named States
 
 States can have display names for documentation and visualization purposes:
 
-.. code-block::
+.. code-block:: fcstm
 
    state Running named "System Running";
    state Error named "Error State - Requires Manual Reset";
@@ -402,7 +402,7 @@ Common Errors
 
 **Incorrect Usage:**
 
-.. code-block::
+.. code-block:: fcstm
 
    // ERROR: Missing entry transition
    state Container {
@@ -433,7 +433,7 @@ Common Errors
 
 **Correct Alternative:**
 
-.. code-block::
+.. code-block:: fcstm
 
    // Provide entry transition
    state Container {
@@ -481,7 +481,7 @@ Transition Types
 
 The DSL supports three types of transitions with distinct syntax patterns:
 
-.. code-block::
+.. code-block:: fcstm
 
    transition_definition ::= entryTransitionDefinition | normalTransitionDefinition | exitTransitionDefinition
 
@@ -494,7 +494,7 @@ Entry transitions define the initial state when entering a composite state. They
 
 **Correct Usage:**
 
-.. code-block::
+.. code-block:: fcstm
 
    [*] -> Idle;                                    // Simple entry
    [*] -> Running : startup_event;                 // Entry with chain event
@@ -518,7 +518,7 @@ Normal transitions connect two named states within the same scope.
 
 **Correct Usage:**
 
-.. code-block::
+.. code-block:: fcstm
 
    Idle -> Running;                                // Simple transition
    Slow -> Fast : speed_up;                        // Transition with chain event
@@ -548,7 +548,7 @@ Exit transitions define how to leave a composite state to its parent. They use t
 
 **Correct Usage:**
 
-.. code-block::
+.. code-block:: fcstm
 
    Error -> [*];                                   // Simple exit
    Complete -> [*] : finish_event;                 // Exit with event
@@ -570,7 +570,7 @@ Forced transitions are a **syntactic sugar** that automatically expands to multi
 
 **Syntax:**
 
-.. code-block::
+.. code-block:: fcstm
 
    // Forced transition from specific state
    ! from_state -> to_state [: chain_id|:: event_name] [if [condition]] ';'
@@ -587,7 +587,7 @@ Forced transitions are a **syntactic sugar** that automatically expands to multi
 .. important::
    Forced transitions are a **syntactic sugar** that expands during model construction. When you write:
 
-   .. code-block::
+   .. code-block:: fcstm
 
       state Parent {
           ! * -> ErrorHandler :: CriticalError;
@@ -598,7 +598,7 @@ Forced transitions are a **syntactic sugar** that automatically expands to multi
 
    The parser automatically generates normal transitions from **all substates**:
 
-   .. code-block::
+   .. code-block:: fcstm
 
       // Expanded transitions (generated automatically):
       Child1 -> ErrorHandler : CriticalError;
@@ -623,7 +623,7 @@ Forced transitions are a **syntactic sugar** that automatically expands to multi
    - **Emergency Shutdown**: Transition from all states to shutdown state
    - **Timeout Handling**: Handle timeouts uniformly across multiple states
 
-.. code-block::
+.. code-block:: fcstm
 
    state System {
        // Force transition from any state to error handler
@@ -658,7 +658,7 @@ Forced transitions are a **syntactic sugar** that automatically expands to multi
 **Complete Example:**
 
 .. literalinclude:: forced_transitions.fcstm
-    :language: python
+    :language: fcstm
     :linenos:
 
 **Visualization:**
@@ -672,7 +672,7 @@ Forced transitions are a **syntactic sugar** that automatically expands to multi
 
 When ``! * -> ErrorHandler :: CriticalError`` is defined in ``System``, it expands to:
 
-.. code-block::
+.. code-block:: fcstm
 
    // From direct children
    Running -> ErrorHandler :: CriticalError;
@@ -689,7 +689,7 @@ When ``! * -> ErrorHandler :: CriticalError`` is defined in ``System``, it expan
 
 All expanded transitions from a single forced transition definition share the **same event object**. This means:
 
-.. code-block::
+.. code-block:: fcstm
 
    state System {
        ! * -> ErrorHandler :: CriticalError;
@@ -714,7 +714,7 @@ All expanded transitions from a single forced transition definition share the **
 
 **Common Errors:**
 
-.. code-block::
+.. code-block:: fcstm
 
    // ERROR: Cannot have effect block on forced transition
    ! * -> ErrorHandler :: Error effect {  // Syntax error
@@ -726,7 +726,7 @@ All expanded transitions from a single forced transition definition share the **
 
 **Correct Alternative:**
 
-.. code-block::
+.. code-block:: fcstm
 
    // Use enter action in target state for initialization
    state ErrorHandler {
@@ -743,7 +743,7 @@ Event Scoping: Understanding Event Namespaces
 .. important::
    In hierarchical state machines, events need a namespace to avoid naming conflicts. Consider this scenario:
 
-   .. code-block::
+   .. code-block:: fcstm
 
       state Root {
           state A;
@@ -780,7 +780,7 @@ Local events use the ``::`` operator and are scoped to the **source state's name
 
 **Example:**
 
-.. code-block::
+.. code-block:: fcstm
 
    state Root {
        state A;
@@ -793,7 +793,7 @@ Local events use the ``::`` operator and are scoped to the **source state's name
 
 **Equivalent Absolute Path:**
 
-.. code-block::
+.. code-block:: fcstm
 
    // A -> B :: E  is equivalent to:
    A -> B : /A.E
@@ -820,7 +820,7 @@ Chain events use the ``:`` operator and are scoped to the **parent state's names
 
 **Example:**
 
-.. code-block::
+.. code-block:: fcstm
 
    state Root {
        state A;
@@ -834,7 +834,7 @@ Chain events use the ``:`` operator and are scoped to the **parent state's names
 
 **Equivalent Absolute Path:**
 
-.. code-block::
+.. code-block:: fcstm
 
    // A -> B : E  is equivalent to:
    A -> B : /E
@@ -861,7 +861,7 @@ Absolute events use the ``/`` prefix and are scoped to the **root state's namesp
 
 **Example:**
 
-.. code-block::
+.. code-block:: fcstm
 
    state Root {
        state ModuleA {
@@ -885,7 +885,7 @@ Absolute events use the ``/`` prefix and are scoped to the **root state's namesp
 
 **Equivalent Absolute Path:**
 
-.. code-block::
+.. code-block:: fcstm
 
    // Already absolute - no conversion needed
    A1 -> A2 : /GlobalEvent  // Root.GlobalEvent
@@ -905,7 +905,7 @@ Complete Comparison Example
 Here's a comprehensive example demonstrating all three scoping mechanisms:
 
 .. literalinclude:: event_scoping_complete.fcstm
-    :language: python
+    :language: fcstm
     :linenos:
 
 **Visualization:**
@@ -957,7 +957,7 @@ Here's a comprehensive example demonstrating all three scoping mechanisms:
 .. seealso::
    You can also use dot notation with absolute paths to reference events in specific states:
 
-   .. code-block::
+   .. code-block:: fcstm
 
       state Root {
           state A {
@@ -1000,7 +1000,7 @@ Guard conditions are boolean expressions that control whether a transition can f
 
 **Examples:**
 
-.. code-block::
+.. code-block:: fcstm
 
    // Simple comparison
    Idle -> Active : if [counter >= 10];
@@ -1026,7 +1026,7 @@ Transition effects are blocks of operations executed during a transition, after 
 
 **Examples:**
 
-.. code-block::
+.. code-block:: fcstm
 
    // Simple effect
    Idle -> Running effect {
@@ -1052,7 +1052,7 @@ Combined Guards and Effects
 
 Transitions can have both guard conditions and effects:
 
-.. code-block::
+.. code-block:: fcstm
 
    // Guard and effect
    Charging -> Normal : if [battery_level >= 100] effect {
@@ -1072,7 +1072,7 @@ Complete Example
 Here's a comprehensive example demonstrating guards and effects:
 
 .. literalinclude:: guards_and_effects.fcstm
-    :language: python
+    :language: fcstm
     :linenos:
 
 **Visualization:**
@@ -1106,7 +1106,7 @@ Common Errors
 
 **Incorrect Usage:**
 
-.. code-block::
+.. code-block:: fcstm
 
    // ERROR: References to undefined states
    StateA -> UndefinedState :: Event;  // Semantic error
@@ -1131,7 +1131,7 @@ Common Errors
 
 **Correct Alternative:**
 
-.. code-block::
+.. code-block:: fcstm
 
    // Define all states
    state Root {
@@ -1189,7 +1189,7 @@ Expression Hierarchy
 
 The DSL supports comprehensive expression types for mathematical and logical operations:
 
-.. code-block::
+.. code-block:: fcstm
 
    init_expression ::= conditional_expression
    num_expression ::= conditional_expression
@@ -1214,7 +1214,7 @@ Literal Values
 
 **Integer Literals:**
 
-.. code-block::
+.. code-block:: fcstm
 
    def int decimal = 42;           // Decimal notation
    def int hex = 0xFF;             // Hexadecimal (0x prefix)
@@ -1223,7 +1223,7 @@ Literal Values
 
 **Float Literals:**
 
-.. code-block::
+.. code-block:: fcstm
 
    def float standard = 3.14;      // Standard notation
    def float scientific = 1.5e-3;  // Scientific notation (0.0015)
@@ -1234,7 +1234,7 @@ Literal Values
 
 **Boolean Literals:**
 
-.. code-block::
+.. code-block:: fcstm
 
    // True values (case-insensitive)
    true, True, TRUE
@@ -1274,7 +1274,7 @@ Operators
 
 **Operator Precedence Example:**
 
-.. code-block::
+.. code-block:: fcstm
 
    // Without parentheses (follows precedence)
    result = 2 + 3 * 4;              // Result: 14 (multiplication first)
@@ -1300,7 +1300,7 @@ Arithmetic vs Logical Expression Separation
 
 **Common Errors:**
 
-.. code-block::
+.. code-block:: fcstm
 
    // ERROR: Cannot assign boolean expression to variable
    result = (x > 10);               // Syntax error: boolean in arithmetic context
@@ -1312,7 +1312,7 @@ Arithmetic vs Logical Expression Separation
 
 **Correct Usage:**
 
-.. code-block::
+.. code-block:: fcstm
 
    // Use ternary operator to convert boolean to arithmetic
    result = (x > 10) ? 1 : 0;       // Valid: ternary returns arithmetic value
@@ -1338,7 +1338,7 @@ The DSL provides extensive mathematical function support:
 
 **Trigonometric Functions:**
 
-.. code-block::
+.. code-block:: fcstm
 
    // Basic trigonometry
    result = sin(angle);             // Sine
@@ -1357,7 +1357,7 @@ The DSL provides extensive mathematical function support:
 
 **Exponential and Logarithmic:**
 
-.. code-block::
+.. code-block:: fcstm
 
    result = exp(x);                 // e^x
    result = log(x);                 // Natural logarithm (base e)
@@ -1366,7 +1366,7 @@ The DSL provides extensive mathematical function support:
 
 **Other Mathematical Functions:**
 
-.. code-block::
+.. code-block:: fcstm
 
    result = sqrt(x);                // Square root
    result = abs(x);                 // Absolute value
@@ -1386,7 +1386,7 @@ Conditional expressions use ternary operator syntax for inline conditional logic
 
 **Examples:**
 
-.. code-block::
+.. code-block:: fcstm
 
    // Simple conditional
    result = (x > 0) ? 1 : -1;
@@ -1406,7 +1406,7 @@ Conditional expressions use ternary operator syntax for inline conditional logic
 **Common Error:**
 
 .. warning::
-   .. code-block::
+   .. code-block:: fcstm
 
       // ERROR: Missing parentheses around condition
       result = x > 0 ? 1 : -1;  // Syntax error
@@ -1420,7 +1420,7 @@ Complete Expression Example
 Here's a comprehensive example demonstrating all expression capabilities:
 
 .. literalinclude:: expression_demo.fcstm
-    :language: python
+    :language: fcstm
     :linenos:
 
 **Visualization:**
@@ -1454,7 +1454,7 @@ Common Errors
 
 **Incorrect Usage:**
 
-.. code-block::
+.. code-block:: fcstm
 
    // ERROR: Undefined variable reference
    result = unknown_var + 10;  // Semantic error
@@ -1470,7 +1470,7 @@ Common Errors
 
 **Correct Alternative:**
 
-.. code-block::
+.. code-block:: fcstm
 
    // Declare all variables
    def int result = 0;
@@ -1512,7 +1512,7 @@ Action Types
 
 States support three lifecycle phases with corresponding action definitions:
 
-.. code-block::
+.. code-block:: fcstm
 
    enter_definition ::= enterOperations | enterAbstractFunc | enterRefFunc
    during_definition ::= duringOperations | duringAbstractFunc
@@ -1536,7 +1536,7 @@ Enter actions execute when a state is entered from outside.
 
 **Concrete Operations:**
 
-.. code-block::
+.. code-block:: fcstm
 
    state Active {
        // Simple enter action
@@ -1557,7 +1557,7 @@ Enter actions execute when a state is entered from outside.
 
 Abstract enter actions declare functions that must be implemented in generated code:
 
-.. code-block::
+.. code-block:: fcstm
 
    state Active {
        // Simple abstract enter
@@ -1576,7 +1576,7 @@ Abstract enter actions declare functions that must be implemented in generated c
 
 Reference actions reuse enter actions from other states:
 
-.. code-block::
+.. code-block:: fcstm
 
    state BaseState {
        enter CommonInit {
@@ -1602,7 +1602,7 @@ During actions execute while a state is active. The behavior differs between lea
 
 Leaf states use plain ``during`` without aspect keywords:
 
-.. code-block::
+.. code-block:: fcstm
 
    state Running {
        // Executes every cycle while Running is active
@@ -1616,7 +1616,7 @@ Leaf states use plain ``during`` without aspect keywords:
 
 Composite states MUST use ``before`` or ``after`` aspects:
 
-.. code-block::
+.. code-block:: fcstm
 
    state Parent {
        // Executes when entering a child from outside
@@ -1641,7 +1641,7 @@ Composite states MUST use ``before`` or ``after`` aspects:
 
 **Abstract During Actions:**
 
-.. code-block::
+.. code-block:: fcstm
 
    state Processing {
        // Leaf state abstract during
@@ -1674,7 +1674,7 @@ Exit actions execute when leaving a state to outside.
 
 **Concrete Operations:**
 
-.. code-block::
+.. code-block:: fcstm
 
    state Active {
        exit {
@@ -1692,7 +1692,7 @@ Exit actions execute when leaving a state to outside.
 
 **Abstract Functions:**
 
-.. code-block::
+.. code-block:: fcstm
 
    state Active {
        exit abstract cleanup_resources;
@@ -1706,7 +1706,7 @@ Exit actions execute when leaving a state to outside.
 
 **Reference Actions:**
 
-.. code-block::
+.. code-block:: fcstm
 
    state BaseState {
        exit CommonCleanup {
@@ -1726,7 +1726,7 @@ Aspect actions apply to **all descendant leaf states** using the ``>>`` prefix.
 
 **Syntax:**
 
-.. code-block::
+.. code-block:: fcstm
 
    state Root {
        // Executes before EVERY descendant leaf state's during action
@@ -1764,7 +1764,7 @@ Hierarchical Execution Order
 Understanding execution order in hierarchical state machines is crucial. Here's a complete example:
 
 .. literalinclude:: hierarchy_execution.fcstm
-    :language: python
+    :language: fcstm
     :linenos:
 
 **Visualization:**
@@ -1831,7 +1831,7 @@ Abstract and Reference Actions Example
 Here's a complete example demonstrating abstract functions and action references:
 
 .. literalinclude:: abstract_reference_demo.fcstm
-    :language: python
+    :language: fcstm
     :linenos:
 
 **Visualization:**
@@ -1867,7 +1867,7 @@ Common Errors
 .. warning::
    **Incorrect Usage:**
 
-   .. code-block::
+   .. code-block:: fcstm
 
       // ERROR: Undefined variable in action
       state Example {
@@ -1900,7 +1900,7 @@ Common Errors
 
 **Correct Alternative:**
 
-.. code-block::
+.. code-block:: fcstm
 
    // Declare all variables
    def int result = 0;
@@ -1945,7 +1945,7 @@ Real-World Example: Smart Thermostat
 To demonstrate all DSL features in a realistic context, here's a comprehensive smart thermostat controller implementation:
 
 .. literalinclude:: thermostat_example.fcstm
-    :language: python
+    :language: fcstm
     :linenos:
 
 **Visualization:**
@@ -1990,7 +1990,7 @@ The DSL supports multiple comment formats for documentation:
 
 **Line Comments:**
 
-.. code-block::
+.. code-block:: fcstm
 
    // C++ style line comment
    # Python style line comment
@@ -2000,7 +2000,7 @@ The DSL supports multiple comment formats for documentation:
 
 **Block Comments:**
 
-.. code-block::
+.. code-block:: fcstm
 
    /*
     * Multi-line block comment
@@ -2009,7 +2009,7 @@ The DSL supports multiple comment formats for documentation:
 
 **Abstract Function Documentation:**
 
-.. code-block::
+.. code-block:: fcstm
 
    enter abstract InitializeHardware /*
        Initialize hardware peripherals and sensors.
@@ -2029,7 +2029,7 @@ Documentation Best Practices
 
 **Variable Documentation:**
 
-.. code-block::
+.. code-block:: fcstm
 
    // System state variables
    def int system_state = 0;         // 0=init, 1=running, 2=error
@@ -2045,7 +2045,7 @@ Documentation Best Practices
 
 **State Documentation:**
 
-.. code-block::
+.. code-block:: fcstm
 
    state System {
        // Initialization phase - runs once at startup
@@ -2079,7 +2079,7 @@ Documentation Best Practices
 
 **Transition Documentation:**
 
-.. code-block::
+.. code-block:: fcstm
 
    // Transition to low power mode when battery is low
    // and no critical tasks are active
@@ -2151,7 +2151,7 @@ The parser provides detailed error messages for common mistakes:
 
 **Example Error Messages:**
 
-.. code-block::
+.. code-block:: fcstm
 
    Error: Undefined variable 'unknown_var' at line 15
    Error: Duplicate state name 'Active' in scope 'System' at line 23

@@ -1,0 +1,178 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "FCSTM",
+  "scopeName": "source.fcstm",
+  "fileTypes": ["fcstm"],
+  "patterns": [
+    {"include": "#comments"},
+    {"include": "#keywords"},
+    {"include": "#operators"},
+    {"include": "#constants"},
+    {"include": "#strings"},
+    {"include": "#numbers"},
+    {"include": "#identifiers"}
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.block.fcstm",
+          "begin": "/\\*",
+          "end": "\\*/",
+          "patterns": [
+            {
+              "name": "comment.block.fcstm",
+              "match": "."
+            }
+          ]
+        },
+        {
+          "name": "comment.line.double-slash.fcstm",
+          "match": "//.*$"
+        },
+        {
+          "name": "comment.line.number-sign.fcstm",
+          "match": "#.*$"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.fcstm",
+          "match": "\\b(state|pseudo|named|def|event|if)\\b"
+        },
+        {
+          "name": "keyword.other.lifecycle.fcstm",
+          "match": "\\b(enter|during|exit|before|after)\\b"
+        },
+        {
+          "name": "keyword.other.modifier.fcstm",
+          "match": "\\b(abstract|ref|effect)\\b"
+        },
+        {
+          "name": "storage.type.fcstm",
+          "match": "\\b(int|float)\\b"
+        },
+        {
+          "name": "keyword.operator.word.fcstm",
+          "match": "\\b(and|or|not)\\b"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.aspect.fcstm",
+          "match": ">>"
+        },
+        {
+          "name": "keyword.operator.transition.fcstm",
+          "match": "->"
+        },
+        {
+          "name": "constant.language.pseudo-state.fcstm",
+          "match": "\\[\\*\\]"
+        },
+        {
+          "name": "keyword.operator.scope.fcstm",
+          "match": "::"
+        },
+        {
+          "name": "keyword.operator.arithmetic.fcstm",
+          "match": "\\*\\*"
+        },
+        {
+          "name": "keyword.operator.bitshift.fcstm",
+          "match": "<<"
+        },
+        {
+          "name": "keyword.operator.comparison.fcstm",
+          "match": "<=|>=|==|!="
+        },
+        {
+          "name": "keyword.operator.logical.fcstm",
+          "match": "&&|\\|\\|"
+        },
+        {
+          "name": "keyword.operator.forced.fcstm",
+          "match": "!"
+        },
+        {
+          "name": "keyword.operator.arithmetic.fcstm",
+          "match": "[+\\-*/%&|^~<>]"
+        },
+        {
+          "name": "keyword.operator.assignment.fcstm",
+          "match": "=|\\?"
+        }
+      ]
+    },
+    "constants": {
+      "patterns": [
+        {
+          "name": "constant.language.boolean.fcstm",
+          "match": "\\b(True|true|TRUE|False|false|FALSE)\\b"
+        },
+        {
+          "name": "constant.language.math.fcstm",
+          "match": "\\b(pi|E|tau)\\b"
+        },
+        {
+          "name": "support.function.builtin.fcstm",
+          "match": "\\b(sin|cos|tan|asin|acos|atan|sinh|cosh|tanh|asinh|acosh|atanh|sqrt|cbrt|exp|log|log10|log2|log1p|abs|ceil|floor|round|trunc|sign)\\b"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.fcstm",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.fcstm",
+              "match": "\\\\([btnfr\"'\\\\]|[0-7]{1,3}|u[0-9a-fA-F]{4}|x[0-9a-fA-F]{2})"
+            }
+          ]
+        },
+        {
+          "name": "string.quoted.single.fcstm",
+          "begin": "'",
+          "end": "'",
+          "patterns": [
+            {
+              "name": "constant.character.escape.fcstm",
+              "match": "\\\\([btnfr\"'\\\\]|[0-7]{1,3}|u[0-9a-fA-F]{4}|x[0-9a-fA-F]{2})"
+            }
+          ]
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.hex.fcstm",
+          "match": "\\b0x[0-9a-fA-F]+\\b"
+        },
+        {
+          "name": "constant.numeric.float.fcstm",
+          "match": "\\b([0-9]+\\.[0-9]*([eE][+-]?[0-9]+)?|\\.[0-9]+([eE][+-]?[0-9]+)?|[0-9]+[eE][+-]?[0-9]+)\\b"
+        },
+        {
+          "name": "constant.numeric.integer.fcstm",
+          "match": "\\b[0-9]+\\b"
+        }
+      ]
+    },
+    "identifiers": {
+      "patterns": [
+        {
+          "name": "variable.other.fcstm",
+          "match": "\\b[a-zA-Z_][a-zA-Z0-9_]*\\b"
+        }
+      ]
+    }
+  }
+}

@@ -836,7 +836,36 @@ When modifying `pyfcstm/dsl/grammar/Grammar.g4`:
 2. Run `make antlr` to download ANTLR jar (only needed once)
 3. Run `make antlr_build` to regenerate parser code
 4. Update `listener.py` and `node.py` if grammar structure changes
-5. Run tests to verify changes
+5. **Update syntax highlighting implementations** to match grammar changes:
+   - `pyfcstm/highlight/pygments_lexer.py` - Pygments lexer (serves as reference implementation)
+   - `editors/fcstm.tmLanguage.json` - TextMate grammar
+6. **Validate syntax highlighting** after changes:
+   - Run `python editors/validate.py` to verify Pygments lexer works correctly
+7. Run tests to verify changes
+
+**Important Notes for Syntax Highlighting Updates:**
+
+- **Operator Ordering**: When adding new operators, ensure multi-character operators are matched before single-character ones to avoid tokenization conflicts. For example:
+  - `**` must come before `*`
+  - `<<` must come before `<`
+  - `<=`, `>=`, `==`, `!=` must come before `<`, `>`, `!`
+  - `&&`, `||` must come before `!`
+
+- **Consistency**: Both implementations (Pygments, TextMate) should be kept in sync. The Pygments lexer serves as the reference implementation.
+
+- **Testing**: The `editors/validate.py` script provides comprehensive validation with 20+ checkpoints covering all ANTLR grammar rules. All checkpoints must pass (100% pass rate) before committing changes.
+
+**Adding New Keywords:**
+
+When adding new keywords to the FCSTM grammar:
+
+1. Update `pyfcstm/dsl/grammar/Grammar.g4` with the new keyword
+2. Regenerate parser: `make antlr_build`
+3. Update `pyfcstm/highlight/pygments_lexer.py`:
+   - Add keyword to appropriate `words()` group (Declaration, Reserved, Namespace, Type, etc.)
+4. Update `editors/fcstm.tmLanguage.json`:
+   - Add keyword to appropriate pattern in the `keywords` repository section
+5. Run `python editors/validate.py` to verify all changes work correctly
 
 ### Template Development
 

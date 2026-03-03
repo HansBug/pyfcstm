@@ -112,7 +112,10 @@ setup(
     entry_points={
         'console_scripts': [
             'pyfcstm=pyfcstm.entry:pyfcstmcli'
-        ]
+        ],
+        'pygments.lexers': [
+            'fcstm = pyfcstm.highlight.pygments_lexer:FcstmLexer',
+        ],
     },
     project_urls={
         'Homepage': 'https://github.com/hansbug/pyfcstm',

@@ -499,398 +499,377 @@ DSL 支持三种具有不同语法模式的转换类型：
    [*] -> Idle;                                    // 简单入口
    [*] -> Running : startup_event;                 // 带链事件的入口
    [*] -> Running :: startup_event;                // 带本地事件的入口
-   [*] -> Active : if [ready_flag == 1];           // 带守卫条件的入口
-   [*] -> Init effect { counter = 0; };            // 带效果的入口
+   [*] -> Active : if [initialized == 0x1];        // 带守卫条件的入口
+   [*] -> Ready effect { counter = 0; };           // 带效果的入口
+   [*] -> Running : if [mode == 1] effect {        // 带守卫和效果的入口
+       counter = 0;
+       status = 1;
+   };
 
-.. important::
-   每个复合状态必须至少有一个入口转换。入口转换决定进入复合状态时哪个子状态变为活动状态。
-
-**带注释的示例：**
-
-.. code-block::
-
-   state System {
-       state Idle;
-       state Running;
-       state Error;
-
-       // 简单入口：进入 System 时默认进入 Idle
-       [*] -> Idle;
-
-       // 条件入口：根据标志选择初始状态
-       // [*] -> Running : if [auto_start == 1];
-
-       Idle -> Running :: Start;
-       Running -> Error : if [error_detected == 1];
-   }
+.. note::
+   当从外部进入复合状态时，入口转换决定哪个子状态变为活动状态。守卫条件（如果存在）会被评估，如果为真，效果（如果存在）会在进入目标状态之前执行。
 
 普通转换
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-普通转换定义两个命名状态之间的转换。
+普通转换连接同一作用域内的两个命名状态。
 
-**语法：** ``source_state -> target_state [: chain_id|:: event_name] [if [condition]] [effect { operations }] ';'``
+**语法：** ``from_state -> to_state [: chain_id|:: event_name] [if [condition]] [effect { operations }] ';'``
 
 **正确用法：**
 
 .. code-block::
 
    Idle -> Running;                                // 简单转换
-   Running -> Idle :: Stop;                        // 带本地事件的转换
-   Idle -> Running : /GlobalStart;                 // 带全局事件的转换
-   Running -> Error : if [temp > 100];             // 带守卫条件的转换
-   Idle -> Running effect { counter = 0; };        // 带效果的转换
-   Running -> Idle :: Stop : if [safe_mode == 1] effect {
-       counter = counter + 1;
-       error_flag = 0;
-   };                                              // 完整转换
+   Slow -> Fast : speed_up;                        // 带链事件的转换
+   Slow -> Fast :: speed_up;                       // 带本地事件的转换
+   Active -> Inactive : if [timeout > 100];        // 带守卫条件的转换
+   Processing -> Complete effect {                 // 带效果的转换
+       result = output;
+       status = 1;
+   };
+   Running -> Idle : if [stop_requested] effect {  // 守卫和效果
+       cleanup_flag = 1;
+   };
 
-.. tip::
-   **转换执行顺序：**
+.. note::
+   普通转换在源状态的"during"阶段进行评估。当事件被触发（如果指定）且守卫条件为真（如果指定）时，转换触发：
 
-   1. **守卫评估**：如果存在守卫条件，首先评估它。如果为假，转换不触发
-   2. **源状态退出**：执行源状态的退出动作
-   3. **效果执行**：如果存在，执行转换效果
-   4. **目标状态进入**：执行目标状态的进入动作
-
-**带注释的示例：**
-
-.. code-block::
-
-   state TrafficController {
-       state Green {
-           enter {
-               light_color = 2;  // 绿色
-               timer = 0;
-           }
-           during {
-               timer = timer + 1;
-           }
-           exit {
-               light_color = 0;  // 关闭
-           }
-       }
-
-       state Yellow {
-           enter {
-               light_color = 1;  // 黄色
-               timer = 0;
-           }
-           during {
-               timer = timer + 1;
-           }
-       }
-
-       state Red {
-           enter {
-               light_color = 0;  // 红色
-               timer = 0;
-           }
-           during {
-               timer = timer + 1;
-           }
-       }
-
-       [*] -> Red;
-
-       // 带守卫的转换：仅当计时器到期时转换
-       Red -> Green : if [timer >= 30];
-       Green -> Yellow : if [timer >= 25];
-       Yellow -> Red : if [timer >= 5];
-   }
+   1. 源状态的退出动作执行
+   2. 转换效果执行（如果存在）
+   3. 目标状态的进入动作执行
 
 退出转换
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-退出转换定义从命名状态到伪状态 ``[*]`` 的转换，表示退出当前复合状态。
+退出转换定义如何离开复合状态到其父状态。它们使用伪状态 ``[*]`` 作为目标。
 
-**语法：** ``source_state -> [*] [: chain_id|:: event_name] [if [condition]] [effect { operations }] ';'``
+**语法：** ``from_state -> [*] [: chain_id|:: event_name] [if [condition]] [effect { operations }] ';'``
 
 **正确用法：**
 
 .. code-block::
 
-   Done -> [*];                                    // 简单退出
-   Error -> [*] :: FatalError;                     // 带本地事件的退出
-   Finished -> [*] : /Shutdown;                    // 带全局事件的退出
-   Complete -> [*] : if [all_done == 1];           // 带守卫条件的退出
-   Cleanup -> [*] effect { status = 0; };          // 带效果的退出
+   Error -> [*];                                   // 简单退出
+   Complete -> [*] : finish_event;                 // 带事件的退出
+   Running -> [*] : if [shutdown_requested];       // 带守卫条件的退出
+   Active -> [*] effect {                          // 带效果的退出
+       cleanup_flag = 0x1;
+   };
+   Processing -> [*] : if [done] effect {          // 守卫和效果
+       result = final_value;
+   };
 
 .. note::
-   退出转换将控制权返回给父状态。如果父状态有多个子状态，退出转换允许子状态完成其工作并将控制权返回给父状态的转换逻辑。
-
-**带注释的示例：**
-
-.. code-block::
-
-   state TaskProcessor {
-       state Processing {
-           state LoadData;
-           state ValidateData;
-           state ProcessData;
-           state SaveResults;
-
-           [*] -> LoadData;
-           LoadData -> ValidateData :: DataLoaded;
-           ValidateData -> ProcessData :: DataValid;
-           ProcessData -> SaveResults :: ProcessingComplete;
-
-           // 退出转换：完成所有步骤后退出
-           SaveResults -> [*] :: AllDone;
-
-           // 错误退出：验证失败时退出
-           ValidateData -> [*] : if [validation_error == 1];
-       }
-
-       state Idle;
-       state Error;
-
-       [*] -> Idle;
-       Idle -> Processing :: StartTask;
-
-       // 当 Processing 退出时，根据结果转换
-       Processing -> Idle : if [error_flag == 0];
-       Processing -> Error : if [error_flag == 1];
-   }
+   退出转换允许子状态发出完成信号并将控制权返回给父状态。然后父状态可以转换到另一个状态或自己退出。
 
 强制转换
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-强制转换是一种语法糖，可以从多个源状态创建转换到单个目标状态。它们使用 ``!`` 前缀。
+强制转换是一种**语法糖**，自动扩展为多个普通转换。它们对于定义从多个状态到共同目标的转换非常有用，无需重复代码，特别适用于错误处理或紧急情况。
 
-**语法：** ``'!' ('*'|state_name) -> target_state [: chain_id|:: event_name] [if [condition]] ';'``
+**语法：**
+
+.. code-block::
+
+   // 从特定状态的强制转换
+   ! from_state -> to_state [: chain_id|:: event_name] [if [condition]] ';'
+
+   // 从特定状态的强制退出
+   ! from_state -> [*] [: chain_id|:: event_name] [if [condition]] ';'
+
+   // 从所有子状态的强制转换（通配符）
+   ! * -> to_state [: chain_id|:: event_name] [if [condition]] ';'
+
+   // 从所有子状态的强制退出
+   ! * -> [*] [: chain_id|:: event_name] [if [condition]] ';'
 
 .. important::
-   强制转换是**语法糖**，在模型构建期间扩展为普通转换。它们**不是**特殊转换 - 它们扩展为正常执行退出动作的普通转换。
+   强制转换是一种**语法糖**，在模型构建期间扩展。当你编写：
 
-   **关键点：**
+   .. code-block::
 
-   1. **语法糖**：自动生成多个普通转换
-   2. **通配符扩展**：``!*`` 从当前作用域中的所有子状态创建转换
-   3. **事件共享**：所有扩展的转换共享**相同的事件对象**
-   4. **正常执行**：退出动作正常执行 - 这些是常规转换
-   5. **递归传播**：传播到嵌套的子状态
+      state Parent {
+          ! * -> ErrorHandler :: CriticalError;
 
-**正确用法：**
+          state Child1;
+          state Child2;
+      }
+
+   解析器自动从**所有子状态**生成普通转换：
+
+   .. code-block::
+
+      // 扩展的转换（自动生成）：
+      Child1 -> ErrorHandler :: CriticalError;
+      Child2 -> ErrorHandler :: CriticalError;
+
+   **重要**：这些是**普通转换** - 它们像任何其他转换一样执行退出动作。
+
+**关键特性：**
+
+1. **语法糖**：在模型构建期间扩展为多个普通转换
+2. **通配符扩展**：``! *`` 从当前作用域中的所有子状态生成转换
+3. **层次传播**：强制转换递归传播到嵌套的子状态
+4. **共享事件对象**：所有扩展的转换共享**相同的事件对象**
+5. **无效果块**：强制转换不能有效果块（语法限制）
+6. **正常执行**：退出动作正常执行 - 强制转换只是常规转换
+
+.. tip::
+   **何时使用强制转换：**
+
+   - **避免重复代码**：定义一个转换而不是许多相同的转换
+   - **错误处理**：从任何状态转换到错误处理器
+   - **紧急关闭**：从所有状态转换到关闭状态
+   - **超时处理**：跨多个状态统一处理超时
 
 .. code-block::
 
    state System {
-       state Running;
-       state Idle;
-       state Processing;
+       // 从任何状态强制转换到错误处理器
+       ! * -> ErrorHandler :: CriticalError;
 
-       [*] -> Idle;
+       // 从特定状态强制转换
+       ! Running -> SafeMode :: EmergencyStop;
 
-       // 强制转换：从所有子状态到 Error
-       !* -> Error :: CriticalError;
+       // 从任何状态强制退出
+       ! * -> [*] :: FatalError;
 
-       // 等价于：
-       // Running -> Error :: CriticalError;
-       // Idle -> Error :: CriticalError;
-       // Processing -> Error :: CriticalError;
-       // 所有转换共享相同的 CriticalError 事件对象
+       // 带守卫条件
+       ! * -> ErrorHandler : if [error_code > 100];
 
-       state Error;
+       state Running {
+           exit {
+               // 此退出动作在转换时会执行
+               cleanup_flag = 1;
+           }
+       }
+
+       state ErrorHandler;
    }
 
-**扩展示例：**
+**何时使用强制转换：**
+
+- **避免重复代码**：定义一个转换而不是许多相同的转换
+- **错误处理**：从任何状态转换到错误处理器
+- **紧急关闭**：从所有状态转换到关闭状态
+- **超时处理**：跨多个状态统一处理超时
+
+**完整示例：**
+
+.. literalinclude:: forced_transitions.fcstm
+    :language: python
+    :linenos:
+
+**可视化：**
+
+.. figure:: forced_transitions.fcstm.puml.svg
+   :width: 80%
+   :align: center
+   :alt: 强制转换示例
+
+**扩展行为：**
+
+当在 ``System`` 中定义 ``! * -> ErrorHandler :: CriticalError`` 时，它扩展为：
+
+.. code-block::
+
+   // 从直接子状态
+   Running -> ErrorHandler :: CriticalError;
+   Idle -> ErrorHandler :: CriticalError;
+   SafeMode -> ErrorHandler :: CriticalError;
+   ErrorHandler -> ErrorHandler :: CriticalError;
+
+   // 传播到嵌套子状态（Running.Processing、Running.Waiting）
+   // 在 Running 状态内部生成：
+   Processing -> [*] : /CriticalError;  // 退出到父状态，然后父状态转换
+   Waiting -> [*] : /CriticalError;
+
+**事件共享：**
+
+单个强制转换定义扩展的所有转换共享**相同的事件对象**。这意味着：
 
 .. code-block::
 
    state System {
        ! * -> ErrorHandler :: CriticalError;
 
-       state Running {
-           state Processing;
-           state Waiting;
-       }
-       state Idle;
-
-       state ErrorHandler;
+       state A;
+       state B;
+       state C;
    }
 
-   // 扩展为：
-   // Running -> ErrorHandler :: CriticalError;
-   // Idle -> ErrorHandler :: CriticalError;
-   // 并且在 Running 内部：
-   //   Processing -> [*] : /CriticalError;  (退出到父状态)
-   //   Waiting -> [*] : /CriticalError;     (退出到父状态)
-   // 所有转换共享相同的 CriticalError 事件对象
+   // 所有这些转换使用相同的事件对象：
+   // A -> ErrorHandler :: CriticalError
+   // B -> ErrorHandler :: CriticalError
+   // C -> ErrorHandler :: CriticalError
+   // 当你触发 CriticalError 时，所有匹配的转换都可以触发
 
-.. tip::
-   **何时使用强制转换：**
+.. warning::
+   1. **普通转换**：扩展的转换是普通转换 - 退出动作会执行
+   2. **事件共享**：所有扩展的转换共享相同的事件对象
+   3. **无效果块**：强制转换不能有效果块（使用目标状态的进入动作）
+   4. **作用域限制**：``! *`` 应用于直接子状态，但递归传播
+   5. **事件作用域**：事件作用域规则（``:`` vs ``::``）正常应用
 
-   - 当许多状态需要相同的转换时避免重复代码
-   - 从多个状态进行错误处理
-   - 从所有状态进行紧急关闭
-   - 跨多个状态的超时处理
-
-**关键限制：**
-
-- 强制转换**不能**有效果块（语法限制）
-- 使用目标状态的进入动作进行初始化
-- 退出动作正常执行（不会被绕过）
-
-语义规则
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-转换定义必须遵守以下语义约束：
-
-1. **有效状态引用**：源状态和目标状态必须存在于当前作用域中
-2. **守卫类型**：守卫条件必须是布尔表达式
-3. **效果操作**：效果块只能包含赋值操作
-4. **事件作用域**：事件必须遵循正确的作用域规则（``::``、``:``、``/``）
-5. **入口唯一性**：每个复合状态必须至少有一个入口转换
-
-.. tip::
-   **为什么有这些规则？**
-
-   - **有效状态引用**：防止悬空转换并确保状态机连通性
-   - **守卫类型**：确保条件可以评估为真/假
-   - **效果操作**：保持转换效果简单且可预测
-   - **事件作用域**：强制正确的事件命名空间和可见性
-   - **入口唯一性**：确保进入复合状态时的确定性行为
-
-常见错误
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-**错误用法：**
+**常见错误：**
 
 .. code-block::
 
-   // 错误：引用不存在的状态
-   state Root {
-       state A;
-       [*] -> A;
-       A -> B :: Event;  // 语义错误：B 不存在
-   }
+   // 错误：强制转换不能有效果块
+   ! * -> ErrorHandler :: Error effect {  // 语法错误
+       error_code = 1;
+   };
 
-   // 错误：守卫中的非布尔表达式
-   state Root {
-       state A;
-       state B;
-       [*] -> A;
-       A -> B : if [counter];  // 语义错误：需要布尔表达式
-   }
-
-   // 错误：效果中的非赋值操作
-   state Root {
-       state A;
-       state B;
-       [*] -> A;
-       A -> B effect {
-           counter + 1;  // 语义错误：不是赋值
-       };
-   }
-
-   // 错误：强制转换带效果
-   state Root {
-       state A;
-       state B;
-       state Error;
-       [*] -> A;
-       !* -> Error :: Fail effect { x = 1; };  // 语法错误：强制转换不能有效果
-   }
+   // 错误：强制转换必须引用现有状态
+   ! * -> NonExistentState :: Error;  // 语义错误
 
 **正确的替代方案：**
 
 .. code-block::
 
-   // 定义所有引用的状态
-   state Root {
-       state A;
-       state B;
-       [*] -> A;
-       A -> B :: Event;
-   }
-
-   // 使用比较运算符创建布尔表达式
-   state Root {
-       state A;
-       state B;
-       [*] -> A;
-       A -> B : if [counter > 0];
-   }
-
-   // 在效果中使用赋值
-   state Root {
-       state A;
-       state B;
-       [*] -> A;
-       A -> B effect {
-           counter = counter + 1;
-       };
-   }
-
    // 在目标状态的进入动作中初始化
-   state Root {
-       state A;
-       state B;
-       state Error {
-           enter {
-               x = 1;
-           }
+   state ErrorHandler {
+       enter {
+           error_code = 1;  // 在目标状态中初始化
        }
-       [*] -> A;
-       !* -> Error :: Fail;
    }
 
-事件作用域
+   ! * -> ErrorHandler :: Error;  // 正确：无效果块
+
+事件作用域：理解事件命名空间
 ----------------------------------------------------
 
+.. important::
+   在层次化状态机中，事件需要命名空间以避免命名冲突。考虑这个场景：
+
+   .. code-block::
+
+      state Root {
+          state A;
+          state B;
+          state C;
+
+          [*] -> A;
+          A -> B : Event;  // 哪个 Event？
+          B -> C : Event;  // 相同的 Event 还是不同的？
+      }
+
+   两个转换应该使用相同的事件还是不同的事件？DSL 提供**三种作用域机制**来处理这个问题。
+
+事件作用域机制
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+DSL 支持三种指定事件作用域的方式：
+
+1. **本地事件**（``::``）：作用域限定于源状态的命名空间
+2. **链事件**（``:``）：作用域限定于父状态的命名空间
+3. **绝对事件**（``/``）：作用域限定于根状态的命名空间
+
+所有三种机制都等价于使用绝对路径，只是起始点不同。
+
+本地事件（``::`` 运算符）
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+本地事件使用 ``::`` 运算符，作用域限定于**源状态的命名空间**。
+
+**语法：** ``StateA -> StateB :: EventName;``
+
 .. note::
-   事件是触发转换的命名触发器。DSL 提供三种事件作用域机制来控制层次化状态机中的事件命名空间。
+   事件在源状态的命名空间中创建。每个源状态获得自己的事件。
 
-作用域类型
+**示例：**
+
+.. code-block::
+
+   state Root {
+       state A;
+       state B;
+
+       [*] -> A;
+       A -> B :: E;     // 创建事件：Root.A.E
+       B -> A :: E;     // 创建事件：Root.B.E（与上面不同）
+   }
+
+**等价的绝对路径：**
+
+.. code-block::
+
+   // A -> B :: E  等价于：
+   A -> B : /Root.A.E
+
+   // B -> A :: E  等价于：
+   B -> A : /Root.B.E
+
+.. tip::
+   **何时使用：**
+
+   - 每个转换需要自己的唯一事件
+   - 避免类似转换之间的命名冲突
+   - 不应共享的状态特定事件
+
+链事件（``:`` 运算符）
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-DSL 提供**三种事件作用域机制**来控制层次化状态机中的事件命名空间：
+链事件使用 ``:`` 运算符，作用域限定于**父状态的命名空间**。
 
-**1. 本地事件**（``::`` - 作用域限定于源状态）：
+**语法：** ``StateA -> StateB : EventName;``
 
-.. code-block::
+.. note::
+   事件在父状态的命名空间中创建。同一作用域中的多个转换可以共享事件。
 
-   StateA -> StateB :: LocalEvent;
-   // 事件作用域限定于源状态：Parent.StateA.LocalEvent
-   // 等价于：StateA -> StateB : /Parent.StateA.LocalEvent
-
-每个源状态获得自己的事件。当每个转换需要唯一事件时使用。
-
-**2. 链事件**（``:`` - 作用域限定于父状态）：
+**示例：**
 
 .. code-block::
 
-   StateA -> StateB : ChainEvent;
-   // 事件作用域限定于父状态：Parent.ChainEvent
-   // 等价于：StateA -> StateB : /Parent.ChainEvent
+   state Root {
+       state A;
+       state B;
+       state C;
 
-同一作用域中的多个转换共享事件。当协调兄弟状态转换时使用。
+       [*] -> A;
+       A -> B : E;      // 创建事件：Root.E
+       B -> C : E;      // 使用相同的事件：Root.E
+   }
 
-**3. 绝对事件**（``/`` - 作用域限定于根状态）：
+**等价的绝对路径：**
 
 .. code-block::
 
-   StateA -> StateB : /GlobalEvent;
-   // 事件作用域限定于根状态：Root.GlobalEvent
-   // 已经是绝对路径 - 不需要转换
+   // A -> B : E  等价于：
+   A -> B : /Root.E
 
-使用相同绝对路径的所有转换共享事件。用于跨模块通信或全局事件。
+   // B -> C : E  等价于：
+   B -> C : /Root.E
 
-事件解析示例
+.. tip::
+   **何时使用：**
+
+   - 多个转换应响应相同的事件
+   - 协调兄弟状态之间的转换
+   - 作用域内的共享事件
+
+绝对事件（``/`` 前缀）
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+绝对事件使用 ``/`` 前缀，作用域限定于**根状态的命名空间**。
+
+**语法：** ``StateA -> StateB : /EventName;`` 或 ``StateA -> StateB : /Path.To.EventName;``
+
+.. note::
+   事件路径从根状态解析，允许对事件位置进行显式控制。
+
+**示例：**
+
 .. code-block::
 
-   state System {
+   state Root {
        state ModuleA {
            state A1;
            state A2;
 
            [*] -> A1;
-           A1 -> A2 :: E;        // System.ModuleA.A1.E
-           A1 -> A2 : E;         // System.ModuleA.E
-           A1 -> A2 : /E;        // System.E
+           A1 -> A2 : /GlobalEvent;  // 使用 Root.GlobalEvent
        }
 
        state ModuleB {
@@ -898,112 +877,126 @@ DSL 提供**三种事件作用域机制**来控制层次化状态机中的事件
            state B2;
 
            [*] -> B1;
-           B1 -> B2 :: E;        // System.ModuleB.B1.E（与 A1 的不同）
-           B1 -> B2 : E;         // System.ModuleB.E（与 ModuleA 的不同）
-           B1 -> B2 : /E;        // System.E（与 ModuleA 的相同）
+           B1 -> B2 : /GlobalEvent;  // 使用相同的 Root.GlobalEvent
        }
+
+       [*] -> ModuleA;
    }
 
-.. tip::
-   **关键点：**
-
-   - ``::`` 创建状态特定的事件（避免冲突）
-   - ``:`` 创建父作用域的事件（在作用域内共享）
-   - ``/`` 创建根作用域的事件（全局共享）
-   - 三者都等价于具有不同起点的绝对路径
-
-实际示例
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-**示例 1：模块间通信**
+**等价的绝对路径：**
 
 .. code-block::
 
-   state Application {
-       state UIModule {
-           state Idle;
-           state Busy;
-
-           [*] -> Idle;
-           // 使用全局事件与其他模块通信
-           Idle -> Busy : /DataRequested;
-           Busy -> Idle : /DataReceived;
-       }
-
-       state DataModule {
-           state Ready;
-           state Processing;
-
-           [*] -> Ready;
-           // 响应来自 UI 的全局事件
-           Ready -> Processing : /DataRequested;
-           Processing -> Ready : /DataReceived;
-       }
-   }
-
-**示例 2：本地状态协调**
-
-.. code-block::
-
-   state Workflow {
-       state Step1 {
-           state Init;
-           state Work;
-           state Done;
-
-           [*] -> Init;
-           // 本地事件用于内部转换
-           Init -> Work :: Start;
-           Work -> Done :: Complete;
-       }
-
-       state Step2 {
-           state Init;
-           state Work;
-           state Done;
-
-           [*] -> Init;
-           // 相同的事件名称，但作用域不同
-           Init -> Work :: Start;
-           Work -> Done :: Complete;
-       }
-
-       [*] -> Step1;
-       // 使用链事件协调步骤
-       Step1 -> Step2 : NextStep;
-   }
-
-语义规则
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-事件作用域必须遵守以下语义约束：
-
-1. **作用域一致性**：事件引用必须遵循正确的作用域规则
-2. **命名空间有效性**：绝对事件路径必须从根状态开始
-3. **事件唯一性**：同一作用域中的事件名称必须唯一
-4. **引用有效性**：链事件和绝对事件必须引用现有事件
+   // 已经是绝对路径 - 不需要转换
+   A1 -> A2 : /GlobalEvent  // Root.GlobalEvent
+   B1 -> B2 : /GlobalEvent  // Root.GlobalEvent（相同的事件）
 
 .. tip::
-   **为什么有这些规则？**
+   **何时使用：**
 
-   - **作用域一致性**：确保事件在正确的命名空间中解析
-   - **命名空间有效性**：防止无效的事件路径
-   - **事件唯一性**：防止同一作用域中的事件冲突
-   - **引用有效性**：确保事件引用可以解析
+   - 跨模块通信
+   - 应该从任何地方访问的全局事件
+   - 对事件位置的显式控制
+   - 避免深度嵌套状态中的歧义
 
-表达式系统
+完整对比示例
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+这是一个演示所有三种作用域机制的综合示例：
+
+.. literalinclude:: event_scoping_complete.fcstm
+    :language: python
+    :linenos:
+
+**可视化：**
+
+.. figure:: event_scoping_complete.fcstm.puml.svg
+   :width: 90%
+   :align: center
+   :alt: 完整事件作用域示例
+
+**事件解析表：**
+
+.. list-table::
+   :header-rows: 1
+   :widths: 40 30 30
+
+   * - 转换语法
+     - 事件作用域
+     - 绝对路径等价
+   * - ``A1 -> A2 :: LocalEvent``
+     - 源状态（A1）
+     - ``A1 -> A2 : /System.ModuleA.A1.LocalEvent``
+   * - ``A2 -> A1 : ChainEvent``
+     - 父状态（ModuleA）
+     - ``A2 -> A1 : /System.ModuleA.ChainEvent``
+   * - ``ModuleA -> Target : /GlobalEvent``
+     - 根状态（System）
+     - 已经是绝对路径：``/System.GlobalEvent``
+   * - ``B1 -> B2 :: LocalEvent``
+     - 源状态（B1）
+     - ``B1 -> B2 : /System.ModuleB.B1.LocalEvent``
+   * - ``B2 -> B1 : ChainEvent``
+     - 父状态（ModuleB）
+     - ``B2 -> B1 : /System.ModuleB.ChainEvent``
+   * - ``ModuleB -> Target : /GlobalEvent``
+     - 根状态（System）
+     - 已经是绝对路径：``/System.GlobalEvent``
+
+**关键观察：**
+
+1. **本地事件**（``::``）：每个源状态获得自己的事件
+   - ``ModuleA.A1.LocalEvent`` ≠ ``ModuleB.B1.LocalEvent``
+
+2. **链事件**（``:``）：每个父作用域获得自己的事件
+   - ``ModuleA.ChainEvent`` ≠ ``ModuleB.ChainEvent``
+
+3. **绝对事件**（``/``）：所有转换共享相同的事件
+   - ``ModuleA -> Target : /GlobalEvent`` = ``ModuleB -> Target : /GlobalEvent``
+
+.. seealso::
+   您还可以使用点表示法与绝对路径来引用特定状态中的事件：
+
+   .. code-block::
+
+      state Root {
+          state A {
+              state A1;
+              state A2;
+
+              [*] -> A1;
+          }
+
+          state B {
+              state B1;
+              state B2;
+
+              [*] -> B1;
+              // 引用 A 命名空间中的事件
+              B1 -> B2 : /A.SpecificEvent;  // 使用 Root.A.SpecificEvent
+          }
+
+          [*] -> A;
+      }
+
+   这允许对层次结构中的事件位置进行细粒度控制。
+
+守卫条件和效果
 ----------------------------------------------------
 
-.. important::
-   fcstm DSL 严格区分算术表达式（``num_expression``）和逻辑/布尔表达式（``cond_expression``）。与常见的高级语言不同，您不能自由混合算术和逻辑操作。赋值需要算术表达式，守卫条件需要布尔表达式，比较运算符通过接受算术操作数并产生布尔结果来桥接两者。
-
-表达式类型
+守卫条件
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-DSL 支持两种基本类型的表达式：
+守卫条件是控制转换是否可以触发的布尔表达式。它们在 ``if`` 关键字后用方括号括起来。
 
-1. **算术表达式**（``num_expression``）：求值为数值（int 或 float）
-2. **条件表达式**（``cond_expression``）：求值为布尔值（true 或 false）
+**语法：** ``StateA -> StateB : if [condition];``
+
+**支持的运算符：**
+
+- **比较**：``<``、``>``、``<=``、``>=``、``==``、``!=``
+- **逻辑**：``&&``、``||``、``!``、``and``、``or``、``not``
+- **位运算**：``&``、``|``、``^``
+- **算术**：``+``、``-``、``*``、``/``、``%``、``**``
 
 **示例：**
 
@@ -1087,7 +1080,7 @@ DSL 支持两种基本类型的表达式：
 .. figure:: guards_and_effects.fcstm.puml.svg
    :width: 80%
    :align: center
-   :alt: Guards and Effects Example
+   :alt: 守卫和效果示例
 
 语义规则
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1097,15 +1090,15 @@ DSL 支持两种基本类型的表达式：
 1. **状态存在性**：源状态和目标状态都必须存在于当前作用域中
 2. **变量有效性**：条件和效果中的所有变量都必须已声明
 3. **表达式类型**：守卫条件必须求值为布尔值
-4. **入口要求**：复合状态至少需要一个入口转换
+4. **入口要求**：复合状态需要至少一个入口转换
 5. **效果作用域**：效果只能赋值给已声明的变量
 
 **为什么有这些规则？**
 
 - **状态存在性**：防止悬空转换
-- **变量有效性**：确保所有引用都可以解析
-- **表达式类型**：在守卫求值中保持类型安全
-- **入口要求**：确保复合状态入口的确定性
+- **变量有效性**：确保所有引用都可解析
+- **表达式类型**：在守卫评估中保持类型安全
+- **入口要求**：确保复合状态进入的确定性
 - **效果作用域**：防止生成代码中的未定义行为
 
 常见错误
@@ -1136,7 +1129,7 @@ DSL 支持两种基本类型的表达式：
        undefined_var = 10;  // 语义错误
    };
 
-**正确替代方案：**
+**正确的替代方案：**
 
 .. code-block::
 
@@ -1228,7 +1221,7 @@ DSL 支持用于数学和逻辑操作的全面表达式类型：
    def int binary = 0b11110000;    // 二进制（0b 前缀）
    def int octal = 0o755;          // 八进制（0o 前缀）
 
-**浮点数字面量：**
+**浮点字面量：**
 
 .. code-block::
 
@@ -1243,7 +1236,7 @@ DSL 支持用于数学和逻辑操作的全面表达式类型：
 
 .. code-block::
 
-   // True 值（不区分大小写）
+   // 真值（不区分大小写）
    true, True, TRUE
 
    // False 值（不区分大小写）
@@ -2202,3 +2195,4 @@ DSL 解析器在解析过程中执行广泛的语义验证：
    - 测试套件：``test/testfile/sample_codes/``
 
    有关实现细节，请参阅文法定义、解析管道和模型系统文档。测试套件为复杂用例提供了额外的示例和验证模式。
+

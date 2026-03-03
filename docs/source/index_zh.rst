@@ -14,7 +14,7 @@
     tutorials/structure/index_zh
     tutorials/dsl/index_zh
     tutorials/render/index
-    tutorials/cli/index
+    tutorials/cli/index_zh
 
 .. toctree::
     :maxdepth: 2

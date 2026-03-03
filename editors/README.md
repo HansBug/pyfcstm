@@ -1,16 +1,15 @@
 # FCSTM Syntax Highlighting Support
 
-Complete syntax highlighting support for FCSTM (Finite State Machine) DSL across multiple editors and platforms.
+Syntax highlighting support for FCSTM (Finite State Machine) DSL.
 
 ## Overview
 
-Three complete implementations provide syntax highlighting for FCSTM code:
+Two implementations provide syntax highlighting for FCSTM code:
 
 1. **Pygments Lexer** - For Sphinx documentation and Python-based tools
-2. **TextMate Grammar** - For VSCode, GitHub, and GitLab
-3. **JetBrains Language Definition** - For IntelliJ IDEA, PyCharm, WebStorm, CLion, etc.
+2. **TextMate Grammar** - For GitHub, GitLab, and other platforms supporting TextMate grammars
 
-All implementations are based on the ANTLR grammar (`pyfcstm/dsl/grammar/Grammar.g4`) and have been thoroughly tested.
+Both implementations are based on the ANTLR grammar (`pyfcstm/dsl/grammar/Grammar.g4`) and have been thoroughly tested.
 
 ## Quick Start
 
@@ -48,37 +47,13 @@ print("✓ FCSTM Pygments lexer registered successfully")
 
 This registration should be placed after importing your project metadata and before the Sphinx configuration variables. The lexer will then be automatically available for all `.. code-block:: fcstm` directives in your documentation.
 
-### VSCode
+### TextMate Grammar
 
-```bash
-# Copy extension to VSCode extensions directory
-cp -r editors/vscode ~/.vscode/extensions/fcstm-language-support/
-
-# Reload VSCode (Cmd+Shift+P -> "Reload Window")
-```
-
-### JetBrains IDEs
-
-**Linux:**
-```bash
-cp editors/jetbrains/fcstm.xml ~/.config/JetBrains/<Product><Version>/filetypes/
-```
-
-**macOS:**
-```bash
-cp editors/jetbrains/fcstm.xml ~/Library/Application\ Support/JetBrains/<Product><Version>/filetypes/
-```
-
-**Windows:**
-```cmd
-copy editors\jetbrains\fcstm.xml %APPDATA%\JetBrains\<Product><Version>\filetypes\
-```
-
-Then restart your IDE.
+The TextMate grammar (`editors/fcstm.tmLanguage.json`) provides syntax highlighting for platforms that support TextMate grammars, including GitHub and GitLab.
 
 ## Supported Syntax
 
-All implementations support the complete FCSTM syntax:
+Both implementations support the complete FCSTM syntax:
 
 **Keywords:** `state`, `pseudo`, `named`, `def`, `event`, `enter`, `during`, `exit`, `before`, `after`, `abstract`, `ref`, `effect`, `if`, `and`, `or`, `not`
 
@@ -160,7 +135,7 @@ state TrafficLight {
 - Core dependency (included in `requirements.txt`)
 - Direct import in `pyfcstm/highlight/__init__.py`
 - Registered as Pygments entry point in `setup.py`
-- 195 lines, generates 277 tokens for typical code
+- 200 lines, generates 277 tokens for typical code
 
 **Entry Point Registration:**
 
@@ -177,85 +152,42 @@ entry_points={
 
 ### TextMate Grammar
 
-**Location:** `editors/vscode/syntaxes/fcstm.tmLanguage.json`
+**Location:** `editors/fcstm.tmLanguage.json`
 
 **Features:**
 - Scope-based syntax highlighting
-- VSCode integration via `package.json`
 - GitHub/GitLab syntax highlighting support
-- Bracket matching and auto-closing
-- Comment toggling support
-
-**Files:**
-- `package.json` - VSCode extension manifest
-- `language-configuration.json` - Language behavior configuration
-- `syntaxes/fcstm.tmLanguage.json` - TextMate grammar (145 lines)
-- `README.md` - Installation and usage instructions
+- Support for nested comments
+- Escape sequence highlighting in strings
 
 **Design:**
 - Based on Pygments lexer for consistency
 - Comprehensive scope definitions
-- Support for nested comments
-- Escape sequence highlighting in strings
-
-### JetBrains Language Definition
-
-**Location:** `editors/jetbrains/fcstm.xml`
-
-**Features:**
-- Basic syntax highlighting
-- Comment toggling (Ctrl+/, Cmd+/)
-- Block comment support (Ctrl+Shift+/, Cmd+Shift+/)
-- Bracket matching
-- File type association
-
-**Limitations:**
-- Basic highlighting only (no semantic analysis)
-- No code completion or error checking
-- No refactoring support
-
-**Design:**
-- XML-based language definition (85 lines)
-- Keyword grouping for different syntax categories
-- Support for multiple comment styles
+- 178 lines of JSON grammar rules
 
 ## Testing and Validation
 
-### Test Scripts
+### Validation Script
 
-**`test_highlight.py`** - Tests Pygments lexer functionality:
-- Tokenization test
-- Language detection test
-- Terminal output test
-- HTML output test
+**`editors/validate.py`** - Comprehensive validation:
+- Pygments lexer validation with 20+ checkpoints
+- Tests all ANTLR grammar rules
+- Terminal-based highlighting display
 - Token type verification
-
-**`validate_highlight.py`** - Comprehensive validation:
-- Pygments lexer validation
-- TextMate grammar structure validation
-- JetBrains XML validation
-- VSCode package.json validation
 
 ### Running Tests
 
 ```bash
-# Test Pygments lexer
-python test_highlight.py
-
-# Test on specific file
-python test_highlight.py docs/source/tutorials/dsl/example.fcstm
-
-# Validate all implementations
-python validate_highlight.py
+# Validate Pygments lexer
+python editors/validate.py
 ```
 
 ### Test Results
 
 All tests pass successfully:
-- Pygments Lexer: PASSED
-- TextMate Grammar: PASSED
-- JetBrains Definition: PASSED
-- VSCode Package: PASSED
+- Pygments Lexer: PASSED (20/20 checkpoints)
+- Language detection score: 1.00
+- Token generation: 1861 tokens for comprehensive test code
 
 ## File Structure
 
@@ -267,18 +199,9 @@ pyfcstm/
 │       └── pygments_lexer.py        # Pygments lexer implementation
 ├── editors/
 │   ├── README.md                    # This file
-│   ├── vscode/
-│   │   ├── package.json             # VSCode extension manifest
-│   │   ├── language-configuration.json
-│   │   ├── syntaxes/
-│   │   │   └── fcstm.tmLanguage.json
-│   │   └── README.md
-│   └── jetbrains/
-│       ├── fcstm.xml                # JetBrains language definition
-│       └── README.md
+│   ├── fcstm.tmLanguage.json        # TextMate grammar
+│   └── validate.py                  # Validation script
 ├── requirements.txt                 # Includes pygments>=2.10.0
-├── test_highlight.py                # Pygments lexer test script
-├── validate_highlight.py            # Comprehensive validation script
 └── setup.py                         # Updated with Pygments entry point
 ```
 
@@ -297,18 +220,6 @@ pip install -r requirements.txt
 python -c "from pygments.lexers import get_lexer_by_name; print(get_lexer_by_name('fcstm'))"
 ```
 
-### VSCode not highlighting `.fcstm` files
-
-1. Check extension is in `~/.vscode/extensions/fcstm-language-support/`
-2. Reload VSCode window (Cmd+Shift+P -> "Reload Window")
-3. Open a `.fcstm` file and check bottom-right corner shows "FCSTM"
-
-### JetBrains not highlighting `.fcstm` files
-
-1. Check `fcstm.xml` is in correct filetypes directory
-2. Restart IDE completely
-3. Open Settings -> Editor -> File Types -> verify FCSTM is listed
-
 ## Development
 
 ### Adding New Keywords
@@ -318,32 +229,12 @@ When adding new keywords to the FCSTM grammar:
 1. Update `pyfcstm/dsl/grammar/Grammar.g4`
 2. Regenerate parser: `make antlr_build`
 3. Update `pyfcstm/highlight/pygments_lexer.py`
-4. Update `editors/vscode/syntaxes/fcstm.tmLanguage.json`
-5. Update `editors/jetbrains/fcstm.xml`
-6. Update `editors/validate.py` to fit the new grammar (if necessary)
+4. Update `editors/fcstm.tmLanguage.json`
+5. Update `editors/validate.py` to fit the new grammar (if necessary)
 
 ### Consistency
 
-All three implementations should be kept in sync. The Pygments lexer serves as the reference implementation, with TextMate and JetBrains definitions derived from it.
-
-## Future Enhancements
-
-**VSCode Extension:**
-- Publish to VSCode Marketplace
-- Add semantic highlighting
-- Add code completion
-- Add error checking via language server
-
-**JetBrains Plugin:**
-- Create full plugin (not just file type)
-- Add semantic highlighting
-- Add code completion
-- Add error checking
-
-**Language Server Protocol (LSP):**
-- Implement LSP server for FCSTM
-- Provide cross-editor support
-- Add advanced features (go-to-definition, find references, etc.)
+Both implementations should be kept in sync. The Pygments lexer serves as the reference implementation, with the TextMate grammar derived from it.
 
 ## Related Documentation
 
@@ -351,7 +242,6 @@ All three implementations should be kept in sync. The Pygments lexer serves as t
 - [ANTLR Grammar](../pyfcstm/dsl/grammar/Grammar.g4)
 - [Pygments Documentation](https://pygments.org/)
 - [TextMate Grammar Documentation](https://macromates.com/manual/en/language_grammars)
-- [JetBrains Language Definition](https://www.jetbrains.com/help/idea/language-and-file-type.html)
 
 ## License
 

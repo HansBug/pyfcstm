@@ -15,6 +15,7 @@ Overview
     tutorials/dsl/index
     tutorials/render/index
     tutorials/cli/index
+    tutorials/grammar/index
 
 .. toctree::
     :maxdepth: 2

@@ -12,7 +12,7 @@
 
     tutorials/installation/index_zh
     tutorials/structure/index_zh
-    tutorials/dsl/index
+    tutorials/dsl/index_zh
     tutorials/render/index
     tutorials/cli/index
 

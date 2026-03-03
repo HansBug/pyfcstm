@@ -281,7 +281,8 @@ FinalState -> [*];               // Exit transition (to pseudo-final state)
 
 **How Forced Transitions Work:**
 
-Forced transitions are a **syntactic sugar** that expands during model construction to avoid repetitive code. They are **NOT** special transitions - they expand to normal transitions that execute exit actions normally.
+Forced transitions are a **syntactic sugar** that expands during model construction to avoid repetitive code. They are *
+*NOT** special transitions - they expand to normal transitions that execute exit actions normally.
 
 **Key Points:**
 
@@ -292,6 +293,7 @@ Forced transitions are a **syntactic sugar** that expands during model construct
 5. **Recursive Propagation**: Propagates to nested substates
 
 Example expansion:
+
 ```
 state System {
     ! * -> ErrorHandler :: CriticalError;
@@ -313,11 +315,13 @@ state System {
 ```
 
 **Key Limitations:**
+
 - Forced transitions **cannot** have effect blocks (syntax restriction)
 - Use the target state's enter action for initialization instead
 - Exit actions execute normally (not bypassed)
 
 **Use Cases:**
+
 - Avoid repetitive code when many states need the same transition
 - Error handling from multiple states
 - Emergency shutdown from all states
@@ -413,6 +417,7 @@ state System {
 ```
 
 **Key Points:**
+
 - `::` creates state-specific events (avoid conflicts)
 - `:` creates parent-scoped events (share within scope)
 - `/` creates root-scoped events (share globally)
@@ -526,7 +531,10 @@ state StateB {
 
 ### Expression System
 
-**IMPORTANT**: The fcstm DSL strictly separates arithmetic expressions (`num_expression`) from logical/boolean expressions (`cond_expression`). Unlike common high-level languages, you cannot mix arithmetic and logical operations freely. Assignments require arithmetic expressions, guard conditions require boolean expressions, and comparison operators bridge the two by taking arithmetic operands and producing boolean results.
+**IMPORTANT**: The fcstm DSL strictly separates arithmetic expressions (`num_expression`) from logical/boolean
+expressions (`cond_expression`). Unlike common high-level languages, you cannot mix arithmetic and logical operations
+freely. Assignments require arithmetic expressions, guard conditions require boolean expressions, and comparison
+operators bridge the two by taking arithmetic operands and producing boolean results.
 
 **Arithmetic Operators**:
 
@@ -870,7 +878,8 @@ Development requires `ruff` for formatting (see `requirements-dev.txt`).
 
 ### Documentation Editing
 
-The documentation system uses Sphinx with a sophisticated build pipeline that automatically generates derived resources from source files. Understanding this pipeline is critical to avoid editing generated files that will be overwritten.
+The documentation system uses Sphinx with a sophisticated build pipeline that automatically generates derived resources
+from source files. Understanding this pipeline is critical to avoid editing generated files that will be overwritten.
 
 #### Documentation Structure
 
@@ -884,9 +893,12 @@ Documentation source files are in `docs/source/` with the following organization
 
 #### Resource Generation Pipeline
 
-The documentation build system uses multiple Makefile fragments (`*.mk`) to define generation rules for different resource types. These rules create a dependency chain where source files generate intermediate files, which in turn generate final output files.
+The documentation build system uses multiple Makefile fragments (`*.mk`) to define generation rules for different
+resource types. These rules create a dependency chain where source files generate intermediate files, which in turn
+generate final output files.
 
-**CRITICAL RULE**: Always edit source files only. Never edit generated files directly, as they will be overwritten during the next build.
+**CRITICAL RULE**: Always edit source files only. Never edit generated files directly, as they will be overwritten
+during the next build.
 
 #### Generation Rules by File Type
 
@@ -902,8 +914,8 @@ Source files with `.fcstm` extension generate PlantUML and image files:
 - **Edit**: `*.fcstm` files only
 - **Generated** (do not edit): `*.fcstm.puml`, `*.fcstm.puml.png`, `*.fcstm.puml.svg`
 - **Commands**:
-  - `make -f docs/source/fcstms.mk SOURCE=docs/source build` - Generate all FSM diagrams
-  - `make -f docs/source/fcstms.mk SOURCE=docs/source clean` - Remove generated files
+    - `make -f docs/source/fcstms.mk SOURCE=docs/source build` - Generate all FSM diagrams
+    - `make -f docs/source/fcstms.mk SOURCE=docs/source clean` - Remove generated files
 
 **2. PlantUML to Images** (`diagrams.mk`)
 
@@ -917,8 +929,8 @@ Standalone PlantUML files (not generated from `.fcstm`) generate image files:
 - **Edit**: `*.puml` files only (unless they have `.fcstm.puml` extension, which are generated)
 - **Generated** (do not edit): `*.puml.png`, `*.puml.svg`
 - **Commands**:
-  - `make -f docs/source/diagrams.mk SOURCE=docs/source build` - Generate PlantUML images
-  - `make -f docs/source/diagrams.mk SOURCE=docs/source clean` - Remove generated images
+    - `make -f docs/source/diagrams.mk SOURCE=docs/source build` - Generate PlantUML images
+    - `make -f docs/source/diagrams.mk SOURCE=docs/source clean` - Remove generated images
 
 **3. Graphviz to Images** (`graphviz.mk`)
 
@@ -932,8 +944,8 @@ Graphviz DOT files generate image files:
 - **Edit**: `*.gv` files only
 - **Generated** (do not edit): `*.gv.png`, `*.gv.svg`
 - **Commands**:
-  - `make -f docs/source/graphviz.mk SOURCE=docs/source build` - Generate Graphviz images
-  - `make -f docs/source/graphviz.mk SOURCE=docs/source clean` - Remove generated images
+    - `make -f docs/source/graphviz.mk SOURCE=docs/source build` - Generate Graphviz images
+    - `make -f docs/source/graphviz.mk SOURCE=docs/source clean` - Remove generated images
 
 **4. Demo Scripts to Output** (`demos.mk`)
 
@@ -948,11 +960,12 @@ Python and shell demo scripts generate output files:
 ```
 
 - **Edit**: `*.demo.py`, `*.demox.py`, `*.plot.py`, `*.demo.sh`, `*.demox.sh` files only
-- **Generated** (do not edit): `*.py.txt`, `*.py.err`, `*.py.exitcode`, `*.py.svg`, `*.sh.txt`, `*.sh.err`, `*.sh.exitcode`
+- **Generated** (do not edit): `*.py.txt`, `*.py.err`, `*.py.exitcode`, `*.py.svg`, `*.sh.txt`, `*.sh.err`,
+  `*.sh.exitcode`
 - **Commands**:
-  - `make -f docs/source/demos.mk SOURCE=docs/source build` - Run all demo scripts
-  - `make -f docs/source/demos.mk SOURCE=docs/source clean` - Remove generated outputs
-  - `make -f docs/source/demos.mk SOURCE=docs/source cleanplt` - Remove plot outputs only
+    - `make -f docs/source/demos.mk SOURCE=docs/source build` - Run all demo scripts
+    - `make -f docs/source/demos.mk SOURCE=docs/source clean` - Remove generated outputs
+    - `make -f docs/source/demos.mk SOURCE=docs/source cleanplt` - Remove plot outputs only
 
 **5. Jupyter Notebooks** (`notebook.mk`)
 
@@ -965,8 +978,8 @@ Jupyter notebooks generate executed versions:
 - **Edit**: `*.ipynb` files only (with outputs cleared)
 - **Generated** (do not edit): `*.result.ipynb`
 - **Commands**:
-  - `make -f docs/source/notebook.mk SOURCE=docs/source build` - Execute notebooks
-  - `make -f docs/source/notebook.mk SOURCE=docs/source clean` - Remove executed notebooks and clear outputs
+    - `make -f docs/source/notebook.mk SOURCE=docs/source build` - Execute notebooks
+    - `make -f docs/source/notebook.mk SOURCE=docs/source clean` - Remove executed notebooks and clear outputs
 
 #### Unified Build Commands
 
@@ -1086,6 +1099,7 @@ cd docs && make html
 #### File Extension Reference
 
 **Source files** (edit these):
+
 - `.fcstm` - FSM DSL source
 - `.puml` - PlantUML source (only if not generated from `.fcstm`)
 - `.gv` - Graphviz DOT source
@@ -1095,6 +1109,7 @@ cd docs && make html
 - `.rst`, `.md` - Documentation text
 
 **Generated files** (never edit):
+
 - `.fcstm.puml` - Generated from `.fcstm`
 - `.fcstm.puml.png`, `.fcstm.puml.svg` - Generated from `.fcstm.puml`
 - `.puml.png`, `.puml.svg` - Generated from `.puml`
@@ -1119,3 +1134,188 @@ Install with:
 pip install -r requirements.txt
 pip install -r requirements-doc.txt
 ```
+
+### Multilingual Documentation Support
+
+The documentation system supports multiple languages through a dynamic index file mechanism. Understanding this system
+is essential for writing and translating documentation.
+
+#### Language Support Mechanism
+
+The project uses a **language-specific index file pattern** where:
+
+1. **Language-specific index files** are created with the suffix `_<lang>` (e.g., `index_en.rst`, `index_zh.rst`)
+2. **Build-time index selection** happens in `docs/source/conf.py`:
+    - Reads `READTHEDOCS_LANGUAGE` environment variable (defaults to `'en'`)
+    - Copies the appropriate `index_<language>.rst` to `index.rst` before building
+    - The copied `index.rst` becomes the entry point for Sphinx
+3. **Language detection** normalizes language codes (e.g., `zh-CN`, `zh_CN`, `zh-Hans` all become `zh`)
+
+**Key Configuration in `conf.py`:**
+
+```python
+READTHEDOCS_LANGUAGE = os.environ.get('READTHEDOCS_LANGUAGE', 'en')
+language = READTHEDOCS_LANGUAGE
+if 'zh' in re.split(r'[_-]+', language.lower()):
+    language = 'zh'
+
+_source_index = os.path.join(_DOC_PATH, f'index_{language}.rst')
+_target_index = os.path.join(_DOC_PATH, 'index.rst')
+shutil.copyfile(_source_index, _target_index)
+```
+
+#### File Naming Conventions
+
+**Root-Level Index Files** (`docs/source/`):
+
+- `index_en.rst` - English root index (source file)
+- `index_zh.rst` - Chinese root index (source file)
+- `index.rst` - Generated entry point (copied from `index_<lang>.rst` during build)
+
+**Section-Level Index Files** (e.g., `docs/source/tutorials/installation/`):
+
+- `index.rst` - Default/English version (source file)
+- `index_zh.rst` - Chinese version (source file)
+- No `index_en.rst` needed if `index.rst` serves as English version
+
+**Content Files** (non-index documentation):
+
+- Most content files have a single language version without suffix
+- Language-specific content uses `_<lang>` suffix when multiple versions exist
+- API documentation (`api_doc/`) typically has no language variants (code is language-agnostic)
+
+#### Directory Structure Pattern
+
+```
+docs/source/
+├── index_en.rst              # English root (source)
+├── index_zh.rst              # Chinese root (source)
+├── index.rst                 # Generated entry point (do not edit directly)
+├── tutorials/
+│   ├── installation/
+│   │   ├── index.rst         # English version (source)
+│   │   ├── index_zh.rst      # Chinese version (source)
+│   │   ├── install_check.demo.py
+│   │   └── cli_check.demo.sh
+│   ├── structure/
+│   │   ├── index.rst         # English version (source)
+│   │   ├── index_zh.rst      # Chinese version (source)
+│   │   └── structure.puml
+│   ├── dsl/
+│   │   └── index.rst         # Single language version
+│   └── cli/
+│       └── index.rst         # Single language version
+└── api_doc/
+    ├── config/
+    │   └── index.rst         # API docs typically single language
+    └── model/
+        └── index.rst
+```
+
+#### Translation Workflow
+
+**When creating a new documentation section:**
+
+1. **Create English version first** as `index.rst` (or `<section>.rst`)
+2. **Create translated versions** with language suffix (e.g., `index_zh.rst`)
+3. **Update parent index files** to reference the appropriate language version:
+
+```rst
+.. toctree::
+    :maxdepth: 2
+    :caption: Tutorials
+
+    tutorials/installation/index_zh    # Reference Chinese version
+    tutorials/structure/index_zh       # Reference Chinese version
+    tutorials/dsl/index                # Reference default (English) version
+```
+
+**When translating existing documentation:**
+
+1. **Identify the source file** (usually `index.rst` or `<section>.rst`)
+2. **Create language-specific copy** with `_<lang>` suffix (e.g., `index_zh.rst`)
+3. **Translate content** while preserving:
+    - ReStructuredText directives and formatting
+    - File references (e.g., `.. literalinclude:: install_check.demo.py`)
+    - Image references (e.g., `.. figure:: structure.puml.svg`)
+    - Code blocks and examples
+4. **Update parent index** to reference the new translation
+5. **Verify shared resources** (demo scripts, images, diagrams) work for both languages
+
+#### Language-Specific Index References
+
+Parent index files must reference the correct language version of child sections:
+
+**English root index** (`index_en.rst`):
+
+```rst
+.. toctree::
+    :maxdepth: 2
+
+    tutorials/installation/index       # English version
+    tutorials/structure/index          # English version
+```
+
+**Chinese root index** (`index_zh.rst`):
+
+```rst
+.. toctree::
+    :maxdepth: 2
+
+    tutorials/installation/index_zh    # Chinese version
+    tutorials/structure/index_zh       # Chinese version
+```
+
+#### Best Practices
+
+**DO**:
+
+- Create `index_en.rst` and `index_zh.rst` at the root level (`docs/source/`)
+- Use `index.rst` as the default English version for subsections
+- Add `index_zh.rst` for Chinese translations of subsections
+- Keep shared resources (images, demos, code) language-agnostic
+- Update parent index files to reference the correct language version
+- Preserve all ReStructuredText formatting and directives during translation
+- Test both language builds locally before committing
+
+**DO NOT**:
+
+- Edit `docs/source/index.rst` directly (it's generated during build)
+- Create `index_en.rst` for subsections (use `index.rst` as English default)
+- Duplicate shared resources (images, demos) for each language
+- Translate code examples or API documentation (keep language-agnostic)
+- Forget to update parent index files after adding translations
+
+#### Building Documentation for Specific Languages
+
+**Local builds** (defaults to English):
+
+```bash
+cd docs
+make html
+```
+
+**Build for specific language**:
+
+```bash
+cd docs
+READTHEDOCS_LANGUAGE=zh make html
+```
+
+**Production builds** (ReadTheDocs):
+
+- ReadTheDocs automatically sets `READTHEDOCS_LANGUAGE` based on project configuration
+- Each language version is built separately with the appropriate environment variable
+
+#### Translation Checklist
+
+When translating a documentation section:
+
+- [ ] Create `index_zh.rst` (or `<section>_zh.rst`) with translated content
+- [ ] Preserve all ReStructuredText directives (`:maxdepth:`, `.. literalinclude::`, etc.)
+- [ ] Keep file references unchanged (demo scripts, images work for all languages)
+- [ ] Update parent index file to reference `index_zh` for Chinese builds
+- [ ] Verify shared resources (images, diagrams, demos) are language-agnostic
+- [ ] Test build with `READTHEDOCS_LANGUAGE=zh make html`
+- [ ] Check that all links and references work correctly
+- [ ] Ensure consistent terminology across translated sections

@@ -601,8 +601,8 @@ DSL 支持三种具有不同语法模式的转换类型：
    .. code-block::
 
       // 扩展的转换（自动生成）：
-      Child1 -> ErrorHandler :: CriticalError;
-      Child2 -> ErrorHandler :: CriticalError;
+      Child1 -> ErrorHandler : CriticalError;
+      Child2 -> ErrorHandler : CriticalError;
 
    **重要**：这些是**普通转换** - 它们像任何其他转换一样执行退出动作。
 
@@ -796,10 +796,10 @@ DSL 支持三种指定事件作用域的方式：
 .. code-block::
 
    // A -> B :: E  等价于：
-   A -> B : /Root.A.E
+   A -> B : /A.E
 
    // B -> A :: E  等价于：
-   B -> A : /Root.B.E
+   B -> A : /B.E
 
 .. tip::
    **何时使用：**
@@ -837,10 +837,10 @@ DSL 支持三种指定事件作用域的方式：
 .. code-block::
 
    // A -> B : E  等价于：
-   A -> B : /Root.E
+   A -> B : /E
 
    // B -> C : E  等价于：
-   B -> C : /Root.E
+   B -> C : /E
 
 .. tip::
    **何时使用：**
@@ -926,22 +926,22 @@ DSL 支持三种指定事件作用域的方式：
      - 绝对路径等价
    * - ``A1 -> A2 :: LocalEvent``
      - 源状态（A1）
-     - ``A1 -> A2 : /System.ModuleA.A1.LocalEvent``
+     - ``A1 -> A2 : /ModuleA.A1.LocalEvent``
    * - ``A2 -> A1 : ChainEvent``
      - 父状态（ModuleA）
-     - ``A2 -> A1 : /System.ModuleA.ChainEvent``
+     - ``A2 -> A1 : /ModuleA.ChainEvent``
    * - ``ModuleA -> Target : /GlobalEvent``
      - 根状态（System）
-     - 已经是绝对路径：``/System.GlobalEvent``
+     - 已经是绝对路径：``/GlobalEvent``
    * - ``B1 -> B2 :: LocalEvent``
      - 源状态（B1）
-     - ``B1 -> B2 : /System.ModuleB.B1.LocalEvent``
+     - ``B1 -> B2 : /ModuleB.B1.LocalEvent``
    * - ``B2 -> B1 : ChainEvent``
      - 父状态（ModuleB）
-     - ``B2 -> B1 : /System.ModuleB.ChainEvent``
+     - ``B2 -> B1 : /ModuleB.ChainEvent``
    * - ``ModuleB -> Target : /GlobalEvent``
      - 根状态（System）
-     - 已经是绝对路径：``/System.GlobalEvent``
+     - 已经是绝对路径：``/GlobalEvent``
 
 **关键观察：**
 

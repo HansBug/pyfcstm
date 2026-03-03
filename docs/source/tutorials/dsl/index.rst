@@ -601,8 +601,8 @@ Forced transitions are a **syntactic sugar** that automatically expands to multi
    .. code-block::
 
       // Expanded transitions (generated automatically):
-      Child1 -> ErrorHandler :: CriticalError;
-      Child2 -> ErrorHandler :: CriticalError;
+      Child1 -> ErrorHandler : CriticalError;
+      Child2 -> ErrorHandler : CriticalError;
 
    **Important**: These are **normal transitions** - they execute exit actions just like any other transition.
 
@@ -796,10 +796,10 @@ Local events use the ``::`` operator and are scoped to the **source state's name
 .. code-block::
 
    // A -> B :: E  is equivalent to:
-   A -> B : /Root.A.E
+   A -> B : /A.E
 
    // B -> A :: E  is equivalent to:
-   B -> A : /Root.B.E
+   B -> A : /B.E
 
 .. tip::
    **When to Use:**
@@ -837,10 +837,10 @@ Chain events use the ``:`` operator and are scoped to the **parent state's names
 .. code-block::
 
    // A -> B : E  is equivalent to:
-   A -> B : /Root.E
+   A -> B : /E
 
    // B -> C : E  is equivalent to:
-   B -> C : /Root.E
+   B -> C : /E
 
 .. tip::
    **When to Use:**
@@ -926,22 +926,22 @@ Here's a comprehensive example demonstrating all three scoping mechanisms:
      - Absolute Path Equivalent
    * - ``A1 -> A2 :: LocalEvent``
      - Source state (A1)
-     - ``A1 -> A2 : /System.ModuleA.A1.LocalEvent``
+     - ``A1 -> A2 : /ModuleA.A1.LocalEvent``
    * - ``A2 -> A1 : ChainEvent``
      - Parent state (ModuleA)
-     - ``A2 -> A1 : /System.ModuleA.ChainEvent``
+     - ``A2 -> A1 : /ModuleA.ChainEvent``
    * - ``ModuleA -> Target : /GlobalEvent``
      - Root state (System)
-     - Already absolute: ``/System.GlobalEvent``
+     - Already absolute: ``/GlobalEvent``
    * - ``B1 -> B2 :: LocalEvent``
      - Source state (B1)
-     - ``B1 -> B2 : /System.ModuleB.B1.LocalEvent``
+     - ``B1 -> B2 : /ModuleB.B1.LocalEvent``
    * - ``B2 -> B1 : ChainEvent``
      - Parent state (ModuleB)
-     - ``B2 -> B1 : /System.ModuleB.ChainEvent``
+     - ``B2 -> B1 : /ModuleB.ChainEvent``
    * - ``ModuleB -> Target : /GlobalEvent``
      - Root state (System)
-     - Already absolute: ``/System.GlobalEvent``
+     - Already absolute: ``/GlobalEvent``
 
 **Key Observations:**
 

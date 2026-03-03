@@ -23,11 +23,11 @@ state System {
         [*] -> A1;
 
         // Local event :: - scoped to source state (A1)
-        // Equivalent to: A1 -> A2 : /System.ModuleA.A1.LocalEvent
+        // Equivalent to: A1 -> A2 : /ModuleA.A1.LocalEvent
         A1 -> A2 :: LocalEvent;
 
         // Chain event : - scoped to parent state (ModuleA)
-        // Equivalent to: A2 -> A1 : /System.ModuleA.ChainEvent
+        // Equivalent to: A2 -> A1 : /ModuleA.ChainEvent
         A2 -> A1 : ChainEvent;
     }
 
@@ -47,12 +47,12 @@ state System {
         [*] -> B1;
 
         // Local event :: - scoped to source state (B1)
-        // Equivalent to: B1 -> B2 : /System.ModuleB.B1.LocalEvent
+        // Equivalent to: B1 -> B2 : /ModuleB.B1.LocalEvent
         // This is DIFFERENT from ModuleA.A1.LocalEvent
         B1 -> B2 :: LocalEvent;
 
         // Chain event : - scoped to parent state (ModuleB)
-        // Equivalent to: B2 -> B1 : /System.ModuleB.ChainEvent
+        // Equivalent to: B2 -> B1 : /ModuleB.ChainEvent
         // This is DIFFERENT from ModuleA.ChainEvent
         B2 -> B1 : ChainEvent;
     }

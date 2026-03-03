@@ -27,6 +27,7 @@ Example::
 """
 
 import pathlib
+from typing import Optional
 
 import click
 
@@ -79,7 +80,7 @@ def _add_plantuml_subcommand(cli: click.Group) -> click.Group:
         default=None,
         help='Output directory of the code generation, output to stdout when not assigned.',
     )
-    def plantuml(input_code_file: str, output_file: str | None) -> None:
+    def plantuml(input_code_file: str, output_file: Optional[str]) -> None:
         """
         Convert state machine DSL code to PlantUML format.
 

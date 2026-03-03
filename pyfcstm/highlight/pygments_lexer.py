@@ -1,10 +1,31 @@
 """
-Pygments lexer for FCSTM DSL syntax highlighting.
+Pygments lexer implementation for FCSTM DSL syntax highlighting.
 
-This lexer is based on the ANTLR grammar defined in Grammar.g4 and provides
-syntax highlighting for Sphinx documentation and other Pygments-based tools.
+This module defines :class:`FcstmLexer`, a Pygments lexer tailored for the
+FCSTM (Finite State Machine) DSL. The lexer is based on the ANTLR grammar in
+``Grammar.g4`` and provides syntax highlighting support for Sphinx
+documentation as well as other Pygments-based tools.
 
-Usage in Sphinx documentation:
+The module exposes the following public component:
+
+* :class:`FcstmLexer` - Regex-based lexer for FCSTM DSL tokens and comments
+
+.. note::
+   The lexer is designed for use with Pygments and Sphinx's ``code-block``
+   directive. It does not perform parsing or validation; it only assigns
+   token types based on regular expressions.
+
+Example::
+
+    >>> from pygments import highlight
+    >>> from pygments.formatters import HtmlFormatter
+    >>> from pygments.lexers import get_lexer_by_name
+    >>> code = "state MyState { enter { counter = 0; } }"
+    >>> lexer = get_lexer_by_name("fcstm")
+    >>> html = highlight(code, lexer, HtmlFormatter())
+
+Usage in Sphinx documentation::
+
     .. code-block:: fcstm
 
         def int counter = 0;
@@ -26,16 +47,32 @@ class FcstmLexer(RegexLexer):
     """
     Lexer for FCSTM (Finite State Machine) DSL.
 
-    Based on the ANTLR grammar in Grammar.g4, this lexer provides syntax
-    highlighting for hierarchical state machine definitions with support for:
-    - Variable definitions (int, float)
-    - State definitions (leaf, composite, pseudo)
-    - Transitions (normal, forced, entry, exit)
-    - Lifecycle actions (enter, during, exit)
-    - Aspect-oriented actions (>> during before/after)
-    - Guard conditions and effects
-    - Expressions (arithmetic, bitwise, logical, conditional)
-    - Events and references
+    This lexer provides syntax highlighting for hierarchical state machine
+    definitions in the FCSTM DSL. It recognizes keywords, operators, numbers,
+    strings, comments (including nested multiline comments), and identifiers.
+    The implementation uses stateful regular expressions via
+    :class:`pygments.lexer.RegexLexer`.
+
+    The lexer supports:
+
+    * Variable definitions and types (``def``, ``int``, ``float``)
+    * State definitions (``state``, ``pseudo``, ``named``)
+    * Transitions and lifecycle actions (``enter``, ``during``, ``exit``)
+    * Aspect-oriented actions (``before``, ``after``, ``>>``)
+    * Guards and effects (``if``, ``effect``)
+    * Logical and arithmetic expressions
+    * Events and scoped references (``::``)
+
+    Example::
+
+        >>> from pygments.lexers import get_lexer_by_name
+        >>> lexer = get_lexer_by_name("fcstm")
+        >>> list(lexer.get_tokens("state A { enter { x = 1; } }"))[:5]
+        [(Token.Keyword.Declaration, 'state'), ...]
+
+    .. note::
+       The lexer includes a heuristic :meth:`analyse_text` method used by
+       Pygments to guess if input text is likely FCSTM code.
     """
 
     name = 'FCSTM'
@@ -173,11 +210,23 @@ class FcstmLexer(RegexLexer):
         ],
     }
 
-    def analyse_text(text):
+    def analyse_text(text: str) -> float:
         """
-        Analyze text to determine if it's likely FCSTM code.
+        Analyze text to determine if it is likely FCSTM code.
 
-        Returns a score between 0.0 and 1.0 indicating confidence.
+        This method is used by Pygments to heuristically determine whether the
+        input should be lexed by :class:`FcstmLexer`. It scans for key tokens
+        and constructs a confidence score in the range ``0.0`` to ``1.0``.
+
+        :param text: Text content to analyze
+        :type text: str
+        :return: Confidence score indicating likelihood of FCSTM syntax
+        :rtype: float
+
+        Example::
+
+            >>> FcstmLexer.analyse_text("state A { enter { x = 1; } }")
+            0.6
         """
         score = 0.0
 

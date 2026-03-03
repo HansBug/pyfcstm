@@ -21,7 +21,7 @@ RANGE_SRC_DIR_TEST := ${TEST_DIR}/${RANGE_DIR}
 COV_TYPES ?= xml term-missing
 
 # LLM-based documentation generation options
-AUTO_OPTIONS ?= --param max_tokens=400000 --no-ignore-module pyfcstm --model-name deepseek-chat
+AUTO_OPTIONS ?= --param max_tokens=400000 --no-ignore-module pyfcstm --no-ignore-module hbutils --model-name gpt-5.2-codex
 
 # RST documentation generation variables
 PYTHON_CODE_DIR   := ${SRC_DIR}

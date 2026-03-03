@@ -1,52 +1,42 @@
 """
-State Machine Code Renderer Module
+State machine code renderer for Jinja2 template-based code generation.
 
-This module provides functionality for rendering state machine models into code using templates.
-It uses Jinja2 templating engine to transform state machine models into various programming
-languages and formats based on template configurations.
+This module provides the :class:`StateMachineCodeRenderer` class, which renders
+state machine models into code files using a template directory. The renderer
+supports configuration-driven expression styles, Jinja2 globals, filters, and
+tests. Template files with the ``.j2`` extension are rendered, while all other
+files are copied directly to the output directory.
 
-Template Directory Structure:
-    The template directory should contain:
+The template directory is expected to contain:
 
-    - ``config.yaml``: Configuration file for the renderer
-    - ``*.j2`` files: Jinja2 templates that will be rendered
-    - Other files: Will be copied directly to the output directory
+* ``config.yaml`` - Configuration file for the renderer (see below)
+* ``*.j2`` files - Jinja2 templates to render
+* Other files - Copied verbatim to the output directory
 
-Configuration File (config.yaml) Structure:
-    - ``expr_styles``: Dictionary defining expression rendering styles
-      - ``default``: Default style configuration (will use 'dsl' as base_lang if not specified)
+Configuration file (``config.yaml``) structure:
 
-      - ``[style_name]``: Additional named styles
-        - base_lang: Base language style ('dsl', 'c', 'cpp', 'python')
-        - [additional options]: Extra rendering options for the style
-    - ``globals``: Dictionary of global variables to be added to the Jinja2 environment
-      Each entry can be:
+* ``expr_styles`` - Mapping of expression rendering styles. Each style is a
+  mapping with a ``base_lang`` key and optional template overrides.
+  The ``default`` style is always created if absent.
+* ``globals`` - Mapping of Jinja2 globals (see :func:`pyfcstm.render.func.process_item_to_object`)
+* ``filters`` - Mapping of Jinja2 filters (same structure as ``globals``)
+* ``tests`` - Mapping of Jinja2 tests (same structure as ``globals``)
+* ``ignores`` - Git-style ignore patterns to skip files in the template directory
 
-      - ``type: template``: A template renderer function
-        - params: List[str], means the parameter list of this template rendering function, e.g. ``['a', 'b']``.
-        - template: str, means the Jinja2-format text render template, e.g. ``{{ a + b * 2 }}``.
-      - ``type: import``: An imported object
-        - from: str, means the import position, e.g. `math.sin`.
-      - ``type: value``: A direct value
-        - value: Any, means any possible value, e.g. ``1``, ``'Hello World'``.
-      - Other values (e.g. ``1``, ``'Hello World'``) means directly this value itself.
+Expression rendering:
 
-    - ``filters``: Dictionary of filter functions to be added to the Jinja2 environment
-      (Same format as globals)
+* Use ``{{ expression | expr_render }}`` to render with the ``default`` style
+* Use ``{{ expression | expr_render(style='c') }}`` to render with a named style
 
-    - ``tests``: Dictionary of test functions to be added to the Jinja2 environment
-      (Same format as globals)
+The module depends on :mod:`jinja2`, :mod:`pyyaml`, and :mod:`pathspec` for
+templating, YAML configuration, and ignore pattern handling.
 
-    - ``ignores``: List of file patterns to ignore (using gitignore syntax, e.g. ``.git``, ``*.md``, etc)
+Example::
 
-Expression Rendering:
-    The expr_styles configuration allows customizing how expressions are rendered in different
-    language styles. The base_lang determines the starting template set, which can be extended
-    or overridden with additional configuration.
-
-    And you can use these pre-defined styles in ``expr_render`` function/filter in the template.
-    When use ``{{ expression | expr_render }}`` it will use ``default`` style to render your expression.
-    When use ``{{ expression | expr_render(style='c') }}`` it will use ``c`` style to render your expression.
+    >>> from pyfcstm.render.render import StateMachineCodeRenderer
+    >>> from pyfcstm.model import StateMachine
+    >>> renderer = StateMachineCodeRenderer('./templates')
+    >>> renderer.render(StateMachine(defines={}, root_state=some_state), './output')
 
 """
 import copy
@@ -72,26 +62,43 @@ class StateMachineCodeRenderer:
     """
     Renderer for generating code from state machine models using templates.
 
-    This class handles the rendering of state machine models into code using
-    Jinja2 templates. It supports custom expression styles, global functions,
-    filters, and tests through a configuration file.
+    This class handles rendering of state machine models into code by combining
+    a template directory with a configuration file. It creates a Jinja2
+    environment, registers expression rendering styles, and maps template files
+    to rendering operations or file copying operations.
 
     :param template_dir: Directory containing the templates and configuration
     :type template_dir: str
+    :param config_file: Name of the configuration file within the template directory,
+        defaults to ``'config.yaml'``
+    :type config_file: str, optional
 
-    :param config_file: Name of the configuration file within the template directory
-    :type config_file: str, default: 'config.yaml'
+    :ivar template_dir: Absolute path to the template directory
+    :vartype template_dir: str
+    :ivar config_file: Absolute path to the configuration file
+    :vartype config_file: str
+    :ivar env: Jinja2 environment used for rendering
+    :vartype env: jinja2.Environment
+    :ivar _ignore_patterns: List of git-style ignore patterns
+    :vartype _ignore_patterns: List[str]
+    :ivar _file_mappings: Mapping of relative template paths to render/copy callables
+    :vartype _file_mappings: Dict[str, Callable]
+
+    Example::
+
+        >>> renderer = StateMachineCodeRenderer('./templates')
+        >>> renderer.render(my_state_machine, './output', clear_previous_directory=True)
     """
 
-    def __init__(self, template_dir: str, config_file: str = 'config.yaml'):
+    def __init__(self, template_dir: str, config_file: str = 'config.yaml') -> None:
         """
         Initialize the StateMachineCodeRenderer.
 
         :param template_dir: Directory containing the templates and configuration
         :type template_dir: str
-
-        :param config_file: Name of the configuration file within the template directory
-        :type config_file: str, default: 'config.yaml'
+        :param config_file: Name of the configuration file within the template directory,
+            defaults to ``'config.yaml'``
+        :type config_file: str, optional
         """
         self.template_dir = os.path.abspath(template_dir)
         self.config_file = os.path.join(self.template_dir, config_file)
@@ -107,12 +114,12 @@ class StateMachineCodeRenderer:
         self._file_mappings: Dict[str, Callable] = {}
         self._prepare_for_file_mapping()
 
-    def _prepare_for_configs(self):
+    def _prepare_for_configs(self) -> None:
         """
         Load and process the configuration file.
 
-        This method reads the configuration file, sets up expression rendering styles,
-        and registers globals, filters, and tests in the Jinja2 environment.
+        This method reads the configuration file, sets up expression rendering
+        styles, and registers globals, filters, and tests in the Jinja2 environment.
 
         :raises FileNotFoundError: If the configuration file does not exist
         :raises yaml.YAMLError: If the configuration file contains invalid YAML
@@ -130,16 +137,15 @@ class StateMachineCodeRenderer:
                 ext_configs=expr_style,
             )
 
-        def _fn_expr_render(node: Union[float, int, dict, dsl_nodes.Expr, Any], style: str = 'default'):
+        def _fn_expr_render(node: Union[float, int, dict, dsl_nodes.Expr, Any],
+                            style: str = 'default') -> str:
             """
             Render an expression node using the specified style.
 
             :param node: The expression node to render
             :type node: Union[float, int, dict, dsl_nodes.Expr, Any]
-
-            :param style: The expression rendering style to use
-            :type style: str, default: 'default'
-
+            :param style: The expression rendering style to use, defaults to ``'default'``
+            :type style: str, optional
             :return: The rendered expression as a string
             :rtype: str
             """
@@ -165,15 +171,16 @@ class StateMachineCodeRenderer:
         ignores = list(config_info.pop('ignores', None) or [])
         self._ignore_patterns.extend(ignores)
 
-    def _prepare_for_file_mapping(self):
+    def _prepare_for_file_mapping(self) -> None:
         """
         Prepare file mappings for rendering or copying.
 
         This method walks through the template directory and creates mappings for:
-        - .j2 files: Will be rendered using Jinja2
-        - Other files: Will be copied directly to the output directory
 
-        Files matching the ignore patterns will be excluded.
+        * ``.j2`` files: Rendered using Jinja2 and written without the ``.j2`` extension
+        * Other files: Copied directly to the output directory
+
+        Files matching the configured ignore patterns are excluded.
         """
         for root, _, files in os.walk(self.template_dir):
             for file in files:
@@ -194,21 +201,18 @@ class StateMachineCodeRenderer:
                         src_file=current_file,
                     )
 
-    def render_one_file(self, model: StateMachine, output_file: str, template_file: str):
+    def render_one_file(self, model: StateMachine, output_file: str, template_file: str) -> None:
         """
         Render a single template file.
 
         :param model: The state machine model to render
         :type model: StateMachine
-
         :param output_file: Path to the output file
         :type output_file: str
-
         :param template_file: Path to the template file
         :type template_file: str
-
-        :raises jinja2.exceptions.TemplateError: If there's an error in the template
-        :raises IOError: If there's an error reading or writing files
+        :raises jinja2.exceptions.TemplateError: If there is an error in the template
+        :raises IOError: If there is an error reading or writing files
         """
         tp = self.env.from_string(auto_decode(pathlib.Path(template_file).read_bytes()))
         if os.path.dirname(output_file):
@@ -217,27 +221,24 @@ class StateMachineCodeRenderer:
         with open(output_file, 'w') as f:
             f.write(tp.render(model=model))
 
-    def copy_one_file(self, model: StateMachine, output_file: str, src_file: str):
+    def copy_one_file(self, model: StateMachine, output_file: str, src_file: str) -> None:
         """
         Copy a single file to the output directory.
 
         :param model: The state machine model (unused in this method)
         :type model: StateMachine
-
         :param output_file: Path to the output file
         :type output_file: str
-
         :param src_file: Path to the source file
         :type src_file: str
-
-        :raises IOError: If there's an error copying the file
+        :raises IOError: If there is an error copying the file
         """
         _ = model
         if os.path.dirname(output_file):
             os.makedirs(os.path.dirname(self.config_file), exist_ok=True)
         shutil.copyfile(src_file, output_file)
 
-    def render(self, model: StateMachine, output_dir: str, clear_previous_directory: bool = False):
+    def render(self, model: StateMachine, output_dir: str, clear_previous_directory: bool = False) -> None:
         """
         Render the state machine model to the output directory.
 
@@ -247,14 +248,12 @@ class StateMachineCodeRenderer:
 
         :param model: The state machine model to render
         :type model: StateMachine
-
         :param output_dir: Directory where the rendered files will be placed
         :type output_dir: str
-
-        :param clear_previous_directory: Whether to clear the output directory before rendering
-        :type clear_previous_directory: bool, default: False
-
-        :raises IOError: If there's an error accessing or writing to the output directory
+        :param clear_previous_directory: Whether to clear the output directory before rendering,
+            defaults to ``False``
+        :type clear_previous_directory: bool, optional
+        :raises IOError: If there is an error accessing or writing to the output directory
 
         Example::
 

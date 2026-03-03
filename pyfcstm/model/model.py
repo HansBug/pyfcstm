@@ -1,19 +1,43 @@
 """
-State machine module for parsing and representing hierarchical state machines.
+Hierarchical state machine model and DSL conversion utilities.
 
-This module provides classes and functions for working with state machines, including:
+This module provides the core model objects used to represent hierarchical
+state machines, along with conversion helpers that map between the internal
+model and the DSL/AST representation. The primary capabilities include:
 
-- Representation of states, transitions, events, and operations
-- Parsing state machine DSL nodes into state machine objects
-- Exporting state machines to AST nodes and PlantUML diagrams
+* Defining states, transitions, events, and variable definitions.
+* Representing entry, during, exit, and aspect-oriented actions.
+* Parsing a DSL AST into a structured :class:`StateMachine`.
+* Exporting models to AST nodes and PlantUML diagrams.
 
-The module implements a hierarchical state machine model with support for:
+The main public components are:
 
-- Nested states
-- Entry, during, and exit actions
-- Guards and effects on transitions
-- Abstract function declarations
-- Variable definitions
+* :class:`Operation` - Operation assignments used in actions and transitions.
+* :class:`Event` - Event definitions scoped to a state path.
+* :class:`Transition` - Transition definitions with optional guards and effects.
+* :class:`OnStage` - Entry/during/exit actions for a state.
+* :class:`OnAspect` - Aspect-oriented during actions.
+* :class:`State` - Hierarchical state container with actions and transitions.
+* :class:`VarDefine` - Typed variable definitions.
+* :class:`StateMachine` - Root container for the full state machine.
+* :func:`parse_dsl_node_to_state_machine` - DSL AST parsing utility.
+
+.. note::
+   The parsing utilities validate state and variable references. Syntax errors
+   are raised when invalid references or structural inconsistencies are found.
+
+Example::
+
+    >>> from pyfcstm.dsl import node as dsl_nodes
+    >>> from pyfcstm.model.model import parse_dsl_node_to_state_machine
+    >>> program = dsl_nodes.StateMachineDSLProgram(
+    ...     definitions=[],
+    ...     root_state=dsl_nodes.StateDefinition("root")
+    ... )
+    >>> sm = parse_dsl_node_to_state_machine(program)
+    >>> sm.root_state.name
+    'root'
+
 """
 import io
 import json
@@ -186,7 +210,7 @@ class Transition(AstExportable):
             return self.parent_ref()
 
     @parent.setter
-    def parent(self, new_parent: Optional['State']):
+    def parent(self, new_parent: Optional['State']) -> None:
         """
         Set the parent state of this transition.
 
@@ -274,7 +298,7 @@ class OnStage(AstExportable):
             return self.parent_ref()
 
     @parent.setter
-    def parent(self, new_parent: Optional['State']):
+    def parent(self, new_parent: Optional['State']) -> None:
         """
         Set the parent state of this action.
 
@@ -452,7 +476,7 @@ class OnAspect(AstExportable):
             return self.parent_ref()
 
     @parent.setter
-    def parent(self, new_parent: Optional['State']):
+    def parent(self, new_parent: Optional['State']) -> None:
         """
         Set the parent state of this aspect action.
 
@@ -583,7 +607,7 @@ class State(AstExportable, PlantUMLExportable):
     extra_name: Optional[str] = None
     is_pseudo: bool = False
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """
         Initialize default values for optional fields after instance creation.
         """
@@ -630,7 +654,7 @@ class State(AstExportable, PlantUMLExportable):
             return self.parent_ref()
 
     @parent.setter
-    def parent(self, new_parent: Optional['State']):
+    def parent(self, new_parent: Optional['State']) -> None:
         """
         Set the parent state of this state.
 
@@ -1053,10 +1077,8 @@ class State(AstExportable, PlantUMLExportable):
 
         if transition.event:
             if len(transition.event.path) > len(cur_path) and transition.event.path[:len(cur_path)] == cur_path:
-                # is relative path
                 event_id = dsl_nodes.ChainID(path=list(transition.event.path[len(cur_path):]), is_absolute=False)
             else:
-                # use absolute path
                 event_id = dsl_nodes.ChainID(path=list(transition.event.path[1:]), is_absolute=True)
         else:
             event_id = None
@@ -1111,7 +1133,7 @@ class State(AstExportable, PlantUMLExportable):
         :rtype: str
         """
 
-        def _name_safe(sub_state: Optional[str] = None):
+        def _name_safe(sub_state: Optional[str] = None) -> str:
             subpath = [*self.path]
             if sub_state is not None:
                 subpath.append(sub_state)
@@ -1120,8 +1142,6 @@ class State(AstExportable, PlantUMLExportable):
         state_style_marks = []
         if self.is_pseudo:
             state_style_marks.append('line.dotted')
-        # if self.is_leaf_state and not self.is_pseudo:
-        #     state_style_marks.append('line.bold')
         state_style_mark_str = " #" + ";".join(state_style_marks) if state_style_marks else ""
         with io.StringIO() as sf:
             if self.extra_name is not None:
@@ -1320,7 +1340,7 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
 
     :raises SyntaxError: If there are syntax errors in the state machine definition,
                          such as duplicate variable definitions, unknown states in
-                         transitions, missing entry transitions, etc.
+                         transitions, missing entry transitions, or invalid references.
 
     Example::
 
@@ -1340,7 +1360,7 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
         else:
             raise SyntaxError(f'Duplicated variable definition - {def_item}.')
 
-    def _recursive_build_states(node: dsl_nodes.StateDefinition, current_path: Tuple[str, ...]):
+    def _recursive_build_states(node: dsl_nodes.StateDefinition, current_path: Tuple[str, ...]) -> State:
         current_path = tuple((*current_path, node.name))
         d_substates = {}
 
@@ -1470,7 +1490,6 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                     operations=[],
                     is_abstract=False,
                     state_path=(*current_path, during_item.name),
-                    # TODO: add part of during ref function
                     ref=None,
                     ref_state_path=(
                         *((dnode.root_state.name,) if during_item.ref.is_absolute else current_path),
@@ -1534,7 +1553,6 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                     operations=[],
                     is_abstract=False,
                     state_path=(*current_path, exit_item.name),
-                    # TODO: add part of exit ref function
                     ref=None,
                     ref_state_path=(
                         *((dnode.root_state.name,) if exit_item.ref.is_absolute else current_path),
@@ -1598,7 +1616,6 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                     operations=[],
                     is_abstract=False,
                     state_path=(*current_path, during_aspect_item.name),
-                    # TODO: add part of during aspect ref function
                     ref=None,
                     ref_state_path=(
                         *((dnode.root_state.name,) if during_aspect_item.ref.is_absolute else current_path),
@@ -1645,7 +1662,7 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
     root_state = _recursive_build_states(dnode.root_state, current_path=())
 
     def _recursive_finish_states(node: dsl_nodes.StateDefinition, current_state: State, current_path: Tuple[str, ...],
-                                 force_transitions: List[dsl_nodes.ForceTransitionDefinition] = None):
+                                 force_transitions: Optional[List[dsl_nodes.ForceTransitionDefinition]] = None) -> None:
         current_path = tuple((*current_path, current_state.name))
         force_transitions = list(force_transitions or [])
 

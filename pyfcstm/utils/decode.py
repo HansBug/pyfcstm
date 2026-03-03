@@ -1,11 +1,26 @@
 """
-Utilities for automatic text decoding with a focus on Chinese encodings.
+Automatic text decoding utilities with a focus on Chinese encodings.
 
-This module provides functionality to automatically detect and decode text data
-from various encodings, with special emphasis on Chinese character encodings.
-It includes a comprehensive list of Chinese encodings commonly used on Windows
-systems and a robust auto-detection mechanism that tries multiple encodings
-until successful decoding is achieved.
+This module provides helpers for decoding byte sequences by trying a series of
+likely encodings. It is designed to work well with Windows-centric Chinese
+encodings while still supporting Unicode variants. The decoding strategy
+attempts multiple encodings in a defined order and returns the first successful
+result.
+
+The module contains the following public components:
+
+* :data:`windows_chinese_encodings` - Ordered list of common Chinese encodings
+* :func:`auto_decode` - Robust decoding function with auto-detection
+
+.. note::
+   This module relies on :mod:`chardet` for probabilistic encoding detection.
+
+Example::
+
+    >>> from pyfcstm.utils.decode import auto_decode
+    >>> text_bytes = b'\\xc4\\xe3\\xba\\xc3'  # "你好" in GBK encoding
+    >>> auto_decode(text_bytes)
+    '你好'
 """
 
 import sys
@@ -38,38 +53,41 @@ def _decode(data: bytes, encoding: str) -> str:
     """
     Decode bytes data using the specified encoding.
 
-    :param data: The bytes data to decode
+    :param data: Bytes to decode.
     :type data: bytes
-    :param encoding: The encoding to use for decoding
+    :param encoding: Text encoding to use for decoding.
     :type encoding: str
-
-    :return: The decoded string
+    :return: Decoded text.
     :rtype: str
-    :raises UnicodeDecodeError: If the data cannot be decoded with the specified encoding
+    :raises UnicodeDecodeError: If the bytes cannot be decoded using ``encoding``.
     """
     return data.decode(encoding)
 
 
 def auto_decode(data: Union[bytes, bytearray]) -> str:
     """
-    Automatically decode bytes data by trying multiple encodings.
+    Automatically decode bytes by trying multiple encodings.
 
-    This function attempts to decode the input data using multiple encodings in the following order:
+    The decoding order depends on the input length:
 
-    1. The encoding detected by chardet
-    2. Common Chinese encodings used in Windows
-    3. The default system encoding
+    * For inputs with length >= 30, the order is:
+      1) encoding detected by :mod:`chardet`
+      2) entries in :data:`windows_chinese_encodings`
+      3) system default encoding
+    * For shorter inputs, the order is:
+      1) entries in :data:`windows_chinese_encodings`
+      2) system default encoding
+      3) encoding detected by :mod:`chardet`
 
-    The function tries each encoding until successful decoding is achieved. If all
-    encodings fail, it raises the UnicodeDecodeError from the encoding that managed
-    to decode the most characters before failing.
+    The function tries each encoding until one succeeds. If all attempts fail,
+    it raises the :class:`UnicodeDecodeError` that progressed furthest (i.e.,
+    the error with the highest ``start`` position).
 
-    :param data: The bytes data to decode
+    :param data: The bytes data to decode.
     :type data: Union[bytes, bytearray]
-
-    :return: The decoded string
+    :return: The decoded string.
     :rtype: str
-    :raises UnicodeDecodeError: If the data cannot be decoded with any of the attempted encodings
+    :raises UnicodeDecodeError: If decoding fails for all attempted encodings.
 
     Example::
 

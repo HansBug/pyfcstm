@@ -1,8 +1,29 @@
 """
-This module provides utilities for enhancing Jinja2 environments with Python builtins and additional settings.
+Jinja2 environment augmentation utilities.
 
-It includes functions to add Python built-in functions to Jinja2 environments as filters, tests, and globals,
-as well as adding environment variables and custom text processing functions.
+This module provides helpers for enriching a :class:`jinja2.Environment` with
+Python built-ins, text-processing filters, and selected operating system
+environment variables. It is intended to simplify template authoring by making
+common Python functions available as filters, tests, and globals, while also
+adding project-specific text utilities.
+
+The module contains the following public functions:
+
+* :func:`add_builtins_to_env` - Register Python built-ins as filters, tests, and globals
+* :func:`add_settings_for_env` - Apply built-ins plus additional filters and globals
+
+.. note::
+   The added filters and globals are only attached to the environment instance
+   passed to the functions and do not affect other environments.
+
+Example::
+
+    >>> import jinja2
+    >>> from pyfcstm.utils.jinja2 import add_settings_for_env
+    >>> env = add_settings_for_env(jinja2.Environment())
+    >>> template = env.from_string("{{ 'Hello World'|to_identifier }}")
+    >>> template.render()
+    'Hello_World'
 """
 
 import builtins
@@ -19,50 +40,67 @@ def add_builtins_to_env(env: jinja2.Environment) -> jinja2.Environment:
     """
     Mount Python built-in functions to a Jinja2 environment.
 
-    This function adds Python's built-in functions to the specified Jinja2 environment
-    as filters, tests, or global functions based on their characteristics.
+    This function registers Python built-ins to the provided environment as:
 
-    :param env: A Jinja2 Environment instance
+    - **Filters**: Callable built-ins are added as filters when no naming
+      conflict exists.
+    - **Tests**: Common boolean checks are added as tests, using a simplified
+      name for functions beginning with ``is`` (e.g., ``isinstance`` becomes
+      the ``instance`` test).
+    - **Globals**: All non-conflicting built-ins are added to the global
+      namespace.
+
+    In addition to these automatic registrations, this function always injects
+    several convenience filters, even if they overwrite existing names in the
+    environment:
+
+    - ``str``: :class:`str`
+    - ``set``: :class:`set`
+    - ``dict``: :class:`dict`
+    - ``keys``: ``lambda x: x.keys()``
+    - ``values``: ``lambda x: x.values()``
+    - ``enumerate``: :func:`enumerate`
+    - ``reversed``: :func:`reversed`
+    - ``filter``: ``lambda x, y: filter(y, x)``
+
+    :param env: A Jinja2 environment instance to modify.
     :type env: jinja2.Environment
-
-    :return: The Jinja2 Environment with Python builtins mounted
+    :return: The same Jinja2 environment with built-ins mounted.
     :rtype: jinja2.Environment
+
+    .. warning::
+       This function may override pre-existing filters named ``str``, ``set``,
+       ``dict``, ``keys``, ``values``, ``enumerate``, ``reversed``, and
+       ``filter``.
 
     Example::
 
-        >>> env = jinja2.Environment()
-        >>> env = add_builtins_to_env(env)
-        >>> # Now Python builtins like len, str, etc. are available in templates
+        >>> import jinja2
+        >>> env = add_builtins_to_env(jinja2.Environment())
+        >>> tmpl = env.from_string("{{ [1, 2, 3]|reversed|list }}")
+        >>> tmpl.render()
+        '[3, 2, 1]'
     """
-    # Existing built-in filters, tests and global functions in Jinja2
     existing_filters = set(env.filters.keys())
     existing_tests = set(env.tests.keys())
     existing_globals = set(env.globals.keys())
 
-    # Get all Python built-in functions
     builtin_items = [(name, obj) for name, obj in inspect.getmembers(builtins)
-                     if not name.startswith('_')]  # Exclude internal functions starting with underscore
+                     if not name.startswith('_')]
 
-    # Categorize functions for appropriate mounting positions
     for name, func in builtin_items:
-        # Skip non-function objects
         if not callable(func):
             continue
 
-        # Determine if the function is suitable as a filter
         is_filter_candidate = (
-            # Filters typically accept one main argument and may have other optional parameters
-                inspect.isfunction(func) or inspect.isbuiltin(func)
+            inspect.isfunction(func) or inspect.isbuiltin(func)
         )
 
-        # Determine if the function is suitable as a tester
         is_test_candidate = (
-            # Test functions typically return boolean values, like isinstance, issubclass, etc.
-                name.startswith('is') or
-                name in ('all', 'any', 'callable', 'hasattr')
+            name.startswith('is') or
+            name in ('all', 'any', 'callable', 'hasattr')
         )
 
-        # Mount as a filter (if suitable and no conflict)
         filter_name = name
         if is_filter_candidate and filter_name not in existing_filters:
             env.filters[filter_name] = func
@@ -75,15 +113,12 @@ def add_builtins_to_env(env: jinja2.Environment) -> jinja2.Environment:
         env.filters['reversed'] = reversed
         env.filters['filter'] = lambda x, y: filter(y, x)
 
-        # Mount as a tester (if suitable and no conflict)
         test_name = name
         if name.startswith('is'):
-            # For functions starting with 'is', the prefix can be removed as the tester name
             test_name = name[2:].lower()
         if is_test_candidate and test_name not in existing_tests:
             env.tests[test_name] = func
 
-        # Mount as a global function (if no conflict)
         if name not in existing_globals:
             env.globals[name] = func
 
@@ -92,24 +127,35 @@ def add_builtins_to_env(env: jinja2.Environment) -> jinja2.Environment:
 
 def add_settings_for_env(env: jinja2.Environment) -> jinja2.Environment:
     """
-    Add additional settings and functions to a Jinja2 environment.
+    Add built-ins, text filters, and environment variables to a Jinja2 environment.
 
-    This function enhances a Jinja2 environment by:
-    1. Adding Python built-in functions
-    2. Adding custom text processing filters
-    3. Adding environment variables as global variables
+    This function enhances a Jinja2 environment by applying the following steps:
 
-    :param env: The Jinja2 environment to enhance
+    1. Register Python built-ins via :func:`add_builtins_to_env`
+    2. Add text-processing filters:
+       - ``normalize``: :func:`pyfcstm.utils.text.normalize`
+       - ``to_identifier``: :func:`pyfcstm.utils.text.to_identifier`
+    3. Add a global helper:
+       - ``indent``: :func:`textwrap.indent`
+    4. Add operating system environment variables as globals (only if the name
+       does not already exist in the environment).
+
+    :param env: The Jinja2 environment to enhance.
     :type env: jinja2.Environment
-
-    :return: The enhanced Jinja2 environment
+    :return: The enhanced Jinja2 environment.
     :rtype: jinja2.Environment
+
+    .. note::
+       Environment variables are only added if their names do not already exist
+       in the environment's global namespace.
 
     Example::
 
-        >>> env = jinja2.Environment()
-        >>> env = add_settings_for_env(env)
-        >>> # Now the environment has additional filters and globals
+        >>> import jinja2
+        >>> env = add_settings_for_env(jinja2.Environment())
+        >>> template = env.from_string("{{ 'Hello World'|normalize }}")
+        >>> template.render()
+        'Hello_World'
     """
     env = add_builtins_to_env(env)
     env.filters['normalize'] = normalize

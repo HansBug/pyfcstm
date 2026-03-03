@@ -1,3 +1,39 @@
+"""
+Utility helpers package for :mod:`pyfcstm`.
+
+This package provides a consolidated import location for frequently used utility
+functions, interfaces, and exceptions within :mod:`pyfcstm`. The exported
+symbols cover binary detection, decoding utilities, documentation formatting,
+Jinja2 environment configuration, JSON/YAML serialization interfaces, safe
+string handling, text normalization, and validation helpers.
+
+The package exposes the following main components:
+
+* :func:`is_binary_file` - Detect whether a file is binary by inspecting its bytes
+* :func:`auto_decode` - Decode bytes by trying multiple encodings
+* :func:`format_multiline_comment` - Normalize multiline comments from parsers
+* :func:`add_builtins_to_env` - Register Python built-ins in a Jinja2 environment
+* :func:`add_settings_for_env` - Apply common filters and globals to Jinja2
+* :class:`IJsonOp` - Interface for JSON/YAML serialization
+* :func:`sequence_safe` - Build a safe underscore-separated identifier
+* :func:`normalize` - Normalize text to identifier-friendly form
+* :func:`to_identifier` - Convert text to a valid identifier format
+* :class:`ValidationError` - Base validation error exception
+* :class:`ModelValidationError` - Aggregated validation error exception
+* :class:`IValidatable` - Interface for objects with validation rules
+
+.. note::
+   This package re-exports utilities from internal modules to provide a unified
+   import path. The implementations reside in submodules such as
+   :mod:`pyfcstm.utils.text` and :mod:`pyfcstm.utils.validate`.
+
+Example::
+
+    >>> from pyfcstm.utils import normalize, IJsonOp
+    >>> normalize("Hello World!")
+    'Hello_World'
+"""
+
 from .binary import is_binary_file
 from .decode import auto_decode
 from .doc import format_multiline_comment

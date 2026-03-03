@@ -34,7 +34,12 @@ import os
 import sys
 import traceback
 from functools import wraps, partial
-from typing import Optional, IO, Callable, TypeVar, ParamSpec
+from typing import Optional, IO, Callable, TypeVar
+
+try:
+    from typing import ParamSpec
+except ImportError:
+    from typing_extensions import ParamSpec
 
 import click
 from click.exceptions import ClickException

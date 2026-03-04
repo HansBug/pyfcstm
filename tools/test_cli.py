@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# -*- coding: utf-8 -*-
 """
 Test CLI executable functionality
 
@@ -10,6 +11,11 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+
+
+# Use ASCII-safe symbols for cross-platform compatibility
+CHECK_MARK = '[OK]'
+CROSS_MARK = '[FAIL]'
 
 
 class CLITester:
@@ -35,7 +41,7 @@ class CLITester:
                 raise
             return e
         except subprocess.TimeoutExpired as e:
-            print(f"✗ Command timed out: {' '.join(cmd)}")
+            print(f"[FAIL] Command timed out: {' '.join(cmd)}")
             raise
 
     def test_version(self):
@@ -44,7 +50,7 @@ class CLITester:
         result = self.run_command(['-v'])
         assert 'Pyfcstm' in result.stdout or 'pyfcstm' in result.stdout.lower(), \
             f"Version output doesn't contain 'Pyfcstm': {result.stdout}"
-        print(f"  ✓ Version: {result.stdout.strip()}")
+        print(f"  [OK] Version: {result.stdout.strip()}")
         self.test_results.append(('version', True))
 
     def test_help(self):
@@ -57,7 +63,7 @@ class CLITester:
             "Help output doesn't mention plantuml command"
         assert 'generate' in result.stdout.lower(), \
             "Help output doesn't mention generate command"
-        print("  ✓ Help output looks correct")
+        print("  [OK] Help output looks correct")
         self.test_results.append(('help', True))
 
     def test_plantuml_generation(self, test_dsl_file):
@@ -84,7 +90,7 @@ class CLITester:
             assert '@startuml' in content, "Output doesn't contain @startuml"
             assert '@enduml' in content, "Output doesn't contain @enduml"
 
-            print(f"  ✓ Generated PlantUML ({len(content)} bytes)")
+            print(f"  [OK] Generated PlantUML ({len(content)} bytes)")
             self.test_results.append(('plantuml', True))
         finally:
             if os.path.exists(output_file):
@@ -109,7 +115,7 @@ class CLITester:
 
             assert len(generated_files) > 0, "No files were generated"
 
-            print(f"  ✓ Generated {len(generated_files)} file(s)")
+            print(f"  [OK] Generated {len(generated_files)} file(s)")
             self.test_results.append(('generate', True))
 
     def test_error_handling(self):
@@ -124,7 +130,7 @@ class CLITester:
         ], check=False)
 
         assert result.returncode != 0, "Should fail with non-existent file"
-        print("  ✓ Correctly handles non-existent file")
+        print("  [OK] Correctly handles non-existent file")
         self.test_results.append(('error_handling', True))
 
     def run_all_tests(self, test_dsl_file=None, template_dir=None):
@@ -149,7 +155,7 @@ class CLITester:
             try:
                 test_func()
             except Exception as e:
-                print(f"  ✗ {test_name} failed: {e}")
+                print(f"  [FAIL] {test_name} failed: {e}")
                 self.test_results.append((test_name, False))
                 self.failed_tests.append((test_name, str(e)))
 
@@ -166,10 +172,10 @@ class CLITester:
         if self.failed_tests:
             print("\nFailed tests:")
             for test_name, error in self.failed_tests:
-                print(f"  ✗ {test_name}: {error}")
+                print(f"  [FAIL] {test_name}: {error}")
             return False
         else:
-            print("\n✓ All tests passed!")
+            print("\n[OK] All tests passed!")
             return True
 
 

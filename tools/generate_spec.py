@@ -64,7 +64,6 @@ a = Analysis(
         'py',
     ],
     noarchive=False,
-    optimize=2,              # Enable highest level bytecode optimization (remove docstrings and assert)
 )
 
 # Use compressed PYZ archive

@@ -1,4 +1,4 @@
-.PHONY: docs test unittest resource antlr antlr_build build package clean docs_auto todos_auto tests_auto rst_auto
+.PHONY: docs test unittest resource antlr antlr_build build package clean docs_auto todos_auto tests_auto rst_auto vscode vscode_clean
 
 PYTHON := $(shell which python)
 
@@ -34,6 +34,13 @@ RST_NONM_FILES    := $(foreach file,${PYTHON_NONM_FILES},$(patsubst %/__init__.p
 ANTLR_VERSION ?= 4.9.3
 ANTLR_GRAMMAR_DIR  := ${SRC_DIR}/dsl/grammar
 ANTLR_GRAMMAR_FILE := ${ANTLR_GRAMMAR_DIR}/Grammar.g4
+
+# VSCode extension variables
+VSCODE_EXT_DIR := ${PROJ_DIR}/editors/vscode
+VSCODE_BUILD_DIR := ${VSCODE_EXT_DIR}/build
+VSCODE_SYNTAXES_DIR := ${VSCODE_EXT_DIR}/syntaxes
+VSCODE_GRAMMAR_SRC := ${PROJ_DIR}/editors/fcstm.tmLanguage.json
+VSCODE_GRAMMAR_DST := ${VSCODE_SYNTAXES_DIR}/fcstm.tmLanguage.json
 
 # Sample test generation related variables
 MODEL_TEST_DIR   := ${TEST_DIR}/model
@@ -131,3 +138,18 @@ ${MODEL_TEST_DIR}/test_sample_neg_%.py: ${SAMPLE_NEG_CODES_DIR}/%.fcstm sample_t
 sample_clean:
 	rm -rf ${SAMPLE_TEST_FILES}
 	rm -rf ${SAMPLE_NEG_TEST_FILES}
+
+# VSCode extension build targets
+vscode: ${VSCODE_GRAMMAR_DST}
+	@echo "Building VSCode extension..."
+	@mkdir -p ${VSCODE_BUILD_DIR}
+	cd ${VSCODE_EXT_DIR} && vsce package --out build/
+	@echo "VSCode extension built successfully at ${VSCODE_BUILD_DIR}/"
+
+${VSCODE_GRAMMAR_DST}: ${VSCODE_GRAMMAR_SRC}
+	@mkdir -p ${VSCODE_SYNTAXES_DIR}
+	cp ${VSCODE_GRAMMAR_SRC} ${VSCODE_GRAMMAR_DST}
+
+vscode_clean:
+	rm -rf ${VSCODE_BUILD_DIR}
+	rm -f ${VSCODE_EXT_DIR}/*.vsix

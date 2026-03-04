@@ -3,7 +3,6 @@
 Generate optimized PyInstaller spec file with all necessary resource files
 """
 import argparse
-import os
 import sys
 
 

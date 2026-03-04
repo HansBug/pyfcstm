@@ -52,7 +52,7 @@ jobs:
   release_cli:
     name: CLI Build And Release
     runs-on: ${{ matrix.os }}
-    if: "!contains(github.event.head_commit.message, 'ci skip')"
+    if: ${{ github.repository == 'hansbug/pyfcstm' }}
     strategy:
       fail-fast: false
       matrix:
@@ -193,5 +193,77 @@ jobs:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: dist/${{ env.ZIP_NAME }}.zip
           asset_name: ${{ env.ZIP_NAME }}.zip
+          tag: ${{ github.ref }}
+          overwrite: true
+
+  release_vscode_extension:
+    name: VSCode Extension Build And Release
+    runs-on: ubuntu-latest
+    if: ${{ github.repository == 'hansbug/pyfcstm' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 20
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install vsce (VSCode Extension Manager)
+        run: |
+          npm install -g @vscode/vsce
+
+      - name: Get extension version
+        id: ext_version
+        run: |
+          cd editors/vscode
+          VERSION=$(node -p "require('./package.json').version")
+          NAME=$(node -p "require('./package.json').name")
+          echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+          echo "NAME=${NAME}" >> $GITHUB_OUTPUT
+          echo "Extension: ${NAME} v${VERSION}"
+
+      - name: Build VSCode extension using make
+        run: |
+          make vscode
+          ls -lh editors/vscode/build/
+
+      - name: Find and verify extension file
+        id: find_vsix
+        run: |
+          VSIX_FILE=$(find editors/vscode/build -name "*.vsix" -type f | head -n 1)
+          if [ -z "$VSIX_FILE" ]; then
+            echo "Error: No .vsix file found in editors/vscode/build/"
+            exit 1
+          fi
+          echo "Found extension: $VSIX_FILE"
+          echo "VSIX_FILE=${VSIX_FILE}" >> $GITHUB_OUTPUT
+          echo "VSIX_BASENAME=$(basename ${VSIX_FILE})" >> $GITHUB_OUTPUT
+
+      # Publish to VSCode Marketplace (commented out until configured)
+      # - name: Publish to VSCode Marketplace
+      #   run: |
+      #     cd editors/vscode
+      #     vsce publish -p ${{ secrets.VSCE_PAT }}
+      #   env:
+      #     VSCE_PAT: ${{ secrets.VSCE_PAT }}
+
+      # Publish to Open VSX Registry (commented out until configured)
+      # - name: Publish to Open VSX
+      #   run: |
+      #     npm install -g ovsx
+      #     cd editors/vscode
+      #     ovsx publish -p ${{ secrets.OVSX_PAT }}
+      #   env:
+      #     OVSX_PAT: ${{ secrets.OVSX_PAT }}
+
+      - name: Upload VSCode extension to release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: ${{ steps.find_vsix.outputs.VSIX_FILE }}
+          asset_name: ${{ steps.find_vsix.outputs.VSIX_BASENAME }}
           tag: ${{ github.ref }}
           overwrite: true

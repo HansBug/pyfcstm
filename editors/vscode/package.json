@@ -1,9 +1,13 @@
 {
   "name": "fcstm-language-support",
   "displayName": "FCSTM Language Support",
-  "description": "Syntax highlighting for FCSTM (Finite State Machine) DSL",
+  "description": "Syntax highlighting and language support for FCSTM (Finite State Machine) DSL - a domain-specific language for modeling hierarchical state machines",
   "version": "0.1.0",
-  "publisher": "pyfcstm",
+  "publisher": "hansbug",
+  "author": {
+    "name": "HansBug",
+    "email": "hansbug@buaa.edu.cn"
+  },
   "license": "LGPL-3.0",
   "engines": {
     "vscode": "^1.60.0"
@@ -16,12 +20,28 @@
     "state machine",
     "fsm",
     "dsl",
-    "finite state machine"
+    "finite state machine",
+    "statechart",
+    "harel",
+    "hierarchical state machine",
+    "syntax highlighting"
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/hansbug/pyfcstm"
+    "url": "https://github.com/HansBug/pyfcstm.git"
   },
+  "bugs": {
+    "url": "https://github.com/HansBug/pyfcstm/issues"
+  },
+  "homepage": "https://github.com/HansBug/pyfcstm#readme",
+  "qna": "https://github.com/HansBug/pyfcstm/discussions",
+  "badges": [
+    {
+      "url": "https://img.shields.io/github/stars/HansBug/pyfcstm?style=social",
+      "href": "https://github.com/HansBug/pyfcstm",
+      "description": "Star pyfcstm on GitHub"
+    }
+  ],
   "contributes": {
     "languages": [
       {

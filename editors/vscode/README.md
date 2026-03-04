@@ -14,15 +14,22 @@ Syntax highlighting support for FCSTM (Finite State Machine) DSL in Visual Studi
 
 ### From VSIX Package
 
-1. Download the `.vsix` file from the releases page
-2. Open VSCode
-3. Go to Extensions view (`Ctrl+Shift+X` or `Cmd+Shift+X`)
-4. Click the `...` menu at the top of the Extensions view
-5. Select "Install from VSIX..."
-6. Choose the downloaded `.vsix` file
-7. Reload VSCode
+1. Download the `.vsix` file from the [GitHub releases page](https://github.com/hansbug/pyfcstm/releases)
+2. Install using command line:
+   ```bash
+   code --install-extension fcstm-language-support-0.1.0.vsix
+   ```
+   Or install via VSCode UI:
+   - Open VSCode
+   - Go to Extensions view (`Ctrl+Shift+X` or `Cmd+Shift+X`)
+   - Click the `...` menu at the top of the Extensions view
+   - Select "Install from VSIX..."
+   - Choose the downloaded `.vsix` file
+3. Reload VSCode
 
-### From Source
+### Building from Source
+
+If you want to build the extension from source:
 
 1. Clone the pyfcstm repository:
    ```bash
@@ -30,39 +37,25 @@ Syntax highlighting support for FCSTM (Finite State Machine) DSL in Visual Studi
    cd pyfcstm
    ```
 
-2. Copy the extension to your VSCode extensions folder:
-   ```bash
-   # Linux/macOS
-   cp -r editors/vscode ~/.vscode/extensions/fcstm-language-support-0.1.0/
-
-   # Windows
-   xcopy /E /I editors\vscode %USERPROFILE%\.vscode\extensions\fcstm-language-support-0.1.0\
-   ```
-
-3. Reload VSCode
-
-### Building from Source
-
-To build a `.vsix` package:
-
-1. Install vsce (VSCode Extension Manager):
+2. Install vsce (VSCode Extension Manager):
    ```bash
    npm install -g @vscode/vsce
    ```
 
-2. Navigate to the extension directory:
+3. Build using Makefile (recommended):
    ```bash
-   cd editors/vscode
+   make vscode
    ```
 
-3. Package the extension:
+   Or build manually:
    ```bash
-   vsce package
+   cd editors/vscode
+   vsce package --out build/
    ```
 
 4. Install the generated `.vsix` file:
    ```bash
-   code --install-extension fcstm-language-support-0.1.0.vsix
+   code --install-extension editors/vscode/build/fcstm-language-support-0.1.0.vsix
    ```
 
 ## Supported Syntax

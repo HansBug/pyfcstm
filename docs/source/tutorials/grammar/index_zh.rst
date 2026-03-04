@@ -181,112 +181,71 @@ TextMate 语法文件位于：
 VS Code 集成
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-**方法 1：创建 VS Code 扩展（推荐）**
+pyfcstm 项目包含了一个即用型 VS Code 扩展。
 
-1. 为您的扩展创建新目录：
+**安装预构建扩展**
 
-   .. code-block:: bash
+从 GitHub releases 页面下载 ``.vsix`` 文件并安装：
 
-      mkdir fcstm-vscode
-      cd fcstm-vscode
+.. code-block:: bash
 
-2. 创建 ``package.json``：
+   code --install-extension fcstm-language-support-0.1.0.vsix
 
-   .. code-block:: json
+重启 VS Code。现在 ``.fcstm`` 扩展名的文件将具有语法高亮。
 
-      {
-        "name": "fcstm-language-support",
-        "displayName": "FCSTM Language Support",
-        "description": "Syntax highlighting for FCSTM state machine DSL",
-        "version": "1.0.0",
-        "engines": {
-          "vscode": "^1.60.0"
-        },
-        "categories": ["Programming Languages"],
-        "contributes": {
-          "languages": [{
-            "id": "fcstm",
-            "aliases": ["FCSTM", "fcstm"],
-            "extensions": [".fcstm", ".fcsm"],
-            "configuration": "./language-configuration.json"
-          }],
-          "grammars": [{
-            "language": "fcstm",
-            "scopeName": "source.fcstm",
-            "path": "./syntaxes/fcstm.tmLanguage.json"
-          }]
-        }
-      }
+**从源代码构建**
 
-3. 创建 ``language-configuration.json``：
+如果您想从源代码构建扩展：
 
-   .. code-block:: json
+1. 确保已安装 Node.js 和 npm
 
-      {
-        "comments": {
-          "lineComment": "//",
-          "blockComment": ["/*", "*/"]
-        },
-        "brackets": [
-          ["{", "}"],
-          ["[", "]"],
-          ["(", ")"]
-        ],
-        "autoClosingPairs": [
-          { "open": "{", "close": "}" },
-          { "open": "[", "close": "]" },
-          { "open": "(", "close": ")" },
-          { "open": "\"", "close": "\"" },
-          { "open": "'", "close": "'" }
-        ],
-        "surroundingPairs": [
-          ["{", "}"],
-          ["[", "]"],
-          ["(", ")"],
-          ["\"", "\""],
-          ["'", "'"]
-        ]
-      }
-
-4. 创建 syntaxes 目录并复制语法文件：
+2. 安装 vsce（VS Code 扩展打包工具）：
 
    .. code-block:: bash
 
-      mkdir syntaxes
-      cp /path/to/pyfcstm/editors/fcstm.tmLanguage.json syntaxes/
+      npm install -g @vscode/vsce
 
-5. 安装扩展：
+3. 使用 Makefile 构建扩展：
 
    .. code-block:: bash
 
-      # 复制到 VS Code 扩展目录
-      cp -r . ~/.vscode/extensions/fcstm-language-support-1.0.0/
+      # 构建扩展（会自动复制语法文件并打包）
+      make vscode
 
-      # 或使用 vsce 打包并安装
-      npm install -g vsce
-      vsce package
-      code --install-extension fcstm-language-support-1.0.0.vsix
+      # 安装构建的扩展
+      code --install-extension editors/vscode/build/fcstm-language-support-0.1.0.vsix
 
-6. 重启 VS Code。现在 ``.fcstm`` 或 ``.fcsm`` 扩展名的文件将具有语法高亮。
+      # 清理构建产物
+      make vscode_clean
 
-**方法 2：手动配置**
+4. 或者手动构建：
 
-用于快速测试而无需创建扩展：
+   .. code-block:: bash
 
-1. 打开 VS Code 设置（``Ctrl+,`` 或 ``Cmd+,``）
-2. 搜索 "files.associations"
-3. 将以下内容添加到您的 ``settings.json``：
+      cd editors/vscode
+      mkdir -p syntaxes
+      cp ../fcstm.tmLanguage.json syntaxes/
+      vsce package --out build/
+      code --install-extension build/fcstm-language-support-0.1.0.vsix
 
-   .. code-block:: json
+**扩展功能**
 
-      {
-        "files.associations": {
-          "*.fcstm": "fcstm",
-          "*.fcsm": "fcstm"
-        }
-      }
+VS Code 扩展提供：
 
-注意：此方法需要安装方法 1 中的扩展才能使语法生效。
+- 所有 FCSTM 语言元素的语法高亮
+- 注释切换（``Ctrl+/`` 或 ``Cmd+/`` 用于行注释）
+- 块注释支持（``Shift+Alt+A`` 或 ``Shift+Option+A``）
+- 自动关闭括号、引号和注释块
+- 使用区域标记进行代码折叠
+- 正确的单词边界语言配置
+
+**验证安装**
+
+安装后：
+
+1. 在 VS Code 中打开一个 ``.fcstm`` 文件
+2. 检查右下角的语言模式 - 应显示 "FCSTM"
+3. 验证关键字、运算符和其他语法元素是否高亮显示
 
 Sublime Text 集成
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -624,6 +583,14 @@ TextMate 语法不工作
    ├── editors/
    │   ├── README.md                    # 详细实现说明
    │   ├── fcstm.tmLanguage.json        # TextMate 语法
-   │   └── validate.py                  # 验证脚本
+   │   ├── validate.py                  # 验证脚本
+   │   └── vscode/                      # VS Code 扩展
+   │       ├── package.json             # 扩展清单
+   │       ├── language-configuration.json  # 语言配置
+   │       ├── README.md                # 扩展文档
+   │       ├── syntaxes/
+   │       │   └── fcstm.tmLanguage.json    # TextMate 语法（副本）
+   │       └── build/                   # 构建输出目录（git ignored）
+   │           └── fcstm-language-support-0.1.0.vsix  # 预构建扩展包
    ├── docs/source/conf.py              # 带词法分析器注册的 Sphinx 配置
    └── setup.py                         # Pygments 入口点注册

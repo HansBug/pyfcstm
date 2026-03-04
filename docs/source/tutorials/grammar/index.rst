@@ -181,112 +181,71 @@ The TextMate grammar file is located at:
 VS Code Integration
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-**Method 1: Create a VS Code Extension (Recommended)**
+The pyfcstm project includes a ready-to-use VS Code extension.
 
-1. Create a new directory for your extension:
+**Installing Pre-built Extension**
 
-   .. code-block:: bash
+Download the ``.vsix`` file from the GitHub releases page and install it:
 
-      mkdir fcstm-vscode
-      cd fcstm-vscode
+.. code-block:: bash
 
-2. Create ``package.json``:
+   code --install-extension fcstm-language-support-0.1.0.vsix
 
-   .. code-block:: json
+Restart VS Code. Files with ``.fcstm`` extension will now have syntax highlighting.
 
-      {
-        "name": "fcstm-language-support",
-        "displayName": "FCSTM Language Support",
-        "description": "Syntax highlighting for FCSTM state machine DSL",
-        "version": "1.0.0",
-        "engines": {
-          "vscode": "^1.60.0"
-        },
-        "categories": ["Programming Languages"],
-        "contributes": {
-          "languages": [{
-            "id": "fcstm",
-            "aliases": ["FCSTM", "fcstm"],
-            "extensions": [".fcstm", ".fcsm"],
-            "configuration": "./language-configuration.json"
-          }],
-          "grammars": [{
-            "language": "fcstm",
-            "scopeName": "source.fcstm",
-            "path": "./syntaxes/fcstm.tmLanguage.json"
-          }]
-        }
-      }
+**Building from Source**
 
-3. Create ``language-configuration.json``:
+If you want to build the extension from source:
 
-   .. code-block:: json
+1. Ensure Node.js and npm are installed
 
-      {
-        "comments": {
-          "lineComment": "//",
-          "blockComment": ["/*", "*/"]
-        },
-        "brackets": [
-          ["{", "}"],
-          ["[", "]"],
-          ["(", ")"]
-        ],
-        "autoClosingPairs": [
-          { "open": "{", "close": "}" },
-          { "open": "[", "close": "]" },
-          { "open": "(", "close": ")" },
-          { "open": "\"", "close": "\"" },
-          { "open": "'", "close": "'" }
-        ],
-        "surroundingPairs": [
-          ["{", "}"],
-          ["[", "]"],
-          ["(", ")"],
-          ["\"", "\""],
-          ["'", "'"]
-        ]
-      }
-
-4. Create the syntaxes directory and copy the grammar:
+2. Install vsce (VS Code Extension Manager):
 
    .. code-block:: bash
 
-      mkdir syntaxes
-      cp /path/to/pyfcstm/editors/fcstm.tmLanguage.json syntaxes/
+      npm install -g @vscode/vsce
 
-5. Install the extension:
+3. Build using Makefile:
 
    .. code-block:: bash
 
-      # Copy to VS Code extensions directory
-      cp -r . ~/.vscode/extensions/fcstm-language-support-1.0.0/
+      # Build the extension (automatically copies grammar and packages)
+      make vscode
 
-      # Or use vsce to package and install
-      npm install -g vsce
-      vsce package
-      code --install-extension fcstm-language-support-1.0.0.vsix
+      # Install the built extension
+      code --install-extension editors/vscode/build/fcstm-language-support-0.1.0.vsix
 
-6. Restart VS Code. Files with ``.fcstm`` or ``.fcsm`` extensions will now have syntax highlighting.
+      # Clean build artifacts
+      make vscode_clean
 
-**Method 2: Manual Configuration**
+4. Or build manually:
 
-For quick testing without creating an extension:
+   .. code-block:: bash
 
-1. Open VS Code settings (``Ctrl+,`` or ``Cmd+,``)
-2. Search for "files.associations"
-3. Add the following to your ``settings.json``:
+      cd editors/vscode
+      mkdir -p syntaxes
+      cp ../fcstm.tmLanguage.json syntaxes/
+      vsce package --out build/
+      code --install-extension build/fcstm-language-support-0.1.0.vsix
 
-   .. code-block:: json
+**Extension Features**
 
-      {
-        "files.associations": {
-          "*.fcstm": "fcstm",
-          "*.fcsm": "fcstm"
-        }
-      }
+The VS Code extension provides:
 
-Note: This method requires the extension from Method 1 to be installed for the grammar to work.
+- Syntax highlighting for all FCSTM language elements
+- Comment toggling (``Ctrl+/`` or ``Cmd+/`` for line comments)
+- Block comment support (``Shift+Alt+A`` or ``Shift+Option+A``)
+- Automatic bracket, quote, and comment block closing
+- Code folding with region markers
+- Language configuration for proper word boundaries
+
+**Verifying Installation**
+
+After installation:
+
+1. Open a ``.fcstm`` file in VS Code
+2. Check the language mode in the bottom-right corner - it should show "FCSTM"
+3. Verify that keywords, operators, and other syntax elements are highlighted
 
 Sublime Text Integration
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -624,6 +583,14 @@ File Locations
    ├── editors/
    │   ├── README.md                    # Detailed implementation notes
    │   ├── fcstm.tmLanguage.json        # TextMate grammar
-   │   └── validate.py                  # Validation script
+   │   ├── validate.py                  # Validation script
+   │   └── vscode/                      # VS Code extension
+   │       ├── package.json             # Extension manifest
+   │       ├── language-configuration.json  # Language configuration
+   │       ├── README.md                # Extension documentation
+   │       ├── syntaxes/
+   │       │   └── fcstm.tmLanguage.json    # TextMate grammar (copy)
+   │       └── build/                   # Build output directory (git ignored)
+   │           └── fcstm-language-support-0.1.0.vsix  # Pre-built extension package
    ├── docs/source/conf.py              # Sphinx configuration with lexer registration
    └── setup.py                         # Pygments entry point registration

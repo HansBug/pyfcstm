@@ -164,6 +164,11 @@ jobs:
           ls -al dist
           dist/pyfcstm -v
           dist/pyfcstm -h
+      - name: Test CLI executable on Linux and MacOS
+        if: ${{ env.OS_NAME != 'Windows' }}
+        shell: bash
+        run: |
+          make test_cli
       - name: Build standalone CLI on Windows
         if: ${{ env.OS_NAME == 'Windows' }}
         shell: bash
@@ -177,6 +182,11 @@ jobs:
           ls -al dist
           dist/pyfcstm -v
           dist/pyfcstm -h
+      - name: Test CLI executable on Windows
+        if: ${{ env.OS_NAME == 'Windows' }}
+        shell: bash
+        run: |
+          python -m tools.test_cli dist/pyfcstm.exe --test-dsl docs/source/tutorials/cli/simple_machine.fcstm --template-dir test/testfile/template_1
       - name: Upload binaries to release
         uses: svenstaro/upload-release-action@v2
         with:

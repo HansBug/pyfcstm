@@ -61,7 +61,13 @@ MODEL_SOURCE_FILES := \
 package:
 	$(PYTHON) -m build --sdist --wheel --outdir ${DIST_DIR}
 build:
-	pyinstaller -D -F $(shell python -m tools.resources) -n pyfcstm -c pyfcstm_cli.py
+	python -m tools.generate_spec -o pyfcstm.spec
+	pyinstaller pyfcstm.spec
+
+test_cli:
+	python -m tools.test_cli dist/pyfcstm \
+		--test-dsl docs/source/tutorials/cli/simple_machine.fcstm \
+		--template-dir test/testfile/template_1
 clean:
 	rm -rf ${DIST_DIR} ${BUILD_DIR} *.egg-info
 	rm -rf build dist pyfcstm.spec

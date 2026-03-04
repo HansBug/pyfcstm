@@ -186,3 +186,56 @@ jobs:
         with:
           name: pyfcstm-v${{ env.PACKAGE_VERSION }}-${{ env.OS_NAME }}-${{ env.CPU_ARCH }}-${{ env.GIT_COMMIT_ID }}
           path: ./dist/*
+
+  release_vscode_extension:
+    name: VSCode Extension Build And Release
+    runs-on: ubuntu-latest
+    if: "!contains(github.event.head_commit.message, 'ci skip')"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 20
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install vsce (VSCode Extension Manager)
+        run: |
+          npm install -g @vscode/vsce
+
+      - name: Get extension version
+        id: ext_version
+        run: |
+          cd editors/vscode
+          VERSION=$(node -p "require('./package.json').version")
+          NAME=$(node -p "require('./package.json').name")
+          echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+          echo "NAME=${NAME}" >> $GITHUB_OUTPUT
+          echo "Extension: ${NAME} v${VERSION}"
+
+      - name: Build VSCode extension using make
+        run: |
+          make vscode
+          ls -lh editors/vscode/build/
+
+      - name: Find and verify extension file
+        id: find_vsix
+        run: |
+          VSIX_FILE=$(find editors/vscode/build -name "*.vsix" -type f | head -n 1)
+          if [ -z "$VSIX_FILE" ]; then
+            echo "Error: No .vsix file found in editors/vscode/build/"
+            exit 1
+          fi
+          echo "Found extension: $VSIX_FILE"
+          echo "VSIX_FILE=${VSIX_FILE}" >> $GITHUB_OUTPUT
+          echo "VSIX_BASENAME=$(basename ${VSIX_FILE})" >> $GITHUB_OUTPUT
+
+      - name: Upload VSCode extension to artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: vscode-extension-${{ steps.ext_version.outputs.NAME }}-v${{ steps.ext_version.outputs.VERSION }}
+          path: ${{ steps.find_vsix.outputs.VSIX_FILE }}

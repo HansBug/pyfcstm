@@ -63,6 +63,11 @@ package:
 build:
 	python -m tools.generate_spec -o pyfcstm.spec
 	pyinstaller pyfcstm.spec
+
+test_cli:
+	python -m tools.test_cli dist/pyfcstm \
+		--test-dsl docs/source/tutorials/cli/simple_machine.fcstm \
+		--template-dir test/testfile/template_1
 clean:
 	rm -rf ${DIST_DIR} ${BUILD_DIR} *.egg-info
 	rm -rf build dist pyfcstm.spec

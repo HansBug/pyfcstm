@@ -8,7 +8,7 @@ StateMachine to_plantuml() methods, ensuring proper configuration application.
 import pytest
 
 from pyfcstm.model.model import State, StateMachine, VarDefine
-from pyfcstm.model.plantuml import PlantUMLOptions, DetailLevel
+from pyfcstm.model.plantuml import PlantUMLOptions
 from pyfcstm.model.expr import Integer
 
 
@@ -151,7 +151,7 @@ class TestStateMachinePlantUMLGeneration:
             root_state=root_state,
         )
 
-        options = PlantUMLOptions(detail_level=DetailLevel.MINIMAL)
+        options = PlantUMLOptions(detail_level='minimal')
         result = sm.to_plantuml(options)
 
         # MINIMAL level hides variable definitions

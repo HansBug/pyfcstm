@@ -14,16 +14,16 @@ The configuration system uses a hierarchical fallback mechanism:
 
 The main public components are:
 
-* :class:`DetailLevel` - Enum for preset detail levels (MINIMAL, NORMAL, FULL)
+* :data:`DetailLevelLiteral` - Literal type for preset detail levels
 * :class:`PlantUMLOptions` - Configuration class for PlantUML generation
 * :func:`format_state_name` - Format state names according to configuration
 * :func:`format_event_name` - Format event names according to configuration
 
 Example::
 
-    >>> from pyfcstm.model.plantuml import PlantUMLOptions, DetailLevel
+    >>> from pyfcstm.model.plantuml import PlantUMLOptions
     >>> options = PlantUMLOptions(
-    ...     detail_level=DetailLevel.NORMAL,
+    ...     detail_level='normal',
     ...     show_lifecycle_actions=True,
     ... )
     >>> config = options.to_config()
@@ -32,14 +32,18 @@ Example::
 """
 
 from dataclasses import dataclass
-from enum import Enum
-from typing import Literal, Optional, Tuple, TYPE_CHECKING
+from typing import Optional, Tuple, TYPE_CHECKING
+
+try:
+    from typing import Literal
+except ImportError:
+    from typing_extensions import Literal
 
 if TYPE_CHECKING:
     from .model import State, Event
 
 __all__ = [
-    'DetailLevel',
+    'DetailLevelLiteral',
     'PlantUMLOptions',
     'format_state_name',
     'format_event_name',
@@ -123,26 +127,7 @@ def format_event_name(event: 'Event', name_format: Tuple[Literal['name', 'extra_
     return result
 
 
-class DetailLevel(str, Enum):
-    """
-    Preset detail levels for PlantUML generation.
-
-    These presets provide convenient starting points for common use cases:
-
-    * MINIMAL: Show state structure and transitions with the least visual noise
-    * NORMAL: Show key transition information by default while hiding verbose internals
-    * FULL: Show all available details including variables and lifecycle actions
-
-    Example::
-
-        >>> DetailLevel.MINIMAL
-        <DetailLevel.MINIMAL: 'minimal'>
-        >>> DetailLevel.NORMAL.value
-        'normal'
-    """
-    MINIMAL = 'minimal'
-    NORMAL = 'normal'
-    FULL = 'full'
+DetailLevelLiteral = Literal['minimal', 'normal', 'full']
 
 
 @dataclass
@@ -163,8 +148,8 @@ class PlantUMLOptions:
     * show_abstract_actions/show_concrete_actions inherit from show_lifecycle_actions
     * show_transition_guards/show_transition_effects are independently configurable
 
-    :param detail_level: Preset detail level (MINIMAL, NORMAL, or FULL)
-    :type detail_level: DetailLevel
+    :param detail_level: Preset detail level (``'minimal'``, ``'normal'``, or ``'full'``)
+    :type detail_level: DetailLevelLiteral
     :param show_variable_definitions: Whether to show variable definitions
     :type show_variable_definitions: Optional[bool]
     :param variable_display_mode: How to display variables ('note', 'legend', or 'hide')
@@ -219,7 +204,7 @@ class PlantUMLOptions:
     Example::
 
         >>> options = PlantUMLOptions(
-        ...     detail_level=DetailLevel.NORMAL,
+        ...     detail_level='normal',
         ...     show_lifecycle_actions=True,
         ... )
         >>> config = options.to_config()
@@ -227,7 +212,7 @@ class PlantUMLOptions:
     """
 
     # Preset level
-    detail_level: DetailLevel = DetailLevel.NORMAL
+    detail_level: DetailLevelLiteral = 'normal'
 
     # Variable definitions
     show_variable_definitions: Optional[bool] = None
@@ -302,7 +287,7 @@ class PlantUMLOptions:
         Example::
 
             >>> options = PlantUMLOptions(
-            ...     detail_level=DetailLevel.NORMAL,
+            ...     detail_level='normal',
             ...     show_lifecycle_actions=True,
             ...     show_enter_actions=None,
             ... )
@@ -407,7 +392,7 @@ class PlantUMLOptions:
         :return: Dictionary of default values for Optional fields
         :rtype: dict
         """
-        if self.detail_level == DetailLevel.MINIMAL:
+        if self.detail_level == 'minimal':
             return {
                 'show_variable_definitions': False,
                 'show_lifecycle_actions': False,
@@ -416,7 +401,7 @@ class PlantUMLOptions:
                 'show_events': True,
                 'show_pseudo_state_style': False,
             }
-        elif self.detail_level == DetailLevel.NORMAL:
+        elif self.detail_level == 'normal':
             return {
                 'show_variable_definitions': False,
                 'show_lifecycle_actions': False,

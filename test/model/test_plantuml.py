@@ -11,24 +11,18 @@ import pytest
 
 from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model.model import Event, State, parse_dsl_node_to_state_machine
-from pyfcstm.model.plantuml import DetailLevel, PlantUMLOptions, format_event_name, format_state_name
+from pyfcstm.model.plantuml import PlantUMLOptions, format_event_name, format_state_name
 
 
 @pytest.mark.unittest
-class TestDetailLevel:
-    """Test cases for DetailLevel enum."""
+class TestDetailLevelStrings:
+    """Test cases for detail_level string values."""
 
     def test_detail_level_values(self):
-        """Test DetailLevel enum values."""
-        assert DetailLevel.MINIMAL.value == 'minimal'
-        assert DetailLevel.NORMAL.value == 'normal'
-        assert DetailLevel.FULL.value == 'full'
-
-    def test_detail_level_string_comparison(self):
-        """Test DetailLevel can be compared with strings."""
-        assert DetailLevel.MINIMAL == 'minimal'
-        assert DetailLevel.NORMAL == 'normal'
-        assert DetailLevel.FULL == 'full'
+        """Test accepted detail_level strings."""
+        assert PlantUMLOptions(detail_level='minimal').detail_level == 'minimal'
+        assert PlantUMLOptions(detail_level='normal').detail_level == 'normal'
+        assert PlantUMLOptions(detail_level='full').detail_level == 'full'
 
 
 @pytest.mark.unittest
@@ -88,7 +82,7 @@ class TestPlantUMLOptionsInit:
     def test_default_initialization(self):
         """Test default initialization with no arguments."""
         options = PlantUMLOptions()
-        assert options.detail_level == DetailLevel.NORMAL
+        assert options.detail_level == 'normal'
         assert options.show_variable_definitions is None
         assert options.variable_display_mode == 'note'
         assert options.state_name_format == ('extra_name',)
@@ -102,14 +96,14 @@ class TestPlantUMLOptionsInit:
     def test_custom_initialization(self):
         """Test initialization with custom values."""
         options = PlantUMLOptions(
-            detail_level=DetailLevel.MINIMAL,
+            detail_level='minimal',
             show_variable_definitions=False,
             variable_display_mode='legend',
             state_name_format=('name', 'extra_name'),
             show_lifecycle_actions=True,
             max_depth=3,
         )
-        assert options.detail_level == DetailLevel.MINIMAL
+        assert options.detail_level == 'minimal'
         assert options.show_variable_definitions is False
         assert options.variable_display_mode == 'legend'
         assert options.state_name_format == ('name', 'extra_name')
@@ -133,7 +127,7 @@ class TestPlantUMLOptionsToConfigMinimal:
 
     def test_minimal_defaults(self):
         """Test MINIMAL detail level defaults."""
-        options = PlantUMLOptions(detail_level=DetailLevel.MINIMAL)
+        options = PlantUMLOptions(detail_level='minimal')
         config = options.to_config()
 
         assert config.show_variable_definitions is False
@@ -152,7 +146,7 @@ class TestPlantUMLOptionsToConfigMinimal:
     def test_minimal_with_overrides(self):
         """Test MINIMAL detail level with user overrides."""
         options = PlantUMLOptions(
-            detail_level=DetailLevel.MINIMAL,
+            detail_level='minimal',
             show_lifecycle_actions=True,
             show_variable_definitions=True,
         )
@@ -171,7 +165,7 @@ class TestPlantUMLOptionsToConfigNormal:
 
     def test_normal_defaults(self):
         """Test NORMAL detail level defaults."""
-        options = PlantUMLOptions(detail_level=DetailLevel.NORMAL)
+        options = PlantUMLOptions(detail_level='normal')
         config = options.to_config()
 
         assert config.show_variable_definitions is False
@@ -190,7 +184,7 @@ class TestPlantUMLOptionsToConfigNormal:
     def test_normal_with_overrides(self):
         """Test NORMAL detail level with user overrides."""
         options = PlantUMLOptions(
-            detail_level=DetailLevel.NORMAL,
+            detail_level='normal',
             show_lifecycle_actions=False,
             show_transition_guards=False,
         )
@@ -208,7 +202,7 @@ class TestPlantUMLOptionsToConfigFull:
 
     def test_full_defaults(self):
         """Test FULL detail level defaults."""
-        options = PlantUMLOptions(detail_level=DetailLevel.FULL)
+        options = PlantUMLOptions(detail_level='full')
         config = options.to_config()
 
         assert config.show_variable_definitions is True
@@ -232,7 +226,7 @@ class TestPlantUMLOptionsInheritance:
     def test_lifecycle_actions_inheritance(self):
         """Test that lifecycle sub-actions inherit from show_lifecycle_actions."""
         options = PlantUMLOptions(
-            detail_level=DetailLevel.MINIMAL,
+            detail_level='minimal',
             show_lifecycle_actions=True,
         )
         config = options.to_config()
@@ -246,7 +240,7 @@ class TestPlantUMLOptionsInheritance:
     def test_lifecycle_actions_partial_override(self):
         """Test partial override of lifecycle actions."""
         options = PlantUMLOptions(
-            detail_level=DetailLevel.MINIMAL,
+            detail_level='minimal',
             show_lifecycle_actions=True,
             show_enter_actions=False,
         )
@@ -260,7 +254,7 @@ class TestPlantUMLOptionsInheritance:
     def test_abstract_concrete_inheritance(self):
         """Test that abstract/concrete actions inherit from show_lifecycle_actions."""
         options = PlantUMLOptions(
-            detail_level=DetailLevel.MINIMAL,
+            detail_level='minimal',
             show_lifecycle_actions=True,
         )
         config = options.to_config()
@@ -271,7 +265,7 @@ class TestPlantUMLOptionsInheritance:
     def test_abstract_concrete_override(self):
         """Test override of abstract/concrete actions."""
         options = PlantUMLOptions(
-            detail_level=DetailLevel.MINIMAL,
+            detail_level='minimal',
             show_lifecycle_actions=True,
             show_abstract_actions=False,
         )
@@ -282,7 +276,7 @@ class TestPlantUMLOptionsInheritance:
 
     def test_transition_defaults(self):
         """Test transition sub-options default to detail level settings."""
-        options = PlantUMLOptions(detail_level=DetailLevel.MINIMAL)
+        options = PlantUMLOptions(detail_level='minimal')
         config = options.to_config()
 
         assert config.show_transition_guards is True
@@ -291,7 +285,7 @@ class TestPlantUMLOptionsInheritance:
     def test_transition_partial_override(self):
         """Test partial override of transition options."""
         options = PlantUMLOptions(
-            detail_level=DetailLevel.MINIMAL,
+            detail_level='minimal',
             show_transition_guards=False,
         )
         config = options.to_config()
@@ -302,7 +296,7 @@ class TestPlantUMLOptionsInheritance:
     def test_no_inheritance_when_parent_false(self):
         """Test that inheritance doesn't happen when parent is False."""
         options = PlantUMLOptions(
-            detail_level=DetailLevel.MINIMAL,
+            detail_level='minimal',
             show_lifecycle_actions=False,
         )
         config = options.to_config()
@@ -319,7 +313,7 @@ class TestPlantUMLOptionsComplexScenarios:
 
     def test_all_none_values(self):
         """Test resolution when all values are None."""
-        options = PlantUMLOptions(detail_level=DetailLevel.NORMAL)
+        options = PlantUMLOptions(detail_level='normal')
         config = options.to_config()
 
         # All fields should be resolved to non-None values
@@ -331,7 +325,7 @@ class TestPlantUMLOptionsComplexScenarios:
     def test_mixed_inheritance_levels(self):
         """Test complex inheritance with multiple levels."""
         options = PlantUMLOptions(
-            detail_level=DetailLevel.MINIMAL,
+            detail_level='minimal',
             show_lifecycle_actions=None,  # Will use detail_level default (False)
             show_enter_actions=True,  # Explicit override
         )
@@ -344,7 +338,7 @@ class TestPlantUMLOptionsComplexScenarios:
     def test_idempotent_to_config(self):
         """Test that calling to_config() multiple times is idempotent."""
         options = PlantUMLOptions(
-            detail_level=DetailLevel.NORMAL,
+            detail_level='normal',
             show_lifecycle_actions=True,
         )
         config1 = options.to_config()
@@ -357,7 +351,7 @@ class TestPlantUMLOptionsComplexScenarios:
     def test_to_config_preserves_non_optional_fields(self):
         """Test that to_config() preserves non-optional fields."""
         options = PlantUMLOptions(
-            detail_level=DetailLevel.NORMAL,
+            detail_level='normal',
             variable_display_mode='legend',
             state_name_format=('name', 'path'),
             event_name_format=('extra_name', 'name'),
@@ -390,7 +384,7 @@ class TestPlantUMLOptionsEdgeCases:
     def test_all_explicit_false(self):
         """Test when all options are explicitly set to False."""
         options = PlantUMLOptions(
-            detail_level=DetailLevel.NORMAL,
+            detail_level='normal',
             show_variable_definitions=False,
             show_lifecycle_actions=False,
             show_transition_guards=False,
@@ -409,7 +403,7 @@ class TestPlantUMLOptionsEdgeCases:
     def test_all_explicit_true(self):
         """Test when all options are explicitly set to True."""
         options = PlantUMLOptions(
-            detail_level=DetailLevel.MINIMAL,
+            detail_level='minimal',
             show_variable_definitions=True,
             show_lifecycle_actions=True,
             show_enter_actions=True,
@@ -489,7 +483,7 @@ class TestPlantUMLOptionsDetailLevelDefaults:
 
     def test_get_minimal_defaults(self):
         """Test getting MINIMAL detail level defaults."""
-        options = PlantUMLOptions(detail_level=DetailLevel.MINIMAL)
+        options = PlantUMLOptions(detail_level='minimal')
         defaults = options._get_detail_level_defaults()
 
         assert defaults['show_variable_definitions'] is False
@@ -501,7 +495,7 @@ class TestPlantUMLOptionsDetailLevelDefaults:
 
     def test_get_normal_defaults(self):
         """Test getting NORMAL detail level defaults."""
-        options = PlantUMLOptions(detail_level=DetailLevel.NORMAL)
+        options = PlantUMLOptions(detail_level='normal')
         defaults = options._get_detail_level_defaults()
 
         assert defaults['show_variable_definitions'] is False
@@ -513,7 +507,7 @@ class TestPlantUMLOptionsDetailLevelDefaults:
 
     def test_get_full_defaults(self):
         """Test getting FULL detail level defaults."""
-        options = PlantUMLOptions(detail_level=DetailLevel.FULL)
+        options = PlantUMLOptions(detail_level='full')
         defaults = options._get_detail_level_defaults()
 
         assert defaults['show_variable_definitions'] is True
@@ -599,7 +593,7 @@ class TestPlantUMLOptionsComplexExample:
     def test_complex_example_customized_rendering(self, complex_state_machine_for_plantuml):
         """Test a complex model rendered with multiple option overrides."""
         options = PlantUMLOptions(
-            detail_level=DetailLevel.MINIMAL,
+            detail_level='minimal',
             show_variable_definitions=True,
             variable_display_mode='note',
             state_name_format=('extra_name', 'name'),
@@ -639,7 +633,7 @@ class TestPlantUMLOptionsComplexExample:
     def test_complex_example_transition_visibility_switch(self, complex_state_machine_for_plantuml):
         """Test transition label/detail toggles while keeping arrows visible."""
         options = PlantUMLOptions(
-            detail_level=DetailLevel.FULL,
+            detail_level='full',
             show_events=False,
             show_transition_guards=False,
             show_transition_effects=False,

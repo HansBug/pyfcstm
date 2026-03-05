@@ -370,7 +370,51 @@ StateA -> StateB : if [counter < 100] effect {
 }
 ```
 
-### Event Scoping
+### Events
+
+Events in the pyfcstm DSL trigger state transitions. Events can be defined implicitly through transitions or explicitly with event definitions.
+
+#### Explicit Event Definitions
+
+Events can be explicitly defined within a state scope using the `event` keyword:
+
+```
+event EventName;                          // Simple event definition
+event ErrorOccurred named "Error Occurred";  // Event with display name
+```
+
+**Purpose of Explicit Event Definitions:**
+
+- **Documentation**: Explicitly declare events used within a state scope for clarity
+- **Visualization**: The `named` attribute provides human-readable display names for diagrams and documentation
+- **Consistency**: Similar to state definitions with `named`, event definitions support visualization tools
+
+**Relationship with Transition Events:**
+
+Explicit event definitions and transition events are part of the **same event system**. When you define an event explicitly, it can be referenced in transitions within the same scope:
+
+```
+state System {
+    event Start named "System Start";
+    event Stop named "System Stop";
+
+    state Idle;
+    state Running;
+
+    [*] -> Idle;
+    Idle -> Running : Start;      // References the explicitly defined Start event
+    Running -> Idle : Stop;       // References the explicitly defined Stop event
+}
+```
+
+**Key Points:**
+
+- Explicit event definitions are **optional** - events can be used in transitions without explicit definition
+- The `named` attribute is the primary benefit, providing display names for visualization (PlantUML, diagrams)
+- Events defined explicitly follow the same scoping rules as transition events
+- Explicit definitions improve code readability and documentation
+
+#### Event Scoping
 
 The DSL provides **three event scoping mechanisms** to control event namespaces in hierarchical state machines:
 
@@ -408,7 +452,11 @@ All transitions using the same absolute path share the event. Use for cross-modu
 
 ```
 state System {
+    event GlobalEvent named "Global System Event";  // Explicit definition with display name
+
     state ModuleA {
+        event ModuleEvent named "Module A Event";   // Module-scoped event
+
         state A1;
         state A2;
 
@@ -416,6 +464,7 @@ state System {
         A1 -> A2 :: E;        // System.ModuleA.A1.E
         A1 -> A2 : E;         // System.ModuleA.E
         A1 -> A2 : /E;        // System.E
+        A1 -> A2 : ModuleEvent;  // References explicitly defined event
     }
 
     state ModuleB {
@@ -426,6 +475,7 @@ state System {
         B1 -> B2 :: E;        // System.ModuleB.B1.E (different from A1's)
         B1 -> B2 : E;         // System.ModuleB.E (different from ModuleA's)
         B1 -> B2 : /E;        // System.E (SAME as ModuleA's)
+        B1 -> B2 : /GlobalEvent;  // References root-level explicit event
     }
 }
 ```
@@ -436,6 +486,7 @@ state System {
 - `:` creates parent-scoped events (share within scope)
 - `/` creates root-scoped events (share globally)
 - All three are equivalent to absolute paths with different starting points
+- Explicit event definitions with `named` improve visualization and documentation
 
 ### Lifecycle Actions
 

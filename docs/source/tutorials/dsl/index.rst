@@ -737,11 +737,86 @@ All expanded transitions from a single forced transition definition share the **
 
    ! * -> ErrorHandler :: Error;  // Correct: no effect block
 
-Event Scoping: Understanding Event Namespaces
+Event Definitions
 ----------------------------------------------------
 
+Events are the core mechanism that triggers state transitions. In finite state machines, state transitions are typically driven by external events—such as user input, sensor signals, timer expiration, or system messages. Events provide the state machine with the ability to respond to external stimuli, enabling it to change behavior based on the current state and received events.
+
+In the PyFCSTM DSL, events can be defined in two ways:
+
+1. **Implicit Definition**: Events are automatically created when referenced directly in transitions
+2. **Explicit Definition**: Events are pre-declared using the ``event`` keyword, optionally with display names
+
+Explicit Event Definitions
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Events can be explicitly defined within a state scope using the ``event`` keyword:
+
+**Syntax:**
+
+.. code-block:: fcstm
+
+   event_definition ::= 'event' ID ('named' STRING)? ';'
+
+**Examples:**
+
+.. code-block:: fcstm
+
+   event StartEvent;                              // Simple event definition
+   event ErrorOccurred named "Error Occurred";    // Event with display name
+   event UserInput named "User Input Received";   // Event with descriptive name
+
+**Purpose of Explicit Event Definitions:**
+
+Explicit event definitions serve several important purposes:
+
+1. **Documentation**: Explicitly declare events used within a state scope for better code clarity and maintainability
+2. **Visualization**: The ``named`` attribute provides human-readable display names for PlantUML diagrams and documentation generation
+3. **Consistency**: Similar to state definitions with ``named``, event definitions support visualization and documentation tools
+
 .. important::
-   In hierarchical state machines, events need a namespace to avoid naming conflicts. Consider this scenario:
+   **Relationship with Transition Events:**
+
+   Explicit event definitions and transition events are part of the **same event system**. When you define an event explicitly, it can be referenced in transitions within the same scope. The events are unified - there is no distinction between "explicitly defined events" and "transition events" at runtime.
+
+**Complete Example:**
+
+.. code-block:: fcstm
+
+   state System {
+       // Explicit event definitions with display names
+       event Start named "System Start";
+       event Stop named "System Stop";
+       event Pause named "System Pause";
+       event Resume named "System Resume";
+
+       state Idle;
+       state Running;
+       state Paused;
+
+       [*] -> Idle;
+       Idle -> Running : Start;      // References the explicitly defined Start event
+       Running -> Idle : Stop;       // References the explicitly defined Stop event
+       Running -> Paused : Pause;    // References the explicitly defined Pause event
+       Paused -> Running : Resume;   // References the explicitly defined Resume event
+   }
+
+.. note::
+   **Key Points:**
+
+   - Explicit event definitions are **optional** - events can be used in transitions without explicit definition
+   - The ``named`` attribute is the primary benefit, providing display names for visualization (PlantUML, state diagrams)
+   - Events defined explicitly follow the same scoping rules as transition events (see Event Scoping section below)
+   - Explicit definitions improve code readability, self-documentation, and integration with visualization tools
+   - The ``named`` attribute works exactly like the ``named`` attribute for states - it provides a human-readable label
+
+Event Scoping
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+In hierarchical state machines, events need a namespace to avoid naming conflicts.
+
+.. important::
+   Consider this scenario:
 
    .. code-block:: fcstm
 
@@ -757,7 +832,7 @@ Event Scoping: Understanding Event Namespaces
 
    Should both transitions use the same event or different events? The DSL provides **three scoping mechanisms** to handle this.
 
-Event Scoping Mechanisms
+Scoping Mechanisms
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 The DSL supports three ways to specify event scope:
@@ -769,7 +844,7 @@ The DSL supports three ways to specify event scope:
 All three mechanisms are equivalent to using absolute paths, just with different starting points.
 
 Local Events (`::` operator)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Local events use the ``::`` operator and are scoped to the **source state's namespace**.
 
@@ -809,7 +884,7 @@ Local events use the ``::`` operator and are scoped to the **source state's name
    - State-specific events that shouldn't be shared
 
 Chain Events (`:` operator)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Chain events use the ``:`` operator and are scoped to the **parent state's namespace**.
 
@@ -850,7 +925,7 @@ Chain events use the ``:`` operator and are scoped to the **parent state's names
    - Shared events within a scope
 
 Absolute Events (`/` prefix)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Absolute events use the ``/`` prefix and are scoped to the **root state's namespace**.
 
@@ -900,7 +975,7 @@ Absolute events use the ``/`` prefix and are scoped to the **root state's namesp
    - Avoiding ambiguity in deeply nested states
 
 Complete Comparison Example
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Here's a comprehensive example demonstrating all three scoping mechanisms:
 

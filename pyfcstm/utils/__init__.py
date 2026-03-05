@@ -5,7 +5,7 @@ This package provides a consolidated import location for frequently used utility
 functions, interfaces, and exceptions within :mod:`pyfcstm`. The exported
 symbols cover binary detection, decoding utilities, documentation formatting,
 Jinja2 environment configuration, JSON/YAML serialization interfaces, safe
-string handling, text normalization, and validation helpers.
+string handling, text normalization, value parsing, and validation helpers.
 
 The package exposes the following main components:
 
@@ -18,6 +18,8 @@ The package exposes the following main components:
 * :func:`sequence_safe` - Build a safe underscore-separated identifier
 * :func:`normalize` - Normalize text to identifier-friendly form
 * :func:`to_identifier` - Convert text to a valid identifier format
+* :func:`parse_value` - Parse string values to appropriate Python types
+* :func:`parse_key_value_pairs` - Parse multiple key=value pairs into a dictionary
 * :class:`ValidationError` - Base validation error exception
 * :class:`ModelValidationError` - Aggregated validation error exception
 * :class:`IValidatable` - Interface for objects with validation rules
@@ -29,9 +31,11 @@ The package exposes the following main components:
 
 Example::
 
-    >>> from pyfcstm.utils import normalize, IJsonOp
+    >>> from pyfcstm.utils import normalize, IJsonOp, parse_value
     >>> normalize("Hello World!")
     'Hello_World'
+    >>> parse_value('42')
+    42
 """
 
 from .binary import is_binary_file
@@ -39,6 +43,7 @@ from .decode import auto_decode
 from .doc import format_multiline_comment
 from .jinja2 import add_builtins_to_env, add_settings_for_env
 from .json import IJsonOp
+from .parse import parse_value, parse_key_value_pairs
 from .safe import sequence_safe
 from .text import normalize, to_identifier
 from .validate import ValidationError, ModelValidationError, IValidatable

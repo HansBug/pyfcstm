@@ -1,0 +1,51 @@
+@startuml
+hide empty description
+
+skinparam state {
+  BackgroundColor<<pseudo>> LightGray
+  BackgroundColor<<composite>> LightBlue
+  BorderColor<<pseudo>> Gray
+  FontStyle<<pseudo>> italic
+}
+
+note as DefinitionNote
+defines {
+    def int counter = 0;
+    def int error_count = 0;
+}
+end note
+
+state "System (System)" as system <<composite>> {
+    state "Idle (System.Idle)" as system__idle
+    system__idle : enter {\n    counter = 0;\n}
+    state "Active (System.Active)" as system__active <<composite>> {
+        state "Processing (System.Active.Processing)" as system__active__processing
+        system__active__processing : during {\n    counter = counter + 10;\n}
+        state "Waiting (System.Active.Waiting)" as system__active__waiting
+        system__active__processing --> [*] : /FatalError #76B7B2
+        system__active__waiting --> [*] : /FatalError #76B7B2
+        [*] --> system__active__processing
+        system__active__processing --> system__active__waiting : Processing.Pause #4E79A7
+        system__active__waiting --> system__active__processing : Waiting.Resume #E15759
+    }
+    system__active : during before {\n    counter = counter + 1;\n}
+    state "Error (System.Error)" as system__error
+    system__error : enter {\n    error_count = error_count + 1;\n}
+    system__idle --> system__error : FatalError #76B7B2
+    system__active --> system__error : FatalError #76B7B2
+    system__error --> system__error : FatalError #76B7B2
+    [*] --> system__idle
+    system__idle --> system__active : Idle.Start #59A14F
+    system__active --> system__idle : Active.Stop #F28E2B
+    note on link
+    effect {
+        counter = 0;
+    }
+    end note
+    system__active --> system__error : counter > 100
+    system__error --> system__idle : error_count < 3
+}
+system : >> during before abstract GlobalMonitor;
+[*] --> system
+system --> [*]
+@enduml

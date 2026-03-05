@@ -1,0 +1,46 @@
+def int counter = 0;
+def int error_count = 0;
+
+state System {
+    >> during before abstract GlobalMonitor;
+
+    [*] -> Idle;
+    !* -> Error :: FatalError;
+
+    state Idle {
+        enter {
+            counter = 0;
+        }
+    }
+
+    state Active {
+        during before {
+            counter = counter + 1;
+        }
+
+        state Processing {
+            during {
+                counter = counter + 10;
+            }
+        }
+
+        state Waiting;
+
+        [*] -> Processing;
+        Processing -> Waiting :: Pause;
+        Waiting -> Processing :: Resume;
+    }
+
+    state Error {
+        enter {
+            error_count = error_count + 1;
+        }
+    }
+
+    Idle -> Active :: Start;
+    Active -> Idle :: Stop effect {
+        counter = 0;
+    };
+    Active -> Error : if [counter > 100];
+    Error -> Idle : if [error_count < 3];
+}

@@ -14,6 +14,7 @@
     tutorials/structure/index_zh
     tutorials/dsl/index_zh
     tutorials/render/index
+    tutorials/visualization/index_zh
     tutorials/cli/index_zh
     tutorials/grammar/index_zh
 

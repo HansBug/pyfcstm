@@ -63,6 +63,15 @@ Output:
 .. literalinclude:: python_basic.demo.py.txt
    :language: text
 
+**Generated Visualization**
+
+.. figure:: output_basic.puml.svg
+   :alt: Basic Python visualization output
+   :align: center
+   :width: 80%
+
+   PlantUML diagram generated with default settings
+
 **With Custom Options**
 
 .. literalinclude:: python_options.demo.py
@@ -73,6 +82,15 @@ Output:
 
 .. literalinclude:: python_options.demo.py.txt
    :language: text
+
+**Generated Visualization**
+
+.. figure:: output_custom.puml.svg
+   :alt: Python visualization with custom options
+   :align: center
+   :width: 80%
+
+   PlantUML diagram with custom PlantUMLOptions (full detail level, events enabled, max depth 3)
 
 CLI Visualization
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -90,10 +108,180 @@ Output:
 .. literalinclude:: cli_basic.demo.sh.txt
    :language: text
 
+**Generated Visualization**
+
+.. figure:: output_cli_basic.puml.svg
+   :alt: CLI basic visualization output
+   :align: center
+   :width: 80%
+
+   PlantUML diagram generated with CLI default settings
+
 Configuration System
 ---------------------------------------
 
 The visualization system provides comprehensive configuration through ``PlantUMLOptions``. All options are available in both Python API and CLI.
+
+Configuration Options Reference
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The following table provides a complete reference of all available configuration options:
+
+.. list-table:: PlantUMLOptions Configuration Reference
+   :widths: 25 15 15 45
+   :header-rows: 1
+
+   * - Option
+     - Type
+     - Default
+     - Description
+   * - **Preset Level**
+     -
+     -
+     -
+   * - ``detail_level``
+     - str
+     - ``'normal'``
+     - Preset detail level: ``'minimal'``, ``'normal'``, or ``'full'``
+   * - **Variable Display**
+     -
+     -
+     -
+   * - ``show_variable_definitions``
+     - bool
+     - ``None``
+     - Show variable definitions (inherits from detail_level if None)
+   * - ``variable_display_mode``
+     - str
+     - ``'note'``
+     - How to display variables: ``'note'``, ``'legend'``, or ``'hide'``
+   * - **State Formatting**
+     -
+     -
+     -
+   * - ``state_name_format``
+     - tuple
+     - ``('extra_name',)``
+     - State name format: ``'name'``, ``'extra_name'``, ``'path'``
+   * - ``show_pseudo_state_style``
+     - bool
+     - ``None``
+     - Apply dotted border styling to pseudo states
+   * - ``collapse_empty_states``
+     - bool
+     - ``False``
+     - Hide action text for states with no lifecycle actions
+   * - **Lifecycle Actions**
+     -
+     -
+     -
+   * - ``show_lifecycle_actions``
+     - bool
+     - ``None``
+     - Master switch for all lifecycle actions (enter/during/exit/aspect)
+   * - ``show_enter_actions``
+     - bool
+     - ``None``
+     - Show enter actions (inherits from show_lifecycle_actions)
+   * - ``show_during_actions``
+     - bool
+     - ``None``
+     - Show during actions (inherits from show_lifecycle_actions)
+   * - ``show_exit_actions``
+     - bool
+     - ``None``
+     - Show exit actions (inherits from show_lifecycle_actions)
+   * - ``show_aspect_actions``
+     - bool
+     - ``None``
+     - Show aspect actions (``>> during before/after``)
+   * - **Action Details**
+     -
+     -
+     -
+   * - ``show_abstract_actions``
+     - bool
+     - ``None``
+     - Show abstract actions (inherits from show_lifecycle_actions)
+   * - ``show_concrete_actions``
+     - bool
+     - ``None``
+     - Show concrete actions (inherits from show_lifecycle_actions)
+   * - ``abstract_action_marker``
+     - str
+     - ``'text'``
+     - Abstract action marker: ``'text'``, ``'symbol'``, or ``'none'``
+   * - ``max_action_lines``
+     - int
+     - ``None``
+     - Maximum lines per action (None = unlimited)
+   * - **Transitions**
+     -
+     -
+     -
+   * - ``show_transition_guards``
+     - bool
+     - ``None``
+     - Show guard conditions on transitions
+   * - ``show_transition_effects``
+     - bool
+     - ``None``
+     - Show transition effects
+   * - ``transition_effect_mode``
+     - str
+     - ``'note'``
+     - Effect display mode: ``'note'``, ``'inline'``, or ``'hide'``
+   * - **Events**
+     -
+     -
+     -
+   * - ``show_events``
+     - bool
+     - ``None``
+     - Show event names on transitions
+   * - ``event_name_format``
+     - tuple
+     - ``('extra_name', 'relpath')``
+     - Event name format: ``'name'``, ``'extra_name'``, ``'path'``, ``'relpath'``
+   * - ``event_visualization_mode``
+     - str
+     - ``'none'``
+     - Event visualization: ``'none'``, ``'color'``, ``'legend'``, ``'both'``
+   * - **Hierarchy Control**
+     -
+     -
+     -
+   * - ``max_depth``
+     - int
+     - ``None``
+     - Maximum nesting depth to visualize (None = unlimited)
+   * - ``collapsed_state_marker``
+     - str
+     - ``'...'``
+     - Text marker for collapsed states
+   * - **PlantUML Styling**
+     -
+     -
+     -
+   * - ``use_skinparam``
+     - bool
+     - ``True``
+     - Include skinparam styling block
+   * - ``use_stereotypes``
+     - bool
+     - ``True``
+     - Add stereotype markers (``<<pseudo>>``, ``<<composite>>``)
+   * - ``custom_colors``
+     - dict
+     - ``None``
+     - Custom color mapping for events (event path -> hex color)
+
+**Notes:**
+
+- Options with ``None`` default inherit from ``detail_level`` preset or parent options
+- ``show_lifecycle_actions`` controls defaults for enter/during/exit/aspect/abstract/concrete actions
+- Tuple options accept multiple format elements combined in display order
+- CLI uses ``-c key=value`` syntax for configuration
 
 Detail Level Presets
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -117,31 +305,34 @@ Output:
 
 **Visual Comparison**
 
-The three detail levels produce different visualization outputs:
+The three detail levels produce significantly different visualization outputs:
 
 **Minimal Detail Level**
 
-.. code-block:: text
+.. figure:: output_python_minimal.puml.svg
+   :alt: Minimal detail level visualization
+   :align: center
+   :width: 70%
 
-   Minimal detail level: output_python_minimal.puml
-
-Shows only the basic state structure without actions or detailed information.
+   Minimal: Basic state structure only, no actions or detailed information
 
 **Normal Detail Level** (Default)
 
-.. code-block:: text
+.. figure:: output_python_normal.puml.svg
+   :alt: Normal detail level visualization
+   :align: center
+   :width: 70%
 
-   Normal detail level: output_python_normal.puml
-
-Balanced view with essential lifecycle actions and transition information.
+   Normal: Balanced view with essential lifecycle actions and transition information
 
 **Full Detail Level**
 
-.. code-block:: text
+.. figure:: output_python_full.puml.svg
+   :alt: Full detail level visualization
+   :align: center
+   :width: 70%
 
-   Full detail level: output_python_full.puml
-
-Complete details including all actions, events, guards, and effects.
+   Full: Complete details including all actions, events, guards, and effects
 
 **CLI**
 
@@ -285,6 +476,17 @@ Output:
 
 .. literalinclude:: cli_config.demo.sh.txt
    :language: text
+
+**Generated Visualizations**
+
+The lifecycle actions configuration produces different outputs based on which actions are shown:
+
+.. figure:: output_lifecycle.puml.svg
+   :alt: Lifecycle actions configuration visualization
+   :align: center
+   :width: 80%
+
+   Custom lifecycle actions display (enter and during shown, exit hidden)
 
 Transition Display Options
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -452,6 +654,15 @@ Output:
 
 .. literalinclude:: cli_advanced.demo.sh.txt
    :language: text
+
+**Generated Visualization**
+
+.. figure:: output_advanced.puml.svg
+   :alt: Advanced configuration visualization
+   :align: center
+   :width: 90%
+
+   Comprehensive custom configuration combining multiple options (full detail, events with color mode, all lifecycle actions, custom name formats, max depth 3)
 
 Configuration Type System
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

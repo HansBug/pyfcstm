@@ -63,6 +63,15 @@ Python API 通过 ``PlantUMLOptions`` 类提供对可视化的编程控制。
 .. literalinclude:: python_basic.demo.py.txt
    :language: text
 
+**生成的可视化效果**
+
+.. figure:: output_basic.puml.svg
+   :alt: 基本 Python 可视化输出
+   :align: center
+   :width: 80%
+
+   使用默认设置生成的 PlantUML 图表
+
 **使用自定义选项**
 
 .. literalinclude:: python_options.demo.py
@@ -73,6 +82,15 @@ Python API 通过 ``PlantUMLOptions`` 类提供对可视化的编程控制。
 
 .. literalinclude:: python_options.demo.py.txt
    :language: text
+
+**生成的可视化效果**
+
+.. figure:: output_custom.puml.svg
+   :alt: 使用自定义选项的 Python 可视化
+   :align: center
+   :width: 80%
+
+   使用自定义 PlantUMLOptions 生成的图表（完整详细级别，启用事件，最大深度 3）
 
 CLI 可视化
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -90,10 +108,180 @@ CLI 可视化
 .. literalinclude:: cli_basic.demo.sh.txt
    :language: text
 
+**生成的可视化效果**
+
+.. figure:: output_cli_basic.puml.svg
+   :alt: CLI 基本可视化输出
+   :align: center
+   :width: 80%
+
+   使用 CLI 默认设置生成的 PlantUML 图表
+
 配置系统
 ---------------------------------------
 
 可视化系统通过 ``PlantUMLOptions`` 提供全面的配置。所有选项在 Python API 和 CLI 中都可用。
+
+配置选项参考
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+下表提供了所有可用配置选项的完整参考：
+
+.. list-table:: PlantUMLOptions 配置参考
+   :widths: 25 15 15 45
+   :header-rows: 1
+
+   * - 选项
+     - 类型
+     - 默认值
+     - 描述
+   * - **预设级别**
+     -
+     -
+     -
+   * - ``detail_level``
+     - str
+     - ``'normal'``
+     - 预设详细级别：``'minimal'``、``'normal'`` 或 ``'full'``
+   * - **变量显示**
+     -
+     -
+     -
+   * - ``show_variable_definitions``
+     - bool
+     - ``None``
+     - 显示变量定义（如果为 None 则从 detail_level 继承）
+   * - ``variable_display_mode``
+     - str
+     - ``'note'``
+     - 变量显示方式：``'note'``、``'legend'`` 或 ``'hide'``
+   * - **状态格式化**
+     -
+     -
+     -
+   * - ``state_name_format``
+     - tuple
+     - ``('extra_name',)``
+     - 状态名称格式：``'name'``、``'extra_name'``、``'path'``
+   * - ``show_pseudo_state_style``
+     - bool
+     - ``None``
+     - 对伪状态应用虚线边框样式
+   * - ``collapse_empty_states``
+     - bool
+     - ``False``
+     - 隐藏没有生命周期动作的状态的动作文本
+   * - **生命周期动作**
+     -
+     -
+     -
+   * - ``show_lifecycle_actions``
+     - bool
+     - ``None``
+     - 所有生命周期动作的主开关（enter/during/exit/aspect）
+   * - ``show_enter_actions``
+     - bool
+     - ``None``
+     - 显示 enter 动作（从 show_lifecycle_actions 继承）
+   * - ``show_during_actions``
+     - bool
+     - ``None``
+     - 显示 during 动作（从 show_lifecycle_actions 继承）
+   * - ``show_exit_actions``
+     - bool
+     - ``None``
+     - 显示 exit 动作（从 show_lifecycle_actions 继承）
+   * - ``show_aspect_actions``
+     - bool
+     - ``None``
+     - 显示切面动作（``>> during before/after``）
+   * - **动作详情**
+     -
+     -
+     -
+   * - ``show_abstract_actions``
+     - bool
+     - ``None``
+     - 显示抽象动作（从 show_lifecycle_actions 继承）
+   * - ``show_concrete_actions``
+     - bool
+     - ``None``
+     - 显示具体动作（从 show_lifecycle_actions 继承）
+   * - ``abstract_action_marker``
+     - str
+     - ``'text'``
+     - 抽象动作标记：``'text'``、``'symbol'`` 或 ``'none'``
+   * - ``max_action_lines``
+     - int
+     - ``None``
+     - 每个动作的最大行数（None = 无限制）
+   * - **转换**
+     -
+     -
+     -
+   * - ``show_transition_guards``
+     - bool
+     - ``None``
+     - 在转换上显示守卫条件
+   * - ``show_transition_effects``
+     - bool
+     - ``None``
+     - 显示转换效果
+   * - ``transition_effect_mode``
+     - str
+     - ``'note'``
+     - 效果显示模式：``'note'``、``'inline'`` 或 ``'hide'``
+   * - **事件**
+     -
+     -
+     -
+   * - ``show_events``
+     - bool
+     - ``None``
+     - 在转换上显示事件名称
+   * - ``event_name_format``
+     - tuple
+     - ``('extra_name', 'relpath')``
+     - 事件名称格式：``'name'``、``'extra_name'``、``'path'``、``'relpath'``
+   * - ``event_visualization_mode``
+     - str
+     - ``'none'``
+     - 事件可视化：``'none'``、``'color'``、``'legend'``、``'both'``
+   * - **层次控制**
+     -
+     -
+     -
+   * - ``max_depth``
+     - int
+     - ``None``
+     - 可视化的最大嵌套深度（None = 无限制）
+   * - ``collapsed_state_marker``
+     - str
+     - ``'...'``
+     - 折叠状态的文本标记
+   * - **PlantUML 样式**
+     -
+     -
+     -
+   * - ``use_skinparam``
+     - bool
+     - ``True``
+     - 包含 skinparam 样式块
+   * - ``use_stereotypes``
+     - bool
+     - ``True``
+     - 添加构造型标记（``<<pseudo>>``、``<<composite>>``）
+   * - ``custom_colors``
+     - dict
+     - ``None``
+     - 事件的自定义颜色映射（事件路径 -> 十六进制颜色）
+
+**注意：**
+
+- 默认值为 ``None`` 的选项从 ``detail_level`` 预设或父选项继承
+- ``show_lifecycle_actions`` 控制 enter/during/exit/aspect/abstract/concrete 动作的默认值
+- 元组选项接受多个格式元素，按显示顺序组合
+- CLI 使用 ``-c key=value`` 语法进行配置
 
 详细级别预设
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -125,6 +313,37 @@ CLI 可视化
 
 .. literalinclude:: cli_level.demo.sh.txt
    :language: text
+
+**可视化效果对比**
+
+三种详细级别产生显著不同的可视化输出：
+
+**最小详细级别**
+
+.. figure:: output_minimal.puml.svg
+   :alt: 最小详细级别可视化
+   :align: center
+   :width: 70%
+
+   最小：仅基本状态结构，无动作或详细信息
+
+**普通详细级别**（默认）
+
+.. figure:: output_normal.puml.svg
+   :alt: 普通详细级别可视化
+   :align: center
+   :width: 70%
+
+   普通：包含基本生命周期动作和转换信息的平衡视图
+
+**完整详细级别**
+
+.. figure:: output_full.puml.svg
+   :alt: 完整详细级别可视化
+   :align: center
+   :width: 70%
+
+   完整：包括所有动作、事件、守卫和效果的完整细节
 
 变量显示选项
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -230,6 +449,17 @@ CLI 可视化
 
 .. literalinclude:: cli_config.demo.sh.txt
    :language: text
+
+**生成的可视化效果**
+
+生命周期动作配置根据显示的动作产生不同的输出：
+
+.. figure:: output_lifecycle.puml.svg
+   :alt: 生命周期动作配置可视化
+   :align: center
+   :width: 80%
+
+   自定义生命周期动作显示（显示 enter 和 during，隐藏 exit）
 
 转换显示选项
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -397,6 +627,15 @@ PlantUML 样式
 
 .. literalinclude:: cli_advanced.demo.sh.txt
    :language: text
+
+**生成的可视化效果**
+
+.. figure:: output_advanced.puml.svg
+   :alt: 高级配置可视化
+   :align: center
+   :width: 90%
+
+   综合自定义配置组合多个选项（完整详细级别，带颜色模式的事件，所有生命周期动作，自定义名称格式，最大深度 3）
 
 配置类型系统
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

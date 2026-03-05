@@ -3272,11 +3272,11 @@ state "TrafficLight" as traffic_light {
         state "Yellow" as traffic_light__in_service__yellow
         state "Green" as traffic_light__in_service__green
         traffic_light__in_service__red --> [*] : ServiceError
-        traffic_light__in_service__red --> [*] : /GodDamnFuckUp
+        traffic_light__in_service__red --> [*] : GodDamnFuckUp
         traffic_light__in_service__yellow --> [*] : ServiceError
-        traffic_light__in_service__yellow --> [*] : /GodDamnFuckUp
+        traffic_light__in_service__yellow --> [*] : GodDamnFuckUp
         traffic_light__in_service__green --> [*] : ServiceError
-        traffic_light__in_service__green --> [*] : /GodDamnFuckUp
+        traffic_light__in_service__green --> [*] : GodDamnFuckUp
         [*] --> traffic_light__in_service__red : Start
         note on link
         effect {
@@ -3302,28 +3302,28 @@ state "TrafficLight" as traffic_light {
             round_count = round_count + 1;
         }
         end note
-        traffic_light__in_service__green --> traffic_light__in_service__yellow : /Idle.E2
-        traffic_light__in_service__yellow --> traffic_light__in_service__yellow : /E2
+        traffic_light__in_service__green --> traffic_light__in_service__yellow : E2
+        traffic_light__in_service__yellow --> traffic_light__in_service__yellow : E2
     }
     state "Idle" as traffic_light__idle {
         state "ToBe" as traffic_light__idle__to_be
         state "NotToBe" as traffic_light__idle__not_to_be
         traffic_light__idle__to_be --> [*] : GiveUpThinking
-        traffic_light__idle__to_be --> [*] : /GodDamnFuckUp
+        traffic_light__idle__to_be --> [*] : GodDamnFuckUp
         traffic_light__idle__not_to_be --> [*] : GiveUpThinking
-        traffic_light__idle__not_to_be --> [*] : /GodDamnFuckUp
+        traffic_light__idle__not_to_be --> [*] : GodDamnFuckUp
         [*] --> traffic_light__idle__to_be
-        traffic_light__idle__to_be --> traffic_light__idle__not_to_be : ToBe.E1
-        traffic_light__idle__not_to_be --> traffic_light__idle__to_be : NotToBe.E1
-        traffic_light__idle__not_to_be --> [*] : NotToBe.E2
+        traffic_light__idle__to_be --> traffic_light__idle__not_to_be : E1
+        traffic_light__idle__not_to_be --> traffic_light__idle__to_be : E1
+        traffic_light__idle__not_to_be --> [*] : E2
     }
-    traffic_light__in_service --> [*] : InService.ServiceError
+    traffic_light__in_service --> [*] : ServiceError
     traffic_light__in_service --> [*] : GodDamnFuckUp
-    traffic_light__idle --> traffic_light__in_service : Idle.GiveUpThinking
+    traffic_light__idle --> traffic_light__in_service : GiveUpThinking
     traffic_light__idle --> [*] : GodDamnFuckUp
     [*] --> traffic_light__in_service
-    traffic_light__in_service --> traffic_light__idle : InService.Maintain
-    traffic_light__idle --> traffic_light__idle : Idle.E2
+    traffic_light__in_service --> traffic_light__idle : Maintain
+    traffic_light__idle --> traffic_light__idle : E2
     traffic_light__idle --> [*]
 }
 [*] --> traffic_light

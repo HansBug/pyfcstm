@@ -1174,12 +1174,10 @@ class State(AstExportable, PlantUMLExportable):
 
                         # Show event if enabled
                         if config.show_events and trans.event is not None:
-                            # For backward compatibility, use the old format by default
-                            # TODO: Use format_event_name() and apply event_visualization_mode colors
-                            if trans.event.extra_name is not None:
-                                print(f' : {trans.event.extra_name}({trans_node.event_id})', file=tf, end='')
-                            else:
-                                print(f' : {trans_node.event_id}', file=tf, end='')
+                            from .plantuml import format_event_name
+                            formatted_event = format_event_name(trans.event, config.event_name_format)
+                            print(f' : {formatted_event}', file=tf, end='')
+                            # TODO: Apply event_visualization_mode colors
                         elif config.show_transition_guards and trans.guard is not None:
                             print(f' : {trans.guard.to_ast_node()}', file=tf, end='')
 
@@ -1194,8 +1192,11 @@ class State(AstExportable, PlantUMLExportable):
                                 print('}', file=tf)
                                 print('end note', file=tf, end='')
                             elif config.transition_effect_mode == 'inline':
-                                # TODO: Implement inline effect display
-                                pass
+                                # Display effects inline on the transition arrow
+                                effect_strs = [str(operation.to_ast_node()) for operation in trans.effects]
+                                effect_text = '; '.join(effect_strs)
+                                # Append to existing label or create new one
+                                print(f' / {effect_text}', file=tf, end='')
 
                         trans_text = tf.getvalue()
                     print(indent(trans_text, prefix='    '), file=sf)
@@ -1352,8 +1353,16 @@ class StateMachine(AstExportable, PlantUMLExportable):
                     print('end note', file=sf)
                     print('', file=sf)
                 elif config.variable_display_mode == 'legend':
-                    # TODO: Implement legend display mode for variables
-                    pass
+                    # Display variables as a legend
+                    print('legend right', file=sf)
+                    print('|= Variable |= Type |= Initial Value |', file=sf)
+                    for def_item in self.defines.values():
+                        var_name = def_item.name
+                        var_type = def_item.type
+                        var_init = def_item.init.to_ast_node() if def_item.init else 'N/A'
+                        print(f'| {var_name} | {var_type} | {var_init} |', file=sf)
+                    print('endlegend', file=sf)
+                    print('', file=sf)
 
             # TODO: Add event legend if event_visualization_mode is 'legend' or 'both'
             # TODO: Add event color styling if event_visualization_mode is 'color' or 'both'

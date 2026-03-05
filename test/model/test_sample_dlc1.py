@@ -4317,14 +4317,14 @@ state "TrafficLight" as traffic_light {
             round_count = round_count + 1;
         }
         end note
-        traffic_light__in_service__green --> traffic_light__in_service__yellow : /Idle.E2
-        traffic_light__in_service__yellow --> traffic_light__in_service__yellow : /E2
+        traffic_light__in_service__green --> traffic_light__in_service__yellow : E2
+        traffic_light__in_service__yellow --> traffic_light__in_service__yellow : E2
     }
     traffic_light__in_service : enter {\\n    a = 0;\\n    b = 0;\\n    round_count = 0;\\n}\\nenter abstract InServiceAbstractEnter /*\\n    Abstract Operation When Entering State 'InService'\\n    TODO: Should be Implemented In Generated Code Framework\\n*/\\nduring before abstract InServiceBeforeEnterChild /*\\n    Abstract Operation Before Entering Child States of State 'InService'\\n    TODO: Should be Implemented In Generated Code Framework\\n*/\\nduring after abstract InServiceAfterEnterChild /*\\n    Abstract Operation After Entering Child States of State 'InService'\\n    TODO: Should be Implemented In Generated Code Framework\\n*/\\nexit abstract InServiceAbstractExit /*\\n    Abstract Operation When Leaving State 'InService'\\n    TODO: Should be Implemented In Generated Code Framework\\n*/
     state "Idle" as traffic_light__idle
     [*] --> traffic_light__in_service
-    traffic_light__in_service --> traffic_light__idle : InService.Maintain
-    traffic_light__idle --> traffic_light__idle : Idle.E2
+    traffic_light__in_service --> traffic_light__idle : Maintain
+    traffic_light__idle --> traffic_light__idle : E2
     traffic_light__idle --> [*]
 }
 traffic_light : >> during before {\\n    a = 0;\\n}\\n>> during before abstract FFT;\\n>> during before abstract TTT /*\\n    this is the line\\n*/\\n>> during after {\\n    a = 255;\\n    b = 1;\\n}

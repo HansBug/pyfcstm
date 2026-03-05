@@ -12,4 +12,5 @@ pyfcstm.model
     base
     expr
     model
+    plantuml
 

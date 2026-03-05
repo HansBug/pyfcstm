@@ -4278,18 +4278,9 @@ state TrafficLight {
             expect=textwrap.dedent("""
 @startuml
 hide empty description
-note as DefinitionNote
-defines {
-    def int a = 0;
-    def int b = 0 * 0;
-    def int round_count = 0;
-}
-end note
-
 state "TrafficLight" as traffic_light {
     state "InService" as traffic_light__in_service {
         state "Red" as traffic_light__in_service__red
-        traffic_light__in_service__red : during {\\n    a = 1 << 2;\\n}
         state "Yellow" as traffic_light__in_service__yellow
         state "Green" as traffic_light__in_service__green
         [*] --> traffic_light__in_service__red : Start
@@ -4320,14 +4311,12 @@ state "TrafficLight" as traffic_light {
         traffic_light__in_service__green --> traffic_light__in_service__yellow : /Idle.E2
         traffic_light__in_service__yellow --> traffic_light__in_service__yellow : /E2
     }
-    traffic_light__in_service : enter {\\n    a = 0;\\n    b = 0;\\n    round_count = 0;\\n}\\nenter abstract InServiceAbstractEnter /*\\n    Abstract Operation When Entering State 'InService'\\n    TODO: Should be Implemented In Generated Code Framework\\n*/\\nduring before abstract InServiceBeforeEnterChild /*\\n    Abstract Operation Before Entering Child States of State 'InService'\\n    TODO: Should be Implemented In Generated Code Framework\\n*/\\nduring after abstract InServiceAfterEnterChild /*\\n    Abstract Operation After Entering Child States of State 'InService'\\n    TODO: Should be Implemented In Generated Code Framework\\n*/\\nexit abstract InServiceAbstractExit /*\\n    Abstract Operation When Leaving State 'InService'\\n    TODO: Should be Implemented In Generated Code Framework\\n*/
     state "Idle" as traffic_light__idle
     [*] --> traffic_light__in_service
     traffic_light__in_service --> traffic_light__idle : InService.Maintain
     traffic_light__idle --> traffic_light__idle : Idle.E2
     traffic_light__idle --> [*]
 }
-traffic_light : >> during before {\\n    a = 0;\\n}\\n>> during before abstract FFT;\\n>> during before abstract TTT /*\\n    this is the line\\n*/\\n>> during after {\\n    a = 255;\\n    b = 1;\\n}
 [*] --> traffic_light
 traffic_light --> [*]
 @enduml

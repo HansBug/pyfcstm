@@ -6,6 +6,7 @@ from pyfcstm.dsl import node as dsl_nodes
 from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model.expr import *
 from pyfcstm.model.model import *
+from pyfcstm.model.plantuml import DetailLevel, PlantUMLOptions
 
 
 @pytest.fixture()
@@ -1394,7 +1395,7 @@ class TestModelModel:
     def test_to_plantuml(self, demo_model_1, expected_plantuml_code, text_aligner):
         text_aligner.assert_equal(
             expect=expected_plantuml_code,
-            actual=demo_model_1.to_plantuml(),
+            actual=demo_model_1.to_plantuml(PlantUMLOptions(detail_level=DetailLevel.FULL)),
         )
 
     def test_parse_unknown_non_abstract_during_aspect_variable(self):

@@ -1832,12 +1832,6 @@ state LX {
             expect=textwrap.dedent("""
 @startuml
 hide empty description
-note as DefinitionNote
-defines {
-    def int Event = 0;
-}
-end note
-
 state "LX" as lx {
     state "LX2" as lx__lx2 {
         state "start" as lx__lx2__start {
@@ -1858,7 +1852,6 @@ state "LX" as lx {
     [*] --> lx__lx2
     lx__error --> [*]
 }
-lx : enter {\\n}\\nenter abstract act1;
 [*] --> lx
 lx --> [*]
 @enduml

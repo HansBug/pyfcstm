@@ -48,6 +48,7 @@ from typing import Optional, Union, List, Dict, Tuple, Iterator
 
 from .base import AstExportable, PlantUMLExportable
 from .expr import Expr, parse_expr_node_to_expr
+from .plantuml import PlantUMLOptions, format_state_name, format_event_name
 from ..dsl import node as dsl_nodes, INIT_STATE, EXIT_STATE
 
 __all__ = [
@@ -1125,13 +1126,19 @@ class State(AstExportable, PlantUMLExportable):
             is_pseudo=bool(self.is_pseudo),
         )
 
-    def to_plantuml(self) -> str:
+    def to_plantuml(self, options: Optional[PlantUMLOptions] = None) -> str:
         """
         Convert this state to PlantUML notation.
 
+        :param options: Configuration options for PlantUML generation
+        :type options: Optional[PlantUMLOptions]
         :return: PlantUML representation of the state
         :rtype: str
         """
+        # Resolve configuration
+        if options is None:
+            options = PlantUMLOptions()
+        config = options.to_config()
 
         def _name_safe(sub_state: Optional[str] = None) -> str:
             subpath = [*self.path]
@@ -1140,20 +1147,22 @@ class State(AstExportable, PlantUMLExportable):
             return sequence_safe(subpath)
 
         state_style_marks = []
-        if self.is_pseudo:
+        if self.is_pseudo and config.show_pseudo_state_style:
             state_style_marks.append('line.dotted')
         state_style_mark_str = " #" + ";".join(state_style_marks) if state_style_marks else ""
+
         with io.StringIO() as sf:
-            if self.extra_name is not None:
-                shown_name = self.extra_name
-            else:
-                shown_name = self.name
+            # Format state name according to configuration
+            shown_name = format_state_name(self, config.state_name_format)
+
             print(f'state {json.dumps(shown_name, ensure_ascii=False)} as {_name_safe()}{state_style_mark_str}',
                   file=sf, end='')
+
             if not self.is_leaf_state:
                 print(f' {{', file=sf)
                 for state in self.substates.values():
-                    print(indent(state.to_plantuml(), prefix='    '), file=sf)
+                    print(indent(state.to_plantuml(options), prefix='    '), file=sf)
+
                 for trans in self.transitions:
                     with io.StringIO() as tf:
                         print('[*]' if trans.from_state is dsl_nodes.INIT_STATE
@@ -1163,40 +1172,65 @@ class State(AstExportable, PlantUMLExportable):
                               else _name_safe(trans.to_state), file=tf, end='')
 
                         trans_node: dsl_nodes.TransitionDefinition = trans.to_ast_node()
-                        if trans.event is not None:
+
+                        # Show event if enabled
+                        if config.show_events and trans.event is not None:
+                            # For backward compatibility, use the old format by default
+                            # TODO: Use format_event_name() and apply event_visualization_mode colors
                             if trans.event.extra_name is not None:
                                 print(f' : {trans.event.extra_name}({trans_node.event_id})', file=tf, end='')
                             else:
                                 print(f' : {trans_node.event_id}', file=tf, end='')
-                        elif trans.guard is not None:
+                        elif config.show_transition_guards and trans.guard is not None:
                             print(f' : {trans.guard.to_ast_node()}', file=tf, end='')
 
-                        if len(trans.effects) > 0:
-                            print('', file=tf)
-                            print('note on link', file=tf)
-                            print('effect {', file=tf)
-                            for operation in trans.effects:
-                                print(f'    {operation.to_ast_node()}', file=tf)
-                            print('}', file=tf)
-                            print('end note', file=tf, end='')
+                        # Show transition effects if enabled
+                        if config.show_transition_effects and len(trans.effects) > 0:
+                            if config.transition_effect_mode == 'note':
+                                print('', file=tf)
+                                print('note on link', file=tf)
+                                print('effect {', file=tf)
+                                for operation in trans.effects:
+                                    print(f'    {operation.to_ast_node()}', file=tf)
+                                print('}', file=tf)
+                                print('end note', file=tf, end='')
+                            elif config.transition_effect_mode == 'inline':
+                                # TODO: Implement inline effect display
+                                pass
 
                         trans_text = tf.getvalue()
                     print(indent(trans_text, prefix='    '), file=sf)
+
                 print(f'}}', file=sf, end='')
 
-            if self.on_enters or self.on_durings or self.on_exits or self.on_during_aspects:
+            # Show lifecycle actions if enabled
+            should_show_actions = (
+                (config.show_lifecycle_actions and config.show_enter_actions and self.on_enters) or
+                (config.show_lifecycle_actions and config.show_during_actions and self.on_durings) or
+                (config.show_lifecycle_actions and config.show_exit_actions and self.on_exits) or
+                (config.show_lifecycle_actions and config.show_aspect_actions and self.on_during_aspects)
+            )
+
+            if should_show_actions:
                 print('', file=sf)
                 with io.StringIO() as tf:
-                    for enter_item in self.on_enters:
-                        print(enter_item.to_ast_node(), file=tf)
-                    for during_item in self.on_durings:
-                        print(during_item.to_ast_node(), file=tf)
-                    for exit_item in self.on_exits:
-                        print(exit_item.to_ast_node(), file=tf)
-                    for during_aspect_item in self.on_during_aspects:
-                        print(during_aspect_item.to_ast_node(), file=tf)
-                    text = json.dumps(tf.getvalue().rstrip().replace('\r\n', '\n').replace('\r', '\n')).strip("\"")
-                    print(f'{_name_safe()} : {text}', file=sf, end='')
+                    if config.show_enter_actions:
+                        for enter_item in self.on_enters:
+                            print(enter_item.to_ast_node(), file=tf)
+                    if config.show_during_actions:
+                        for during_item in self.on_durings:
+                            print(during_item.to_ast_node(), file=tf)
+                    if config.show_exit_actions:
+                        for exit_item in self.on_exits:
+                            print(exit_item.to_ast_node(), file=tf)
+                    if config.show_aspect_actions:
+                        for during_aspect_item in self.on_during_aspects:
+                            print(during_aspect_item.to_ast_node(), file=tf)
+
+                    action_text = tf.getvalue().rstrip().replace('\r\n', '\n').replace('\r', '\n')
+                    if action_text:  # Only show if there's actual content
+                        text = json.dumps(action_text).strip("\"")
+                        print(f'{_name_safe()} : {text}', file=sf, end='')
 
             return sf.getvalue()
 
@@ -1291,25 +1325,42 @@ class StateMachine(AstExportable, PlantUMLExportable):
             root_state=self.root_state.to_ast_node(),
         )
 
-    def to_plantuml(self) -> str:
+    def to_plantuml(self, options: Optional[PlantUMLOptions] = None) -> str:
         """
         Convert this state machine to PlantUML notation.
 
+        :param options: Configuration options for PlantUML generation
+        :type options: Optional[PlantUMLOptions]
         :return: PlantUML representation of the state machine
         :rtype: str
         """
+        # Resolve configuration
+        if options is None:
+            options = PlantUMLOptions()
+        config = options.to_config()
+
         with io.StringIO() as sf:
             print('@startuml', file=sf)
             print('hide empty description', file=sf)
-            if self.defines:
-                print('note as DefinitionNote', file=sf)
-                print('defines {', file=sf)
-                for def_item in self.defines.values():
-                    print(f'    {def_item.to_ast_node()}', file=sf)
-                print('}', file=sf)
-                print('end note', file=sf)
-                print('', file=sf)
-            print(self.root_state.to_plantuml(), file=sf)
+
+            # Show variable definitions if enabled
+            if config.show_variable_definitions and self.defines:
+                if config.variable_display_mode == 'note':
+                    print('note as DefinitionNote', file=sf)
+                    print('defines {', file=sf)
+                    for def_item in self.defines.values():
+                        print(f'    {def_item.to_ast_node()}', file=sf)
+                    print('}', file=sf)
+                    print('end note', file=sf)
+                    print('', file=sf)
+                elif config.variable_display_mode == 'legend':
+                    # TODO: Implement legend display mode for variables
+                    pass
+
+            # TODO: Add event legend if event_visualization_mode is 'legend' or 'both'
+            # TODO: Add event color styling if event_visualization_mode is 'color' or 'both'
+
+            print(self.root_state.to_plantuml(options), file=sf)
             print(f'[*] --> {sequence_safe(self.root_state.path)}', file=sf)
             print(f'{sequence_safe(self.root_state.path)} --> [*]', file=sf)
             print('@enduml', file=sf, end='')

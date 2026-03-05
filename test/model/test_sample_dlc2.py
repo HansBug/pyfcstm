@@ -3258,14 +3258,6 @@ state TrafficLight {
             expect=textwrap.dedent("""
 @startuml
 hide empty description
-note as DefinitionNote
-defines {
-    def int a = 0;
-    def int b = 0;
-    def int round_count = 0;
-}
-end note
-
 state "TrafficLight" as traffic_light {
     state "InService" as traffic_light__in_service {
         state "Red" as traffic_light__in_service__red

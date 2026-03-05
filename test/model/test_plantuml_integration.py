@@ -651,3 +651,215 @@ class TestActionFilteringAndFormatting:
         # Should not show concrete actions
         assert 'counter = 0' not in result
         assert 'counter = counter + 1' not in result
+
+
+@pytest.mark.unittest
+class TestCollapseEmptyStates:
+    """Test cases for collapse_empty_states feature."""
+
+    def test_collapse_empty_states_disabled(self):
+        """Test that empty states show actions when collapse is disabled."""
+        from pyfcstm.dsl import parse_with_grammar_entry
+        from pyfcstm.model.model import parse_dsl_node_to_state_machine
+
+        dsl_code = """
+        def int counter = 0;
+
+        state System {
+            state EmptyState;
+            state ActiveState {
+                enter {
+                    counter = 1;
+                }
+            }
+
+            [*] -> EmptyState;
+            EmptyState -> ActiveState;
+        }
+        """
+
+        ast_node = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+        sm = parse_dsl_node_to_state_machine(ast_node)
+
+        options = PlantUMLOptions(
+            collapse_empty_states=False,
+            show_lifecycle_actions=True,
+        )
+        result = sm.to_plantuml(options)
+
+        # Empty state should be present
+        assert 'EmptyState' in result
+        # Active state should show actions
+        assert 'counter = 1' in result
+
+    def test_collapse_empty_states_enabled(self):
+        """Test that empty states are collapsed when enabled."""
+        from pyfcstm.dsl import parse_with_grammar_entry
+        from pyfcstm.model.model import parse_dsl_node_to_state_machine
+
+        dsl_code = """
+        def int counter = 0;
+
+        state System {
+            state EmptyState;
+            state ActiveState {
+                enter {
+                    counter = 1;
+                }
+            }
+
+            [*] -> EmptyState;
+            EmptyState -> ActiveState;
+        }
+        """
+
+        ast_node = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+        sm = parse_dsl_node_to_state_machine(ast_node)
+
+        options = PlantUMLOptions(
+            collapse_empty_states=True,
+            show_lifecycle_actions=True,
+        )
+        result = sm.to_plantuml(options)
+
+        # Empty state should still be present (structure preserved)
+        assert 'EmptyState' in result
+        # But should not have action text (EmptyState : ...)
+        assert 'System_EmptyState :' not in result
+        # Active state should still show actions
+        assert 'counter = 1' in result
+
+
+@pytest.mark.unittest
+class TestUseSkinparam:
+    """Test cases for use_skinparam feature."""
+
+    def test_use_skinparam_enabled(self):
+        """Test that skinparam styling is added when enabled."""
+        root_state = State(
+            name='Root',
+            extra_name=None,
+            path=('Root',),
+            substates={},
+        )
+        sm = StateMachine(
+            defines={},
+            root_state=root_state,
+        )
+
+        options = PlantUMLOptions(use_skinparam=True)
+        result = sm.to_plantuml(options)
+
+        # Should contain skinparam block
+        assert 'skinparam state {' in result
+        assert 'BackgroundColor<<pseudo>> LightGray' in result
+        assert 'BackgroundColor<<composite>> LightBlue' in result
+        assert 'BorderColor<<pseudo>> Gray' in result
+        assert 'FontStyle<<pseudo>> italic' in result
+
+    def test_use_skinparam_disabled(self):
+        """Test that skinparam styling is not added when disabled."""
+        root_state = State(
+            name='Root',
+            extra_name=None,
+            path=('Root',),
+            substates={},
+        )
+        sm = StateMachine(
+            defines={},
+            root_state=root_state,
+        )
+
+        options = PlantUMLOptions(use_skinparam=False)
+        result = sm.to_plantuml(options)
+
+        # Should not contain skinparam block
+        assert 'skinparam' not in result
+
+
+@pytest.mark.unittest
+class TestUseStereotypes:
+    """Test cases for use_stereotypes feature."""
+
+    def test_use_stereotypes_enabled_pseudo_state(self):
+        """Test that pseudo state stereotype is added when enabled."""
+        state = State(
+            name='PseudoState',
+            extra_name=None,
+            path=('PseudoState',),
+            substates={},
+            is_pseudo=True,
+        )
+
+        options = PlantUMLOptions(use_stereotypes=True)
+        result = state.to_plantuml(options)
+
+        # Should have pseudo stereotype
+        assert '<<pseudo>>' in result
+
+    def test_use_stereotypes_enabled_composite_state(self):
+        """Test that composite state stereotype is added when enabled."""
+        child_state = State(
+            name='Child',
+            extra_name=None,
+            path=('Parent', 'Child'),
+            substates={},
+        )
+        parent_state = State(
+            name='Parent',
+            extra_name=None,
+            path=('Parent',),
+            substates={'Child': child_state},
+        )
+
+        options = PlantUMLOptions(use_stereotypes=True)
+        result = parent_state.to_plantuml(options)
+
+        # Should have composite stereotype
+        assert '<<composite>>' in result
+
+    def test_use_stereotypes_enabled_pseudo_composite_state(self):
+        """Test that both stereotypes are added for pseudo composite state."""
+        child_state = State(
+            name='Child',
+            extra_name=None,
+            path=('Parent', 'Child'),
+            substates={},
+        )
+        parent_state = State(
+            name='Parent',
+            extra_name=None,
+            path=('Parent',),
+            substates={'Child': child_state},
+            is_pseudo=True,
+        )
+
+        options = PlantUMLOptions(use_stereotypes=True)
+        result = parent_state.to_plantuml(options)
+
+        # Should have both stereotypes
+        assert '<<pseudo,composite>>' in result
+
+    def test_use_stereotypes_disabled(self):
+        """Test that stereotypes are not added when disabled."""
+        child_state = State(
+            name='Child',
+            extra_name=None,
+            path=('Parent', 'Child'),
+            substates={},
+        )
+        parent_state = State(
+            name='Parent',
+            extra_name=None,
+            path=('Parent',),
+            substates={'Child': child_state},
+            is_pseudo=True,
+        )
+
+        options = PlantUMLOptions(use_stereotypes=False)
+        result = parent_state.to_plantuml(options)
+
+        # Should not have stereotypes
+        assert '<<pseudo>>' not in result
+        assert '<<composite>>' not in result
+

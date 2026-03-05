@@ -3843,10 +3843,18 @@ state L1 {
             expect=textwrap.dedent("""
 @startuml
 hide empty description
-state "L1" as l1 {
-    state "L11" as l1__l11 {
-        state "L111" as l1__l11__l111 {
-            state "L1111" as l1__l11__l111__l1111 {
+
+skinparam state {
+  BackgroundColor<<pseudo>> LightGray
+  BackgroundColor<<composite>> LightBlue
+  BorderColor<<pseudo>> Gray
+  FontStyle<<pseudo>> italic
+}
+
+state "L1" as l1 <<composite>> {
+    state "L11" as l1__l11 <<composite>> {
+        state "L111" as l1__l11__l111 <<composite>> {
+            state "L1111" as l1__l11__l111__l1111 <<composite>> {
                 state "L11111" as l1__l11__l111__l1111__l11111
                 state "L11112" as l1__l11__l111__l1111__l11112
                 state "L11113" as l1__l11__l111__l1111__l11113

@@ -1145,16 +1145,33 @@ class State(AstExportable, PlantUMLExportable):
                 subpath.append(sub_state)
             return sequence_safe(subpath)
 
+        # Check if this is an empty state (for collapse_empty_states)
+        is_empty_state = (
+            not self.on_enters and
+            not self.on_durings and
+            not self.on_exits and
+            not self.on_during_aspects
+        )
+
         state_style_marks = []
         if self.is_pseudo and config.show_pseudo_state_style:
             state_style_marks.append('line.dotted')
         state_style_mark_str = " #" + ";".join(state_style_marks) if state_style_marks else ""
 
+        # Build stereotype string
+        stereotype_parts = []
+        if config.use_stereotypes:
+            if self.is_pseudo:
+                stereotype_parts.append('pseudo')
+            if not self.is_leaf_state:
+                stereotype_parts.append('composite')
+        stereotype_str = f' <<{",".join(stereotype_parts)}>>' if stereotype_parts else ""
+
         with io.StringIO() as sf:
             # Format state name according to configuration
             shown_name = format_state_name(self, config.state_name_format)
 
-            print(f'state {json.dumps(shown_name, ensure_ascii=False)} as {_name_safe()}{state_style_mark_str}',
+            print(f'state {json.dumps(shown_name, ensure_ascii=False)} as {_name_safe()}{state_style_mark_str}{stereotype_str}',
                   file=sf, end='')
 
             if not self.is_leaf_state:
@@ -1203,12 +1220,15 @@ class State(AstExportable, PlantUMLExportable):
 
                 print(f'}}', file=sf, end='')
 
-            # Show lifecycle actions if enabled
+            # Show lifecycle actions if enabled (skip if collapse_empty_states is True and state is empty)
             should_show_actions = (
-                (config.show_lifecycle_actions and config.show_enter_actions and self.on_enters) or
-                (config.show_lifecycle_actions and config.show_during_actions and self.on_durings) or
-                (config.show_lifecycle_actions and config.show_exit_actions and self.on_exits) or
-                (config.show_lifecycle_actions and config.show_aspect_actions and self.on_during_aspects)
+                not (config.collapse_empty_states and is_empty_state) and
+                (
+                    (config.show_lifecycle_actions and config.show_enter_actions and self.on_enters) or
+                    (config.show_lifecycle_actions and config.show_during_actions and self.on_durings) or
+                    (config.show_lifecycle_actions and config.show_exit_actions and self.on_exits) or
+                    (config.show_lifecycle_actions and config.show_aspect_actions and self.on_during_aspects)
+                )
             )
 
             if should_show_actions:
@@ -1352,6 +1372,17 @@ class StateMachine(AstExportable, PlantUMLExportable):
         with io.StringIO() as sf:
             print('@startuml', file=sf)
             print('hide empty description', file=sf)
+
+            # Add skinparam styling if enabled
+            if config.use_skinparam:
+                print('', file=sf)
+                print('skinparam state {', file=sf)
+                print('  BackgroundColor<<pseudo>> LightGray', file=sf)
+                print('  BackgroundColor<<composite>> LightBlue', file=sf)
+                print('  BorderColor<<pseudo>> Gray', file=sf)
+                print('  FontStyle<<pseudo>> italic', file=sf)
+                print('}', file=sf)
+                print('', file=sf)
 
             # Show variable definitions if enabled
             if config.show_variable_definitions and self.defines:

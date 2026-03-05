@@ -183,6 +183,14 @@ def expected_plantuml_code():
     return textwrap.dedent("""
 @startuml
 hide empty description
+
+skinparam state {
+  BackgroundColor<<pseudo>> LightGray
+  BackgroundColor<<composite>> LightBlue
+  BorderColor<<pseudo>> Gray
+  FontStyle<<pseudo>> italic
+}
+
 note as DefinitionNote
 defines {
     def int a = 0;
@@ -190,8 +198,8 @@ defines {
 }
 end note
 
-state "LX" as lx {
-    state "LX1" as lx__lx1 {
+state "LX" as lx <<composite>> {
+    state "LX1" as lx__lx1 <<composite>> {
         state "LX11" as lx__lx1__lx11
         lx__lx1__lx11 : enter abstract LX11Enter;\\nenter abstract /*\\n    This is X\\n*/\\nduring abstract LX11During;\\nduring {\\n    b = 2 << 3;\\n    b = b + -1;\\n}\\nexit abstract LX11Exit;
         state "LX12" as lx__lx1__lx12
@@ -224,8 +232,8 @@ state "LX" as lx {
         end note
     }
     lx__lx1 : during before abstract BeforeLX1Enter;\\nduring after abstract AfterLX1Enter /*\\n    this is the comment line\\n*/\\nduring before {\\n    b = 1 + 2;\\n}\\nduring after {\\n    b = 3 - 2;\\n    b = 3 + 2 + a;\\n}
-    state "LX2" as lx__lx2 {
-        state "LX21" as lx__lx2__lx21 {
+    state "LX2" as lx__lx2 <<composite>> {
+        state "LX21" as lx__lx2__lx21 <<composite>> {
             state "LX211" as lx__lx2__lx21__lx211
             state "LX212" as lx__lx2__lx21__lx212
             [*] --> lx__lx2__lx21__lx211 : a == 2

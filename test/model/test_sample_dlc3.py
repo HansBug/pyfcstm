@@ -1832,16 +1832,24 @@ state LX {
             expect=textwrap.dedent("""
 @startuml
 hide empty description
+
+skinparam state {
+  BackgroundColor<<pseudo>> LightGray
+  BackgroundColor<<composite>> LightBlue
+  BorderColor<<pseudo>> Gray
+  FontStyle<<pseudo>> italic
+}
+
 note as DefinitionNote
 defines {
     def int Event = 0;
 }
 end note
 
-state "LX" as lx {
-    state "LX2" as lx__lx2 {
-        state "start" as lx__lx2__start {
-            state "LX4" as lx__lx2__start__lx4 {
+state "LX" as lx <<composite>> {
+    state "LX2" as lx__lx2 <<composite>> {
+        state "start" as lx__lx2__start <<composite>> {
+            state "LX4" as lx__lx2__start__lx4 <<composite>> {
                 state "LX5" as lx__lx2__start__lx4__lx5
                 lx__lx2__start__lx4__lx5 --> [*] : /E1
                 [*] --> lx__lx2__start__lx4__lx5

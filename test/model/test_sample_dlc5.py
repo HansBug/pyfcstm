@@ -1582,15 +1582,23 @@ state L1 {
             expect=textwrap.dedent("""
 @startuml
 hide empty description
+
+skinparam state {
+  BackgroundColor<<pseudo>> LightGray
+  BackgroundColor<<composite>> LightBlue
+  BorderColor<<pseudo>> Gray
+  FontStyle<<pseudo>> italic
+}
+
 note as DefinitionNote
 defines {
     def int a = 0;
 }
 end note
 
-state "L1" as l1 {
-    state "L2" as l1__l2 {
-        state "L21" as l1__l2__l21 #line.dotted
+state "L1" as l1 <<composite>> {
+    state "L2" as l1__l2 <<composite>> {
+        state "L21" as l1__l2__l21 #line.dotted <<pseudo>>
         state "L22" as l1__l2__l22
         [*] --> l1__l2__l21
         l1__l2__l21 --> l1__l2__l22 : L21.E1

@@ -2238,6 +2238,14 @@ state L1 {
             expect=textwrap.dedent("""
 @startuml
 hide empty description
+
+skinparam state {
+  BackgroundColor<<pseudo>> LightGray
+  BackgroundColor<<composite>> LightBlue
+  BorderColor<<pseudo>> Gray
+  FontStyle<<pseudo>> italic
+}
+
 note as DefinitionNote
 defines {
     def int x = 0;
@@ -2245,7 +2253,7 @@ defines {
 }
 end note
 
-state "L1" as l1 {
+state "L1" as l1 <<composite>> {
     state "L21" as l1__l21
     l1__l21 : enter F1 {\\n    x = 0;\\n    y = y + 1;\\n}\\nexit ref /F1x;\\n>> during after ref /F1x;
     state "L22" as l1__l22

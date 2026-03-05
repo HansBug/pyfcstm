@@ -892,10 +892,18 @@ state Root named '根状态' {
             expect=textwrap.dedent("""
 @startuml
 hide empty description
-state "根状态" as root {
+
+skinparam state {
+  BackgroundColor<<pseudo>> LightGray
+  BackgroundColor<<composite>> LightBlue
+  BorderColor<<pseudo>> Gray
+  FontStyle<<pseudo>> italic
+}
+
+state "根状态" as root <<composite>> {
     state "Zhuang Tai I" as root__state1
     state "状態2" as root__state2
-    state "상태3" as root__state3 #line.dotted
+    state "상태3" as root__state3 #line.dotted <<pseudo>>
     state "state4" as root__state4
     [*] --> root__state1
     root__state1 --> root__state2

@@ -4278,6 +4278,14 @@ state TrafficLight {
             expect=textwrap.dedent("""
 @startuml
 hide empty description
+
+skinparam state {
+  BackgroundColor<<pseudo>> LightGray
+  BackgroundColor<<composite>> LightBlue
+  BorderColor<<pseudo>> Gray
+  FontStyle<<pseudo>> italic
+}
+
 note as DefinitionNote
 defines {
     def int a = 0;
@@ -4286,8 +4294,8 @@ defines {
 }
 end note
 
-state "TrafficLight" as traffic_light {
-    state "InService" as traffic_light__in_service {
+state "TrafficLight" as traffic_light <<composite>> {
+    state "InService" as traffic_light__in_service <<composite>> {
         state "Red" as traffic_light__in_service__red
         traffic_light__in_service__red : during {\\n    a = 1 << 2;\\n}
         state "Yellow" as traffic_light__in_service__yellow

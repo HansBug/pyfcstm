@@ -122,6 +122,38 @@ class TestPlantUMLOptionsInit:
 
 
 @pytest.mark.unittest
+class TestPlantUMLOptionsFromValue:
+    """Test cases for PlantUMLOptions.from_value()."""
+
+    def test_from_value_with_options_instance(self):
+        """Test that existing options object is returned directly."""
+        options = PlantUMLOptions(detail_level='full')
+        assert PlantUMLOptions.from_value(options) is options
+
+    def test_from_value_with_detail_level_string(self):
+        """Test that detail level string creates options object."""
+        options = PlantUMLOptions.from_value('minimal')
+        assert isinstance(options, PlantUMLOptions)
+        assert options.detail_level == 'minimal'
+
+    def test_from_value_with_none(self):
+        """Test that None creates default options object."""
+        options = PlantUMLOptions.from_value(None)
+        assert isinstance(options, PlantUMLOptions)
+        assert options.detail_level == 'normal'
+
+    def test_from_value_with_invalid_detail_level(self):
+        """Test that invalid detail level string raises TypeError."""
+        with pytest.raises(TypeError, match='Invalid detail level value'):
+            PlantUMLOptions.from_value('unknown')
+
+    def test_from_value_with_invalid_type(self):
+        """Test that unsupported input type raises TypeError."""
+        with pytest.raises(TypeError, match='Invalid plantuml options type'):
+            PlantUMLOptions.from_value(123)
+
+
+@pytest.mark.unittest
 class TestPlantUMLOptionsToConfigMinimal:
     """Test cases for to_config() with MINIMAL detail level."""
 

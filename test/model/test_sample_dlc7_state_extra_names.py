@@ -906,5 +906,5 @@ state "根状态" as root {
 root --> [*]
 @enduml
             """).strip(),
-            actual=str(model.to_plantuml()),
+            actual=str(model.to_plantuml(options="full")),
         )

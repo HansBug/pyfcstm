@@ -101,8 +101,31 @@ class TestStatePlantUMLGeneration:
 
 
 
-@pytest.mark.unittest
-class TestStateMachinePlantUMLGeneration:
+    def test_state_to_plantuml_accepts_detail_level_string(self):
+        """Test State.to_plantuml accepts detail level string input."""
+        state = State(
+            name='TestState',
+            extra_name='测试状态',
+            path=('TestState',),
+            substates={},
+        )
+
+        result = state.to_plantuml('minimal')
+
+        assert 'state "测试状态" as test_state' in result
+
+    def test_state_to_plantuml_rejects_invalid_option_type(self):
+        """Test State.to_plantuml rejects invalid option type."""
+        state = State(
+            name='TestState',
+            extra_name='测试状态',
+            path=('TestState',),
+            substates={},
+        )
+
+        with pytest.raises(TypeError, match='Invalid plantuml options type'):
+            state.to_plantuml(1)
+
     """Test cases for StateMachine.to_plantuml() with PlantUMLOptions."""
 
     def test_state_machine_default_options(self):
@@ -228,6 +251,39 @@ class TestStateMachinePlantUMLGeneration:
 
         # State name should follow the format
         assert '"Root (根状态)"' in result
+    def test_state_machine_to_plantuml_accepts_detail_level_string(self):
+        """Test StateMachine.to_plantuml accepts detail level string input."""
+        root_state = State(
+            name='Root',
+            extra_name=None,
+            path=('Root',),
+            substates={},
+        )
+        sm = StateMachine(
+            defines={},
+            root_state=root_state,
+        )
+
+        result = sm.to_plantuml('full')
+
+        assert '@startuml' in result
+        assert '@enduml' in result
+
+    def test_state_machine_to_plantuml_rejects_invalid_option_type(self):
+        """Test StateMachine.to_plantuml rejects invalid option type."""
+        root_state = State(
+            name='Root',
+            extra_name=None,
+            path=('Root',),
+            substates={},
+        )
+        sm = StateMachine(
+            defines={},
+            root_state=root_state,
+        )
+
+        with pytest.raises(TypeError, match='Invalid plantuml options type'):
+            sm.to_plantuml(object())
 
 
 @pytest.mark.unittest

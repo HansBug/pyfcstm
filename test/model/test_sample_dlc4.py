@@ -3890,5 +3890,5 @@ state "L1" as l1 {
 l1 --> [*]
 @enduml
             """).strip(),
-            actual=str(model.to_plantuml()),
+            actual=str(model.to_plantuml(options="full")),
         )

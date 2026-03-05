@@ -48,7 +48,7 @@ from typing import Optional, Union, List, Dict, Tuple, Iterator
 
 from .base import AstExportable, PlantUMLExportable
 from .expr import Expr, parse_expr_node_to_expr
-from .plantuml import PlantUMLOptions, format_state_name, format_event_name
+from .plantuml import PlantUMLOptions, PlantUMLOptionsInput, format_state_name, format_event_name
 from ..dsl import node as dsl_nodes, INIT_STATE, EXIT_STATE
 
 __all__ = [
@@ -1126,18 +1126,17 @@ class State(AstExportable, PlantUMLExportable):
             is_pseudo=bool(self.is_pseudo),
         )
 
-    def to_plantuml(self, options: Optional[PlantUMLOptions] = None) -> str:
+    def to_plantuml(self, options: PlantUMLOptionsInput = None) -> str:
         """
         Convert this state to PlantUML notation.
 
-        :param options: Configuration options for PlantUML generation
-        :type options: Optional[PlantUMLOptions]
+        :param options: Configuration input for PlantUML generation
+        :type options: PlantUMLOptionsInput
         :return: PlantUML representation of the state
         :rtype: str
         """
         # Resolve configuration
-        if options is None:
-            options = PlantUMLOptions()
+        options = PlantUMLOptions.from_value(options)
         config = options.to_config()
 
         def _name_safe(sub_state: Optional[str] = None) -> str:
@@ -1325,18 +1324,17 @@ class StateMachine(AstExportable, PlantUMLExportable):
             root_state=self.root_state.to_ast_node(),
         )
 
-    def to_plantuml(self, options: Optional[PlantUMLOptions] = None) -> str:
+    def to_plantuml(self, options: PlantUMLOptionsInput = None) -> str:
         """
         Convert this state machine to PlantUML notation.
 
-        :param options: Configuration options for PlantUML generation
-        :type options: Optional[PlantUMLOptions]
+        :param options: Configuration input for PlantUML generation
+        :type options: PlantUMLOptionsInput
         :return: PlantUML representation of the state machine
         :rtype: str
         """
         # Resolve configuration
-        if options is None:
-            options = PlantUMLOptions()
+        options = PlantUMLOptions.from_value(options)
         config = options.to_config()
 
         with io.StringIO() as sf:

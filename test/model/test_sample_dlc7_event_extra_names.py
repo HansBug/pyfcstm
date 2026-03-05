@@ -963,5 +963,5 @@ state "Root" as root {
 root --> [*]
 @enduml
             """).strip(),
-            actual=str(model.to_plantuml()),
+            actual=str(model.to_plantuml(options="full")),
         )

@@ -32,7 +32,7 @@ Example::
 """
 
 from dataclasses import dataclass
-from typing import Optional, Tuple, TYPE_CHECKING
+from typing import Optional, Tuple, TYPE_CHECKING, Union
 
 try:
     from typing import Literal
@@ -44,6 +44,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     'DetailLevelLiteral',
+    'PlantUMLOptionsInput',
     'PlantUMLOptions',
     'format_state_name',
     'format_event_name',
@@ -128,6 +129,7 @@ def format_event_name(event: 'Event', name_format: Tuple[Literal['name', 'extra_
 
 
 DetailLevelLiteral = Literal['minimal', 'normal', 'full']
+PlantUMLOptionsInput = Union['PlantUMLOptions', DetailLevelLiteral, None]
 
 
 @dataclass
@@ -265,6 +267,34 @@ class PlantUMLOptions:
             raise ValueError("state_name_format must contain at least one element")
         if not self.event_name_format:
             raise ValueError("event_name_format must contain at least one element")
+
+    @classmethod
+    def from_value(cls, value: PlantUMLOptionsInput) -> 'PlantUMLOptions':
+        """
+        Normalize user-provided PlantUML option input to a :class:`PlantUMLOptions` instance.
+
+        :param value: Input configuration value. Accepts an existing options object,
+            detail-level string, or ``None``.
+        :type value: PlantUMLOptionsInput
+        :return: Normalized PlantUML options object
+        :rtype: PlantUMLOptions
+        :raises TypeError: If ``value`` is not supported
+        """
+        if isinstance(value, cls):
+            return value
+        if value is None:
+            return cls()
+        if isinstance(value, str):
+            if value in ('minimal', 'normal', 'full'):
+                return cls(detail_level=value)
+            raise TypeError(
+                f"Invalid detail level value {value!r}, expected one of 'minimal', 'normal', 'full'."
+            )
+
+        raise TypeError(
+            f"Invalid plantuml options type {type(value).__name__}, "
+            f"expected PlantUMLOptions, detail level string, or None."
+        )
 
     def to_config(self) -> 'PlantUMLOptions':
         """

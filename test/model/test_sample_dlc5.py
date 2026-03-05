@@ -1582,6 +1582,12 @@ state L1 {
             expect=textwrap.dedent("""
 @startuml
 hide empty description
+note as DefinitionNote
+defines {
+    def int a = 0;
+}
+end note
+
 state "L1" as l1 {
     state "L2" as l1__l2 {
         state "L21" as l1__l2__l21 #line.dotted
@@ -1590,12 +1596,14 @@ state "L1" as l1 {
         l1__l2__l21 --> l1__l2__l22 : L21.E1
         l1__l2__l22 --> [*] : L22.E1
     }
+    l1__l2 : >> during before abstract user_B;\\n>> during before abstract user_A;
     [*] --> l1__l2
     l1__l2 --> [*]
 }
+l1 : during before {\\n    a = 1;\\n}\\nduring before abstract mock;\\n>> during before abstract user_B;\\n>> during before abstract user_A;
 [*] --> l1
 l1 --> [*]
 @enduml
             """).strip(),
-            actual=str(model.to_plantuml()),
+            actual=str(model.to_plantuml(options="full")),
         )

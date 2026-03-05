@@ -233,77 +233,441 @@ class PlantUMLOptions:
     This class provides fine-grained control over what elements are displayed
     in generated PlantUML diagrams. It supports two usage modes:
 
-    1. Quick mode: Use detail_level presets
-    2. Fine-grained mode: Configure individual options
+    1. **Quick mode**: Use ``detail_level`` presets (``'minimal'``, ``'normal'``, ``'full'``)
+    2. **Fine-grained mode**: Configure individual options explicitly
 
-    Configuration inheritance:
+    Configuration Inheritance
+    --------------------------
 
-    * show_enter_actions/show_during_actions/show_exit_actions/show_aspect_actions
-      inherit from show_lifecycle_actions
-    * show_abstract_actions/show_concrete_actions inherit from show_lifecycle_actions
-    * show_transition_guards/show_transition_effects are independently configurable
+    The configuration system uses a hierarchical fallback mechanism:
 
-    :param detail_level: Preset detail level (``'minimal'``, ``'normal'``, or ``'full'``)
-    :type detail_level: DetailLevelLiteral
-    :param show_variable_definitions: Whether to show variable definitions
-    :type show_variable_definitions: Optional[bool]
-    :param variable_display_mode: How to display variables ('note', 'legend', or 'hide')
-    :type variable_display_mode: Literal['note', 'legend', 'hide']
-    :param state_name_format: Tuple of display elements for state names
-    :type state_name_format: Tuple[Literal['name', 'extra_name', 'path'], ...]
-    :param show_pseudo_state_style: Whether to show pseudo state styling
-    :type show_pseudo_state_style: Optional[bool]
-    :param collapse_empty_states: Whether to collapse states with no actions
-    :type collapse_empty_states: bool
-    :param show_lifecycle_actions: Master switch for lifecycle actions
-    :type show_lifecycle_actions: Optional[bool]
-    :param show_enter_actions: Whether to show enter actions
-    :type show_enter_actions: Optional[bool]
-    :param show_during_actions: Whether to show during actions
-    :type show_during_actions: Optional[bool]
-    :param show_exit_actions: Whether to show exit actions
-    :type show_exit_actions: Optional[bool]
-    :param show_aspect_actions: Whether to show aspect actions
-    :type show_aspect_actions: Optional[bool]
-    :param show_abstract_actions: Whether to show abstract actions
-    :type show_abstract_actions: Optional[bool]
-    :param show_concrete_actions: Whether to show concrete actions
-    :type show_concrete_actions: Optional[bool]
-    :param abstract_action_marker: How to mark abstract actions
-    :type abstract_action_marker: Literal['text', 'symbol', 'none']
-    :param max_action_lines: Maximum lines per action (None for unlimited)
-    :type max_action_lines: Optional[int]
-    :param show_transition_guards: Whether to show transition guards
-    :type show_transition_guards: Optional[bool]
-    :param show_transition_effects: Whether to show transition effects
-    :type show_transition_effects: Optional[bool]
-    :param transition_effect_mode: How to display effects
-    :type transition_effect_mode: Literal['note', 'inline', 'hide']
-    :param show_events: Whether to show event names
-    :type show_events: Optional[bool]
-    :param event_name_format: Tuple of display elements for event names
-    :type event_name_format: Tuple[Literal['name', 'extra_name', 'path', 'relpath'], ...]
-    :param event_visualization_mode: Event visualization mode
-    :type event_visualization_mode: Literal['none', 'color', 'legend', 'both', 'dependency_view']
-    :param max_depth: Maximum depth to expand (None for unlimited)
-    :type max_depth: Optional[int]
-    :param collapsed_state_marker: Marker for collapsed states
-    :type collapsed_state_marker: str
-    :param use_skinparam: Whether to use skinparam styling
-    :type use_skinparam: bool
-    :param use_stereotypes: Whether to use stereotypes
-    :type use_stereotypes: bool
-    :param custom_colors: Custom color mapping for events
-    :type custom_colors: Optional[dict]
+    1. User-specified values (non-None parameters)
+    2. Parent configuration values (e.g., ``show_lifecycle_actions`` controls child options)
+    3. ``detail_level`` preset values
+    4. Final fallback defaults
 
-    Example::
+    Inheritance relationships:
 
+    * ``show_enter_actions``, ``show_during_actions``, ``show_exit_actions``, ``show_aspect_actions``
+      inherit from ``show_lifecycle_actions``
+    * ``show_abstract_actions``, ``show_concrete_actions`` inherit from ``show_lifecycle_actions``
+    * ``show_transition_guards``, ``show_transition_effects`` are independently configurable
+
+    Detail Level Presets
+    ---------------------
+
+    **minimal**: Clean diagrams focusing on structure
+
+    * Hides: variable definitions, lifecycle actions, pseudo state styling
+    * Shows: transition guards, transition effects, events
+
+    **normal** (default): Balanced view for typical use cases
+
+    * Hides: variable definitions, lifecycle actions
+    * Shows: transition guards, transition effects, events, pseudo state styling
+
+    **full**: Complete information for detailed analysis
+
+    * Shows: everything including variable definitions and lifecycle actions
+
+    Parameters
+    ----------
+
+    detail_level : DetailLevelLiteral, default='normal'
+        Preset detail level. One of ``'minimal'``, ``'normal'``, or ``'full'``.
+
+        Example::
+
+            >>> PlantUMLOptions(detail_level='minimal')  # Clean structure view
+            >>> PlantUMLOptions(detail_level='full')     # Show all details
+
+    show_variable_definitions : Optional[bool], default=None
+        Whether to display variable definitions in the diagram.
+
+        * ``True``: Show variable definitions as note or legend
+        * ``False``: Hide variable definitions
+        * ``None``: Use ``detail_level`` preset (False for minimal/normal, True for full)
+
+        Example::
+
+            >>> # Show variables in a note block
+            >>> PlantUMLOptions(show_variable_definitions=True, variable_display_mode='note')
+            >>> # Output: note as DefinitionNote
+            >>> #         defines {
+            >>> #             def int counter = 0;
+            >>> #         }
+            >>> #         end note
+
+    variable_display_mode : Literal['note', 'legend', 'hide'], default='note'
+        How to display variable definitions when ``show_variable_definitions=True``.
+
+        * ``'note'``: Display as a floating note block
+        * ``'legend'``: Display as a legend table (more compact)
+        * ``'hide'``: Don't display (same as ``show_variable_definitions=False``)
+
+        Example::
+
+            >>> # Legend format (compact table)
+            >>> PlantUMLOptions(show_variable_definitions=True, variable_display_mode='legend')
+            >>> # Output: legend right
+            >>> #         |= Variable |= Type |= Initial Value |
+            >>> #         | counter | int | 0 |
+            >>> #         endlegend
+
+    state_name_format : Tuple[Literal['name', 'extra_name', 'path'], ...], default=('extra_name',)
+        Tuple of display elements for state names. Elements are combined with the first
+        as the main display and others in parentheses.
+
+        * ``'name'``: State identifier (e.g., ``'Running'``)
+        * ``'extra_name'``: Localized/display name (e.g., ``'运行中'``)
+        * ``'path'``: Full hierarchical path (e.g., ``'System.Module.Running'``)
+
+        Example::
+
+            >>> # Show only extra_name (default)
+            >>> PlantUMLOptions(state_name_format=('extra_name',))
+            >>> # Output: state "运行中" as running
+
+            >>> # Show extra_name with name in parentheses
+            >>> PlantUMLOptions(state_name_format=('extra_name', 'name'))
+            >>> # Output: state "运行中 (Running)" as running
+
+            >>> # Show name with full path
+            >>> PlantUMLOptions(state_name_format=('name', 'path'))
+            >>> # Output: state "Running (System.Module.Running)" as system__module__running
+
+    show_pseudo_state_style : Optional[bool], default=None
+        Whether to apply visual styling to pseudo states (dotted border).
+
+        * ``True``: Pseudo states shown with ``#line.dotted`` style
+        * ``False``: Pseudo states shown without special styling
+        * ``None``: Use ``detail_level`` preset (False for minimal, True for normal/full)
+
+        Example::
+
+            >>> PlantUMLOptions(show_pseudo_state_style=True)
+            >>> # Output: state "PseudoState" as pseudo_state <<pseudo>> #line.dotted
+
+    collapse_empty_states : bool, default=False
+        Whether to hide action text for states with no lifecycle actions.
+
+        * ``True``: Empty states don't show action text (cleaner diagrams)
+        * ``False``: All states show their structure
+
+        Example::
+
+            >>> # With collapse_empty_states=True, empty states are more compact
+            >>> PlantUMLOptions(collapse_empty_states=True)
+            >>> # State with no actions: state "EmptyState" as empty_state
+            >>> # (no "EmptyState :" line)
+
+    show_lifecycle_actions : Optional[bool], default=None
+        Master switch for all lifecycle actions (enter/during/exit/aspect).
+
+        * ``True``: Show all lifecycle actions (unless overridden by specific options)
+        * ``False``: Hide all lifecycle actions
+        * ``None``: Use ``detail_level`` preset (False for minimal/normal, True for full)
+
+        This option controls the default for ``show_enter_actions``, ``show_during_actions``,
+        ``show_exit_actions``, ``show_aspect_actions``, ``show_abstract_actions``, and
+        ``show_concrete_actions``.
+
+        Example::
+
+            >>> # Show all lifecycle actions
+            >>> PlantUMLOptions(show_lifecycle_actions=True)
+            >>> # Output: state "Active" as active
+            >>> #         active : enter {\\n    counter = 0;\\n}\\nduring {\\n    counter++;\\n}
+
+    show_enter_actions : Optional[bool], default=None
+        Whether to show enter actions. Inherits from ``show_lifecycle_actions`` if None.
+
+        Example::
+
+            >>> # Show only enter actions, hide others
+            >>> PlantUMLOptions(show_lifecycle_actions=False, show_enter_actions=True)
+
+    show_during_actions : Optional[bool], default=None
+        Whether to show during actions. Inherits from ``show_lifecycle_actions`` if None.
+
+    show_exit_actions : Optional[bool], default=None
+        Whether to show exit actions. Inherits from ``show_lifecycle_actions`` if None.
+
+    show_aspect_actions : Optional[bool], default=None
+        Whether to show aspect actions (``>> during before/after``).
+        Inherits from ``show_lifecycle_actions`` if None.
+
+        Example::
+
+            >>> # Show aspect actions for cross-cutting concerns
+            >>> PlantUMLOptions(show_lifecycle_actions=True, show_aspect_actions=True)
+            >>> # Output: state : >> during before abstract GlobalMonitor;
+
+    show_abstract_actions : Optional[bool], default=None
+        Whether to show abstract actions (actions without implementation).
+        Inherits from ``show_lifecycle_actions`` if None.
+
+        Example::
+
+            >>> # Show only abstract actions (API surface)
+            >>> PlantUMLOptions(show_lifecycle_actions=True,
+            ...                 show_abstract_actions=True,
+            ...                 show_concrete_actions=False)
+            >>> # Output: state : enter abstract InitHardware;
+
+    show_concrete_actions : Optional[bool], default=None
+        Whether to show concrete actions (actions with implementation).
+        Inherits from ``show_lifecycle_actions`` if None.
+
+        Example::
+
+            >>> # Show only concrete actions (implementation details)
+            >>> PlantUMLOptions(show_lifecycle_actions=True,
+            ...                 show_abstract_actions=False,
+            ...                 show_concrete_actions=True)
+            >>> # Output: state : enter {\\n    counter = 0;\\n}
+
+    abstract_action_marker : Literal['text', 'symbol', 'none'], default='text'
+        How to mark abstract actions when displayed.
+
+        * ``'text'``: Use ``abstract`` keyword (e.g., ``enter abstract Init``)
+        * ``'symbol'``: Use guillemet markers (e.g., ``enter «abstract» Init``)
+        * ``'none'``: No marker (e.g., ``enter Init``)
+
+        Example::
+
+            >>> PlantUMLOptions(show_lifecycle_actions=True, abstract_action_marker='symbol')
+            >>> # Output: state : enter «abstract» InitHardware;
+
+    max_action_lines : Optional[int], default=None
+        Maximum number of lines to display per action. Lines beyond this limit
+        are truncated with ``...`` ellipsis.
+
+        * ``None``: No limit (show all lines)
+        * ``> 0``: Limit to specified number of lines
+
+        Example::
+
+            >>> # Limit actions to 3 lines for compact diagrams
+            >>> PlantUMLOptions(show_lifecycle_actions=True, max_action_lines=3)
+            >>> # Output: state : enter {\\n    a = 1;\\n    b = 2;\\n...
+
+    show_transition_guards : Optional[bool], default=None
+        Whether to show guard conditions on transitions.
+
+        * ``True``: Show guard conditions (e.g., ``StateA -> StateB : [counter > 10]``)
+        * ``False``: Hide guard conditions
+        * ``None``: Use ``detail_level`` preset (True for all levels)
+
+        Example::
+
+            >>> PlantUMLOptions(show_transition_guards=True)
+            >>> # Output: idle --> active : [temperature > 25]
+
+    show_transition_effects : Optional[bool], default=None
+        Whether to show transition effects (operations executed during transition).
+
+        * ``True``: Show effects according to ``transition_effect_mode``
+        * ``False``: Hide effects
+        * ``None``: Use ``detail_level`` preset (True for all levels)
+
+        Example::
+
+            >>> PlantUMLOptions(show_transition_effects=True, transition_effect_mode='inline')
+            >>> # Output: idle --> active : Start / counter = 0
+
+    transition_effect_mode : Literal['note', 'inline', 'hide'], default='note'
+        How to display transition effects when ``show_transition_effects=True``.
+
+        * ``'note'``: Display as note on link (detailed, multi-line)
+        * ``'inline'``: Display inline with ``/`` separator (compact, single-line)
+        * ``'hide'``: Don't display (same as ``show_transition_effects=False``)
+
+        Example::
+
+            >>> # Note format (detailed)
+            >>> PlantUMLOptions(show_transition_effects=True, transition_effect_mode='note')
+            >>> # Output: idle --> active : Start
+            >>> #         note on link
+            >>> #         effect {
+            >>> #             counter = 0;
+            >>> #         }
+            >>> #         end note
+
+            >>> # Inline format (compact)
+            >>> PlantUMLOptions(show_transition_effects=True, transition_effect_mode='inline')
+            >>> # Output: idle --> active : Start / counter = 0
+
+    show_events : Optional[bool], default=None
+        Whether to show event names on transitions.
+
+        * ``True``: Show event names
+        * ``False``: Hide event names (show only guards/effects)
+        * ``None``: Use ``detail_level`` preset (True for all levels)
+
+    event_name_format : Tuple[Literal['name', 'extra_name', 'path', 'relpath'], ...], default=('extra_name', 'relpath')
+        Tuple of display elements for event names.
+
+        * ``'name'``: Event identifier (e.g., ``'Start'``)
+        * ``'extra_name'``: Localized/display name (e.g., ``'启动'``)
+        * ``'path'``: Absolute path (e.g., ``'/System.Start'``)
+        * ``'relpath'``: Relative path from transition source (e.g., ``'State.Start'``)
+
+        Example::
+
+            >>> # Show extra_name with relative path
+            >>> PlantUMLOptions(event_name_format=('extra_name', 'relpath'))
+            >>> # Output: idle --> active : 启动 (State.Start)
+
+            >>> # Show only name
+            >>> PlantUMLOptions(event_name_format=('name',))
+            >>> # Output: idle --> active : Start
+
+    event_visualization_mode : Literal['none', 'color', 'legend', 'both', 'dependency_view'], default='none'
+        How to visualize events in the diagram.
+
+        * ``'none'``: No special visualization
+        * ``'color'``: Apply colors to transitions by event (colorblind-friendly palette)
+        * ``'legend'``: Show event legend with transition counts
+        * ``'both'``: Apply colors and show legend
+        * ``'dependency_view'``: Reserved for future use
+
+        Example::
+
+            >>> # Color-code transitions by event
+            >>> PlantUMLOptions(event_visualization_mode='color')
+            >>> # Output: idle --> active : Start #4E79A7
+
+            >>> # Show event legend
+            >>> PlantUMLOptions(event_visualization_mode='legend')
+            >>> # Output: legend right
+            >>> #         Event Scoping
+            >>> #         * Start: 3 transitions
+            >>> #         endlegend
+
+    max_depth : Optional[int], default=None
+        Maximum depth to expand in state hierarchy. States beyond this depth
+        are collapsed and shown with ``collapsed_state_marker``.
+
+        * ``None``: Expand all levels (no limit)
+        * ``0``: Show only root state
+        * ``> 0``: Expand to specified depth
+
+        Example::
+
+            >>> # Show only 2 levels deep
+            >>> PlantUMLOptions(max_depth=2, collapsed_state_marker='[...]')
+            >>> # Output: state "Level1" as level1 {
+            >>> #             state "Level2" as level1__level2 {
+            >>> #                 state "[...]" as level1__level2___collapsed_
+            >>> #             }
+            >>> #         }
+
+    collapsed_state_marker : str, default='...'
+        Text marker to display for collapsed states when ``max_depth`` is exceeded.
+
+        Example::
+
+            >>> PlantUMLOptions(max_depth=1, collapsed_state_marker='[more states...]')
+            >>> # Output: state "[more states...]" as parent___collapsed_
+
+    use_skinparam : bool, default=True
+        Whether to include skinparam styling block for pseudo and composite states.
+
+        * ``True``: Include skinparam block with predefined colors
+        * ``False``: No skinparam block (use PlantUML defaults)
+
+        Example::
+
+            >>> PlantUMLOptions(use_skinparam=True)
+            >>> # Output: skinparam state {
+            >>> #           BackgroundColor<<pseudo>> LightGray
+            >>> #           BackgroundColor<<composite>> LightBlue
+            >>> #           BorderColor<<pseudo>> Gray
+            >>> #           FontStyle<<pseudo>> italic
+            >>> #         }
+
+    use_stereotypes : bool, default=True
+        Whether to add stereotype markers (``<<pseudo>>``, ``<<composite>>``) to states.
+
+        * ``True``: Add stereotypes for pseudo and composite states
+        * ``False``: No stereotypes
+
+        Example::
+
+            >>> PlantUMLOptions(use_stereotypes=True)
+            >>> # Output: state "Parent" as parent <<composite>> {
+            >>> #             state "Child" as parent__child
+            >>> #         }
+
+    custom_colors : Optional[Dict[str, str]], default=None
+        Custom color mapping for events. Keys are event paths (e.g., ``'Root.Start'``),
+        values are hex color codes (e.g., ``'#FF0000'``).
+
+        Only used when ``event_visualization_mode`` is ``'color'`` or ``'both'``.
+
+        Example::
+
+            >>> PlantUMLOptions(
+            ...     event_visualization_mode='color',
+            ...     custom_colors={'Root.Start': '#FF0000', 'Root.Stop': '#00FF00'}
+            ... )
+            >>> # Output: idle --> active : Start #FF0000
+            >>> #         active --> idle : Stop #00FF00
+
+    Examples
+    --------
+
+    **Quick mode with presets**::
+
+        >>> # Minimal diagram for presentations
+        >>> options = PlantUMLOptions(detail_level='minimal')
+        >>> sm.to_plantuml(options)
+
+        >>> # Full details for documentation
+        >>> options = PlantUMLOptions(detail_level='full')
+        >>> sm.to_plantuml(options)
+
+    **Fine-grained control**::
+
+        >>> # Show only abstract actions (API surface)
+        >>> options = PlantUMLOptions(
+        ...     show_lifecycle_actions=True,
+        ...     show_abstract_actions=True,
+        ...     show_concrete_actions=False,
+        ...     abstract_action_marker='symbol'
+        ... )
+
+        >>> # Compact diagram with depth limit
+        >>> options = PlantUMLOptions(
+        ...     max_depth=2,
+        ...     collapsed_state_marker='[...]',
+        ...     collapse_empty_states=True
+        ... )
+
+        >>> # Event-focused view with colors
+        >>> options = PlantUMLOptions(
+        ...     event_visualization_mode='both',
+        ...     event_name_format=('extra_name', 'name'),
+        ...     custom_colors={'Root.Start': '#00FF00'}
+        ... )
+
+    **Combining options**::
+
+        >>> # Custom configuration inheriting from 'normal'
         >>> options = PlantUMLOptions(
         ...     detail_level='normal',
-        ...     show_lifecycle_actions=True,
+        ...     show_lifecycle_actions=True,  # Override preset
+        ...     show_enter_actions=True,      # Show only enter actions
+        ...     show_during_actions=False,
+        ...     show_exit_actions=False,
+        ...     max_action_lines=5            # Limit verbosity
         ... )
-        >>> config = options.to_config()
-        >>> config.show_enter_actions  # True (inherited)
+
+    See Also
+    --------
+    format_state_name : Format state names according to configuration
+    format_event_name : Format event names according to configuration
     """
 
     # Preset level

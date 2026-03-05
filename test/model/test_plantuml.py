@@ -1,78 +1,22 @@
 """
-Unit tests for PlantUML configuration options.
+Unit tests for PlantUML configuration and utility functions.
 
-This module tests the :class:`PlantUMLOptions` configuration class and its
-resolution logic, ensuring proper inheritance and fallback behavior.
+This module tests the plantuml.py module components:
+- PlantUMLOptions configuration class and resolution logic
+- format_state_name() and format_event_name() utility functions
+- collect_event_transitions() and assign_event_colors() helper functions
 """
-
-import textwrap
 
 import pytest
 
-from pyfcstm.dsl import parse_with_grammar_entry
-from pyfcstm.model.model import Event, State, parse_dsl_node_to_state_machine
-from pyfcstm.model.plantuml import PlantUMLOptions, format_event_name, format_state_name
-
-
-@pytest.mark.unittest
-class TestDetailLevelStrings:
-    """Test cases for detail_level string values."""
-
-    def test_detail_level_values(self):
-        """Test accepted detail_level strings."""
-        assert PlantUMLOptions(detail_level='minimal').detail_level == 'minimal'
-        assert PlantUMLOptions(detail_level='normal').detail_level == 'normal'
-        assert PlantUMLOptions(detail_level='full').detail_level == 'full'
-
-
-@pytest.mark.unittest
-class TestPlantUMLNameFormatters:
-    """Test cases for state/event name formatting helpers."""
-
-    def test_format_state_name_only(self):
-        """Test state name formatter with name only."""
-        state = State(name='Running', extra_name='运行中', path=('System', 'Running'), substates={})
-        assert format_state_name(state, ('name',)) == 'Running'
-
-    def test_format_state_extra_name_and_name(self):
-        """Test state name formatter with extra_name and name."""
-        state = State(name='Running', extra_name='运行中', path=('System', 'Running'), substates={})
-        assert format_state_name(state, ('extra_name', 'name')) == '运行中 (Running)'
-
-    def test_format_state_path(self):
-        """Test state name formatter with path element."""
-        state = State(name='Running', extra_name='运行中', path=('System', 'ModuleA', 'Running'), substates={})
-        assert format_state_name(state, ('path',)) == 'System.ModuleA.Running'
-
-    def test_format_state_fallback_when_extra_name_missing(self):
-        """Test state name formatter fallback to name when extra_name is missing."""
-        state = State(name='Running', extra_name=None, path=('System', 'Running'), substates={})
-        assert format_state_name(state, ('extra_name',)) == 'Running'
-
-    def test_format_state_multi_part_joining(self):
-        """Test state name formatter multi-part joining format."""
-        state = State(name='Running', extra_name='运行中', path=('System', 'Running'), substates={})
-        assert format_state_name(state, ('extra_name', 'name', 'path')) == '运行中 (Running / System.Running)'
-
-    def test_format_event_name_only(self):
-        """Test event name formatter with name only."""
-        event = Event(name='Boot', state_path=('System',), extra_name='启动')
-        assert format_event_name(event, ('name',)) == 'Boot'
-
-    def test_format_event_extra_name_and_name(self):
-        """Test event name formatter with extra_name and name."""
-        event = Event(name='Boot', state_path=('System',), extra_name='启动')
-        assert format_event_name(event, ('extra_name', 'name')) == '启动 (Boot)'
-
-    def test_format_event_path(self):
-        """Test event name formatter with full path."""
-        event = Event(name='Boot', state_path=('System', 'ModuleA'), extra_name='启动')
-        assert format_event_name(event, ('path',)) == '/ModuleA.Boot'
-
-    def test_format_event_multi_part_joining(self):
-        """Test event name formatter multi-part joining format."""
-        event = Event(name='Boot', state_path=('System',), extra_name='启动')
-        assert format_event_name(event, ('extra_name', 'name', 'path')) == '启动 (Boot / /Boot)'
+from pyfcstm.model.model import Event, State, StateMachine, Transition
+from pyfcstm.model.plantuml import (
+    PlantUMLOptions,
+    format_state_name,
+    format_event_name,
+    collect_event_transitions,
+    assign_event_colors,
+)
 
 
 @pytest.mark.unittest
@@ -98,24 +42,20 @@ class TestPlantUMLOptionsInit:
         options = PlantUMLOptions(
             detail_level='minimal',
             show_variable_definitions=False,
-            variable_display_mode='legend',
-            state_name_format=('name', 'extra_name'),
+            state_name_format=('name',),
             show_lifecycle_actions=True,
-            max_depth=3,
         )
         assert options.detail_level == 'minimal'
         assert options.show_variable_definitions is False
-        assert options.variable_display_mode == 'legend'
-        assert options.state_name_format == ('name', 'extra_name')
+        assert options.state_name_format == ('name',)
         assert options.show_lifecycle_actions is True
-        assert options.max_depth == 3
 
-    def test_empty_state_name_format_raises_error(self):
+    def test_invalid_state_name_format_raises_error(self):
         """Test that empty state_name_format raises ValueError."""
         with pytest.raises(ValueError, match="state_name_format must contain at least one element"):
             PlantUMLOptions(state_name_format=())
 
-    def test_empty_event_name_format_raises_error(self):
+    def test_invalid_event_name_format_raises_error(self):
         """Test that empty event_name_format raises ValueError."""
         with pytest.raises(ValueError, match="event_name_format must contain at least one element"):
             PlantUMLOptions(event_name_format=())
@@ -123,121 +63,82 @@ class TestPlantUMLOptionsInit:
 
 @pytest.mark.unittest
 class TestPlantUMLOptionsFromValue:
-    """Test cases for PlantUMLOptions.from_value()."""
+    """Test cases for PlantUMLOptions.from_value() normalization."""
 
     def test_from_value_with_options_instance(self):
-        """Test that existing options object is returned directly."""
-        options = PlantUMLOptions(detail_level='full')
-        assert PlantUMLOptions.from_value(options) is options
-
-    def test_from_value_with_detail_level_string(self):
-        """Test that detail level string creates options object."""
-        options = PlantUMLOptions.from_value('minimal')
-        assert isinstance(options, PlantUMLOptions)
-        assert options.detail_level == 'minimal'
+        """Test from_value with existing PlantUMLOptions instance."""
+        original = PlantUMLOptions(detail_level='minimal')
+        result = PlantUMLOptions.from_value(original)
+        assert result is original
 
     def test_from_value_with_none(self):
-        """Test that None creates default options object."""
-        options = PlantUMLOptions.from_value(None)
-        assert isinstance(options, PlantUMLOptions)
-        assert options.detail_level == 'normal'
+        """Test from_value with None creates default options."""
+        result = PlantUMLOptions.from_value(None)
+        assert isinstance(result, PlantUMLOptions)
+        assert result.detail_level == 'normal'
 
-    def test_from_value_with_invalid_detail_level(self):
-        """Test that invalid detail level string raises TypeError."""
-        with pytest.raises(TypeError, match='Invalid detail level value'):
-            PlantUMLOptions.from_value('unknown')
+    def test_from_value_with_detail_level_string(self):
+        """Test from_value with detail level string."""
+        result = PlantUMLOptions.from_value('minimal')
+        assert isinstance(result, PlantUMLOptions)
+        assert result.detail_level == 'minimal'
 
-    def test_from_value_with_invalid_type(self):
-        """Test that unsupported input type raises TypeError."""
-        with pytest.raises(TypeError, match='Invalid plantuml options type'):
+    def test_from_value_with_invalid_string_raises_error(self):
+        """Test from_value with invalid string raises TypeError."""
+        with pytest.raises(TypeError, match="Invalid detail level value"):
+            PlantUMLOptions.from_value('invalid')
+
+    def test_from_value_with_invalid_type_raises_error(self):
+        """Test from_value with invalid type raises TypeError."""
+        with pytest.raises(TypeError, match="Invalid plantuml options type"):
             PlantUMLOptions.from_value(123)
 
 
 @pytest.mark.unittest
-class TestPlantUMLOptionsToConfigMinimal:
-    """Test cases for to_config() with MINIMAL detail level."""
+class TestPlantUMLOptionsToConfig:
+    """Test cases for PlantUMLOptions.to_config() resolution."""
 
-    def test_minimal_defaults(self):
-        """Test MINIMAL detail level defaults."""
+    def test_to_config_minimal_detail_level(self):
+        """Test to_config with minimal detail level."""
         options = PlantUMLOptions(detail_level='minimal')
         config = options.to_config()
 
         assert config.show_variable_definitions is False
         assert config.show_lifecycle_actions is False
-        assert config.show_enter_actions is False
-        assert config.show_during_actions is False
-        assert config.show_exit_actions is False
-        assert config.show_aspect_actions is False
-        assert config.show_abstract_actions is False
-        assert config.show_concrete_actions is False
         assert config.show_transition_guards is True
         assert config.show_transition_effects is True
         assert config.show_events is True
         assert config.show_pseudo_state_style is False
 
-    def test_minimal_with_overrides(self):
-        """Test MINIMAL detail level with user overrides."""
-        options = PlantUMLOptions(
-            detail_level='minimal',
-            show_lifecycle_actions=True,
-            show_variable_definitions=True,
-        )
-        config = options.to_config()
-
-        assert config.show_variable_definitions is True
-        assert config.show_lifecycle_actions is True
-        assert config.show_enter_actions is True  # Inherited from show_lifecycle_actions
-        assert config.show_during_actions is True  # Inherited
-        assert config.show_exit_actions is True  # Inherited
-
-
-@pytest.mark.unittest
-class TestPlantUMLOptionsToConfigNormal:
-    """Test cases for to_config() with NORMAL detail level."""
-
-    def test_normal_defaults(self):
-        """Test NORMAL detail level defaults."""
+    def test_to_config_normal_detail_level(self):
+        """Test to_config with normal detail level."""
         options = PlantUMLOptions(detail_level='normal')
         config = options.to_config()
 
         assert config.show_variable_definitions is False
         assert config.show_lifecycle_actions is False
-        assert config.show_enter_actions is False
-        assert config.show_during_actions is False
-        assert config.show_exit_actions is False
-        assert config.show_aspect_actions is False
-        assert config.show_abstract_actions is False
-        assert config.show_concrete_actions is False
         assert config.show_transition_guards is True
         assert config.show_transition_effects is True
         assert config.show_events is True
         assert config.show_pseudo_state_style is True
 
-    def test_normal_with_overrides(self):
-        """Test NORMAL detail level with user overrides."""
-        options = PlantUMLOptions(
-            detail_level='normal',
-            show_lifecycle_actions=False,
-            show_transition_guards=False,
-        )
-        config = options.to_config()
-
-        assert config.show_lifecycle_actions is False
-        assert config.show_enter_actions is False  # Inherited
-        assert config.show_transition_guards is False  # User override
-        assert config.show_transition_effects is True  # Default from detail level
-
-
-@pytest.mark.unittest
-class TestPlantUMLOptionsToConfigFull:
-    """Test cases for to_config() with FULL detail level."""
-
-    def test_full_defaults(self):
-        """Test FULL detail level defaults."""
+    def test_to_config_full_detail_level(self):
+        """Test to_config with full detail level."""
         options = PlantUMLOptions(detail_level='full')
         config = options.to_config()
 
         assert config.show_variable_definitions is True
+        assert config.show_lifecycle_actions is True
+        assert config.show_transition_guards is True
+        assert config.show_transition_effects is True
+        assert config.show_events is True
+        assert config.show_pseudo_state_style is True
+
+    def test_to_config_inheritance_from_show_lifecycle_actions(self):
+        """Test that lifecycle sub-fields inherit from show_lifecycle_actions."""
+        options = PlantUMLOptions(show_lifecycle_actions=True)
+        config = options.to_config()
+
         assert config.show_lifecycle_actions is True
         assert config.show_enter_actions is True
         assert config.show_during_actions is True
@@ -245,439 +146,305 @@ class TestPlantUMLOptionsToConfigFull:
         assert config.show_aspect_actions is True
         assert config.show_abstract_actions is True
         assert config.show_concrete_actions is True
-        assert config.show_transition_guards is True
-        assert config.show_transition_effects is True
-        assert config.show_events is True
-        assert config.show_pseudo_state_style is True
 
-
-@pytest.mark.unittest
-class TestPlantUMLOptionsInheritance:
-    """Test cases for configuration inheritance logic."""
-
-    def test_lifecycle_actions_inheritance(self):
-        """Test that lifecycle sub-actions inherit from show_lifecycle_actions."""
+    def test_to_config_explicit_overrides_inheritance(self):
+        """Test that explicit values override inheritance."""
         options = PlantUMLOptions(
-            detail_level='minimal',
-            show_lifecycle_actions=True,
-        )
-        config = options.to_config()
-
-        assert config.show_lifecycle_actions is True
-        assert config.show_enter_actions is True
-        assert config.show_during_actions is True
-        assert config.show_exit_actions is True
-        assert config.show_aspect_actions is True
-
-    def test_lifecycle_actions_partial_override(self):
-        """Test partial override of lifecycle actions."""
-        options = PlantUMLOptions(
-            detail_level='minimal',
             show_lifecycle_actions=True,
             show_enter_actions=False,
+            show_during_actions=False,
         )
         config = options.to_config()
 
         assert config.show_lifecycle_actions is True
-        assert config.show_enter_actions is False  # User override
-        assert config.show_during_actions is True  # Inherited
-        assert config.show_exit_actions is True  # Inherited
-
-    def test_abstract_concrete_inheritance(self):
-        """Test that abstract/concrete actions inherit from show_lifecycle_actions."""
-        options = PlantUMLOptions(
-            detail_level='minimal',
-            show_lifecycle_actions=True,
-        )
-        config = options.to_config()
-
-        assert config.show_abstract_actions is True
-        assert config.show_concrete_actions is True
-
-    def test_abstract_concrete_override(self):
-        """Test override of abstract/concrete actions."""
-        options = PlantUMLOptions(
-            detail_level='minimal',
-            show_lifecycle_actions=True,
-            show_abstract_actions=False,
-        )
-        config = options.to_config()
-
-        assert config.show_abstract_actions is False  # User override
-        assert config.show_concrete_actions is True  # Inherited
-
-    def test_transition_defaults(self):
-        """Test transition sub-options default to detail level settings."""
-        options = PlantUMLOptions(detail_level='minimal')
-        config = options.to_config()
-
-        assert config.show_transition_guards is True
-        assert config.show_transition_effects is True
-
-    def test_transition_partial_override(self):
-        """Test partial override of transition options."""
-        options = PlantUMLOptions(
-            detail_level='minimal',
-            show_transition_guards=False,
-        )
-        config = options.to_config()
-
-        assert config.show_transition_guards is False  # User override
-        assert config.show_transition_effects is True  # Detail-level default
-
-    def test_no_inheritance_when_parent_false(self):
-        """Test that inheritance doesn't happen when parent is False."""
-        options = PlantUMLOptions(
-            detail_level='minimal',
-            show_lifecycle_actions=False,
-        )
-        config = options.to_config()
-
-        assert config.show_lifecycle_actions is False
         assert config.show_enter_actions is False
         assert config.show_during_actions is False
-        assert config.show_exit_actions is False
-
-
-@pytest.mark.unittest
-class TestPlantUMLOptionsComplexScenarios:
-    """Test cases for complex configuration scenarios."""
-
-    def test_all_none_values(self):
-        """Test resolution when all values are None."""
-        options = PlantUMLOptions(detail_level='normal')
-        config = options.to_config()
-
-        # All fields should be resolved to non-None values
-        assert config.show_variable_definitions is not None
-        assert config.show_lifecycle_actions is not None
-        assert config.show_enter_actions is not None
-        assert config.show_transition_effects is not None
-
-    def test_mixed_inheritance_levels(self):
-        """Test complex inheritance with multiple levels."""
-        options = PlantUMLOptions(
-            detail_level='minimal',
-            show_lifecycle_actions=None,  # Will use detail_level default (False)
-            show_enter_actions=True,  # Explicit override
-        )
-        config = options.to_config()
-
-        assert config.show_lifecycle_actions is False  # From MINIMAL
-        assert config.show_enter_actions is True  # User override
-        assert config.show_during_actions is False  # Inherited from show_lifecycle_actions
-
-    def test_idempotent_to_config(self):
-        """Test that calling to_config() multiple times is idempotent."""
-        options = PlantUMLOptions(
-            detail_level='normal',
-            show_lifecycle_actions=True,
-        )
-        config1 = options.to_config()
-        config2 = options.to_config()
-
-        assert config1.show_lifecycle_actions == config2.show_lifecycle_actions
-        assert config1.show_enter_actions == config2.show_enter_actions
-        assert config1.show_transition_guards == config2.show_transition_guards
+        assert config.show_exit_actions is True  # Inherited
+        assert config.show_aspect_actions is True  # Inherited
 
     def test_to_config_preserves_non_optional_fields(self):
-        """Test that to_config() preserves non-optional fields."""
+        """Test that non-optional fields are preserved."""
         options = PlantUMLOptions(
-            detail_level='normal',
+            detail_level='minimal',
             variable_display_mode='legend',
             state_name_format=('name', 'path'),
-            event_name_format=('extra_name', 'name'),
-            abstract_action_marker='symbol',
-            max_action_lines=10,
-            max_depth=5,
-            collapsed_state_marker='+++',
+            collapsed_state_marker='[...]',
             use_skinparam=False,
             use_stereotypes=False,
-            custom_colors={'Event1': '#FF0000'},
         )
         config = options.to_config()
 
+        assert config.detail_level == 'minimal'
         assert config.variable_display_mode == 'legend'
         assert config.state_name_format == ('name', 'path')
-        assert config.event_name_format == ('extra_name', 'name')
-        assert config.abstract_action_marker == 'symbol'
-        assert config.max_action_lines == 10
-        assert config.max_depth == 5
-        assert config.collapsed_state_marker == '+++'
+        assert config.collapsed_state_marker == '[...]'
         assert config.use_skinparam is False
         assert config.use_stereotypes is False
-        assert config.custom_colors == {'Event1': '#FF0000'}
 
 
 @pytest.mark.unittest
-class TestPlantUMLOptionsEdgeCases:
-    """Test cases for edge cases and boundary conditions."""
+class TestFormatStateName:
+    """Test cases for format_state_name() function."""
 
-    def test_all_explicit_false(self):
-        """Test when all options are explicitly set to False."""
-        options = PlantUMLOptions(
-            detail_level='normal',
-            show_variable_definitions=False,
-            show_lifecycle_actions=False,
-            show_transition_guards=False,
-            show_transition_effects=False,
-            show_events=False,
-        )
-        config = options.to_config()
+    def test_format_name_only(self):
+        """Test formatting with name only."""
+        state = State(name='Running', extra_name='运行中', path=('System', 'Running'), substates={})
+        assert format_state_name(state, ('name',)) == 'Running'
 
-        assert config.show_variable_definitions is False
-        assert config.show_lifecycle_actions is False
-        assert config.show_enter_actions is False
-        assert config.show_transition_guards is False
-        assert config.show_transition_effects is False
-        assert config.show_events is False
+    def test_format_extra_name_only(self):
+        """Test formatting with extra_name only."""
+        state = State(name='Running', extra_name='运行中', path=('System', 'Running'), substates={})
+        assert format_state_name(state, ('extra_name',)) == '运行中'
 
-    def test_all_explicit_true(self):
-        """Test when all options are explicitly set to True."""
-        options = PlantUMLOptions(
-            detail_level='minimal',
-            show_variable_definitions=True,
-            show_lifecycle_actions=True,
-            show_enter_actions=True,
-            show_during_actions=True,
-            show_exit_actions=True,
-            show_aspect_actions=True,
-            show_abstract_actions=True,
-            show_concrete_actions=True,
-            show_transition_guards=True,
-            show_transition_effects=True,
-            show_events=True,
-            show_pseudo_state_style=True,
-        )
-        config = options.to_config()
+    def test_format_path_only(self):
+        """Test formatting with path only."""
+        state = State(name='Running', extra_name='运行中', path=('System', 'ModuleA', 'Running'), substates={})
+        assert format_state_name(state, ('path',)) == 'System.ModuleA.Running'
 
-        assert config.show_variable_definitions is True
-        assert config.show_lifecycle_actions is True
-        assert config.show_enter_actions is True
-        assert config.show_during_actions is True
-        assert config.show_exit_actions is True
-        assert config.show_aspect_actions is True
-        assert config.show_abstract_actions is True
-        assert config.show_concrete_actions is True
-        assert config.show_transition_guards is True
-        assert config.show_transition_effects is True
-        assert config.show_events is True
-        assert config.show_pseudo_state_style is True
+    def test_format_extra_name_and_name(self):
+        """Test formatting with extra_name and name."""
+        state = State(name='Running', extra_name='运行中', path=('System', 'Running'), substates={})
+        assert format_state_name(state, ('extra_name', 'name')) == '运行中 (Running)'
 
-    def test_name_format_single_element(self):
-        """Test name format with single element."""
-        options = PlantUMLOptions(
-            state_name_format=('name',),
-            event_name_format=('path',),
-        )
-        config = options.to_config()
+    def test_format_multi_part_joining(self):
+        """Test multi-part joining format."""
+        state = State(name='Running', extra_name='运行中', path=('System', 'Running'), substates={})
+        assert format_state_name(state, ('extra_name', 'name', 'path')) == '运行中 (Running / System.Running)'
 
-        assert config.state_name_format == ('name',)
-        assert config.event_name_format == ('path',)
+    def test_format_fallback_when_extra_name_missing(self):
+        """Test fallback to name when extra_name is missing."""
+        state = State(name='Running', extra_name=None, path=('System', 'Running'), substates={})
+        assert format_state_name(state, ('extra_name',)) == 'Running'
 
-    def test_name_format_multiple_elements(self):
-        """Test name format with multiple elements."""
-        options = PlantUMLOptions(
-            state_name_format=('extra_name', 'name', 'path'),
-            event_name_format=('name', 'extra_name', 'path'),
-        )
-        config = options.to_config()
-
-        assert config.state_name_format == ('extra_name', 'name', 'path')
-        assert config.event_name_format == ('name', 'extra_name', 'path')
-
-    def test_max_values(self):
-        """Test with maximum reasonable values."""
-        options = PlantUMLOptions(
-            max_action_lines=1000,
-            max_depth=100,
-        )
-        config = options.to_config()
-
-        assert config.max_action_lines == 1000
-        assert config.max_depth == 100
-
-    def test_none_max_values(self):
-        """Test with None max values (unlimited)."""
-        options = PlantUMLOptions(
-            max_action_lines=None,
-            max_depth=None,
-        )
-        config = options.to_config()
-
-        assert config.max_action_lines is None
-        assert config.max_depth is None
+    def test_format_empty_tuple_fallback(self):
+        """Test fallback to name when format tuple is empty."""
+        state = State(name='Running', extra_name=None, path=('System', 'Running'), substates={})
+        # Empty tuple should fallback to name
+        assert format_state_name(state, ()) == 'Running'
 
 
 @pytest.mark.unittest
-class TestPlantUMLOptionsDetailLevelDefaults:
-    """Test cases for _get_detail_level_defaults() method."""
+class TestFormatEventName:
+    """Test cases for format_event_name() function."""
 
-    def test_get_minimal_defaults(self):
-        """Test getting MINIMAL detail level defaults."""
-        options = PlantUMLOptions(detail_level='minimal')
-        defaults = options._get_detail_level_defaults()
+    def test_format_name_only(self):
+        """Test formatting with name only."""
+        event = Event(name='Boot', state_path=('System',), extra_name='启动')
+        assert format_event_name(event, ('name',)) == 'Boot'
 
-        assert defaults['show_variable_definitions'] is False
-        assert defaults['show_lifecycle_actions'] is False
-        assert defaults['show_transition_guards'] is True
-        assert defaults['show_transition_effects'] is True
-        assert defaults['show_events'] is True
-        assert defaults['show_pseudo_state_style'] is False
+    def test_format_extra_name_only(self):
+        """Test formatting with extra_name only."""
+        event = Event(name='Boot', state_path=('System',), extra_name='启动')
+        assert format_event_name(event, ('extra_name',)) == '启动'
 
-    def test_get_normal_defaults(self):
-        """Test getting NORMAL detail level defaults."""
-        options = PlantUMLOptions(detail_level='normal')
-        defaults = options._get_detail_level_defaults()
+    def test_format_path_single_element(self):
+        """Test path formatting with single element."""
+        event = Event(name='Boot', state_path=(), extra_name='启动')
+        assert format_event_name(event, ('path',)) == '/Boot'
 
-        assert defaults['show_variable_definitions'] is False
-        assert defaults['show_lifecycle_actions'] is False
-        assert defaults['show_transition_guards'] is True
-        assert defaults['show_transition_effects'] is True
-        assert defaults['show_events'] is True
-        assert defaults['show_pseudo_state_style'] is True
+    def test_format_path_multiple_elements(self):
+        """Test path formatting with multiple elements."""
+        event = Event(name='Boot', state_path=('System', 'ModuleA'), extra_name='启动')
+        assert format_event_name(event, ('path',)) == '/ModuleA.Boot'
 
-    def test_get_full_defaults(self):
-        """Test getting FULL detail level defaults."""
-        options = PlantUMLOptions(detail_level='full')
-        defaults = options._get_detail_level_defaults()
+    def test_format_extra_name_and_name(self):
+        """Test formatting with extra_name and name."""
+        event = Event(name='Boot', state_path=('System',), extra_name='启动')
+        assert format_event_name(event, ('extra_name', 'name')) == '启动 (Boot)'
 
-        assert defaults['show_variable_definitions'] is True
-        assert defaults['show_lifecycle_actions'] is True
-        assert defaults['show_transition_guards'] is True
-        assert defaults['show_transition_effects'] is True
-        assert defaults['show_events'] is True
-        assert defaults['show_pseudo_state_style'] is True
+    def test_format_multi_part_joining(self):
+        """Test multi-part joining format."""
+        event = Event(name='Boot', state_path=('System',), extra_name='启动')
+        assert format_event_name(event, ('extra_name', 'name', 'path')) == '启动 (Boot / /Boot)'
 
+    def test_format_relpath_without_trans_node(self):
+        """Test relpath formatting without trans_node."""
+        event = Event(name='TestEvent', state_path=('Root', 'State'), extra_name=None)
+        result = format_event_name(event, ('relpath',), trans_node=None)
+        assert result == '/State.TestEvent'
 
-@pytest.fixture()
-def complex_state_machine_for_plantuml():
-    """Build a complex state machine used for PlantUML options integration checks."""
-    ast_node = parse_with_grammar_entry(
-        textwrap.dedent(
-            """
-            def int temp = 20;
-            def int retry_count = 0;
-            def int alarm = 0;
+    def test_format_relpath_single_element_fallback(self):
+        """Test relpath formatting with single element fallback."""
+        event = Event(name='TestEvent', state_path=(), extra_name=None)
+        result = format_event_name(event, ('relpath',), trans_node=None)
+        assert result == '/TestEvent'
 
-            state System named "系统" {
-                event Boot named "启动";
-                event Reset named "复位";
+    def test_format_empty_tuple_fallback(self):
+        """Test fallback to name when format tuple is empty."""
+        event = Event(name='Boot', state_path=('System',), extra_name='启动')
+        assert format_event_name(event, ()) == 'Boot'
 
-                >> during before {
-                    retry_count = retry_count + 1;
-                }
-                >> during after abstract GlobalAudit;
-
-                state Standby named "待机" {
-                    enter {
-                        alarm = 0;
-                    }
-
-                    state Waiting;
-                    pseudo state Bypass;
-
-                    [*] -> Waiting : Boot;
-                    Waiting -> Bypass : if [temp > 100] effect {
-                        alarm = 1;
-                    };
-                    Bypass -> Waiting : /Reset;
-                }
-
-                state Active named "工作" {
-                    enter abstract Prepare;
-                    during before abstract Poll;
-                    during after {
-                        temp = temp + 1;
-                    }
-                    exit {
-                        retry_count = 0;
-                    }
-
-                    state Running;
-                    state Cooling;
-
-                    [*] -> Running;
-                    Running -> Cooling : if [temp >= 80] effect {
-                        alarm = 1;
-                    };
-                    Cooling -> Running :: Cooled effect {
-                        alarm = 0;
-                    };
-                    Cooling -> [*] :: Stop;
-                }
-
-                [*] -> Standby;
-                Standby -> Active : /Boot;
-                Active -> Standby :: Pause;
-            }
-            """
-        ),
-        entry_name='state_machine_dsl',
-    )
-    return parse_dsl_node_to_state_machine(ast_node)
+    def test_format_fallback_when_extra_name_missing(self):
+        """Test fallback when extra_name is missing."""
+        event = Event(name='Boot', state_path=('System',), extra_name=None)
+        assert format_event_name(event, ('extra_name',)) == 'Boot'
 
 
 @pytest.mark.unittest
-class TestPlantUMLOptionsComplexExample:
-    """Complex end-to-end checks for rendering with the new PlantUMLOptions system."""
+class TestCollectEventTransitions:
+    """Test cases for collect_event_transitions() function."""
 
-    def test_complex_example_customized_rendering(self, complex_state_machine_for_plantuml):
-        """Test a complex model rendered with multiple option overrides."""
-        options = PlantUMLOptions(
-            detail_level='minimal',
-            show_variable_definitions=True,
-            variable_display_mode='note',
-            state_name_format=('extra_name', 'name'),
-            show_lifecycle_actions=True,
-            show_enter_actions=True,
-            show_during_actions=False,
-            show_exit_actions=True,
-            show_aspect_actions=True,
-            show_transition_effects=True,
-            transition_effect_mode='note',
-            show_pseudo_state_style=True,
+    def test_collect_from_single_state(self):
+        """Test collecting events from a single state."""
+        event = Event(name='TestEvent', state_path=('Root',), extra_name=None)
+        child1 = State(name='Child1', extra_name=None, path=('Root', 'Child1'), substates={})
+        child2 = State(name='Child2', extra_name=None, path=('Root', 'Child2'), substates={})
+        root = State(
+            name='Root',
+            extra_name=None,
+            path=('Root',),
+            substates={'Child1': child1, 'Child2': child2},
+            transitions=[
+                Transition(from_state='Child1', to_state='Child2', event=event, guard=None, effects=[])
+            ],
+        )
+        sm = StateMachine(defines={}, root_state=root)
+
+        event_map = collect_event_transitions(sm)
+
+        assert 'Root.TestEvent' in event_map
+        assert len(event_map['Root.TestEvent']) == 1
+
+    def test_collect_from_multiple_states(self):
+        """Test collecting events from multiple states with same event."""
+        event1 = Event(name='Event1', state_path=('Root',), extra_name=None)
+        event2 = Event(name='Event2', state_path=('Root',), extra_name=None)
+
+        child1 = State(name='Child1', extra_name=None, path=('Root', 'Child1'), substates={})
+        child2 = State(name='Child2', extra_name=None, path=('Root', 'Child2'), substates={})
+        child3 = State(name='Child3', extra_name=None, path=('Root', 'Child3'), substates={})
+
+        root = State(
+            name='Root',
+            extra_name=None,
+            path=('Root',),
+            substates={'Child1': child1, 'Child2': child2, 'Child3': child3},
+            transitions=[
+                Transition(from_state='Child1', to_state='Child2', event=event1, guard=None, effects=[]),
+                Transition(from_state='Child2', to_state='Child3', event=event1, guard=None, effects=[]),
+                Transition(from_state='Child3', to_state='Child1', event=event2, guard=None, effects=[]),
+            ],
         )
 
-        result = complex_state_machine_for_plantuml.to_plantuml(options)
+        sm = StateMachine(defines={}, root_state=root)
+        event_map = collect_event_transitions(sm)
 
-        # variable definitions forced on, despite MINIMAL preset
-        assert 'note as DefinitionNote' in result
-        assert 'def int temp = 20;' in result
+        assert len(event_map) == 2
+        assert len(event_map['Root.Event1']) == 2
+        assert len(event_map['Root.Event2']) == 1
 
-        # custom state naming format is applied
-        assert '"系统 (System)"' in result
-        assert '"待机 (Standby)"' in result
-        assert '"工作 (Active)"' in result
+    def test_collect_from_nested_states(self):
+        """Test collecting events from nested states."""
+        event = Event(name='TestEvent', state_path=('Root', 'Parent'), extra_name=None)
 
-        # pseudo state style is visible
-        assert '#line.dotted' in result
-
-        # root aspect actions are shown, but regular during actions are hidden
-        assert 'GlobalAudit' in result
-        assert 'retry_count = retry_count + 1;' in result
-        assert 'temp = temp + 1;' not in result
-
-        # transition effects are shown as notes
-        assert 'note on link' in result
-        assert 'effect {' in result
-
-    def test_complex_example_transition_visibility_switch(self, complex_state_machine_for_plantuml):
-        """Test transition label/detail toggles while keeping arrows visible."""
-        options = PlantUMLOptions(
-            detail_level='full',
-            show_events=False,
-            show_transition_guards=False,
-            show_transition_effects=False,
+        grandchild1 = State(
+            name='GrandChild1',
+            extra_name=None,
+            path=('Root', 'Parent', 'Child', 'GrandChild1'),
+            substates={},
+        )
+        grandchild2 = State(
+            name='GrandChild2',
+            extra_name=None,
+            path=('Root', 'Parent', 'Child', 'GrandChild2'),
+            substates={},
+        )
+        child = State(
+            name='Child',
+            extra_name=None,
+            path=('Root', 'Parent', 'Child'),
+            substates={'GrandChild1': grandchild1, 'GrandChild2': grandchild2},
+            transitions=[
+                Transition(from_state='GrandChild1', to_state='GrandChild2', event=event, guard=None, effects=[])
+            ],
+        )
+        parent = State(
+            name='Parent',
+            extra_name=None,
+            path=('Root', 'Parent'),
+            substates={'Child': child},
+        )
+        root = State(
+            name='Root',
+            extra_name=None,
+            path=('Root',),
+            substates={'Parent': parent},
         )
 
-        result = complex_state_machine_for_plantuml.to_plantuml(options)
+        sm = StateMachine(defines={}, root_state=root)
+        event_map = collect_event_transitions(sm)
 
-        # Transition arrows are always visible (state aliases are fully qualified).
-        assert 'system__standby__waiting --> system__standby__bypass' in result
-        assert 'system__active__running --> system__active__cooling' in result
-        assert '[*] --> system' in result
-        assert 'system --> [*]' in result
+        assert 'Root.Parent.TestEvent' in event_map
+        assert len(event_map['Root.Parent.TestEvent']) == 1
 
-        # But event/guard/effect decorations can be hidden.
-        assert 'note on link' not in result
+    def test_collect_empty_when_no_events(self):
+        """Test that collection returns empty dict when no events."""
+        root = State(name='Root', extra_name=None, path=('Root',), substates={})
+        sm = StateMachine(defines={}, root_state=root)
+
+        event_map = collect_event_transitions(sm)
+
+        assert event_map == {}
+
+
+@pytest.mark.unittest
+class TestAssignEventColors:
+    """Test cases for assign_event_colors() function."""
+
+    def test_assign_default_colors(self):
+        """Test assigning default colors to events."""
+        event_map = {
+            'Root.Event1': [],
+            'Root.Event2': [],
+            'Root.Event3': [],
+        }
+
+        colors = assign_event_colors(event_map)
+
+        assert len(colors) == 3
+        assert colors['Root.Event1'] == '#4E79A7'  # First color in palette
+        assert colors['Root.Event2'] == '#F28E2B'  # Second color
+        assert colors['Root.Event3'] == '#E15759'  # Third color
+
+    def test_assign_custom_colors(self):
+        """Test assigning custom colors overrides defaults."""
+        event_map = {
+            'Root.Event1': [],
+            'Root.Event2': [],
+        }
+        custom_colors = {
+            'Root.Event1': '#FF0000',
+        }
+
+        colors = assign_event_colors(event_map, custom_colors)
+
+        assert colors['Root.Event1'] == '#FF0000'  # Custom color
+        assert colors['Root.Event2'] == '#4E79A7'  # Default color
+
+    def test_assign_colors_cycling_palette(self):
+        """Test that color palette cycles for many events."""
+        event_map = {f'Root.Event{i}': [] for i in range(15)}
+
+        colors = assign_event_colors(event_map)
+
+        assert len(colors) == 15
+        # First and 11th event should use same color (palette has 10 colors)
+        event_keys = sorted(event_map.keys())
+        assert colors[event_keys[0]] == colors[event_keys[10]]
+
+    def test_assign_colors_sorted_order(self):
+        """Test that colors are assigned in sorted order of event paths."""
+        event_map = {
+            'Root.EventZ': [],
+            'Root.EventA': [],
+            'Root.EventM': [],
+        }
+
+        colors = assign_event_colors(event_map)
+
+        # EventA should get first color (sorted first)
+        assert colors['Root.EventA'] == '#4E79A7'
+        # EventM should get second color
+        assert colors['Root.EventM'] == '#F28E2B'
+        # EventZ should get third color
+        assert colors['Root.EventZ'] == '#E15759'

@@ -1,20 +1,20 @@
 """
-Integration tests for PlantUML generation with PlantUMLOptions.
+Tests for State.to_plantuml() and StateMachine.to_plantuml() methods.
 
-This module tests the integration of PlantUMLOptions with the State and
-StateMachine to_plantuml() methods, ensuring proper configuration application.
+This module tests the PlantUML generation methods of State and StateMachine
+classes, ensuring proper integration with PlantUMLOptions configuration.
 """
 
 import pytest
 
-from pyfcstm.model.model import State, StateMachine, VarDefine
+from pyfcstm.model.model import State, StateMachine, VarDefine, Event, Transition, OnStage, OnAspect, Operation
 from pyfcstm.model.plantuml import PlantUMLOptions
-from pyfcstm.model.expr import Integer
+from pyfcstm.model.expr import Integer, Variable, BinaryOp
 
 
 @pytest.mark.unittest
-class TestStatePlantUMLGeneration:
-    """Test cases for State.to_plantuml() with PlantUMLOptions."""
+class TestStateToPlantUML:
+    """Test cases for State.to_plantuml() method."""
 
     def test_state_default_options(self):
         """Test state PlantUML generation with default options."""
@@ -99,8 +99,6 @@ class TestStatePlantUMLGeneration:
 
         assert '#line.dotted' not in result
 
-
-
     def test_state_to_plantuml_accepts_detail_level_string(self):
         """Test State.to_plantuml accepts detail level string input."""
         state = State(
@@ -126,7 +124,90 @@ class TestStatePlantUMLGeneration:
         with pytest.raises(TypeError, match='Invalid plantuml options type'):
             state.to_plantuml(1)
 
-    """Test cases for StateMachine.to_plantuml() with PlantUMLOptions."""
+    def test_state_with_no_actions(self):
+        """Test state with no lifecycle actions."""
+        state = State(
+            name='EmptyState',
+            extra_name=None,
+            path=('EmptyState',),
+            substates={},
+        )
+
+        options = PlantUMLOptions(show_lifecycle_actions=True)
+        result = state.to_plantuml(options)
+
+        # Should not have action text
+        assert 'EmptyState :' not in result
+
+    def test_state_with_all_action_types(self):
+        """Test state with enter, during, exit, and aspect actions."""
+        enter_action = OnStage(
+            stage='enter',
+            aspect=None,
+            name='EnterAction',
+            doc=None,
+            operations=[],
+            is_abstract=False,
+            state_path=('TestState', 'EnterAction'),
+        )
+        during_action = OnStage(
+            stage='during',
+            aspect=None,
+            name='DuringAction',
+            doc=None,
+            operations=[],
+            is_abstract=False,
+            state_path=('TestState', 'DuringAction'),
+        )
+        exit_action = OnStage(
+            stage='exit',
+            aspect=None,
+            name='ExitAction',
+            doc=None,
+            operations=[],
+            is_abstract=False,
+            state_path=('TestState', 'ExitAction'),
+        )
+        aspect_action = OnAspect(
+            stage='during',
+            aspect='before',
+            name='AspectAction',
+            doc=None,
+            operations=[],
+            is_abstract=False,
+            state_path=('TestState', 'AspectAction'),
+        )
+
+        state = State(
+            name='TestState',
+            extra_name=None,
+            path=('TestState',),
+            substates={},
+            on_enters=[enter_action],
+            on_durings=[during_action],
+            on_exits=[exit_action],
+            on_during_aspects=[aspect_action],
+        )
+
+        options = PlantUMLOptions(
+            show_lifecycle_actions=True,
+            show_enter_actions=True,
+            show_during_actions=True,
+            show_exit_actions=True,
+            show_aspect_actions=True,
+        )
+        result = state.to_plantuml(options)
+
+        # Should show all action types
+        assert 'enter' in result
+        assert 'during' in result
+        assert 'exit' in result
+        assert 'before' in result
+
+
+@pytest.mark.unittest
+class TestStateMachineToPlantUML:
+    """Test cases for StateMachine.to_plantuml() method."""
 
     def test_state_machine_default_options(self):
         """Test state machine PlantUML generation with default options."""
@@ -151,8 +232,7 @@ class TestStatePlantUMLGeneration:
         assert '@startuml' in result
         assert '@enduml' in result
         assert 'hide empty description' in result
-        # Default NORMAL level now focuses on major transition information
-        # and hides verbose variable definitions.
+        # Default NORMAL level hides variable definitions
         assert 'defines' not in result
         assert 'counter' not in result
 
@@ -251,6 +331,7 @@ class TestStatePlantUMLGeneration:
 
         # State name should follow the format
         assert '"Root (根状态)"' in result
+
     def test_state_machine_to_plantuml_accepts_detail_level_string(self):
         """Test StateMachine.to_plantuml accepts detail level string input."""
         root_state = State(
@@ -285,11 +366,6 @@ class TestStatePlantUMLGeneration:
         with pytest.raises(TypeError, match='Invalid plantuml options type'):
             sm.to_plantuml(object())
 
-
-@pytest.mark.unittest
-class TestPlantUMLOptionsEdgeCases:
-    """Test edge cases for PlantUML generation with options."""
-
     def test_empty_state_machine(self):
         """Test empty state machine with no variables."""
         root_state = State(
@@ -310,25 +386,217 @@ class TestPlantUMLOptionsEdgeCases:
         # No variable definitions should be shown
         assert 'DefinitionNote' not in result
 
-    def test_state_with_no_actions(self):
-        """Test state with no lifecycle actions."""
-        state = State(
-            name='EmptyState',
+
+@pytest.mark.unittest
+class TestTransitionEffectModes:
+    """Test cases for transition effect display modes in to_plantuml()."""
+
+    def test_transition_effect_inline_mode(self):
+        """Test inline transition effect mode."""
+        operation = Operation(
+            var_name='counter',
+            expr=BinaryOp(
+                x=Variable('counter'),
+                op='+',
+                y=Integer(1),
+            )
+        )
+        child1 = State(
+            name='Child1',
             extra_name=None,
-            path=('EmptyState',),
+            path=('Root', 'Child1'),
+            substates={},
+        )
+        child2 = State(
+            name='Child2',
+            extra_name=None,
+            path=('Root', 'Child2'),
+            substates={},
+        )
+        root = State(
+            name='Root',
+            extra_name=None,
+            path=('Root',),
+            substates={'Child1': child1, 'Child2': child2},
+            transitions=[
+                Transition(
+                    from_state='Child1',
+                    to_state='Child2',
+                    event=None,
+                    guard=None,
+                    effects=[operation],
+                )
+            ],
+        )
+
+        options = PlantUMLOptions(
+            show_transition_effects=True,
+            transition_effect_mode='inline'
+        )
+        result = root.to_plantuml(options)
+
+        # Should have inline effect with /
+        assert '/ counter = counter + 1' in result
+
+    def test_transition_effect_note_mode(self):
+        """Test note transition effect mode."""
+        operation = Operation(
+            var_name='counter',
+            expr=Integer(0),
+        )
+        child1 = State(
+            name='Child1',
+            extra_name=None,
+            path=('Root', 'Child1'),
+            substates={},
+        )
+        child2 = State(
+            name='Child2',
+            extra_name=None,
+            path=('Root', 'Child2'),
+            substates={},
+        )
+        root = State(
+            name='Root',
+            extra_name=None,
+            path=('Root',),
+            substates={'Child1': child1, 'Child2': child2},
+            transitions=[
+                Transition(
+                    from_state='Child1',
+                    to_state='Child2',
+                    event=None,
+                    guard=None,
+                    effects=[operation],
+                )
+            ],
+        )
+
+        options = PlantUMLOptions(
+            show_transition_effects=True,
+            transition_effect_mode='note'
+        )
+        result = root.to_plantuml(options)
+
+        # Should have note on link
+        assert 'note on link' in result
+        assert 'effect {' in result
+        assert 'end note' in result
+
+    def test_multiple_transitions_same_states(self):
+        """Test multiple transitions between same states."""
+        event1 = Event(name='Event1', state_path=('Root',), extra_name=None)
+        event2 = Event(name='Event2', state_path=('Root',), extra_name=None)
+
+        child1 = State(
+            name='Child1',
+            extra_name=None,
+            path=('Root', 'Child1'),
+            substates={},
+        )
+        child2 = State(
+            name='Child2',
+            extra_name=None,
+            path=('Root', 'Child2'),
             substates={},
         )
 
-        options = PlantUMLOptions(show_lifecycle_actions=True)
-        result = state.to_plantuml(options)
+        root = State(
+            name='Root',
+            extra_name=None,
+            path=('Root',),
+            substates={'Child1': child1, 'Child2': child2},
+            transitions=[
+                Transition(
+                    from_state='Child1',
+                    to_state='Child2',
+                    event=event1,
+                    guard=None,
+                    effects=[],
+                ),
+                Transition(
+                    from_state='Child1',
+                    to_state='Child2',
+                    event=event2,
+                    guard=None,
+                    effects=[],
+                ),
+            ],
+        )
 
-        # Should not have action text
-        assert 'EmptyState :' not in result
+        result = root.to_plantuml()
+
+        # Should have both transitions
+        assert result.count('root__child1 --> root__child2') == 2
+
+
+@pytest.mark.unittest
+class TestVariableDisplayModes:
+    """Test cases for variable display modes in to_plantuml()."""
+
+    def test_variable_display_legend_mode(self):
+        """Test legend variable display mode."""
+        var_def = VarDefine(
+            name='counter',
+            type='int',
+            init=Integer(0),
+        )
+        root = State(
+            name='Root',
+            extra_name=None,
+            path=('Root',),
+            substates={},
+        )
+        sm = StateMachine(
+            defines={'counter': var_def},
+            root_state=root,
+        )
+
+        options = PlantUMLOptions(
+            show_variable_definitions=True,
+            variable_display_mode='legend'
+        )
+        result = sm.to_plantuml(options)
+
+        # Should have legend with table
+        assert 'legend right' in result
+        assert '|= Variable |= Type |= Initial Value |' in result
+        assert '| counter | int | 0 |' in result
+        assert 'endlegend' in result
+
+    def test_variable_display_note_mode(self):
+        """Test note variable display mode."""
+        var_def = VarDefine(
+            name='counter',
+            type='int',
+            init=Integer(0),
+        )
+        root = State(
+            name='Root',
+            extra_name=None,
+            path=('Root',),
+            substates={},
+        )
+        sm = StateMachine(
+            defines={'counter': var_def},
+            root_state=root,
+        )
+
+        options = PlantUMLOptions(
+            show_variable_definitions=True,
+            variable_display_mode='note'
+        )
+        result = sm.to_plantuml(options)
+
+        # Should have note
+        assert 'note as DefinitionNote' in result
+        assert 'defines {' in result
+        assert 'end note' in result
 
 
 @pytest.mark.unittest
 class TestActionFilteringAndFormatting:
-    """Test cases for action filtering and formatting features."""
+    """Test cases for action filtering and formatting features in to_plantuml()."""
 
     def test_show_abstract_actions_only(self):
         """Test showing only abstract actions."""
@@ -655,7 +923,7 @@ class TestActionFilteringAndFormatting:
 
 @pytest.mark.unittest
 class TestCollapseEmptyStates:
-    """Test cases for collapse_empty_states feature."""
+    """Test cases for collapse_empty_states feature in to_plantuml()."""
 
     def test_collapse_empty_states_disabled(self):
         """Test that empty states show actions when collapse is disabled."""
@@ -732,7 +1000,7 @@ class TestCollapseEmptyStates:
 
 @pytest.mark.unittest
 class TestUseSkinparam:
-    """Test cases for use_skinparam feature."""
+    """Test cases for use_skinparam feature in to_plantuml()."""
 
     def test_use_skinparam_enabled(self):
         """Test that skinparam styling is added when enabled."""
@@ -779,7 +1047,7 @@ class TestUseSkinparam:
 
 @pytest.mark.unittest
 class TestUseStereotypes:
-    """Test cases for use_stereotypes feature."""
+    """Test cases for use_stereotypes feature in to_plantuml()."""
 
     def test_use_stereotypes_enabled_pseudo_state(self):
         """Test that pseudo state stereotype is added when enabled."""
@@ -866,7 +1134,7 @@ class TestUseStereotypes:
 
 @pytest.mark.unittest
 class TestMaxDepth:
-    """Test cases for max_depth and collapsed_state_marker."""
+    """Test cases for max_depth and collapsed_state_marker in to_plantuml()."""
 
     def test_max_depth_none_expands_all(self):
         """Test that max_depth=None expands all substates."""
@@ -995,13 +1263,10 @@ class TestMaxDepth:
 
 @pytest.mark.unittest
 class TestEventVisualization:
-    """Test cases for event_visualization_mode."""
+    """Test cases for event_visualization_mode in to_plantuml()."""
 
     def test_event_visualization_none(self):
         """Test that event_visualization_mode='none' shows no colors or legend."""
-        from pyfcstm.model.model import Event, Transition
-        from pyfcstm.model.expr import Integer
-
         event = Event(name='TestEvent', state_path=('Root',), extra_name=None)
         child1 = State(
             name='Child1',
@@ -1046,8 +1311,6 @@ class TestEventVisualization:
 
     def test_event_visualization_color(self):
         """Test that event_visualization_mode='color' applies colors to transitions."""
-        from pyfcstm.model.model import Event, Transition
-
         event = Event(name='TestEvent', state_path=('Root',), extra_name=None)
         child1 = State(
             name='Child1',
@@ -1088,8 +1351,6 @@ class TestEventVisualization:
 
     def test_event_visualization_legend(self):
         """Test that event_visualization_mode='legend' shows event legend."""
-        from pyfcstm.model.model import Event, Transition
-
         event = Event(name='TestEvent', state_path=('Root',), extra_name='测试事件')
         child1 = State(
             name='Child1',
@@ -1132,8 +1393,6 @@ class TestEventVisualization:
 
     def test_event_visualization_both(self):
         """Test that event_visualization_mode='both' shows both colors and legend."""
-        from pyfcstm.model.model import Event, Transition
-
         event = Event(name='TestEvent', state_path=('Root',), extra_name=None)
         child1 = State(
             name='Child1',
@@ -1175,8 +1434,6 @@ class TestEventVisualization:
 
     def test_event_visualization_custom_colors(self):
         """Test custom event colors."""
-        from pyfcstm.model.model import Event, Transition
-
         event = Event(name='TestEvent', state_path=('Root',), extra_name=None)
         child1 = State(
             name='Child1',
@@ -1219,8 +1476,6 @@ class TestEventVisualization:
 
     def test_multiple_events_different_colors(self):
         """Test that multiple events get different colors."""
-        from pyfcstm.model.model import Event, Transition
-
         event1 = Event(name='Event1', state_path=('Root',), extra_name=None)
         event2 = Event(name='Event2', state_path=('Root',), extra_name=None)
 
@@ -1273,5 +1528,4 @@ class TestEventVisualization:
         assert 'Event1' in result
         assert 'Event2' in result
         assert '1 transitions' in result  # Each event has 1 transition
-
 

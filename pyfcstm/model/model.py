@@ -1212,20 +1212,31 @@ class State(AstExportable, PlantUMLExportable):
             )
 
             if should_show_actions:
+                from .plantuml import should_show_action, format_action_text
+
                 print('', file=sf)
                 with io.StringIO() as tf:
                     if config.show_enter_actions:
                         for enter_item in self.on_enters:
-                            print(enter_item.to_ast_node(), file=tf)
+                            # Apply abstract/concrete filtering
+                            if should_show_action(enter_item, config):
+                                formatted_text = format_action_text(enter_item, config)
+                                print(formatted_text, file=tf)
                     if config.show_during_actions:
                         for during_item in self.on_durings:
-                            print(during_item.to_ast_node(), file=tf)
+                            if should_show_action(during_item, config):
+                                formatted_text = format_action_text(during_item, config)
+                                print(formatted_text, file=tf)
                     if config.show_exit_actions:
                         for exit_item in self.on_exits:
-                            print(exit_item.to_ast_node(), file=tf)
+                            if should_show_action(exit_item, config):
+                                formatted_text = format_action_text(exit_item, config)
+                                print(formatted_text, file=tf)
                     if config.show_aspect_actions:
                         for during_aspect_item in self.on_during_aspects:
-                            print(during_aspect_item.to_ast_node(), file=tf)
+                            if should_show_action(during_aspect_item, config):
+                                formatted_text = format_action_text(during_aspect_item, config)
+                                print(formatted_text, file=tf)
 
                     action_text = tf.getvalue().rstrip().replace('\r\n', '\n').replace('\r', '\n')
                     if action_text:  # Only show if there's actual content

@@ -324,3 +324,330 @@ class TestPlantUMLOptionsEdgeCases:
 
         # Should not have action text
         assert 'EmptyState :' not in result
+
+
+@pytest.mark.unittest
+class TestActionFilteringAndFormatting:
+    """Test cases for action filtering and formatting features."""
+
+    def test_show_abstract_actions_only(self):
+        """Test showing only abstract actions."""
+        from pyfcstm.dsl import parse_with_grammar_entry
+        from pyfcstm.model.model import parse_dsl_node_to_state_machine
+
+        dsl_code = """
+        def int counter = 0;
+
+        state System {
+            state Active {
+                enter abstract InitHardware;
+                enter {
+                    counter = 0;
+                }
+            }
+
+            [*] -> Active;
+        }
+        """
+
+        ast_node = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+        sm = parse_dsl_node_to_state_machine(ast_node)
+
+        # Show only abstract actions
+        options = PlantUMLOptions(
+            show_lifecycle_actions=True,
+            show_abstract_actions=True,
+            show_concrete_actions=False,
+        )
+        result = sm.to_plantuml(options)
+
+        # Should show abstract action
+        assert 'enter abstract InitHardware' in result
+        # Should not show concrete action
+        assert 'counter = 0' not in result
+
+    def test_show_concrete_actions_only(self):
+        """Test showing only concrete actions."""
+        from pyfcstm.dsl import parse_with_grammar_entry
+        from pyfcstm.model.model import parse_dsl_node_to_state_machine
+
+        dsl_code = """
+        def int counter = 0;
+
+        state System {
+            state Active {
+                enter abstract InitHardware;
+                enter {
+                    counter = 0;
+                }
+            }
+
+            [*] -> Active;
+        }
+        """
+
+        ast_node = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+        sm = parse_dsl_node_to_state_machine(ast_node)
+
+        # Show only concrete actions
+        options = PlantUMLOptions(
+            show_lifecycle_actions=True,
+            show_abstract_actions=False,
+            show_concrete_actions=True,
+        )
+        result = sm.to_plantuml(options)
+
+        # Should not show abstract action
+        assert 'enter abstract InitHardware' not in result
+        # Should show concrete action
+        assert 'counter = 0' in result
+
+    def test_show_both_abstract_and_concrete_actions(self):
+        """Test showing both abstract and concrete actions."""
+        from pyfcstm.dsl import parse_with_grammar_entry
+        from pyfcstm.model.model import parse_dsl_node_to_state_machine
+
+        dsl_code = """
+        def int counter = 0;
+
+        state System {
+            state Active {
+                enter abstract InitHardware;
+                enter {
+                    counter = 0;
+                }
+            }
+
+            [*] -> Active;
+        }
+        """
+
+        ast_node = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+        sm = parse_dsl_node_to_state_machine(ast_node)
+
+        # Show both types
+        options = PlantUMLOptions(
+            show_lifecycle_actions=True,
+            show_abstract_actions=True,
+            show_concrete_actions=True,
+        )
+        result = sm.to_plantuml(options)
+
+        # Should show both
+        assert 'enter abstract InitHardware' in result
+        assert 'counter = 0' in result
+
+    def test_abstract_action_marker_text(self):
+        """Test abstract action marker with text mode."""
+        from pyfcstm.dsl import parse_with_grammar_entry
+        from pyfcstm.model.model import parse_dsl_node_to_state_machine
+
+        dsl_code = """
+        state System {
+            state Active {
+                enter abstract InitHardware;
+            }
+
+            [*] -> Active;
+        }
+        """
+
+        ast_node = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+        sm = parse_dsl_node_to_state_machine(ast_node)
+
+        options = PlantUMLOptions(
+            show_lifecycle_actions=True,
+            abstract_action_marker='text',
+        )
+        result = sm.to_plantuml(options)
+
+        # Should use 'abstract' keyword
+        assert 'enter abstract InitHardware' in result
+        assert '«abstract»' not in result
+
+    def test_abstract_action_marker_symbol(self):
+        """Test abstract action marker with symbol mode."""
+        from pyfcstm.dsl import parse_with_grammar_entry
+        from pyfcstm.model.model import parse_dsl_node_to_state_machine
+
+        dsl_code = """
+        state System {
+            state Active {
+                enter abstract InitHardware;
+            }
+
+            [*] -> Active;
+        }
+        """
+
+        ast_node = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+        sm = parse_dsl_node_to_state_machine(ast_node)
+
+        options = PlantUMLOptions(
+            show_lifecycle_actions=True,
+            abstract_action_marker='symbol',
+        )
+        result = sm.to_plantuml(options)
+
+        # Should use symbol marker (may be Unicode escaped in JSON)
+        assert ('«abstract»' in result or '\\u00ababstract\\u00bb' in result)
+        assert 'InitHardware' in result
+
+    def test_abstract_action_marker_none(self):
+        """Test abstract action marker with none mode."""
+        from pyfcstm.dsl import parse_with_grammar_entry
+        from pyfcstm.model.model import parse_dsl_node_to_state_machine
+
+        dsl_code = """
+        state System {
+            state Active {
+                enter abstract InitHardware;
+            }
+
+            [*] -> Active;
+        }
+        """
+
+        ast_node = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+        sm = parse_dsl_node_to_state_machine(ast_node)
+
+        options = PlantUMLOptions(
+            show_lifecycle_actions=True,
+            abstract_action_marker='none',
+        )
+        result = sm.to_plantuml(options)
+
+        # Should not have abstract marker
+        assert 'enter abstract InitHardware' not in result
+        assert '«abstract»' not in result
+        # But should still show the action name
+        assert 'InitHardware' in result
+
+    def test_max_action_lines_limit(self):
+        """Test max_action_lines limits the number of lines shown."""
+        from pyfcstm.dsl import parse_with_grammar_entry
+        from pyfcstm.model.model import parse_dsl_node_to_state_machine
+
+        dsl_code = """
+        def int a = 0;
+        def int b = 0;
+        def int c = 0;
+        def int d = 0;
+
+        state System {
+            state Active {
+                enter {
+                    a = 1;
+                    b = 2;
+                    c = 3;
+                    d = 4;
+                }
+            }
+
+            [*] -> Active;
+        }
+        """
+
+        ast_node = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+        sm = parse_dsl_node_to_state_machine(ast_node)
+
+        # Limit to 3 lines (enter {, a = 1;, b = 2;)
+        options = PlantUMLOptions(
+            show_lifecycle_actions=True,
+            max_action_lines=3,
+        )
+        result = sm.to_plantuml(options)
+
+        # Should have ellipsis indicating truncation
+        assert '...' in result
+        # Should show first lines
+        assert 'a = 1' in result
+        assert 'b = 2' in result
+        # Should not show later lines
+        assert 'c = 3' not in result
+        assert 'd = 4' not in result
+
+    def test_max_action_lines_no_limit(self):
+        """Test max_action_lines with None shows all lines."""
+        from pyfcstm.dsl import parse_with_grammar_entry
+        from pyfcstm.model.model import parse_dsl_node_to_state_machine
+
+        dsl_code = """
+        def int a = 0;
+        def int b = 0;
+        def int c = 0;
+        def int d = 0;
+
+        state System {
+            state Active {
+                enter {
+                    a = 1;
+                    b = 2;
+                    c = 3;
+                    d = 4;
+                }
+            }
+
+            [*] -> Active;
+        }
+        """
+
+        ast_node = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+        sm = parse_dsl_node_to_state_machine(ast_node)
+
+        # No limit
+        options = PlantUMLOptions(
+            show_lifecycle_actions=True,
+            max_action_lines=None,
+        )
+        result = sm.to_plantuml(options)
+
+        # Should show all lines
+        assert 'a = 1' in result
+        assert 'b = 2' in result
+        assert 'c = 3' in result
+        assert 'd = 4' in result
+
+    def test_combined_filtering_and_formatting(self):
+        """Test combined abstract/concrete filtering with formatting."""
+        from pyfcstm.dsl import parse_with_grammar_entry
+        from pyfcstm.model.model import parse_dsl_node_to_state_machine
+
+        dsl_code = """
+        def int counter = 0;
+
+        state System {
+            state Active {
+                enter abstract InitHardware;
+                enter {
+                    counter = 0;
+                }
+                during abstract ProcessData;
+                during {
+                    counter = counter + 1;
+                }
+            }
+
+            [*] -> Active;
+        }
+        """
+
+        ast_node = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+        sm = parse_dsl_node_to_state_machine(ast_node)
+
+        # Show only abstract with symbol marker
+        options = PlantUMLOptions(
+            show_lifecycle_actions=True,
+            show_abstract_actions=True,
+            show_concrete_actions=False,
+            abstract_action_marker='symbol',
+        )
+        result = sm.to_plantuml(options)
+
+        # Should show abstract actions with symbol
+        assert ('«abstract»' in result or '\\u00ababstract\\u00bb' in result)
+        assert 'InitHardware' in result
+        assert 'ProcessData' in result
+        # Should not show concrete actions
+        assert 'counter = 0' not in result
+        assert 'counter = counter + 1' not in result

@@ -40,7 +40,7 @@ except ImportError:
     from typing_extensions import Literal
 
 if TYPE_CHECKING:
-    from .model import State, Event
+    from .model import State, Event, OnStage, OnAspect
 
 __all__ = [
     'DetailLevelLiteral',
@@ -48,6 +48,8 @@ __all__ = [
     'PlantUMLOptions',
     'format_state_name',
     'format_event_name',
+    'should_show_action',
+    'format_action_text',
 ]
 
 
@@ -146,6 +148,75 @@ def format_event_name(
         result += f" ({' / '.join(parts[1:])})"
 
     return result
+
+
+def should_show_action(action: 'Union[OnStage, OnAspect]', config: 'PlantUMLOptions') -> bool:
+    """
+    Determine if an action should be shown based on abstract/concrete filtering.
+
+    :param action: Action object (OnStage or OnAspect) to check
+    :type action: Union[OnStage, OnAspect]
+    :param config: PlantUML configuration options
+    :type config: PlantUMLOptions
+    :return: True if the action should be shown, False otherwise
+    :rtype: bool
+
+    Example::
+
+        >>> # For an abstract action
+        >>> should_show_action(action, config)
+        True
+    """
+    # Check if action is abstract or concrete
+    is_abstract = action.is_abstract
+
+    # Apply filtering based on config
+    if is_abstract:
+        return config.show_abstract_actions
+    else:
+        return config.show_concrete_actions
+
+
+def format_action_text(action: 'Union[OnStage, OnAspect]', config: 'PlantUMLOptions') -> str:
+    """
+    Format action text with abstract marker and line limit.
+
+    :param action: Action object (OnStage or OnAspect) to format
+    :type action: Union[OnStage, OnAspect]
+    :param config: PlantUML configuration options
+    :type config: PlantUMLOptions
+    :return: Formatted action text
+    :rtype: str
+
+    Example::
+
+        >>> format_action_text(action, config)
+        'enter abstract InitHardware'
+    """
+    # Convert action to AST node and get text representation
+    ast_node = action.to_ast_node()
+    action_text = str(ast_node)
+
+    # Apply abstract marker if needed
+    if action.is_abstract:
+        if config.abstract_action_marker == 'symbol':
+            # Replace 'abstract' keyword with symbol marker
+            action_text = action_text.replace('abstract ', '«abstract» ', 1)
+        elif config.abstract_action_marker == 'none':
+            # Remove 'abstract' keyword entirely
+            action_text = action_text.replace('abstract ', '', 1)
+        # 'text' mode keeps the default 'abstract' keyword, no change needed
+
+    # Apply line limit if configured
+    if config.max_action_lines is not None and config.max_action_lines > 0:
+        lines = action_text.split('\n')
+        if len(lines) > config.max_action_lines:
+            # Truncate and add ellipsis
+            lines = lines[:config.max_action_lines]
+            lines.append('...')
+            action_text = '\n'.join(lines)
+
+    return action_text
 
 
 DetailLevelLiteral = Literal['minimal', 'normal', 'full']

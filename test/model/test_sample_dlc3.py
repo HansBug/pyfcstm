@@ -1843,13 +1843,13 @@ state "LX" as lx {
         state "start" as lx__lx2__start {
             state "LX4" as lx__lx2__start__lx4 {
                 state "LX5" as lx__lx2__start__lx4__lx5
-                lx__lx2__start__lx4__lx5 --> [*] : E1
+                lx__lx2__start__lx4__lx5 --> [*] : /E1
                 [*] --> lx__lx2__start__lx4__lx5
             }
-            lx__lx2__start__lx4 --> [*] : E1
+            lx__lx2__start__lx4 --> [*] : /E1
             [*] --> lx__lx2__start__lx4
         }
-        lx__lx2__start --> [*] : E1
+        lx__lx2__start --> [*] : /E1
         [*] --> lx__lx2__start
     }
     state "ERROR" as lx__error

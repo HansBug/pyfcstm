@@ -1175,7 +1175,7 @@ class State(AstExportable, PlantUMLExportable):
                         # Show event if enabled
                         if config.show_events and trans.event is not None:
                             from .plantuml import format_event_name
-                            formatted_event = format_event_name(trans.event, config.event_name_format)
+                            formatted_event = format_event_name(trans.event, config.event_name_format, trans_node=trans_node)
                             print(f' : {formatted_event}', file=tf, end='')
                             # TODO: Apply event_visualization_mode colors
                         elif config.show_transition_guards and trans.guard is not None:

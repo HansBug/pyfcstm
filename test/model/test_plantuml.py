@@ -67,12 +67,12 @@ class TestPlantUMLNameFormatters:
     def test_format_event_path(self):
         """Test event name formatter with full path."""
         event = Event(name='Boot', state_path=('System', 'ModuleA'), extra_name='启动')
-        assert format_event_name(event, ('path',)) == 'System.ModuleA.Boot'
+        assert format_event_name(event, ('path',)) == '/ModuleA.Boot'
 
     def test_format_event_multi_part_joining(self):
         """Test event name formatter multi-part joining format."""
         event = Event(name='Boot', state_path=('System',), extra_name='启动')
-        assert format_event_name(event, ('extra_name', 'name', 'path')) == '启动 (Boot / System.Boot)'
+        assert format_event_name(event, ('extra_name', 'name', 'path')) == '启动 (Boot / /Boot)'
 
 
 @pytest.mark.unittest
@@ -86,7 +86,7 @@ class TestPlantUMLOptionsInit:
         assert options.show_variable_definitions is None
         assert options.variable_display_mode == 'note'
         assert options.state_name_format == ('extra_name',)
-        assert options.event_name_format == ('extra_name',)
+        assert options.event_name_format == ('extra_name', 'relpath')
         assert options.show_lifecycle_actions is None
         assert options.show_transition_guards is None
         assert options.collapsed_state_marker == '...'

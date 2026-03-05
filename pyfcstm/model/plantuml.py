@@ -89,14 +89,20 @@ def format_state_name(state: 'State', name_format: Tuple[Literal['name', 'extra_
     return result
 
 
-def format_event_name(event: 'Event', name_format: Tuple[Literal['name', 'extra_name', 'path'], ...]) -> str:
+def format_event_name(
+        event: 'Event',
+        name_format: Tuple[Literal['name', 'extra_name', 'path', 'relpath'], ...],
+        trans_node: Optional[object] = None
+) -> str:
     """
     Format event name according to the specified format tuple.
 
     :param event: Event object to format
     :type event: Event
     :param name_format: Tuple of display elements
-    :type name_format: Tuple[Literal['name', 'extra_name', 'path'], ...]
+    :type name_format: Tuple[Literal['name', 'extra_name', 'path', 'relpath'], ...]
+    :param trans_node: Optional transition AST node for relpath computation
+    :type trans_node: Optional[object]
     :return: Formatted event name
     :rtype: str
 
@@ -104,6 +110,8 @@ def format_event_name(event: 'Event', name_format: Tuple[Literal['name', 'extra_
 
         >>> format_event_name(event, ('extra_name', 'name'))
         '启动模块 (Start)'
+        >>> format_event_name(event, ('extra_name', 'relpath'), trans_node)
+        '启动模块 (State.Start)'
     """
     parts = []
     for element in name_format:
@@ -113,8 +121,20 @@ def format_event_name(event: 'Event', name_format: Tuple[Literal['name', 'extra_
             if event.extra_name:
                 parts.append(event.extra_name)
         elif element == 'path':
-            full_path = '.'.join(event.path)
-            parts.append(full_path)
+            # Absolute path format: /Root.State.Event (skip first element, prepend /)
+            if len(event.path) > 1:
+                abs_path = '/' + '.'.join(event.path[1:])
+            else:
+                abs_path = '/' + event.path[0]
+            parts.append(abs_path)
+        elif element == 'relpath':
+            # Relative path: use trans_node.event_id if available, otherwise fallback to path
+            if trans_node is not None and hasattr(trans_node, 'event_id') and trans_node.event_id is not None:
+                rel_path = str(trans_node.event_id)
+            else:
+                # Fallback to path format
+                rel_path = "/" + ('.'.join(event.path[1:]) if len(event.path) > 1 else event.path[0])
+            parts.append(rel_path)
 
     # Fallback to name if all elements were skipped
     if not parts:
@@ -189,7 +209,7 @@ class PlantUMLOptions:
     :param show_events: Whether to show event names
     :type show_events: Optional[bool]
     :param event_name_format: Tuple of display elements for event names
-    :type event_name_format: Tuple[Literal['name', 'extra_name', 'path'], ...]
+    :type event_name_format: Tuple[Literal['name', 'extra_name', 'path', 'relpath'], ...]
     :param event_visualization_mode: Event visualization mode
     :type event_visualization_mode: Literal['none', 'color', 'legend', 'both', 'dependency_view']
     :param max_depth: Maximum depth to expand (None for unlimited)
@@ -245,7 +265,7 @@ class PlantUMLOptions:
 
     # Events
     show_events: Optional[bool] = None
-    event_name_format: Tuple[Literal['name', 'extra_name', 'path'], ...] = ('extra_name',)
+    event_name_format: Tuple[Literal['name', 'extra_name', 'path', 'relpath'], ...] = ('extra_name', 'relpath')
     event_visualization_mode: Literal['none', 'color', 'legend', 'both', 'dependency_view'] = 'none'
 
     # Hierarchy control

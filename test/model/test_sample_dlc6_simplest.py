@@ -1838,8 +1838,8 @@ state "L1" as l1 {
         state "L21" as l1__l2__l21 #line.dotted
         state "L22" as l1__l2__l22
         [*] --> l1__l2__l21
-        l1__l2__l21 --> l1__l2__l22 : E1
-        l1__l2__l22 --> [*] : E1
+        l1__l2__l21 --> l1__l2__l22 : L21.E1
+        l1__l2__l22 --> [*] : L22.E1
     }
     l1__l2 : exit inner_mock ref /mock;\\n>> during before abstract user_B;\\n>> during before abstract user_A;
     [*] --> l1__l2

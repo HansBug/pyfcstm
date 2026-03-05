@@ -954,10 +954,10 @@ state "Root" as root {
     state "state2" as root__state2
     state "state3" as root__state3 #line.dotted
     state "state4" as root__state4
-    [*] --> root__state1 : 事件1
-    root__state1 --> root__state2 : S1 -> 事件1
-    root__state2 --> root__state3 : 事件1
-    root__state3 --> root__state4 : S3 -> 事件2
+    [*] --> root__state1 : 事件1 (E1)
+    root__state1 --> root__state2 : S1 -> 事件1 (state1.E1)
+    root__state2 --> root__state3 : 事件1 (E1)
+    root__state3 --> root__state4 : S3 -> 事件2 (state3.E2)
 }
 [*] --> root
 root --> [*]

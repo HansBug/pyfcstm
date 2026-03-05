@@ -960,7 +960,7 @@ skinparam state {
 state "Root" as root <<composite>> {
     state "state1" as root__state1
     state "state2" as root__state2
-    state "state3" as root__state3 #line.dotted <<pseudo>>
+    state "state3" as root__state3 <<pseudo>> #line.dotted
     state "state4" as root__state4
     [*] --> root__state1 : 事件1 (E1)
     root__state1 --> root__state2 : S1 -> 事件1 (state1.E1)

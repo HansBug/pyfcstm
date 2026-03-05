@@ -1598,7 +1598,7 @@ end note
 
 state "L1" as l1 <<composite>> {
     state "L2" as l1__l2 <<composite>> {
-        state "L21" as l1__l2__l21 #line.dotted <<pseudo>>
+        state "L21" as l1__l2__l21 <<pseudo>> #line.dotted
         state "L22" as l1__l2__l22
         [*] --> l1__l2__l21
         l1__l2__l21 --> l1__l2__l22 : L21.E1

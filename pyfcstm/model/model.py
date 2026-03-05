@@ -1178,7 +1178,7 @@ class State(AstExportable, PlantUMLExportable):
             # Format state name according to configuration
             shown_name = format_state_name(self, config.state_name_format)
 
-            print(f'state {json.dumps(shown_name, ensure_ascii=False)} as {_name_safe()}{state_style_mark_str}{stereotype_str}',
+            print(f'state {json.dumps(shown_name, ensure_ascii=False)} as {_name_safe()}{stereotype_str}{state_style_mark_str}',
                   file=sf, end='')
 
             if not self.is_leaf_state:

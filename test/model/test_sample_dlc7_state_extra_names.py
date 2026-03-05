@@ -903,7 +903,7 @@ skinparam state {
 state "根状态" as root <<composite>> {
     state "Zhuang Tai I" as root__state1
     state "状態2" as root__state2
-    state "상태3" as root__state3 #line.dotted <<pseudo>>
+    state "상태3" as root__state3 <<pseudo>> #line.dotted
     state "state4" as root__state4
     [*] --> root__state1
     root__state1 --> root__state2

@@ -55,3 +55,15 @@ format\_action\_text
 .. autofunction:: format_action_text
 
 
+collect\_event\_transitions
+-----------------------------------------------------
+
+.. autofunction:: collect_event_transitions
+
+
+assign\_event\_colors
+-----------------------------------------------------
+
+.. autofunction:: assign_event_colors
+
+

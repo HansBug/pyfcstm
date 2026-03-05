@@ -1,6 +1,14 @@
 @startuml
 hide empty description
-state "SimpleMachine" as simple_machine {
+
+skinparam state {
+  BackgroundColor<<pseudo>> LightGray
+  BackgroundColor<<composite>> LightBlue
+  BorderColor<<pseudo>> Gray
+  FontStyle<<pseudo>> italic
+}
+
+state "SimpleMachine" as simple_machine <<composite>> {
     state "Idle" as simple_machine__idle
     state "Running" as simple_machine__running
     state "Stopped" as simple_machine__stopped

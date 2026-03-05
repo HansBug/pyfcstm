@@ -939,6 +939,9 @@ def assign_event_colors(event_map: Dict[str, List], custom_colors: Optional[dict
     """
     Assign colors to events for visualization.
 
+    Only assigns colors to events that appear 2 or more times. Events that appear
+    only once will not be assigned a color (use default transition color).
+
     :param event_map: Dictionary mapping event paths to transitions
     :type event_map: Dict[str, List]
     :param custom_colors: Optional custom color mapping
@@ -949,7 +952,7 @@ def assign_event_colors(event_map: Dict[str, List], custom_colors: Optional[dict
     Example::
 
         >>> colors = assign_event_colors(event_map)
-        >>> colors['System.ErrorEvent']
+        >>> colors['System.ErrorEvent']  # Only if ErrorEvent appears >= 2 times
         '#FF6B6B'
     """
     # Default color palette (colorblind-friendly)
@@ -970,6 +973,10 @@ def assign_event_colors(event_map: Dict[str, List], custom_colors: Optional[dict
     color_index = 0
 
     for event_path in sorted(event_map.keys()):
+        # Only assign colors to events that appear 2 or more times
+        if len(event_map[event_path]) < 2:
+            continue
+
         # Check custom colors first
         if custom_colors and event_path in custom_colors:
             event_colors[event_path] = custom_colors[event_path]

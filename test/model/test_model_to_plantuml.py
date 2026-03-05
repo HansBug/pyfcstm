@@ -1310,7 +1310,7 @@ class TestEventVisualization:
                 assert not line.strip().endswith('#4E79A7')  # Default first color
 
     def test_event_visualization_color(self):
-        """Test that event_visualization_mode='color' applies colors to transitions."""
+        """Test that event_visualization_mode='color' applies colors to transition arrows."""
         event = Event(name='TestEvent', state_path=('Root',), extra_name=None)
         child1 = State(
             name='Child1',
@@ -1324,15 +1324,28 @@ class TestEventVisualization:
             path=('Root', 'Child2'),
             substates={},
         )
+        child3 = State(
+            name='Child3',
+            extra_name=None,
+            path=('Root', 'Child3'),
+            substates={},
+        )
         root = State(
             name='Root',
             extra_name=None,
             path=('Root',),
-            substates={'Child1': child1, 'Child2': child2},
+            substates={'Child1': child1, 'Child2': child2, 'Child3': child3},
             transitions=[
                 Transition(
                     from_state='Child1',
                     to_state='Child2',
+                    event=event,
+                    guard=None,
+                    effects=[],
+                ),
+                Transition(
+                    from_state='Child2',
+                    to_state='Child3',
                     event=event,
                     guard=None,
                     effects=[],
@@ -1344,10 +1357,10 @@ class TestEventVisualization:
         options = PlantUMLOptions(event_visualization_mode='color')
         result = sm.to_plantuml(options)
 
-        # Should have color code after event name
-        # Color format: #RRGGBB
+        # Should have color code in arrow syntax: -[#RRGGBB]->
+        # Colors only applied to events that appear >= 2 times
         import re
-        assert re.search(r'#[0-9A-F]{6}', result, re.IGNORECASE) is not None
+        assert re.search(r'-\[#[0-9A-F]{6}\]->', result, re.IGNORECASE) is not None
 
     def test_event_visualization_legend(self):
         """Test that event_visualization_mode='legend' shows event legend."""
@@ -1406,15 +1419,28 @@ class TestEventVisualization:
             path=('Root', 'Child2'),
             substates={},
         )
+        child3 = State(
+            name='Child3',
+            extra_name=None,
+            path=('Root', 'Child3'),
+            substates={},
+        )
         root = State(
             name='Root',
             extra_name=None,
             path=('Root',),
-            substates={'Child1': child1, 'Child2': child2},
+            substates={'Child1': child1, 'Child2': child2, 'Child3': child3},
             transitions=[
                 Transition(
                     from_state='Child1',
                     to_state='Child2',
+                    event=event,
+                    guard=None,
+                    effects=[],
+                ),
+                Transition(
+                    from_state='Child2',
+                    to_state='Child3',
                     event=event,
                     guard=None,
                     effects=[],
@@ -1426,59 +1452,15 @@ class TestEventVisualization:
         options = PlantUMLOptions(event_visualization_mode='both')
         result = sm.to_plantuml(options)
 
-        # Should have both legend and colors
+        # Should have both legend and colors in arrow syntax
         assert 'legend right' in result
         assert 'Event Scoping' in result
         import re
-        assert re.search(r'#[0-9A-F]{6}', result, re.IGNORECASE) is not None
+        assert re.search(r'-\[#[0-9A-F]{6}\]->', result, re.IGNORECASE) is not None
 
     def test_event_visualization_custom_colors(self):
-        """Test custom event colors."""
+        """Test custom event colors applied to arrows."""
         event = Event(name='TestEvent', state_path=('Root',), extra_name=None)
-        child1 = State(
-            name='Child1',
-            extra_name=None,
-            path=('Root', 'Child1'),
-            substates={},
-        )
-        child2 = State(
-            name='Child2',
-            extra_name=None,
-            path=('Root', 'Child2'),
-            substates={},
-        )
-        root = State(
-            name='Root',
-            extra_name=None,
-            path=('Root',),
-            substates={'Child1': child1, 'Child2': child2},
-            transitions=[
-                Transition(
-                    from_state='Child1',
-                    to_state='Child2',
-                    event=event,
-                    guard=None,
-                    effects=[],
-                )
-            ],
-        )
-
-        sm = StateMachine(defines={}, root_state=root)
-        custom_colors = {'Root.TestEvent': '#FF0000'}
-        options = PlantUMLOptions(
-            event_visualization_mode='color',
-            custom_colors=custom_colors
-        )
-        result = sm.to_plantuml(options)
-
-        # Should use custom color
-        assert '#FF0000' in result
-
-    def test_multiple_events_different_colors(self):
-        """Test that multiple events get different colors."""
-        event1 = Event(name='Event1', state_path=('Root',), extra_name=None)
-        event2 = Event(name='Event2', state_path=('Root',), extra_name=None)
-
         child1 = State(
             name='Child1',
             extra_name=None,
@@ -1506,6 +1488,69 @@ class TestEventVisualization:
                 Transition(
                     from_state='Child1',
                     to_state='Child2',
+                    event=event,
+                    guard=None,
+                    effects=[],
+                ),
+                Transition(
+                    from_state='Child2',
+                    to_state='Child3',
+                    event=event,
+                    guard=None,
+                    effects=[],
+                )
+            ],
+        )
+
+        sm = StateMachine(defines={}, root_state=root)
+        custom_colors = {'Root.TestEvent': '#FF0000'}
+        options = PlantUMLOptions(
+            event_visualization_mode='color',
+            custom_colors=custom_colors
+        )
+        result = sm.to_plantuml(options)
+
+        # Should use custom color in arrow syntax
+        assert '-[#FF0000]->' in result
+
+    def test_multiple_events_different_colors(self):
+        """Test that multiple events get different colors when they appear >= 2 times."""
+        event1 = Event(name='Event1', state_path=('Root',), extra_name=None)
+        event2 = Event(name='Event2', state_path=('Root',), extra_name=None)
+
+        child1 = State(
+            name='Child1',
+            extra_name=None,
+            path=('Root', 'Child1'),
+            substates={},
+        )
+        child2 = State(
+            name='Child2',
+            extra_name=None,
+            path=('Root', 'Child2'),
+            substates={},
+        )
+        child3 = State(
+            name='Child3',
+            extra_name=None,
+            path=('Root', 'Child3'),
+            substates={},
+        )
+        child4 = State(
+            name='Child4',
+            extra_name=None,
+            path=('Root', 'Child4'),
+            substates={},
+        )
+        root = State(
+            name='Root',
+            extra_name=None,
+            path=('Root',),
+            substates={'Child1': child1, 'Child2': child2, 'Child3': child3, 'Child4': child4},
+            transitions=[
+                Transition(
+                    from_state='Child1',
+                    to_state='Child2',
                     event=event1,
                     guard=None,
                     effects=[],
@@ -1513,6 +1558,20 @@ class TestEventVisualization:
                 Transition(
                     from_state='Child2',
                     to_state='Child3',
+                    event=event1,
+                    guard=None,
+                    effects=[],
+                ),
+                Transition(
+                    from_state='Child3',
+                    to_state='Child4',
+                    event=event2,
+                    guard=None,
+                    effects=[],
+                ),
+                Transition(
+                    from_state='Child4',
+                    to_state='Child1',
                     event=event2,
                     guard=None,
                     effects=[],
@@ -1521,11 +1580,15 @@ class TestEventVisualization:
         )
 
         sm = StateMachine(defines={}, root_state=root)
-        options = PlantUMLOptions(event_visualization_mode='legend')
+        options = PlantUMLOptions(event_visualization_mode='color')
         result = sm.to_plantuml(options)
 
-        # Should show both events in legend
-        assert 'Event1' in result
-        assert 'Event2' in result
-        assert '1 transitions' in result  # Each event has 1 transition
+        # Both events appear >= 2 times, so both should get colors
+        # Should have at least 2 different color codes in arrow syntax
+        import re
+        color_matches = re.findall(r'-\[#([0-9A-F]{6})\]->', result, re.IGNORECASE)
+        assert len(color_matches) >= 2
+        # Should have at least 2 different colors
+        unique_colors = set(color_matches)
+        assert len(unique_colors) >= 2
 

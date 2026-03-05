@@ -392,11 +392,11 @@ class TestAssignEventColors:
     """Test cases for assign_event_colors() function."""
 
     def test_assign_default_colors(self):
-        """Test assigning default colors to events."""
+        """Test assigning default colors to events that appear >= 2 times."""
         event_map = {
-            'Root.Event1': [],
-            'Root.Event2': [],
-            'Root.Event3': [],
+            'Root.Event1': [1, 2],  # Appears 2 times
+            'Root.Event2': [1, 2],  # Appears 2 times
+            'Root.Event3': [1, 2],  # Appears 2 times
         }
 
         colors = assign_event_colors(event_map)
@@ -406,11 +406,26 @@ class TestAssignEventColors:
         assert colors['Root.Event2'] == '#F28E2B'  # Second color
         assert colors['Root.Event3'] == '#E15759'  # Third color
 
-    def test_assign_custom_colors(self):
-        """Test assigning custom colors overrides defaults."""
+    def test_assign_colors_only_for_multiple_occurrences(self):
+        """Test that colors are only assigned to events appearing >= 2 times."""
         event_map = {
-            'Root.Event1': [],
-            'Root.Event2': [],
+            'Root.Event1': [1],        # Appears 1 time - no color
+            'Root.Event2': [1, 2],     # Appears 2 times - gets color
+            'Root.Event3': [1, 2, 3],  # Appears 3 times - gets color
+        }
+
+        colors = assign_event_colors(event_map)
+
+        assert len(colors) == 2
+        assert 'Root.Event1' not in colors  # Only appears once
+        assert colors['Root.Event2'] == '#4E79A7'  # First color
+        assert colors['Root.Event3'] == '#F28E2B'  # Second color
+
+    def test_assign_custom_colors(self):
+        """Test assigning custom colors overrides defaults for events appearing >= 2 times."""
+        event_map = {
+            'Root.Event1': [1, 2],  # Appears 2 times
+            'Root.Event2': [1, 2],  # Appears 2 times
         }
         custom_colors = {
             'Root.Event1': '#FF0000',
@@ -422,8 +437,8 @@ class TestAssignEventColors:
         assert colors['Root.Event2'] == '#4E79A7'  # Default color
 
     def test_assign_colors_cycling_palette(self):
-        """Test that color palette cycles for many events."""
-        event_map = {f'Root.Event{i}': [] for i in range(15)}
+        """Test that color palette cycles for many events that appear >= 2 times."""
+        event_map = {f'Root.Event{i}': [1, 2] for i in range(15)}  # Each event appears 2 times
 
         colors = assign_event_colors(event_map)
 
@@ -433,11 +448,11 @@ class TestAssignEventColors:
         assert colors[event_keys[0]] == colors[event_keys[10]]
 
     def test_assign_colors_sorted_order(self):
-        """Test that colors are assigned in sorted order of event paths."""
+        """Test that colors are assigned in sorted order of event paths for events appearing >= 2 times."""
         event_map = {
-            'Root.EventZ': [],
-            'Root.EventA': [],
-            'Root.EventM': [],
+            'Root.EventZ': [1, 2],  # Appears 2 times
+            'Root.EventA': [1, 2],  # Appears 2 times
+            'Root.EventM': [1, 2],  # Appears 2 times
         }
 
         colors = assign_event_colors(event_map)

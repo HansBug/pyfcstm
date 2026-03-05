@@ -1204,7 +1204,16 @@ class State(AstExportable, PlantUMLExportable):
                     with io.StringIO() as tf:
                         print('[*]' if trans.from_state is dsl_nodes.INIT_STATE
                               else _name_safe(trans.from_state), file=tf, end='')
-                        print(' --> ', file=tf, end='')
+
+                        # Apply event_visualization_mode colors to arrow
+                        arrow_str = ' -->'
+                        if config.event_visualization_mode in ('color', 'both') and trans.event is not None:
+                            event_path = '.'.join(trans.event.path)
+                            if event_path in event_colors:
+                                color = event_colors[event_path]
+                                arrow_str = f' -[{color}]->'
+
+                        print(arrow_str, file=tf, end=' ')
                         print('[*]' if trans.to_state is dsl_nodes.EXIT_STATE
                               else _name_safe(trans.to_state), file=tf, end='')
 
@@ -1215,13 +1224,6 @@ class State(AstExportable, PlantUMLExportable):
                             from .plantuml import format_event_name
                             formatted_event = format_event_name(trans.event, config.event_name_format, trans_node=trans_node)
                             print(f' : {formatted_event}', file=tf, end='')
-
-                            # Apply event_visualization_mode colors
-                            if config.event_visualization_mode in ('color', 'both'):
-                                event_path = '.'.join(trans.event.path)
-                                if event_path in event_colors:
-                                    color = event_colors[event_path]
-                                    print(f' {color}', file=tf, end='')
                         elif config.show_transition_guards and trans.guard is not None:
                             print(f' : {trans.guard.to_ast_node()}', file=tf, end='')
 

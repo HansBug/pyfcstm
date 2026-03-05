@@ -32,7 +32,7 @@ Example::
 """
 
 from dataclasses import dataclass
-from typing import Optional, Tuple, TYPE_CHECKING, Union
+from typing import Optional, Tuple, TYPE_CHECKING, Union, Dict, List
 
 try:
     from typing import Literal
@@ -40,7 +40,7 @@ except ImportError:
     from typing_extensions import Literal
 
 if TYPE_CHECKING:
-    from .model import State, Event, OnStage, OnAspect
+    from .model import State, Event, OnStage, OnAspect, StateMachine, Transition
 
 __all__ = [
     'DetailLevelLiteral',
@@ -50,6 +50,8 @@ __all__ = [
     'format_event_name',
     'should_show_action',
     'format_action_text',
+    'collect_event_transitions',
+    'assign_event_colors',
 ]
 
 
@@ -540,3 +542,77 @@ class PlantUMLOptions:
                 'show_events': True,
                 'show_pseudo_state_style': True,
             }
+
+
+def collect_event_transitions(state_machine: 'StateMachine') -> Dict[str, List[Tuple['State', 'Transition']]]:
+    """
+    Collect all events and their associated transitions from a state machine.
+
+    :param state_machine: The state machine to analyze
+    :type state_machine: StateMachine
+    :return: Dictionary mapping event paths to list of (state, transition) tuples
+    :rtype: Dict[str, List[Tuple[State, Transition]]]
+
+    Example::
+
+        >>> event_map = collect_event_transitions(sm)
+        >>> event_map['System.ErrorEvent']
+        [(state1, trans1), (state2, trans2)]
+    """
+    from collections import defaultdict
+    event_map = defaultdict(list)
+
+    for state in state_machine.walk_states():
+        for transition in state.transitions:
+            if transition.event is not None:
+                event_path = '.'.join(transition.event.path)
+                event_map[event_path].append((state, transition))
+
+    return dict(event_map)
+
+
+def assign_event_colors(event_map: Dict[str, List], custom_colors: Optional[dict] = None) -> Dict[str, str]:
+    """
+    Assign colors to events for visualization.
+
+    :param event_map: Dictionary mapping event paths to transitions
+    :type event_map: Dict[str, List]
+    :param custom_colors: Optional custom color mapping
+    :type custom_colors: Optional[dict]
+    :return: Dictionary mapping event paths to color codes
+    :rtype: Dict[str, str]
+
+    Example::
+
+        >>> colors = assign_event_colors(event_map)
+        >>> colors['System.ErrorEvent']
+        '#FF6B6B'
+    """
+    # Default color palette (colorblind-friendly)
+    default_palette = [
+        '#4E79A7',  # Blue
+        '#F28E2B',  # Orange
+        '#E15759',  # Red
+        '#76B7B2',  # Teal
+        '#59A14F',  # Green
+        '#EDC948',  # Yellow
+        '#B07AA1',  # Purple
+        '#FF9DA7',  # Pink
+        '#9C755F',  # Brown
+        '#BAB0AC',  # Gray
+    ]
+
+    event_colors = {}
+    color_index = 0
+
+    for event_path in sorted(event_map.keys()):
+        # Check custom colors first
+        if custom_colors and event_path in custom_colors:
+            event_colors[event_path] = custom_colors[event_path]
+        else:
+            # Assign from default palette (cycle if needed)
+            event_colors[event_path] = default_palette[color_index % len(default_palette)]
+            color_index += 1
+
+    return event_colors
+

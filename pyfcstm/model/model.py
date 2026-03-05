@@ -1126,18 +1126,25 @@ class State(AstExportable, PlantUMLExportable):
             is_pseudo=bool(self.is_pseudo),
         )
 
-    def to_plantuml(self, options: PlantUMLOptionsInput = None) -> str:
+    def to_plantuml(self, options: PlantUMLOptionsInput = None, current_depth: int = 0, event_colors: Optional[Dict[str, str]] = None) -> str:
         """
         Convert this state to PlantUML notation.
 
         :param options: Configuration input for PlantUML generation
         :type options: PlantUMLOptionsInput
+        :param current_depth: Current depth in the state hierarchy (for max_depth support)
+        :type current_depth: int
+        :param event_colors: Optional mapping of event paths to color codes
+        :type event_colors: Optional[Dict[str, str]]
         :return: PlantUML representation of the state
         :rtype: str
         """
         # Resolve configuration
         options = PlantUMLOptions.from_value(options)
         config = options.to_config()
+
+        if event_colors is None:
+            event_colors = {}
 
         def _name_safe(sub_state: Optional[str] = None) -> str:
             subpath = [*self.path]
@@ -1176,8 +1183,22 @@ class State(AstExportable, PlantUMLExportable):
 
             if not self.is_leaf_state:
                 print(f' {{', file=sf)
-                for state in self.substates.values():
-                    print(indent(state.to_plantuml(options), prefix='    '), file=sf)
+
+                # Check if we should expand substates or collapse them
+                should_expand_substates = (
+                    config.max_depth is None or
+                    current_depth < config.max_depth
+                )
+
+                if should_expand_substates:
+                    # Expand substates normally
+                    for state in self.substates.values():
+                        print(indent(state.to_plantuml(options, current_depth=current_depth + 1, event_colors=event_colors), prefix='    '), file=sf)
+                else:
+                    # Collapsed: show marker state
+                    marker_name = config.collapsed_state_marker
+                    marker_safe_name = sequence_safe([*self.path, '__collapsed__'])
+                    print(f'    state {json.dumps(marker_name, ensure_ascii=False)} as {marker_safe_name}', file=sf)
 
                 for trans in self.transitions:
                     with io.StringIO() as tf:
@@ -1194,7 +1215,13 @@ class State(AstExportable, PlantUMLExportable):
                             from .plantuml import format_event_name
                             formatted_event = format_event_name(trans.event, config.event_name_format, trans_node=trans_node)
                             print(f' : {formatted_event}', file=tf, end='')
-                            # TODO: Apply event_visualization_mode colors
+
+                            # Apply event_visualization_mode colors
+                            if config.event_visualization_mode in ('color', 'both'):
+                                event_path = '.'.join(trans.event.path)
+                                if event_path in event_colors:
+                                    color = event_colors[event_path]
+                                    print(f' {color}', file=tf, end='')
                         elif config.show_transition_guards and trans.guard is not None:
                             print(f' : {trans.guard.to_ast_node()}', file=tf, end='')
 
@@ -1406,10 +1433,31 @@ class StateMachine(AstExportable, PlantUMLExportable):
                     print('endlegend', file=sf)
                     print('', file=sf)
 
-            # TODO: Add event legend if event_visualization_mode is 'legend' or 'both'
-            # TODO: Add event color styling if event_visualization_mode is 'color' or 'both'
+            # Collect events and assign colors if event visualization is enabled
+            event_colors = {}
+            event_map = {}
+            if config.event_visualization_mode != 'none':
+                from .plantuml import collect_event_transitions, assign_event_colors
+                event_map = collect_event_transitions(self)
+                event_colors = assign_event_colors(event_map, config.custom_colors)
 
-            print(self.root_state.to_plantuml(options), file=sf)
+            # Add event legend if event_visualization_mode is 'legend' or 'both'
+            if config.event_visualization_mode in ('legend', 'both') and event_map:
+                print('legend right', file=sf)
+                print('**Event Scoping**', file=sf)
+                print('----', file=sf)
+                for event_path in sorted(event_map.keys()):
+                    transitions = event_map[event_path]
+                    color = event_colors.get(event_path, '#000000')
+                    # Show event name and count
+                    event_name = event_path.split('.')[-1]
+                    print(f'<color:{color}>■</color> **{event_name}** ({len(transitions)} transitions)', file=sf)
+                    # Show event path
+                    print(f'  <size:10><color:gray>/{event_path}</color></size>', file=sf)
+                print('endlegend', file=sf)
+                print('', file=sf)
+
+            print(self.root_state.to_plantuml(options, event_colors=event_colors), file=sf)
             print(f'[*] --> {sequence_safe(self.root_state.path)}', file=sf)
             print(f'{sequence_safe(self.root_state.path)} --> [*]', file=sf)
             print('@enduml', file=sf, end='')

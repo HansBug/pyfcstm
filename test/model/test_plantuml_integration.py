@@ -863,3 +863,415 @@ class TestUseStereotypes:
         assert '<<pseudo>>' not in result
         assert '<<composite>>' not in result
 
+
+@pytest.mark.unittest
+class TestMaxDepth:
+    """Test cases for max_depth and collapsed_state_marker."""
+
+    def test_max_depth_none_expands_all(self):
+        """Test that max_depth=None expands all substates."""
+        # Create nested states: Root -> Level1 -> Level2 -> Level3
+        level3 = State(
+            name='Level3',
+            extra_name=None,
+            path=('Root', 'Level1', 'Level2', 'Level3'),
+            substates={},
+        )
+        level2 = State(
+            name='Level2',
+            extra_name=None,
+            path=('Root', 'Level1', 'Level2'),
+            substates={'Level3': level3},
+        )
+        level1 = State(
+            name='Level1',
+            extra_name=None,
+            path=('Root', 'Level1'),
+            substates={'Level2': level2},
+        )
+        root = State(
+            name='Root',
+            extra_name=None,
+            path=('Root',),
+            substates={'Level1': level1},
+        )
+
+        options = PlantUMLOptions(max_depth=None)
+        result = root.to_plantuml(options)
+
+        # All levels should be expanded
+        assert 'as root__level1' in result
+        assert 'as root__level1__level2' in result
+        assert 'as root__level1__level2__level3' in result
+
+    def test_max_depth_0_shows_only_root(self):
+        """Test that max_depth=0 shows only root state with collapsed marker."""
+        level2 = State(
+            name='Level2',
+            extra_name=None,
+            path=('Root', 'Level1', 'Level2'),
+            substates={},
+        )
+        level1 = State(
+            name='Level1',
+            extra_name=None,
+            path=('Root', 'Level1'),
+            substates={'Level2': level2},
+        )
+        root = State(
+            name='Root',
+            extra_name=None,
+            path=('Root',),
+            substates={'Level1': level1},
+        )
+
+        options = PlantUMLOptions(max_depth=0, collapsed_state_marker='...')
+        result = root.to_plantuml(options)
+
+        # Root should be shown
+        assert 'state "Root"' in result
+        # Level1 should NOT be expanded, collapsed marker should be shown
+        assert 'as root__level1' not in result
+        assert '"..."' in result
+        assert 'as root___collapsed_' in result
+
+    def test_max_depth_1_expands_one_level(self):
+        """Test that max_depth=1 expands only one level."""
+        level3 = State(
+            name='Level3',
+            extra_name=None,
+            path=('Root', 'Level1', 'Level2', 'Level3'),
+            substates={},
+        )
+        level2 = State(
+            name='Level2',
+            extra_name=None,
+            path=('Root', 'Level1', 'Level2'),
+            substates={'Level3': level3},
+        )
+        level1 = State(
+            name='Level1',
+            extra_name=None,
+            path=('Root', 'Level1'),
+            substates={'Level2': level2},
+        )
+        root = State(
+            name='Root',
+            extra_name=None,
+            path=('Root',),
+            substates={'Level1': level1},
+        )
+
+        options = PlantUMLOptions(max_depth=1)
+        result = root.to_plantuml(options)
+
+        # Level1 should be expanded
+        assert 'as root__level1' in result
+        # Level2 should NOT be expanded (collapsed)
+        assert 'as root__level1__level2' not in result
+        # Collapsed marker should be shown in Level1
+        assert 'as root__level1___collapsed_' in result
+
+    def test_custom_collapsed_marker(self):
+        """Test custom collapsed state marker."""
+        level1 = State(
+            name='Level1',
+            extra_name=None,
+            path=('Root', 'Level1'),
+            substates={},
+        )
+        root = State(
+            name='Root',
+            extra_name=None,
+            path=('Root',),
+            substates={'Level1': level1},
+        )
+
+        options = PlantUMLOptions(max_depth=0, collapsed_state_marker='[more...]')
+        result = root.to_plantuml(options)
+
+        assert '"[more...]"' in result
+
+
+@pytest.mark.unittest
+class TestEventVisualization:
+    """Test cases for event_visualization_mode."""
+
+    def test_event_visualization_none(self):
+        """Test that event_visualization_mode='none' shows no colors or legend."""
+        from pyfcstm.model.model import Event, Transition
+        from pyfcstm.model.expr import Integer
+
+        event = Event(name='TestEvent', state_path=('Root',), extra_name=None)
+        child1 = State(
+            name='Child1',
+            extra_name=None,
+            path=('Root', 'Child1'),
+            substates={},
+        )
+        child2 = State(
+            name='Child2',
+            extra_name=None,
+            path=('Root', 'Child2'),
+            substates={},
+        )
+        root = State(
+            name='Root',
+            extra_name=None,
+            path=('Root',),
+            substates={'Child1': child1, 'Child2': child2},
+            transitions=[
+                Transition(
+                    from_state='Child1',
+                    to_state='Child2',
+                    event=event,
+                    guard=None,
+                    effects=[],
+                )
+            ],
+        )
+
+        sm = StateMachine(defines={}, root_state=root)
+        options = PlantUMLOptions(event_visualization_mode='none')
+        result = sm.to_plantuml(options)
+
+        # Should not have legend
+        assert 'legend' not in result.lower()
+        # Should not have color codes after event names (except in directives)
+        lines = result.split('\n')
+        for line in lines:
+            if 'TestEvent' in line:
+                # Event line should not have color code
+                assert not line.strip().endswith('#4E79A7')  # Default first color
+
+    def test_event_visualization_color(self):
+        """Test that event_visualization_mode='color' applies colors to transitions."""
+        from pyfcstm.model.model import Event, Transition
+
+        event = Event(name='TestEvent', state_path=('Root',), extra_name=None)
+        child1 = State(
+            name='Child1',
+            extra_name=None,
+            path=('Root', 'Child1'),
+            substates={},
+        )
+        child2 = State(
+            name='Child2',
+            extra_name=None,
+            path=('Root', 'Child2'),
+            substates={},
+        )
+        root = State(
+            name='Root',
+            extra_name=None,
+            path=('Root',),
+            substates={'Child1': child1, 'Child2': child2},
+            transitions=[
+                Transition(
+                    from_state='Child1',
+                    to_state='Child2',
+                    event=event,
+                    guard=None,
+                    effects=[],
+                )
+            ],
+        )
+
+        sm = StateMachine(defines={}, root_state=root)
+        options = PlantUMLOptions(event_visualization_mode='color')
+        result = sm.to_plantuml(options)
+
+        # Should have color code after event name
+        # Color format: #RRGGBB
+        import re
+        assert re.search(r'#[0-9A-F]{6}', result, re.IGNORECASE) is not None
+
+    def test_event_visualization_legend(self):
+        """Test that event_visualization_mode='legend' shows event legend."""
+        from pyfcstm.model.model import Event, Transition
+
+        event = Event(name='TestEvent', state_path=('Root',), extra_name='测试事件')
+        child1 = State(
+            name='Child1',
+            extra_name=None,
+            path=('Root', 'Child1'),
+            substates={},
+        )
+        child2 = State(
+            name='Child2',
+            extra_name=None,
+            path=('Root', 'Child2'),
+            substates={},
+        )
+        root = State(
+            name='Root',
+            extra_name=None,
+            path=('Root',),
+            substates={'Child1': child1, 'Child2': child2},
+            transitions=[
+                Transition(
+                    from_state='Child1',
+                    to_state='Child2',
+                    event=event,
+                    guard=None,
+                    effects=[],
+                )
+            ],
+        )
+
+        sm = StateMachine(defines={}, root_state=root)
+        options = PlantUMLOptions(event_visualization_mode='legend')
+        result = sm.to_plantuml(options)
+
+        # Should have legend
+        assert 'legend right' in result
+        assert 'Event Scoping' in result
+        assert 'TestEvent' in result
+        assert '1 transitions' in result
+        assert 'endlegend' in result
+
+    def test_event_visualization_both(self):
+        """Test that event_visualization_mode='both' shows both colors and legend."""
+        from pyfcstm.model.model import Event, Transition
+
+        event = Event(name='TestEvent', state_path=('Root',), extra_name=None)
+        child1 = State(
+            name='Child1',
+            extra_name=None,
+            path=('Root', 'Child1'),
+            substates={},
+        )
+        child2 = State(
+            name='Child2',
+            extra_name=None,
+            path=('Root', 'Child2'),
+            substates={},
+        )
+        root = State(
+            name='Root',
+            extra_name=None,
+            path=('Root',),
+            substates={'Child1': child1, 'Child2': child2},
+            transitions=[
+                Transition(
+                    from_state='Child1',
+                    to_state='Child2',
+                    event=event,
+                    guard=None,
+                    effects=[],
+                )
+            ],
+        )
+
+        sm = StateMachine(defines={}, root_state=root)
+        options = PlantUMLOptions(event_visualization_mode='both')
+        result = sm.to_plantuml(options)
+
+        # Should have both legend and colors
+        assert 'legend right' in result
+        assert 'Event Scoping' in result
+        import re
+        assert re.search(r'#[0-9A-F]{6}', result, re.IGNORECASE) is not None
+
+    def test_event_visualization_custom_colors(self):
+        """Test custom event colors."""
+        from pyfcstm.model.model import Event, Transition
+
+        event = Event(name='TestEvent', state_path=('Root',), extra_name=None)
+        child1 = State(
+            name='Child1',
+            extra_name=None,
+            path=('Root', 'Child1'),
+            substates={},
+        )
+        child2 = State(
+            name='Child2',
+            extra_name=None,
+            path=('Root', 'Child2'),
+            substates={},
+        )
+        root = State(
+            name='Root',
+            extra_name=None,
+            path=('Root',),
+            substates={'Child1': child1, 'Child2': child2},
+            transitions=[
+                Transition(
+                    from_state='Child1',
+                    to_state='Child2',
+                    event=event,
+                    guard=None,
+                    effects=[],
+                )
+            ],
+        )
+
+        sm = StateMachine(defines={}, root_state=root)
+        custom_colors = {'Root.TestEvent': '#FF0000'}
+        options = PlantUMLOptions(
+            event_visualization_mode='color',
+            custom_colors=custom_colors
+        )
+        result = sm.to_plantuml(options)
+
+        # Should use custom color
+        assert '#FF0000' in result
+
+    def test_multiple_events_different_colors(self):
+        """Test that multiple events get different colors."""
+        from pyfcstm.model.model import Event, Transition
+
+        event1 = Event(name='Event1', state_path=('Root',), extra_name=None)
+        event2 = Event(name='Event2', state_path=('Root',), extra_name=None)
+
+        child1 = State(
+            name='Child1',
+            extra_name=None,
+            path=('Root', 'Child1'),
+            substates={},
+        )
+        child2 = State(
+            name='Child2',
+            extra_name=None,
+            path=('Root', 'Child2'),
+            substates={},
+        )
+        child3 = State(
+            name='Child3',
+            extra_name=None,
+            path=('Root', 'Child3'),
+            substates={},
+        )
+        root = State(
+            name='Root',
+            extra_name=None,
+            path=('Root',),
+            substates={'Child1': child1, 'Child2': child2, 'Child3': child3},
+            transitions=[
+                Transition(
+                    from_state='Child1',
+                    to_state='Child2',
+                    event=event1,
+                    guard=None,
+                    effects=[],
+                ),
+                Transition(
+                    from_state='Child2',
+                    to_state='Child3',
+                    event=event2,
+                    guard=None,
+                    effects=[],
+                ),
+            ],
+        )
+
+        sm = StateMachine(defines={}, root_state=root)
+        options = PlantUMLOptions(event_visualization_mode='legend')
+        result = sm.to_plantuml(options)
+
+        # Should show both events in legend
+        assert 'Event1' in result
+        assert 'Event2' in result
+        assert '1 transitions' in result  # Each event has 1 transition
+
+

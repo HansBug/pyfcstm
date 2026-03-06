@@ -2,13 +2,38 @@
 
 Syntax highlighting support for FCSTM (Finite State Machine) DSL in Visual Studio Code.
 
+## Project Positioning
+
+This extension is intended to remain a lightweight, offline-capable VSCode extension for FCSTM authoring.
+
+The main design principles are:
+
+- The extension should remain language-neutral at runtime.
+  - It may use JavaScript because that is native to the VSCode extension host.
+  - It must not depend on Python, Java, or other external runtimes at extension runtime.
+- The extension should remain compatible with a wide range of VSCode versions, including older and newer releases where practical.
+- The extension should work fully offline for its core editor features.
+- The FCSTM ANTLR grammar should remain the main source of truth for syntax-driven capabilities.
+- Parser-related assets should be maintainable from within [editors/vscode/](.) through a local regeneration command.
+
+## Current Scope
+
+The extension currently provides:
+
+- Syntax highlighting for FCSTM files (`.fcstm`)
+- Comment toggling support (`//` and `/* */`)
+- Bracket matching and auto-closing
+- Code folding support through language configuration
+
+The extension is planned to grow toward lightweight parser-backed editing features, but it is not positioned as a full language server.
+
 ## Features
 
 - Syntax highlighting for FCSTM files (`.fcstm`)
 - Comment toggling support (`//` and `/* */`)
 - Bracket matching and auto-closing
 - Code folding support
-- Full language support based on ANTLR grammar
+- Grammar-aligned language package foundation for future parser-backed editor features
 
 ## Installation
 
@@ -170,6 +195,18 @@ The extension provides:
 - **Auto-closing pairs**: Automatic closing of brackets, quotes, and comment blocks
 - **Code folding**: Fold code blocks using region markers
 
+## Offline and Compatibility Notes
+
+- Core editor behavior should remain available without network access.
+- Planned parser-backed features are intended to run locally inside the extension host.
+- New capabilities should be implemented conservatively to preserve compatibility across a wide range of VSCode versions.
+
+## Grammar-Driven Development
+
+The extension is intended to reuse the FCSTM ANTLR grammar as the source of truth for syntax-driven capabilities.
+
+The long-term plan is to keep generated JavaScript lexer/parser assets and their regeneration command inside [editors/vscode/](.) so that the extension remains maintainable without depending on Python or the FCSTM CLI at runtime.
+
 ## Related Projects
 
 - [pyfcstm](https://github.com/hansbug/pyfcstm) - FCSTM DSL parser and code generator
@@ -177,14 +214,9 @@ The extension provides:
 
 ## Development
 
-The syntax highlighting is based on the TextMate grammar format and is synchronized with the Pygments lexer implementation in the pyfcstm project.
+The syntax highlighting is based on the TextMate grammar format and is synchronized with the FCSTM language definition in the repository.
 
-To contribute or modify the grammar:
-
-1. Edit `syntaxes/fcstm.tmLanguage.json`
-2. Test your changes by reloading VSCode (`Ctrl+R` or `Cmd+R` in Extension Development Host)
-3. Run validation: `python editors/validate.py` in the pyfcstm repository
-4. Submit a pull request
+When parser-backed capabilities are introduced, grammar-derived lexer/parser assets and their regeneration command should remain maintained under [editors/vscode/](.).
 
 ## License
 

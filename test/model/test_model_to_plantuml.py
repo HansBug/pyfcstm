@@ -561,7 +561,7 @@ class TestVariableDisplayModes:
         # Should have legend with table
         assert 'legend top left' in result
         assert '|= Variable |= Type |= Initial Value |' in result
-        assert '| counter |: int |: 0 |' in result
+        assert '| counter | int | 0 |' in result
         assert 'endlegend' in result
 
     def test_variable_display_note_mode(self):
@@ -1630,7 +1630,7 @@ class TestEventVisualization:
             assert 'counter' in result
 
     def test_variable_legend_centered_columns(self):
-        """Test that type and initial value columns are centered in legend."""
+        """Test that all columns are left-aligned in legend."""
         sm = StateMachine(
             defines={
                 'a': VarDefine(name='a', type='int', init=Integer(value=0)),
@@ -1641,7 +1641,7 @@ class TestEventVisualization:
         options = PlantUMLOptions(show_variable_definitions=True, variable_display_mode='legend')
         result = sm.to_plantuml(options)
 
-        # Check for centered columns (|: indicates center alignment in PlantUML)
-        assert '| a |: int |: 0 |' in result
-        assert '| b |: int |: 2 \\| 5 |' in result  # Pipe should be escaped
+        # Check for left-aligned columns
+        assert '| a | int | 0 |' in result
+        assert '| b | int | 2 \\| 5 |' in result  # Pipe should be escaped
 

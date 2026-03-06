@@ -3268,9 +3268,9 @@ skinparam state {
 
 legend top left
 |= Variable |= Type |= Initial Value |
-| a |: int |: 0 |
-| b |: int |: 0 |
-| round_count |: int |: 0 |
+| a | int | 0 |
+| b | int | 0 |
+| round_count | int | 0 |
 endlegend
 
 state "TrafficLight" as traffic_light <<composite>> {

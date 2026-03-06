@@ -150,11 +150,15 @@ CLI 可视化
    * - ``show_variable_definitions``
      - bool
      - ``None``
-     - 显示变量定义（如果为 None 则从 detail_level 继承）
+     - 显示变量定义（如果为 None 则从 detail_level 继承，所有级别默认为 True）
    * - ``variable_display_mode``
      - str
-     - ``'note'``
+     - ``'legend'``
      - 变量显示方式：``'note'``、``'legend'`` 或 ``'hide'``
+   * - ``variable_legend_position``
+     - str
+     - ``'top left'``
+     - 图例位置：``'top left'``、``'top center'``、``'top right'``、``'bottom left'``、``'bottom center'``、``'bottom right'``、``'left'``、``'right'``、``'center'``
    * - **状态格式化**
      -
      -
@@ -247,6 +251,10 @@ CLI 可视化
      - str
      - ``'none'``
      - 事件可视化：``'none'``、``'color'``、``'legend'``、``'both'``
+   * - ``event_legend_position``
+     - str
+     - ``'right'``
+     - 事件图例位置：``'top left'``、``'top center'``、``'top right'``、``'bottom left'``、``'bottom center'``、``'bottom right'``、``'left'``、``'right'``、``'center'``
    * - **层次控制**
      -
      -
@@ -352,8 +360,11 @@ CLI 可视化
 
 **配置选项**
 
-- ``show_variable_definitions`` (bool)：在顶部显示变量定义
-- ``variable_display_mode`` (str)：显示模式 - ``'none'``、``'note'`` 或 ``'legend'``
+- ``show_variable_definitions`` (bool)：在顶部显示变量定义（所有详细级别默认为 True）
+- ``variable_display_mode`` (str)：显示模式 - ``'note'``、``'legend'`` 或 ``'hide'``（默认：``'legend'``）
+- ``variable_legend_position`` (str)：使用 ``'legend'`` 模式时的图例位置（默认：``'top left'``）
+
+  - 可用位置：``'top left'``、``'top center'``、``'top right'``、``'bottom left'``、``'bottom center'``、``'bottom right'``、``'left'``、``'right'``、``'center'``
 
 **示例**
 
@@ -361,19 +372,35 @@ CLI 可视化
 
    from pyfcstm.model.plantuml import PlantUMLOptions
 
-   # 将变量显示为图例
+   # 将变量显示为左上角的图例（默认）
    options = PlantUMLOptions(
        show_variable_definitions=True,
-       variable_display_mode='legend'
+       variable_display_mode='legend',
+       variable_legend_position='top left'
+   )
+
+   # 将图例放在右下角
+   options = PlantUMLOptions(
+       show_variable_definitions=True,
+       variable_display_mode='legend',
+       variable_legend_position='bottom right'
    )
 
 **CLI 等效命令**
 
 .. code-block:: bash
 
+   # 默认位置（左上角）
    pyfcstm plantuml -i example.fcstm \
      -c show_variable_definitions=true \
      -c variable_display_mode=legend \
+     -o output.puml
+
+   # 自定义位置
+   pyfcstm plantuml -i example.fcstm \
+     -c show_variable_definitions=true \
+     -c variable_display_mode=legend \
+     -c variable_legend_position="bottom right" \
      -o output.puml
 
 状态名称格式化
@@ -502,7 +529,10 @@ CLI 可视化
 
 - ``show_events`` (bool)：在转换上显示事件名称
 - ``event_name_format`` (tuple[str, ...])：格式组件 - ``'name'``、``'path'``、``'relpath'``
-- ``event_visualization_mode`` (str)：可视化模式 - ``'none'``、``'label'``、``'color'`` 或 ``'both'``
+- ``event_visualization_mode`` (str)：可视化模式 - ``'none'``、``'color'``、``'legend'`` 或 ``'both'``
+- ``event_legend_position`` (str)：使用 ``'legend'`` 或 ``'both'`` 模式时的事件图例位置（默认：``'right'``）
+
+  - 可用位置：``'top left'``、``'top center'``、``'top right'``、``'bottom left'``、``'bottom center'``、``'bottom right'``、``'left'``、``'right'``、``'center'``
 
 **示例**
 
@@ -515,14 +545,33 @@ CLI 可视化
        event_visualization_mode='color'
    )
 
+   # 在自定义位置显示事件图例
+   options = PlantUMLOptions(
+       event_visualization_mode='legend',
+       event_legend_position='bottom right'
+   )
+
+   # 同时显示颜色和图例，并自定义位置
+   options = PlantUMLOptions(
+       event_visualization_mode='both',
+       event_legend_position='top right'
+   )
+
 **CLI 等效命令**
 
 .. code-block:: bash
 
+   # 颜色模式
    pyfcstm plantuml -i example.fcstm \
      -c show_events=true \
      -c event_name_format=name,relpath \
      -c event_visualization_mode=color \
+     -o output.puml
+
+   # 图例模式，自定义位置
+   pyfcstm plantuml -i example.fcstm \
+     -c event_visualization_mode=legend \
+     -c event_legend_position="bottom right" \
      -o output.puml
 
 深度控制

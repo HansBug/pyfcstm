@@ -1592,7 +1592,7 @@ skinparam state {
 
 legend top left
 |= Variable |= Type |= Initial Value |
-| a |: int |: 0 |
+| a | int | 0 |
 endlegend
 
 state "L1" as l1 <<composite>> {

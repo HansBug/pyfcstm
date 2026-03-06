@@ -1428,7 +1428,7 @@ class StateMachine(AstExportable, PlantUMLExportable):
                     from .plantuml import escape_plantuml_table_cell
                     # Use configured legend position
                     print(f'legend {config.variable_legend_position}', file=sf)
-                    # Header row with centered columns
+                    # Header row
                     print('|= Variable |= Type |= Initial Value |', file=sf)
                     for def_item in self.defines.values():
                         var_name = def_item.name
@@ -1436,8 +1436,8 @@ class StateMachine(AstExportable, PlantUMLExportable):
                         var_init = def_item.init.to_ast_node() if def_item.init else 'N/A'
                         # Escape pipe characters in the initial value
                         var_init_escaped = escape_plantuml_table_cell(str(var_init))
-                        # Left-align variable name, center-align type and initial value
-                        print(f'| {var_name} |: {var_type} |: {var_init_escaped} |', file=sf)
+                        # All columns left-aligned
+                        print(f'| {var_name} | {var_type} | {var_init_escaped} |', file=sf)
                     print('endlegend', file=sf)
                     print('', file=sf)
 

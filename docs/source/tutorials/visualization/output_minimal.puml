@@ -8,7 +8,7 @@ skinparam state {
   FontStyle<<pseudo>> italic
 }
 
-legend right
+legend top left
 |= Variable |= Type |= Initial Value |
 | counter | int | 0 |
 | error_count | int | 0 |

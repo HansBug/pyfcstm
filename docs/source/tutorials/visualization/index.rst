@@ -150,11 +150,15 @@ The following table provides a complete reference of all available configuration
    * - ``show_variable_definitions``
      - bool
      - ``None``
-     - Show variable definitions (inherits from detail_level if None)
+     - Show variable definitions (inherits from detail_level if None, defaults to True for all levels)
    * - ``variable_display_mode``
      - str
-     - ``'note'``
+     - ``'legend'``
      - How to display variables: ``'note'``, ``'legend'``, or ``'hide'``
+   * - ``variable_legend_position``
+     - str
+     - ``'top left'``
+     - Legend position: ``'top left'``, ``'top center'``, ``'top right'``, ``'bottom left'``, ``'bottom center'``, ``'bottom right'``, ``'left'``, ``'right'``, ``'center'``
    * - **State Formatting**
      -
      -
@@ -247,6 +251,10 @@ The following table provides a complete reference of all available configuration
      - str
      - ``'none'``
      - Event visualization: ``'none'``, ``'color'``, ``'legend'``, ``'both'``
+   * - ``event_legend_position``
+     - str
+     - ``'right'``
+     - Event legend position: ``'top left'``, ``'top center'``, ``'top right'``, ``'bottom left'``, ``'bottom center'``, ``'bottom right'``, ``'left'``, ``'right'``, ``'center'``
    * - **Hierarchy Control**
      -
      -
@@ -379,8 +387,11 @@ Control how state machine variables are displayed in the diagram.
 
 **Configuration Options**
 
-- ``show_variable_definitions`` (bool): Show variable definitions at the top
-- ``variable_display_mode`` (str): Display mode - ``'none'``, ``'note'``, or ``'legend'``
+- ``show_variable_definitions`` (bool): Show variable definitions at the top (defaults to True for all detail levels)
+- ``variable_display_mode`` (str): Display mode - ``'note'``, ``'legend'``, or ``'hide'`` (default: ``'legend'``)
+- ``variable_legend_position`` (str): Legend position when using ``'legend'`` mode (default: ``'top left'``)
+
+  - Available positions: ``'top left'``, ``'top center'``, ``'top right'``, ``'bottom left'``, ``'bottom center'``, ``'bottom right'``, ``'left'``, ``'right'``, ``'center'``
 
 **Example**
 
@@ -388,19 +399,35 @@ Control how state machine variables are displayed in the diagram.
 
    from pyfcstm.model.plantuml import PlantUMLOptions
 
-   # Show variables as a legend
+   # Show variables as a legend at top-left (default)
    options = PlantUMLOptions(
        show_variable_definitions=True,
-       variable_display_mode='legend'
+       variable_display_mode='legend',
+       variable_legend_position='top left'
+   )
+
+   # Place legend at bottom-right
+   options = PlantUMLOptions(
+       show_variable_definitions=True,
+       variable_display_mode='legend',
+       variable_legend_position='bottom right'
    )
 
 **CLI Equivalent**
 
 .. code-block:: bash
 
+   # Default position (top left)
    pyfcstm plantuml -i example.fcstm \
      -c show_variable_definitions=true \
      -c variable_display_mode=legend \
+     -o output.puml
+
+   # Custom position
+   pyfcstm plantuml -i example.fcstm \
+     -c show_variable_definitions=true \
+     -c variable_display_mode=legend \
+     -c variable_legend_position="bottom right" \
      -o output.puml
 
 State Name Formatting
@@ -529,7 +556,10 @@ Control how events are displayed in the diagram.
 
 - ``show_events`` (bool): Show event names on transitions
 - ``event_name_format`` (tuple[str, ...]): Format components - ``'name'``, ``'path'``, ``'relpath'``
-- ``event_visualization_mode`` (str): Visualization mode - ``'none'``, ``'label'``, ``'color'``, or ``'both'``
+- ``event_visualization_mode`` (str): Visualization mode - ``'none'``, ``'color'``, ``'legend'``, or ``'both'``
+- ``event_legend_position`` (str): Event legend position when using ``'legend'`` or ``'both'`` mode (default: ``'right'``)
+
+  - Available positions: ``'top left'``, ``'top center'``, ``'top right'``, ``'bottom left'``, ``'bottom center'``, ``'bottom right'``, ``'left'``, ``'right'``, ``'center'``
 
 **Example**
 
@@ -542,14 +572,33 @@ Control how events are displayed in the diagram.
        event_visualization_mode='color'
    )
 
+   # Show event legend at custom position
+   options = PlantUMLOptions(
+       event_visualization_mode='legend',
+       event_legend_position='bottom right'
+   )
+
+   # Show both colors and legend with custom positions
+   options = PlantUMLOptions(
+       event_visualization_mode='both',
+       event_legend_position='top right'
+   )
+
 **CLI Equivalent**
 
 .. code-block:: bash
 
+   # Color mode
    pyfcstm plantuml -i example.fcstm \
      -c show_events=true \
      -c event_name_format=name,relpath \
      -c event_visualization_mode=color \
+     -o output.puml
+
+   # Legend mode with custom position
+   pyfcstm plantuml -i example.fcstm \
+     -c event_visualization_mode=legend \
+     -c event_legend_position="bottom right" \
      -o output.puml
 
 Depth Control

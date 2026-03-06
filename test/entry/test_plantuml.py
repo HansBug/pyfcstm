@@ -126,8 +126,8 @@ skinparam state {
 
 legend top left
 |= Variable |= Type |= Initial Value |
-| a |: int |: 0 |
-| b |: int |: 2 \\| 5 |
+| a | int | 0 |
+| b | int | 2 \\| 5 |
 endlegend
 
 state "LX" as lx <<composite>> {
@@ -500,4 +500,132 @@ class TestEntryPlantuml:
                 ],
             )
             assert result.exitcode == 0
+            assert "@startuml" in result.stdout
+
+    def test_plantuml_variable_legend_position(self, input_code_file):
+        """Test plantuml with variable_legend_position configuration."""
+        # Test default position (top left)
+        result = simulate_entry(
+            pyfcstmcli,
+            [
+                "pyfcstm",
+                "plantuml",
+                "-i",
+                input_code_file,
+                "-c",
+                "show_variable_definitions=true",
+                "-c",
+                "variable_display_mode=legend",
+            ],
+        )
+        assert result.exitcode == 0
+        assert "legend top left" in result.stdout
+        assert "@startuml" in result.stdout
+
+        # Test custom position (bottom right)
+        result = simulate_entry(
+            pyfcstmcli,
+            [
+                "pyfcstm",
+                "plantuml",
+                "-i",
+                input_code_file,
+                "-c",
+                "show_variable_definitions=true",
+                "-c",
+                "variable_display_mode=legend",
+                "-c",
+                "variable_legend_position=bottom right",
+            ],
+        )
+        assert result.exitcode == 0
+        assert "legend bottom right" in result.stdout
+        assert "@startuml" in result.stdout
+
+    def test_plantuml_event_legend_position(self, input_code_file):
+        """Test plantuml with event_legend_position configuration."""
+        # Test default position (right)
+        result = simulate_entry(
+            pyfcstmcli,
+            [
+                "pyfcstm",
+                "plantuml",
+                "-i",
+                input_code_file,
+                "-c",
+                "event_visualization_mode=legend",
+            ],
+        )
+        assert result.exitcode == 0
+        # Event legend should be present (if there are events in the test file)
+        assert "@startuml" in result.stdout
+
+        # Test custom position (top left)
+        result = simulate_entry(
+            pyfcstmcli,
+            [
+                "pyfcstm",
+                "plantuml",
+                "-i",
+                input_code_file,
+                "-c",
+                "event_visualization_mode=legend",
+                "-c",
+                "event_legend_position=top left",
+            ],
+        )
+        assert result.exitcode == 0
+        assert "@startuml" in result.stdout
+
+    def test_plantuml_both_legend_positions(self, input_code_file):
+        """Test plantuml with both variable and event legend positions."""
+        result = simulate_entry(
+            pyfcstmcli,
+            [
+                "pyfcstm",
+                "plantuml",
+                "-i",
+                input_code_file,
+                "-c",
+                "show_variable_definitions=true",
+                "-c",
+                "variable_display_mode=legend",
+                "-c",
+                "variable_legend_position=top left",
+                "-c",
+                "event_visualization_mode=legend",
+                "-c",
+                "event_legend_position=bottom right",
+            ],
+        )
+        assert result.exitcode == 0
+        assert "legend top left" in result.stdout
+        assert "@startuml" in result.stdout
+
+    def test_plantuml_all_legend_positions(self, input_code_file):
+        """Test plantuml with all available legend positions."""
+        positions = [
+            "top left", "top center", "top right",
+            "bottom left", "bottom center", "bottom right",
+            "left", "right", "center"
+        ]
+
+        for position in positions:
+            result = simulate_entry(
+                pyfcstmcli,
+                [
+                    "pyfcstm",
+                    "plantuml",
+                    "-i",
+                    input_code_file,
+                    "-c",
+                    "show_variable_definitions=true",
+                    "-c",
+                    "variable_display_mode=legend",
+                    "-c",
+                    f"variable_legend_position={position}",
+                ],
+            )
+            assert result.exitcode == 0
+            assert f"legend {position}" in result.stdout
             assert "@startuml" in result.stdout

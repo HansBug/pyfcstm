@@ -4,7 +4,7 @@ import pytest
 
 from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model import parse_dsl_node_to_state_machine
-from pyfcstm.simulate import SimulationRuntime
+from pyfcstm.simulate import SimulationRuntime, SimulationRuntimeDfsError
 
 
 def build_runtime(dsl_code: str) -> SimulationRuntime:
@@ -1192,3 +1192,85 @@ state Root {
             run_cycle_and_assert(runtime, current_path=None, vars={'phase': 2, 'trace': 20}, is_ended=True)
         assert runtime.brief_stack == []
         assert 'Runtime already ended, cycle ignored.' in caplog.text
+
+    def test_4_31_prunes_repeated_speculative_execution_state(self):
+        dsl_code = '''
+def int counter = 0;
+state Root {
+    state A {
+        during {
+            counter = counter + 1;
+        }
+    }
+
+    state B {
+        during {
+            counter = counter + 10;
+        }
+    }
+
+    state Sink {
+        state Dead;
+        [*] -> Dead : if [counter < 0];
+    }
+
+    [*] -> A;
+    A -> Sink :: Go;
+    A -> B :: Go;
+}
+'''
+        runtime = build_runtime(dsl_code)
+
+        run_cycle_and_assert(runtime, current_path=('Root', 'A'), vars={'counter': 1})
+        run_cycle_and_assert(runtime, ['Root.A.Go'], current_path=('Root', 'B'), vars={'counter': 11})
+
+    def test_4_32_raises_error_for_non_converging_speculative_dfs(self):
+        depth = 80
+        lines = [
+            'def int counter = 0;',
+            'state Root {',
+            '    state A {',
+            '        during {',
+            '            counter = counter + 1;',
+            '        }',
+            '    }',
+            '    state Deep {',
+        ]
+        indent = '        '
+        for idx in range(depth):
+            lines.extend([
+                f'{indent}state L{idx} {{',
+                f'{indent}    [*] -> L{idx + 1};',
+            ])
+            indent += '    '
+        lines.extend([
+            f'{indent}state L{depth} {{',
+            f'{indent}    during {{',
+            f'{indent}        counter = counter + 1;',
+            f'{indent}    }}',
+            f'{indent}}}',
+        ])
+        for idx in reversed(range(depth)):
+            indent = '        ' + '    ' * idx
+            lines.append(f'{indent}}}')
+        lines.extend([
+            '        [*] -> L0;',
+            '    }',
+            '',
+            '    [*] -> A;',
+            '    A -> Deep :: Go;',
+            '}',
+        ])
+        dsl_code = '\n'.join(lines)
+        runtime = build_runtime(dsl_code)
+
+        run_cycle_and_assert(runtime, current_path=('Root', 'A'), vars={'counter': 1})
+        before_stack = runtime.brief_stack
+        before_vars = dict(runtime.vars)
+
+        with pytest.raises(SimulationRuntimeDfsError, match='structural stack-depth safety limit'):
+            runtime.cycle(['Root.A.Go'])
+
+        assert runtime.brief_stack == before_stack
+        assert runtime.vars == before_vars
+        assert runtime.is_ended is False

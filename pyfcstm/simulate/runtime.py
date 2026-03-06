@@ -63,6 +63,20 @@ from ..model import Event, OnAspect, OnStage, State, StateMachine, Transition
 from .utils import get_event_name, get_func_name
 
 
+class SimulationRuntimeDfsError(RuntimeError):
+    """
+    Raised when speculative DFS execution fails to converge safely.
+
+    This exception is used for pathological search spaces where runtime
+    validation keeps descending through unique execution states without
+    reaching a stoppable configuration, reaching termination, or being pruned
+    by repeated-state detection. Such cases usually indicate that the state
+    machine definition contains an unintended unbounded execution chain.
+    """
+
+    pass
+
+
 @dataclass
 class _Frame:
     """
@@ -619,7 +633,7 @@ class SimulationRuntime:
         if ended:
             return True
 
-        success, sim_ended = self._run_cycle_on_context(
+        success, _ = self._run_cycle_on_context(
             sim_stack,
             sim_vars,
             d_events,
@@ -685,6 +699,60 @@ class SimulationRuntime:
         """
         return [_Frame(self.state_machine.root_state, 'init_wait')]
 
+    @staticmethod
+    def _create_execution_signature(
+        stack: List[_Frame],
+        vars_: Dict[str, Union[int, float]],
+    ) -> Tuple[Tuple[Tuple[str, ...], str], Tuple[Tuple[str, Union[int, float]], ...]]:
+        """
+        Build a hashable execution signature for DFS pruning.
+
+        The signature captures the full active stack shape, each frame mode, and
+        the current numeric variable mapping in deterministic key order. It is
+        used only for speculative DFS protection so repeated execution states on
+        the same search path can be pruned safely.
+
+        :param stack: Execution stack to summarize.
+        :type stack: List[_Frame]
+        :param vars_: Variable mapping to summarize.
+        :type vars_: Dict[str, Union[int, float]]
+        :return: Hashable execution signature.
+        :rtype: Tuple[Tuple[Tuple[str, ...], str], Tuple[Tuple[str, Union[int, float]], ...]]
+        """
+        stack_signature = tuple((frame.state.path, frame.mode) for frame in stack)
+        vars_signature = tuple((key, vars_[key]) for key in sorted(vars_))
+        return stack_signature, vars_signature
+
+    @staticmethod
+    def _create_structural_signature(stack: List[_Frame]) -> Tuple[Tuple[Tuple[str, ...], str], ...]:
+        """
+        Build a stack-shape signature for deep-search protection.
+
+        Unlike :meth:`_create_execution_signature`, this helper ignores variable
+        values and keeps only the structural execution path. It is used to
+        detect unbounded speculative descent through ever-new stack/mode shapes.
+
+        :param stack: Execution stack to summarize.
+        :type stack: List[_Frame]
+        :return: Hashable structural signature.
+        :rtype: Tuple[Tuple[Tuple[str, ...], str], ...]
+        """
+        return tuple((frame.state.path, frame.mode) for frame in stack)
+
+    def _raise_dfs_depth_error(self, max_steps: int) -> None:
+        """
+        Raise the DFS safety error used for pathological speculative searches.
+
+        :param max_steps: Maximum speculative steps permitted before aborting.
+        :type max_steps: int
+        :raises SimulationRuntimeDfsError: Always raised to signal a non-converging DFS.
+        """
+        raise SimulationRuntimeDfsError(
+            'Speculative DFS exceeded the safety limit without reaching a '
+            f'stoppable state, ending the runtime, or being pruned after {max_steps} steps; '
+            'the state machine likely contains an invalid unbounded execution chain.'
+        )
+
     def _run_cycle_on_context(
         self,
         stack: List[_Frame],
@@ -701,6 +769,10 @@ class SimulationRuntime:
         Success means the execution reaches either a stoppable stable boundary
         or machine termination. Failure means the cycle cannot form a valid
         stoppable continuation and should therefore be rolled back by the caller.
+        Repeated execution states within the same speculative search are pruned,
+        while unusually deep non-converging searches raise
+        :class:`SimulationRuntimeDfsError` to indicate a likely invalid state
+        machine definition.
 
         :param stack: Execution stack to mutate.
         :type stack: List[_Frame]
@@ -715,17 +787,43 @@ class SimulationRuntime:
         :type validate_post_child_exit: bool
         :return: Pair ``(success, ended)`` describing the result.
         :rtype: Tuple[bool, bool]
+        :raises SimulationRuntimeDfsError: If speculative DFS exceeds the safety
+            limit without convergence or pruning.
         """
         if ended:
             return True, True
 
         steps_taken = 0
         max_steps = 1000
+        seen_signatures = set()
+        max_structural_depth = 64
 
-        while not ended and steps_taken < max_steps:
+        while not ended:
             if not stack:
                 ended = True
                 break
+
+            signature = self._create_execution_signature(stack, vars_)
+            if signature in seen_signatures:
+                logging.warning('Pruned repeated speculative execution state during DFS validation.')
+                return False, False
+            seen_signatures.add(signature)
+
+            structural_signature = self._create_structural_signature(stack)
+            if len(structural_signature) > max_structural_depth:
+                raise SimulationRuntimeDfsError(
+                    'Speculative DFS exceeded the structural stack-depth safety limit '
+                    f'({max_structural_depth}) without reaching a stoppable state or pruning; '
+                    'the state machine likely contains an invalid unbounded nesting chain.'
+                )
+
+            if steps_taken >= max_steps:
+                logging.warning(
+                    'Speculative DFS reached the step safety limit (%s) without convergence; '
+                    'treating the path as invalid continuation.',
+                    max_steps,
+                )
+                return False, False
 
             frame = stack[-1]
             state = frame.state
@@ -735,6 +833,8 @@ class SimulationRuntime:
                     frame.mode = 'active'
                     if state.is_stoppable:
                         return True, False
+                    steps_taken += 1
+                    continue
 
                 transition = self._select_transition(stack, vars_, d_events)
                 if transition is not None:
@@ -773,11 +873,7 @@ class SimulationRuntime:
 
             return False, False
 
-        if steps_taken >= max_steps:
-            logging.error(f'Maximum steps ({max_steps}) reached, possible infinite loop')
-            return False, ended
-
-        return ended or bool(stack and stack[-1].state.is_leaf_state and stack[-1].mode == 'active' and stack[-1].state.is_stoppable), ended
+        return True, True
 
     def cycle(self, events: List[Union[str, Event]] = None):
         """

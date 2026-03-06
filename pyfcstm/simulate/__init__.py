@@ -41,7 +41,5 @@ Example::
     >>> runtime.cycle(['Root.A.Go'])
 """
 
-from .runtime import SimulationRuntime
+from .runtime import SimulationRuntime, SimulationRuntimeDfsError
 from .utils import get_event_name, get_func_name
-
-__all__ = ['SimulationRuntime', 'get_event_name', 'get_func_name']

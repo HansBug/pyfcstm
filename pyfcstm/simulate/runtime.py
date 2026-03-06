@@ -10,7 +10,7 @@ transitions, and exit-to-parent flows are advanced.
 The module contains the following main components:
 
 * :class:`_Frame` - Internal stack frame describing an active state and its phase.
-* :class:`SimulationRuntime` - Runtime environment for stepping and cycling a
+* :class:`SimulationRuntime` - Runtime environment for cycling a
   hierarchical state machine.
 
 .. note::
@@ -92,9 +92,8 @@ class SimulationRuntime:
     The runtime owns three pieces of mutable execution state: the active frame
     stack, the current variable mapping, and two lifecycle flags tracking
     whether initialization has already happened and whether the machine has
-    ended. Public callers usually interact with :meth:`step` when they want to
-    advance a single execution phase, or :meth:`cycle` when they want the runtime
-    to keep advancing until it reaches a stable boundary.
+    ended. Public callers interact with :meth:`cycle` to advance execution
+    until it reaches a stable boundary.
 
     In the current implementation, transition selection is always driven by the
     stack-top state's :attr:`pyfcstm.model.State.transitions_from`. This detail
@@ -133,7 +132,7 @@ class SimulationRuntime:
         Variable storage is prepared eagerly from ``state_machine.defines`` in
         declaration order so later initializers can depend on variables defined
         earlier. The runtime itself is still considered uninitialized until the
-        first call to :meth:`step` or :meth:`cycle`, at which point root entry is
+        first call to :meth:`cycle`, at which point root entry is
         performed by :meth:`_initialize_runtime`.
 
         :param state_machine: The state machine model to simulate.
@@ -716,68 +715,18 @@ class SimulationRuntime:
         self._initialized = True
         self._ended = len(self.stack) == 0
 
-    def step(self, events: List[Union[str, Event]] = None):
-        """
-        Advance the runtime by one execution phase.
-
-        ``step()`` is a fine-grained primitive. On the first call it initializes
-        the runtime. Afterwards it performs at most one phase transition from the
-        current top frame: leaf-state transition selection or during execution,
-        composite-state initial-transition waiting, or parent-level resumption
-        after a child has exited via ``[*]``.
-
-        :param events: Events available for this single step.
-        :type events: List[Union[str, Event]], optional
-        :return: ``None``.
-        :rtype: None
-        """
-        _, d_events = self._normalize_events(events)
-        if self._ended:
-            logging.info('Runtime ended, nothing to do.')
-            return
-        if not self._initialized:
-            self._initialize_runtime(d_events)
-            return
-
-        if not self.stack:
-            self._ended = True
-            return
-
-        frame = self.stack[-1]
-        state = frame.state
-
-        if state.is_leaf_state:
-            transition = self._select_transition(self.stack, self.vars, d_events)
-            if transition is not None:
-                self._ended = self._execute_transition_on_context(self.stack, self.vars, transition, d_events)
-            else:
-                self._run_leaf_during(state, self.vars)
-                frame.mode = 'after_entry'
-            return
-
-        if frame.mode == 'init_wait':
-            self._attempt_init_transition(self.stack, self.vars, d_events)
-            self._ended = len(self.stack) == 0
-            return
-
-        if frame.mode == 'post_child_exit':
-            transition = self._select_transition(self.stack, self.vars, d_events)
-            if transition is not None:
-                self._ended = self._execute_transition_on_context(self.stack, self.vars, transition, d_events)
-            return
-
     def cycle(self, events: List[Union[str, Event]] = None):
         """
         Execute a full runtime cycle until a stable boundary is reached.
 
-        ``cycle()`` repeatedly applies the same transition, init, and during
-        rules used by :meth:`step`, but keeps looping until one of four
-        conditions is met: the runtime ends, a stable stoppable leaf state is
-        reached, a composite state cannot advance further, or a safety limit is
-        hit. In practice this is the method that corresponds most closely to the
-        reviewed examples in :mod:`SIMULATE_DESIGN.md`, including the difference
-        between 4.25 (stays in ``System1.A``) and 4.26 (eventually reaches
-        ``System2.B`` once the exit and follow-up validations all succeed).
+        ``cycle()`` repeatedly applies transition, init, and during rules until
+        one of four conditions is met: the runtime ends, a stable stoppable leaf
+        state is reached, a composite state cannot advance further, or a safety
+        limit is hit. In practice this is the method that corresponds most
+        closely to the reviewed examples in :mod:`SIMULATE_DESIGN.md`, including
+        the difference between 4.25 (stays in ``System1.A``) and 4.26
+        (eventually reaches ``System2.B`` once the exit and follow-up
+        validations all succeed).
 
         :param events: Events available for the current cycle.
         :type events: List[Union[str, Event]], optional
@@ -884,7 +833,7 @@ class SimulationRuntime:
         """
         Indicate whether the runtime has finished execution.
 
-        Once ``True``, subsequent :meth:`step` and :meth:`cycle` calls are
+        Once ``True``, subsequent :meth:`cycle` calls are
         no-ops unless a new :class:`SimulationRuntime` instance is created.
 
         :return: ``True`` if execution has ended.

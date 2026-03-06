@@ -8,7 +8,7 @@ functions for naming events and lifecycle actions in logs or tests.
 
 The module contains the following main components:
 
-* :class:`SimulationRuntime` - Stateful runtime for stepping and cycling a
+* :class:`SimulationRuntime` - Stateful runtime for cycling a
   hierarchical state machine.
 * :func:`get_event_name` - Convert an event object into its canonical path name.
 * :func:`get_func_name` - Convert an action object into a readable path name.

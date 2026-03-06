@@ -64,19 +64,20 @@
 
 ### 2.2 Cycle 语义
 
-**定义**: 执行多个 step，直到到达一个 stoppable 状态
+**定义**: 执行一个完整的 cycle，直到到达可稳定驻停的边界
 
 **执行流程**:
-1. 重复执行 step，直到满足以下任一条件：
+1. 在当前 cycle 内，按定义顺序尝试转换与必要的后续链路，直到满足以下任一条件：
    - 到达一个 stoppable 状态（叶子状态且非伪状态）
-   - 确认没有任何转换可以触发（停在当前叶子状态）
+   - 确认无法继续到达任何 stoppable 状态
    - 状态机结束
 
-2. 到达 stoppable 状态后，执行该状态的 during 动作
+2. 若到达 stoppable 状态，则执行该状态的 during 动作
 
 **关键约束**:
-- Cycle 的终点必须是 stoppable 状态
-- 复合状态、伪状态不能作为 cycle 的终点
+- Cycle 的终点必须是 stoppable 状态，或者状态机已结束
+- 复合状态、伪状态不能作为 cycle 的稳定终点
+- 若整轮搜索无法到达任何 stoppable，则不应提交模拟阶段的副作用
 
 ### 2.3 转换验证规则
 
@@ -2205,6 +2206,217 @@ state Root {
   - 父层跨层级转换未满足
   - 目标复合状态内部无法到达 stoppable
 
+### 4.27 复合状态进入后没有可用的初始转换
+
+这个测试点现在按本轮讨论后的设计语义理解：当一个 cycle 从初始状态开始执行时，应先以 **Root** 为起点做一轮 DFS 式可达性搜索，尝试找到一个可驻停的 stoppable state。若整条链路无法到达任何 stoppable，则本次 cycle 应整体失败，回退到最初状态，并且不保留任何模拟阶段的副作用。
+
+因此，这个例子里虽然 `Root.[*] -> System` 可以进入复合状态 `System`，但因为 `System.[*] -> A` 永远不满足，所以整轮 cycle 最终找不到任何 stoppable。按照这里确认的设计语义，runtime 应保持在 `Root`，并且 `phase`、`trace` 都维持初始值 0。
+
+```python
+dsl_code = '''
+def int phase = 0;
+def int trace = 0;
+state Root {
+    state System {
+        enter {
+            trace = trace + 1;
+        }
+        during before {
+            trace = trace + 10;
+        }
+
+        state A {
+            during {
+                phase = phase + 1;
+                trace = trace + 100;
+            }
+        }
+
+        [*] -> A : if [phase >= 3];
+    }
+
+    [*] -> System;
+}
+'''
+```
+
+**执行序列**:
+
+| 操作 | 当前状态 | phase | trace | 说明 |
+|------|----------|-------|-------|------|
+| `runtime.cycle()` | Root | 0 | 0 | 从 `Root` 开始做 DFS 式搜索，尝试 `Root -> System -> A`，但 `System.[*] -> A` 不满足，整轮找不到 stoppable，因此回退到 `Root`，不提交任何副作用，并给出 warning |
+| `runtime.cycle()` | Root | 0 | 0 | 与上一次相同，仍无法找到 stoppable，状态继续卡在 `Root`，变量保持不变，并再次给出 warning |
+| `runtime.cycle()` | Root | 0 | 0 | 同上，状态机持续卡死在初始状态 |
+
+**详细计算**:
+```
+初始: 当前状态 = Root, phase = 0, trace = 0
+
+第1次 cycle:
+  从 Root 开始 DFS 式尝试：
+    Root.[*] -> System
+    System.enter / System.during before 在模拟过程中可被尝试
+    继续检查 System.[*] -> A: phase >= 3 不满足
+  因此整条链路无法到达任何 stoppable
+  本次 cycle 判定失败
+  回退到最初状态 Root
+  丢弃所有模拟副作用
+  本次结束后: 当前状态 = Root, phase = 0, trace = 0
+  并给出 warning：无法正常转入 stoppable state
+
+第2次 cycle:
+  与第1次 cycle 相同
+  本次结束后: 当前状态 = Root, phase = 0, trace = 0
+  并再次给出 warning
+
+第3次 cycle:
+  与第2次 cycle 相同
+  本次结束后: 当前状态 = Root, phase = 0, trace = 0
+```
+
+**注意**:
+- 这里强调的是本轮讨论确认后的设计语义，而不是当前 `runtime.py` 的既有实现
+- 关键点不是“停在 `System(init_wait)`”，而是“整轮 cycle 无法找到可驻停的 stoppable，因此回退到 `Root`”
+- 所有模拟阶段的 enter / during before 等副作用都不应提交到真实 runtime 状态
+- 这种情况应抛出 warning，提示用户当前状态机无法正常转入 stoppable state
+
+### 4.28 子状态退出到父状态后没有后续 transition
+
+这个测试点也按本轮讨论后的设计语义重新理解：cycle 不应只看局部是否能暂时前进，而应从起点整体判断是否最终可达某个 stoppable。若整条链路最终仍找不到可驻停状态，则所有模拟副作用都应回滚，runtime 保持在最初状态 `Root`。
+
+在这个例子里，虽然 `Root.[*] -> System -> A` 可以成立，`A -> [*]` 也可以退出到父状态 `System`，但退出后 `System` 没有任何可继续推进到 stoppable 的后续 transition，因此整轮 cycle 仍然失败。结果应是回退到 `Root`，并保持 `phase=0`、`trace=0`。
+
+```python
+dsl_code = '''
+def int phase = 0;
+def int trace = 0;
+state Root {
+    state System {
+        during after {
+            trace = trace + 1000;
+        }
+
+        pseudo state A {
+            during {
+                phase = phase + 1;
+                trace = trace + 10;
+            }
+        }
+
+        [*] -> A;
+        A -> [*] : if [phase >= 2];
+    }
+
+    [*] -> System;
+}
+'''
+```
+
+**执行序列**:
+
+| 操作 | 当前状态 | phase | trace | 说明 |
+|------|----------|-------|-------|------|
+| `runtime.cycle()` | Root | 0 | 0 | 虽然模拟上可走到 `System -> A -> [*] -> System`，但退出到父状态后仍无后续链路到达 stoppable，所以整轮 cycle 失败，回退到 `Root`，变量不变，并给出 warning |
+| `runtime.cycle()` | Root | 0 | 0 | 再次尝试仍然无法形成可驻停链路，状态继续停在 `Root`，变量保持 0，并再次给出 warning |
+| `runtime.cycle()` | Root | 0 | 0 | 同上，状态机持续卡死在初始状态 |
+
+**详细计算**:
+```
+初始: 当前状态 = Root, phase = 0, trace = 0
+
+第1次 cycle:
+  从 Root 开始 DFS 式尝试：
+    Root.[*] -> System
+    System.[*] -> A
+    在模拟过程中，A.during / A -> [*] / System.during after 都可能被尝试
+    但退出回 System 后，System 没有任何后续 transition 可以继续到达 stoppable
+  因此整轮 cycle 仍判定失败
+  回退到最初状态 Root
+  丢弃所有模拟副作用
+  本次结束后: 当前状态 = Root, phase = 0, trace = 0
+  并给出 warning：无法正常转入 stoppable state
+
+第2次 cycle:
+  与第1次 cycle 相同
+  本次结束后: 当前状态 = Root, phase = 0, trace = 0
+  并再次给出 warning
+
+第3次 cycle:
+  与第2次 cycle 相同
+  本次结束后: 当前状态 = Root, phase = 0, trace = 0
+```
+
+**注意**:
+- 这里也表达的是本轮讨论确认后的设计语义，而不是当前 `runtime.py` 的既有实现
+- 关键点不是“停在 `System(post_child_exit)`”，而是“整轮 cycle 最终不能到达 stoppable，因此必须整体回滚到 `Root`”
+- 所有模拟阶段里对 `phase`、`trace` 的修改都不应写回真实状态
+- 这种情况同样应抛出 warning，提示用户当前状态机无法形成可驻停链路
+
+### 4.30 显式退出到根并结束
+
+这个测试点覆盖的是：叶子状态通过 `A -> [*]` 直接退出到 root，runtime 清空 stack，整个状态机结束；之后再次调用 `cycle()` 都是 no-op。
+
+```python
+dsl_code = '''
+def int phase = 0;
+def int trace = 0;
+state Root {
+    state A {
+        during {
+            phase = phase + 1;
+            trace = trace + 10;
+        }
+    }
+
+    [*] -> A;
+    A -> [*] : if [phase >= 2];
+}
+'''
+```
+
+**执行序列**:
+
+| 操作 | 当前状态 | phase | trace | 说明 |
+|------|----------|-------|-------|------|
+| `runtime.cycle()` | A | 1 | 10 | 首次进入 `A` 并执行 `A.during` |
+| `runtime.cycle()` | A | 2 | 20 | `A -> [*]` 还不满足，再执行一次 `A.during` |
+| `runtime.cycle()` | ended | 2 | 20 | `A -> [*]` 成功，直接退出到 root，runtime 结束并清空 stack |
+| `runtime.cycle()` | ended | 2 | 20 | 在 cycle 开始前 runtime 已经结束，因此不再执行任何动作；按本轮讨论后的设计语义，这里应额外给出 warning 提示“runtime 已结束” |
+
+**详细计算**:
+```
+初始: phase = 0, trace = 0
+
+第1次 cycle:
+  Root.[*] -> A
+  A.during:
+    phase = 0 + 1 = 1
+    trace = 0 + 10 = 10
+
+第2次 cycle:
+  检查 A -> [*]: phase >= 2 不满足 (当前 phase = 1)
+  再执行 A.during:
+    phase = 1 + 1 = 2
+    trace = 10 + 10 = 20
+
+第3次 cycle:
+  检查 A -> [*]: phase >= 2 满足
+  A 直接退出到 root
+  runtime 清空 stack，is_ended = True
+  本次结束后: phase = 2, trace = 20
+
+第4次 cycle:
+  cycle 开始前 runtime 已结束
+  不再执行任何动作
+  phase = 2, trace = 20
+  并给出 warning：runtime 已结束
+```
+
+**注意**:
+- 这个例子保留“退出到 root 后整机结束”的主体语义
+- 按本轮讨论后的设计语义，当 `cycle()` 开始前已经 `is_ended=True` 时，应显式给出 warning，而不仅仅是静默 no-op
+- 与 4.28 的区别在于：4.28 是因为无法形成可驻停链路而整体回滚到 `Root`；4.30 则是已经成功结束整机
+
 ---
 
 ## 5. 实现要点
@@ -2274,42 +2486,7 @@ def execute_during(state, vars):
         execute_action(action, vars)
 ```
 
-### 5.3 Step 的实现框架
-
-```python
-def step(events):
-    """
-    执行一次 step
-
-    参数:
-        events: 事件列表
-    """
-    current_state = get_current_state()
-
-    if current_state.is_leaf_state:
-        # 尝试触发转换
-        for transition in current_state.transitions_from:
-            if is_triggered(transition, events, vars):
-                # 如果源状态是 stoppable 且目标是 non-stoppable，需要验证
-                if current_state.is_stoppable and not get_target_state(transition).is_stoppable:
-                    if not validate_transition(current_state, get_target_state(transition), events, vars):
-                        continue  # 验证失败，尝试下一个转换
-
-                # 执行转换
-                execute_transition(transition)
-                return
-
-        # 没有转换可触发，执行 during
-        execute_during(current_state, vars)
-    else:
-        # 复合状态，处理初始转换
-        for transition in current_state.init_transitions:
-            if is_triggered(transition, events, vars):
-                execute_transition(transition)
-                return
-```
-
-### 5.4 Cycle 的实现框架
+### 5.3 Cycle 的实现框架
 
 ```python
 def cycle(events):
@@ -2319,6 +2496,8 @@ def cycle(events):
     参数:
         events: 事件列表
     """
+    snapshot = save_runtime_snapshot()
+
     while True:
         current_state = get_current_state()
 
@@ -2327,12 +2506,10 @@ def cycle(events):
             execute_during(current_state, vars)
             break
 
-        # 执行 step
-        prev_state = current_state
-        step(events)
-
-        # 如果状态没有变化且是叶子状态，说明没有转换可触发
-        if get_current_state() == prev_state and prev_state.is_leaf_state:
+        progressed = try_advance_with_validation(events)
+        if not progressed:
+            restore_runtime_snapshot(snapshot)
+            warn('Unable to reach stoppable state in current cycle.')
             break
 ```
 
@@ -2368,7 +2545,7 @@ def cycle(events):
 **答案**: 事件在整个 cycle 内都有效（已确认）
 - 事件在一个 cycle 内都有效
 - 验证过程中的所有转换都可以使用这些事件
-- 所有 step 和转换都可以使用 cycle 提供的事件
+- 所有转换都可以使用 cycle 提供的事件
 
 ### 6.4 During 的执行时机
 
@@ -2427,7 +2604,7 @@ def cycle(events):
 
 ### v0.1.0 (2026-03-06)
 - 初始版本
-- 定义了 step 和 cycle 的语义
+- 定义了 cycle 的语义
 - 定义了转换验证规则
 - 添加了 12 个测试用例
 - 明确了执行顺序和优先级规则

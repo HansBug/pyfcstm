@@ -1072,3 +1072,98 @@ state Root {
         run_cycle_and_assert(runtime, current_path=('Root', 'System1', 'A'), vars={'phase': 7, 'trace': 770777})
         run_cycle_and_assert(runtime, current_path=('Root', 'System2', 'B'), vars={'phase': 7, 'trace': 1881778})
         run_cycle_and_assert(runtime, current_path=('Root', 'System2', 'B'), vars={'phase': 7, 'trace': 2992779})
+
+    def test_4_27_composite_state_stuck_in_init_wait_without_enabled_init_transition(self):
+        dsl_code = '''
+def int phase = 0;
+def int trace = 0;
+state Root {
+    state System {
+        enter {
+            trace = trace + 1;
+        }
+        during before {
+            trace = trace + 10;
+        }
+
+        state A {
+            during {
+                phase = phase + 1;
+                trace = trace + 100;
+            }
+        }
+
+        [*] -> A : if [phase >= 3];
+    }
+
+    [*] -> System;
+}
+'''
+        runtime = build_runtime(dsl_code)
+
+        run_cycle_and_assert(runtime, current_path=('Root', 'System'), vars={'phase': 0, 'trace': 11})
+        assert runtime.brief_stack == [(('Root',), 'init_wait'), (('Root', 'System'), 'init_wait')]
+        run_cycle_and_assert(runtime, current_path=('Root', 'System'), vars={'phase': 0, 'trace': 11})
+        assert runtime.brief_stack == [(('Root',), 'init_wait'), (('Root', 'System'), 'init_wait')]
+        run_cycle_and_assert(runtime, current_path=('Root', 'System'), vars={'phase': 0, 'trace': 11})
+        assert runtime.brief_stack == [(('Root',), 'init_wait'), (('Root', 'System'), 'init_wait')]
+
+    def test_4_28_post_child_exit_without_follow_up_transition(self):
+        dsl_code = '''
+def int phase = 0;
+def int trace = 0;
+state Root {
+    state System {
+        during after {
+            trace = trace + 1000;
+        }
+
+        pseudo state A {
+            during {
+                phase = phase + 1;
+                trace = trace + 10;
+            }
+        }
+
+        [*] -> A;
+        A -> [*] : if [phase >= 2];
+    }
+
+    [*] -> System;
+}
+'''
+        runtime = build_runtime(dsl_code)
+
+        run_cycle_and_assert(runtime, current_path=('Root', 'System'), vars={'phase': 2, 'trace': 1020})
+        assert runtime.brief_stack == [(('Root',), 'init_wait'), (('Root', 'System'), 'post_child_exit')]
+        run_cycle_and_assert(runtime, current_path=('Root', 'System'), vars={'phase': 2, 'trace': 1020})
+        assert runtime.brief_stack == [(('Root',), 'init_wait'), (('Root', 'System'), 'post_child_exit')]
+        run_cycle_and_assert(runtime, current_path=('Root', 'System'), vars={'phase': 2, 'trace': 1020})
+        assert runtime.brief_stack == [(('Root',), 'init_wait'), (('Root', 'System'), 'post_child_exit')]
+
+    def test_4_30_explicit_exit_to_root_ends_runtime(self):
+        dsl_code = '''
+def int phase = 0;
+def int trace = 0;
+state Root {
+    state A {
+        during {
+            phase = phase + 1;
+            trace = trace + 10;
+        }
+    }
+
+    [*] -> A;
+    A -> [*] : if [phase >= 2];
+}
+'''
+        runtime = build_runtime(dsl_code)
+
+        run_cycle_and_assert(runtime, current_path=('Root', 'A'), vars={'phase': 1, 'trace': 10})
+        assert runtime.brief_stack == [(('Root',), 'init_wait'), (('Root', 'A'), 'active')]
+        run_cycle_and_assert(runtime, current_path=('Root', 'A'), vars={'phase': 2, 'trace': 20})
+        assert runtime.brief_stack == [(('Root',), 'init_wait'), (('Root', 'A'), 'active')]
+        run_cycle_and_assert(runtime, current_path=None, vars={'phase': 2, 'trace': 20}, is_ended=True)
+        assert runtime.brief_stack == []
+        run_cycle_and_assert(runtime, current_path=None, vars={'phase': 2, 'trace': 20}, is_ended=True)
+        assert runtime.brief_stack == []

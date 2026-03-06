@@ -1,19 +1,24 @@
 """
-Simulation runtime for executing finite state machine models.
+Public simulation runtime interfaces for finite state machine execution.
 
-This module provides a runtime environment for simulating the execution of
-hierarchical state machines defined using the pyfcstm DSL. It handles state
-transitions, lifecycle actions, aspect-oriented programming, and variable
-operations.
+This package exposes the runtime entry points used to execute
+:class:`pyfcstm.model.StateMachine` instances after they have been parsed from
+DSL source. The public API centers on :class:`SimulationRuntime`, with helper
+functions for naming events and lifecycle actions in logs or tests.
 
-The main public components are:
+The module contains the following main components:
 
-* :class:`SimulationRuntime` - Runtime environment for executing state machines
+* :class:`SimulationRuntime` - Stateful runtime for stepping and cycling a
+  hierarchical state machine.
+* :func:`get_event_name` - Convert an event object into its canonical path name.
+* :func:`get_func_name` - Convert an action object into a readable path name.
 
 .. note::
-   The simulation runtime follows the exact execution semantics defined in
-   CLAUDE.md, including proper handling of aspect actions, composite state
-   during before/after timing, and pseudo states.
+   The runtime documentation in this package describes the current implementation
+   in [runtime.py](runtime.py), including the reviewed semantics documented in
+   [SIMULATE_DESIGN.md](../../SIMULATE_DESIGN.md). In particular, cross-level
+   transition behavior is explained according to the actual runtime rules rather
+   than an idealized statechart model.
 
 Example::
 
@@ -32,8 +37,8 @@ Example::
     >>> ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
     >>> sm = parse_dsl_node_to_state_machine(ast)
     >>> runtime = SimulationRuntime(sm)
-    >>> runtime.cycle()  # Enter initial state
-    >>> runtime.cycle(['Root.A.Go'])  # Trigger transition
+    >>> runtime.cycle()
+    >>> runtime.cycle(['Root.A.Go'])
 """
 
 from .runtime import SimulationRuntime

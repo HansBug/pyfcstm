@@ -2417,6 +2417,232 @@ state Root {
 - 按本轮讨论后的设计语义，当 `cycle()` 开始前已经 `is_ended=True` 时，应显式给出 warning，而不仅仅是静默 no-op
 - 与 4.28 的区别在于：4.28 是因为无法形成可驻停链路而整体回滚到 `Root`；4.30 则是已经成功结束整机
 
+### 4.33 `ref` 复用 enter 动作
+
+这个测试点覆盖的是：多个状态通过 `ref` 复用同一个具名 enter 动作。对 simulate 而言，`ref` 的本质仍然是执行目标 lifecycle action，因此进入不同状态时应产生一致的初始化副作用。
+
+```python
+dsl_code = '''
+def int init_count = 0;
+def int trace = 0;
+state Root {
+    enter CommonInit {
+        init_count = init_count + 1;
+        trace = trace + 100;
+    }
+
+    state A {
+        enter ref /CommonInit;
+        during {
+            trace = trace + 1;
+        }
+    }
+
+    state B {
+        enter ref /CommonInit;
+        during {
+            trace = trace + 10;
+        }
+    }
+
+    [*] -> A;
+    A -> B :: Go;
+}
+'''
+```
+
+**执行序列**:
+
+| 操作 | 当前状态 | init_count | trace | 说明 |
+|------|----------|------------|-------|------|
+| `runtime.cycle()` | A | 2 | 201 | 首次 cycle 先进入 `Root` 并执行 `Root.enter CommonInit`，随后 `Root.[*] -> A`，`A.enter ref /CommonInit` 再次执行同一个具名 enter 动作，最后执行 `A.during` |
+| `runtime.cycle(['Root.A.Go'])` | B | 3 | 311 | `A -> B`，`B.enter ref /CommonInit` 再次执行同一个具名 enter 动作，随后执行 `B.during` |
+| `runtime.cycle()` | B | 3 | 321 | 无转换，继续执行 `B.during` |
+
+**详细计算**:
+```
+初始: init_count = 0, trace = 0
+
+第1次 cycle:
+  进入 Root:
+    Root.enter CommonInit:
+      init_count = 0 + 1 = 1
+      trace = 0 + 100 = 100
+  Root.[*] -> A
+  A.enter ref /CommonInit:
+    init_count = 1 + 1 = 2
+    trace = 100 + 100 = 200
+  A.during:
+    trace = 200 + 1 = 201
+
+第2次 cycle (提供 Go 事件):
+  A.exit
+  A -> B
+  B.enter ref /CommonInit:
+    init_count = 2 + 1 = 3
+    trace = 201 + 100 = 301
+  B.during:
+    trace = 301 + 10 = 311
+
+第3次 cycle:
+  无转换可触发
+  B.during:
+    trace = 311 + 10 = 321
+```
+
+**注意**:
+- `ref` 引用的是已命名动作，不是状态或事件
+- 在 simulate 中，`enter ref /CommonInit` 的执行效果应与把 `CommonInit` 的动作体直接写在目标状态中一致
+- 这个例子适合验证 runtime 对具名 enter action 复用的处理是否一致
+
+### 4.34 `ref` 复用抽象动作
+
+这个测试点覆盖的是：`ref` 的目标不仅可以是具体动作，也可以是抽象动作。对 simulate 而言，抽象动作本身不包含变量赋值，因此被 `ref` 命中时不应产生额外数据副作用，但执行链路仍应保持合法。
+
+```python
+dsl_code = '''
+def int trace = 0;
+state Root {
+    enter abstract PlatformInit;
+
+    state A {
+        enter ref /PlatformInit;
+        during {
+            trace = trace + 1;
+        }
+    }
+
+    state B {
+        enter ref /PlatformInit;
+        during {
+            trace = trace + 10;
+        }
+    }
+
+    [*] -> A;
+    A -> B :: Go;
+}
+'''
+```
+
+**执行序列**:
+
+| 操作 | 当前状态 | trace | 说明 |
+|------|----------|-------|------|
+| `runtime.cycle()` | A | 1 | 进入 `A` 时命中 `enter ref /PlatformInit`，但该目标是 abstract action，本身不修改变量；随后执行 `A.during` |
+| `runtime.cycle(['Root.A.Go'])` | B | 11 | `A -> B` 后再次命中同一个 abstract action，仍无数据副作用；随后执行 `B.during` |
+| `runtime.cycle()` | B | 21 | 无转换，继续执行 `B.during` |
+
+**详细计算**:
+```
+初始: trace = 0
+
+第1次 cycle:
+  Root.[*] -> A
+  A.enter ref /PlatformInit:
+    目标为 abstract action
+    不产生变量修改
+  A.during:
+    trace = 0 + 1 = 1
+
+第2次 cycle (提供 Go 事件):
+  A.exit
+  A -> B
+  B.enter ref /PlatformInit:
+    仍命中同一个 abstract action
+    不产生变量修改
+  B.during:
+    trace = 1 + 10 = 11
+
+第3次 cycle:
+  无转换可触发
+  B.during:
+    trace = 11 + 10 = 21
+```
+
+**注意**:
+- 这里强调的是 `ref` 的解析目标可以是 abstract action
+- simulate 不负责“实现”抽象动作；若目标 abstract action 本身无可执行副作用，则运行时变量不应变化
+- 这个例子适合验证 runtime 不会把 `ref` 错误地当成普通状态跳转或事件触发
+
+### 4.35 `ref` 复用 `>> during` aspect action
+
+这个测试点覆盖的是：`ref` 可以指向具名 aspect action。对 simulate 而言，若叶子状态的 cycle 会执行祖先 aspect actions，则通过 `ref` 复用的 aspect action 也应按同样顺序参与执行。
+
+```python
+dsl_code = '''
+def int trace = 0;
+state Root {
+    >> during before SharedBefore {
+        trace = trace + 100;
+    }
+
+    state System {
+        >> during before ref /SharedBefore;
+
+        state A {
+            during {
+                trace = trace + 1;
+            }
+        }
+
+        state B {
+            during {
+                trace = trace + 10;
+            }
+        }
+
+        [*] -> A;
+        A -> B :: Go;
+    }
+
+    [*] -> System;
+}
+'''
+```
+
+**执行序列**:
+
+| 操作 | 当前状态 | trace | 说明 |
+|------|----------|-------|------|
+| `runtime.cycle()` | A | 201 | 进入 `System -> A` 后，执行 `Root >> during before SharedBefore` 与 `System >> during before ref /SharedBefore`，两者都指向同一套 before 逻辑，然后执行 `A.during` |
+| `runtime.cycle(['Root.System.A.Go'])` | B | 411 | `A -> B` 后再次执行两层 before 逻辑，然后执行 `B.during` |
+| `runtime.cycle()` | B | 621 | 无转换，继续执行相同的 aspect 链与 `B.during` |
+
+**详细计算**:
+```
+初始: trace = 0
+
+第1次 cycle:
+  Root.[*] -> System -> A
+  进入 stoppable 状态 A 后执行 during 链:
+    Root >> during before SharedBefore:      trace = 0 + 100 = 100
+    System >> during before ref /SharedBefore:
+      复用 Root.SharedBefore                trace = 100 + 100 = 200
+    A.during:                                trace = 200 + 1 = 201
+
+第2次 cycle (提供 Go 事件):
+  A.exit
+  A -> B
+  进入 B 后执行 during 链:
+    Root >> during before SharedBefore:      trace = 201 + 100 = 301
+    System >> during before ref /SharedBefore:
+      复用 Root.SharedBefore                trace = 301 + 100 = 401
+    B.during:                                trace = 401 + 10 = 411
+
+第3次 cycle:
+  无转换可触发
+  再次执行相同的 before 链:
+    Root.SharedBefore                        trace = 411 + 100 = 511
+    System ref /SharedBefore                 trace = 511 + 100 = 611
+    B.during                                 trace = 611 + 10 = 621
+```
+
+**注意**:
+- 这里验证的是 `ref` 指向 aspect action 时，simulate 仍按正常 aspect 执行链处理
+- `System >> during before ref /SharedBefore` 不是“跳过一层直接调用”，而是把该位置的动作解析为同一个具名 before action
+- 这个例子适合验证 aspect 顺序与 `ref` 复用叠加后的执行一致性
+
 ### 4.100 真实系统用例：电梯轿门控制
 
 这个例子模拟常见电梯的轿门控制逻辑：收到呼梯后开门，开到位后保持一段时间，再自动关门；如果关门过程中红外光幕检测到有人或物体遮挡，则立即重新开门并重新计时。

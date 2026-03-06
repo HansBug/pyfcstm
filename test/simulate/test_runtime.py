@@ -1275,6 +1275,106 @@ state Root {
         assert runtime.vars == before_vars
         assert runtime.is_ended is False
 
+    def test_4_33_ref_reuses_named_enter_action(self):
+        dsl_code = '''
+def int init_count = 0;
+def int trace = 0;
+state Root {
+    enter CommonInit {
+        init_count = init_count + 1;
+        trace = trace + 100;
+    }
+
+    state A {
+        enter ref /CommonInit;
+        during {
+            trace = trace + 1;
+        }
+    }
+
+    state B {
+        enter ref /CommonInit;
+        during {
+            trace = trace + 10;
+        }
+    }
+
+    [*] -> A;
+    A -> B :: Go;
+}
+'''
+        runtime = build_runtime(dsl_code)
+
+        run_cycle_and_assert(runtime, current_path=('Root', 'A'), vars={'init_count': 2, 'trace': 201})
+        run_cycle_and_assert(runtime, ['Root.A.Go'], current_path=('Root', 'B'), vars={'init_count': 3, 'trace': 311})
+        run_cycle_and_assert(runtime, current_path=('Root', 'B'), vars={'init_count': 3, 'trace': 321})
+
+    def test_4_34_ref_targets_abstract_action_without_side_effects(self):
+        dsl_code = '''
+def int trace = 0;
+state Root {
+    enter abstract PlatformInit;
+
+    state A {
+        enter ref /PlatformInit;
+        during {
+            trace = trace + 1;
+        }
+    }
+
+    state B {
+        enter ref /PlatformInit;
+        during {
+            trace = trace + 10;
+        }
+    }
+
+    [*] -> A;
+    A -> B :: Go;
+}
+'''
+        runtime = build_runtime(dsl_code)
+
+        run_cycle_and_assert(runtime, current_path=('Root', 'A'), vars={'trace': 1})
+        run_cycle_and_assert(runtime, ['Root.A.Go'], current_path=('Root', 'B'), vars={'trace': 11})
+        run_cycle_and_assert(runtime, current_path=('Root', 'B'), vars={'trace': 21})
+
+    def test_4_35_ref_reuses_named_aspect_action(self):
+        dsl_code = '''
+def int trace = 0;
+state Root {
+    >> during before SharedBefore {
+        trace = trace + 100;
+    }
+
+    state System {
+        >> during before ref /SharedBefore;
+
+        state A {
+            during {
+                trace = trace + 1;
+            }
+        }
+
+        state B {
+            during {
+                trace = trace + 10;
+            }
+        }
+
+        [*] -> A;
+        A -> B :: Go;
+    }
+
+    [*] -> System;
+}
+'''
+        runtime = build_runtime(dsl_code)
+
+        run_cycle_and_assert(runtime, current_path=('Root', 'System', 'A'), vars={'trace': 201})
+        run_cycle_and_assert(runtime, ['Root.System.A.Go'], current_path=('Root', 'System', 'B'), vars={'trace': 411})
+        run_cycle_and_assert(runtime, current_path=('Root', 'System', 'B'), vars={'trace': 621})
+
     def test_4_100_elevator_door_control(self):
         dsl_code = '''
 def int door_pos = 0;

@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 修改内容 | 作者 |
 |------|------|----------|------|
+| 0.2.0 | 2026-03-06 | 补充伪状态和退出转换的验证规则，新增 9 个复杂测试用例 | Claude |
 | 0.1.0 | 2026-03-06 | 初始版本，定义核心概念和执行语义 | Claude |
 
 ---
@@ -92,10 +93,18 @@
 
 **示例**:
 ```
-A (stoppable) -> B (non-stoppable) -> C (stoppable)  ✓ 有效
-A (stoppable) -> B (non-stoppable, 无初始转换)      ✗ 无效
-A (stoppable) -> B (non-stoppable) -> [*]           ✗ 无效（退出不算 stoppable）
+A (stoppable) -> B (non-stoppable) -> C (stoppable)           ✓ 有效
+A (stoppable) -> B (non-stoppable, 无初始转换)                ✗ 无效
+A (stoppable) -> B (non-stoppable) -> C (non-stoppable)       ✗ 无效（C 也是 non-stoppable）
+A (stoppable) -> B (pseudo) -> C (pseudo)                     ✗ 无效（伪状态不是 stoppable）
+A (stoppable) -> B (non-stoppable) -> [*] -> 状态机结束       ✓ 有效（整个状态机结束）
+A (stoppable) -> B (non-stoppable) -> [*] -> 父状态           ✗ 无效（退到复合状态，不是 stoppable）
 ```
+
+**退出转换的特殊规则**:
+- 如果退出转换 `[*]` 导致整个状态机结束（栈为空），则该转换有效
+- 如果退出转换 `[*]` 只是退到父状态（父状态是复合状态），则该转换无效
+- 判断方法：检查退出后的状态栈，如果为空则有效，否则检查栈顶是否为 stoppable
 
 ---
 
@@ -594,6 +603,356 @@ state Root {
 
 **注意**: 这里的验证需要模拟执行 B.enter，发现 flag 会被设置为 1，但初始转换需要 flag==2，所以无法进入 B1。
 
+### 4.13 伪状态链路测试：单个伪状态
+
+```python
+dsl_code = '''
+def int counter = 0;
+state Root {
+    state A {
+        during {
+            counter = counter + 1;
+        }
+    }
+
+    pseudo state P {
+        enter {
+            counter = counter + 10;
+        }
+        during {
+            counter = counter + 100;
+        }
+    }
+
+    state B {
+        during {
+            counter = counter + 1000;
+        }
+    }
+
+    [*] -> A;
+    A -> P :: GoP;
+    P -> B :: GoB;
+}
+'''
+```
+
+**执行序列**:
+
+| 操作 | 当前状态 | counter | 说明 |
+|------|----------|---------|------|
+| `runtime.cycle()` | A | 1 | 进入 A，执行 A.during |
+| `runtime.cycle(['Root.A.GoP'])` | A | 2 | A->P 无效（P 是伪状态，不是 stoppable），停在 A，执行 A.during |
+| `runtime.cycle(['Root.A.GoP', 'Root.P.GoB'])` | B | 1111 | A->P（enter +10），P->B（enter 0），执行 B.during |
+
+**注意**:
+- 第2次 cycle 时，虽然提供了 GoP 事件，但 P 是伪状态（non-stoppable），无法停在 P，所以转换无效
+- 第3次 cycle 时，同时提供 GoP 和 GoB 事件，A->P->B 形成完整链路到达 B（stoppable），转换有效
+
+### 4.14 伪状态链路测试：多个伪状态串联
+
+```python
+dsl_code = '''
+def int counter = 0;
+state Root {
+    state A {
+        during {
+            counter = counter + 1;
+        }
+    }
+
+    pseudo state P1 {
+        enter {
+            counter = counter + 10;
+        }
+    }
+
+    pseudo state P2 {
+        enter {
+            counter = counter + 100;
+        }
+    }
+
+    state B {
+        during {
+            counter = counter + 1000;
+        }
+    }
+
+    [*] -> A;
+    A -> P1 :: Go1;
+    P1 -> P2 :: Go2;
+    P2 -> B :: Go3;
+}
+'''
+```
+
+**执行序列**:
+
+| 操作 | 当前状态 | counter | 说明 |
+|------|----------|---------|------|
+| `runtime.cycle()` | A | 1 | 进入 A，执行 A.during |
+| `runtime.cycle(['Root.A.Go1'])` | A | 2 | A->P1 无效（P1 是伪状态），停在 A，执行 A.during |
+| `runtime.cycle(['Root.A.Go1', 'Root.P1.Go2'])` | A | 3 | A->P1->P2 无效（P2 也是伪状态），停在 A，执行 A.during |
+| `runtime.cycle(['Root.A.Go1', 'Root.P1.Go2', 'Root.P2.Go3'])` | B | 1113 | A->P1(+10)->P2(+100)->B，执行 B.during(+1000) |
+
+### 4.15 伪状态链路测试：带守卫条件
+
+```python
+dsl_code = '''
+def int counter = 0;
+state Root {
+    state A {
+        during {
+            counter = counter + 1;
+        }
+    }
+
+    pseudo state P {
+        enter {
+            counter = counter + 10;
+        }
+    }
+
+    state B {
+        during {
+            counter = counter + 100;
+        }
+    }
+
+    [*] -> A;
+    A -> P : if [counter >= 3];
+    P -> B : if [counter >= 15];
+}
+'''
+```
+
+**执行序列**:
+
+| 操作 | 当前状态 | counter | 说明 |
+|------|----------|---------|------|
+| `runtime.cycle()` | A | 1 | 进入 A，执行 A.during |
+| `runtime.cycle()` | A | 2 | 无转换，执行 A.during |
+| `runtime.cycle()` | A | 3 | A->P 验证：counter=3，P.enter 后 counter=13，P->B 需要 counter>=15，不满足，转换无效，停在 A，执行 A.during |
+| `runtime.cycle()` | A | 4 | 无转换，执行 A.during |
+| `runtime.cycle()` | A | 5 | 无转换，执行 A.during |
+| `runtime.cycle()` | B | 115 | A->P 验证：counter=5，P.enter 后 counter=15，P->B 满足，转换有效，执行 B.during |
+
+### 4.16 伪状态链路测试：退出到状态机结束
+
+```python
+dsl_code = '''
+def int counter = 0;
+state Root {
+    state A {
+        during {
+            counter = counter + 1;
+        }
+    }
+
+    pseudo state P {
+        enter {
+            counter = counter + 10;
+        }
+    }
+
+    [*] -> A;
+    A -> P :: GoP;
+    P -> [*];
+}
+'''
+```
+
+**执行序列**:
+
+| 操作 | 当前状态 | counter | 说明 |
+|------|----------|---------|------|
+| `runtime.cycle()` | A | 1 | 进入 A，执行 A.during |
+| `runtime.cycle(['Root.A.GoP'])` | 已结束 | 11 | A->P(+10)->[\*]（状态机结束），转换有效 |
+
+**注意**: P->[*] 导致状态机结束（栈为空），所以 A->P 转换有效。
+
+### 4.17 伪状态链路测试：退出到父状态（无效）
+
+```python
+dsl_code = '''
+def int counter = 0;
+state Root {
+    state System {
+        state A {
+            during {
+                counter = counter + 1;
+            }
+        }
+
+        pseudo state P {
+            enter {
+                counter = counter + 10;
+            }
+        }
+
+        [*] -> A;
+        A -> P :: GoP;
+        P -> [*];
+    }
+
+    [*] -> System;
+}
+'''
+```
+
+**执行序列**:
+
+| 操作 | 当前状态 | counter | 说明 |
+|------|----------|---------|------|
+| `runtime.cycle()` | A | 1 | 进入 System->A，执行 A.during |
+| `runtime.cycle(['Root.System.A.GoP'])` | A | 2 | A->P->[\*] 验证：P->[\*] 退到 System（复合状态，non-stoppable），转换无效，停在 A，执行 A.during |
+
+**注意**: P->[*] 只是退到父状态 System，而 System 是复合状态（non-stoppable），所以 A->P 转换无效。
+
+### 4.18 伪状态链路测试：复合状态中的伪状态链
+
+```python
+dsl_code = '''
+def int counter = 0;
+state Root {
+    state A {
+        during {
+            counter = counter + 1;
+        }
+    }
+
+    state B {
+        pseudo state P1 {
+            enter {
+                counter = counter + 10;
+            }
+        }
+
+        pseudo state P2 {
+            enter {
+                counter = counter + 100;
+            }
+        }
+
+        state B1 {
+            during {
+                counter = counter + 1000;
+            }
+        }
+
+        [*] -> P1;
+        P1 -> P2;
+        P2 -> B1;
+    }
+
+    [*] -> A;
+    A -> B :: GoB;
+}
+'''
+```
+
+**执行序列**:
+
+| 操作 | 当前状态 | counter | 说明 |
+|------|----------|---------|------|
+| `runtime.cycle()` | A | 1 | 进入 A，执行 A.during |
+| `runtime.cycle(['Root.A.GoB'])` | B1 | 1111 | A->B，B->[\*]->P1(+10)->P2(+100)->B1，执行 B1.during(+1000) |
+
+**注意**:
+- B 的初始转换链路：[*]->P1->P2->B1，全部是无条件转换
+- 验证时会自动执行整个链路，最终到达 B1（stoppable）
+
+### 4.19 伪状态链路测试：带事件的伪状态链（无效）
+
+```python
+dsl_code = '''
+def int counter = 0;
+state Root {
+    state A {
+        during {
+            counter = counter + 1;
+        }
+    }
+
+    state B {
+        pseudo state P1 {
+            enter {
+                counter = counter + 10;
+            }
+        }
+
+        state B1 {
+            during {
+                counter = counter + 100;
+            }
+        }
+
+        [*] -> P1;
+        P1 -> B1 :: Event;  // 需要事件
+    }
+
+    [*] -> A;
+    A -> B :: GoB;
+}
+'''
+```
+
+**执行序列**:
+
+| 操作 | 当前状态 | counter | 说明 |
+|------|----------|---------|------|
+| `runtime.cycle()` | A | 1 | 进入 A，执行 A.during |
+| `runtime.cycle(['Root.A.GoB'])` | A | 2 | A->B 验证：B->[\*]->P1，但 P1->B1 需要 Event，无法到达 stoppable，转换无效，停在 A，执行 A.during |
+| `runtime.cycle(['Root.A.GoB', 'Root.B.P1.Event'])` | B1 | 112 | A->B，B->[\*]->P1(+10)->B1，执行 B1.during(+100) |
+
+### 4.20 伪状态链路测试：混合复合状态和伪状态
+
+```python
+dsl_code = '''
+def int counter = 0;
+state Root {
+    state A {
+        during {
+            counter = counter + 1;
+        }
+    }
+
+    state B {
+        pseudo state P {
+            enter {
+                counter = counter + 10;
+            }
+        }
+
+        state C {
+            state C1 {
+                during {
+                    counter = counter + 100;
+                }
+            }
+            [*] -> C1;
+        }
+
+        [*] -> P;
+        P -> C;
+    }
+
+    [*] -> A;
+    A -> B :: GoB;
+}
+'''
+```
+
+**执行序列**:
+
+| 操作 | 当前状态 | counter | 说明 |
+|------|----------|---------|------|
+| `runtime.cycle()` | A | 1 | 进入 A，执行 A.during |
+| `runtime.cycle(['Root.A.GoB'])` | C1 | 111 | A->B，B->[\*]->P(+10)->C，C->[\*]->C1，执行 C1.during(+100) |
+
+**注意**: 验证链路：B（复合）->P（伪状态）->C（复合）->C1（stoppable）
+
 ---
 
 ## 5. 实现要点
@@ -776,6 +1135,21 @@ def cycle(events):
 ---
 
 ## 7. 更新日志
+
+### v0.2.0 (2026-03-06)
+- 补充转换验证规则：
+  - 明确 non-stoppable 到 non-stoppable 的转换无效
+  - 明确伪状态链路的验证规则
+  - 明确退出转换的特殊规则（状态机结束 vs 退到父状态）
+- 新增 9 个复杂测试用例（4.13-4.20）：
+  - 单个伪状态测试
+  - 多个伪状态串联测试
+  - 带守卫条件的伪状态链路
+  - 退出到状态机结束 vs 退到父状态
+  - 复合状态中的伪状态链
+  - 带事件的伪状态链
+  - 混合复合状态和伪状态
+- 完善转换验证示例
 
 ### v0.1.0 (2026-03-06)
 - 初始版本

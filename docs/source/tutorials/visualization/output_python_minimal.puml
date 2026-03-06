@@ -8,6 +8,12 @@ skinparam state {
   FontStyle<<pseudo>> italic
 }
 
+legend right
+|= Variable |= Type |= Initial Value |
+| counter | int | 0 |
+| error_count | int | 0 |
+endlegend
+
 state "System" as system <<composite>> {
     state "Idle" as system__idle
     state "Active" as system__active <<composite>> {

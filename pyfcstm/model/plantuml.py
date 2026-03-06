@@ -333,9 +333,36 @@ class PlantUMLOptions:
 
             >>> # Legend format (compact table)
             >>> PlantUMLOptions(show_variable_definitions=True, variable_display_mode='legend')
-            >>> # Output: legend right
+            >>> # Output: legend top left
             >>> #         |= Variable |= Type |= Initial Value |
             >>> #         | counter | int | 0 |
+            >>> #         endlegend
+
+    variable_legend_position : Literal['top left', 'top center', 'top right', 'bottom left', 'bottom center', 'bottom right', 'left', 'right', 'center'], default='top left'
+        Position of the variable legend when ``variable_display_mode='legend'``.
+
+        * ``'top left'``: Legend at top-left corner (default)
+        * ``'top center'``: Legend at top-center
+        * ``'top right'``: Legend at top-right corner
+        * ``'bottom left'``: Legend at bottom-left corner
+        * ``'bottom center'``: Legend at bottom-center
+        * ``'bottom right'``: Legend at bottom-right corner
+        * ``'left'``: Legend on the left side
+        * ``'right'``: Legend on the right side
+        * ``'center'``: Legend in the center
+
+        Example::
+
+            >>> # Place legend at top-left (default)
+            >>> PlantUMLOptions(variable_display_mode='legend', variable_legend_position='top left')
+            >>> # Output: legend top left
+            >>> #         |= Variable |= Type |= Initial Value |
+            >>> #         endlegend
+
+            >>> # Place legend at bottom-right
+            >>> PlantUMLOptions(variable_display_mode='legend', variable_legend_position='bottom right')
+            >>> # Output: legend bottom right
+            >>> #         |= Variable |= Type |= Initial Value |
             >>> #         endlegend
 
     state_name_format : Tuple[Literal['name', 'extra_name', 'path'], ...], default=('extra_name',)
@@ -569,6 +596,27 @@ class PlantUMLOptions:
             >>> #         * Start: 3 transitions
             >>> #         endlegend
 
+    event_legend_position : Literal['top left', 'top center', 'top right', 'bottom left', 'bottom center', 'bottom right', 'left', 'right', 'center'], default='right'
+        Position of the event legend when ``event_visualization_mode`` is ``'legend'`` or ``'both'``.
+
+        * ``'top left'``: Legend at top-left corner
+        * ``'top center'``: Legend at top-center
+        * ``'top right'``: Legend at top-right corner
+        * ``'bottom left'``: Legend at bottom-left corner
+        * ``'bottom center'``: Legend at bottom-center
+        * ``'bottom right'``: Legend at bottom-right corner
+        * ``'left'``: Legend on the left side
+        * ``'right'``: Legend on the right side (default)
+        * ``'center'``: Legend in the center
+
+        Example::
+
+            >>> # Place event legend on the right (default)
+            >>> PlantUMLOptions(event_visualization_mode='legend', event_legend_position='right')
+
+            >>> # Place event legend at bottom-right
+            >>> PlantUMLOptions(event_visualization_mode='legend', event_legend_position='bottom right')
+
     max_depth : Optional[int], default=None
         Maximum depth to expand in state hierarchy. States beyond this depth
         are collapsed and shown with ``collapsed_state_marker``.
@@ -700,6 +748,11 @@ class PlantUMLOptions:
     # Variable definitions
     show_variable_definitions: Optional[bool] = None
     variable_display_mode: Literal['note', 'legend', 'hide'] = 'legend'
+    variable_legend_position: Literal[
+        'top left', 'top center', 'top right',
+        'bottom left', 'bottom center', 'bottom right',
+        'left', 'right', 'center'
+    ] = 'top left'
 
     # State related
     state_name_format: Tuple[Literal['name', 'extra_name', 'path'], ...] = ('extra_name',)
@@ -728,6 +781,11 @@ class PlantUMLOptions:
     show_events: Optional[bool] = None
     event_name_format: Tuple[Literal['name', 'extra_name', 'path', 'relpath'], ...] = ('extra_name', 'relpath')
     event_visualization_mode: Literal['none', 'color', 'legend', 'both', 'dependency_view'] = 'none'
+    event_legend_position: Literal[
+        'top left', 'top center', 'top right',
+        'bottom left', 'bottom center', 'bottom right',
+        'left', 'right', 'center'
+    ] = 'right'
 
     # Hierarchy control
     max_depth: Optional[int] = None
@@ -871,6 +929,7 @@ class PlantUMLOptions:
             detail_level=self.detail_level,
             show_variable_definitions=resolved_show_variable_definitions,
             variable_display_mode=self.variable_display_mode,
+            variable_legend_position=self.variable_legend_position,
             state_name_format=self.state_name_format,
             show_pseudo_state_style=resolved_show_pseudo_state_style,
             collapse_empty_states=self.collapse_empty_states,
@@ -889,6 +948,7 @@ class PlantUMLOptions:
             show_events=resolved_show_events,
             event_name_format=self.event_name_format,
             event_visualization_mode=self.event_visualization_mode,
+            event_legend_position=self.event_legend_position,
             max_depth=self.max_depth,
             collapsed_state_marker=self.collapsed_state_marker,
             use_skinparam=self.use_skinparam,

@@ -43,6 +43,12 @@ format\_event\_name
 .. autofunction:: format_event_name
 
 
+escape\_plantuml\_table\_cell
+-----------------------------------------------------
+
+.. autofunction:: escape_plantuml_table_cell
+
+
 should\_show\_action
 -----------------------------------------------------
 

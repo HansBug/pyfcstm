@@ -233,7 +233,7 @@ class TestStateMachineToPlantUML:
         assert '@enduml' in result
         assert 'hide empty description' in result
         # Default NORMAL level now shows variable definitions as legend
-        assert 'legend right' in result
+        assert 'legend top left' in result
         assert 'counter' in result
 
     def test_state_machine_minimal_detail(self):
@@ -258,7 +258,7 @@ class TestStateMachineToPlantUML:
         result = sm.to_plantuml(options)
 
         # MINIMAL level now shows variable definitions as legend
-        assert 'legend right' in result
+        assert 'legend top left' in result
         assert 'counter' in result
 
     def test_state_machine_variable_definitions_shown(self):
@@ -559,9 +559,9 @@ class TestVariableDisplayModes:
         result = sm.to_plantuml(options)
 
         # Should have legend with table
-        assert 'legend right' in result
+        assert 'legend top left' in result
         assert '|= Variable |= Type |= Initial Value |' in result
-        assert '| counter | int | 0 |' in result
+        assert '| counter |: int |: 0 |' in result
         assert 'endlegend' in result
 
     def test_variable_display_note_mode(self):
@@ -1591,4 +1591,57 @@ class TestEventVisualization:
         # Should have at least 2 different colors
         unique_colors = set(color_matches)
         assert len(unique_colors) >= 2
+
+    def test_variable_legend_position_default(self):
+        """Test default variable legend position is top left."""
+        sm = StateMachine(
+            defines={'counter': VarDefine(name='counter', type='int', init=Integer(value=0))},
+            root_state=State(name='Root', extra_name=None, path=('Root',), substates={})
+        )
+        options = PlantUMLOptions(show_variable_definitions=True, variable_display_mode='legend')
+        result = sm.to_plantuml(options)
+
+        # Default position should be top left
+        assert 'legend top left' in result
+        assert 'counter' in result
+
+    def test_variable_legend_position_custom(self):
+        """Test custom variable legend positions."""
+        sm = StateMachine(
+            defines={'counter': VarDefine(name='counter', type='int', init=Integer(value=0))},
+            root_state=State(name='Root', extra_name=None, path=('Root',), substates={})
+        )
+
+        # Test different positions
+        positions = [
+            'top left', 'top center', 'top right',
+            'bottom left', 'bottom center', 'bottom right',
+            'left', 'right', 'center'
+        ]
+
+        for position in positions:
+            options = PlantUMLOptions(
+                show_variable_definitions=True,
+                variable_display_mode='legend',
+                variable_legend_position=position
+            )
+            result = sm.to_plantuml(options)
+            assert f'legend {position}' in result
+            assert 'counter' in result
+
+    def test_variable_legend_centered_columns(self):
+        """Test that type and initial value columns are centered in legend."""
+        sm = StateMachine(
+            defines={
+                'a': VarDefine(name='a', type='int', init=Integer(value=0)),
+                'b': VarDefine(name='b', type='int', init=BinaryOp(x=Integer(value=2), op='|', y=Integer(value=5)))
+            },
+            root_state=State(name='Root', extra_name=None, path=('Root',), substates={})
+        )
+        options = PlantUMLOptions(show_variable_definitions=True, variable_display_mode='legend')
+        result = sm.to_plantuml(options)
+
+        # Check for centered columns (|: indicates center alignment in PlantUML)
+        assert '| a |: int |: 0 |' in result
+        assert '| b |: int |: 2 \\| 5 |' in result  # Pipe should be escaped
 

@@ -8,12 +8,11 @@ skinparam state {
   FontStyle<<pseudo>> italic
 }
 
-note as DefinitionNote
-defines {
-    def int counter = 0;
-    def int error_count = 0;
-}
-end note
+legend right
+|= Variable |= Type |= Initial Value |
+| counter | int | 0 |
+| error_count | int | 0 |
+endlegend
 
 state "System (System)" as system <<composite>> {
     state "Idle (System.Idle)" as system__idle

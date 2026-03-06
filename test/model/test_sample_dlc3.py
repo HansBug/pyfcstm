@@ -1840,9 +1840,9 @@ skinparam state {
   FontStyle<<pseudo>> italic
 }
 
-legend right
+legend top left
 |= Variable |= Type |= Initial Value |
-| Event | int | 0 |
+| Event |: int |: 0 |
 endlegend
 
 state "LX" as lx <<composite>> {

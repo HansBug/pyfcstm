@@ -2246,10 +2246,10 @@ skinparam state {
   FontStyle<<pseudo>> italic
 }
 
-legend right
+legend top left
 |= Variable |= Type |= Initial Value |
-| x | int | 0 |
-| y | int | 0 |
+| x |: int |: 0 |
+| y |: int |: 0 |
 endlegend
 
 state "L1" as l1 <<composite>> {

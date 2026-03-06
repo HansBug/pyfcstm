@@ -1426,7 +1426,9 @@ class StateMachine(AstExportable, PlantUMLExportable):
                 elif config.variable_display_mode == 'legend':
                     # Display variables as a legend
                     from .plantuml import escape_plantuml_table_cell
-                    print('legend right', file=sf)
+                    # Use configured legend position
+                    print(f'legend {config.variable_legend_position}', file=sf)
+                    # Header row with centered columns
                     print('|= Variable |= Type |= Initial Value |', file=sf)
                     for def_item in self.defines.values():
                         var_name = def_item.name
@@ -1434,7 +1436,8 @@ class StateMachine(AstExportable, PlantUMLExportable):
                         var_init = def_item.init.to_ast_node() if def_item.init else 'N/A'
                         # Escape pipe characters in the initial value
                         var_init_escaped = escape_plantuml_table_cell(str(var_init))
-                        print(f'| {var_name} | {var_type} | {var_init_escaped} |', file=sf)
+                        # Left-align variable name, center-align type and initial value
+                        print(f'| {var_name} |: {var_type} |: {var_init_escaped} |', file=sf)
                     print('endlegend', file=sf)
                     print('', file=sf)
 
@@ -1448,7 +1451,7 @@ class StateMachine(AstExportable, PlantUMLExportable):
 
             # Add event legend if event_visualization_mode is 'legend' or 'both'
             if config.event_visualization_mode in ('legend', 'both') and event_map:
-                print('legend right', file=sf)
+                print(f'legend {config.event_legend_position}', file=sf)
                 print('**Event Scoping**', file=sf)
                 print('----', file=sf)
                 for event_path in sorted(event_map.keys()):

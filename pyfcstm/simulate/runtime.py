@@ -715,6 +715,130 @@ class SimulationRuntime:
         self._initialized = True
         self._ended = len(self.stack) == 0
 
+    def _initialize_context(
+        self,
+        stack: List[_Frame],
+        vars_: Dict[str, Union[int, float]],
+        d_events: Dict[str, Event],
+    ) -> bool:
+        """
+        Initialize an arbitrary execution context from the root state.
+
+        This helper mirrors :meth:`_initialize_runtime` but operates on caller-
+        supplied stack and variable containers so cycle-level speculative
+        execution can start from a cloned context.
+
+        :param stack: Execution stack to reset and initialize.
+        :type stack: List[_Frame]
+        :param vars_: Variable mapping visible during initialization.
+        :type vars_: Dict[str, Union[int, float]]
+        :param d_events: Active events available during initial entry.
+        :type d_events: Dict[str, Event]
+        :return: ``True`` if initialization ends the runtime immediately.
+        :rtype: bool
+        """
+        stack.clear()
+        self._enter_state(stack, self.state_machine.root_state, vars_, d_events)
+        return len(stack) == 0
+
+    def _create_root_rollback_stack(self) -> List[_Frame]:
+        """
+        Create the rollback stack used for initial-cycle dead ends.
+
+        When the very first cycle cannot reach a stoppable state, the reviewed
+        design keeps the runtime pinned at the root boundary with all simulated
+        side effects discarded. The returned stack represents that boundary.
+
+        :return: Single-frame stack rooted at the state machine root.
+        :rtype: List[_Frame]
+        """
+        return [_Frame(self.state_machine.root_state, 'init_wait')]
+
+    def _run_cycle_on_context(
+        self,
+        stack: List[_Frame],
+        vars_: Dict[str, Union[int, float]],
+        d_events: Dict[str, Event],
+        *,
+        ended: bool = False,
+    ) -> Tuple[bool, bool]:
+        """
+        Advance a full cycle on an arbitrary execution context.
+
+        The context is mutated in place using the same rules as :meth:`cycle`.
+        Success means the execution reaches either a stoppable stable boundary
+        or machine termination. Failure means the cycle cannot form a valid
+        stoppable continuation and should therefore be rolled back by the caller.
+
+        :param stack: Execution stack to mutate.
+        :type stack: List[_Frame]
+        :param vars_: Variable mapping to mutate.
+        :type vars_: Dict[str, Union[int, float]]
+        :param d_events: Active events for the current execution attempt.
+        :type d_events: Dict[str, Event]
+        :param ended: Whether the supplied context has already ended.
+        :type ended: bool
+        :return: Pair ``(success, ended)`` describing the result.
+        :rtype: Tuple[bool, bool]
+        """
+        if ended:
+            return True, True
+
+        steps_taken = 0
+        max_steps = 1000
+
+        while not ended and steps_taken < max_steps:
+            if not stack:
+                ended = True
+                break
+
+            frame = stack[-1]
+            state = frame.state
+
+            if state.is_leaf_state:
+                if frame.mode == 'after_entry':
+                    frame.mode = 'active'
+                    if state.is_stoppable:
+                        return True, False
+
+                transition = self._select_transition(stack, vars_, d_events)
+                if transition is not None:
+                    ended = self._execute_transition_on_context(stack, vars_, transition, d_events)
+                    steps_taken += 1
+                    if ended:
+                        return True, True
+                    continue
+
+                self._run_leaf_during(state, vars_)
+                frame.mode = 'after_entry'
+                steps_taken += 1
+                continue
+
+            if frame.mode == 'init_wait':
+                progressed = self._attempt_init_transition(stack, vars_, d_events)
+                steps_taken += 1
+                if not progressed:
+                    return False, False
+                continue
+
+            if frame.mode == 'post_child_exit':
+                transition = self._select_transition(stack, vars_, d_events)
+                if transition is None:
+                    return False, False
+                ended = self._execute_transition_on_context(stack, vars_, transition, d_events)
+                steps_taken += 1
+                if ended:
+                    return True, True
+                continue
+
+            return False, False
+
+        if steps_taken >= max_steps:
+            logging.error(f'Maximum steps ({max_steps}) reached, possible infinite loop')
+            return False, ended
+
+        return ended or bool(stack and stack[-1].state.is_leaf_state and stack[-1].mode == 'active' and stack[-1].state.is_stoppable), ended
+
     def cycle(self, events: List[Union[str, Event]] = None):
         """
         Execute a full runtime cycle until a stable boundary is reached.
@@ -735,62 +859,40 @@ class SimulationRuntime:
         """
         _, d_events = self._normalize_events(events)
         if self._ended:
-            logging.info('Runtime ended, nothing to do.')
+            logging.warning('Runtime already ended, cycle ignored.')
             return
 
-        if not self._initialized:
-            self._initialize_runtime(d_events)
+        snapshot_stack = self._clone_stack(self.stack)
+        snapshot_vars = copy.deepcopy(self.vars)
+        snapshot_initialized = self._initialized
+        snapshot_ended = self._ended
 
-        steps_taken = 0
-        max_steps = 1000
+        sim_stack = self._clone_stack(self.stack)
+        sim_vars = copy.deepcopy(self.vars)
+        sim_initialized = self._initialized
+        sim_ended = self._ended
 
-        while not self._ended and steps_taken < max_steps:
-            if not self.stack:
-                self._ended = True
-                break
+        if not sim_initialized:
+            sim_ended = self._initialize_context(sim_stack, sim_vars, d_events)
+            sim_initialized = True
 
-            frame = self.stack[-1]
-            state = frame.state
+        success, sim_ended = self._run_cycle_on_context(sim_stack, sim_vars, d_events, ended=sim_ended)
 
-            if state.is_leaf_state:
-                if frame.mode == 'after_entry':
-                    frame.mode = 'active'
-                    if state.is_stoppable:
-                        break
-
-                transition = self._select_transition(self.stack, self.vars, d_events)
-                if transition is not None:
-                    self._ended = self._execute_transition_on_context(self.stack, self.vars, transition, d_events)
-                    steps_taken += 1
-                    continue
-
-                if frame.mode == 'after_entry':
-                    break
-
-                self._run_leaf_during(state, self.vars)
-                frame.mode = 'after_entry'
-                steps_taken += 1
-                continue
-
-            if frame.mode == 'init_wait':
-                progressed = self._attempt_init_transition(self.stack, self.vars, d_events)
-                steps_taken += 1
-                if not progressed:
-                    break
-                continue
-
-            if frame.mode == 'post_child_exit':
-                transition = self._select_transition(self.stack, self.vars, d_events)
-                if transition is None:
-                    break
-                self._ended = self._execute_transition_on_context(self.stack, self.vars, transition, d_events)
-                steps_taken += 1
-                continue
-
-            break
-
-        if steps_taken >= max_steps:
-            logging.error(f'Maximum steps ({max_steps}) reached, possible infinite loop')
+        if success:
+            self.stack = [] if sim_ended else sim_stack
+            self.vars = sim_vars
+            self._initialized = sim_initialized
+            self._ended = sim_ended
+        else:
+            self.vars = snapshot_vars
+            self._ended = snapshot_ended
+            if not snapshot_initialized and not snapshot_ended:
+                self.stack = self._create_root_rollback_stack()
+                self._initialized = True
+            else:
+                self.stack = snapshot_stack
+                self._initialized = snapshot_initialized
+            logging.warning('Unable to reach a stoppable state in current cycle, changes rolled back.')
 
         if self._ended or not self.stack:
             self._ended = True

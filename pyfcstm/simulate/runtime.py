@@ -507,7 +507,7 @@ class SimulationRuntime:
         self._initialized = False
         self._ended = False
 
-    def parse_event(self, event: Union[str, Event]) -> Event:
+    def _parse_event(self, event: Union[str, Event]) -> Event:
         """
         Resolve an event reference into a concrete event object.
 
@@ -548,11 +548,11 @@ class SimulationRuntime:
             >>> sm = parse_dsl_node_to_state_machine(ast)
             >>> runtime = SimulationRuntime(sm)
             >>> # Parse event by string path
-            >>> event = runtime.parse_event('System.Idle.Start')
+            >>> event = runtime._parse_event('System.Idle.Start')
             >>> event.name
             'Start'
             >>> # Parse event by object (returns same object)
-            >>> same_event = runtime.parse_event(event)
+            >>> same_event = runtime._parse_event(event)
             >>> same_event is event
             True
 
@@ -604,7 +604,7 @@ class SimulationRuntime:
         :return: A pair containing the resolved event list and a name-indexed mapping.
         :rtype: Tuple[List[Event], Dict[str, Event]]
         """
-        event_objects = [self.parse_event(event) for event in list(events or [])]
+        event_objects = [self._parse_event(event) for event in list(events or [])]
         d_events = {get_event_name(event): event for event in event_objects}
         return event_objects, d_events
 
@@ -625,56 +625,6 @@ class SimulationRuntime:
         """
         for effect in (transition.effects or []):
             vars_[effect.var_name] = effect.expr(**vars_)
-
-    def execute_transition_effect(self, transition: Transition):
-        """
-        Execute a transition's effects against the runtime's live variables.
-
-        This method applies the transition's effect operations to the runtime's
-        variable mapping in declaration order. Each operation evaluates its
-        expression and assigns the result to the target variable.
-
-        This is a public wrapper around the internal effect execution logic,
-        primarily useful for testing and introspection.
-
-        :param transition: Transition whose effects should be applied.
-        :type transition: Transition
-        :return: ``None``.
-        :rtype: None
-
-        Example::
-
-            >>> from pyfcstm.dsl import parse_with_grammar_entry
-            >>> from pyfcstm.model import parse_dsl_node_to_state_machine
-            >>> from pyfcstm.simulate import SimulationRuntime
-            >>> dsl_code = '''
-            ... def int x = 0;
-            ... def int y = 0;
-            ... state Root {
-            ...     state A;
-            ...     state B;
-            ...     [*] -> A;
-            ...     A -> B effect {
-            ...         x = 10;
-            ...         y = x + 5;
-            ...     }
-            ... }
-            ... '''
-            >>> ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
-            >>> sm = parse_dsl_node_to_state_machine(ast)
-            >>> runtime = SimulationRuntime(sm)
-            >>> runtime.cycle()
-            >>> transition = sm.root_state.substates['A'].transitions_from[0]
-            >>> runtime.execute_transition_effect(transition)
-            >>> runtime.vars
-            {'x': 10, 'y': 15}
-
-        .. note::
-           This method mutates the runtime's live variable mapping. It's
-           primarily intended for testing and debugging rather than normal
-           runtime operation.
-        """
-        self._execute_transition_effect(transition, self.vars)
 
     def _execute_func(self, func: Union[OnStage, OnAspect], vars_: Dict[str, Union[int, float]]) -> None:
         """
@@ -702,54 +652,6 @@ class SimulationRuntime:
             logging.info(f'Execute function {get_func_name(func)}.')
             for op in (func.operations or []):
                 vars_[op.var_name] = op.expr(**vars_)
-
-    def execute_func(self, func: Union[OnStage, OnAspect]):
-        """
-        Execute a lifecycle or aspect action on the live runtime state.
-
-        This method executes the action's operations against the runtime's
-        variable mapping. Referenced actions are followed transitively through
-        ``func.ref`` until a concrete implementation is reached. Abstract
-        actions are logged but do not mutate state.
-
-        This is a public wrapper around the internal action execution logic,
-        primarily useful for testing and introspection.
-
-        :param func: Lifecycle or aspect action to execute.
-        :type func: Union[OnStage, OnAspect]
-        :return: ``None``.
-        :rtype: None
-
-        Example::
-
-            >>> from pyfcstm.dsl import parse_with_grammar_entry
-            >>> from pyfcstm.model import parse_dsl_node_to_state_machine
-            >>> from pyfcstm.simulate import SimulationRuntime
-            >>> dsl_code = '''
-            ... def int counter = 0;
-            ... state Root {
-            ...     state A {
-            ...         enter Initialize {
-            ...             counter = 100;
-            ...         }
-            ...     }
-            ...     [*] -> A;
-            ... }
-            ... '''
-            >>> ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
-            >>> sm = parse_dsl_node_to_state_machine(ast)
-            >>> runtime = SimulationRuntime(sm)
-            >>> enter_action = sm.root_state.substates['A'].on_enters[0]
-            >>> runtime.execute_func(enter_action)
-            >>> runtime.vars['counter']
-            100
-
-        .. note::
-           This method mutates the runtime's live variable mapping. It's
-           primarily intended for testing and debugging rather than normal
-           runtime operation.
-        """
-        self._execute_func(func, self.vars)
 
     def _transition_matches_event(self, transition: Transition, d_events: Dict[str, Event]) -> bool:
         """
@@ -787,28 +689,6 @@ class SimulationRuntime:
         if transition.guard is None:
             return True
         return bool(transition.guard(**vars_))
-
-    def is_transition_triggered(self, transition: Transition, d_events: Dict[str, Event]) -> bool:
-        """
-        Check whether a transition is triggered for the runtime's current state.
-
-        A transition is triggered only when both of its optional conditions are
-        satisfied: event matching and guard evaluation. This helper uses the
-        runtime's live variable mapping rather than a simulated one.
-
-        :param transition: Transition to test.
-        :type transition: Transition
-        :param d_events: Active events indexed by dot-separated name.
-        :type d_events: Dict[str, Event]
-        :return: ``True`` if the transition is triggered.
-        :rtype: bool
-        """
-        matched = self._transition_matches_event(transition, d_events) and self._transition_matches_guard(transition, self.vars)
-        if matched:
-            logging.info(f'Transition {transition.to_ast_node()} triggered.')
-        else:
-            logging.debug(f'Transition {transition.to_ast_node()} not triggered.')
-        return matched
 
     def _transition_is_enabled(
         self,

@@ -548,13 +548,15 @@ class SimulationRuntime:
         stack: List[_Frame],
         vars_: Dict[str, Union[int, float]],
         d_events: Dict[str, Event],
+        *,
+        validate_stoppable: bool = True,
     ) -> Optional[Transition]:
         """
         Select the next executable transition for the current stack-top state.
 
         Transitions are considered in declaration order from
         ``current_state.transitions_from``. For stoppable source states, each
-        candidate must also pass :meth:`_validate_transition`, which simulates the
+        candidate may also pass :meth:`_validate_transition`, which simulates the
         remainder of the chain and rejects transitions that cannot eventually
         reach another stoppable configuration or end the machine.
 
@@ -564,6 +566,9 @@ class SimulationRuntime:
         :type vars_: Dict[str, Union[int, float]]
         :param d_events: Active events for the current execution attempt.
         :type d_events: Dict[str, Event]
+        :param validate_stoppable: Whether stoppable-source transitions should be
+            recursively validated.
+        :type validate_stoppable: bool
         :return: The first acceptable transition, or ``None``.
         :rtype: Optional[Transition]
         """
@@ -573,8 +578,9 @@ class SimulationRuntime:
         for transition in current_state.transitions_from:
             if not self._transition_is_enabled(transition, d_events, vars_):
                 continue
-            if current_state.is_stoppable and not self._validate_transition(stack, vars_, transition, d_events):
-                continue
+            if validate_stoppable and current_state.is_stoppable:
+                if not self._validate_transition(stack, vars_, transition, d_events):
+                    continue
             return transition
         return None
 
@@ -613,89 +619,14 @@ class SimulationRuntime:
         if ended:
             return True
 
-        steps = 0
-        max_steps = 1000
-        while sim_stack and steps < max_steps:
-            frame = sim_stack[-1]
-            state = frame.state
-
-            if state.is_leaf_state:
-                if frame.mode == 'after_entry':
-                    frame.mode = 'active'
-                    if state.is_stoppable:
-                        return True
-
-                transition = self._select_transition_for_validation(sim_stack, sim_vars, d_events)
-                if transition is not None:
-                    ended = self._execute_transition_on_context(sim_stack, sim_vars, transition, d_events)
-                    if ended:
-                        return True
-                    steps += 1
-                    continue
-
-                if state.is_stoppable:
-                    return False
-                return False
-
-            if frame.mode == 'init_wait':
-                progressed = self._attempt_init_transition(sim_stack, sim_vars, d_events)
-                if not progressed:
-                    return False
-                steps += 1
-                continue
-
-            if frame.mode == 'post_child_exit':
-                transition = self._select_transition_for_validation(sim_stack, sim_vars, d_events, validate_stoppable=False)
-                if transition is None:
-                    return False
-                ended = self._execute_transition_on_context(sim_stack, sim_vars, transition, d_events)
-                if ended:
-                    return True
-                steps += 1
-                continue
-
-            return False
-
-        return False
-
-    def _select_transition_for_validation(
-        self,
-        stack: List[_Frame],
-        vars_: Dict[str, Union[int, float]],
-        d_events: Dict[str, Event],
-        validate_stoppable: bool = True,
-    ) -> Optional[Transition]:
-        """
-        Select a transition while simulating future execution during validation.
-
-        This helper mirrors :meth:`_select_transition` but operates on cloned
-        execution state. The ``validate_stoppable`` flag is used to suppress
-        recursive revalidation in contexts where the caller has already enforced
-        the necessary parent-level semantics.
-
-        :param stack: Simulated execution stack.
-        :type stack: List[_Frame]
-        :param vars_: Simulated variable mapping.
-        :type vars_: Dict[str, Union[int, float]]
-        :param d_events: Active events for the current execution attempt.
-        :type d_events: Dict[str, Event]
-        :param validate_stoppable: Whether stoppable-source transitions should be
-            recursively validated.
-        :type validate_stoppable: bool
-        :return: The first acceptable transition in the simulated context, or ``None``.
-        :rtype: Optional[Transition]
-        """
-        if not stack:
-            return None
-        current_state = stack[-1].state
-        for transition in current_state.transitions_from:
-            if not self._transition_is_enabled(transition, d_events, vars_):
-                continue
-            if validate_stoppable and current_state.is_stoppable:
-                if not self._validate_transition(stack, vars_, transition, d_events):
-                    continue
-            return transition
-        return None
+        success, sim_ended = self._run_cycle_on_context(
+            sim_stack,
+            sim_vars,
+            d_events,
+            ended=ended,
+            validate_post_child_exit=False,
+        )
+        return success
 
     def _initialize_runtime(self, d_events: Dict[str, Event]) -> None:
         """
@@ -761,6 +692,7 @@ class SimulationRuntime:
         d_events: Dict[str, Event],
         *,
         ended: bool = False,
+        validate_post_child_exit: bool = True,
     ) -> Tuple[bool, bool]:
         """
         Advance a full cycle on an arbitrary execution context.
@@ -778,6 +710,9 @@ class SimulationRuntime:
         :type d_events: Dict[str, Event]
         :param ended: Whether the supplied context has already ended.
         :type ended: bool
+        :param validate_post_child_exit: Whether transitions selected after a
+            child exits to its parent should still perform stoppable validation.
+        :type validate_post_child_exit: bool
         :return: Pair ``(success, ended)`` describing the result.
         :rtype: Tuple[bool, bool]
         """
@@ -822,7 +757,12 @@ class SimulationRuntime:
                 continue
 
             if frame.mode == 'post_child_exit':
-                transition = self._select_transition(stack, vars_, d_events)
+                transition = self._select_transition(
+                    stack,
+                    vars_,
+                    d_events,
+                    validate_stoppable=validate_post_child_exit,
+                )
                 if transition is None:
                     return False, False
                 ended = self._execute_transition_on_context(stack, vars_, transition, d_events)

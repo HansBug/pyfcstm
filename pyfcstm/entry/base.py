@@ -90,7 +90,7 @@ class ClickErrorException(ClickException):
         click.secho(self.format_message(), fg='red', file=sys.stderr)
 
 
-def print_exception(err: BaseException, print: Optional[Callable[..., None]] = None) -> None:
+def print_exception(err: BaseException, print_func: Optional[Callable[..., None]] = None) -> None:
     """
     Print exception information, including a formatted traceback.
 
@@ -100,8 +100,8 @@ def print_exception(err: BaseException, print: Optional[Callable[..., None]] = N
 
     :param err: The exception object to display.
     :type err: BaseException
-    :param print: Custom print function. If not provided, uses built-in ``print``.
-    :type print: Optional[Callable[..., None]]
+    :param print_func: Custom print function. If not provided, uses built-in ``print``.
+    :type print_func: Optional[Callable[..., None]]
     :return: ``None``. The function prints directly to the output stream.
     :rtype: None
 
@@ -115,7 +115,7 @@ def print_exception(err: BaseException, print: Optional[Callable[..., None]] = N
         ...
         ZeroDivisionError: division by zero
     """
-    print = print or builtins.print
+    print_func = print_func or builtins.print
 
     lines = list(itertools.chain(*map(
         lambda x: x.splitlines(keepends=False),
@@ -123,15 +123,15 @@ def print_exception(err: BaseException, print: Optional[Callable[..., None]] = N
     )))
 
     if lines:
-        print('Traceback (most recent call last):')
-        print(os.linesep.join(lines))
+        print_func('Traceback (most recent call last):')
+        print_func(os.linesep.join(lines))
 
     if len(err.args) == 0:
-        print(f'{type(err).__name__}')
+        print_func(f'{type(err).__name__}')
     elif len(err.args) == 1:
-        print(f'{type(err).__name__}: {err.args[0]}')
+        print_func(f'{type(err).__name__}: {err.args[0]}')
     else:
-        print(f'{type(err).__name__}: {err.args}')
+        print_func(f'{type(err).__name__}: {err.args}')
 
 
 class KeyboardInterrupted(ClickWarningException):

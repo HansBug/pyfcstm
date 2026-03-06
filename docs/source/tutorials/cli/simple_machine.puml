@@ -1,0 +1,32 @@
+@startuml
+hide empty description
+
+skinparam state {
+  BackgroundColor<<pseudo>> LightGray
+  BackgroundColor<<composite>> LightBlue
+  BorderColor<<pseudo>> Gray
+  FontStyle<<pseudo>> italic
+}
+
+state "SimpleMachine" as simple_machine <<composite>> {
+    state "Idle" as simple_machine__idle
+    state "Running" as simple_machine__running
+    state "Stopped" as simple_machine__stopped
+    [*] --> simple_machine__idle
+    simple_machine__idle --> simple_machine__running : Idle.Start
+    note on link
+    effect {
+        counter = 0;
+    }
+    end note
+    simple_machine__running --> simple_machine__stopped : Running.Stop
+    note on link
+    effect {
+        counter = counter + 1;
+    }
+    end note
+    simple_machine__stopped --> simple_machine__idle : Stopped.Reset
+}
+[*] --> simple_machine
+simple_machine --> [*]
+@enduml

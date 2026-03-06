@@ -949,19 +949,27 @@ state Root {
             expect=textwrap.dedent("""
 @startuml
 hide empty description
-state "Root" as root {
+
+skinparam state {
+  BackgroundColor<<pseudo>> LightGray
+  BackgroundColor<<composite>> LightBlue
+  BorderColor<<pseudo>> Gray
+  FontStyle<<pseudo>> italic
+}
+
+state "Root" as root <<composite>> {
     state "state1" as root__state1
     state "state2" as root__state2
-    state "state3" as root__state3 #line.dotted
+    state "state3" as root__state3 <<pseudo>> #line.dotted
     state "state4" as root__state4
-    [*] --> root__state1 : 事件1(E1)
-    root__state1 --> root__state2 : S1 -> 事件1(state1.E1)
-    root__state2 --> root__state3 : 事件1(E1)
-    root__state3 --> root__state4 : S3 -> 事件2(state3.E2)
+    [*] --> root__state1 : 事件1 (E1)
+    root__state1 --> root__state2 : S1 -> 事件1 (state1.E1)
+    root__state2 --> root__state3 : 事件1 (E1)
+    root__state3 --> root__state4 : S3 -> 事件2 (state3.E2)
 }
 [*] --> root
 root --> [*]
 @enduml
             """).strip(),
-            actual=str(model.to_plantuml()),
+            actual=str(model.to_plantuml(options="full")),
         )

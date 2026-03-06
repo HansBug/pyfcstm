@@ -57,7 +57,7 @@ class TestClickExceptions:
         try:
             raise ValueError("Test error")
         except ValueError as e:
-            print_exception(e, print=custom_print)
+            print_exception(e, print_func=custom_print)
 
         custom_print.assert_called()
 
@@ -152,7 +152,7 @@ class TestClickExceptions:
         try:
             raise ValueError("Test error")
         except ValueError as e:
-            print_exception(e, print=custom_print)
+            print_exception(e, print_func=custom_print)
 
         output = custom_output.getvalue()
         assert "Traceback (most recent call last):" in output

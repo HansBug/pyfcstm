@@ -116,17 +116,23 @@ def expected_plantuml_code():
     return textwrap.dedent("""
 @startuml
 hide empty description
-note as DefinitionNote
-defines {
-    def int a = 0;
-    def int b = 2 | 5;
-}
-end note
 
-state "LX" as lx {
-    state "LX1" as lx__lx1 {
+skinparam state {
+  BackgroundColor<<pseudo>> LightGray
+  BackgroundColor<<composite>> LightBlue
+  BorderColor<<pseudo>> Gray
+  FontStyle<<pseudo>> italic
+}
+
+legend top left
+|= Variable |= Type |= Initial Value |
+| a | int | 0 |
+| b | int | 2 \\| 5 |
+endlegend
+
+state "LX" as lx <<composite>> {
+    state "LX1" as lx__lx1 <<composite>> {
         state "LX11" as lx__lx1__lx11
-        lx__lx1__lx11 : enter abstract LX11Enter;\\nenter abstract /*\\n    This is X\\n*/\\nduring abstract LX11During;\\nduring {\\n    b = 2 << 3;\\n    b = b + -1;\\n}\\nexit abstract LX11Exit;
         state "LX12" as lx__lx1__lx12
         state "LX13" as lx__lx1__lx13
         state "LX14" as lx__lx1__lx14
@@ -156,9 +162,8 @@ state "LX" as lx {
         }
         end note
     }
-    lx__lx1 : during before abstract BeforeLX1Enter;\\nduring after abstract AfterLX1Enter /*\\n    this is the comment line\\n*/\\nduring before {\\n    b = 1 + 2;\\n}\\nduring after {\\n    b = 3 - 2;\\n    b = 3 + 2 + a;\\n}
-    state "LX2" as lx__lx2 {
-        state "LX21" as lx__lx2__lx21 {
+    state "LX2" as lx__lx2 <<composite>> {
+        state "LX21" as lx__lx2__lx21 <<composite>> {
             state "LX211" as lx__lx2__lx21__lx211
             state "LX212" as lx__lx2__lx21__lx212
             [*] --> lx__lx2__lx21__lx211 : a == 2
@@ -187,7 +192,6 @@ state "LX" as lx {
     lx__lx1 --> lx__lx1 : a == 1
     lx__lx2 --> lx__lx1 : a == 1
 }
-lx : enter {\\n    b = 0 + b;\\n    b = 3 + a * (2 + b);\\n}\\nexit {\\n    b = 0;\\n    b = a << 2;\\n}
 [*] --> lx
 lx --> [*]
 @enduml
@@ -235,3 +239,393 @@ class TestEntryPlantuml:
                 expect=expected_plantuml_code,
                 actual=pathlib.Path("output_code.plantuml").read_text(),
             )
+
+    def test_plantuml_with_detail_level_minimal(self, input_code_file):
+        """Test plantuml with minimal detail level."""
+        result = simulate_entry(
+            pyfcstmcli,
+            [
+                "pyfcstm",
+                "plantuml",
+                "-i",
+                input_code_file,
+                "-l",
+                "minimal",
+            ],
+        )
+        assert result.exitcode == 0
+        assert "@startuml" in result.stdout
+        assert "@enduml" in result.stdout
+
+    def test_plantuml_with_detail_level_full(self, input_code_file):
+        """Test plantuml with full detail level."""
+        result = simulate_entry(
+            pyfcstmcli,
+            [
+                "pyfcstm",
+                "plantuml",
+                "-i",
+                input_code_file,
+                "-l",
+                "full",
+            ],
+        )
+        assert result.exitcode == 0
+        assert "@startuml" in result.stdout
+        assert "@enduml" in result.stdout
+
+    def test_plantuml_with_config_options(self, input_code_file):
+        """Test plantuml with configuration options."""
+        result = simulate_entry(
+            pyfcstmcli,
+            [
+                "pyfcstm",
+                "plantuml",
+                "-i",
+                input_code_file,
+                "-c",
+                "show_events=true",
+                "-c",
+                "max_depth=2",
+            ],
+        )
+        assert result.exitcode == 0
+        assert "@startuml" in result.stdout
+        assert "@enduml" in result.stdout
+
+    def test_plantuml_with_bool_config(self, input_code_file):
+        """Test plantuml with boolean configuration options."""
+        result = simulate_entry(
+            pyfcstmcli,
+            [
+                "pyfcstm",
+                "plantuml",
+                "-i",
+                input_code_file,
+                "-c",
+                "show_variable_definitions=true",
+                "-c",
+                "use_skinparam=false",
+            ],
+        )
+        assert result.exitcode == 0
+        assert "@startuml" in result.stdout
+
+    def test_plantuml_with_int_config(self, input_code_file):
+        """Test plantuml with integer configuration options."""
+        result = simulate_entry(
+            pyfcstmcli,
+            [
+                "pyfcstm",
+                "plantuml",
+                "-i",
+                input_code_file,
+                "-c",
+                "max_depth=3",
+                "-c",
+                "max_action_lines=10",
+            ],
+        )
+        assert result.exitcode == 0
+        assert "@startuml" in result.stdout
+
+    def test_plantuml_with_tuple_config(self, input_code_file):
+        """Test plantuml with tuple configuration options."""
+        result = simulate_entry(
+            pyfcstmcli,
+            [
+                "pyfcstm",
+                "plantuml",
+                "-i",
+                input_code_file,
+                "-c",
+                "state_name_format=name,path",
+                "-c",
+                "event_name_format=name,relpath",
+            ],
+        )
+        assert result.exitcode == 0
+        assert "@startuml" in result.stdout
+
+    def test_plantuml_with_string_config(self, input_code_file):
+        """Test plantuml with string configuration options."""
+        result = simulate_entry(
+            pyfcstmcli,
+            [
+                "pyfcstm",
+                "plantuml",
+                "-i",
+                input_code_file,
+                "-c",
+                "event_visualization_mode=color",
+                "-c",
+                "variable_display_mode=legend",
+            ],
+        )
+        assert result.exitcode == 0
+        assert "@startuml" in result.stdout
+
+    def test_plantuml_with_combined_level_and_config(self, input_code_file):
+        """Test plantuml with both detail level and config options."""
+        result = simulate_entry(
+            pyfcstmcli,
+            [
+                "pyfcstm",
+                "plantuml",
+                "-i",
+                input_code_file,
+                "-l",
+                "full",
+                "-c",
+                "max_depth=3",
+                "-c",
+                "event_visualization_mode=both",
+            ],
+        )
+        assert result.exitcode == 0
+        assert "@startuml" in result.stdout
+
+    def test_plantuml_missing_input_file(self):
+        """Test plantuml with missing required input file."""
+        result = simulate_entry(
+            pyfcstmcli,
+            [
+                "pyfcstm",
+                "plantuml",
+            ],
+        )
+        assert result.exitcode != 0
+        assert "Missing option" in result.stderr or "required" in result.stderr.lower()
+
+    def test_plantuml_invalid_detail_level(self, input_code_file):
+        """Test plantuml with invalid detail level."""
+        result = simulate_entry(
+            pyfcstmcli,
+            [
+                "pyfcstm",
+                "plantuml",
+                "-i",
+                input_code_file,
+                "-l",
+                "invalid",
+            ],
+        )
+        assert result.exitcode != 0
+
+    def test_plantuml_invalid_config_format(self, input_code_file):
+        """Test plantuml with invalid config format (missing equals sign)."""
+        result = simulate_entry(
+            pyfcstmcli,
+            [
+                "pyfcstm",
+                "plantuml",
+                "-i",
+                input_code_file,
+                "-c",
+                "invalid_format",
+            ],
+        )
+        assert result.exitcode != 0
+
+    def test_plantuml_nonexistent_input_file(self):
+        """Test plantuml with nonexistent input file."""
+        result = simulate_entry(
+            pyfcstmcli,
+            [
+                "pyfcstm",
+                "plantuml",
+                "-i",
+                "/nonexistent/file.fcstm",
+            ],
+        )
+        assert result.exitcode != 0
+
+    def test_plantuml_output_to_nested_directory(self, input_code_file):
+        """Test plantuml output to nested directory."""
+        with isolated_directory():
+            os.makedirs("output/nested", exist_ok=True)
+            result = simulate_entry(
+                pyfcstmcli,
+                [
+                    "pyfcstm",
+                    "plantuml",
+                    "-i",
+                    input_code_file,
+                    "-o",
+                    "output/nested/result.puml",
+                ],
+            )
+            assert result.exitcode == 0
+            assert pathlib.Path("output/nested/result.puml").exists()
+            content = pathlib.Path("output/nested/result.puml").read_text()
+            assert "@startuml" in content
+            assert "@enduml" in content
+
+    def test_plantuml_multiple_config_options(self, input_code_file):
+        """Test plantuml with many configuration options."""
+        result = simulate_entry(
+            pyfcstmcli,
+            [
+                "pyfcstm",
+                "plantuml",
+                "-i",
+                input_code_file,
+                "-c",
+                "show_events=true",
+                "-c",
+                "max_depth=2",
+                "-c",
+                "use_skinparam=true",
+                "-c",
+                "use_stereotypes=true",
+                "-c",
+                "collapse_empty_states=false",
+            ],
+        )
+        assert result.exitcode == 0
+        assert "@startuml" in result.stdout
+
+    def test_plantuml_case_insensitive_detail_level(self, input_code_file):
+        """Test plantuml with case-insensitive detail level."""
+        for level in ["MINIMAL", "Normal", "FuLl"]:
+            result = simulate_entry(
+                pyfcstmcli,
+                [
+                    "pyfcstm",
+                    "plantuml",
+                    "-i",
+                    input_code_file,
+                    "-l",
+                    level,
+                ],
+            )
+            assert result.exitcode == 0
+            assert "@startuml" in result.stdout
+
+    def test_plantuml_variable_legend_position(self, input_code_file):
+        """Test plantuml with variable_legend_position configuration."""
+        # Test default position (top left)
+        result = simulate_entry(
+            pyfcstmcli,
+            [
+                "pyfcstm",
+                "plantuml",
+                "-i",
+                input_code_file,
+                "-c",
+                "show_variable_definitions=true",
+                "-c",
+                "variable_display_mode=legend",
+            ],
+        )
+        assert result.exitcode == 0
+        assert "legend top left" in result.stdout
+        assert "@startuml" in result.stdout
+
+        # Test custom position (bottom right)
+        result = simulate_entry(
+            pyfcstmcli,
+            [
+                "pyfcstm",
+                "plantuml",
+                "-i",
+                input_code_file,
+                "-c",
+                "show_variable_definitions=true",
+                "-c",
+                "variable_display_mode=legend",
+                "-c",
+                "variable_legend_position=bottom right",
+            ],
+        )
+        assert result.exitcode == 0
+        assert "legend bottom right" in result.stdout
+        assert "@startuml" in result.stdout
+
+    def test_plantuml_event_legend_position(self, input_code_file):
+        """Test plantuml with event_legend_position configuration."""
+        # Test default position (right)
+        result = simulate_entry(
+            pyfcstmcli,
+            [
+                "pyfcstm",
+                "plantuml",
+                "-i",
+                input_code_file,
+                "-c",
+                "event_visualization_mode=legend",
+            ],
+        )
+        assert result.exitcode == 0
+        # Event legend should be present (if there are events in the test file)
+        assert "@startuml" in result.stdout
+
+        # Test custom position (top left)
+        result = simulate_entry(
+            pyfcstmcli,
+            [
+                "pyfcstm",
+                "plantuml",
+                "-i",
+                input_code_file,
+                "-c",
+                "event_visualization_mode=legend",
+                "-c",
+                "event_legend_position=top left",
+            ],
+        )
+        assert result.exitcode == 0
+        assert "@startuml" in result.stdout
+
+    def test_plantuml_both_legend_positions(self, input_code_file):
+        """Test plantuml with both variable and event legend positions."""
+        result = simulate_entry(
+            pyfcstmcli,
+            [
+                "pyfcstm",
+                "plantuml",
+                "-i",
+                input_code_file,
+                "-c",
+                "show_variable_definitions=true",
+                "-c",
+                "variable_display_mode=legend",
+                "-c",
+                "variable_legend_position=top left",
+                "-c",
+                "event_visualization_mode=legend",
+                "-c",
+                "event_legend_position=bottom right",
+            ],
+        )
+        assert result.exitcode == 0
+        assert "legend top left" in result.stdout
+        assert "@startuml" in result.stdout
+
+    def test_plantuml_all_legend_positions(self, input_code_file):
+        """Test plantuml with all available legend positions."""
+        positions = [
+            "top left", "top center", "top right",
+            "bottom left", "bottom center", "bottom right",
+            "left", "right", "center"
+        ]
+
+        for position in positions:
+            result = simulate_entry(
+                pyfcstmcli,
+                [
+                    "pyfcstm",
+                    "plantuml",
+                    "-i",
+                    input_code_file,
+                    "-c",
+                    "show_variable_definitions=true",
+                    "-c",
+                    "variable_display_mode=legend",
+                    "-c",
+                    f"variable_legend_position={position}",
+                ],
+            )
+            assert result.exitcode == 0
+            assert f"legend {position}" in result.stdout
+            assert "@startuml" in result.stdout

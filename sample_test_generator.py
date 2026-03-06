@@ -540,10 +540,10 @@ def sample_generation_to_file(code: str, test_file: str):
         print(f'    def test_to_plantuml(self, model, text_aligner):', file=tf)
         print(f'        text_aligner.assert_equal(', file=tf)
         print(f'            expect=textwrap.dedent("""', file=tf)
-        repr_code = model.to_plantuml().replace("\\", "\\\\")
+        repr_code = model.to_plantuml(options='full').replace("\\", "\\\\")
         print(f'{repr_code}', file=tf)
         print(f'            """).strip(),', file=tf)
-        print(f'            actual=str(model.to_plantuml()),', file=tf)
+        print(f'            actual=str(model.to_plantuml(options=\'full\')),', file=tf)
         print(f'        )', file=tf)
 
 

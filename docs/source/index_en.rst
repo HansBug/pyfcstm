@@ -14,6 +14,7 @@ Overview
     tutorials/structure/index
     tutorials/dsl/index
     tutorials/render/index
+    tutorials/visualization/index
     tutorials/cli/index
     tutorials/grammar/index
 

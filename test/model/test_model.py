@@ -6,6 +6,7 @@ from pyfcstm.dsl import node as dsl_nodes
 from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model.expr import *
 from pyfcstm.model.model import *
+from pyfcstm.model.plantuml import PlantUMLOptions
 
 
 @pytest.fixture()
@@ -182,15 +183,22 @@ def expected_plantuml_code():
     return textwrap.dedent("""
 @startuml
 hide empty description
-note as DefinitionNote
-defines {
-    def int a = 0;
-    def int b = 2 | 5;
-}
-end note
 
-state "LX" as lx {
-    state "LX1" as lx__lx1 {
+skinparam state {
+  BackgroundColor<<pseudo>> LightGray
+  BackgroundColor<<composite>> LightBlue
+  BorderColor<<pseudo>> Gray
+  FontStyle<<pseudo>> italic
+}
+
+legend top left
+|= Variable |= Type |= Initial Value |
+| a | int | 0 |
+| b | int | 2 \\| 5 |
+endlegend
+
+state "LX" as lx <<composite>> {
+    state "LX1" as lx__lx1 <<composite>> {
         state "LX11" as lx__lx1__lx11
         lx__lx1__lx11 : enter abstract LX11Enter;\\nenter abstract /*\\n    This is X\\n*/\\nduring abstract LX11During;\\nduring {\\n    b = 2 << 3;\\n    b = b + -1;\\n}\\nexit abstract LX11Exit;
         state "LX12" as lx__lx1__lx12
@@ -223,8 +231,8 @@ state "LX" as lx {
         end note
     }
     lx__lx1 : during before abstract BeforeLX1Enter;\\nduring after abstract AfterLX1Enter /*\\n    this is the comment line\\n*/\\nduring before {\\n    b = 1 + 2;\\n}\\nduring after {\\n    b = 3 - 2;\\n    b = 3 + 2 + a;\\n}
-    state "LX2" as lx__lx2 {
-        state "LX21" as lx__lx2__lx21 {
+    state "LX2" as lx__lx2 <<composite>> {
+        state "LX21" as lx__lx2__lx21 <<composite>> {
             state "LX211" as lx__lx2__lx21__lx211
             state "LX212" as lx__lx2__lx21__lx212
             [*] --> lx__lx2__lx21__lx211 : a == 2
@@ -1394,7 +1402,7 @@ class TestModelModel:
     def test_to_plantuml(self, demo_model_1, expected_plantuml_code, text_aligner):
         text_aligner.assert_equal(
             expect=expected_plantuml_code,
-            actual=demo_model_1.to_plantuml(),
+            actual=demo_model_1.to_plantuml(PlantUMLOptions(detail_level='full')),
         )
 
     def test_parse_unknown_non_abstract_during_aspect_variable(self):

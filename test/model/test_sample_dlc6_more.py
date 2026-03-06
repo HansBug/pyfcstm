@@ -2238,14 +2238,21 @@ state L1 {
             expect=textwrap.dedent("""
 @startuml
 hide empty description
-note as DefinitionNote
-defines {
-    def int x = 0;
-    def int y = 0;
-}
-end note
 
-state "L1" as l1 {
+skinparam state {
+  BackgroundColor<<pseudo>> LightGray
+  BackgroundColor<<composite>> LightBlue
+  BorderColor<<pseudo>> Gray
+  FontStyle<<pseudo>> italic
+}
+
+legend top left
+|= Variable |= Type |= Initial Value |
+| x | int | 0 |
+| y | int | 0 |
+endlegend
+
+state "L1" as l1 <<composite>> {
     state "L21" as l1__l21
     l1__l21 : enter F1 {\\n    x = 0;\\n    y = y + 1;\\n}\\nexit ref /F1x;\\n>> during after ref /F1x;
     state "L22" as l1__l22
@@ -2258,5 +2265,5 @@ l1 : enter abstract F1;\\nduring before F12 {\\n    x = 1;\\n}\\nduring after ab
 l1 --> [*]
 @enduml
             """).strip(),
-            actual=str(model.to_plantuml()),
+            actual=str(model.to_plantuml(options="full")),
         )

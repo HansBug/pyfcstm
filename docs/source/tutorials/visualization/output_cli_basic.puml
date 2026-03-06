@@ -1,0 +1,45 @@
+@startuml
+hide empty description
+
+skinparam state {
+  BackgroundColor<<pseudo>> LightGray
+  BackgroundColor<<composite>> LightBlue
+  BorderColor<<pseudo>> Gray
+  FontStyle<<pseudo>> italic
+}
+
+legend top left
+|= Variable |= Type |= Initial Value |
+| counter | int | 0 |
+| error_count | int | 0 |
+endlegend
+
+state "System" as system <<composite>> {
+    state "Idle" as system__idle
+    state "Active" as system__active <<composite>> {
+        state "Processing" as system__active__processing
+        state "Waiting" as system__active__waiting
+        system__active__processing --> [*] : /FatalError
+        system__active__waiting --> [*] : /FatalError
+        [*] --> system__active__processing
+        system__active__processing --> system__active__waiting : Processing.Pause
+        system__active__waiting --> system__active__processing : Waiting.Resume
+    }
+    state "Error" as system__error
+    system__idle --> system__error : FatalError
+    system__active --> system__error : FatalError
+    system__error --> system__error : FatalError
+    [*] --> system__idle
+    system__idle --> system__active : Idle.Start
+    system__active --> system__idle : Active.Stop
+    note on link
+    effect {
+        counter = 0;
+    }
+    end note
+    system__active --> system__error : counter > 100
+    system__error --> system__idle : error_count < 3
+}
+[*] --> system
+system --> [*]
+@enduml

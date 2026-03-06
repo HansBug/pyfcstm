@@ -27,14 +27,46 @@ Example::
 """
 
 import pathlib
-from typing import Optional
+from typing import Optional, Tuple, Dict, Union
 
 import click
 
 from .base import CONTEXT_SETTINGS
 from ..dsl import parse_with_grammar_entry
 from ..model import parse_dsl_node_to_state_machine
-from ..utils import auto_decode
+from ..model.plantuml import PlantUMLOptions
+from ..utils import auto_decode, parse_key_value_pairs
+
+# Type hints for PlantUMLOptions fields
+PLANTUML_OPTION_TYPES: Dict[str, Union[type, str]] = {
+    'detail_level': str,
+    'show_variable_definitions': bool,
+    'variable_display_mode': str,
+    'variable_legend_position': str,
+    'state_name_format': 'tuple[str, ...]',
+    'show_pseudo_state_style': bool,
+    'collapse_empty_states': bool,
+    'show_lifecycle_actions': bool,
+    'show_enter_actions': bool,
+    'show_during_actions': bool,
+    'show_exit_actions': bool,
+    'show_aspect_actions': bool,
+    'show_abstract_actions': bool,
+    'show_concrete_actions': bool,
+    'abstract_action_marker': str,
+    'max_action_lines': int,
+    'show_transition_guards': bool,
+    'show_transition_effects': bool,
+    'transition_effect_mode': str,
+    'show_events': bool,
+    'event_name_format': 'tuple[str, ...]',
+    'event_visualization_mode': str,
+    'event_legend_position': str,
+    'max_depth': int,
+    'collapsed_state_marker': str,
+    'use_skinparam': bool,
+    'use_stereotypes': bool,
+}
 
 
 def _add_plantuml_subcommand(cli: click.Group) -> click.Group:
@@ -78,9 +110,30 @@ def _add_plantuml_subcommand(cli: click.Group) -> click.Group:
         'output_file',
         type=str,
         default=None,
-        help='Output directory of the code generation, output to stdout when not assigned.',
+        help='Output file for PlantUML code, output to stdout when not assigned.',
     )
-    def plantuml(input_code_file: str, output_file: Optional[str]) -> None:
+    @click.option(
+        '-l',
+        '--level',
+        'detail_level',
+        type=click.Choice(['minimal', 'normal', 'full'], case_sensitive=False),
+        default='normal',
+        help='Detail level preset (minimal/normal/full). Default: normal.',
+    )
+    @click.option(
+        '-c',
+        '--config',
+        'config_options',
+        multiple=True,
+        help='Configuration options in key=value format. Can be specified multiple times. '
+             'Example: -c show_events=true -c max_depth=2',
+    )
+    def plantuml(
+        input_code_file: str,
+        output_file: Optional[str],
+        detail_level: str,
+        config_options: Tuple[str, ...],
+    ) -> None:
         """
         Convert state machine DSL code to PlantUML format.
 
@@ -88,11 +141,21 @@ def _add_plantuml_subcommand(cli: click.Group) -> click.Group:
         state machine model, and emits PlantUML text either to the specified
         output file or to stdout when no output path is provided.
 
+        The command supports flexible configuration through detail level presets
+        and individual option overrides:
+
+        * Use ``-l/--level`` to select a preset (minimal/normal/full)
+        * Use ``-c/--config`` to override specific options with key=value pairs
+
         :param input_code_file: Path to the file containing state machine DSL code.
         :type input_code_file: str
         :param output_file: Path to the output file for PlantUML code. If
             ``None``, output is written to stdout.
         :type output_file: str or None
+        :param detail_level: Detail level preset (minimal/normal/full).
+        :type detail_level: str
+        :param config_options: Tuple of key=value configuration options.
+        :type config_options: Tuple[str, ...]
         :return: ``None``. Output is written to a file or stdout.
         :rtype: None
 
@@ -104,20 +167,41 @@ def _add_plantuml_subcommand(cli: click.Group) -> click.Group:
             provided DSL input.
         :raises SyntaxError: If the parsed DSL contains invalid state machine
             constructs.
+        :raises click.BadParameter: If a config option is not in key=value format.
 
         Example::
 
-            >>> # CLI usage example (shell):
+            >>> # Basic usage with default settings
             >>> # pyfcstm plantuml -i example.dsl -o example.puml
-            >>> pass
+
+            >>> # Use minimal detail level
+            >>> # pyfcstm plantuml -i example.dsl -l minimal
+
+            >>> # Override specific options
+            >>> # pyfcstm plantuml -i example.dsl -c show_events=true -c max_depth=2
+
+            >>> # Combine preset with overrides
+            >>> # pyfcstm plantuml -i example.dsl -l full -c max_depth=3 -c event_visualization_mode=color
         """
+        # Parse DSL code
         code = auto_decode(pathlib.Path(input_code_file).read_bytes())
         ast_node = parse_with_grammar_entry(code, entry_name='state_machine_dsl')
         model = parse_dsl_node_to_state_machine(ast_node)
+
+        # Parse configuration options with type hints
+        parsed_options = parse_key_value_pairs(config_options, type_hints=PLANTUML_OPTION_TYPES)
+
+        # Create PlantUMLOptions with detail level and overrides
+        options = PlantUMLOptions(detail_level=detail_level, **parsed_options)
+
+        # Generate PlantUML output
+        plantuml_output = model.to_plantuml(options)
+
+        # Write output
         if output_file is not None:
             with open(output_file, 'w') as f:
-                f.write(model.to_plantuml())
+                f.write(plantuml_output)
         else:
-            click.echo(model.to_plantuml())
+            click.echo(plantuml_output)
 
     return cli

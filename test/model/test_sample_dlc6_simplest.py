@@ -1827,15 +1827,22 @@ state L1 {
             expect=textwrap.dedent("""
 @startuml
 hide empty description
-note as DefinitionNote
-defines {
-    def int a = 0;
-}
-end note
 
-state "L1" as l1 {
-    state "L2" as l1__l2 {
-        state "L21" as l1__l2__l21 #line.dotted
+skinparam state {
+  BackgroundColor<<pseudo>> LightGray
+  BackgroundColor<<composite>> LightBlue
+  BorderColor<<pseudo>> Gray
+  FontStyle<<pseudo>> italic
+}
+
+legend top left
+|= Variable |= Type |= Initial Value |
+| a | int | 0 |
+endlegend
+
+state "L1" as l1 <<composite>> {
+    state "L2" as l1__l2 <<composite>> {
+        state "L21" as l1__l2__l21 <<pseudo>> #line.dotted
         state "L22" as l1__l2__l22
         [*] --> l1__l2__l21
         l1__l2__l21 --> l1__l2__l22 : L21.E1
@@ -1850,5 +1857,5 @@ l1 : enter ref L2.user_B;\\nduring before {\\n    a = 1;\\n}\\nduring before abs
 l1 --> [*]
 @enduml
             """).strip(),
-            actual=str(model.to_plantuml()),
+            actual=str(model.to_plantuml(options="full")),
         )

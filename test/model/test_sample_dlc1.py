@@ -4278,16 +4278,23 @@ state TrafficLight {
             expect=textwrap.dedent("""
 @startuml
 hide empty description
-note as DefinitionNote
-defines {
-    def int a = 0;
-    def int b = 0 * 0;
-    def int round_count = 0;
-}
-end note
 
-state "TrafficLight" as traffic_light {
-    state "InService" as traffic_light__in_service {
+skinparam state {
+  BackgroundColor<<pseudo>> LightGray
+  BackgroundColor<<composite>> LightBlue
+  BorderColor<<pseudo>> Gray
+  FontStyle<<pseudo>> italic
+}
+
+legend top left
+|= Variable |= Type |= Initial Value |
+| a | int | 0 |
+| b | int | 0 * 0 |
+| round_count | int | 0 |
+endlegend
+
+state "TrafficLight" as traffic_light <<composite>> {
+    state "InService" as traffic_light__in_service <<composite>> {
         state "Red" as traffic_light__in_service__red
         traffic_light__in_service__red : during {\\n    a = 1 << 2;\\n}
         state "Yellow" as traffic_light__in_service__yellow
@@ -4332,5 +4339,5 @@ traffic_light : >> during before {\\n    a = 0;\\n}\\n>> during before abstract 
 traffic_light --> [*]
 @enduml
             """).strip(),
-            actual=str(model.to_plantuml()),
+            actual=str(model.to_plantuml(options="full")),
         )

@@ -3258,16 +3258,23 @@ state TrafficLight {
             expect=textwrap.dedent("""
 @startuml
 hide empty description
-note as DefinitionNote
-defines {
-    def int a = 0;
-    def int b = 0;
-    def int round_count = 0;
-}
-end note
 
-state "TrafficLight" as traffic_light {
-    state "InService" as traffic_light__in_service {
+skinparam state {
+  BackgroundColor<<pseudo>> LightGray
+  BackgroundColor<<composite>> LightBlue
+  BorderColor<<pseudo>> Gray
+  FontStyle<<pseudo>> italic
+}
+
+legend top left
+|= Variable |= Type |= Initial Value |
+| a | int | 0 |
+| b | int | 0 |
+| round_count | int | 0 |
+endlegend
+
+state "TrafficLight" as traffic_light <<composite>> {
+    state "InService" as traffic_light__in_service <<composite>> {
         state "Red" as traffic_light__in_service__red
         state "Yellow" as traffic_light__in_service__yellow
         state "Green" as traffic_light__in_service__green
@@ -3305,7 +3312,7 @@ state "TrafficLight" as traffic_light {
         traffic_light__in_service__green --> traffic_light__in_service__yellow : /Idle.E2
         traffic_light__in_service__yellow --> traffic_light__in_service__yellow : /E2
     }
-    state "Idle" as traffic_light__idle {
+    state "Idle" as traffic_light__idle <<composite>> {
         state "ToBe" as traffic_light__idle__to_be
         state "NotToBe" as traffic_light__idle__not_to_be
         traffic_light__idle__to_be --> [*] : GiveUpThinking
@@ -3330,5 +3337,5 @@ state "TrafficLight" as traffic_light {
 traffic_light --> [*]
 @enduml
             """).strip(),
-            actual=str(model.to_plantuml()),
+            actual=str(model.to_plantuml(options="full")),
         )

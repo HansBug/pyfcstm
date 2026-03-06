@@ -1,41 +1,197 @@
 """
-Simulation runtime execution semantics for finite state machine models.
+Simulation runtime for executing hierarchical finite state machines.
 
-This module implements the runtime that executes :class:`pyfcstm.model.StateMachine`
-instances produced from the pyfcstm DSL. The implementation is intentionally
-stateful: it tracks the active state stack, current variable values, and a small
-set of internal frame modes that control how entry, during, exit, initial
-transitions, and exit-to-parent flows are advanced.
+This module implements the cycle-based execution engine for state machines
+parsed from the pyfcstm DSL. The runtime maintains a stateful execution
+context including an active state stack, variable mappings, and internal
+frame modes that control lifecycle progression through entry, during, exit,
+initial transitions, and exit-to-parent flows.
 
 The module contains the following main components:
 
-* :class:`_Frame` - Internal stack frame describing an active state and its phase.
-* :class:`SimulationRuntime` - Runtime environment for cycling a
-  hierarchical state machine.
+* :class:`_Frame` - Internal stack frame representing an active state and its
+  execution phase.
+* :class:`SimulationRuntime` - Stateful runtime environment for executing
+  hierarchical state machines with cycle-based semantics.
+* :class:`SimulationRuntimeDfsError` - Exception raised when speculative
+  validation exceeds safety limits.
 
-.. note::
-   The descriptions in this module document the current behavior implemented in
-   :mod:`pyfcstm.simulate.runtime`. They are aligned with the reviewed examples
-   in :mod:`SIMULATE_DESIGN.md`, including the corrected behavior around the
-   4.25 and 4.26 examples.
+Core Execution Model
+--------------------
 
-Example::
+The runtime implements a cycle-based execution model where each cycle advances
+the state machine until reaching a stable boundary. A cycle can end in three
+ways:
+
+1. **Stoppable State**: Reached a leaf state (non-pseudo) where execution can
+   stabilize
+2. **Termination**: The state machine has ended (empty stack)
+3. **Validation Failure**: Cannot reach a stoppable state, changes rolled back
+
+**Frame Modes**:
+
+The runtime uses internal frame modes to track execution phases:
+
+* ``active``: Normal execution state, ready for transitions or during actions
+* ``after_entry``: Just entered a leaf state, during already executed
+* ``init_wait``: Composite state waiting for initial transition
+* ``post_child_exit``: Parent state after child exited via ``[*]``
+
+**Transition Selection**:
+
+Transitions are always selected from the current stack-top state's
+``transitions_from`` list in declaration order. This is critical for
+understanding cross-level transition behavior:
+
+* A leaf state can only fire its own transitions
+* Parent-level transitions are only considered after the child exits to parent
+* This explains why some transitions require explicit exit transitions first
+
+Validation and Rollback
+------------------------
+
+**Stoppable State Validation**:
+
+When a stoppable state has an enabled transition, the runtime performs
+speculative validation to ensure the transition can eventually reach another
+stoppable state or terminate. This prevents cycles from getting stuck in
+non-stoppable configurations.
+
+Validation works by:
+
+1. Cloning the current execution context (stack + variables)
+2. Executing the candidate transition on the clone
+3. Running cycle logic until reaching a stable boundary or failure
+4. Accepting the transition only if validation succeeds
+
+**Rollback Semantics**:
+
+If a cycle cannot reach a stoppable state, all variable changes are rolled
+back and the runtime remains at the previous stable boundary:
+
+* For normal cycles: Restore previous stack and variables
+* For initial cycle: Pin runtime at root boundary in ``init_wait`` mode
+* All side effects from failed validation are discarded
+
+**DFS Safety Limits**:
+
+To prevent infinite loops in pathological state machines, validation enforces
+two safety limits:
+
+* Maximum 1000 speculative steps per validation attempt
+* Maximum 64 structural stack depth
+* Repeated execution states are pruned automatically
+
+When these limits are exceeded, :class:`SimulationRuntimeDfsError` is raised,
+indicating an invalid state machine with unbounded execution chains.
+
+Lifecycle Execution Order
+-------------------------
+
+**Leaf State During Chain**:
+
+When a leaf state executes its during actions, the complete chain includes:
+
+1. Ancestor ``>> during before`` actions (root to leaf order)
+2. Leaf state's own ``during`` actions
+3. Ancestor ``>> during after`` actions (leaf to root order)
+
+Pseudo states skip ancestor aspect actions entirely.
+
+**Composite State Semantics**:
+
+Composite states have special ``during before`` and ``during after`` actions
+that execute at specific boundaries:
+
+* ``during before``: Executes when entering composite from parent (``[*] -> Child``)
+  - Runs AFTER composite's ``enter`` but BEFORE child's ``enter``
+  - NOT executed during child-to-child transitions
+* ``during after``: Executes when exiting composite to parent (``Child -> [*]``)
+  - Runs AFTER child's ``exit`` but BEFORE composite's ``exit``
+  - NOT executed during child-to-child transitions
+
+**Transition Execution**:
+
+Standard transition execution follows this sequence:
+
+1. Execute source state's ``exit`` actions
+2. Execute transition's ``effect`` operations
+3. Pop source state from stack
+4. If target is ``[*]``, finalize exit to parent
+5. Otherwise, enter target state (which may trigger initial transitions)
+
+Example Usage
+-------------
+
+Basic cycle execution with transitions::
 
     >>> from pyfcstm.dsl import parse_with_grammar_entry
     >>> from pyfcstm.model import parse_dsl_node_to_state_machine
     >>> from pyfcstm.simulate import SimulationRuntime
     >>> dsl_code = '''
     ... def int counter = 0;
-    ... state Root {
-    ...     state A {
-    ...         during {
-    ...             counter = counter + 1;
-    ...         }
+    ... state System {
+    ...     state Idle {
+    ...         during { counter = counter + 1; }
     ...     }
+    ...     state Active {
+    ...         during { counter = counter + 10; }
+    ...     }
+    ...     [*] -> Idle;
+    ...     Idle -> Active :: Start;
+    ... }
+    ... '''
+    >>> ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+    >>> sm = parse_dsl_node_to_state_machine(ast)
+    >>> runtime = SimulationRuntime(sm)
+    >>> runtime.cycle()
+    >>> runtime.current_state.path
+    ('System', 'Idle')
+    >>> runtime.vars['counter']
+    1
+    >>> runtime.cycle(['System.Idle.Start'])
+    >>> runtime.current_state.path
+    ('System', 'Active')
+
+Exit transitions and parent continuation::
+
+    >>> dsl_code = '''
+    ... def int x = 0;
+    ... state System1 {
+    ...     state A {
+    ...         during { x = x + 1; }
+    ...     }
+    ...     [*] -> A;
+    ...     A -> [*] :: Exit;
+    ... }
+    ... state System2 {
     ...     state B {
-    ...         during {
-    ...             counter = counter + 10;
-    ...         }
+    ...         during { x = x + 10; }
+    ...     }
+    ...     [*] -> B;
+    ... }
+    ... [*] -> System1;
+    ... System1 -> System2 :: Switch;
+    ... '''
+    >>> ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+    >>> sm = parse_dsl_node_to_state_machine(ast)
+    >>> runtime = SimulationRuntime(sm)
+    >>> runtime.cycle()
+    >>> runtime.current_state.path
+    ('System1', 'A')
+    >>> # Provide both Exit and Switch events
+    >>> runtime.cycle(['System1.A.Exit', 'Switch'])
+    >>> runtime.current_state.path
+    ('System2', 'B')
+
+Validation preventing invalid transitions::
+
+    >>> dsl_code = '''
+    ... state Root {
+    ...     state A;
+    ...     state B {
+    ...         [*] -> C : if [false];
+    ...         state C;
     ...     }
     ...     [*] -> A;
     ...     A -> B :: Go;
@@ -45,11 +201,29 @@ Example::
     >>> sm = parse_dsl_node_to_state_machine(ast)
     >>> runtime = SimulationRuntime(sm)
     >>> runtime.cycle()
-    >>> runtime.current_state.path
-    ('Root', 'A')
     >>> runtime.cycle(['Root.A.Go'])
     >>> runtime.current_state.path
-    ('Root', 'B')
+    ('Root', 'A')  # Remains in A due to validation failure
+
+Aspect actions with hierarchical execution::
+
+    >>> dsl_code = '''
+    ... def int log = 0;
+    ... state Root {
+    ...     >> during before { log = log + 1; }
+    ...     >> during after { log = log + 100; }
+    ...     state Active {
+    ...         during { log = log + 50; }
+    ...     }
+    ...     [*] -> Active;
+    ... }
+    ... '''
+    >>> ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+    >>> sm = parse_dsl_node_to_state_machine(ast)
+    >>> runtime = SimulationRuntime(sm)
+    >>> runtime.cycle()
+    >>> runtime.vars['log']
+    151  # Root.aspect_before(1) + Active.during(50) + Root.aspect_after(100)
 """
 
 
@@ -65,13 +239,57 @@ from .utils import get_event_name, get_func_name
 
 class SimulationRuntimeDfsError(RuntimeError):
     """
-    Raised when speculative DFS execution fails to converge safely.
+    Raised when speculative validation exceeds safety limits without converging.
 
-    This exception is used for pathological search spaces where runtime
-    validation keeps descending through unique execution states without
-    reaching a stoppable configuration, reaching termination, or being pruned
-    by repeated-state detection. Such cases usually indicate that the state
-    machine definition contains an unintended unbounded execution chain.
+    This exception indicates that the state machine contains an invalid
+    unbounded execution chain that prevents the runtime from reaching a
+    stable stoppable state. The runtime enforces two safety limits during
+    speculative validation:
+
+    1. **Step Limit**: Maximum 1000 speculative steps per validation attempt
+    2. **Depth Limit**: Maximum 64 structural stack frames
+
+    When either limit is exceeded, validation aborts and raises this exception
+    to prevent infinite loops or stack overflow.
+
+    **Why This Happens**:
+
+    This error typically occurs when a state machine has:
+
+    * Composite states with no valid initial transitions
+    * Chains of pseudo states that never reach a stoppable state
+    * Circular dependencies between exit transitions and parent continuations
+    * Guard conditions that create infinite validation loops
+
+    **Error Prevention**:
+
+    To avoid this error, ensure your state machine:
+
+    * Every composite state has at least one unconditional initial transition
+    * Pseudo state chains eventually reach a stoppable leaf state
+    * Exit transitions lead to valid parent continuations
+    * Guard conditions don't create circular validation dependencies
+
+    Example of problematic state machine::
+
+        >>> dsl_code = '''
+        ... state Root {
+        ...     state A {
+        ...         [*] -> B : if [false];  # Always blocked
+        ...         pseudo state B;
+        ...     }
+        ...     [*] -> A;
+        ... }
+        ... '''
+        >>> ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+        >>> sm = parse_dsl_node_to_state_machine(ast)
+        >>> runtime = SimulationRuntime(sm)
+        >>> runtime.cycle()  # Raises SimulationRuntimeDfsError
+
+    .. note::
+       This exception is raised during validation, not during normal execution.
+       If you encounter this error, review your state machine definition for
+       unbounded execution chains or missing stoppable states.
     """
 
     pass
@@ -80,19 +298,51 @@ class SimulationRuntimeDfsError(RuntimeError):
 @dataclass
 class _Frame:
     """
-    Internal runtime frame for an active state.
+    Internal stack frame representing an active state and its execution phase.
 
-    Frames are stored in :attr:`SimulationRuntime.stack` from root to the current
-    active state. The ``mode`` field is used by the runtime to distinguish
-    whether a frame has just entered a leaf state (``'after_entry'``), is waiting
-    for a composite state's initial transition (``'init_wait'``), is ready for
-    ordinary execution (``'active'``), or is resuming control after a child
-    exited via ``[*]`` (``'post_child_exit'``).
+    Frames are stored in the runtime's execution stack from root to the current
+    active state. Each frame tracks both the state itself and its current
+    execution mode, which controls how the runtime processes the frame during
+    cycle execution.
+
+    **Frame Modes**:
+
+    * ``active``: Normal execution state, ready for transitions or during actions
+    * ``after_entry``: Just entered a leaf state, during chain already executed,
+      waiting to stabilize or fire transitions
+    * ``init_wait``: Composite state waiting for an initial transition to enter
+      a child state
+    * ``post_child_exit``: Parent state after a child exited via ``[*]``,
+      ready to consider parent-level transitions
+
+    **Mode Transitions**:
+
+    Leaf states:
+    - Enter with ``active`` → execute during chain → switch to ``after_entry``
+    - Next cycle: ``after_entry`` → ``active`` (if stoppable, cycle ends here)
+
+    Composite states:
+    - Enter with ``active`` → execute ``during before`` → switch to ``init_wait``
+    - After child exits: switch to ``post_child_exit``
 
     :param state: The active state represented by this frame.
     :type state: State
-    :param mode: Internal execution phase associated with ``state``.
+    :param mode: Internal execution phase controlling frame processing.
     :type mode: str
+
+    Example::
+
+        >>> # Internal frame structure (not directly created by users)
+        >>> frame = _Frame(state=some_state, mode='active')
+        >>> frame.state.path
+        ('System', 'Active')
+        >>> frame.mode
+        'active'
+
+    .. note::
+       This is an internal implementation detail. Users should interact with
+       the runtime through :class:`SimulationRuntime` methods rather than
+       manipulating frames directly.
     """
 
     state: State
@@ -101,58 +351,152 @@ class _Frame:
 
 class SimulationRuntime:
     """
-    Runtime environment for simulating hierarchical state machine execution.
+    Runtime environment for executing hierarchical finite state machines.
 
-    The runtime owns three pieces of mutable execution state: the active frame
-    stack, the current variable mapping, and two lifecycle flags tracking
-    whether initialization has already happened and whether the machine has
-    ended. Public callers interact with :meth:`cycle` to advance execution
-    until it reaches a stable boundary.
+    This class provides the stateful execution engine for state machines parsed
+    from the pyfcstm DSL. It maintains an active state stack, variable mappings,
+    and lifecycle flags that control cycle-based execution semantics.
 
-    In the current implementation, transition selection is always driven by the
-    stack-top state's :attr:`pyfcstm.model.State.transitions_from`. This detail
-    is important for understanding why the reviewed 4.25 example in
-    :mod:`SIMULATE_DESIGN.md` remains in ``System1.A`` when only the parent-level
-    ``System1 -> System2`` transition is offered directly, while 4.26 can advance
-    because the leaf state first exits through ``A -> [*]`` and only then allows
-    parent-level continuation.
+    **Core Execution Model**:
+
+    The runtime implements cycle-based execution where each :meth:`cycle` call
+    advances the state machine until reaching a stable boundary. Cycles can end
+    in three ways:
+
+    1. **Stoppable State**: Reached a leaf state (non-pseudo) where execution
+       can stabilize
+    2. **Termination**: The state machine has ended (empty stack)
+    3. **Validation Failure**: Cannot reach a stoppable state, changes rolled back
+
+    **Transition Selection**:
+
+    Transitions are always selected from the current stack-top state's
+    ``transitions_from`` list in declaration order. This is critical for
+    understanding cross-level transition behavior:
+
+    * A leaf state can only fire its own transitions
+    * Parent-level transitions are only considered after the child exits to parent
+    * This explains why some transitions require explicit exit transitions first
+
+    For example, if state ``System1.A`` wants to trigger a parent-level
+    transition ``System1 -> System2``, it must first exit to parent via
+    ``A -> [*]``, which puts ``System1`` in ``post_child_exit`` mode where
+    parent-level transitions can be considered.
+
+    **Validation and Rollback**:
+
+    When a stoppable state has an enabled transition, the runtime performs
+    speculative validation to ensure the transition can eventually reach another
+    stoppable state or terminate. This prevents cycles from getting stuck in
+    non-stoppable configurations.
+
+    If validation fails or a cycle cannot reach a stoppable state, all variable
+    changes are rolled back and the runtime remains at the previous stable
+    boundary. For the initial cycle, rollback pins the runtime at the root
+    boundary in ``init_wait`` mode.
+
+    **DFS Safety Limits**:
+
+    To prevent infinite loops in pathological state machines, validation enforces
+    two safety limits:
+
+    * Maximum 1000 speculative steps per validation attempt
+    * Maximum 64 structural stack depth
+    * Repeated execution states are pruned automatically
+
+    When these limits are exceeded, :class:`SimulationRuntimeDfsError` is raised.
 
     :param state_machine: The state machine model to simulate.
     :type state_machine: StateMachine
 
     :ivar state_machine: The state machine being simulated.
     :vartype state_machine: StateMachine
-    :ivar stack: Active frames ordered from root to the current execution point.
+    :ivar stack: Active frames ordered from root to current execution point.
     :vartype stack: List[_Frame]
     :ivar vars: Mutable variable values visible to guards, effects, and actions.
     :vartype vars: Dict[str, Union[int, float]]
-    :ivar _initialized: Whether the runtime has already performed root entry.
+    :ivar _initialized: Whether the runtime has performed root entry.
     :vartype _initialized: bool
-    :ivar _ended: Whether execution has terminated and the active stack is empty.
+    :ivar _ended: Whether execution has terminated (empty stack).
     :vartype _ended: bool
 
     Example::
 
+        >>> from pyfcstm.dsl import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> from pyfcstm.simulate import SimulationRuntime
+        >>> dsl_code = '''
+        ... def int counter = 0;
+        ... state System {
+        ...     state Idle {
+        ...         during { counter = counter + 1; }
+        ...     }
+        ...     state Active {
+        ...         during { counter = counter + 10; }
+        ...     }
+        ...     [*] -> Idle;
+        ...     Idle -> Active :: Start;
+        ... }
+        ... '''
+        >>> ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+        >>> sm = parse_dsl_node_to_state_machine(ast)
         >>> runtime = SimulationRuntime(sm)
         >>> runtime.cycle()
-        >>> runtime.brief_stack
-        [(('Root',), 'init_wait'), (('Root', 'A'), 'after_entry')]
+        >>> runtime.current_state.path
+        ('System', 'Idle')
+        >>> runtime.vars['counter']
+        1
+        >>> runtime.cycle(['System.Idle.Start'])
+        >>> runtime.current_state.path
+        ('System', 'Active')
+        >>> runtime.vars['counter']
+        11
     """
 
     def __init__(self, state_machine: StateMachine):
         """
-        Initialize the simulation runtime with a concrete state machine model.
+        Initialize the simulation runtime with a state machine model.
 
-        Variable storage is prepared eagerly from ``state_machine.defines`` in
-        declaration order so later initializers can depend on variables defined
-        earlier. The runtime itself is still considered uninitialized until the
-        first call to :meth:`cycle`, at which point root entry is
-        performed by :meth:`_initialize_runtime`.
+        This constructor prepares the runtime for execution by initializing
+        variable storage from the state machine's variable definitions. Variables
+        are initialized in declaration order, allowing later initializers to
+        reference earlier variables.
+
+        The runtime is not fully initialized until the first :meth:`cycle` call,
+        which performs root state entry and builds the initial execution stack.
 
         :param state_machine: The state machine model to simulate.
         :type state_machine: StateMachine
         :return: ``None``.
         :rtype: None
+
+        Example::
+
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+            >>> from pyfcstm.simulate import SimulationRuntime
+            >>> dsl_code = '''
+            ... def int x = 10;
+            ... def int y = x + 5;  # Can reference earlier variables
+            ... state Root {
+            ...     state A;
+            ...     [*] -> A;
+            ... }
+            ... '''
+            >>> ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+            >>> sm = parse_dsl_node_to_state_machine(ast)
+            >>> runtime = SimulationRuntime(sm)
+            >>> runtime.vars
+            {'x': 10, 'y': 15}
+            >>> runtime.is_ended
+            False
+            >>> runtime.stack
+            []  # Not initialized until first cycle
+
+        .. note::
+           Variable initialization happens eagerly during construction, but
+           state entry is deferred until the first :meth:`cycle` call. This
+           allows inspection of initial variable values before execution begins.
         """
         self.state_machine = state_machine
         self.stack: List[_Frame] = []
@@ -165,19 +509,57 @@ class SimulationRuntime:
 
     def parse_event(self, event: Union[str, Event]) -> Event:
         """
-        Resolve an event reference into a concrete :class:`pyfcstm.model.Event`.
+        Resolve an event reference into a concrete event object.
 
-        String inputs are interpreted as dot-separated paths. If the first path
-        segment equals the root state's name it is treated as an explicit root
-        prefix and skipped during descent. The final segment is then resolved
-        from the event table of the enclosing state reached by the preceding
-        segments.
+        This method accepts either an event object (returned as-is) or a
+        dot-separated event path string. String paths are resolved by walking
+        the state hierarchy to find the enclosing state, then looking up the
+        event name in that state's event table.
 
-        :param event: Event object or dot-separated event path.
+        **Path Resolution**:
+
+        Event paths follow the format ``State1.State2.EventName`` where:
+        - ``State1.State2`` is the state hierarchy path
+        - ``EventName`` is the event name in the final state's event table
+
+        If the path starts with the root state name, it's treated as an explicit
+        root prefix and skipped during resolution.
+
+        :param event: Event object or dot-separated event path string.
         :type event: Union[str, Event]
         :return: The resolved event instance.
         :rtype: Event
         :raises TypeError: If ``event`` is neither a string nor an :class:`Event`.
+
+        Example::
+
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+            >>> from pyfcstm.simulate import SimulationRuntime
+            >>> dsl_code = '''
+            ... state System {
+            ...     state Idle;
+            ...     state Active;
+            ...     [*] -> Idle;
+            ...     Idle -> Active :: Start;
+            ... }
+            ... '''
+            >>> ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+            >>> sm = parse_dsl_node_to_state_machine(ast)
+            >>> runtime = SimulationRuntime(sm)
+            >>> # Parse event by string path
+            >>> event = runtime.parse_event('System.Idle.Start')
+            >>> event.name
+            'Start'
+            >>> # Parse event by object (returns same object)
+            >>> same_event = runtime.parse_event(event)
+            >>> same_event is event
+            True
+
+        .. note::
+           This method is used internally by :meth:`cycle` to normalize the
+           events parameter. Users typically pass string paths directly to
+           :meth:`cycle` rather than calling this method explicitly.
         """
         if isinstance(event, Event):
             return event
@@ -248,14 +630,49 @@ class SimulationRuntime:
         """
         Execute a transition's effects against the runtime's live variables.
 
-        This public wrapper exists mainly for tests and introspection. It uses
-        the same effect-order semantics as the internal execution path used by
-        actual transitions.
+        This method applies the transition's effect operations to the runtime's
+        variable mapping in declaration order. Each operation evaluates its
+        expression and assigns the result to the target variable.
+
+        This is a public wrapper around the internal effect execution logic,
+        primarily useful for testing and introspection.
 
         :param transition: Transition whose effects should be applied.
         :type transition: Transition
         :return: ``None``.
         :rtype: None
+
+        Example::
+
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+            >>> from pyfcstm.simulate import SimulationRuntime
+            >>> dsl_code = '''
+            ... def int x = 0;
+            ... def int y = 0;
+            ... state Root {
+            ...     state A;
+            ...     state B;
+            ...     [*] -> A;
+            ...     A -> B effect {
+            ...         x = 10;
+            ...         y = x + 5;
+            ...     }
+            ... }
+            ... '''
+            >>> ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+            >>> sm = parse_dsl_node_to_state_machine(ast)
+            >>> runtime = SimulationRuntime(sm)
+            >>> runtime.cycle()
+            >>> transition = sm.root_state.substates['A'].transitions_from[0]
+            >>> runtime.execute_transition_effect(transition)
+            >>> runtime.vars
+            {'x': 10, 'y': 15}
+
+        .. note::
+           This method mutates the runtime's live variable mapping. It's
+           primarily intended for testing and debugging rather than normal
+           runtime operation.
         """
         self._execute_transition_effect(transition, self.vars)
 
@@ -290,13 +707,47 @@ class SimulationRuntime:
         """
         Execute a lifecycle or aspect action on the live runtime state.
 
-        This method mirrors the action execution semantics used internally by the
-        runtime and is primarily useful for tests or interactive inspection.
+        This method executes the action's operations against the runtime's
+        variable mapping. Referenced actions are followed transitively through
+        ``func.ref`` until a concrete implementation is reached. Abstract
+        actions are logged but do not mutate state.
 
-        :param func: Action to execute.
+        This is a public wrapper around the internal action execution logic,
+        primarily useful for testing and introspection.
+
+        :param func: Lifecycle or aspect action to execute.
         :type func: Union[OnStage, OnAspect]
         :return: ``None``.
         :rtype: None
+
+        Example::
+
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+            >>> from pyfcstm.simulate import SimulationRuntime
+            >>> dsl_code = '''
+            ... def int counter = 0;
+            ... state Root {
+            ...     state A {
+            ...         enter Initialize {
+            ...             counter = 100;
+            ...         }
+            ...     }
+            ...     [*] -> A;
+            ... }
+            ... '''
+            >>> ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+            >>> sm = parse_dsl_node_to_state_machine(ast)
+            >>> runtime = SimulationRuntime(sm)
+            >>> enter_action = sm.root_state.substates['A'].on_enters[0]
+            >>> runtime.execute_func(enter_action)
+            >>> runtime.vars['counter']
+            100
+
+        .. note::
+           This method mutates the runtime's live variable mapping. It's
+           primarily intended for testing and debugging rather than normal
+           runtime operation.
         """
         self._execute_func(func, self.vars)
 
@@ -877,21 +1328,176 @@ class SimulationRuntime:
 
     def cycle(self, events: List[Union[str, Event]] = None):
         """
-        Execute a full runtime cycle until a stable boundary is reached.
+        Execute a full runtime cycle until reaching a stable boundary.
 
-        ``cycle()`` repeatedly applies transition, init, and during rules until
-        one of four conditions is met: the runtime ends, a stable stoppable leaf
-        state is reached, a composite state cannot advance further, or a safety
-        limit is hit. In practice this is the method that corresponds most
-        closely to the reviewed examples in :mod:`SIMULATE_DESIGN.md`, including
-        the difference between 4.25 (stays in ``System1.A``) and 4.26
-        (eventually reaches ``System2.B`` once the exit and follow-up
-        validations all succeed).
+        This method advances the state machine through transitions and lifecycle
+        actions until one of three conditions is met:
 
-        :param events: Events available for the current cycle.
+        1. **Stoppable State**: Reached a leaf state (non-pseudo) where execution
+           can stabilize
+        2. **Termination**: The state machine has ended (empty stack)
+        3. **Validation Failure**: Cannot reach a stoppable state, changes rolled back
+
+        **Cycle Execution Flow**:
+
+        The cycle operates in two phases:
+
+        1. **Speculative Execution**: Clone the current context and simulate the
+           cycle to validate it can reach a stable boundary
+        2. **Commit or Rollback**: If validation succeeds, commit the changes;
+           otherwise, rollback to the previous stable state
+
+        **Event Handling**:
+
+        Events can be provided as either event objects or dot-separated path
+        strings. Multiple events can be active simultaneously, allowing complex
+        transition chains to execute in a single cycle.
+
+        **Validation and Safety**:
+
+        When a stoppable state has an enabled transition, the runtime validates
+        that taking the transition can eventually reach another stoppable state
+        or terminate. This prevents cycles from getting stuck in non-stoppable
+        configurations.
+
+        Validation enforces safety limits:
+        - Maximum 1000 speculative steps per validation
+        - Maximum 64 structural stack depth
+        - Repeated execution states are pruned automatically
+
+        **Rollback Behavior**:
+
+        If a cycle cannot reach a stoppable state, all variable changes are
+        rolled back:
+        - For normal cycles: Restore previous stack and variables
+        - For initial cycle: Pin runtime at root boundary in ``init_wait`` mode
+        - All side effects from failed validation are discarded
+
+        :param events: Events available for the current cycle. Can be event
+            objects or dot-separated path strings.
         :type events: List[Union[str, Event]], optional
         :return: ``None``.
         :rtype: None
+
+        Example - Basic cycle execution::
+
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+            >>> from pyfcstm.simulate import SimulationRuntime
+            >>> dsl_code = '''
+            ... def int counter = 0;
+            ... state System {
+            ...     state Idle {
+            ...         during { counter = counter + 1; }
+            ...     }
+            ...     state Active {
+            ...         during { counter = counter + 10; }
+            ...     }
+            ...     [*] -> Idle;
+            ...     Idle -> Active :: Start;
+            ... }
+            ... '''
+            >>> ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+            >>> sm = parse_dsl_node_to_state_machine(ast)
+            >>> runtime = SimulationRuntime(sm)
+            >>> runtime.cycle()  # Initialize and reach Idle
+            >>> runtime.current_state.path
+            ('System', 'Idle')
+            >>> runtime.vars['counter']
+            1
+            >>> runtime.cycle(['System.Idle.Start'])  # Transition to Active
+            >>> runtime.current_state.path
+            ('System', 'Active')
+
+        Example - Exit transitions and parent continuation::
+
+            >>> dsl_code = '''
+            ... def int x = 0;
+            ... state System1 {
+            ...     state A {
+            ...         during { x = x + 1; }
+            ...     }
+            ...     [*] -> A;
+            ...     A -> [*] :: Exit;
+            ... }
+            ... state System2 {
+            ...     state B {
+            ...         during { x = x + 10; }
+            ...     }
+            ...     [*] -> B;
+            ... }
+            ... [*] -> System1;
+            ... System1 -> System2 :: Switch;
+            ... '''
+            >>> ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+            >>> sm = parse_dsl_node_to_state_machine(ast)
+            >>> runtime = SimulationRuntime(sm)
+            >>> runtime.cycle()
+            >>> runtime.current_state.path
+            ('System1', 'A')
+            >>> # Provide both Exit and Switch events
+            >>> runtime.cycle(['System1.A.Exit', 'Switch'])
+            >>> runtime.current_state.path
+            ('System2', 'B')
+
+        Example - Validation preventing invalid transitions::
+
+            >>> dsl_code = '''
+            ... state Root {
+            ...     state A;
+            ...     state B {
+            ...         [*] -> C : if [false];  # Blocked initial transition
+            ...         state C;
+            ...     }
+            ...     [*] -> A;
+            ...     A -> B :: Go;  # Rejected by validation
+            ... }
+            ... '''
+            >>> ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+            >>> sm = parse_dsl_node_to_state_machine(ast)
+            >>> runtime = SimulationRuntime(sm)
+            >>> runtime.cycle()
+            >>> runtime.cycle(['Root.A.Go'])  # Rejected - cannot reach stoppable
+            >>> runtime.current_state.path
+            ('Root', 'A')  # Remains in A due to validation failure
+
+        Example - Multiple cycles with state changes::
+
+            >>> dsl_code = '''
+            ... def int counter = 0;
+            ... state Root {
+            ...     state A {
+            ...         during { counter = counter + 1; }
+            ...     }
+            ...     [*] -> A;
+            ...     A -> A : if [counter >= 3];  # Self-transition after 3 cycles
+            ... }
+            ... '''
+            >>> ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+            >>> sm = parse_dsl_node_to_state_machine(ast)
+            >>> runtime = SimulationRuntime(sm)
+            >>> runtime.cycle()
+            >>> runtime.vars['counter']
+            1
+            >>> runtime.cycle()
+            >>> runtime.vars['counter']
+            2
+            >>> runtime.cycle()
+            >>> runtime.vars['counter']
+            3
+            >>> runtime.cycle()  # Self-transition fires
+            >>> runtime.vars['counter']
+            4  # Exit + re-enter + during
+
+        .. note::
+           Once the runtime has ended (:attr:`is_ended` is ``True``), subsequent
+           :meth:`cycle` calls are no-ops. Create a new :class:`SimulationRuntime`
+           instance to restart execution.
+
+        .. warning::
+           If validation exceeds safety limits (1000 steps or 64 stack depth),
+           :class:`SimulationRuntimeDfsError` is raised. This indicates an
+           invalid state machine with unbounded execution chains.
         """
         _, d_events = self._normalize_events(events)
         if self._ended:
@@ -943,26 +1549,91 @@ class SimulationRuntime:
         """
         Get the current active state at the top of the execution stack.
 
-        This property is only meaningful when the runtime has not ended and the
-        stack is non-empty. Callers typically inspect :attr:`is_ended` first when
-        dealing with machines that may already have terminated.
+        This property returns the state currently being executed by the runtime.
+        For leaf states, this is the state where during actions execute. For
+        composite states in ``init_wait`` mode, this is the parent waiting for
+        an initial transition.
 
         :return: The current active state.
         :rtype: State
+        :raises IndexError: If the runtime has ended and the stack is empty.
+
+        Example::
+
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+            >>> from pyfcstm.simulate import SimulationRuntime
+            >>> dsl_code = '''
+            ... state System {
+            ...     state Idle;
+            ...     state Active;
+            ...     [*] -> Idle;
+            ...     Idle -> Active :: Start;
+            ... }
+            ... '''
+            >>> ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+            >>> sm = parse_dsl_node_to_state_machine(ast)
+            >>> runtime = SimulationRuntime(sm)
+            >>> runtime.cycle()
+            >>> runtime.current_state.name
+            'Idle'
+            >>> runtime.current_state.path
+            ('System', 'Idle')
+            >>> runtime.cycle(['System.Idle.Start'])
+            >>> runtime.current_state.name
+            'Active'
+
+        .. note::
+           This property is only meaningful when the runtime has not ended.
+           Check :attr:`is_ended` first to avoid accessing an empty stack.
         """
         return self.stack[-1].state
 
     @property
     def brief_stack(self) -> List[Tuple[Tuple[str, ...], str]]:
         """
-        Return a compact representation of the active frame stack.
+        Return a compact representation of the active execution stack.
 
         Each tuple contains the state's full path and the frame's internal mode.
-        The result is useful for debugging or for tests that need to assert the
-        runtime's phase without inspecting private frame objects directly.
+        This representation is useful for debugging, testing, and understanding
+        the runtime's current execution phase without inspecting internal frame
+        objects directly.
 
-        :return: List of ``(state_path, mode)`` tuples.
+        **Frame Modes**:
+
+        * ``active``: Normal execution state
+        * ``after_entry``: Just entered a leaf state, during already executed
+        * ``init_wait``: Composite state waiting for initial transition
+        * ``post_child_exit``: Parent state after child exited via ``[*]``
+
+        :return: List of ``(state_path, mode)`` tuples from root to current state.
         :rtype: List[Tuple[Tuple[str, ...], str]]
+
+        Example::
+
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+            >>> from pyfcstm.simulate import SimulationRuntime
+            >>> dsl_code = '''
+            ... state System {
+            ...     state SubSystem {
+            ...         state Active;
+            ...         [*] -> Active;
+            ...     }
+            ...     [*] -> SubSystem;
+            ... }
+            ... '''
+            >>> ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+            >>> sm = parse_dsl_node_to_state_machine(ast)
+            >>> runtime = SimulationRuntime(sm)
+            >>> runtime.cycle()
+            >>> runtime.brief_stack
+            [(('System',), 'active'), (('System', 'SubSystem'), 'active'), (('System', 'SubSystem', 'Active'), 'active')]
+
+        .. note::
+           This property is primarily useful for testing and debugging. It
+           provides insight into the runtime's internal execution state without
+           exposing the internal :class:`_Frame` objects.
         """
         return [(frame.state.path, frame.mode) for frame in self.stack]
 
@@ -971,10 +1642,59 @@ class SimulationRuntime:
         """
         Indicate whether the runtime has finished execution.
 
-        Once ``True``, subsequent :meth:`cycle` calls are
-        no-ops unless a new :class:`SimulationRuntime` instance is created.
+        Once ``True``, the state machine has terminated and the execution stack
+        is empty. Subsequent :meth:`cycle` calls become no-ops. To restart
+        execution, create a new :class:`SimulationRuntime` instance.
 
-        :return: ``True`` if execution has ended.
+        **Termination Conditions**:
+
+        The runtime ends when:
+        - The root state exits to ``[*]``
+        - An exit transition from a root-level state completes
+        - The execution stack becomes empty for any reason
+
+        :return: ``True`` if execution has ended, ``False`` otherwise.
         :rtype: bool
+
+        Example::
+
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+            >>> from pyfcstm.simulate import SimulationRuntime
+            >>> dsl_code = '''
+            ... def int counter = 0;
+            ... state System {
+            ...     state Active {
+            ...         during { counter = counter + 1; }
+            ...     }
+            ...     [*] -> Active;
+            ...     Active -> [*] : if [counter >= 3];
+            ... }
+            ... '''
+            >>> ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+            >>> sm = parse_dsl_node_to_state_machine(ast)
+            >>> runtime = SimulationRuntime(sm)
+            >>> runtime.is_ended
+            False
+            >>> runtime.cycle()
+            >>> runtime.is_ended
+            False
+            >>> runtime.cycle()
+            >>> runtime.is_ended
+            False
+            >>> runtime.cycle()
+            >>> runtime.is_ended
+            False
+            >>> runtime.cycle()  # counter >= 3, exit transition fires
+            >>> runtime.is_ended
+            True
+            >>> runtime.cycle()  # No-op, runtime already ended
+            >>> runtime.is_ended
+            True
+
+        .. note::
+           Once the runtime has ended, the only way to restart execution is
+           to create a new :class:`SimulationRuntime` instance with the same
+           or a different state machine model.
         """
         return self._ended

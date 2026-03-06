@@ -24,6 +24,7 @@ The extension currently provides:
 - Comment toggling support (`//` and `/* */`)
 - Bracket matching and auto-closing
 - Code folding support through language configuration
+- Authoring snippets for common FCSTM constructs
 
 The extension is planned to grow toward lightweight parser-backed editing features, but it is not positioned as a full language server.
 
@@ -33,6 +34,7 @@ The extension is planned to grow toward lightweight parser-backed editing featur
 - Comment toggling support (`//` and `/* */`)
 - Bracket matching and auto-closing
 - Code folding support
+- Authoring snippets for common FCSTM constructs
 - Grammar-aligned language package foundation for future parser-backed editor features
 
 ## Installation
@@ -194,6 +196,23 @@ The extension provides:
 - **Block comments**: Use `Shift+Alt+A` (or `Shift+Option+A`) for block comments
 - **Auto-closing pairs**: Automatic closing of brackets, quotes, and comment blocks
 - **Code folding**: Fold code blocks using region markers
+- **Snippets**: Expand common FCSTM templates such as states, transitions, events, and lifecycle blocks
+
+## Snippets
+
+The extension includes snippets for the most common FCSTM authoring patterns.
+
+Representative snippet prefixes include:
+
+- `defi`, `deff`
+- `state`, `stateb`, `pstate`, `staten`
+- `event`, `eventn`
+- `init`, `trans`, `transe`, `transg`, `transeff`, `transfull`
+- `enter`, `during`, `exit`, `dbefore`, `dafter`
+- `globalbefore`, `globalafter`
+- `eabstract`, `eref`
+
+These snippets are intended to reduce repetitive boilerplate while keeping the extension fully offline-capable.
 
 ## Offline and Compatibility Notes
 

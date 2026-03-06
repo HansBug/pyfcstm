@@ -67,7 +67,7 @@ These features have the best balance of user impact and engineering cost.
 
 ### P0 Feature Checklist
 
-- [ ] Add FCSTM snippets
+- [x] Add FCSTM snippets
 - [ ] Generate and integrate ANTLR-based JavaScript parser runtime
 - [ ] Add syntax diagnostics based on the generated parser
 - [ ] Add document symbols / outline support
@@ -120,12 +120,12 @@ FCSTM has many recurring structural patterns. Snippets are the fastest way to im
 
 **Implementation tasks**
 
-- [ ] Add snippet contribution to `package.json`
-- [ ] Create snippet definition file
-- [ ] Cover at least 15-20 high-frequency FCSTM templates
-- [ ] Ensure tab stops follow common FCSTM writing order
-- [ ] Verify snippet prefixes are short and memorable
-- [ ] Add snippet usage notes to `README.md`
+- [x] Add snippet contribution to `package.json`
+- [x] Create snippet definition file
+- [x] Cover at least 15-20 high-frequency FCSTM templates
+- [x] Ensure tab stops follow common FCSTM writing order
+- [x] Verify snippet prefixes are short and memorable
+- [x] Add snippet usage notes to `README.md`
 
 **Acceptance criteria**
 
@@ -538,7 +538,7 @@ The following items are intentionally out of scope for the near term:
 
 The current selected scope is:
 
-- [ ] P0.1 Snippets
+- [x] P0.1 Snippets
 - [ ] P0.2 ANTLR-based JavaScript parser runtime
 - [ ] P0.3 Syntax diagnostics
 - [ ] P0.4 Document symbols / outline

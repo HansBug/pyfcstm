@@ -62,6 +62,12 @@
         "scopeName": "source.fcstm",
         "path": "./syntaxes/fcstm.tmLanguage.json"
       }
+    ],
+    "snippets": [
+      {
+        "language": "fcstm",
+        "path": "./snippets/fcstm.code-snippets"
+      }
     ]
   }
 }

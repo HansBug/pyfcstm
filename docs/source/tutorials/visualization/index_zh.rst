@@ -536,39 +536,48 @@ CLI 可视化
 
 **示例**
 
+.. note::
+   **推荐**：使用 ``event_visualization_mode='both'`` 来结合颜色编码的转换和图例。这提供了最佳的可视化效果，通过颜色使事件在视觉上更加清晰，同时提供清晰的参考图例显示事件名称和转换计数。
+
 .. code-block:: python
 
-   # 使用颜色编码显示事件
+   # 推荐：同时显示颜色和图例，并自定义位置
+   options = PlantUMLOptions(
+       event_visualization_mode='both',
+       event_legend_position='top right'
+   )
+
+   # 仅使用颜色编码显示事件
    options = PlantUMLOptions(
        show_events=True,
        event_name_format=('name', 'relpath'),
        event_visualization_mode='color'
    )
 
-   # 在自定义位置显示事件图例
+   # 仅在自定义位置显示事件图例
    options = PlantUMLOptions(
        event_visualization_mode='legend',
        event_legend_position='bottom right'
-   )
-
-   # 同时显示颜色和图例，并自定义位置
-   options = PlantUMLOptions(
-       event_visualization_mode='both',
-       event_legend_position='top right'
    )
 
 **CLI 等效命令**
 
 .. code-block:: bash
 
-   # 颜色模式
+   # 推荐：同时使用颜色和图例
+   pyfcstm plantuml -i example.fcstm \
+     -c event_visualization_mode=both \
+     -c event_legend_position="top right" \
+     -o output.puml
+
+   # 仅颜色模式
    pyfcstm plantuml -i example.fcstm \
      -c show_events=true \
      -c event_name_format=name,relpath \
      -c event_visualization_mode=color \
      -o output.puml
 
-   # 图例模式，自定义位置
+   # 仅图例模式，自定义位置
    pyfcstm plantuml -i example.fcstm \
      -c event_visualization_mode=legend \
      -c event_legend_position="bottom right" \
@@ -684,7 +693,7 @@ PlantUML 样式
    :align: center
    :width: 90%
 
-   综合自定义配置组合多个选项（完整详细级别，带颜色模式的事件，所有生命周期动作，自定义名称格式，最大深度 3）
+   综合自定义配置组合多个选项（完整详细级别，同时使用颜色和图例的事件可视化，所有生命周期动作，自定义名称格式，最大深度 3）
 
 配置类型系统
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

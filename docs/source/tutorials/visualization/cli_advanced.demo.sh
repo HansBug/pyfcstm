@@ -5,7 +5,7 @@
 pyfcstm plantuml -i example.fcstm \
   -l full \
   -c show_events=true \
-  -c event_visualization_mode=color \
+  -c event_visualization_mode=both \
   -c state_name_format=name,path \
   -c max_action_lines=5 \
   -c use_stereotypes=true \

@@ -1461,7 +1461,7 @@ class StateMachine(AstExportable, PlantUMLExportable):
                     event_name = event_path.split('.')[-1]
                     print(f'<color:{color}>■</color> **{event_name}** ({len(transitions)} transitions)', file=sf)
                     # Show event path
-                    print(f'  <size:10><color:gray>/{event_path}</color></size>', file=sf)
+                    print(f'  <size:10><color:gray>/{".".join(event_path.split(".")[1:])}</color></size>', file=sf)
                 print('endlegend', file=sf)
                 print('', file=sf)
 

@@ -14,6 +14,21 @@ legend top left
 | error_count | int | 0 |
 endlegend
 
+legend right
+**Event Scoping**
+----
+<color:#000000>■</color> **Pause** (1 transitions)
+  <size:10><color:gray>/Active.Processing.Pause</color></size>
+<color:#000000>■</color> **Stop** (1 transitions)
+  <size:10><color:gray>/Active.Stop</color></size>
+<color:#000000>■</color> **Resume** (1 transitions)
+  <size:10><color:gray>/Active.Waiting.Resume</color></size>
+<color:#4E79A7>■</color> **FatalError** (5 transitions)
+  <size:10><color:gray>/FatalError</color></size>
+<color:#000000>■</color> **Start** (1 transitions)
+  <size:10><color:gray>/Idle.Start</color></size>
+endlegend
+
 state "System (System)" as system <<composite>> {
     state "Idle (System.Idle)" as system__idle
     system__idle : enter {\n    counter = 0;\n}

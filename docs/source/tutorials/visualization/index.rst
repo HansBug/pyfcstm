@@ -561,34 +561,46 @@ Control how events are displayed in the diagram.
 
   - Available positions: ``'top left'``, ``'top center'``, ``'top right'``, ``'bottom left'``, ``'bottom center'``, ``'bottom right'``, ``'left'``, ``'right'``, ``'center'``
 
+.. note::
+   **Recommended**: Use ``event_visualization_mode='both'`` to combine color-coded transitions with a legend. This provides the best visualization by making events visually distinct through colors while also providing a clear reference legend showing event names and transition counts.
+
 **Example**
 
 .. code-block:: python
 
-   # Show events with color coding
+   # Recommended: Show both colors and legend (best visualization)
+   options = PlantUMLOptions(
+       show_events=True,
+       event_name_format=('name', 'relpath'),
+       event_visualization_mode='both',
+       event_legend_position='right'
+   )
+
+   # Color mode only (visual distinction without legend)
    options = PlantUMLOptions(
        show_events=True,
        event_name_format=('name', 'relpath'),
        event_visualization_mode='color'
    )
 
-   # Show event legend at custom position
+   # Legend mode only (reference without colors)
    options = PlantUMLOptions(
        event_visualization_mode='legend',
        event_legend_position='bottom right'
-   )
-
-   # Show both colors and legend with custom positions
-   options = PlantUMLOptions(
-       event_visualization_mode='both',
-       event_legend_position='top right'
    )
 
 **CLI Equivalent**
 
 .. code-block:: bash
 
-   # Color mode
+   # Recommended: Both mode with colors and legend
+   pyfcstm plantuml -i example.fcstm \
+     -c show_events=true \
+     -c event_name_format=name,relpath \
+     -c event_visualization_mode=both \
+     -o output.puml
+
+   # Color mode only
    pyfcstm plantuml -i example.fcstm \
      -c show_events=true \
      -c event_name_format=name,relpath \
@@ -711,7 +723,7 @@ Output:
    :align: center
    :width: 90%
 
-   Comprehensive custom configuration combining multiple options (full detail, events with color mode, all lifecycle actions, custom name formats, max depth 3)
+   Comprehensive custom configuration combining multiple options (full detail, events with both color and legend, all lifecycle actions, custom name formats, max depth 3)
 
 Configuration Type System
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

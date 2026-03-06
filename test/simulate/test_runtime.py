@@ -1,10 +1,8 @@
 import pytest
+
 from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model import parse_dsl_node_to_state_machine
 from pyfcstm.simulate import SimulationRuntime
-
-
-pytestmark = [pytest.mark.unittest]
 
 
 def build_runtime(dsl_code: str) -> SimulationRuntime:
@@ -29,6 +27,7 @@ def run_cycle_and_assert(runtime: SimulationRuntime, events=None, *, current_pat
     assert_runtime_state(runtime, current_path=current_path, vars=vars, is_ended=is_ended)
 
 
+@pytest.mark.unittest
 class TestSimulationDesignExamples:
     def test_4_1_basic_simple_transition(self):
         dsl_code = '''
@@ -141,7 +140,8 @@ state Root {
 
         run_cycle_and_assert(runtime, current_path=('Root', 'A'), vars={'counter': 1})
         run_cycle_and_assert(runtime, ['Root.A.GoB'], current_path=('Root', 'A'), vars={'counter': 2})
-        run_cycle_and_assert(runtime, ['Root.A.GoB', 'Root.B.Start'], current_path=('Root', 'B', 'B1'), vars={'counter': 12})
+        run_cycle_and_assert(runtime, ['Root.A.GoB', 'Root.B.Start'], current_path=('Root', 'B', 'B1'),
+                             vars={'counter': 12})
 
     def test_4_5_aspect_actions(self):
         dsl_code = '''
@@ -394,8 +394,6 @@ state Root {
         run_cycle_and_assert(runtime, current_path=('Root', 'A'), vars={'counter': 3, 'flag': 0})
         run_cycle_and_assert(runtime, current_path=('Root', 'A'), vars={'counter': 4, 'flag': 0})
 
-
-class TestPseudoChainsAndAspectExamples:
     def test_4_13_single_pseudo_state_chain(self):
         dsl_code = '''
 def int counter = 0;
@@ -471,7 +469,8 @@ state Root {
         run_cycle_and_assert(runtime, current_path=('Root', 'A'), vars={'counter': 1})
         run_cycle_and_assert(runtime, ['Root.A.Go1'], current_path=('Root', 'A'), vars={'counter': 2})
         run_cycle_and_assert(runtime, ['Root.A.Go1', 'Root.P1.Go2'], current_path=('Root', 'A'), vars={'counter': 3})
-        run_cycle_and_assert(runtime, ['Root.A.Go1', 'Root.P1.Go2', 'Root.P2.Go3'], current_path=('Root', 'B'), vars={'counter': 1113})
+        run_cycle_and_assert(runtime, ['Root.A.Go1', 'Root.P1.Go2', 'Root.P2.Go3'], current_path=('Root', 'B'),
+                             vars={'counter': 1113})
 
     def test_4_15_pseudo_chain_with_guard(self):
         dsl_code = '''
@@ -601,7 +600,8 @@ state Root {
 
         run_cycle_and_assert(runtime, current_path=('Root', 'System', 'A'), vars={'counter': 1})
         run_cycle_and_assert(runtime, ['Root.System.A.GoP'], current_path=('Root', 'System', 'A'), vars={'counter': 2})
-        run_cycle_and_assert(runtime, ['Root.System.A.GoP', 'Root.System.ToB'], current_path=('Root', 'B'), vars={'counter': 112})
+        run_cycle_and_assert(runtime, ['Root.System.A.GoP', 'Root.System.ToB'], current_path=('Root', 'B'),
+                             vars={'counter': 112})
 
     def test_4_17_2_exit_to_parent_then_pseudo_then_guard(self):
         dsl_code = '''
@@ -729,7 +729,8 @@ state Root {
 
         run_cycle_and_assert(runtime, current_path=('Root', 'A'), vars={'counter': 1})
         run_cycle_and_assert(runtime, ['Root.A.GoB'], current_path=('Root', 'A'), vars={'counter': 2})
-        run_cycle_and_assert(runtime, ['Root.A.GoB', 'Root.B.P1.Event'], current_path=('Root', 'B', 'B1'), vars={'counter': 112})
+        run_cycle_and_assert(runtime, ['Root.A.GoB', 'Root.B.P1.Event'], current_path=('Root', 'B', 'B1'),
+                             vars={'counter': 112})
 
     def test_4_20_mixed_composite_and_pseudo(self):
         dsl_code = '''
@@ -890,7 +891,8 @@ state Root {
         runtime = build_runtime(dsl_code)
 
         run_cycle_and_assert(runtime, current_path=('Root', 'A'), vars={'counter': 10101})
-        run_cycle_and_assert(runtime, ['Root.A.GoP', 'Root.P.GoB'], current_path=('Root', 'B'), vars={'counter': 121102})
+        run_cycle_and_assert(runtime, ['Root.A.GoP', 'Root.P.GoB'], current_path=('Root', 'B'),
+                             vars={'counter': 121102})
 
     def test_4_24_multiple_leaf_states_share_aspects(self):
         dsl_code = '''
@@ -942,10 +944,12 @@ state Root {
         runtime = build_runtime(dsl_code)
 
         run_cycle_and_assert(runtime, current_path=('Root', 'System', 'A'), vars={'counter': 1112})
-        run_cycle_and_assert(runtime, ['Root.System.A.GoB'], current_path=('Root', 'System', 'B'), vars={'counter': 2233})
-        run_cycle_and_assert(runtime, ['Root.System.B.GoC'], current_path=('Root', 'System', 'C'), vars={'counter': 3444})
+        run_cycle_and_assert(runtime, ['Root.System.A.GoB'], current_path=('Root', 'System', 'B'),
+                             vars={'counter': 2233})
+        run_cycle_and_assert(runtime, ['Root.System.B.GoC'], current_path=('Root', 'System', 'C'),
+                             vars={'counter': 3444})
 
-    def test_4_25_cross_hierarchy_aspect_transition(self):
+    def test_4_25_cross_hierarchy_transition_actual_runtime_behavior(self):
         dsl_code = '''
 def int counter = 0;
 state Root {
@@ -1002,3 +1006,69 @@ state Root {
         run_cycle_and_assert(runtime, current_path=('Root', 'System1', 'A'), vars={'counter': 110111})
         run_cycle_and_assert(runtime, ['Root.System1.Go'], current_path=('Root', 'System1', 'A'), vars={'counter': 220222})
 
+    def test_4_26_cross_hierarchy_transition_with_staged_guards(self):
+        dsl_code = '''
+def int phase = 0;
+def int trace = 0;
+state Root {
+    >> during before {
+        trace = trace + 1;
+    }
+
+    >> during after {
+        trace = trace + 100000;
+    }
+
+    state System1 {
+        >> during before {
+            trace = trace + 10;
+        }
+
+        >> during after {
+            trace = trace + 10000;
+        }
+
+        state A {
+            during {
+                phase = phase + 1;
+                trace = trace + 100;
+            }
+        }
+
+        [*] -> A;
+        A -> [*] : if [phase >= 3];
+    }
+
+    state System2 {
+        >> during before {
+            trace = trace + 1000;
+        }
+
+        >> during after {
+            trace = trace + 1000000;
+        }
+
+        state B {
+            during {
+                trace = trace + 10000;
+            }
+        }
+
+        [*] -> B : if [phase >= 7];
+    }
+
+    [*] -> System1;
+    System1 -> System2 : if [phase >= 5];
+}
+'''
+        runtime = build_runtime(dsl_code)
+
+        run_cycle_and_assert(runtime, current_path=('Root', 'System1', 'A'), vars={'phase': 1, 'trace': 110111})
+        run_cycle_and_assert(runtime, current_path=('Root', 'System1', 'A'), vars={'phase': 2, 'trace': 220222})
+        run_cycle_and_assert(runtime, current_path=('Root', 'System1', 'A'), vars={'phase': 3, 'trace': 330333})
+        run_cycle_and_assert(runtime, current_path=('Root', 'System1', 'A'), vars={'phase': 4, 'trace': 440444})
+        run_cycle_and_assert(runtime, current_path=('Root', 'System1', 'A'), vars={'phase': 5, 'trace': 550555})
+        run_cycle_and_assert(runtime, current_path=('Root', 'System1', 'A'), vars={'phase': 6, 'trace': 660666})
+        run_cycle_and_assert(runtime, current_path=('Root', 'System1', 'A'), vars={'phase': 7, 'trace': 770777})
+        run_cycle_and_assert(runtime, current_path=('Root', 'System2', 'B'), vars={'phase': 7, 'trace': 1881778})
+        run_cycle_and_assert(runtime, current_path=('Root', 'System2', 'B'), vars={'phase': 7, 'trace': 2992779})

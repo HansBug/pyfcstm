@@ -2034,6 +2034,177 @@ state Root {
 - 因此此处文档已按实际 runtime 行为修正为“保持在 `System1.A` 并再次执行同一条 aspect/during 链路”
 - 若后续需要支持这类跨层级转换，应以 runtime 语义修正为准，再同步更新本节示例
 
+### 4.26 Aspect Actions 测试：带分阶段出口条件的跨层级转换
+
+这个测试点以 **4.25** 为蓝本，但补上了从 `A` 退出 `System1` 所必需的出口 `A -> [*]`，并且把三段关键链路都分别加上守卫条件：
+
+1. `A -> [*]`：控制**能否先离开叶子状态 A**
+2. `System1 -> System2`：控制**能否从 System1 跨层级切换到 System2**
+3. `System2` 内部的 `[*] -> B`：控制**进入 System2 后能否最终到达 stoppable 状态 B**
+
+这样可以形成三个分阶段“卡住”的区间：
+
+- 前几个 cycle：卡在 `A -> [*]` 不满足
+- 中间几个 cycle：`A -> [*]` 已满足，但 `System1 -> System2` 不满足
+- 后面几个 cycle：前两段都满足，但 `System2 -> B` 不满足
+- 最后才整体链路打通，到达 `B`
+
+```python
+dsl_code = '''
+def int phase = 0;
+def int trace = 0;
+state Root {
+    >> during before {
+        trace = trace + 1;
+    }
+
+    >> during after {
+        trace = trace + 100000;
+    }
+
+    state System1 {
+        >> during before {
+            trace = trace + 10;
+        }
+
+        >> during after {
+            trace = trace + 10000;
+        }
+
+        state A {
+            during {
+                phase = phase + 1;
+                trace = trace + 100;
+            }
+        }
+
+        [*] -> A;
+        A -> [*] : if [phase >= 3];
+    }
+
+    state System2 {
+        >> during before {
+            trace = trace + 1000;
+        }
+
+        >> during after {
+            trace = trace + 1000000;
+        }
+
+        state B {
+            during {
+                trace = trace + 10000;
+            }
+        }
+
+        [*] -> B : if [phase >= 7];
+    }
+
+    [*] -> System1;
+    System1 -> System2 : if [phase >= 5];
+}
+'''
+```
+
+**执行序列**:
+
+| 操作 | 当前状态 | phase | trace | 说明 |
+|------|----------|-------|-------|------|
+| `runtime.cycle()` | A | 1 | 110111 | 进入 `System1.A`，执行 `System1.A` 的 aspect/during 链路 |
+| `runtime.cycle()` | A | 2 | 220222 | `A -> [*]` 尚不满足，继续停在 `A` |
+| `runtime.cycle()` | A | 3 | 330333 | 本 cycle 检查时 `phase=2`，`A -> [*]` 仍不满足，执行 `A.during` 后变为 3 |
+| `runtime.cycle()` | A | 4 | 440444 | `A -> [*]` 已满足，但 `System1 -> System2` 不满足，整条链路验证失败，停在 `A` |
+| `runtime.cycle()` | A | 5 | 550555 | 同上；本 cycle 后 `phase` 增至 5 |
+| `runtime.cycle()` | A | 6 | 660666 | `A -> [*]` 与 `System1 -> System2` 都满足，但 `System2 -> B` 不满足，整条链路仍失败 |
+| `runtime.cycle()` | A | 7 | 770777 | 同上；本 cycle 后 `phase` 增至 7 |
+| `runtime.cycle()` | B | 7 | 1881778 | 三段条件全部满足，完成 `A -> [*] -> System1 -> System2 -> B`，并执行 `B.during` |
+| `runtime.cycle()` | B | 7 | 2992779 | 已稳定停在 `B`，继续执行 `System2.B` 的 aspect/during 链路 |
+
+**详细计算**:
+```
+初始: phase = 0, trace = 0
+
+第1次 cycle:
+  Root >> during before:      0 + 1 = 1
+  System1 >> during before:   1 + 10 = 11
+  A.during:
+    phase = 0 + 1 = 1
+    trace = 11 + 100 = 111
+  System1 >> during after:    111 + 10000 = 10111
+  Root >> during after:       10111 + 100000 = 110111
+
+第2次 cycle:
+  检查 A->[*]: phase >= 3 不满足 (当前 phase = 1)
+  继续执行 A.during 链路
+  本次结束后: phase = 2, trace = 220222
+
+第3次 cycle:
+  检查 A->[*]: phase >= 3 不满足 (当前 phase = 2)
+  继续执行 A.during 链路
+  本次结束后: phase = 3, trace = 330333
+
+第4次 cycle:
+  检查 A->[*]: phase >= 3 满足
+  退出到 System1 后继续检查 System1->System2: phase >= 5 不满足 (当前 phase = 3)
+  整条链路验证失败，停在 A
+  本次结束后: phase = 4, trace = 440444
+
+第5次 cycle:
+  检查 A->[*]: phase >= 3 满足
+  检查 System1->System2: phase >= 5 不满足 (当前 phase = 4)
+  整条链路验证失败，停在 A
+  本次结束后: phase = 5, trace = 550555
+
+第6次 cycle:
+  检查 A->[*]: phase >= 3 满足
+  检查 System1->System2: phase >= 5 满足
+  进入 System2 后检查 [*]->B: phase >= 7 不满足 (当前 phase = 5)
+  整条链路验证失败，停在 A
+  本次结束后: phase = 6, trace = 660666
+
+第7次 cycle:
+  检查 A->[*]: phase >= 3 满足
+  检查 System1->System2: phase >= 5 满足
+  进入 System2 后检查 [*]->B: phase >= 7 不满足 (当前 phase = 6)
+  整条链路验证失败，停在 A
+  本次结束后: phase = 7, trace = 770777
+
+第8次 cycle:
+  检查 A->[*]: phase >= 3 满足
+  检查 System1->System2: phase >= 5 满足
+  检查 System2 内部 [*]->B: phase >= 7 满足
+  链路验证成功
+  A.exit
+  A->[*] (退出到 System1)
+  System1->System2
+  System2.enter
+  System2->[*]->B
+  B.enter
+  B.during:
+    Root >> during before:      770777 + 1 = 770778
+    System2 >> during before:   770778 + 1000 = 771778
+    B.during:                   771778 + 10000 = 781778
+    System2 >> during after:    781778 + 1000000 = 1781778
+    Root >> during after:       1781778 + 100000 = 1881778
+
+第9次 cycle:
+  已稳定处于 B
+  再次执行 System2.B 的 during 链路:
+    Root >> during before:      1881778 + 1 = 1881779
+    System2 >> during before:   1881779 + 1000 = 1882779
+    B.during:                   1882779 + 10000 = 1892779
+    System2 >> during after:    1892779 + 1000000 = 2892779
+    Root >> during after:       2892779 + 100000 = 2992779
+```
+
+**注意**:
+- 这个例子已经按当前 [pyfcstm/simulate/runtime.py](pyfcstm/simulate/runtime.py) 的实际输出校正
+- `phase` 专门用于控制 guard 的阶段性满足；`trace` 专门用于观察 aspect actions 和 `during` 的累积效果
+- 这个案例适合验证三类独立阻塞路径：
+  - 叶子状态出口未满足
+  - 父层跨层级转换未满足
+  - 目标复合状态内部无法到达 stoppable
+
 ---
 
 ## 5. 实现要点

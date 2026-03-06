@@ -1178,7 +1178,7 @@ state Root {
 | 操作 | 当前状态 | counter | 说明 |
 |------|----------|---------|------|
 | `runtime.cycle()` | A | 1 | 进入 System->A，执行 A.during |
-| `runtime.cycle(['Root.System.A.GoP'])` | A | 2 | A->P->[\*] 验证：P->[\*] 退到 System（复合状态，non-stoppable），转换无效，停在 A，执行 A.during |
+| `runtime.cycle(['Root.System.A.GoP'])` | A | 2 | A->P->[\*] 验证：P->[\*] 退到 System，但 System 没有后续转换可以到达 stoppable，转换无效，停在 A，执行 A.during |
 
 **详细计算**:
 ```
@@ -1195,13 +1195,197 @@ state Root {
   检查转换 A->P:
     验证 A->P:
       模拟 P.enter: counter = 1 + 10 = 11
-      检查 P->[*]: 退出到 System（复合状态，non-stoppable）
+      检查 P->[*]: 退出到 System（复合状态）
+      检查 System 是否有后续转换可以到达 stoppable: 无
     验证失败
   停在 A
   A.during:                 1 + 1 = 2
 ```
 
-**注意**: P->[*] 只是退到父状态 System，而 System 是复合状态（non-stoppable），所以 A->P 转换无效。
+**注意**: P->[*] 退到父状态 System 后，System 没有后续转换可以到达 stoppable 状态，所以 A->P 转换无效。关键不是 System 是复合状态，而是 System 无法继续到达 stoppable。
+
+### 4.17.1 伪状态链路测试：退出到父状态后可达 stoppable（带事件）
+
+```python
+dsl_code = '''
+def int counter = 0;
+state Root {
+    state System {
+        state A {
+            during {
+                counter = counter + 1;
+            }
+        }
+
+        pseudo state P {
+            enter {
+                counter = counter + 10;
+            }
+        }
+
+        state B {
+            during {
+                counter = counter + 100;
+            }
+        }
+
+        [*] -> A;
+        A -> P :: GoP;
+        P -> [*];
+        [*] -> B :: ToB;  // System 的初始转换，需要 ToB 事件
+    }
+
+    [*] -> System;
+}
+'''
+```
+
+**执行序列**:
+
+| 操作 | 当前状态 | counter | 说明 |
+|------|----------|---------|------|
+| `runtime.cycle()` | A | 1 | 进入 System->A，执行 A.during |
+| `runtime.cycle(['Root.System.A.GoP'])` | A | 2 | A->P->[\*] 验证：P->[\*] 退到 System，但 System->[*]->B 需要 ToB 事件，无法到达 stoppable，转换无效，停在 A，执行 A.during |
+| `runtime.cycle(['Root.System.A.GoP', 'Root.System.ToB'])` | B | 112 | A->P(+10)->[\*]->System，System->[*]->B，执行 B.during(+100) |
+
+**详细计算**:
+```
+初始: counter = 0
+
+第1次 cycle:
+  进入 System
+  System.enter
+  System->[*]->A
+  A.enter
+  A.during:                 0 + 1 = 1
+
+第2次 cycle (提供 GoP 事件):
+  检查转换 A->P:
+    验证 A->P:
+      模拟 P.enter: counter = 1 + 10 = 11
+      检查 P->[*]: 退出到 System
+      检查 System->[*]->B: 需要 ToB 事件，但未提供
+    验证失败
+  停在 A
+  A.during:                 1 + 1 = 2
+
+第3次 cycle (提供 GoP 和 ToB 事件):
+  A.exit
+  A->P
+  P.enter:                  2 + 10 = 12
+  P.exit
+  P->[*] (退出到 System)
+  System->[*]->B (ToB 事件满足)
+  B.enter
+  B.during:                 12 + 100 = 112
+```
+
+**注意**: P->[*] 退到 System 后，System 有初始转换 [*]->B，但需要 ToB 事件。当提供事件时，验证成功，转换有效。
+
+### 4.17.2 伪状态链路测试：退出到父状态后经伪状态可达 stoppable（带守卫）
+
+```python
+dsl_code = '''
+def int counter = 0;
+state Root {
+    state System {
+        state A {
+            during {
+                counter = counter + 1;
+            }
+        }
+
+        pseudo state P1 {
+            enter {
+                counter = counter + 10;
+            }
+        }
+
+        pseudo state P2 {
+            enter {
+                counter = counter + 100;
+            }
+        }
+
+        state B {
+            during {
+                counter = counter + 1000;
+            }
+        }
+
+        [*] -> A;
+        A -> P1 :: GoP;
+        P1 -> [*];
+        [*] -> P2;  // System 的初始转换，无条件
+        P2 -> B : if [counter >= 115];  // 需要守卫条件：P1.enter(+10) + P2.enter(+100) = 110，需要初始 counter >= 5
+    }
+
+    [*] -> System;
+}
+'''
+```
+
+**执行序列**:
+
+| 操作 | 当前状态 | counter | 说明 |
+|------|----------|---------|------|
+| `runtime.cycle()` | A | 1 | 进入 System->A，执行 A.during |
+| `runtime.cycle(['Root.System.A.GoP'])` | A | 2 | A->P1->[\*] 验证：counter=1，P1.enter(+10=11)，P2.enter(+100=111)，P2->B 需要 counter>=115 不满足，转换无效，停在 A，执行 A.during |
+| `runtime.cycle()` | A | 3 | 无转换，执行 A.during |
+| `runtime.cycle()` | A | 4 | 无转换，执行 A.during |
+| `runtime.cycle()` | A | 5 | 无转换，执行 A.during |
+| `runtime.cycle(['Root.System.A.GoP'])` | B | 1115 | A->P1(+10=15)->[\*]->System->[*]->P2(+100=115)，P2->B 守卫满足(115>=115)，执行 B.during(+1000) |
+
+**详细计算**:
+```
+初始: counter = 0
+
+第1次 cycle:
+  进入 System
+  System.enter
+  System->[*]->A
+  A.enter
+  A.during:                 0 + 1 = 1
+
+第2次 cycle (提供 GoP 事件):
+  检查转换 A->P1:
+    验证 A->P1 (使用变量快照 counter=1):
+      模拟 P1.enter: counter = 1 + 10 = 11
+      检查 P1->[*]: 退出到 System
+      检查 System->[*]->P2: 无条件，满足
+      模拟 P2.enter: counter = 11 + 100 = 111
+      检查 P2->B: counter >= 115，111 < 115 不满足
+    验证失败
+  停在 A
+  A.during:                 1 + 1 = 2
+
+第3-5次 cycle:
+  无转换可触发
+  A.during 累加: 2 -> 3 -> 4 -> 5
+
+第6次 cycle (提供 GoP 事件):
+  检查转换 A->P1:
+    验证 A->P1 (使用变量快照 counter=5):
+      模拟 P1.enter: counter = 5 + 10 = 15
+      检查 P1->[*]: 退出到 System
+      检查 System->[*]->P2: 无条件，满足
+      模拟 P2.enter: counter = 15 + 100 = 115
+      检查 P2->B: counter >= 115，115 >= 115 满足
+      到达 B (stoppable)
+    验证成功
+  A.exit
+  A->P1
+  P1.enter:                 5 + 10 = 15
+  P1.exit
+  P1->[*] (退出到 System)
+  System->[*]->P2
+  P2.enter:                 15 + 100 = 115
+  P2->B (守卫满足)
+  B.enter
+  B.during:                 115 + 1000 = 1115
+```
+
+**注意**: P1->[*] 退到 System 后，System 有初始转换链路 [*]->P2->B，但 P2->B 需要守卫条件 counter>=115。只有当 A 的 counter 累加到 5 时，验证才能成功。关键是验证时需要模拟整个链路，包括所有 enter 动作和守卫条件，确保最终能到达 stoppable 状态。
 
 ### 4.18 伪状态链路测试：复合状态中的伪状态链
 

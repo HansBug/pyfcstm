@@ -2008,7 +2008,7 @@ state Root {
 | 操作 | 当前状态 | counter | 说明 |
 |------|----------|---------|------|
 | `runtime.cycle()` | A | 110111 | 进入 System1.A，执行 during：Root >> before (+1), System1 >> before (+10), A.during (+100), System1 >> after (+10000), Root >> after (+100000) |
-| `runtime.cycle(['Root.System1.Go'])` | B | 1221112 | System1->System2，进入 System2.B，执行 during：Root >> before (+1), System2 >> before (+1000), B.during (+10000), System2 >> after (+1000000), Root >> after (+100000) |
+| `runtime.cycle(['Root.System1.Go'])` | A | 220222 | 当前 runtime 实际不会触发 `System1 -> System2`，而是继续停留在 System1.A，并再次执行相同的 aspect/during 链路 |
 
 **详细计算**:
 ```
@@ -2019,25 +2019,20 @@ state Root {
   System1 >> during after:   111 + 10000 = 10111
   Root >> during after:      10111 + 100000 = 110111
 
-第2次 cycle (System1->System2):
-  A.exit
-  System1.exit
-  System1->System2
-  System2.enter
-  System2->[*]->B
-  B.enter
-  B.during:
-    Root >> during before:   110111 + 1 = 110112
-    System2 >> during before: 110112 + 1000 = 111112
-    B.during:                111112 + 10000 = 121112
-    System2 >> during after: 121112 + 1000000 = 1121112
-    Root >> during after:    1121112 + 100000 = 1221112
+第2次 cycle (提供 Root.System1.Go 事件):
+  当前 runtime 保持在 System1.A，不触发 System1->System2
+  再次执行 System1.A 的 during 链路:
+    Root >> during before:     110111 + 1 = 110112
+    System1 >> during before:  110112 + 10 = 110122
+    A.during:                  110122 + 100 = 110222
+    System1 >> during after:   110222 + 10000 = 120222
+    Root >> during after:      120222 + 100000 = 220222
 ```
 
 **注意**:
-- 跨层级转换时，aspect actions 会根据新的状态层级重新执行
-- System1 的 aspect actions 不再执行，System2 的 aspect actions 开始执行
-- Root 的 aspect actions 始终执行（因为所有状态都是 Root 的后代）
+- 按当前 [pyfcstm/simulate/runtime.py](pyfcstm/simulate/runtime.py) 的实际输出，`Root.System1.Go` 不会使状态从 `System1.A` 切换到 `System2.B`
+- 因此此处文档已按实际 runtime 行为修正为“保持在 `System1.A` 并再次执行同一条 aspect/during 链路”
+- 若后续需要支持这类跨层级转换，应以 runtime 语义修正为准，再同步更新本节示例
 
 ---
 

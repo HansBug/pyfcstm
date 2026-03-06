@@ -1,16 +1,26 @@
 """
 Simulation runtime for executing finite state machine models.
 
-This module provides the core SimulationRuntime class for simulating
+This module provides the core :class:`SimulationRuntime` class for simulating
 hierarchical state machine execution.
 """
 
+import copy
 import logging
-from typing import Union, List, Dict, Optional, Tuple
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Tuple, Union
 
 from ..dsl import EXIT_STATE
-from ..model import StateMachine, Event, Transition, OnStage, OnAspect, State
+from ..model import Event, OnAspect, OnStage, State, StateMachine, Transition
 from .utils import get_event_name, get_func_name
+
+
+@dataclass
+class _Frame:
+    """Internal runtime frame for an active state."""
+
+    state: State
+    mode: str
 
 
 class SimulationRuntime:
@@ -29,32 +39,21 @@ class SimulationRuntime:
 
     :ivar state_machine: The state machine being simulated
     :vartype state_machine: StateMachine
-    :ivar stack: Execution stack of (state, status) tuples
-    :vartype stack: List[Tuple[State, str]]
+    :ivar stack: Execution stack of active states from root to current state
+    :vartype stack: List[_Frame]
     :ivar vars: Current variable values
     :vartype vars: Dict[str, Union[int, float]]
-
-    Example::
-
-        >>> from pyfcstm.model import StateMachine
-        >>> runtime = SimulationRuntime(StateMachine(...))
-        >>> runtime.cycle()  # Execute one cycle
-        >>> runtime.vars['counter']  # Access variable values
-        0
     """
 
     def __init__(self, state_machine: StateMachine):
         self.state_machine = state_machine
-        self.stack: List[Tuple[State, str]] = [
-            (self.state_machine.root_state, 'enter'),
-        ]
-
+        self.stack: List[_Frame] = []
         self.vars: Dict[str, Union[int, float]] = {}
         for name, define in self.state_machine.defines.items():
             self.vars[name] = define.init(**self.vars)
 
-        self._next_state: Optional[str] = None
-        self._transition_target_state: Optional[State] = None
+        self._initialized = False
+        self._ended = False
 
     def parse_event(self, event: Union[str, Event]) -> Event:
         """
@@ -69,22 +68,68 @@ class SimulationRuntime:
         if isinstance(event, Event):
             return event
         elif isinstance(event, str):
-            # Event path format: "Root.State.EventName"
-            # Navigate to the state that owns the event
             segments = event.split('.')
             state = self.state_machine.root_state
-
-            # Navigate through states (all segments except last which is event name)
-            # Skip first segment if it matches root state name
             start_idx = 1 if segments[0] == state.name else 0
             for segment in segments[start_idx:-1]:
                 state = state.substates[segment]
-
-            # Get the event from the state
-            event_name = segments[-1]
-            return state.events[event_name]
+            return state.events[segments[-1]]
         else:
             raise TypeError(f'Unknown event type {type(event)!r} - {event!r}.')
+
+    @staticmethod
+    def _clone_stack(stack: List[_Frame]) -> List[_Frame]:
+        return [_Frame(frame.state, frame.mode) for frame in stack]
+
+    def _normalize_events(self, events: Optional[List[Union[str, Event]]]) -> Tuple[List[Event], Dict[str, Event]]:
+        event_objects = [self.parse_event(event) for event in list(events or [])]
+        d_events = {get_event_name(event): event for event in event_objects}
+        return event_objects, d_events
+
+    def _execute_transition_effect(self, transition: Transition, vars_: Dict[str, Union[int, float]]) -> None:
+        for effect in (transition.effects or []):
+            vars_[effect.var_name] = effect.expr(**vars_)
+
+    def execute_transition_effect(self, transition: Transition):
+        """
+        Execute the effects of a transition.
+
+        :param transition: The transition whose effects to execute
+        :type transition: Transition
+        """
+        self._execute_transition_effect(transition, self.vars)
+
+    def _execute_func(self, func: Union[OnStage, OnAspect], vars_: Dict[str, Union[int, float]]) -> None:
+        while func.ref is not None:
+            new_func = func.ref
+            logging.debug(f'Function {get_func_name(func)} -> {get_func_name(new_func)}.')
+            func = new_func
+
+        if func.is_abstract:
+            logging.info(f'Execute abstract function {get_func_name(func)}:\n{func.to_ast_node()}')
+        else:
+            logging.info(f'Execute function {get_func_name(func)}.')
+            for op in (func.operations or []):
+                vars_[op.var_name] = op.expr(**vars_)
+
+    def execute_func(self, func: Union[OnStage, OnAspect]):
+        """
+        Execute a lifecycle action, following references and handling abstracts.
+
+        :param func: The action to execute
+        :type func: Union[OnStage, OnAspect]
+        """
+        self._execute_func(func, self.vars)
+
+    def _transition_matches_event(self, transition: Transition, d_events: Dict[str, Event]) -> bool:
+        if transition.event is None:
+            return True
+        return get_event_name(transition.event) in d_events
+
+    def _transition_matches_guard(self, transition: Transition, vars_: Dict[str, Union[int, float]]) -> bool:
+        if transition.guard is None:
+            return True
+        return bool(transition.guard(**vars_))
 
     def is_transition_triggered(self, transition: Transition, d_events: Dict[str, Event]) -> bool:
         """
@@ -97,79 +142,204 @@ class SimulationRuntime:
         :return: True if transition should trigger
         :rtype: bool
         """
-        if transition.event is not None:
-            if get_event_name(transition.event) in d_events:
-                logging.info(
-                    f'Transition {transition.to_ast_node()} triggered due to event {get_event_name(transition.event)!r}.')
-                return True
-            else:
-                logging.debug(f'Transition {transition.to_ast_node()} not triggered.')
-                return False
+        matched = self._transition_matches_event(transition, d_events) and self._transition_matches_guard(transition, self.vars)
+        if matched:
+            logging.info(f'Transition {transition.to_ast_node()} triggered.')
         else:
-            if transition.guard is None or transition.guard(**self.vars):
-                logging.info(f'Transition {transition.to_ast_node()} triggered due to guard.')
-                return True
-            else:
-                logging.debug(f'Transition {transition.to_ast_node()} not triggered.')
-                return False
+            logging.debug(f'Transition {transition.to_ast_node()} not triggered.')
+        return matched
 
-    def execute_transition_effect(self, transition: Transition):
-        """
-        Execute the effects of a transition.
+    def _transition_is_enabled(
+        self,
+        transition: Transition,
+        d_events: Dict[str, Event],
+        vars_: Dict[str, Union[int, float]],
+    ) -> bool:
+        return self._transition_matches_event(transition, d_events) and self._transition_matches_guard(transition, vars_)
 
-        :param transition: The transition whose effects to execute
-        :type transition: Transition
-        """
-        for effect in (transition.effects or []):
-            self.vars[effect.var_name] = effect.expr(**self.vars)
+    def _run_leaf_during(self, state: State, vars_: Dict[str, Union[int, float]]) -> None:
+        for _, func in state.iter_on_during_aspect_recursively():
+            self._execute_func(func, vars_)
 
-    def execute_func(self, func: Union[OnStage, OnAspect]):
-        """
-        Execute a lifecycle action, following references and handling abstracts.
+    def _enter_state(
+        self,
+        stack: List[_Frame],
+        state: State,
+        vars_: Dict[str, Union[int, float]],
+        d_events: Dict[str, Event],
+    ) -> None:
+        stack.append(_Frame(state, 'active'))
+        for on_enter in state.on_enters:
+            self._execute_func(on_enter, vars_)
 
-        :param func: The action to execute
-        :type func: Union[OnStage, OnAspect]
-        """
-        # Follow reference chain
-        while func.ref is not None:
-            new_func = func.ref
-            logging.debug(f'Function {get_func_name(func)}'
-                          f' -> {get_func_name(new_func)}.')
-            func = new_func
-
-        if func.is_abstract:
-            logging.info(
-                f'Execute abstract function {get_func_name(func)}:\n{func.to_ast_node()}')
+        if state.is_leaf_state:
+            self._run_leaf_during(state, vars_)
+            stack[-1].mode = 'after_entry'
         else:
-            logging.info(f'Execute function {get_func_name(func)}.')
-            for op in (func.operations or []):
-                self.vars[op.var_name] = op.expr(**self.vars)
+            for on_during_before in state.list_on_durings(aspect='before'):
+                self._execute_func(on_during_before, vars_)
+            stack[-1].mode = 'init_wait'
+            self._attempt_init_transition(stack, vars_, d_events)
 
-    def _check_and_handle_parent_transition(self, parent_state: State, d_events: Dict[str, Event]) -> bool:
-        """
-        Check if parent has transitions and handle them.
+    def _attempt_init_transition(
+        self,
+        stack: List[_Frame],
+        vars_: Dict[str, Union[int, float]],
+        d_events: Dict[str, Event],
+    ) -> bool:
+        if not stack:
+            return False
+        state = stack[-1].state
+        if state.is_leaf_state:
+            return False
 
-        :param parent_state: The parent state to check
-        :type parent_state: State
-        :param d_events: Dictionary of active events
-        :type d_events: Dict[str, Event]
-        :return: True if transition was triggered
-        :rtype: bool
-        """
-        self._next_state = None
-        self._transition_target_state = None
-
-        for transition in parent_state.transitions_from:
-            if self.is_transition_triggered(transition, d_events):
-                self.execute_transition_effect(transition)
-                self._next_state = transition.to_state
-
-                if self._next_state == EXIT_STATE:
-                    self._transition_target_state = None
-                else:
-                    self._transition_target_state = parent_state.parent.substates[self._next_state]
+        for transition in state.init_transitions:
+            if self._transition_is_enabled(transition, d_events, vars_):
+                self._execute_transition_effect(transition, vars_)
+                target_state = state.substates[transition.to_state]
+                self._enter_state(stack, target_state, vars_, d_events)
                 return True
         return False
+
+    def _finalize_exit_to_parent(
+        self,
+        stack: List[_Frame],
+        vars_: Dict[str, Union[int, float]],
+    ) -> bool:
+        if not stack:
+            return True
+
+        parent = stack[-1].state
+        if parent.is_root_state:
+            stack.clear()
+            return True
+
+        for on_during_after in parent.list_on_durings(aspect='after'):
+            self._execute_func(on_during_after, vars_)
+        stack[-1].mode = 'post_child_exit'
+        return False
+
+    def _execute_transition_on_context(
+        self,
+        stack: List[_Frame],
+        vars_: Dict[str, Union[int, float]],
+        transition: Transition,
+        d_events: Dict[str, Event],
+    ) -> bool:
+        current_state = stack[-1].state
+
+        for on_exit in current_state.on_exits:
+            self._execute_func(on_exit, vars_)
+
+        self._execute_transition_effect(transition, vars_)
+        stack.pop()
+
+        if transition.to_state == EXIT_STATE:
+            return self._finalize_exit_to_parent(stack, vars_)
+
+        target_state = current_state.parent.substates[transition.to_state]
+        self._enter_state(stack, target_state, vars_, d_events)
+        return False
+
+    def _select_transition(
+        self,
+        stack: List[_Frame],
+        vars_: Dict[str, Union[int, float]],
+        d_events: Dict[str, Event],
+    ) -> Optional[Transition]:
+        if not stack:
+            return None
+        current_state = stack[-1].state
+        for transition in current_state.transitions_from:
+            if not self._transition_is_enabled(transition, d_events, vars_):
+                continue
+            if current_state.is_stoppable and not self._validate_transition(stack, vars_, transition, d_events):
+                continue
+            return transition
+        return None
+
+    def _validate_transition(
+        self,
+        stack: List[_Frame],
+        vars_: Dict[str, Union[int, float]],
+        transition: Transition,
+        d_events: Dict[str, Event],
+    ) -> bool:
+        sim_stack = self._clone_stack(stack)
+        sim_vars = copy.deepcopy(vars_)
+        ended = self._execute_transition_on_context(sim_stack, sim_vars, transition, d_events)
+        if ended:
+            return True
+
+        steps = 0
+        max_steps = 1000
+        while sim_stack and steps < max_steps:
+            frame = sim_stack[-1]
+            state = frame.state
+
+            if state.is_leaf_state:
+                if frame.mode == 'after_entry':
+                    frame.mode = 'active'
+                    if state.is_stoppable:
+                        return True
+
+                transition = self._select_transition_for_validation(sim_stack, sim_vars, d_events)
+                if transition is not None:
+                    ended = self._execute_transition_on_context(sim_stack, sim_vars, transition, d_events)
+                    if ended:
+                        return True
+                    steps += 1
+                    continue
+
+                if state.is_stoppable:
+                    return False
+                return False
+
+            if frame.mode == 'init_wait':
+                progressed = self._attempt_init_transition(sim_stack, sim_vars, d_events)
+                if not progressed:
+                    return False
+                steps += 1
+                continue
+
+            if frame.mode == 'post_child_exit':
+                transition = self._select_transition_for_validation(sim_stack, sim_vars, d_events, validate_stoppable=False)
+                if transition is None:
+                    return False
+                ended = self._execute_transition_on_context(sim_stack, sim_vars, transition, d_events)
+                if ended:
+                    return True
+                steps += 1
+                continue
+
+            return False
+
+        return False
+
+    def _select_transition_for_validation(
+        self,
+        stack: List[_Frame],
+        vars_: Dict[str, Union[int, float]],
+        d_events: Dict[str, Event],
+        validate_stoppable: bool = True,
+    ) -> Optional[Transition]:
+        if not stack:
+            return None
+        current_state = stack[-1].state
+        for transition in current_state.transitions_from:
+            if not self._transition_is_enabled(transition, d_events, vars_):
+                continue
+            if validate_stoppable and current_state.is_stoppable:
+                if not self._validate_transition(stack, vars_, transition, d_events):
+                    continue
+            return transition
+        return None
+
+    def _initialize_runtime(self, d_events: Dict[str, Event]) -> None:
+        self.stack = []
+        self._enter_state(self.stack, self.state_machine.root_state, self.vars, d_events)
+        self._initialized = True
+        self._ended = len(self.stack) == 0
 
     def step(self, events: List[Union[str, Event]] = None):
         """
@@ -178,169 +348,114 @@ class SimulationRuntime:
         :param events: List of events to process in this step
         :type events: List[Union[str, Event]], optional
         """
-        events = [self.parse_event(event) for event in list(events or [])]
-        d_events = {get_event_name(event): event for event in events}
-        current_state, current_status = self.stack[-1]
+        _, d_events = self._normalize_events(events)
+        if self._ended:
+            logging.info('Runtime ended, nothing to do.')
+            return
+        if not self._initialized:
+            self._initialize_runtime(d_events)
+            return
 
-        if current_status == 'enter':
-            # Execute enter actions
-            for on_enter in current_state.on_enters:
-                self.execute_func(on_enter)
+        if not self.stack:
+            self._ended = True
+            return
 
-            if current_state.is_leaf_state:
-                # Leaf state: go to during phase
-                self.stack[-1] = (current_state, 'during')
+        frame = self.stack[-1]
+        state = frame.state
+
+        if state.is_leaf_state:
+            transition = self._select_transition(self.stack, self.vars, d_events)
+            if transition is not None:
+                self._ended = self._execute_transition_on_context(self.stack, self.vars, transition, d_events)
             else:
-                # Composite state: execute during before and process init transition
-                self.stack[-1] = (current_state, 'during_before')
+                self._run_leaf_during(state, self.vars)
+                frame.mode = 'after_entry'
+            return
 
-        elif current_status == 'during_before':
-            # Execute composite state's during before actions
-            for on_during_before in current_state.list_on_durings(aspect='before'):
-                self.execute_func(on_during_before)
+        if frame.mode == 'init_wait':
+            self._attempt_init_transition(self.stack, self.vars, d_events)
+            self._ended = len(self.stack) == 0
+            return
 
-            # Process initial transition
-            for transition in current_state.init_transitions:
-                if self.is_transition_triggered(transition, d_events):
-                    self.execute_transition_effect(transition)
-                    target_state = current_state.substates[transition.to_state]
-                    # Replace current state with child state
-                    self.stack[-1] = (current_state, 'during_after')
-                    self.stack.append((target_state, 'enter'))
-                    break
-            else:
-                # No init transition found - this shouldn't happen in valid FSM
-                self.stack[-1] = (current_state, 'during_after')
-
-        elif current_status == 'during_after':
-            # Check if we need to process init transition (for composite states waiting for event)
-            if not current_state.is_leaf_state:
-                # Check if we have a child state active
-                has_child_active = False
-                for state, status in self.stack:
-                    if state.parent == current_state:
-                        has_child_active = True
-                        break
-
-                if not has_child_active:
-                    # No child active, try to trigger init transition
-                    for transition in current_state.init_transitions:
-                        if self.is_transition_triggered(transition, d_events):
-                            self.execute_transition_effect(transition)
-                            target_state = current_state.substates[transition.to_state]
-                            self.stack.append((target_state, 'enter'))
-                            return  # Exit early, child will be processed in next step
-
-            # Check for transitions from composite state
-            if self._check_and_handle_parent_transition(current_state, d_events):
-                # Transition triggered: execute during after and exit
-                for on_during_after in current_state.list_on_durings(aspect='after'):
-                    self.execute_func(on_during_after)
-                self.stack[-1] = (current_state, 'exit')
-            else:
-                # No transition: stay in during_after (waiting for child or event)
-                pass
-
-        elif current_status == 'during':
-            # Execute aspect actions for leaf state
-            for _, on_during in current_state.iter_on_during_aspect_recursively():
-                self.execute_func(on_during)
-
-            # Check for transitions
-            if self._check_and_handle_parent_transition(current_state, d_events):
-                self.stack[-1] = (current_state, 'exit')
-
-        elif current_status == 'exit':
-            # Execute exit actions
-            for on_exit in current_state.on_exits:
-                self.execute_func(on_exit)
-
-            if self._next_state == EXIT_STATE:
-                # Exit to parent
-                self.stack.pop()
-                if not self.is_ended:
-                    parent_state = self.stack[-1][0]
-                    logging.info(f'State exited {".".join(current_state.path)} --> {".".join(parent_state.path)}')
-
-                    # Parent composite state needs to execute during after
-                    if self.stack[-1][1] == 'during_after':
-                        # Execute during after actions
-                        for on_during_after in parent_state.list_on_durings(aspect='after'):
-                            self.execute_func(on_during_after)
-
-                        # Check if parent has transitions
-                        if self._check_and_handle_parent_transition(parent_state, d_events):
-                            # Parent transitions
-                            self.stack[-1] = (parent_state, 'exit')
-                        else:
-                            # Parent stays, go back to during_before
-                            self.stack[-1] = (parent_state, 'during_before')
-            else:
-                # Transition to sibling or other state
-                self.stack[-1] = (self._transition_target_state, 'enter')
-                logging.info(f'State transited {".".join(current_state.path)} --> {".".join(self._transition_target_state.path)}')
-
-        else:
-            raise RuntimeError(f'Unknown current status {current_status!r} on state {current_state!r}.')
+        if frame.mode == 'post_child_exit':
+            transition = self._select_transition(self.stack, self.vars, d_events)
+            if transition is not None:
+                self._ended = self._execute_transition_on_context(self.stack, self.vars, transition, d_events)
+            return
 
     def cycle(self, events: List[Union[str, Event]] = None):
         """
         Execute a complete simulation cycle until reaching a stable state.
 
-        A cycle continues stepping until either:
-        - The state machine ends
-        - A stoppable leaf state is reached and has executed its during action
-        - A composite state is waiting in during_after with no child active and no events
-
         :param events: List of events to process
         :type events: List[Union[str, Event]], optional
         """
-        events = [self.parse_event(event) for event in list(events or [])]
-        if self.is_ended:
+        _, d_events = self._normalize_events(events)
+        if self._ended:
             logging.info('Runtime ended, nothing to do.')
-        else:
-            # Track if we've executed a during action in a stoppable state
-            executed_during_in_stoppable = False
-            steps_taken = 0
-            max_steps = 1000  # Prevent infinite loops
+            return
 
-            while not self.is_ended and steps_taken < max_steps:
-                current_state, current_status = self.stack[-1]
+        if not self._initialized:
+            self._initialize_runtime(d_events)
 
-                # Check if we should stop BEFORE this step
-                if executed_during_in_stoppable and current_state.is_stoppable and current_status == 'during':
-                    break
+        steps_taken = 0
+        max_steps = 1000
 
-                # Check if we're stuck in during_after (composite state waiting for child)
-                # Only stop if no events provided
-                if current_status == 'during_after' and not current_state.is_leaf_state and not events:
-                    # Check if we have a child state active on the stack
-                    has_child_active = False
-                    for state, status in self.stack:
-                        if state.parent == current_state:
-                            has_child_active = True
-                            break
+        while not self._ended and steps_taken < max_steps:
+            if not self.stack:
+                self._ended = True
+                break
 
-                    if not has_child_active:
-                        # No child active and no events, we're waiting
-                        logging.info(f'Composite state {".".join(current_state.path)} waiting for init transition event')
+            frame = self.stack[-1]
+            state = frame.state
+
+            if state.is_leaf_state:
+                if frame.mode == 'after_entry':
+                    frame.mode = 'active'
+                    if state.is_stoppable:
                         break
 
-                # Remember if we're about to execute during in a stoppable state
-                if current_state.is_stoppable and current_status == 'during':
-                    executed_during_in_stoppable = True
+                transition = self._select_transition(self.stack, self.vars, d_events)
+                if transition is not None:
+                    self._ended = self._execute_transition_on_context(self.stack, self.vars, transition, d_events)
+                    steps_taken += 1
+                    continue
 
-                self.step(events)
+                if frame.mode == 'after_entry':
+                    break
+
+                self._run_leaf_during(state, self.vars)
+                frame.mode = 'after_entry'
                 steps_taken += 1
+                continue
 
-            if steps_taken >= max_steps:
-                logging.error(f'Maximum steps ({max_steps}) reached, possible infinite loop')
+            if frame.mode == 'init_wait':
+                progressed = self._attempt_init_transition(self.stack, self.vars, d_events)
+                steps_taken += 1
+                if not progressed:
+                    break
+                continue
 
-            if self.is_ended:
-                logging.info('Runtime ended.')
-            else:
-                logging.info(f'Current state: {".".join(self.current_state.path)}')
-            logging.info(f'Current vars: {self.vars!r}')
+            if frame.mode == 'post_child_exit':
+                transition = self._select_transition(self.stack, self.vars, d_events)
+                if transition is None:
+                    break
+                self._ended = self._execute_transition_on_context(self.stack, self.vars, transition, d_events)
+                steps_taken += 1
+                continue
+
+            break
+
+        if steps_taken >= max_steps:
+            logging.error(f'Maximum steps ({max_steps}) reached, possible infinite loop')
+
+        if self._ended or not self.stack:
+            self._ended = True
+            self.stack = []
+            logging.info('Runtime ended.')
+        else:
+            logging.info(f'Current state: {".".join(self.current_state.path)}')
+        logging.info(f'Current vars: {self.vars!r}')
 
     @property
     def current_state(self) -> State:
@@ -350,7 +465,7 @@ class SimulationRuntime:
         :return: The current state
         :rtype: State
         """
-        return self.stack[-1][0]
+        return self.stack[-1].state
 
     @property
     def brief_stack(self) -> List[Tuple[Tuple[str, ...], str]]:
@@ -360,7 +475,7 @@ class SimulationRuntime:
         :return: List of (state_path, status) tuples
         :rtype: List[Tuple[Tuple[str, ...], str]]
         """
-        return [(state.path, status) for state, status in self.stack]
+        return [(frame.state.path, frame.mode) for frame in self.stack]
 
     @property
     def is_ended(self) -> bool:
@@ -370,4 +485,4 @@ class SimulationRuntime:
         :return: True if execution has ended
         :rtype: bool
         """
-        return len(self.stack) == 0
+        return self._ended

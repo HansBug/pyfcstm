@@ -157,13 +157,14 @@ entry_points={
 **Features:**
 - Scope-based syntax highlighting
 - GitHub/GitLab syntax highlighting support
-- Support for nested comments
 - Escape sequence highlighting in strings
+- Declaration-name highlighting for variables, states, and events
 
 **Design:**
 - Based on Pygments lexer for consistency
-- Comprehensive scope definitions
-- 178 lines of JSON grammar rules
+- Kept aligned with the FCSTM ANTLR grammar
+- Canonical grammar source lives in `editors/fcstm.tmLanguage.json`
+- VSCode ships a copied grammar asset under `editors/vscode/syntaxes/`
 
 ## Testing and Validation
 
@@ -171,14 +172,15 @@ entry_points={
 
 **`editors/validate.py`** - Comprehensive validation:
 - Pygments lexer validation with 20+ checkpoints
-- Tests all ANTLR grammar rules
+- TextMate grammar synchronization checks for the VSCode-packaged asset
+- Ordering-sensitive operator coverage checks
 - Terminal-based highlighting display
 - Token type verification
 
 ### Running Tests
 
 ```bash
-# Validate Pygments lexer
+# Validate syntax-highlighting assets
 python editors/validate.py
 ```
 

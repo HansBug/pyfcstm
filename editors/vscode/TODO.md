@@ -44,6 +44,7 @@ The extension currently provides:
   - auto-closing pairs
   - surrounding pairs
   - region-based folding markers
+- snippets
 
 The extension does **not** yet provide:
 
@@ -348,7 +349,7 @@ This phase strengthens the existing language package behavior and keeps the decl
 
 ### P1 Feature Checklist
 
-- [ ] Improve TextMate syntax highlighting coverage
+- [x] Improve TextMate syntax highlighting coverage
 - [ ] Improve language configuration details
 - [ ] Add dedicated folding range provider
 - [ ] Add selection range provider
@@ -365,55 +366,54 @@ Make highlighting more accurate, more complete, and more aligned with the FCSTM 
 
 **Current issues to address**
 
-- Binary literals are documented but should be explicitly covered and verified in the TextMate grammar.
+- The TextMate grammar should stay explicitly aligned with the ANTLR grammar and the shipped VSCode grammar copy.
 - Some token categories are still broad and can be made more precise.
 - Naming scopes can be improved for states, events, and declarations.
 - Highlighting quality should be verified against the grammar and example documents.
 
 **Detailed implementation checklist**
 
-- [ ] Audit TextMate grammar against the ANTLR grammar and documentation
-- [ ] Add or verify binary integer literal highlighting (`0b...`)
-- [ ] Verify hexadecimal, decimal, float, and scientific notation coverage
-- [ ] Verify multi-character operator ordering remains correct
-  - [ ] `**` before `*`
-  - [ ] `<<` before `<`
-  - [ ] `<=`, `>=`, `==`, `!=` before single-character comparisons
-  - [ ] `&&`, `||` before `!`
-  - [ ] `::` before `:`
-  - [ ] `->` before `-`
-  - [ ] `>>` before `>`
-- [ ] Improve scopes for declaration keywords
-  - [ ] `state`
-  - [ ] `pseudo`
-  - [ ] `event`
-  - [ ] `def`
+- [x] Audit TextMate grammar against the ANTLR grammar and documentation
+- [x] Verify hexadecimal, decimal, float, and scientific notation coverage
+- [x] Verify multi-character operator ordering remains correct
+  - [x] `**` before `*`
+  - [x] `<<` before `<`
+  - [x] `<=`, `>=`, `==`, `!=` before single-character comparisons
+  - [x] `&&`, `||` before `!`
+  - [x] `::` before `:`
+  - [x] `->` before `-`
+  - [x] `>>` before `>`
+- [x] Improve scopes for declaration keywords
+  - [x] `state`
+  - [x] `pseudo`
+  - [x] `event`
+  - [x] `def`
   - [ ] `named`
-- [ ] Improve scopes for lifecycle and modifier keywords
-  - [ ] `enter`
-  - [ ] `during`
-  - [ ] `exit`
-  - [ ] `before`
-  - [ ] `after`
-  - [ ] `abstract`
-  - [ ] `ref`
-  - [ ] `effect`
-  - [ ] `if`
-- [ ] Add or refine scopes for type keywords
-  - [ ] `int`
-  - [ ] `float`
-- [ ] Add or refine scopes for state names in declarations where feasible
-- [ ] Add or refine scopes for event names in declarations where feasible
-- [ ] Add or refine scopes for built-in constants
-  - [ ] `true`, `false`
-  - [ ] `True`, `False`
-  - [ ] `pi`, `E`, `tau`
-- [ ] Add or refine scopes for built-in functions
-- [ ] Verify string handling with escape sequences
-- [ ] Verify comments remain correct for `//`, `/* */`, and `#`
-- [ ] Run or update grammar validation workflow for representative FCSTM files
-- [ ] Refresh README examples if highlighting capabilities change materially
-- [ ] Ensure highlighting changes do not depend on network access or non-extension runtimes
+- [x] Improve scopes for lifecycle and modifier keywords
+  - [x] `enter`
+  - [x] `during`
+  - [x] `exit`
+  - [x] `before`
+  - [x] `after`
+  - [x] `abstract`
+  - [x] `ref`
+  - [x] `effect`
+  - [x] `if`
+- [x] Add or refine scopes for type keywords
+  - [x] `int`
+  - [x] `float`
+- [x] Add or refine scopes for state names in declarations where feasible
+- [x] Add or refine scopes for event names in declarations where feasible
+- [x] Add or refine scopes for built-in constants
+  - [x] `true`, `false`
+  - [x] `True`, `False`
+  - [x] `pi`, `E`, `tau`
+- [x] Add or refine scopes for built-in functions
+- [x] Verify string handling with escape sequences
+- [x] Verify comments remain correct for `//`, `/* */`, and `#`
+- [x] Run or update grammar validation workflow for representative FCSTM files
+- [x] Refresh README examples if highlighting capabilities change materially
+- [x] Ensure highlighting changes do not depend on network access or non-extension runtimes
 
 **Expected outcome**
 
@@ -443,7 +443,7 @@ Improve editing behavior for selection, pairing, and structure-aware text operat
   - [ ] absolute event names like `/GlobalEvent`
   - [ ] local event syntax around `::EventName`
   - [ ] pseudo-state token `[*]`
-  - [ ] numeric literals including `0x...` and `0b...`
+  - [ ] numeric literals including `0x...`
 - [ ] Refine `wordPattern` based on real editing behavior rather than generic regex assumptions
 - [ ] Review auto-closing pairs for correctness and ergonomics
   - [ ] braces
@@ -544,7 +544,7 @@ The current selected scope is:
 - [ ] P0.4 Document symbols / outline
 - [ ] P0.5 Lightweight completion
 - [ ] P0.6 Hover documentation
-- [ ] P1.A Syntax highlighting reinforcement
+- [x] P1.A Syntax highlighting reinforcement
 - [ ] P1.B Language configuration reinforcement
 
 ### Deferred

@@ -87,7 +87,7 @@ If you want to build the extension from source:
 
 ## Supported Syntax
 
-The extension provides comprehensive syntax highlighting for all FCSTM language features:
+The extension provides grammar-aligned syntax highlighting for the FCSTM language features supported by the repository grammar and shipped editor assets:
 
 ### Keywords
 
@@ -111,11 +111,20 @@ The extension provides comprehensive syntax highlighting for all FCSTM language 
 
 ### Literals
 
-- **Integers**: `123`, `0xFF` (hex), `0b1010` (binary)
+- **Integers**: `123`, `0xFF` (hex)
 - **Floats**: `3.14`, `1e-5`, `2.5e10`
 - **Booleans**: `True`, `False`, `true`, `false`
 - **Strings**: `"text"`, `'text'` with escape sequences
 - **Math Constants**: `pi`, `E`, `tau`
+
+### Declaration Highlighting
+
+The grammar gives more specific scopes to declaration forms so themes can distinguish declared names more clearly:
+
+- Variable definitions: `def int counter = 0;`
+- Pseudo state declarations: `pseudo state Junction;`
+- State declarations: `state Running { ... }`
+- Event declarations: `event Start;`
 
 ### Built-in Functions
 

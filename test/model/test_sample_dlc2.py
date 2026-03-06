@@ -3266,13 +3266,12 @@ skinparam state {
   FontStyle<<pseudo>> italic
 }
 
-note as DefinitionNote
-defines {
-    def int a = 0;
-    def int b = 0;
-    def int round_count = 0;
-}
-end note
+legend right
+|= Variable |= Type |= Initial Value |
+| a | int | 0 |
+| b | int | 0 |
+| round_count | int | 0 |
+endlegend
 
 state "TrafficLight" as traffic_light <<composite>> {
     state "InService" as traffic_light__in_service <<composite>> {

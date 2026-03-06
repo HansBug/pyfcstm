@@ -232,9 +232,9 @@ class TestStateMachineToPlantUML:
         assert '@startuml' in result
         assert '@enduml' in result
         assert 'hide empty description' in result
-        # Default NORMAL level hides variable definitions
-        assert 'defines' not in result
-        assert 'counter' not in result
+        # Default NORMAL level now shows variable definitions as legend
+        assert 'legend right' in result
+        assert 'counter' in result
 
     def test_state_machine_minimal_detail(self):
         """Test state machine with MINIMAL detail level."""
@@ -257,9 +257,9 @@ class TestStateMachineToPlantUML:
         options = PlantUMLOptions(detail_level='minimal')
         result = sm.to_plantuml(options)
 
-        # MINIMAL level hides variable definitions
-        assert 'defines' not in result
-        assert 'counter' not in result
+        # MINIMAL level now shows variable definitions as legend
+        assert 'legend right' in result
+        assert 'counter' in result
 
     def test_state_machine_variable_definitions_shown(self):
         """Test variable definitions are shown when enabled."""

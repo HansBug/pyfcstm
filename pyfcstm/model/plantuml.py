@@ -48,6 +48,7 @@ __all__ = [
     'PlantUMLOptions',
     'format_state_name',
     'format_event_name',
+    'escape_plantuml_table_cell',
     'should_show_action',
     'format_action_text',
     'collect_event_transitions',
@@ -150,6 +151,29 @@ def format_event_name(
         result += f" ({' / '.join(parts[1:])})"
 
     return result
+
+
+def escape_plantuml_table_cell(text: str) -> str:
+    """
+    Escape special characters in PlantUML table cells.
+
+    PlantUML uses pipe (|) as table cell delimiter, so any pipe characters
+    in cell content must be escaped to prevent breaking the table structure.
+
+    :param text: Text to escape
+    :type text: str
+    :return: Escaped text safe for use in PlantUML table cells
+    :rtype: str
+
+    Example::
+
+        >>> escape_plantuml_table_cell("2 | 5")
+        '2 \\| 5'
+        >>> escape_plantuml_table_cell("normal text")
+        'normal text'
+    """
+    # Escape pipe characters with backslash
+    return text.replace('|', '\\|')
 
 
 def should_show_action(action: 'Union[OnStage, OnAspect]', config: 'PlantUMLOptions') -> bool:
@@ -258,17 +282,17 @@ class PlantUMLOptions:
 
     **minimal**: Clean diagrams focusing on structure
 
-    * Hides: variable definitions, lifecycle actions, pseudo state styling
-    * Shows: transition guards, transition effects, events
+    * Shows: variable definitions (legend), transition guards, transition effects, events
+    * Hides: lifecycle actions, pseudo state styling
 
     **normal** (default): Balanced view for typical use cases
 
-    * Hides: variable definitions, lifecycle actions
-    * Shows: transition guards, transition effects, events, pseudo state styling
+    * Shows: variable definitions (legend), transition guards, transition effects, events, pseudo state styling
+    * Hides: lifecycle actions
 
     **full**: Complete information for detailed analysis
 
-    * Shows: everything including variable definitions and lifecycle actions
+    * Shows: everything including variable definitions (legend) and lifecycle actions
 
     Parameters
     ----------
@@ -286,7 +310,7 @@ class PlantUMLOptions:
 
         * ``True``: Show variable definitions as note or legend
         * ``False``: Hide variable definitions
-        * ``None``: Use ``detail_level`` preset (False for minimal/normal, True for full)
+        * ``None``: Use ``detail_level`` preset (True for all levels)
 
         Example::
 
@@ -298,7 +322,7 @@ class PlantUMLOptions:
             >>> #         }
             >>> #         end note
 
-    variable_display_mode : Literal['note', 'legend', 'hide'], default='note'
+    variable_display_mode : Literal['note', 'legend', 'hide'], default='legend'
         How to display variable definitions when ``show_variable_definitions=True``.
 
         * ``'note'``: Display as a floating note block
@@ -675,7 +699,7 @@ class PlantUMLOptions:
 
     # Variable definitions
     show_variable_definitions: Optional[bool] = None
-    variable_display_mode: Literal['note', 'legend', 'hide'] = 'note'
+    variable_display_mode: Literal['note', 'legend', 'hide'] = 'legend'
 
     # State related
     state_name_format: Tuple[Literal['name', 'extra_name', 'path'], ...] = ('extra_name',)
@@ -881,7 +905,7 @@ class PlantUMLOptions:
         """
         if self.detail_level == 'minimal':
             return {
-                'show_variable_definitions': False,
+                'show_variable_definitions': True,
                 'show_lifecycle_actions': False,
                 'show_transition_guards': True,
                 'show_transition_effects': True,
@@ -890,7 +914,7 @@ class PlantUMLOptions:
             }
         elif self.detail_level == 'normal':
             return {
-                'show_variable_definitions': False,
+                'show_variable_definitions': True,
                 'show_lifecycle_actions': False,
                 'show_transition_guards': True,
                 'show_transition_effects': True,

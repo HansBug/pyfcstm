@@ -28,7 +28,7 @@ class TestPlantUMLOptionsInit:
         options = PlantUMLOptions()
         assert options.detail_level == 'normal'
         assert options.show_variable_definitions is None
-        assert options.variable_display_mode == 'note'
+        assert options.variable_display_mode == 'legend'
         assert options.state_name_format == ('extra_name',)
         assert options.event_name_format == ('extra_name', 'relpath')
         assert options.show_lifecycle_actions is None
@@ -103,7 +103,7 @@ class TestPlantUMLOptionsToConfig:
         options = PlantUMLOptions(detail_level='minimal')
         config = options.to_config()
 
-        assert config.show_variable_definitions is False
+        assert config.show_variable_definitions is True
         assert config.show_lifecycle_actions is False
         assert config.show_transition_guards is True
         assert config.show_transition_effects is True
@@ -115,7 +115,7 @@ class TestPlantUMLOptionsToConfig:
         options = PlantUMLOptions(detail_level='normal')
         config = options.to_config()
 
-        assert config.show_variable_definitions is False
+        assert config.show_variable_definitions is True
         assert config.show_lifecycle_actions is False
         assert config.show_transition_guards is True
         assert config.show_transition_effects is True
@@ -463,3 +463,34 @@ class TestAssignEventColors:
         assert colors['Root.EventM'] == '#F28E2B'
         # EventZ should get third color
         assert colors['Root.EventZ'] == '#E15759'
+
+
+@pytest.mark.unittest
+class TestEscapePlantUMLTableCell:
+    """Test cases for escape_plantuml_table_cell() function."""
+
+    def test_escape_pipe_character(self):
+        """Test escaping pipe character."""
+        from pyfcstm.model.plantuml import escape_plantuml_table_cell
+        assert escape_plantuml_table_cell("2 | 5") == "2 \\| 5"
+
+    def test_escape_multiple_pipes(self):
+        """Test escaping multiple pipe characters."""
+        from pyfcstm.model.plantuml import escape_plantuml_table_cell
+        assert escape_plantuml_table_cell("a | b | c") == "a \\| b \\| c"
+
+    def test_no_escape_needed(self):
+        """Test text without pipe characters."""
+        from pyfcstm.model.plantuml import escape_plantuml_table_cell
+        assert escape_plantuml_table_cell("normal text") == "normal text"
+
+    def test_empty_string(self):
+        """Test empty string."""
+        from pyfcstm.model.plantuml import escape_plantuml_table_cell
+        assert escape_plantuml_table_cell("") == ""
+
+    def test_only_pipe(self):
+        """Test string with only pipe character."""
+        from pyfcstm.model.plantuml import escape_plantuml_table_cell
+        assert escape_plantuml_table_cell("|") == "\\|"
+

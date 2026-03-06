@@ -1425,13 +1425,16 @@ class StateMachine(AstExportable, PlantUMLExportable):
                     print('', file=sf)
                 elif config.variable_display_mode == 'legend':
                     # Display variables as a legend
+                    from .plantuml import escape_plantuml_table_cell
                     print('legend right', file=sf)
                     print('|= Variable |= Type |= Initial Value |', file=sf)
                     for def_item in self.defines.values():
                         var_name = def_item.name
                         var_type = def_item.type
                         var_init = def_item.init.to_ast_node() if def_item.init else 'N/A'
-                        print(f'| {var_name} | {var_type} | {var_init} |', file=sf)
+                        # Escape pipe characters in the initial value
+                        var_init_escaped = escape_plantuml_table_cell(str(var_init))
+                        print(f'| {var_name} | {var_type} | {var_init_escaped} |', file=sf)
                     print('endlegend', file=sf)
                     print('', file=sf)
 

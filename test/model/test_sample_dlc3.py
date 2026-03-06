@@ -1840,11 +1840,10 @@ skinparam state {
   FontStyle<<pseudo>> italic
 }
 
-note as DefinitionNote
-defines {
-    def int Event = 0;
-}
-end note
+legend right
+|= Variable |= Type |= Initial Value |
+| Event | int | 0 |
+endlegend
 
 state "LX" as lx <<composite>> {
     state "LX2" as lx__lx2 <<composite>> {

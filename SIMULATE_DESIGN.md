@@ -2417,6 +2417,903 @@ state Root {
 - 按本轮讨论后的设计语义，当 `cycle()` 开始前已经 `is_ended=True` 时，应显式给出 warning，而不仅仅是静默 no-op
 - 与 4.28 的区别在于：4.28 是因为无法形成可驻停链路而整体回滚到 `Root`；4.30 则是已经成功结束整机
 
+### 4.100 真实系统用例：电梯轿门控制
+
+这个例子模拟常见电梯的轿门控制逻辑：收到呼梯后开门，开到位后保持一段时间，再自动关门；如果关门过程中红外光幕检测到有人或物体遮挡，则立即重新开门并重新计时。
+
+以下两条执行序列彼此独立，均从相同的初始状态开始。
+
+```python
+dsl_code = '''
+def int door_pos = 0;
+def int hold = 0;
+def int reopen_count = 0;
+state Root {
+    state Closed {
+        during {
+            hold = 0;
+        }
+    }
+
+    state Opening {
+        during {
+            door_pos = door_pos + 50;
+        }
+    }
+
+    state Opened {
+        during {
+            hold = hold + 1;
+        }
+    }
+
+    state Closing {
+        during {
+            door_pos = door_pos - 50;
+        }
+    }
+
+    [*] -> Closed;
+    Closed -> Opening :: HallCall effect {
+        hold = 0;
+    };
+    Opening -> Opened : if [door_pos >= 100] effect {
+        hold = 0;
+    };
+    Opened -> Closing : if [hold >= 2];
+    Closing -> Opened :: BeamBlocked effect {
+        reopen_count = reopen_count + 1;
+        door_pos = 100;
+        hold = 0;
+    };
+    Closing -> Closed : if [door_pos <= 0] effect {
+        hold = 0;
+    };
+}
+'''
+```
+
+**执行序列 A（正常开门、保持、自动关门）**:
+
+| 操作 | 当前状态 | door_pos | hold | reopen_count | 说明 |
+|------|----------|----------|------|--------------|------|
+| `runtime.cycle()` | Closed | 0 | 0 | 0 | 初始进入 `Closed` |
+| `runtime.cycle(['Root.Closed.HallCall'])` | Opening | 50 | 0 | 0 | 收到呼梯，开始开门 |
+| `runtime.cycle()` | Opening | 100 | 0 | 0 | 开门继续，达到全开位 |
+| `runtime.cycle()` | Opened | 100 | 1 | 0 | 进入 `Opened`，开始保持开门 |
+| `runtime.cycle()` | Opened | 100 | 2 | 0 | 保持开门继续计时 |
+| `runtime.cycle()` | Closing | 50 | 2 | 0 | 保持时间达到阈值，开始关门 |
+| `runtime.cycle()` | Closing | 0 | 2 | 0 | 继续关门到闭合位 |
+| `runtime.cycle()` | Closed | 0 | 0 | 0 | 门完全关闭，回到待命 |
+
+**详细计算 A**:
+```text
+初始: door_pos = 0, hold = 0, reopen_count = 0
+
+第1次 cycle:
+  进入 Closed
+  Closed.during:
+    hold = 0
+
+第2次 cycle (提供 HallCall 事件):
+  Closed.exit
+  Closed->Opening effect:
+    hold = 0
+  Opening.enter
+  Opening.during:
+    door_pos = 0 + 50 = 50
+
+第3次 cycle:
+  检查 Opening->Opened: door_pos >= 100 不满足 (当前 door_pos = 50)
+  Opening.during:
+    door_pos = 50 + 50 = 100
+
+第4次 cycle:
+  检查 Opening->Opened: door_pos >= 100 满足
+  Opening.exit
+  Opening->Opened effect:
+    hold = 0
+  Opened.enter
+  Opened.during:
+    hold = 0 + 1 = 1
+
+第5次 cycle:
+  检查 Opened->Closing: hold >= 2 不满足 (当前 hold = 1)
+  Opened.during:
+    hold = 1 + 1 = 2
+
+第6次 cycle:
+  检查 Opened->Closing: hold >= 2 满足
+  Opened.exit
+  Opened->Closing
+  Closing.enter
+  Closing.during:
+    door_pos = 100 - 50 = 50
+
+第7次 cycle:
+  检查 Closing->Closed: door_pos <= 0 不满足 (当前 door_pos = 50)
+  Closing.during:
+    door_pos = 50 - 50 = 0
+
+第8次 cycle:
+  检查 Closing->Closed: door_pos <= 0 满足
+  Closing.exit
+  Closing->Closed effect:
+    hold = 0
+  Closed.enter
+  Closed.during:
+    hold = 0
+```
+
+**执行序列 B（关门时光幕遮挡，重新开门）**:
+
+| 操作 | 当前状态 | door_pos | hold | reopen_count | 说明 |
+|------|----------|----------|------|--------------|------|
+| `runtime.cycle()` | Closed | 0 | 0 | 0 | 初始进入 `Closed` |
+| `runtime.cycle(['Root.Closed.HallCall'])` | Opening | 50 | 0 | 0 | 收到呼梯，开始开门 |
+| `runtime.cycle()` | Opening | 100 | 0 | 0 | 开门继续，达到全开位 |
+| `runtime.cycle()` | Opened | 100 | 1 | 0 | 进入 `Opened`，开始保持开门 |
+| `runtime.cycle()` | Opened | 100 | 2 | 0 | 保持开门继续计时 |
+| `runtime.cycle()` | Closing | 50 | 2 | 0 | 开始自动关门 |
+| `runtime.cycle(['Root.Closing.BeamBlocked'])` | Opened | 100 | 1 | 1 | 关门途中检测到遮挡，立即重开并记录一次重开 |
+
+**详细计算 B**:
+```text
+初始: door_pos = 0, hold = 0, reopen_count = 0
+
+第1~6次 cycle:
+  与执行序列 A 的第1~6次 cycle 相同
+  第6次结束后:
+    当前状态 = Closing
+    door_pos = 50, hold = 2, reopen_count = 0
+
+第7次 cycle (提供 BeamBlocked 事件):
+  检查 Closing->Opened: BeamBlocked 事件满足
+  Closing.exit
+  Closing->Opened effect:
+    reopen_count = 0 + 1 = 1
+    door_pos = 50 -> 100
+    hold = 0
+  Opened.enter
+  Opened.during:
+    hold = 0 + 1 = 1
+```
+
+**注意**:
+- 这里把 `door_pos` 抽象成 0、50、100 三个位置，分别表示全关、半开/半关、全开
+- `BeamBlocked` 只在 `Closing` 状态下有意义，符合光幕仅在关门阶段触发重开的真实逻辑
+- 重新开门后会重新进入 `Opened` 的保持计时阶段，而不是直接回到 `Opening`
+
+### 4.101 真实系统用例：储水式电热水器控温
+
+这个例子模拟常见家用储水式电热水器：待机时水温缓慢下降，降到下限后自动加热；如果用户集中用水，则水温会在一个 cycle 内显著下降，从而更早触发加热。
+
+以下两条执行序列彼此独立，均从相同的初始状态开始。
+
+```python
+dsl_code = '''
+def int water_temp = 55;
+def int draw_count = 0;
+state Root {
+    state Standby {
+        during {
+            water_temp = water_temp - 1;
+        }
+    }
+
+    state Heating {
+        during {
+            water_temp = water_temp + 4;
+        }
+    }
+
+    [*] -> Standby;
+    Standby -> Heating : if [water_temp <= 50];
+    Standby -> Standby :: HotWaterDraw effect {
+        water_temp = water_temp - 8;
+        draw_count = draw_count + 1;
+    };
+    Heating -> Standby : if [water_temp >= 60];
+    Heating -> Heating :: HotWaterDraw effect {
+        water_temp = water_temp - 8;
+        draw_count = draw_count + 1;
+    };
+}
+'''
+```
+
+**执行序列 A（无人集中用水，温度自然下降后再加热）**:
+
+| 操作 | 当前状态 | water_temp | draw_count | 说明 |
+|------|----------|------------|------------|------|
+| `runtime.cycle()` | Standby | 54 | 0 | 初始进入待机，水温自然散热 |
+| `runtime.cycle()` | Standby | 53 | 0 | 持续散热 |
+| `runtime.cycle()` | Standby | 52 | 0 | 持续散热 |
+| `runtime.cycle()` | Standby | 51 | 0 | 持续散热 |
+| `runtime.cycle()` | Standby | 50 | 0 | 降到加热阈值 |
+| `runtime.cycle()` | Heating | 54 | 0 | 触发加热，温度开始回升 |
+| `runtime.cycle()` | Heating | 58 | 0 | 持续加热 |
+
+**详细计算 A**:
+```text
+初始: water_temp = 55, draw_count = 0
+
+第1次 cycle:
+  进入 Standby
+  Standby.during:
+    water_temp = 55 - 1 = 54
+
+第2次 cycle:
+  检查 Standby->Heating: water_temp <= 50 不满足 (当前 water_temp = 54)
+  Standby.during:
+    water_temp = 54 - 1 = 53
+
+第3次 cycle:
+  检查 Standby->Heating: water_temp <= 50 不满足 (当前 water_temp = 53)
+  Standby.during:
+    water_temp = 53 - 1 = 52
+
+第4次 cycle:
+  检查 Standby->Heating: water_temp <= 50 不满足 (当前 water_temp = 52)
+  Standby.during:
+    water_temp = 52 - 1 = 51
+
+第5次 cycle:
+  检查 Standby->Heating: water_temp <= 50 不满足 (当前 water_temp = 51)
+  Standby.during:
+    water_temp = 51 - 1 = 50
+
+第6次 cycle:
+  检查 Standby->Heating: water_temp <= 50 满足
+  Standby.exit
+  Standby->Heating
+  Heating.enter
+  Heating.during:
+    water_temp = 50 + 4 = 54
+
+第7次 cycle:
+  检查 Heating->Standby: water_temp >= 60 不满足 (当前 water_temp = 54)
+  Heating.during:
+    water_temp = 54 + 4 = 58
+```
+
+**执行序列 B（早晨连续用水，提前触发加热）**:
+
+| 操作 | 当前状态 | water_temp | draw_count | 说明 |
+|------|----------|------------|------------|------|
+| `runtime.cycle()` | Standby | 54 | 0 | 初始进入待机，水温自然散热 |
+| `runtime.cycle(['Root.Standby.HotWaterDraw'])` | Standby | 45 | 1 | 用户大量用水，温度在一个 cycle 内显著下降 |
+| `runtime.cycle()` | Heating | 49 | 1 | 因温度已低于下限，立即进入加热 |
+| `runtime.cycle()` | Heating | 53 | 1 | 持续加热 |
+| `runtime.cycle()` | Heating | 57 | 1 | 持续加热 |
+| `runtime.cycle()` | Heating | 61 | 1 | 加热达到停机阈值以上 |
+| `runtime.cycle()` | Standby | 60 | 1 | 控制器停加热并回到待机 |
+
+**详细计算 B**:
+```text
+初始: water_temp = 55, draw_count = 0
+
+第1次 cycle:
+  进入 Standby
+  Standby.during:
+    water_temp = 55 - 1 = 54
+
+第2次 cycle (提供 HotWaterDraw 事件):
+  检查 Standby->Standby: HotWaterDraw 事件满足
+  Standby.exit
+  Standby->Standby effect:
+    water_temp = 54 - 8 = 46
+    draw_count = 0 + 1 = 1
+  Standby.enter
+  Standby.during:
+    water_temp = 46 - 1 = 45
+
+第3次 cycle:
+  检查 Standby->Heating: water_temp <= 50 满足
+  Standby.exit
+  Standby->Heating
+  Heating.enter
+  Heating.during:
+    water_temp = 45 + 4 = 49
+
+第4次 cycle:
+  检查 Heating->Standby: water_temp >= 60 不满足 (当前 water_temp = 49)
+  Heating.during:
+    water_temp = 49 + 4 = 53
+
+第5次 cycle:
+  检查 Heating->Standby: water_temp >= 60 不满足 (当前 water_temp = 53)
+  Heating.during:
+    water_temp = 53 + 4 = 57
+
+第6次 cycle:
+  检查 Heating->Standby: water_temp >= 60 不满足 (当前 water_temp = 57)
+  Heating.during:
+    water_temp = 57 + 4 = 61
+
+第7次 cycle:
+  检查 Heating->Standby: water_temp >= 60 满足
+  Heating.exit
+  Heating->Standby
+  Standby.enter
+  Standby.during:
+    water_temp = 61 - 1 = 60
+```
+
+**注意**:
+- `HotWaterDraw` 被建模为一个显著降温事件，符合储水式热水器在短时间集中用水时的温降特征
+- `Standby -> Heating` 与 `Heating -> Standby` 形成典型的上下限迟滞控制
+- 在 `Heating` 状态下如果继续发生 `HotWaterDraw`，本模型也能表示“边补热边被抽冷水”的场景
+
+### 4.102 真实系统用例：主干道信号灯带行人过街请求
+
+这个例子模拟城市路口中常见的信号控制器：主干道默认保持绿灯；行人按钮被按下后，请求会先被锁存；只有主干道最小绿灯时间达到后，控制器才进入黄灯和行人放行阶段，结束后再回到主干道绿灯。
+
+以下两条执行序列彼此独立，均从相同的初始状态开始。
+
+```python
+dsl_code = '''
+def int green_ticks = 0;
+def int request_latched = 0;
+def int yellow_ticks = 0;
+def int walk_ticks = 0;
+state Root {
+    state MainGreen {
+        during {
+            green_ticks = green_ticks + 1;
+        }
+    }
+
+    state PedestrianPhase {
+        state MainYellow {
+            during {
+                yellow_ticks = yellow_ticks + 1;
+            }
+        }
+
+        state PedWalk {
+            during {
+                walk_ticks = walk_ticks + 1;
+            }
+        }
+
+        [*] -> MainYellow;
+        MainYellow -> PedWalk : if [yellow_ticks >= 1];
+        PedWalk -> [*] : if [walk_ticks >= 2];
+    }
+
+    [*] -> MainGreen;
+    MainGreen -> PedestrianPhase : if [request_latched == 1 && green_ticks >= 3] effect {
+        request_latched = 0;
+        yellow_ticks = 0;
+        walk_ticks = 0;
+    };
+    MainGreen -> MainGreen :: PedRequest effect {
+        request_latched = 1;
+    };
+    PedestrianPhase -> MainGreen effect {
+        green_ticks = 0;
+        yellow_ticks = 0;
+        walk_ticks = 0;
+    };
+}
+'''
+```
+
+**执行序列 A（没有行人请求，主干道持续放行）**:
+
+| 操作 | 当前状态 | green_ticks | request_latched | yellow_ticks | walk_ticks | 说明 |
+|------|----------|-------------|-----------------|--------------|------------|------|
+| `runtime.cycle()` | MainGreen | 1 | 0 | 0 | 0 | 初始进入主干道绿灯 |
+| `runtime.cycle()` | MainGreen | 2 | 0 | 0 | 0 | 无人请求，继续保持绿灯 |
+| `runtime.cycle()` | MainGreen | 3 | 0 | 0 | 0 | 最小绿灯达到，但仍无行人请求 |
+| `runtime.cycle()` | MainGreen | 4 | 0 | 0 | 0 | 继续保持主干道优先 |
+
+**详细计算 A**:
+```text
+初始: green_ticks = 0, request_latched = 0, yellow_ticks = 0, walk_ticks = 0
+
+第1次 cycle:
+  进入 MainGreen
+  MainGreen.during:
+    green_ticks = 0 + 1 = 1
+
+第2次 cycle:
+  检查 MainGreen->PedestrianPhase: request_latched == 1 && green_ticks >= 3 不满足
+  MainGreen.during:
+    green_ticks = 1 + 1 = 2
+
+第3次 cycle:
+  检查 MainGreen->PedestrianPhase: request_latched == 1 && green_ticks >= 3 不满足
+  MainGreen.during:
+    green_ticks = 2 + 1 = 3
+
+第4次 cycle:
+  检查 MainGreen->PedestrianPhase: request_latched == 1 && green_ticks >= 3 不满足
+  MainGreen.during:
+    green_ticks = 3 + 1 = 4
+```
+
+**执行序列 B（行人提前按键，请求被锁存并在允许时放行）**:
+
+| 操作 | 当前状态 | green_ticks | request_latched | yellow_ticks | walk_ticks | 说明 |
+|------|----------|-------------|-----------------|--------------|------------|------|
+| `runtime.cycle()` | MainGreen | 1 | 0 | 0 | 0 | 初始进入主干道绿灯 |
+| `runtime.cycle(['Root.MainGreen.PedRequest'])` | MainGreen | 2 | 1 | 0 | 0 | 行人按钮按下，请求先被锁存 |
+| `runtime.cycle()` | MainGreen | 3 | 1 | 0 | 0 | 最小绿灯尚未满足前，继续主干道放行 |
+| `runtime.cycle()` | MainYellow | 3 | 0 | 1 | 0 | 进入行人阶段，先执行车辆黄灯 |
+| `runtime.cycle()` | PedWalk | 3 | 0 | 1 | 1 | 黄灯结束，开始行人放行 |
+| `runtime.cycle()` | PedWalk | 3 | 0 | 1 | 2 | 行人继续通行 |
+| `runtime.cycle()` | MainGreen | 1 | 0 | 0 | 0 | 行人阶段结束，恢复主干道绿灯 |
+
+**详细计算 B**:
+```text
+初始: green_ticks = 0, request_latched = 0, yellow_ticks = 0, walk_ticks = 0
+
+第1次 cycle:
+  进入 MainGreen
+  MainGreen.during:
+    green_ticks = 0 + 1 = 1
+
+第2次 cycle (提供 PedRequest 事件):
+  检查 MainGreen->PedestrianPhase: request_latched == 1 && green_ticks >= 3 不满足
+  MainGreen->MainGreen effect:
+    request_latched = 1
+  MainGreen.during:
+    green_ticks = 1 + 1 = 2
+
+第3次 cycle:
+  检查 MainGreen->PedestrianPhase: request_latched == 1 && green_ticks >= 3 不满足 (当前 green_ticks = 2)
+  MainGreen.during:
+    green_ticks = 2 + 1 = 3
+
+第4次 cycle:
+  检查 MainGreen->PedestrianPhase: request_latched == 1 && green_ticks >= 3 满足
+  MainGreen.exit
+  MainGreen->PedestrianPhase effect:
+    request_latched = 1 -> 0
+    yellow_ticks = 0
+    walk_ticks = 0
+  PedestrianPhase.enter
+  PedestrianPhase.[*] -> MainYellow
+  MainYellow.enter
+  MainYellow.during:
+    yellow_ticks = 0 + 1 = 1
+
+第5次 cycle:
+  检查 MainYellow->PedWalk: yellow_ticks >= 1 满足
+  MainYellow.exit
+  MainYellow->PedWalk
+  PedWalk.enter
+  PedWalk.during:
+    walk_ticks = 0 + 1 = 1
+
+第6次 cycle:
+  检查 PedWalk->[*]: walk_ticks >= 2 不满足 (当前 walk_ticks = 1)
+  PedWalk.during:
+    walk_ticks = 1 + 1 = 2
+
+第7次 cycle:
+  检查 PedWalk->[*]: walk_ticks >= 2 满足
+  PedWalk.exit
+  PedWalk->[*]
+  回到 PedestrianPhase
+  检查 PedestrianPhase->MainGreen: 无条件满足
+  PedestrianPhase.exit
+  PedestrianPhase->MainGreen effect:
+    green_ticks = 0
+    yellow_ticks = 0
+    walk_ticks = 0
+  MainGreen.enter
+  MainGreen.during:
+    green_ticks = 0 + 1 = 1
+```
+
+**注意**:
+- `request_latched` 表示按钮请求被控制器锁存，而不是要求按钮持续按住
+- `PedestrianPhase` 被建模为复合状态，反映“黄灯清空车辆流 -> 行人放行 -> 返回主干道”的真实阶段划分
+- `PedWalk -> [*]` 后再由 `PedestrianPhase -> MainGreen` 回到父层级，符合 runtime 的复合状态退出语义
+
+### 4.103 真实系统用例：交流充电桩会话控制
+
+这个例子模拟常见交流充电桩的简化会话逻辑：车辆插枪后开始充电，电量达到满电后转入完成态；用户也可能因为临时出发而提前拔枪结束会话。
+
+以下两条执行序列彼此独立，均从相同的初始状态开始。
+
+```python
+dsl_code = '''
+def int soc = 70;
+def int sessions = 0;
+state Root {
+    state Idle;
+
+    state Charging {
+        during {
+            soc = soc + 10;
+        }
+    }
+
+    state Complete;
+
+    [*] -> Idle;
+    Idle -> Charging :: PlugIn;
+    Charging -> Complete : if [soc >= 100];
+    Charging -> Idle :: Unplug effect {
+        sessions = sessions + 1;
+    };
+    Complete -> Idle :: Unplug effect {
+        sessions = sessions + 1;
+    };
+}
+'''
+```
+
+**执行序列 A（正常充满后拔枪）**:
+
+| 操作 | 当前状态 | soc | sessions | 说明 |
+|------|----------|-----|----------|------|
+| `runtime.cycle()` | Idle | 70 | 0 | 初始进入空闲态 |
+| `runtime.cycle(['Root.Idle.PlugIn'])` | Charging | 80 | 0 | 插枪后开始充电 |
+| `runtime.cycle()` | Charging | 90 | 0 | 持续充电 |
+| `runtime.cycle()` | Charging | 100 | 0 | 电量达到满电阈值 |
+| `runtime.cycle()` | Complete | 100 | 0 | 进入充电完成态 |
+| `runtime.cycle(['Root.Complete.Unplug'])` | Idle | 100 | 1 | 用户拔枪，完成一次会话 |
+
+**详细计算 A**:
+```text
+初始: soc = 70, sessions = 0
+
+第1次 cycle:
+  进入 Idle
+  Idle 无 during 动作
+
+第2次 cycle (提供 PlugIn 事件):
+  Idle.exit
+  Idle->Charging
+  Charging.enter
+  Charging.during:
+    soc = 70 + 10 = 80
+
+第3次 cycle:
+  检查 Charging->Complete: soc >= 100 不满足 (当前 soc = 80)
+  Charging.during:
+    soc = 80 + 10 = 90
+
+第4次 cycle:
+  检查 Charging->Complete: soc >= 100 不满足 (当前 soc = 90)
+  Charging.during:
+    soc = 90 + 10 = 100
+
+第5次 cycle:
+  检查 Charging->Complete: soc >= 100 满足
+  Charging.exit
+  Charging->Complete
+  Complete.enter
+  Complete 无 during 动作
+
+第6次 cycle (提供 Unplug 事件):
+  Complete.exit
+  Complete->Idle effect:
+    sessions = 0 + 1 = 1
+  Idle.enter
+  Idle 无 during 动作
+```
+
+**执行序列 B（用户提前拔枪离开）**:
+
+| 操作 | 当前状态 | soc | sessions | 说明 |
+|------|----------|-----|----------|------|
+| `runtime.cycle()` | Idle | 70 | 0 | 初始进入空闲态 |
+| `runtime.cycle(['Root.Idle.PlugIn'])` | Charging | 80 | 0 | 插枪后开始充电 |
+| `runtime.cycle(['Root.Charging.Unplug'])` | Idle | 80 | 1 | 用户临时离开，提前结束充电会话 |
+| `runtime.cycle(['Root.Idle.PlugIn'])` | Charging | 90 | 1 | 车辆重新插枪，继续补电 |
+| `runtime.cycle()` | Charging | 100 | 1 | 继续充电到满电阈值 |
+
+**详细计算 B**:
+```text
+初始: soc = 70, sessions = 0
+
+第1次 cycle:
+  进入 Idle
+  Idle 无 during 动作
+
+第2次 cycle (提供 PlugIn 事件):
+  Idle.exit
+  Idle->Charging
+  Charging.enter
+  Charging.during:
+    soc = 70 + 10 = 80
+
+第3次 cycle (提供 Unplug 事件):
+  检查 Charging->Complete: soc >= 100 不满足 (当前 soc = 80)
+  Charging.exit
+  Charging->Idle effect:
+    sessions = 0 + 1 = 1
+  Idle.enter
+  Idle 无 during 动作
+
+第4次 cycle (再次提供 PlugIn 事件):
+  Idle.exit
+  Idle->Charging
+  Charging.enter
+  Charging.during:
+    soc = 80 + 10 = 90
+
+第5次 cycle:
+  检查 Charging->Complete: soc >= 100 不满足 (当前 soc = 90)
+  Charging.during:
+    soc = 90 + 10 = 100
+```
+
+**注意**:
+- 这里把 `soc` 简化为每个 cycle 增加固定 10%，用于表达会话级状态转换而不是精确电池模型
+- `Complete` 没有 `during` 动作，表示车辆已满电但枪仍插着，桩端处于等待拔枪的完成态
+- “提前拔枪”和“充满后拔枪”都记为一次完成的插枪会话，因此都会增加 `sessions`
+
+### 4.104 真实系统用例：机房 ATS 市电/发电机切换
+
+这个例子模拟机房或小型数据中心常见的自动切换开关（ATS）场景：默认由市电供电；市电故障后启动发电机并预热，预热完成后切到发电机；市电恢复后再切回市电。
+
+以下两条执行序列彼此独立，均从相同的初始状态开始。
+
+```python
+dsl_code = '''
+def int warmup = 0;
+def int transfer_count = 0;
+state Root {
+    state OnMains {
+        during {
+            warmup = 0;
+        }
+    }
+
+    state StartingGen {
+        during {
+            warmup = warmup + 1;
+        }
+    }
+
+    state OnGenerator;
+
+    [*] -> OnMains;
+    OnMains -> StartingGen :: GridFail effect {
+        warmup = 0;
+    };
+    StartingGen -> OnGenerator : if [warmup >= 2] effect {
+        transfer_count = transfer_count + 1;
+    };
+    OnGenerator -> OnMains :: GridRestore effect {
+        transfer_count = transfer_count + 1;
+        warmup = 0;
+    };
+}
+'''
+```
+
+**执行序列 A（市电稳定，始终不切换）**:
+
+| 操作 | 当前状态 | warmup | transfer_count | 说明 |
+|------|----------|--------|----------------|------|
+| `runtime.cycle()` | OnMains | 0 | 0 | 初始由市电供电 |
+| `runtime.cycle()` | OnMains | 0 | 0 | 市电稳定，继续保持 |
+| `runtime.cycle()` | OnMains | 0 | 0 | 市电稳定，继续保持 |
+
+**详细计算 A**:
+```text
+初始: warmup = 0, transfer_count = 0
+
+第1次 cycle:
+  进入 OnMains
+  OnMains.during:
+    warmup = 0
+
+第2次 cycle:
+  无 GridFail 事件
+  OnMains.during:
+    warmup = 0
+
+第3次 cycle:
+  无 GridFail 事件
+  OnMains.during:
+    warmup = 0
+```
+
+**执行序列 B（市电故障后切到发电机，再切回市电）**:
+
+| 操作 | 当前状态 | warmup | transfer_count | 说明 |
+|------|----------|--------|----------------|------|
+| `runtime.cycle()` | OnMains | 0 | 0 | 初始由市电供电 |
+| `runtime.cycle(['Root.OnMains.GridFail'])` | StartingGen | 1 | 0 | 市电中断，发电机启动并开始预热 |
+| `runtime.cycle()` | StartingGen | 2 | 0 | 发电机继续预热 |
+| `runtime.cycle()` | OnGenerator | 2 | 1 | 预热完成，ATS 将负载切到发电机 |
+| `runtime.cycle(['Root.OnGenerator.GridRestore'])` | OnMains | 0 | 2 | 市电恢复，ATS 切回市电 |
+
+**详细计算 B**:
+```text
+初始: warmup = 0, transfer_count = 0
+
+第1次 cycle:
+  进入 OnMains
+  OnMains.during:
+    warmup = 0
+
+第2次 cycle (提供 GridFail 事件):
+  OnMains.exit
+  OnMains->StartingGen effect:
+    warmup = 0
+  StartingGen.enter
+  StartingGen.during:
+    warmup = 0 + 1 = 1
+
+第3次 cycle:
+  检查 StartingGen->OnGenerator: warmup >= 2 不满足 (当前 warmup = 1)
+  StartingGen.during:
+    warmup = 1 + 1 = 2
+
+第4次 cycle:
+  检查 StartingGen->OnGenerator: warmup >= 2 满足
+  StartingGen.exit
+  StartingGen->OnGenerator effect:
+    transfer_count = 0 + 1 = 1
+  OnGenerator.enter
+  OnGenerator 无 during 动作
+
+第5次 cycle (提供 GridRestore 事件):
+  OnGenerator.exit
+  OnGenerator->OnMains effect:
+    transfer_count = 1 + 1 = 2
+    warmup = 0
+  OnMains.enter
+  OnMains.during:
+    warmup = 0
+```
+
+**注意**:
+- `warmup` 表示发电机预热计数，真实工程里通常对应若干秒到数十秒的稳定建压/建频时间
+- `transfer_count` 记录 ATS 发生过多少次负载切换：一次切到发电机，一次切回市电
+- 这里没有加入发电机启动失败分支，目的是聚焦“事件触发 + 预热守卫 + 供电切换”的主链路
+
+### 4.105 真实系统用例：冷库蒸发器除霜周期
+
+这个例子模拟冷库蒸发器的典型控制：正常制冷时结霜量逐步累积；达到阈值后进入除霜周期；融霜结束后还需要短暂滴水阶段，避免残留水滴被风机再次带入库内，之后才能回到正常制冷。
+
+以下两条执行序列彼此独立，均从相同的初始状态开始。
+
+```python
+dsl_code = '''
+def int frost = 0;
+def int drip_ticks = 0;
+state Root {
+    state Cooling {
+        during {
+            frost = frost + 2;
+        }
+    }
+
+    state DefrostCycle {
+        state Defrost {
+            during {
+                frost = frost - 5;
+            }
+        }
+
+        state Drip {
+            during {
+                drip_ticks = drip_ticks + 1;
+            }
+        }
+
+        [*] -> Defrost;
+        Defrost -> Drip : if [frost <= 0] effect {
+            frost = 0;
+            drip_ticks = 0;
+        };
+        Drip -> [*] : if [drip_ticks >= 1];
+    }
+
+    [*] -> Cooling;
+    Cooling -> DefrostCycle : if [frost >= 6];
+    DefrostCycle -> Cooling effect {
+        drip_ticks = 0;
+    };
+}
+'''
+```
+
+**执行序列 A（结霜尚未触发除霜）**:
+
+| 操作 | 当前状态 | frost | drip_ticks | 说明 |
+|------|----------|-------|------------|------|
+| `runtime.cycle()` | Cooling | 2 | 0 | 初始进入制冷，开始累积结霜 |
+| `runtime.cycle()` | Cooling | 4 | 0 | 持续制冷，结霜增加 |
+| `runtime.cycle()` | Cooling | 6 | 0 | 结霜达到阈值，下一轮才会切入除霜 |
+
+**详细计算 A**:
+```text
+初始: frost = 0, drip_ticks = 0
+
+第1次 cycle:
+  进入 Cooling
+  Cooling.during:
+    frost = 0 + 2 = 2
+
+第2次 cycle:
+  检查 Cooling->DefrostCycle: frost >= 6 不满足 (当前 frost = 2)
+  Cooling.during:
+    frost = 2 + 2 = 4
+
+第3次 cycle:
+  检查 Cooling->DefrostCycle: frost >= 6 不满足 (当前 frost = 4)
+  Cooling.during:
+    frost = 4 + 2 = 6
+```
+
+**执行序列 B（达到除霜阈值后完成一轮除霜并回制冷）**:
+
+| 操作 | 当前状态 | frost | drip_ticks | 说明 |
+|------|----------|-------|------------|------|
+| `runtime.cycle()` | Cooling | 2 | 0 | 初始进入制冷 |
+| `runtime.cycle()` | Cooling | 4 | 0 | 继续制冷 |
+| `runtime.cycle()` | Cooling | 6 | 0 | 结霜达到阈值 |
+| `runtime.cycle()` | Defrost | 1 | 0 | 进入除霜周期，先执行融霜 |
+| `runtime.cycle()` | Defrost | -4 | 0 | 继续融霜，本轮结束时已足以转入滴水 |
+| `runtime.cycle()` | Drip | 0 | 1 | 融霜完成，进入滴水阶段 |
+| `runtime.cycle()` | Cooling | 2 | 0 | 滴水结束，恢复制冷 |
+
+**详细计算 B**:
+```text
+初始: frost = 0, drip_ticks = 0
+
+第1~3次 cycle:
+  与执行序列 A 的第1~3次 cycle 相同
+  第3次结束后:
+    当前状态 = Cooling
+    frost = 6, drip_ticks = 0
+
+第4次 cycle:
+  检查 Cooling->DefrostCycle: frost >= 6 满足
+  Cooling.exit
+  Cooling->DefrostCycle
+  DefrostCycle.enter
+  DefrostCycle.[*] -> Defrost
+  Defrost.enter
+  Defrost.during:
+    frost = 6 - 5 = 1
+
+第5次 cycle:
+  检查 Defrost->Drip: frost <= 0 不满足 (当前 frost = 1)
+  Defrost.during:
+    frost = 1 - 5 = -4
+
+第6次 cycle:
+  检查 Defrost->Drip: frost <= 0 满足
+  Defrost.exit
+  Defrost->Drip effect:
+    frost = -4 -> 0
+    drip_ticks = 0
+  Drip.enter
+  Drip.during:
+    drip_ticks = 0 + 1 = 1
+
+第7次 cycle:
+  检查 Drip->[*]: drip_ticks >= 1 满足
+  Drip.exit
+  Drip->[*]
+  回到 DefrostCycle
+  检查 DefrostCycle->Cooling: 无条件满足
+  DefrostCycle.exit
+  DefrostCycle->Cooling effect:
+    drip_ticks = 1 -> 0
+  Cooling.enter
+  Cooling.during:
+    frost = 0 + 2 = 2
+```
+
+**注意**:
+- `DefrostCycle` 被建模为复合状态，用来表达“融霜 -> 滴水 -> 返回制冷”的工程顺序
+- `Defrost -> Drip` 会把负值结霜量归零，表示在业务语义上不关心过融多少，只关心霜层已清除
+- 滴水阶段结束后才回到 `Cooling`，符合冷库设备避免带水复风的常见控制习惯
+
 ---
 
 ## 5. 实现要点

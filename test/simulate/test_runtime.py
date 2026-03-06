@@ -1274,3 +1274,356 @@ state Root {
         assert runtime.brief_stack == before_stack
         assert runtime.vars == before_vars
         assert runtime.is_ended is False
+
+    def test_4_100_elevator_door_control(self):
+        dsl_code = '''
+def int door_pos = 0;
+def int hold = 0;
+def int reopen_count = 0;
+state Root {
+    state Closed {
+        during {
+            hold = 0;
+        }
+    }
+
+    state Opening {
+        during {
+            door_pos = door_pos + 50;
+        }
+    }
+
+    state Opened {
+        during {
+            hold = hold + 1;
+        }
+    }
+
+    state Closing {
+        during {
+            door_pos = door_pos - 50;
+        }
+    }
+
+    [*] -> Closed;
+    Closed -> Opening :: HallCall effect {
+        hold = 0;
+    };
+    Opening -> Opened : if [door_pos >= 100] effect {
+        hold = 0;
+    };
+    Opened -> Closing : if [hold >= 2];
+    Closing -> Opened :: BeamBlocked effect {
+        reopen_count = reopen_count + 1;
+        door_pos = 100;
+        hold = 0;
+    };
+    Closing -> Closed : if [door_pos <= 0] effect {
+        hold = 0;
+    };
+}
+'''
+        runtime = build_runtime(dsl_code)
+
+        run_cycle_and_assert(runtime, current_path=('Root', 'Closed'), vars={'door_pos': 0, 'hold': 0, 'reopen_count': 0})
+        run_cycle_and_assert(runtime, ['Root.Closed.HallCall'], current_path=('Root', 'Opening'),
+                             vars={'door_pos': 50, 'hold': 0, 'reopen_count': 0})
+        run_cycle_and_assert(runtime, current_path=('Root', 'Opening'),
+                             vars={'door_pos': 100, 'hold': 0, 'reopen_count': 0})
+        run_cycle_and_assert(runtime, current_path=('Root', 'Opened'),
+                             vars={'door_pos': 100, 'hold': 1, 'reopen_count': 0})
+        run_cycle_and_assert(runtime, current_path=('Root', 'Opened'),
+                             vars={'door_pos': 100, 'hold': 2, 'reopen_count': 0})
+        run_cycle_and_assert(runtime, current_path=('Root', 'Closing'),
+                             vars={'door_pos': 50, 'hold': 2, 'reopen_count': 0})
+        run_cycle_and_assert(runtime, current_path=('Root', 'Closing'),
+                             vars={'door_pos': 0, 'hold': 2, 'reopen_count': 0})
+        run_cycle_and_assert(runtime, current_path=('Root', 'Closed'),
+                             vars={'door_pos': 0, 'hold': 0, 'reopen_count': 0})
+
+        runtime = build_runtime(dsl_code)
+        run_cycle_and_assert(runtime, current_path=('Root', 'Closed'), vars={'door_pos': 0, 'hold': 0, 'reopen_count': 0})
+        run_cycle_and_assert(runtime, ['Root.Closed.HallCall'], current_path=('Root', 'Opening'),
+                             vars={'door_pos': 50, 'hold': 0, 'reopen_count': 0})
+        run_cycle_and_assert(runtime, current_path=('Root', 'Opening'),
+                             vars={'door_pos': 100, 'hold': 0, 'reopen_count': 0})
+        run_cycle_and_assert(runtime, current_path=('Root', 'Opened'),
+                             vars={'door_pos': 100, 'hold': 1, 'reopen_count': 0})
+        run_cycle_and_assert(runtime, current_path=('Root', 'Opened'),
+                             vars={'door_pos': 100, 'hold': 2, 'reopen_count': 0})
+        run_cycle_and_assert(runtime, current_path=('Root', 'Closing'),
+                             vars={'door_pos': 50, 'hold': 2, 'reopen_count': 0})
+        run_cycle_and_assert(runtime, ['Root.Closing.BeamBlocked'], current_path=('Root', 'Opened'),
+                             vars={'door_pos': 100, 'hold': 1, 'reopen_count': 1})
+
+    def test_4_101_storage_water_heater_control(self):
+        dsl_code = '''
+def int water_temp = 55;
+def int draw_count = 0;
+state Root {
+    state Standby {
+        during {
+            water_temp = water_temp - 1;
+        }
+    }
+
+    state Heating {
+        during {
+            water_temp = water_temp + 4;
+        }
+    }
+
+    [*] -> Standby;
+    Standby -> Heating : if [water_temp <= 50];
+    Standby -> Standby :: HotWaterDraw effect {
+        water_temp = water_temp - 8;
+        draw_count = draw_count + 1;
+    };
+    Heating -> Standby : if [water_temp >= 60];
+    Heating -> Heating :: HotWaterDraw effect {
+        water_temp = water_temp - 8;
+        draw_count = draw_count + 1;
+    };
+}
+'''
+        runtime = build_runtime(dsl_code)
+
+        run_cycle_and_assert(runtime, current_path=('Root', 'Standby'), vars={'water_temp': 54, 'draw_count': 0})
+        run_cycle_and_assert(runtime, current_path=('Root', 'Standby'), vars={'water_temp': 53, 'draw_count': 0})
+        run_cycle_and_assert(runtime, current_path=('Root', 'Standby'), vars={'water_temp': 52, 'draw_count': 0})
+        run_cycle_and_assert(runtime, current_path=('Root', 'Standby'), vars={'water_temp': 51, 'draw_count': 0})
+        run_cycle_and_assert(runtime, current_path=('Root', 'Standby'), vars={'water_temp': 50, 'draw_count': 0})
+        run_cycle_and_assert(runtime, current_path=('Root', 'Heating'), vars={'water_temp': 54, 'draw_count': 0})
+        run_cycle_and_assert(runtime, current_path=('Root', 'Heating'), vars={'water_temp': 58, 'draw_count': 0})
+
+        runtime = build_runtime(dsl_code)
+        run_cycle_and_assert(runtime, current_path=('Root', 'Standby'), vars={'water_temp': 54, 'draw_count': 0})
+        run_cycle_and_assert(runtime, ['Root.Standby.HotWaterDraw'], current_path=('Root', 'Standby'),
+                             vars={'water_temp': 45, 'draw_count': 1})
+        run_cycle_and_assert(runtime, current_path=('Root', 'Heating'), vars={'water_temp': 49, 'draw_count': 1})
+        run_cycle_and_assert(runtime, current_path=('Root', 'Heating'), vars={'water_temp': 53, 'draw_count': 1})
+        run_cycle_and_assert(runtime, current_path=('Root', 'Heating'), vars={'water_temp': 57, 'draw_count': 1})
+        run_cycle_and_assert(runtime, current_path=('Root', 'Heating'), vars={'water_temp': 61, 'draw_count': 1})
+        run_cycle_and_assert(runtime, current_path=('Root', 'Standby'), vars={'water_temp': 60, 'draw_count': 1})
+
+    def test_4_102_traffic_signal_with_pedestrian_request(self):
+        dsl_code = '''
+def int green_ticks = 0;
+def int request_latched = 0;
+def int yellow_ticks = 0;
+def int walk_ticks = 0;
+state Root {
+    state MainGreen {
+        during {
+            green_ticks = green_ticks + 1;
+        }
+    }
+
+    state PedestrianPhase {
+        state MainYellow {
+            during {
+                yellow_ticks = yellow_ticks + 1;
+            }
+        }
+
+        state PedWalk {
+            during {
+                walk_ticks = walk_ticks + 1;
+            }
+        }
+
+        [*] -> MainYellow;
+        MainYellow -> PedWalk : if [yellow_ticks >= 1];
+        PedWalk -> [*] : if [walk_ticks >= 2];
+    }
+
+    [*] -> MainGreen;
+    MainGreen -> PedestrianPhase : if [request_latched == 1 && green_ticks >= 3] effect {
+        request_latched = 0;
+        yellow_ticks = 0;
+        walk_ticks = 0;
+    };
+    MainGreen -> MainGreen :: PedRequest effect {
+        request_latched = 1;
+    };
+    PedestrianPhase -> MainGreen effect {
+        green_ticks = 0;
+        yellow_ticks = 0;
+        walk_ticks = 0;
+    };
+}
+'''
+        runtime = build_runtime(dsl_code)
+
+        run_cycle_and_assert(runtime, current_path=('Root', 'MainGreen'),
+                             vars={'green_ticks': 1, 'request_latched': 0, 'yellow_ticks': 0, 'walk_ticks': 0})
+        run_cycle_and_assert(runtime, current_path=('Root', 'MainGreen'),
+                             vars={'green_ticks': 2, 'request_latched': 0, 'yellow_ticks': 0, 'walk_ticks': 0})
+        run_cycle_and_assert(runtime, current_path=('Root', 'MainGreen'),
+                             vars={'green_ticks': 3, 'request_latched': 0, 'yellow_ticks': 0, 'walk_ticks': 0})
+        run_cycle_and_assert(runtime, current_path=('Root', 'MainGreen'),
+                             vars={'green_ticks': 4, 'request_latched': 0, 'yellow_ticks': 0, 'walk_ticks': 0})
+
+        runtime = build_runtime(dsl_code)
+        run_cycle_and_assert(runtime, current_path=('Root', 'MainGreen'),
+                             vars={'green_ticks': 1, 'request_latched': 0, 'yellow_ticks': 0, 'walk_ticks': 0})
+        run_cycle_and_assert(runtime, ['Root.MainGreen.PedRequest'], current_path=('Root', 'MainGreen'),
+                             vars={'green_ticks': 2, 'request_latched': 1, 'yellow_ticks': 0, 'walk_ticks': 0})
+        run_cycle_and_assert(runtime, current_path=('Root', 'MainGreen'),
+                             vars={'green_ticks': 3, 'request_latched': 1, 'yellow_ticks': 0, 'walk_ticks': 0})
+        run_cycle_and_assert(runtime, current_path=('Root', 'PedestrianPhase', 'MainYellow'),
+                             vars={'green_ticks': 3, 'request_latched': 0, 'yellow_ticks': 1, 'walk_ticks': 0})
+        run_cycle_and_assert(runtime, current_path=('Root', 'PedestrianPhase', 'PedWalk'),
+                             vars={'green_ticks': 3, 'request_latched': 0, 'yellow_ticks': 1, 'walk_ticks': 1})
+        run_cycle_and_assert(runtime, current_path=('Root', 'PedestrianPhase', 'PedWalk'),
+                             vars={'green_ticks': 3, 'request_latched': 0, 'yellow_ticks': 1, 'walk_ticks': 2})
+        run_cycle_and_assert(runtime, current_path=('Root', 'MainGreen'),
+                             vars={'green_ticks': 1, 'request_latched': 0, 'yellow_ticks': 0, 'walk_ticks': 0})
+
+    def test_4_103_ac_charger_session_control(self):
+        dsl_code = '''
+def int soc = 70;
+def int sessions = 0;
+state Root {
+    state Idle;
+
+    state Charging {
+        during {
+            soc = soc + 10;
+        }
+    }
+
+    state Complete;
+
+    [*] -> Idle;
+    Idle -> Charging :: PlugIn;
+    Charging -> Complete : if [soc >= 100];
+    Charging -> Idle :: Unplug effect {
+        sessions = sessions + 1;
+    };
+    Complete -> Idle :: Unplug effect {
+        sessions = sessions + 1;
+    };
+}
+'''
+        runtime = build_runtime(dsl_code)
+
+        run_cycle_and_assert(runtime, current_path=('Root', 'Idle'), vars={'soc': 70, 'sessions': 0})
+        run_cycle_and_assert(runtime, ['Root.Idle.PlugIn'], current_path=('Root', 'Charging'),
+                             vars={'soc': 80, 'sessions': 0})
+        run_cycle_and_assert(runtime, current_path=('Root', 'Charging'), vars={'soc': 90, 'sessions': 0})
+        run_cycle_and_assert(runtime, current_path=('Root', 'Charging'), vars={'soc': 100, 'sessions': 0})
+        run_cycle_and_assert(runtime, current_path=('Root', 'Complete'), vars={'soc': 100, 'sessions': 0})
+        run_cycle_and_assert(runtime, ['Root.Complete.Unplug'], current_path=('Root', 'Idle'),
+                             vars={'soc': 100, 'sessions': 1})
+
+        runtime = build_runtime(dsl_code)
+        run_cycle_and_assert(runtime, current_path=('Root', 'Idle'), vars={'soc': 70, 'sessions': 0})
+        run_cycle_and_assert(runtime, ['Root.Idle.PlugIn'], current_path=('Root', 'Charging'),
+                             vars={'soc': 80, 'sessions': 0})
+        run_cycle_and_assert(runtime, ['Root.Charging.Unplug'], current_path=('Root', 'Idle'),
+                             vars={'soc': 80, 'sessions': 1})
+        run_cycle_and_assert(runtime, ['Root.Idle.PlugIn'], current_path=('Root', 'Charging'),
+                             vars={'soc': 90, 'sessions': 1})
+        run_cycle_and_assert(runtime, current_path=('Root', 'Charging'), vars={'soc': 100, 'sessions': 1})
+
+    def test_4_104_ats_mains_generator_transfer(self):
+        dsl_code = '''
+def int warmup = 0;
+def int transfer_count = 0;
+state Root {
+    state OnMains {
+        during {
+            warmup = 0;
+        }
+    }
+
+    state StartingGen {
+        during {
+            warmup = warmup + 1;
+        }
+    }
+
+    state OnGenerator;
+
+    [*] -> OnMains;
+    OnMains -> StartingGen :: GridFail effect {
+        warmup = 0;
+    };
+    StartingGen -> OnGenerator : if [warmup >= 2] effect {
+        transfer_count = transfer_count + 1;
+    };
+    OnGenerator -> OnMains :: GridRestore effect {
+        transfer_count = transfer_count + 1;
+        warmup = 0;
+    };
+}
+'''
+        runtime = build_runtime(dsl_code)
+
+        run_cycle_and_assert(runtime, current_path=('Root', 'OnMains'), vars={'warmup': 0, 'transfer_count': 0})
+        run_cycle_and_assert(runtime, current_path=('Root', 'OnMains'), vars={'warmup': 0, 'transfer_count': 0})
+        run_cycle_and_assert(runtime, current_path=('Root', 'OnMains'), vars={'warmup': 0, 'transfer_count': 0})
+
+        runtime = build_runtime(dsl_code)
+        run_cycle_and_assert(runtime, current_path=('Root', 'OnMains'), vars={'warmup': 0, 'transfer_count': 0})
+        run_cycle_and_assert(runtime, ['Root.OnMains.GridFail'], current_path=('Root', 'StartingGen'),
+                             vars={'warmup': 1, 'transfer_count': 0})
+        run_cycle_and_assert(runtime, current_path=('Root', 'StartingGen'), vars={'warmup': 2, 'transfer_count': 0})
+        run_cycle_and_assert(runtime, current_path=('Root', 'OnGenerator'), vars={'warmup': 2, 'transfer_count': 1})
+        run_cycle_and_assert(runtime, ['Root.OnGenerator.GridRestore'], current_path=('Root', 'OnMains'),
+                             vars={'warmup': 0, 'transfer_count': 2})
+
+    def test_4_105_cold_storage_defrost_cycle(self):
+        dsl_code = '''
+def int frost = 0;
+def int drip_ticks = 0;
+state Root {
+    state Cooling {
+        during {
+            frost = frost + 2;
+        }
+    }
+
+    state DefrostCycle {
+        state Defrost {
+            during {
+                frost = frost - 5;
+            }
+        }
+
+        state Drip {
+            during {
+                drip_ticks = drip_ticks + 1;
+            }
+        }
+
+        [*] -> Defrost;
+        Defrost -> Drip : if [frost <= 0] effect {
+            frost = 0;
+            drip_ticks = 0;
+        };
+        Drip -> [*] : if [drip_ticks >= 1];
+    }
+
+    [*] -> Cooling;
+    Cooling -> DefrostCycle : if [frost >= 6];
+    DefrostCycle -> Cooling effect {
+        drip_ticks = 0;
+    };
+}
+'''
+        runtime = build_runtime(dsl_code)
+
+        run_cycle_and_assert(runtime, current_path=('Root', 'Cooling'), vars={'frost': 2, 'drip_ticks': 0})
+        run_cycle_and_assert(runtime, current_path=('Root', 'Cooling'), vars={'frost': 4, 'drip_ticks': 0})
+        run_cycle_and_assert(runtime, current_path=('Root', 'Cooling'), vars={'frost': 6, 'drip_ticks': 0})
+
+        runtime = build_runtime(dsl_code)
+        run_cycle_and_assert(runtime, current_path=('Root', 'Cooling'), vars={'frost': 2, 'drip_ticks': 0})
+        run_cycle_and_assert(runtime, current_path=('Root', 'Cooling'), vars={'frost': 4, 'drip_ticks': 0})
+        run_cycle_and_assert(runtime, current_path=('Root', 'Cooling'), vars={'frost': 6, 'drip_ticks': 0})
+        run_cycle_and_assert(runtime, current_path=('Root', 'DefrostCycle', 'Defrost'), vars={'frost': 1, 'drip_ticks': 0})
+        run_cycle_and_assert(runtime, current_path=('Root', 'DefrostCycle', 'Defrost'), vars={'frost': -4, 'drip_ticks': 0})
+        run_cycle_and_assert(runtime, current_path=('Root', 'DefrostCycle', 'Drip'), vars={'frost': 0, 'drip_ticks': 1})
+        run_cycle_and_assert(runtime, current_path=('Root', 'Cooling'), vars={'frost': 2, 'drip_ticks': 0})

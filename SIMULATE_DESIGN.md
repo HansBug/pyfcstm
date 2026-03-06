@@ -1121,6 +1121,27 @@ state Root {
 | `runtime.cycle()` | A | 1 | 进入 A，执行 A.during |
 | `runtime.cycle(['Root.A.GoP'])` | 已结束 | 11 | A->P(+10)->[\*]（状态机结束），转换有效 |
 
+**详细计算**:
+```
+初始: counter = 0
+
+第1次 cycle:
+  进入 A
+  A.during:                 0 + 1 = 1
+
+第2次 cycle (提供 GoP 事件):
+  检查转换 A->P:
+    验证 A->P:
+      模拟 P.enter: counter = 1 + 10 = 11
+      检查 P->[*]: 退出到状态机结束（栈为空）
+    验证成功
+  A.exit
+  A->P
+  P.enter:                  1 + 10 = 11
+  P.exit
+  P->[*] (状态机结束)
+```
+
 **注意**: P->[*] 导致状态机结束（栈为空），所以 A->P 转换有效。
 
 ### 4.17 伪状态链路测试：退出到父状态（无效）
@@ -1158,6 +1179,27 @@ state Root {
 |------|----------|---------|------|
 | `runtime.cycle()` | A | 1 | 进入 System->A，执行 A.during |
 | `runtime.cycle(['Root.System.A.GoP'])` | A | 2 | A->P->[\*] 验证：P->[\*] 退到 System（复合状态，non-stoppable），转换无效，停在 A，执行 A.during |
+
+**详细计算**:
+```
+初始: counter = 0
+
+第1次 cycle:
+  进入 System
+  System.enter
+  System->[*]->A
+  A.enter
+  A.during:                 0 + 1 = 1
+
+第2次 cycle (提供 GoP 事件):
+  检查转换 A->P:
+    验证 A->P:
+      模拟 P.enter: counter = 1 + 10 = 11
+      检查 P->[*]: 退出到 System（复合状态，non-stoppable）
+    验证失败
+  停在 A
+  A.during:                 1 + 1 = 2
+```
 
 **注意**: P->[*] 只是退到父状态 System，而 System 是复合状态（non-stoppable），所以 A->P 转换无效。
 
@@ -1210,6 +1252,27 @@ state Root {
 | `runtime.cycle()` | A | 1 | 进入 A，执行 A.during |
 | `runtime.cycle(['Root.A.GoB'])` | B1 | 1111 | A->B，B->[\*]->P1(+10)->P2(+100)->B1，执行 B1.during(+1000) |
 
+**详细计算**:
+```
+初始: counter = 0
+
+第1次 cycle:
+  进入 A
+  A.during:                 0 + 1 = 1
+
+第2次 cycle (提供 GoB 事件):
+  A.exit
+  A->B
+  B.enter
+  B->[*]->P1 (初始转换)
+  P1.enter:                 1 + 10 = 11
+  P1->P2 (无条件转换)
+  P2.enter:                 11 + 100 = 111
+  P2->B1 (无条件转换)
+  B1.enter
+  B1.during:                111 + 1000 = 1111
+```
+
 **注意**:
 - B 的初始转换链路：[*]->P1->P2->B1，全部是无条件转换
 - 验证时会自动执行整个链路，最终到达 B1（stoppable）
@@ -1257,6 +1320,36 @@ state Root {
 | `runtime.cycle(['Root.A.GoB'])` | A | 2 | A->B 验证：B->[\*]->P1，但 P1->B1 需要 Event，无法到达 stoppable，转换无效，停在 A，执行 A.during |
 | `runtime.cycle(['Root.A.GoB', 'Root.B.P1.Event'])` | B1 | 112 | A->B，B->[\*]->P1(+10)->B1，执行 B1.during(+100) |
 
+**详细计算**:
+```
+初始: counter = 0
+
+第1次 cycle:
+  进入 A
+  A.during:                 0 + 1 = 1
+
+第2次 cycle (提供 GoB 事件):
+  检查转换 A->B:
+    验证 A->B:
+      模拟 B.enter
+      模拟 B->[*]->P1
+      模拟 P1.enter: counter = 11
+      检查 P1->B1: 需要 Event，但未提供
+    验证失败
+  停在 A
+  A.during:                 1 + 1 = 2
+
+第3次 cycle (提供 GoB 和 Event 事件):
+  A.exit
+  A->B
+  B.enter
+  B->[*]->P1
+  P1.enter:                 2 + 10 = 12
+  P1->B1 (Event 满足)
+  B1.enter
+  B1.during:                12 + 100 = 112
+```
+
 ### 4.20 伪状态链路测试：混合复合状态和伪状态
 
 ```python
@@ -1302,6 +1395,27 @@ state Root {
 | `runtime.cycle()` | A | 1 | 进入 A，执行 A.during |
 | `runtime.cycle(['Root.A.GoB'])` | C1 | 111 | A->B，B->[\*]->P(+10)->C，C->[\*]->C1，执行 C1.during(+100) |
 
+**详细计算**:
+```
+初始: counter = 0
+
+第1次 cycle:
+  进入 A
+  A.during:                 0 + 1 = 1
+
+第2次 cycle (提供 GoB 事件):
+  A.exit
+  A->B
+  B.enter
+  B->[*]->P (初始转换)
+  P.enter:                  1 + 10 = 11
+  P->C (无条件转换)
+  C.enter
+  C->[*]->C1 (初始转换)
+  C1.enter
+  C1.during:                11 + 100 = 111
+```
+
 **注意**: 验证链路：B（复合）->P（伪状态）->C（复合）->C1（stoppable）
 
 ### 4.21 Aspect Actions 测试：单层 aspect actions
@@ -1342,6 +1456,27 @@ state Root {
 |------|----------|---------|------|
 | `runtime.cycle()` | A | 10101 | 进入 A，执行 during：Root >> before (+1), A.during (+100), Root >> after (+10000) |
 | `runtime.cycle(['Root.A.Go'])` | B | 21102 | A->B，执行 during：Root >> before (+1), B.during (+1000), Root >> after (+10000) |
+
+**详细计算**:
+```
+初始: counter = 0
+
+第1次 cycle:
+  进入 A
+  A.during:
+    Root >> during before:  0 + 1 = 1
+    A.during:               1 + 100 = 101
+    Root >> during after:   101 + 10000 = 10101
+
+第2次 cycle (提供 Go 事件):
+  A.exit
+  A->B
+  B.enter
+  B.during:
+    Root >> during before:  10101 + 1 = 10102
+    B.during:               10102 + 1000 = 11102
+    Root >> during after:   11102 + 10000 = 21102
+```
 
 **注意**:
 - Root 的 aspect actions 对所有叶子状态生效

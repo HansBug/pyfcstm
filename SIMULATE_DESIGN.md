@@ -194,6 +194,25 @@ state Root {
 | `runtime.cycle()` | A | 2 | 无转换，执行 A.during |
 | `runtime.cycle(['Root.A.Go'])` | B | 12 | A->B，执行 B.during |
 
+**详细计算**:
+```
+初始: counter = 0
+
+第1次 cycle:
+  进入 A
+  A.during:                 0 + 1 = 1
+
+第2次 cycle:
+  无转换可触发
+  A.during:                 1 + 1 = 2
+
+第3次 cycle (提供 Go 事件):
+  A.exit
+  A->B
+  B.enter
+  B.during:                 2 + 10 = 12
+```
+
 ### 4.2 复合状态测试
 
 ```python
@@ -235,6 +254,29 @@ state Root {
 | `runtime.cycle(['Root.A.GoB'])` | B1 | 11 | A->B->B1，执行 B1.during |
 | `runtime.cycle(['Root.B.B1.Next'])` | B2 | 111 | B1->B2，执行 B2.during |
 
+**详细计算**:
+```
+初始: counter = 0
+
+第1次 cycle:
+  进入 A
+  A.during:                 0 + 1 = 1
+
+第2次 cycle (提供 GoB 事件):
+  A.exit
+  A->B
+  B.enter
+  B->[*]->B1 (初始转换)
+  B1.enter
+  B1.during:                1 + 10 = 11
+
+第3次 cycle (提供 Next 事件):
+  B1.exit
+  B1->B2
+  B2.enter
+  B2.during:                11 + 100 = 111
+```
+
 ### 4.3 转换验证测试：无法到达 stoppable
 
 ```python
@@ -264,6 +306,20 @@ state Root {
 |------|----------|---------|------|
 | `runtime.cycle()` | A | 1 | 进入 A，执行 A.during |
 | `runtime.cycle(['Root.A.GoB'])` | A | 2 | A->B 无效（B 无法到达 stoppable），停在 A，执行 A.during |
+
+**详细计算**:
+```
+初始: counter = 0
+
+第1次 cycle:
+  进入 A
+  A.during:                 0 + 1 = 1
+
+第2次 cycle (提供 GoB 事件):
+  A->B 验证：B 没有初始转换，无法进入子状态，无法到达 stoppable
+  验证失败，停在 A
+  A.during:                 1 + 1 = 2
+```
 
 ### 4.4 转换验证测试：需要事件的初始转换
 
@@ -300,6 +356,28 @@ state Root {
 | `runtime.cycle(['Root.A.GoB'])` | A | 2 | A->B 无效（B 需要 Start 事件才能进入 B1），停在 A，执行 A.during |
 | `runtime.cycle(['Root.A.GoB', 'Root.B.Start'])` | B1 | 12 | A->B->B1，执行 B1.during |
 
+**详细计算**:
+```
+初始: counter = 0
+
+第1次 cycle:
+  进入 A
+  A.during:                 0 + 1 = 1
+
+第2次 cycle (提供 GoB 事件):
+  A->B 验证：B->[*]->B1 需要 Start 事件，但未提供，无法到达 stoppable
+  验证失败，停在 A
+  A.during:                 1 + 1 = 2
+
+第3次 cycle (提供 GoB 和 Start 事件):
+  A.exit
+  A->B
+  B.enter
+  B->[*]->B1 (Start 事件满足)
+  B1.enter
+  B1.during:                2 + 10 = 12
+```
+
 ### 4.5 方面动作测试
 
 ```python
@@ -330,6 +408,25 @@ state Root {
 |------|----------|-------|------|
 | `runtime.cycle()` | A | 123 | 进入 A，执行 before(1) -> during(2) -> after(3) |
 | `runtime.cycle()` | A | 123123 | 执行 before(1) -> during(2) -> after(3) |
+
+**详细计算**:
+```
+初始: trace = 0
+
+第1次 cycle:
+  进入 A
+  A.during:
+    Root >> during before:  0 * 10 + 1 = 1
+    A.during:               1 * 10 + 2 = 12
+    Root >> during after:   12 * 10 + 3 = 123
+
+第2次 cycle:
+  无转换可触发
+  A.during:
+    Root >> during before:  123 * 10 + 1 = 1231
+    A.during:               1231 * 10 + 2 = 12312
+    Root >> during after:   12312 * 10 + 3 = 123123
+```
 
 ### 4.6 伪状态测试
 
@@ -363,9 +460,19 @@ state Root {
 | `runtime.cycle()` | A | 2 | 进入 A，跳过 aspect，只执行 during(2) |
 | `runtime.cycle()` | 已结束 | 2 | A->[*]，退出 |
 
-**注意**: 伪状态不是 stoppable，所以第一次 cycle 后应该立即退出，但这里有守卫条件 `trace >= 2`，所以会停在 A。
+**详细计算**:
+```
+初始: trace = 0
 
-**修正**: 伪状态虽然跳过 aspect，但仍然是叶子状态。如果没有转换可触发，应该停在伪状态并执行 during。
+第1次 cycle:
+  进入 A (伪状态)
+  A.during:                 0 * 10 + 2 = 2  (跳过 aspect actions)
+  检查转换 A->[*]：trace >= 2 满足
+  A.exit
+  A->[*] (状态机结束)
+```
+
+**注意**: 伪状态不是 stoppable，但如果有转换可触发，会立即执行转换。
 
 ### 4.7 复杂链路测试：多级 non-stoppable
 
@@ -414,6 +521,37 @@ state Root {
 | `runtime.cycle()` | A | 1 | 进入 A，执行 A.during |
 | `runtime.cycle(['Root.A.GoC'])` | C | 101 | A->C，执行 C.during |
 
+**详细计算**:
+```
+场景1 (A->B):
+初始: counter = 0
+第1次 cycle:
+  进入 A
+  A.during:                 0 + 1 = 1
+
+第2次 cycle (提供 GoB 事件):
+  A.exit
+  A->B
+  B.enter
+  B->[*]->B1 (初始转换)
+  B1.enter
+  B1->[*]->B1a (初始转换)
+  B1a.enter
+  B1a.during:               1 + 10 = 11
+
+场景2 (A->C):
+初始: counter = 0
+第1次 cycle:
+  进入 A
+  A.during:                 0 + 1 = 1
+
+第2次 cycle (提供 GoC 事件):
+  A.exit
+  A->C
+  C.enter
+  C.during:                 1 + 100 = 101
+```
+
 ### 4.8 转换优先级测试
 
 ```python
@@ -452,7 +590,31 @@ state Root {
 | `runtime.cycle()` | A | 3 | 无转换（A->B 不满足），执行 A.during |
 | `runtime.cycle()` | C | 103 | A->C 满足（优先级低但先满足），执行 C.during |
 
-**注意**: 当 counter=3 时，A->B 的守卫 `counter >= 5` 不满足，但 A->C 的守卫 `counter >= 3` 满足，所以触发 A->C。
+**详细计算**:
+```
+初始: counter = 0
+
+第1次 cycle:
+  进入 A
+  A.during:                 0 + 1 = 1
+
+第2次 cycle:
+  检查转换：A->B (counter >= 5) 不满足，A->C (counter >= 3) 不满足
+  A.during:                 1 + 1 = 2
+
+第3次 cycle:
+  检查转换：A->B (counter >= 5) 不满足，A->C (counter >= 3) 不满足
+  A.during:                 2 + 1 = 3
+
+第4次 cycle:
+  检查转换：A->B (counter >= 5) 不满足，A->C (counter >= 3) 满足
+  A.exit
+  A->C
+  C.enter
+  C.during:                 3 + 100 = 103
+```
+
+**注意**: 转换按定义顺序检查，A->B 虽然优先级高，但守卫不满足，所以检查下一个转换 A->C。
 
 ### 4.9 自转换测试
 
@@ -485,6 +647,22 @@ state Root {
 | `runtime.cycle()` | A | 11 | 进入 A，enter(+1)，during(+10) |
 | `runtime.cycle(['Root.A.Loop'])` | A | 122 | A->A，exit(+100)，enter(+1)，during(+10) |
 
+**详细计算**:
+```
+初始: counter = 0
+
+第1次 cycle:
+  进入 A
+  A.enter:                  0 + 1 = 1
+  A.during:                 1 + 10 = 11
+
+第2次 cycle (提供 Loop 事件):
+  A.exit:                   11 + 100 = 111
+  A->A (自转换)
+  A.enter:                  111 + 1 = 112
+  A.during:                 112 + 10 = 122
+```
+
 ### 4.10 退出状态测试
 
 ```python
@@ -514,6 +692,28 @@ state Root {
 | `runtime.cycle()` | A | 2 | 无转换，执行 A.during |
 | `runtime.cycle()` | A | 3 | 无转换，执行 A.during |
 | `runtime.cycle()` | 已结束 | 103 | A->[*]，exit(+100) |
+
+**详细计算**:
+```
+初始: counter = 0
+
+第1次 cycle:
+  进入 A
+  A.during:                 0 + 1 = 1
+
+第2次 cycle:
+  检查转换 A->[*]: counter >= 3 不满足
+  A.during:                 1 + 1 = 2
+
+第3次 cycle:
+  检查转换 A->[*]: counter >= 3 不满足
+  A.during:                 2 + 1 = 3
+
+第4次 cycle:
+  检查转换 A->[*]: counter >= 3 满足
+  A.exit:                   3 + 100 = 103
+  A->[*] (状态机结束)
+```
 
 ### 4.11 复杂场景：带守卫和效果的多级转换
 
@@ -564,6 +764,32 @@ state Root {
 | `runtime.cycle()` | A | 3 | 0 | 无转换，执行 A.during |
 | `runtime.cycle()` | B1 | 13 | 1 | A->B（守卫满足，effect 设置 flag=1），B.enter（flag=1），B->[*]->B1（守卫满足），执行 B1.during |
 
+**详细计算**:
+```
+初始: counter = 0, flag = 0
+
+第1次 cycle:
+  进入 A
+  A.during:                 0 + 1 = 1
+
+第2次 cycle:
+  检查转换 A->B: counter >= 3 不满足
+  A.during:                 1 + 1 = 2
+
+第3次 cycle:
+  检查转换 A->B: counter >= 3 不满足
+  A.during:                 2 + 1 = 3
+
+第4次 cycle:
+  检查转换 A->B: counter >= 3 满足
+  A.exit
+  A->B effect: flag = 1
+  B.enter: flag = 1
+  B->[*]->B1: flag == 1 满足
+  B1.enter
+  B1.during:                3 + 10 = 13
+```
+
 ### 4.12 复杂场景：验证失败的多级转换
 
 ```python
@@ -606,7 +832,35 @@ state Root {
 | `runtime.cycle()` | A | 3 | 0 | 无转换，执行 A.during |
 | `runtime.cycle()` | A | 4 | 0 | A->B 验证失败（B.enter 设置 flag=1，但 B->[*]->B1 需要 flag==2，无法到达 stoppable），停在 A，执行 A.during |
 
-**注意**: 这里的验证需要模拟执行 B.enter，发现 flag 会被设置为 1，但初始转换需要 flag==2，所以无法进入 B1。
+**详细计算**:
+```
+初始: counter = 0, flag = 0
+
+第1次 cycle:
+  进入 A
+  A.during:                 0 + 1 = 1
+
+第2次 cycle:
+  检查转换 A->B: counter >= 3 不满足
+  A.during:                 1 + 1 = 2
+
+第3次 cycle:
+  检查转换 A->B: counter >= 3 不满足
+  A.during:                 2 + 1 = 3
+
+第4次 cycle:
+  检查转换 A->B: counter >= 3 满足
+  验证 A->B:
+    模拟 A.exit
+    模拟 A->B effect: flag = 1
+    模拟 B.enter: flag = 1
+    检查 B->[*]->B1: flag == 2 不满足
+    无法到达 stoppable
+  验证失败，停在 A
+  A.during:                 3 + 1 = 4
+```
+
+**注意**: 验证过程中模拟执行 B.enter，发现 flag 会被设置为 1，但初始转换需要 flag==2，所以无法进入 B1。
 
 ### 4.13 伪状态链路测试：单个伪状态
 
@@ -648,29 +902,31 @@ state Root {
 |------|----------|---------|------|
 | `runtime.cycle()` | A | 1 | 进入 A，执行 A.during |
 | `runtime.cycle(['Root.A.GoP'])` | A | 2 | A->P 无效（P 是伪状态，不是 stoppable），停在 A，执行 A.during |
-| `runtime.cycle(['Root.A.GoP', 'Root.P.GoB'])` | B | 1112 | A->P（enter +10，exit 0），P->B（enter 0），执行 B.during(+1000)，总计：1+10+1+1000=1012，但之前已经是 2，所以是 2+10+1000=1012... 等等，让我重新算 |
-
-**重新计算**:
-- 初始：counter = 0
-- 第1次 cycle：进入 A，A.during (+1)，counter = 1
-- 第2次 cycle：停在 A，A.during (+1)，counter = 2
-- 第3次 cycle：
-  - A.exit (无)
-  - A->P effect (无)
-  - P.enter (+10)，counter = 12
-  - P.during (+100)，counter = 112（**伪状态也会执行 during，但不执行 aspect actions**）
-  - P.exit (无)
-  - P->B effect (无)
-  - B.enter (无)
-  - B.during (+1000)，counter = 1112
-
-**修正后的执行序列**:
-
-| 操作 | 当前状态 | counter | 说明 |
-|------|----------|---------|------|
-| `runtime.cycle()` | A | 1 | 进入 A，执行 A.during |
-| `runtime.cycle(['Root.A.GoP'])` | A | 2 | A->P 无效（P 是伪状态，不是 stoppable），停在 A，执行 A.during |
 | `runtime.cycle(['Root.A.GoP', 'Root.P.GoB'])` | B | 1112 | A->P（enter +10, during +100），P->B，执行 B.during(+1000) |
+
+**详细计算**:
+```
+初始: counter = 0
+
+第1次 cycle:
+  进入 A
+  A.during:                 0 + 1 = 1
+
+第2次 cycle (提供 GoP 事件):
+  A->P 验证失败（P 是伪状态，non-stoppable）
+  停在 A
+  A.during:                 1 + 1 = 2
+
+第3次 cycle (提供 GoP 和 GoB 事件):
+  A.exit
+  A->P
+  P.enter:                  2 + 10 = 12
+  P.during:                 12 + 100 = 112  (伪状态执行 during，但不执行 aspect actions)
+  P.exit
+  P->B
+  B.enter
+  B.during:                 112 + 1000 = 1112
+```
 
 **注意**:
 - 第2次 cycle 时，虽然提供了 GoP 事件，但 P 是伪状态（non-stoppable），验证时发现无法停在 P，所以转换无效
@@ -727,6 +983,39 @@ state Root {
 | `runtime.cycle(['Root.A.Go1', 'Root.P1.Go2'])` | A | 3 | A->P1->P2 无效（P2 也是伪状态），停在 A，执行 A.during |
 | `runtime.cycle(['Root.A.Go1', 'Root.P1.Go2', 'Root.P2.Go3'])` | B | 1113 | A->P1(+10)->P2(+100)->B，执行 B.during(+1000) |
 
+**详细计算**:
+```
+初始: counter = 0
+
+第1次 cycle:
+  进入 A
+  A.during:                 0 + 1 = 1
+
+第2次 cycle (提供 Go1 事件):
+  A->P1 验证：P1 是伪状态，non-stoppable
+  验证失败，停在 A
+  A.during:                 1 + 1 = 2
+
+第3次 cycle (提供 Go1, Go2 事件):
+  A->P1 验证：
+    P1.enter: counter = 12
+    P1->P2: P2 是伪状态，non-stoppable
+  验证失败，停在 A
+  A.during:                 2 + 1 = 3
+
+第4次 cycle (提供 Go1, Go2, Go3 事件):
+  A.exit
+  A->P1
+  P1.enter:                 3 + 10 = 13
+  P1.exit
+  P1->P2
+  P2.enter:                 13 + 100 = 113
+  P2.exit
+  P2->B
+  B.enter
+  B.during:                 113 + 1000 = 1113
+```
+
 ### 4.15 伪状态链路测试：带守卫条件
 
 ```python
@@ -768,6 +1057,37 @@ state Root {
 | `runtime.cycle()` | A | 4 | 无转换，执行 A.during |
 | `runtime.cycle()` | A | 5 | 无转换，执行 A.during |
 | `runtime.cycle()` | B | 115 | A->P 验证：counter=5，P.enter 后 counter=15，P->B 满足，转换有效，执行 B.during |
+
+**详细计算**:
+```
+初始: counter = 0
+
+第1-2次 cycle: A.during 累加，counter = 1, 2
+
+第3次 cycle:
+  检查转换 A->P: counter >= 3 满足
+  验证 A->P:
+    模拟 P.enter: counter = 3 + 10 = 13
+    检查 P->B: counter >= 15 不满足
+  验证失败，停在 A
+  A.during:                 2 + 1 = 3
+
+第4-5次 cycle: A.during 累加，counter = 4, 5
+
+第6次 cycle:
+  检查转换 A->P: counter >= 3 满足
+  验证 A->P:
+    模拟 P.enter: counter = 5 + 10 = 15
+    检查 P->B: counter >= 15 满足
+  验证成功
+  A.exit
+  A->P
+  P.enter:                  5 + 10 = 15
+  P.exit
+  P->B
+  B.enter
+  B.during:                 15 + 100 = 115
+```
 
 ### 4.16 伪状态链路测试：退出到状态机结束
 
@@ -984,6 +1304,379 @@ state Root {
 
 **注意**: 验证链路：B（复合）->P（伪状态）->C（复合）->C1（stoppable）
 
+### 4.21 Aspect Actions 测试：单层 aspect actions
+
+```python
+dsl_code = '''
+def int counter = 0;
+state Root {
+    >> during before {
+        counter = counter + 1;
+    }
+
+    >> during after {
+        counter = counter + 10000;
+    }
+
+    state A {
+        during {
+            counter = counter + 100;
+        }
+    }
+
+    state B {
+        during {
+            counter = counter + 1000;
+        }
+    }
+
+    [*] -> A;
+    A -> B :: Go;
+}
+'''
+```
+
+**执行序列**:
+
+| 操作 | 当前状态 | counter | 说明 |
+|------|----------|---------|------|
+| `runtime.cycle()` | A | 10101 | 进入 A，执行 during：Root >> before (+1), A.during (+100), Root >> after (+10000) |
+| `runtime.cycle(['Root.A.Go'])` | B | 21102 | A->B，执行 during：Root >> before (+1), B.during (+1000), Root >> after (+10000) |
+
+**注意**:
+- Root 的 aspect actions 对所有叶子状态生效
+- 执行顺序：>> before -> during -> >> after
+
+### 4.22 Aspect Actions 测试：多层嵌套 aspect actions
+
+```python
+dsl_code = '''
+def int counter = 0;
+state Root {
+    >> during before {
+        counter = counter + 1;
+    }
+
+    >> during after {
+        counter = counter + 100000;
+    }
+
+    state System {
+        >> during before {
+            counter = counter + 10;
+        }
+
+        >> during after {
+            counter = counter + 10000;
+        }
+
+        state Module {
+            >> during before {
+                counter = counter + 100;
+            }
+
+            >> during after {
+                counter = counter + 1000;
+            }
+
+            state Active {
+                during {
+                    counter = counter + 1;
+                }
+            }
+
+            [*] -> Active;
+        }
+
+        [*] -> Module;
+    }
+
+    [*] -> System;
+}
+'''
+```
+
+**执行序列**:
+
+| 操作 | 当前状态 | counter | 说明 |
+|------|----------|---------|------|
+| `runtime.cycle()` | Active | 111112 | 进入 System.Module.Active，执行 during：Root >> before (+1), System >> before (+10), Module >> before (+100), Active.during (+1), Module >> after (+1000), System >> after (+10000), Root >> after (+100000) |
+
+**详细计算**:
+```
+初始: counter = 0
+进入 Active 后执行 during:
+  Root >> during before:    0 + 1 = 1
+  System >> during before:  1 + 10 = 11
+  Module >> during before:  11 + 100 = 111
+  Active.during:            111 + 1 = 112
+  Module >> during after:   112 + 1000 = 1112
+  System >> during after:   1112 + 10000 = 11112
+  Root >> during after:     11112 + 100000 = 111112
+```
+
+**注意**:
+- Aspect actions 按层级从根到叶执行 before，从叶到根执行 after
+- 每一层的 aspect actions 都会被执行
+
+### 4.23 Aspect Actions 测试：伪状态跳过 aspect actions
+
+```python
+dsl_code = '''
+def int counter = 0;
+state Root {
+    >> during before {
+        counter = counter + 1;
+    }
+
+    >> during after {
+        counter = counter + 10000;
+    }
+
+    state A {
+        during {
+            counter = counter + 100;
+        }
+    }
+
+    pseudo state P {
+        during {
+            counter = counter + 1000;
+        }
+    }
+
+    state B {
+        during {
+            counter = counter + 100000;
+        }
+    }
+
+    [*] -> A;
+    A -> P :: GoP;
+    P -> B :: GoB;
+}
+'''
+```
+
+**执行序列**:
+
+| 操作 | 当前状态 | counter | 说明 |
+|------|----------|---------|------|
+| `runtime.cycle()` | A | 10101 | 进入 A，执行 during：Root >> before (+1), A.during (+100), Root >> after (+10000) |
+| `runtime.cycle(['Root.A.GoP', 'Root.P.GoB'])` | B | 121102 | A->P（P.during +1000，**不执行 aspect actions**），P->B，执行 during：Root >> before (+1), B.during (+100000), Root >> after (+10000) |
+
+**详细计算**:
+```
+第1次 cycle:
+  Root >> during before:    0 + 1 = 1
+  A.during:                 1 + 100 = 101
+  Root >> during after:     101 + 10000 = 10101
+
+第2次 cycle:
+  A.exit
+  A->P
+  P.enter
+  P.during:                 10101 + 1000 = 11101  (不执行 aspect actions)
+  P.exit
+  P->B
+  B.enter
+  B.during:
+    Root >> during before:  11101 + 1 = 11102
+    B.during:               11102 + 100000 = 111102
+    Root >> during after:   111102 + 10000 = 121102
+```
+
+**注意**:
+- 伪状态执行自己的 during，但跳过所有祖先的 aspect actions
+- 普通状态会执行完整的 aspect actions
+
+### 4.24 Aspect Actions 测试：多个叶子状态共享 aspect actions
+
+```python
+dsl_code = '''
+def int counter = 0;
+state Root {
+    >> during before {
+        counter = counter + 1;
+    }
+
+    >> during after {
+        counter = counter + 1000;
+    }
+
+    state System {
+        >> during before {
+            counter = counter + 10;
+        }
+
+        >> during after {
+            counter = counter + 100;
+        }
+
+        state A {
+            during {
+                counter = counter + 1;
+            }
+        }
+
+        state B {
+            during {
+                counter = counter + 10;
+            }
+        }
+
+        state C {
+            during {
+                counter = counter + 100;
+            }
+        }
+
+        [*] -> A;
+        A -> B :: GoB;
+        B -> C :: GoC;
+    }
+
+    [*] -> System;
+}
+'''
+```
+
+**执行序列**:
+
+| 操作 | 当前状态 | counter | 说明 |
+|------|----------|---------|------|
+| `runtime.cycle()` | A | 1112 | 进入 A，执行 during：Root >> before (+1), System >> before (+10), A.during (+1), System >> after (+100), Root >> after (+1000) |
+| `runtime.cycle(['Root.System.A.GoB'])` | B | 2233 | A->B，执行 during：Root >> before (+1), System >> before (+10), B.during (+10), System >> after (+100), Root >> after (+1000) |
+| `runtime.cycle(['Root.System.B.GoC'])` | C | 3444 | B->C，执行 during：Root >> before (+1), System >> before (+10), C.during (+100), System >> after (+100), Root >> after (+1000) |
+
+**详细计算**:
+```
+第1次 cycle (进入 A):
+  Root >> during before:    0 + 1 = 1
+  System >> during before:  1 + 10 = 11
+  A.during:                 11 + 1 = 12
+  System >> during after:   12 + 100 = 112
+  Root >> during after:     112 + 1000 = 1112
+
+第2次 cycle (A->B):
+  A.exit
+  A->B
+  B.enter
+  B.during:
+    Root >> during before:  1112 + 1 = 1113
+    System >> during before: 1113 + 10 = 1123
+    B.during:               1123 + 10 = 1133
+    System >> during after: 1133 + 100 = 1233
+    Root >> during after:   1233 + 1000 = 2233
+
+第3次 cycle (B->C):
+  B.exit
+  B->C
+  C.enter
+  C.during:
+    Root >> during before:  2233 + 1 = 2234
+    System >> during before: 2234 + 10 = 2244
+    C.during:               2244 + 100 = 2344
+    System >> during after: 2344 + 100 = 2444
+    Root >> during after:   2444 + 1000 = 3444
+```
+
+**注意**:
+- 同一复合状态下的所有叶子状态共享父状态的 aspect actions
+- 每次转换到新的叶子状态，都会重新执行完整的 aspect actions
+
+### 4.25 Aspect Actions 测试：跨层级转换
+
+```python
+dsl_code = '''
+def int counter = 0;
+state Root {
+    >> during before {
+        counter = counter + 1;
+    }
+
+    >> during after {
+        counter = counter + 100000;
+    }
+
+    state System1 {
+        >> during before {
+            counter = counter + 10;
+        }
+
+        >> during after {
+            counter = counter + 10000;
+        }
+
+        state A {
+            during {
+                counter = counter + 100;
+            }
+        }
+
+        [*] -> A;
+    }
+
+    state System2 {
+        >> during before {
+            counter = counter + 1000;
+        }
+
+        >> during after {
+            counter = counter + 1000000;
+        }
+
+        state B {
+            during {
+                counter = counter + 10000;
+            }
+        }
+
+        [*] -> B;
+    }
+
+    [*] -> System1;
+    System1 -> System2 :: Go;
+}
+'''
+```
+
+**执行序列**:
+
+| 操作 | 当前状态 | counter | 说明 |
+|------|----------|---------|------|
+| `runtime.cycle()` | A | 110111 | 进入 System1.A，执行 during：Root >> before (+1), System1 >> before (+10), A.during (+100), System1 >> after (+10000), Root >> after (+100000) |
+| `runtime.cycle(['Root.System1.Go'])` | B | 1221112 | System1->System2，进入 System2.B，执行 during：Root >> before (+1), System2 >> before (+1000), B.during (+10000), System2 >> after (+1000000), Root >> after (+100000) |
+
+**详细计算**:
+```
+第1次 cycle (进入 System1.A):
+  Root >> during before:     0 + 1 = 1
+  System1 >> during before:  1 + 10 = 11
+  A.during:                  11 + 100 = 111
+  System1 >> during after:   111 + 10000 = 10111
+  Root >> during after:      10111 + 100000 = 110111
+
+第2次 cycle (System1->System2):
+  A.exit
+  System1.exit
+  System1->System2
+  System2.enter
+  System2->[*]->B
+  B.enter
+  B.during:
+    Root >> during before:   110111 + 1 = 110112
+    System2 >> during before: 110112 + 1000 = 111112
+    B.during:                111112 + 10000 = 121112
+    System2 >> during after: 121112 + 1000000 = 1121112
+    Root >> during after:    1121112 + 100000 = 1221112
+```
+
+**注意**:
+- 跨层级转换时，aspect actions 会根据新的状态层级重新执行
+- System1 的 aspect actions 不再执行，System2 的 aspect actions 开始执行
+- Root 的 aspect actions 始终执行（因为所有状态都是 Root 的后代）
+
 ---
 
 ## 5. 实现要点
@@ -1164,6 +1857,16 @@ def cycle(events):
 ---
 
 ## 7. 更新日志
+
+### v0.3.0 (2026-03-06)
+- 新增 5 个 Aspect Actions 复杂测试用例（4.21-4.25）：
+  - 4.21: 单层 aspect actions 基础测试
+  - 4.22: 多层嵌套 aspect actions（3层嵌套）
+  - 4.23: 伪状态跳过 aspect actions 的验证
+  - 4.24: 多个叶子状态共享 aspect actions
+  - 4.25: 跨层级转换时 aspect actions 的变化
+- 详细展示了 aspect actions 的执行顺序和层级关系
+- 提供了完整的计算过程和说明
 
 ### v0.2.2 (2026-03-06)
 - **重要修正**: 明确伪状态会执行 during 动作

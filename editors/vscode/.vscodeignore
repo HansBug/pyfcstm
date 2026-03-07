@@ -10,18 +10,24 @@ test/**
 .github/**
 
 # Source files (not needed in package)
-src/**/*.ts
+src/**
+parser/**
 tsconfig.json
 .eslintrc.json
+esbuild.config.js
 Makefile
+
+# Build artifacts (keep only dist/)
+out/**
 
 # Documentation
 TODO.md
 PARSER.md
+DEPENDENCY-FIX.md
+BUILD-IMPROVEMENTS.md
 
-# Keep compiled output
-!out/**/*.js
+# Scripts (not needed in package)
+scripts/**
 
-# CRITICAL: Include antlr4 runtime dependency
-# VSCode extensions need runtime dependencies bundled
-!node_modules/antlr4/**
+# Keep bundled extension
+!dist/extension.js

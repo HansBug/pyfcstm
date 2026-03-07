@@ -25,7 +25,9 @@ help:
 	@echo "  make install      - Install npm dependencies"
 	@echo "  make syntaxes     - Copy TextMate grammar from editors/"
 	@echo "  make parser       - Generate JavaScript parser from ANTLR grammar"
-	@echo "  make build        - Compile TypeScript to JavaScript"
+	@echo "  make build        - Build extension with esbuild (production, all-in-one)"
+	@echo "  make build-dev    - Build extension (development mode with sourcemaps)"
+	@echo "  make build-tsc    - Compile TypeScript only (for verification scripts)"
 	@echo "  make verify-p0.2  - Verify P0.2 parser integration (32 tests)"
 	@echo "  make verify-p0.3  - Verify P0.3 syntax diagnostics (35 tests)"
 	@echo "  make verify-p0.4  - Verify P0.4 document symbols (35 tests)"
@@ -73,32 +75,43 @@ parser: $(ANTLR_JAR) $(GRAMMAR_FILE)
 	@echo "Generated files:"
 	@ls -1 $(PARSER_OUTPUT_DIR)/*.js 2>/dev/null || echo "  (none yet - check for errors above)"
 
-build: syntaxes
-	@echo "Compiling TypeScript..."
-	$(TSC) -p ./
-	@echo "Build complete. Output in ./out/"
+build: syntaxes parser
+	@echo "Building extension with esbuild..."
+	node esbuild.config.js --production
+	@echo "Build complete. Output in ./dist/"
 
-verify-p0.2: build
+build-dev: syntaxes parser
+	@echo "Building extension (development mode)..."
+	node esbuild.config.js
+	@echo "Development build complete. Output in ./dist/"
+
+# Legacy TypeScript compilation (for verification scripts)
+build-tsc: syntaxes
+	@echo "Compiling TypeScript (for verification scripts)..."
+	$(TSC) -p ./
+	@echo "TypeScript compilation complete. Output in ./out/"
+
+verify-p0.2: build-tsc
 	@echo "Running P0.2 verification script..."
 	node ./scripts/verify-p0.2.js
 	@echo ""
 
-verify-p0.3: build
+verify-p0.3: build-tsc
 	@echo "Running P0.3 verification script..."
 	node ./scripts/verify-p0.3.js
 	@echo ""
 
-verify-p0.4: build
+verify-p0.4: build-tsc
 	@echo "Running P0.4 verification script..."
 	node ./scripts/verify-p0.4.js
 	@echo ""
 
-verify-p0.5: build
+verify-p0.5: build-tsc
 	@echo "Running P0.5 verification script..."
 	node ./scripts/verify-p0.5.js
 	@echo ""
 
-verify-p0.6: build
+verify-p0.6: build-tsc
 	@echo "Running P0.6 verification script..."
 	node ./scripts/verify-p0.6.js
 	@echo ""
@@ -113,20 +126,22 @@ test-e2e: package
 
 package: all
 	@echo "Building VSIX package..."
-	@echo "Note: .vscodeignore includes antlr4 runtime dependency"
-	@echo "      See DEPENDENCY-FIX.md for details"
+	@echo "Note: All dependencies are bundled into dist/extension.js"
 	@mkdir -p ./build
 	$(NPM) run package
 	@echo "Package built successfully in ./build/"
 	@echo ""
-	@echo "Verifying antlr4 is included in package..."
-	@unzip -l ./build/*.vsix | grep -q "node_modules/antlr4" && echo "✓ antlr4 dependency included" || echo "✗ WARNING: antlr4 not found in package!"
+	@echo "Verifying package contents..."
+	@unzip -l ./build/*.vsix | grep -q "dist/extension.js" && echo "✓ Bundled extension.js included" || echo "✗ WARNING: extension.js not found in package!"
+	@echo "Package size:"
+	@ls -lh ./build/*.vsix | awk '{print "  " $$9 ": " $$5}'
 
 clean:
 	@echo "Cleaning generated files..."
 	@find $(PARSER_OUTPUT_DIR) -mindepth 1 ! -name 'README.md' ! -name 'package.json' -exec rm -rf {} + 2>/dev/null || true
 	rm -rf $(SYNTAXES_DIR)
 	rm -rf ./out
+	rm -rf ./dist
 	rm -rf ./node_modules
 	rm -rf ./build
 	rm -f ./*.vsix

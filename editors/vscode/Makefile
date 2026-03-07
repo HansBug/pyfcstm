@@ -55,7 +55,7 @@ parser: $(ANTLR_JAR) $(GRAMMAR_FILE)
 	@echo "Generating JavaScript parser from ANTLR grammar..."
 	@echo "Using the canonical Grammar.g4 with JavaScript-safe labels shared across Python and VSCode."
 	@mkdir -p $(PARSER_OUTPUT_DIR)
-	@find $(PARSER_OUTPUT_DIR) -mindepth 1 ! -name 'README.md' -exec rm -rf {} +
+	@find $(PARSER_OUTPUT_DIR) -mindepth 1 ! -name 'README.md' ! -name 'package.json' -exec rm -rf {} +
 	java -jar $(ANTLR_JAR) -Dlanguage=JavaScript \
 		-o $(PARSER_OUTPUT_DIR) \
 		-Xexact-output-dir \

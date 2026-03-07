@@ -5,7 +5,6 @@
 # IntelliJ project files
 .idea
 *.iml
-out
 gen
 ### CVS template
 /CVS/*
@@ -751,7 +750,6 @@ dkms.conf
 [Ll]ib
 [Ll]ib64
 [Ll]ocal
-[Ss]cripts
 pyvenv.cfg
 .venv
 pip-selfcheck.json
@@ -771,7 +769,6 @@ pip-selfcheck.json
 *.str
 *.tmp
 *.os
-*.js
 *.pb
 *.dcp
 *.hwdef
@@ -1167,7 +1164,6 @@ cmake-build-*/
 *.iws
 
 # IntelliJ
-out/
 
 # mpeltonen/sbt-idea plugin
 .idea_modules/
@@ -1233,4 +1229,7 @@ junit.xml
 # VSCode extension build artifacts
 /editors/vscode/build/
 /editors/vscode/*.vsix
+/editors/vscode/out/
+/editors/vscode/parser/*
+!/editors/vscode/parser/README.md
 /editors/vscode/syntaxes/*.json

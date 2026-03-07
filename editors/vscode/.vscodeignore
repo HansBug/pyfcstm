@@ -8,3 +8,16 @@ node_modules/**
 **/.DS_Store
 test/**
 .github/**
+
+# Source files (not needed in package)
+src/**/*.ts
+tsconfig.json
+.eslintrc.json
+Makefile
+
+# Documentation
+TODO.md
+PARSER.md
+
+# Keep compiled output
+!out/**/*.js

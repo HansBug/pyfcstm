@@ -79,6 +79,7 @@ verify-p0.2: build
 
 package: all
 	@echo "Building VSIX package..."
+	@mkdir -p ./build
 	$(NPM) run package
 	@echo "Package built successfully in ./build/"
 

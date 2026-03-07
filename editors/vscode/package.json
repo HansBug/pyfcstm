@@ -52,7 +52,7 @@
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile",
     "lint": "eslint src --ext ts",
-    "package": "vsce package"
+    "package": "vsce package --out build/"
   },
   "dependencies": {
     "antlr4": "4.9.3"

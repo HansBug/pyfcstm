@@ -43,6 +43,9 @@
     }
   ],
   "main": "./out/extension.js",
+  "activationEvents": [
+    "onLanguage:fcstm"
+  ],
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",

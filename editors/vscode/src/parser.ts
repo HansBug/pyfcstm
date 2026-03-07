@@ -224,19 +224,63 @@ export class FcstmParser {
 
     private async loadGeneratedModules(): Promise<void> {
         try {
+            console.log('[FCSTM Parser] Starting to load parser modules...');
+
+            // Use absolute path resolution for VSCode extension environment
+            const path = require('path');
+            const parserDir = path.join(__dirname, '..', 'parser');
+            const lexerPath = path.join(parserDir, 'GrammarLexer.js');
+            const parserPath = path.join(parserDir, 'GrammarParser.js');
+
+            console.log('[FCSTM Parser] Parser directory:', parserDir);
+            console.log('[FCSTM Parser] Lexer path:', lexerPath);
+            console.log('[FCSTM Parser] Parser path:', parserPath);
+
+            // Check if files exist
+            const fs = require('fs');
+            const lexerExists = fs.existsSync(lexerPath);
+            const parserExists = fs.existsSync(parserPath);
+            console.log('[FCSTM Parser] Lexer exists:', lexerExists);
+            console.log('[FCSTM Parser] Parser exists:', parserExists);
+
+            if (!lexerExists || !parserExists) {
+                console.error('[FCSTM Parser] Parser files not found!');
+                this.modules = null;
+                return;
+            }
+
+            // Convert to file:// URL for dynamic import
+            const { pathToFileURL } = require('url');
+            const lexerUrl = pathToFileURL(lexerPath).href;
+            const parserUrl = pathToFileURL(parserPath).href;
+
+            console.log('[FCSTM Parser] Lexer URL:', lexerUrl);
+            console.log('[FCSTM Parser] Parser URL:', parserUrl);
+
             const nativeImport = new Function('specifier', 'return import(specifier);') as (
                 specifier: string
             ) => Promise<DefaultExportModule<GeneratedLexerClass> | DefaultExportModule<GeneratedParserClass>>;
+
+            console.log('[FCSTM Parser] Starting dynamic import...');
             const [lexerModule, parserModule] = await Promise.all([
-                nativeImport('../parser/GrammarLexer.js') as Promise<DefaultExportModule<GeneratedLexerClass>>,
-                nativeImport('../parser/GrammarParser.js') as Promise<DefaultExportModule<GeneratedParserClass>>
+                nativeImport(lexerUrl) as Promise<DefaultExportModule<GeneratedLexerClass>>,
+                nativeImport(parserUrl) as Promise<DefaultExportModule<GeneratedParserClass>>
             ]);
+
+            console.log('[FCSTM Parser] Lexer module loaded:', !!lexerModule);
+            console.log('[FCSTM Parser] Lexer default:', !!lexerModule.default);
+            console.log('[FCSTM Parser] Parser module loaded:', !!parserModule);
+            console.log('[FCSTM Parser] Parser default:', !!parserModule.default);
 
             this.modules = {
                 GrammarLexer: lexerModule.default,
                 GrammarParser: parserModule.default
             };
-        } catch {
+
+            console.log('[FCSTM Parser] Parser modules loaded successfully!');
+        } catch (error) {
+            console.error('[FCSTM Parser] Failed to load parser modules:', error);
+            console.error('[FCSTM Parser] Error stack:', (error as Error).stack);
             this.modules = null;
         }
     }

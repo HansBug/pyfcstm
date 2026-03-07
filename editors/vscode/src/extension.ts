@@ -16,16 +16,21 @@ import { FcstmHoverProvider } from './hover';
  * Extension activation
  */
 export function activate(context: vscode.ExtensionContext) {
-    console.log('FCSTM Language Support extension is now active');
+    console.log('[FCSTM Extension] Starting activation...');
+    console.log('[FCSTM Extension] Extension path:', context.extensionPath);
 
     // Initialize parser
     const parser = getParser();
+    console.log('[FCSTM Extension] Parser instance created');
 
     // Register diagnostics provider (P0.3)
+    console.log('[FCSTM Extension] Registering diagnostics provider...');
     const diagnosticsProvider = new FcstmDiagnosticsProvider();
     diagnosticsProvider.register(context);
+    console.log('[FCSTM Extension] Diagnostics provider registered');
 
     // Register document symbol provider (P0.4)
+    console.log('[FCSTM Extension] Registering document symbol provider...');
     const symbolProvider = new FcstmDocumentSymbolProvider();
     context.subscriptions.push(
         vscode.languages.registerDocumentSymbolProvider(
@@ -33,8 +38,10 @@ export function activate(context: vscode.ExtensionContext) {
             symbolProvider
         )
     );
+    console.log('[FCSTM Extension] Document symbol provider registered');
 
     // Register completion provider (P0.5)
+    console.log('[FCSTM Extension] Registering completion provider...');
     const completionProvider = new FcstmCompletionProvider();
     context.subscriptions.push(
         vscode.languages.registerCompletionItemProvider(
@@ -43,8 +50,10 @@ export function activate(context: vscode.ExtensionContext) {
             '.', ':', '/'  // Trigger characters
         )
     );
+    console.log('[FCSTM Extension] Completion provider registered');
 
     // Register hover provider (P0.6)
+    console.log('[FCSTM Extension] Registering hover provider...');
     const hoverProvider = new FcstmHoverProvider();
     context.subscriptions.push(
         vscode.languages.registerHoverProvider(
@@ -52,12 +61,16 @@ export function activate(context: vscode.ExtensionContext) {
             hoverProvider
         )
     );
+    console.log('[FCSTM Extension] Hover provider registered');
 
     // Register a simple command to test parser availability
     const testParserCommand = vscode.commands.registerCommand(
         'fcstm.testParser',
         async () => {
+            console.log('[FCSTM Extension] Test parser command invoked');
             const isAvailable = parser.isAvailable();
+            console.log('[FCSTM Extension] Parser available:', isAvailable);
+
             if (isAvailable) {
                 vscode.window.showInformationMessage('FCSTM parser is available');
             } else {
@@ -69,6 +82,8 @@ export function activate(context: vscode.ExtensionContext) {
     );
 
     context.subscriptions.push(testParserCommand);
+
+    console.log('[FCSTM Extension] FCSTM Language Support extension is now active');
 }
 
 /**

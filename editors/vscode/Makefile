@@ -1,7 +1,7 @@
 # Makefile for FCSTM VSCode Extension
 # This file provides commands for building and maintaining the extension
 
-.PHONY: all parser clean install build package verify-p0.2 help syntaxes
+.PHONY: all parser clean install build package verify-p0.2 verify-p0.3 verify-p0.4 verify help syntaxes
 
 # ANTLR configuration
 ANTLR_VERSION := 4.9.3
@@ -22,14 +22,17 @@ help:
 	@echo "FCSTM VSCode Extension Build Commands"
 	@echo "======================================"
 	@echo ""
-	@echo "  make install     - Install npm dependencies"
-	@echo "  make syntaxes    - Copy TextMate grammar from editors/"
-	@echo "  make parser      - Generate JavaScript parser from ANTLR grammar"
-	@echo "  make build       - Compile TypeScript to JavaScript"
-	@echo "  make verify-p0.2 - Verify P0.2 parser integration"
-	@echo "  make package     - Build VSIX package (runs all prerequisites)"
-	@echo "  make clean       - Remove generated files"
-	@echo "  make all         - Install deps, copy syntaxes, generate parser, and build"
+	@echo "  make install      - Install npm dependencies"
+	@echo "  make syntaxes     - Copy TextMate grammar from editors/"
+	@echo "  make parser       - Generate JavaScript parser from ANTLR grammar"
+	@echo "  make build        - Compile TypeScript to JavaScript"
+	@echo "  make verify-p0.2  - Verify P0.2 parser integration (32 tests)"
+	@echo "  make verify-p0.3  - Verify P0.3 syntax diagnostics (35 tests)"
+	@echo "  make verify-p0.4  - Verify P0.4 document symbols (35 tests)"
+	@echo "  make verify       - Run all verification tests (102 tests total)"
+	@echo "  make package      - Build VSIX package (runs all prerequisites)"
+	@echo "  make clean        - Remove generated files"
+	@echo "  make all          - Install deps, copy syntaxes, generate parser, and build"
 	@echo ""
 	@echo "Prerequisites:"
 	@echo "  - Java (for ANTLR)"
@@ -75,7 +78,20 @@ build: syntaxes
 verify-p0.2: build
 	@echo "Running P0.2 verification script..."
 	node ./scripts/verify-p0.2.js
-	@echo "P0.2 verification completed successfully."
+	@echo ""
+
+verify-p0.3: build
+	@echo "Running P0.3 verification script..."
+	node ./scripts/verify-p0.3.js
+	@echo ""
+
+verify-p0.4: build
+	@echo "Running P0.4 verification script..."
+	node ./scripts/verify-p0.4.js
+	@echo ""
+
+verify: verify-p0.2 verify-p0.3 verify-p0.4
+	@echo "All verification tests passed!"
 
 package: all
 	@echo "Building VSIX package..."

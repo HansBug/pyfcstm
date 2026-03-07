@@ -25,16 +25,25 @@ The extension currently provides:
 - Bracket matching and auto-closing
 - Code folding support through language configuration
 - Authoring snippets for common FCSTM constructs
+- **Syntax diagnostics** - Real-time error detection and reporting
+- **Document symbols** - Outline view and breadcrumb navigation for states, variables, and events
 
 The extension is planned to grow toward lightweight parser-backed editing features, but it is not positioned as a full language server.
 
 ## Features
 
-- Syntax highlighting for FCSTM files (`.fcstm`)
-- Comment toggling support (`//` and `/* */`)
-- Bracket matching and auto-closing
-- Code folding support
-- Authoring snippets for common FCSTM constructs
+- **Syntax highlighting** for FCSTM files (`.fcstm`)
+- **Comment toggling** support (`//` and `/* */`)
+- **Bracket matching** and auto-closing
+- **Code folding** support
+- **Authoring snippets** for common FCSTM constructs
+- **Syntax diagnostics** - Real-time error detection with clear error messages in the Problems panel
+- **Document symbols** - Navigate your state machine structure via the Outline view
+  - Variables (`def int`, `def float`)
+  - States (leaf and composite)
+  - Pseudo states
+  - Events
+  - Nested state hierarchies
 - Grammar-aligned language package foundation for future parser-backed editor features
 
 ## Installation
@@ -159,6 +168,36 @@ When the ANTLR grammar (`pyfcstm/dsl/grammar/Grammar.g4`) changes:
    npm run compile
    make verify-p0.2
    ```
+
+## Testing and Verification
+
+The extension includes comprehensive test suites to validate all parser-backed features:
+
+### Verification Commands
+
+```bash
+cd editors/vscode
+
+# Verify P0.2 - Parser Integration (32 tests)
+make verify-p0.2
+
+# Verify P0.3 - Syntax Diagnostics (35 tests)
+make verify-p0.3
+
+# Verify P0.4 - Document Symbols (35 tests)
+make verify-p0.4
+
+# Run all verification tests (102 tests total)
+make verify
+```
+
+### Test Coverage
+
+- **P0.2 Parser Integration**: 32 tests covering valid/invalid FCSTM inputs
+- **P0.3 Syntax Diagnostics**: 35 tests covering error detection and messages
+- **P0.4 Document Symbols**: 35 tests covering symbol extraction and hierarchies
+
+All tests use real FCSTM code and provide detailed error reporting with emoji indicators (✅/❌) for easy debugging.
 
 ## Supported Syntax
 
@@ -323,6 +362,8 @@ The extension uses a pure JavaScript ANTLR parser generated from the canonical F
 
 The parser provides:
 - Syntax validation with detailed error messages
+- Real-time diagnostics in the Problems panel and inline squiggles
+- Document symbols for outline navigation
 - 0-based line/column positions for VSCode diagnostics
 - Error message normalization matching Python parser behavior
 - No Python or external runtime dependencies
@@ -333,7 +374,9 @@ The parser provides:
 editors/vscode/
 ├── src/
 │   ├── extension.ts       # Extension entry point
-│   └── parser.ts          # Pure JS parser adapter
+│   ├── parser.ts          # Pure JS parser adapter
+│   ├── diagnostics.ts     # Syntax diagnostics provider
+│   └── symbols.ts         # Document symbols provider
 ├── parser/
 │   ├── GrammarLexer.js    # Generated lexer (from ANTLR)
 │   ├── GrammarParser.js   # Generated parser (from ANTLR)

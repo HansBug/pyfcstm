@@ -295,6 +295,42 @@ export class FcstmParser {
     }
 
     /**
+     * Parse FCSTM document text and return parse tree
+     *
+     * @param text The FCSTM document text to parse
+     * @returns Parse tree root node or null if parsing failed
+     */
+    async parseTree(text: string): Promise<unknown | null> {
+        await this.readyPromise;
+
+        if (!this.modules) {
+            return null;
+        }
+
+        try {
+            const errors: ParseError[] = [];
+            const errorListener = new CollectingErrorListener(errors);
+            const input = new antlr4.InputStream(text);
+            const lexer = new this.modules.GrammarLexer(input);
+            lexer.removeErrorListeners();
+            lexer.addErrorListener(errorListener);
+
+            const tokens = new antlr4.CommonTokenStream(lexer);
+            const parser = new this.modules.GrammarParser(tokens);
+            parser.buildParseTrees = true; // Enable parse tree building
+            parser.removeErrorListeners();
+            parser.addErrorListener(errorListener);
+
+            const tree = parser.state_machine_dsl();
+
+            // Return tree even if there are errors (for partial parsing)
+            return tree;
+        } catch {
+            return null;
+        }
+    }
+
+    /**
      * Check if the parser is available
      */
     isAvailable(): boolean {

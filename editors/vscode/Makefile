@@ -1,7 +1,7 @@
 # Makefile for FCSTM VSCode Extension
 # This file provides commands for building and maintaining the extension
 
-.PHONY: all parser clean install build package verify-p0.2 verify-p0.3 verify-p0.4 verify-p0.5 verify-p0.6 verify help syntaxes
+.PHONY: all parser clean install build package verify-p0.2 verify-p0.3 verify-p0.4 verify-p0.5 verify-p0.6 verify test-e2e help syntaxes
 
 # ANTLR configuration
 ANTLR_VERSION := 4.9.3
@@ -32,6 +32,7 @@ help:
 	@echo "  make verify-p0.5  - Verify P0.5 completion support (30 tests)"
 	@echo "  make verify-p0.6  - Verify P0.6 hover documentation (35 tests)"
 	@echo "  make verify       - Run all verification tests (167 tests total)"
+	@echo "  make test-e2e     - Run end-to-end package test"
 	@echo "  make package      - Build VSIX package (runs all prerequisites)"
 	@echo "  make clean        - Remove generated files"
 	@echo "  make all          - Install deps, copy syntaxes, generate parser, and build"
@@ -105,11 +106,21 @@ verify-p0.6: build
 verify: verify-p0.2 verify-p0.3 verify-p0.4 verify-p0.5 verify-p0.6
 	@echo "All verification tests passed!"
 
+test-e2e: package
+	@echo "Running end-to-end package test..."
+	node ./scripts/test-e2e.js
+	@echo ""
+
 package: all
 	@echo "Building VSIX package..."
+	@echo "Note: .vscodeignore includes antlr4 runtime dependency"
+	@echo "      See DEPENDENCY-FIX.md for details"
 	@mkdir -p ./build
 	$(NPM) run package
 	@echo "Package built successfully in ./build/"
+	@echo ""
+	@echo "Verifying antlr4 is included in package..."
+	@unzip -l ./build/*.vsix | grep -q "node_modules/antlr4" && echo "✓ antlr4 dependency included" || echo "✗ WARNING: antlr4 not found in package!"
 
 clean:
 	@echo "Cleaning generated files..."

@@ -199,3 +199,35 @@ Error message: Invalid syntax - check for missing semicolons, braces, or operato
 ```
 
 如果输出不同，请把完整输出发给我。
+
+## 常见问题解决方案
+
+### 问题: Cannot find module 'antlr4'
+
+**症状**: 在开发者控制台中看到错误:
+```
+Activating extension 'hansbug.fcstm-language-support' failed: Cannot find module 'antlr4'
+```
+
+**原因**: VSCode 扩展打包时默认排除了 `node_modules` 目录,导致运行时依赖 `antlr4` 无法加载。
+
+**解决方案**: 已在 `.vscodeignore` 文件中添加了例外规则:
+```
+# CRITICAL: Include antlr4 runtime dependency
+# VSCode extensions need runtime dependencies bundled
+!node_modules/antlr4/**
+```
+
+**验证修复**:
+1. 重新打包扩展: `npm run package`
+2. 检查打包内容: `unzip -l build/fcstm-language-support-0.1.0.vsix | grep antlr4`
+3. 应该看到 `extension/node_modules/antlr4/` 目录及其文件
+4. 重新安装扩展: `code --install-extension build/fcstm-language-support-0.1.0.vsix --force`
+5. 重新加载 VSCode 窗口并检查控制台日志
+
+**技术说明**:
+- VSCode 扩展使用 `.vscodeignore` 文件控制打包内容
+- 默认情况下 `node_modules/**` 会排除所有依赖
+- 使用 `!node_modules/antlr4/**` 可以强制包含特定依赖
+- 这是临时解决方案,更好的做法是使用 webpack/esbuild 打包所有依赖到单个文件
+

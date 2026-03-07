@@ -21,3 +21,7 @@ PARSER.md
 
 # Keep compiled output
 !out/**/*.js
+
+# CRITICAL: Include antlr4 runtime dependency
+# VSCode extensions need runtime dependencies bundled
+!node_modules/antlr4/**

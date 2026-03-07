@@ -1,7 +1,7 @@
 # Makefile for FCSTM VSCode Extension
 # This file provides commands for building and maintaining the extension
 
-.PHONY: all parser clean install build package verify-p0.2 verify-p0.3 verify-p0.4 verify-p0.5 verify-p0.6 verify test-e2e help syntaxes
+.PHONY: all parser clean install build package verify-p0.2 verify-p0.3 verify-p0.4 verify-p0.5 verify-p0.6 verify-p1.b verify test-e2e help syntaxes
 
 # ANTLR configuration
 ANTLR_VERSION := 4.9.3
@@ -33,6 +33,7 @@ help:
 	@echo "  make verify-p0.4  - Verify P0.4 document symbols (35 tests)"
 	@echo "  make verify-p0.5  - Verify P0.5 completion support (30 tests)"
 	@echo "  make verify-p0.6  - Verify P0.6 hover documentation (35 tests)"
+	@echo "  make verify-p1.b  - Verify P1.B language configuration reinforcement"
 	@echo "  make test-e2e     - Run end-to-end bundle verification (20 tests)"
 	@echo "  make verify       - Run all verification tests (187 tests total)"
 	@echo "  make package      - Build VSIX package (runs all prerequisites)"
@@ -116,18 +117,18 @@ verify-p0.6: build-tsc
 	node ./scripts/verify-p0.6.js
 	@echo ""
 
+verify-p1.b:
+	@echo "Running P1.B verification script..."
+	node ./scripts/verify-p1.b.js
+	@echo ""
+
 test-e2e: build
 	@echo "Running end-to-end bundle verification..."
 	node ./scripts/test-e2e.js
 	@echo ""
 
-verify: verify-p0.2 verify-p0.3 verify-p0.4 verify-p0.5 verify-p0.6 test-e2e
+verify: verify-p0.2 verify-p0.3 verify-p0.4 verify-p0.5 verify-p0.6 verify-p1.b test-e2e
 	@echo "All verification tests passed!"
-
-test-e2e: package
-	@echo "Running end-to-end package test..."
-	node ./scripts/test-e2e.js
-	@echo ""
 
 package: all
 	@echo "Building VSIX package..."

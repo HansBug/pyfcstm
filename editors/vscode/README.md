@@ -209,7 +209,10 @@ make verify-p0.5
 # Verify P0.6 - Hover Documentation (35 tests)
 make verify-p0.6
 
-# Run all verification tests (167 tests total)
+# Verify P1.B - Language Configuration Reinforcement
+make verify-p1.b
+
+# Run all verification tests (including bundle checks)
 make verify
 ```
 
@@ -342,7 +345,9 @@ The extension provides:
 
 - **Comment toggling**: Use `Ctrl+/` (or `Cmd+/`) to toggle line comments
 - **Block comments**: Use `Shift+Alt+A` (or `Shift+Option+A`) for block comments
-- **Auto-closing pairs**: Automatic closing of brackets, quotes, and comment blocks
+- **Auto-closing pairs**: Automatic closing of braces, brackets, parentheses, quotes, and block comments
+- **Selection wrapping**: Wrap selected text with braces, brackets, parentheses, or quotes
+- **FCSTM-aware token selection**: Word navigation and double-click selection cover identifiers, dotted references, absolute events, local event names, pseudo-state tokens, and numeric literals
 - **Code folding**: Fold code blocks using region markers
 - **Snippets**: Expand common FCSTM templates such as states, transitions, events, and lifecycle blocks
 
@@ -420,6 +425,7 @@ editors/vscode/
 │   ├── verify-p0.4.js     # Symbols verification (35 tests)
 │   ├── verify-p0.5.js     # Completion verification (30 tests)
 │   ├── verify-p0.6.js     # Hover verification (35 tests)
+│   ├── verify-p1.b.js     # Language configuration verification
 │   └── test-e2e.js        # End-to-end bundle tests
 ├── dist/                  # Bundled extension (generated)
 │   └── extension.js       # Single 246KB bundle

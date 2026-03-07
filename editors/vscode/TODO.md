@@ -602,7 +602,7 @@ This phase strengthens the existing language package behavior and keeps the decl
 ### P1 Feature Checklist
 
 - [x] Improve TextMate syntax highlighting coverage
-- [ ] Improve language configuration details
+- [x] Improve language configuration details
 - [ ] Add dedicated folding range provider
 - [ ] Add selection range provider
 
@@ -688,33 +688,36 @@ Improve editing behavior for selection, pairing, and structure-aware text operat
 
 **Detailed implementation checklist**
 
-- [ ] Revisit `wordPattern` for FCSTM-specific token navigation behavior
-- [ ] Test double-click selection on representative FCSTM forms
-  - [ ] simple identifiers
-  - [ ] dotted references like `StateA.UserInit`
-  - [ ] absolute event names like `/GlobalEvent`
-  - [ ] local event syntax around `::EventName`
-  - [ ] pseudo-state token `[*]`
-  - [ ] numeric literals including `0x...`
-- [ ] Refine `wordPattern` based on real editing behavior rather than generic regex assumptions
-- [ ] Review auto-closing pairs for correctness and ergonomics
-  - [ ] braces
-  - [ ] brackets
-  - [ ] parentheses
-  - [ ] double quotes
-  - [ ] single quotes
-  - [ ] block comments
-- [ ] Verify surrounding pairs are still appropriate
-- [ ] Re-evaluate whether single quotes should remain enabled if they are not meaningfully distinct in the DSL
-- [ ] Review bracket matching behavior for `[*]`
-- [ ] Keep region markers, but do not rely on them as the primary folding mechanism long term
-- [ ] Document any intentional configuration limitations in `README.md`
-- [ ] Verify language-configuration changes remain compatible across a broad VSCode version range
+- [x] Revisit `wordPattern` for FCSTM-specific token navigation behavior
+- [x] Test double-click selection on representative FCSTM forms
+  - [x] simple identifiers
+  - [x] dotted references like `StateA.UserInit`
+  - [x] absolute event names like `/GlobalEvent`
+  - [x] local event syntax around `::EventName`
+  - [x] pseudo-state token `[*]`
+  - [x] numeric literals including `0x...`
+- [x] Refine `wordPattern` based on real editing behavior rather than generic regex assumptions
+- [x] Review auto-closing pairs for correctness and ergonomics
+  - [x] braces
+  - [x] brackets
+  - [x] parentheses
+  - [x] double quotes
+  - [x] single quotes
+  - [x] block comments
+- [x] Verify surrounding pairs are still appropriate
+- [x] Re-evaluate whether single quotes should remain enabled if they are not meaningfully distinct in the DSL
+- [x] Review bracket matching behavior for `[*]`
+- [x] Keep region markers, but do not rely on them as the primary folding mechanism long term
+- [x] Document any intentional configuration limitations in `README.md`
+- [x] Verify language-configuration changes remain compatible across a broad VSCode version range
 
-**Expected outcome**
+**Verification**
 
-- Cursor movement, token selection, and pairing behavior will feel more natural for FCSTM documents.
-- Editing common FCSTM constructs will require fewer manual corrections.
+- `make verify-p1.b` validates the language configuration declaratively:
+  - FCSTM-specific `wordPattern` coverage for identifiers, dotted references, absolute and local events, pseudo-state tokens, and numeric literals
+  - bracket, auto-closing, and surrounding pair definitions
+  - `package.json` wiring for `language-configuration.json`
+- Manual VSCode checks should still confirm double-click selection, selection wrapping, and comment toggling behavior in a real editor session
 
 ---
 

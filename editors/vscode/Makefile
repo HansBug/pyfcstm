@@ -33,8 +33,8 @@ help:
 	@echo "  make verify-p0.4  - Verify P0.4 document symbols (35 tests)"
 	@echo "  make verify-p0.5  - Verify P0.5 completion support (30 tests)"
 	@echo "  make verify-p0.6  - Verify P0.6 hover documentation (35 tests)"
-	@echo "  make verify       - Run all verification tests (167 tests total)"
-	@echo "  make test-e2e     - Run end-to-end package test"
+	@echo "  make test-e2e     - Run end-to-end bundle verification (20 tests)"
+	@echo "  make verify       - Run all verification tests (187 tests total)"
 	@echo "  make package      - Build VSIX package (runs all prerequisites)"
 	@echo "  make clean        - Remove generated files"
 	@echo "  make all          - Install deps, copy syntaxes, generate parser, and build"
@@ -116,7 +116,12 @@ verify-p0.6: build-tsc
 	node ./scripts/verify-p0.6.js
 	@echo ""
 
-verify: verify-p0.2 verify-p0.3 verify-p0.4 verify-p0.5 verify-p0.6
+test-e2e: build
+	@echo "Running end-to-end bundle verification..."
+	node ./scripts/test-e2e.js
+	@echo ""
+
+verify: verify-p0.2 verify-p0.3 verify-p0.4 verify-p0.5 verify-p0.6 test-e2e
 	@echo "All verification tests passed!"
 
 test-e2e: package

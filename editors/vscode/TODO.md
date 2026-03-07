@@ -74,6 +74,7 @@ These features have the best balance of user impact and engineering cost.
 - [x] Add document symbols / outline support
 - [x] Add lightweight completion support
 - [x] Add hover documentation support
+- [x] Implement esbuild all-in-one bundle architecture
 
 ### P0 Detailed Plan
 
@@ -441,6 +442,156 @@ FCSTM includes several constructs whose meaning is easy to forget during writing
 - **Features**: Hover docs for operators (::, :, /), keywords, lifecycle aspects, with markdown examples
 - **Coverage**: 26 FCSTM constructs documented with title, description, and example code
 - **Context-Aware**: Distinguishes between :: and :, handles multi-character operators correctly
+
+---
+
+#### 7. Implement esbuild all-in-one bundle architecture
+
+**Goal**
+
+Replace multi-file TypeScript compilation with esbuild bundling to create a single, self-contained extension file that includes all dependencies.
+
+**Why this matters**
+
+The original architecture had dependency loading issues in VSCode environments. A single bundled file eliminates runtime dependency resolution problems, improves extension loading performance, and simplifies deployment.
+
+**Scope**
+
+- Replace TypeScript compiler (`tsc`) with esbuild for extension bundling
+- Bundle all ANTLR-generated parser files into the extension
+- Bundle antlr4 runtime library
+- Bundle all extension sources
+- Maintain separate TypeScript compilation for verification scripts
+- Preserve all existing functionality and test compatibility
+
+**Implementation tasks**
+
+- [x] Add esbuild as dev dependency
+- [x] Create esbuild configuration (`esbuild.config.js`)
+- [x] Configure esbuild to bundle all sources and dependencies
+- [x] Migrate parser loading from dynamic import to static require
+- [x] Fix ANTLR line number conversion (1-based to 0-based)
+- [x] Update Makefile with separate build targets
+  - [x] `make build` - Production bundle with esbuild
+  - [x] `make build-dev` - Development bundle with sourcemaps
+  - [x] `make build-tsc` - TypeScript compilation for verification
+- [x] Update package.json scripts
+  - [x] `compile` uses esbuild
+  - [x] `compile:tsc` for verification scripts
+- [x] Update .vscodeignore to only include bundled file
+- [x] Remove parser/package.json module type declaration
+- [x] Verify all 167 tests pass with bundled architecture
+- [x] Update documentation (README.md, build guides)
+
+**Acceptance criteria**
+
+- [x] Single `dist/extension.js` file contains all dependencies
+- [x] ANTLR-generated parser files (GrammarLexer, GrammarParser, GrammarVisitor) bundled
+- [x] antlr4 runtime library bundled
+- [x] All extension sources bundled
+- [x] No runtime dependency loading issues
+- [x] All 167 verification tests pass (P0.2-P0.6)
+- [x] Build time significantly faster than TypeScript compiler
+- [x] VSIX package size reasonable and functional
+
+**Implementation Notes**
+
+**Architecture:**
+- **Build Tool**: esbuild (replaces tsc for extension bundling)
+- **Bundle Output**: `dist/extension.js` (246KB, single file)
+- **Bundle Contents**:
+  - ANTLR-generated parser: ~104KB (GrammarLexer, GrammarParser, GrammarVisitor)
+  - antlr4 runtime library: ~80KB
+  - Extension sources: ~20KB (extension.ts, parser.ts, diagnostics.ts, symbols.ts, completion.ts, hover.ts)
+- **Build Time**: ~77ms (26x faster than tsc ~2s)
+- **VSIX Size**: 83KB (compressed)
+
+**Technical Details:**
+
+1. **esbuild Configuration** (`esbuild.config.js`):
+   - Entry point: `src/extension.ts`
+   - Bundle: true (includes all dependencies)
+   - External: `vscode` (VSCode API must remain external)
+   - Format: CommonJS (required by VSCode)
+   - Platform: Node.js
+   - Target: Node 16 (VSCode 1.60+ compatibility)
+   - Minification: Production mode only
+   - Source maps: Development mode only
+   - Tree shaking: Enabled
+   - Metafile: Enabled for bundle analysis
+
+2. **Parser Loading Migration**:
+   ```typescript
+   // Before: Dynamic import (not bundled by esbuild)
+   const nativeImport = new Function('specifier', 'return import(specifier);');
+   const [lexerModule, parserModule] = await Promise.all([...]);
+
+   // After: Static require (bundled by esbuild)
+   const GrammarLexer = require('../parser/GrammarLexer').default;
+   const GrammarParser = require('../parser/GrammarParser').default;
+   ```
+
+3. **Build Targets**:
+   - `make build`: Production bundle (minified, no sourcemaps)
+   - `make build-dev`: Development bundle (sourcemaps, no minification)
+   - `make build-tsc`: TypeScript compilation for verification scripts (out/ directory)
+   - Verification scripts use `out/` directory (separate from bundle)
+   - Extension uses `dist/extension.js` (bundled)
+
+4. **Module System**:
+   - Removed `"type": "module"` from `parser/package.json`
+   - Unified CommonJS throughout (no ESM/CommonJS conflicts)
+   - esbuild handles all module resolution
+
+5. **Line Number Fix**:
+   - ANTLR reports 1-based line numbers
+   - VSCode expects 0-based line numbers
+   - Added conversion in error listener: `line: line - 1`
+
+**Benefits:**
+
+- **Reliability**: No runtime dependency loading issues
+- **Performance**:
+  - Build: 77ms vs 2s (26x faster)
+  - Loading: Single file loads faster than multiple modules
+- **Simplicity**:
+  - Single file deployment
+  - No manual dependency management in .vscodeignore
+  - Cleaner package structure
+- **Maintainability**:
+  - Bundle analysis shows exact size contributions
+  - Easy to identify large dependencies
+  - Clear separation between extension bundle and verification scripts
+
+**Verification:**
+
+All 167 tests pass:
+- ✅ P0.2: Parser integration (32 tests)
+- ✅ P0.3: Syntax diagnostics (35 tests)
+- ✅ P0.4: Document symbols (35 tests)
+- ✅ P0.5: Code completion (30 tests)
+- ✅ P0.6: Hover documentation (35 tests)
+
+**Bundle Analysis:**
+
+Top contributors to bundle size:
+- `parser/GrammarParser.js`: 84.9KB (34.6%)
+- `antlr4/atn/ParserATNSimulator.js`: 17.0KB (6.9%)
+- `parser/GrammarLexer.js`: 16.2KB (6.6%)
+- `antlr4/atn/ATNDeserializer.js`: 9.8KB (4.0%)
+- `antlr4/atn/LexerATNSimulator.js`: 6.9KB (2.8%)
+- `src/hover.ts`: 6.2KB (2.5%)
+- `src/parser.ts`: 4.1KB (1.7%)
+- `parser/GrammarVisitor.js`: 3.4KB (1.4%)
+
+**Migration Impact:**
+
+- **For Users**: No changes, extension works the same
+- **For Developers**:
+  - Use `make build` instead of `npm run compile`
+  - Verification scripts still use `make build-tsc`
+  - All existing workflows preserved
+- **For CI/CD**: No changes, `make package` still works
 
 ---
 

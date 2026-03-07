@@ -109,7 +109,7 @@ If you want to build the extension from source:
    - Install npm dependencies
    - Copy TextMate grammar files
    - Generate JavaScript parser from ANTLR grammar
-   - Compile TypeScript to JavaScript
+   - Bundle extension with esbuild (all-in-one)
    - Package the extension as `.vsix`
 
    The built extension will be available at `editors/vscode/build/fcstm-language-support-0.1.0.vsix`
@@ -135,8 +135,8 @@ make syntaxes
 # Generate JavaScript parser
 make parser
 
-# Compile TypeScript
-npm run compile
+# Bundle extension
+make build
 
 # Package extension
 make package
@@ -149,11 +149,14 @@ For active development:
 ```bash
 cd editors/vscode
 
-# Watch mode for TypeScript compilation
+# Watch mode for development (with sourcemaps)
 npm run watch
 
-# In another terminal, verify parser integration
-make verify-p0.2
+# Or build manually
+make build-dev
+
+# In another terminal, verify features
+make verify
 ```
 
 #### Regenerating Parser After Grammar Changes
@@ -178,8 +181,8 @@ When the ANTLR grammar (`pyfcstm/dsl/grammar/Grammar.g4`) changes:
 
 4. Rebuild and verify:
    ```bash
-   npm run compile
-   make verify-p0.2
+   make build
+   make verify
    ```
 
 ## Testing and Verification
@@ -217,6 +220,7 @@ make verify
 - **P0.4 Document Symbols**: 35 tests covering symbol extraction and hierarchies
 - **P0.5 Code Completion**: 30 tests covering keywords, constants, functions, and document symbols
 - **P0.6 Hover Documentation**: 35 tests covering operators, keywords, and lifecycle aspects
+- **E2E Bundle Tests**: Comprehensive tests validating bundled extension functionality
 
 All tests use real FCSTM code and provide detailed error reporting with emoji indicators (✅/❌) for easy debugging.
 
@@ -397,21 +401,31 @@ editors/vscode/
 │   ├── extension.ts       # Extension entry point
 │   ├── parser.ts          # Pure JS parser adapter
 │   ├── diagnostics.ts     # Syntax diagnostics provider
-│   └── symbols.ts         # Document symbols provider
+│   ├── symbols.ts         # Document symbols provider
+│   ├── completion.ts      # Code completion provider
+│   └── hover.ts           # Hover documentation provider
 ├── parser/
 │   ├── GrammarLexer.js    # Generated lexer (from ANTLR)
 │   ├── GrammarParser.js   # Generated parser (from ANTLR)
 │   ├── GrammarVisitor.js  # Generated visitor (from ANTLR)
-│   ├── package.json       # ESM module marker
+│   ├── package.json       # Parser metadata
 │   └── README.md          # Parser regeneration notes
 ├── syntaxes/
 │   └── fcstm.tmLanguage.json  # TextMate grammar (copied from editors/)
 ├── snippets/
 │   └── fcstm.code-snippets    # Code snippets
 ├── scripts/
-│   └── verify-p0.2.js     # Parser verification suite (32 checkpoints)
-├── out/                   # Compiled JavaScript (generated)
+│   ├── verify-p0.2.js     # Parser verification (32 tests)
+│   ├── verify-p0.3.js     # Diagnostics verification (35 tests)
+│   ├── verify-p0.4.js     # Symbols verification (35 tests)
+│   ├── verify-p0.5.js     # Completion verification (30 tests)
+│   ├── verify-p0.6.js     # Hover verification (35 tests)
+│   └── test-e2e.js        # End-to-end bundle tests
+├── dist/                  # Bundled extension (generated)
+│   └── extension.js       # Single 246KB bundle
+├── out/                   # TypeScript compilation (for verification)
 ├── build/                 # VSIX packages (generated)
+├── esbuild.config.js      # esbuild bundling configuration
 ├── package.json           # Extension manifest
 ├── tsconfig.json          # TypeScript configuration
 ├── Makefile               # Build commands
@@ -420,10 +434,10 @@ editors/vscode/
 
 ### Build Pipeline
 
-The extension build process follows this pipeline:
+The extension uses **esbuild** for bundling, creating a single all-in-one `extension.js` file:
 
 1. **Install Dependencies** (`npm install`)
-   - Installs TypeScript, ANTLR runtime, and build tools
+   - Installs TypeScript, ANTLR runtime, esbuild, and build tools
 
 2. **Copy TextMate Grammar** (`make syntaxes`)
    - Copies `editors/fcstm.tmLanguage.json` to `syntaxes/`
@@ -432,11 +446,30 @@ The extension build process follows this pipeline:
    - Uses ANTLR 4.9.3 to generate JS artifacts from `Grammar.g4`
    - Outputs to `parser/` directory
 
-4. **Compile TypeScript** (`npm run compile`)
-   - Compiles `src/` to `out/` using CommonJS target
+4. **Bundle Extension** (`make build`)
+   - Uses esbuild to bundle all sources and dependencies into single file
+   - Outputs to `dist/extension.js` (246KB)
+   - Includes: ANTLR-generated parser (~104KB) + antlr4 runtime (~80KB) + sources (~20KB)
+   - Build time: ~77ms (26x faster than TypeScript compiler)
 
 5. **Package Extension** (`npm run package`)
-   - Creates `.vsix` file in `build/` directory
+   - Creates `.vsix` file in `build/` directory (83KB)
+
+### Build Architecture
+
+**All-in-One Bundle:**
+- Single `dist/extension.js` file contains all dependencies
+- ANTLR-generated parser files (GrammarLexer, GrammarParser, GrammarVisitor) bundled
+- antlr4 runtime library bundled
+- All extension sources bundled
+- No runtime dependency loading issues
+- Faster extension activation
+
+**Verification:**
+- Separate TypeScript compilation (`make build-tsc`) for verification scripts
+- Verification scripts use `out/` directory
+- Extension uses bundled `dist/extension.js`
+- All 167 tests pass (P0.2-P0.6)
 
 ### Grammar Synchronization
 

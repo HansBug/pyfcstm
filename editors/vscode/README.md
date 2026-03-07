@@ -27,6 +27,8 @@ The extension currently provides:
 - Authoring snippets for common FCSTM constructs
 - **Syntax diagnostics** - Real-time error detection and reporting
 - **Document symbols** - Outline view and breadcrumb navigation for states, variables, and events
+- **Code completion** - IntelliSense for keywords, built-in functions, constants, and document symbols
+- **Hover documentation** - Contextual help for FCSTM constructs
 
 The extension is planned to grow toward lightweight parser-backed editing features, but it is not positioned as a full language server.
 
@@ -44,6 +46,17 @@ The extension is planned to grow toward lightweight parser-backed editing featur
   - Pseudo states
   - Events
   - Nested state hierarchies
+- **Code completion** - IntelliSense support for:
+  - Keywords (`state`, `def`, `event`, `enter`, `during`, `exit`, etc.)
+  - Built-in constants (`pi`, `E`, `tau`, `true`, `false`)
+  - Built-in functions (`sin`, `cos`, `sqrt`, `abs`, `log`, etc.)
+  - Document-local symbols (variables, states, events)
+  - Filtered in comments and strings
+- **Hover documentation** - Contextual help for:
+  - Event scoping operators (`::`, `:`, `/`)
+  - Pseudo-state marker (`[*]`)
+  - Keywords (`pseudo`, `effect`, `abstract`, `ref`, `named`, etc.)
+  - Lifecycle aspects (`during before/after`, `>> during before/after`)
 - Grammar-aligned language package foundation for future parser-backed editor features
 
 ## Installation
@@ -187,7 +200,13 @@ make verify-p0.3
 # Verify P0.4 - Document Symbols (35 tests)
 make verify-p0.4
 
-# Run all verification tests (102 tests total)
+# Verify P0.5 - Code Completion (30 tests)
+make verify-p0.5
+
+# Verify P0.6 - Hover Documentation (35 tests)
+make verify-p0.6
+
+# Run all verification tests (167 tests total)
 make verify
 ```
 
@@ -196,6 +215,8 @@ make verify
 - **P0.2 Parser Integration**: 32 tests covering valid/invalid FCSTM inputs
 - **P0.3 Syntax Diagnostics**: 35 tests covering error detection and messages
 - **P0.4 Document Symbols**: 35 tests covering symbol extraction and hierarchies
+- **P0.5 Code Completion**: 30 tests covering keywords, constants, functions, and document symbols
+- **P0.6 Hover Documentation**: 35 tests covering operators, keywords, and lifecycle aspects
 
 All tests use real FCSTM code and provide detailed error reporting with emoji indicators (✅/❌) for easy debugging.
 

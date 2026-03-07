@@ -9,6 +9,8 @@ import * as vscode from 'vscode';
 import { getParser } from './parser';
 import { FcstmDiagnosticsProvider } from './diagnostics';
 import { FcstmDocumentSymbolProvider } from './symbols';
+import { FcstmCompletionProvider } from './completion';
+import { FcstmHoverProvider } from './hover';
 
 /**
  * Extension activation
@@ -32,6 +34,25 @@ export function activate(context: vscode.ExtensionContext) {
         )
     );
 
+    // Register completion provider (P0.5)
+    const completionProvider = new FcstmCompletionProvider();
+    context.subscriptions.push(
+        vscode.languages.registerCompletionItemProvider(
+            { language: 'fcstm' },
+            completionProvider,
+            '.', ':', '/'  // Trigger characters
+        )
+    );
+
+    // Register hover provider (P0.6)
+    const hoverProvider = new FcstmHoverProvider();
+    context.subscriptions.push(
+        vscode.languages.registerHoverProvider(
+            { language: 'fcstm' },
+            hoverProvider
+        )
+    );
+
     // Register a simple command to test parser availability
     const testParserCommand = vscode.commands.registerCommand(
         'fcstm.testParser',
@@ -48,9 +69,6 @@ export function activate(context: vscode.ExtensionContext) {
     );
 
     context.subscriptions.push(testParserCommand);
-
-    // Future: Register completion provider, hover provider, etc.
-    // These will be implemented in P0.5, P0.6
 }
 
 /**

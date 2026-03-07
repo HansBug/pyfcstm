@@ -1,7 +1,7 @@
 # Makefile for FCSTM VSCode Extension
 # This file provides commands for building and maintaining the extension
 
-.PHONY: all parser clean install build package verify-p0.2 verify-p0.3 verify-p0.4 verify help syntaxes
+.PHONY: all parser clean install build package verify-p0.2 verify-p0.3 verify-p0.4 verify-p0.5 verify-p0.6 verify help syntaxes
 
 # ANTLR configuration
 ANTLR_VERSION := 4.9.3
@@ -29,7 +29,9 @@ help:
 	@echo "  make verify-p0.2  - Verify P0.2 parser integration (32 tests)"
 	@echo "  make verify-p0.3  - Verify P0.3 syntax diagnostics (35 tests)"
 	@echo "  make verify-p0.4  - Verify P0.4 document symbols (35 tests)"
-	@echo "  make verify       - Run all verification tests (102 tests total)"
+	@echo "  make verify-p0.5  - Verify P0.5 completion support (30 tests)"
+	@echo "  make verify-p0.6  - Verify P0.6 hover documentation (35 tests)"
+	@echo "  make verify       - Run all verification tests (167 tests total)"
 	@echo "  make package      - Build VSIX package (runs all prerequisites)"
 	@echo "  make clean        - Remove generated files"
 	@echo "  make all          - Install deps, copy syntaxes, generate parser, and build"
@@ -90,7 +92,17 @@ verify-p0.4: build
 	node ./scripts/verify-p0.4.js
 	@echo ""
 
-verify: verify-p0.2 verify-p0.3 verify-p0.4
+verify-p0.5: build
+	@echo "Running P0.5 verification script..."
+	node ./scripts/verify-p0.5.js
+	@echo ""
+
+verify-p0.6: build
+	@echo "Running P0.6 verification script..."
+	node ./scripts/verify-p0.6.js
+	@echo ""
+
+verify: verify-p0.2 verify-p0.3 verify-p0.4 verify-p0.5 verify-p0.6
 	@echo "All verification tests passed!"
 
 package: all

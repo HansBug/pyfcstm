@@ -72,8 +72,8 @@ These features have the best balance of user impact and engineering cost.
 - [x] Generate and integrate ANTLR-based JavaScript parser runtime
 - [x] Add syntax diagnostics based on the generated parser
 - [x] Add document symbols / outline support
-- [ ] Add lightweight completion support
-- [ ] Add hover documentation support
+- [x] Add lightweight completion support
+- [x] Add hover documentation support
 
 ### P0 Detailed Plan
 
@@ -342,22 +342,42 @@ Even basic context-aware completion makes FCSTM writing feel much more native in
 
 **Implementation tasks**
 
-- [ ] Add `CompletionItemProvider`
-- [ ] Provide keyword completions
-- [ ] Provide math constant completions
-- [ ] Provide built-in function completions
-- [ ] Extract document-local symbols from parse tree or lightweight index
-- [ ] Offer state names in transition source/target contexts where practical
-- [ ] Offer event names in event contexts where practical
-- [ ] Offer variable names in expression contexts where practical
-- [ ] Add insertion snippets or commit characters where helpful
-- [ ] Prevent noisy completion in comments/strings
-- [ ] Verify completion remains useful without any network or external service dependency
+- [x] Add `CompletionItemProvider`
+- [x] Provide keyword completions
+- [x] Provide math constant completions
+- [x] Provide built-in function completions
+- [x] Extract document-local symbols from parse tree or lightweight index
+- [x] Offer state names in transition source/target contexts where practical
+- [x] Offer event names in event contexts where practical
+- [x] Offer variable names in expression contexts where practical
+- [x] Add insertion snippets or commit characters where helpful
+- [x] Prevent noisy completion in comments/strings
+- [x] Verify completion remains useful without any network or external service dependency
 
 **Acceptance criteria**
 
-- Users get useful keyword and built-in completions anywhere relevant.
-- Document-local names appear often enough to reduce repetitive typing meaningfully.
+- [x] Users get useful keyword and built-in completions anywhere relevant.
+- [x] Document-local names appear often enough to reduce repetitive typing meaningfully.
+
+**Verification**
+
+- `make verify-p0.5` runs 30 comprehensive test cases:
+  - 5 keyword completion tests
+  - 2 built-in constant tests
+  - 3 built-in function tests
+  - 5 document-local symbol tests
+  - 5 comment/string filtering tests
+  - 5 context-specific tests
+  - 5 edge case tests
+- Tests validate completion items, kinds, and filtering behavior
+- Mock VSCode API allows testing in Node.js environment
+
+**Implementation Notes**
+
+- **Files**: `src/completion.ts`, enhanced `src/extension.ts`
+- **Features**: Keywords, constants (pi, E, tau, true/false), functions (sin, cos, sqrt, etc.), document symbols (variables, states, events)
+- **Filtering**: Completions disabled in comments and strings
+- **Performance**: Uses parse tree extraction for document-local symbols
 
 ---
 
@@ -388,18 +408,39 @@ FCSTM includes several constructs whose meaning is easy to forget during writing
 
 **Implementation tasks**
 
-- [ ] Add `HoverProvider`
-- [ ] Define concise built-in documentation strings for core FCSTM constructs
-- [ ] Match hovers by token or parse-tree context where practical
-- [ ] Use markdown formatting for compact examples
-- [ ] Avoid overly verbose hovers
-- [ ] Ensure hover results remain useful without semantic resolution
-- [ ] Verify hover behavior stays compatible with a broad VSCode version range
+- [x] Add `HoverProvider`
+- [x] Define concise built-in documentation strings for core FCSTM constructs
+- [x] Match hovers by token or parse-tree context where practical
+- [x] Use markdown formatting for compact examples
+- [x] Avoid overly verbose hovers
+- [x] Ensure hover results remain useful without semantic resolution
+- [x] Verify hover behavior stays compatible with a broad VSCode version range
 
 **Acceptance criteria**
 
-- Hovering core FCSTM constructs provides short, accurate, high-value explanations.
-- Hovers reduce the need to consult external documentation for common syntax questions.
+- [x] Hovering core FCSTM constructs provides short, accurate, high-value explanations.
+- [x] Hovers reduce the need to consult external documentation for common syntax questions.
+
+**Verification**
+
+- `make verify-p0.6` runs 35 comprehensive test cases:
+  - 3 event scoping operator tests (::, :, /)
+  - 2 pseudo-state marker tests ([*])
+  - 5 keyword tests (pseudo, effect, abstract, ref, named)
+  - 4 lifecycle aspect tests (during before/after, >> during before/after)
+  - 5 lifecycle action tests (enter, during, exit, before, after)
+  - 4 control flow/declaration tests (if, def, state, event)
+  - 5 edge case tests (no hover on identifiers, whitespace)
+  - 7 context-specific tests (operators in transitions, keywords in context)
+- Tests validate hover titles, descriptions, and examples
+- Mock VSCode API with proper document.getText() implementation
+
+**Implementation Notes**
+
+- **Files**: `src/hover.ts`, enhanced `src/extension.ts`
+- **Features**: Hover docs for operators (::, :, /), keywords, lifecycle aspects, with markdown examples
+- **Coverage**: 26 FCSTM constructs documented with title, description, and example code
+- **Context-Aware**: Distinguishes between :: and :, handles multi-character operators correctly
 
 ---
 
@@ -602,8 +643,8 @@ The current selected scope is:
 - [x] P0.2 ANTLR-based JavaScript parser runtime
 - [x] P0.3 Syntax diagnostics
 - [x] P0.4 Document symbols / outline
-- [ ] P0.5 Lightweight completion
-- [ ] P0.6 Hover documentation
+- [x] P0.5 Lightweight completion
+- [x] P0.6 Hover documentation
 - [x] P1.A Syntax highlighting reinforcement
 - [ ] P1.B Language configuration reinforcement
 

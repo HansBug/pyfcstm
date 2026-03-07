@@ -58,31 +58,106 @@ The extension is planned to grow toward lightweight parser-backed editing featur
 
 If you want to build the extension from source:
 
+#### Prerequisites
+
+- **Node.js** (v20 or later) and npm
+- **Java** (JDK 11 or later) - required for ANTLR parser generation
+- **Python** (3.8 or later) - required for ANTLR setup
+- **Git** - for cloning the repository
+
+#### Build Steps
+
 1. Clone the pyfcstm repository:
    ```bash
    git clone https://github.com/hansbug/pyfcstm.git
    cd pyfcstm
    ```
 
-2. Install vsce (VSCode Extension Manager):
+2. Download ANTLR (first-time setup):
    ```bash
-   npm install -g @vscode/vsce
+   make antlr
    ```
 
-3. Build using Makefile (recommended):
+3. Build the extension using the root Makefile (recommended):
    ```bash
    make vscode
    ```
 
-   Or build manually:
-   ```bash
-   cd editors/vscode
-   vsce package --out build/
-   ```
+   This command will:
+   - Install npm dependencies
+   - Copy TextMate grammar files
+   - Generate JavaScript parser from ANTLR grammar
+   - Compile TypeScript to JavaScript
+   - Package the extension as `.vsix`
+
+   The built extension will be available at `editors/vscode/build/fcstm-language-support-0.1.0.vsix`
 
 4. Install the generated `.vsix` file:
    ```bash
    code --install-extension editors/vscode/build/fcstm-language-support-0.1.0.vsix
+   ```
+
+#### Manual Build (from VSCode directory)
+
+If you prefer to build from the VSCode extension directory:
+
+```bash
+cd editors/vscode
+
+# Install dependencies
+npm install
+
+# Copy TextMate grammar
+make syntaxes
+
+# Generate JavaScript parser
+make parser
+
+# Compile TypeScript
+npm run compile
+
+# Package extension
+make package
+```
+
+#### Development Workflow
+
+For active development:
+
+```bash
+cd editors/vscode
+
+# Watch mode for TypeScript compilation
+npm run watch
+
+# In another terminal, verify parser integration
+make verify-p0.2
+```
+
+#### Regenerating Parser After Grammar Changes
+
+When the ANTLR grammar (`pyfcstm/dsl/grammar/Grammar.g4`) changes:
+
+1. From project root, regenerate Python parser:
+   ```bash
+   make antlr_build
+   ```
+
+2. Verify Python tests pass:
+   ```bash
+   make unittest
+   ```
+
+3. Regenerate JavaScript parser for VSCode:
+   ```bash
+   cd editors/vscode
+   make parser
+   ```
+
+4. Rebuild and verify:
+   ```bash
+   npm run compile
+   make verify-p0.2
    ```
 
 ## Supported Syntax
@@ -234,6 +309,79 @@ These snippets are intended to reduce repetitive boilerplate while keeping the e
 The extension is intended to reuse the FCSTM ANTLR grammar as the source of truth for syntax-driven capabilities.
 
 The long-term plan is to keep generated JavaScript lexer/parser assets and their regeneration command inside [editors/vscode/](.) so that the extension remains maintainable without depending on Python or the FCSTM CLI at runtime.
+
+## Extension Architecture
+
+### Parser Integration
+
+The extension uses a pure JavaScript ANTLR parser generated from the canonical FCSTM grammar:
+
+- **Grammar Source**: `pyfcstm/dsl/grammar/Grammar.g4` (single source of truth)
+- **Generated Artifacts**: `editors/vscode/parser/` (GrammarLexer.js, GrammarParser.js, GrammarVisitor.js)
+- **Parser Adapter**: `src/parser.ts` (loads generated artifacts and normalizes diagnostics)
+- **Runtime**: `antlr4` version 4.9.3 (exact match with generation toolchain)
+
+The parser provides:
+- Syntax validation with detailed error messages
+- 0-based line/column positions for VSCode diagnostics
+- Error message normalization matching Python parser behavior
+- No Python or external runtime dependencies
+
+### File Structure
+
+```
+editors/vscode/
+├── src/
+│   ├── extension.ts       # Extension entry point
+│   └── parser.ts          # Pure JS parser adapter
+├── parser/
+│   ├── GrammarLexer.js    # Generated lexer (from ANTLR)
+│   ├── GrammarParser.js   # Generated parser (from ANTLR)
+│   ├── GrammarVisitor.js  # Generated visitor (from ANTLR)
+│   ├── package.json       # ESM module marker
+│   └── README.md          # Parser regeneration notes
+├── syntaxes/
+│   └── fcstm.tmLanguage.json  # TextMate grammar (copied from editors/)
+├── snippets/
+│   └── fcstm.code-snippets    # Code snippets
+├── scripts/
+│   └── verify-p0.2.js     # Parser verification suite (32 checkpoints)
+├── out/                   # Compiled JavaScript (generated)
+├── build/                 # VSIX packages (generated)
+├── package.json           # Extension manifest
+├── tsconfig.json          # TypeScript configuration
+├── Makefile               # Build commands
+└── README.md              # This file
+```
+
+### Build Pipeline
+
+The extension build process follows this pipeline:
+
+1. **Install Dependencies** (`npm install`)
+   - Installs TypeScript, ANTLR runtime, and build tools
+
+2. **Copy TextMate Grammar** (`make syntaxes`)
+   - Copies `editors/fcstm.tmLanguage.json` to `syntaxes/`
+
+3. **Generate JavaScript Parser** (`make parser`)
+   - Uses ANTLR 4.9.3 to generate JS artifacts from `Grammar.g4`
+   - Outputs to `parser/` directory
+
+4. **Compile TypeScript** (`npm run compile`)
+   - Compiles `src/` to `out/` using CommonJS target
+
+5. **Package Extension** (`npm run package`)
+   - Creates `.vsix` file in `build/` directory
+
+### Grammar Synchronization
+
+Both Python and JavaScript parsers are generated from the same canonical grammar:
+
+- **Python Target**: `pyfcstm/dsl/grammar/` (for CLI and library)
+- **JavaScript Target**: `editors/vscode/parser/` (for VSCode extension)
+
+The grammar uses JavaScript-safe labels (e.g., `func_name` instead of `function`) to ensure cross-target compatibility.
 
 ## Related Projects
 

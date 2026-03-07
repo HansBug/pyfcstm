@@ -180,12 +180,32 @@ This is the core technical foundation for diagnostics and future lightweight lan
 
 The VSCode extension now uses a pure JavaScript ANTLR parser generated from the canonical `Grammar.g4`.
 
-- The original JavaScript-target conflict came from the UFUNC label `function=UFUNC_NAME`
-- The canonical grammar was updated to use the JavaScript-safe label `func_name=UFUNC_NAME`
-- Python-side parser consumers were updated and verified with the full Python test suite before the VSCode migration continued
-- The extension now loads generated lexer/parser artifacts locally through `src/parser.ts`
-- `make parser` regenerates the JavaScript artifacts, and `make verify-p0.2` validates the parser contract with a comprehensive checkpoint suite
-- Extension runtime remains fully local and does not depend on Python, Java, or CLI invocation
+**Parser Architecture:**
+- **Grammar Source**: `pyfcstm/dsl/grammar/Grammar.g4` (single source of truth for both Python and JavaScript)
+- **JavaScript Artifacts**: Generated to `editors/vscode/parser/` using ANTLR 4.9.3
+- **Parser Adapter**: `src/parser.ts` loads generated artifacts via dynamic import and normalizes ANTLR diagnostics
+- **Runtime**: `antlr4@4.9.3` (exact version pinned for artifact compatibility)
+- **Error Handling**: Matches Python parser behavior with enhanced error messages
+
+**Grammar Label Compatibility:**
+- The original grammar used `function=UFUNC_NAME` which conflicted with JavaScript's reserved `function` keyword
+- Updated to `func_name=UFUNC_NAME` for cross-target compatibility
+- Python listener updated to use `ctx.func_name` accessor
+- Both Python and JavaScript parsers now generate from the same grammar revision
+
+**Regeneration Workflow:**
+1. Modify `pyfcstm/dsl/grammar/Grammar.g4`
+2. Regenerate Python parser: `make antlr_build` (from project root)
+3. Update Python consumers if grammar structure changed
+4. Verify Python tests: `make unittest`
+5. Regenerate JavaScript parser: `make parser` (from `editors/vscode/`)
+6. Rebuild extension: `npm run compile`
+7. Verify parser contract: `make verify-p0.2`
+
+**Verification:**
+- `make verify-p0.2` runs 32 comprehensive checkpoints covering valid and invalid FCSTM inputs
+- Extension runtime remains fully local with no Python, Java, or CLI dependencies
+- Full documentation in `README.md`
 
 ---
 

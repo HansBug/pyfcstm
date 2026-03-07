@@ -58,6 +58,7 @@ function formatTokenText(tokenText: string | undefined): string {
 }
 
 function normalizeSyntaxMessage(message: string, tokenText?: string): string {
+    // Special case: state followed by [*] without semicolon
     if (
         tokenText === '[*]'
         && /no viable alternative at input 'state[^']*\[\*\]'/i.test(message)
@@ -65,26 +66,120 @@ function normalizeSyntaxMessage(message: string, tokenText?: string): string {
         return 'Missing semicolon before "[*]".';
     }
 
+    // Missing semicolon patterns
     if (/missing ';'|expecting ';'/i.test(message)) {
+        if (tokenText === 'def') {
+            return 'Missing semicolon after variable definition';
+        } else if (tokenText === 'state') {
+            return 'Missing semicolon after previous statement';
+        } else if (tokenText === '}') {
+            return 'Missing semicolon after operation statement';
+        } else if (tokenText && /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(tokenText)) {
+            return 'Missing semicolon after previous statement';
+        }
         return `Missing semicolon before ${formatTokenText(tokenText)}.`;
     }
 
+    // Missing closing bracket
     if (/missing '\]'|expecting '\]'/i.test(message)) {
         return 'Missing closing bracket in guard condition.';
     }
 
-    if (
-        /missing '\}'|expecting '\}'/i.test(message)
-        || (tokenText === '<EOF>' && /mismatched input|extraneous input|no viable alternative/i.test(message))
-    ) {
+    // Missing closing brace
+    if (/missing '\}'|expecting '\}'/i.test(message)) {
+        if (tokenText === '<EOF>') {
+            return 'Missing closing brace - check for unclosed state definitions or action blocks';
+        }
         return 'Missing closing brace before end of file.';
     }
 
-    if (/token recognition error/i.test(message)) {
+    // Missing opening brace
+    if (/missing '\{'|expecting '\{'/i.test(message)) {
+        return 'Missing opening brace for block';
+    }
+
+    // Missing opening bracket
+    if (/missing '\['|expecting '\['/i.test(message)) {
+        return 'Missing opening bracket for guard condition';
+    }
+
+    // Missing transition arrow
+    if (/missing '->'|expecting '->'/i.test(message)) {
+        return 'Missing transition arrow \'->\'';
+    }
+
+    // Missing equals sign
+    if (/missing '='|expecting '='/i.test(message)) {
+        return 'Missing equals sign in assignment or definition';
+    }
+
+    // Extraneous input patterns
+    if (/extraneous input/i.test(message)) {
+        if (tokenText === '<EOF>') {
+            return 'Unexpected end of file - missing closing brace';
+        } else if (tokenText === '}') {
+            return 'Extra closing brace - check for mismatched braces';
+        } else if (tokenText === 'during') {
+            return 'Unexpected \'during\' keyword - missing closing brace before this line';
+        }
         return `Unexpected token ${formatTokenText(tokenText)}.`;
     }
 
-    if (/extraneous input|mismatched input|no viable alternative/i.test(message)) {
+    // Mismatched input patterns
+    if (/mismatched input/i.test(message)) {
+        if (/expecting ';'/i.test(message)) {
+            if (tokenText === 'state') {
+                return 'Missing semicolon after previous state definition';
+            } else if (tokenText === '}') {
+                return 'Missing semicolon before closing brace';
+            }
+            return 'Missing semicolon on previous line';
+        } else if (/expecting '='/i.test(message)) {
+            return 'Missing equals sign in variable definition';
+        } else if (/expecting \{';', 'named'\}/i.test(message)) {
+            return 'Missing semicolon after event definition';
+        }
+        return `Unexpected token ${formatTokenText(tokenText)}.`;
+    }
+
+    // No viable alternative patterns
+    if (/no viable alternative at input/i.test(message)) {
+        if (tokenText) {
+            const tokenLower = tokenText.toLowerCase();
+
+            // Pattern: stateXXXstate (missing semicolon between states)
+            if (tokenLower.includes('state') && (tokenLower.match(/state/g) || []).length >= 2) {
+                return 'Missing semicolon between state definitions';
+            }
+
+            // Pattern: stateXXXenter/exit/during (missing brace or semicolon)
+            if (tokenLower.includes('state') && /enter|exit|during/.test(tokenLower)) {
+                return 'Missing opening brace or semicolon before lifecycle action';
+            }
+
+            // Pattern: stateXXXID (missing semicolon after state)
+            if (tokenLower.includes('state') && tokenText.length > 10) {
+                return 'Missing semicolon after state definition';
+            }
+
+            // Pattern: Active= (wrong arrow operator)
+            if (tokenText.includes('=')) {
+                return 'Invalid operator - use \'->\' for transitions, not \'=>\'';
+            }
+
+            // Pattern: enterabstractXXX} (missing semicolon after abstract)
+            if (/abstract|ref/.test(tokenLower) && tokenText.includes('}')) {
+                return 'Missing semicolon after abstract function or reference definition';
+            }
+        }
+        return 'Invalid syntax - check for missing semicolons, braces, or operators';
+    }
+
+    // Token recognition error
+    if (/token recognition error/i.test(message)) {
+        if (tokenText && tokenText.includes('"')) {
+            return 'Unclosed string literal - add closing quote';
+        }
         return `Unexpected token ${formatTokenText(tokenText)}.`;
     }
 

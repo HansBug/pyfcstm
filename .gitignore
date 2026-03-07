@@ -1232,4 +1232,5 @@ junit.xml
 /editors/vscode/out/
 /editors/vscode/parser/*
 !/editors/vscode/parser/README.md
+!/editors/vscode/parser/package.json
 /editors/vscode/syntaxes/*.json

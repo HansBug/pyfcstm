@@ -1,66 +1,55 @@
 # FCSTM Parser for VSCode Extension
 
-This directory contains the ANTLR4-generated JavaScript parser for the FCSTM DSL.
+This directory contains the ANTLR4-generated JavaScript parser artifacts for the FCSTM DSL used by the VSCode extension.
 
-## Known Issue: JavaScript Reserved Keyword Conflict
+## Current Design
 
-The ANTLR grammar (`Grammar.g4`) uses `function` as a label name in rules:
-- Line 112: `function=UFUNC_NAME` in `init_expression`
-- Line 128: `function=UFUNC_NAME` in `num_expression`
+The VSCode extension now uses a pure JavaScript parser path:
 
-This conflicts with JavaScript's reserved `function` keyword, preventing direct JavaScript code generation.
+1. The canonical grammar remains `pyfcstm/dsl/grammar/Grammar.g4`
+2. Python and JavaScript artifacts are both generated from that same grammar
+3. The extension loads the generated lexer/parser from this directory at runtime
+4. `src/parser.ts` normalizes ANTLR diagnostics into the extension's `ParseResult` contract
 
-## Workaround Solution
+This keeps the ANTLR grammar as the single source of truth while avoiding any Python dependency at extension runtime.
 
-Since modifying the grammar would break Python compatibility, we use a **wrapper-based approach**:
+## Why JavaScript Generation Now Works
 
-1. **Generate Python parser** (already done in main project)
-2. **Create JavaScript adapter** that uses the Python CLI via child_process
-3. **Future enhancement**: Create a patched grammar copy specifically for JavaScript generation
+The original grammar used the label `function=UFUNC_NAME` in UFUNC-related rules. That label was acceptable for the Python target, but it conflicted with JavaScript code generation because `function` is a reserved word.
 
-## Current Implementation
+The grammar was updated to use the JavaScript-safe label `func_name=UFUNC_NAME`, and the Python-side listener was updated accordingly. With that change, both Python and JavaScript parser artifacts can be generated from the same grammar revision.
 
-The parser adapter in `src/parser.ts` provides a clean API for parsing FCSTM documents by:
-- Invoking the Python CLI parser when available
-- Providing graceful fallback for offline/no-Python scenarios
-- Exposing a simple `parse()` function that returns structured errors
+## Runtime Notes
 
-## Alternative Approaches Considered
+- The generated files in this directory are build artifacts and are ignored by git.
+- `README.md` is intentionally kept in version control to document regeneration and integration behavior.
+- The extension depends on `antlr4` version `4.9.3` to match the generated parser artifacts.
 
-### Option 1: Patch Grammar for JavaScript (Not Implemented)
-Create a JavaScript-specific grammar copy with renamed labels:
-- `function=UFUNC_NAME` → `func=UFUNC_NAME`
-- Requires maintaining two grammar versions
-- Risk of divergence between Python and JavaScript parsers
+## Regeneration
 
-### Option 2: Python CLI Bridge (Current Implementation)
-Use the existing Python parser via subprocess:
-- Leverages battle-tested Python implementation
-- No grammar duplication
-- Requires Python runtime (acceptable for development, optional for users)
+When the grammar changes, regenerate artifacts in this order:
 
-### Option 3: Manual JavaScript Parser (Not Recommended)
-Write a hand-coded JavaScript parser:
-- High maintenance burden
-- Risk of grammar drift
-- Not aligned with "single source of truth" principle
+1. From the project root, regenerate Python parser artifacts:
+   ```bash
+   make antlr_build
+   ```
+2. If Python-side grammar consumers need updates, fix them and verify Python tests.
+3. From `editors/vscode/`, regenerate JavaScript parser artifacts:
+   ```bash
+   make parser
+   ```
+4. Rebuild and verify the extension:
+   ```bash
+   npm run compile
+   make verify-p0.2
+   ```
 
-## Future Work
+## Generated Files
 
-For P0.3 (syntax diagnostics), we'll implement the Python CLI bridge approach, which provides:
-- Reliable parsing using the canonical Python implementation
-- Structured error messages for diagnostics
-- No grammar duplication or maintenance burden
+Typical generated files in this directory include:
 
-## Regeneration (When Grammar Changes)
+- `GrammarLexer.js`
+- `GrammarParser.js`
+- `GrammarVisitor.js`
 
-Since JavaScript generation is blocked, regeneration is not currently needed. When the grammar changes:
-
-1. Regenerate Python parser: `make antlr_build` (from project root)
-2. The VSCode extension will automatically use the updated Python parser
-
-If JavaScript generation becomes possible in the future:
-```bash
-cd /home/hansbug/oo-projects/pyfcstm/editors/vscode
-make parser
-```
+These files are replaced whenever `make parser` is run.

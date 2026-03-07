@@ -69,7 +69,7 @@ These features have the best balance of user impact and engineering cost.
 ### P0 Feature Checklist
 
 - [x] Add FCSTM snippets
-- [ ] Generate and integrate ANTLR-based JavaScript parser runtime
+- [x] Generate and integrate ANTLR-based JavaScript parser runtime
 - [ ] Add syntax diagnostics based on the generated parser
 - [ ] Add document symbols / outline support
 - [ ] Add lightweight completion support
@@ -154,14 +154,14 @@ This is the core technical foundation for diagnostics and future lightweight lan
 **Implementation tasks**
 
 - [x] Decide generated target format
-  - [x] JavaScript target (blocked by reserved keyword conflict)
-  - [x] TypeScript wrappers implemented
+  - [x] JavaScript target implemented from canonical grammar
+  - [x] TypeScript adapter implemented
 - [x] Define a reproducible generation script under [editors/vscode/](.)
 - [x] Add or define a local regeneration command under [editors/vscode/](.)
   - [x] Prefer a Makefile or similarly simple local build entrypoint
   - [x] Ensure the command remains callable for long-term maintenance
 - [x] Add ANTLR runtime dependency for Node/VSCode extension host only if it fits the extension dependency policy
-- [x] Generate lexer/parser artifacts from the FCSTM grammar (Python CLI bridge approach)
+- [x] Generate lexer/parser artifacts from the FCSTM grammar
 - [x] Store generated lexer/parser artifacts inside the VSCode extension tree
 - [x] Add a parser adapter module inside the extension
 - [x] Normalize parse entry selection for full FCSTM documents
@@ -178,13 +178,14 @@ This is the core technical foundation for diagnostics and future lightweight lan
 
 **Implementation Notes**
 
-Due to a JavaScript reserved keyword conflict (`function` label in grammar lines 112 and 128), direct JavaScript parser generation from ANTLR is blocked. The implementation uses a **Python CLI bridge approach** instead:
+The VSCode extension now uses a pure JavaScript ANTLR parser generated from the canonical `Grammar.g4`.
 
-- Parser adapter (`src/parser.ts`) invokes the Python parser via subprocess
-- Provides structured error messages for diagnostics
-- Graceful fallback to basic syntax checking when Python is unavailable
-- Maintains single source of truth (no grammar duplication)
-- Full documentation in `PARSER.md`
+- The original JavaScript-target conflict came from the UFUNC label `function=UFUNC_NAME`
+- The canonical grammar was updated to use the JavaScript-safe label `func_name=UFUNC_NAME`
+- Python-side parser consumers were updated and verified with the full Python test suite before the VSCode migration continued
+- The extension now loads generated lexer/parser artifacts locally through `src/parser.ts`
+- `make parser` regenerates the JavaScript artifacts, and `make verify-p0.2` validates the parser contract with a comprehensive checkpoint suite
+- Extension runtime remains fully local and does not depend on Python, Java, or CLI invocation
 
 ---
 

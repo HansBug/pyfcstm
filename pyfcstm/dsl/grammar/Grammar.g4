@@ -109,7 +109,7 @@ init_expression
     | init_expression op='&' init_expression                 # binaryExprInit
     | init_expression op='^' init_expression                 # binaryExprInit
     | init_expression op='|' init_expression                 # binaryExprInit
-    | function=UFUNC_NAME '(' init_expression ')'            # funcExprInit
+    | func_name=UFUNC_NAME '(' init_expression ')'           # funcExprInit
     ;
 
 num_expression
@@ -125,7 +125,7 @@ num_expression
     | num_expression op='&' num_expression                 # binaryExprNum
     | num_expression op='^' num_expression                 # binaryExprNum
     | num_expression op='|' num_expression                 # binaryExprNum
-    | function=UFUNC_NAME '(' num_expression ')'           # funcExprNum
+    | func_name=UFUNC_NAME '(' num_expression ')'          # funcExprNum
     | <assoc=right> '(' cond_expression ')' '?' num_expression ':' num_expression  # conditionalCStyleExprNum
     ;
 

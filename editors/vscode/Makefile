@@ -39,8 +39,7 @@ install:
 
 parser: $(ANTLR_JAR) $(GRAMMAR_FILE)
 	@echo "Generating JavaScript parser from ANTLR grammar..."
-	@echo "Note: The grammar contains 'function' labels which conflict with JavaScript."
-	@echo "      Generated parser will have these renamed to 'function_' automatically by ANTLR."
+	@echo "Using the canonical Grammar.g4 with JavaScript-safe labels shared across Python and VSCode."
 	@mkdir -p $(PARSER_OUTPUT_DIR)
 	@find $(PARSER_OUTPUT_DIR) -mindepth 1 ! -name 'README.md' -exec rm -rf {} +
 	java -jar $(ANTLR_JAR) -Dlanguage=JavaScript \

@@ -26,7 +26,7 @@ export function activate(context: vscode.ExtensionContext) {
                 vscode.window.showInformationMessage('FCSTM parser is available');
             } else {
                 vscode.window.showWarningMessage(
-                    'FCSTM parser is not available. Install pyfcstm for full parsing support: pip install pyfcstm'
+                    'FCSTM parser runtime is not available. Please rebuild the extension artifacts.'
                 );
             }
         }

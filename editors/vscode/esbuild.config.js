@@ -23,7 +23,7 @@ const buildOptions = {
   external: ['vscode'], // VSCode API must be external
   format: 'cjs',        // CommonJS format required by VSCode
   platform: 'node',     // Node.js environment
-  target: 'node16',     // VSCode 1.60+ uses Node 16
+  target: 'es2015',    // Prefer broad compatibility with older VSCode extension hosts
 
   // Source maps for debugging
   sourcemap: production ? false : 'inline',

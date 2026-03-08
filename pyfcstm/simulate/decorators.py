@@ -30,7 +30,7 @@ Example::
     >>> runtime.register_handlers_from_object(handlers)
 """
 
-from typing import Callable, TYPE_CHECKING
+from typing import Callable, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .context import ReadOnlyExecutionContext
@@ -80,14 +80,14 @@ def abstract_handler(action_path: str) -> Callable[[Callable], Callable]:
     return decorator
 
 
-def get_handler_metadata(func: Callable) -> str | None:
+def get_handler_metadata(func: Callable) -> Optional[str]:
     """
     Get the action path metadata from a decorated method.
 
     :param func: The function to check
     :type func: Callable
     :return: The action path if the function is decorated, None otherwise
-    :rtype: str | None
+    :rtype: Optional[str]
 
     Example::
 

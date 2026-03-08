@@ -1,0 +1,19 @@
+def int trace = 0;
+
+state Root {
+    >> during before {
+        trace = trace * 10 + 1;
+    }
+
+    >> during after {
+        trace = trace * 10 + 3;
+    }
+
+    state A {
+        during {
+            trace = trace * 10 + 2;
+        }
+    }
+
+    [*] -> A;
+}

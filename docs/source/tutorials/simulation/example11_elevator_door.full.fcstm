@@ -1,0 +1,46 @@
+def int door_pos = 0;
+def int hold = 0;
+def int reopen_count = 0;
+
+state Root {
+    state Closed {
+        during {
+            hold = 0;
+        }
+    }
+
+    state Opening {
+        during {
+            door_pos = door_pos + 50;
+        }
+    }
+
+    state Opened {
+        during {
+            hold = hold + 1;
+        }
+    }
+
+    state Closing {
+        during {
+            door_pos = door_pos - 50;
+        }
+    }
+
+    [*] -> Closed;
+    Closed -> Opening :: HallCall effect {
+        hold = 0;
+    };
+    Opening -> Opened : if [door_pos >= 100] effect {
+        hold = 0;
+    };
+    Opened -> Closing : if [hold >= 2];
+    Closing -> Opened :: BeamBlocked effect {
+        reopen_count = reopen_count + 1;
+        door_pos = 100;
+        hold = 0;
+    };
+    Closing -> Closed : if [door_pos <= 0] effect {
+        hold = 0;
+    };
+}

@@ -1,0 +1,8 @@
+Cycle 1: state=System.Parent.Child, counter=111
+  → Parent.during before (100) executed during entry
+
+Cycle 2: state=System.Parent.Child, counter=122
+  → >> during before (1) + Child.during (10)
+
+Cycle 3: state=System.Parent.Child, counter=133
+  → >> during before (1) + Child.during (10)

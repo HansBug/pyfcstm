@@ -1,0 +1,4 @@
+Initial: state=System.Idle
+After 'Start': state=System.Active
+After 'Stop': state=System.Idle
+After 'Start' again: state=System.Active

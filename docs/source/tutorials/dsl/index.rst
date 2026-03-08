@@ -1668,6 +1668,18 @@ Reference actions reuse enter actions from other states:
        enter ref /GlobalInit;
    }
 
+.. important::
+   ``ref`` is an **action reuse mechanism**, not a state reference and not an event reference.
+   It resolves to a previously named lifecycle action under a state scope. The target may be a
+   named ``enter``, ``during``, ``exit``, or ``>> during`` action, including an abstract action.
+   Relative paths are resolved from the current state path, while ``/`` starts from the root state.
+
+.. tip::
+   Use ``ref`` when several states should share the same lifecycle behavior and you want one source
+   of truth for that action body or abstract hook. Prefer absolute paths for cross-state reuse to
+   avoid ambiguity. Use ``abstract`` instead when the action is only a contract to be implemented in
+   generated code rather than a reuse of an existing named action.
+
 During Actions
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

@@ -1,0 +1,45 @@
+def int green_ticks = 0;
+def int request_latched = 0;
+def int yellow_ticks = 0;
+def int walk_ticks = 0;
+
+state Root {
+    state MainGreen {
+        during {
+            green_ticks = green_ticks + 1;
+        }
+    }
+
+    state PedestrianPhase {
+        state MainYellow {
+            during {
+                yellow_ticks = yellow_ticks + 1;
+            }
+        }
+
+        state PedWalk {
+            during {
+                walk_ticks = walk_ticks + 1;
+            }
+        }
+
+        [*] -> MainYellow;
+        MainYellow -> PedWalk : if [yellow_ticks >= 1];
+        PedWalk -> [*] : if [walk_ticks >= 2];
+    }
+
+    [*] -> MainGreen;
+    MainGreen -> PedestrianPhase : if [request_latched == 1 && green_ticks >= 3] effect {
+        request_latched = 0;
+        yellow_ticks = 0;
+        walk_ticks = 0;
+    };
+    MainGreen -> MainGreen :: PedRequest effect {
+        request_latched = 1;
+    };
+    PedestrianPhase -> MainGreen effect {
+        green_ticks = 0;
+        yellow_ticks = 0;
+        walk_ticks = 0;
+    };
+}

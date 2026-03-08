@@ -1,0 +1,13 @@
+[Init] state=System.Active, counter=0
+[Monitor] counter=0
+Cycle 1: state=System.Active
+[Monitor] counter=1
+Cycle 2: state=System.Active
+[Monitor] counter=2
+Cycle 3: state=System.Active
+[Monitor] counter=3
+Cycle 4: state=System.Active
+[Monitor] counter=4
+Cycle 5: state=System.Active
+[Cleanup] final_counter=5
+Cycle 6: state=System.Done

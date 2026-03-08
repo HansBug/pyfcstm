@@ -592,7 +592,24 @@ state StateB {
     enter ref StateA.UserInit;      // Reuse StateA's enter action
     exit ref /GlobalCleanup;        // Reference global action
 }
+
+state Root {
+    enter GlobalInit {
+        counter = 0;
+    }
+
+    state Child {
+        enter ref /GlobalInit;      // Reuse the named action "GlobalInit" from the root state
+        // `ref` points to a previously named lifecycle action, not to a state or event.
+        // Relative paths start from the current state's path; `/` starts from the root state.
+    }
+}
 ```
+
+`ref` is an action reuse mechanism, not an event or state reference. It resolves to a previously named lifecycle action
+(`enter`, `during`, `exit`, or `>> during`) under a specific state scope. Relative paths are resolved from the current
+state path, while `/` starts from the root state. Prefer `ref` when multiple states should share the same lifecycle
+behavior without duplicating action bodies; prefer `abstract` when the action should be implemented by generated code.
 
 ### Expression System
 

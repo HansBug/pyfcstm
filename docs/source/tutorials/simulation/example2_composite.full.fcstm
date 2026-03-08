@@ -1,0 +1,27 @@
+def int counter = 0;
+
+state Root {
+    state A {
+        during {
+            counter = counter + 1;
+        }
+    }
+
+    state B {
+        state B1 {
+            during {
+                counter = counter + 10;
+            }
+        }
+        state B2 {
+            during {
+                counter = counter + 100;
+            }
+        }
+        [*] -> B1;
+        B1 -> B2 :: Next;
+    }
+
+    [*] -> A;
+    A -> B :: GoB;
+}

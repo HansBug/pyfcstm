@@ -145,6 +145,35 @@ class Event:
         """
         return tuple((*self.state_path, self.name))
 
+    @property
+    def path_name(self) -> str:
+        """
+        Get the canonical dot-separated path string for this event.
+
+        The returned string serves as the stable identifier used by the runtime
+        for event indexing and transition matching. This format matches the
+        fully-qualified event paths used in the DSL.
+
+        Event paths follow the state hierarchy where the event is defined. For
+        example, a local event ``Go`` defined in state ``System.Active`` would
+        have the path ``System.Active.Go``.
+
+        :return: Dot-separated event path matching the DSL structure
+        :rtype: str
+
+        Example::
+
+            >>> event = Event(name="Start", state_path=("System", "Idle"))
+            >>> event.path_name
+            'System.Idle.Start'
+
+        .. note::
+           This property is used internally by :class:`SimulationRuntime` when
+           building the event dictionary for transition matching. The returned
+           string must be stable and unique within the state machine.
+        """
+        return '.'.join(self.path)
+
     def to_ast_node(self) -> dsl_nodes.EventDefinition:
         """
         Convert this event to an AST node.
@@ -331,6 +360,35 @@ class OnStage(AstExportable):
         """
         return False
 
+    @property
+    def func_name(self) -> str:
+        """
+        Get the readable dot-separated path string for this action.
+
+        The returned string represents the action's location in the state hierarchy,
+        making it easy to identify which state owns the action in log messages and
+        diagnostic output.
+
+        Unnamed actions (where the name component is ``None``) are rendered with
+        ``<unnamed>`` in the terminal position.
+
+        :return: Dot-separated action path with state hierarchy
+        :rtype: str
+
+        Example::
+
+            >>> # Named enter action
+            >>> action.func_name
+            'System.Active.Initialize'
+            >>> # Unnamed during action
+            >>> action.func_name
+            'System.Active.<unnamed>'
+        """
+        sp = self.state_path
+        if sp[-1] is None:
+            sp = tuple((*sp[:-1], '<unnamed>'))
+        return '.'.join(sp)
+
     def to_ast_node(self) -> Union[dsl_nodes.EnterStatement, dsl_nodes.DuringStatement, dsl_nodes.ExitStatement]:
         """
         Convert this OnStage to an appropriate AST node based on the stage.
@@ -508,6 +566,35 @@ class OnAspect(AstExportable):
         :rtype: bool
         """
         return True
+
+    @property
+    def func_name(self) -> str:
+        """
+        Get the readable dot-separated path string for this action.
+
+        The returned string represents the action's location in the state hierarchy,
+        making it easy to identify which state owns the action in log messages and
+        diagnostic output.
+
+        Unnamed actions (where the name component is ``None``) are rendered with
+        ``<unnamed>`` in the terminal position.
+
+        :return: Dot-separated action path with state hierarchy
+        :rtype: str
+
+        Example::
+
+            >>> # Named aspect action
+            >>> action.func_name
+            'System.PreProcess'
+            >>> # Unnamed aspect action
+            >>> action.func_name
+            'System.<unnamed>'
+        """
+        sp = self.state_path
+        if sp[-1] is None:
+            sp = tuple((*sp[:-1], '<unnamed>'))
+        return '.'.join(sp)
 
     def to_ast_node(self) -> Union[dsl_nodes.DuringAspectStatement]:
         """
@@ -1305,6 +1392,137 @@ class State(AstExportable, PlantUMLExportable):
         for _, substate in self.substates.items():
             yield from substate.walk_states()
 
+    def resolve_event(self, event_ref: str) -> Event:
+        """
+        Resolve an event reference string to an existing Event object in the state hierarchy.
+
+        This method supports three types of event references:
+
+        1. **Relative events** (e.g., ``"xxx.yyy.zzz"``): Resolved relative to the current state's path.
+           If the current state is ``XXX.YYY``, the event resolves to ``XXX.YYY.xxx.yyy.zzz``.
+
+        2. **Parent-relative events** (e.g., ``".xxx.yyy.zzz"``): Each leading dot represents moving up
+           one level in the state hierarchy. If the current state is ``XXX.YYY.ZZZ``, then ``.xxx``
+           resolves to ``XXX.YYY.xxx`` (up one level), and ``..xxx`` resolves to ``XXX.xxx`` (up two levels).
+
+        3. **Absolute events** (e.g., ``"/xxx.yyy"``): Resolved relative to the root state.
+           If the root state is ``Root``, the event resolves to ``Root.xxx.yyy``.
+
+        :param event_ref: The event reference string to resolve
+        :type event_ref: str
+        :return: The resolved Event object from the state hierarchy
+        :rtype: Event
+        :raises ValueError: If the event reference is invalid or cannot be resolved
+        :raises ValueError: If parent-relative reference goes beyond the root state
+        :raises LookupError: If the event does not exist in the state hierarchy
+
+        Example::
+
+            >>> # Assuming current state path is ("Root", "System", "Active")
+            >>> # and an event "critical" exists in state "Root.System.Active.error"
+            >>> state.resolve_event("error.critical")
+            Event(name="critical", state_path=("Root", "System", "Active", "error"))
+
+            >>> state.resolve_event(".error.critical")
+            Event(name="critical", state_path=("Root", "System", "error"))
+
+            >>> state.resolve_event("/global.shutdown")
+            Event(name="shutdown", state_path=("Root", "global"))
+        """
+        if not event_ref:
+            raise ValueError("Event reference cannot be empty")
+
+        # Determine the target state path and event name based on reference type
+        target_state_path = None
+        event_name = None
+
+        # Handle absolute events (starting with '/')
+        if event_ref.startswith('/'):
+            # Remove leading '/' and resolve from root
+            relative_path = event_ref[1:]
+            if not relative_path:
+                raise ValueError("Absolute event reference cannot be just '/'")
+
+            # Find root state
+            root_state = self
+            while root_state.parent is not None:
+                root_state = root_state.parent
+
+            # Split the path
+            path_parts = relative_path.split('.')
+            if not all(path_parts):
+                raise ValueError(f"Invalid absolute event reference: {event_ref!r}")
+
+            event_name = path_parts[-1]
+            target_state_path = root_state.path + tuple(path_parts[:-1])
+
+        # Handle parent-relative events (starting with '.')
+        elif event_ref.startswith('.'):
+            # Count leading dots
+            dot_count = 0
+            for char in event_ref:
+                if char == '.':
+                    dot_count += 1
+                else:
+                    break
+
+            # Get the remaining path after dots
+            remaining_path = event_ref[dot_count:]
+            if not remaining_path:
+                raise ValueError(f"Parent-relative event reference cannot end with dots: {event_ref!r}")
+
+            # Move up the hierarchy
+            current_state = self
+            for _ in range(dot_count):
+                if current_state.parent is None:
+                    raise ValueError(
+                        f"Parent-relative event reference {event_ref!r} goes beyond root state "
+                        f"(current state: {'.'.join(self.path)}, tried to go up {dot_count} levels)"
+                    )
+                current_state = current_state.parent
+
+            # Split the remaining path
+            path_parts = remaining_path.split('.')
+            if not all(path_parts):
+                raise ValueError(f"Invalid parent-relative event reference: {event_ref!r}")
+
+            event_name = path_parts[-1]
+            target_state_path = current_state.path + tuple(path_parts[:-1])
+
+        # Handle relative events (no leading '/' or '.')
+        else:
+            path_parts = event_ref.split('.')
+            if not all(path_parts):
+                raise ValueError(f"Invalid relative event reference: {event_ref!r}")
+
+            event_name = path_parts[-1]
+            target_state_path = self.path + tuple(path_parts[:-1])
+
+        # Now find the state and retrieve the event
+        # First, find the root state
+        root_state = self
+        while root_state.parent is not None:
+            root_state = root_state.parent
+
+        # Navigate to the target state
+        current_state = root_state
+        for i, state_name in enumerate(target_state_path[1:], 1):  # Skip root name
+            if state_name not in current_state.substates:
+                raise LookupError(
+                    f"State {'.'.join(target_state_path[:i+1])!r} not found in hierarchy "
+                    f"while resolving event reference {event_ref!r}"
+                )
+            current_state = current_state.substates[state_name]
+
+        # Look for the event in the target state
+        if event_name not in current_state.events:
+            raise LookupError(
+                f"Event {event_name!r} not found in state {'.'.join(target_state_path)!r} "
+                f"while resolving event reference {event_ref!r}"
+            )
+
+        return current_state.events[event_name]
+
 
 @dataclass
 class VarDefine(AstExportable):
@@ -1479,6 +1697,77 @@ class StateMachine(AstExportable, PlantUMLExportable):
         :rtype: Iterator[State]
         """
         yield from self.root_state.walk_states()
+
+    def resolve_event(self, event_path: str) -> Event:
+        """
+        Resolve a full event path to an existing Event object in the state machine.
+
+        This method requires a complete event path in the format ``State1.State2.State3.event_name``,
+        where the path must include all states from the root to the event location. Unlike
+        :meth:`State.resolve_event`, this method does not support relative, parent-relative,
+        or absolute path notations (no leading dots or slashes).
+
+        :param event_path: The complete event path (e.g., ``"Root.System.Active.error"``)
+        :type event_path: str
+        :return: The resolved Event object from the state hierarchy
+        :rtype: Event
+        :raises ValueError: If the event path is invalid or empty
+        :raises LookupError: If any state in the path or the event does not exist
+
+        Example::
+
+            >>> # Assuming a state machine with Root -> System -> Active -> error event
+            >>> sm = StateMachine(defines={}, root_state=root_state)
+            >>> event = sm.resolve_event("Root.System.Active.error")
+            >>> event.name
+            'error'
+        """
+        if not event_path:
+            raise ValueError("Event path cannot be empty")
+
+        # Split the path into components
+        path_parts = event_path.split('.')
+        if not all(path_parts):
+            raise ValueError(f"Invalid event path: {event_path!r} (contains empty parts)")
+
+        if len(path_parts) < 2:
+            raise ValueError(
+                f"Invalid event path: {event_path!r} "
+                f"(must contain at least state name and event name)"
+            )
+
+        # The last part is the event name, everything before is the state path
+        event_name = path_parts[-1]
+        state_path_parts = path_parts[:-1]
+
+        # Navigate to the target state starting from root
+        current_state = self.root_state
+
+        # Verify the first part matches the root state name
+        if state_path_parts[0] != current_state.name:
+            raise LookupError(
+                f"Event path root '{state_path_parts[0]}' does not match "
+                f"state machine root '{current_state.name}' "
+                f"while resolving event path {event_path!r}"
+            )
+
+        # Navigate through the remaining state path
+        for i, state_name in enumerate(state_path_parts[1:], 1):
+            if state_name not in current_state.substates:
+                raise LookupError(
+                    f"State '{state_name}' not found in state '{'.'.join(state_path_parts[:i])}' "
+                    f"while resolving event path {event_path!r}"
+                )
+            current_state = current_state.substates[state_name]
+
+        # Look for the event in the target state
+        if event_name not in current_state.events:
+            raise LookupError(
+                f"Event '{event_name}' not found in state '{'.'.join(state_path_parts)}' "
+                f"while resolving event path {event_path!r}"
+            )
+
+        return current_state.events[event_name]
 
 
 def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> StateMachine:

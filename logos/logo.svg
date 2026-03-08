@@ -2,13 +2,11 @@
   <!-- Background circle for reference (will be transparent in final) -->
   <circle cx="512" cy="512" r="480" fill="none" stroke="none"/>
 
-  <!-- Left brace (DSL indicator) -->
-  <path d="M 140 200 Q 120 200 120 220 L 120 480 Q 120 500 100 500 Q 120 500 120 520 L 120 780 Q 120 800 140 800"
-        fill="none" stroke="#78909C" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Left brace (DSL indicator) - code-style curly brace -->
+  <text x="140" y="550" font-family="Consolas, Monaco, 'Courier New', monospace" font-size="600" font-weight="normal" fill="#78909C" text-anchor="middle">{</text>
 
-  <!-- Right brace (DSL indicator) -->
-  <path d="M 884 200 Q 904 200 904 220 L 904 480 Q 904 500 924 500 Q 904 500 904 520 L 904 780 Q 904 800 884 800"
-        fill="none" stroke="#78909C" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Right brace (DSL indicator) - code-style curly brace -->
+  <text x="884" y="550" font-family="Consolas, Monaco, 'Courier New', monospace" font-size="600" font-weight="normal" fill="#78909C" text-anchor="middle">}</text>
 
   <!-- Main state machine visualization -->
   <g id="state-machine">
@@ -60,5 +58,5 @@
   </g>
 
   <!-- FCSTM text at bottom -->
-  <text x="512" y="940" font-family="Arial, sans-serif" font-size="96" font-weight="bold" fill="#546E7A" text-anchor="middle" letter-spacing="8">FCSTM</text>
+  <text x="535" y="1000" font-family="Arial, sans-serif" font-size="180" font-weight="bold" fill="#546E7A" text-anchor="middle" letter-spacing="40">FCSTM</text>
 </svg>

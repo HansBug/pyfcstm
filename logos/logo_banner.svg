@@ -1,13 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 300" width="1200" height="300">
   <!-- Left side: Logo icon -->
   <g id="logo-icon" transform="translate(30, 0)">
-    <!-- Left brace (DSL indicator) -->
-    <path d="M 10 50 Q 5 50 5 55 L 5 140 Q 5 145 0 145 Q 5 145 5 150 L 5 235 Q 5 240 10 240"
-          fill="none" stroke="#78909C" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+    <!-- Left brace (DSL indicator) - code-style curly brace -->
+    <text x="10" y="175" font-family="Consolas, Monaco, 'Courier New', monospace" font-size="200" font-weight="normal" fill="#78909C" text-anchor="middle">{</text>
 
-    <!-- Right brace (DSL indicator) -->
-    <path d="M 250 50 Q 255 50 255 55 L 255 140 Q 255 145 260 145 Q 255 145 255 150 L 255 235 Q 255 240 250 240"
-          fill="none" stroke="#78909C" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+    <!-- Right brace (DSL indicator) - code-style curly brace -->
+    <text x="250" y="175" font-family="Consolas, Monaco, 'Courier New', monospace" font-size="200" font-weight="normal" fill="#78909C" text-anchor="middle">}</text>
 
     <!-- State machine visualization centered in braces -->
     <g transform="translate(30, 20)">

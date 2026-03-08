@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Background circle for reference (will be transparent in final) -->
+  <circle cx="512" cy="512" r="480" fill="none" stroke="none"/>
+
+  <!-- Arrow marker definitions -->
+  <defs>
+    <!-- Gray arrow for cross-color transitions -->
+    <marker id="arrowGray" markerWidth="10" markerHeight="10" refX="5" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M 1 1 L 9 5 L 1 9 Z" fill="#546E7A"/>
+    </marker>
+    <!-- Blue arrow for blue-to-blue transitions -->
+    <marker id="arrowBlue" markerWidth="10" markerHeight="10" refX="5" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M 1 1 L 9 5 L 1 9 Z" fill="#1976D2"/>
+    </marker>
+    <!-- Green arrow for green-to-green transitions -->
+    <marker id="arrowGreen" markerWidth="10" markerHeight="10" refX="5" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M 1 1 L 9 5 L 1 9 Z" fill="#388E3C"/>
+    </marker>
+  </defs>
+
+  <!-- Left brace (DSL indicator) - code-style curly brace -->
+  <text x="140" y="550" font-family="Consolas, Monaco, 'Courier New', monospace" font-size="600" font-weight="normal" fill="#78909C" text-anchor="middle">{</text>
+
+  <!-- Right brace (DSL indicator) - code-style curly brace -->
+  <text x="884" y="550" font-family="Consolas, Monaco, 'Courier New', monospace" font-size="600" font-weight="normal" fill="#78909C" text-anchor="middle">}</text>
+
+  <!-- Main state machine visualization -->
+  <g id="state-machine">
+    <!-- Top state (initial) - S0 (Blue) -->
+    <circle cx="512" cy="240" r="70" fill="#42A5F5" stroke="#1976D2" stroke-width="8"/>
+    <circle cx="512" cy="240" r="56" fill="none" stroke="#90CAF9" stroke-width="4"/>
+    <text x="512" y="258" font-family="Arial, sans-serif" font-size="48" font-weight="bold" fill="#FFFFFF" text-anchor="middle">S0</text>
+
+    <!-- Left state - S1 (Green) -->
+    <circle cx="320" cy="500" r="80" fill="#66BB6A" stroke="#388E3C" stroke-width="8"/>
+    <circle cx="320" cy="500" r="64" fill="none" stroke="#A5D6A7" stroke-width="4"/>
+    <text x="320" y="520" font-family="Arial, sans-serif" font-size="52" font-weight="bold" fill="#FFFFFF" text-anchor="middle">S1</text>
+
+    <!-- Right state (pseudo state) - S2 (Blue) with dashed border -->
+    <circle cx="704" cy="500" r="80" fill="#42A5F5" stroke="#1976D2" stroke-width="8" stroke-dasharray="16,12"/>
+    <circle cx="704" cy="500" r="64" fill="none" stroke="#90CAF9" stroke-width="4" stroke-dasharray="12,8"/>
+    <text x="704" y="520" font-family="Arial, sans-serif" font-size="52" font-weight="bold" fill="#FFFFFF" text-anchor="middle">S2</text>
+
+    <!-- Bottom state (final) - S3 (Green) -->
+    <circle cx="512" cy="720" r="70" fill="#388E3C" stroke="#1B5E20" stroke-width="8"/>
+    <circle cx="512" cy="720" r="56" fill="none" stroke="#66BB6A" stroke-width="4"/>
+    <circle cx="512" cy="720" r="40" fill="none" stroke="#66BB6A" stroke-width="6"/>
+    <text x="512" y="738" font-family="Arial, sans-serif" font-size="48" font-weight="bold" fill="#FFFFFF" text-anchor="middle">S3</text>
+
+    <!-- Transitions (thick lines for visibility with arrows) -->
+    <!-- Top to Left (Blue to Green) -->
+    <path d="M 450 280 L 360 405" fill="none" stroke="#546E7A" stroke-width="16" stroke-linecap="round"/>
+    <path d="M 450 280 L 360 405" fill="none" stroke="#90A4AE" stroke-width="8" stroke-linecap="round" marker-end="url(#arrowGray)"/>
+
+    <!-- Top to Right (Blue to Blue) -->
+    <path d="M 575 280 L 664 405" fill="none" stroke="#1976D2" stroke-width="16" stroke-linecap="round"/>
+    <path d="M 575 280 L 664 405" fill="none" stroke="#64B5F6" stroke-width="8" stroke-linecap="round" marker-end="url(#arrowBlue)"/>
+
+    <!-- Left to Bottom (Green to Green) -->
+    <path d="M 380 560 L 460 645" fill="none" stroke="#388E3C" stroke-width="16" stroke-linecap="round"/>
+    <path d="M 380 560 L 460 645" fill="none" stroke="#81C784" stroke-width="8" stroke-linecap="round" marker-end="url(#arrowGreen)"/>
+
+    <!-- Right to Bottom (Blue to Green) -->
+    <path d="M 650 560 L 564 645" fill="none" stroke="#546E7A" stroke-width="16" stroke-linecap="round"/>
+    <path d="M 650 560 L 564 645" fill="none" stroke="#90A4AE" stroke-width="8" stroke-linecap="round" marker-end="url(#arrowGray)"/>
+
+    <!-- Left to Right (Green to Blue - bidirectional) -->
+    <path d="M 405 500 L 600 500" fill="none" stroke="#546E7A" stroke-width="16" stroke-linecap="round"/>
+    <path d="M 405 500 L 600 500" fill="none" stroke="#90A4AE" stroke-width="8" stroke-linecap="round" marker-end="url(#arrowGray)"/>
+
+    <!-- Entry point indicator (gray circle at top) -->
+    <circle cx="512" cy="120" r="24" fill="#78909C"/>
+    <path d="M 512 144 L 512 170" stroke="#78909C" stroke-width="12" stroke-linecap="round"/>
+  </g>
+
+  <!-- FCSTM text at bottom -->
+  <text x="535" y="1000" font-family="Arial, sans-serif" font-size="180" font-weight="bold" fill="#546E7A" text-anchor="middle" letter-spacing="40">FCSTM</text>
+</svg>

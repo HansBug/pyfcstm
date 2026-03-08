@@ -16,6 +16,8 @@ DEMOS_MK    := ${SOURCEDIR}/demos.mk
 DEMOS       := $(MAKE) -f "${DEMOS_MK}" SOURCE=${SOURCEDIR}
 NOTEBOOK_MK := ${SOURCEDIR}/notebook.mk
 NOTEBOOK    := $(MAKE) -f "${NOTEBOOK_MK}" SOURCE=${SOURCEDIR}
+LOGOS_MK    := ${SOURCEDIR}/logos.mk
+LOGOS       := $(MAKE) -f "${LOGOS_MK}" SOURCE=${SOURCEDIR}
 
 _CURRENT_PATH := ${PATH}
 _PROJ_DIR     := $(shell readlink -f ${SOURCEDIR}/../..)
@@ -34,6 +36,7 @@ pip:
 	@$(PIP) install -r ${_PROJ_DIR}/requirements-doc.txt
 
 build:
+	@$(LOGOS) build
 	@$(DIAGRAMS) build
 	@$(FCSTMS) build
 	@$(GRAPHVIZ) build
@@ -43,6 +46,7 @@ build:
 all: build
 
 clean:
+	@$(LOGOS) clean
 	@$(DIAGRAMS) clean
 	@$(FCSTMS) clean
 	@$(GRAPHVIZ) clean

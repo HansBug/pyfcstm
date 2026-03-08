@@ -1,4 +1,4 @@
-.PHONY: docs test unittest resource antlr antlr_build build package clean docs_auto todos_auto tests_auto rst_auto vscode vscode_clean
+.PHONY: docs test unittest resource antlr antlr_build build package clean docs_auto todos_auto tests_auto rst_auto vscode vscode_clean logos logos_clean help
 
 PYTHON := $(shell which python)
 
@@ -12,6 +12,7 @@ DATASET_DIR   := ${TESTFILE_DIR}/dataset
 SRC_DIR       := ${PROJ_DIR}/pyfcstm
 TEMPLATES_DIR := ${PROJ_DIR}/templates
 RESOURCE_DIR  := ${PROJ_DIR}/resource
+LOGOS_DIR     := ${PROJ_DIR}/logos
 
 RANGE_DIR      ?= .
 RANGE_TEST_DIR := ${TEST_DIR}/${RANGE_DIR}
@@ -53,6 +54,61 @@ MODEL_SOURCE_FILES := \
 	${SRC_DIR}/dsl/node.py \
 	${SRC_DIR}/model/model.py \
 	${SRC_DIR}/model/expr.py
+
+# Help target
+help:
+	@echo "pyfcstm Build System"
+	@echo "===================="
+	@echo ""
+	@echo "Building and Packaging:"
+	@echo "  make package      - Build Python package (sdist and wheel)"
+	@echo "  make build        - Build standalone executable with PyInstaller"
+	@echo "  make clean        - Remove build artifacts"
+	@echo ""
+	@echo "Testing:"
+	@echo "  make test         - Run all tests (alias for unittest)"
+	@echo "  make unittest     - Run unit tests with pytest"
+	@echo "                      Options: RANGE_DIR=<dir> COV_TYPES='xml term-missing'"
+	@echo "                               MIN_COVERAGE=<percent> WORKERS=<n>"
+	@echo "  make test_cli     - Test CLI executable"
+	@echo ""
+	@echo "Documentation:"
+	@echo "  make docs         - Build documentation (auto-detects language)"
+	@echo "  make docs_en      - Build English documentation"
+	@echo "  make docs_zh      - Build Chinese documentation"
+	@echo "  make pdocs        - Build production documentation with versioning"
+	@echo "  make rst_auto     - Generate RST documentation from Python source"
+	@echo "                      Options: RANGE_DIR=<dir>"
+	@echo ""
+	@echo "LLM-Based Documentation (requires hbllmutils):"
+	@echo "  make docs_auto    - Generate Python docstrings"
+	@echo "  make todos_auto   - Complete TODO comments"
+	@echo "  make tests_auto   - Generate unit tests"
+	@echo "                      Options: RANGE_DIR=<dir> AUTO_OPTIONS='...'"
+	@echo ""
+	@echo "ANTLR Grammar:"
+	@echo "  make antlr        - Download ANTLR jar and setup (requires Java)"
+	@echo "  make antlr_build  - Regenerate parser from Grammar.g4"
+	@echo ""
+	@echo "Sample Tests:"
+	@echo "  make sample       - Generate test files from sample DSL files"
+	@echo "  make sample_clean - Remove generated sample tests"
+	@echo ""
+	@echo "VSCode Extension:"
+	@echo "  make vscode       - Build VSCode extension package"
+	@echo "  make vscode_clean - Clean VSCode extension build artifacts"
+	@echo ""
+	@echo "Logos:"
+	@echo "  make logos        - Generate PNG logos from SVG sources"
+	@echo "  make logos_clean  - Remove generated PNG logos"
+	@echo ""
+	@echo "Common Variables:"
+	@echo "  RANGE_DIR=<dir>   - Target specific directory (default: .)"
+	@echo "  COV_TYPES=<types> - Coverage report types (default: xml term-missing)"
+	@echo "  MIN_COVERAGE=<n>  - Minimum coverage percentage"
+	@echo "  WORKERS=<n>       - Number of parallel test workers"
+	@echo "  AUTO_OPTIONS=...  - LLM generation options"
+	@echo ""
 
 package:
 	$(PYTHON) -m build --sdist --wheel --outdir ${DIST_DIR}
@@ -149,3 +205,17 @@ vscode:
 
 vscode_clean:
 	$(MAKE) -C ${VSCODE_EXT_DIR} clean
+
+# Logo generation targets
+LOGO_SVG_FILES := ${LOGOS_DIR}/logo.svg ${LOGOS_DIR}/logo_banner.svg
+LOGO_PNG_FILES := ${LOGOS_DIR}/logo.png ${LOGOS_DIR}/logo_banner.png
+
+logos: ${LOGO_PNG_FILES}
+
+${LOGOS_DIR}/%.png: ${LOGOS_DIR}/%.svg tools/svg2png.py
+	@echo "Converting $< to $@..."
+	$(PYTHON) tools/svg2png.py -i $< -o $@
+
+logos_clean:
+	@echo "Cleaning generated logo PNG files..."
+	rm -f ${LOGO_PNG_FILES}

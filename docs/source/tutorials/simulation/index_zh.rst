@@ -132,11 +132,11 @@ Python 用法
 示例 1：基本转换
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. literalinclude:: example1_basic.fcstm
+.. literalinclude:: example1_basic.full.fcstm
    :language: fcstm
    :caption: 基本状态转换
 
-.. figure:: example1_basic.fcstm.puml.svg
+.. figure:: example1_basic.full.fcstm.puml.svg
    :align: center
 
    状态机图
@@ -206,11 +206,11 @@ Python 用法
 示例 2：带初始转换的复合状态
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. literalinclude:: example2_composite.fcstm
+.. literalinclude:: example2_composite.full.fcstm
    :language: fcstm
    :caption: 带嵌套状态的复合状态
 
-.. figure:: example2_composite.fcstm.puml.svg
+.. figure:: example2_composite.full.fcstm.puml.svg
    :align: center
 
    复合状态图
@@ -285,11 +285,11 @@ Python 用法
 示例 3：切面动作
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. literalinclude:: example3_aspect.fcstm
+.. literalinclude:: example3_aspect.full.fcstm
    :language: fcstm
    :caption: 带执行顺序的切面动作
 
-.. figure:: example3_aspect.fcstm.puml.svg
+.. figure:: example3_aspect.full.fcstm.puml.svg
    :align: center
 
    切面动作图
@@ -349,11 +349,11 @@ Python 用法
 示例 4：伪状态（跳过切面动作）
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. literalinclude:: example4_pseudo.fcstm
+.. literalinclude:: example4_pseudo.full.fcstm
    :language: fcstm
    :caption: 伪状态跳过切面动作
 
-.. figure:: example4_pseudo.fcstm.puml.svg
+.. figure:: example4_pseudo.full.fcstm.puml.svg
    :align: center
 
    伪状态图
@@ -402,11 +402,11 @@ Python 用法
 示例 5：多层复合状态
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. literalinclude:: example5_multilevel.fcstm
+.. literalinclude:: example5_multilevel.full.fcstm
    :language: fcstm
    :caption: 多层嵌套复合状态
 
-.. figure:: example5_multilevel.fcstm.puml.svg
+.. figure:: example5_multilevel.full.fcstm.puml.svg
    :align: center
 
    多层复合状态图

@@ -132,11 +132,11 @@ A **cycle** executes until reaching a stable boundary:
 Example 1: Basic Transition
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. literalinclude:: example1_basic.fcstm
+.. literalinclude:: example1_basic.full.fcstm
    :language: fcstm
    :caption: Basic state transition
 
-.. figure:: example1_basic.fcstm.puml.svg
+.. figure:: example1_basic.full.fcstm.puml.svg
    :align: center
 
    State machine diagram
@@ -206,11 +206,11 @@ Example 1: Basic Transition
 Example 2: Composite State with Initial Transition
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. literalinclude:: example2_composite.fcstm
+.. literalinclude:: example2_composite.full.fcstm
    :language: fcstm
    :caption: Composite state with nested states
 
-.. figure:: example2_composite.fcstm.puml.svg
+.. figure:: example2_composite.full.fcstm.puml.svg
    :align: center
 
    Composite state diagram
@@ -285,11 +285,11 @@ Example 2: Composite State with Initial Transition
 Example 3: Aspect Actions
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. literalinclude:: example3_aspect.fcstm
+.. literalinclude:: example3_aspect.full.fcstm
    :language: fcstm
    :caption: Aspect actions with execution order
 
-.. figure:: example3_aspect.fcstm.puml.svg
+.. figure:: example3_aspect.full.fcstm.puml.svg
    :align: center
 
    Aspect actions diagram
@@ -349,11 +349,11 @@ Example 3: Aspect Actions
 Example 4: Pseudo State (Skipping Aspect Actions)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. literalinclude:: example4_pseudo.fcstm
+.. literalinclude:: example4_pseudo.full.fcstm
    :language: fcstm
    :caption: Pseudo state skips aspect actions
 
-.. figure:: example4_pseudo.fcstm.puml.svg
+.. figure:: example4_pseudo.full.fcstm.puml.svg
    :align: center
 
    Pseudo state diagram
@@ -402,11 +402,11 @@ Example 4: Pseudo State (Skipping Aspect Actions)
 Example 5: Multi-Level Composite State
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. literalinclude:: example5_multilevel.fcstm
+.. literalinclude:: example5_multilevel.full.fcstm
    :language: fcstm
    :caption: Multi-level nested composite states
 
-.. figure:: example5_multilevel.fcstm.puml.svg
+.. figure:: example5_multilevel.full.fcstm.puml.svg
    :align: center
 
    Multi-level composite state diagram

@@ -1020,6 +1020,590 @@ DFS 验证机制
 - 最小化切面动作（它们每个周期都执行）
 - 使用伪状态在不需要时跳过切面动作
 
+真实业务例子
+---------------------------------------
+
+以下例子展示了 FCSTM 状态机在真实控制系统中的实际应用。每个例子包含多个执行场景，展示不同的业务条件及其详细的执行跟踪。
+
+示例 11：电梯轿门控制
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+此例子模拟常见电梯轿门控制逻辑：收到呼梯后开门，开到位后保持一段时间，再自动关门；如果关门过程中红外光幕检测到有人或物体遮挡，则立即重新开门并重新计时。
+
+.. literalinclude:: example11_elevator_door.full.fcstm
+   :language: fcstm
+   :caption: 电梯轿门控制系统
+
+.. figure:: example11_elevator_door.full.fcstm.puml.svg
+   :align: center
+
+   电梯轿门控制图
+
+**业务背景**：
+
+此状态机模拟典型的电梯安全系统，其中：
+- ``door_pos`` 表示门位置（0=完全关闭，50=半开，100=完全打开）
+- ``hold`` 计数门保持完全打开的周期数
+- ``reopen_count`` 跟踪因遮挡而重新开门的次数
+
+**场景 A：正常操作**（开门 → 保持 → 关门）
+
+.. list-table::
+   :header-rows: 1
+   :widths: 8 20 12 12 12 36
+
+   * - 周期
+     - 事件
+     - 状态
+     - door_pos
+     - hold
+     - 业务含义
+   * - 1
+     - *（无）*
+     - Closed
+     - 0
+     - 0
+     - 电梯空闲，门关闭
+   * - 2
+     - ``HallCall``
+     - Opening
+     - 50
+     - 0
+     - 乘客呼叫电梯，门开始打开
+   * - 3
+     - *（无）*
+     - Opening
+     - 100
+     - 0
+     - 门继续打开到完全打开位置
+   * - 4
+     - *（无）*
+     - Opened
+     - 100
+     - 1
+     - 门完全打开，保持计时器启动
+   * - 5
+     - *（无）*
+     - Opened
+     - 100
+     - 2
+     - 保持计时器继续（等待乘客）
+   * - 6
+     - *（无）*
+     - Closing
+     - 50
+     - 2
+     - 保持时间到期，门开始关闭
+   * - 7
+     - *（无）*
+     - Closing
+     - 0
+     - 2
+     - 门继续关闭到完全关闭
+   * - 8
+     - *（无）*
+     - Closed
+     - 0
+     - 0
+     - 门完全关闭，准备下次呼叫
+
+**详细执行跟踪 A**：
+
+**周期 1**（初始状态）：
+- 初始：``door_pos = 0``，``hold = 0``，``reopen_count = 0``
+- 执行 ``[*] -> Closed``
+- 执行 ``Closed.during``：``hold = 0``
+- **结果**：电梯空闲，门关闭
+
+**周期 2**（收到呼梯）：
+- 事件 ``HallCall`` 触发 ``Closed -> Opening``
+- 执行 ``Closed.exit``（未定义）
+- 执行转换效果：``hold = 0``
+- 执行 ``Opening.enter``（未定义）
+- 执行 ``Opening.during``：``door_pos = 0 + 50 = 50``
+- **结果**：门开始打开，半开状态
+
+**周期 3**（门继续打开）：
+- 检查 ``Opening -> Opened``：``door_pos >= 100`` 不满足（当前：50）
+- 执行 ``Opening.during``：``door_pos = 50 + 50 = 100``
+- **结果**：门到达完全打开位置
+
+**周期 4**（转换到打开状态）：
+- 检查 ``Opening -> Opened``：``door_pos >= 100`` 满足
+- 执行 ``Opening.exit``（未定义）
+- 执行转换效果：``hold = 0``
+- 执行 ``Opened.enter``（未定义）
+- 执行 ``Opened.during``：``hold = 0 + 1 = 1``
+- **结果**：门完全打开，保持计时器启动
+
+**周期 5**（保持计时器继续）：
+- 检查 ``Opened -> Closing``：``hold >= 2`` 不满足（当前：1）
+- 执行 ``Opened.during``：``hold = 1 + 1 = 2``
+- **结果**：保持计时器达到阈值
+
+**周期 6**（开始关门）：
+- 检查 ``Opened -> Closing``：``hold >= 2`` 满足
+- 执行 ``Opened.exit``（未定义）
+- 执行 ``Closing.enter``（未定义）
+- 执行 ``Closing.during``：``door_pos = 100 - 50 = 50``
+- **结果**：门开始关闭
+
+**周期 7**（继续关门）：
+- 检查 ``Closing -> Closed``：``door_pos <= 0`` 不满足（当前：50）
+- 执行 ``Closing.during``：``door_pos = 50 - 50 = 0``
+- **结果**：门到达完全关闭位置
+
+**周期 8**（转换到关闭状态）：
+- 检查 ``Closing -> Closed``：``door_pos <= 0`` 满足
+- 执行 ``Closing.exit``（未定义）
+- 执行转换效果：``hold = 0``
+- 执行 ``Closed.enter``（未定义）
+- 执行 ``Closed.during``：``hold = 0``
+- **结果**：门完全关闭，系统就绪
+
+**场景 B：安全重开**（关门时检测到遮挡）
+
+.. list-table::
+   :header-rows: 1
+   :widths: 8 25 12 12 12 31
+
+   * - 周期
+     - 事件
+     - 状态
+     - door_pos
+     - reopen_count
+     - 业务含义
+   * - 1-5
+     - *（同 A）*
+     - *（同 A）*
+     - *（同）*
+     - 0
+     - 正常开门和保持序列
+   * - 6
+     - *（无）*
+     - Closing
+     - 50
+     - 0
+     - 门开始自动关闭
+   * - 7
+     - ``BeamBlocked``
+     - Opened
+     - 100
+     - 1
+     - 检测到遮挡！门立即重开以确保安全
+
+**详细执行跟踪 B**：
+
+**周期 1-6**：与场景 A 相同（门打开、保持、开始关闭）
+- 周期 6 后：``state = Closing``，``door_pos = 50``，``hold = 2``，``reopen_count = 0``
+
+**周期 7**（检测到遮挡）：
+- 事件 ``BeamBlocked`` 触发 ``Closing -> Opened``
+- 执行 ``Closing.exit``（未定义）
+- 执行转换效果：
+  - ``reopen_count = 0 + 1 = 1``（跟踪安全重开）
+  - ``door_pos = 100``（立即设置为完全打开）
+  - ``hold = 0``（重启保持计时器）
+- 执行 ``Opened.enter``（未定义）
+- 执行 ``Opened.during``：``hold = 0 + 1 = 1``
+- **结果**：门立即重开以确保安全，保持计时器重启
+
+**关键点**：
+- ``door_pos`` 抽象为三个位置（0、50、100）表示关闭、半开和完全打开
+- ``BeamBlocked`` 事件仅在 ``Closing`` 状态下有意义，符合真实电梯安全逻辑
+- 重开直接转换到 ``Opened``（而非 ``Opening``），立即提供通行空间
+- ``reopen_count`` 跟踪安全事件用于维护监控
+
+示例 12：储水式电热水器控温
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+此例子模拟常见家用储水式电热水器：待机时水温缓慢下降，降到下限后自动加热；如果用户集中用水，则水温会在一个周期内显著下降，从而更早触发加热。
+
+.. literalinclude:: example12_water_heater.full.fcstm
+   :language: fcstm
+   :caption: 储水式电热水器控温系统
+
+.. figure:: example12_water_heater.full.fcstm.puml.svg
+   :align: center
+
+   热水器温度控制图
+
+**业务背景**：
+
+此状态机模拟典型的迟滞温度控制系统，其中：
+- ``water_temp`` 表示水温（度）
+- ``draw_count`` 跟踪热水使用事件次数
+- 待机时温度自然下降 1°/周期
+- 加热时温度上升 4°/周期
+- 热水抽取导致立即 8° 温降
+
+**场景 A：自然散热与恢复**（无用水）
+
+.. list-table::
+   :header-rows: 1
+   :widths: 8 20 15 12 43
+
+   * - 周期
+     - 事件
+     - 状态
+     - water_temp
+     - 业务含义
+   * - 1
+     - *（无）*
+     - Standby
+     - 54
+     - 正常待机，逐渐散热
+   * - 2
+     - *（无）*
+     - Standby
+     - 53
+     - 通过保温层持续散热
+   * - 3
+     - *（无）*
+     - Standby
+     - 52
+     - 温度接近下限阈值
+   * - 4
+     - *（无）*
+     - Standby
+     - 51
+     - 温度接近加热启动点
+   * - 5
+     - *（无）*
+     - Standby
+     - 50
+     - 温度达到下限阈值
+   * - 6
+     - *（无）*
+     - Heating
+     - 54
+     - 加热启动，温度开始上升
+   * - 7
+     - *（无）*
+     - Heating
+     - 58
+     - 加热继续向上限阈值
+
+**详细执行跟踪 A**：
+
+**周期 1**（初始待机）：
+- 初始：``water_temp = 55``，``draw_count = 0``
+- 执行 ``[*] -> Standby``
+- 执行 ``Standby.during``：``water_temp = 55 - 1 = 54``
+- **结果**：通过水箱保温层正常散热
+
+**周期 2-5**（温度逐渐下降）：
+- 每周期：检查 ``Standby -> Heating``：``water_temp <= 50`` 不满足
+- 执行 ``Standby.during``：``water_temp`` 减 1
+- 周期 2：``54 - 1 = 53``
+- 周期 3：``53 - 1 = 52``
+- 周期 4：``52 - 1 = 51``
+- 周期 5：``51 - 1 = 50``
+- **结果**：温度逐渐降至下限阈值
+
+**周期 6**（加热启动）：
+- 检查 ``Standby -> Heating``：``water_temp <= 50`` 满足
+- 执行 ``Standby.exit``（未定义）
+- 执行 ``Heating.enter``（未定义）
+- 执行 ``Heating.during``：``water_temp = 50 + 4 = 54``
+- **结果**：加热元件启动，温度开始上升
+
+**周期 7**（继续加热）：
+- 检查 ``Heating -> Standby``：``water_temp >= 60`` 不满足（当前：54）
+- 执行 ``Heating.during``：``water_temp = 54 + 4 = 58``
+- **结果**：加热继续向上限阈值
+
+**场景 B：大量用水**（早晨淋浴触发提前加热）
+
+.. list-table::
+   :header-rows: 1
+   :widths: 8 25 15 12 12 28
+
+   * - 周期
+     - 事件
+     - 状态
+     - water_temp
+     - draw_count
+     - 业务含义
+   * - 1
+     - *（无）*
+     - Standby
+     - 54
+     - 0
+     - 正常待机状态
+   * - 2
+     - ``HotWaterDraw``
+     - Standby
+     - 45
+     - 1
+     - 大量用水（淋浴），温度快速下降
+   * - 3
+     - *（无）*
+     - Heating
+     - 49
+     - 1
+     - 温度低于阈值，加热启动
+   * - 4
+     - *（无）*
+     - Heating
+     - 53
+     - 1
+     - 加热继续
+   * - 5
+     - *（无）*
+     - Heating
+     - 57
+     - 1
+     - 接近上限阈值
+   * - 6
+     - *（无）*
+     - Heating
+     - 61
+     - 1
+     - 温度超过上限阈值
+   * - 7
+     - *（无）*
+     - Standby
+     - 60
+     - 1
+     - 加热停止，返回待机
+
+**详细执行跟踪 B**：
+
+**周期 1**（初始待机）：
+- 与场景 A 相同：``water_temp = 54``，``draw_count = 0``
+
+**周期 2**（大量用水）：
+- 事件 ``HotWaterDraw`` 触发 ``Standby -> Standby``（自转换）
+- 执行 ``Standby.exit``（未定义）
+- 执行转换效果：
+  - ``water_temp = 54 - 8 = 46``（冷水涌入）
+  - ``draw_count = 0 + 1 = 1``（跟踪用水事件）
+- 执行 ``Standby.enter``（未定义）
+- 执行 ``Standby.during``：``water_temp = 46 - 1 = 45``
+- **结果**：用水导致显著温降
+
+**周期 3**（加热启动）：
+- 检查 ``Standby -> Heating``：``water_temp <= 50`` 满足（当前：45）
+- 执行 ``Standby.exit``（未定义）
+- 执行 ``Heating.enter``（未定义）
+- 执行 ``Heating.during``：``water_temp = 45 + 4 = 49``
+- **结果**：低温触发立即加热
+
+**周期 4-6**（加热至上限阈值）：
+- 每周期：检查 ``Heating -> Standby``：``water_temp >= 60`` 不满足
+- 执行 ``Heating.during``：``water_temp`` 增加 4
+- 周期 4：``49 + 4 = 53``
+- 周期 5：``53 + 4 = 57``
+- 周期 6：``57 + 4 = 61``
+- **结果**：温度上升超过上限阈值
+
+**周期 7**（加热停止）：
+- 检查 ``Heating -> Standby``：``water_temp >= 60`` 满足
+- 执行 ``Heating.exit``（未定义）
+- 执行 ``Standby.enter``（未定义）
+- 执行 ``Standby.during``：``water_temp = 61 - 1 = 60``
+- **结果**：加热停止，系统返回待机
+
+**关键点**：
+- ``HotWaterDraw`` 模拟用水导致的显著温降
+- ``Standby -> Heating`` 和 ``Heating -> Standby`` 形成典型的迟滞控制（50°-60° 死区）
+- 自转换 ``Standby -> Standby`` 允许待机时用水
+- 自转换 ``Heating -> Heating`` 模拟"边加热边用水"场景
+- ``draw_count`` 支持用水模式分析用于能源管理
+
+示例 13：主干道信号灯带行人过街请求
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+此例子模拟城市路口中常见的信号控制器：主干道默认保持绿灯；行人按钮被按下后，请求会先被锁存；只有主干道最小绿灯时间达到后，控制器才进入黄灯和行人放行阶段，结束后再回到主干道绿灯。
+
+.. literalinclude:: example13_traffic_light.full.fcstm
+   :language: fcstm
+   :caption: 带行人过街的交通信号灯控制
+
+.. figure:: example13_traffic_light.full.fcstm.puml.svg
+   :align: center
+
+   交通信号灯控制图
+
+**业务背景**：
+
+此状态机模拟交通响应式信号系统，其中：
+- ``green_ticks`` 计数主干道绿灯持续周期数
+- ``request_latched`` 存储行人按钮按下（锁存，非瞬时）
+- ``yellow_ticks`` 计数黄灯持续时间
+- ``walk_ticks`` 计数行人过街时间
+- ``PedestrianPhase`` 是包含黄灯和过街子阶段的复合状态
+
+**场景 A：无行人请求**（保持主干道优先）
+
+.. list-table::
+   :header-rows: 1
+   :widths: 8 20 15 15 50
+
+   * - 周期
+     - 事件
+     - 状态
+     - green_ticks
+     - 业务含义
+   * - 1
+     - *（无）*
+     - MainGreen
+     - 1
+     - 主干道绿灯激活，无行人请求
+   * - 2
+     - *（无）*
+     - MainGreen
+     - 2
+     - 继续主干道优先
+   * - 3
+     - *（无）*
+     - MainGreen
+     - 3
+     - 最小绿灯时间满足，但无行人等待
+   * - 4
+     - *（无）*
+     - MainGreen
+     - 4
+     - 主干道继续绿灯（高效交通流）
+
+**详细执行跟踪 A**：
+
+**周期 1**（初始状态）：
+- 初始：``green_ticks = 0``，``request_latched = 0``，``yellow_ticks = 0``，``walk_ticks = 0``
+- 执行 ``[*] -> MainGreen``
+- 执行 ``MainGreen.during``：``green_ticks = 0 + 1 = 1``
+- **结果**：主干道绿灯激活
+
+**周期 2-4**（继续主干道优先）：
+- 每周期：检查 ``MainGreen -> PedestrianPhase``：``request_latched == 1 && green_ticks >= 3`` 不满足
+- 执行 ``MainGreen.during``：``green_ticks`` 递增
+- 周期 2：``green_ticks = 2``
+- 周期 3：``green_ticks = 3``（最小绿灯满足，但无请求）
+- 周期 4：``green_ticks = 4``
+- **结果**：主干道在无行人需求时保持优先
+
+**场景 B：行人请求与锁存**（按钮提前按下，最小绿灯后放行）
+
+.. list-table::
+   :header-rows: 1
+   :widths: 8 25 20 15 12 20
+
+   * - 周期
+     - 事件
+     - 状态
+     - green_ticks
+     - request_latched
+     - 业务含义
+   * - 1
+     - *（无）*
+     - MainGreen
+     - 1
+     - 0
+     - 主干道绿灯激活
+   * - 2
+     - ``PedRequest``
+     - MainGreen
+     - 2
+     - 1
+     - 行人按下按钮，请求被锁存
+   * - 3
+     - *（无）*
+     - MainGreen
+     - 3
+     - 1
+     - 最小绿灯尚未满足，主干道继续
+   * - 4
+     - *（无）*
+     - MainYellow
+     - 3
+     - 0
+     - 最小绿灯满足，进入行人阶段（先黄灯）
+   * - 5
+     - *（无）*
+     - PedWalk
+     - 3
+     - 0
+     - 黄灯完成，行人过街开始
+   * - 6
+     - *（无）*
+     - PedWalk
+     - 3
+     - 0
+     - 行人过街继续
+   * - 7
+     - *（无）*
+     - MainGreen
+     - 1
+     - 0
+     - 行人阶段完成，返回主干道绿灯
+
+**详细执行跟踪 B**：
+
+**周期 1**（初始状态）：
+- 与场景 A 相同：``green_ticks = 1``，``request_latched = 0``
+
+**周期 2**（行人按钮按下）：
+- 事件 ``PedRequest`` 触发 ``MainGreen -> MainGreen``（自转换）
+- 检查 ``MainGreen -> PedestrianPhase``：``request_latched == 1 && green_ticks >= 3`` 不满足
+- 执行 ``MainGreen.exit``（未定义）
+- 执行转换效果：``request_latched = 1``（锁存请求）
+- 执行 ``MainGreen.enter``（未定义）
+- 执行 ``MainGreen.during``：``green_ticks = 1 + 1 = 2``
+- **结果**：请求被锁存，但最小绿灯尚未满足
+
+**周期 3**（等待最小绿灯）：
+- 检查 ``MainGreen -> PedestrianPhase``：``request_latched == 1 && green_ticks >= 3`` 不满足（当前：2）
+- 执行 ``MainGreen.during``：``green_ticks = 2 + 1 = 3``
+- **结果**：最小绿灯时间现已满足
+
+**周期 4**（进入行人阶段 - 黄灯）：
+- 检查 ``MainGreen -> PedestrianPhase``：``request_latched == 1 && green_ticks >= 3`` 满足
+- 执行 ``MainGreen.exit``（未定义）
+- 执行转换效果：
+  - ``request_latched = 0``（清除锁存）
+  - ``yellow_ticks = 0``（重置黄灯计时器）
+  - ``walk_ticks = 0``（重置过街计时器）
+- 执行 ``PedestrianPhase.enter``（未定义）
+- **PedestrianPhase 是复合状态** - 跟随 ``[*] -> MainYellow``
+- 执行 ``MainYellow.enter``（未定义）
+- 执行 ``MainYellow.during``：``yellow_ticks = 0 + 1 = 1``
+- **结果**：黄灯清空车辆交通
+
+**周期 5**（转换到行人过街）：
+- 检查 ``MainYellow -> PedWalk``：``yellow_ticks >= 1`` 满足
+- 执行 ``MainYellow.exit``（未定义）
+- 执行 ``PedWalk.enter``（未定义）
+- 执行 ``PedWalk.during``：``walk_ticks = 0 + 1 = 1``
+- **结果**：行人过街信号激活
+
+**周期 6**（行人过街继续）：
+- 检查 ``PedWalk -> [*]``：``walk_ticks >= 2`` 不满足（当前：1）
+- 执行 ``PedWalk.during``：``walk_ticks = 1 + 1 = 2``
+- **结果**：行人过街时间满足
+
+**周期 7**（返回主干道绿灯）：
+- 检查 ``PedWalk -> [*]``：``walk_ticks >= 2`` 满足
+- 执行 ``PedWalk.exit``（未定义）
+- 退出到 ``PedestrianPhase``
+- 检查 ``PedestrianPhase -> MainGreen``：无条件转换
+- 执行 ``PedestrianPhase.exit``（未定义）
+- 执行转换效果：
+  - ``green_ticks = 0``（重置主干道绿灯计时器）
+  - ``yellow_ticks = 0``（重置黄灯计时器）
+  - ``walk_ticks = 0``（重置过街计时器）
+- 执行 ``MainGreen.enter``（未定义）
+- 执行 ``MainGreen.during``：``green_ticks = 0 + 1 = 1``
+- **结果**：主干道绿灯恢复，系统准备下一周期
+
+**关键点**：
+- ``request_latched`` 实现按钮请求记忆（不需要持续按压）
+- ``PedestrianPhase`` 复合状态模拟真实世界序列：黄灯 → 行人过街 → 返回
+- 最小绿灯时间（``green_ticks >= 3``）防止过度中断主干道
+- ``PedWalk -> [*]`` 退出到父状态，然后 ``PedestrianPhase -> MainGreen`` 完成周期
+- 所有计时器在阶段转换时重置，确保下一周期的干净状态
+- 自转换 ``MainGreen -> MainGreen`` 允许请求锁存而不改变状态
+
 常见陷阱
 ---------------------------------------
 

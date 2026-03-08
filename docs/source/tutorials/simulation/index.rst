@@ -1020,6 +1020,590 @@ Performance
 - Minimize aspect actions (they execute every cycle)
 - Use pseudo states to skip aspect actions when not needed
 
+Real-World Business Examples
+---------------------------------------
+
+The following examples demonstrate practical applications of FCSTM state machines in real-world control systems. Each example includes multiple execution scenarios showing different business conditions and their detailed execution traces.
+
+Example 11: Elevator Door Control
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+This example simulates common elevator car door control logic: doors open when a hall call is received, remain open for a hold period, then automatically close. If the infrared beam detects an obstruction during closing, the doors immediately reopen and restart the hold timer.
+
+.. literalinclude:: example11_elevator_door.full.fcstm
+   :language: fcstm
+   :caption: Elevator door control system
+
+.. figure:: example11_elevator_door.full.fcstm.puml.svg
+   :align: center
+
+   Elevator door control diagram
+
+**Business Context**:
+
+This state machine models a typical elevator safety system where:
+- ``door_pos`` represents door position (0=fully closed, 50=half-open, 100=fully open)
+- ``hold`` counts cycles the door remains fully open
+- ``reopen_count`` tracks how many times the door reopened due to obstructions
+
+**Scenario A: Normal Operation** (open → hold → close)
+
+.. list-table::
+   :header-rows: 1
+   :widths: 8 20 12 12 12 36
+
+   * - Cycle
+     - Event
+     - State
+     - door_pos
+     - hold
+     - Business Meaning
+   * - 1
+     - *(none)*
+     - Closed
+     - 0
+     - 0
+     - Elevator idle, doors closed
+   * - 2
+     - ``HallCall``
+     - Opening
+     - 50
+     - 0
+     - Passenger calls elevator, doors begin opening
+   * - 3
+     - *(none)*
+     - Opening
+     - 100
+     - 0
+     - Doors continue opening to full position
+   * - 4
+     - *(none)*
+     - Opened
+     - 100
+     - 1
+     - Doors fully open, hold timer starts
+   * - 5
+     - *(none)*
+     - Opened
+     - 100
+     - 2
+     - Hold timer continues (waiting for passengers)
+   * - 6
+     - *(none)*
+     - Closing
+     - 50
+     - 2
+     - Hold time expired, doors begin closing
+   * - 7
+     - *(none)*
+     - Closing
+     - 0
+     - 2
+     - Doors continue closing to fully closed
+   * - 8
+     - *(none)*
+     - Closed
+     - 0
+     - 0
+     - Doors fully closed, ready for next call
+
+**Detailed Execution Trace A**:
+
+**Cycle 1** (initial state):
+- Initial: ``door_pos = 0``, ``hold = 0``, ``reopen_count = 0``
+- Execute ``[*] -> Closed``
+- Execute ``Closed.during``: ``hold = 0``
+- **Result**: Elevator idle with doors closed
+
+**Cycle 2** (hall call received):
+- Event ``HallCall`` triggers ``Closed -> Opening``
+- Execute ``Closed.exit`` (none defined)
+- Execute transition effect: ``hold = 0``
+- Execute ``Opening.enter`` (none defined)
+- Execute ``Opening.during``: ``door_pos = 0 + 50 = 50``
+- **Result**: Doors begin opening, halfway open
+
+**Cycle 3** (doors continue opening):
+- Check ``Opening -> Opened``: ``door_pos >= 100`` not satisfied (current: 50)
+- Execute ``Opening.during``: ``door_pos = 50 + 50 = 100``
+- **Result**: Doors reach fully open position
+
+**Cycle 4** (transition to opened state):
+- Check ``Opening -> Opened``: ``door_pos >= 100`` satisfied
+- Execute ``Opening.exit`` (none defined)
+- Execute transition effect: ``hold = 0``
+- Execute ``Opened.enter`` (none defined)
+- Execute ``Opened.during``: ``hold = 0 + 1 = 1``
+- **Result**: Doors fully open, hold timer starts
+
+**Cycle 5** (hold timer continues):
+- Check ``Opened -> Closing``: ``hold >= 2`` not satisfied (current: 1)
+- Execute ``Opened.during``: ``hold = 1 + 1 = 2``
+- **Result**: Hold timer reaches threshold
+
+**Cycle 6** (begin closing):
+- Check ``Opened -> Closing``: ``hold >= 2`` satisfied
+- Execute ``Opened.exit`` (none defined)
+- Execute ``Closing.enter`` (none defined)
+- Execute ``Closing.during``: ``door_pos = 100 - 50 = 50``
+- **Result**: Doors begin closing
+
+**Cycle 7** (continue closing):
+- Check ``Closing -> Closed``: ``door_pos <= 0`` not satisfied (current: 50)
+- Execute ``Closing.during``: ``door_pos = 50 - 50 = 0``
+- **Result**: Doors reach fully closed position
+
+**Cycle 8** (transition to closed):
+- Check ``Closing -> Closed``: ``door_pos <= 0`` satisfied
+- Execute ``Closing.exit`` (none defined)
+- Execute transition effect: ``hold = 0``
+- Execute ``Closed.enter`` (none defined)
+- Execute ``Closed.during``: ``hold = 0``
+- **Result**: Doors fully closed, system ready
+
+**Scenario B: Safety Reopening** (obstruction detected during closing)
+
+.. list-table::
+   :header-rows: 1
+   :widths: 8 25 12 12 12 31
+
+   * - Cycle
+     - Event
+     - State
+     - door_pos
+     - reopen_count
+     - Business Meaning
+   * - 1-5
+     - *(same as A)*
+     - *(same as A)*
+     - *(same)*
+     - 0
+     - Normal opening and hold sequence
+   * - 6
+     - *(none)*
+     - Closing
+     - 50
+     - 0
+     - Doors begin closing automatically
+   * - 7
+     - ``BeamBlocked``
+     - Opened
+     - 100
+     - 1
+     - Obstruction detected! Doors immediately reopen for safety
+
+**Detailed Execution Trace B**:
+
+**Cycles 1-6**: Same as Scenario A (doors open, hold, begin closing)
+- After cycle 6: ``state = Closing``, ``door_pos = 50``, ``hold = 2``, ``reopen_count = 0``
+
+**Cycle 7** (obstruction detected):
+- Event ``BeamBlocked`` triggers ``Closing -> Opened``
+- Execute ``Closing.exit`` (none defined)
+- Execute transition effect:
+  - ``reopen_count = 0 + 1 = 1`` (track safety reopening)
+  - ``door_pos = 100`` (immediately set to fully open)
+  - ``hold = 0`` (restart hold timer)
+- Execute ``Opened.enter`` (none defined)
+- Execute ``Opened.during``: ``hold = 0 + 1 = 1``
+- **Result**: Doors immediately reopen for safety, hold timer restarts
+
+**Key Points**:
+- ``door_pos`` is abstracted to three positions (0, 50, 100) representing closed, half, and fully open
+- ``BeamBlocked`` event only has meaning in ``Closing`` state, matching real elevator safety logic
+- Reopening transitions directly to ``Opened`` (not ``Opening``), immediately providing clearance
+- ``reopen_count`` tracks safety events for maintenance monitoring
+
+Example 12: Water Heater Temperature Control
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+This example simulates a common residential storage water heater: water temperature gradually decreases during standby, heating activates when temperature drops below the lower threshold, and deactivates when reaching the upper threshold. Heavy water usage causes rapid temperature drop, triggering earlier heating.
+
+.. literalinclude:: example12_water_heater.full.fcstm
+   :language: fcstm
+   :caption: Water heater temperature control system
+
+.. figure:: example12_water_heater.full.fcstm.puml.svg
+   :align: center
+
+   Water heater temperature control diagram
+
+**Business Context**:
+
+This state machine models a typical hysteresis temperature control system where:
+- ``water_temp`` represents water temperature in degrees
+- ``draw_count`` tracks number of hot water usage events
+- Temperature naturally decreases by 1°/cycle in standby
+- Heating increases temperature by 4°/cycle
+- Hot water draw causes immediate 8° temperature drop
+
+**Scenario A: Natural Heat Loss and Recovery** (no water usage)
+
+.. list-table::
+   :header-rows: 1
+   :widths: 8 20 15 12 43
+
+   * - Cycle
+     - Event
+     - State
+     - water_temp
+     - Business Meaning
+   * - 1
+     - *(none)*
+     - Standby
+     - 54
+     - Normal standby, gradual heat loss
+   * - 2
+     - *(none)*
+     - Standby
+     - 53
+     - Continued heat loss through insulation
+   * - 3
+     - *(none)*
+     - Standby
+     - 52
+     - Temperature approaching lower threshold
+   * - 4
+     - *(none)*
+     - Standby
+     - 51
+     - Temperature nearing heating activation point
+   * - 5
+     - *(none)*
+     - Standby
+     - 50
+     - Temperature at lower threshold
+   * - 6
+     - *(none)*
+     - Heating
+     - 54
+     - Heating activated, temperature begins rising
+   * - 7
+     - *(none)*
+     - Heating
+     - 58
+     - Heating continues toward upper threshold
+
+**Detailed Execution Trace A**:
+
+**Cycle 1** (initial standby):
+- Initial: ``water_temp = 55``, ``draw_count = 0``
+- Execute ``[*] -> Standby``
+- Execute ``Standby.during``: ``water_temp = 55 - 1 = 54``
+- **Result**: Normal heat loss through tank insulation
+
+**Cycles 2-5** (gradual temperature decrease):
+- Each cycle: Check ``Standby -> Heating``: ``water_temp <= 50`` not satisfied
+- Execute ``Standby.during``: ``water_temp`` decreases by 1
+- Cycle 2: ``54 - 1 = 53``
+- Cycle 3: ``53 - 1 = 52``
+- Cycle 4: ``52 - 1 = 51``
+- Cycle 5: ``51 - 1 = 50``
+- **Result**: Temperature gradually drops to lower threshold
+
+**Cycle 6** (heating activation):
+- Check ``Standby -> Heating``: ``water_temp <= 50`` satisfied
+- Execute ``Standby.exit`` (none defined)
+- Execute ``Heating.enter`` (none defined)
+- Execute ``Heating.during``: ``water_temp = 50 + 4 = 54``
+- **Result**: Heating element activates, temperature begins rising
+
+**Cycle 7** (continued heating):
+- Check ``Heating -> Standby``: ``water_temp >= 60`` not satisfied (current: 54)
+- Execute ``Heating.during``: ``water_temp = 54 + 4 = 58``
+- **Result**: Heating continues toward upper threshold
+
+**Scenario B: Heavy Water Usage** (morning shower triggers early heating)
+
+.. list-table::
+   :header-rows: 1
+   :widths: 8 25 15 12 12 28
+
+   * - Cycle
+     - Event
+     - State
+     - water_temp
+     - draw_count
+     - Business Meaning
+   * - 1
+     - *(none)*
+     - Standby
+     - 54
+     - 0
+     - Normal standby state
+   * - 2
+     - ``HotWaterDraw``
+     - Standby
+     - 45
+     - 1
+     - Heavy water usage (shower), rapid temperature drop
+   * - 3
+     - *(none)*
+     - Heating
+     - 49
+     - 1
+     - Temperature below threshold, heating activates
+   * - 4
+     - *(none)*
+     - Heating
+     - 53
+     - 1
+     - Heating continues
+   * - 5
+     - *(none)*
+     - Heating
+     - 57
+     - 1
+     - Approaching upper threshold
+   * - 6
+     - *(none)*
+     - Heating
+     - 61
+     - 1
+     - Temperature exceeds upper threshold
+   * - 7
+     - *(none)*
+     - Standby
+     - 60
+     - 1
+     - Heating deactivates, return to standby
+
+**Detailed Execution Trace B**:
+
+**Cycle 1** (initial standby):
+- Same as Scenario A: ``water_temp = 54``, ``draw_count = 0``
+
+**Cycle 2** (heavy water usage):
+- Event ``HotWaterDraw`` triggers ``Standby -> Standby`` (self-transition)
+- Execute ``Standby.exit`` (none defined)
+- Execute transition effect:
+  - ``water_temp = 54 - 8 = 46`` (cold water influx)
+  - ``draw_count = 0 + 1 = 1`` (track usage event)
+- Execute ``Standby.enter`` (none defined)
+- Execute ``Standby.during``: ``water_temp = 46 - 1 = 45``
+- **Result**: Significant temperature drop from water usage
+
+**Cycle 3** (heating activation):
+- Check ``Standby -> Heating``: ``water_temp <= 50`` satisfied (current: 45)
+- Execute ``Standby.exit`` (none defined)
+- Execute ``Heating.enter`` (none defined)
+- Execute ``Heating.during``: ``water_temp = 45 + 4 = 49``
+- **Result**: Low temperature triggers immediate heating
+
+**Cycles 4-6** (heating to upper threshold):
+- Each cycle: Check ``Heating -> Standby``: ``water_temp >= 60`` not satisfied
+- Execute ``Heating.during``: ``water_temp`` increases by 4
+- Cycle 4: ``49 + 4 = 53``
+- Cycle 5: ``53 + 4 = 57``
+- Cycle 6: ``57 + 4 = 61``
+- **Result**: Temperature rises above upper threshold
+
+**Cycle 7** (heating deactivation):
+- Check ``Heating -> Standby``: ``water_temp >= 60`` satisfied
+- Execute ``Heating.exit`` (none defined)
+- Execute ``Standby.enter`` (none defined)
+- Execute ``Standby.during``: ``water_temp = 61 - 1 = 60``
+- **Result**: Heating deactivates, system returns to standby
+
+**Key Points**:
+- ``HotWaterDraw`` models significant temperature drop from water usage
+- ``Standby -> Heating`` and ``Heating -> Standby`` form classic hysteresis control (50°-60° deadband)
+- Self-transition ``Standby -> Standby`` allows water draw during standby
+- Self-transition ``Heating -> Heating`` models "heating while drawing" scenario
+- ``draw_count`` enables usage pattern analysis for energy management
+
+Example 13: Traffic Light with Pedestrian Crossing
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+This example simulates a common urban intersection signal controller: the main road maintains green light by default; when a pedestrian button is pressed, the request is latched; only after the minimum green time is satisfied does the controller enter yellow light and pedestrian crossing phases, then returns to main road green.
+
+.. literalinclude:: example13_traffic_light.full.fcstm
+   :language: fcstm
+   :caption: Traffic light with pedestrian crossing control
+
+.. figure:: example13_traffic_light.full.fcstm.puml.svg
+   :align: center
+
+   Traffic light control diagram
+
+**Business Context**:
+
+This state machine models a traffic-responsive signal system where:
+- ``green_ticks`` counts cycles the main road has been green
+- ``request_latched`` stores pedestrian button press (latched, not momentary)
+- ``yellow_ticks`` counts yellow light duration
+- ``walk_ticks`` counts pedestrian crossing time
+- ``PedestrianPhase`` is a composite state containing yellow and walk sub-phases
+
+**Scenario A: No Pedestrian Request** (main road priority maintained)
+
+.. list-table::
+   :header-rows: 1
+   :widths: 8 20 15 15 50
+
+   * - Cycle
+     - Event
+     - State
+     - green_ticks
+     - Business Meaning
+   * - 1
+     - *(none)*
+     - MainGreen
+     - 1
+     - Main road green light active, no pedestrian request
+   * - 2
+     - *(none)*
+     - MainGreen
+     - 2
+     - Continued main road priority
+   * - 3
+     - *(none)*
+     - MainGreen
+     - 3
+     - Minimum green time satisfied, but no pedestrian waiting
+   * - 4
+     - *(none)*
+     - MainGreen
+     - 4
+     - Main road continues with green (efficient traffic flow)
+
+**Detailed Execution Trace A**:
+
+**Cycle 1** (initial state):
+- Initial: ``green_ticks = 0``, ``request_latched = 0``, ``yellow_ticks = 0``, ``walk_ticks = 0``
+- Execute ``[*] -> MainGreen``
+- Execute ``MainGreen.during``: ``green_ticks = 0 + 1 = 1``
+- **Result**: Main road green light active
+
+**Cycles 2-4** (continued main road priority):
+- Each cycle: Check ``MainGreen -> PedestrianPhase``: ``request_latched == 1 && green_ticks >= 3`` not satisfied
+- Execute ``MainGreen.during``: ``green_ticks`` increments
+- Cycle 2: ``green_ticks = 2``
+- Cycle 3: ``green_ticks = 3`` (minimum green satisfied, but no request)
+- Cycle 4: ``green_ticks = 4``
+- **Result**: Main road maintains priority without pedestrian demand
+
+**Scenario B: Pedestrian Request with Latching** (button pressed early, served after minimum green)
+
+.. list-table::
+   :header-rows: 1
+   :widths: 8 25 20 15 12 20
+
+   * - Cycle
+     - Event
+     - State
+     - green_ticks
+     - request_latched
+     - Business Meaning
+   * - 1
+     - *(none)*
+     - MainGreen
+     - 1
+     - 0
+     - Main road green active
+   * - 2
+     - ``PedRequest``
+     - MainGreen
+     - 2
+     - 1
+     - Pedestrian presses button, request latched
+   * - 3
+     - *(none)*
+     - MainGreen
+     - 3
+     - 1
+     - Minimum green not yet satisfied, main road continues
+   * - 4
+     - *(none)*
+     - MainYellow
+     - 3
+     - 0
+     - Minimum green satisfied, enter pedestrian phase (yellow first)
+   * - 5
+     - *(none)*
+     - PedWalk
+     - 3
+     - 0
+     - Yellow complete, pedestrian crossing begins
+   * - 6
+     - *(none)*
+     - PedWalk
+     - 3
+     - 0
+     - Pedestrian crossing continues
+   * - 7
+     - *(none)*
+     - MainGreen
+     - 1
+     - 0
+     - Pedestrian phase complete, return to main road green
+
+**Detailed Execution Trace B**:
+
+**Cycle 1** (initial state):
+- Same as Scenario A: ``green_ticks = 1``, ``request_latched = 0``
+
+**Cycle 2** (pedestrian button pressed):
+- Event ``PedRequest`` triggers ``MainGreen -> MainGreen`` (self-transition)
+- Check ``MainGreen -> PedestrianPhase``: ``request_latched == 1 && green_ticks >= 3`` not satisfied
+- Execute ``MainGreen.exit`` (none defined)
+- Execute transition effect: ``request_latched = 1`` (latch the request)
+- Execute ``MainGreen.enter`` (none defined)
+- Execute ``MainGreen.during``: ``green_ticks = 1 + 1 = 2``
+- **Result**: Request latched, but minimum green not yet satisfied
+
+**Cycle 3** (waiting for minimum green):
+- Check ``MainGreen -> PedestrianPhase``: ``request_latched == 1 && green_ticks >= 3`` not satisfied (current: 2)
+- Execute ``MainGreen.during``: ``green_ticks = 2 + 1 = 3``
+- **Result**: Minimum green time now satisfied
+
+**Cycle 4** (enter pedestrian phase - yellow light):
+- Check ``MainGreen -> PedestrianPhase``: ``request_latched == 1 && green_ticks >= 3`` satisfied
+- Execute ``MainGreen.exit`` (none defined)
+- Execute transition effect:
+  - ``request_latched = 0`` (clear the latch)
+  - ``yellow_ticks = 0`` (reset yellow timer)
+  - ``walk_ticks = 0`` (reset walk timer)
+- Execute ``PedestrianPhase.enter`` (none defined)
+- **PedestrianPhase is composite** - follow ``[*] -> MainYellow``
+- Execute ``MainYellow.enter`` (none defined)
+- Execute ``MainYellow.during``: ``yellow_ticks = 0 + 1 = 1``
+- **Result**: Yellow light clears vehicle traffic
+
+**Cycle 5** (transition to pedestrian walk):
+- Check ``MainYellow -> PedWalk``: ``yellow_ticks >= 1`` satisfied
+- Execute ``MainYellow.exit`` (none defined)
+- Execute ``PedWalk.enter`` (none defined)
+- Execute ``PedWalk.during``: ``walk_ticks = 0 + 1 = 1``
+- **Result**: Pedestrian crossing signal activates
+
+**Cycle 6** (pedestrian crossing continues):
+- Check ``PedWalk -> [*]``: ``walk_ticks >= 2`` not satisfied (current: 1)
+- Execute ``PedWalk.during``: ``walk_ticks = 1 + 1 = 2``
+- **Result**: Pedestrian crossing time satisfied
+
+**Cycle 7** (return to main road green):
+- Check ``PedWalk -> [*]``: ``walk_ticks >= 2`` satisfied
+- Execute ``PedWalk.exit`` (none defined)
+- Exit to ``PedestrianPhase``
+- Check ``PedestrianPhase -> MainGreen``: unconditional transition
+- Execute ``PedestrianPhase.exit`` (none defined)
+- Execute transition effect:
+  - ``green_ticks = 0`` (reset main green timer)
+  - ``yellow_ticks = 0`` (reset yellow timer)
+  - ``walk_ticks = 0`` (reset walk timer)
+- Execute ``MainGreen.enter`` (none defined)
+- Execute ``MainGreen.during``: ``green_ticks = 0 + 1 = 1``
+- **Result**: Main road green restored, system ready for next cycle
+
+**Key Points**:
+- ``request_latched`` implements button request memory (not requiring continuous press)
+- ``PedestrianPhase`` composite state models real-world sequence: yellow → pedestrian walk → return
+- Minimum green time (``green_ticks >= 3``) prevents excessive main road interruption
+- ``PedWalk -> [*]`` exits to parent, then ``PedestrianPhase -> MainGreen`` completes the cycle
+- All timers reset on phase transitions, ensuring clean state for next cycle
+- Self-transition ``MainGreen -> MainGreen`` allows request latching without changing state
+
 Common Pitfalls
 ---------------------------------------
 

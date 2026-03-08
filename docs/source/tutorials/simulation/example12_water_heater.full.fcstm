@@ -1,0 +1,28 @@
+def int water_temp = 55;
+def int draw_count = 0;
+
+state Root {
+    state Standby {
+        during {
+            water_temp = water_temp - 1;
+        }
+    }
+
+    state Heating {
+        during {
+            water_temp = water_temp + 4;
+        }
+    }
+
+    [*] -> Standby;
+    Standby -> Heating : if [water_temp <= 50];
+    Standby -> Standby :: HotWaterDraw effect {
+        water_temp = water_temp - 8;
+        draw_count = draw_count + 1;
+    };
+    Heating -> Standby : if [water_temp >= 60];
+    Heating -> Heating :: HotWaterDraw effect {
+        water_temp = water_temp - 8;
+        draw_count = draw_count + 1;
+    };
+}

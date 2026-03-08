@@ -34,16 +34,8 @@ sm = parse_dsl_node_to_state_machine(ast)
 runtime = SimulationRuntime(sm)
 
 # Execute cycles
-print("Initial state:", runtime.current_state)
-print("Initial counter:", runtime.vars['counter'])
+print(f"Initial: state={'.'.join(runtime.current_state.path)}, counter={runtime.vars['counter']}")
 
-runtime.cycle()
-print("\nAfter cycle 1:")
-print("State:", runtime.current_state)
-print("Counter:", runtime.vars['counter'])
-
-for i in range(2, 8):
+for i in range(1, 8):
     runtime.cycle()
-    print(f"\nAfter cycle {i}:")
-    print("State:", runtime.current_state)
-    print("Counter:", runtime.vars['counter'])
+    print(f"Cycle {i}: state={'.'.join(runtime.current_state.path)}, counter={runtime.vars['counter']}")

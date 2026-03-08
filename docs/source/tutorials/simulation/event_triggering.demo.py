@@ -26,16 +26,16 @@ runtime = SimulationRuntime(sm)
 
 # Initialize
 runtime.cycle()
-print(f"Initial state: {runtime.current_state}")
+print(f"Initial: state={'.'.join(runtime.current_state.path)}")
 
 # Trigger Start event
 runtime.cycle(['Start'])
-print(f"After 'Start' event: {runtime.current_state}")
+print(f"After 'Start': state={'.'.join(runtime.current_state.path)}")
 
 # Trigger Stop event
 runtime.cycle(['Stop'])
-print(f"After 'Stop' event: {runtime.current_state}")
+print(f"After 'Stop': state={'.'.join(runtime.current_state.path)}")
 
 # Try Start again
 runtime.cycle(['Start'])
-print(f"After 'Start' again: {runtime.current_state}")
+print(f"After 'Start' again: state={'.'.join(runtime.current_state.path)}")

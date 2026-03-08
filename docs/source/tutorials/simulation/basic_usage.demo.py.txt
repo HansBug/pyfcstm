@@ -1,0 +1,8 @@
+Initial: state=System, counter=0
+Cycle 1: state=System.Idle, counter=1
+Cycle 2: state=System.Idle, counter=2
+Cycle 3: state=System.Idle, counter=3
+Cycle 4: state=System.Idle, counter=4
+Cycle 5: state=System.Idle, counter=5
+Cycle 6: state=System.Active, counter=15
+Cycle 7: state=System.Active, counter=25

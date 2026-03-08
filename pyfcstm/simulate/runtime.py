@@ -231,7 +231,12 @@ import copy
 import logging
 import warnings
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Literal, Optional, Tuple, Union
+from typing import Callable, Dict, List, Optional, Tuple, Union
+
+try:
+    from typing import Literal
+except ImportError:
+    from typing_extensions import Literal
 
 from ..dsl import EXIT_STATE
 from ..model import Event, OnAspect, OnStage, State, StateMachine, Transition

@@ -183,6 +183,7 @@ html_context = {
     'display_github': True,
     'github_user': 'hansbug',
     'github_repo': 'pyfcstm',
+    'github_version': 'main',
     'conf_py_path': '/docs/source/',
 }
 

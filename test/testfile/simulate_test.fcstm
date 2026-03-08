@@ -1,0 +1,12 @@
+def int counter = 0;
+def float temperature = 25.0;
+
+state System {
+    [*] -> Idle;
+
+    state Idle;
+    state Running;
+
+    Idle -> Running :: Start;
+    Running -> Idle :: Stop;
+}

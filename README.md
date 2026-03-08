@@ -1,5 +1,11 @@
 # pyfcstm
 
+<div align="center">
+  <img src="logos/logo_banner.svg" alt="pyfcstm - Python Finite State Machine Framework" width="800"/>
+</div>
+
+<div align="center">
+
 [![PyPI](https://img.shields.io/pypi/v/pyfcstm)](https://pypi.org/project/pyfcstm/)
 ![PyPI - Python Version](https://img.shields.io/pypi/pyversions/pyfcstm)
 ![PyPI - Implementation](https://img.shields.io/pypi/implementation/pyfcstm)
@@ -23,6 +29,10 @@
 [![GitHub pulls](https://img.shields.io/github/issues-pr/hansbug/pyfcstm)](https://github.com/hansbug/pyfcstm/pulls)
 [![Contributors](https://img.shields.io/github/contributors/hansbug/pyfcstm)](https://github.com/hansbug/pyfcstm/graphs/contributors)
 [![GitHub license](https://img.shields.io/github/license/hansbug/pyfcstm)](https://github.com/hansbug/pyfcstm/blob/master/LICENSE)
+
+</div>
+
+---
 
 **pyfcstm** is a powerful **Python framework** for parsing **Finite State Machine (FSM) Domain-Specific Language (DSL)**
 and generating executable code in multiple target languages. It specializes in modeling **Hierarchical State Machines (

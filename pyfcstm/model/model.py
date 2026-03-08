@@ -145,6 +145,35 @@ class Event:
         """
         return tuple((*self.state_path, self.name))
 
+    @property
+    def path_name(self) -> str:
+        """
+        Get the canonical dot-separated path string for this event.
+
+        The returned string serves as the stable identifier used by the runtime
+        for event indexing and transition matching. This format matches the
+        fully-qualified event paths used in the DSL.
+
+        Event paths follow the state hierarchy where the event is defined. For
+        example, a local event ``Go`` defined in state ``System.Active`` would
+        have the path ``System.Active.Go``.
+
+        :return: Dot-separated event path matching the DSL structure
+        :rtype: str
+
+        Example::
+
+            >>> event = Event(name="Start", state_path=("System", "Idle"))
+            >>> event.path_name
+            'System.Idle.Start'
+
+        .. note::
+           This property is used internally by :class:`SimulationRuntime` when
+           building the event dictionary for transition matching. The returned
+           string must be stable and unique within the state machine.
+        """
+        return '.'.join(self.path)
+
     def to_ast_node(self) -> dsl_nodes.EventDefinition:
         """
         Convert this event to an AST node.

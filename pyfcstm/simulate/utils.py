@@ -3,13 +3,11 @@ Naming utilities for simulation runtime logging and diagnostics.
 
 This module provides helper functions for converting runtime objects into
 human-readable string representations. These utilities are used throughout
-the simulation runtime for logging execution steps, indexing events for
-transition matching, and presenting lifecycle action paths in diagnostic
-messages.
+the simulation runtime for logging execution steps and presenting lifecycle
+action paths in diagnostic messages.
 
 The module contains the following main components:
 
-* :func:`get_event_name` - Convert an event object to its dot-separated path.
 * :func:`get_func_name` - Convert a lifecycle or aspect action to its readable path.
 * :func:`is_state_resolve_event_path` - Check if a path string is definitely for State.resolve_event.
 
@@ -18,23 +16,23 @@ provide consistent naming conventions that match the DSL source structure.
 
 Example::
 
-    >>> from pyfcstm.model import Event, OnStage, State
-    >>> from pyfcstm.simulate.utils import get_event_name, get_func_name
-    >>> # Event naming
-    >>> event = Event(name='Start', path=('System', 'Idle', 'Start'))
-    >>> get_event_name(event)
-    'System.Idle.Start'
+    >>> from pyfcstm.model import OnStage, State
+    >>> from pyfcstm.simulate.utils import get_func_name
     >>> # Action naming
     >>> state = State(name='Active', path=('System', 'Active'))
     >>> action = OnStage(name='Initialize', state_path=('System', 'Active', 'Initialize'))
     >>> get_func_name(action)
     'System.Active.Initialize'
+
+.. note::
+   For event naming, use the :attr:`Event.path_name` property directly instead
+   of a utility function.
 """
 
 
 from typing import Union
 
-from ..model import Event, OnStage, OnAspect
+from ..model import OnStage, OnAspect
 
 
 def is_state_resolve_event_path(path: str) -> bool:
@@ -97,51 +95,6 @@ def is_state_resolve_event_path(path: str) -> bool:
 
     # Plain paths without special notation are uncertain
     return False
-
-
-def get_event_name(event: Event) -> str:
-    """
-    Convert an event object to its canonical dot-separated path string.
-
-    The returned string serves as the stable identifier used by the runtime
-    for event indexing and transition matching. This format matches the
-    fully-qualified event paths used in the DSL.
-
-    Event paths follow the state hierarchy where the event is defined. For
-    example, a local event ``Go`` defined in state ``System.Active`` would
-    have the path ``System.Active.Go``.
-
-    :param event: Event object to convert to string representation.
-    :type event: Event
-    :return: Dot-separated event path matching the DSL structure.
-    :rtype: str
-
-    Example::
-
-        >>> from pyfcstm.dsl import parse_with_grammar_entry
-        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
-        >>> from pyfcstm.simulate.utils import get_event_name
-        >>> dsl_code = '''
-        ... state System {
-        ...     state Idle;
-        ...     state Active;
-        ...     [*] -> Idle;
-        ...     Idle -> Active :: Start;
-        ... }
-        ... '''
-        >>> ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
-        >>> sm = parse_dsl_node_to_state_machine(ast)
-        >>> # Find the Start event
-        >>> start_event = sm.root_state.substates['Idle'].events['Start']
-        >>> get_event_name(start_event)
-        'System.Idle.Start'
-
-    .. note::
-       This function is used internally by :class:`SimulationRuntime` when
-       building the event dictionary for transition matching. The returned
-       string must be stable and unique within the state machine.
-    """
-    return '.'.join(event.path)
 
 
 def get_func_name(func: Union[OnStage, OnAspect]) -> str:

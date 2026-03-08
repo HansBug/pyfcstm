@@ -12,12 +12,6 @@ is\_state\_resolve\_event\_path
 .. autofunction:: is_state_resolve_event_path
 
 
-get\_event\_name
------------------------------------------------------
-
-.. autofunction:: get_event_name
-
-
 get\_func\_name
 -----------------------------------------------------
 

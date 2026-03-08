@@ -23,7 +23,7 @@ Event
 -----------------------------------------------------
 
 .. autoclass:: Event
-    :members: path,to_ast_node,name,state_path,extra_name
+    :members: path,path_name,to_ast_node,name,state_path,extra_name
 
 
 Transition

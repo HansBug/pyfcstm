@@ -12,7 +12,6 @@ The module contains the following main components:
   state machines with cycle-based semantics.
 * :class:`SimulationRuntimeDfsError` - Exception raised when speculative
   validation exceeds safety limits.
-* :func:`get_event_name` - Convert an event object to its dot-separated path.
 * :func:`get_func_name` - Convert a lifecycle action to its readable path.
 
 Key Concepts
@@ -209,4 +208,4 @@ Validation preventing invalid transitions::
 """
 
 from .runtime import SimulationRuntime, SimulationRuntimeDfsError
-from .utils import get_event_name, get_func_name
+from .utils import get_func_name

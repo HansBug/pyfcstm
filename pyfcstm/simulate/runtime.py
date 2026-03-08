@@ -234,7 +234,7 @@ from typing import Dict, List, Optional, Tuple, Union
 
 from ..dsl import EXIT_STATE
 from ..model import Event, OnAspect, OnStage, State, StateMachine, Transition
-from .utils import get_event_name, get_func_name
+from .utils import get_func_name
 
 
 class SimulationRuntimeDfsError(RuntimeError):
@@ -645,7 +645,7 @@ class SimulationRuntime:
 
         The runtime accepts both event objects and string paths. This helper
         resolves them into concrete :class:`Event` instances and also builds a
-        dictionary keyed by :func:`pyfcstm.simulate.get_event_name` so transition
+        dictionary keyed by :attr:`Event.path_name` so transition
         matching can perform constant-time membership checks.
 
         :param events: Raw event inputs for the current execution attempt.
@@ -654,7 +654,7 @@ class SimulationRuntime:
         :rtype: Tuple[List[Event], Dict[str, Event]]
         """
         event_objects = [self._parse_event(event) for event in list(events or [])]
-        d_events = {get_event_name(event): event for event in event_objects}
+        d_events = {event.path_name: event for event in event_objects}
         return event_objects, d_events
 
     def _execute_transition_effect(self, transition: Transition, vars_: Dict[str, Union[int, float]]) -> None:
@@ -719,7 +719,7 @@ class SimulationRuntime:
         """
         if transition.event is None:
             return True
-        return get_event_name(transition.event) in d_events
+        return transition.event.path_name in d_events
 
     def _transition_matches_guard(self, transition: Transition, vars_: Dict[str, Union[int, float]]) -> bool:
         """

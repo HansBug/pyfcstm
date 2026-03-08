@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <!-- Background circle for reference (will be transparent in final) -->
+  <circle cx="200" cy="200" r="180" fill="none" stroke="none"/>
+
+  <!-- Main state machine visualization -->
+  <g id="state-machine">
+    <!-- Top state (initial) - S0 -->
+    <circle cx="200" cy="80" r="35" fill="#2196F3" stroke="#1976D2" stroke-width="4"/>
+    <circle cx="200" cy="80" r="28" fill="none" stroke="#BBDEFB" stroke-width="2"/>
+    <text x="200" y="88" font-family="Arial, sans-serif" font-size="24" font-weight="bold" fill="#FFFFFF" text-anchor="middle">S0</text>
+
+    <!-- Left state - S1 -->
+    <circle cx="100" cy="200" r="40" fill="#42A5F5" stroke="#1976D2" stroke-width="4"/>
+    <circle cx="100" cy="200" r="32" fill="none" stroke="#BBDEFB" stroke-width="2"/>
+    <text x="100" y="210" font-family="Arial, sans-serif" font-size="26" font-weight="bold" fill="#FFFFFF" text-anchor="middle">S1</text>
+
+    <!-- Right state (pseudo state) - S2 with dashed border -->
+    <circle cx="300" cy="200" r="40" fill="#42A5F5" stroke="#1976D2" stroke-width="4" stroke-dasharray="8,6"/>
+    <circle cx="300" cy="200" r="32" fill="none" stroke="#BBDEFB" stroke-width="2" stroke-dasharray="6,4"/>
+    <text x="300" y="210" font-family="Arial, sans-serif" font-size="26" font-weight="bold" fill="#FFFFFF" text-anchor="middle">S2</text>
+
+    <!-- Bottom state (final) - S3 -->
+    <circle cx="200" cy="320" r="35" fill="#1976D2" stroke="#0D47A1" stroke-width="4"/>
+    <circle cx="200" cy="320" r="28" fill="none" stroke="#90CAF9" stroke-width="2"/>
+    <circle cx="200" cy="320" r="20" fill="none" stroke="#90CAF9" stroke-width="3"/>
+    <text x="200" y="330" font-family="Arial, sans-serif" font-size="24" font-weight="bold" fill="#FFFFFF" text-anchor="middle">S3</text>
+
+    <!-- Transitions (thick lines for visibility) -->
+    <!-- Top to Left -->
+    <path d="M 175 100 L 120 180" fill="none" stroke="#1976D2" stroke-width="8" stroke-linecap="round"/>
+    <path d="M 175 100 L 120 180" fill="none" stroke="#64B5F6" stroke-width="4" stroke-linecap="round"/>
+
+    <!-- Top to Right -->
+    <path d="M 225 100 L 280 180" fill="none" stroke="#1976D2" stroke-width="8" stroke-linecap="round"/>
+    <path d="M 225 100 L 280 180" fill="none" stroke="#64B5F6" stroke-width="4" stroke-linecap="round"/>
+
+    <!-- Left to Bottom -->
+    <path d="M 120 230 L 175 300" fill="none" stroke="#1976D2" stroke-width="8" stroke-linecap="round"/>
+    <path d="M 120 230 L 175 300" fill="none" stroke="#64B5F6" stroke-width="4" stroke-linecap="round"/>
+
+    <!-- Right to Bottom -->
+    <path d="M 280 230 L 225 300" fill="none" stroke="#1976D2" stroke-width="8" stroke-linecap="round"/>
+    <path d="M 280 230 L 225 300" fill="none" stroke="#64B5F6" stroke-width="4" stroke-linecap="round"/>
+
+    <!-- Left to Right (bidirectional) -->
+    <path d="M 140 200 L 260 200" fill="none" stroke="#1976D2" stroke-width="8" stroke-linecap="round"/>
+    <path d="M 140 200 L 260 200" fill="none" stroke="#64B5F6" stroke-width="4" stroke-linecap="round"/>
+
+    <!-- Entry point indicator (small circle at top) -->
+    <circle cx="200" cy="30" r="8" fill="#0D47A1"/>
+    <path d="M 200 38 L 200 45" stroke="#0D47A1" stroke-width="6" stroke-linecap="round"/>
+  </g>
+</svg>

@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 300" width="1200" height="300">
+  <!-- Left side: Logo icon -->
+  <g id="logo-icon" transform="translate(50, 0)">
+    <!-- State machine visualization (scaled down) -->
+    <g transform="scale(0.7) translate(50, 0)">
+      <!-- Top state - S0 -->
+      <circle cx="150" cy="60" r="30" fill="#2196F3" stroke="#1976D2" stroke-width="4"/>
+      <circle cx="150" cy="60" r="24" fill="none" stroke="#BBDEFB" stroke-width="2"/>
+      <text x="150" y="67" font-family="Arial, sans-serif" font-size="20" font-weight="bold" fill="#FFFFFF" text-anchor="middle">S0</text>
+
+      <!-- Left state - S1 -->
+      <circle cx="70" cy="150" r="35" fill="#42A5F5" stroke="#1976D2" stroke-width="4"/>
+      <circle cx="70" cy="150" r="28" fill="none" stroke="#BBDEFB" stroke-width="2"/>
+      <text x="70" y="158" font-family="Arial, sans-serif" font-size="22" font-weight="bold" fill="#FFFFFF" text-anchor="middle">S1</text>
+
+      <!-- Right state (pseudo state) - S2 with dashed border -->
+      <circle cx="230" cy="150" r="35" fill="#42A5F5" stroke="#1976D2" stroke-width="4" stroke-dasharray="8,6"/>
+      <circle cx="230" cy="150" r="28" fill="none" stroke="#BBDEFB" stroke-width="2" stroke-dasharray="6,4"/>
+      <text x="230" y="158" font-family="Arial, sans-serif" font-size="22" font-weight="bold" fill="#FFFFFF" text-anchor="middle">S2</text>
+
+      <!-- Bottom state - S3 -->
+      <circle cx="150" cy="240" r="30" fill="#1976D2" stroke="#0D47A1" stroke-width="4"/>
+      <circle cx="150" cy="240" r="24" fill="none" stroke="#90CAF9" stroke-width="2"/>
+      <circle cx="150" cy="240" r="18" fill="none" stroke="#90CAF9" stroke-width="2.5"/>
+      <text x="150" y="247" font-family="Arial, sans-serif" font-size="20" font-weight="bold" fill="#FFFFFF" text-anchor="middle">S3</text>
+
+      <!-- Transitions -->
+      <path d="M 130 80 L 85 130" fill="none" stroke="#1976D2" stroke-width="7" stroke-linecap="round"/>
+      <path d="M 130 80 L 85 130" fill="none" stroke="#64B5F6" stroke-width="3.5" stroke-linecap="round"/>
+
+      <path d="M 170 80 L 215 130" fill="none" stroke="#1976D2" stroke-width="7" stroke-linecap="round"/>
+      <path d="M 170 80 L 215 130" fill="none" stroke="#64B5F6" stroke-width="3.5" stroke-linecap="round"/>
+
+      <path d="M 85 175 L 130 220" fill="none" stroke="#1976D2" stroke-width="7" stroke-linecap="round"/>
+      <path d="M 85 175 L 130 220" fill="none" stroke="#64B5F6" stroke-width="3.5" stroke-linecap="round"/>
+
+      <path d="M 215 175 L 170 220" fill="none" stroke="#1976D2" stroke-width="7" stroke-linecap="round"/>
+      <path d="M 215 175 L 170 220" fill="none" stroke="#64B5F6" stroke-width="3.5" stroke-linecap="round"/>
+
+      <path d="M 105 150 L 195 150" fill="none" stroke="#1976D2" stroke-width="7" stroke-linecap="round"/>
+      <path d="M 105 150 L 195 150" fill="none" stroke="#64B5F6" stroke-width="3.5" stroke-linecap="round"/>
+
+      <!-- Entry indicator -->
+      <circle cx="150" cy="20" r="7" fill="#0D47A1"/>
+      <path d="M 150 27 L 150 33" stroke="#0D47A1" stroke-width="5" stroke-linecap="round"/>
+    </g>
+  </g>
+
+  <!-- Right side: Text -->
+  <g id="text-content" transform="translate(280, 0)">
+    <!-- Project name -->
+    <text x="0" y="120" font-family="Arial, sans-serif" font-size="90" font-weight="bold" fill="#1976D2">
+      pyfcstm
+    </text>
+
+    <!-- Tagline -->
+    <text x="0" y="180" font-family="Arial, sans-serif" font-size="32" fill="#42A5F5">
+      Python Finite State Machine Framework
+    </text>
+
+    <!-- Description -->
+    <text x="0" y="220" font-family="Arial, sans-serif" font-size="24" fill="#64B5F6">
+      DSL Parsing • Code Generation • Hierarchical States
+    </text>
+  </g>
+</svg>

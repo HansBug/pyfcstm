@@ -1,11 +1,10 @@
 Welcome to pyfcstm's Documentation
 =========================================================
 
-.. raw:: html
-
-   <div align="center">
-     <img src="_static/logos/logo_banner.svg" alt="pyfcstm - Python Finite State Machine Framework" style="width: 100%; max-width: 800px; margin: 20px 0;">
-   </div>
+.. image:: _static/logos/logo_banner.svg
+   :alt: pyfcstm - Python Finite State Machine Framework
+   :align: center
+   :width: 800px
 
 Overview
 -------------

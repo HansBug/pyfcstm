@@ -1,11 +1,10 @@
 欢迎来到 pyfcstm 的文档
 =========================================================
 
-.. raw:: html
-
-   <div align="center">
-     <img src="_static/logos/logo_banner.svg" alt="pyfcstm - Python 有限状态机框架" style="width: 100%; max-width: 800px; margin: 20px 0;">
-   </div>
+.. image:: _static/logos/logo_banner.svg
+   :alt: pyfcstm - Python 有限状态机框架
+   :align: center
+   :width: 800px
 
 概述
 -------------

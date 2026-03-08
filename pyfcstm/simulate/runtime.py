@@ -1991,3 +1991,84 @@ class SimulationRuntime:
             ...     print("Handlers registered")
         """
         return action_path in self._abstract_handlers and len(self._abstract_handlers[action_path]) > 0
+
+    def register_handlers_from_object(self, obj: object) -> int:
+        """
+        Register all decorated methods from an object as abstract handlers.
+
+        This method scans the object for methods decorated with
+        :func:`~pyfcstm.simulate.decorators.abstract_handler` and automatically
+        registers them with their specified action paths.
+
+        This provides a convenient way to organize multiple related handlers
+        in a single class, maintaining state and shared logic between handlers.
+
+        :param obj: Object instance containing decorated handler methods
+        :type obj: object
+        :return: Number of handlers registered
+        :rtype: int
+
+        Example::
+
+            >>> from pyfcstm.simulate import abstract_handler
+            >>> class MyHandlers:
+            ...     def __init__(self):
+            ...         self.init_count = 0
+            ...         self.monitor_count = 0
+            ...
+            ...     @abstract_handler('System.Active.Init')
+            ...     def handle_init(self, ctx: ReadOnlyExecutionContext):
+            ...         self.init_count += 1
+            ...         print(f"Init called {self.init_count} times")
+            ...
+            ...     @abstract_handler('System.Active.Monitor')
+            ...     def handle_monitor(self, ctx: ReadOnlyExecutionContext):
+            ...         self.monitor_count += 1
+            ...         counter = ctx.get_var('counter')
+            ...         print(f"Monitor: counter={counter}, called {self.monitor_count} times")
+            ...
+            ...     def helper_method(self):
+            ...         # Not decorated, won't be registered
+            ...         pass
+            >>>
+            >>> handlers = MyHandlers()
+            >>> count = runtime.register_handlers_from_object(handlers)
+            >>> print(f"Registered {count} handlers")
+            Registered 2 handlers
+
+        .. note::
+           Only methods decorated with :func:`~pyfcstm.simulate.decorators.abstract_handler`
+           will be registered. Other methods are ignored.
+        """
+        from .decorators import get_handler_metadata
+
+        registered_count = 0
+
+        # Iterate through all attributes of the object
+        for name in dir(obj):
+            # Skip private/magic methods
+            if name.startswith('_'):
+                continue
+
+            try:
+                attr = getattr(obj, name)
+            except AttributeError:
+                continue
+
+            # Check if it's a callable method
+            if not callable(attr):
+                continue
+
+            # Check if it has handler metadata
+            action_path = get_handler_metadata(attr)
+            if action_path is None:
+                continue
+
+            # Register the bound method
+            self.register_abstract_handler(action_path, attr)
+            registered_count += 1
+            logging.debug(f'Registered method {name} from {obj.__class__.__name__} '
+                          f'for action {action_path}')
+
+        logging.info(f'Registered {registered_count} handler(s) from {obj.__class__.__name__}')
+        return registered_count

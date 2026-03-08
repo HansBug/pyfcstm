@@ -37,14 +37,14 @@ OnStage
 -----------------------------------------------------
 
 .. autoclass:: OnStage
-    :members: parent,parent,is_ref,is_aspect,to_ast_node,stage,aspect,name,doc,operations,is_abstract,state_path,ref,ref_state_path,parent_ref
+    :members: parent,parent,is_ref,is_aspect,func_name,to_ast_node,stage,aspect,name,doc,operations,is_abstract,state_path,ref,ref_state_path,parent_ref
 
 
 OnAspect
 -----------------------------------------------------
 
 .. autoclass:: OnAspect
-    :members: parent,parent,is_ref,is_aspect,to_ast_node,stage,aspect,name,doc,operations,is_abstract,state_path,ref,ref_state_path,parent_ref
+    :members: parent,parent,is_ref,is_aspect,func_name,to_ast_node,stage,aspect,name,doc,operations,is_abstract,state_path,ref,ref_state_path,parent_ref
 
 
 State

@@ -13,6 +13,7 @@ The module contains the following main components:
 * :class:`SimulationRuntimeDfsError` - Exception raised when speculative
   validation exceeds safety limits.
 * :class:`ReadOnlyExecutionContext` - Immutable context passed to abstract handlers.
+* :func:`abstract_handler` - Decorator for marking methods as abstract handlers.
 * :func:`is_state_resolve_event_path` - Check if a path string is definitely for State.resolve_event.
 
 Key Concepts
@@ -209,5 +210,6 @@ Validation preventing invalid transitions::
 """
 
 from .context import ReadOnlyExecutionContext
+from .decorators import abstract_handler
 from .runtime import SimulationRuntime, SimulationRuntimeDfsError
 from .utils import is_state_resolve_event_path

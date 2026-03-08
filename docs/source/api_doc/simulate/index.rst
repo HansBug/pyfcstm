@@ -10,6 +10,7 @@ pyfcstm.simulate
     :maxdepth: 3
 
     context
+    decorators
     runtime
     utils
 

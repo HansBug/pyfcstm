@@ -1,229 +1,68 @@
 """
 Simulation runtime for executing hierarchical finite state machines.
 
-This module implements the cycle-based execution engine for state machines
-parsed from the pyfcstm DSL. The runtime maintains a stateful execution
-context including an active state stack, variable mappings, and internal
-frame modes that control lifecycle progression through entry, during, exit,
-initial transitions, and exit-to-parent flows.
+This module implements a cycle-based execution engine for state machines parsed
+from the pyfcstm DSL. The runtime maintains an execution stack of active states,
+variable mappings, and internal frame modes that control lifecycle progression.
 
-The module contains the following main components:
+Each cycle advances the state machine until reaching a stable boundary: either a
+stoppable state (non-pseudo leaf state), termination (empty stack), or validation
+failure (changes rolled back). The runtime uses speculative validation to ensure
+transitions can reach valid stable states before executing them.
 
-* :class:`_Frame` - Internal stack frame representing an active state and its
-  execution phase.
-* :class:`SimulationRuntime` - Stateful runtime environment for executing
-  hierarchical state machines with cycle-based semantics.
-* :class:`SimulationRuntimeDfsError` - Exception raised when speculative
-  validation exceeds safety limits.
+The execution model uses internal frame modes (active, after_entry, init_wait,
+post_child_exit) to track execution phases. Transitions are selected from the
+current stack-top state's transitions in declaration order. Parent-level transitions
+are only considered after a child explicitly exits to parent via [*] transitions.
 
-Core Execution Model
---------------------
+Lifecycle actions execute in a specific order: enter when entering states, during
+while in leaf states each cycle, and exit when leaving states. For leaf states,
+the during chain includes ancestor aspect actions (>> during before/after) that
+execute before and after the leaf's own during actions. Pseudo states skip ancestor
+aspect actions entirely.
 
-The runtime implements a cycle-based execution model where each cycle advances
-the state machine until reaching a stable boundary. A cycle can end in three
-ways:
+Composite states have special during before/after actions that execute only at
+composite boundaries: during before runs when entering from parent ([*] -> Child),
+and during after runs when exiting to parent (Child -> [*]). These do NOT execute
+during child-to-child transitions.
 
-1. **Stoppable State**: Reached a leaf state (non-pseudo) where execution can
-   stabilize
-2. **Termination**: The state machine has ended (empty stack)
-3. **Validation Failure**: Cannot reach a stoppable state, changes rolled back
+Validation works by cloning the execution context and speculatively executing the
+transition until reaching a stable boundary. If validation succeeds, the real
+transition executes. If validation fails or exceeds safety limits (1000 steps or
+64 stack depth), the transition is rejected and variables roll back.
 
-**Frame Modes**:
+Abstract actions can be implemented by registering Python handlers that receive
+read-only execution context. Handlers can be registered individually or organized
+in classes using the @abstract_handler decorator.
 
-The runtime uses internal frame modes to track execution phases:
+Basic usage::
 
-* ``active``: Normal execution state, ready for transitions or during actions
-* ``after_entry``: Just entered a leaf state, during already executed
-* ``init_wait``: Composite state waiting for initial transition
-* ``post_child_exit``: Parent state after child exited via ``[*]``
+    from pyfcstm.simulate import SimulationRuntime
 
-**Transition Selection**:
+    runtime = SimulationRuntime(state_machine)
+    runtime.cycle()  # Execute first cycle
+    runtime.cycle(['EventName'])  # Execute with events
 
-Transitions are always selected from the current stack-top state's
-``transitions_from`` list in declaration order. This is critical for
-understanding cross-level transition behavior:
+    # Access state and variables
+    current_state = runtime.current_state
+    variables = runtime.vars
 
-* A leaf state can only fire its own transitions
-* Parent-level transitions are only considered after the child exits to parent
-* This explains why some transitions require explicit exit transitions first
+Abstract handler registration::
 
-Validation and Rollback
-------------------------
+    def my_handler(ctx):
+        print(f"State: {ctx.get_full_state_path()}")
 
-**Stoppable State Validation**:
+    runtime.register_abstract_handler('System.Active.Init', my_handler)
 
-When a stoppable state has an enabled transition, the runtime performs
-speculative validation to ensure the transition can eventually reach another
-stoppable state or terminate. This prevents cycles from getting stuck in
-non-stoppable configurations.
+    # Or use decorator-based registration
+    from pyfcstm.simulate import abstract_handler
 
-Validation works by:
+    class MyHandlers:
+        @abstract_handler('System.Active.Init')
+        def handle_init(self, ctx):
+            print(f"Counter: {ctx.get_var('counter')}")
 
-1. Cloning the current execution context (stack + variables)
-2. Executing the candidate transition on the clone
-3. Running cycle logic until reaching a stable boundary or failure
-4. Accepting the transition only if validation succeeds
-
-**Rollback Semantics**:
-
-If a cycle cannot reach a stoppable state, all variable changes are rolled
-back and the runtime remains at the previous stable boundary:
-
-* For normal cycles: Restore previous stack and variables
-* For initial cycle: Pin runtime at root boundary in ``init_wait`` mode
-* All side effects from failed validation are discarded
-
-**DFS Safety Limits**:
-
-To prevent infinite loops in pathological state machines, validation enforces
-two safety limits:
-
-* Maximum 1000 speculative steps per validation attempt
-* Maximum 64 structural stack depth
-* Repeated execution states are pruned automatically
-
-When these limits are exceeded, :class:`SimulationRuntimeDfsError` is raised,
-indicating an invalid state machine with unbounded execution chains.
-
-Lifecycle Execution Order
--------------------------
-
-**Leaf State During Chain**:
-
-When a leaf state executes its during actions, the complete chain includes:
-
-1. Ancestor ``>> during before`` actions (root to leaf order)
-2. Leaf state's own ``during`` actions
-3. Ancestor ``>> during after`` actions (leaf to root order)
-
-Pseudo states skip ancestor aspect actions entirely.
-
-**Composite State Semantics**:
-
-Composite states have special ``during before`` and ``during after`` actions
-that execute at specific boundaries:
-
-* ``during before``: Executes when entering composite from parent (``[*] -> Child``)
-  - Runs AFTER composite's ``enter`` but BEFORE child's ``enter``
-  - NOT executed during child-to-child transitions
-* ``during after``: Executes when exiting composite to parent (``Child -> [*]``)
-  - Runs AFTER child's ``exit`` but BEFORE composite's ``exit``
-  - NOT executed during child-to-child transitions
-
-**Transition Execution**:
-
-Standard transition execution follows this sequence:
-
-1. Execute source state's ``exit`` actions
-2. Execute transition's ``effect`` operations
-3. Pop source state from stack
-4. If target is ``[*]``, finalize exit to parent
-5. Otherwise, enter target state (which may trigger initial transitions)
-
-Example Usage
--------------
-
-Basic cycle execution with transitions::
-
-    >>> from pyfcstm.dsl import parse_with_grammar_entry
-    >>> from pyfcstm.model import parse_dsl_node_to_state_machine
-    >>> from pyfcstm.simulate import SimulationRuntime
-    >>> dsl_code = '''
-    ... def int counter = 0;
-    ... state System {
-    ...     state Idle {
-    ...         during { counter = counter + 1; }
-    ...     }
-    ...     state Active {
-    ...         during { counter = counter + 10; }
-    ...     }
-    ...     [*] -> Idle;
-    ...     Idle -> Active :: Start;
-    ... }
-    ... '''
-    >>> ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
-    >>> sm = parse_dsl_node_to_state_machine(ast)
-    >>> runtime = SimulationRuntime(sm)
-    >>> runtime.cycle()
-    >>> runtime.current_state.path
-    ('System', 'Idle')
-    >>> runtime.vars['counter']
-    1
-    >>> runtime.cycle(['System.Idle.Start'])
-    >>> runtime.current_state.path
-    ('System', 'Active')
-
-Exit transitions and parent continuation::
-
-    >>> dsl_code = '''
-    ... def int x = 0;
-    ... state System1 {
-    ...     state A {
-    ...         during { x = x + 1; }
-    ...     }
-    ...     [*] -> A;
-    ...     A -> [*] :: Exit;
-    ... }
-    ... state System2 {
-    ...     state B {
-    ...         during { x = x + 10; }
-    ...     }
-    ...     [*] -> B;
-    ... }
-    ... [*] -> System1;
-    ... System1 -> System2 :: Switch;
-    ... '''
-    >>> ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
-    >>> sm = parse_dsl_node_to_state_machine(ast)
-    >>> runtime = SimulationRuntime(sm)
-    >>> runtime.cycle()
-    >>> runtime.current_state.path
-    ('System1', 'A')
-    >>> # Provide both Exit and Switch events
-    >>> runtime.cycle(['System1.A.Exit', 'Switch'])
-    >>> runtime.current_state.path
-    ('System2', 'B')
-
-Validation preventing invalid transitions::
-
-    >>> dsl_code = '''
-    ... state Root {
-    ...     state A;
-    ...     state B {
-    ...         [*] -> C : if [false];
-    ...         state C;
-    ...     }
-    ...     [*] -> A;
-    ...     A -> B :: Go;
-    ... }
-    ... '''
-    >>> ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
-    >>> sm = parse_dsl_node_to_state_machine(ast)
-    >>> runtime = SimulationRuntime(sm)
-    >>> runtime.cycle()
-    >>> runtime.cycle(['Root.A.Go'])
-    >>> runtime.current_state.path
-    ('Root', 'A')  # Remains in A due to validation failure
-
-Aspect actions with hierarchical execution::
-
-    >>> dsl_code = '''
-    ... def int log = 0;
-    ... state Root {
-    ...     >> during before { log = log + 1; }
-    ...     >> during after { log = log + 100; }
-    ...     state Active {
-    ...         during { log = log + 50; }
-    ...     }
-    ...     [*] -> Active;
-    ... }
-    ... '''
-    >>> ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
-    >>> sm = parse_dsl_node_to_state_machine(ast)
-    >>> runtime = SimulationRuntime(sm)
-    >>> runtime.cycle()
-    >>> runtime.vars['log']
-    151  # Root.aspect_before(1) + Active.during(50) + Root.aspect_after(100)
+    runtime.register_handlers_from_object(MyHandlers())
 """
 
 

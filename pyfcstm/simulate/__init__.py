@@ -13,6 +13,7 @@ The module contains the following main components:
 * :class:`SimulationRuntimeDfsError` - Exception raised when speculative
   validation exceeds safety limits.
 * :func:`get_func_name` - Convert a lifecycle action to its readable path.
+* :func:`is_state_resolve_event_path` - Check if a path string is definitely for State.resolve_event.
 
 Key Concepts
 ------------
@@ -208,4 +209,4 @@ Validation preventing invalid transitions::
 """
 
 from .runtime import SimulationRuntime, SimulationRuntimeDfsError
-from .utils import get_func_name
+from .utils import get_func_name, is_state_resolve_event_path

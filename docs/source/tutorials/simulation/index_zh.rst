@@ -117,6 +117,8 @@ Python 用法
 执行语义
 ---------------------------------------
 
+理解状态机如何执行对于构建正确的行为至关重要。本节提供详细的示例和逐步执行跟踪。
+
 周期执行
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -126,6 +128,381 @@ Python 用法
 - 在最终可停止状态执行 ``during`` 动作
 - 一个周期可能执行多个转换（例如，通过伪状态）
 - 如果没有转换触发，执行当前状态的 ``during`` 动作
+
+示例 1：基本转换
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. literalinclude:: example1_basic.fcstm
+   :language: fcstm
+   :caption: 基本状态转换
+
+.. figure:: example1_basic.fcstm.puml.svg
+   :align: center
+
+   状态机图
+
+**执行摘要**：
+
+.. list-table::
+   :header-rows: 1
+   :widths: 8 20 20 12 40
+
+   * - 周期
+     - 事件
+     - 状态
+     - counter
+     - 原因
+   * - 0
+     - *(无)*
+     - *(初始)*
+     - 0
+     - 初始变量值
+   * - 1
+     - *(无)*
+     - Root.A
+     - 1
+     - 初始转换 ``[*] -> A``，然后执行 ``A.during`` (counter + 1)
+   * - 2
+     - *(无)*
+     - Root.A
+     - 2
+     - 无事件，保持在 A，执行 ``A.during`` (counter + 1)
+   * - 3
+     - ``Go``
+     - Root.B
+     - 12
+     - 事件 ``Go`` 触发 ``A -> B``，然后执行 ``B.during`` (counter + 10)
+
+**详细执行跟踪**：
+
+**周期 1**（初始化）：
+
+- 初始状态：``counter = 0``
+- 执行初始转换 ``[*] -> A``
+- 执行 ``A.enter``（未定义）
+- 到达可停止状态 ``A``
+- 执行 ``A.during``：``counter = 0 + 1 = 1``
+- **结果**：``state = Root.A``，``counter = 1``
+
+**周期 2**（无事件）：
+
+- 当前状态：``Root.A``，``counter = 1``
+- 检查转换：``A -> B :: Go``（需要事件，未触发）
+- 没有转换触发
+- 执行 ``A.during``：``counter = 1 + 1 = 2``
+- **结果**：``state = Root.A``，``counter = 2``
+
+**周期 3**（带事件 ``Go``）：
+
+- 当前状态：``Root.A``，``counter = 2``
+- 检查转换：``A -> B :: Go``（事件匹配！）
+- 执行 ``A.exit``（未定义）
+- 执行转换（无效果）
+- 执行 ``B.enter``（未定义）
+- 到达可停止状态 ``B``
+- 执行 ``B.during``：``counter = 2 + 10 = 12``
+- **结果**：``state = Root.B``，``counter = 12``
+
+示例 2：带初始转换的复合状态
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. literalinclude:: example2_composite.fcstm
+   :language: fcstm
+   :caption: 带嵌套状态的复合状态
+
+.. figure:: example2_composite.fcstm.puml.svg
+   :align: center
+
+   复合状态图
+
+**执行摘要**：
+
+.. list-table::
+   :header-rows: 1
+   :widths: 8 20 22 12 38
+
+   * - 周期
+     - 事件
+     - 状态
+     - counter
+     - 原因
+   * - 0
+     - *(无)*
+     - *(初始)*
+     - 0
+     - 初始变量值
+   * - 1
+     - *(无)*
+     - Root.A
+     - 1
+     - 初始转换 ``[*] -> A``，执行 ``A.during`` (counter + 1)
+   * - 2
+     - ``GoB``
+     - Root.B.B1
+     - 11
+     - 事件 ``GoB`` 触发 ``A -> B``，跟随 ``[*] -> B1``，执行 ``B1.during`` (counter + 10)
+   * - 3
+     - ``Next``
+     - Root.B.B2
+     - 111
+     - 事件 ``Next`` 触发 ``B1 -> B2``，执行 ``B2.during`` (counter + 100)
+
+**详细执行跟踪**：
+
+**周期 1**（初始化）：
+
+- 初始状态：``counter = 0``
+- 执行 ``[*] -> A``
+- 到达可停止状态 ``A``
+- 执行 ``A.during``：``counter = 0 + 1 = 1``
+- **结果**：``state = Root.A``，``counter = 1``
+
+**周期 2**（带事件 ``GoB``）：
+
+- 当前状态：``Root.A``，``counter = 1``
+- 检查转换：``A -> B :: GoB``（事件匹配！）
+- 执行 ``A.exit``（未定义）
+- 执行 ``B.enter``（未定义）
+- **B 是复合状态** - 必须跟随初始转换
+- 执行 ``[*] -> B1``（在 B 内部）
+- 执行 ``B1.enter``（未定义）
+- 到达可停止状态 ``B1``
+- 执行 ``B1.during``：``counter = 1 + 10 = 11``
+- **结果**：``state = Root.B.B1``，``counter = 11``
+
+**关键点**：当转换到复合状态时，周期继续跟随初始转换直到到达可停止状态。
+
+**周期 3**（带事件 ``Next``）：
+
+- 当前状态：``Root.B.B1``，``counter = 11``
+- 检查转换：``B1 -> B2 :: Next``（事件匹配！）
+- 执行 ``B1.exit``（未定义）
+- 执行 ``B2.enter``（未定义）
+- 到达可停止状态 ``B2``
+- 执行 ``B2.during``：``counter = 11 + 100 = 111``
+- **结果**：``state = Root.B.B2``，``counter = 111``
+
+示例 3：切面动作
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. literalinclude:: example3_aspect.fcstm
+   :language: fcstm
+   :caption: 带执行顺序的切面动作
+
+.. figure:: example3_aspect.fcstm.puml.svg
+   :align: center
+
+   切面动作图
+
+**执行摘要**：
+
+.. list-table::
+   :header-rows: 1
+   :widths: 8 20 20 12 40
+
+   * - 周期
+     - 事件
+     - 状态
+     - trace
+     - 原因
+   * - 0
+     - *(无)*
+     - *(初始)*
+     - 0
+     - 初始变量值
+   * - 1
+     - *(无)*
+     - Root.A
+     - 123
+     - 初始转换 ``[*] -> A``，执行：before (×10+1=1) → during (×10+2=12) → after (×10+3=123)
+   * - 2
+     - *(无)*
+     - Root.A
+     - 123123
+     - 无事件，执行：before (×10+1=1231) → during (×10+2=12312) → after (×10+3=123123)
+
+**详细执行跟踪**：
+
+**周期 1**（初始化）：
+
+- 初始状态：``trace = 0``
+- 执行 ``[*] -> A``
+- 到达可停止状态 ``A``
+- 执行 during 阶段：
+  1. ``Root >> during before``：``trace = 0 * 10 + 1 = 1``
+  2. ``A.during``：``trace = 1 * 10 + 2 = 12``
+  3. ``Root >> during after``：``trace = 12 * 10 + 3 = 123``
+- **结果**：``state = Root.A``，``trace = 123``
+
+**周期 2**（无事件）：
+
+- 当前状态：``Root.A``，``trace = 123``
+- 没有转换触发
+- 执行 during 阶段：
+  1. ``Root >> during before``：``trace = 123 * 10 + 1 = 1231``
+  2. ``A.during``：``trace = 1231 * 10 + 2 = 12312``
+  3. ``Root >> during after``：``trace = 12312 * 10 + 3 = 123123``
+- **结果**：``state = Root.A``，``trace = 123123``
+
+**关键点**：切面动作（``>> during before/after``）按层次顺序在叶状态的 ``during`` 动作周围执行，形成三明治模式：before → during → after。
+
+示例 4：伪状态（跳过切面动作）
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. literalinclude:: example4_pseudo.fcstm
+   :language: fcstm
+   :caption: 伪状态跳过切面动作
+
+.. figure:: example4_pseudo.fcstm.puml.svg
+   :align: center
+
+   伪状态图
+
+**执行摘要**：
+
+.. list-table::
+   :header-rows: 1
+   :widths: 8 20 22 12 38
+
+   * - 周期
+     - 事件
+     - 状态
+     - trace
+     - 原因
+   * - 0
+     - *(无)*
+     - *(初始)*
+     - 0
+     - 初始变量值
+   * - 1
+     - *(无)*
+     - *(已终止)*
+     - 2
+     - 初始转换 ``[*] -> A``，伪状态跳过切面动作，执行 ``A.during`` (×10+2=2)，守卫满足，转换到 ``[*]``
+
+**详细执行跟踪**：
+
+**周期 1**（初始化和终止）：
+
+- 初始状态：``trace = 0``
+- 执行 ``[*] -> A``
+- 到达可停止状态 ``A``（伪状态）
+- **伪状态跳过切面动作！**
+- 执行 during 阶段：
+  - ``Root >> during before`` **跳过**
+  - ``A.during``：``trace = 0 * 10 + 2 = 2``
+  - ``Root >> during after`` **跳过**
+- 检查转换：``A -> [*] : if [trace >= 2]``（守卫满足！）
+- 执行 ``A.exit``（未定义）
+- 转换到最终状态
+- **结果**：``state = terminated``，``trace = 2``
+
+**关键点**：伪状态跳过所有祖先切面动作，只执行自己的 ``during`` 动作。这对于不应触发横切关注点的中间状态很有用。
+
+示例 5：多层复合状态
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. literalinclude:: example5_multilevel.fcstm
+   :language: fcstm
+   :caption: 多层嵌套复合状态
+
+.. figure:: example5_multilevel.fcstm.puml.svg
+   :align: center
+
+   多层复合状态图
+
+**执行摘要（场景 1：A → B）**：
+
+.. list-table::
+   :header-rows: 1
+   :widths: 8 20 25 12 35
+
+   * - 周期
+     - 事件
+     - 状态
+     - counter
+     - 原因
+   * - 0
+     - *(无)*
+     - *(初始)*
+     - 0
+     - 初始变量值
+   * - 1
+     - *(无)*
+     - Root.A
+     - 1
+     - 初始转换 ``[*] -> A``，执行 ``A.during`` (counter + 1)
+   * - 2
+     - ``GoB``
+     - Root.B.B1.B1a
+     - 11
+     - 事件 ``GoB`` 触发 ``A -> B``，跟随 ``[*] -> B1`` 然后 ``[*] -> B1a``，执行 ``B1a.during`` (counter + 10)
+
+**执行摘要（场景 2：A → C）**：
+
+.. list-table::
+   :header-rows: 1
+   :widths: 8 20 25 12 35
+
+   * - 周期
+     - 事件
+     - 状态
+     - counter
+     - 原因
+   * - 0
+     - *(无)*
+     - *(初始)*
+     - 0
+     - 初始变量值
+   * - 1
+     - *(无)*
+     - Root.A
+     - 1
+     - 初始转换 ``[*] -> A``，执行 ``A.during`` (counter + 1)
+   * - 2
+     - ``GoC``
+     - Root.C
+     - 101
+     - 事件 ``GoC`` 触发 ``A -> C``，执行 ``C.during`` (counter + 100)
+
+**详细执行跟踪**：
+
+**周期 1**（初始化）：
+
+- 初始状态：``counter = 0``
+- 执行 ``[*] -> A``
+- 到达可停止状态 ``A``
+- 执行 ``A.during``：``counter = 0 + 1 = 1``
+- **结果**：``state = Root.A``，``counter = 1``
+
+**周期 2**（带事件 ``GoB``）：
+
+- 当前状态：``Root.A``，``counter = 1``
+- 检查转换：``A -> B :: GoB``（事件匹配！）
+- 执行 ``A.exit``（未定义）
+- 执行 ``B.enter``（未定义）
+- **B 是复合状态** - 跟随 ``[*] -> B1``
+- 执行 ``B1.enter``（未定义）
+- **B1 也是复合状态** - 跟随 ``[*] -> B1a``
+- 执行 ``B1a.enter``（未定义）
+- 到达可停止状态 ``B1a``
+- 执行 ``B1a.during``：``counter = 1 + 10 = 11``
+- **结果**：``state = Root.B.B1.B1a``，``counter = 11``
+
+**关键点**：单个周期可以通过跟随初始转换链遍历多层复合状态，直到到达可停止的叶状态。
+
+**周期 3**（从初始状态带事件 ``GoC``）：
+
+- 重新开始：``counter = 0``
+- 执行 ``[*] -> A``
+- 执行 ``A.during``：``counter = 1``
+- 下一个周期带事件 ``GoC``：
+- 检查转换：``A -> C :: GoC``（事件匹配！）
+- 执行 ``A.exit``（未定义）
+- 执行 ``C.enter``（未定义）
+- 到达可停止状态 ``C``
+- 执行 ``C.during``：``counter = 1 + 100 = 101``
+- **结果**：``state = Root.C``，``counter = 101``
 
 层次执行顺序
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

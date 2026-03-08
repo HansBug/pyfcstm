@@ -1,0 +1,32 @@
+@startuml
+hide empty description
+
+skinparam state {
+  BackgroundColor<<pseudo>> LightGray
+  BackgroundColor<<composite>> LightBlue
+  BorderColor<<pseudo>> Gray
+  FontStyle<<pseudo>> italic
+}
+
+legend top left
+|= Variable |= Type |= Initial Value |
+| counter | int | 0 |
+endlegend
+
+state "Root" as root <<composite>> {
+    state "A" as root__a
+    state "B" as root__b <<composite>> {
+        state "B1" as root__b__b1 <<composite>> {
+            state "B1a" as root__b__b1__b1a
+            [*] --> root__b__b1__b1a
+        }
+        [*] --> root__b__b1
+    }
+    state "C" as root__c
+    [*] --> root__a
+    root__a --> root__b : A.GoB
+    root__a --> root__c : A.GoC
+}
+[*] --> root
+root --> [*]
+@enduml

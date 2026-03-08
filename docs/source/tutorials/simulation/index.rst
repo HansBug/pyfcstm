@@ -28,9 +28,9 @@ Before diving into usage, understand these key concepts:
 
 **Composite State Actions**
 
-- **during before** (without ``>>``): Executed when entering composite state from parent (``[*] -> Child``)
-- **during after** (without ``>>``): Executed when exiting composite state to parent (``Child -> [*]``)
-- **NOT executed** during child-to-child transitions (``Child1 -> Child2``)
+- **during before**  (without ``>>``): Executed when entering composite state from parent (``[*] -> Child``)
+- **during after**  (without ``>>``): Executed when exiting composite state to parent (``Child -> [*]``)
+- **NOT executed**  during child-to-child transitions (``Child1 -> Child2``)
 
 Python Usage
 ---------------------------------------
@@ -122,7 +122,7 @@ Understanding how state machines execute is crucial for building correct behavio
 Cycle Execution
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-A **cycle** executes until reaching a stable boundary:
+A **cycle**  executes until reaching a stable boundary:
 
 - Follows transition chains until reaching a stoppable state (leaf state, non-pseudo)
 - Executes the ``during`` action at the final stoppable state
@@ -175,7 +175,7 @@ Example 1: Basic Transition
 
 **Detailed Execution Trace**:
 
-**Cycle 1** (initialization):
+**Cycle 1**  (initialization):
 
 - Initial state: ``counter = 0``
 - Execute initial transition ``[*] -> A``
@@ -184,7 +184,7 @@ Example 1: Basic Transition
 - Execute ``A.during``: ``counter = 0 + 1 = 1``
 - **Result**: ``state = Root.A``, ``counter = 1``
 
-**Cycle 2** (no event):
+**Cycle 2**  (no event):
 
 - Current state: ``Root.A``, ``counter = 1``
 - Check transitions: ``A -> B :: Go`` (requires event, not triggered)
@@ -192,7 +192,7 @@ Example 1: Basic Transition
 - Execute ``A.during``: ``counter = 1 + 1 = 2``
 - **Result**: ``state = Root.A``, ``counter = 2``
 
-**Cycle 3** (with event ``Go``):
+**Cycle 3**  (with event ``Go``):
 
 - Current state: ``Root.A``, ``counter = 2``
 - Check transitions: ``A -> B :: Go`` (event matches!)
@@ -249,7 +249,7 @@ Example 2: Composite State with Initial Transition
 
 **Detailed Execution Trace**:
 
-**Cycle 1** (initialization):
+**Cycle 1**  (initialization):
 
 - Initial state: ``counter = 0``
 - Execute ``[*] -> A``
@@ -257,13 +257,13 @@ Example 2: Composite State with Initial Transition
 - Execute ``A.during``: ``counter = 0 + 1 = 1``
 - **Result**: ``state = Root.A``, ``counter = 1``
 
-**Cycle 2** (with event ``GoB``):
+**Cycle 2**  (with event ``GoB``):
 
 - Current state: ``Root.A``, ``counter = 1``
 - Check transitions: ``A -> B :: GoB`` (event matches!)
 - Execute ``A.exit`` (none defined)
 - Execute ``B.enter`` (none defined)
-- **B is composite state** - must follow initial transition
+- **B is composite state**  - must follow initial transition
 - Execute ``[*] -> B1`` (inside B)
 - Execute ``B1.enter`` (none defined)
 - Reach stoppable state ``B1``
@@ -272,7 +272,7 @@ Example 2: Composite State with Initial Transition
 
 **Key Point**: When transitioning to a composite state, the cycle continues by following initial transitions until reaching a stoppable state.
 
-**Cycle 3** (with event ``Next``):
+**Cycle 3**  (with event ``Next``):
 
 - Current state: ``Root.B.B1``, ``counter = 11``
 - Check transitions: ``B1 -> B2 :: Next`` (event matches!)
@@ -323,7 +323,7 @@ Example 3: Aspect Actions
 
 **Detailed Execution Trace**:
 
-**Cycle 1** (initialization):
+**Cycle 1**  (initialization):
 
 - Initial state: ``trace = 0``
 - Execute ``[*] -> A``
@@ -334,7 +334,7 @@ Example 3: Aspect Actions
   3. ``Root >> during after``: ``trace = 12 * 10 + 3 = 123``
 - **Result**: ``state = Root.A``, ``trace = 123``
 
-**Cycle 2** (no event):
+**Cycle 2**  (no event):
 
 - Current state: ``Root.A``, ``trace = 123``
 - No transition fires
@@ -382,7 +382,7 @@ Example 4: Pseudo State (Skipping Aspect Actions)
 
 **Detailed Execution Trace**:
 
-**Cycle 1** (initialization and termination):
+**Cycle 1**  (initialization and termination):
 
 - Initial state: ``trace = 0``
 - Execute ``[*] -> A``
@@ -467,7 +467,7 @@ Example 5: Multi-Level Composite State
 
 **Detailed Execution Trace**:
 
-**Cycle 1** (initialization):
+**Cycle 1**  (initialization):
 
 - Initial state: ``counter = 0``
 - Execute ``[*] -> A``
@@ -475,15 +475,15 @@ Example 5: Multi-Level Composite State
 - Execute ``A.during``: ``counter = 0 + 1 = 1``
 - **Result**: ``state = Root.A``, ``counter = 1``
 
-**Cycle 2** (with event ``GoB``):
+**Cycle 2**  (with event ``GoB``):
 
 - Current state: ``Root.A``, ``counter = 1``
 - Check transitions: ``A -> B :: GoB`` (event matches!)
 - Execute ``A.exit`` (none defined)
 - Execute ``B.enter`` (none defined)
-- **B is composite** - follow ``[*] -> B1``
+- **B is composite**  - follow ``[*] -> B1``
 - Execute ``B1.enter`` (none defined)
-- **B1 is also composite** - follow ``[*] -> B1a``
+- **B1 is also composite**  - follow ``[*] -> B1a``
 - Execute ``B1a.enter`` (none defined)
 - Reach stoppable state ``B1a``
 - Execute ``B1a.during``: ``counter = 1 + 10 = 11``
@@ -491,7 +491,7 @@ Example 5: Multi-Level Composite State
 
 **Key Point**: A single cycle can traverse multiple levels of composite states by following initial transition chains until reaching a stoppable leaf state.
 
-**Cycle 3** (with event ``GoC`` from initial state):
+**Cycle 3**  (with event ``GoC`` from initial state):
 
 - Starting fresh: ``counter = 0``
 - Execute ``[*] -> A``
@@ -520,19 +520,19 @@ Output:
 
 **Complete Execution Order**:
 
-**Entry Phase** (from parent):
+**Entry Phase**  (from parent):
 
 1. ``State.enter``
 2. ``State.during before`` (if entering via ``[*] -> Child``)
 3. ``Child.enter``
 
-**During Phase** (each cycle at leaf state):
+**During Phase**  (each cycle at leaf state):
 
 1. Ancestor ``>> during before`` actions (root to leaf)
 2. Leaf state ``during`` action
 3. Ancestor ``>> during after`` actions (leaf to root)
 
-**Exit Phase** (to parent):
+**Exit Phase**  (to parent):
 
 1. ``Child.exit``
 2. ``State.during after`` (if exiting via ``Child -> [*]``)
@@ -604,7 +604,7 @@ When multiple transitions from the same state have satisfied guards, the first t
 
 **Detailed Execution Trace**:
 
-**Cycle 1-3** (accumulating counter):
+**Cycle 1-3**  (accumulating counter):
 
 - Initial state: ``counter = 0``
 - Execute ``[*] -> A``
@@ -612,7 +612,7 @@ When multiple transitions from the same state have satisfied guards, the first t
 - Execute ``A.during``: ``counter = 0 + 1 = 1``
 - Cycles 2-3 continue incrementing: ``counter = 2``, then ``counter = 3``
 
-**Cycle 4** (transition priority):
+**Cycle 4**  (transition priority):
 
 - Current state: ``Root.A``, ``counter = 3``
 - Check transitions in definition order:
@@ -679,7 +679,7 @@ Self-transitions execute exit and enter actions, providing a way to reset state-
 
 **Detailed Execution Trace**:
 
-**Cycle 1** (initialization):
+**Cycle 1**  (initialization):
 
 - Initial state: ``counter = 0``
 - Execute ``[*] -> A``
@@ -688,7 +688,7 @@ Self-transitions execute exit and enter actions, providing a way to reset state-
 - Execute ``A.during``: ``counter = 1 + 10 = 11``
 - **Result**: ``state = Root.A``, ``counter = 11``
 
-**Cycle 2-3** (staying in state without transition):
+**Cycle 2-3**  (staying in state without transition):
 
 - Current state: ``Root.A``, ``counter = 11``
 - No event provided, no transition fires
@@ -697,7 +697,7 @@ Self-transitions execute exit and enter actions, providing a way to reset state-
 - **Result**: ``state = Root.A``, ``counter = 21``
 - Cycle 3: Same process, ``counter = 21 + 10 = 31``
 
-**Cycle 4** (self-transition with event ``Loop``):
+**Cycle 4**  (self-transition with event ``Loop``):
 
 - Current state: ``Root.A``, ``counter = 31``
 - Check transitions: ``A -> A :: Loop`` (event matches!)
@@ -709,8 +709,8 @@ Self-transitions execute exit and enter actions, providing a way to reset state-
 - **Result**: ``state = Root.A``, ``counter = 142``
 
 **Key Point**: Self-transitions (``A -> A``) execute the full exit-enter sequence, allowing state reinitialization. This is different from staying in the state without a transition:
-- **Staying in state** (cycles 2-3): Only ``during`` action executes (+10 each cycle)
-- **Self-transition** (cycle 4): Full sequence executes: ``exit`` (+100) → ``enter`` (+1) → ``during`` (+10)
+- **Staying in state**  (cycles 2-3): Only ``during`` action executes (+10 each cycle)
+- **Self-transition**  (cycle 4): Full sequence executes: ``exit`` (+100) → ``enter`` (+1) → ``during`` (+10)
 
 Example 8: Guard Conditions with Effects
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -771,7 +771,7 @@ Guards and effects work together to enable complex conditional transitions with 
 
 **Detailed Execution Trace**:
 
-**Cycle 1-3** (accumulating counter):
+**Cycle 1-3**  (accumulating counter):
 
 - Initial state: ``counter = 0``, ``flag = 0``
 - Execute ``[*] -> A``
@@ -779,14 +779,14 @@ Guards and effects work together to enable complex conditional transitions with 
 - Execute ``A.during``: ``counter = 0 + 1 = 1``
 - Cycles 2-3 continue: ``counter = 2``, then ``counter = 3``
 
-**Cycle 4** (guard satisfied, effect executed):
+**Cycle 4**  (guard satisfied, effect executed):
 
 - Current state: ``Root.A``, ``counter = 3``, ``flag = 0``
 - Check transitions: ``A -> B : if [counter >= 3]`` (guard satisfied!)
 - Execute ``A.exit`` (none defined)
 - Execute transition effect: ``flag = 1``
 - Execute ``B.enter``: ``flag = 1`` (enter action sets flag)
-- **B is composite** - follow ``[*] -> B1 : if [flag == 1]`` (guard satisfied!)
+- **B is composite**  - follow ``[*] -> B1 : if [flag == 1]`` (guard satisfied!)
 - Execute ``B1.enter`` (none defined)
 - Reach stoppable state ``B1``
 - Execute ``B1.during``: ``counter = 3 + 10 = 13``
@@ -865,7 +865,7 @@ Pseudo states require validation to ensure they lead to stoppable states:
 
 **Detailed Execution Trace**:
 
-**Cycle 1** (initialization):
+**Cycle 1**  (initialization):
 
 - Initial state: ``counter = 0``
 - Execute ``[*] -> A``
@@ -873,11 +873,11 @@ Pseudo states require validation to ensure they lead to stoppable states:
 - Execute ``A.during``: ``counter = 0 + 1 = 1``
 - **Result**: ``state = Root.A``, ``counter = 1``
 
-**Cycle 2** (validation failure - missing event):
+**Cycle 2**  (validation failure - missing event):
 
 - Current state: ``Root.A``, ``counter = 1``
 - Check transitions: ``A -> P :: GoP`` (event matches!)
-- **Validation phase** (using snapshot):
+- **Validation phase**  (using snapshot):
   - Target ``P`` is pseudo state (non-stoppable)
   - Simulate: execute ``P.enter``: ``counter_snapshot = 1 + 10 = 11``
   - Check ``P``'s transitions: ``P -> B :: GoB`` (requires ``GoB`` event)
@@ -887,11 +887,11 @@ Pseudo states require validation to ensure they lead to stoppable states:
 - Execute ``A.during``: ``counter = 1 + 1 = 2``
 - **Result**: ``state = Root.A``, ``counter = 2``
 
-**Cycle 3** (validation success - all events provided):
+**Cycle 3**  (validation success - all events provided):
 
 - Current state: ``Root.A``, ``counter = 2``
 - Check transitions: ``A -> P :: GoP`` (event matches!)
-- **Validation phase** (using snapshot):
+- **Validation phase**  (using snapshot):
   - Target ``P`` is pseudo state (non-stoppable)
   - Simulate: execute ``P.enter``: ``counter_snapshot = 2 + 10 = 12``
   - Check ``P``'s transitions: ``P -> B :: GoB`` (requires ``GoB`` event)
@@ -959,7 +959,7 @@ When a composite state's initial transitions cannot reach a stoppable state, the
 
 **Detailed Execution Trace**:
 
-**Cycle 1** (initialization):
+**Cycle 1**  (initialization):
 
 - Initial state: ``counter = 0``, ``ready = 0``
 - Execute ``[*] -> A``
@@ -967,11 +967,11 @@ When a composite state's initial transitions cannot reach a stoppable state, the
 - Execute ``A.during``: ``counter = 0 + 1 = 1``
 - **Result**: ``state = Root.A``, ``counter = 1``, ``ready = 0``
 
-**Cycle 2** (validation failure - guard not satisfied):
+**Cycle 2**  (validation failure - guard not satisfied):
 
 - Current state: ``Root.A``, ``counter = 1``, ``ready = 0``
 - Check transitions: ``A -> B :: GoB`` (event matches!)
-- **Validation phase** (using snapshot):
+- **Validation phase**  (using snapshot):
   - Target ``B`` is composite state (non-stoppable)
   - Simulate: execute ``B.enter`` (none defined)
   - Check ``B``'s initial transitions: ``[*] -> B1 : if [ready == 1]``
@@ -1046,7 +1046,7 @@ This state machine models a typical elevator safety system where:
 - ``hold`` counts cycles the door remains fully open
 - ``reopen_count`` tracks how many times the door reopened due to obstructions
 
-**Scenario A: Normal Operation** (open → hold → close)
+**Scenario A: Normal Operation**  (open → hold → close)
 
 .. list-table::
    :header-rows: 1
@@ -1109,13 +1109,13 @@ This state machine models a typical elevator safety system where:
 
 **Detailed Execution Trace A**:
 
-**Cycle 1** (initial state):
+**Cycle 1**  (initial state):
 - Initial: ``door_pos = 0``, ``hold = 0``, ``reopen_count = 0``
 - Execute ``[*] -> Closed``
 - Execute ``Closed.during``: ``hold = 0``
 - **Result**: Elevator idle with doors closed
 
-**Cycle 2** (hall call received):
+**Cycle 2**  (hall call received):
 - Event ``HallCall`` triggers ``Closed -> Opening``
 - Execute ``Closed.exit`` (none defined)
 - Execute transition effect: ``hold = 0``
@@ -1123,12 +1123,12 @@ This state machine models a typical elevator safety system where:
 - Execute ``Opening.during``: ``door_pos = 0 + 50 = 50``
 - **Result**: Doors begin opening, halfway open
 
-**Cycle 3** (doors continue opening):
+**Cycle 3**  (doors continue opening):
 - Check ``Opening -> Opened``: ``door_pos >= 100`` not satisfied (current: 50)
 - Execute ``Opening.during``: ``door_pos = 50 + 50 = 100``
 - **Result**: Doors reach fully open position
 
-**Cycle 4** (transition to opened state):
+**Cycle 4**  (transition to opened state):
 - Check ``Opening -> Opened``: ``door_pos >= 100`` satisfied
 - Execute ``Opening.exit`` (none defined)
 - Execute transition effect: ``hold = 0``
@@ -1136,24 +1136,24 @@ This state machine models a typical elevator safety system where:
 - Execute ``Opened.during``: ``hold = 0 + 1 = 1``
 - **Result**: Doors fully open, hold timer starts
 
-**Cycle 5** (hold timer continues):
+**Cycle 5**  (hold timer continues):
 - Check ``Opened -> Closing``: ``hold >= 2`` not satisfied (current: 1)
 - Execute ``Opened.during``: ``hold = 1 + 1 = 2``
 - **Result**: Hold timer reaches threshold
 
-**Cycle 6** (begin closing):
+**Cycle 6**  (begin closing):
 - Check ``Opened -> Closing``: ``hold >= 2`` satisfied
 - Execute ``Opened.exit`` (none defined)
 - Execute ``Closing.enter`` (none defined)
 - Execute ``Closing.during``: ``door_pos = 100 - 50 = 50``
 - **Result**: Doors begin closing
 
-**Cycle 7** (continue closing):
+**Cycle 7**  (continue closing):
 - Check ``Closing -> Closed``: ``door_pos <= 0`` not satisfied (current: 50)
 - Execute ``Closing.during``: ``door_pos = 50 - 50 = 0``
 - **Result**: Doors reach fully closed position
 
-**Cycle 8** (transition to closed):
+**Cycle 8**  (transition to closed):
 - Check ``Closing -> Closed``: ``door_pos <= 0`` satisfied
 - Execute ``Closing.exit`` (none defined)
 - Execute transition effect: ``hold = 0``
@@ -1161,7 +1161,7 @@ This state machine models a typical elevator safety system where:
 - Execute ``Closed.during``: ``hold = 0``
 - **Result**: Doors fully closed, system ready
 
-**Scenario B: Safety Reopening** (obstruction detected during closing)
+**Scenario B: Safety Reopening**  (obstruction detected during closing)
 
 .. list-table::
    :header-rows: 1
@@ -1197,7 +1197,7 @@ This state machine models a typical elevator safety system where:
 **Cycles 1-6**: Same as Scenario A (doors open, hold, begin closing)
 - After cycle 6: ``state = Closing``, ``door_pos = 50``, ``hold = 2``, ``reopen_count = 0``
 
-**Cycle 7** (obstruction detected):
+**Cycle 7**  (obstruction detected):
 - Event ``BeamBlocked`` triggers ``Closing -> Opened``
 - Execute ``Closing.exit`` (none defined)
 - Execute transition effect:
@@ -1237,7 +1237,7 @@ This state machine models a typical hysteresis temperature control system where:
 - Heating increases temperature by 4°/cycle
 - Hot water draw causes immediate 8° temperature drop
 
-**Scenario A: Natural Heat Loss and Recovery** (no water usage)
+**Scenario A: Natural Heat Loss and Recovery**  (no water usage)
 
 .. list-table::
    :header-rows: 1
@@ -1286,13 +1286,13 @@ This state machine models a typical hysteresis temperature control system where:
 
 **Detailed Execution Trace A**:
 
-**Cycle 1** (initial standby):
+**Cycle 1**  (initial standby):
 - Initial: ``water_temp = 55``, ``draw_count = 0``
 - Execute ``[*] -> Standby``
 - Execute ``Standby.during``: ``water_temp = 55 - 1 = 54``
 - **Result**: Normal heat loss through tank insulation
 
-**Cycles 2-5** (gradual temperature decrease):
+**Cycles 2-5**  (gradual temperature decrease):
 - Each cycle: Check ``Standby -> Heating``: ``water_temp <= 50`` not satisfied
 - Execute ``Standby.during``: ``water_temp`` decreases by 1
 - Cycle 2: ``54 - 1 = 53``
@@ -1301,19 +1301,19 @@ This state machine models a typical hysteresis temperature control system where:
 - Cycle 5: ``51 - 1 = 50``
 - **Result**: Temperature gradually drops to lower threshold
 
-**Cycle 6** (heating activation):
+**Cycle 6**  (heating activation):
 - Check ``Standby -> Heating``: ``water_temp <= 50`` satisfied
 - Execute ``Standby.exit`` (none defined)
 - Execute ``Heating.enter`` (none defined)
 - Execute ``Heating.during``: ``water_temp = 50 + 4 = 54``
 - **Result**: Heating element activates, temperature begins rising
 
-**Cycle 7** (continued heating):
+**Cycle 7**  (continued heating):
 - Check ``Heating -> Standby``: ``water_temp >= 60`` not satisfied (current: 54)
 - Execute ``Heating.during``: ``water_temp = 54 + 4 = 58``
 - **Result**: Heating continues toward upper threshold
 
-**Scenario B: Heavy Water Usage** (morning shower triggers early heating)
+**Scenario B: Heavy Water Usage**  (morning shower triggers early heating)
 
 .. list-table::
    :header-rows: 1
@@ -1370,10 +1370,10 @@ This state machine models a typical hysteresis temperature control system where:
 
 **Detailed Execution Trace B**:
 
-**Cycle 1** (initial standby):
+**Cycle 1**  (initial standby):
 - Same as Scenario A: ``water_temp = 54``, ``draw_count = 0``
 
-**Cycle 2** (heavy water usage):
+**Cycle 2**  (heavy water usage):
 - Event ``HotWaterDraw`` triggers ``Standby -> Standby`` (self-transition)
 - Execute ``Standby.exit`` (none defined)
 - Execute transition effect:
@@ -1383,14 +1383,14 @@ This state machine models a typical hysteresis temperature control system where:
 - Execute ``Standby.during``: ``water_temp = 46 - 1 = 45``
 - **Result**: Significant temperature drop from water usage
 
-**Cycle 3** (heating activation):
+**Cycle 3**  (heating activation):
 - Check ``Standby -> Heating``: ``water_temp <= 50`` satisfied (current: 45)
 - Execute ``Standby.exit`` (none defined)
 - Execute ``Heating.enter`` (none defined)
 - Execute ``Heating.during``: ``water_temp = 45 + 4 = 49``
 - **Result**: Low temperature triggers immediate heating
 
-**Cycles 4-6** (heating to upper threshold):
+**Cycles 4-6**  (heating to upper threshold):
 - Each cycle: Check ``Heating -> Standby``: ``water_temp >= 60`` not satisfied
 - Execute ``Heating.during``: ``water_temp`` increases by 4
 - Cycle 4: ``49 + 4 = 53``
@@ -1398,7 +1398,7 @@ This state machine models a typical hysteresis temperature control system where:
 - Cycle 6: ``57 + 4 = 61``
 - **Result**: Temperature rises above upper threshold
 
-**Cycle 7** (heating deactivation):
+**Cycle 7**  (heating deactivation):
 - Check ``Heating -> Standby``: ``water_temp >= 60`` satisfied
 - Execute ``Heating.exit`` (none defined)
 - Execute ``Standby.enter`` (none defined)
@@ -1435,7 +1435,7 @@ This state machine models a traffic-responsive signal system where:
 - ``walk_ticks`` counts pedestrian crossing time
 - ``PedestrianPhase`` is a composite state containing yellow and walk sub-phases
 
-**Scenario A: No Pedestrian Request** (main road priority maintained)
+**Scenario A: No Pedestrian Request**  (main road priority maintained)
 
 .. list-table::
    :header-rows: 1
@@ -1469,13 +1469,13 @@ This state machine models a traffic-responsive signal system where:
 
 **Detailed Execution Trace A**:
 
-**Cycle 1** (initial state):
+**Cycle 1**  (initial state):
 - Initial: ``green_ticks = 0``, ``request_latched = 0``, ``yellow_ticks = 0``, ``walk_ticks = 0``
 - Execute ``[*] -> MainGreen``
 - Execute ``MainGreen.during``: ``green_ticks = 0 + 1 = 1``
 - **Result**: Main road green light active
 
-**Cycles 2-4** (continued main road priority):
+**Cycles 2-4**  (continued main road priority):
 - Each cycle: Check ``MainGreen -> PedestrianPhase``: ``request_latched == 1 && green_ticks >= 3`` not satisfied
 - Execute ``MainGreen.during``: ``green_ticks`` increments
 - Cycle 2: ``green_ticks = 2``
@@ -1483,7 +1483,7 @@ This state machine models a traffic-responsive signal system where:
 - Cycle 4: ``green_ticks = 4``
 - **Result**: Main road maintains priority without pedestrian demand
 
-**Scenario B: Pedestrian Request with Latching** (button pressed early, served after minimum green)
+**Scenario B: Pedestrian Request with Latching**  (button pressed early, served after minimum green)
 
 .. list-table::
    :header-rows: 1
@@ -1540,10 +1540,10 @@ This state machine models a traffic-responsive signal system where:
 
 **Detailed Execution Trace B**:
 
-**Cycle 1** (initial state):
+**Cycle 1**  (initial state):
 - Same as Scenario A: ``green_ticks = 1``, ``request_latched = 0``
 
-**Cycle 2** (pedestrian button pressed):
+**Cycle 2**  (pedestrian button pressed):
 - Event ``PedRequest`` triggers ``MainGreen -> MainGreen`` (self-transition)
 - Check ``MainGreen -> PedestrianPhase``: ``request_latched == 1 && green_ticks >= 3`` not satisfied
 - Execute ``MainGreen.exit`` (none defined)
@@ -1552,12 +1552,12 @@ This state machine models a traffic-responsive signal system where:
 - Execute ``MainGreen.during``: ``green_ticks = 1 + 1 = 2``
 - **Result**: Request latched, but minimum green not yet satisfied
 
-**Cycle 3** (waiting for minimum green):
+**Cycle 3**  (waiting for minimum green):
 - Check ``MainGreen -> PedestrianPhase``: ``request_latched == 1 && green_ticks >= 3`` not satisfied (current: 2)
 - Execute ``MainGreen.during``: ``green_ticks = 2 + 1 = 3``
 - **Result**: Minimum green time now satisfied
 
-**Cycle 4** (enter pedestrian phase - yellow light):
+**Cycle 4**  (enter pedestrian phase - yellow light):
 - Check ``MainGreen -> PedestrianPhase``: ``request_latched == 1 && green_ticks >= 3`` satisfied
 - Execute ``MainGreen.exit`` (none defined)
 - Execute transition effect:
@@ -1565,24 +1565,24 @@ This state machine models a traffic-responsive signal system where:
   - ``yellow_ticks = 0`` (reset yellow timer)
   - ``walk_ticks = 0`` (reset walk timer)
 - Execute ``PedestrianPhase.enter`` (none defined)
-- **PedestrianPhase is composite** - follow ``[*] -> MainYellow``
+- **PedestrianPhase is composite**  - follow ``[*] -> MainYellow``
 - Execute ``MainYellow.enter`` (none defined)
 - Execute ``MainYellow.during``: ``yellow_ticks = 0 + 1 = 1``
 - **Result**: Yellow light clears vehicle traffic
 
-**Cycle 5** (transition to pedestrian walk):
+**Cycle 5**  (transition to pedestrian walk):
 - Check ``MainYellow -> PedWalk``: ``yellow_ticks >= 1`` satisfied
 - Execute ``MainYellow.exit`` (none defined)
 - Execute ``PedWalk.enter`` (none defined)
 - Execute ``PedWalk.during``: ``walk_ticks = 0 + 1 = 1``
 - **Result**: Pedestrian crossing signal activates
 
-**Cycle 6** (pedestrian crossing continues):
+**Cycle 6**  (pedestrian crossing continues):
 - Check ``PedWalk -> [*]``: ``walk_ticks >= 2`` not satisfied (current: 1)
 - Execute ``PedWalk.during``: ``walk_ticks = 1 + 1 = 2``
 - **Result**: Pedestrian crossing time satisfied
 
-**Cycle 7** (return to main road green):
+**Cycle 7**  (return to main road green):
 - Check ``PedWalk -> [*]``: ``walk_ticks >= 2`` satisfied
 - Execute ``PedWalk.exit`` (none defined)
 - Exit to ``PedestrianPhase``

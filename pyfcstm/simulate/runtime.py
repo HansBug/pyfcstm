@@ -241,7 +241,7 @@ except ImportError:
 from ..dsl import EXIT_STATE
 from ..model import Event, OnAspect, OnStage, State, StateMachine, Transition
 from .context import ReadOnlyExecutionContext
-from .utils import get_func_name
+from .utils import is_state_resolve_event_path
 
 
 class SimulationRuntimeDfsError(RuntimeError):
@@ -738,11 +738,11 @@ class SimulationRuntime:
         """
         while func.ref is not None:
             new_func = func.ref
-            logging.debug(f'Function {get_func_name(func)} -> {get_func_name(new_func)}.')
+            logging.debug(f'Function {func.func_name} -> {new_func.func_name}.')
             func = new_func
 
         if func.is_abstract:
-            func_path = get_func_name(func)
+            func_path = func.func_name
 
             # Check if this is an anonymous abstract (no name)
             if func.name is None:
@@ -811,7 +811,7 @@ class SimulationRuntime:
                         logging.error(f'Abstract handler {idx + 1} for {func_path} raised exception '
                                       f'(continuing in log mode): {e}')
         else:
-            logging.info(f'Execute function {get_func_name(func)}.')
+            logging.info(f'Execute function {func.func_name}.')
             for op in (func.operations or []):
                 vars_[op.var_name] = op.expr(**vars_)
 

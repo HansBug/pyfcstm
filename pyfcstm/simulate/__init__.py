@@ -13,7 +13,6 @@ The module contains the following main components:
 * :class:`SimulationRuntimeDfsError` - Exception raised when speculative
   validation exceeds safety limits.
 * :class:`ReadOnlyExecutionContext` - Immutable context passed to abstract handlers.
-* :func:`get_func_name` - Convert a lifecycle action to its readable path.
 * :func:`is_state_resolve_event_path` - Check if a path string is definitely for State.resolve_event.
 
 Key Concepts
@@ -211,4 +210,4 @@ Validation preventing invalid transitions::
 
 from .context import ReadOnlyExecutionContext
 from .runtime import SimulationRuntime, SimulationRuntimeDfsError
-from .utils import get_func_name, is_state_resolve_event_path
+from .utils import is_state_resolve_event_path

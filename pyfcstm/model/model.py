@@ -360,6 +360,35 @@ class OnStage(AstExportable):
         """
         return False
 
+    @property
+    def func_name(self) -> str:
+        """
+        Get the readable dot-separated path string for this action.
+
+        The returned string represents the action's location in the state hierarchy,
+        making it easy to identify which state owns the action in log messages and
+        diagnostic output.
+
+        Unnamed actions (where the name component is ``None``) are rendered with
+        ``<unnamed>`` in the terminal position.
+
+        :return: Dot-separated action path with state hierarchy
+        :rtype: str
+
+        Example::
+
+            >>> # Named enter action
+            >>> action.func_name
+            'System.Active.Initialize'
+            >>> # Unnamed during action
+            >>> action.func_name
+            'System.Active.<unnamed>'
+        """
+        sp = self.state_path
+        if sp[-1] is None:
+            sp = tuple((*sp[:-1], '<unnamed>'))
+        return '.'.join(sp)
+
     def to_ast_node(self) -> Union[dsl_nodes.EnterStatement, dsl_nodes.DuringStatement, dsl_nodes.ExitStatement]:
         """
         Convert this OnStage to an appropriate AST node based on the stage.
@@ -537,6 +566,35 @@ class OnAspect(AstExportable):
         :rtype: bool
         """
         return True
+
+    @property
+    def func_name(self) -> str:
+        """
+        Get the readable dot-separated path string for this action.
+
+        The returned string represents the action's location in the state hierarchy,
+        making it easy to identify which state owns the action in log messages and
+        diagnostic output.
+
+        Unnamed actions (where the name component is ``None``) are rendered with
+        ``<unnamed>`` in the terminal position.
+
+        :return: Dot-separated action path with state hierarchy
+        :rtype: str
+
+        Example::
+
+            >>> # Named aspect action
+            >>> action.func_name
+            'System.PreProcess'
+            >>> # Unnamed aspect action
+            >>> action.func_name
+            'System.<unnamed>'
+        """
+        sp = self.state_path
+        if sp[-1] is None:
+            sp = tuple((*sp[:-1], '<unnamed>'))
+        return '.'.join(sp)
 
     def to_ast_node(self) -> Union[dsl_nodes.DuringAspectStatement]:
         """

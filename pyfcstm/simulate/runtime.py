@@ -513,21 +513,33 @@ class SimulationRuntime:
 
         This method accepts either an event object (returned as-is) or a
         dot-separated event path string. String paths are resolved using
-        :meth:`StateMachine.resolve_event` which requires a full path from
-        the root state to the event.
+        intelligent resolution that supports both StateMachine and State
+        resolve_event methods for maximum flexibility.
 
-        **Path Resolution**:
+        **Path Resolution Strategy**:
 
-        Event paths must follow the complete format ``Root.State1.State2.EventName`` where:
-        - ``Root.State1.State2`` is the complete state hierarchy path from root
-        - ``EventName`` is the event name in the final state's event table
+        The method uses a smart resolution strategy based on the current runtime
+        state and path syntax:
+
+        1. **If runtime has ended** (no current state): Use StateMachine.resolve_event only
+        2. **If path is definitely State.resolve_event syntax** (starts with ``/`` or ``.``):
+           Use State.resolve_event from current state
+        3. **If path is uncertain** (plain path like ``Root.System.event``):
+           Try StateMachine.resolve_event first, fall back to State.resolve_event if it fails
+
+        **Supported Path Formats**:
+
+        - **Full paths**: ``Root.State1.State2.EventName`` (StateMachine.resolve_event)
+        - **Relative paths**: ``error.critical`` (State.resolve_event from current state)
+        - **Parent-relative**: ``.error`` or ``..system.error`` (State.resolve_event)
+        - **Absolute**: ``/global.shutdown`` (State.resolve_event from root)
 
         :param event: Event object or dot-separated event path string.
         :type event: Union[str, Event]
         :return: The resolved event instance.
         :rtype: Event
         :raises TypeError: If ``event`` is neither a string nor an :class:`Event`.
-        :raises LookupError: If the event path cannot be resolved.
+        :raises LookupError: If the event path cannot be resolved by either method.
 
         Example::
 
@@ -539,7 +551,9 @@ class SimulationRuntime:
             ...     state Idle {
             ...         event Start;
             ...     }
-            ...     state Active;
+            ...     state Active {
+            ...         event Timeout;
+            ...     }
             ...     [*] -> Idle;
             ...     Idle -> Active :: Start;
             ... }
@@ -547,24 +561,64 @@ class SimulationRuntime:
             >>> ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
             >>> sm = parse_dsl_node_to_state_machine(ast)
             >>> runtime = SimulationRuntime(sm)
-            >>> # Parse event by string path
-            >>> event = runtime._parse_event('System.Idle.Start')
-            >>> event.name
+            >>> runtime.cycle()
+            >>> # Full path (StateMachine.resolve_event)
+            >>> event1 = runtime._parse_event('System.Idle.Start')
+            >>> event1.name
             'Start'
-            >>> # Parse event by object (returns same object)
-            >>> same_event = runtime._parse_event(event)
-            >>> same_event is event
-            True
+            >>> # Relative path (State.resolve_event from current state)
+            >>> event2 = runtime._parse_event('Start')
+            >>> event2.name
+            'Start'
+            >>> # Parent-relative path (State.resolve_event)
+            >>> event3 = runtime._parse_event('.Start')
+            >>> event3.name
+            'Start'
+            >>> # Absolute path (State.resolve_event)
+            >>> event4 = runtime._parse_event('/Idle.Start')
+            >>> event4.name
+            'Start'
 
         .. note::
            This method is used internally by :meth:`cycle` to normalize the
-           events parameter. Users typically pass string paths directly to
-           :meth:`cycle` rather than calling this method explicitly.
+           events parameter. Users can pass any supported path format directly
+           to :meth:`cycle` for maximum flexibility.
         """
         if isinstance(event, Event):
             return event
         elif isinstance(event, str):
-            return self.state_machine.resolve_event(event)
+            from .utils import is_state_resolve_event_path
+
+            # Check if runtime has ended (no current state)
+            has_current_state = len(self.stack) > 0
+
+            # If runtime has ended, only use StateMachine.resolve_event
+            if not has_current_state:
+                return self.state_machine.resolve_event(event)
+
+            # Check if path is definitely State.resolve_event syntax
+            is_definitely_state_path = is_state_resolve_event_path(event)
+
+            if is_definitely_state_path:
+                # Use State.resolve_event from current state
+                current_state = self.stack[-1].state
+                return current_state.resolve_event(event)
+            else:
+                # Uncertain path - try StateMachine first, then State
+                try:
+                    return self.state_machine.resolve_event(event)
+                except (ValueError, LookupError):
+                    # Fall back to State.resolve_event
+                    current_state = self.stack[-1].state
+                    try:
+                        return current_state.resolve_event(event)
+                    except (ValueError, LookupError) as e:
+                        # Both methods failed - raise informative error
+                        raise LookupError(
+                            f"Cannot resolve event path {event!r}: "
+                            f"failed with both StateMachine.resolve_event and State.resolve_event. "
+                            f"Last error: {e}"
+                        ) from e
         else:
             raise TypeError(f'Unknown event type {type(event)!r} - {event!r}.')
 

@@ -54,13 +54,13 @@
       <path d="M 72 120 L 128 120" fill="none" stroke="#90A4AE" stroke-width="3" stroke-linecap="round"/>
 
       <!-- Entry indicator (gray circle at top, touching S0) -->
-      <circle cx="100" cy="4" r="8" fill="#78909C"/>
-      <path d="M 100 12 L 100 12" stroke="#78909C" stroke-width="4" stroke-linecap="round"/>
+      <circle cx="100" cy="0" r="8" fill="#78909C"/>
+      <path d="M 100 8 L 100 12" stroke="#78909C" stroke-width="4" stroke-linecap="round"/>
     </g>
   </g>
 
   <!-- Right side: Text (moved further right) -->
-  <g id="text-content" transform="translate(380, 0)">
+  <g id="text-content" transform="translate(340, 0)">
     <!-- Project name -->
     <text x="0" y="120" font-family="Arial, sans-serif" font-size="90" font-weight="bold" fill="#1976D2">
       pyfcstm

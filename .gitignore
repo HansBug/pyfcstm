@@ -1204,6 +1204,7 @@ fabric.properties
 /docs/source/**/*.dat.*
 !/docs/source/**/*.plot.py.svg
 !/docs/source/_static/**/*
+/docs/source/_static/logos/
 /docs/source/**/*.result.ipynb
 /docs/source/index.rst
 /pyfcstm/**/*.json

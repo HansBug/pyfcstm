@@ -12,9 +12,9 @@
     {"open": "{", "close": "}"},
     {"open": "[", "close": "]"},
     {"open": "(", "close": ")"},
-    {"open": "\"", "close": "\"", "notIn": ["string"]},
-    {"open": "'", "close": "'", "notIn": ["string"]},
-    {"open": "/*", "close": "*/", "notIn": ["string"]}
+    {"open": "\"", "close": "\"", "notIn": ["string", "comment"]},
+    {"open": "'", "close": "'", "notIn": ["string", "comment"]},
+    {"open": "/*", "close": "*/", "notIn": ["string", "comment"]}
   ],
   "surroundingPairs": [
     ["{", "}"],
@@ -23,11 +23,12 @@
     ["\"", "\""],
     ["'", "'"]
   ],
+  "autoCloseBefore": ";:.,=}])> \n\t",
   "folding": {
     "markers": {
       "start": "^\\s*//\\s*#?region\\b",
       "end": "^\\s*//\\s*#?endregion\\b"
     }
   },
-  "wordPattern": "(-?\\d*\\.\\d\\w*)|([^\\`\\~\\!\\@\\#\\%\\^\\&\\*\\(\\)\\-\\=\\+\\[\\{\\]\\}\\\\\\|\\;\\:\\'\\\"\\,\\.\\<\\>\\/\\?\\s]+)"
+  "wordPattern": "(\\[\\*\\])|(::[A-Za-z_][A-Za-z0-9_]*)|(\\/?[A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)*)|(0[xX][0-9A-Fa-f]+)|(0[bB][01]+)|(-?\\d+(?:\\.\\d+)?(?:[eE][+-]?\\d+)?)"
 }

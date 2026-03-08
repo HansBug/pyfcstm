@@ -8,3 +8,26 @@ node_modules/**
 **/.DS_Store
 test/**
 .github/**
+
+# Source files (not needed in package)
+src/**
+parser/**
+tsconfig.json
+.eslintrc.json
+esbuild.config.js
+Makefile
+
+# Build artifacts (keep only dist/)
+out/**
+
+# Documentation
+TODO.md
+PARSER.md
+DEPENDENCY-FIX.md
+BUILD-IMPROVEMENTS.md
+
+# Scripts (not needed in package)
+scripts/**
+
+# Keep bundled extension
+!dist/extension.js

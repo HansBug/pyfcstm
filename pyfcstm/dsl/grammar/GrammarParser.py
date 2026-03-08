@@ -641,6 +641,7 @@ class GrammarParser(Parser):
                 listener.exitCondition(self)
 
     def condition(self):
+
         localctx = GrammarParser.ConditionContext(self, self._ctx, self.state)
         self.enterRule(localctx, 0, self.RULE_condition)
         try:
@@ -690,6 +691,7 @@ class GrammarParser(Parser):
                 listener.exitState_machine_dsl(self)
 
     def state_machine_dsl(self):
+
         localctx = GrammarParser.State_machine_dslContext(self, self._ctx, self.state)
         self.enterRule(localctx, 2, self.RULE_state_machine_dsl)
         self._la = 0  # Token type
@@ -745,6 +747,7 @@ class GrammarParser(Parser):
                 listener.exitDef_assignment(self)
 
     def def_assignment(self):
+
         localctx = GrammarParser.Def_assignmentContext(self, self._ctx, self.state)
         self.enterRule(localctx, 4, self.RULE_def_assignment)
         self._la = 0  # Token type
@@ -850,6 +853,7 @@ class GrammarParser(Parser):
                 listener.exitCompositeStateDefinition(self)
 
     def state_definition(self):
+
         localctx = GrammarParser.State_definitionContext(self, self._ctx, self.state)
         self.enterRule(localctx, 6, self.RULE_state_definition)
         self._la = 0  # Token type
@@ -1076,6 +1080,7 @@ class GrammarParser(Parser):
                 listener.exitExitTransitionDefinition(self)
 
     def transition_definition(self):
+
         localctx = GrammarParser.Transition_definitionContext(
             self, self._ctx, self.state
         )
@@ -1432,6 +1437,7 @@ class GrammarParser(Parser):
                 listener.exitExitForceTransitionDefinition(self)
 
     def transition_force_definition(self):
+
         localctx = GrammarParser.Transition_force_definitionContext(
             self, self._ctx, self.state
         )
@@ -1735,6 +1741,7 @@ class GrammarParser(Parser):
                 listener.exitEnterAbstractFunc(self)
 
     def enter_definition(self):
+
         localctx = GrammarParser.Enter_definitionContext(self, self._ctx, self.state)
         self.enterRule(localctx, 12, self.RULE_enter_definition)
         self._la = 0  # Token type
@@ -1919,6 +1926,7 @@ class GrammarParser(Parser):
                 listener.exitExitAbstractFunc(self)
 
     def exit_definition(self):
+
         localctx = GrammarParser.Exit_definitionContext(self, self._ctx, self.state)
         self.enterRule(localctx, 14, self.RULE_exit_definition)
         self._la = 0  # Token type
@@ -2106,6 +2114,7 @@ class GrammarParser(Parser):
                 listener.exitDuringRefFunc(self)
 
     def during_definition(self):
+
         localctx = GrammarParser.During_definitionContext(self, self._ctx, self.state)
         self.enterRule(localctx, 16, self.RULE_during_definition)
         self._la = 0  # Token type
@@ -2345,6 +2354,7 @@ class GrammarParser(Parser):
                 listener.exitDuringAspectOperations(self)
 
     def during_aspect_definition(self):
+
         localctx = GrammarParser.During_aspect_definitionContext(
             self, self._ctx, self.state
         )
@@ -2510,6 +2520,7 @@ class GrammarParser(Parser):
                 listener.exitEvent_definition(self)
 
     def event_definition(self):
+
         localctx = GrammarParser.Event_definitionContext(self, self._ctx, self.state)
         self.enterRule(localctx, 20, self.RULE_event_definition)
         self._la = 0  # Token type
@@ -2565,6 +2576,7 @@ class GrammarParser(Parser):
                 listener.exitOperation_assignment(self)
 
     def operation_assignment(self):
+
         localctx = GrammarParser.Operation_assignmentContext(
             self, self._ctx, self.state
         )
@@ -2613,6 +2625,7 @@ class GrammarParser(Parser):
                 listener.exitOperational_statement(self)
 
     def operational_statement(self):
+
         localctx = GrammarParser.Operational_statementContext(
             self, self._ctx, self.state
         )
@@ -2693,6 +2706,7 @@ class GrammarParser(Parser):
                 listener.exitState_inner_statement(self)
 
     def state_inner_statement(self):
+
         localctx = GrammarParser.State_inner_statementContext(
             self, self._ctx, self.state
         )
@@ -2791,6 +2805,7 @@ class GrammarParser(Parser):
                 listener.exitOperation_program(self)
 
     def operation_program(self):
+
         localctx = GrammarParser.Operation_programContext(self, self._ctx, self.state)
         self.enterRule(localctx, 28, self.RULE_operation_program)
         self._la = 0  # Token type
@@ -2850,6 +2865,7 @@ class GrammarParser(Parser):
                 listener.exitPreamble_program(self)
 
     def preamble_program(self):
+
         localctx = GrammarParser.Preamble_programContext(self, self._ctx, self.state)
         self.enterRule(localctx, 30, self.RULE_preamble_program)
         self._la = 0  # Token type
@@ -2902,6 +2918,7 @@ class GrammarParser(Parser):
                 listener.exitPreamble_statement(self)
 
     def preamble_statement(self):
+
         localctx = GrammarParser.Preamble_statementContext(self, self._ctx, self.state)
         self.enterRule(localctx, 32, self.RULE_preamble_statement)
         try:
@@ -2955,6 +2972,7 @@ class GrammarParser(Parser):
                 listener.exitInitial_assignment(self)
 
     def initial_assignment(self):
+
         localctx = GrammarParser.Initial_assignmentContext(self, self._ctx, self.state)
         self.enterRule(localctx, 34, self.RULE_initial_assignment)
         try:
@@ -3002,6 +3020,7 @@ class GrammarParser(Parser):
                 listener.exitConstant_definition(self)
 
     def constant_definition(self):
+
         localctx = GrammarParser.Constant_definitionContext(self, self._ctx, self.state)
         self.enterRule(localctx, 36, self.RULE_constant_definition)
         try:
@@ -3049,6 +3068,7 @@ class GrammarParser(Parser):
                 listener.exitOperational_assignment(self)
 
     def operational_assignment(self):
+
         localctx = GrammarParser.Operational_assignmentContext(
             self, self._ctx, self.state
         )
@@ -3098,6 +3118,7 @@ class GrammarParser(Parser):
                 listener.exitGeneric_expression(self)
 
     def generic_expression(self):
+
         localctx = GrammarParser.Generic_expressionContext(self, self._ctx, self.state)
         self.enterRule(localctx, 40, self.RULE_generic_expression)
         try:
@@ -3144,7 +3165,7 @@ class GrammarParser(Parser):
             self, parser, ctx: ParserRuleContext
         ):  # actually a GrammarParser.Init_expressionContext
             super().__init__(parser)
-            self.function = None  # Token
+            self.func_name = None  # Token
             self.copyFrom(ctx)
 
         def init_expression(self):
@@ -3323,7 +3344,7 @@ class GrammarParser(Parser):
                 self._ctx = localctx
                 _prevctx = localctx
                 self.state = 482
-                localctx.function = self.match(GrammarParser.UFUNC_NAME)
+                localctx.func_name = self.match(GrammarParser.UFUNC_NAME)
                 self.state = 483
                 self.match(GrammarParser.T__30)
                 self.state = 484
@@ -3591,7 +3612,7 @@ class GrammarParser(Parser):
             self, parser, ctx: ParserRuleContext
         ):  # actually a GrammarParser.Num_expressionContext
             super().__init__(parser)
-            self.function = None  # Token
+            self.func_name = None  # Token
             self.copyFrom(ctx)
 
         def num_expression(self):
@@ -3797,7 +3818,7 @@ class GrammarParser(Parser):
                 self._ctx = localctx
                 _prevctx = localctx
                 self.state = 525
-                localctx.function = self.match(GrammarParser.UFUNC_NAME)
+                localctx.func_name = self.match(GrammarParser.UFUNC_NAME)
                 self.state = 526
                 self.match(GrammarParser.T__30)
                 self.state = 527
@@ -4466,6 +4487,7 @@ class GrammarParser(Parser):
                 listener.exitNum_literal(self)
 
     def num_literal(self):
+
         localctx = GrammarParser.Num_literalContext(self, self._ctx, self.state)
         self.enterRule(localctx, 48, self.RULE_num_literal)
         self._la = 0  # Token type
@@ -4524,6 +4546,7 @@ class GrammarParser(Parser):
                 listener.exitBool_literal(self)
 
     def bool_literal(self):
+
         localctx = GrammarParser.Bool_literalContext(self, self._ctx, self.state)
         self.enterRule(localctx, 50, self.RULE_bool_literal)
         self._la = 0  # Token type
@@ -4565,6 +4588,7 @@ class GrammarParser(Parser):
                 listener.exitMath_const(self)
 
     def math_const(self):
+
         localctx = GrammarParser.Math_constContext(self, self._ctx, self.state)
         self.enterRule(localctx, 52, self.RULE_math_const)
         self._la = 0  # Token type
@@ -4624,6 +4648,7 @@ class GrammarParser(Parser):
                 listener.exitChain_id(self)
 
     def chain_id(self):
+
         localctx = GrammarParser.Chain_idContext(self, self._ctx, self.state)
         self.enterRule(localctx, 54, self.RULE_chain_id)
         self._la = 0  # Token type

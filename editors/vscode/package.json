@@ -42,6 +42,32 @@
       "description": "Star pyfcstm on GitHub"
     }
   ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onLanguage:fcstm"
+  ],
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "node esbuild.config.js --production",
+    "watch": "node esbuild.config.js --watch",
+    "compile:tsc": "tsc -p ./",
+    "pretest": "npm run compile:tsc",
+    "lint": "eslint src --ext ts",
+    "package": "vsce package --out build/"
+  },
+  "dependencies": {
+    "antlr4": "4.9.3"
+  },
+  "devDependencies": {
+    "@types/node": "^16.0.0",
+    "@types/vscode": "^1.60.0",
+    "@typescript-eslint/eslint-plugin": "^5.0.0",
+    "@typescript-eslint/parser": "^5.0.0",
+    "@vscode/vsce": "^2.15.0",
+    "esbuild": "^0.20.2",
+    "eslint": "^8.0.0",
+    "typescript": "^4.5.0"
+  },
   "contributes": {
     "languages": [
       {
@@ -61,6 +87,12 @@
         "language": "fcstm",
         "scopeName": "source.fcstm",
         "path": "./syntaxes/fcstm.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "fcstm",
+        "path": "./snippets/fcstm.code-snippets"
       }
     ]
   }

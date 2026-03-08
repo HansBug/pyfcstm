@@ -1,25 +1,32 @@
 #!/usr/bin/env python3
 """
-Comprehensive validation script for FCSTM Pygments Lexer.
+Comprehensive validation script for FCSTM syntax-highlighting assets.
 
-This script validates that the Pygments lexer correctly tokenizes all FCSTM
-syntax elements defined in the ANTLR grammar (Grammar.g4).
+This script validates FCSTM highlighting behavior across both the Pygments
+lexer and the TextMate grammar used by the VSCode extension. It keeps the
+validation output separated by implementation so it is easy to see which side
+passed or failed, while still using a shared set of lexical checkpoints to
+ensure both implementations stay aligned.
 """
 
+import json
 import os
+import re
 import sys
-from typing import List, Tuple, Any
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional, Tuple
 
 # Add parent directory to path to import pyfcstm
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from pygments import highlight
-from pygments.formatters import TerminalFormatter
 from pygments.token import Token
 
 from pyfcstm.highlight.pygments_lexer import FcstmLexer
 
-# Comprehensive test code covering all ANTLR grammar rules
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+TEXTMATE_GRAMMAR_FILE = os.path.join(ROOT_DIR, 'editors', 'fcstm.tmLanguage.json')
+VSCODE_TEXTMATE_GRAMMAR_FILE = os.path.join(ROOT_DIR, 'editors', 'vscode', 'syntaxes', 'fcstm.tmLanguage.json')
+
 COMPREHENSIVE_TEST_CODE = """
 // ============================================================================
 // FCSTM DSL Comprehensive Test - Covers All Grammar Rules
@@ -28,7 +35,6 @@ COMPREHENSIVE_TEST_CODE = """
 // Variable definitions (def_assignment)
 def int counter = 0;                    // Integer with decimal literal
 def int flags = 0xFF;                   // Integer with hex literal
-def int mask = 0b1010;                  // Integer with binary literal (if supported)
 def float temperature = 25.5;           // Float with decimal
 def float ratio = 3.14e-5;              // Float with scientific notation
 def float pi_value = 3.14159;           // Float literal
@@ -323,384 +329,615 @@ state System named "System State Machine" {
 """
 
 
+@dataclass
 class ValidationCheckpoint:
-    """Represents a validation checkpoint for a specific syntax feature."""
+    """Represents a validation checkpoint."""
 
-    def __init__(self, name: str, description: str, token_patterns: List[Tuple[str, Any]]):
-        """
-        Initialize a validation checkpoint.
-
-        Args:
-            name: Name of the feature being tested
-            description: Description of what is being validated
-            token_patterns: List of (text, expected_token_type) tuples to check
-        """
-        self.name = name
-        self.description = description
-        self.token_patterns = token_patterns
-        self.passed = False
-        self.failures = []
+    name: str
+    description: str
+    passed: bool = False
+    failures: List[str] = field(default_factory=list)
 
 
-def create_checkpoints() -> List[ValidationCheckpoint]:
-    """Create validation checkpoints for all FCSTM syntax features."""
+@dataclass
+class SharedExpectation:
+    """Shared lexical expectation for both validators."""
 
-    checkpoints = [
-        ValidationCheckpoint(
-            "Keywords - Structure",
-            "state, pseudo, named, def, event keywords",
-            [
-                ("state", Token.Keyword.Declaration),
-                ("pseudo", Token.Keyword.Declaration),
-                ("named", Token.Keyword.Declaration),
-                ("def", Token.Keyword.Declaration),
-                ("event", Token.Keyword.Declaration),
-            ]
-        ),
+    text: str
+    pygments_token: Any
+    textmate_section: str
+    textmate_scope: str
+    capture_group: Optional[int] = None
+    mode: str = 'auto'
 
-        ValidationCheckpoint(
-            "Keywords - Lifecycle",
-            "enter, during, exit, before, after keywords",
-            [
-                ("enter", Token.Keyword.Reserved),
-                ("during", Token.Keyword.Reserved),
-                ("exit", Token.Keyword.Reserved),
-                ("before", Token.Keyword.Reserved),
-                ("after", Token.Keyword.Reserved),
-            ]
-        ),
 
-        ValidationCheckpoint(
-            "Keywords - Modifiers",
-            "abstract, ref, effect keywords",
-            [
-                ("abstract", Token.Keyword.Namespace),
-                ("ref", Token.Keyword.Namespace),
-                ("effect", Token.Keyword.Namespace),
-            ]
-        ),
+SHARED_CHECKPOINT_SPECS: List[Dict[str, Any]] = [
+    {
+        'name': 'Keywords - Structure',
+        'description': 'state, pseudo, named, def, event keywords',
+        'items': [
+            SharedExpectation('state', Token.Keyword.Declaration, 'keywords', 'keyword.control.fcstm'),
+            SharedExpectation('pseudo', Token.Keyword.Declaration, 'keywords', 'keyword.control.fcstm'),
+            SharedExpectation('named', Token.Keyword.Declaration, 'keywords', 'keyword.control.fcstm'),
+            SharedExpectation('def', Token.Keyword.Declaration, 'keywords', 'keyword.control.fcstm'),
+            SharedExpectation('event', Token.Keyword.Declaration, 'keywords', 'keyword.control.fcstm'),
+        ],
+    },
+    {
+        'name': 'Keywords - Lifecycle',
+        'description': 'enter, during, exit, before, after keywords',
+        'items': [
+            SharedExpectation('enter', Token.Keyword.Reserved, 'keywords', 'keyword.other.lifecycle.fcstm'),
+            SharedExpectation('during', Token.Keyword.Reserved, 'keywords', 'keyword.other.lifecycle.fcstm'),
+            SharedExpectation('exit', Token.Keyword.Reserved, 'keywords', 'keyword.other.lifecycle.fcstm'),
+            SharedExpectation('before', Token.Keyword.Reserved, 'keywords', 'keyword.other.lifecycle.fcstm'),
+            SharedExpectation('after', Token.Keyword.Reserved, 'keywords', 'keyword.other.lifecycle.fcstm'),
+        ],
+    },
+    {
+        'name': 'Keywords - Modifiers',
+        'description': 'abstract, ref, effect keywords',
+        'items': [
+            SharedExpectation('abstract', Token.Keyword.Namespace, 'keywords', 'keyword.other.modifier.fcstm'),
+            SharedExpectation('ref', Token.Keyword.Namespace, 'keywords', 'keyword.other.modifier.fcstm'),
+            SharedExpectation('effect', Token.Keyword.Namespace, 'keywords', 'keyword.other.modifier.fcstm'),
+        ],
+    },
+    {
+        'name': 'Keywords - Types',
+        'description': 'int, float type keywords',
+        'items': [
+            SharedExpectation('int', Token.Keyword.Type, 'keywords', 'storage.type.fcstm'),
+            SharedExpectation('float', Token.Keyword.Type, 'keywords', 'storage.type.fcstm'),
+        ],
+    },
+    {
+        'name': 'Keywords - Control',
+        'description': 'if keyword',
+        'items': [
+            SharedExpectation('if', Token.Keyword.Reserved, 'keywords', 'keyword.control.fcstm'),
+        ],
+    },
+    {
+        'name': 'Keywords - Logical (word form)',
+        'description': 'and, or, not keywords',
+        'items': [
+            SharedExpectation('and', Token.Operator.Word, 'keywords', 'keyword.operator.word.fcstm'),
+            SharedExpectation('or', Token.Operator.Word, 'keywords', 'keyword.operator.word.fcstm'),
+            SharedExpectation('not', Token.Operator.Word, 'keywords', 'keyword.operator.word.fcstm'),
+        ],
+    },
+    {
+        'name': 'Operators - Transition and Scope',
+        'description': '->, >>, ::, :, /, ! operators',
+        'items': [
+            SharedExpectation('->', Token.Operator, 'operators', 'keyword.operator.transition.fcstm'),
+            SharedExpectation('>>', Token.Operator.Word, 'operators', 'keyword.operator.aspect.fcstm'),
+            SharedExpectation('::', Token.Operator, 'operators', 'keyword.operator.scope.fcstm'),
+            SharedExpectation(':', Token.Punctuation, 'operators', 'punctuation.separator.transition.fcstm'),
+            SharedExpectation('/', Token.Operator, 'operators', 'keyword.operator.path.fcstm'),
+            SharedExpectation('!', Token.Operator.Word, 'operators', 'keyword.operator.forced.fcstm'),
+        ],
+    },
+    {
+        'name': 'Operators - Arithmetic',
+        'description': '+, -, *, /, %, ** operators',
+        'items': [
+            SharedExpectation('+', Token.Operator, 'operators', 'keyword.operator.arithmetic.fcstm'),
+            SharedExpectation('-', Token.Operator, 'operators', 'keyword.operator.arithmetic.fcstm'),
+            SharedExpectation('*', Token.Operator, 'operators', 'keyword.operator.arithmetic.fcstm'),
+            SharedExpectation('/', Token.Operator, 'operators', 'keyword.operator.path.fcstm'),
+            SharedExpectation('%', Token.Operator, 'operators', 'keyword.operator.arithmetic.fcstm'),
+            SharedExpectation('**', Token.Operator, 'operators', 'keyword.operator.arithmetic.fcstm'),
+        ],
+    },
+    {
+        'name': 'Operators - Bitwise',
+        'description': '&, |, ^, ~, << operators',
+        'items': [
+            SharedExpectation('&', Token.Operator, 'operators', 'keyword.operator.arithmetic.fcstm'),
+            SharedExpectation('|', Token.Operator, 'operators', 'keyword.operator.arithmetic.fcstm'),
+            SharedExpectation('^', Token.Operator, 'operators', 'keyword.operator.arithmetic.fcstm'),
+            SharedExpectation('~', Token.Operator, 'operators', 'keyword.operator.arithmetic.fcstm'),
+            SharedExpectation('<<', Token.Operator, 'operators', 'keyword.operator.bitshift.fcstm'),
+        ],
+    },
+    {
+        'name': 'Operators - Comparison',
+        'description': '<, >, <=, >=, ==, != operators',
+        'items': [
+            SharedExpectation('<', Token.Operator, 'operators', 'keyword.operator.arithmetic.fcstm'),
+            SharedExpectation('>', Token.Operator, 'operators', 'keyword.operator.arithmetic.fcstm'),
+            SharedExpectation('<=', Token.Operator, 'operators', 'keyword.operator.comparison.fcstm'),
+            SharedExpectation('>=', Token.Operator, 'operators', 'keyword.operator.comparison.fcstm'),
+            SharedExpectation('==', Token.Operator, 'operators', 'keyword.operator.comparison.fcstm'),
+            SharedExpectation('!=', Token.Operator, 'operators', 'keyword.operator.comparison.fcstm'),
+        ],
+    },
+    {
+        'name': 'Operators - Logical (symbol form)',
+        'description': '&&, || operators',
+        'items': [
+            SharedExpectation('&&', Token.Operator, 'operators', 'keyword.operator.logical.fcstm'),
+            SharedExpectation('||', Token.Operator, 'operators', 'keyword.operator.logical.fcstm'),
+        ],
+    },
+    {
+        'name': 'Literals - Numbers',
+        'description': 'integer, hex, float literals',
+        'items': [
+            SharedExpectation('0', Token.Number.Integer, 'numbers', 'constant.numeric.integer.fcstm'),
+            SharedExpectation('10', Token.Number.Integer, 'numbers', 'constant.numeric.integer.fcstm'),
+            SharedExpectation('0xFF', Token.Number.Hex, 'numbers', 'constant.numeric.hex.fcstm'),
+            SharedExpectation('0x0F', Token.Number.Hex, 'numbers', 'constant.numeric.hex.fcstm'),
+            SharedExpectation('25.5', Token.Number.Float, 'numbers', 'constant.numeric.float.fcstm'),
+            SharedExpectation('3.14e-5', Token.Number.Float, 'numbers', 'constant.numeric.float.fcstm'),
+        ],
+    },
+    {
+        'name': 'Literals - Booleans',
+        'description': 'True, true, false literals',
+        'items': [
+            SharedExpectation('True', Token.Keyword.Constant, 'constants', 'constant.language.boolean.fcstm'),
+            SharedExpectation('true', Token.Keyword.Constant, 'constants', 'constant.language.boolean.fcstm'),
+            SharedExpectation('false', Token.Keyword.Constant, 'constants', 'constant.language.boolean.fcstm'),
+        ],
+    },
+    {
+        'name': 'Math Constants',
+        'description': 'pi, E, tau constants',
+        'items': [
+            SharedExpectation('pi', Token.Name.Constant, 'constants', 'constant.language.math.fcstm'),
+            SharedExpectation('E', Token.Name.Constant, 'constants', 'constant.language.math.fcstm'),
+            SharedExpectation('tau', Token.Name.Constant, 'constants', 'constant.language.math.fcstm'),
+        ],
+    },
+    {
+        'name': 'Built-in Functions - Trigonometric',
+        'description': 'sin, cos, tan, asin, acos, atan',
+        'items': [
+            SharedExpectation('sin', Token.Name.Builtin, 'constants', 'support.function.builtin.fcstm'),
+            SharedExpectation('cos', Token.Name.Builtin, 'constants', 'support.function.builtin.fcstm'),
+            SharedExpectation('tan', Token.Name.Builtin, 'constants', 'support.function.builtin.fcstm'),
+            SharedExpectation('asin', Token.Name.Builtin, 'constants', 'support.function.builtin.fcstm'),
+            SharedExpectation('acos', Token.Name.Builtin, 'constants', 'support.function.builtin.fcstm'),
+            SharedExpectation('atan', Token.Name.Builtin, 'constants', 'support.function.builtin.fcstm'),
+        ],
+    },
+    {
+        'name': 'Built-in Functions - Hyperbolic',
+        'description': 'sinh, cosh, tanh, asinh, acosh, atanh',
+        'items': [
+            SharedExpectation('sinh', Token.Name.Builtin, 'constants', 'support.function.builtin.fcstm'),
+            SharedExpectation('cosh', Token.Name.Builtin, 'constants', 'support.function.builtin.fcstm'),
+            SharedExpectation('tanh', Token.Name.Builtin, 'constants', 'support.function.builtin.fcstm'),
+            SharedExpectation('asinh', Token.Name.Builtin, 'constants', 'support.function.builtin.fcstm'),
+            SharedExpectation('acosh', Token.Name.Builtin, 'constants', 'support.function.builtin.fcstm'),
+            SharedExpectation('atanh', Token.Name.Builtin, 'constants', 'support.function.builtin.fcstm'),
+        ],
+    },
+    {
+        'name': 'Built-in Functions - Math',
+        'description': 'sqrt, cbrt, exp, log, log10, log2, log1p',
+        'items': [
+            SharedExpectation('sqrt', Token.Name.Builtin, 'constants', 'support.function.builtin.fcstm'),
+            SharedExpectation('cbrt', Token.Name.Builtin, 'constants', 'support.function.builtin.fcstm'),
+            SharedExpectation('exp', Token.Name.Builtin, 'constants', 'support.function.builtin.fcstm'),
+            SharedExpectation('log', Token.Name.Builtin, 'constants', 'support.function.builtin.fcstm'),
+            SharedExpectation('log10', Token.Name.Builtin, 'constants', 'support.function.builtin.fcstm'),
+            SharedExpectation('log2', Token.Name.Builtin, 'constants', 'support.function.builtin.fcstm'),
+            SharedExpectation('log1p', Token.Name.Builtin, 'constants', 'support.function.builtin.fcstm'),
+        ],
+    },
+    {
+        'name': 'Built-in Functions - Rounding',
+        'description': 'abs, ceil, floor, round, trunc, sign',
+        'items': [
+            SharedExpectation('abs', Token.Name.Builtin, 'constants', 'support.function.builtin.fcstm'),
+            SharedExpectation('ceil', Token.Name.Builtin, 'constants', 'support.function.builtin.fcstm'),
+            SharedExpectation('floor', Token.Name.Builtin, 'constants', 'support.function.builtin.fcstm'),
+            SharedExpectation('round', Token.Name.Builtin, 'constants', 'support.function.builtin.fcstm'),
+            SharedExpectation('trunc', Token.Name.Builtin, 'constants', 'support.function.builtin.fcstm'),
+            SharedExpectation('sign', Token.Name.Builtin, 'constants', 'support.function.builtin.fcstm'),
+        ],
+    },
+    {
+        'name': 'Special Symbols',
+        'description': '[*] pseudo-state marker',
+        'items': [
+            SharedExpectation('[*]', Token.Keyword.Pseudo, 'operators', 'constant.language.pseudo-state.fcstm'),
+        ],
+    },
+    {
+        'name': 'Comments',
+        'description': 'single-line, hash, and block comments',
+        'items': [
+            SharedExpectation('// Single-line comment with //', Token.Comment.Single, 'comments', 'comment.line.double-slash.fcstm'),
+            SharedExpectation('# Python-style comment with #', Token.Comment.Single, 'comments', 'comment.line.number-sign.fcstm'),
+            SharedExpectation('/*', Token.Comment.Multiline, 'comments', 'comment.block.fcstm', mode='begin'),
+            SharedExpectation('*/', Token.Comment.Multiline, 'comments', 'comment.block.fcstm', mode='end'),
+        ],
+    },
+    {
+        'name': 'Strings',
+        'description': 'double-quoted strings',
+        'items': [
+            SharedExpectation('"System State Machine"', Token.String.Double, 'strings', 'string.quoted.double.fcstm'),
+            SharedExpectation('"Stop Event"', Token.String.Double, 'strings', 'string.quoted.double.fcstm'),
+        ],
+    },
+]
 
-        ValidationCheckpoint(
-            "Keywords - Types",
-            "int, float type keywords",
-            [
-                ("int", Token.Keyword.Type),
-                ("float", Token.Keyword.Type),
-            ]
-        ),
+TEXTMATE_STRUCTURE_SPECS: List[Dict[str, Any]] = [
+    {
+        'name': 'Grammar Sync',
+        'description': 'canonical and VSCode-packaged grammars are identical',
+    },
+    {
+        'name': 'Top-Level Includes',
+        'description': 'expected repository includes are present in pattern order',
+    },
+    {
+        'name': 'Repository Sections',
+        'description': 'expected repository sections are present',
+    },
+    {
+        'name': 'Operator Order',
+        'description': 'multi-character and special operators stay in safe matching order',
+    },
+    {
+        'name': 'Declaration Captures',
+        'description': 'declaration patterns provide specific scopes for declared names',
+    },
+    {
+        'name': 'Unsupported Binary Literals',
+        'description': 'binary integer highlighting is not introduced without grammar support',
+    },
+]
 
-        ValidationCheckpoint(
-            "Keywords - Control",
-            "if keyword",
-            [
-                ("if", Token.Keyword.Reserved),
-            ]
-        ),
 
-        ValidationCheckpoint(
-            "Keywords - Logical (word form)",
-            "and, or, not keywords",
-            [
-                ("and", Token.Operator.Word),
-                ("or", Token.Operator.Word),
-                ("not", Token.Operator.Word),
-            ]
-        ),
+def _load_json(file_path: str) -> Dict[str, Any]:
+    with open(file_path, 'r', encoding='utf-8') as file:
+        return json.load(file)
 
-        ValidationCheckpoint(
-            "Operators - Special",
-            "->, >>, ::, !, operators",
-            [
-                ("->", Token.Operator),
-                (">>", Token.Operator.Word),
-                ("::", Token.Operator),
-                ("!", Token.Operator.Word),
-            ]
-        ),
 
-        ValidationCheckpoint(
-            "Operators - Arithmetic",
-            "+, -, *, /, %, ** operators",
-            [
-                ("+", Token.Operator),
-                ("-", Token.Operator),
-                ("*", Token.Operator),
-                ("/", Token.Operator),
-                ("%", Token.Operator),
-                ("**", Token.Operator),
-            ]
-        ),
+def _compile_pattern(pattern: str) -> re.Pattern[str]:
+    return re.compile(pattern)
 
-        ValidationCheckpoint(
-            "Operators - Bitwise",
-            "&, |, ^, ~, <<, >> operators",
-            [
-                ("&", Token.Operator),
-                ("|", Token.Operator),
-                ("^", Token.Operator),
-                ("~", Token.Operator),
-                ("<<", Token.Operator),
-                # Note: >> is used for both bitwise shift and aspect operator
-                # In the lexer, >> is Token.Operator.Word (aspect operator)
-                # This is correct behavior - removed from this checkpoint
-            ]
-        ),
 
-        ValidationCheckpoint(
-            "Operators - Comparison",
-            "<, >, <=, >=, ==, != operators",
-            [
-                ("<", Token.Operator),
-                (">", Token.Operator),
-                ("<=", Token.Operator),
-                (">=", Token.Operator),
-                ("==", Token.Operator),
-                ("!=", Token.Operator),
-            ]
-        ),
+def _token_map(tokens: List[Tuple[Any, str]]) -> Dict[str, List[Any]]:
+    mapping: Dict[str, List[Any]] = {}
+    for token_type, token_text in tokens:
+        if token_text.strip():
+            mapping.setdefault(token_text, []).append(token_type)
+    return mapping
 
-        ValidationCheckpoint(
-            "Operators - Logical (symbol form)",
-            "&&, || operators",
-            [
-                ("&&", Token.Operator),
-                ("||", Token.Operator),
-            ]
-        ),
 
-        ValidationCheckpoint(
-            "Literals - Numbers",
-            "Integer, hex, float literals",
-            [
-                ("0", Token.Number.Integer),
-                ("1", Token.Number.Integer),
-                ("10", Token.Number.Integer),
-                ("0xFF", Token.Number.Hex),
-                ("0x0F", Token.Number.Hex),
-                ("25.5", Token.Number.Float),
-                ("3.14e-5", Token.Number.Float),
-            ]
-        ),
+def _find_textmate_match(
+    grammar: Dict[str, Any],
+    expectation: SharedExpectation,
+) -> Tuple[bool, str]:
+    repository = grammar.get('repository', {})
+    patterns = repository.get(expectation.textmate_section, {}).get('patterns', [])
+    candidate_details = []
 
-        ValidationCheckpoint(
-            "Literals - Booleans",
-            "True, False literals",
-            [
-                ("True", Token.Keyword.Constant),
-                ("true", Token.Keyword.Constant),
-                ("false", Token.Keyword.Constant),
-            ]
-        ),
+    for pattern in patterns:
+        scope_name = pattern.get('name')
+        regex = pattern.get('match')
+        begin = pattern.get('begin')
+        end = pattern.get('end')
 
-        ValidationCheckpoint(
-            "Math Constants",
-            "pi, E, tau constants",
-            [
-                ("pi", Token.Name.Constant),
-                ("E", Token.Name.Constant),
-                ("tau", Token.Name.Constant),
-            ]
-        ),
+        if expectation.capture_group is not None:
+            if not regex:
+                continue
+            match = _compile_pattern(regex).search(expectation.text)
+            if not match:
+                continue
 
-        ValidationCheckpoint(
-            "Built-in Functions - Trigonometric",
-            "sin, cos, tan, etc.",
-            [
-                ("sin", Token.Name.Builtin),
-                ("cos", Token.Name.Builtin),
-                ("tan", Token.Name.Builtin),
-                ("asin", Token.Name.Builtin),
-                ("acos", Token.Name.Builtin),
-                ("atan", Token.Name.Builtin),
-            ]
-        ),
+            captures = pattern.get('captures', {})
+            actual_scope = captures.get(str(expectation.capture_group), {}).get('name')
+            if actual_scope == expectation.textmate_scope:
+                return True, ''
 
-        ValidationCheckpoint(
-            "Built-in Functions - Hyperbolic",
-            "sinh, cosh, tanh, etc.",
-            [
-                ("sinh", Token.Name.Builtin),
-                ("cosh", Token.Name.Builtin),
-                ("tanh", Token.Name.Builtin),
-                ("asinh", Token.Name.Builtin),
-                ("acosh", Token.Name.Builtin),
-                ("atanh", Token.Name.Builtin),
-            ]
-        ),
+            candidate_details.append(
+                f"pattern {regex!r} matched, but capture {expectation.capture_group} scope was {actual_scope!r}"
+            )
+            continue
 
-        ValidationCheckpoint(
-            "Built-in Functions - Math",
-            "sqrt, exp, log, etc.",
-            [
-                ("sqrt", Token.Name.Builtin),
-                ("cbrt", Token.Name.Builtin),
-                ("exp", Token.Name.Builtin),
-                ("log", Token.Name.Builtin),
-                ("log10", Token.Name.Builtin),
-                ("log2", Token.Name.Builtin),
-                ("log1p", Token.Name.Builtin),
-            ]
-        ),
+        if regex:
+            if _compile_pattern(regex).search(expectation.text):
+                if scope_name == expectation.textmate_scope:
+                    return True, ''
+                candidate_details.append(
+                    f"pattern {regex!r} matched, but scope was {scope_name!r}"
+                )
+            continue
 
-        ValidationCheckpoint(
-            "Built-in Functions - Rounding",
-            "abs, ceil, floor, round, trunc, sign",
-            [
-                ("abs", Token.Name.Builtin),
-                ("ceil", Token.Name.Builtin),
-                ("floor", Token.Name.Builtin),
-                ("round", Token.Name.Builtin),
-                ("trunc", Token.Name.Builtin),
-                ("sign", Token.Name.Builtin),
-            ]
-        ),
+        if begin and end and expectation.mode == 'begin':
+            if _compile_pattern(begin).search(expectation.text):
+                if scope_name == expectation.textmate_scope:
+                    return True, ''
+                candidate_details.append(
+                    f"begin pattern {begin!r} matched, but scope was {scope_name!r}"
+                )
+            continue
 
-        ValidationCheckpoint(
-            "Special Symbols",
-            "[*] pseudo-state marker",
-            [
-                ("[*]", Token.Keyword.Pseudo),
-            ]
-        ),
+        if begin and end and expectation.mode == 'end':
+            if _compile_pattern(end).search(expectation.text):
+                if scope_name == expectation.textmate_scope:
+                    return True, ''
+                candidate_details.append(
+                    f"end pattern {end!r} matched, but scope was {scope_name!r}"
+                )
+            continue
 
-        # ValidationCheckpoint(
-        #     "Comments",
-        #     "Single-line, multi-line, Python-style comments",
-        #     [
-        #         ("//", Token.Comment.Single),
-        #         ("#", Token.Comment.Single),
-        #         ("/*", Token.Comment.Multiline),
-        #         ("*/", Token.Comment.Multiline),
-        #     ]
-        # ),
+        if begin and end:
+            begin_match = _compile_pattern(begin).search(expectation.text)
+            end_match = _compile_pattern(end).search(expectation.text)
+            if begin_match and end_match and begin_match.start() <= end_match.start():
+                if scope_name == expectation.textmate_scope:
+                    return True, ''
+                candidate_details.append(
+                    f"span pattern begin={begin!r}, end={end!r} matched, but scope was {scope_name!r}"
+                )
 
-        ValidationCheckpoint(
-            "Strings",
-            "Double-quoted and single-quoted strings",
-            [
-                ('"System State Machine"', Token.String.Double),
-                ('"Stop Event"', Token.String.Double),
-            ]
-        ),
-    ]
+    if candidate_details:
+        return False, '; '.join(candidate_details)
+
+    return False, (
+        f"no pattern in repository section {expectation.textmate_section!r} matched {expectation.text!r} "
+        f"with expected scope {expectation.textmate_scope!r}"
+    )
+
+
+def _validate_pygments_shared(code: str) -> Tuple[List[ValidationCheckpoint], int, float]:
+    lexer = FcstmLexer()
+    tokens = list(lexer.get_tokens(code))
+    token_map = _token_map(tokens)
+    detection_score = FcstmLexer.analyse_text(code)
+
+    checkpoints: List[ValidationCheckpoint] = []
+
+    tokenization_checkpoint = ValidationCheckpoint(
+        name='Tokenization',
+        description='the lexer emits tokens for the shared FCSTM test corpus',
+    )
+    if tokens:
+        tokenization_checkpoint.passed = True
+    else:
+        tokenization_checkpoint.failures.append('lexer returned zero tokens for the shared test corpus')
+    checkpoints.append(tokenization_checkpoint)
+
+    detection_checkpoint = ValidationCheckpoint(
+        name='Language Detection',
+        description='analyse_text reports a confident FCSTM detection score',
+    )
+    if detection_score >= 0.5:
+        detection_checkpoint.passed = True
+    else:
+        detection_checkpoint.failures.append(
+            f'detection score {detection_score:.2f} is below the required threshold 0.50'
+        )
+    checkpoints.append(detection_checkpoint)
+
+    for spec in SHARED_CHECKPOINT_SPECS:
+        checkpoint = ValidationCheckpoint(name=spec['name'], description=spec['description'])
+
+        for item in spec['items']:
+            actual_types = token_map.get(item.text)
+            if actual_types is None:
+                checkpoint.failures.append(f"token {item.text!r} was not found in the token stream")
+                continue
+            if item.pygments_token not in actual_types:
+                actual_text = ', '.join(str(token_type) for token_type in actual_types)
+                checkpoint.failures.append(
+                    f"token {item.text!r} expected {item.pygments_token}, got {actual_text}"
+                )
+
+        checkpoint.passed = not checkpoint.failures
+        checkpoints.append(checkpoint)
+
+    return checkpoints, len(tokens), detection_score
+
+
+def _validate_textmate_shared(grammar: Dict[str, Any]) -> List[ValidationCheckpoint]:
+    checkpoints: List[ValidationCheckpoint] = []
+
+    for spec in SHARED_CHECKPOINT_SPECS:
+        checkpoint = ValidationCheckpoint(name=spec['name'], description=spec['description'])
+
+        for item in spec['items']:
+            matched, failure_detail = _find_textmate_match(grammar, item)
+            if not matched:
+                checkpoint.failures.append(failure_detail)
+
+        checkpoint.passed = not checkpoint.failures
+        checkpoints.append(checkpoint)
 
     return checkpoints
 
 
-def validate_tokens(code: str, checkpoints: List[ValidationCheckpoint]) -> Tuple[int, int]:
-    """
-    Validate that the lexer correctly tokenizes the code.
+def _validate_textmate_structure(grammar: Dict[str, Any], vscode_copy: Dict[str, Any]) -> List[ValidationCheckpoint]:
+    checkpoints: List[ValidationCheckpoint] = []
 
-    Args:
-        code: FCSTM code to tokenize
-        checkpoints: List of validation checkpoints
-
-    Returns:
-        Tuple of (passed_count, total_count)
-    """
-    lexer = FcstmLexer()
-    tokens = list(lexer.get_tokens(code))
-
-    # Create a map of token text to token types for quick lookup
-    token_map = {}
-    for token_type, token_text in tokens:
-        if token_text.strip():  # Ignore whitespace
-            if token_text not in token_map:
-                token_map[token_text] = []
-            token_map[token_text].append(token_type)
-
-    passed = 0
-    total = len(checkpoints)
-
-    for checkpoint in checkpoints:
-        checkpoint.passed = True
-        checkpoint.failures = []
-
-        for text, expected_type in checkpoint.token_patterns:
-            if text not in token_map:
-                checkpoint.passed = False
-                checkpoint.failures.append(f"Token '{text}' not found in code")
-            elif expected_type not in token_map[text]:
-                checkpoint.passed = False
-                actual_types = ", ".join(str(t) for t in token_map[text])
-                checkpoint.failures.append(
-                    f"Token '{text}': expected {expected_type}, got {actual_types}"
-                )
-
-        if checkpoint.passed:
-            passed += 1
-
-    return passed, total
-
-
-def print_validation_results(checkpoints: List[ValidationCheckpoint]):
-    """Print validation results in a readable format."""
-
-    print("\n" + "=" * 70)
-    print("VALIDATION RESULTS")
-    print("=" * 70)
-
-    for checkpoint in checkpoints:
-        status = "✅ PASSED" if checkpoint.passed else "❌ FAILED"
-        print(f"\n{status}: {checkpoint.name}")
-        print(f"  {checkpoint.description}")
-
-        if not checkpoint.passed:
-            for failure in checkpoint.failures:
-                print(f"    - {failure}")
-
-
-def main():
-    """Main validation function."""
-
-    print("=" * 70)
-    print("FCSTM PYGMENTS LEXER VALIDATION")
-    print("=" * 70)
-
-    # Create lexer
-    lexer = FcstmLexer()
-
-    # Test 1: Basic tokenization
-    print("\n1. Testing tokenization...")
-    tokens = list(lexer.get_tokens(COMPREHENSIVE_TEST_CODE))
-    print(f"   Generated {len(tokens)} tokens")
-
-    # Test 2: Language detection
-    print("\n2. Testing language detection...")
-    score = FcstmLexer.analyse_text(COMPREHENSIVE_TEST_CODE)
-    print(f"   Detection score: {score:.2f} (should be > 0.5)")
-
-    if score < 0.5:
-        print("   WARNING: Detection score is low!")
-
-    # Test 3: Terminal output
-    print("\n3. Testing terminal output...")
-    print("-" * 70)
-    result = highlight(COMPREHENSIVE_TEST_CODE, lexer, TerminalFormatter())
-    print(result)
-    print("-" * 70)
-
-    # Test 4: Validation checkpoints
-    print("\n4. Running validation checkpoints...")
-    checkpoints = create_checkpoints()
-    passed, total = validate_tokens(COMPREHENSIVE_TEST_CODE, checkpoints)
-
-    print_validation_results(checkpoints)
-
-    # Summary
-    print("\n" + "=" * 70)
-    print("SUMMARY")
-    print("=" * 70)
-    print(f"Validation checkpoints: {passed}/{total} passed")
-    print(f"Token count: {len(tokens)}")
-    print(f"Language detection: {score:.2f}")
-
-    if passed == total and score >= 0.5:
-        print("\n✅ ALL VALIDATIONS PASSED!")
-        return 0
+    sync_checkpoint = ValidationCheckpoint(
+        name='Grammar Sync',
+        description='canonical and VSCode-packaged grammars are identical',
+    )
+    if grammar == vscode_copy:
+        sync_checkpoint.passed = True
     else:
-        print("\n❌ SOME VALIDATIONS FAILED")
-        return 1
+        sync_checkpoint.failures.append('canonical TextMate grammar and VSCode-packaged grammar differ')
+    checkpoints.append(sync_checkpoint)
+
+    includes_checkpoint = ValidationCheckpoint(
+        name='Top-Level Includes',
+        description='expected repository includes are present in pattern order',
+    )
+    expected_includes = [
+        '#comments',
+        '#declarations',
+        '#keywords',
+        '#operators',
+        '#constants',
+        '#strings',
+        '#numbers',
+        '#identifiers',
+    ]
+    actual_includes = [item.get('include') for item in grammar.get('patterns', [])]
+    if actual_includes == expected_includes:
+        includes_checkpoint.passed = True
+    else:
+        includes_checkpoint.failures.append(
+            f'expected includes {expected_includes!r}, got {actual_includes!r}'
+        )
+    checkpoints.append(includes_checkpoint)
+
+    sections_checkpoint = ValidationCheckpoint(
+        name='Repository Sections',
+        description='expected repository sections are present',
+    )
+    expected_sections = ['comments', 'declarations', 'keywords', 'operators', 'constants', 'strings', 'numbers', 'identifiers']
+    repository = grammar.get('repository', {})
+    for section in expected_sections:
+        if section not in repository:
+            sections_checkpoint.failures.append(f'missing repository section {section!r}')
+    sections_checkpoint.passed = not sections_checkpoint.failures
+    checkpoints.append(sections_checkpoint)
+
+    operator_checkpoint = ValidationCheckpoint(
+        name='Operator Order',
+        description='multi-character and special operators stay in safe matching order',
+    )
+    expected_operator_order = [
+        '>>',
+        '->',
+        '\\[\\*\\]',
+        '::',
+        ':',
+        '/',
+        '\\*\\*',
+        '<<',
+        '<=|>=|==|!=',
+        '&&|\\|\\|',
+        '!',
+        '[+\\-*%&|^~<>]',
+        '=|\\?',
+    ]
+    operator_patterns = repository.get('operators', {}).get('patterns', [])
+    actual_operator_order = [item.get('match') for item in operator_patterns]
+    if actual_operator_order == expected_operator_order:
+        operator_checkpoint.passed = True
+    else:
+        operator_checkpoint.failures.append(
+            f'expected operator order {expected_operator_order!r}, got {actual_operator_order!r}'
+        )
+    checkpoints.append(operator_checkpoint)
+
+    declaration_checkpoint = ValidationCheckpoint(
+        name='Declaration Captures',
+        description='declaration patterns provide specific scopes for declared names',
+    )
+    declaration_expectations = [
+        ('def int counter', 3, 'variable.other.definition.fcstm'),
+        ('pseudo state SpecialState', 3, 'entity.name.type.state.fcstm'),
+        ('state Running', 2, 'entity.name.type.state.fcstm'),
+        ('event StartEvent', 2, 'entity.name.event.fcstm'),
+    ]
+    declaration_patterns = repository.get('declarations', {}).get('patterns', [])
+    for sample_text, capture_group, expected_scope in declaration_expectations:
+        matched = False
+        for pattern in declaration_patterns:
+            regex = pattern.get('match')
+            if not regex:
+                continue
+            match = _compile_pattern(regex).search(sample_text)
+            if not match:
+                continue
+            captures = pattern.get('captures', {})
+            actual_scope = captures.get(str(capture_group), {}).get('name')
+            if actual_scope == expected_scope:
+                matched = True
+                break
+        if not matched:
+            declaration_checkpoint.failures.append(
+                f"sample {sample_text!r} did not produce capture {capture_group} with scope {expected_scope!r}"
+            )
+    declaration_checkpoint.passed = not declaration_checkpoint.failures
+    checkpoints.append(declaration_checkpoint)
+
+    binary_checkpoint = ValidationCheckpoint(
+        name='Unsupported Binary Literals',
+        description='binary integer highlighting is not introduced without grammar support',
+    )
+    number_patterns = repository.get('numbers', {}).get('patterns', [])
+    number_matches = [item.get('match') for item in number_patterns]
+    if any('0b' in (item or '') for item in number_matches):
+        binary_checkpoint.failures.append('found binary literal highlighting in TextMate number patterns')
+    else:
+        binary_checkpoint.passed = True
+    checkpoints.append(binary_checkpoint)
+
+    return checkpoints
+
+
+def _print_section(title: str, checkpoints: List[ValidationCheckpoint]) -> None:
+    print(f'\n🧪 {title}')
+    for checkpoint in checkpoints:
+        if checkpoint.passed:
+            print(f'✅ {checkpoint.name}')
+        else:
+            print(f'❌ {checkpoint.name}')
+            print(f'   {checkpoint.description}')
+            for failure in checkpoint.failures:
+                print(f'   - {failure}')
+
+
+def _count_passed(checkpoints: List[ValidationCheckpoint]) -> int:
+    return sum(1 for checkpoint in checkpoints if checkpoint.passed)
+
+
+def main() -> int:
+    print('======================================================================')
+    print('FCSTM SYNTAX-HIGHLIGHTING VALIDATION')
+    print('======================================================================')
+
+    pygments_checkpoints, token_count, detection_score = _validate_pygments_shared(COMPREHENSIVE_TEST_CODE)
+
+    canonical_grammar = _load_json(TEXTMATE_GRAMMAR_FILE)
+    vscode_grammar = _load_json(VSCODE_TEXTMATE_GRAMMAR_FILE)
+    textmate_shared_checkpoints = _validate_textmate_shared(canonical_grammar)
+    textmate_structure_checkpoints = _validate_textmate_structure(canonical_grammar, vscode_grammar)
+    textmate_checkpoints = textmate_shared_checkpoints + textmate_structure_checkpoints
+
+    _print_section('Pygments Validation', pygments_checkpoints)
+    print(
+        f'ℹ️ Pygments summary: {_count_passed(pygments_checkpoints)}/{len(pygments_checkpoints)} passed, '
+        f'tokens={token_count}, detection={detection_score:.2f}'
+    )
+
+    _print_section('TextMate Validation', textmate_checkpoints)
+    print(
+        f'ℹ️ TextMate summary: {_count_passed(textmate_checkpoints)}/{len(textmate_checkpoints)} passed'
+    )
+
+    all_checkpoints = pygments_checkpoints + textmate_checkpoints
+    all_passed = all(checkpoint.passed for checkpoint in all_checkpoints)
+
+    print('\n======================================================================')
+    print('SUMMARY')
+    print('======================================================================')
+    print(
+        f'Pygments: {_count_passed(pygments_checkpoints)}/{len(pygments_checkpoints)} passed | '
+        f'TextMate: {_count_passed(textmate_checkpoints)}/{len(textmate_checkpoints)} passed'
+    )
+
+    if all_passed:
+        print('✅ ALL VALIDATIONS PASSED')
+        return 0
+
+    print('❌ VALIDATION FAILURES DETECTED')
+    return 1
 
 
 if __name__ == '__main__':

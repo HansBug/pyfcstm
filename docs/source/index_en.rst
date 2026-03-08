@@ -117,6 +117,7 @@ Documentation Structure
     tutorials/structure/index
     tutorials/dsl/index
     tutorials/render/index
+    tutorials/simulation/index
     tutorials/visualization/index
     tutorials/cli/index
     tutorials/grammar/index

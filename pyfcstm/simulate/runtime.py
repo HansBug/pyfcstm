@@ -308,12 +308,15 @@ class SimulationRuntime:
         Initialize the simulation runtime with a state machine model.
 
         This constructor prepares the runtime for execution by initializing
-        variable storage from the state machine's variable definitions. Variables
+        variable storage from the state machine's variable definitions and
+        setting up the initial execution stack with the root state. Variables
         are initialized in declaration order, allowing later initializers to
         reference earlier variables.
 
-        The runtime is not fully initialized until the first :meth:`cycle` call,
-        which performs root state entry and builds the initial execution stack.
+        The runtime stack is initialized with the root state in ``init_wait``
+        mode, allowing :attr:`current_state` to be accessed immediately. Full
+        initialization (entering the root state and executing lifecycle actions)
+        is deferred until the first :meth:`cycle` call.
 
         :param state_machine: The state machine model to simulate.
         :type state_machine: StateMachine
@@ -344,13 +347,16 @@ class SimulationRuntime:
             {'x': 10, 'y': 15}
             >>> runtime.is_ended
             False
-            >>> runtime.stack
-            []  # Not initialized until first cycle
+            >>> runtime.current_state.name
+            'Root'
+            >>> runtime.current_state.path
+            ('Root',)
 
         .. note::
-           Variable initialization happens eagerly during construction, but
-           state entry is deferred until the first :meth:`cycle` call. This
-           allows inspection of initial variable values before execution begins.
+           Variable initialization and stack setup happen during construction,
+           but state entry actions are deferred until the first :meth:`cycle`
+           call. This allows inspection of initial variable values and the
+           root state before execution begins.
         """
         self.state_machine = state_machine
         self.stack: List[_Frame] = []
@@ -376,6 +382,9 @@ class SimulationRuntime:
         # Error state flag (set to True when handler error occurs in 'raise' mode)
         self._is_error_state = False
         self._error_info: Optional[Tuple[str, Exception]] = None
+
+        # Initialize stack with root state to allow current_state access before first cycle
+        self.stack.append(_Frame(self.state_machine.root_state, 'init_wait'))
 
     def _parse_event(self, event: Union[str, Event]) -> Event:
         """
@@ -471,17 +480,15 @@ class SimulationRuntime:
 
             if is_definitely_state_path:
                 # Use State.resolve_event from current state
-                current_state = self.stack[-1].state
-                return current_state.resolve_event(event)
+                return self.current_state.resolve_event(event)
             else:
                 # Uncertain path - try StateMachine first, then State
                 try:
                     return self.state_machine.resolve_event(event)
                 except (ValueError, LookupError):
                     # Fall back to State.resolve_event
-                    current_state = self.stack[-1].state
                     try:
-                        return current_state.resolve_event(event)
+                        return self.current_state.resolve_event(event)
                     except (ValueError, LookupError) as e:
                         # Both methods failed - raise informative error
                         raise LookupError(
@@ -1504,19 +1511,32 @@ class SimulationRuntime:
             >>> ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
             >>> sm = parse_dsl_node_to_state_machine(ast)
             >>> runtime = SimulationRuntime(sm)
+            >>> runtime.current_state.name
+            'System'
+            >>> runtime.current_state.path
+            ('System',)
             >>> runtime.cycle()
             >>> runtime.current_state.name
             'Idle'
-            >>> runtime.current_state.path
-            ('System', 'Idle')
             >>> runtime.cycle(['System.Idle.Start'])
             >>> runtime.current_state.name
             'Active'
 
         .. note::
-           This property is only meaningful when the runtime has not ended.
-           Check :attr:`is_ended` first to avoid accessing an empty stack.
+           Before the first :meth:`cycle` call, this returns the root state.
+           After the runtime has ended, accessing this property will raise
+           an IndexError.
         """
+        if not self.stack:
+            if self._ended:
+                raise IndexError(
+                    "Cannot access current_state: runtime has ended."
+                )
+            else:
+                raise IndexError(
+                    "Cannot access current_state: runtime has not been initialized. "
+                    "This should not happen - the stack should be initialized in __init__."
+                )
         return self.stack[-1].state
 
     @property

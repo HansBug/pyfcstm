@@ -117,6 +117,7 @@ pyfcstm 遵循三阶段流水线：
     tutorials/structure/index_zh
     tutorials/dsl/index_zh
     tutorials/render/index
+    tutorials/simulation/index_zh
     tutorials/visualization/index_zh
     tutorials/cli/index_zh
     tutorials/grammar/index_zh

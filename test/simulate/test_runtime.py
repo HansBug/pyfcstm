@@ -1876,3 +1876,68 @@ state Root {
         run_cycle_and_assert(runtime, current_path=('Root', 'System', 'A'), vars={'counter': 1})
         run_cycle_and_assert(runtime, ['Root.System.A.local_a'], current_path=('Root', 'System', 'B'),
                              vars={'counter': 11})
+
+    def test_auto_initialization_on_current_state_access(self):
+        """Test that current_state can be accessed before cycle() and returns root state."""
+        dsl_code = '''
+def int counter = 0;
+
+state System {
+    [*] -> Idle;
+
+    state Idle {
+        during {
+            counter = counter + 1;
+        }
+    }
+
+    state Active {
+        during {
+            counter = counter + 10;
+        }
+    }
+
+    Idle -> Active : if [counter >= 5];
+    Active -> Idle : if [counter >= 50];
+}
+'''
+        runtime = build_runtime(dsl_code)
+
+        # Access current_state before calling cycle() - should return root state
+        assert runtime.current_state.path == ('System',)
+        assert runtime.vars['counter'] == 0
+
+        # First cycle enters the initial state
+        runtime.cycle()
+        assert runtime.current_state.path == ('System', 'Idle')
+        assert runtime.vars['counter'] == 1
+
+        # Continue with normal cycles
+        runtime.cycle()
+        assert runtime.current_state.path == ('System', 'Idle')
+        assert runtime.vars['counter'] == 2
+
+        runtime.cycle()
+        assert runtime.current_state.path == ('System', 'Idle')
+        assert runtime.vars['counter'] == 3
+
+        runtime.cycle()
+        assert runtime.current_state.path == ('System', 'Idle')
+        assert runtime.vars['counter'] == 4
+
+        runtime.cycle()
+        assert runtime.current_state.path == ('System', 'Idle')
+        assert runtime.vars['counter'] == 5
+
+        # Transition to Active when counter >= 5
+        runtime.cycle()
+        assert runtime.current_state.path == ('System', 'Active')
+        assert runtime.vars['counter'] == 15
+
+        runtime.cycle()
+        assert runtime.current_state.path == ('System', 'Active')
+        assert runtime.vars['counter'] == 25
+
+        runtime.cycle()
+        assert runtime.current_state.path == ('System', 'Active')
+        assert runtime.vars['counter'] == 35

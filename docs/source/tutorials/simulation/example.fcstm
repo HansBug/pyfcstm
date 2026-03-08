@@ -1,0 +1,71 @@
+def int counter = 0;
+def int error_count = 0;
+def float temperature = 25.0;
+
+state System {
+    >> during before abstract GlobalMonitor;
+
+    >> during before {
+        counter = counter + 1;
+    }
+
+    [*] -> Initializing;
+    !* -> Error :: FatalError;
+
+    state Initializing {
+        enter {
+            counter = 0;
+            error_count = 0;
+        }
+
+        enter abstract HardwareInit /*
+            Initialize hardware peripherals
+        */
+
+        exit {
+            temperature = 25.0;
+        }
+    }
+
+    state Active {
+        during before {
+            temperature = temperature + 0.1;
+        }
+
+        state Processing {
+            during {
+                counter = counter + 10;
+            }
+        }
+
+        state Waiting {
+            during {
+                counter = counter + 1;
+            }
+        }
+
+        [*] -> Processing;
+        Processing -> Waiting :: Pause;
+        Waiting -> Processing :: Resume;
+    }
+
+    state Idle {
+        during {
+            counter = counter + 1;
+        }
+    }
+
+    state Error {
+        enter {
+            error_count = error_count + 1;
+        }
+    }
+
+    Initializing -> Active : if [counter >= 10];
+    Active -> Idle :: Stop effect {
+        counter = 0;
+    };
+    Idle -> Active :: Start;
+    Active -> Error : if [counter > 100];
+    Error -> [*] : if [error_count > 5];
+}

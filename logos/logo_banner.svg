@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 300" width="1200" height="300">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1050 300" width="1050" height="300">
   <!-- Left side: Logo icon -->
-  <g id="logo-icon" transform="translate(30, 0)">
+  <g id="logo-icon" transform="translate(80, 20)">
     <!-- Left brace (DSL indicator) - code-style curly brace -->
     <text x="10" y="175" font-family="Consolas, Monaco, 'Courier New', monospace" font-size="200" font-weight="normal" fill="#78909C" text-anchor="middle">{</text>
 
@@ -58,7 +58,7 @@
   </g>
 
   <!-- Right side: Text (moved further right) -->
-  <g id="text-content" transform="translate(340, 0)">
+  <g id="text-content" transform="translate(390, 20)">
     <!-- Project name -->
     <text x="0" y="120" font-family="Arial, sans-serif" font-size="90" font-weight="bold" fill="#1976D2">
       pyfcstm

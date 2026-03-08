@@ -745,35 +745,6 @@ Because all P0 items and the syntax/config reinforcement are currently in scope 
 
 ---
 
-## Phase P2 - Nice-to-Have Editor Intelligence
-
-### P2 Feature Checklist
-
-- [ ] Add conservative formatter support
-- [ ] Add limited goto declaration support
-- [ ] Add lightweight code actions for obvious syntax fixes
-- [ ] Add semantic token enhancement if needed
-
-### Notes
-
-These should only be tackled after P0 and P1 are stable.
-
----
-
-## Non-Goals for Now
-
-The following items are intentionally out of scope for the near term:
-
-- Full language server implementation
-- Python-backed validation or Python runtime dependency
-- CLI-backed validation or generation features inside the extension
-- Deep semantic validation equivalent to the Python model layer
-- Cross-file rename/reference analysis
-- Heavy formatting that rewrites document layout aggressively
-- Any network-dependent feature for core editor capabilities
-
----
-
 ## Documentation and Maintenance Checklist
 
 - [ ] Keep this roadmap updated as work progresses

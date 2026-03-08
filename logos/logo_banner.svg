@@ -1,4 +1,20 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1050 300" width="1050" height="300">
+  <!-- Arrow marker definitions -->
+  <defs>
+    <!-- Gray arrow for cross-color transitions -->
+    <marker id="arrowGray" markerWidth="10" markerHeight="10" refX="5" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M 1 1 L 9 5 L 1 9 Z" fill="#546E7A"/>
+    </marker>
+    <!-- Blue arrow for blue-to-blue transitions -->
+    <marker id="arrowBlue" markerWidth="10" markerHeight="10" refX="5" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M 1 1 L 9 5 L 1 9 Z" fill="#1976D2"/>
+    </marker>
+    <!-- Green arrow for green-to-green transitions -->
+    <marker id="arrowGreen" markerWidth="10" markerHeight="10" refX="5" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M 1 1 L 9 5 L 1 9 Z" fill="#388E3C"/>
+    </marker>
+  </defs>
+
   <!-- Left side: Logo icon -->
   <g id="logo-icon" transform="translate(80, 20)">
     <!-- Left brace (DSL indicator) - code-style curly brace -->
@@ -30,26 +46,26 @@
       <circle cx="100" cy="200" r="16" fill="none" stroke="#66BB6A" stroke-width="2.5"/>
       <text x="100" y="207" font-family="Arial, sans-serif" font-size="18" font-weight="bold" fill="#FFFFFF" text-anchor="middle">S3</text>
 
-      <!-- Transitions -->
+      <!-- Transitions with arrows -->
       <!-- Top to Left (Blue to Green) -->
-      <path d="M 80 58 L 52 102" fill="none" stroke="#546E7A" stroke-width="6" stroke-linecap="round"/>
-      <path d="M 80 58 L 52 102" fill="none" stroke="#90A4AE" stroke-width="3" stroke-linecap="round"/>
+      <path d="M 78 58 L 52 85" fill="none" stroke="#546E7A" stroke-width="6" stroke-linecap="round"/>
+      <path d="M 78 58 L 52 85" fill="none" stroke="#90A4AE" stroke-width="3" stroke-linecap="round" marker-end="url(#arrowGray)"/>
 
       <!-- Top to Right (Blue to Blue) -->
-      <path d="M 120 58 L 148 102" fill="none" stroke="#1976D2" stroke-width="6" stroke-linecap="round"/>
-      <path d="M 120 58 L 148 102" fill="none" stroke="#64B5F6" stroke-width="3" stroke-linecap="round"/>
+      <path d="M 122 58 L 148 85" fill="none" stroke="#1976D2" stroke-width="6" stroke-linecap="round"/>
+      <path d="M 122 58 L 148 85" fill="none" stroke="#64B5F6" stroke-width="3" stroke-linecap="round" marker-end="url(#arrowBlue)"/>
 
       <!-- Left to Bottom (Green to Green) -->
-      <path d="M 52 145 L 80 182" fill="none" stroke="#388E3C" stroke-width="6" stroke-linecap="round"/>
-      <path d="M 52 145 L 80 182" fill="none" stroke="#81C784" stroke-width="3" stroke-linecap="round"/>
+      <path d="M 55 145 L 80 168" fill="none" stroke="#388E3C" stroke-width="6" stroke-linecap="round"/>
+      <path d="M 55 145 L 80 168" fill="none" stroke="#81C784" stroke-width="3" stroke-linecap="round" marker-end="url(#arrowGreen)"/>
 
       <!-- Right to Bottom (Blue to Green) -->
-      <path d="M 148 145 L 120 182" fill="none" stroke="#546E7A" stroke-width="6" stroke-linecap="round"/>
-      <path d="M 148 145 L 120 182" fill="none" stroke="#90A4AE" stroke-width="3" stroke-linecap="round"/>
+      <path d="M 145 145 L 120 168" fill="none" stroke="#546E7A" stroke-width="6" stroke-linecap="round"/>
+      <path d="M 145 145 L 120 168" fill="none" stroke="#90A4AE" stroke-width="3" stroke-linecap="round" marker-end="url(#arrowGray)"/>
 
       <!-- Left to Right (Green to Blue - bidirectional) -->
-      <path d="M 72 120 L 128 120" fill="none" stroke="#546E7A" stroke-width="6" stroke-linecap="round"/>
-      <path d="M 72 120 L 128 120" fill="none" stroke="#90A4AE" stroke-width="3" stroke-linecap="round"/>
+      <path d="M 75 120 L 120 120" fill="none" stroke="#546E7A" stroke-width="6" stroke-linecap="round"/>
+      <path d="M 75 120 L 120 120" fill="none" stroke="#90A4AE" stroke-width="3" stroke-linecap="round" marker-end="url(#arrowGray)"/>
 
       <!-- Entry indicator (gray circle at top, touching S0) -->
       <circle cx="100" cy="0" r="8" fill="#78909C"/>

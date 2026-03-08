@@ -54,9 +54,9 @@
     <path d="M 400 500 L 624 500" fill="none" stroke="#546E7A" stroke-width="16" stroke-linecap="round"/>
     <path d="M 400 500 L 624 500" fill="none" stroke="#90A4AE" stroke-width="8" stroke-linecap="round"/>
 
-    <!-- Entry point indicator (small circle at top) -->
-    <circle cx="512" cy="120" r="16" fill="#1B5E20"/>
-    <path d="M 512 136 L 512 160" stroke="#1B5E20" stroke-width="12" stroke-linecap="round"/>
+    <!-- Entry point indicator (gray circle at top) -->
+    <circle cx="512" cy="120" r="24" fill="#78909C"/>
+    <path d="M 512 144 L 512 170" stroke="#78909C" stroke-width="12" stroke-linecap="round"/>
   </g>
 
   <!-- FCSTM text at bottom -->

@@ -53,9 +53,9 @@
       <path d="M 72 120 L 128 120" fill="none" stroke="#546E7A" stroke-width="6" stroke-linecap="round"/>
       <path d="M 72 120 L 128 120" fill="none" stroke="#90A4AE" stroke-width="3" stroke-linecap="round"/>
 
-      <!-- Entry indicator -->
-      <circle cx="100" cy="10" r="6" fill="#1B5E20"/>
-      <path d="M 100 16 L 100 22" stroke="#1B5E20" stroke-width="4" stroke-linecap="round"/>
+      <!-- Entry indicator (gray circle at top, touching S0) -->
+      <circle cx="100" cy="4" r="8" fill="#78909C"/>
+      <path d="M 100 12 L 100 12" stroke="#78909C" stroke-width="4" stroke-linecap="round"/>
     </g>
   </g>
 

@@ -49,12 +49,18 @@ class TestAbstractHandlers:
         assert calls[0] == 'System.Idle.InitHardware'
 
     def test_during_abstract_handler(self):
-        """Test handler for during abstract action."""
+        """Test handler for during abstract action with multiple cycles and complex logic."""
         dsl_code = '''
         def int counter = 0;
+        def int error_count = 0;
+        def float temperature = 20.0;
 
         state System {
             state Active {
+                during {
+                    counter = counter + 1;
+                    temperature = temperature + 0.5;
+                }
                 during abstract Monitor;
             }
 
@@ -65,74 +71,191 @@ class TestAbstractHandlers:
         sm = parse_dsl_node_to_state_machine(ast)
         runtime = SimulationRuntime(sm)
 
-        # Register handler
+        # Register handler with complex logic
         calls = []
+        anomaly_detected = []
 
         def handler(ctx: ReadOnlyExecutionContext):
-            calls.append({
+            counter_val = ctx.get_var('counter')
+            temp_val = ctx.get_var('temperature')
+
+            # Complex monitoring logic
+            call_info = {
+                'cycle': len(calls) + 1,
                 'action': ctx.action_name,
                 'stage': ctx.action_stage,
-                'state': ctx.get_full_state_path()
-            })
+                'state': ctx.get_full_state_path(),
+                'counter': counter_val,
+                'temperature': temp_val,
+                'counter_even': counter_val % 2 == 0,
+                'temp_high': temp_val > 22.0
+            }
+            calls.append(call_info)
+
+            # Detect anomalies
+            if temp_val > 22.0:
+                anomaly_detected.append(f'High temperature at cycle {len(calls)}: {temp_val}')
+            if counter_val > 5:
+                anomaly_detected.append(f'Counter threshold exceeded at cycle {len(calls)}: {counter_val}')
 
         runtime.register_abstract_handler('System.Active.Monitor', handler)
 
-        # Execute - during is called in the first cycle
-        runtime.cycle()
+        # Execute multiple cycles
+        for i in range(7):
+            runtime.cycle()
 
-        # Verify handler was called
-        assert len(calls) == 1
-        assert calls[0]['action'] == 'System.Active.Monitor'
-        assert calls[0]['stage'] == 'during'
-        assert calls[0]['state'] == 'System.Active'
+        # Verify handler was called 7 times (once per cycle)
+        assert len(calls) == 7
+
+        # Verify first cycle
+        assert calls[0]['cycle'] == 1
+        assert calls[0]['counter'] == 1
+        assert calls[0]['temperature'] == 20.5
+        assert calls[0]['counter_even'] is False
+        assert calls[0]['temp_high'] is False
+
+        # Verify third cycle
+        assert calls[2]['cycle'] == 3
+        assert calls[2]['counter'] == 3
+        assert calls[2]['temperature'] == 21.5
+        assert calls[2]['counter_even'] is False
+        assert calls[2]['temp_high'] is False
+
+        # Verify fifth cycle (temperature crosses threshold)
+        assert calls[4]['cycle'] == 5
+        assert calls[4]['counter'] == 5
+        assert calls[4]['temperature'] == 22.5
+        assert calls[4]['counter_even'] is False
+        assert calls[4]['temp_high'] is True
+
+        # Verify seventh cycle (both thresholds exceeded)
+        assert calls[6]['cycle'] == 7
+        assert calls[6]['counter'] == 7
+        assert calls[6]['temperature'] == 23.5
+        assert calls[6]['counter_even'] is False
+        assert calls[6]['temp_high'] is True
+
+        # Verify anomalies were detected
+        assert len(anomaly_detected) > 0
+        assert any('High temperature' in msg for msg in anomaly_detected)
+        assert any('Counter threshold exceeded' in msg for msg in anomaly_detected)
+
+        # Verify runtime state
+        assert runtime.vars['counter'] == 7
+        assert runtime.vars['temperature'] == 23.5
 
     def test_exit_abstract_handler(self):
-        """Test handler for exit abstract action."""
+        """Test handler for exit abstract action with state tracking."""
         dsl_code = '''
         def int counter = 0;
+        def int active_time = 0;
 
         state System {
             state Active {
+                during {
+                    counter = counter + 1;
+                    active_time = active_time + 1;
+                }
                 exit abstract Cleanup;
             }
 
-            state Idle;
+            state Idle {
+                during {
+                    counter = counter + 100;
+                }
+            }
 
             [*] -> Active;
             Active -> Idle :: Stop;
+            Idle -> Active :: Resume;
         }
         '''
         ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
         sm = parse_dsl_node_to_state_machine(ast)
         runtime = SimulationRuntime(sm)
 
-        # Register handler
+        # Register handler with state tracking
         calls = []
+        exit_log = []
 
         def handler(ctx: ReadOnlyExecutionContext):
-            calls.append({
+            counter_val = ctx.get_var('counter')
+            active_time_val = ctx.get_var('active_time')
+
+            call_info = {
+                'exit_count': len(calls) + 1,
                 'action': ctx.action_name,
                 'stage': ctx.action_stage,
-                'state': ctx.get_full_state_path()
-            })
+                'state': ctx.get_full_state_path(),
+                'counter': counter_val,
+                'active_time': active_time_val
+            }
+            calls.append(call_info)
+
+            # Log exit information
+            exit_log.append(f'Exiting Active after {active_time_val} cycles, counter={counter_val}')
 
         runtime.register_abstract_handler('System.Active.Cleanup', handler)
 
-        # First cycle - enter Active
+        # First cycle - enter Active, execute during
         runtime.cycle()
         assert len(calls) == 0  # Exit not called yet
+        assert runtime.vars['counter'] == 1
+        assert runtime.vars['active_time'] == 1
 
-        # Second cycle - transition to Idle, exit is called
+        # Stay in Active for a few more cycles
+        runtime.cycle()
+        runtime.cycle()
+        assert len(calls) == 0
+        assert runtime.vars['counter'] == 3
+        assert runtime.vars['active_time'] == 3
+
+        # Transition to Idle - exit is called
         runtime.cycle(['System.Active.Stop'])
         assert len(calls) == 1
+        assert calls[0]['exit_count'] == 1
         assert calls[0]['action'] == 'System.Active.Cleanup'
         assert calls[0]['stage'] == 'exit'
         assert calls[0]['state'] == 'System.Active'
+        assert calls[0]['counter'] == 3  # Counter before transition
+        assert calls[0]['active_time'] == 3  # Active time before exit
+        assert runtime.vars['counter'] == 103  # After Idle's during
+
+        # Stay in Idle
+        runtime.cycle()
+        assert len(calls) == 1  # Exit not called again
+        assert runtime.vars['counter'] == 203
+
+        # Resume to Active
+        runtime.cycle(['System.Idle.Resume'])
+        assert len(calls) == 1  # Exit still not called (entering Active)
+        assert runtime.vars['counter'] == 204  # Active's during executed
+
+        # Stay in Active again
+        runtime.cycle()
+        runtime.cycle()
+        assert len(calls) == 1
+        assert runtime.vars['counter'] == 206
+        assert runtime.vars['active_time'] == 6
+
+        # Exit Active again
+        runtime.cycle(['System.Active.Stop'])
+        assert len(calls) == 2
+        assert calls[1]['exit_count'] == 2
+        assert calls[1]['counter'] == 206
+        assert calls[1]['active_time'] == 6
+
+        # Verify exit log
+        assert len(exit_log) == 2
+        assert 'after 3 cycles' in exit_log[0]
+        assert 'after 6 cycles' in exit_log[1]
 
     def test_aspect_before_abstract_handler(self):
-        """Test handler for >> during before abstract action."""
+        """Test handler for >> during before abstract action with multiple cycles."""
         dsl_code = '''
         def int counter = 0;
+        def int pre_counter = 0;
+        def int validation_errors = 0;
 
         state System {
             >> during before abstract PreProcess;
@@ -150,43 +273,72 @@ class TestAbstractHandlers:
         sm = parse_dsl_node_to_state_machine(ast)
         runtime = SimulationRuntime(sm)
 
-        # Register handler
+        # Register handler with validation logic
         calls = []
+        validation_log = []
 
         def handler(ctx: ReadOnlyExecutionContext):
-            calls.append({
+            counter_val = ctx.get_var('counter')
+            pre_counter_val = ctx.get_var('pre_counter')
+
+            call_info = {
+                'cycle': len(calls) + 1,
                 'action': ctx.action_name,
                 'stage': ctx.action_stage,
                 'state': ctx.get_full_state_path(),
-                'counter': ctx.get_var('counter')
-            })
+                'counter': counter_val,
+                'pre_counter': pre_counter_val
+            }
+            calls.append(call_info)
+
+            # Validation: pre_counter should equal counter (both increment together)
+            if counter_val != pre_counter_val:
+                validation_log.append(f'Cycle {len(calls)}: counter mismatch - counter={counter_val}, pre_counter={pre_counter_val}')
+
+            # Simulate pre-processing logic
+            if counter_val % 3 == 0:
+                validation_log.append(f'Cycle {len(calls)}: counter is divisible by 3')
 
         runtime.register_abstract_handler('System.PreProcess', handler)
 
-        # Execute - aspect before is called before leaf during
-        runtime.cycle()
+        # Execute multiple cycles
+        for i in range(5):
+            runtime.cycle()
+            # Simulate updating pre_counter after each cycle
+            runtime.vars['pre_counter'] = runtime.vars['counter']
 
-        # Verify handler was called
-        assert len(calls) == 1
-        assert calls[0]['action'] == 'System.PreProcess'
-        assert calls[0]['stage'] == 'during'
-        assert calls[0]['state'] == 'System'
-        assert calls[0]['counter'] == 0  # Called before counter increment
+        # Verify handler was called 5 times
+        assert len(calls) == 5
+
+        # Verify aspect before is called before counter increment
+        for i, call in enumerate(calls):
+            assert call['cycle'] == i + 1
+            assert call['action'] == 'System.PreProcess'
+            assert call['stage'] == 'during'
+            assert call['state'] == 'System'
+            # Counter should be i (before increment in this cycle)
+            assert call['counter'] == i
 
         # Verify counter was incremented after aspect
-        assert runtime.vars['counter'] == 1
+        assert runtime.vars['counter'] == 5
+
+        # Verify validation log
+        assert len(validation_log) > 0
+        assert any('divisible by 3' in msg for msg in validation_log)
 
     def test_aspect_after_abstract_handler(self):
-        """Test handler for >> during after abstract action."""
+        """Test handler for >> during after abstract action with multiple cycles and aggregation."""
         dsl_code = '''
         def int counter = 0;
+        def int sum = 0;
 
         state System {
             >> during after abstract PostProcess;
 
             state Active {
                 during {
-                    counter = counter + 10;
+                    counter = counter + 1;
+                    sum = sum + counter;
                 }
             }
 
@@ -197,28 +349,63 @@ class TestAbstractHandlers:
         sm = parse_dsl_node_to_state_machine(ast)
         runtime = SimulationRuntime(sm)
 
-        # Register handler
+        # Register handler with aggregation logic
         calls = []
+        statistics = {
+            'total_sum': 0,
+            'max_counter': 0,
+            'cycle_count': 0
+        }
 
         def handler(ctx: ReadOnlyExecutionContext):
-            calls.append({
+            counter_val = ctx.get_var('counter')
+            sum_val = ctx.get_var('sum')
+
+            call_info = {
+                'cycle': len(calls) + 1,
                 'action': ctx.action_name,
                 'stage': ctx.action_stage,
                 'state': ctx.get_full_state_path(),
-                'counter': ctx.get_var('counter')
-            })
+                'counter': counter_val,
+                'sum': sum_val
+            }
+            calls.append(call_info)
+
+            # Aggregate statistics
+            statistics['total_sum'] = sum_val
+            statistics['max_counter'] = max(statistics['max_counter'], counter_val)
+            statistics['cycle_count'] += 1
 
         runtime.register_abstract_handler('System.PostProcess', handler)
 
-        # Execute - aspect after is called after leaf during
-        runtime.cycle()
+        # Execute multiple cycles
+        for i in range(6):
+            runtime.cycle()
 
-        # Verify handler was called
-        assert len(calls) == 1
-        assert calls[0]['action'] == 'System.PostProcess'
-        assert calls[0]['stage'] == 'during'
-        assert calls[0]['state'] == 'System'
-        assert calls[0]['counter'] == 10  # Called after counter increment
+        # Verify handler was called 6 times
+        assert len(calls) == 6
+
+        # Verify aspect after is called after counter and sum updates
+        expected_sum = 0
+        for i, call in enumerate(calls):
+            expected_counter = i + 1
+            expected_sum += expected_counter
+
+            assert call['cycle'] == i + 1
+            assert call['action'] == 'System.PostProcess'
+            assert call['stage'] == 'during'
+            assert call['state'] == 'System'
+            assert call['counter'] == expected_counter
+            assert call['sum'] == expected_sum
+
+        # Verify final state
+        assert runtime.vars['counter'] == 6
+        assert runtime.vars['sum'] == 21  # 1+2+3+4+5+6
+
+        # Verify statistics
+        assert statistics['total_sum'] == 21
+        assert statistics['max_counter'] == 6
+        assert statistics['cycle_count'] == 6
 
     def test_multiple_lifecycle_abstract_handlers(self):
         """Test handlers for multiple lifecycle stages in the same state."""

@@ -1,0 +1,18 @@
+def int counter = 0;
+def int ready = 0;
+
+state Root {
+    state A {
+        during {
+            counter = counter + 1;
+        }
+    }
+
+    state B {
+        state B1;
+        [*] -> B1 : if [ready == 1];
+    }
+
+    [*] -> A;
+    A -> B :: GoB;
+}

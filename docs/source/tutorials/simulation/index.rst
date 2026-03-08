@@ -551,6 +551,419 @@ Output:
 - Composite state actions (``during before/after`` without ``>>``) only execute during entry/exit transitions, NOT during the ``during`` phase
 - Pseudo states skip ancestor aspect actions
 
+Example 6: Transition Priority
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+When multiple transitions from the same state have satisfied guards, the first transition in definition order is selected:
+
+.. literalinclude:: example6_transition_priority.full.fcstm
+   :language: fcstm
+   :caption: Transition priority demonstration
+
+.. figure:: example6_transition_priority.full.fcstm.puml.svg
+   :align: center
+
+   Transition priority diagram
+
+**Execution Summary**:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 8 20 20 12 40
+
+   * - Cycle
+     - Event
+     - State
+     - counter
+     - Reason
+   * - 0
+     - *(none)*
+     - *(initial)*
+     - 0
+     - Initial variable values
+   * - 1
+     - *(none)*
+     - Root.A
+     - 1
+     - Initial transition ``[*] -> A``, execute ``A.during`` (counter + 1)
+   * - 2
+     - *(none)*
+     - Root.A
+     - 2
+     - No guard satisfied, execute ``A.during`` (counter + 1)
+   * - 3
+     - *(none)*
+     - Root.A
+     - 3
+     - No guard satisfied, execute ``A.during`` (counter + 1)
+   * - 4
+     - *(none)*
+     - Root.C
+     - 103
+     - Both guards satisfied (counter >= 5 and counter >= 3), but ``A -> C`` is defined later and takes priority, execute ``C.during`` (counter + 100)
+
+**Detailed Execution Trace**:
+
+**Cycle 1-3** (accumulating counter):
+
+- Initial state: ``counter = 0``
+- Execute ``[*] -> A``
+- Reach stoppable state ``A``
+- Execute ``A.during``: ``counter = 0 + 1 = 1``
+- Cycles 2-3 continue incrementing: ``counter = 2``, then ``counter = 3``
+
+**Cycle 4** (transition priority):
+
+- Current state: ``Root.A``, ``counter = 3``
+- Check transitions in definition order:
+  1. ``A -> B : if [counter >= 5]`` (guard NOT satisfied, counter = 3)
+  2. ``A -> C : if [counter >= 3]`` (guard satisfied!)
+- Execute ``A.exit`` (none defined)
+- Execute ``C.enter`` (none defined)
+- Reach stoppable state ``C``
+- Execute ``C.during``: ``counter = 3 + 100 = 103``
+- **Result**: ``state = Root.C``, ``counter = 103``
+
+**Key Point**: Transitions are evaluated in definition order. The first transition with a satisfied guard is selected, even if multiple guards are satisfied.
+
+Example 7: Self-Transition
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Self-transitions execute exit and enter actions, providing a way to reset state-specific initialization:
+
+.. literalinclude:: example7_self_transition.full.fcstm
+   :language: fcstm
+   :caption: Self-transition with lifecycle actions
+
+.. figure:: example7_self_transition.full.fcstm.puml.svg
+   :align: center
+
+   Self-transition diagram
+
+**Execution Summary**:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 8 20 20 12 40
+
+   * - Cycle
+     - Event
+     - State
+     - counter
+     - Reason
+   * - 0
+     - *(none)*
+     - *(initial)*
+     - 0
+     - Initial variable values
+   * - 1
+     - *(none)*
+     - Root.A
+     - 11
+     - Initial transition ``[*] -> A``, execute ``A.enter`` (+1), then ``A.during`` (+10)
+   * - 2
+     - ``Loop``
+     - Root.A
+     - 122
+     - Event ``Loop`` triggers ``A -> A``, execute ``A.exit`` (+100), ``A.enter`` (+1), ``A.during`` (+10)
+
+**Detailed Execution Trace**:
+
+**Cycle 1** (initialization):
+
+- Initial state: ``counter = 0``
+- Execute ``[*] -> A``
+- Execute ``A.enter``: ``counter = 0 + 1 = 1``
+- Reach stoppable state ``A``
+- Execute ``A.during``: ``counter = 1 + 10 = 11``
+- **Result**: ``state = Root.A``, ``counter = 11``
+
+**Cycle 2** (self-transition with event ``Loop``):
+
+- Current state: ``Root.A``, ``counter = 11``
+- Check transitions: ``A -> A :: Loop`` (event matches!)
+- Execute ``A.exit``: ``counter = 11 + 100 = 111``
+- Execute transition (no effect)
+- Execute ``A.enter``: ``counter = 111 + 1 = 112``
+- Reach stoppable state ``A`` (same state)
+- Execute ``A.during``: ``counter = 112 + 10 = 122``
+- **Result**: ``state = Root.A``, ``counter = 122``
+
+**Key Point**: Self-transitions (``A -> A``) execute the full exit-enter sequence, allowing state reinitialization. This is different from staying in the state without a transition.
+
+Example 8: Guard Conditions with Effects
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Guards and effects work together to enable complex conditional transitions with state modifications:
+
+.. literalinclude:: example8_guard_effect.full.fcstm
+   :language: fcstm
+   :caption: Guard conditions with transition effects
+
+.. figure:: example8_guard_effect.full.fcstm.puml.svg
+   :align: center
+
+   Guard and effect diagram
+
+**Execution Summary**:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 8 20 25 12 12 31
+
+   * - Cycle
+     - Event
+     - State
+     - counter
+     - flag
+     - Reason
+   * - 0
+     - *(none)*
+     - *(initial)*
+     - 0
+     - 0
+     - Initial variable values
+   * - 1
+     - *(none)*
+     - Root.A
+     - 1
+     - 0
+     - Initial transition ``[*] -> A``, execute ``A.during`` (counter + 1)
+   * - 2
+     - *(none)*
+     - Root.A
+     - 2
+     - 0
+     - Guard not satisfied (counter < 3), execute ``A.during`` (counter + 1)
+   * - 3
+     - *(none)*
+     - Root.A
+     - 3
+     - 0
+     - Guard not satisfied (counter < 3), execute ``A.during`` (counter + 1)
+   * - 4
+     - *(none)*
+     - Root.B.B1
+     - 13
+     - 1
+     - Guard satisfied (counter >= 3), effect sets flag=1, ``B.enter`` validates ``B1`` is reachable, execute ``B1.during`` (counter + 10)
+
+**Detailed Execution Trace**:
+
+**Cycle 1-3** (accumulating counter):
+
+- Initial state: ``counter = 0``, ``flag = 0``
+- Execute ``[*] -> A``
+- Reach stoppable state ``A``
+- Execute ``A.during``: ``counter = 0 + 1 = 1``
+- Cycles 2-3 continue: ``counter = 2``, then ``counter = 3``
+
+**Cycle 4** (guard satisfied, effect executed):
+
+- Current state: ``Root.A``, ``counter = 3``, ``flag = 0``
+- Check transitions: ``A -> B : if [counter >= 3]`` (guard satisfied!)
+- Execute ``A.exit`` (none defined)
+- Execute transition effect: ``flag = 1``
+- Execute ``B.enter``: ``flag = 1`` (enter action sets flag)
+- **B is composite** - follow ``[*] -> B1 : if [flag == 1]`` (guard satisfied!)
+- Execute ``B1.enter`` (none defined)
+- Reach stoppable state ``B1``
+- Execute ``B1.during``: ``counter = 3 + 10 = 13``
+- **Result**: ``state = Root.B.B1``, ``counter = 13``, ``flag = 1``
+
+**Key Point**: Transition effects execute after exit actions but before enter actions. The effect can modify variables that are checked by guards in subsequent initial transitions, enabling complex multi-stage validation.
+
+DFS Validation Mechanism
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+When transitioning to a non-stoppable state (composite or pseudo), the runtime performs a depth-first search (DFS) to validate that a stoppable state can be reached. This prevents the state machine from entering invalid states.
+
+**Validation Rules**:
+
+1. **Composite States**: Must have at least one initial transition that leads to a stoppable state
+2. **Pseudo States**: Must have an outgoing transition that leads to a stoppable state
+3. **Event Requirements**: All required events must be available in the current cycle
+4. **Guard Conditions**: All guards along the path must be satisfied
+5. **Transition Order**: Transitions are evaluated in definition order (DFS, not BFS)
+
+**Validation Process**:
+
+1. Create a snapshot of current variables
+2. Simulate the transition chain using DFS:
+   - Execute enter actions (modifying snapshot)
+   - Check guards (using snapshot)
+   - Follow initial transitions recursively
+3. If a stoppable state is reached: validation succeeds, execute the real transition
+4. If no stoppable state is reachable: validation fails, stay in current state
+
+Example 9: Pseudo State Chain Validation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Pseudo states require validation to ensure they lead to stoppable states:
+
+.. literalinclude:: example9_pseudo_chain.full.fcstm
+   :language: fcstm
+   :caption: Pseudo state chain requiring validation
+
+.. figure:: example9_pseudo_chain.full.fcstm.puml.svg
+   :align: center
+
+   Pseudo state chain diagram
+
+**Execution Summary**:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 8 25 20 12 35
+
+   * - Cycle
+     - Event
+     - State
+     - counter
+     - Reason
+   * - 0
+     - *(none)*
+     - *(initial)*
+     - 0
+     - Initial variable values
+   * - 1
+     - *(none)*
+     - Root.A
+     - 1
+     - Initial transition ``[*] -> A``, execute ``A.during`` (counter + 1)
+   * - 2
+     - ``GoP``
+     - Root.A
+     - 2
+     - Event ``GoP`` triggers ``A -> P``, but P is pseudo (non-stoppable), validation fails (no ``GoB`` event), stay in A, execute ``A.during`` (counter + 1)
+   * - 3
+     - ``GoP``, ``GoB``
+     - Root.B
+     - 1112
+     - Both events provided, validation succeeds: ``A -> P`` (+10, +100) ``-> B``, execute ``B.during`` (+1000)
+
+**Detailed Execution Trace**:
+
+**Cycle 1** (initialization):
+
+- Initial state: ``counter = 0``
+- Execute ``[*] -> A``
+- Reach stoppable state ``A``
+- Execute ``A.during``: ``counter = 0 + 1 = 1``
+- **Result**: ``state = Root.A``, ``counter = 1``
+
+**Cycle 2** (validation failure - missing event):
+
+- Current state: ``Root.A``, ``counter = 1``
+- Check transitions: ``A -> P :: GoP`` (event matches!)
+- **Validation phase** (using snapshot):
+  - Target ``P`` is pseudo state (non-stoppable)
+  - Simulate: execute ``P.enter``: ``counter_snapshot = 1 + 10 = 11``
+  - Check ``P``'s transitions: ``P -> B :: GoB`` (requires ``GoB`` event)
+  - Event ``GoB`` NOT available in current cycle
+  - **Validation fails**: cannot reach stoppable state
+- Transition rejected, stay in ``A``
+- Execute ``A.during``: ``counter = 1 + 1 = 2``
+- **Result**: ``state = Root.A``, ``counter = 2``
+
+**Cycle 3** (validation success - all events provided):
+
+- Current state: ``Root.A``, ``counter = 2``
+- Check transitions: ``A -> P :: GoP`` (event matches!)
+- **Validation phase** (using snapshot):
+  - Target ``P`` is pseudo state (non-stoppable)
+  - Simulate: execute ``P.enter``: ``counter_snapshot = 2 + 10 = 12``
+  - Check ``P``'s transitions: ``P -> B :: GoB`` (requires ``GoB`` event)
+  - Event ``GoB`` IS available in current cycle
+  - Simulate: execute ``B.enter`` (none defined)
+  - Target ``B`` is stoppable state
+  - **Validation succeeds**: can reach stoppable state ``B``
+- **Real execution**:
+  - Execute ``A.exit`` (none defined)
+  - Execute ``P.enter``: ``counter = 2 + 10 = 12``
+  - Reach pseudo state ``P`` (non-stoppable, continue immediately)
+  - Execute ``P.during``: ``counter = 12 + 100 = 112``
+  - Execute ``P.exit`` (none defined)
+  - Execute ``B.enter`` (none defined)
+  - Reach stoppable state ``B``
+  - Execute ``B.during``: ``counter = 112 + 1000 = 1112``
+- **Result**: ``state = Root.B``, ``counter = 1112``
+
+**Key Point**: Pseudo states are non-stoppable and require validation. The validation uses DFS to check if the transition chain can reach a stoppable state with the available events. Pseudo states execute their ``during`` action during the real transition, but this happens in the same cycle as reaching the final stoppable state.
+
+Example 10: Validation Failure - Unreachable Stoppable
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+When a composite state's initial transitions cannot reach a stoppable state, the transition is rejected:
+
+.. literalinclude:: example10_validation_failure.full.fcstm
+   :language: fcstm
+   :caption: Validation failure due to unreachable stoppable state
+
+.. figure:: example10_validation_failure.full.fcstm.puml.svg
+   :align: center
+
+   Validation failure diagram
+
+**Execution Summary**:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 8 20 20 12 12 28
+
+   * - Cycle
+     - Event
+     - State
+     - counter
+     - ready
+     - Reason
+   * - 0
+     - *(none)*
+     - *(initial)*
+     - 0
+     - 0
+     - Initial variable values
+   * - 1
+     - *(none)*
+     - Root.A
+     - 1
+     - 0
+     - Initial transition ``[*] -> A``, execute ``A.during`` (counter + 1)
+   * - 2
+     - ``GoB``
+     - Root.A
+     - 2
+     - 0
+     - Event ``GoB`` triggers ``A -> B``, but validation fails (``B`` has no valid initial transition to reach stoppable), stay in A, execute ``A.during`` (counter + 1)
+
+**Detailed Execution Trace**:
+
+**Cycle 1** (initialization):
+
+- Initial state: ``counter = 0``, ``ready = 0``
+- Execute ``[*] -> A``
+- Reach stoppable state ``A``
+- Execute ``A.during``: ``counter = 0 + 1 = 1``
+- **Result**: ``state = Root.A``, ``counter = 1``, ``ready = 0``
+
+**Cycle 2** (validation failure - guard not satisfied):
+
+- Current state: ``Root.A``, ``counter = 1``, ``ready = 0``
+- Check transitions: ``A -> B :: GoB`` (event matches!)
+- **Validation phase** (using snapshot):
+  - Target ``B`` is composite state (non-stoppable)
+  - Simulate: execute ``B.enter`` (none defined)
+  - Check ``B``'s initial transitions: ``[*] -> B1 : if [ready == 1]``
+  - Guard check: ``ready == 1`` (current value: ``ready = 0``)
+  - **Guard NOT satisfied**
+  - No other initial transitions available
+  - **Validation fails**: cannot reach stoppable state
+- Transition rejected, stay in ``A``
+- Execute ``A.during``: ``counter = 1 + 1 = 2``
+- **Result**: ``state = Root.A``, ``counter = 2``, ``ready = 0``
+
+**Key Point**: Composite states must have at least one initial transition that can reach a stoppable state. The validation checks all guards and event requirements along the path. If no valid path exists, the transition is rejected and the state machine remains in the current state.
+
 Best Practices
 ---------------------------------------
 

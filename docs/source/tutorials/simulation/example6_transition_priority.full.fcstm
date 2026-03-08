@@ -1,0 +1,23 @@
+def int counter = 0;
+
+state Root {
+    state A {
+        during {
+            counter = counter + 1;
+        }
+    }
+    state B {
+        during {
+            counter = counter + 10;
+        }
+    }
+    state C {
+        during {
+            counter = counter + 100;
+        }
+    }
+
+    [*] -> A;
+    A -> B : if [counter >= 5];
+    A -> C : if [counter >= 3];
+}

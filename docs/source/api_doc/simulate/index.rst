@@ -9,6 +9,7 @@ pyfcstm.simulate
 .. toctree::
     :maxdepth: 3
 
+    context
     runtime
     utils
 

@@ -987,41 +987,6 @@ When a composite state's initial transitions cannot reach a stoppable state, the
 
 **Key Point**: Composite states must have at least one initial transition that can reach a stoppable state. The validation checks all guards and event requirements along the path. If no valid path exists, the transition is rejected and the state machine remains in the current state.
 
-Best Practices
----------------------------------------
-
-State Machine Design
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-- Keep states focused with clear, single responsibilities
-- Use hierarchical states to group related states
-- Minimize aspect actions - use sparingly for cross-cutting concerns
-- Document abstract actions with comments
-
-Testing and Debugging
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-- Test initialization, all transitions, guards, effects, and termination
-- Print state and variables after each cycle for debugging
-- Use abstract handlers to trace execution
-- Inspect state objects with ``runtime.get_current_state_object()``
-
-Handler Implementation
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-- Keep handlers simple and focused
-- Avoid side effects - minimize external state modifications
-- Use the context API to access runtime state
-- Add logging for debugging complex interactions
-
-Performance
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-- Limit cycle count to avoid infinite loops
-- Keep guard expressions simple for faster evaluation
-- Minimize aspect actions (they execute every cycle)
-- Use pseudo states to skip aspect actions when not needed
-
 Real-World Business Examples
 ---------------------------------------
 
@@ -1638,6 +1603,41 @@ This state machine models a traffic-responsive signal system where:
 - ``PedWalk -> [*]`` exits to parent, then ``PedestrianPhase -> MainGreen`` completes the cycle
 - All timers reset on phase transitions, ensuring clean state for next cycle
 - Self-transition ``MainGreen -> MainGreen`` allows request latching without changing state
+
+Best Practices
+---------------------------------------
+
+State Machine Design
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+- Keep states focused with clear, single responsibilities
+- Use hierarchical states to group related states
+- Minimize aspect actions - use sparingly for cross-cutting concerns
+- Document abstract actions with comments
+
+Testing and Debugging
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+- Test initialization, all transitions, guards, effects, and termination
+- Print state and variables after each cycle for debugging
+- Use abstract handlers to trace execution
+- Inspect state objects with ``runtime.get_current_state_object()``
+
+Handler Implementation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+- Keep handlers simple and focused
+- Avoid side effects - minimize external state modifications
+- Use the context API to access runtime state
+- Add logging for debugging complex interactions
+
+Performance
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+- Limit cycle count to avoid infinite loops
+- Keep guard expressions simple for faster evaluation
+- Minimize aspect actions (they execute every cycle)
+- Use pseudo states to skip aspect actions when not needed
 
 Common Pitfalls
 ---------------------------------------

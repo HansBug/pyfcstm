@@ -1006,7 +1006,8 @@ state Root {
         runtime = build_runtime(dsl_code)
 
         run_cycle_and_assert(runtime, current_path=('Root', 'System1', 'A'), vars={'counter': 110111})
-        run_cycle_and_assert(runtime, ['Root.System1.Go'], current_path=('Root', 'System1', 'A'), vars={'counter': 220222})
+        run_cycle_and_assert(runtime, ['Root.System1.Go'], current_path=('Root', 'System1', 'A'),
+                             vars={'counter': 220222})
 
     def test_4_26_cross_hierarchy_transition_with_staged_guards(self):
         dsl_code = '''
@@ -1425,7 +1426,8 @@ state Root {
 '''
         runtime = build_runtime(dsl_code)
 
-        run_cycle_and_assert(runtime, current_path=('Root', 'Closed'), vars={'door_pos': 0, 'hold': 0, 'reopen_count': 0})
+        run_cycle_and_assert(runtime, current_path=('Root', 'Closed'),
+                             vars={'door_pos': 0, 'hold': 0, 'reopen_count': 0})
         run_cycle_and_assert(runtime, ['Root.Closed.HallCall'], current_path=('Root', 'Opening'),
                              vars={'door_pos': 50, 'hold': 0, 'reopen_count': 0})
         run_cycle_and_assert(runtime, current_path=('Root', 'Opening'),
@@ -1442,7 +1444,8 @@ state Root {
                              vars={'door_pos': 0, 'hold': 0, 'reopen_count': 0})
 
         runtime = build_runtime(dsl_code)
-        run_cycle_and_assert(runtime, current_path=('Root', 'Closed'), vars={'door_pos': 0, 'hold': 0, 'reopen_count': 0})
+        run_cycle_and_assert(runtime, current_path=('Root', 'Closed'),
+                             vars={'door_pos': 0, 'hold': 0, 'reopen_count': 0})
         run_cycle_and_assert(runtime, ['Root.Closed.HallCall'], current_path=('Root', 'Opening'),
                              vars={'door_pos': 50, 'hold': 0, 'reopen_count': 0})
         run_cycle_and_assert(runtime, current_path=('Root', 'Opening'),
@@ -1723,7 +1726,153 @@ state Root {
         run_cycle_and_assert(runtime, current_path=('Root', 'Cooling'), vars={'frost': 2, 'drip_ticks': 0})
         run_cycle_and_assert(runtime, current_path=('Root', 'Cooling'), vars={'frost': 4, 'drip_ticks': 0})
         run_cycle_and_assert(runtime, current_path=('Root', 'Cooling'), vars={'frost': 6, 'drip_ticks': 0})
-        run_cycle_and_assert(runtime, current_path=('Root', 'DefrostCycle', 'Defrost'), vars={'frost': 1, 'drip_ticks': 0})
-        run_cycle_and_assert(runtime, current_path=('Root', 'DefrostCycle', 'Defrost'), vars={'frost': -4, 'drip_ticks': 0})
+        run_cycle_and_assert(runtime, current_path=('Root', 'DefrostCycle', 'Defrost'),
+                             vars={'frost': 1, 'drip_ticks': 0})
+        run_cycle_and_assert(runtime, current_path=('Root', 'DefrostCycle', 'Defrost'),
+                             vars={'frost': -4, 'drip_ticks': 0})
         run_cycle_and_assert(runtime, current_path=('Root', 'DefrostCycle', 'Drip'), vars={'frost': 0, 'drip_ticks': 1})
         run_cycle_and_assert(runtime, current_path=('Root', 'Cooling'), vars={'frost': 2, 'drip_ticks': 0})
+
+    # Tests for flexible event path resolution
+    def test_4_200_flexible_path_basic_relative(self):
+        """Test basic relative event paths from current state."""
+        dsl_code = '''
+def int counter = 0;
+state Root {
+    state A {
+        event go;
+        during {
+            counter = counter + 1;
+        }
+    }
+    state B {
+        during {
+            counter = counter + 10;
+        }
+    }
+    [*] -> A;
+    A -> B :: go;
+}
+'''
+        runtime = build_runtime(dsl_code)
+
+        # Initialize to state A
+        run_cycle_and_assert(runtime, current_path=('Root', 'A'), vars={'counter': 1})
+        # Use relative path "go" instead of full path "Root.A.go"
+        run_cycle_and_assert(runtime, ['go'], current_path=('Root', 'B'), vars={'counter': 11})
+
+    def test_4_201_flexible_path_parent_relative(self):
+        """Test parent-relative event paths with leading dots."""
+        dsl_code = '''
+def int counter = 0;
+state Root {
+    event root_event;
+    state System {
+        event system_event;
+        state Active {
+            event active_event;
+            during {
+                counter = counter + 1;
+            }
+        }
+        state Idle {
+            during {
+                counter = counter + 10;
+            }
+        }
+        [*] -> Active;
+        Active -> Idle :: active_event;
+        Idle -> Active : system_event;
+    }
+    [*] -> System;
+}
+'''
+        runtime = build_runtime(dsl_code)
+
+        # Initialize to Root.System.Active
+        run_cycle_and_assert(runtime, current_path=('Root', 'System', 'Active'), vars={'counter': 1})
+        # Use relative path from current state
+        run_cycle_and_assert(runtime, ['active_event'], current_path=('Root', 'System', 'Idle'), vars={'counter': 11})
+        # Use parent-relative path (. means go up one level to System)
+        run_cycle_and_assert(runtime, ['.system_event'], current_path=('Root', 'System', 'Active'),
+                             vars={'counter': 12})
+
+    def test_4_202_flexible_path_absolute(self):
+        """Test absolute event paths with leading slash."""
+        dsl_code = '''
+def int counter = 0;
+state Root {
+    event global_reset;
+    state System {
+        state A {
+            during {
+                counter = counter + 1;
+            }
+        }
+        state B {
+            during {
+                counter = counter + 10;
+            }
+        }
+        [*] -> A;
+        A -> B : /global_reset;
+    }
+    [*] -> System;
+}
+'''
+        runtime = build_runtime(dsl_code)
+
+        # Initialize to Root.System.A
+        run_cycle_and_assert(runtime, current_path=('Root', 'System', 'A'), vars={'counter': 1})
+        # Use absolute path (/ means from root)
+        run_cycle_and_assert(runtime, ['/global_reset'], current_path=('Root', 'System', 'B'), vars={'counter': 11})
+
+    def test_4_203_flexible_path_mixed_formats(self):
+        """Test mixing different path formats in the same cycle."""
+        dsl_code = '''
+def int counter = 0;
+state Root {
+    event global_event;
+    state System {
+        event system_event;
+        state A {
+            event local_a;
+            during {
+                counter = counter + 1;
+            }
+        }
+        state B {
+            event local_b;
+            during {
+                counter = counter + 10;
+            }
+        }
+        [*] -> A;
+        A -> B :: local_a;
+        A -> B : system_event;
+        A -> B : /global_event;
+    }
+    [*] -> System;
+}
+'''
+        runtime = build_runtime(dsl_code)
+
+        # Test with relative path
+        run_cycle_and_assert(runtime, current_path=('Root', 'System', 'A'), vars={'counter': 1})
+        run_cycle_and_assert(runtime, ['local_a'], current_path=('Root', 'System', 'B'), vars={'counter': 11})
+
+        # Reset and test with parent-relative path
+        runtime = build_runtime(dsl_code)
+        run_cycle_and_assert(runtime, current_path=('Root', 'System', 'A'), vars={'counter': 1})
+        run_cycle_and_assert(runtime, ['.system_event'], current_path=('Root', 'System', 'B'), vars={'counter': 11})
+
+        # Reset and test with absolute path
+        runtime = build_runtime(dsl_code)
+        run_cycle_and_assert(runtime, current_path=('Root', 'System', 'A'), vars={'counter': 1})
+        run_cycle_and_assert(runtime, ['/global_event'], current_path=('Root', 'System', 'B'), vars={'counter': 11})
+
+        # Reset and test with full path (backward compatibility)
+        runtime = build_runtime(dsl_code)
+        run_cycle_and_assert(runtime, current_path=('Root', 'System', 'A'), vars={'counter': 1})
+        run_cycle_and_assert(runtime, ['Root.System.A.local_a'], current_path=('Root', 'System', 'B'),
+                             vars={'counter': 11})

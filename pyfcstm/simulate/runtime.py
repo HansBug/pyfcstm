@@ -1282,6 +1282,19 @@ class SimulationRuntime:
         strings. Multiple events can be active simultaneously, allowing complex
         transition chains to execute in a single cycle.
 
+        **Flexible Event Path Formats**:
+
+        The runtime supports multiple event path formats for maximum convenience:
+
+        - **Full paths**: ``"Root.System.Active.Start"`` - Complete path from root
+        - **Relative paths**: ``"Start"`` - Resolved from current state
+        - **Parent-relative**: ``".error"`` or ``"..system.error"`` - Navigate up hierarchy
+        - **Absolute**: ``"/global.shutdown"`` - Resolved from root state
+
+        The runtime intelligently determines which resolution method to use based
+        on the path syntax and current runtime state. This allows you to use the
+        most convenient format for your use case without worrying about the details.
+
         **Validation and Safety**:
 
         When a stoppable state has an enabled transition, the runtime validates
@@ -1337,6 +1350,45 @@ class SimulationRuntime:
             >>> runtime.cycle(['System.Idle.Start'])  # Transition to Active
             >>> runtime.current_state.path
             ('System', 'Active')
+
+        Example - Flexible event path formats::
+
+            >>> dsl_code = '''
+            ... state Root {
+            ...     event global_stop;
+            ...     state System {
+            ...         event system_error;
+            ...         state Idle {
+            ...             event start;
+            ...         }
+            ...         state Active {
+            ...             event pause;
+            ...         }
+            ...         [*] -> Idle;
+            ...         Idle -> Active :: start;
+            ...         Active -> Idle :: pause;
+            ...     }
+            ...     [*] -> System;
+            ... }
+            ... '''
+            >>> ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+            >>> sm = parse_dsl_node_to_state_machine(ast)
+            >>> runtime = SimulationRuntime(sm)
+            >>> runtime.cycle()
+            >>> runtime.current_state.path
+            ('Root', 'System', 'Idle')
+            >>> # Use relative path from current state - most convenient!
+            >>> runtime.cycle(['start'])
+            >>> runtime.current_state.path
+            ('Root', 'System', 'Active')
+            >>> # Use parent-relative path to access parent's event
+            >>> runtime.cycle(['.system_error'])  # Access System.system_error
+            >>> # Use absolute path to access root event
+            >>> runtime.cycle(['/global_stop'])  # Access Root.global_stop
+            >>> # Full path still works for backward compatibility
+            >>> runtime.cycle(['Root.System.Active.pause'])
+            >>> runtime.current_state.path
+            ('Root', 'System', 'Idle')
 
         Example - Exit transitions and parent continuation::
 

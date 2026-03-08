@@ -6,12 +6,13 @@ pyfcstm provides native syntax highlighting support for FCSTM DSL code through m
 Overview
 ---------------------------------------
 
-Two complementary implementations provide comprehensive syntax highlighting:
+Multiple complementary implementations provide comprehensive syntax highlighting and language support:
 
 1. **Pygments Lexer** - For Python ecosystem tools (Sphinx, Jupyter, etc.)
-2. **TextMate Grammar** - For editors and platforms supporting TextMate grammars (VS Code, GitHub, GitLab, etc.)
+2. **TextMate Grammar** - For editors supporting TextMate grammars (Sublime Text, etc.)
+3. **VS Code Extension** - Comprehensive language support with advanced features (syntax diagnostics, code completion, document symbols, hover documentation)
 
-Both implementations are based on the ANTLR grammar and support the complete FCSTM syntax including keywords, operators, literals, comments, and built-in functions.
+All implementations are based on the ANTLR grammar and support the complete FCSTM syntax including keywords, operators, literals, comments, and built-in functions.
 
 Using Pygments in Python
 ---------------------------------------
@@ -167,7 +168,7 @@ The result will be beautifully syntax-highlighted FCSTM code with proper colorin
 Using TextMate Grammar
 ---------------------------------------
 
-The TextMate grammar provides syntax highlighting for editors and platforms that support TextMate grammars, including VS Code, Sublime Text, Atom, GitHub, and GitLab.
+The TextMate grammar provides syntax highlighting for editors that support TextMate grammars, including VS Code and Sublime Text.
 
 Location
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -178,74 +179,7 @@ The TextMate grammar file is located at:
 
    editors/fcstm.tmLanguage.json
 
-VS Code Integration
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-The pyfcstm project includes a ready-to-use VS Code extension.
-
-**Installing Pre-built Extension**
-
-Download the ``.vsix`` file from the GitHub releases page and install it:
-
-.. code-block:: bash
-
-   code --install-extension fcstm-language-support-0.1.0.vsix
-
-Restart VS Code. Files with ``.fcstm`` extension will now have syntax highlighting.
-
-**Building from Source**
-
-If you want to build the extension from source:
-
-1. Ensure Node.js and npm are installed
-
-2. Install vsce (VS Code Extension Manager):
-
-   .. code-block:: bash
-
-      npm install -g @vscode/vsce
-
-3. Build using Makefile:
-
-   .. code-block:: bash
-
-      # Build the extension (automatically copies grammar and packages)
-      make vscode
-
-      # Install the built extension
-      code --install-extension editors/vscode/build/fcstm-language-support-0.1.0.vsix
-
-      # Clean build artifacts
-      make vscode_clean
-
-4. Or build manually:
-
-   .. code-block:: bash
-
-      cd editors/vscode
-      mkdir -p syntaxes
-      cp ../fcstm.tmLanguage.json syntaxes/
-      vsce package --out build/
-      code --install-extension build/fcstm-language-support-0.1.0.vsix
-
-**Extension Features**
-
-The VS Code extension provides:
-
-- Syntax highlighting for all FCSTM language elements
-- Comment toggling (``Ctrl+/`` or ``Cmd+/`` for line comments)
-- Block comment support (``Shift+Alt+A`` or ``Shift+Option+A``)
-- Automatic bracket, quote, and comment block closing
-- Code folding with region markers
-- Language configuration for proper word boundaries
-
-**Verifying Installation**
-
-After installation:
-
-1. Open a ``.fcstm`` file in VS Code
-2. Check the language mode in the bottom-right corner - it should show "FCSTM"
-3. Verify that keywords, operators, and other syntax elements are highlighted
+This grammar file serves as the foundation for editor integrations and is synchronized with the ANTLR grammar definition.
 
 Sublime Text Integration
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -257,30 +191,245 @@ Sublime Text Integration
 5. Restart Sublime Text
 6. Files with ``.fcstm`` extension will now have syntax highlighting
 
-GitHub and GitLab
+VS Code Extension
+---------------------------------------
+
+The pyfcstm project includes a comprehensive VS Code extension that provides advanced language support beyond basic syntax highlighting.
+
+Overview
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-GitHub and GitLab automatically recognize TextMate grammars for syntax highlighting in repositories.
+The VS Code extension is a lightweight, offline-capable tool designed for FCSTM authoring with the following principles:
 
-**For Repository Owners:**
+- Language-neutral at runtime (no Python or Java dependencies)
+- Compatible with a wide range of VS Code versions (1.60.0+)
+- Fully offline for core editor features
+- Grammar-driven development using ANTLR as the source of truth
 
-1. Add the grammar file to your repository:
+Features
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The extension provides comprehensive language support:
+
+**Basic Features:**
+
+- Syntax highlighting for all FCSTM language elements
+- Comment toggling (``Ctrl+/`` or ``Cmd+/`` for line comments)
+- Block comment support (``Shift+Alt+A`` or ``Shift+Option+A``)
+- Automatic bracket, quote, and comment block closing
+- Code folding with region markers
+- FCSTM-aware token selection for identifiers, events, and literals
+
+**Advanced Features:**
+
+- **Syntax Diagnostics** - Real-time error detection with clear messages in the Problems panel
+- **Document Symbols** - Navigate state machine structure via Outline view
+
+  - Variables (``def int``, ``def float``)
+  - States (leaf and composite)
+  - Pseudo states
+  - Events
+  - Nested state hierarchies
+
+- **Code Completion** - IntelliSense support for:
+
+  - Keywords (``state``, ``def``, ``event``, ``enter``, ``during``, ``exit``, etc.)
+  - Built-in constants (``pi``, ``E``, ``tau``, ``true``, ``false``)
+  - Built-in functions (``sin``, ``cos``, ``sqrt``, ``abs``, ``log``, etc.)
+  - Document-local symbols (variables, states, events)
+
+- **Hover Documentation** - Contextual help for:
+
+  - Event scoping operators (``::`, ``:``, ``/``)
+  - Pseudo-state marker (``[*]``)
+  - Keywords (``pseudo``, ``effect``, ``abstract``, ``ref``, ``named``, etc.)
+  - Lifecycle aspects (``during before/after``, ``>> during before/after``)
+
+- **Code Snippets** - Quick templates for common FCSTM patterns:
+
+  - Variable definitions (``defi``, ``deff``)
+  - State declarations (``state``, ``stateb``, ``pstate``, ``staten``)
+  - Event definitions (``event``, ``eventn``)
+  - Transitions (``init``, ``trans``, ``transe``, ``transg``, ``transeff``, ``transfull``)
+  - Lifecycle actions (``enter``, ``during``, ``exit``, ``dbefore``, ``dafter``)
+  - Aspect actions (``globalbefore``, ``globalafter``)
+  - Action modifiers (``eabstract``, ``eref``)
+
+Installation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**From VSIX Package**
+
+Download the ``.vsix`` file from the `GitHub releases page <https://github.com/hansbug/pyfcstm/releases>`_ and install it:
+
+.. code-block:: bash
+
+   code --install-extension fcstm-language-support-0.1.0.vsix
+
+Or install via VS Code UI:
+
+1. Open VS Code
+2. Go to Extensions view (``Ctrl+Shift+X`` or ``Cmd+Shift+X``)
+3. Click the ``...`` menu at the top of the Extensions view
+4. Select "Install from VSIX..."
+5. Choose the downloaded ``.vsix`` file
+6. Reload VS Code
+
+**Building from Source**
+
+Prerequisites:
+
+- Node.js (v20 or later) and npm
+- Java (JDK 11 or later) - required for ANTLR parser generation
+- Python (3.8 or later) - required for ANTLR setup
+- Git
+
+Build steps:
+
+1. Clone the repository:
 
    .. code-block:: bash
 
-      mkdir -p .github/linguist
-      cp editors/fcstm.tmLanguage.json .github/linguist/
+      git clone https://github.com/hansbug/pyfcstm.git
+      cd pyfcstm
 
-2. Create ``.gitattributes`` to associate file extensions:
+2. Download ANTLR (first-time setup):
 
-   .. code-block:: text
+   .. code-block:: bash
 
-      *.fcstm linguist-language=FCSTM
-      *.fcsm linguist-language=FCSTM
+      make antlr
 
-3. Commit and push. GitHub will now syntax-highlight ``.fcstm`` files in your repository.
+3. Build the extension using the root Makefile:
 
-**Note:** Full GitHub Linguist integration requires submitting the grammar to the Linguist project. The above method works for individual repositories.
+   .. code-block:: bash
+
+      make vscode
+
+   This command will:
+
+   - Install npm dependencies
+   - Copy TextMate grammar files
+   - Generate JavaScript parser from ANTLR grammar
+   - Bundle extension with esbuild
+   - Package the extension as ``.vsix``
+
+   The built extension will be available at ``editors/vscode/build/fcstm-language-support-0.1.0.vsix``
+
+4. Install the generated ``.vsix`` file:
+
+   .. code-block:: bash
+
+      code --install-extension editors/vscode/build/fcstm-language-support-0.1.0.vsix
+
+Verifying Installation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+After installation:
+
+1. Open a ``.fcstm`` file in VS Code
+2. Check the language mode in the bottom-right corner - it should show "FCSTM"
+3. Verify that keywords, operators, and other syntax elements are highlighted
+4. Open the Outline view (``Ctrl+Shift+O`` or ``Cmd+Shift+O``) to see document symbols
+5. Try typing ``state`` and verify that code completion appears
+6. Hover over keywords like ``pseudo`` or ``effect`` to see documentation
+
+Extension Architecture
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The extension uses a pure JavaScript ANTLR parser generated from the canonical FCSTM grammar:
+
+- **Grammar Source**: ``pyfcstm/dsl/grammar/Grammar.g4`` (single source of truth)
+- **Generated Artifacts**: ``editors/vscode/parser/`` (GrammarLexer.js, GrammarParser.js, GrammarVisitor.js)
+- **Parser Adapter**: ``src/parser.ts`` (loads generated artifacts and normalizes diagnostics)
+- **Runtime**: antlr4 version 4.9.3 (exact match with generation toolchain)
+
+The extension is bundled using esbuild into a single ``dist/extension.js`` file (246KB) that includes:
+
+- ANTLR-generated parser (~104KB)
+- antlr4 runtime (~80KB)
+- Extension sources (~20KB)
+
+This all-in-one bundle ensures:
+
+- No runtime dependency loading issues
+- Faster extension activation
+- Fully offline operation
+- No Python or external runtime dependencies
+
+Development Workflow
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+For active development:
+
+.. code-block:: bash
+
+   cd editors/vscode
+
+   # Watch mode for development (with sourcemaps)
+   npm run watch
+
+   # Or build manually
+   make build-dev
+
+   # In another terminal, verify features
+   make verify
+
+When the ANTLR grammar changes:
+
+1. Regenerate Python parser from project root:
+
+   .. code-block:: bash
+
+      make antlr_build
+
+2. Verify Python tests pass:
+
+   .. code-block:: bash
+
+      make unittest
+
+3. Regenerate JavaScript parser for VS Code:
+
+   .. code-block:: bash
+
+      cd editors/vscode
+      make parser
+
+4. Rebuild and verify:
+
+   .. code-block:: bash
+
+      make build
+      make verify
+
+Testing and Verification
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The extension includes comprehensive test suites:
+
+.. code-block:: bash
+
+   cd editors/vscode
+
+   # Verify P0.2 - Parser Integration (32 tests)
+   make verify-p0.2
+
+   # Verify P0.3 - Syntax Diagnostics (35 tests)
+   make verify-p0.3
+
+   # Verify P0.4 - Document Symbols (35 tests)
+   make verify-p0.4
+
+   # Verify P0.5 - Code Completion (30 tests)
+   make verify-p0.5
+
+   # Verify P0.6 - Hover Documentation (35 tests)
+   make verify-p0.6
+
+   # Run all verification tests
+   make verify
+
+All tests use real FCSTM code and provide detailed error reporting for easy debugging.
 
 Supported Syntax Elements
 ---------------------------------------
@@ -485,13 +634,34 @@ Pygments Not Working in Sphinx
    # Verify lexer registration
    python -c "from pygments.lexers import get_lexer_by_name; print(get_lexer_by_name('fcstm'))"
 
-VS Code Not Highlighting
+VS Code Extension Not Working
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-1. Check that the extension is installed in ``~/.vscode/extensions/``
-2. Verify file extension is ``.fcstm`` or ``.fcsm``
-3. Restart VS Code
-4. Check VS Code's language mode (bottom right corner) - it should show "FCSTM"
+1. Check that the extension is installed:
+
+   - Open Extensions view (``Ctrl+Shift+X`` or ``Cmd+Shift+X``)
+   - Search for "FCSTM" or check ``~/.vscode/extensions/``
+
+2. Verify file extension is ``.fcstm``
+3. Check VS Code's language mode (bottom right corner) - it should show "FCSTM"
+4. Reload VS Code window (``Ctrl+Shift+P`` → "Reload Window")
+5. Check the Output panel (View → Output) and select "FCSTM Language Support" for diagnostic messages
+
+VS Code Syntax Diagnostics Not Appearing
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+1. Ensure the file is saved (diagnostics update on save)
+2. Check the Problems panel (View → Problems or ``Ctrl+Shift+M``)
+3. Verify the extension is activated (check Output panel)
+4. Try opening a known invalid FCSTM file to test error detection
+
+VS Code Code Completion Not Working
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+1. Ensure IntelliSense is enabled in VS Code settings
+2. Try triggering completion manually (``Ctrl+Space``)
+3. Check that you're not in a comment or string context
+4. Verify the extension is activated
 
 TextMate Grammar Not Working
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -565,10 +735,11 @@ Related Resources
 ---------------------------------------
 
 - **FCSTM DSL Reference:** See the DSL tutorial for complete language syntax
+- **VS Code Extension:** See ``editors/vscode/README.md`` for detailed extension documentation
 - **Pygments Documentation:** https://pygments.org/
 - **TextMate Grammar Guide:** https://macromates.com/manual/en/language_grammars
 - **VS Code Language Extensions:** https://code.visualstudio.com/api/language-extensions/syntax-highlight-guide
-- **GitHub Linguist:** https://github.com/github/linguist
+- **ANTLR Documentation:** https://www.antlr.org/
 
 File Locations
 ---------------------------------------
@@ -588,9 +759,30 @@ File Locations
    │       ├── package.json             # Extension manifest
    │       ├── language-configuration.json  # Language configuration
    │       ├── README.md                # Extension documentation
+   │       ├── src/                     # Extension source code
+   │       │   ├── extension.ts         # Extension entry point
+   │       │   ├── parser.ts            # Parser adapter
+   │       │   ├── diagnostics.ts       # Syntax diagnostics provider
+   │       │   ├── symbols.ts           # Document symbols provider
+   │       │   ├── completion.ts        # Code completion provider
+   │       │   └── hover.ts             # Hover documentation provider
+   │       ├── parser/                  # Generated ANTLR parser
+   │       │   ├── GrammarLexer.js      # Generated lexer
+   │       │   ├── GrammarParser.js     # Generated parser
+   │       │   └── GrammarVisitor.js    # Generated visitor
    │       ├── syntaxes/
    │       │   └── fcstm.tmLanguage.json    # TextMate grammar (copy)
-   │       └── build/                   # Build output directory (git ignored)
-   │           └── fcstm-language-support-0.1.0.vsix  # Pre-built extension package
+   │       ├── snippets/
+   │       │   └── fcstm.code-snippets  # Code snippets
+   │       ├── scripts/                 # Verification scripts
+   │       │   ├── verify-p0.2.js       # Parser verification
+   │       │   ├── verify-p0.3.js       # Diagnostics verification
+   │       │   ├── verify-p0.4.js       # Symbols verification
+   │       │   ├── verify-p0.5.js       # Completion verification
+   │       │   └── verify-p0.6.js       # Hover verification
+   │       ├── dist/                    # Bundled extension
+   │       │   └── extension.js         # Single bundle (246KB)
+   │       └── build/                   # VSIX packages
+   │           └── fcstm-language-support-0.1.0.vsix
    ├── docs/source/conf.py              # Sphinx configuration with lexer registration
    └── setup.py                         # Pygments entry point registration

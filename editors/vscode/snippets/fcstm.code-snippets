@@ -1,0 +1,183 @@
+{
+  "Variable Definition (int)": {
+    "prefix": "defi",
+    "body": [
+      "def int ${1:name} = ${2:0};"
+    ],
+    "description": "Insert an integer variable definition"
+  },
+  "Variable Definition (float)": {
+    "prefix": "deff",
+    "body": [
+      "def float ${1:name} = ${2:0.0};"
+    ],
+    "description": "Insert a floating-point variable definition"
+  },
+  "State Declaration": {
+    "prefix": "state",
+    "body": [
+      "state ${1:StateName};"
+    ],
+    "description": "Insert a simple state declaration"
+  },
+  "Composite State": {
+    "prefix": "stateb",
+    "body": [
+      "state ${1:StateName} {",
+      "    $0",
+      "}"
+    ],
+    "description": "Insert a composite state block"
+  },
+  "Pseudo State": {
+    "prefix": "pstate",
+    "body": [
+      "pseudo state ${1:StateName};"
+    ],
+    "description": "Insert a pseudo state declaration"
+  },
+  "Named State": {
+    "prefix": "staten",
+    "body": [
+      "state ${1:StateName} named \"${2:Display Name}\";"
+    ],
+    "description": "Insert a named state declaration"
+  },
+  "Event Declaration": {
+    "prefix": "event",
+    "body": [
+      "event ${1:EventName};"
+    ],
+    "description": "Insert an event declaration"
+  },
+  "Named Event": {
+    "prefix": "eventn",
+    "body": [
+      "event ${1:EventName} named \"${2:Display Name}\";"
+    ],
+    "description": "Insert a named event declaration"
+  },
+  "Initial Transition": {
+    "prefix": "init",
+    "body": [
+      "[*] -> ${1:InitialState};"
+    ],
+    "description": "Insert an initial transition"
+  },
+  "Transition": {
+    "prefix": "trans",
+    "body": [
+      "${1:FromState} -> ${2:ToState};"
+    ],
+    "description": "Insert a plain transition"
+  },
+  "Event Transition": {
+    "prefix": "transe",
+    "body": [
+      "${1:FromState} -> ${2:ToState} :: ${3:EventName};"
+    ],
+    "description": "Insert a transition triggered by a local event"
+  },
+  "Guarded Transition": {
+    "prefix": "transg",
+    "body": [
+      "${1:FromState} -> ${2:ToState} : if [${3:condition}];"
+    ],
+    "description": "Insert a guarded transition"
+  },
+  "Effect Transition": {
+    "prefix": "transeff",
+    "body": [
+      "${1:FromState} -> ${2:ToState} effect {",
+      "    $0",
+      "}"
+    ],
+    "description": "Insert a transition with an effect block"
+  },
+  "Guarded Effect Transition": {
+    "prefix": "transfull",
+    "body": [
+      "${1:FromState} -> ${2:ToState} : if [${3:condition}] effect {",
+      "    $0",
+      "}"
+    ],
+    "description": "Insert a transition with both guard and effect"
+  },
+  "Enter Block": {
+    "prefix": "enter",
+    "body": [
+      "enter {",
+      "    $0",
+      "}"
+    ],
+    "description": "Insert an enter action block"
+  },
+  "During Block": {
+    "prefix": "during",
+    "body": [
+      "during {",
+      "    $0",
+      "}"
+    ],
+    "description": "Insert a during action block"
+  },
+  "Exit Block": {
+    "prefix": "exit",
+    "body": [
+      "exit {",
+      "    $0",
+      "}"
+    ],
+    "description": "Insert an exit action block"
+  },
+  "During Before Block": {
+    "prefix": "dbefore",
+    "body": [
+      "during before {",
+      "    $0",
+      "}"
+    ],
+    "description": "Insert a during before block"
+  },
+  "During After Block": {
+    "prefix": "dafter",
+    "body": [
+      "during after {",
+      "    $0",
+      "}"
+    ],
+    "description": "Insert a during after block"
+  },
+  "Global During Before Block": {
+    "prefix": "globalbefore",
+    "body": [
+      ">> during before {",
+      "    $0",
+      "}"
+    ],
+    "description": "Insert a global during before aspect block"
+  },
+  "Global During After Block": {
+    "prefix": "globalafter",
+    "body": [
+      ">> during after {",
+      "    $0",
+      "}"
+    ],
+    "description": "Insert a global during after aspect block"
+  },
+  "Abstract Enter Action": {
+    "prefix": "eabstract",
+    "body": [
+      "enter abstract ${1:ActionName};"
+    ],
+    "description": "Insert an abstract enter action declaration"
+  },
+  "Enter Reference Action": {
+    "prefix": "eref",
+    "body": [
+      "enter ref ${1:StateName.ActionName};"
+    ],
+    "description": "Insert an enter reference action declaration"
+  }
+}

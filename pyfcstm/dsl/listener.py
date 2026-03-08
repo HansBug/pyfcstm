@@ -97,7 +97,7 @@ class GrammarParseListener(GrammarListener):
         """
         super().exitFuncExprNum(ctx)
         node = UFunc(
-            func=ctx.function.text,
+            func=ctx.func_name.text,
             expr=self.nodes[ctx.num_expression()],
         )
         self.nodes[ctx] = node
@@ -373,7 +373,7 @@ class GrammarParseListener(GrammarListener):
         """
         super().exitFuncExprInit(ctx)
         self.nodes[ctx] = UFunc(
-            func=ctx.function.text,
+            func=ctx.func_name.text,
             expr=self.nodes[ctx.init_expression()],
         )
 

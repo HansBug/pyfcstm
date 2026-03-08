@@ -198,6 +198,26 @@ jobs:
         with:
           fetch-depth: 20
 
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '11'
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.8'
+
+      - name: Install Python dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Download ANTLR
+        run: |
+          make antlr
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:

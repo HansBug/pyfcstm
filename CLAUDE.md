@@ -1234,6 +1234,34 @@ Example::
     $ pyfcstm generate -i input.fcstm -t templates/ -o output/
 ```
 
+**For FCSTM DSL code blocks in Sphinx documentation**:
+
+The project includes syntax highlighting support for FCSTM DSL code. Use the `fcstm` language identifier in code blocks:
+
+```rst
+.. code-block:: fcstm
+
+    def int counter = 0;
+
+    state System {
+        state Idle;
+        state Running;
+
+        [*] -> Idle;
+        Idle -> Running :: Start;
+    }
+```
+
+For including external FCSTM files, use `literalinclude` with the `:language: fcstm` option:
+
+```rst
+.. literalinclude:: example.fcstm
+   :language: fcstm
+   :linenos:
+```
+
+This provides proper syntax highlighting for FCSTM keywords, operators, and structure. Do not use `text` or generic code blocks for FCSTM code.
+
 ### Special Directives
 
 Use reST directives for special content:

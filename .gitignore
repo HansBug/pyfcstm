@@ -1227,6 +1227,9 @@ junit.xml
 # LLM configuration (contains API tokens)
 .llmconfig.yaml
 
+# Claude Code auto memory directory
+.claude
+
 # VSCode extension build artifacts
 /editors/vscode/build/
 /editors/vscode/*.vsix

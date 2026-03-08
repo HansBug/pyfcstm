@@ -590,17 +590,17 @@ When multiple transitions from the same state have satisfied guards, the first t
      - *(none)*
      - Root.A
      - 2
-     - No guard satisfied, execute ``A.during`` (counter + 1)
+     - No guard satisfied (counter < 3), execute ``A.during`` (counter + 1)
    * - 3
      - *(none)*
      - Root.A
      - 3
-     - No guard satisfied, execute ``A.during`` (counter + 1)
+     - No guard satisfied (counter < 3), execute ``A.during`` (counter + 1)
    * - 4
      - *(none)*
-     - Root.C
-     - 103
-     - Both guards satisfied (counter >= 5 and counter >= 3), but ``A -> C`` is defined later and takes priority, execute ``C.during`` (counter + 100)
+     - Root.B
+     - 13
+     - Both guards satisfied (counter >= 3), but ``A -> B`` is defined first and takes priority, execute ``B.during`` (counter + 10)
 
 **Detailed Execution Trace**:
 
@@ -616,13 +616,13 @@ When multiple transitions from the same state have satisfied guards, the first t
 
 - Current state: ``Root.A``, ``counter = 3``
 - Check transitions in definition order:
-  1. ``A -> B : if [counter >= 5]`` (guard NOT satisfied, counter = 3)
-  2. ``A -> C : if [counter >= 3]`` (guard satisfied!)
+  1. ``A -> B : if [counter >= 3]`` (guard satisfied!)
+  2. ``A -> C : if [counter >= 3]`` (guard also satisfied, but not checked)
 - Execute ``A.exit`` (none defined)
-- Execute ``C.enter`` (none defined)
-- Reach stoppable state ``C``
-- Execute ``C.during``: ``counter = 3 + 100 = 103``
-- **Result**: ``state = Root.C``, ``counter = 103``
+- Execute ``B.enter`` (none defined)
+- Reach stoppable state ``B``
+- Execute ``B.during``: ``counter = 3 + 10 = 13``
+- **Result**: ``state = Root.B``, ``counter = 13``
 
 **Key Point**: Transitions are evaluated in definition order. The first transition with a satisfied guard is selected, even if multiple guards are satisfied.
 
@@ -662,9 +662,19 @@ Self-transitions execute exit and enter actions, providing a way to reset state-
      - 11
      - Initial transition ``[*] -> A``, execute ``A.enter`` (+1), then ``A.during`` (+10)
    * - 2
+     - *(none)*
+     - Root.A
+     - 21
+     - No event, stay in A, execute ``A.during`` (+10)
+   * - 3
+     - *(none)*
+     - Root.A
+     - 31
+     - No event, stay in A, execute ``A.during`` (+10)
+   * - 4
      - ``Loop``
      - Root.A
-     - 122
+     - 142
      - Event ``Loop`` triggers ``A -> A``, execute ``A.exit`` (+100), ``A.enter`` (+1), ``A.during`` (+10)
 
 **Detailed Execution Trace**:
@@ -678,18 +688,29 @@ Self-transitions execute exit and enter actions, providing a way to reset state-
 - Execute ``A.during``: ``counter = 1 + 10 = 11``
 - **Result**: ``state = Root.A``, ``counter = 11``
 
-**Cycle 2** (self-transition with event ``Loop``):
+**Cycle 2-3** (staying in state without transition):
 
 - Current state: ``Root.A``, ``counter = 11``
-- Check transitions: ``A -> A :: Loop`` (event matches!)
-- Execute ``A.exit``: ``counter = 11 + 100 = 111``
-- Execute transition (no effect)
-- Execute ``A.enter``: ``counter = 111 + 1 = 112``
-- Reach stoppable state ``A`` (same state)
-- Execute ``A.during``: ``counter = 112 + 10 = 122``
-- **Result**: ``state = Root.A``, ``counter = 122``
+- No event provided, no transition fires
+- Stay in state ``A``
+- Execute ``A.during``: ``counter = 11 + 10 = 21``
+- **Result**: ``state = Root.A``, ``counter = 21``
+- Cycle 3: Same process, ``counter = 21 + 10 = 31``
 
-**Key Point**: Self-transitions (``A -> A``) execute the full exit-enter sequence, allowing state reinitialization. This is different from staying in the state without a transition.
+**Cycle 4** (self-transition with event ``Loop``):
+
+- Current state: ``Root.A``, ``counter = 31``
+- Check transitions: ``A -> A :: Loop`` (event matches!)
+- Execute ``A.exit``: ``counter = 31 + 100 = 131``
+- Execute transition (no effect)
+- Execute ``A.enter``: ``counter = 131 + 1 = 132``
+- Reach stoppable state ``A`` (same state)
+- Execute ``A.during``: ``counter = 132 + 10 = 142``
+- **Result**: ``state = Root.A``, ``counter = 142``
+
+**Key Point**: Self-transitions (``A -> A``) execute the full exit-enter sequence, allowing state reinitialization. This is different from staying in the state without a transition:
+- **Staying in state** (cycles 2-3): Only ``during`` action executes (+10 each cycle)
+- **Self-transition** (cycle 4): Full sequence executes: ``exit`` (+100) → ``enter`` (+1) → ``during`` (+10)
 
 Example 8: Guard Conditions with Effects
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

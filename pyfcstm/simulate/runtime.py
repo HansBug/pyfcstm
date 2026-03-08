@@ -512,24 +512,22 @@ class SimulationRuntime:
         Resolve an event reference into a concrete event object.
 
         This method accepts either an event object (returned as-is) or a
-        dot-separated event path string. String paths are resolved by walking
-        the state hierarchy to find the enclosing state, then looking up the
-        event name in that state's event table.
+        dot-separated event path string. String paths are resolved using
+        :meth:`StateMachine.resolve_event` which requires a full path from
+        the root state to the event.
 
         **Path Resolution**:
 
-        Event paths follow the format ``State1.State2.EventName`` where:
-        - ``State1.State2`` is the state hierarchy path
+        Event paths must follow the complete format ``Root.State1.State2.EventName`` where:
+        - ``Root.State1.State2`` is the complete state hierarchy path from root
         - ``EventName`` is the event name in the final state's event table
-
-        If the path starts with the root state name, it's treated as an explicit
-        root prefix and skipped during resolution.
 
         :param event: Event object or dot-separated event path string.
         :type event: Union[str, Event]
         :return: The resolved event instance.
         :rtype: Event
         :raises TypeError: If ``event`` is neither a string nor an :class:`Event`.
+        :raises LookupError: If the event path cannot be resolved.
 
         Example::
 
@@ -538,7 +536,9 @@ class SimulationRuntime:
             >>> from pyfcstm.simulate import SimulationRuntime
             >>> dsl_code = '''
             ... state System {
-            ...     state Idle;
+            ...     state Idle {
+            ...         event Start;
+            ...     }
             ...     state Active;
             ...     [*] -> Idle;
             ...     Idle -> Active :: Start;
@@ -564,12 +564,7 @@ class SimulationRuntime:
         if isinstance(event, Event):
             return event
         elif isinstance(event, str):
-            segments = event.split('.')
-            state = self.state_machine.root_state
-            start_idx = 1 if segments[0] == state.name else 0
-            for segment in segments[start_idx:-1]:
-                state = state.substates[segment]
-            return state.events[segments[-1]]
+            return self.state_machine.resolve_event(event)
         else:
             raise TypeError(f'Unknown event type {type(event)!r} - {event!r}.')
 

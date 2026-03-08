@@ -48,6 +48,227 @@ class TestAbstractHandlers:
         assert len(calls) == 1
         assert calls[0] == 'System.Idle.InitHardware'
 
+    def test_during_abstract_handler(self):
+        """Test handler for during abstract action."""
+        dsl_code = '''
+        def int counter = 0;
+
+        state System {
+            state Active {
+                during abstract Monitor;
+            }
+
+            [*] -> Active;
+        }
+        '''
+        ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+        sm = parse_dsl_node_to_state_machine(ast)
+        runtime = SimulationRuntime(sm)
+
+        # Register handler
+        calls = []
+
+        def handler(ctx: ReadOnlyExecutionContext):
+            calls.append({
+                'action': ctx.action_name,
+                'stage': ctx.action_stage,
+                'state': ctx.get_full_state_path()
+            })
+
+        runtime.register_abstract_handler('System.Active.Monitor', handler)
+
+        # Execute - during is called in the first cycle
+        runtime.cycle()
+
+        # Verify handler was called
+        assert len(calls) == 1
+        assert calls[0]['action'] == 'System.Active.Monitor'
+        assert calls[0]['stage'] == 'during'
+        assert calls[0]['state'] == 'System.Active'
+
+    def test_exit_abstract_handler(self):
+        """Test handler for exit abstract action."""
+        dsl_code = '''
+        def int counter = 0;
+
+        state System {
+            state Active {
+                exit abstract Cleanup;
+            }
+
+            state Idle;
+
+            [*] -> Active;
+            Active -> Idle :: Stop;
+        }
+        '''
+        ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+        sm = parse_dsl_node_to_state_machine(ast)
+        runtime = SimulationRuntime(sm)
+
+        # Register handler
+        calls = []
+
+        def handler(ctx: ReadOnlyExecutionContext):
+            calls.append({
+                'action': ctx.action_name,
+                'stage': ctx.action_stage,
+                'state': ctx.get_full_state_path()
+            })
+
+        runtime.register_abstract_handler('System.Active.Cleanup', handler)
+
+        # First cycle - enter Active
+        runtime.cycle()
+        assert len(calls) == 0  # Exit not called yet
+
+        # Second cycle - transition to Idle, exit is called
+        runtime.cycle(['System.Active.Stop'])
+        assert len(calls) == 1
+        assert calls[0]['action'] == 'System.Active.Cleanup'
+        assert calls[0]['stage'] == 'exit'
+        assert calls[0]['state'] == 'System.Active'
+
+    def test_aspect_before_abstract_handler(self):
+        """Test handler for >> during before abstract action."""
+        dsl_code = '''
+        def int counter = 0;
+
+        state System {
+            >> during before abstract PreProcess;
+
+            state Active {
+                during {
+                    counter = counter + 1;
+                }
+            }
+
+            [*] -> Active;
+        }
+        '''
+        ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+        sm = parse_dsl_node_to_state_machine(ast)
+        runtime = SimulationRuntime(sm)
+
+        # Register handler
+        calls = []
+
+        def handler(ctx: ReadOnlyExecutionContext):
+            calls.append({
+                'action': ctx.action_name,
+                'stage': ctx.action_stage,
+                'state': ctx.get_full_state_path(),
+                'counter': ctx.get_var('counter')
+            })
+
+        runtime.register_abstract_handler('System.PreProcess', handler)
+
+        # Execute - aspect before is called before leaf during
+        runtime.cycle()
+
+        # Verify handler was called
+        assert len(calls) == 1
+        assert calls[0]['action'] == 'System.PreProcess'
+        assert calls[0]['stage'] == 'during'
+        assert calls[0]['state'] == 'System'
+        assert calls[0]['counter'] == 0  # Called before counter increment
+
+        # Verify counter was incremented after aspect
+        assert runtime.vars['counter'] == 1
+
+    def test_aspect_after_abstract_handler(self):
+        """Test handler for >> during after abstract action."""
+        dsl_code = '''
+        def int counter = 0;
+
+        state System {
+            >> during after abstract PostProcess;
+
+            state Active {
+                during {
+                    counter = counter + 10;
+                }
+            }
+
+            [*] -> Active;
+        }
+        '''
+        ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+        sm = parse_dsl_node_to_state_machine(ast)
+        runtime = SimulationRuntime(sm)
+
+        # Register handler
+        calls = []
+
+        def handler(ctx: ReadOnlyExecutionContext):
+            calls.append({
+                'action': ctx.action_name,
+                'stage': ctx.action_stage,
+                'state': ctx.get_full_state_path(),
+                'counter': ctx.get_var('counter')
+            })
+
+        runtime.register_abstract_handler('System.PostProcess', handler)
+
+        # Execute - aspect after is called after leaf during
+        runtime.cycle()
+
+        # Verify handler was called
+        assert len(calls) == 1
+        assert calls[0]['action'] == 'System.PostProcess'
+        assert calls[0]['stage'] == 'during'
+        assert calls[0]['state'] == 'System'
+        assert calls[0]['counter'] == 10  # Called after counter increment
+
+    def test_multiple_lifecycle_abstract_handlers(self):
+        """Test handlers for multiple lifecycle stages in the same state."""
+        dsl_code = '''
+        def int counter = 0;
+
+        state System {
+            state Active {
+                enter abstract Init;
+                during abstract Monitor;
+                exit abstract Cleanup;
+            }
+
+            state Idle;
+
+            [*] -> Active;
+            Active -> Idle :: Stop;
+        }
+        '''
+        ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+        sm = parse_dsl_node_to_state_machine(ast)
+        runtime = SimulationRuntime(sm)
+
+        # Register handlers
+        calls = []
+
+        def init_handler(ctx: ReadOnlyExecutionContext):
+            calls.append(('init', ctx.action_stage))
+
+        def monitor_handler(ctx: ReadOnlyExecutionContext):
+            calls.append(('monitor', ctx.action_stage))
+
+        def cleanup_handler(ctx: ReadOnlyExecutionContext):
+            calls.append(('cleanup', ctx.action_stage))
+
+        runtime.register_abstract_handler('System.Active.Init', init_handler)
+        runtime.register_abstract_handler('System.Active.Monitor', monitor_handler)
+        runtime.register_abstract_handler('System.Active.Cleanup', cleanup_handler)
+
+        # First cycle - enter and during
+        runtime.cycle()
+        assert len(calls) == 2
+        assert calls[0] == ('init', 'enter')
+        assert calls[1] == ('monitor', 'during')
+
+        # Second cycle - exit
+        runtime.cycle(['System.Active.Stop'])
+        assert len(calls) == 3
+        assert calls[2] == ('cleanup', 'exit')
+
     def test_register_multiple_handlers(self):
         """Test registering multiple handlers for the same abstract action."""
         dsl_code = '''

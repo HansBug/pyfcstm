@@ -761,11 +761,18 @@ class SimulationRuntime:
             # Named abstract - check for handlers
             handlers = self._abstract_handlers.get(func_path, [])
 
-            # In validation mode, never execute handlers
-            if is_validation_mode or not handlers:
-                # No handlers or validation mode - skip execution
-                mode_label = '[VALIDATION]' if is_validation_mode or not handlers else '[SIMULATION]'
-                logging.info(f'{mode_label} Skip abstract function {func_path} (no handlers registered)')
+            # Validation mode: skip execution even if handlers exist
+            if is_validation_mode:
+                if handlers:
+                    logging.info(f'[VALIDATION] Skip abstract function {func_path} '
+                                 f'({len(handlers)} handler(s) registered but not executed in validation mode)')
+                else:
+                    logging.info(f'[VALIDATION] Skip abstract function {func_path} (no handlers registered)')
+                return
+
+            # Real execution mode: check if handlers are registered
+            if not handlers:
+                logging.info(f'[SIMULATION] Skip abstract function {func_path} (no handlers registered)')
                 return
 
             # Has registered handlers - this is real execution mode

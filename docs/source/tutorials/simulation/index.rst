@@ -497,6 +497,7 @@ Example 5: Multi-Level Composite State
 - Execute ``[*] -> A``
 - Execute ``A.during``: ``counter = 1``
 - Next cycle with event ``GoC``:
+
 - Check transitions: ``A -> C :: GoC`` (event matches!)
 - Execute ``A.exit`` (none defined)
 - Execute ``C.enter`` (none defined)
@@ -709,6 +710,7 @@ Self-transitions execute exit and enter actions, providing a way to reset state-
 - **Result**: ``state = Root.A``, ``counter = 142``
 
 **Key Point**: Self-transitions (``A -> A``) execute the full exit-enter sequence, allowing state reinitialization. This is different from staying in the state without a transition:
+
 - **Staying in state**  (cycles 2-3): Only ``during`` action executes (+10 each cycle)
 - **Self-transition**  (cycle 4): Full sequence executes: ``exit`` (+100) → ``enter`` (+1) → ``during`` (+10)
 
@@ -1042,6 +1044,7 @@ This example simulates common elevator car door control logic: doors open when a
 **Business Context**:
 
 This state machine models a typical elevator safety system where:
+
 - ``door_pos`` represents door position (0=fully closed, 50=half-open, 100=fully open)
 - ``hold`` counts cycles the door remains fully open
 - ``reopen_count`` tracks how many times the door reopened due to obstructions
@@ -1110,12 +1113,14 @@ This state machine models a typical elevator safety system where:
 **Detailed Execution Trace A**:
 
 **Cycle 1**  (initial state):
+
 - Initial: ``door_pos = 0``, ``hold = 0``, ``reopen_count = 0``
 - Execute ``[*] -> Closed``
 - Execute ``Closed.during``: ``hold = 0``
 - **Result**: Elevator idle with doors closed
 
 **Cycle 2**  (hall call received):
+
 - Event ``HallCall`` triggers ``Closed -> Opening``
 - Execute ``Closed.exit`` (none defined)
 - Execute transition effect: ``hold = 0``
@@ -1124,11 +1129,13 @@ This state machine models a typical elevator safety system where:
 - **Result**: Doors begin opening, halfway open
 
 **Cycle 3**  (doors continue opening):
+
 - Check ``Opening -> Opened``: ``door_pos >= 100`` not satisfied (current: 50)
 - Execute ``Opening.during``: ``door_pos = 50 + 50 = 100``
 - **Result**: Doors reach fully open position
 
 **Cycle 4**  (transition to opened state):
+
 - Check ``Opening -> Opened``: ``door_pos >= 100`` satisfied
 - Execute ``Opening.exit`` (none defined)
 - Execute transition effect: ``hold = 0``
@@ -1137,11 +1144,13 @@ This state machine models a typical elevator safety system where:
 - **Result**: Doors fully open, hold timer starts
 
 **Cycle 5**  (hold timer continues):
+
 - Check ``Opened -> Closing``: ``hold >= 2`` not satisfied (current: 1)
 - Execute ``Opened.during``: ``hold = 1 + 1 = 2``
 - **Result**: Hold timer reaches threshold
 
 **Cycle 6**  (begin closing):
+
 - Check ``Opened -> Closing``: ``hold >= 2`` satisfied
 - Execute ``Opened.exit`` (none defined)
 - Execute ``Closing.enter`` (none defined)
@@ -1149,11 +1158,13 @@ This state machine models a typical elevator safety system where:
 - **Result**: Doors begin closing
 
 **Cycle 7**  (continue closing):
+
 - Check ``Closing -> Closed``: ``door_pos <= 0`` not satisfied (current: 50)
 - Execute ``Closing.during``: ``door_pos = 50 - 50 = 0``
 - **Result**: Doors reach fully closed position
 
 **Cycle 8**  (transition to closed):
+
 - Check ``Closing -> Closed``: ``door_pos <= 0`` satisfied
 - Execute ``Closing.exit`` (none defined)
 - Execute transition effect: ``hold = 0``
@@ -1198,6 +1209,7 @@ This state machine models a typical elevator safety system where:
 - After cycle 6: ``state = Closing``, ``door_pos = 50``, ``hold = 2``, ``reopen_count = 0``
 
 **Cycle 7**  (obstruction detected):
+
 - Event ``BeamBlocked`` triggers ``Closing -> Opened``
 - Execute ``Closing.exit`` (none defined)
 - Execute transition effect:
@@ -1209,6 +1221,7 @@ This state machine models a typical elevator safety system where:
 - **Result**: Doors immediately reopen for safety, hold timer restarts
 
 **Key Points**:
+
 - ``door_pos`` is abstracted to three positions (0, 50, 100) representing closed, half, and fully open
 - ``BeamBlocked`` event only has meaning in ``Closing`` state, matching real elevator safety logic
 - Reopening transitions directly to ``Opened`` (not ``Opening``), immediately providing clearance
@@ -1231,6 +1244,7 @@ This example simulates a common residential storage water heater: water temperat
 **Business Context**:
 
 This state machine models a typical hysteresis temperature control system where:
+
 - ``water_temp`` represents water temperature in degrees
 - ``draw_count`` tracks number of hot water usage events
 - Temperature naturally decreases by 1°/cycle in standby
@@ -1287,12 +1301,14 @@ This state machine models a typical hysteresis temperature control system where:
 **Detailed Execution Trace A**:
 
 **Cycle 1**  (initial standby):
+
 - Initial: ``water_temp = 55``, ``draw_count = 0``
 - Execute ``[*] -> Standby``
 - Execute ``Standby.during``: ``water_temp = 55 - 1 = 54``
 - **Result**: Normal heat loss through tank insulation
 
 **Cycles 2-5**  (gradual temperature decrease):
+
 - Each cycle: Check ``Standby -> Heating``: ``water_temp <= 50`` not satisfied
 - Execute ``Standby.during``: ``water_temp`` decreases by 1
 - Cycle 2: ``54 - 1 = 53``
@@ -1302,6 +1318,7 @@ This state machine models a typical hysteresis temperature control system where:
 - **Result**: Temperature gradually drops to lower threshold
 
 **Cycle 6**  (heating activation):
+
 - Check ``Standby -> Heating``: ``water_temp <= 50`` satisfied
 - Execute ``Standby.exit`` (none defined)
 - Execute ``Heating.enter`` (none defined)
@@ -1309,6 +1326,7 @@ This state machine models a typical hysteresis temperature control system where:
 - **Result**: Heating element activates, temperature begins rising
 
 **Cycle 7**  (continued heating):
+
 - Check ``Heating -> Standby``: ``water_temp >= 60`` not satisfied (current: 54)
 - Execute ``Heating.during``: ``water_temp = 54 + 4 = 58``
 - **Result**: Heating continues toward upper threshold
@@ -1371,9 +1389,11 @@ This state machine models a typical hysteresis temperature control system where:
 **Detailed Execution Trace B**:
 
 **Cycle 1**  (initial standby):
+
 - Same as Scenario A: ``water_temp = 54``, ``draw_count = 0``
 
 **Cycle 2**  (heavy water usage):
+
 - Event ``HotWaterDraw`` triggers ``Standby -> Standby`` (self-transition)
 - Execute ``Standby.exit`` (none defined)
 - Execute transition effect:
@@ -1384,6 +1404,7 @@ This state machine models a typical hysteresis temperature control system where:
 - **Result**: Significant temperature drop from water usage
 
 **Cycle 3**  (heating activation):
+
 - Check ``Standby -> Heating``: ``water_temp <= 50`` satisfied (current: 45)
 - Execute ``Standby.exit`` (none defined)
 - Execute ``Heating.enter`` (none defined)
@@ -1391,6 +1412,7 @@ This state machine models a typical hysteresis temperature control system where:
 - **Result**: Low temperature triggers immediate heating
 
 **Cycles 4-6**  (heating to upper threshold):
+
 - Each cycle: Check ``Heating -> Standby``: ``water_temp >= 60`` not satisfied
 - Execute ``Heating.during``: ``water_temp`` increases by 4
 - Cycle 4: ``49 + 4 = 53``
@@ -1399,6 +1421,7 @@ This state machine models a typical hysteresis temperature control system where:
 - **Result**: Temperature rises above upper threshold
 
 **Cycle 7**  (heating deactivation):
+
 - Check ``Heating -> Standby``: ``water_temp >= 60`` satisfied
 - Execute ``Heating.exit`` (none defined)
 - Execute ``Standby.enter`` (none defined)
@@ -1406,6 +1429,7 @@ This state machine models a typical hysteresis temperature control system where:
 - **Result**: Heating deactivates, system returns to standby
 
 **Key Points**:
+
 - ``HotWaterDraw`` models significant temperature drop from water usage
 - ``Standby -> Heating`` and ``Heating -> Standby`` form classic hysteresis control (50°-60° deadband)
 - Self-transition ``Standby -> Standby`` allows water draw during standby
@@ -1429,6 +1453,7 @@ This example simulates a common urban intersection signal controller: the main r
 **Business Context**:
 
 This state machine models a traffic-responsive signal system where:
+
 - ``green_ticks`` counts cycles the main road has been green
 - ``request_latched`` stores pedestrian button press (latched, not momentary)
 - ``yellow_ticks`` counts yellow light duration
@@ -1470,12 +1495,14 @@ This state machine models a traffic-responsive signal system where:
 **Detailed Execution Trace A**:
 
 **Cycle 1**  (initial state):
+
 - Initial: ``green_ticks = 0``, ``request_latched = 0``, ``yellow_ticks = 0``, ``walk_ticks = 0``
 - Execute ``[*] -> MainGreen``
 - Execute ``MainGreen.during``: ``green_ticks = 0 + 1 = 1``
 - **Result**: Main road green light active
 
 **Cycles 2-4**  (continued main road priority):
+
 - Each cycle: Check ``MainGreen -> PedestrianPhase``: ``request_latched == 1 && green_ticks >= 3`` not satisfied
 - Execute ``MainGreen.during``: ``green_ticks`` increments
 - Cycle 2: ``green_ticks = 2``
@@ -1541,9 +1568,11 @@ This state machine models a traffic-responsive signal system where:
 **Detailed Execution Trace B**:
 
 **Cycle 1**  (initial state):
+
 - Same as Scenario A: ``green_ticks = 1``, ``request_latched = 0``
 
 **Cycle 2**  (pedestrian button pressed):
+
 - Event ``PedRequest`` triggers ``MainGreen -> MainGreen`` (self-transition)
 - Check ``MainGreen -> PedestrianPhase``: ``request_latched == 1 && green_ticks >= 3`` not satisfied
 - Execute ``MainGreen.exit`` (none defined)
@@ -1553,11 +1582,13 @@ This state machine models a traffic-responsive signal system where:
 - **Result**: Request latched, but minimum green not yet satisfied
 
 **Cycle 3**  (waiting for minimum green):
+
 - Check ``MainGreen -> PedestrianPhase``: ``request_latched == 1 && green_ticks >= 3`` not satisfied (current: 2)
 - Execute ``MainGreen.during``: ``green_ticks = 2 + 1 = 3``
 - **Result**: Minimum green time now satisfied
 
 **Cycle 4**  (enter pedestrian phase - yellow light):
+
 - Check ``MainGreen -> PedestrianPhase``: ``request_latched == 1 && green_ticks >= 3`` satisfied
 - Execute ``MainGreen.exit`` (none defined)
 - Execute transition effect:
@@ -1571,6 +1602,7 @@ This state machine models a traffic-responsive signal system where:
 - **Result**: Yellow light clears vehicle traffic
 
 **Cycle 5**  (transition to pedestrian walk):
+
 - Check ``MainYellow -> PedWalk``: ``yellow_ticks >= 1`` satisfied
 - Execute ``MainYellow.exit`` (none defined)
 - Execute ``PedWalk.enter`` (none defined)
@@ -1578,11 +1610,13 @@ This state machine models a traffic-responsive signal system where:
 - **Result**: Pedestrian crossing signal activates
 
 **Cycle 6**  (pedestrian crossing continues):
+
 - Check ``PedWalk -> [*]``: ``walk_ticks >= 2`` not satisfied (current: 1)
 - Execute ``PedWalk.during``: ``walk_ticks = 1 + 1 = 2``
 - **Result**: Pedestrian crossing time satisfied
 
 **Cycle 7**  (return to main road green):
+
 - Check ``PedWalk -> [*]``: ``walk_ticks >= 2`` satisfied
 - Execute ``PedWalk.exit`` (none defined)
 - Exit to ``PedestrianPhase``
@@ -1597,6 +1631,7 @@ This state machine models a traffic-responsive signal system where:
 - **Result**: Main road green restored, system ready for next cycle
 
 **Key Points**:
+
 - ``request_latched`` implements button request memory (not requiring continuous press)
 - ``PedestrianPhase`` composite state models real-world sequence: yellow → pedestrian walk → return
 - Minimum green time (``green_ticks >= 3``) prevents excessive main road interruption

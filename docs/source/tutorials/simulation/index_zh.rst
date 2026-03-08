@@ -497,6 +497,7 @@ Python 用法
 - 执行 ``[*] -> A``
 - 执行 ``A.during``：``counter = 1``
 - 下一个周期带事件 ``GoC``：
+
 - 检查转换：``A -> C :: GoC``（事件匹配！）
 - 执行 ``A.exit``（未定义）
 - 执行 ``C.enter``（未定义）
@@ -709,6 +710,7 @@ Python 用法
 - **结果** ：``state = Root.A``，``counter = 142``
 
 **关键点** ：自转换（``A -> A``）执行完整的退出-进入序列，允许状态重新初始化。这与没有转换而停留在状态中不同：
+
 - **停留在状态中** （周期 2-3）：只执行 ``during`` 动作（每个周期 +10）
 - **自转换** （周期 4）：执行完整序列：``exit``（+100）→ ``enter``（+1）→ ``during``（+10）
 
@@ -1042,6 +1044,7 @@ DFS 验证机制
 **业务背景** ：
 
 此状态机模拟典型的电梯安全系统，其中：
+
 - ``door_pos`` 表示门位置（0=完全关闭，50=半开，100=完全打开）
 - ``hold`` 计数门保持完全打开的周期数
 - ``reopen_count`` 跟踪因遮挡而重新开门的次数
@@ -1110,12 +1113,14 @@ DFS 验证机制
 **详细执行跟踪 A** ：
 
 **周期 1** （初始状态）：
+
 - 初始：``door_pos = 0``，``hold = 0``，``reopen_count = 0``
 - 执行 ``[*] -> Closed``
 - 执行 ``Closed.during``：``hold = 0``
 - **结果** ：电梯空闲，门关闭
 
 **周期 2** （收到呼梯）：
+
 - 事件 ``HallCall`` 触发 ``Closed -> Opening``
 - 执行 ``Closed.exit``（未定义）
 - 执行转换效果：``hold = 0``
@@ -1124,11 +1129,13 @@ DFS 验证机制
 - **结果** ：门开始打开，半开状态
 
 **周期 3** （门继续打开）：
+
 - 检查 ``Opening -> Opened``：``door_pos >= 100`` 不满足（当前：50）
 - 执行 ``Opening.during``：``door_pos = 50 + 50 = 100``
 - **结果** ：门到达完全打开位置
 
 **周期 4** （转换到打开状态）：
+
 - 检查 ``Opening -> Opened``：``door_pos >= 100`` 满足
 - 执行 ``Opening.exit``（未定义）
 - 执行转换效果：``hold = 0``
@@ -1137,11 +1144,13 @@ DFS 验证机制
 - **结果** ：门完全打开，保持计时器启动
 
 **周期 5** （保持计时器继续）：
+
 - 检查 ``Opened -> Closing``：``hold >= 2`` 不满足（当前：1）
 - 执行 ``Opened.during``：``hold = 1 + 1 = 2``
 - **结果** ：保持计时器达到阈值
 
 **周期 6** （开始关门）：
+
 - 检查 ``Opened -> Closing``：``hold >= 2`` 满足
 - 执行 ``Opened.exit``（未定义）
 - 执行 ``Closing.enter``（未定义）
@@ -1149,11 +1158,13 @@ DFS 验证机制
 - **结果** ：门开始关闭
 
 **周期 7** （继续关门）：
+
 - 检查 ``Closing -> Closed``：``door_pos <= 0`` 不满足（当前：50）
 - 执行 ``Closing.during``：``door_pos = 50 - 50 = 0``
 - **结果** ：门到达完全关闭位置
 
 **周期 8** （转换到关闭状态）：
+
 - 检查 ``Closing -> Closed``：``door_pos <= 0`` 满足
 - 执行 ``Closing.exit``（未定义）
 - 执行转换效果：``hold = 0``
@@ -1198,6 +1209,7 @@ DFS 验证机制
 - 周期 6 后：``state = Closing``，``door_pos = 50``，``hold = 2``，``reopen_count = 0``
 
 **周期 7** （检测到遮挡）：
+
 - 事件 ``BeamBlocked`` 触发 ``Closing -> Opened``
 - 执行 ``Closing.exit``（未定义）
 - 执行转换效果：
@@ -1209,6 +1221,7 @@ DFS 验证机制
 - **结果** ：门立即重开以确保安全，保持计时器重启
 
 **关键点** ：
+
 - ``door_pos`` 抽象为三个位置（0、50、100）表示关闭、半开和完全打开
 - ``BeamBlocked`` 事件仅在 ``Closing`` 状态下有意义，符合真实电梯安全逻辑
 - 重开直接转换到 ``Opened``（而非 ``Opening``），立即提供通行空间
@@ -1231,6 +1244,7 @@ DFS 验证机制
 **业务背景** ：
 
 此状态机模拟典型的迟滞温度控制系统，其中：
+
 - ``water_temp`` 表示水温（度）
 - ``draw_count`` 跟踪热水使用事件次数
 - 待机时温度自然下降 1°/周期
@@ -1287,12 +1301,14 @@ DFS 验证机制
 **详细执行跟踪 A** ：
 
 **周期 1** （初始待机）：
+
 - 初始：``water_temp = 55``，``draw_count = 0``
 - 执行 ``[*] -> Standby``
 - 执行 ``Standby.during``：``water_temp = 55 - 1 = 54``
 - **结果** ：通过水箱保温层正常散热
 
 **周期 2-5** （温度逐渐下降）：
+
 - 每周期：检查 ``Standby -> Heating``：``water_temp <= 50`` 不满足
 - 执行 ``Standby.during``：``water_temp`` 减 1
 - 周期 2：``54 - 1 = 53``
@@ -1302,6 +1318,7 @@ DFS 验证机制
 - **结果** ：温度逐渐降至下限阈值
 
 **周期 6** （加热启动）：
+
 - 检查 ``Standby -> Heating``：``water_temp <= 50`` 满足
 - 执行 ``Standby.exit``（未定义）
 - 执行 ``Heating.enter``（未定义）
@@ -1309,6 +1326,7 @@ DFS 验证机制
 - **结果** ：加热元件启动，温度开始上升
 
 **周期 7** （继续加热）：
+
 - 检查 ``Heating -> Standby``：``water_temp >= 60`` 不满足（当前：54）
 - 执行 ``Heating.during``：``water_temp = 54 + 4 = 58``
 - **结果** ：加热继续向上限阈值
@@ -1371,9 +1389,11 @@ DFS 验证机制
 **详细执行跟踪 B** ：
 
 **周期 1** （初始待机）：
+
 - 与场景 A 相同：``water_temp = 54``，``draw_count = 0``
 
 **周期 2** （大量用水）：
+
 - 事件 ``HotWaterDraw`` 触发 ``Standby -> Standby``（自转换）
 - 执行 ``Standby.exit``（未定义）
 - 执行转换效果：
@@ -1384,6 +1404,7 @@ DFS 验证机制
 - **结果** ：用水导致显著温降
 
 **周期 3** （加热启动）：
+
 - 检查 ``Standby -> Heating``：``water_temp <= 50`` 满足（当前：45）
 - 执行 ``Standby.exit``（未定义）
 - 执行 ``Heating.enter``（未定义）
@@ -1391,6 +1412,7 @@ DFS 验证机制
 - **结果** ：低温触发立即加热
 
 **周期 4-6** （加热至上限阈值）：
+
 - 每周期：检查 ``Heating -> Standby``：``water_temp >= 60`` 不满足
 - 执行 ``Heating.during``：``water_temp`` 增加 4
 - 周期 4：``49 + 4 = 53``
@@ -1399,6 +1421,7 @@ DFS 验证机制
 - **结果** ：温度上升超过上限阈值
 
 **周期 7** （加热停止）：
+
 - 检查 ``Heating -> Standby``：``water_temp >= 60`` 满足
 - 执行 ``Heating.exit``（未定义）
 - 执行 ``Standby.enter``（未定义）
@@ -1406,6 +1429,7 @@ DFS 验证机制
 - **结果** ：加热停止，系统返回待机
 
 **关键点** ：
+
 - ``HotWaterDraw`` 模拟用水导致的显著温降
 - ``Standby -> Heating`` 和 ``Heating -> Standby`` 形成典型的迟滞控制（50°-60° 死区）
 - 自转换 ``Standby -> Standby`` 允许待机时用水
@@ -1429,6 +1453,7 @@ DFS 验证机制
 **业务背景** ：
 
 此状态机模拟交通响应式信号系统，其中：
+
 - ``green_ticks`` 计数主干道绿灯持续周期数
 - ``request_latched`` 存储行人按钮按下（锁存，非瞬时）
 - ``yellow_ticks`` 计数黄灯持续时间
@@ -1470,12 +1495,14 @@ DFS 验证机制
 **详细执行跟踪 A** ：
 
 **周期 1** （初始状态）：
+
 - 初始：``green_ticks = 0``，``request_latched = 0``，``yellow_ticks = 0``，``walk_ticks = 0``
 - 执行 ``[*] -> MainGreen``
 - 执行 ``MainGreen.during``：``green_ticks = 0 + 1 = 1``
 - **结果** ：主干道绿灯激活
 
 **周期 2-4** （继续主干道优先）：
+
 - 每周期：检查 ``MainGreen -> PedestrianPhase``：``request_latched == 1 && green_ticks >= 3`` 不满足
 - 执行 ``MainGreen.during``：``green_ticks`` 递增
 - 周期 2：``green_ticks = 2``
@@ -1541,9 +1568,11 @@ DFS 验证机制
 **详细执行跟踪 B** ：
 
 **周期 1** （初始状态）：
+
 - 与场景 A 相同：``green_ticks = 1``，``request_latched = 0``
 
 **周期 2** （行人按钮按下）：
+
 - 事件 ``PedRequest`` 触发 ``MainGreen -> MainGreen``（自转换）
 - 检查 ``MainGreen -> PedestrianPhase``：``request_latched == 1 && green_ticks >= 3`` 不满足
 - 执行 ``MainGreen.exit``（未定义）
@@ -1553,11 +1582,13 @@ DFS 验证机制
 - **结果** ：请求被锁存，但最小绿灯尚未满足
 
 **周期 3** （等待最小绿灯）：
+
 - 检查 ``MainGreen -> PedestrianPhase``：``request_latched == 1 && green_ticks >= 3`` 不满足（当前：2）
 - 执行 ``MainGreen.during``：``green_ticks = 2 + 1 = 3``
 - **结果** ：最小绿灯时间现已满足
 
 **周期 4** （进入行人阶段 - 黄灯）：
+
 - 检查 ``MainGreen -> PedestrianPhase``：``request_latched == 1 && green_ticks >= 3`` 满足
 - 执行 ``MainGreen.exit``（未定义）
 - 执行转换效果：
@@ -1571,6 +1602,7 @@ DFS 验证机制
 - **结果** ：黄灯清空车辆交通
 
 **周期 5** （转换到行人过街）：
+
 - 检查 ``MainYellow -> PedWalk``：``yellow_ticks >= 1`` 满足
 - 执行 ``MainYellow.exit``（未定义）
 - 执行 ``PedWalk.enter``（未定义）
@@ -1578,11 +1610,13 @@ DFS 验证机制
 - **结果** ：行人过街信号激活
 
 **周期 6** （行人过街继续）：
+
 - 检查 ``PedWalk -> [*]``：``walk_ticks >= 2`` 不满足（当前：1）
 - 执行 ``PedWalk.during``：``walk_ticks = 1 + 1 = 2``
 - **结果** ：行人过街时间满足
 
 **周期 7** （返回主干道绿灯）：
+
 - 检查 ``PedWalk -> [*]``：``walk_ticks >= 2`` 满足
 - 执行 ``PedWalk.exit``（未定义）
 - 退出到 ``PedestrianPhase``
@@ -1597,6 +1631,7 @@ DFS 验证机制
 - **结果** ：主干道绿灯恢复，系统准备下一周期
 
 **关键点** ：
+
 - ``request_latched`` 实现按钮请求记忆（不需要持续按压）
 - ``PedestrianPhase`` 复合状态模拟真实世界序列：黄灯 → 行人过街 → 返回
 - 最小绿灯时间（``green_ticks >= 3``）防止过度中断主干道

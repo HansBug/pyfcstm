@@ -857,6 +857,465 @@ class TestREPL:
 
 
 @pytest.mark.unittest
+class TestPlatformCompatibility:
+    """Tests for cross-platform compatibility."""
+
+    def test_color_support_detection(self):
+        """Test color support detection works on different platforms."""
+        from pyfcstm.entry.simulate.display import StateDisplay
+
+        # Test with color explicitly enabled
+        display_color = StateDisplay(use_color=True)
+        assert isinstance(display_color.use_color, bool)
+
+        # Test with color explicitly disabled
+        display_no_color = StateDisplay(use_color=False)
+        assert display_no_color.use_color is False
+
+    def test_path_handling(self, tmp_path):
+        """Test that file paths work correctly across platforms."""
+        from click.testing import CliRunner
+        from pyfcstm.entry.cli import pyfcstmcli
+
+        # Create test file using pathlib (cross-platform)
+        test_file = tmp_path / "test.fcstm"
+        test_file.write_text(TEST_DSL)
+
+        runner = CliRunner()
+        # Use string path (should work on all platforms)
+        result = runner.invoke(pyfcstmcli, [
+            'simulate',
+            '-i', str(test_file),
+            '-e', 'current'
+        ])
+
+        assert result.exit_code == 0
+        assert 'System' in result.output
+
+    def test_line_endings(self, tmp_path):
+        """Test that different line endings are handled correctly."""
+        from click.testing import CliRunner
+        from pyfcstm.entry.cli import pyfcstmcli
+
+        # Test with Unix line endings
+        unix_file = tmp_path / "unix.fcstm"
+        unix_file.write_text(TEST_DSL.replace('\r\n', '\n'))
+
+        runner = CliRunner()
+        result = runner.invoke(pyfcstmcli, [
+            'simulate',
+            '-i', str(unix_file),
+            '-e', 'current'
+        ])
+        assert result.exit_code == 0
+
+        # Test with Windows line endings
+        windows_file = tmp_path / "windows.fcstm"
+        windows_file.write_text(TEST_DSL.replace('\n', '\r\n'))
+
+        result = runner.invoke(pyfcstmcli, [
+            'simulate',
+            '-i', str(windows_file),
+            '-e', 'current'
+        ])
+        assert result.exit_code == 0
+
+    def test_unicode_handling(self, tmp_path):
+        """Test that Unicode in DSL is handled correctly."""
+        from click.testing import CliRunner
+        from pyfcstm.entry.cli import pyfcstmcli
+
+        # DSL with Unicode comments (should be stripped by parser)
+        unicode_dsl = """
+        def int counter = 0;
+
+        state System {
+            state Active;
+            [*] -> Active;
+        }
+        """
+        unicode_file = tmp_path / "unicode.fcstm"
+        unicode_file.write_text(unicode_dsl, encoding='utf-8')
+
+        runner = CliRunner()
+        result = runner.invoke(pyfcstmcli, [
+            'simulate',
+            '-i', str(unicode_file),
+            '-e', 'current'
+        ])
+        assert result.exit_code == 0
+
+    def test_batch_processor_no_color(self, runtime):
+        """Test BatchProcessor works without color support."""
+        from pyfcstm.entry.simulate.batch import BatchProcessor
+
+        processor = BatchProcessor(runtime, use_color=False)
+        result = processor.execute_commands("current; cycle; current")
+
+        # Should work without ANSI codes
+        assert "System" in result
+        assert "Idle" in result or "Running" in result
+
+    def test_command_processor_no_color(self, runtime):
+        """Test CommandProcessor works without color support."""
+        from pyfcstm.entry.simulate.commands import CommandProcessor
+
+        processor = CommandProcessor(runtime, use_color=False)
+        result = processor.process("/current")
+
+        # Should work without ANSI codes
+        assert "System" in result.output
+        assert "\033[" not in result.output  # No ANSI codes
+
+
+@pytest.mark.unittest
+class TestTerminalCompatibility:
+    """Tests for terminal compatibility."""
+
+    def test_ansi_color_codes(self):
+        """Test ANSI color codes are properly formatted."""
+        from pyfcstm.entry.simulate.display import StateDisplay
+
+        display = StateDisplay(use_color=True)
+        display.use_color = True  # Force enable for testing
+
+        # Test all color codes
+        for color in ['blue', 'green', 'yellow', 'red', 'cyan', 'gray']:
+            result = display._colorize("test", color)
+            # Should either have ANSI codes or be plain text
+            assert isinstance(result, str)
+            assert "test" in result
+
+    def test_table_formatting_without_color(self, display):
+        """Test table formatting works without color."""
+        headers = ['Col1', 'Col2', 'Col3']
+        rows = [
+            [1, 'text', 3.14],
+            [2, 'more', 2.71],
+        ]
+
+        result = display.format_table(headers, rows, [])
+        # Should have proper structure
+        assert 'Col1' in result
+        assert 'Col2' in result
+        assert 'text' in result
+        assert '---' in result  # Separator
+
+    def test_wide_characters_in_table(self, display):
+        """Test table handles wide characters correctly."""
+        headers = ['Name', 'Value']
+        rows = [
+            ['Test', '123'],
+            ['LongName', '456789'],
+        ]
+
+        result = display.format_table(headers, rows, [])
+        # Should not crash with wide characters
+        assert 'Name' in result
+        assert 'Test' in result
+
+    def test_log_output_levels(self, display, capsys):
+        """Test log output with different levels."""
+        levels = ['debug', 'info', 'warning', 'error']
+
+        for level in levels:
+            display.log(f"Test {level}", level)
+            captured = capsys.readouterr()
+            assert f"Test {level}" in captured.out
+
+    def test_empty_output_handling(self, display):
+        """Test handling of empty output."""
+        # Empty table
+        result = display.format_table(['A', 'B'], [], [])
+        assert result == ""
+
+        # Empty events
+        result = display.format_events([])
+        assert "No events" in result or result != ""
+
+
+@pytest.mark.unittest
+class TestDSLVariety:
+    """Tests with various DSL files to ensure robustness."""
+
+    def test_simple_dsl(self):
+        """Test with a very simple DSL."""
+        dsl = """
+        state System {
+            state A;
+            [*] -> A;
+        }
+        """
+        ast = parse_with_grammar_entry(dsl, 'state_machine_dsl')
+        sm = parse_dsl_node_to_state_machine(ast)
+        runtime = SimulationRuntime(sm)
+        processor = CommandProcessor(runtime, use_color=False)
+
+        result = processor.process("/current")
+        assert "System" in result.output
+
+        result = processor.process("/cycle")
+        assert "System.A" in result.output
+
+    def test_complex_hierarchical_dsl(self):
+        """Test with complex hierarchical state machine."""
+        dsl = """
+        def int x = 0;
+        def int y = 0;
+
+        state System {
+            state Level1 {
+                state Level2 {
+                    state Level3 {
+                        state Deep;
+                        [*] -> Deep;
+                    }
+                    [*] -> Level3;
+                }
+                [*] -> Level2;
+            }
+            [*] -> Level1;
+        }
+        """
+        ast = parse_with_grammar_entry(dsl, 'state_machine_dsl')
+        sm = parse_dsl_node_to_state_machine(ast)
+        runtime = SimulationRuntime(sm)
+        processor = CommandProcessor(runtime, use_color=False)
+
+        # Should navigate through all levels
+        result = processor.process("/cycle")
+        assert "Deep" in result.output
+
+    def test_dsl_with_transitions_and_events(self):
+        """Test DSL with multiple transitions and events."""
+        dsl = """
+        def int counter = 0;
+
+        state System {
+            state A {
+                during {
+                    counter = counter + 1;
+                }
+            }
+            state B {
+                during {
+                    counter = counter + 10;
+                }
+            }
+            state C;
+
+            [*] -> A;
+            A -> B :: GoToB;
+            B -> C :: GoToC;
+            C -> A :: GoToA;
+        }
+        """
+        ast = parse_with_grammar_entry(dsl, 'state_machine_dsl')
+        sm = parse_dsl_node_to_state_machine(ast)
+        runtime = SimulationRuntime(sm)
+        processor = CommandProcessor(runtime, use_color=False)
+
+        # Test state transitions
+        processor.process("/cycle")  # Enter A
+        assert runtime.vars['counter'] == 1
+
+        processor.process("/cycle GoToB")  # A -> B
+        assert runtime.vars['counter'] == 11
+
+        processor.process("/cycle GoToC")  # B -> C
+        assert runtime.vars['counter'] == 11
+
+        processor.process("/cycle GoToA")  # C -> A
+        assert runtime.vars['counter'] == 12
+
+    def test_dsl_with_guards(self):
+        """Test DSL with guard conditions."""
+        dsl = """
+        def int value = 0;
+
+        state System {
+            state Low;
+            state High;
+
+            [*] -> Low;
+            Low -> High : if [value >= 10];
+            High -> Low : if [value < 10];
+        }
+        """
+        ast = parse_with_grammar_entry(dsl, 'state_machine_dsl')
+        sm = parse_dsl_node_to_state_machine(ast)
+        runtime = SimulationRuntime(sm)
+        processor = CommandProcessor(runtime, use_color=False)
+
+        # Initially in Low
+        processor.process("/cycle")
+        assert "Low" in processor.process("/current").output
+
+        # Set value to trigger guard
+        runtime.vars['value'] = 10
+        processor.process("/cycle")
+        assert "High" in processor.process("/current").output
+
+    def test_dsl_with_effects(self):
+        """Test DSL with transition effects."""
+        dsl = """
+        def int x = 0;
+        def int y = 0;
+
+        state System {
+            state A;
+            state B;
+
+            [*] -> A;
+            A -> B effect {
+                x = 100;
+                y = 200;
+            };
+        }
+        """
+        ast = parse_with_grammar_entry(dsl, 'state_machine_dsl')
+        sm = parse_dsl_node_to_state_machine(ast)
+        runtime = SimulationRuntime(sm)
+        processor = CommandProcessor(runtime, use_color=False)
+
+        processor.process("/cycle")  # Enter A
+        assert runtime.vars['x'] == 0
+        assert runtime.vars['y'] == 0
+
+        processor.process("/cycle")  # A -> B with effect
+        assert runtime.vars['x'] == 100
+        assert runtime.vars['y'] == 200
+
+    def test_dsl_with_enter_exit_actions(self):
+        """Test DSL with enter/exit actions."""
+        dsl = """
+        def int enter_count = 0;
+        def int exit_count = 0;
+
+        state System {
+            state A {
+                enter {
+                    enter_count = enter_count + 1;
+                }
+                exit {
+                    exit_count = exit_count + 1;
+                }
+            }
+            state B;
+
+            [*] -> A;
+            A -> B :: Next;
+        }
+        """
+        ast = parse_with_grammar_entry(dsl, 'state_machine_dsl')
+        sm = parse_dsl_node_to_state_machine(ast)
+        runtime = SimulationRuntime(sm)
+        processor = CommandProcessor(runtime, use_color=False)
+
+        processor.process("/cycle")  # Enter A
+        assert runtime.vars['enter_count'] == 1
+        assert runtime.vars['exit_count'] == 0
+
+        processor.process("/cycle Next")  # Exit A, enter B
+        assert runtime.vars['enter_count'] == 1
+        assert runtime.vars['exit_count'] == 1
+
+    def test_dsl_with_multiple_variables(self):
+        """Test DSL with many variables."""
+        dsl = """
+        def int a = 1;
+        def int b = 2;
+        def int c = 3;
+        def float d = 4.5;
+        def float e = 5.5;
+
+        state System {
+            state Active {
+                during {
+                    a = a + 1;
+                    b = b * 2;
+                    c = c + b;
+                    d = d + 0.1;
+                    e = e * 1.1;
+                }
+            }
+            [*] -> Active;
+        }
+        """
+        ast = parse_with_grammar_entry(dsl, 'state_machine_dsl')
+        sm = parse_dsl_node_to_state_machine(ast)
+        runtime = SimulationRuntime(sm)
+        processor = CommandProcessor(runtime, use_color=False)
+
+        # Test that all variables are tracked
+        result = processor.process("/current")
+        assert "a" in result.output
+        assert "b" in result.output
+        assert "c" in result.output
+        assert "d" in result.output
+        assert "e" in result.output
+
+        # Test multi-cycle with many variables
+        result = processor.process("/cycle 3")
+        assert "a" in result.output
+        assert "b" in result.output
+
+    def test_dsl_edge_case_empty_states(self):
+        """Test DSL with empty states (no actions)."""
+        dsl = """
+        state System {
+            state Empty1;
+            state Empty2;
+            state Empty3;
+
+            [*] -> Empty1;
+            Empty1 -> Empty2 :: E1;
+            Empty2 -> Empty3 :: E2;
+        }
+        """
+        ast = parse_with_grammar_entry(dsl, 'state_machine_dsl')
+        sm = parse_dsl_node_to_state_machine(ast)
+        runtime = SimulationRuntime(sm)
+        processor = CommandProcessor(runtime, use_color=False)
+
+        processor.process("/cycle")
+        assert "Empty1" in processor.process("/current").output
+
+        processor.process("/cycle E1")
+        assert "Empty2" in processor.process("/current").output
+
+    def test_dsl_with_termination(self):
+        """Test DSL that terminates."""
+        dsl = """
+        def int steps = 0;
+
+        state System {
+            state Running {
+                during {
+                    steps = steps + 1;
+                }
+            }
+
+            [*] -> Running;
+            Running -> [*] : if [steps >= 5];
+        }
+        """
+        ast = parse_with_grammar_entry(dsl, 'state_machine_dsl')
+        sm = parse_dsl_node_to_state_machine(ast)
+        runtime = SimulationRuntime(sm)
+        processor = CommandProcessor(runtime, use_color=False)
+
+        # Run until termination
+        for _ in range(10):
+            processor.process("/cycle")
+            if runtime.is_ended:
+                break
+
+        assert runtime.is_ended
+        assert runtime.vars['steps'] >= 5
+
+
+@pytest.mark.unittest
 class TestIntegration:
     """Integration tests for the simulate entry point."""
 

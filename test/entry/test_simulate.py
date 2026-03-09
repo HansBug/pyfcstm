@@ -285,6 +285,109 @@ class TestCommandProcessor:
         """Test /cycle with invalid event."""
         result = command_processor.process("/cycle InvalidEvent")
         assert "failed" in result.output.lower() or "error" in result.output.lower()
+
+    def test_handle_history_empty(self, command_processor):
+        """Test history command with no history."""
+        result = command_processor.process("/history")
+        assert "No execution history available" in result.output
+
+    def test_handle_history_default(self, command_processor):
+        """Test history command with default count."""
+        # Execute some cycles to generate history
+        command_processor.process("/cycle 5")
+        result = command_processor.process("/history")
+        assert "Cycle" in result.output
+        assert "State" in result.output
+
+    def test_handle_history_with_count(self, command_processor):
+        """Test history command with specific count."""
+        # Execute cycles
+        command_processor.process("/cycle 10")
+        result = command_processor.process("/history 3")
+        # Should show last 3 entries
+        lines = [line for line in result.output.split('\n') if line.strip() and not line.startswith('-')]
+        # Header + 3 data rows
+        assert len(lines) >= 4
+
+    def test_handle_history_all(self, command_processor):
+        """Test history command with 'all' parameter."""
+        command_processor.process("/cycle 5")
+        result = command_processor.process("/history all")
+        assert "Cycle" in result.output
+        assert "State" in result.output
+
+    def test_handle_history_invalid_count(self, command_processor):
+        """Test history command with invalid count."""
+        command_processor.process("/cycle 5")
+        result = command_processor.process("/history invalid")
+        assert "Error" in result.output
+
+    def test_handle_history_zero_count(self, command_processor):
+        """Test history command with zero count."""
+        command_processor.process("/cycle 5")
+        result = command_processor.process("/history 0")
+        assert "Error" in result.output
+
+    def test_handle_setting_list_all(self, command_processor):
+        """Test setting command without arguments."""
+        result = command_processor.process("/setting")
+        assert "Current settings:" in result.output
+        assert "table_max_rows" in result.output
+        assert "history_size" in result.output
+        assert "color" in result.output
+        assert "log_level" in result.output
+
+    def test_handle_setting_get(self, command_processor):
+        """Test getting a specific setting."""
+        result = command_processor.process("/setting history_size")
+        assert "history_size" in result.output
+        assert "100" in result.output
+
+    def test_handle_setting_set_int(self, command_processor):
+        """Test setting an integer value."""
+        result = command_processor.process("/setting history_size 50")
+        assert "Setting updated" in result.output
+        # Verify it was set
+        result = command_processor.process("/setting history_size")
+        assert "50" in result.output
+
+    def test_handle_setting_set_bool(self, command_processor):
+        """Test setting a boolean value."""
+        result = command_processor.process("/setting color off")
+        assert "Setting updated" in result.output
+        # Verify it was set
+        result = command_processor.process("/setting color")
+        assert "False" in result.output
+
+    def test_handle_setting_set_log_level(self, command_processor):
+        """Test setting log level."""
+        result = command_processor.process("/setting log_level debug")
+        assert "Setting updated" in result.output
+        # Verify it was set
+        result = command_processor.process("/setting log_level")
+        assert "debug" in result.output
+
+    def test_handle_setting_invalid_key(self, command_processor):
+        """Test setting with invalid key."""
+        result = command_processor.process("/setting invalid_key 123")
+        assert "Error" in result.output
+
+    def test_handle_setting_invalid_value(self, command_processor):
+        """Test setting with invalid value."""
+        result = command_processor.process("/setting history_size invalid")
+        assert "Error" in result.output
+
+    def test_handle_setting_history_size_trim(self, command_processor):
+        """Test that changing history_size trims existing history."""
+        # Generate history
+        command_processor.process("/cycle 10")
+        # Set smaller history size
+        command_processor.process("/setting history_size 3")
+        # Check history is trimmed
+        result = command_processor.process("/history")
+        lines = [line for line in result.output.split('\n') if line.strip() and not line.startswith('-')]
+        # Header + 3 data rows
+        assert len(lines) == 4
         assert not result.should_exit
 
 

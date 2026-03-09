@@ -39,7 +39,8 @@ prompt_toolkit>=3.0.0
 | `/current` | 无                           | 显示当前状态路径和所有变量值    | `/current`                              |
 | `/events`  | 无                           | 列出当前状态可触发的事件       | `/events`                               |
 | `/log`     | `[level]`                   | 设置或显示日志级别           | `/log debug`, `/log`                    |
-| `/history` | `[n]`                       | 显示最近 n 条历史（默认 10）  | `/history`, `/history 20`               |
+| `/history` | `[n\|all]`                  | 显示执行历史记录            | `/history`, `/history 20`, `/history all` |
+| `/setting` | `[key] [value]`             | 查看或设置配置项            | `/setting`, `/setting table_max_rows 30` |
 | `/help`    | 无                           | 显示帮助信息               | `/help`                                 |
 | `/quit`    | 无                           | 退出模拟器                 | `/quit`                                 |
 | `/exit`    | 无                           | 退出模拟器（同 /quit）      | `/exit`                                 |
@@ -783,47 +784,66 @@ Available Events:
 
 ### 阶段 P2：高级功能
 
-**P2.1：日志级别控制**
-- [ ] 实现 `LogLevel` 枚举（debug、info、warning、error、off）
-- [ ] 将日志级别状态添加到 `CommandProcessor`
-- [ ] 实现 `/log [level]` 命令处理器
-- [ ] 根据当前级别添加条件日志记录
-- [ ] 实现 `StateDisplay.log()` 方法及基于级别的着色
-- [ ] 添加日志前缀格式化（`[DEBUG]`、`[INFO]` 等）
-- [ ] 在不同级别测试日志过滤
+**P2.1：日志级别控制** ✅
+- [x] `LogLevel` 枚举已在 P0 实现（debug、info、warning、error、off）
+- [x] 日志级别状态已添加到 `CommandProcessor`
+- [x] `/log [level]` 命令处理器已实现
+- [x] 根据当前级别的条件日志记录已实现
+- [x] `StateDisplay.log()` 方法及基于级别的着色已实现
+- [x] 日志前缀格式化已实现（`[DEBUG]`、`[INFO]` 等）
+- [x] 在不同级别测试日志过滤
 
-**P2.2：命令历史显示**
-- [ ] 实现 `/history [n]` 命令处理器
-- [ ] 从 `FileHistory` 添加历史检索
-- [ ] 使用行号格式化历史输出
-- [ ] 支持可选计数参数（默认：10）
-- [ ] 为历史显示添加颜色编码
-- [ ] 使用各种历史大小进行测试
+**P2.2：执行历史记录** ✅
+- [x] 在 `SimulationRuntime` 中添加历史记录功能
+  - [x] 添加 `history` 列表存储执行记录
+  - [x] 每次 cycle 后记录：cycle number, state, variables, events
+  - [x] 支持历史记录大小限制（可配置，默认 None 表示无限）
+- [x] 实现 `/history [n]` 命令处理器
+  - [x] 从 runtime.history 检索历史记录
+  - [x] 使用表格格式显示历史（类似 /cycle 多次执行）
+  - [x] 支持可选计数参数（默认：10，显示最近10条）
+  - [x] 为历史显示添加颜色编码
+  - [x] 支持 `/history all` 显示所有历史
 
-**P2.3：增强帮助系统**
-- [ ] 实现 `/help` 命令处理器
-- [ ] 创建带制表符的格式化帮助文本
-- [ ] 添加命令描述和使用示例
-- [ ] 包含事件名称格式说明（全路径 vs 简短）
-- [ ] 添加键盘快捷键文档
-- [ ] 格式化帮助输出以提高可读性
+**P2.3：增强帮助系统** ✅
+- [x] `/help` 命令处理器已在 P0 实现
+- [x] 格式化帮助文本已创建
+- [x] 命令描述和使用示例已添加
+- [x] 添加键盘快捷键文档（Tab、Ctrl+R 等）
+- [ ] 添加更详细的事件名称格式说明（全路径 vs 简短）
 
-**P2.4：错误处理与用户体验**
-- [ ] 捕获 `SimulationRuntimeDfsError` 并显示友好消息
-- [ ] 为所有命令添加输入验证
-- [ ] 改进错误消息并提供建议
-- [ ] 为边缘情况添加警告消息
-- [ ] 实现缺失功能的优雅降级
-- [ ] 全面测试错误场景
+**P2.4：错误处理与用户体验** ✅
+- [x] 捕获 `SimulationRuntimeDfsError` 并显示友好消息
+- [x] 为所有命令添加输入验证
+- [x] 改进错误消息并提供建议
+- [x] 为边缘情况添加警告消息
+- [x] 实现缺失功能的优雅降级
+- [x] 全面测试错误场景
+
+**P2.5：可配置设置系统** ✅
+- [x] 实现 `/setting` 命令用于配置运行时参数
+  - [x] `/setting` - 显示所有当前设置
+  - [x] `/setting <key>` - 显示特定设置的值
+  - [x] `/setting <key> <value>` - 设置特定配置项
+- [x] 支持的配置项：
+  - [x] `table_max_rows` - 表格最大显示行数（默认：20）
+  - [x] `history_size` - 历史记录最大条数（默认：100）
+  - [x] `color` - 启用/禁用颜色（on/off，默认：on）
+  - [x] `log_level` - 日志级别（debug/info/warning/error/off）
+- [x] 设置验证和错误处理
+- [x] 设置更改时立即应用（如 history_size 会立即裁剪历史）
+- [ ] 设置持久化（可选，保存到配置文件）
 
 ### 阶段 P3：完善与文档
 
-**P3.1：测试**
-- [ ] 为 `CommandProcessor` 编写单元测试
+**P3.1：测试** ✅
+- [x] 为 `CommandProcessor` 编写单元测试
+- [x] 为 `StateDisplay` 格式化编写单元测试
+- [x] 为 `BatchProcessor` 编写单元测试
+- [x] 为完整 REPL 工作流编写集成测试
+- [x] 为 `/history` 命令编写测试（空历史、计数、all、无效输入）
+- [x] 为 `/setting` 命令编写测试（列表、获取、设置、验证、历史裁剪）
 - [ ] 为 `SimulationCompleter` 编写单元测试
-- [ ] 为 `StateDisplay` 格式化编写单元测试
-- [ ] 为 `BatchProcessor` 编写单元测试
-- [ ] 为完整 REPL 工作流编写集成测试
 - [ ] 测试跨平台兼容性（Windows、Linux、macOS）
 - [ ] 使用各种 DSL 文件测试（简单、复杂、边缘情况）
 - [ ] 测试终端兼容性（不同模拟器、配色方案）

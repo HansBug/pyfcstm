@@ -6,7 +6,7 @@ state machine simulator.
 """
 
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict, Any
 from enum import Enum
 
 from .display import StateDisplay
@@ -27,6 +27,97 @@ class LogLevel(Enum):
     WARNING = "warning"
     ERROR = "error"
     OFF = "off"
+
+
+class Settings:
+    """
+    Runtime settings for the simulator.
+
+    :ivar table_max_rows: Maximum rows to display in tables before truncating
+    :vartype table_max_rows: int
+    :ivar history_size: Maximum number of history entries to keep
+    :vartype history_size: int
+    :ivar color: Whether to use ANSI colors
+    :vartype color: bool
+    :ivar log_level: Current log level
+    :vartype log_level: LogLevel
+    """
+
+    def __init__(self):
+        """Initialize settings with default values."""
+        self.table_max_rows: int = 20
+        self.history_size: int = 100
+        self.color: bool = True
+        self.log_level: LogLevel = LogLevel.INFO
+
+    def get(self, key: str) -> Any:
+        """
+        Get a setting value.
+
+        :param key: Setting key
+        :type key: str
+        :return: Setting value
+        :rtype: Any
+        :raises KeyError: If key doesn't exist
+        """
+        if not hasattr(self, key):
+            raise KeyError(f"Unknown setting: {key}")
+        return getattr(self, key)
+
+    def set(self, key: str, value: Any) -> None:
+        """
+        Set a setting value.
+
+        :param key: Setting key
+        :type key: str
+        :param value: Setting value
+        :type value: Any
+        :raises KeyError: If key doesn't exist
+        :raises ValueError: If value is invalid
+        """
+        if not hasattr(self, key):
+            raise KeyError(f"Unknown setting: {key}")
+
+        # Validate and convert value based on type
+        current_value = getattr(self, key)
+        if isinstance(current_value, bool):
+            if isinstance(value, str):
+                if value.lower() in ('on', 'true', '1', 'yes'):
+                    value = True
+                elif value.lower() in ('off', 'false', '0', 'no'):
+                    value = False
+                else:
+                    raise ValueError(f"Invalid boolean value: {value}")
+        elif isinstance(current_value, int):
+            try:
+                value = int(value)
+                if value < 0:
+                    raise ValueError(f"Value must be non-negative: {value}")
+            except (ValueError, TypeError):
+                raise ValueError(f"Invalid integer value: {value}")
+        elif isinstance(current_value, LogLevel):
+            if isinstance(value, str):
+                try:
+                    value = LogLevel(value.lower())
+                except ValueError:
+                    valid_levels = [level.value for level in LogLevel]
+                    raise ValueError(f"Invalid log level. Available: {', '.join(valid_levels)}")
+
+        setattr(self, key, value)
+
+    def list_all(self) -> Dict[str, Any]:
+        """
+        Get all settings as a dictionary.
+
+        :return: Dictionary of all settings
+        :rtype: Dict[str, Any]
+        """
+        return {
+            'table_max_rows': self.table_max_rows,
+            'history_size': self.history_size,
+            'color': self.color,
+            'log_level': self.log_level.value if isinstance(self.log_level, LogLevel) else self.log_level,
+        }
 
 
 @dataclass
@@ -68,8 +159,10 @@ class CommandProcessor:
         :type use_color: bool, optional
         """
         self.runtime = runtime
+        self.settings = Settings()
+        self.settings.color = use_color
         self.display = StateDisplay(use_color=use_color)
-        self.log_level = LogLevel.INFO
+        self.log_level = self.settings.log_level
 
     def process(self, user_input: str) -> CommandResult:
         """
@@ -98,6 +191,10 @@ class CommandProcessor:
                 return self._handle_events()
             elif command == '/log':
                 return self._handle_log(args)
+            elif command == '/history':
+                return self._handle_history(args)
+            elif command == '/setting':
+                return self._handle_setting(args)
             elif command == '/help':
                 return self._handle_help()
             elif command in ['/quit', '/exit']:
@@ -151,7 +248,17 @@ class CommandProcessor:
             return self._handle_multiple_cycles(count, event_list)
 
         except Exception as e:
-            return CommandResult(f"Cycle execution failed: {e}")
+            # Import here to avoid circular dependency
+            from ...simulate import SimulationRuntimeDfsError
+
+            if isinstance(e, SimulationRuntimeDfsError):
+                return CommandResult(
+                    "Cycle execution failed: State machine contains an unbounded execution chain.\n"
+                    "This usually means there are too many automatic transitions without a stable state.\n"
+                    "Please review your state machine definition for missing stoppable states."
+                )
+            else:
+                return CommandResult(f"Cycle execution failed: {e}")
 
     def _handle_multiple_cycles(self, count: int, event_list: List[str]) -> CommandResult:
         """
@@ -277,9 +384,117 @@ class CommandProcessor:
   /current                    - Show current state and all variables
   /events                     - List available events in current state
   /log [level]                - Set or display log level (debug, info, warning, error, off)
+  /history [n|all]            - Show execution history (default: 10 recent entries)
+  /setting [key] [value]      - View or change settings
   /help                       - Show this help message
-  /quit, /exit                - Exit simulator"""
+  /quit, /exit                - Exit simulator
+
+Keyboard shortcuts (interactive mode):
+  Tab                         - Auto-complete commands and events
+  Ctrl+R                      - Search command history
+  Ctrl+C                      - Cancel current input
+  Ctrl+D                      - Exit simulator
+  Up/Down arrows              - Navigate command history"""
         return CommandResult(help_text)
+
+    def _handle_history(self, args: List[str]) -> CommandResult:
+        """
+        Handle /history command.
+
+        :param args: Command arguments (count or 'all')
+        :type args: List[str]
+        :return: Command result with history table
+        :rtype: CommandResult
+        """
+        if not self.runtime.history:
+            return CommandResult("No execution history available.")
+
+        # Determine how many entries to show
+        if args and args[0].lower() == 'all':
+            count = len(self.runtime.history)
+        elif args:
+            try:
+                count = int(args[0])
+                if count <= 0:
+                    return CommandResult("Error: count must be a positive integer")
+            except ValueError:
+                return CommandResult(f"Error: invalid count '{args[0]}'")
+        else:
+            count = 10  # Default
+
+        # Get the most recent entries
+        entries = self.runtime.history[-count:]
+
+        # Prepare table data
+        headers = ['Cycle', 'State']
+        if entries:
+            # Get all variable names from the first entry
+            var_names = sorted(entries[0]['vars'].keys())
+            headers.extend(var_names)
+
+            # Build table rows
+            table_data = []
+            for entry in entries:
+                row = [entry['cycle'], entry['state']]
+                for var_name in var_names:
+                    row.append(entry['vars'].get(var_name, ''))
+                table_data.append(row)
+
+            # Generate table
+            table_str = self.display.format_table(headers, table_data, var_names)
+            return CommandResult(table_str)
+        else:
+            return CommandResult("No history entries to display.")
+
+    def _handle_setting(self, args: List[str]) -> CommandResult:
+        """
+        Handle /setting command.
+
+        :param args: Command arguments (key and optional value)
+        :type args: List[str]
+        :return: Command result
+        :rtype: CommandResult
+        """
+        if not args:
+            # Show all settings
+            settings = self.settings.list_all()
+            lines = ["Current settings:"]
+            for key, value in sorted(settings.items()):
+                lines.append(f"  {key} = {value}")
+            return CommandResult('\n'.join(lines))
+
+        key = args[0]
+
+        if len(args) == 1:
+            # Show specific setting
+            try:
+                value = self.settings.get(key)
+                if isinstance(value, LogLevel):
+                    value = value.value
+                return CommandResult(f"{key} = {value}")
+            except KeyError as e:
+                return CommandResult(f"Error: {e}")
+
+        # Set setting
+        value = args[1]
+        try:
+            self.settings.set(key, value)
+
+            # Apply setting changes
+            if key == 'color':
+                self.display.use_color = self.settings.color
+            elif key == 'log_level':
+                self.log_level = self.settings.log_level
+            elif key == 'history_size':
+                # Update runtime history size
+                self.runtime.history_size = self.settings.history_size if self.settings.history_size > 0 else None
+                # Trim existing history to new size
+                if self.runtime.history_size is not None and len(self.runtime.history) > self.runtime.history_size:
+                    self.runtime.history = self.runtime.history[-self.runtime.history_size:]
+
+            return CommandResult(f"Setting updated: {key} = {value}")
+        except (KeyError, ValueError) as e:
+            return CommandResult(f"Error: {e}")
 
     def _get_current_events(self) -> List[Tuple[str, Optional[str]]]:
         """

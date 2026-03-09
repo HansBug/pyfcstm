@@ -302,7 +302,8 @@ class SimulationRuntime:
     def __init__(
         self,
         state_machine: StateMachine,
-        abstract_error_mode: Literal['raise', 'log'] = 'raise'
+        abstract_error_mode: Literal['raise', 'log'] = 'raise',
+        history_size: Optional[int] = None
     ):
         """
         Initialize the simulation runtime with a state machine model.
@@ -324,6 +325,9 @@ class SimulationRuntime:
             ``'raise'`` (default) stops execution and raises the exception.
             ``'log'`` logs the exception and continues execution.
         :type abstract_error_mode: Literal['raise', 'log']
+        :param history_size: Maximum number of history entries to keep.
+            ``None`` (default) means unlimited history.
+        :type history_size: Optional[int]
         :return: ``None``.
         :rtype: None
 
@@ -362,6 +366,8 @@ class SimulationRuntime:
         self.stack: List[_Frame] = []
         self.vars: Dict[str, Union[int, float]] = {}
         self.cycle_count: int = 0  # Track number of cycles executed
+        self.history_size: Optional[int] = history_size  # Maximum history entries (None = unlimited)
+        self.history: List[Dict] = []  # Execution history
         for name, define in self.state_machine.defines.items():
             self.vars[name] = define.init(**self.vars)
 
@@ -1464,6 +1470,26 @@ class SimulationRuntime:
             self._initialized = sim_initialized
             self._ended = sim_ended
             self.cycle_count += 1  # Increment cycle count on successful cycle
+
+            # Record history entry
+            # Get current state path
+            try:
+                state_path = '.'.join(self.current_state.path) if self.current_state else "(terminated)"
+            except (AttributeError, IndexError):
+                state_path = "(terminated)"
+
+            # Create history entry
+            history_entry = {
+                'cycle': self.cycle_count,
+                'state': state_path,
+                'vars': copy.deepcopy(self.vars),
+                'events': [str(e) if isinstance(e, Event) else e for e in (events or [])]
+            }
+
+            # Add to history and maintain size limit
+            self.history.append(history_entry)
+            if self.history_size is not None and len(self.history) > self.history_size:
+                self.history.pop(0)  # Remove oldest entry
         else:
             self.vars = snapshot_vars
             self._ended = snapshot_ended

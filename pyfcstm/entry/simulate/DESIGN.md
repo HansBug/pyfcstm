@@ -48,11 +48,35 @@ prompt_toolkit>=3.0.0
 
 ### 2.2 自动补全规则
 
+**命令补全**：
 - 输入命令开头字母后：显示匹配的命令列表
 - 输入 `cy` 后：补全为 `cycle`
-- 输入 `cycle ` 后：显示当前状态可用事件列表（全路径和简短版本）
+- 输入 `se` 后：补全为 `setting`
+- 输入 `hi` 后：补全为 `history`
+
+**cycle 命令参数补全**：
+- 输入 `cycle ` 后：显示常用计数值（1, 5, 10, 20, 50, 100）和当前状态可用事件列表
+- 输入 `cycle 1` 后：显示以 1 开头的计数值（1, 10, 100）和事件
+- 输入 `cycle 5 ` 后：显示可用事件列表（支持多个事件）
+
+**history 命令参数补全**：
+- 输入 `history ` 后：显示 `all` 关键字和常用计数值（5, 10, 20, 50, 100）
+- 输入 `history a` 后：补全为 `all`
+
+**setting 命令参数补全**：
 - 输入 `setting ` 后：显示可用的设置项（table_max_rows, history_size, color, log_level）
+- 输入 `setting log_level ` 后：显示日志级别（debug, info, warning, error, off）
+- 输入 `setting color ` 后：显示布尔值（on, off, true, false）
+- 输入 `setting table_max_rows ` 后：显示常用数值（10, 20, 50, 100, 200, 500, 1000）
+- 输入 `setting history_size ` 后：显示常用数值（10, 20, 50, 100, 200, 500, 1000）
+
+**事件补全**：
+- 显示当前状态可用事件列表（全路径和简短版本）
+- 支持部分匹配（输入 `S` 显示以 S 开头的事件）
+
+**操作方式**：
 - Tab 键触发补全，右箭头键接受建议
+- 所有补全项都带有帮助文本（display_meta）
 
 ### 2.3 事件名称支持
 
@@ -168,32 +192,94 @@ class SimulationCompleter(Completer):
 
     def get_completions(self, document, complete_event):
         text = document.text_before_cursor
+        words = text.split()
 
-        # 命令补全
-        if not text or ' ' not in text:
+        # 命令补全 - 输入命令开头字母时
+        if not words or (len(words) == 1 and ' ' not in text):
+            prefix = text.strip()
             for cmd in self.COMMANDS:
-                if cmd.startswith(text):
+                if cmd.startswith(prefix):
                     yield Completion(
                         cmd,
-                        start_position=-len(text),
+                        start_position=-len(prefix),
                         display_meta=self._get_command_help(cmd)
                     )
+            return
 
-        # cycle 后的事件补全
-        elif text.startswith('cycle '):
-            event_prefix = text.split()[-1]
-            events = self._get_current_events()
-            for event in events:
-                if event.startswith(event_prefix):
-                    yield Completion(event, start_position=-len(event_prefix))
+        command = words[0]
 
-        # setting 后的配置项补全
-        elif text.startswith('setting '):
+        # cycle 命令 - 补全计数值和事件
+        if command == 'cycle':
+            if len(words) == 1 or (len(words) == 2 and not text.endswith(' ')):
+                prefix = words[1] if len(words) == 2 else ''
+
+                # 建议常用计数值
+                for count in ['1', '5', '10', '20', '50', '100']:
+                    if count.startswith(prefix):
+                        yield Completion(count, start_position=-len(prefix),
+                                       display_meta='cycle count')
+
+                # 建议事件
+                events = self._get_current_events()
+                for event in events:
+                    if event.startswith(prefix):
+                        yield Completion(event, start_position=-len(prefix),
+                                       display_meta='event name')
+            else:
+                # 计数后继续补全事件
+                prefix = words[-1] if not text.endswith(' ') else ''
+                events = self._get_current_events()
+                for event in events:
+                    if event.startswith(prefix):
+                        yield Completion(event, start_position=-len(prefix),
+                                       display_meta='event name')
+
+        # history 命令 - 补全 'all' 和计数值
+        elif command == 'history':
+            if len(words) == 1 or (len(words) == 2 and not text.endswith(' ')):
+                prefix = words[1] if len(words) == 2 else ''
+
+                if 'all'.startswith(prefix):
+                    yield Completion('all', start_position=-len(prefix),
+                                   display_meta='show all history')
+
+                for count in ['5', '10', '20', '50', '100']:
+                    if count.startswith(prefix):
+                        yield Completion(count, start_position=-len(prefix),
+                                       display_meta='history count')
+
+        # setting 命令 - 补全键和值
+        elif command == 'setting':
             setting_keys = ['table_max_rows', 'history_size', 'color', 'log_level']
-            key_prefix = text.split()[-1]
-            for key in setting_keys:
-                if key.startswith(key_prefix):
-                    yield Completion(key, start_position=-len(key_prefix))
+
+            # 第一个参数 - 设置键
+            if len(words) == 1 or (len(words) == 2 and not text.endswith(' ')):
+                prefix = words[1] if len(words) == 2 else ''
+                for key in setting_keys:
+                    if key.startswith(prefix):
+                        yield Completion(key, start_position=-len(prefix),
+                                       display_meta=self._get_setting_help(key))
+
+            # 第二个参数 - 设置值
+            elif len(words) >= 2:
+                setting_key = words[1]
+                prefix = words[2] if len(words) == 3 and not text.endswith(' ') else ''
+
+                if setting_key == 'log_level':
+                    for level in self.LOG_LEVELS:
+                        if level.startswith(prefix):
+                            yield Completion(level, start_position=-len(prefix),
+                                           display_meta='log level')
+                elif setting_key == 'color':
+                    for value in ['on', 'off', 'true', 'false']:
+                        if value.startswith(prefix):
+                            yield Completion(value, start_position=-len(prefix),
+                                           display_meta='color setting')
+                elif setting_key in ['table_max_rows', 'history_size']:
+                    for value in ['10', '20', '50', '100', '200', '500', '1000']:
+                        if value.startswith(prefix):
+                            yield Completion(value, start_position=-len(prefix),
+                                           display_meta='numeric value')
 
     def _get_current_events(self):
         """获取当前状态可触发的事件（全路径和简短版本）"""
@@ -201,18 +287,18 @@ class SimulationCompleter(Completer):
             return []
 
         events = set()
-        current_state = self.runtime.model.get_state_by_path(self.runtime.current_state)
+        current_state = self.runtime.current_state
+        current_state_name = current_state.name
 
-        if current_state and hasattr(current_state, 'transitions'):
-            for transition in current_state.transitions:
-                if hasattr(transition, 'events'):
-                    for event in transition.events:
-                        # 添加全路径版本
-                        events.add(event)
-                        # 添加简短版本（如果不同）
-                        short_name = event.split('.')[-1]
-                        if short_name != event:
-                            events.add(short_name)
+        if current_state.parent:
+            parent = current_state.parent
+            for transition in parent.transitions:
+                if transition.from_state == current_state_name and transition.event:
+                    # 添加全路径
+                    event_path = '.'.join(transition.event.state_path) + '.' + transition.event.name
+                    events.add(event_path)
+                    # 添加简短名称
+                    events.add(transition.event.name)
 
         return sorted(events)
 
@@ -225,6 +311,22 @@ class SimulationCompleter(Completer):
             'events': 'List available events',
             'history': 'Show execution history',
             'setting': 'View or change settings',
+            'help': 'Show help',
+            'quit': 'Exit simulator',
+            'exit': 'Exit simulator',
+        }
+        return help_map.get(cmd, '')
+
+    def _get_setting_help(self, key):
+        """获取设置项帮助信息"""
+        help_map = {
+            'table_max_rows': 'max rows in tables (default: 20)',
+            'history_size': 'max history entries (default: 100)',
+            'color': 'enable/disable colors (on/off)',
+            'log_level': 'logging level (debug/info/warning/error/off)',
+        }
+        return help_map.get(key, '')
+```
             'help': 'Show help',
             'quit': 'Exit simulator',
             'exit': 'Exit simulator',

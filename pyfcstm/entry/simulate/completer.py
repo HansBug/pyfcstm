@@ -1,8 +1,9 @@
 """
 Auto-completion support for the simulation REPL.
 
-This module provides command and argument completion using prompt_toolkit's
-completion framework.
+This module provides comprehensive command and argument completion using
+prompt_toolkit's completion framework. It supports context-aware completion
+for all commands including their arguments and values.
 """
 
 from typing import Iterable
@@ -15,8 +16,12 @@ class SimulationCompleter(Completer):
     """
     Completer for simulation REPL commands and arguments.
 
-    This class provides context-aware completion for commands, event names,
-    and log levels in the interactive simulator.
+    This class provides comprehensive context-aware completion for:
+    - Command names (with partial matching)
+    - Event names for cycle command (both full-path and short names)
+    - Count values for cycle and history commands
+    - Setting keys and values for setting command
+    - Log levels for log_level setting
 
     :param runtime: The simulation runtime instance
     :type runtime: SimulationRuntime
@@ -55,46 +60,126 @@ class SimulationCompleter(Completer):
         text = document.text_before_cursor
         words = text.split()
 
-        # Command completion
-        if not text or ' ' not in text:
+        # Command completion - when no space or typing command
+        if not words or (len(words) == 1 and ' ' not in text):
+            prefix = text.strip()
             for cmd in self.COMMANDS:
-                if cmd.startswith(text):
+                if cmd.startswith(prefix):
                     yield Completion(
                         cmd,
-                        start_position=-len(text),
+                        start_position=-len(prefix),
                         display_meta=self._get_command_help(cmd)
                     )
+            return
 
-        # Event completion (after cycle)
-        elif text.startswith('cycle '):
-            # Get the last word being typed
-            if words:
-                event_prefix = words[-1]
+        # Get command and check for argument completion
+        command = words[0]
+
+        # cycle command - complete with count or events
+        if command == 'cycle':
+            # If we have only "cycle " or typing first argument
+            if len(words) == 1 or (len(words) == 2 and not text.endswith(' ')):
+                # Suggest count numbers and events
+                prefix = words[1] if len(words) == 2 else ''
+
+                # Suggest common count values
+                for count in ['1', '5', '10', '20', '50', '100']:
+                    if count.startswith(prefix):
+                        yield Completion(
+                            count,
+                            start_position=-len(prefix),
+                            display_meta='cycle count'
+                        )
+
+                # Also suggest events
+                events = self._get_current_events()
+                for event in events:
+                    if event.startswith(prefix):
+                        yield Completion(
+                            event,
+                            start_position=-len(prefix),
+                            display_meta='event name'
+                        )
             else:
-                event_prefix = ''
+                # After count or additional events
+                prefix = words[-1] if not text.endswith(' ') else ''
+                events = self._get_current_events()
+                for event in events:
+                    if event.startswith(prefix):
+                        yield Completion(
+                            event,
+                            start_position=-len(prefix),
+                            display_meta='event name'
+                        )
 
-            events = self._get_current_events()
-            for event in events:
-                if event.startswith(event_prefix):
+        # history command - complete with count or 'all'
+        elif command == 'history':
+            if len(words) == 1 or (len(words) == 2 and not text.endswith(' ')):
+                prefix = words[1] if len(words) == 2 else ''
+
+                # Suggest 'all' keyword
+                if 'all'.startswith(prefix):
                     yield Completion(
-                        event,
-                        start_position=-len(event_prefix)
+                        'all',
+                        start_position=-len(prefix),
+                        display_meta='show all history'
                     )
 
-        # Setting key completion (after setting)
-        elif text.startswith('setting '):
+                # Suggest common count values
+                for count in ['5', '10', '20', '50', '100']:
+                    if count.startswith(prefix):
+                        yield Completion(
+                            count,
+                            start_position=-len(prefix),
+                            display_meta='history count'
+                        )
+
+        # setting command - complete with keys and values
+        elif command == 'setting':
             setting_keys = ['table_max_rows', 'history_size', 'color', 'log_level']
-            if words and len(words) >= 2:
-                key_prefix = words[-1]
-            else:
-                key_prefix = ''
 
-            for key in setting_keys:
-                if key.startswith(key_prefix):
-                    yield Completion(
-                        key,
-                        start_position=-len(key_prefix)
-                    )
+            # First argument - setting key
+            if len(words) == 1 or (len(words) == 2 and not text.endswith(' ')):
+                prefix = words[1] if len(words) == 2 else ''
+                for key in setting_keys:
+                    if key.startswith(prefix):
+                        yield Completion(
+                            key,
+                            start_position=-len(prefix),
+                            display_meta=self._get_setting_help(key)
+                        )
+
+            # Second argument - setting value
+            elif len(words) >= 2:
+                setting_key = words[1]
+                prefix = words[2] if len(words) == 3 and not text.endswith(' ') else ''
+
+                # Suggest values based on setting key
+                if setting_key == 'log_level':
+                    for level in self.LOG_LEVELS:
+                        if level.startswith(prefix):
+                            yield Completion(
+                                level,
+                                start_position=-len(prefix),
+                                display_meta='log level'
+                            )
+                elif setting_key == 'color':
+                    for value in ['on', 'off', 'true', 'false']:
+                        if value.startswith(prefix):
+                            yield Completion(
+                                value,
+                                start_position=-len(prefix),
+                                display_meta='color setting'
+                            )
+                elif setting_key in ['table_max_rows', 'history_size']:
+                    # Suggest common numeric values
+                    for value in ['10', '20', '50', '100', '200', '500', '1000']:
+                        if value.startswith(prefix):
+                            yield Completion(
+                                value,
+                                start_position=-len(prefix),
+                                display_meta='numeric value'
+                            )
 
     def _get_current_events(self) -> list:
         """
@@ -147,3 +232,20 @@ class SimulationCompleter(Completer):
             'exit': 'Exit simulator',
         }
         return help_map.get(cmd, '')
+
+    def _get_setting_help(self, key: str) -> str:
+        """
+        Get help text for a setting key.
+
+        :param key: The setting key
+        :type key: str
+        :return: Help text
+        :rtype: str
+        """
+        help_map = {
+            'table_max_rows': 'max rows in tables (default: 20)',
+            'history_size': 'max history entries (default: 100)',
+            'color': 'enable/disable colors (on/off)',
+            'log_level': 'logging level (debug/info/warning/error/off)',
+        }
+        return help_map.get(key, '')

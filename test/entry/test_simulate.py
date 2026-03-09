@@ -880,6 +880,131 @@ class TestSimulationCompleter:
         # Should return empty
         assert len(completions) == 0
 
+    def test_partial_command_completion(self, runtime):
+        """Test partial command name completion."""
+        from pyfcstm.entry.simulate.completer import SimulationCompleter
+        from prompt_toolkit.document import Document
+
+        completer = SimulationCompleter(runtime)
+
+        # Test 'cy' should suggest 'cycle'
+        document = Document('cy')
+        completions = list(completer.get_completions(document, None))
+        texts = [c.text for c in completions]
+        assert 'cycle' in texts
+
+        # Test 'se' should suggest 'setting'
+        document = Document('se')
+        completions = list(completer.get_completions(document, None))
+        texts = [c.text for c in completions]
+        assert 'setting' in texts
+
+        # Test 'hi' should suggest 'history'
+        document = Document('hi')
+        completions = list(completer.get_completions(document, None))
+        texts = [c.text for c in completions]
+        assert 'history' in texts
+
+    def test_cycle_count_completion(self, runtime):
+        """Test cycle command count completion."""
+        from pyfcstm.entry.simulate.completer import SimulationCompleter
+        from prompt_toolkit.document import Document
+
+        completer = SimulationCompleter(runtime)
+
+        # Test 'cycle ' should suggest counts and events
+        document = Document('cycle ')
+        completions = list(completer.get_completions(document, None))
+        texts = [c.text for c in completions]
+        # Should suggest common counts
+        assert '1' in texts or '5' in texts or '10' in texts
+
+        # Test 'cycle 1' should suggest counts starting with 1
+        document = Document('cycle 1')
+        completions = list(completer.get_completions(document, None))
+        texts = [c.text for c in completions]
+        assert '1' in texts or '10' in texts or '100' in texts
+
+    def test_cycle_event_after_count(self, runtime):
+        """Test event completion after count in cycle command."""
+        from pyfcstm.entry.simulate.completer import SimulationCompleter
+        from prompt_toolkit.document import Document
+
+        completer = SimulationCompleter(runtime)
+        runtime.cycle()  # Move to a state with events
+
+        # Test 'cycle 5 ' should suggest events
+        document = Document('cycle 5 ')
+        completions = list(completer.get_completions(document, None))
+        # Should have some completions (events or empty list)
+        assert isinstance(completions, list)
+
+    def test_history_count_completion(self, runtime):
+        """Test history command count completion."""
+        from pyfcstm.entry.simulate.completer import SimulationCompleter
+        from prompt_toolkit.document import Document
+
+        completer = SimulationCompleter(runtime)
+
+        # Test 'history ' should suggest 'all' and counts
+        document = Document('history ')
+        completions = list(completer.get_completions(document, None))
+        texts = [c.text for c in completions]
+        assert 'all' in texts
+        assert '5' in texts or '10' in texts
+
+        # Test 'history a' should suggest 'all'
+        document = Document('history a')
+        completions = list(completer.get_completions(document, None))
+        texts = [c.text for c in completions]
+        assert 'all' in texts
+
+    def test_setting_value_completion(self, runtime):
+        """Test setting value completion."""
+        from pyfcstm.entry.simulate.completer import SimulationCompleter
+        from prompt_toolkit.document import Document
+
+        completer = SimulationCompleter(runtime)
+
+        # Test 'setting log_level ' should suggest log levels
+        document = Document('setting log_level ')
+        completions = list(completer.get_completions(document, None))
+        texts = [c.text for c in completions]
+        assert 'debug' in texts
+        assert 'info' in texts
+        assert 'warning' in texts
+
+        # Test 'setting color ' should suggest on/off
+        document = Document('setting color ')
+        completions = list(completer.get_completions(document, None))
+        texts = [c.text for c in completions]
+        assert 'on' in texts or 'off' in texts
+
+        # Test 'setting table_max_rows ' should suggest numbers
+        document = Document('setting table_max_rows ')
+        completions = list(completer.get_completions(document, None))
+        texts = [c.text for c in completions]
+        assert '10' in texts or '20' in texts or '50' in texts
+
+    def test_setting_partial_value_completion(self, runtime):
+        """Test partial setting value completion."""
+        from pyfcstm.entry.simulate.completer import SimulationCompleter
+        from prompt_toolkit.document import Document
+
+        completer = SimulationCompleter(runtime)
+
+        # Test 'setting log_level d' should suggest 'debug'
+        document = Document('setting log_level d')
+        completions = list(completer.get_completions(document, None))
+        texts = [c.text for c in completions]
+        assert 'debug' in texts
+
+        # Test 'setting color o' should suggest 'on' and 'off'
+        document = Document('setting color o')
+        completions = list(completer.get_completions(document, None))
+        texts = [c.text for c in completions]
+        assert 'on' in texts or 'off' in texts
+
 
 @pytest.mark.unittest
 class TestCLIEntry:

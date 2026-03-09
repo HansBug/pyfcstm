@@ -162,7 +162,23 @@ class CommandProcessor:
         self.settings = Settings()
         self.settings.color = use_color
         self.display = StateDisplay(use_color=use_color)
-        self.log_level = self.settings.log_level
+
+        # Sync log level with runtime logger
+        self._sync_log_level()
+
+    def _sync_log_level(self):
+        """
+        Synchronize log level setting with runtime logger.
+        """
+        import logging
+        level_map = {
+            LogLevel.DEBUG: logging.DEBUG,
+            LogLevel.INFO: logging.INFO,
+            LogLevel.WARNING: logging.WARNING,
+            LogLevel.ERROR: logging.ERROR,
+            LogLevel.OFF: logging.CRITICAL + 10,  # Higher than CRITICAL to disable all
+        }
+        self.runtime.logger.setLevel(level_map[self.settings.log_level])
 
     def process(self, user_input: str) -> CommandResult:
         """
@@ -189,8 +205,6 @@ class CommandProcessor:
                 return self._handle_current()
             elif command == '/events':
                 return self._handle_events()
-            elif command == '/log':
-                return self._handle_log(args)
             elif command == '/history':
                 return self._handle_history(args)
             elif command == '/setting':
@@ -349,26 +363,6 @@ class CommandProcessor:
         events = self._get_current_events()
         return CommandResult(self.display.format_events(events))
 
-    def _handle_log(self, args: List[str]) -> CommandResult:
-        """
-        Handle /log command.
-
-        :param args: Command arguments (log level)
-        :type args: List[str]
-        :return: Command result
-        :rtype: CommandResult
-        """
-        if not args:
-            return CommandResult(f"Current log level: {self.log_level.value}")
-
-        level_str = args[0].lower()
-        try:
-            self.log_level = LogLevel(level_str)
-            return CommandResult(f"Log level set to: {level_str}")
-        except ValueError:
-            valid_levels = [level.value for level in LogLevel]
-            return CommandResult(f"Invalid log level. Available levels: {', '.join(valid_levels)}")
-
     def _handle_help(self) -> CommandResult:
         """
         Handle /help command.
@@ -383,9 +377,8 @@ class CommandProcessor:
   /clear                      - Reset to initial state
   /current                    - Show current state and all variables
   /events                     - List available events in current state
-  /log [level]                - Set or display log level (debug, info, warning, error, off)
   /history [n|all]            - Show execution history (default: 10 recent entries)
-  /setting [key] [value]      - View or change settings
+  /setting [key] [value]      - View or change settings (including log_level)
   /help                       - Show this help message
   /quit, /exit                - Exit simulator
 
@@ -484,7 +477,8 @@ Keyboard shortcuts (interactive mode):
             if key == 'color':
                 self.display.use_color = self.settings.color
             elif key == 'log_level':
-                self.log_level = self.settings.log_level
+                # Sync log level with runtime logger
+                self._sync_log_level()
             elif key == 'history_size':
                 # Update runtime history size
                 self.runtime.history_size = self.settings.history_size if self.settings.history_size > 0 else None

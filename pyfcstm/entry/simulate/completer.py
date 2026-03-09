@@ -28,7 +28,7 @@ class SimulationCompleter(Completer):
 
     COMMANDS = [
         '/cycle', '/clear', '/current', '/events',
-        '/log', '/help', '/quit', '/exit'
+        '/history', '/setting', '/help', '/quit', '/exit'
     ]
 
     LOG_LEVELS = ['debug', 'info', 'warning', 'error', 'off']
@@ -81,18 +81,19 @@ class SimulationCompleter(Completer):
                         start_position=-len(event_prefix)
                     )
 
-        # Log level completion (after /log)
-        elif text.startswith('/log '):
-            if words:
-                level_prefix = words[-1]
+        # Setting key completion (after /setting)
+        elif text.startswith('/setting '):
+            setting_keys = ['table_max_rows', 'history_size', 'color', 'log_level']
+            if words and len(words) >= 2:
+                key_prefix = words[-1]
             else:
-                level_prefix = ''
+                key_prefix = ''
 
-            for level in self.LOG_LEVELS:
-                if level.startswith(level_prefix):
+            for key in setting_keys:
+                if key.startswith(key_prefix):
                     yield Completion(
-                        level,
-                        start_position=-len(level_prefix)
+                        key,
+                        start_position=-len(key_prefix)
                     )
 
     def _get_current_events(self) -> list:
@@ -139,7 +140,8 @@ class SimulationCompleter(Completer):
             '/clear': 'Reset to initial state',
             '/current': 'Show current state and variables',
             '/events': 'List available events',
-            '/log': 'Set log level',
+            '/history': 'Show execution history',
+            '/setting': 'View or change settings',
             '/help': 'Show help',
             '/quit': 'Exit simulator',
             '/exit': 'Exit simulator',

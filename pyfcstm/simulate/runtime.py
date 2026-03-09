@@ -545,7 +545,12 @@ class SimulationRuntime:
         d_events = {event.path_name: event for event in event_objects}
         return event_objects, d_events
 
-    def _execute_transition_effect(self, transition: Transition, vars_: Dict[str, Union[int, float]]) -> None:
+    def _execute_transition_effect(
+            self,
+            transition: Transition,
+            vars_: Dict[str, Union[int, float]],
+            is_validation_mode: bool = False
+    ) -> None:
         """
         Apply a transition's effect operations to a variable mapping.
 
@@ -557,11 +562,55 @@ class SimulationRuntime:
         :type transition: Transition
         :param vars_: Variable mapping to mutate.
         :type vars_: Dict[str, Union[int, float]]
+        :param is_validation_mode: Whether this is validation mode.
+        :type is_validation_mode: bool
         :return: ``None``.
         :rtype: None
         """
-        for effect in (transition.effects or []):
-            vars_[effect.var_name] = effect.expr(**vars_)
+        if not transition.effects:
+            return
+
+        if is_validation_mode:
+            self.logger.debug(f'[VALIDATION] Execute transition effect for {transition.from_state} -> {transition.to_state}')
+            for effect in transition.effects:
+                vars_[effect.var_name] = effect.expr(**vars_)
+        else:
+            self.logger.info(f'[EXECUTION] Execute transition effect for {transition.from_state} -> {transition.to_state}')
+            old_vars = dict(vars_)
+            for effect in transition.effects:
+                vars_[effect.var_name] = effect.expr(**vars_)
+            self._log_var_changes(old_vars, vars_, prefix=f"[EXECUTION] Transition effect")
+
+    def _log_var_changes(
+            self,
+            old_vars: Dict[str, Union[int, float]],
+            new_vars: Dict[str, Union[int, float]],
+            prefix: str = ""
+    ) -> None:
+        """
+        Log variable changes in INFO level.
+
+        Only logs variables that actually changed, in format: var_name: old_value --> new_value
+
+        :param old_vars: Variable values before change.
+        :type old_vars: Dict[str, Union[int, float]]
+        :param new_vars: Variable values after change.
+        :type new_vars: Dict[str, Union[int, float]]
+        :param prefix: Optional prefix for log message.
+        :type prefix: str
+        :return: ``None``.
+        :rtype: None
+        """
+        changes = []
+        for var_name in sorted(new_vars.keys()):
+            old_val = old_vars.get(var_name)
+            new_val = new_vars.get(var_name)
+            if old_val != new_val:
+                changes.append(f"{var_name}: {old_val} --> {new_val}")
+
+        if changes:
+            prefix_str = f"{prefix} " if prefix else ""
+            self.logger.info(f"{prefix_str}Variable changes: {', '.join(changes)}")
 
     def _execute_func(
             self,
@@ -617,7 +666,10 @@ class SimulationRuntime:
                     )
                     self._warned_anonymous_abstracts.add(anonymous_key)
 
-                self.logger.info(f'Execute anonymous abstract function {func_path} (no handlers supported)')
+                if is_validation_mode:
+                    self.logger.debug(f'[VALIDATION] Skip anonymous abstract function {func_path}')
+                else:
+                    self.logger.info(f'[EXECUTION] Execute anonymous abstract function {func_path} (no handlers supported)')
                 return
 
             # Named abstract - check for handlers
@@ -626,15 +678,15 @@ class SimulationRuntime:
             # Validation mode: skip execution even if handlers exist
             if is_validation_mode:
                 if handlers:
-                    self.logger.info(f'[VALIDATION] Skip abstract function {func_path} '
+                    self.logger.debug(f'[VALIDATION] Skip abstract function {func_path} '
                                      f'({len(handlers)} handler(s) registered but not executed in validation mode)')
                 else:
-                    self.logger.info(f'[VALIDATION] Skip abstract function {func_path} (no handlers registered)')
+                    self.logger.debug(f'[VALIDATION] Skip abstract function {func_path} (no handlers registered)')
                 return
 
             # Real execution mode: check if handlers are registered
             if not handlers:
-                self.logger.info(f'[SIMULATION] Skip abstract function {func_path} (no handlers registered)')
+                self.logger.info(f'[EXECUTION] Skip abstract function {func_path} (no handlers registered)')
                 return
 
             # Has registered handlers - this is real execution mode
@@ -668,9 +720,17 @@ class SimulationRuntime:
                         self.logger.error(f'Abstract handler {idx + 1} for {func_path} raised exception '
                                           f'(continuing in log mode): {e}')
         else:
-            self.logger.info(f'Execute function {func.func_name}.')
-            for op in (func.operations or []):
-                vars_[op.var_name] = op.expr(**vars_)
+            # Concrete function with operations
+            if is_validation_mode:
+                self.logger.debug(f'[VALIDATION] Execute function {func.func_name}')
+                for op in (func.operations or []):
+                    vars_[op.var_name] = op.expr(**vars_)
+            else:
+                self.logger.info(f'[EXECUTION] Execute function {func.func_name}')
+                old_vars = dict(vars_)
+                for op in (func.operations or []):
+                    vars_[op.var_name] = op.expr(**vars_)
+                self._log_var_changes(old_vars, vars_, prefix=f"[EXECUTION] {func.func_name}")
 
     def _transition_matches_event(self, transition: Transition, d_events: Dict[str, Event]) -> bool:
         """
@@ -840,7 +900,7 @@ class SimulationRuntime:
 
         for transition in state.init_transitions:
             if self._transition_is_enabled(transition, d_events, vars_):
-                self._execute_transition_effect(transition, vars_)
+                self._execute_transition_effect(transition, vars_, is_validation_mode=is_validation_mode)
                 target_state = state.substates[transition.to_state]
                 self._enter_state(stack, target_state, vars_, d_events, is_validation_mode=is_validation_mode)
                 return True
@@ -915,36 +975,55 @@ class SimulationRuntime:
         current_state = stack[-1].state
         target_desc = '[*]' if transition.to_state == EXIT_STATE else transition.to_state
         current_state_path = '.'.join(current_state.path)
-        self.logger.info(
-            f'Execute transition at cycle {self.cycle_count + 1}: '
-            f'{current_state_path} -> {target_desc} '
-            f'(event={transition.event.path_name if transition.event else "none"}) '
-            f'before vars={vars_}'
-        )
+
+        if is_validation_mode:
+            self.logger.debug(
+                f'[VALIDATION] Execute transition: '
+                f'{current_state_path} -> {target_desc} '
+                f'(event={transition.event.path_name if transition.event else "none"})'
+            )
+        else:
+            self.logger.info(
+                f'[EXECUTION] Execute transition at cycle {self.cycle_count + 1}: '
+                f'{current_state_path} -> {target_desc} '
+                f'(event={transition.event.path_name if transition.event else "none"})'
+            )
 
         for on_exit in current_state.on_exits:
             self._execute_func(on_exit, vars_, is_validation_mode=is_validation_mode)
 
-        self._execute_transition_effect(transition, vars_)
+        self._execute_transition_effect(transition, vars_, is_validation_mode=is_validation_mode)
         stack.pop()
 
         if transition.to_state == EXIT_STATE:
             ended = self._finalize_exit_to_parent(stack, vars_, is_validation_mode=is_validation_mode)
             current_state_path = '.'.join(current_state.path)
-            self.logger.info(
-                f'Transition completed at cycle {self.cycle_count + 1}: '
-                f'{current_state_path} -> [*], after vars={vars_}, ended={ended}'
-            )
+            if is_validation_mode:
+                self.logger.debug(
+                    f'[VALIDATION] Transition completed: '
+                    f'{current_state_path} -> [*], ended={ended}'
+                )
+            else:
+                self.logger.info(
+                    f'[EXECUTION] Transition completed at cycle {self.cycle_count + 1}: '
+                    f'{current_state_path} -> [*], ended={ended}'
+                )
             return ended
 
         target_state = current_state.parent.substates[transition.to_state]
         self._enter_state(stack, target_state, vars_, d_events, is_validation_mode=is_validation_mode)
         current_state_path = '.'.join(current_state.path)
         target_state_path = '.'.join(target_state.path)
-        self.logger.info(
-            f'Transition completed at cycle {self.cycle_count + 1}: '
-            f'{current_state_path} -> {target_state_path}, after vars={vars_}'
-        )
+        if is_validation_mode:
+            self.logger.debug(
+                f'[VALIDATION] Transition completed: '
+                f'{current_state_path} -> {target_state_path}'
+            )
+        else:
+            self.logger.info(
+                f'[EXECUTION] Transition completed at cycle {self.cycle_count + 1}: '
+                f'{current_state_path} -> {target_state_path}'
+            )
         return False
 
     def _select_transition(
@@ -986,15 +1065,14 @@ class SimulationRuntime:
                 if not self._validate_transition(stack, vars_, transition, d_events):
                     current_state_path = '.'.join(current_state.path)
                     self.logger.debug(
-                        f'DFS validation rejected transition {current_state_path} -> {transition.to_state} '
-                        f'with vars={vars_}'
+                        f'[VALIDATION] DFS validation rejected transition {current_state_path} -> {transition.to_state}'
                     )
                     continue
             current_state_path = '.'.join(current_state.path)
             self.logger.info(
-                f'Transition selected at cycle {self.cycle_count + 1}: '
+                f'[EXECUTION] Transition selected at cycle {self.cycle_count + 1}: '
                 f'{current_state_path} -> {transition.to_state} '
-                f'(event={transition.event.path_name if transition.event else "none"}, vars={vars_})'
+                f'(event={transition.event.path_name if transition.event else "none"})'
             )
             return transition
         return None
@@ -1035,13 +1113,13 @@ class SimulationRuntime:
         sim_vars = copy.deepcopy(vars_)
         stack_repr = [('.'.join(frame.state.path), frame.mode) for frame in stack]
         self.logger.debug(
-            f'DFS validation start for transition {transition.from_state} -> {transition.to_state} '
+            f'[VALIDATION] DFS validation start for transition {transition.from_state} -> {transition.to_state} '
             f'with stack={stack_repr} vars={vars_}'
         )
         ended = self._execute_transition_on_context(sim_stack, sim_vars, transition, d_events, is_validation_mode=True)
         if ended:
             self.logger.debug(
-                f'DFS validation success for transition {transition.from_state} -> {transition.to_state}: runtime ended'
+                f'[VALIDATION] DFS validation success for transition {transition.from_state} -> {transition.to_state}: runtime ended'
             )
             return True
 
@@ -1055,7 +1133,7 @@ class SimulationRuntime:
         )
         sim_stack_repr = [('.'.join(frame.state.path), frame.mode) for frame in sim_stack]
         self.logger.debug(
-            f'DFS validation result for transition {transition.from_state} -> {transition.to_state}: '
+            f'[VALIDATION] DFS validation result for transition {transition.from_state} -> {transition.to_state}: '
             f'success={success}, stack={sim_stack_repr}, vars={sim_vars}'
         )
         return success
@@ -1194,7 +1272,7 @@ class SimulationRuntime:
             if is_validation_mode:
                 stack_repr = [('.'.join(frame.state.path), frame.mode) for frame in stack]
                 self.logger.debug(
-                    f'DFS step {steps_taken + 1}: stack={stack_repr}, '
+                    f'[VALIDATION] DFS step {steps_taken + 1}: stack={stack_repr}, '
                     f'vars={vars_}, ended={ended}'
                 )
             if not stack:
@@ -1203,7 +1281,7 @@ class SimulationRuntime:
 
             signature = self._create_execution_signature(stack, vars_)
             if signature in seen_signatures:
-                self.logger.warning('Pruned repeated speculative execution state during DFS validation.')
+                self.logger.debug('[VALIDATION] Pruned repeated speculative execution state during DFS validation.')
                 return False, False
             seen_signatures.add(signature)
 
@@ -1216,8 +1294,8 @@ class SimulationRuntime:
                 )
 
             if steps_taken >= max_steps:
-                self.logger.warning(
-                    'Speculative DFS reached the step safety limit (%s) without convergence; '
+                self.logger.debug(
+                    '[VALIDATION] Speculative DFS reached the step safety limit (%s) without convergence; '
                     'treating the path as invalid continuation.',
                     max_steps,
                 )
@@ -1503,12 +1581,12 @@ class SimulationRuntime:
         """
         _, d_events = self._normalize_events(events)
         if self._ended:
-            self.logger.warning('Runtime already ended, cycle ignored.')
+            self.logger.warning('[EXECUTION] Runtime already ended, cycle ignored.')
             return
 
         # Log cycle start
         event_names = [e.path_name if isinstance(e, Event) else e for e in (events or [])]
-        self.logger.info(f'Cycle {self.cycle_count + 1} starting with events: {event_names if event_names else "none"}')
+        self.logger.info(f'[EXECUTION] Cycle {self.cycle_count + 1} starting with events: {event_names if event_names else "none"}')
 
         snapshot_stack = self._clone_stack(self.stack)
         snapshot_vars = copy.deepcopy(self.vars)
@@ -1528,6 +1606,7 @@ class SimulationRuntime:
 
         if success:
             self.stack = [] if sim_ended else sim_stack
+            old_vars = snapshot_vars
             self.vars = sim_vars
             self._initialized = sim_initialized
             self._ended = sim_ended
@@ -1553,9 +1632,9 @@ class SimulationRuntime:
             if self.history_size is not None and len(self.history) > self.history_size:
                 self.history.pop(0)  # Remove oldest entry
 
-            # Log successful cycle completion
-            self.logger.info(
-                f'Cycle {self.cycle_count} completed successfully - State: {state_path}, Vars: {self.vars}')
+            # Log successful cycle completion with variable changes
+            self.logger.info(f'[EXECUTION] Cycle {self.cycle_count} completed successfully - State: {state_path}')
+            self._log_var_changes(old_vars, self.vars, prefix=f"[EXECUTION] Cycle {self.cycle_count}")
         else:
             self.vars = snapshot_vars
             self._ended = snapshot_ended
@@ -1566,7 +1645,7 @@ class SimulationRuntime:
                 self.stack = snapshot_stack
                 self._initialized = snapshot_initialized
             self.logger.warning(
-                f'Cycle {self.cycle_count + 1} failed - Unable to reach a stoppable state, changes rolled back')
+                f'[EXECUTION] Cycle {self.cycle_count + 1} failed - Unable to reach a stoppable state, changes rolled back')
 
         if self._ended or not self.stack:
             self._ended = True

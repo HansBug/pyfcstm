@@ -14,6 +14,7 @@ pyfcstm.utils
     doc
     jinja2
     json
+    logging
     parse
     safe
     text

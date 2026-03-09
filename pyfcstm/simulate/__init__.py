@@ -61,6 +61,5 @@ Abstract handler registration::
 
 from .context import ReadOnlyExecutionContext
 from .decorators import abstract_handler
-from .logging import get_logger
 from .runtime import SimulationRuntime, SimulationRuntimeDfsError
 from .utils import is_state_resolve_event_path

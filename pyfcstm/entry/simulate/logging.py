@@ -8,18 +8,10 @@ an optional Rich-based presentation layer for CLI output.
 import logging
 import sys
 
-try:
-    from rich.console import Console
-    from rich.highlighter import Highlighter, ReprHighlighter, RegexHighlighter
-    from rich.logging import RichHandler
-    from rich.theme import Theme
-except ImportError:  # pragma: no cover - exercised via fallback path
-    Console = None
-    Highlighter = None
-    ReprHighlighter = None
-    RegexHighlighter = None
-    RichHandler = None
-    Theme = None
+from rich.console import Console
+from rich.highlighter import Highlighter, ReprHighlighter, RegexHighlighter
+from rich.logging import RichHandler
+from rich.theme import Theme
 
 
 class SimulatePlainLogHandler(logging.StreamHandler):
@@ -55,14 +47,12 @@ class SimulateLogHighlighter(Highlighter):
     """Combine Rich repr highlighting with simulate-specific regex highlighting."""
 
     def __init__(self):
-        self._repr = ReprHighlighter() if ReprHighlighter is not None else None
-        self._regex = _SimulateRegexHighlighter() if RegexHighlighter is not None else None
+        self._repr = ReprHighlighter()
+        self._regex = _SimulateRegexHighlighter()
 
     def highlight(self, text) -> None:
-        if self._repr is not None:
-            self._repr.highlight(text)
-        if self._regex is not None:
-            self._regex.highlight(text)
+        self._repr.highlight(text)
+        self._regex.highlight(text)
 
 
 class SimulateRichLogHandler(RichHandler):
@@ -86,7 +76,7 @@ class SimulateRichLogHandler(RichHandler):
                 'simulate.level_critical': 'bold white on red',
                 'simulate.cycle_complete': 'underline bold cyan',
                 'simulate.transition_path': 'underline green',
-            }) if Theme is not None else None,
+            }),
         )
         super().__init__(
             console=console,
@@ -95,7 +85,7 @@ class SimulateRichLogHandler(RichHandler):
             show_path=False,
             markup=False,
             rich_tracebacks=False,
-            highlighter=SimulateLogHighlighter() if Highlighter is not None else None,
+            highlighter=SimulateLogHighlighter(),
         )
         self.use_color = use_color
 
@@ -116,15 +106,15 @@ def create_simulate_log_handler(use_color: bool = True) -> logging.Handler:
     """
     Create a CLI log handler for simulate output.
 
-    Uses Rich when available and colors are enabled. Falls back to a plain
-    standard-library handler otherwise.
+    Uses Rich when colors are enabled. Falls back to a plain standard-library
+    handler otherwise.
 
     :param use_color: Whether colored terminal output is enabled.
     :type use_color: bool
     :return: Configured logging handler.
     :rtype: logging.Handler
     """
-    if use_color and RichHandler is not None and Console is not None:
+    if use_color:
         handler = SimulateRichLogHandler(use_color=use_color)
     else:
         handler = SimulatePlainLogHandler(use_color=use_color)

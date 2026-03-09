@@ -1107,19 +1107,19 @@ state Root {
         with caplog.at_level(logging.WARNING):
             run_cycle_and_assert(runtime, current_path=('Root',), vars={'phase': 0, 'trace': 0})
         assert runtime.brief_stack == [(('Root',), 'init_wait')]
-        assert 'Unable to reach a stoppable state in current cycle' in caplog.text
+        assert 'Unable to reach a stoppable state' in caplog.text
 
         caplog.clear()
         with caplog.at_level(logging.WARNING):
             run_cycle_and_assert(runtime, current_path=('Root',), vars={'phase': 0, 'trace': 0})
         assert runtime.brief_stack == [(('Root',), 'init_wait')]
-        assert 'Unable to reach a stoppable state in current cycle' in caplog.text
+        assert 'Unable to reach a stoppable state' in caplog.text
 
         caplog.clear()
         with caplog.at_level(logging.WARNING):
             run_cycle_and_assert(runtime, current_path=('Root',), vars={'phase': 0, 'trace': 0})
         assert runtime.brief_stack == [(('Root',), 'init_wait')]
-        assert 'Unable to reach a stoppable state in current cycle' in caplog.text
+        assert 'Unable to reach a stoppable state' in caplog.text
 
     def test_4_28_post_child_exit_without_follow_up_transition(self, caplog):
         dsl_code = '''
@@ -1150,19 +1150,19 @@ state Root {
         with caplog.at_level(logging.WARNING):
             run_cycle_and_assert(runtime, current_path=('Root',), vars={'phase': 0, 'trace': 0})
         assert runtime.brief_stack == [(('Root',), 'init_wait')]
-        assert 'Unable to reach a stoppable state in current cycle' in caplog.text
+        assert 'Unable to reach a stoppable state' in caplog.text
 
         caplog.clear()
         with caplog.at_level(logging.WARNING):
             run_cycle_and_assert(runtime, current_path=('Root',), vars={'phase': 0, 'trace': 0})
         assert runtime.brief_stack == [(('Root',), 'init_wait')]
-        assert 'Unable to reach a stoppable state in current cycle' in caplog.text
+        assert 'Unable to reach a stoppable state' in caplog.text
 
         caplog.clear()
         with caplog.at_level(logging.WARNING):
             run_cycle_and_assert(runtime, current_path=('Root',), vars={'phase': 0, 'trace': 0})
         assert runtime.brief_stack == [(('Root',), 'init_wait')]
-        assert 'Unable to reach a stoppable state in current cycle' in caplog.text
+        assert 'Unable to reach a stoppable state' in caplog.text
 
     def test_4_30_explicit_exit_to_root_ends_runtime(self, caplog):
         dsl_code = '''

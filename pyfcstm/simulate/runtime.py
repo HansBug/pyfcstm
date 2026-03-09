@@ -75,7 +75,7 @@ try:
 except ImportError:
     from typing_extensions import Literal
 
-from .logging import get_logger
+from ..utils.logging import get_logger
 
 from ..dsl import EXIT_STATE
 from ..model import Event, OnAspect, OnStage, State, StateMachine, Transition
@@ -369,7 +369,7 @@ class SimulationRuntime:
         self.history: List[Dict] = []  # Execution history
 
         # Initialize logger
-        self.logger = get_logger()
+        self.logger = get_logger('pyfcstm.simulate')
 
         for name, define in self.state_machine.defines.items():
             self.vars[name] = define.init(**self.vars)

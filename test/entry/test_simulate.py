@@ -67,7 +67,7 @@ class TestSettings:
         assert settings.table_max_rows == 20
         assert settings.history_size == 100
         assert settings.color is True
-        assert settings.log_level == LogLevel.INFO
+        assert settings.log_level == LogLevel.WARNING
 
     def test_get_valid_key(self):
         """Test getting a valid setting."""
@@ -75,7 +75,7 @@ class TestSettings:
         assert settings.get('table_max_rows') == 20
         assert settings.get('history_size') == 100
         assert settings.get('color') is True
-        assert settings.get('log_level') == LogLevel.INFO
+        assert settings.get('log_level') == LogLevel.WARNING
 
     def test_get_invalid_key(self):
         """Test getting an invalid setting raises KeyError."""
@@ -155,7 +155,7 @@ class TestSettings:
         assert all_settings['table_max_rows'] == 20
         assert all_settings['history_size'] == 100
         assert all_settings['color'] is True
-        assert all_settings['log_level'] == 'info'
+        assert all_settings['log_level'] == 'warning'
 
 
 @pytest.mark.unittest
@@ -286,7 +286,7 @@ class TestCommandProcessor:
 
     def test_initialization(self, command_processor):
         """Test command processor initialization."""
-        assert command_processor.settings.log_level == LogLevel.INFO
+        assert command_processor.settings.log_level == LogLevel.WARNING
         assert command_processor.display is not None
 
     def test_process_empty_input(self, command_processor):
@@ -418,7 +418,7 @@ class TestCommandProcessor:
     def test_handle_setting_log_level_get(self, command_processor):
         """Test /setting log_level command."""
         result = command_processor.process("/setting log_level")
-        assert "info" in result.output
+        assert "warning" in result.output
         assert not result.should_exit
 
     def test_handle_setting_log_level_set(self, command_processor):

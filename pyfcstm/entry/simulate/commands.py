@@ -48,7 +48,7 @@ class Settings:
         self.table_max_rows: int = 20
         self.history_size: int = 100
         self.color: bool = True
-        self.log_level: LogLevel = LogLevel.INFO
+        self.log_level: LogLevel = LogLevel.WARNING
 
     def get(self, key: str) -> Any:
         """

@@ -66,6 +66,7 @@ Abstract handler registration::
 """
 
 import copy
+import logging
 import warnings
 from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional, Tuple, Union
@@ -369,7 +370,7 @@ class SimulationRuntime:
         self.history: List[Dict] = []  # Execution history
 
         # Initialize logger
-        self.logger = get_logger()
+        self.logger = get_logger(level=logging.WARNING)
 
         for name, define in self.state_machine.defines.items():
             self.vars[name] = define.init(**self.vars)
@@ -912,6 +913,14 @@ class SimulationRuntime:
         :rtype: bool
         """
         current_state = stack[-1].state
+        target_desc = '[*]' if transition.to_state == EXIT_STATE else transition.to_state
+        current_state_path = '.'.join(current_state.path)
+        self.logger.info(
+            f'Execute transition at cycle {self.cycle_count + 1}: '
+            f'{current_state_path} -> {target_desc} '
+            f'(event={transition.event.path_name if transition.event else "none"}) '
+            f'before vars={vars_}'
+        )
 
         for on_exit in current_state.on_exits:
             self._execute_func(on_exit, vars_, is_validation_mode=is_validation_mode)
@@ -920,10 +929,22 @@ class SimulationRuntime:
         stack.pop()
 
         if transition.to_state == EXIT_STATE:
-            return self._finalize_exit_to_parent(stack, vars_, is_validation_mode=is_validation_mode)
+            ended = self._finalize_exit_to_parent(stack, vars_, is_validation_mode=is_validation_mode)
+            current_state_path = '.'.join(current_state.path)
+            self.logger.info(
+                f'Transition completed at cycle {self.cycle_count + 1}: '
+                f'{current_state_path} -> [*], after vars={vars_}, ended={ended}'
+            )
+            return ended
 
         target_state = current_state.parent.substates[transition.to_state]
         self._enter_state(stack, target_state, vars_, d_events, is_validation_mode=is_validation_mode)
+        current_state_path = '.'.join(current_state.path)
+        target_state_path = '.'.join(target_state.path)
+        self.logger.info(
+            f'Transition completed at cycle {self.cycle_count + 1}: '
+            f'{current_state_path} -> {target_state_path}, after vars={vars_}'
+        )
         return False
 
     def _select_transition(
@@ -963,7 +984,18 @@ class SimulationRuntime:
                 continue
             if validate_stoppable and current_state.is_stoppable:
                 if not self._validate_transition(stack, vars_, transition, d_events):
+                    current_state_path = '.'.join(current_state.path)
+                    self.logger.debug(
+                        f'DFS validation rejected transition {current_state_path} -> {transition.to_state} '
+                        f'with vars={vars_}'
+                    )
                     continue
+            current_state_path = '.'.join(current_state.path)
+            self.logger.info(
+                f'Transition selected at cycle {self.cycle_count + 1}: '
+                f'{current_state_path} -> {transition.to_state} '
+                f'(event={transition.event.path_name if transition.event else "none"}, vars={vars_})'
+            )
             return transition
         return None
 
@@ -1001,8 +1033,16 @@ class SimulationRuntime:
         """
         sim_stack = self._clone_stack(stack)
         sim_vars = copy.deepcopy(vars_)
+        stack_repr = [('.'.join(frame.state.path), frame.mode) for frame in stack]
+        self.logger.debug(
+            f'DFS validation start for transition {transition.from_state} -> {transition.to_state} '
+            f'with stack={stack_repr} vars={vars_}'
+        )
         ended = self._execute_transition_on_context(sim_stack, sim_vars, transition, d_events, is_validation_mode=True)
         if ended:
+            self.logger.debug(
+                f'DFS validation success for transition {transition.from_state} -> {transition.to_state}: runtime ended'
+            )
             return True
 
         success, _ = self._run_cycle_on_context(
@@ -1012,6 +1052,11 @@ class SimulationRuntime:
             ended=ended,
             validate_post_child_exit=False,
             is_validation_mode=True,
+        )
+        sim_stack_repr = [('.'.join(frame.state.path), frame.mode) for frame in sim_stack]
+        self.logger.debug(
+            f'DFS validation result for transition {transition.from_state} -> {transition.to_state}: '
+            f'success={success}, stack={sim_stack_repr}, vars={sim_vars}'
         )
         return success
 
@@ -1146,6 +1191,12 @@ class SimulationRuntime:
         max_structural_depth = 64
 
         while not ended:
+            if is_validation_mode:
+                stack_repr = [('.'.join(frame.state.path), frame.mode) for frame in stack]
+                self.logger.debug(
+                    f'DFS step {steps_taken + 1}: stack={stack_repr}, '
+                    f'vars={vars_}, ended={ended}'
+                )
             if not stack:
                 ended = True
                 break

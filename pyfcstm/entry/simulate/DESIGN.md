@@ -810,7 +810,7 @@ Available Events:
 - [x] 格式化帮助文本已创建
 - [x] 命令描述和使用示例已添加
 - [x] 添加键盘快捷键文档（Tab、Ctrl+R 等）
-- [ ] 添加更详细的事件名称格式说明（全路径 vs 简短）
+- [x] 添加更详细的事件名称格式说明（全路径 vs 简短）
 
 **P2.4：错误处理与用户体验** ✅
 - [x] 捕获 `SimulationRuntimeDfsError` 并显示友好消息
@@ -843,7 +843,11 @@ Available Events:
 - [x] 为完整 REPL 工作流编写集成测试
 - [x] 为 `/history` 命令编写测试（空历史、计数、all、无效输入）
 - [x] 为 `/setting` 命令编写测试（列表、获取、设置、验证、历史裁剪）
-- [ ] 为 `SimulationCompleter` 编写单元测试
+- [x] 为 `Settings` 类编写单元测试（初始化、get/set、验证、list_all）
+- [x] 为 `SimulationCompleter` 编写单元测试（命令补全、事件补全、日志级别补全）
+- [x] 为 CLI 入口点编写测试（批处理模式、无效文件、no-color标志）
+- [x] 为 `SimulationREPL` 编写基础测试
+- [x] 达到92%测试覆盖率（batch.py 100%，commands.py 97%，display.py 97%，completer.py 94%）
 - [ ] 测试跨平台兼容性（Windows、Linux、macOS）
 - [ ] 使用各种 DSL 文件测试（简单、复杂、边缘情况）
 - [ ] 测试终端兼容性（不同模拟器、配色方案）

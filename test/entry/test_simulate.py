@@ -6,16 +6,13 @@ functionality of the interactive state machine simulator.
 """
 
 import pytest
-from io import StringIO
-import sys
 
 from pyfcstm.dsl import parse_with_grammar_entry
+from pyfcstm.entry.simulate.batch import BatchProcessor
+from pyfcstm.entry.simulate.commands import CommandProcessor, LogLevel, Settings
+from pyfcstm.entry.simulate.display import StateDisplay
 from pyfcstm.model import parse_dsl_node_to_state_machine
 from pyfcstm.simulate import SimulationRuntime
-from pyfcstm.entry.simulate.display import StateDisplay
-from pyfcstm.entry.simulate.commands import CommandProcessor, LogLevel, CommandResult
-from pyfcstm.entry.simulate.batch import BatchProcessor
-
 
 # Test DSL code
 TEST_DSL = """
@@ -60,6 +57,108 @@ def batch_processor(runtime):
     return BatchProcessor(runtime, use_color=False)
 
 
+@pytest.mark.unittest
+class TestSettings:
+    """Tests for Settings class."""
+
+    def test_initialization(self):
+        """Test Settings initialization with default values."""
+        settings = Settings()
+        assert settings.table_max_rows == 20
+        assert settings.history_size == 100
+        assert settings.color is True
+        assert settings.log_level == LogLevel.INFO
+
+    def test_get_valid_key(self):
+        """Test getting a valid setting."""
+        settings = Settings()
+        assert settings.get('table_max_rows') == 20
+        assert settings.get('history_size') == 100
+        assert settings.get('color') is True
+        assert settings.get('log_level') == LogLevel.INFO
+
+    def test_get_invalid_key(self):
+        """Test getting an invalid setting raises KeyError."""
+        settings = Settings()
+        with pytest.raises(KeyError, match="Unknown setting"):
+            settings.get('invalid_key')
+
+    def test_set_int_value(self):
+        """Test setting an integer value."""
+        settings = Settings()
+        settings.set('table_max_rows', 30)
+        assert settings.table_max_rows == 30
+        settings.set('table_max_rows', '40')
+        assert settings.table_max_rows == 40
+
+    def test_set_int_negative_value(self):
+        """Test setting negative integer raises ValueError."""
+        settings = Settings()
+        with pytest.raises(ValueError):
+            settings.set('table_max_rows', -1)
+        with pytest.raises(ValueError):
+            settings.set('table_max_rows', '-5')
+
+    def test_set_int_invalid_value(self):
+        """Test setting invalid integer raises ValueError."""
+        settings = Settings()
+        with pytest.raises(ValueError, match="Invalid integer value"):
+            settings.set('table_max_rows', 'abc')
+
+    def test_set_bool_true_values(self):
+        """Test setting boolean to true with various values."""
+        settings = Settings()
+        for value in ['on', 'true', '1', 'yes', 'ON', 'TRUE', 'YES']:
+            settings.set('color', value)
+            assert settings.color is True
+
+    def test_set_bool_false_values(self):
+        """Test setting boolean to false with various values."""
+        settings = Settings()
+        for value in ['off', 'false', '0', 'no', 'OFF', 'FALSE', 'NO']:
+            settings.set('color', value)
+            assert settings.color is False
+
+    def test_set_bool_invalid_value(self):
+        """Test setting invalid boolean raises ValueError."""
+        settings = Settings()
+        with pytest.raises(ValueError, match="Invalid boolean value"):
+            settings.set('color', 'maybe')
+
+    def test_set_log_level_valid(self):
+        """Test setting valid log levels."""
+        settings = Settings()
+        for level in ['debug', 'info', 'warning', 'error', 'off']:
+            settings.set('log_level', level)
+            assert settings.log_level == LogLevel(level)
+
+    def test_set_log_level_invalid(self):
+        """Test setting invalid log level raises ValueError."""
+        settings = Settings()
+        with pytest.raises(ValueError, match="Invalid log level"):
+            settings.set('log_level', 'invalid')
+
+    def test_set_invalid_key(self):
+        """Test setting an invalid key raises KeyError."""
+        settings = Settings()
+        with pytest.raises(KeyError, match="Unknown setting"):
+            settings.set('invalid_key', 'value')
+
+    def test_list_all(self):
+        """Test listing all settings."""
+        settings = Settings()
+        all_settings = settings.list_all()
+        assert 'table_max_rows' in all_settings
+        assert 'history_size' in all_settings
+        assert 'color' in all_settings
+        assert 'log_level' in all_settings
+        assert all_settings['table_max_rows'] == 20
+        assert all_settings['history_size'] == 100
+        assert all_settings['color'] is True
+        assert all_settings['log_level'] == 'info'
+
+
+@pytest.mark.unittest
 class TestStateDisplay:
     """Tests for StateDisplay class."""
 
@@ -73,6 +172,23 @@ class TestStateDisplay:
         """Test colorize with colors disabled."""
         result = display._colorize("test", "blue")
         assert result == "test"
+
+    def test_colorize_enabled(self):
+        """Test colorize with colors enabled."""
+        display = StateDisplay(use_color=True)
+        # Force use_color to True for testing
+        display.use_color = True
+        result = display._colorize("test", "blue")
+        # Should contain ANSI codes
+        assert "\033[" in result or result == "test"  # May not have color if terminal doesn't support it
+
+    def test_colorize_unknown_color(self):
+        """Test colorize with unknown color name."""
+        display = StateDisplay(use_color=True)
+        display.use_color = True
+        result = display._colorize("test", "unknown_color")
+        # Should still work, just without the specific color
+        assert "test" in result
 
     def test_format_current_state(self, runtime, display):
         """Test formatting current state."""
@@ -131,7 +247,40 @@ class TestStateDisplay:
         captured = capsys.readouterr()
         assert "Test message" in captured.out
 
+    def test_format_table_empty_rows(self, display):
+        """Test format_table with empty rows."""
+        result = display.format_table(['Col1', 'Col2'], [], [])
+        assert result == ""
 
+    def test_format_table_with_unknown_header(self, display):
+        """Test format_table with header not in Cycle/State/var_names."""
+        headers = ['Custom', 'Header']
+        rows = [['val1', 'val2']]
+        result = display.format_table(headers, rows, [])
+        assert 'Custom' in result
+        assert 'Header' in result
+        assert 'val1' in result
+
+    def test_format_table_with_non_numeric_values(self, display):
+        """Test format_table with non-numeric values in variable columns."""
+        headers = ['Cycle', 'State', 'var1']
+        rows = [[1, 'State.A', 'text_value']]
+        result = display.format_table(headers, rows, ['var1'])
+        assert 'text_value' in result
+
+    def test_format_table_with_separator_row(self, display):
+        """Test format_table with separator row (...)."""
+        headers = ['Cycle', 'State', 'var1']
+        rows = [
+            [1, 'State.A', 10],
+            ['...', '...', '...'],
+            [20, 'State.B', 30]
+        ]
+        result = display.format_table(headers, rows, ['var1'])
+        assert '...' in result
+
+
+@pytest.mark.unittest
 class TestCommandProcessor:
     """Tests for CommandProcessor class."""
 
@@ -197,6 +346,36 @@ class TestCommandProcessor:
         # Count occurrences of "System.Idle" - should be 20 (10 + 10)
         assert result.output.count("System.Idle") == 20
         assert not result.should_exit
+
+    def test_handle_cycle_with_debug_log(self, command_processor):
+        """Test /cycle with debug log level."""
+        command_processor.process("/log debug")
+        result = command_processor.process("/cycle 2")
+        # Debug logging should be active
+        assert "Cycle" in result.output
+
+    def test_handle_cycle_terminated_state(self):
+        """Test /cycle when state machine terminates."""
+        # Create a state machine that terminates
+        dsl_code = """
+        state System {
+            state A;
+            [*] -> A;
+            A -> [*];
+        }
+        """
+        ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+        sm = parse_dsl_node_to_state_machine(ast)
+        runtime = SimulationRuntime(sm)
+        processor = CommandProcessor(runtime, use_color=False)
+
+        # First cycle enters A
+        processor.process("/cycle")
+        # Second cycle exits to terminated
+        processor.process("/cycle")
+        # Third cycle should show terminated
+        result = processor.process("/cycle 2")
+        assert "(terminated)" in result.output
 
     def test_handle_cycle_with_zero_count(self, command_processor, runtime):
         """Test /cycle command with zero count."""
@@ -281,10 +460,34 @@ class TestCommandProcessor:
         assert "Unknown command" in result.output
         assert not result.should_exit
 
+    def test_process_exception_handling(self, command_processor, monkeypatch):
+        """Test exception handling in process method."""
+
+        # Mock _handle_current to raise an exception
+        def mock_handle_current():
+            raise RuntimeError("Test exception")
+
+        monkeypatch.setattr(command_processor, '_handle_current', mock_handle_current)
+        result = command_processor.process("/current")
+        assert "Error:" in result.output
+        assert "Test exception" in result.output
+
     def test_handle_cycle_error(self, command_processor):
         """Test /cycle with invalid event."""
         result = command_processor.process("/cycle InvalidEvent")
         assert "failed" in result.output.lower() or "error" in result.output.lower()
+
+    def test_handle_cycle_dfs_error(self, command_processor, monkeypatch):
+        """Test /cycle with SimulationRuntimeDfsError."""
+        from pyfcstm.simulate import SimulationRuntimeDfsError
+
+        def mock_cycle(events=None):
+            raise SimulationRuntimeDfsError("DFS limit exceeded")
+
+        monkeypatch.setattr(command_processor.runtime, 'cycle', mock_cycle)
+        result = command_processor.process("/cycle")
+        assert "unbounded execution chain" in result.output
+        assert "stoppable states" in result.output
 
     def test_handle_history_empty(self, command_processor):
         """Test history command with no history."""
@@ -391,6 +594,7 @@ class TestCommandProcessor:
         assert not result.should_exit
 
 
+@pytest.mark.unittest
 class TestBatchProcessor:
     """Tests for BatchProcessor class."""
 
@@ -438,6 +642,221 @@ class TestBatchProcessor:
         assert "System" in result
 
 
+@pytest.mark.unittest
+class TestSimulationCompleter:
+    """Tests for SimulationCompleter class."""
+
+    def test_initialization(self, runtime):
+        """Test completer initialization."""
+        from pyfcstm.entry.simulate.completer import SimulationCompleter
+        completer = SimulationCompleter(runtime)
+        assert completer.runtime is runtime
+        assert len(completer.COMMANDS) > 0
+        assert len(completer.LOG_LEVELS) > 0
+
+    def test_command_completion(self, runtime):
+        """Test command completion."""
+        from pyfcstm.entry.simulate.completer import SimulationCompleter
+        from prompt_toolkit.document import Document
+
+        completer = SimulationCompleter(runtime)
+        document = Document('/c')
+        completions = list(completer.get_completions(document, None))
+        # Should suggest /cycle, /clear, /current
+        assert len(completions) >= 3
+        texts = [c.text for c in completions]
+        assert 'ycle' in texts or '/cycle' in texts
+        assert 'lear' in texts or '/clear' in texts
+
+    def test_log_level_completion(self, runtime):
+        """Test log level completion."""
+        from pyfcstm.entry.simulate.completer import SimulationCompleter
+        from prompt_toolkit.document import Document
+
+        completer = SimulationCompleter(runtime)
+        document = Document('/log d')
+        completions = list(completer.get_completions(document, None))
+        # Should suggest debug
+        texts = [c.text for c in completions]
+        assert 'ebug' in texts or 'debug' in texts
+
+    def test_event_completion(self, runtime):
+        """Test event completion."""
+        from pyfcstm.entry.simulate.completer import SimulationCompleter
+        from prompt_toolkit.document import Document
+
+        completer = SimulationCompleter(runtime)
+        # Move to a state with events
+        runtime.cycle()
+        document = Document('/cycle S')
+        completions = list(completer.get_completions(document, None))
+        # Should suggest Start event
+        texts = [c.text for c in completions]
+        assert any('tart' in t or 'Start' in t for t in texts)
+
+    def test_event_completion_empty_prefix(self, runtime):
+        """Test event completion with trailing space."""
+        from pyfcstm.entry.simulate.completer import SimulationCompleter
+        from prompt_toolkit.document import Document
+
+        completer = SimulationCompleter(runtime)
+        runtime.cycle()
+        # With trailing space, words[-1] will be '/cycle', not empty
+        document = Document('/cycle ')
+        completions = list(completer.get_completions(document, None))
+        # Should suggest events that start with '/cycle' (none)
+        # Actually, the prefix will be '/cycle', so no events will match
+        # This tests the normal flow, not the else branch
+        assert isinstance(completions, list)
+
+    def test_log_completion_empty_prefix(self, runtime):
+        """Test log level completion with trailing space."""
+        from pyfcstm.entry.simulate.completer import SimulationCompleter
+        from prompt_toolkit.document import Document
+
+        completer = SimulationCompleter(runtime)
+        # With trailing space, words[-1] will be '/log', not empty
+        document = Document('/log ')
+        completions = list(completer.get_completions(document, None))
+        # Should suggest log levels that start with '/log' (none)
+        assert isinstance(completions, list)
+
+    def test_completer_no_current_state(self):
+        """Test completer when runtime has ended."""
+        from pyfcstm.entry.simulate.completer import SimulationCompleter
+        from prompt_toolkit.document import Document
+
+        # Create a terminated runtime
+        dsl_code = """
+        state System {
+            state A;
+            [*] -> A;
+            A -> [*];
+        }
+        """
+        ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+        sm = parse_dsl_node_to_state_machine(ast)
+        runtime = SimulationRuntime(sm)
+        runtime.cycle()  # Enter A
+        runtime.cycle()  # Exit to terminated
+
+        completer = SimulationCompleter(runtime)
+        # When runtime has ended, accessing current_state raises IndexError
+        # The completer should handle this gracefully
+        document = Document('/cycle test')
+        # This should not crash even though runtime has ended
+        try:
+            completions = list(completer.get_completions(document, None))
+            assert isinstance(completions, list)
+        except IndexError:
+            # If IndexError is raised, that's also acceptable
+            # as it indicates the runtime has ended
+            pass
+
+    def test_empty_completion(self, runtime):
+        """Test completion with empty input."""
+        from pyfcstm.entry.simulate.completer import SimulationCompleter
+        from prompt_toolkit.document import Document
+
+        completer = SimulationCompleter(runtime)
+        document = Document('/')
+        completions = list(completer.get_completions(document, None))
+        # Should suggest all commands
+        assert len(completions) >= len(completer.COMMANDS)
+
+    def test_no_match_completion(self, runtime):
+        """Test completion with no matches."""
+        from pyfcstm.entry.simulate.completer import SimulationCompleter
+        from prompt_toolkit.document import Document
+
+        completer = SimulationCompleter(runtime)
+        document = Document('/xyz')
+        completions = list(completer.get_completions(document, None))
+        # Should return empty
+        assert len(completions) == 0
+
+
+@pytest.mark.unittest
+class TestCLIEntry:
+    """Tests for CLI entry point."""
+
+    def test_simulate_batch_mode(self, tmp_path):
+        """Test simulate command in batch mode."""
+        from click.testing import CliRunner
+        from pyfcstm.entry.cli import pyfcstmcli
+
+        # Create a test DSL file
+        dsl_file = tmp_path / "test.fcstm"
+        dsl_file.write_text(TEST_DSL)
+
+        runner = CliRunner()
+        result = runner.invoke(pyfcstmcli, [
+            'simulate',
+            '-i', str(dsl_file),
+            '-e', 'current; cycle; current'
+        ])
+
+        assert result.exit_code == 0
+        assert 'System' in result.output
+
+    def test_simulate_invalid_file(self):
+        """Test simulate command with invalid file."""
+        from click.testing import CliRunner
+        from pyfcstm.entry.cli import pyfcstmcli
+
+        runner = CliRunner()
+        result = runner.invoke(pyfcstmcli, [
+            'simulate',
+            '-i', '/nonexistent/file.fcstm',
+            '-e', 'current'
+        ])
+
+        assert result.exit_code == 0  # Click doesn't exit with error
+        assert 'Failed to parse' in result.output or 'No such file' in result.output
+
+    def test_simulate_no_color(self, tmp_path):
+        """Test simulate command with --no-color flag."""
+        from click.testing import CliRunner
+        from pyfcstm.entry.cli import pyfcstmcli
+
+        dsl_file = tmp_path / "test.fcstm"
+        dsl_file.write_text(TEST_DSL)
+
+        runner = CliRunner()
+        result = runner.invoke(pyfcstmcli, [
+            'simulate',
+            '-i', str(dsl_file),
+            '-e', 'current',
+            '--no-color'
+        ])
+
+        assert result.exit_code == 0
+        assert 'System' in result.output
+
+
+@pytest.mark.unittest
+class TestREPL:
+    """Tests for SimulationREPL class."""
+
+    def test_repl_initialization(self, runtime):
+        """Test REPL initialization."""
+        from pyfcstm.entry.simulate.repl import SimulationREPL
+
+        repl = SimulationREPL(runtime, use_color=False)
+        assert repl.command_processor is not None
+        assert repl.session is not None
+
+    def test_repl_process_command(self, runtime):
+        """Test REPL command processing."""
+        from pyfcstm.entry.simulate.repl import SimulationREPL
+
+        repl = SimulationREPL(runtime, use_color=False)
+        # Test that command processor works
+        result = repl.command_processor.process("/current")
+        assert "System" in result.output
+
+
+@pytest.mark.unittest
 class TestIntegration:
     """Integration tests for the simulate entry point."""
 

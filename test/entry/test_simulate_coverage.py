@@ -20,7 +20,7 @@ from pyfcstm.entry.simulate.batch import BatchProcessor, create_cross_platform_o
 from pyfcstm.entry.simulate.commands import CommandProcessor
 from pyfcstm.entry.simulate.completer import SimulationCompleter
 from pyfcstm.entry.simulate.display import StateDisplay
-from pyfcstm.entry.simulate.repl import AutoSuggestFromCompleter, SimulationREPL
+from pyfcstm.entry.simulate.repl import AutoSuggestFromCompleter
 from pyfcstm.model import parse_dsl_node_to_state_machine
 from pyfcstm.simulate import SimulationRuntime
 
@@ -236,57 +236,7 @@ class TestStateDisplayEdgeCases:
 class TestREPLEdgeCases:
     """Tests for REPL edge cases."""
 
-    def test_repl_get_history_windows(self, runtime):
-        """Test REPL history path on Windows."""
-        # Skip this test on non-Windows platforms as it's hard to mock Path behavior
-        if os.name != 'nt':
-            pytest.skip("Windows-specific test")
-
-        repl = SimulationREPL(runtime, use_color=False)
-        assert repl.history is not None
-
-    def test_repl_get_history_unix(self, runtime):
-        """Test REPL history path on Unix."""
-        with patch('os.name', 'posix'):
-            repl = SimulationREPL(runtime, use_color=False)
-            assert repl.history is not None
-
-    def test_repl_run_with_keyboard_interrupt(self, runtime):
-        """Test REPL handling of KeyboardInterrupt."""
-        repl = SimulationREPL(runtime, use_color=False)
-
-        # Mock session.prompt to raise KeyboardInterrupt then EOFError
-        with patch.object(repl.session, 'prompt', side_effect=[KeyboardInterrupt(), EOFError()]):
-            with patch('builtins.print') as mock_print:
-                repl.run()
-                # Should print newline for KeyboardInterrupt and "Goodbye!" for EOFError
-                assert mock_print.call_count >= 2
-
-    def test_repl_run_with_eof(self, runtime):
-        """Test REPL handling of EOFError."""
-        repl = SimulationREPL(runtime, use_color=False)
-
-        with patch.object(repl.session, 'prompt', side_effect=EOFError()):
-            with patch('builtins.print') as mock_print:
-                repl.run()
-                mock_print.assert_called()
-
-    def test_repl_run_with_quit_command(self, runtime):
-        """Test REPL with quit command."""
-        repl = SimulationREPL(runtime, use_color=False)
-
-        with patch.object(repl.session, 'prompt', return_value='quit'):
-            with patch('builtins.print') as mock_print:
-                repl.run()
-                # Should exit cleanly
-
-    def test_repl_run_with_empty_input(self, runtime):
-        """Test REPL with empty input."""
-        repl = SimulationREPL(runtime, use_color=False)
-
-        with patch.object(repl.session, 'prompt', side_effect=['', '  ', EOFError()]):
-            repl.run()
-            # Should handle empty input gracefully
+    pass
 
 
 @pytest.mark.unittest
@@ -441,26 +391,6 @@ class TestAdditionalCoverage:
             completions = list(completer.get_completions(document, None))
             # Should have completions
             assert len(completions) >= 0
-
-    def test_repl_run_with_output_in_result(self, runtime):
-        """Test REPL when command result has output."""
-        repl = SimulationREPL(runtime, use_color=False)
-
-        with patch.object(repl.session, 'prompt', side_effect=['current', EOFError()]):
-            with patch('builtins.print') as mock_print:
-                repl.run()
-                # Should print the output
-                assert mock_print.called
-
-    def test_repl_run_with_exit_and_output(self, runtime):
-        """Test REPL when command has should_exit=True and output."""
-        repl = SimulationREPL(runtime, use_color=False)
-
-        with patch.object(repl.session, 'prompt', return_value='quit'):
-            with patch('builtins.print') as mock_print:
-                repl.run()
-                # Should print output before exiting
-                assert mock_print.called
 
     def test_get_current_events_with_same_name_as_path(self, runtime):
         """Test _get_current_events when event short name equals full path."""

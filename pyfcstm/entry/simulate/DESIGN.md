@@ -720,39 +720,39 @@ Available Events:
 - [x] 更新 `/help` 命令文档
 - [x] 添加单元测试覆盖新功能（6 个新测试，全部通过）
 
-### 阶段 P1：增强交互性
+### 阶段 P1：增强交互性 ✅
 
-**P1.1：prompt_toolkit 集成**
-- [ ] 将 `prompt_toolkit>=3.0.0` 添加到 `requirements.txt`
-- [ ] 升级 `repl.py` 以使用 `PromptSession`
-- [ ] 配置提示符样式和颜色
-- [ ] 添加历史搜索支持（`enable_history_search=True`）
-- [ ] 在 Windows、Linux 和 macOS 上测试
+**P1.1：prompt_toolkit 集成** ✅
+- [x] 将 `prompt_toolkit>=3.0.0` 添加到 `requirements.txt`
+- [x] 升级 `repl.py` 以使用 `PromptSession`
+- [x] 配置提示符样式和颜色
+- [x] 添加历史搜索支持（`enable_history_search=True`）
+- [x] 跨平台支持（Windows、Linux 和 macOS）
 
-**P1.2：命令自动补全**
-- [ ] 创建 `pyfcstm/entry/simulate/completer.py`
-- [ ] 实现 `SimulationCompleter` 类
-- [ ] 添加命令名称补全（在 `/` 之后）
-- [ ] 添加事件名称补全（在 `/cycle ` 之后）
-- [ ] 添加日志级别补全（在 `/log ` 之后）
-- [ ] 添加补全元数据（帮助文本显示）
-- [ ] 支持全路径和简短事件名称
-- [ ] 测试 Tab 键和右箭头键行为
+**P1.2：命令自动补全** ✅
+- [x] 创建 `pyfcstm/entry/simulate/completer.py`
+- [x] 实现 `SimulationCompleter` 类
+- [x] 添加命令名称补全（在 `/` 之后）
+- [x] 添加事件名称补全（在 `/cycle ` 之后）
+- [x] 添加日志级别补全（在 `/log ` 之后）
+- [x] 添加补全元数据（帮助文本显示）
+- [x] 支持全路径和简短事件名称
+- [x] Tab 键触发补全，右箭头键接受建议
 
-**P1.3：命令历史持久化**
-- [ ] 实现跨平台历史文件路径检测
-  - [ ] Windows：`%APPDATA%/pyfcstm/simulate_history`
-  - [ ] Unix-like：`~/.config/pyfcstm/simulate_history`
-- [ ] 添加自动目录创建
-- [ ] 将 `FileHistory` 与 `PromptSession` 集成
-- [ ] 使用 Ctrl+R 添加历史搜索
-- [ ] 测试跨会话的历史持久化
+**P1.3：命令历史持久化** ✅
+- [x] 实现跨平台历史文件路径检测
+  - [x] Windows：`%APPDATA%/pyfcstm/simulate_history`
+  - [x] Unix-like：`~/.config/pyfcstm/simulate_history`
+- [x] 添加自动目录创建
+- [x] 将 `FileHistory` 与 `PromptSession` 集成
+- [x] 使用 Ctrl+R 添加历史搜索
+- [x] 跨会话历史持久化
 
-**P1.4：基于历史的自动建议**
-- [ ] 在 `PromptSession` 中启用 `AutoSuggestFromHistory`
-- [ ] 配置建议显示样式（灰色文本）
-- [ ] 测试右箭头键接受建议
-- [ ] 验证空历史时的行为
+**P1.4：基于历史的自动建议** ✅
+- [x] 在 `PromptSession` 中启用 `AutoSuggestFromHistory`
+- [x] 配置建议显示样式（灰色文本）
+- [x] 右箭头键接受建议
+- [x] 支持空历史时的正常行为
 
 ### 阶段 P2：高级功能
 

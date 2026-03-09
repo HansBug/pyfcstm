@@ -33,7 +33,7 @@ class SimulationCompleter(Completer):
 
     COMMANDS = [
         'cycle', 'clear', 'current', 'events',
-        'history', 'setting', 'help', 'quit', 'exit'
+        'history', 'setting', 'export', 'help', 'quit', 'exit'
     ]
 
     LOG_LEVELS = ['debug', 'info', 'warning', 'error', 'off']
@@ -181,6 +181,21 @@ class SimulationCompleter(Completer):
                                 display_meta='numeric value'
                             )
 
+        # export command - complete with file extensions
+        elif command == 'export':
+            if len(words) == 1 or (len(words) == 2 and not text.endswith(' ')):
+                prefix = words[1] if len(words) == 2 else ''
+
+                # Suggest common filenames with extensions
+                for ext in ['.csv', '.json', '.yaml', '.jsonl']:
+                    filename = f'history{ext}'
+                    if filename.startswith(prefix):
+                        yield Completion(
+                            filename,
+                            start_position=-len(prefix),
+                            display_meta=f'{ext[1:].upper()} format'
+                        )
+
     def _get_current_events(self) -> list:
         """
         Get available events in the current state.
@@ -227,6 +242,7 @@ class SimulationCompleter(Completer):
             'events': 'List available events',
             'history': 'Show execution history',
             'setting': 'View or change settings',
+            'export': 'Export history to file',
             'help': 'Show help',
             'quit': 'Exit simulator',
             'exit': 'Exit simulator',

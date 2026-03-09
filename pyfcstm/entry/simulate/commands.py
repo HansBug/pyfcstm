@@ -212,6 +212,8 @@ class CommandProcessor:
                 return self._handle_history(args)
             elif command == 'setting':
                 return self._handle_setting(args)
+            elif command == 'export':
+                return self._handle_export(args)
             elif command == 'help':
                 return self._handle_help()
             elif command in ['quit', 'exit']:
@@ -382,6 +384,7 @@ class CommandProcessor:
   events                     - List available events in current state
   history [n|all]            - Show execution history (default: 10 recent entries)
   setting [key] [value]      - View or change settings (including log_level)
+  export <filename>          - Export history to file (.csv, .json, .yaml, .jsonl)
   help                       - Show this help message
   quit, exit                 - Exit simulator
 
@@ -525,3 +528,117 @@ Keyboard shortcuts (interactive mode):
                             events.append((event_path, None))
 
         return events
+
+    def _handle_export(self, args: List[str]) -> CommandResult:
+        """
+        Handle export command to export history to file.
+
+        Supports multiple formats based on file extension:
+        - .csv: CSV format with columns: cycle, state, var1, var2, ...
+        - .json: JSON array of history entries
+        - .yaml: YAML array of history entries
+        - .jsonl: JSON Lines format (one JSON object per line)
+
+        :param args: Command arguments [filename]
+        :type args: List[str]
+        :return: Command result
+        :rtype: CommandResult
+        """
+        if not args:
+            return CommandResult("Usage: export <filename>\nSupported formats: .csv, .json, .yaml, .jsonl")
+
+        filename = args[0]
+
+        # Check if history is empty
+        if not self.runtime.history:
+            return CommandResult("No history to export. Run some cycles first.")
+
+        # Determine format from extension
+        import os
+        _, ext = os.path.splitext(filename)
+        ext = ext.lower()
+
+        if ext not in ['.csv', '.json', '.yaml', '.jsonl']:
+            return CommandResult(f"Unsupported file format: {ext}\nSupported formats: .csv, .json, .yaml, .jsonl")
+
+        try:
+            if ext == '.csv':
+                self._export_csv(filename)
+            elif ext == '.json':
+                self._export_json(filename)
+            elif ext == '.yaml':
+                self._export_yaml(filename)
+            elif ext == '.jsonl':
+                self._export_jsonl(filename)
+
+            return CommandResult(f"History exported to {filename} ({len(self.runtime.history)} entries)")
+        except Exception as e:
+            return CommandResult(f"Export failed: {e}")
+
+    def _export_csv(self, filename: str) -> None:
+        """
+        Export history to CSV format.
+
+        :param filename: Output filename
+        :type filename: str
+        """
+        import csv
+
+        # Get all variable names
+        var_names = sorted(self.runtime.vars.keys())
+
+        with open(filename, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+
+            # Write header
+            header = ['cycle', 'state'] + var_names
+            writer.writerow(header)
+
+            # Write data
+            for entry in self.runtime.history:
+                cycle_num = entry['cycle']
+                state = entry['state']
+                vars_dict = entry['vars']
+
+                row = [cycle_num, state]
+                for var_name in var_names:
+                    row.append(vars_dict.get(var_name, ''))
+
+                writer.writerow(row)
+
+    def _export_json(self, filename: str) -> None:
+        """
+        Export history to JSON format.
+
+        :param filename: Output filename
+        :type filename: str
+        """
+        import json
+
+        with open(filename, 'w', encoding='utf-8') as f:
+            json.dump(self.runtime.history, f, indent=2, ensure_ascii=False)
+
+    def _export_yaml(self, filename: str) -> None:
+        """
+        Export history to YAML format.
+
+        :param filename: Output filename
+        :type filename: str
+        """
+        import yaml
+
+        with open(filename, 'w', encoding='utf-8') as f:
+            yaml.dump(self.runtime.history, f, default_flow_style=False, allow_unicode=True)
+
+    def _export_jsonl(self, filename: str) -> None:
+        """
+        Export history to JSON Lines format.
+
+        :param filename: Output filename
+        :type filename: str
+        """
+        import json
+
+        with open(filename, 'w', encoding='utf-8') as f:
+            for entry in self.runtime.history:
+                f.write(json.dumps(entry, ensure_ascii=False) + '\n')

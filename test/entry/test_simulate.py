@@ -698,6 +698,120 @@ class TestCommandProcessor:
         assert len(lines) == 4
         assert not result.should_exit
 
+    def test_handle_export_no_args(self, command_processor):
+        """Test export command without arguments."""
+        result = command_processor.process("export")
+        assert "Usage" in result.output
+        assert ".csv" in result.output
+        assert not result.should_exit
+
+    def test_handle_export_no_history(self, command_processor):
+        """Test export command with no history."""
+        result = command_processor.process("export test.csv")
+        assert "No history" in result.output
+        assert not result.should_exit
+
+    def test_handle_export_unsupported_format(self, command_processor):
+        """Test export command with unsupported format."""
+        command_processor.process("cycle 3")
+        result = command_processor.process("export test.txt")
+        assert "Unsupported file format" in result.output
+        assert not result.should_exit
+
+    def test_handle_export_csv(self, command_processor, tmp_path):
+        """Test export command to CSV format."""
+        import csv
+        # Generate some history
+        command_processor.process("cycle 5")
+
+        # Export to CSV
+        csv_file = tmp_path / "test.csv"
+        result = command_processor.process(f"export {csv_file}")
+        assert "exported" in result.output.lower()
+        assert "5 entries" in result.output
+        assert not result.should_exit
+
+        # Verify CSV content
+        assert csv_file.exists()
+        with open(csv_file, 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+            assert len(rows) == 5
+            assert 'cycle' in rows[0]
+            assert 'state' in rows[0]
+            assert 'counter' in rows[0]
+            assert 'temperature' in rows[0]
+
+    def test_handle_export_json(self, command_processor, tmp_path):
+        """Test export command to JSON format."""
+        import json
+        # Generate some history
+        command_processor.process("cycle 3")
+
+        # Export to JSON
+        json_file = tmp_path / "test.json"
+        result = command_processor.process(f"export {json_file}")
+        assert "exported" in result.output.lower()
+        assert "3 entries" in result.output
+        assert not result.should_exit
+
+        # Verify JSON content
+        assert json_file.exists()
+        with open(json_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            assert isinstance(data, list)
+            assert len(data) == 3
+            assert 'cycle' in data[0]
+            assert 'state' in data[0]
+            assert 'vars' in data[0]
+
+    def test_handle_export_yaml(self, command_processor, tmp_path):
+        """Test export command to YAML format."""
+        import yaml
+        # Generate some history
+        command_processor.process("cycle 4")
+
+        # Export to YAML
+        yaml_file = tmp_path / "test.yaml"
+        result = command_processor.process(f"export {yaml_file}")
+        assert "exported" in result.output.lower()
+        assert "4 entries" in result.output
+        assert not result.should_exit
+
+        # Verify YAML content
+        assert yaml_file.exists()
+        with open(yaml_file, 'r', encoding='utf-8') as f:
+            data = yaml.safe_load(f)
+            assert isinstance(data, list)
+            assert len(data) == 4
+            assert 'cycle' in data[0]
+            assert 'state' in data[0]
+            assert 'vars' in data[0]
+
+    def test_handle_export_jsonl(self, command_processor, tmp_path):
+        """Test export command to JSON Lines format."""
+        import json
+        # Generate some history
+        command_processor.process("cycle 2")
+
+        # Export to JSONL
+        jsonl_file = tmp_path / "test.jsonl"
+        result = command_processor.process(f"export {jsonl_file}")
+        assert "exported" in result.output.lower()
+        assert "2 entries" in result.output
+        assert not result.should_exit
+
+        # Verify JSONL content
+        assert jsonl_file.exists()
+        with open(jsonl_file, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+            assert len(lines) == 2
+            for line in lines:
+                entry = json.loads(line)
+                assert 'cycle' in entry
+                assert 'state' in entry
+                assert 'vars' in entry
+
 
 @pytest.mark.unittest
 class TestBatchProcessor:
@@ -1004,6 +1118,41 @@ class TestSimulationCompleter:
         completions = list(completer.get_completions(document, None))
         texts = [c.text for c in completions]
         assert 'on' in texts or 'off' in texts
+
+    def test_export_command_completion(self, runtime):
+        """Test export command completion."""
+        from pyfcstm.entry.simulate.completer import SimulationCompleter
+        from prompt_toolkit.document import Document
+
+        completer = SimulationCompleter(runtime)
+
+        # Test 'ex' should suggest 'export'
+        document = Document('ex')
+        completions = list(completer.get_completions(document, None))
+        texts = [c.text for c in completions]
+        assert 'export' in texts
+
+    def test_export_filename_completion(self, runtime):
+        """Test export filename completion."""
+        from pyfcstm.entry.simulate.completer import SimulationCompleter
+        from prompt_toolkit.document import Document
+
+        completer = SimulationCompleter(runtime)
+
+        # Test 'export ' should suggest filenames with extensions
+        document = Document('export ')
+        completions = list(completer.get_completions(document, None))
+        texts = [c.text for c in completions]
+        assert 'history.csv' in texts
+        assert 'history.json' in texts
+        assert 'history.yaml' in texts
+        assert 'history.jsonl' in texts
+
+        # Test 'export history.' should suggest extensions
+        document = Document('export history.')
+        completions = list(completer.get_completions(document, None))
+        texts = [c.text for c in completions]
+        assert 'history.csv' in texts or 'history.json' in texts
 
 
 @pytest.mark.unittest

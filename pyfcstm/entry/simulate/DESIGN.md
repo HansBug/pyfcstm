@@ -40,6 +40,7 @@ prompt_toolkit>=3.0.0
 | `events`  | 无                           | 列出当前状态可触发的事件       | `events`                               |
 | `history` | `[n\|all]`                  | 显示执行历史记录            | `history`, `history 20`, `history all` |
 | `setting` | `[key] [value]`             | 查看或设置配置项            | `setting`, `setting table_max_rows 30` |
+| `export`  | `<filename>`                | 导出历史到文件              | `export history.csv`, `export data.json` |
 | `help`    | 无                           | 显示帮助信息               | `help`                                 |
 | `quit`    | 无                           | 退出模拟器                 | `quit`                                 |
 | `exit`    | 无                           | 退出模拟器（同 quit）      | `exit`                                 |
@@ -69,6 +70,10 @@ prompt_toolkit>=3.0.0
 - 输入 `setting color ` 后：显示布尔值（on, off, true, false）
 - 输入 `setting table_max_rows ` 后：显示常用数值（10, 20, 50, 100, 200, 500, 1000）
 - 输入 `setting history_size ` 后：显示常用数值（10, 20, 50, 100, 200, 500, 1000）
+
+**export 命令参数补全**：
+- 输入 `export ` 后：显示建议的文件名（history.csv, history.json, history.yaml, history.jsonl）
+- 每个建议都带有格式类型提示（CSV format, JSON format等）
 
 **事件补全**：
 - 显示当前状态可用事件列表（全路径和简短版本）
@@ -986,4 +991,32 @@ Available Events:
 - [x] 测试跨平台兼容性（颜色支持检测、路径处理、行尾处理、Unicode处理、无颜色模式）
 - [x] 使用各种 DSL 文件测试（简单、复杂层次、转换、守卫、效果、进入/退出动作、多变量、空状态、终止）
 - [x] 测试终端兼容性（ANSI颜色代码、表格格式化、宽字符、日志级别、空输出）
-- [x] 总计111个测试，全部通过
+- [x] 总计137个测试，全部通过
+
+**P3.2：历史导出功能** ✅
+- [x] 实现 `export` 命令用于导出执行历史
+  - [x] `export <filename>` - 根据文件扩展名自动选择格式
+- [x] 支持的导出格式：
+  - [x] `.csv` - CSV格式，列：cycle, state, var1, var2, ...
+  - [x] `.json` - JSON数组格式，每个条目包含 cycle, state, vars
+  - [x] `.yaml` - YAML数组格式，每个条目包含 cycle, state, vars
+  - [x] `.jsonl` - JSON Lines格式，每行一个JSON对象
+- [x] 自动补全支持：
+  - [x] 命令名称补全（`ex` → `export`）
+  - [x] 文件名建议（`history.csv`, `history.json`, `history.yaml`, `history.jsonl`）
+  - [x] 扩展名提示（显示格式类型）
+- [x] 错误处理：
+  - [x] 无参数时显示用法说明
+  - [x] 无历史记录时提示用户
+  - [x] 不支持的格式时显示错误
+  - [x] 文件写入失败时捕获异常
+- [x] 单元测试：
+  - [x] 测试无参数情况
+  - [x] 测试无历史记录情况
+  - [x] 测试不支持的格式
+  - [x] 测试CSV导出和验证
+  - [x] 测试JSON导出和验证
+  - [x] 测试YAML导出和验证
+  - [x] 测试JSONL导出和验证
+  - [x] 测试命令补全
+  - [x] 测试文件名补全

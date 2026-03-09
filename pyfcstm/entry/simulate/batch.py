@@ -39,28 +39,33 @@ class BatchProcessor:
 
     def execute_commands(self, command_string: str) -> str:
         """
-        Execute a batch command string.
+        Execute a batch command string with clear command separators.
 
         Commands are separated by semicolons. The '/' prefix is automatically
-        added if missing.
+        added if missing. Each command's output is clearly labeled.
 
         :param command_string: Semicolon-separated command string
         :type command_string: str
-        :return: Combined output from all commands
+        :return: Combined output from all commands with separators
         :rtype: str
 
         Example::
 
             >>> processor.execute_commands("current; cycle Start; current")
-            "Current State: System.Idle\\n...\\nCurrent State: System.Running\\n..."
+            ">>> /current\\nCurrent State: System.Idle\\n...\\n>>> /cycle Start\\n..."
         """
         commands = [cmd.strip() for cmd in command_string.split(';') if cmd.strip()]
         results = []
 
-        for command in commands:
+        for i, command in enumerate(commands):
             # Automatically add / prefix if missing
             if not command.startswith('/'):
                 command = '/' + command
+
+            # Add command header
+            separator = "─" * 60
+            command_header = f">>> {command}"
+            results.append(f"{separator}\n{command_header}\n{separator}")
 
             result = self.command_processor.process(command)
             if result.output:

@@ -82,6 +82,11 @@ class StateDisplay:
         """
         lines = []
 
+        # Cycle count
+        cycle_label = self._colorize("Cycle:", 'blue')
+        cycle_value = self._colorize(str(runtime.cycle_count), 'cyan')
+        lines.append(f"{cycle_label} {cycle_value}")
+
         # Current state
         try:
             if runtime.current_state:
@@ -154,3 +159,97 @@ class StateDisplay:
         color = color_map.get(level, 'reset')
         prefix = f"[{level.upper()}]" if level != 'info' else ""
         print(f"{self._colorize(prefix, color)} {message}".strip())
+
+    def format_table(self, headers: list, rows: list, var_names: list = None) -> str:
+        """
+        Format data as a centered table with colors.
+
+        :param headers: List of column headers
+        :type headers: list
+        :param rows: List of row data (each row is a list)
+        :type rows: list
+        :param var_names: List of variable names for coloring, defaults to None
+        :type var_names: list, optional
+        :return: Formatted table string
+        :rtype: str
+        """
+        if not rows:
+            return ""
+
+        var_names = var_names or []
+
+        # Calculate column widths (based on visible content)
+        col_widths = [len(str(h)) for h in headers]
+        for row in rows:
+            for i, cell in enumerate(row):
+                col_widths[i] = max(col_widths[i], len(str(cell)))
+
+        # Add padding
+        col_widths = [w + 2 for w in col_widths]
+
+        lines = []
+
+        # Format header row with colors
+        header_parts = []
+        for i, header in enumerate(headers):
+            width = col_widths[i]
+            # Determine color for header
+            if header == 'Cycle':
+                colored_header = self._colorize(header, 'blue')
+            elif header == 'State':
+                colored_header = self._colorize(header, 'blue')
+            elif header in var_names:
+                colored_header = self._colorize(header, 'yellow')
+            else:
+                colored_header = header
+
+            # Center the header
+            padding = width - len(header)
+            left_pad = padding // 2
+            right_pad = padding - left_pad
+            header_parts.append(' ' * left_pad + colored_header + ' ' * right_pad)
+
+        lines.append(''.join(header_parts))
+
+        # Format separator row
+        separator_parts = ['-' * w for w in col_widths]
+        lines.append(''.join(separator_parts))
+
+        # Format data rows with colors
+        for row in rows:
+            row_parts = []
+            for i, cell in enumerate(row):
+                width = col_widths[i]
+                cell_str = str(cell)
+
+                # Determine color for cell
+                colored_cell = cell_str
+                if i == 0:  # Cycle column
+                    if cell_str != '...':
+                        try:
+                            int(cell_str)
+                            colored_cell = self._colorize(cell_str, 'cyan')
+                        except ValueError:
+                            pass
+                elif i == 1:  # State column
+                    if '.' in cell_str or cell_str == '(terminated)':
+                        colored_cell = self._colorize(cell_str, 'green')
+                else:  # Variable columns
+                    if cell_str != '...':
+                        try:
+                            float(cell_str)
+                            colored_cell = self._colorize(cell_str, 'cyan')
+                        except ValueError:
+                            pass
+
+                # Center the cell
+                padding = width - len(cell_str)
+                left_pad = padding // 2
+                right_pad = padding - left_pad
+                row_parts.append(' ' * left_pad + colored_cell + ' ' * right_pad)
+
+            lines.append(''.join(row_parts))
+
+        return '\n'.join(lines)
+
+

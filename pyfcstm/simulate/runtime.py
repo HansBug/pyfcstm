@@ -361,6 +361,7 @@ class SimulationRuntime:
         self.state_machine = state_machine
         self.stack: List[_Frame] = []
         self.vars: Dict[str, Union[int, float]] = {}
+        self.cycle_count: int = 0  # Track number of cycles executed
         for name, define in self.state_machine.defines.items():
             self.vars[name] = define.init(**self.vars)
 
@@ -1462,6 +1463,7 @@ class SimulationRuntime:
             self.vars = sim_vars
             self._initialized = sim_initialized
             self._ended = sim_ended
+            self.cycle_count += 1  # Increment cycle count on successful cycle
         else:
             self.vars = snapshot_vars
             self._ended = snapshot_ended

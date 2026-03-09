@@ -754,6 +754,33 @@ Available Events:
 - [x] 右箭头键接受建议
 - [x] 支持空历史时的正常行为
 
+**P1.5：增强输出格式化** ✅
+- [x] 批处理模式（`-e`）输出优化
+  - [x] 为每条命令添加清晰的分隔符
+  - [x] 显示正在执行的命令
+  - [x] 区分不同命令的输出内容
+- [x] `/cycle` 多次执行表格化输出
+  - [x] 使用手写表格实现（不依赖tabulate）
+  - [x] 所有列居中显示
+  - [x] 表格列：cycle（序号）、state（状态）、各变量列
+  - [x] count < 20：显示所有周期
+  - [x] count >= 20：仅显示前 10 次和后 10 次
+  - [x] 行分隔符仅在 header 和 rows 之间，rows 内部无分隔
+  - [x] 从 `requirements.txt` 移除 `tabulate` 依赖
+  - [x] Cycle 列从当前 runtime 已执行的 cycle 数开始计数（而非从 1 开始）
+  - [x] 表格添加颜色支持：
+    - [x] Cycle header: 蓝色
+    - [x] Cycle values: Cyan
+    - [x] State header: 蓝色
+    - [x] State values: 绿色
+    - [x] 变量 headers: 黄色
+    - [x] 变量 values: Cyan
+- [x] `/current` 和单个 `/cycle` 显示 Cycle 计数
+  - [x] 在 Current State 上方添加 "Cycle: xxx" 显示当前周期数
+- [x] 修复 ANSI 颜色代码问题
+  - [x] 修复 `0m` 后缀问题
+  - [x] 使用正则表达式单词边界避免header着色冲突
+
 ### 阶段 P2：高级功能
 
 **P2.1：日志级别控制**

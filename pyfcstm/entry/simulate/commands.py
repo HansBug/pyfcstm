@@ -115,9 +115,11 @@ class CommandProcessor:
         - /cycle [events...] - Execute 1 cycle with optional events
         - /cycle [count] [events...] - Execute count cycles with optional events
 
+        For count > 1, displays results in table format.
+
         :param events: List containing optional count and event names
         :type events: List[str]
-        :return: Command result with current state
+        :return: Command result with current state or table
         :rtype: CommandResult
         """
         try:
@@ -138,27 +140,74 @@ class CommandProcessor:
                     except ValueError:
                         return CommandResult(f"Error: invalid cycle count '{first_arg}'")
 
-            # Execute cycles
-            outputs = []
-            for i in range(count):
+            # Single cycle - use simple format
+            if count == 1:
                 if self.log_level == LogLevel.DEBUG:
-                    cycle_num = f" (cycle {i+1}/{count})" if count > 1 else ""
-                    self.display.log(f"Executing cycle{cycle_num} with events: {event_list if event_list else 'none'}", "debug")
-
+                    self.display.log(f"Executing cycle with events: {event_list if event_list else 'none'}", "debug")
                 self.runtime.cycle(event_list if event_list else None)
+                return CommandResult(self.display.format_current_state(self.runtime))
 
-                # Show state after each cycle (or only last one for large counts)
-                if count <= 5 or i == count - 1:
-                    outputs.append(self.display.format_current_state(self.runtime))
+            # Multiple cycles - use table format
+            return self._handle_multiple_cycles(count, event_list)
 
-            # If we skipped some outputs, add a summary
-            if count > 5:
-                skipped = count - 1
-                outputs.insert(0, f"Executing {count} cycles... (showing first and last state)")
-
-            return CommandResult("\n\n".join(outputs))
         except Exception as e:
             return CommandResult(f"Cycle execution failed: {e}")
+
+    def _handle_multiple_cycles(self, count: int, event_list: List[str]) -> CommandResult:
+        """
+        Handle multiple cycle execution with table output.
+
+        :param count: Number of cycles to execute
+        :type count: int
+        :param event_list: List of events to trigger each cycle
+        :type event_list: List[str]
+        :return: Command result with table
+        :rtype: CommandResult
+        """
+        # Get starting cycle count
+        start_cycle = self.runtime.cycle_count
+
+        # Collect data for all cycles
+        table_data = []
+        for i in range(count):
+            if self.log_level == LogLevel.DEBUG:
+                self.display.log(f"Executing cycle {i+1}/{count} with events: {event_list if event_list else 'none'}", "debug")
+
+            self.runtime.cycle(event_list if event_list else None)
+
+            # Collect state and variables
+            try:
+                state_path = '.'.join(self.runtime.current_state.path)
+            except (AttributeError, IndexError):
+                state_path = "(terminated)"
+
+            # Use actual cycle count from runtime
+            cycle_num = start_cycle + i + 1
+            row = [cycle_num, state_path]
+            # Add variable values
+            for var_name in sorted(self.runtime.vars.keys()):
+                row.append(self.runtime.vars[var_name])
+
+            table_data.append(row)
+
+        # Prepare table headers
+        headers = ['Cycle', 'State']
+        var_names = sorted(self.runtime.vars.keys())
+        headers.extend(var_names)
+
+        # Filter rows if count >= 20
+        if count >= 20:
+            display_data = table_data[:10] + table_data[-10:]
+            # Add separator row
+            separator_row = ['...'] * len(headers)
+            display_data = table_data[:10] + [separator_row] + table_data[-10:]
+        else:
+            display_data = table_data
+
+        # Generate table using our custom formatter
+        table_str = self.display.format_table(headers, display_data, var_names)
+
+        return CommandResult(table_str)
 
     def _handle_clear(self) -> CommandResult:
         """

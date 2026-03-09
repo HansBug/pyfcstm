@@ -82,7 +82,7 @@ def _add_simulate_subcommand(cli: click.Group) -> click.Group:
         click.echo("╔" + "═" * 58 + "╗")
         click.echo("║  State Machine Interactive Simulator" + " " * 21 + "║")
         click.echo("╟" + "─" * 58 + "╢")
-        click.echo("║  Type /help to see available commands" + " " * 19 + "║")
+        click.echo("║  Type /help to see available commands" + " " * 20 + "║")
         click.echo("╚" + "═" * 58 + "╝")
         click.echo()
         repl.run()

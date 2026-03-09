@@ -170,26 +170,32 @@ class TestCommandProcessor:
     def test_handle_cycle_with_count(self, command_processor, runtime):
         """Test /cycle command with count parameter."""
         result = command_processor.process("/cycle 3")
-        # Should execute 3 cycles and show 3 states
-        assert result.output.count("Current State:") == 3
-        assert "System.Idle" in result.output
+        # Should show table format for multiple cycles
+        assert "Cycle" in result.output
+        assert "State" in result.output
+        assert "counter" in result.output
+        assert "temperature" in result.output
         assert not result.should_exit
 
-    def test_handle_cycle_with_count_and_event(self, command_processor, runtime):
-        """Test /cycle command with count and event."""
-        # Execute 2 cycles without events first
-        result = command_processor.process("/cycle 2")
-        # Should show 2 states, both at Idle
-        assert result.output.count("Current State:") == 2
+    def test_handle_cycle_with_count_table_format(self, command_processor, runtime):
+        """Test /cycle command produces table with correct format."""
+        result = command_processor.process("/cycle 5")
+        # Check table structure
+        lines = result.output.split('\n')
+        # Should have header, separator, and 5 data rows
+        assert len([l for l in lines if l.strip()]) >= 7  # header + separator + 5 rows
         assert "System.Idle" in result.output
         assert not result.should_exit
 
     def test_handle_cycle_with_large_count(self, command_processor, runtime):
-        """Test /cycle command with large count shows summary."""
-        result = command_processor.process("/cycle 10")
-        # Should show summary message and only first/last state
-        assert "Executing 10 cycles" in result.output
-        assert result.output.count("Current State:") == 1  # Only last state
+        """Test /cycle command with large count shows truncated table."""
+        result = command_processor.process("/cycle 25")
+        # Should show first 10, separator, and last 10
+        assert "..." in result.output  # Separator row
+        assert "Cycle" in result.output
+        assert "State" in result.output
+        # Count occurrences of "System.Idle" - should be 20 (10 + 10)
+        assert result.output.count("System.Idle") == 20
         assert not result.should_exit
 
     def test_handle_cycle_with_zero_count(self, command_processor, runtime):

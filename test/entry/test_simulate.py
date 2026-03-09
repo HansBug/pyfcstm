@@ -739,6 +739,7 @@ class TestCommandProcessor:
             assert len(rows) == 5
             assert 'cycle' in rows[0]
             assert 'state' in rows[0]
+            assert 'events' in rows[0]
             assert 'counter' in rows[0]
             assert 'temperature' in rows[0]
 
@@ -1153,6 +1154,67 @@ class TestSimulationCompleter:
         completions = list(completer.get_completions(document, None))
         texts = [c.text for c in completions]
         assert 'history.csv' in texts or 'history.json' in texts
+
+    def test_export_filesystem_completion(self, runtime, tmp_path):
+        """Test export filesystem path completion."""
+        from pyfcstm.entry.simulate.completer import SimulationCompleter
+        from prompt_toolkit.document import Document
+        import os
+
+        # Create test directory structure
+        test_dir = tmp_path / "test_exports"
+        test_dir.mkdir()
+        (test_dir / "data.csv").touch()
+        (test_dir / "results.json").touch()
+        (test_dir / "subdir").mkdir()
+
+        completer = SimulationCompleter(runtime)
+
+        # Change to tmp_path for testing
+        original_cwd = os.getcwd()
+        try:
+            os.chdir(tmp_path)
+
+            # Test directory completion
+            document = Document('export test_')
+            completions = list(completer.get_completions(document, None))
+            texts = [c.text for c in completions]
+            # Should suggest the directory with trailing separator
+            assert any('test_exports' in t for t in texts)
+
+            # Test file completion in subdirectory
+            document = Document(f'export test_exports{os.sep}')
+            completions = list(completer.get_completions(document, None))
+            texts = [c.text for c in completions]
+            # Should suggest files in the directory
+            assert any('data.csv' in t for t in texts)
+            assert any('results.json' in t for t in texts)
+            assert any('subdir' in t for t in texts)
+
+        finally:
+            os.chdir(original_cwd)
+
+    def test_export_csv_with_events(self, command_processor, tmp_path):
+        """Test CSV export includes events column."""
+        import csv
+
+        # Generate history with events
+        command_processor.process("cycle")  # Move to Idle
+        command_processor.process("cycle Start")  # Trigger Start event
+
+        # Export to CSV
+        csv_file = tmp_path / "test_events.csv"
+        result = command_processor.process(f"export {csv_file}")
+        assert "exported" in result.output.lower()
+
+        # Verify CSV has events column
+        assert csv_file.exists()
+        with open(csv_file, 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+            assert 'events' in rows[0]
+            # Check that events column exists and can contain data
+            # (may be empty for cycles without events)
 
 
 @pytest.mark.unittest

@@ -579,6 +579,8 @@ Keyboard shortcuts (interactive mode):
         """
         Export history to CSV format.
 
+        Includes cycle, state, events (comma-separated), and all variables.
+
         :param filename: Output filename
         :type filename: str
         """
@@ -591,16 +593,20 @@ Keyboard shortcuts (interactive mode):
             writer = csv.writer(f)
 
             # Write header
-            header = ['cycle', 'state'] + var_names
+            header = ['cycle', 'state', 'events'] + var_names
             writer.writerow(header)
 
             # Write data
             for entry in self.runtime.history:
                 cycle_num = entry['cycle']
                 state = entry['state']
+                events = entry.get('events', [])
                 vars_dict = entry['vars']
 
-                row = [cycle_num, state]
+                # Join events with comma
+                events_str = ','.join(events) if events else ''
+
+                row = [cycle_num, state, events_str]
                 for var_name in var_names:
                     row.append(vars_dict.get(var_name, ''))
 

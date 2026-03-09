@@ -181,20 +181,83 @@ class SimulationCompleter(Completer):
                                 display_meta='numeric value'
                             )
 
-        # export command - complete with file extensions
+        # export command - complete with filesystem paths
         elif command == 'export':
             if len(words) == 1 or (len(words) == 2 and not text.endswith(' ')):
                 prefix = words[1] if len(words) == 2 else ''
 
-                # Suggest common filenames with extensions
-                for ext in ['.csv', '.json', '.yaml', '.jsonl']:
-                    filename = f'history{ext}'
-                    if filename.startswith(prefix):
-                        yield Completion(
-                            filename,
-                            start_position=-len(prefix),
-                            display_meta=f'{ext[1:].upper()} format'
-                        )
+                # First, suggest common filenames if no path separator in prefix
+                if not any(sep in prefix for sep in ['/', '\\']):
+                    for ext in ['.csv', '.json', '.yaml', '.jsonl']:
+                        filename = f'history{ext}'
+                        if filename.startswith(prefix):
+                            yield Completion(
+                                filename,
+                                start_position=-len(prefix),
+                                display_meta=f'{ext[1:].upper()} format'
+                            )
+
+                # Then, provide filesystem-based completions
+                import os
+                from pathlib import Path
+
+                # Parse the prefix to get directory and filename parts
+                if prefix:
+                    # Expand user home directory
+                    expanded_prefix = os.path.expanduser(prefix)
+                    prefix_path = Path(expanded_prefix)
+
+                    # Determine the directory to search and the filename prefix
+                    if prefix.endswith(os.sep) or prefix.endswith('/') or prefix.endswith('\\'):
+                        # User typed a trailing slash, complete files in that directory
+                        search_dir = prefix_path
+                        file_prefix = ''
+                    else:
+                        # Split into directory and filename parts
+                        search_dir = prefix_path.parent if prefix_path.parent != prefix_path else Path('.')
+                        file_prefix = prefix_path.name
+                else:
+                    # No prefix, search current directory
+                    search_dir = Path('.')
+                    file_prefix = ''
+
+                # Get completions from filesystem
+                try:
+                    if search_dir.exists() and search_dir.is_dir():
+                        for item in sorted(search_dir.iterdir()):
+                            item_name = item.name
+                            # Check if item matches the prefix
+                            if item_name.startswith(file_prefix):
+                                # Build the completion text
+                                if prefix:
+                                    # Calculate the relative path from prefix
+                                    if prefix.endswith(os.sep) or prefix.endswith('/') or prefix.endswith('\\'):
+                                        completion_text = item_name
+                                    else:
+                                        # Replace the filename part
+                                        completion_text = str(Path(prefix).parent / item_name)
+                                        # Normalize path separators for current OS
+                                        completion_text = completion_text.replace('\\', os.sep).replace('/', os.sep)
+                                else:
+                                    completion_text = item_name
+
+                                # Add trailing separator for directories
+                                if item.is_dir():
+                                    completion_text += os.sep
+                                    meta = 'directory'
+                                else:
+                                    # Show file extension as metadata
+                                    ext = item.suffix.upper()
+                                    meta = f'{ext[1:]} file' if ext else 'file'
+
+                                yield Completion(
+                                    completion_text,
+                                    start_position=-len(prefix),
+                                    display_meta=meta
+                                )
+                except (OSError, PermissionError):
+                    # Ignore filesystem errors
+                    pass
 
     def _get_current_events(self) -> list:
         """

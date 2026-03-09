@@ -842,18 +842,34 @@ class TestREPL:
         """Test REPL initialization."""
         from pyfcstm.entry.simulate.repl import SimulationREPL
 
-        repl = SimulationREPL(runtime, use_color=False)
-        assert repl.command_processor is not None
-        assert repl.session is not None
+        # Skip if no terminal available (CI/CD environments)
+        try:
+            repl = SimulationREPL(runtime, use_color=False)
+            assert repl.command_processor is not None
+            assert repl.session is not None
+        except Exception as e:
+            # prompt_toolkit may fail in non-interactive environments (Windows CI, etc.)
+            error_name = type(e).__name__
+            if error_name in ['NoConsoleScreenBufferError', 'EOFError', 'OSError']:
+                pytest.skip(f"REPL requires interactive terminal (skipped in CI): {error_name}")
+            raise
 
     def test_repl_process_command(self, runtime):
         """Test REPL command processing."""
         from pyfcstm.entry.simulate.repl import SimulationREPL
 
-        repl = SimulationREPL(runtime, use_color=False)
-        # Test that command processor works
-        result = repl.command_processor.process("/current")
-        assert "System" in result.output
+        # Skip if no terminal available (CI/CD environments)
+        try:
+            repl = SimulationREPL(runtime, use_color=False)
+            # Test that command processor works
+            result = repl.command_processor.process("/current")
+            assert "System" in result.output
+        except Exception as e:
+            # prompt_toolkit may fail in non-interactive environments (Windows CI, etc.)
+            error_name = type(e).__name__
+            if error_name in ['NoConsoleScreenBufferError', 'EOFError', 'OSError']:
+                pytest.skip(f"REPL requires interactive terminal (skipped in CI): {error_name}")
+            raise
 
 
 @pytest.mark.unittest

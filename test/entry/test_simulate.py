@@ -5,12 +5,21 @@ This module tests the display, commands, batch processor, and REPL
 functionality of the interactive state machine simulator.
 """
 
+import logging
+
 import pytest
 
 from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.entry.simulate.batch import BatchProcessor
 from pyfcstm.entry.simulate.commands import CommandProcessor, LogLevel, Settings
 from pyfcstm.entry.simulate.display import StateDisplay
+from pyfcstm.entry.simulate.logging import (
+    SimulateCliFormatter,
+    SimulateLogHighlighter,
+    SimulatePlainLogHandler,
+    SimulateRichLogHandler,
+    configure_simulate_cli_logger,
+)
 from pyfcstm.model import parse_dsl_node_to_state_machine
 from pyfcstm.simulate import SimulationRuntime
 
@@ -281,6 +290,78 @@ class TestStateDisplay:
 
 
 @pytest.mark.unittest
+class TestSimulateLogging:
+    """Tests for simulate CLI logging presentation."""
+
+    def test_configure_simulate_cli_logger_is_idempotent(self, runtime):
+        """Configuring the CLI logger multiple times should not duplicate handlers."""
+        configure_simulate_cli_logger(runtime.logger, use_color=False)
+        first_handlers = list(runtime.logger.handlers)
+        configure_simulate_cli_logger(runtime.logger, use_color=False)
+
+        assert len(runtime.logger.handlers) == 1
+        assert isinstance(runtime.logger.handlers[0], SimulatePlainLogHandler)
+        assert runtime.logger.handlers[0] is not first_handlers[0]
+        assert runtime.logger.propagate is False
+
+    def test_command_processor_configures_runtime_logger(self, runtime):
+        """Command processor should configure the runtime logger for CLI output."""
+        processor = CommandProcessor(runtime, use_color=False)
+
+        assert processor.runtime.logger.level == logging.WARNING
+        assert len(processor.runtime.logger.handlers) == 1
+        assert isinstance(processor.runtime.logger.handlers[0], SimulatePlainLogHandler)
+        assert processor.runtime.logger.handlers[0].formatter._fmt == '[%(levelname)s] %(message)s'
+
+    def test_command_processor_log_level_sync_still_works(self, runtime):
+        """Changing /setting log_level should still update the runtime logger level."""
+        processor = CommandProcessor(runtime, use_color=False)
+        processor.process("/setting log_level debug")
+
+        assert processor.runtime.logger.level == logging.DEBUG
+
+    def test_cli_formatter_uses_spaced_level_prefix(self):
+        """CLI formatter should place a space after the level prefix."""
+        formatter = SimulateCliFormatter()
+        record = logging.LogRecord(
+            name='pyfcstm.simulate', level=logging.INFO, pathname=__file__, lineno=1,
+            msg='Cycle 1 completed successfully', args=(), exc_info=None,
+        )
+
+        assert formatter.format(record) == '[INFO] Cycle 1 completed successfully'
+
+    def test_rich_handler_is_rich_based(self):
+        """Rich handler should be backed by RichHandler with a simulate highlighter."""
+        handler = SimulateRichLogHandler(use_color=True)
+
+        assert hasattr(handler, 'highlighter')
+        assert isinstance(handler.highlighter, SimulateLogHighlighter)
+
+    def test_simulate_log_highlighter_marks_level_and_cycle(self):
+        """Highlighter should mark level prefix and cycle completion text."""
+        from rich.text import Text
+
+        text = Text('[INFO] Cycle 10 completed successfully - State: System.Idle')
+        highlighter = SimulateLogHighlighter()
+        highlighter.highlight(text)
+
+        span_styles = [span.style for span in text.spans if span.style]
+        assert 'simulate.level_info' in span_styles
+        assert 'simulate.cycle_complete' in span_styles
+
+    def test_simulate_log_highlighter_marks_execute_transition_target(self):
+        """Highlighter should underline execute-transition target details."""
+        from rich.text import Text
+
+        text = Text('[INFO] Execute transition: Root.Standby -> Heating (event=none)')
+        highlighter = SimulateLogHighlighter()
+        highlighter.highlight(text)
+
+        span_styles = [span.style for span in text.spans if span.style]
+        assert 'simulate.transition_path' in span_styles
+
+
+@pytest.mark.unittest
 class TestCommandProcessor:
     """Tests for CommandProcessor class."""
 
@@ -349,7 +430,7 @@ class TestCommandProcessor:
 
     def test_handle_cycle_with_debug_log(self, command_processor):
         """Test /cycle with debug log level."""
-        command_processor.process("/log debug")
+        command_processor.process("/setting log_level debug")
         result = command_processor.process("/cycle 2")
         # Debug logging should be active
         assert "Cycle" in result.output

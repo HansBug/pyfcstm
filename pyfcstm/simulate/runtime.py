@@ -66,7 +66,6 @@ Abstract handler registration::
 """
 
 import copy
-import logging
 import warnings
 from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional, Tuple, Union
@@ -370,7 +369,7 @@ class SimulationRuntime:
         self.history: List[Dict] = []  # Execution history
 
         # Initialize logger
-        self.logger = get_logger(level=logging.WARNING)
+        self.logger = get_logger()
 
         for name, define in self.state_machine.defines.items():
             self.vars[name] = define.init(**self.vars)
@@ -575,31 +574,31 @@ class SimulationRuntime:
             for effect in transition.effects:
                 vars_[effect.var_name] = effect.expr(**vars_)
         else:
-            self.logger.info(f'[EXECUTION] Execute transition effect for {transition.from_state} -> {transition.to_state}')
             old_vars = dict(vars_)
             for effect in transition.effects:
                 vars_[effect.var_name] = effect.expr(**vars_)
-            self._log_var_changes(old_vars, vars_, prefix=f"[EXECUTION] Transition effect")
+            changes = self._format_var_changes(old_vars, vars_)
+            self.logger.info(
+                f'Execute transition effect for {transition.from_state} -> {transition.to_state}{changes}'
+            )
 
-    def _log_var_changes(
+    def _format_var_changes(
             self,
             old_vars: Dict[str, Union[int, float]],
             new_vars: Dict[str, Union[int, float]],
-            prefix: str = ""
-    ) -> None:
+    ) -> str:
         """
-        Log variable changes in INFO level.
+        Format variable changes as a single inline string.
 
-        Only logs variables that actually changed, in format: var_name: old_value --> new_value
+        Only includes variables that actually changed, in format:
+        ``var_name: old_value --> new_value``.
 
         :param old_vars: Variable values before change.
         :type old_vars: Dict[str, Union[int, float]]
         :param new_vars: Variable values after change.
         :type new_vars: Dict[str, Union[int, float]]
-        :param prefix: Optional prefix for log message.
-        :type prefix: str
-        :return: ``None``.
-        :rtype: None
+        :return: Formatted variable changes, or an empty string when nothing changed.
+        :rtype: str
         """
         changes = []
         for var_name in sorted(new_vars.keys()):
@@ -609,8 +608,8 @@ class SimulationRuntime:
                 changes.append(f"{var_name}: {old_val} --> {new_val}")
 
         if changes:
-            prefix_str = f"{prefix} " if prefix else ""
-            self.logger.info(f"{prefix_str}Variable changes: {', '.join(changes)}")
+            return f"; var changes: {', '.join(changes)}"
+        return ""
 
     def _execute_func(
             self,
@@ -669,7 +668,7 @@ class SimulationRuntime:
                 if is_validation_mode:
                     self.logger.debug(f'[VALIDATION] Skip anonymous abstract function {func_path}')
                 else:
-                    self.logger.info(f'[EXECUTION] Execute anonymous abstract function {func_path} (no handlers supported)')
+                    self.logger.info(f'Execute anonymous abstract function {func_path} (no handlers supported)')
                 return
 
             # Named abstract - check for handlers
@@ -686,11 +685,11 @@ class SimulationRuntime:
 
             # Real execution mode: check if handlers are registered
             if not handlers:
-                self.logger.info(f'[EXECUTION] Skip abstract function {func_path} (no handlers registered)')
+                self.logger.info(f'Skip abstract function {func_path} (no handlers registered)')
                 return
 
             # Has registered handlers - this is real execution mode
-            self.logger.info(f'[EXECUTION] Execute abstract function {func_path} '
+            self.logger.info(f'Execute abstract function {func_path} '
                              f'with {len(handlers)} handler(s)')
 
             # Create read-only context
@@ -726,11 +725,11 @@ class SimulationRuntime:
                 for op in (func.operations or []):
                     vars_[op.var_name] = op.expr(**vars_)
             else:
-                self.logger.info(f'[EXECUTION] Execute function {func.func_name}')
                 old_vars = dict(vars_)
                 for op in (func.operations or []):
                     vars_[op.var_name] = op.expr(**vars_)
-                self._log_var_changes(old_vars, vars_, prefix=f"[EXECUTION] {func.func_name}")
+                changes = self._format_var_changes(old_vars, vars_)
+                self.logger.info(f'Execute function {func.func_name}{changes}')
 
     def _transition_matches_event(self, transition: Transition, d_events: Dict[str, Event]) -> bool:
         """
@@ -984,7 +983,7 @@ class SimulationRuntime:
             )
         else:
             self.logger.info(
-                f'[EXECUTION] Execute transition at cycle {self.cycle_count + 1}: '
+                f'Execute transition: '
                 f'{current_state_path} -> {target_desc} '
                 f'(event={transition.event.path_name if transition.event else "none"})'
             )
@@ -1004,8 +1003,8 @@ class SimulationRuntime:
                     f'{current_state_path} -> [*], ended={ended}'
                 )
             else:
-                self.logger.info(
-                    f'[EXECUTION] Transition completed at cycle {self.cycle_count + 1}: '
+                self.logger.debug(
+                    f'Transition completed: '
                     f'{current_state_path} -> [*], ended={ended}'
                 )
             return ended
@@ -1020,8 +1019,8 @@ class SimulationRuntime:
                 f'{current_state_path} -> {target_state_path}'
             )
         else:
-            self.logger.info(
-                f'[EXECUTION] Transition completed at cycle {self.cycle_count + 1}: '
+            self.logger.debug(
+                f'Transition completed: '
                 f'{current_state_path} -> {target_state_path}'
             )
         return False
@@ -1069,8 +1068,8 @@ class SimulationRuntime:
                     )
                     continue
             current_state_path = '.'.join(current_state.path)
-            self.logger.info(
-                f'[EXECUTION] Transition selected at cycle {self.cycle_count + 1}: '
+            self.logger.debug(
+                f'Transition selected: '
                 f'{current_state_path} -> {transition.to_state} '
                 f'(event={transition.event.path_name if transition.event else "none"})'
             )
@@ -1581,12 +1580,12 @@ class SimulationRuntime:
         """
         _, d_events = self._normalize_events(events)
         if self._ended:
-            self.logger.warning('[EXECUTION] Runtime already ended, cycle ignored.')
+            self.logger.warning('Runtime already ended, cycle ignored.')
             return
 
         # Log cycle start
         event_names = [e.path_name if isinstance(e, Event) else e for e in (events or [])]
-        self.logger.info(f'[EXECUTION] Cycle {self.cycle_count + 1} starting with events: {event_names if event_names else "none"}')
+        self.logger.info(f'Cycle {self.cycle_count + 1} starting with events: {event_names if event_names else "none"}')
 
         snapshot_stack = self._clone_stack(self.stack)
         snapshot_vars = copy.deepcopy(self.vars)
@@ -1633,8 +1632,12 @@ class SimulationRuntime:
                 self.history.pop(0)  # Remove oldest entry
 
             # Log successful cycle completion with variable changes
-            self.logger.info(f'[EXECUTION] Cycle {self.cycle_count} completed successfully - State: {state_path}')
-            self._log_var_changes(old_vars, self.vars, prefix=f"[EXECUTION] Cycle {self.cycle_count}")
+            changes = self._format_var_changes(old_vars, self.vars)
+            current_values = ', '.join(f'{name}={value}' for name, value in sorted(self.vars.items()))
+            self.logger.info(
+                f'Cycle {self.cycle_count} completed successfully - State: {state_path}{changes}; '
+                f'current values: state={state_path}, vars={{ {current_values} }}'
+            )
         else:
             self.vars = snapshot_vars
             self._ended = snapshot_ended
@@ -1645,7 +1648,7 @@ class SimulationRuntime:
                 self.stack = snapshot_stack
                 self._initialized = snapshot_initialized
             self.logger.warning(
-                f'[EXECUTION] Cycle {self.cycle_count + 1} failed - Unable to reach a stoppable state, changes rolled back')
+                f'Cycle {self.cycle_count + 1} failed - Unable to reach a stoppable state, changes rolled back')
 
         if self._ended or not self.stack:
             self._ended = True

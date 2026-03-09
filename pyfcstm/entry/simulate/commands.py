@@ -10,6 +10,7 @@ from typing import List, Optional, Tuple, Dict, Any
 from enum import Enum
 
 from .display import StateDisplay
+from .logging import configure_simulate_cli_logger
 
 
 class LogLevel(Enum):
@@ -162,6 +163,8 @@ class CommandProcessor:
         self.settings = Settings()
         self.settings.color = use_color
         self.display = StateDisplay(use_color=use_color)
+
+        configure_simulate_cli_logger(self.runtime.logger, use_color=use_color)
 
         # Sync log level with runtime logger
         self._sync_log_level()

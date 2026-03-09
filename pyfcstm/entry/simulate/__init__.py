@@ -74,17 +74,56 @@ def _add_simulate_subcommand(cli: click.Group) -> click.Group:
         if batch_commands:
             processor = BatchProcessor(runtime, use_color=not no_color)
             result = processor.execute_commands(batch_commands)
-            click.echo(result)
+            # Handle Unicode output on Windows (cp1252 encoding issue)
+            import sys
+            if sys.platform == 'win32':
+                try:
+                    # Try to write directly to binary stdout with UTF-8
+                    if hasattr(sys.stdout, 'buffer'):
+                        sys.stdout.buffer.write(result.encode('utf-8'))
+                        sys.stdout.buffer.write(b'\n')
+                        sys.stdout.flush()
+                    else:
+                        click.echo(result)
+                except (UnicodeEncodeError, AttributeError):
+                    click.echo(result)
+            else:
+                click.echo(result)
             return
 
         # Interactive mode
         repl = SimulationREPL(runtime, use_color=not no_color)
-        click.echo("╔" + "═" * 58 + "╗")
-        click.echo("║  State Machine Interactive Simulator" + " " * 21 + "║")
-        click.echo("╟" + "─" * 58 + "╢")
-        click.echo("║  Type /help to see available commands" + " " * 20 + "║")
-        click.echo("╚" + "═" * 58 + "╝")
-        click.echo()
+
+        # Print banner with Unicode box-drawing characters
+        # Handle Windows encoding issues
+        import sys
+        banner_lines = [
+            "╔" + "═" * 58 + "╗",
+            "║  State Machine Interactive Simulator" + " " * 21 + "║",
+            "╟" + "─" * 58 + "╢",
+            "║  Type /help to see available commands" + " " * 20 + "║",
+            "╚" + "═" * 58 + "╝",
+            ""
+        ]
+
+        if sys.platform == 'win32':
+            # On Windows, write directly to binary stdout with UTF-8
+            try:
+                if hasattr(sys.stdout, 'buffer'):
+                    for line in banner_lines:
+                        sys.stdout.buffer.write(line.encode('utf-8'))
+                        sys.stdout.buffer.write(b'\n')
+                    sys.stdout.flush()
+                else:
+                    for line in banner_lines:
+                        click.echo(line)
+            except (UnicodeEncodeError, AttributeError):
+                for line in banner_lines:
+                    click.echo(line)
+        else:
+            for line in banner_lines:
+                click.echo(line)
+
         repl.run()
 
     return cli

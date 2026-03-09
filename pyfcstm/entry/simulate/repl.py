@@ -2,7 +2,7 @@
 Enhanced REPL (Read-Eval-Print Loop) for interactive simulation.
 
 This module provides an interactive command-line interface with auto-completion,
-history, and suggestions using prompt_toolkit.
+history, and intelligent suggestions using prompt_toolkit.
 """
 
 import os
@@ -10,11 +10,82 @@ from pathlib import Path
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.history import FileHistory
-from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
+from prompt_toolkit.auto_suggest import AutoSuggest, Suggestion
 from prompt_toolkit.styles import Style
+from prompt_toolkit.document import Document
 
 from .commands import CommandProcessor
 from .completer import SimulationCompleter
+
+
+class AutoSuggestFromCompleter(AutoSuggest):
+    """
+    Auto-suggest implementation that uses the completer to provide suggestions.
+
+    This class provides inline suggestions (gray text) based on the completer's
+    completions, showing the first matching completion as you type. The suggestion
+    only shows the remaining part of the completion, not the already-typed text.
+
+    :param completer: The completer to use for suggestions
+    :type completer: SimulationCompleter
+    """
+
+    def __init__(self, completer):
+        """
+        Initialize the auto-suggester.
+
+        :param completer: The completer to use for suggestions
+        :type completer: SimulationCompleter
+        """
+        self.completer = completer
+
+    def get_suggestion(self, buffer, document):
+        """
+        Get suggestion for the current input.
+
+        Returns only the remaining part of the completion that hasn't been typed yet.
+        For example, if user typed 'cy' and completion is 'cycle', this returns 'cle'.
+
+        :param buffer: The input buffer
+        :param document: The current document
+        :type document: Document
+        :return: Suggestion or None
+        :rtype: Suggestion or None
+        """
+        # Get completions from the completer
+        completions = list(self.completer.get_completions(document, None))
+
+        if completions:
+            # Get the first completion
+            first_completion = completions[0]
+
+            # The completion.text is the full word to insert
+            # The completion.start_position tells us how many characters back to replace
+            # We need to figure out what part is already typed
+            text_before_cursor = document.text_before_cursor
+
+            # Calculate what's already been typed that matches the completion
+            # start_position is negative, indicating how far back to go
+            if first_completion.start_position < 0:
+                # The prefix is the part that's already typed
+                prefix_len = -first_completion.start_position
+                # Get the last prefix_len characters
+                if prefix_len <= len(text_before_cursor):
+                    typed_prefix = text_before_cursor[-prefix_len:]
+                    # The suggestion should be the completion minus what's already typed
+                    if first_completion.text.startswith(typed_prefix):
+                        # Return only the part that needs to be added
+                        remaining = first_completion.text[len(typed_prefix):]
+                        if remaining:
+                            return Suggestion(remaining)
+                    else:
+                        # If it doesn't start with the prefix, just return the full text
+                        return Suggestion(first_completion.text)
+            else:
+                # If start_position is 0 or positive, just return the full text
+                return Suggestion(first_completion.text)
+
+        return None
 
 
 class SimulationREPL:
@@ -46,10 +117,11 @@ class SimulationREPL:
         self.runtime = runtime
         self.command_processor = CommandProcessor(runtime, use_color=use_color)
         self.history = self._get_history()
+        self.completer = SimulationCompleter(runtime)
         self.session = PromptSession(
             history=self.history,
-            auto_suggest=AutoSuggestFromHistory(),
-            completer=SimulationCompleter(runtime),
+            auto_suggest=AutoSuggestFromCompleter(self.completer),
+            completer=self.completer,
             enable_history_search=True,
             style=self._get_style(),
         )
@@ -117,4 +189,3 @@ class SimulationREPL:
                 # Ctrl+D - exit gracefully
                 print("\nGoodbye!")
                 break
-

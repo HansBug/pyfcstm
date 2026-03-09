@@ -1007,6 +1007,80 @@ class TestSimulationCompleter:
 
 
 @pytest.mark.unittest
+class TestAutoSuggest:
+    """Tests for AutoSuggestFromCompleter class."""
+
+    def test_auto_suggest_initialization(self, runtime):
+        """Test auto-suggest initialization."""
+        from pyfcstm.entry.simulate.repl import AutoSuggestFromCompleter
+        from pyfcstm.entry.simulate.completer import SimulationCompleter
+
+        completer = SimulationCompleter(runtime)
+        auto_suggest = AutoSuggestFromCompleter(completer)
+        assert auto_suggest.completer is completer
+
+    def test_auto_suggest_command(self, runtime):
+        """Test auto-suggest for commands."""
+        from pyfcstm.entry.simulate.repl import AutoSuggestFromCompleter
+        from pyfcstm.entry.simulate.completer import SimulationCompleter
+        from prompt_toolkit.document import Document
+        from prompt_toolkit.buffer import Buffer
+
+        completer = SimulationCompleter(runtime)
+        auto_suggest = AutoSuggestFromCompleter(completer)
+
+        # Test 'cy' should suggest 'cle' (remaining part of 'cycle')
+        buffer = Buffer()
+        document = Document('cy')
+        suggestion = auto_suggest.get_suggestion(buffer, document)
+        assert suggestion is not None
+        # Should suggest only the remaining part
+        assert suggestion.text == 'cle'
+
+        # Test 'c' should suggest remaining part of 'cycle', 'clear', or 'current'
+        document = Document('c')
+        suggestion = auto_suggest.get_suggestion(buffer, document)
+        assert suggestion is not None
+        # Should be one of: 'ycle', 'lear', 'urrent'
+        assert suggestion.text in ['ycle', 'lear', 'urrent']
+
+    def test_auto_suggest_event(self, runtime):
+        """Test auto-suggest for events."""
+        from pyfcstm.entry.simulate.repl import AutoSuggestFromCompleter
+        from pyfcstm.entry.simulate.completer import SimulationCompleter
+        from prompt_toolkit.document import Document
+        from prompt_toolkit.buffer import Buffer
+
+        completer = SimulationCompleter(runtime)
+        auto_suggest = AutoSuggestFromCompleter(completer)
+        runtime.cycle()  # Move to a state with events
+
+        # Test 'cycle S' should suggest an event starting with S
+        buffer = Buffer()
+        document = Document('cycle S')
+        suggestion = auto_suggest.get_suggestion(buffer, document)
+        # Should have a suggestion if there are events starting with S
+        if suggestion:
+            assert suggestion.text.startswith('S') or suggestion.text.startswith('tart')
+
+    def test_auto_suggest_no_match(self, runtime):
+        """Test auto-suggest with no matches."""
+        from pyfcstm.entry.simulate.repl import AutoSuggestFromCompleter
+        from pyfcstm.entry.simulate.completer import SimulationCompleter
+        from prompt_toolkit.document import Document
+        from prompt_toolkit.buffer import Buffer
+
+        completer = SimulationCompleter(runtime)
+        auto_suggest = AutoSuggestFromCompleter(completer)
+
+        # Test 'xyz' should not suggest anything
+        buffer = Buffer()
+        document = Document('xyz')
+        suggestion = auto_suggest.get_suggestion(buffer, document)
+        assert suggestion is None
+
+
+@pytest.mark.unittest
 class TestCLIEntry:
     """Tests for CLI entry point."""
 

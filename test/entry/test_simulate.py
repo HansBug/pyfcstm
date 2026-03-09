@@ -338,9 +338,9 @@ class TestSimulateLogging:
         assert processor.runtime.logger.handlers[0].formatter._fmt == '[%(levelname)s] %(message)s'
 
     def test_command_processor_log_level_sync_still_works(self, runtime):
-        """Changing /setting log_level should still update the runtime logger level."""
+        """Changing setting log_level should still update the runtime logger level."""
         processor = CommandProcessor(runtime, use_color=False)
-        processor.process("/setting log_level debug")
+        processor.process("setting log_level debug")
 
         assert processor.runtime.logger.level == logging.DEBUG
 
@@ -401,29 +401,29 @@ class TestCommandProcessor:
         assert not result.should_exit
 
     def test_handle_current(self, command_processor, runtime):
-        """Test /current command."""
+        """Test current command."""
         runtime.cycle()  # Move to Idle
-        result = command_processor.process("/current")
+        result = command_processor.process("current")
         assert "System.Idle" in result.output
         assert "counter" in result.output
         assert not result.should_exit
 
     def test_handle_cycle(self, command_processor, runtime):
-        """Test /cycle command."""
-        result = command_processor.process("/cycle")
+        """Test cycle command."""
+        result = command_processor.process("cycle")
         assert "System.Idle" in result.output
         assert not result.should_exit
 
     def test_handle_cycle_with_event(self, command_processor, runtime):
-        """Test /cycle command with event."""
+        """Test cycle command with event."""
         runtime.cycle()  # Move to Idle
-        result = command_processor.process("/cycle Start")
+        result = command_processor.process("cycle Start")
         assert "System.Running" in result.output
         assert not result.should_exit
 
     def test_handle_cycle_with_count(self, command_processor, runtime):
-        """Test /cycle command with count parameter."""
-        result = command_processor.process("/cycle 3")
+        """Test cycle command with count parameter."""
+        result = command_processor.process("cycle 3")
         # Should show table format for multiple cycles
         assert "Cycle" in result.output
         assert "State" in result.output
@@ -432,8 +432,8 @@ class TestCommandProcessor:
         assert not result.should_exit
 
     def test_handle_cycle_with_count_table_format(self, command_processor, runtime):
-        """Test /cycle command produces table with correct format."""
-        result = command_processor.process("/cycle 5")
+        """Test cycle command produces table with correct format."""
+        result = command_processor.process("cycle 5")
         # Check table structure
         lines = result.output.split('\n')
         # Should have header, separator, and 5 data rows
@@ -442,8 +442,8 @@ class TestCommandProcessor:
         assert not result.should_exit
 
     def test_handle_cycle_with_large_count(self, command_processor, runtime):
-        """Test /cycle command with large count shows truncated table."""
-        result = command_processor.process("/cycle 25")
+        """Test cycle command with large count shows truncated table."""
+        result = command_processor.process("cycle 25")
         # Should show first 10, separator, and last 10
         assert "..." in result.output  # Separator row
         assert "Cycle" in result.output
@@ -453,14 +453,14 @@ class TestCommandProcessor:
         assert not result.should_exit
 
     def test_handle_cycle_with_debug_log(self, command_processor):
-        """Test /cycle with debug log level."""
-        command_processor.process("/setting log_level debug")
-        result = command_processor.process("/cycle 2")
+        """Test cycle with debug log level."""
+        command_processor.process("setting log_level debug")
+        result = command_processor.process("cycle 2")
         # Debug logging should be active
         assert "Cycle" in result.output
 
     def test_handle_cycle_terminated_state(self):
-        """Test /cycle when state machine terminates."""
+        """Test cycle when state machine terminates."""
         # Create a state machine that terminates
         dsl_code = """
         state System {
@@ -475,93 +475,93 @@ class TestCommandProcessor:
         processor = CommandProcessor(runtime, use_color=False)
 
         # First cycle enters A
-        processor.process("/cycle")
+        processor.process("cycle")
         # Second cycle exits to terminated
-        processor.process("/cycle")
+        processor.process("cycle")
         # Third cycle should show terminated
-        result = processor.process("/cycle 2")
+        result = processor.process("cycle 2")
         assert "(terminated)" in result.output
 
     def test_handle_cycle_with_zero_count(self, command_processor, runtime):
-        """Test /cycle command with zero count."""
-        result = command_processor.process("/cycle 0")
+        """Test cycle command with zero count."""
+        result = command_processor.process("cycle 0")
         assert "Error" in result.output
         assert "positive integer" in result.output
         assert not result.should_exit
 
     def test_handle_cycle_with_negative_count(self, command_processor, runtime):
-        """Test /cycle command with negative count."""
-        result = command_processor.process("/cycle -5")
+        """Test cycle command with negative count."""
+        result = command_processor.process("cycle -5")
         assert "Error" in result.output
         assert "positive integer" in result.output
         assert not result.should_exit
 
     def test_handle_cycle_with_invalid_count(self, command_processor, runtime):
-        """Test /cycle command with invalid count."""
+        """Test cycle command with invalid count."""
         # Non-numeric first argument should be treated as event name
-        result = command_processor.process("/cycle abc")
+        result = command_processor.process("cycle abc")
         # This will fail because 'abc' is not a valid event
         assert "failed" in result.output.lower() or "error" in result.output.lower()
         assert not result.should_exit
 
     def test_handle_clear(self, command_processor, runtime):
-        """Test /clear command."""
+        """Test clear command."""
         runtime.cycle()  # Move to Idle
         runtime.cycle(["Start"])  # Move to Running
-        result = command_processor.process("/clear")
+        result = command_processor.process("clear")
         # After clear, should be back at initial state
         assert "System" in result.output
         assert not result.should_exit
 
     def test_handle_events(self, command_processor, runtime):
-        """Test /events command."""
+        """Test events command."""
         runtime.cycle()  # Move to Idle
-        result = command_processor.process("/events")
+        result = command_processor.process("events")
         assert "Start" in result.output
         assert not result.should_exit
 
     def test_handle_setting_log_level_get(self, command_processor):
-        """Test /setting log_level command."""
-        result = command_processor.process("/setting log_level")
+        """Test setting log_level command."""
+        result = command_processor.process("setting log_level")
         assert "warning" in result.output
         assert not result.should_exit
 
     def test_handle_setting_log_level_set(self, command_processor):
-        """Test /setting log_level with value."""
-        result = command_processor.process("/setting log_level debug")
+        """Test setting log_level with value."""
+        result = command_processor.process("setting log_level debug")
         assert "debug" in result.output
         assert command_processor.settings.log_level == LogLevel.DEBUG
         assert not result.should_exit
 
     def test_handle_setting_log_level_invalid(self, command_processor):
-        """Test /setting log_level with invalid value."""
-        result = command_processor.process("/setting log_level invalid")
+        """Test setting log_level with invalid value."""
+        result = command_processor.process("setting log_level invalid")
         assert "Invalid log level" in result.output or "Error" in result.output
         assert not result.should_exit
 
     def test_handle_help(self, command_processor):
-        """Test /help command."""
-        result = command_processor.process("/help")
-        assert "/cycle" in result.output
-        assert "/clear" in result.output
-        assert "/current" in result.output
+        """Test help command."""
+        result = command_processor.process("help")
+        assert "cycle" in result.output
+        assert "clear" in result.output
+        assert "current" in result.output
         assert not result.should_exit
 
     def test_handle_quit(self, command_processor):
-        """Test /quit command."""
-        result = command_processor.process("/quit")
+        """Test quit command."""
+        result = command_processor.process("quit")
         assert "Goodbye" in result.output
         assert result.should_exit
 
     def test_handle_exit(self, command_processor):
-        """Test /exit command."""
-        result = command_processor.process("/exit")
+        """Test exit command."""
+        result = command_processor.process("exit")
         assert "Goodbye" in result.output
         assert result.should_exit
 
     def test_handle_unknown_command(self, command_processor):
         """Test unknown command."""
-        result = command_processor.process("/unknown")
+        result = command_processor.process("unknown")
         assert "Unknown command" in result.output
         assert not result.should_exit
 
@@ -573,45 +573,45 @@ class TestCommandProcessor:
             raise RuntimeError("Test exception")
 
         monkeypatch.setattr(command_processor, '_handle_current', mock_handle_current)
-        result = command_processor.process("/current")
+        result = command_processor.process("current")
         assert "Error:" in result.output
         assert "Test exception" in result.output
 
     def test_handle_cycle_error(self, command_processor):
-        """Test /cycle with invalid event."""
-        result = command_processor.process("/cycle InvalidEvent")
+        """Test cycle with invalid event."""
+        result = command_processor.process("cycle InvalidEvent")
         assert "failed" in result.output.lower() or "error" in result.output.lower()
 
     def test_handle_cycle_dfs_error(self, command_processor, monkeypatch):
-        """Test /cycle with SimulationRuntimeDfsError."""
+        """Test cycle with SimulationRuntimeDfsError."""
         from pyfcstm.simulate import SimulationRuntimeDfsError
 
         def mock_cycle(events=None):
             raise SimulationRuntimeDfsError("DFS limit exceeded")
 
         monkeypatch.setattr(command_processor.runtime, 'cycle', mock_cycle)
-        result = command_processor.process("/cycle")
+        result = command_processor.process("cycle")
         assert "unbounded execution chain" in result.output
         assert "stoppable states" in result.output
 
     def test_handle_history_empty(self, command_processor):
         """Test history command with no history."""
-        result = command_processor.process("/history")
+        result = command_processor.process("history")
         assert "No execution history available" in result.output
 
     def test_handle_history_default(self, command_processor):
         """Test history command with default count."""
         # Execute some cycles to generate history
-        command_processor.process("/cycle 5")
-        result = command_processor.process("/history")
+        command_processor.process("cycle 5")
+        result = command_processor.process("history")
         assert "Cycle" in result.output
         assert "State" in result.output
 
     def test_handle_history_with_count(self, command_processor):
         """Test history command with specific count."""
         # Execute cycles
-        command_processor.process("/cycle 10")
-        result = command_processor.process("/history 3")
+        command_processor.process("cycle 10")
+        result = command_processor.process("history 3")
         # Should show last 3 entries
         lines = [line for line in result.output.split('\n') if line.strip() and not line.startswith('-')]
         # Header + 3 data rows
@@ -619,26 +619,26 @@ class TestCommandProcessor:
 
     def test_handle_history_all(self, command_processor):
         """Test history command with 'all' parameter."""
-        command_processor.process("/cycle 5")
-        result = command_processor.process("/history all")
+        command_processor.process("cycle 5")
+        result = command_processor.process("history all")
         assert "Cycle" in result.output
         assert "State" in result.output
 
     def test_handle_history_invalid_count(self, command_processor):
         """Test history command with invalid count."""
-        command_processor.process("/cycle 5")
-        result = command_processor.process("/history invalid")
+        command_processor.process("cycle 5")
+        result = command_processor.process("history invalid")
         assert "Error" in result.output
 
     def test_handle_history_zero_count(self, command_processor):
         """Test history command with zero count."""
-        command_processor.process("/cycle 5")
-        result = command_processor.process("/history 0")
+        command_processor.process("cycle 5")
+        result = command_processor.process("history 0")
         assert "Error" in result.output
 
     def test_handle_setting_list_all(self, command_processor):
         """Test setting command without arguments."""
-        result = command_processor.process("/setting")
+        result = command_processor.process("setting")
         assert "Current settings:" in result.output
         assert "table_max_rows" in result.output
         assert "history_size" in result.output
@@ -647,52 +647,52 @@ class TestCommandProcessor:
 
     def test_handle_setting_get(self, command_processor):
         """Test getting a specific setting."""
-        result = command_processor.process("/setting history_size")
+        result = command_processor.process("setting history_size")
         assert "history_size" in result.output
         assert "100" in result.output
 
     def test_handle_setting_set_int(self, command_processor):
         """Test setting an integer value."""
-        result = command_processor.process("/setting history_size 50")
+        result = command_processor.process("setting history_size 50")
         assert "Setting updated" in result.output
         # Verify it was set
-        result = command_processor.process("/setting history_size")
+        result = command_processor.process("setting history_size")
         assert "50" in result.output
 
     def test_handle_setting_set_bool(self, command_processor):
         """Test setting a boolean value."""
-        result = command_processor.process("/setting color off")
+        result = command_processor.process("setting color off")
         assert "Setting updated" in result.output
         # Verify it was set
-        result = command_processor.process("/setting color")
+        result = command_processor.process("setting color")
         assert "False" in result.output
 
     def test_handle_setting_set_log_level(self, command_processor):
         """Test setting log level."""
-        result = command_processor.process("/setting log_level debug")
+        result = command_processor.process("setting log_level debug")
         assert "Setting updated" in result.output
         # Verify it was set
-        result = command_processor.process("/setting log_level")
+        result = command_processor.process("setting log_level")
         assert "debug" in result.output
 
     def test_handle_setting_invalid_key(self, command_processor):
         """Test setting with invalid key."""
-        result = command_processor.process("/setting invalid_key 123")
+        result = command_processor.process("setting invalid_key 123")
         assert "Error" in result.output
 
     def test_handle_setting_invalid_value(self, command_processor):
         """Test setting with invalid value."""
-        result = command_processor.process("/setting history_size invalid")
+        result = command_processor.process("setting history_size invalid")
         assert "Error" in result.output
 
     def test_handle_setting_history_size_trim(self, command_processor):
         """Test that changing history_size trims existing history."""
         # Generate history
-        command_processor.process("/cycle 10")
+        command_processor.process("cycle 10")
         # Set smaller history size
-        command_processor.process("/setting history_size 3")
+        command_processor.process("setting history_size 3")
         # Check history is trimmed
-        result = command_processor.process("/history")
+        result = command_processor.process("history")
         lines = [line for line in result.output.split('\n') if line.strip() and not line.startswith('-')]
         # Header + 3 data rows
         assert len(lines) == 4
@@ -719,13 +719,13 @@ class TestBatchProcessor:
         assert "System.Idle" in result
 
     def test_execute_with_slash_prefix(self, batch_processor):
-        """Test commands with explicit / prefix."""
-        result = _collect_batch_output(batch_processor, "/current")
+        """Test commands work without prefix."""
+        result = _collect_batch_output(batch_processor, "current")
         assert "System" in result
 
     def test_execute_mixed_prefix(self, batch_processor):
-        """Test mixed commands with and without prefix."""
-        result = _collect_batch_output(batch_processor, "current; /current")
+        """Test multiple commands."""
+        result = _collect_batch_output(batch_processor, "current; current")
         # Should have two outputs
         assert result.count("System") >= 2
 
@@ -765,13 +765,13 @@ class TestSimulationCompleter:
         from prompt_toolkit.document import Document
 
         completer = SimulationCompleter(runtime)
-        document = Document('/c')
+        document = Document('c')
         completions = list(completer.get_completions(document, None))
         # Should suggest /cycle, /clear, /current
         assert len(completions) >= 3
         texts = [c.text for c in completions]
-        assert 'ycle' in texts or '/cycle' in texts
-        assert 'lear' in texts or '/clear' in texts
+        assert 'ycle' in texts or 'cycle' in texts
+        assert 'lear' in texts or 'clear' in texts
 
     def test_setting_key_completion(self, runtime):
         """Test setting key completion."""
@@ -779,7 +779,7 @@ class TestSimulationCompleter:
         from prompt_toolkit.document import Document
 
         completer = SimulationCompleter(runtime)
-        document = Document('/setting log')
+        document = Document('setting log')
         completions = list(completer.get_completions(document, None))
         # Should suggest log_level
         texts = [c.text for c in completions]
@@ -793,7 +793,7 @@ class TestSimulationCompleter:
         completer = SimulationCompleter(runtime)
         # Move to a state with events
         runtime.cycle()
-        document = Document('/cycle S')
+        document = Document('cycle S')
         completions = list(completer.get_completions(document, None))
         # Should suggest Start event
         texts = [c.text for c in completions]
@@ -806,11 +806,11 @@ class TestSimulationCompleter:
 
         completer = SimulationCompleter(runtime)
         runtime.cycle()
-        # With trailing space, words[-1] will be '/cycle', not empty
-        document = Document('/cycle ')
+        # With trailing space, words[-1] will be 'cycle', not empty
+        document = Document('cycle ')
         completions = list(completer.get_completions(document, None))
-        # Should suggest events that start with '/cycle' (none)
-        # Actually, the prefix will be '/cycle', so no events will match
+        # Should suggest events that start with 'cycle' (none)
+        # Actually, the prefix will be 'cycle', so no events will match
         # This tests the normal flow, not the else branch
         assert isinstance(completions, list)
 
@@ -821,7 +821,7 @@ class TestSimulationCompleter:
 
         completer = SimulationCompleter(runtime)
         # With trailing space, words[-1] will be '/log', not empty
-        document = Document('/log ')
+        document = Document('log ')
         completions = list(completer.get_completions(document, None))
         # Should suggest log levels that start with '/log' (none)
         assert isinstance(completions, list)
@@ -848,7 +848,7 @@ class TestSimulationCompleter:
         completer = SimulationCompleter(runtime)
         # When runtime has ended, accessing current_state raises IndexError
         # The completer should handle this gracefully
-        document = Document('/cycle test')
+        document = Document('cycle test')
         # This should not crash even though runtime has ended
         try:
             completions = list(completer.get_completions(document, None))
@@ -864,7 +864,7 @@ class TestSimulationCompleter:
         from prompt_toolkit.document import Document
 
         completer = SimulationCompleter(runtime)
-        document = Document('/')
+        document = Document('')
         completions = list(completer.get_completions(document, None))
         # Should suggest all commands
         assert len(completions) >= len(completer.COMMANDS)
@@ -875,7 +875,7 @@ class TestSimulationCompleter:
         from prompt_toolkit.document import Document
 
         completer = SimulationCompleter(runtime)
-        document = Document('/xyz')
+        document = Document('xyz')
         completions = list(completer.get_completions(document, None))
         # Should return empty
         assert len(completions) == 0
@@ -967,7 +967,7 @@ class TestREPL:
         try:
             repl = SimulationREPL(runtime, use_color=False)
             # Test that command processor works
-            result = repl.command_processor.process("/current")
+            result = repl.command_processor.process("current")
             assert "System" in result.output
         except Exception as e:
             # prompt_toolkit may fail in non-interactive environments (Windows CI, etc.)
@@ -1082,7 +1082,7 @@ class TestPlatformCompatibility:
         from pyfcstm.entry.simulate.commands import CommandProcessor
 
         processor = CommandProcessor(runtime, use_color=False)
-        result = processor.process("/current")
+        result = processor.process("current")
 
         # Should work without ANSI codes
         assert "System" in result.output
@@ -1182,10 +1182,10 @@ class TestDSLVariety:
         runtime = SimulationRuntime(sm)
         processor = CommandProcessor(runtime, use_color=False)
 
-        result = processor.process("/current")
+        result = processor.process("current")
         assert "System" in result.output
 
-        result = processor.process("/cycle")
+        result = processor.process("cycle")
         assert "System.A" in result.output
 
     def test_complex_hierarchical_dsl(self):
@@ -1214,7 +1214,7 @@ class TestDSLVariety:
         processor = CommandProcessor(runtime, use_color=False)
 
         # Should navigate through all levels
-        result = processor.process("/cycle")
+        result = processor.process("cycle")
         assert "Deep" in result.output
 
     def test_dsl_with_transitions_and_events(self):
@@ -1247,16 +1247,16 @@ class TestDSLVariety:
         processor = CommandProcessor(runtime, use_color=False)
 
         # Test state transitions
-        processor.process("/cycle")  # Enter A
+        processor.process("cycle")  # Enter A
         assert runtime.vars['counter'] == 1
 
-        processor.process("/cycle GoToB")  # A -> B
+        processor.process("cycle GoToB")  # A -> B
         assert runtime.vars['counter'] == 11
 
-        processor.process("/cycle GoToC")  # B -> C
+        processor.process("cycle GoToC")  # B -> C
         assert runtime.vars['counter'] == 11
 
-        processor.process("/cycle GoToA")  # C -> A
+        processor.process("cycle GoToA")  # C -> A
         assert runtime.vars['counter'] == 12
 
     def test_dsl_with_guards(self):
@@ -1279,13 +1279,13 @@ class TestDSLVariety:
         processor = CommandProcessor(runtime, use_color=False)
 
         # Initially in Low
-        processor.process("/cycle")
-        assert "Low" in processor.process("/current").output
+        processor.process("cycle")
+        assert "Low" in processor.process("current").output
 
         # Set value to trigger guard
         runtime.vars['value'] = 10
-        processor.process("/cycle")
-        assert "High" in processor.process("/current").output
+        processor.process("cycle")
+        assert "High" in processor.process("current").output
 
     def test_dsl_with_effects(self):
         """Test DSL with transition effects."""
@@ -1309,11 +1309,11 @@ class TestDSLVariety:
         runtime = SimulationRuntime(sm)
         processor = CommandProcessor(runtime, use_color=False)
 
-        processor.process("/cycle")  # Enter A
+        processor.process("cycle")  # Enter A
         assert runtime.vars['x'] == 0
         assert runtime.vars['y'] == 0
 
-        processor.process("/cycle")  # A -> B with effect
+        processor.process("cycle")  # A -> B with effect
         assert runtime.vars['x'] == 100
         assert runtime.vars['y'] == 200
 
@@ -1343,11 +1343,11 @@ class TestDSLVariety:
         runtime = SimulationRuntime(sm)
         processor = CommandProcessor(runtime, use_color=False)
 
-        processor.process("/cycle")  # Enter A
+        processor.process("cycle")  # Enter A
         assert runtime.vars['enter_count'] == 1
         assert runtime.vars['exit_count'] == 0
 
-        processor.process("/cycle Next")  # Exit A, enter B
+        processor.process("cycle Next")  # Exit A, enter B
         assert runtime.vars['enter_count'] == 1
         assert runtime.vars['exit_count'] == 1
 
@@ -1379,7 +1379,7 @@ class TestDSLVariety:
         processor = CommandProcessor(runtime, use_color=False)
 
         # Test that all variables are tracked
-        result = processor.process("/current")
+        result = processor.process("current")
         assert "a" in result.output
         assert "b" in result.output
         assert "c" in result.output
@@ -1387,7 +1387,7 @@ class TestDSLVariety:
         assert "e" in result.output
 
         # Test multi-cycle with many variables
-        result = processor.process("/cycle 3")
+        result = processor.process("cycle 3")
         assert "a" in result.output
         assert "b" in result.output
 
@@ -1409,11 +1409,11 @@ class TestDSLVariety:
         runtime = SimulationRuntime(sm)
         processor = CommandProcessor(runtime, use_color=False)
 
-        processor.process("/cycle")
-        assert "Empty1" in processor.process("/current").output
+        processor.process("cycle")
+        assert "Empty1" in processor.process("current").output
 
-        processor.process("/cycle E1")
-        assert "Empty2" in processor.process("/current").output
+        processor.process("cycle E1")
+        assert "Empty2" in processor.process("current").output
 
     def test_dsl_with_termination(self):
         """Test DSL that terminates."""
@@ -1438,7 +1438,7 @@ class TestDSLVariety:
 
         # Run until termination
         for _ in range(10):
-            processor.process("/cycle")
+            processor.process("cycle")
             if runtime.is_ended:
                 break
 
@@ -1479,17 +1479,17 @@ class TestIntegration:
     def test_command_processor_workflow(self, command_processor, runtime):
         """Test command processor workflow."""
         # Start
-        result = command_processor.process("/cycle")
+        result = command_processor.process("cycle")
         assert "System.Idle" in result.output
 
         # Check events
-        result = command_processor.process("/events")
+        result = command_processor.process("events")
         assert "Start" in result.output
 
         # Trigger event
-        result = command_processor.process("/cycle Start")
+        result = command_processor.process("cycle Start")
         assert "System.Running" in result.output
 
         # Clear
-        result = command_processor.process("/clear")
+        result = command_processor.process("clear")
         assert "System" in result.output

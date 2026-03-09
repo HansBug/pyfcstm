@@ -54,9 +54,8 @@ class BatchProcessor:
         """
         Execute a batch command string with clear command separators.
 
-        Commands are separated by semicolons. The '/' prefix is automatically
-        added if missing. Each command's output is printed immediately to maintain
-        proper ordering with log messages.
+        Commands are separated by semicolons. Each command's output is printed
+        immediately to maintain proper ordering with log messages.
 
         :param command_string: Semicolon-separated command string
         :type command_string: str
@@ -69,10 +68,6 @@ class BatchProcessor:
         commands = [cmd.strip() for cmd in command_string.split(';') if cmd.strip()]
 
         for i, command in enumerate(commands):
-            # Automatically add / prefix if missing
-            if not command.startswith('/'):
-                command = '/' + command
-
             # Add command header
             separator = "─" * 60
             command_header = f">>> {command}"

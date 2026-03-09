@@ -86,7 +86,7 @@ def _add_simulate_subcommand(cli: click.Group) -> click.Group:
             "╔" + "═" * 58 + "╗",
             "║  State Machine Interactive Simulator" + " " * 21 + "║",
             "╟" + "─" * 58 + "╢",
-            "║  Type /help to see available commands" + " " * 20 + "║",
+            "║  Type 'help' to see available commands" + " " * 19 + "║",
             "╚" + "═" * 58 + "╝",
             ""
         ]

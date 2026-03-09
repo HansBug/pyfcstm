@@ -34,24 +34,24 @@ prompt_toolkit>=3.0.0
 
 | 命令         | 参数                          | 功能                      | 示例                                    |
 |------------|-----------------------------|--------------------------|-----------------------------------------|
-| `/cycle`   | `[count] [event1 event2 ...]` | 执行指定次数的周期，可选事件列表 | `/cycle`, `/cycle 5`, `/cycle 3 Start` |
-| `/clear`   | 无                           | 重置状态机到初始状态          | `/clear`                                |
-| `/current` | 无                           | 显示当前状态路径和所有变量值    | `/current`                              |
-| `/events`  | 无                           | 列出当前状态可触发的事件       | `/events`                               |
-| `/log`     | `[level]`                   | 设置或显示日志级别           | `/log debug`, `/log`                    |
-| `/history` | `[n\|all]`                  | 显示执行历史记录            | `/history`, `/history 20`, `/history all` |
-| `/setting` | `[key] [value]`             | 查看或设置配置项            | `/setting`, `/setting table_max_rows 30` |
-| `/help`    | 无                           | 显示帮助信息               | `/help`                                 |
-| `/quit`    | 无                           | 退出模拟器                 | `/quit`                                 |
-| `/exit`    | 无                           | 退出模拟器（同 /quit）      | `/exit`                                 |
+| `cycle`   | `[count] [event1 event2 ...]` | 执行指定次数的周期，可选事件列表 | `cycle`, `cycle 5`, `cycle 3 Start` |
+| `clear`   | 无                           | 重置状态机到初始状态          | `clear`                                |
+| `current` | 无                           | 显示当前状态路径和所有变量值    | `current`                              |
+| `events`  | 无                           | 列出当前状态可触发的事件       | `events`                               |
+| `log`     | `[level]`                   | 设置或显示日志级别           | `/log debug`, `log`                    |
+| `history` | `[n\|all]`                  | 显示执行历史记录            | `history`, `/history 20`, `/history all` |
+| `setting` | `[key] [value]`             | 查看或设置配置项            | `setting`, `/setting table_max_rows 30` |
+| `help`    | 无                           | 显示帮助信息               | `help`                                 |
+| `quit`    | 无                           | 退出模拟器                 | `quit`                                 |
+| `exit`    | 无                           | 退出模拟器（同 /quit）      | `exit`                                 |
 
-**注意**：`/cycle` 命令的 `count` 参数为可选整数，默认值为 1。如果提供，必须是正整数。
+**注意**：`cycle` 命令的 `count` 参数为可选整数，默认值为 1。如果提供，必须是正整数。
 
 ### 2.2 自动补全规则
 
 - 输入 `/` 后：显示所有命令列表
-- 输入 `/cy` 后：补全为 `/cycle`
-- 输入 `/cycle ` 后：显示当前状态可用事件列表（全路径和简短版本）
+- 输入 `cy` 后：补全为 `cycle`
+- 输入 `cycle ` 后：显示当前状态可用事件列表（全路径和简短版本）
 - 输入 `/log ` 后：显示可用日志级别
 - Tab 键触发补全，右箭头键接受建议
 
@@ -158,8 +158,8 @@ from prompt_toolkit.completion import Completer, Completion
 
 class SimulationCompleter(Completer):
     COMMANDS = [
-        '/cycle', '/clear', '/current', '/events',
-        '/log', '/history', '/help', '/quit', '/exit'
+        'cycle', 'clear', 'current', 'events',
+        'log', 'history', 'help', 'quit', 'exit'
     ]
 
     LOG_LEVELS = ['debug', 'info', 'warning', 'error', 'off']
@@ -171,7 +171,7 @@ class SimulationCompleter(Completer):
         text = document.text_before_cursor
 
         # 命令补全
-        if text.startswith('/') and ' ' not in text:
+        if not text or ' ' not in text:
             for cmd in self.COMMANDS:
                 if cmd.startswith(text):
                     yield Completion(
@@ -180,8 +180,8 @@ class SimulationCompleter(Completer):
                         display_meta=self._get_command_help(cmd)
                     )
 
-        # /cycle 后的事件补全
-        elif text.startswith('/cycle '):
+        # cycle 后的事件补全
+        elif text.startswith('cycle '):
             event_prefix = text.split()[-1]
             events = self._get_current_events()
             for event in events:
@@ -219,15 +219,15 @@ class SimulationCompleter(Completer):
     def _get_command_help(self, cmd):
         """获取命令帮助信息"""
         help_map = {
-            '/cycle': 'Execute one cycle',
-            '/clear': 'Reset to initial state',
-            '/current': 'Show current state and variables',
-            '/events': 'List available events',
-            '/log': 'Set log level',
-            '/history': 'Show command history',
-            '/help': 'Show help',
-            '/quit': 'Exit simulator',
-            '/exit': 'Exit simulator',
+            'cycle': 'Execute one cycle',
+            'clear': 'Reset to initial state',
+            'current': 'Show current state and variables',
+            'events': 'List available events',
+            'log': 'Set log level',
+            'history': 'Show command history',
+            'help': 'Show help',
+            'quit': 'Exit simulator',
+            'exit': 'Exit simulator',
         }
         return help_map.get(cmd, '')
 ```
@@ -269,29 +269,29 @@ class CommandProcessor:
         args = parts[1:]
 
         try:
-            if command == '/cycle':
+            if command == 'cycle':
                 return self._handle_cycle(args)
-            elif command == '/clear':
+            elif command == 'clear':
                 return self._handle_clear()
-            elif command == '/current':
+            elif command == 'current':
                 return self._handle_current()
-            elif command == '/events':
+            elif command == 'events':
                 return self._handle_events()
-            elif command == '/log':
+            elif command == 'log':
                 return self._handle_log(args)
-            elif command == '/history':
+            elif command == 'history':
                 return self._handle_history(args)
-            elif command == '/help':
+            elif command == 'help':
                 return self._handle_help()
-            elif command in ['/quit', '/exit']:
+            elif command in ['quit', 'exit']:
                 return CommandResult("Goodbye!", should_exit=True)
             else:
-                return CommandResult(f"Unknown command: {command}. Type /help for available commands.")
+                return CommandResult(f"Unknown command: {command}. Type help for available commands.")
         except Exception as e:
             return CommandResult(f"Error: {e}")
 
     def _handle_cycle(self, events: List[str]) -> CommandResult:
-        """Handle /cycle command"""
+        """Handle cycle command"""
         try:
             if self.log_level == LogLevel.DEBUG:
                 self.display.log("Executing cycle with events:", events if events else "none")
@@ -537,7 +537,7 @@ def _add_simulate_subcommand(cli: click.Group) -> click.Group:
         click.echo("╔" + "═" * 58 + "╗")
         click.echo("║  State Machine Interactive Simulator" + " " * 21 + "║")
         click.echo("╟" + "─" * 58 + "╢")
-        click.echo("║  Type /help to see available commands" + " " * 19 + "║")
+        click.echo("║  Type help to see available commands" + " " * 19 + "║")
         click.echo("╚" + "═" * 58 + "╝")
         click.echo()
         repl.run()
@@ -589,12 +589,12 @@ $ pyfcstm simulate -i example.fcstm
 ╔══════════════════════════════════════════════════════════╗
 ║  State Machine Interactive Simulator                     ║
 ╟──────────────────────────────────────────────────────────╢
-║  Type /help to see available commands                    ║
+║  Type help to see available commands                    ║
 ╚══════════════════════════════════════════════════════════╝
 
-simulate> /help
+simulate> help
 Available commands:
-  /cycle [events...]  - Execute one cycle with optional events
+  cycle [events...]  - Execute one cycle with optional events
   /clear              - Reset to initial state
   /current            - Show current state and all variables
   /events             - List available events in current state
@@ -603,34 +603,34 @@ Available commands:
   /help               - Show this help message
   /quit, /exit        - Exit simulator
 
-simulate> /current
+simulate> current
 Current State: System.Idle
 Variables:
   counter = 0
   temperature = 25.0
 
-simulate> /events
+simulate> events
 Available Events:
   • Start (System.Events.Start)
   • Reset (System.Events.Reset)
 
-simulate> /cycle Start
+simulate> cycle Start
 Current State: System.Running.Active
 Variables:
   counter = 1
   temperature = 25.1
 
-simulate> /log debug
+simulate> log debug
 Log level set to: debug
 
-simulate> /cycle
+simulate> cycle
 [DEBUG] Executing cycle with events: none
 Current State: System.Running.Processing
 Variables:
   counter = 2
   temperature = 25.2
 
-simulate> /quit
+simulate> quit
 Goodbye!
 ```
 
@@ -670,11 +670,11 @@ Available Events:
 - [x] 创建 `pyfcstm/entry/simulate/commands.py`
 - [x] 实现 `CommandResult` 数据类
 - [x] 实现 `CommandProcessor` 类及命令路由
-- [x] 实现 `/cycle [events...]` 命令处理器
-- [x] 实现 `/clear` 命令处理器
-- [x] 实现 `/current` 命令处理器
-- [x] 实现 `/events` 命令处理器
-- [x] 实现 `/quit` 和 `/exit` 命令处理器
+- [x] 实现 `cycle [events...]` 命令处理器
+- [x] 实现 `clear` 命令处理器
+- [x] 实现 `current` 命令处理器
+- [x] 实现 `events` 命令处理器
+- [x] 实现 `quit` 和 `exit` 命令处理器
 - [x] 添加命令执行的基本异常处理
 
 **P0.3：基础显示与输出** ✅
@@ -710,15 +710,15 @@ Available Events:
 - [x] 编写集成测试
 - [x] 所有测试通过（34/34 tests passing）
 
-**P0.7：增强 /cycle 命令（新增功能）** ✅
-- [x] 扩展 `/cycle` 命令支持重复次数参数：`/cycle [count] [events...]`
+**P0.7：增强 cycle 命令（新增功能）** ✅
+- [x] 扩展 `cycle` 命令支持重复次数参数：`cycle [count] [events...]`
 - [x] `count` 为可选整数参数，默认值为 1
-- [x] 示例：`/cycle 5` - 执行 5 次周期（无事件）
-- [x] 示例：`/cycle 3 Start` - 执行 3 次周期，每次触发 Start 事件
-- [x] 示例：`/cycle 10 Start Stop` - 执行 10 次周期，每次触发 Start 和 Stop 事件
+- [x] 示例：`cycle 5` - 执行 5 次周期（无事件）
+- [x] 示例：`cycle 3 Start` - 执行 3 次周期，每次触发 Start 事件
+- [x] 示例：`cycle 10 Start Stop` - 执行 10 次周期，每次触发 Start 和 Stop 事件
 - [x] 在每次周期后显示当前状态（大于 5 次时仅显示首尾状态）
 - [x] 添加参数验证（count 必须为正整数）
-- [x] 更新 `/help` 命令文档
+- [x] 更新 `help` 命令文档
 - [x] 添加单元测试覆盖新功能（6 个新测试，全部通过）
 
 ### 阶段 P1：增强交互性 ✅
@@ -734,7 +734,7 @@ Available Events:
 - [x] 创建 `pyfcstm/entry/simulate/completer.py`
 - [x] 实现 `SimulationCompleter` 类
 - [x] 添加命令名称补全（在 `/` 之后）
-- [x] 添加事件名称补全（在 `/cycle ` 之后）
+- [x] 添加事件名称补全（在 `cycle ` 之后）
 - [x] 添加日志级别补全（在 `/log ` 之后）
 - [x] 添加补全元数据（帮助文本显示）
 - [x] 支持全路径和简短事件名称
@@ -760,7 +760,7 @@ Available Events:
   - [x] 为每条命令添加清晰的分隔符
   - [x] 显示正在执行的命令
   - [x] 区分不同命令的输出内容
-- [x] `/cycle` 多次执行表格化输出
+- [x] `cycle` 多次执行表格化输出
   - [x] 使用手写表格实现（不依赖tabulate）
   - [x] 所有列居中显示
   - [x] 表格列：cycle（序号）、state（状态）、各变量列
@@ -776,7 +776,7 @@ Available Events:
     - [x] State values: 绿色
     - [x] 变量 headers: 黄色
     - [x] 变量 values: Cyan
-- [x] `/current` 和单个 `/cycle` 显示 Cycle 计数
+- [x] `current` 和单个 `cycle` 显示 Cycle 计数
   - [x] 在 Current State 上方添加 "Cycle: xxx" 显示当前周期数
 - [x] 修复 ANSI 颜色代码问题
   - [x] 修复 `0m` 后缀问题
@@ -800,13 +800,13 @@ Available Events:
   - [x] 支持历史记录大小限制（可配置，默认 None 表示无限）
 - [x] 实现 `/history [n]` 命令处理器
   - [x] 从 runtime.history 检索历史记录
-  - [x] 使用表格格式显示历史（类似 /cycle 多次执行）
+  - [x] 使用表格格式显示历史（类似 cycle 多次执行）
   - [x] 支持可选计数参数（默认：10，显示最近10条）
   - [x] 为历史显示添加颜色编码
   - [x] 支持 `/history all` 显示所有历史
 
 **P2.3：增强帮助系统** ✅
-- [x] `/help` 命令处理器已在 P0 实现
+- [x] `help` 命令处理器已在 P0 实现
 - [x] 格式化帮助文本已创建
 - [x] 命令描述和使用示例已添加
 - [x] 添加键盘快捷键文档（Tab、Ctrl+R 等）
@@ -821,8 +821,8 @@ Available Events:
 - [x] 全面测试错误场景
 
 **P2.5：可配置设置系统** ✅
-- [x] 实现 `/setting` 命令用于配置运行时参数
-  - [x] `/setting` - 显示所有当前设置
+- [x] 实现 `setting` 命令用于配置运行时参数
+  - [x] `setting` - 显示所有当前设置
   - [x] `/setting <key>` - 显示特定设置的值
   - [x] `/setting <key> <value>` - 设置特定配置项
 - [x] 支持的配置项：
@@ -841,8 +841,8 @@ Available Events:
 - [x] 为 `StateDisplay` 格式化编写单元测试
 - [x] 为 `BatchProcessor` 编写单元测试
 - [x] 为完整 REPL 工作流编写集成测试
-- [x] 为 `/history` 命令编写测试（空历史、计数、all、无效输入）
-- [x] 为 `/setting` 命令编写测试（列表、获取、设置、验证、历史裁剪）
+- [x] 为 `history` 命令编写测试（空历史、计数、all、无效输入）
+- [x] 为 `setting` 命令编写测试（列表、获取、设置、验证、历史裁剪）
 - [x] 为 `Settings` 类编写单元测试（初始化、get/set、验证、list_all）
 - [x] 为 `SimulationCompleter` 编写单元测试（命令补全、事件补全、日志级别补全）
 - [x] 为 CLI 入口点编写测试（批处理模式、无效文件、no-color标志）

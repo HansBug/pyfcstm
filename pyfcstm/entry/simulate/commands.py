@@ -200,34 +200,34 @@ class CommandProcessor:
         args = parts[1:]
 
         try:
-            if command == '/cycle':
+            if command == 'cycle':
                 return self._handle_cycle(args)
-            elif command == '/clear':
+            elif command == 'clear':
                 return self._handle_clear()
-            elif command == '/current':
+            elif command == 'current':
                 return self._handle_current()
-            elif command == '/events':
+            elif command == 'events':
                 return self._handle_events()
-            elif command == '/history':
+            elif command == 'history':
                 return self._handle_history(args)
-            elif command == '/setting':
+            elif command == 'setting':
                 return self._handle_setting(args)
-            elif command == '/help':
+            elif command == 'help':
                 return self._handle_help()
-            elif command in ['/quit', '/exit']:
+            elif command in ['quit', 'exit']:
                 return CommandResult("Goodbye!", should_exit=True)
             else:
-                return CommandResult(f"Unknown command: {command}. Type /help for available commands.")
+                return CommandResult(f"Unknown command: {command}. Type 'help' for available commands.")
         except Exception as e:
             return CommandResult(f"Error: {e}")
 
     def _handle_cycle(self, events: List[str]) -> CommandResult:
         """
-        Handle /cycle command with optional count parameter.
+        Handle cycle command with optional count parameter.
 
         Supports two formats:
-        - /cycle [events...] - Execute 1 cycle with optional events
-        - /cycle [count] [events...] - Execute count cycles with optional events
+        - cycle [events...] - Execute 1 cycle with optional events
+        - cycle [count] [events...] - Execute count cycles with optional events
 
         For count > 1, displays results in table format.
 
@@ -368,29 +368,29 @@ class CommandProcessor:
 
     def _handle_help(self) -> CommandResult:
         """
-        Handle /help command.
+        Handle help command.
 
         :return: Command result with help text
         :rtype: CommandResult
         """
         help_text = """Available commands:
-  /cycle [count] [events...]  - Execute cycle(s) with optional events
-                                count: number of cycles (default: 1)
-                                Examples: /cycle, /cycle 5, /cycle 3 Start
-  /clear                      - Reset to initial state
-  /current                    - Show current state and all variables
-  /events                     - List available events in current state
-  /history [n|all]            - Show execution history (default: 10 recent entries)
-  /setting [key] [value]      - View or change settings (including log_level)
-  /help                       - Show this help message
-  /quit, /exit                - Exit simulator
+  cycle [count] [events...]  - Execute cycle(s) with optional events
+                               count: number of cycles (default: 1)
+                               Examples: cycle, cycle 5, cycle 3 Start
+  clear                      - Reset to initial state
+  current                    - Show current state and all variables
+  events                     - List available events in current state
+  history [n|all]            - Show execution history (default: 10 recent entries)
+  setting [key] [value]      - View or change settings (including log_level)
+  help                       - Show this help message
+  quit, exit                 - Exit simulator
 
 Keyboard shortcuts (interactive mode):
-  Tab                         - Auto-complete commands and events
-  Ctrl+R                      - Search command history
-  Ctrl+C                      - Cancel current input
-  Ctrl+D                      - Exit simulator
-  Up/Down arrows              - Navigate command history"""
+  Tab                        - Auto-complete commands and events
+  Ctrl+R                     - Search command history
+  Ctrl+C                     - Cancel current input
+  Ctrl+D                     - Exit simulator
+  Up/Down arrows             - Navigate command history"""
         return CommandResult(help_text)
 
     def _handle_history(self, args: List[str]) -> CommandResult:

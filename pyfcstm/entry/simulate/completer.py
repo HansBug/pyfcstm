@@ -27,8 +27,8 @@ class SimulationCompleter(Completer):
     """
 
     COMMANDS = [
-        '/cycle', '/clear', '/current', '/events',
-        '/history', '/setting', '/help', '/quit', '/exit'
+        'cycle', 'clear', 'current', 'events',
+        'history', 'setting', 'help', 'quit', 'exit'
     ]
 
     LOG_LEVELS = ['debug', 'info', 'warning', 'error', 'off']
@@ -55,8 +55,8 @@ class SimulationCompleter(Completer):
         text = document.text_before_cursor
         words = text.split()
 
-        # Command completion (after /)
-        if text.startswith('/') and ' ' not in text:
+        # Command completion
+        if not text or ' ' not in text:
             for cmd in self.COMMANDS:
                 if cmd.startswith(text):
                     yield Completion(
@@ -65,8 +65,8 @@ class SimulationCompleter(Completer):
                         display_meta=self._get_command_help(cmd)
                     )
 
-        # Event completion (after /cycle)
-        elif text.startswith('/cycle '):
+        # Event completion (after cycle)
+        elif text.startswith('cycle '):
             # Get the last word being typed
             if words:
                 event_prefix = words[-1]
@@ -81,8 +81,8 @@ class SimulationCompleter(Completer):
                         start_position=-len(event_prefix)
                     )
 
-        # Setting key completion (after /setting)
-        elif text.startswith('/setting '):
+        # Setting key completion (after setting)
+        elif text.startswith('setting '):
             setting_keys = ['table_max_rows', 'history_size', 'color', 'log_level']
             if words and len(words) >= 2:
                 key_prefix = words[-1]
@@ -136,14 +136,14 @@ class SimulationCompleter(Completer):
         :rtype: str
         """
         help_map = {
-            '/cycle': 'Execute cycle(s) with optional events',
-            '/clear': 'Reset to initial state',
-            '/current': 'Show current state and variables',
-            '/events': 'List available events',
-            '/history': 'Show execution history',
-            '/setting': 'View or change settings',
-            '/help': 'Show help',
-            '/quit': 'Exit simulator',
-            '/exit': 'Exit simulator',
+            'cycle': 'Execute cycle(s) with optional events',
+            'clear': 'Reset to initial state',
+            'current': 'Show current state and variables',
+            'events': 'List available events',
+            'history': 'Show execution history',
+            'setting': 'View or change settings',
+            'help': 'Show help',
+            'quit': 'Exit simulator',
+            'exit': 'Exit simulator',
         }
         return help_map.get(cmd, '')

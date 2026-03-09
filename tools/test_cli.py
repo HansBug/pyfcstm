@@ -158,11 +158,16 @@ class CLITester:
             '-i', test_dsl_file,
             '-e', '/current',
             '--no-color'
-        ])
+        ], check=False)
 
-        assert result.returncode == 0, f"Simulate batch mode failed: {result.stderr}"
+        if result.returncode != 0:
+            print(f"  [FAIL] Command failed with exit code {result.returncode}")
+            print(f"  stdout: {result.stdout}")
+            print(f"  stderr: {result.stderr}")
+            raise AssertionError(f"Simulate batch mode failed with exit code {result.returncode}")
+
         assert 'State:' in result.stdout or 'state' in result.stdout.lower(), \
-            "Batch output doesn't contain state information"
+            f"Batch output doesn't contain state information. stdout: {result.stdout}"
         print("  [OK] Batch mode execution successful")
         self.test_results.append(('simulate_batch', True))
 
@@ -176,11 +181,16 @@ class CLITester:
             '-i', test_dsl_file,
             '-e', '/cycle; /current',
             '--no-color'
-        ])
+        ], check=False)
 
-        assert result.returncode == 0, f"Simulate cycle failed: {result.stderr}"
+        if result.returncode != 0:
+            print(f"  [FAIL] Command failed with exit code {result.returncode}")
+            print(f"  stdout: {result.stdout}")
+            print(f"  stderr: {result.stderr}")
+            raise AssertionError(f"Simulate cycle failed with exit code {result.returncode}")
+
         assert 'Cycle' in result.stdout or 'cycle' in result.stdout.lower(), \
-            "Cycle output doesn't contain cycle information"
+            f"Cycle output doesn't contain cycle information. stdout: {result.stdout}"
         print("  [OK] Cycle execution successful")
         self.test_results.append(('simulate_cycle', True))
 
@@ -194,12 +204,17 @@ class CLITester:
             '-i', test_dsl_file,
             '-e', '/current; /cycle; /current; /events',
             '--no-color'
-        ])
+        ], check=False)
 
-        assert result.returncode == 0, f"Simulate multiple commands failed: {result.stderr}"
+        if result.returncode != 0:
+            print(f"  [FAIL] Command failed with exit code {result.returncode}")
+            print(f"  stdout: {result.stdout}")
+            print(f"  stderr: {result.stderr}")
+            raise AssertionError(f"Simulate multiple commands failed with exit code {result.returncode}")
+
         # Should have output from multiple commands
         assert result.stdout.count('State:') >= 2 or result.stdout.count('state') >= 2, \
-            "Multiple commands output doesn't show multiple states"
+            f"Multiple commands output doesn't show multiple states. stdout: {result.stdout}"
         print("  [OK] Multiple batch commands successful")
         self.test_results.append(('simulate_multiple', True))
 
@@ -213,12 +228,17 @@ class CLITester:
             '-i', test_dsl_file,
             '-e', '/cycle; /cycle; /history',
             '--no-color'
-        ])
+        ], check=False)
 
-        assert result.returncode == 0, f"Simulate history failed: {result.stderr}"
+        if result.returncode != 0:
+            print(f"  [FAIL] Command failed with exit code {result.returncode}")
+            print(f"  stdout: {result.stdout}")
+            print(f"  stderr: {result.stderr}")
+            raise AssertionError(f"Simulate history failed with exit code {result.returncode}")
+
         # History should show cycle information
         assert 'Cycle' in result.stdout or 'cycle' in result.stdout.lower(), \
-            "History output doesn't contain cycle information"
+            f"History output doesn't contain cycle information. stdout: {result.stdout}"
         print("  [OK] History command successful")
         self.test_results.append(('simulate_history', True))
 
@@ -232,12 +252,17 @@ class CLITester:
             '-i', test_dsl_file,
             '-e', '/setting; /setting color off; /setting',
             '--no-color'
-        ])
+        ], check=False)
 
-        assert result.returncode == 0, f"Simulate settings failed: {result.stderr}"
+        if result.returncode != 0:
+            print(f"  [FAIL] Command failed with exit code {result.returncode}")
+            print(f"  stdout: {result.stdout}")
+            print(f"  stderr: {result.stderr}")
+            raise AssertionError(f"Simulate settings failed with exit code {result.returncode}")
+
         # Should show settings
         assert 'color' in result.stdout.lower() or 'setting' in result.stdout.lower(), \
-            "Settings output doesn't contain setting information"
+            f"Settings output doesn't contain setting information. stdout: {result.stdout}"
         print("  [OK] Settings command successful")
         self.test_results.append(('simulate_settings', True))
 
@@ -250,12 +275,17 @@ class CLITester:
             '-i', test_dsl_file,
             '-e', '/current',
             '--no-color'
-        ])
+        ], check=False)
 
-        assert result.returncode == 0, f"Simulate no-color failed: {result.stderr}"
+        if result.returncode != 0:
+            print(f"  [FAIL] Command failed with exit code {result.returncode}")
+            print(f"  stdout: {result.stdout}")
+            print(f"  stderr: {result.stderr}")
+            raise AssertionError(f"Simulate no-color failed with exit code {result.returncode}")
+
         # Check that output doesn't contain ANSI escape codes
         assert '\x1b[' not in result.stdout, \
-            "Output contains ANSI codes despite --no-color flag"
+            f"Output contains ANSI codes despite --no-color flag. stdout: {result.stdout}"
         print("  [OK] No-color mode working correctly")
         self.test_results.append(('simulate_no_color', True))
 
@@ -269,12 +299,17 @@ class CLITester:
             '-i', test_dsl_file,
             '-e', '/cycle; /clear; /current',
             '--no-color'
-        ])
+        ], check=False)
 
-        assert result.returncode == 0, f"Simulate clear failed: {result.stderr}"
+        if result.returncode != 0:
+            print(f"  [FAIL] Command failed with exit code {result.returncode}")
+            print(f"  stdout: {result.stdout}")
+            print(f"  stderr: {result.stderr}")
+            raise AssertionError(f"Simulate clear failed with exit code {result.returncode}")
+
         # Should show state after reset
         assert 'State:' in result.stdout or 'state' in result.stdout.lower(), \
-            "Clear output doesn't contain state information"
+            f"Clear output doesn't contain state information. stdout: {result.stdout}"
         print("  [OK] Clear command successful")
         self.test_results.append(('simulate_clear', True))
 

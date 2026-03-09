@@ -1483,7 +1483,7 @@ class SimulationRuntime:
                 'cycle': self.cycle_count,
                 'state': state_path,
                 'vars': copy.deepcopy(self.vars),
-                'events': [str(e) if isinstance(e, Event) else e for e in (events or [])]
+                'events': [e.path_name if isinstance(e, Event) else e for e in (events or [])]
             }
 
             # Add to history and maintain size limit

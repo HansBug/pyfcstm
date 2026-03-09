@@ -6,9 +6,41 @@ commands in sequence without user interaction.
 """
 
 import sys
-from typing import List, Callable
+from typing import Callable
 
 from .commands import CommandProcessor
+
+
+def create_cross_platform_output_func() -> Callable[[str], None]:
+    """
+    Create a cross-platform output function that handles Unicode correctly.
+
+    On Windows, writes directly to binary stdout with UTF-8 encoding to avoid
+    cp1252 encoding issues. On other platforms, uses standard print.
+
+    :return: Output function that takes a string and prints it
+    :rtype: Callable[[str], None]
+    """
+    if sys.platform == 'win32':
+        def windows_output(text: str) -> None:
+            """Output function for Windows with UTF-8 encoding."""
+            try:
+                if hasattr(sys.stdout, 'buffer'):
+                    sys.stdout.buffer.write(text.encode('utf-8'))
+                    sys.stdout.buffer.write(b'\n')
+                    sys.stdout.flush()
+                else:
+                    print(text, flush=True)
+            except (UnicodeEncodeError, AttributeError):
+                print(text, flush=True)
+
+        return windows_output
+    else:
+        def standard_output(text: str) -> None:
+            """Standard output function for non-Windows platforms."""
+            print(text, flush=True)
+
+        return standard_output
 
 
 class BatchProcessor:
@@ -34,21 +66,12 @@ class BatchProcessor:
         :type runtime: SimulationRuntime
         :param use_color: Whether to use ANSI colors, defaults to True
         :type use_color: bool, optional
-        :param output_func: Function to output text, defaults to print to stdout
+        :param output_func: Function to output text, defaults to cross-platform output
         :type output_func: Callable[[str], None], optional
         """
         self.runtime = runtime
         self.command_processor = CommandProcessor(runtime, use_color=use_color)
-        self.output_func = output_func or self._default_output
-
-    def _default_output(self, text: str) -> None:
-        """
-        Default output function that prints to stdout.
-
-        :param text: Text to output
-        :type text: str
-        """
-        print(text, flush=True)
+        self.output_func = output_func or create_cross_platform_output_func()
 
     def execute_commands(self, command_string: str) -> None:
         """

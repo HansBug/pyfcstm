@@ -156,7 +156,7 @@ class CLITester:
         result = self.run_command([
             'simulate',
             '-i', test_dsl_file,
-            '-e', '/current',
+            '-e', 'current',
             '--no-color'
         ], check=False)
 
@@ -179,7 +179,7 @@ class CLITester:
         result = self.run_command([
             'simulate',
             '-i', test_dsl_file,
-            '-e', '/cycle; /current',
+            '-e', 'cycle; current',
             '--no-color'
         ], check=False)
 
@@ -202,7 +202,7 @@ class CLITester:
         result = self.run_command([
             'simulate',
             '-i', test_dsl_file,
-            '-e', '/current; /cycle; /current; /events',
+            '-e', 'current; cycle; current; events',
             '--no-color'
         ], check=False)
 
@@ -226,7 +226,7 @@ class CLITester:
         result = self.run_command([
             'simulate',
             '-i', test_dsl_file,
-            '-e', '/cycle; /cycle; /history',
+            '-e', 'cycle; cycle; history',
             '--no-color'
         ], check=False)
 
@@ -250,7 +250,7 @@ class CLITester:
         result = self.run_command([
             'simulate',
             '-i', test_dsl_file,
-            '-e', '/setting; /setting color off; /setting',
+            '-e', 'setting; setting color off; setting',
             '--no-color'
         ], check=False)
 
@@ -273,7 +273,7 @@ class CLITester:
         result = self.run_command([
             'simulate',
             '-i', test_dsl_file,
-            '-e', '/current',
+            '-e', 'current',
             '--no-color'
         ], check=False)
 
@@ -297,7 +297,7 @@ class CLITester:
         result = self.run_command([
             'simulate',
             '-i', test_dsl_file,
-            '-e', '/cycle; /clear; /current',
+            '-e', 'cycle; clear; current',
             '--no-color'
         ], check=False)
 
@@ -320,7 +320,7 @@ class CLITester:
         result = self.run_command([
             'simulate',
             '-i', '/nonexistent/file.fcstm',
-            '-e', '/current'
+            '-e', 'current'
         ], check=False)
 
         # Check for error message (exit code may be 0 due to graceful error handling)
@@ -340,7 +340,7 @@ class CLITester:
         result = self.run_command([
             'simulate',
             '-i', test_dsl_file,
-            '-e', '/invalid_command_xyz',
+            '-e', 'invalid_command_xyz',
             '--no-color'
         ], check=False)
 

@@ -4,11 +4,12 @@ CLI entry point for the interactive state machine simulator.
 This module provides the simulate subcommand for the pyfcstm CLI tool.
 """
 
-import click
 from pathlib import Path
 
+import click
+
+from .batch import BatchProcessor, create_cross_platform_output_func
 from .repl import SimulationREPL
-from .batch import BatchProcessor
 
 
 def _add_simulate_subcommand(cli: click.Group) -> click.Group:
@@ -20,6 +21,7 @@ def _add_simulate_subcommand(cli: click.Group) -> click.Group:
     :return: The modified CLI group
     :rtype: click.Group
     """
+
     @cli.command(
         'simulate',
         help='Interactive state machine simulator',
@@ -80,8 +82,6 @@ def _add_simulate_subcommand(cli: click.Group) -> click.Group:
         repl = SimulationREPL(runtime, use_color=not no_color)
 
         # Print banner with Unicode box-drawing characters
-        # Handle Windows encoding issues
-        import sys
         banner_lines = [
             "╔" + "═" * 58 + "╗",
             "║  State Machine Interactive Simulator" + " " * 21 + "║",
@@ -91,23 +91,10 @@ def _add_simulate_subcommand(cli: click.Group) -> click.Group:
             ""
         ]
 
-        if sys.platform == 'win32':
-            # On Windows, write directly to binary stdout with UTF-8
-            try:
-                if hasattr(sys.stdout, 'buffer'):
-                    for line in banner_lines:
-                        sys.stdout.buffer.write(line.encode('utf-8'))
-                        sys.stdout.buffer.write(b'\n')
-                    sys.stdout.flush()
-                else:
-                    for line in banner_lines:
-                        click.echo(line)
-            except (UnicodeEncodeError, AttributeError):
-                for line in banner_lines:
-                    click.echo(line)
-        else:
-            for line in banner_lines:
-                click.echo(line)
+        # Use cross-platform output function for banner
+        output_func = create_cross_platform_output_func()
+        for line in banner_lines:
+            output_func(line)
 
         repl.run()
 

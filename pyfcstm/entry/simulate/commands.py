@@ -579,7 +579,7 @@ Keyboard shortcuts (interactive mode):
         """
         Export history to CSV format.
 
-        Includes cycle, state, events (comma-separated), and all variables.
+        Includes cycle, state, events (semicolon-separated), and all variables.
 
         :param filename: Output filename
         :type filename: str
@@ -603,8 +603,8 @@ Keyboard shortcuts (interactive mode):
                 events = entry.get('events', [])
                 vars_dict = entry['vars']
 
-                # Join events with comma
-                events_str = ','.join(events) if events else ''
+                # Join events with semicolon to avoid confusion with CSV commas
+                events_str = ';'.join(events) if events else ''
 
                 row = [cycle_num, state, events_str]
                 for var_name in var_names:

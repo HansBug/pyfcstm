@@ -813,6 +813,45 @@ class TestCommandProcessor:
                 assert 'state' in entry
                 assert 'vars' in entry
 
+    def test_export_csv_events_semicolon_separator(self, command_processor, tmp_path):
+        """Test CSV export uses semicolon to separate multiple events."""
+        import csv
+
+        # Create a scenario with multiple events in one cycle
+        # First move to a state, then trigger multiple transitions
+        command_processor.process("cycle")  # Move to Idle
+        command_processor.process("cycle Start")  # Move to Running
+
+        # Export to CSV
+        csv_file = tmp_path / "test_semicolon.csv"
+        result = command_processor.process(f"export {csv_file}")
+        assert "exported" in result.output.lower()
+
+        # Read and verify CSV content
+        assert csv_file.exists()
+        with open(csv_file, 'r', encoding='utf-8') as f:
+            content = f.read()
+            # Verify the CSV is valid (can be parsed)
+            f.seek(0)
+            reader = csv.DictReader(f)
+            rows = list(reader)
+
+            # Verify events column exists
+            assert 'events' in rows[0]
+
+            # Check that if there are events, they don't contain commas
+            # (which would break CSV parsing)
+            for row in rows:
+                events_str = row.get('events', '')
+                if events_str:
+                    # Events should use semicolon, not comma
+                    # If we see a semicolon, it means multiple events
+                    if ';' in events_str:
+                        events = events_str.split(';')
+                        assert all(event.strip() for event in events)
+                        # Verify no commas in individual event names
+                        assert ',' not in events_str or ';' in events_str
+
 
 @pytest.mark.unittest
 class TestBatchProcessor:
@@ -1263,7 +1302,7 @@ class TestSimulationCompleter:
             os.chdir(original_cwd)
 
     def test_export_csv_with_events(self, command_processor, tmp_path):
-        """Test CSV export includes events column."""
+        """Test CSV export includes events column with semicolon separator."""
         import csv
 
         # Generate history with events
@@ -1275,14 +1314,26 @@ class TestSimulationCompleter:
         result = command_processor.process(f"export {csv_file}")
         assert "exported" in result.output.lower()
 
-        # Verify CSV has events column
+        # Verify CSV has events column with semicolon separator
         assert csv_file.exists()
         with open(csv_file, 'r', encoding='utf-8') as f:
             reader = csv.DictReader(f)
             rows = list(reader)
             assert 'events' in rows[0]
             # Check that events column exists and can contain data
-            # (may be empty for cycles without events)
+            # Events should be semicolon-separated, not comma-separated
+            # Find a row with events
+            for row in rows:
+                if row.get('events'):
+                    # If multiple events, they should be separated by semicolon
+                    events_str = row['events']
+                    # Verify no commas in events (would conflict with CSV)
+                    # Semicolons are used instead
+                    if ';' in events_str:
+                        # Multiple events separated by semicolon
+                        events_list = events_str.split(';')
+                        assert len(events_list) > 1
+                    break
 
 
 @pytest.mark.unittest

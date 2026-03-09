@@ -38,21 +38,20 @@ prompt_toolkit>=3.0.0
 | `clear`   | 无                           | 重置状态机到初始状态          | `clear`                                |
 | `current` | 无                           | 显示当前状态路径和所有变量值    | `current`                              |
 | `events`  | 无                           | 列出当前状态可触发的事件       | `events`                               |
-| `log`     | `[level]`                   | 设置或显示日志级别           | `/log debug`, `log`                    |
-| `history` | `[n\|all]`                  | 显示执行历史记录            | `history`, `/history 20`, `/history all` |
-| `setting` | `[key] [value]`             | 查看或设置配置项            | `setting`, `/setting table_max_rows 30` |
+| `history` | `[n\|all]`                  | 显示执行历史记录            | `history`, `history 20`, `history all` |
+| `setting` | `[key] [value]`             | 查看或设置配置项            | `setting`, `setting table_max_rows 30` |
 | `help`    | 无                           | 显示帮助信息               | `help`                                 |
 | `quit`    | 无                           | 退出模拟器                 | `quit`                                 |
-| `exit`    | 无                           | 退出模拟器（同 /quit）      | `exit`                                 |
+| `exit`    | 无                           | 退出模拟器（同 quit）      | `exit`                                 |
 
 **注意**：`cycle` 命令的 `count` 参数为可选整数，默认值为 1。如果提供，必须是正整数。
 
 ### 2.2 自动补全规则
 
-- 输入 `/` 后：显示所有命令列表
+- 输入命令开头字母后：显示匹配的命令列表
 - 输入 `cy` 后：补全为 `cycle`
 - 输入 `cycle ` 后：显示当前状态可用事件列表（全路径和简短版本）
-- 输入 `/log ` 后：显示可用日志级别
+- 输入 `setting ` 后：显示可用的设置项（table_max_rows, history_size, color, log_level）
 - Tab 键触发补全，右箭头键接受建议
 
 ### 2.3 事件名称支持
@@ -159,7 +158,7 @@ from prompt_toolkit.completion import Completer, Completion
 class SimulationCompleter(Completer):
     COMMANDS = [
         'cycle', 'clear', 'current', 'events',
-        'log', 'history', 'help', 'quit', 'exit'
+        'history', 'setting', 'help', 'quit', 'exit'
     ]
 
     LOG_LEVELS = ['debug', 'info', 'warning', 'error', 'off']
@@ -188,12 +187,13 @@ class SimulationCompleter(Completer):
                 if event.startswith(event_prefix):
                     yield Completion(event, start_position=-len(event_prefix))
 
-        # /log 后的级别补全
-        elif text.startswith('/log '):
-            level_prefix = text.split()[-1]
-            for level in self.LOG_LEVELS:
-                if level.startswith(level_prefix):
-                    yield Completion(level, start_position=-len(level_prefix))
+        # setting 后的配置项补全
+        elif text.startswith('setting '):
+            setting_keys = ['table_max_rows', 'history_size', 'color', 'log_level']
+            key_prefix = text.split()[-1]
+            for key in setting_keys:
+                if key.startswith(key_prefix):
+                    yield Completion(key, start_position=-len(key_prefix))
 
     def _get_current_events(self):
         """获取当前状态可触发的事件（全路径和简短版本）"""
@@ -219,12 +219,12 @@ class SimulationCompleter(Completer):
     def _get_command_help(self, cmd):
         """获取命令帮助信息"""
         help_map = {
-            'cycle': 'Execute one cycle',
+            'cycle': 'Execute cycle(s) with optional events',
             'clear': 'Reset to initial state',
             'current': 'Show current state and variables',
             'events': 'List available events',
-            'log': 'Set log level',
-            'history': 'Show command history',
+            'history': 'Show execution history',
+            'setting': 'View or change settings',
             'help': 'Show help',
             'quit': 'Exit simulator',
             'exit': 'Exit simulator',
@@ -255,10 +255,11 @@ class CommandResult:
 
 
 class CommandProcessor:
-    def __init__(self, runtime):
+    def __init__(self, runtime, use_color: bool = True):
         self.runtime = runtime
-        self.display = StateDisplay()
-        self.log_level = LogLevel.INFO
+        self.settings = Settings()
+        self.settings.color = use_color
+        self.display = StateDisplay(use_color=use_color, logger=runtime.logger)
 
     def process(self, user_input: str) -> CommandResult:
         parts = user_input.strip().split()
@@ -277,58 +278,56 @@ class CommandProcessor:
                 return self._handle_current()
             elif command == 'events':
                 return self._handle_events()
-            elif command == 'log':
-                return self._handle_log(args)
             elif command == 'history':
                 return self._handle_history(args)
+            elif command == 'setting':
+                return self._handle_setting(args)
             elif command == 'help':
                 return self._handle_help()
             elif command in ['quit', 'exit']:
                 return CommandResult("Goodbye!", should_exit=True)
             else:
-                return CommandResult(f"Unknown command: {command}. Type help for available commands.")
+                return CommandResult(f"Unknown command: {command}. Type 'help' for available commands.")
         except Exception as e:
             return CommandResult(f"Error: {e}")
 
     def _handle_cycle(self, events: List[str]) -> CommandResult:
-        """Handle cycle command"""
-        try:
-            if self.log_level == LogLevel.DEBUG:
-                self.display.log("Executing cycle with events:", events if events else "none")
+        """Handle cycle command with optional count parameter"""
+        # Parse count parameter if present
+        count = 1
+        event_list = events
 
-            self.runtime.cycle(events if events else None)
-            return CommandResult(self.display.format_current_state(self.runtime))
-        except Exception as e:
-            return CommandResult(f"Cycle execution failed: {e}")
+        if events and events[0].isdigit():
+            count = int(events[0])
+            event_list = events[1:]
+
+        # Execute cycles and return formatted output
+        # (implementation details omitted for brevity)
 
     def _handle_clear(self) -> CommandResult:
-        """Handle /clear command"""
+        """Handle clear command"""
         self.runtime.clear()
-        if self.log_level in [LogLevel.DEBUG, LogLevel.INFO]:
-            self.display.log("State machine reset to initial state")
+        self.display.log("State machine reset to initial state", "info")
         return CommandResult(self.display.format_current_state(self.runtime))
 
     def _handle_current(self) -> CommandResult:
-        """Handle /current command"""
+        """Handle current command"""
         return CommandResult(self.display.format_current_state(self.runtime))
 
     def _handle_events(self) -> CommandResult:
-        """处理 /events 命令"""
+        """Handle events command"""
         events = self._get_current_events()
         return CommandResult(self.display.format_events(events))
 
-    def _handle_log(self, args: List[str]) -> CommandResult:
-        """Handle /log command"""
-        if not args:
-            return CommandResult(f"Current log level: {self.log_level.value}")
+    def _handle_history(self, args: List[str]) -> CommandResult:
+        """Handle history command"""
+        # Show execution history in table format
+        # (implementation details omitted for brevity)
 
-        level_str = args[0].lower()
-        try:
-            self.log_level = LogLevel(level_str)
-            return CommandResult(f"Log level set to: {level_str}")
-        except ValueError:
-            valid_levels = [level.value for level in LogLevel]
-            return CommandResult(f"Invalid log level. Available levels: {', '.join(valid_levels)}")
+    def _handle_setting(self, args: List[str]) -> CommandResult:
+        """Handle setting command"""
+        # View or change settings like log_level, table_max_rows, etc.
+        # (implementation details omitted for brevity)
 
     def _get_current_events(self):
         """获取当前状态的可用事件"""
@@ -451,28 +450,42 @@ from typing import List
 from .commands import CommandProcessor
 
 
+def create_cross_platform_output_func() -> Callable[[str], None]:
+    """
+    Create a cross-platform output function that handles Unicode correctly.
+
+    On Windows, writes directly to binary stdout with UTF-8 encoding to avoid
+    cp1252 encoding issues. On other platforms, uses standard print.
+    """
+    # (implementation details omitted for brevity)
+
+
 class BatchProcessor:
-    def __init__(self, runtime):
+    def __init__(self, runtime, use_color: bool = True, output_func: Callable[[str], None] = None):
         self.runtime = runtime
-        self.command_processor = CommandProcessor(runtime)
+        self.command_processor = CommandProcessor(runtime, use_color=use_color)
+        self.output_func = output_func or create_cross_platform_output_func()
 
-    def execute_commands(self, command_string: str) -> str:
-        """执行批处理命令字符串"""
+    def execute_commands(self, command_string: str) -> None:
+        """执行批处理命令字符串，立即输出结果以保持日志顺序"""
         commands = [cmd.strip() for cmd in command_string.split(';') if cmd.strip()]
-        results = []
 
-        for command in commands:
-            if not command.startswith('/'):
-                command = '/' + command  # 自动添加 / 前缀
+        for i, command in enumerate(commands):
+            # Add command header
+            separator = "─" * 60
+            command_header = f">>> {command}"
+            self.output_func(f"{separator}\n{command_header}\n{separator}")
 
             result = self.command_processor.process(command)
             if result.output:
-                results.append(result.output)
+                self.output_func(result.output)
+
+            # Add spacing between commands
+            if i < len(commands) - 1:
+                self.output_func("")
 
             if result.should_exit:
                 break
-
-        return '\n\n'.join(results)
 ```
 
 ### 4.6 CLI 入口（__init__.py）
@@ -492,25 +505,24 @@ from .batch import BatchProcessor
 def _add_simulate_subcommand(cli: click.Group) -> click.Group:
     @cli.command(
         'simulate',
-        help='交互式状态机仿真器',
-        context_settings=CONTEXT_SETTINGS,
+        help='Interactive state machine simulator',
     )
     @click.option(
         '-i', '--input-code', 'input_code_file',
         type=str, required=True,
-        help='状态机 DSL 代码文件路径',
+        help='State machine DSL code file path',
     )
     @click.option(
         '-e', '--execute', 'batch_commands',
         type=str, default=None,
-        help='批处理命令（用分号分隔），例如: "cycle Start; current; cycle Stop"',
+        help='Batch commands (semicolon-separated), e.g.: "current; cycle Start; current"',
     )
     @click.option(
         '--no-color', is_flag=True,
-        help='禁用颜色输出',
+        help='Disable color output',
     )
     def simulate(input_code_file: str, batch_commands: str, no_color: bool) -> None:
-        # 解析 DSL
+        # Parse DSL
         try:
             code = auto_decode(Path(input_code_file).read_bytes())
             ast_node = parse_with_grammar_entry(code, entry_name='state_machine_dsl')
@@ -524,22 +536,28 @@ def _add_simulate_subcommand(cli: click.Group) -> click.Group:
 
         # Batch mode
         if batch_commands:
-            processor = BatchProcessor(runtime)
-            if no_color:
-                # Disable color output logic
-                pass
-            result = processor.execute_commands(batch_commands)
-            click.echo(result)
+            processor = BatchProcessor(runtime, use_color=not no_color)
+            processor.execute_commands(batch_commands)
             return
 
         # Interactive mode
-        repl = SimulationREPL(runtime)
-        click.echo("╔" + "═" * 58 + "╗")
-        click.echo("║  State Machine Interactive Simulator" + " " * 21 + "║")
-        click.echo("╟" + "─" * 58 + "╢")
-        click.echo("║  Type help to see available commands" + " " * 19 + "║")
-        click.echo("╚" + "═" * 58 + "╝")
-        click.echo()
+        repl = SimulationREPL(runtime, use_color=not no_color)
+
+        # Print banner with Unicode box-drawing characters
+        banner_lines = [
+            "╔" + "═" * 58 + "╗",
+            "║  State Machine Interactive Simulator" + " " * 21 + "║",
+            "╟" + "─" * 58 + "╢",
+            "║  Type 'help' to see available commands" + " " * 19 + "║",
+            "╚" + "═" * 58 + "╝",
+            ""
+        ]
+
+        # Use cross-platform output function for banner
+        output_func = create_cross_platform_output_func()
+        for line in banner_lines:
+            output_func(line)
+
         repl.run()
 
     return cli
@@ -589,21 +607,24 @@ $ pyfcstm simulate -i example.fcstm
 ╔══════════════════════════════════════════════════════════╗
 ║  State Machine Interactive Simulator                     ║
 ╟──────────────────────────────────────────────────────────╢
-║  Type help to see available commands                    ║
+║  Type 'help' to see available commands                   ║
 ╚══════════════════════════════════════════════════════════╝
 
 simulate> help
 Available commands:
-  cycle [events...]  - Execute one cycle with optional events
-  /clear              - Reset to initial state
-  /current            - Show current state and all variables
-  /events             - List available events in current state
-  /log [level]        - Set or display log level
-  /history [n]        - Show command history
-  /help               - Show this help message
-  /quit, /exit        - Exit simulator
+  cycle [count] [events...]  - Execute cycle(s) with optional events
+                               count: number of cycles (default: 1)
+                               Examples: cycle, cycle 5, cycle 3 Start
+  clear                      - Reset to initial state
+  current                    - Show current state and all variables
+  events                     - List available events in current state
+  history [n|all]            - Show execution history (default: 10 recent entries)
+  setting [key] [value]      - View or change settings (including log_level)
+  help                       - Show this help message
+  quit, exit                 - Exit simulator
 
 simulate> current
+Cycle: 0
 Current State: System.Idle
 Variables:
   counter = 0
@@ -615,13 +636,25 @@ Available Events:
   • Reset (System.Events.Reset)
 
 simulate> cycle Start
+Cycle: 1
 Current State: System.Running.Active
 Variables:
   counter = 1
   temperature = 25.1
 
-simulate> log debug
-Log level set to: debug
+simulate> cycle
+
+Cycle: 2
+Current State: System.Running.Active
+Variables:
+  counter = 2
+  temperature = 25.2
+
+simulate> quit
+Goodbye!
+
+simulate> setting log_level debug
+Setting 'log_level' set to: debug
 
 simulate> cycle
 [DEBUG] Executing cycle with events: none
@@ -699,7 +732,7 @@ Available Events:
 - [x] 创建 `pyfcstm/entry/simulate/batch.py`
 - [x] 实现 `BatchProcessor` 类
 - [x] 添加命令字符串解析（分号分隔）
-- [x] 为命令自动添加 `/` 前缀
+- [x] 实现即时输出（不缓冲）
 - [x] 与 `CommandProcessor` 集成
 - [x] 使用 `-e` 标志测试批处理命令执行
 
@@ -733,9 +766,9 @@ Available Events:
 **P1.2：命令自动补全** ✅
 - [x] 创建 `pyfcstm/entry/simulate/completer.py`
 - [x] 实现 `SimulationCompleter` 类
-- [x] 添加命令名称补全（在 `/` 之后）
+- [x] 添加命令名称补全
 - [x] 添加事件名称补全（在 `cycle ` 之后）
-- [x] 添加日志级别补全（在 `/log ` 之后）
+- [x] 添加设置键补全（在 `setting ` 之后）
 - [x] 添加补全元数据（帮助文本显示）
 - [x] 支持全路径和简短事件名称
 - [x] Tab 键触发补全，右箭头键接受建议
@@ -786,8 +819,8 @@ Available Events:
 
 **P2.1：日志级别控制** ✅
 - [x] `LogLevel` 枚举已在 P0 实现（debug、info、warning、error、off）
-- [x] 日志级别状态已添加到 `CommandProcessor`
-- [x] `/log [level]` 命令处理器已实现
+- [x] 日志级别状态已添加到 `Settings` 类
+- [x] `setting log_level [level]` 命令处理器已实现
 - [x] 根据当前级别的条件日志记录已实现
 - [x] `StateDisplay.log()` 方法及基于级别的着色已实现
 - [x] 日志前缀格式化已实现（`[DEBUG]`、`[INFO]` 等）
@@ -798,12 +831,12 @@ Available Events:
   - [x] 添加 `history` 列表存储执行记录
   - [x] 每次 cycle 后记录：cycle number, state, variables, events
   - [x] 支持历史记录大小限制（可配置，默认 None 表示无限）
-- [x] 实现 `/history [n]` 命令处理器
+- [x] 实现 `history [n]` 命令处理器
   - [x] 从 runtime.history 检索历史记录
   - [x] 使用表格格式显示历史（类似 cycle 多次执行）
   - [x] 支持可选计数参数（默认：10，显示最近10条）
   - [x] 为历史显示添加颜色编码
-  - [x] 支持 `/history all` 显示所有历史
+  - [x] 支持 `history all` 显示所有历史
 
 **P2.3：增强帮助系统** ✅
 - [x] `help` 命令处理器已在 P0 实现
@@ -823,8 +856,8 @@ Available Events:
 **P2.5：可配置设置系统** ✅
 - [x] 实现 `setting` 命令用于配置运行时参数
   - [x] `setting` - 显示所有当前设置
-  - [x] `/setting <key>` - 显示特定设置的值
-  - [x] `/setting <key> <value>` - 设置特定配置项
+  - [x] `setting <key>` - 显示特定设置的值
+  - [x] `setting <key> <value>` - 设置特定配置项
 - [x] 支持的配置项：
   - [x] `table_max_rows` - 表格最大显示行数（默认：20）
   - [x] `history_size` - 历史记录最大条数（默认：100）
@@ -844,7 +877,7 @@ Available Events:
 - [x] 为 `history` 命令编写测试（空历史、计数、all、无效输入）
 - [x] 为 `setting` 命令编写测试（列表、获取、设置、验证、历史裁剪）
 - [x] 为 `Settings` 类编写单元测试（初始化、get/set、验证、list_all）
-- [x] 为 `SimulationCompleter` 编写单元测试（命令补全、事件补全、日志级别补全）
+- [x] 为 `SimulationCompleter` 编写单元测试（命令补全、事件补全、设置键补全）
 - [x] 为 CLI 入口点编写测试（批处理模式、无效文件、no-color标志）
 - [x] 为 `SimulationREPL` 编写基础测试
 - [x] 达到92%测试覆盖率（batch.py 100%，commands.py 97%，display.py 97%，completer.py 94%）
@@ -881,9 +914,9 @@ Available Events:
 ### 阶段 P4：未来增强（可选）
 
 **P4.1：高级调试**
-- [ ] 添加 `/step` 命令进行单步执行
-- [ ] 添加 `/breakpoint` 命令进行条件断点
-- [ ] 添加 `/watch` 命令进行变量监控
+- [ ] 添加 `step` 命令进行单步执行
+- [ ] 添加 `breakpoint` 命令进行条件断点
+- [ ] 添加 `watch` 命令进行变量监控
 - [ ] 实现执行跟踪日志记录
 - [ ] 添加状态转换可视化
 
@@ -895,7 +928,7 @@ Available Events:
 - [ ] 创建测试场景框架
 
 **P4.3：导出与报告**
-- [ ] 添加 `/export` 命令进行状态/变量转储
+- [ ] 添加 `export` 命令进行状态/变量转储
 - [ ] 支持 JSON/YAML 输出格式
 - [ ] 生成执行报告
 - [ ] 添加时间线可视化

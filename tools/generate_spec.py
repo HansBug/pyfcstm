@@ -55,7 +55,7 @@ a = Analysis(
         'doctest',
         'pydoc',
         'xmlrpc',            # XML-RPC
-        'email',             # Email handling
+        # 'email',           # Email handling - REMOVED: needed by pkg_resources
         'http.server',       # HTTP server
         'distutils',         # Packaging tools
         'setuptools',

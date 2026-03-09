@@ -114,6 +114,226 @@ Output:
        # Access runtime
        runtime = ctx.get_runtime()
 
+CLI Usage
+---------------------------------------
+
+The ``pyfcstm simulate`` command provides an interactive REPL for testing state machines without writing Python code.
+
+Starting the Simulator
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Launch the simulator with a DSL file:
+
+.. code-block:: bash
+
+   pyfcstm simulate -i example.fcstm
+
+This starts an interactive session with command history, auto-completion, and syntax highlighting.
+
+Available Commands
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Command
+     - Description
+   * - ``cycle [count] [events...]``
+     - Execute one or more cycles with optional events. Examples: ``cycle``, ``cycle 5``, ``cycle 3 Start Stop``
+   * - ``current``
+     - Show current state and all variables
+   * - ``events``
+     - List available events in current state
+   * - ``history [n|all]``
+     - Show execution history (default: 10 recent entries). Use ``all`` to show complete history
+   * - ``setting [key] [value]``
+     - View or change settings. Without arguments, shows all settings
+   * - ``export <filename>``
+     - Export history to file. Supported formats: CSV, JSON, YAML, JSONL (auto-detected from extension)
+   * - ``help``
+     - Show help message with command list
+   * - ``quit`` / ``exit``
+     - Exit the simulator
+
+Interactive Features
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+- **Tab completion**: Press Tab to complete commands, events, and settings
+- **History search**: Press Ctrl+R to search command history
+- **Auto-suggestions**: Previous commands appear as gray suggestions
+- **Color output**: Syntax highlighting for states, variables, and events
+
+Example Session
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: text
+
+   $ pyfcstm simulate -i example.fcstm
+
+   ╔══════════════════════════════════════════════════════════╗
+   ║  State Machine Interactive Simulator                     ║
+   ╟──────────────────────────────────────────────────────────╢
+   ║  Type 'help' to see available commands                   ║
+   ╚══════════════════════════════════════════════════════════╝
+
+   simulate> current
+   Cycle: 0
+   Current State: System.Idle
+   Variables:
+     counter = 0
+     temperature = 25.0
+
+   simulate> events
+   Available Events:
+     • Start (System.Events.Start)
+     • Reset (System.Events.Reset)
+
+   simulate> cycle Start
+   Cycle: 1
+   Current State: System.Running.Active
+   Variables:
+     counter = 1
+     temperature = 25.1
+
+   simulate> cycle 5
+    Cycle     State      counter  temperature
+   --------------------------------------------
+      2    Root.Active     2         25.2
+      3    Root.Active     3         25.3
+      4    Root.Active     4         25.4
+      5    Root.Active     5         25.5
+      6    Root.Active     6         25.6
+
+   simulate> history 3
+    Cycle     State      counter  temperature
+   --------------------------------------------
+      4    Root.Active     4         25.4
+      5    Root.Active     5         25.5
+      6    Root.Active     6         25.6
+
+   simulate> export history.csv
+   Exported 6 history entries to history.csv
+
+   simulate> quit
+   Goodbye!
+
+Batch Mode
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Execute commands non-interactively using the ``-e`` flag:
+
+.. code-block:: bash
+
+   pyfcstm simulate -i example.fcstm -e "current; cycle Start; current; events"
+
+Output:
+
+.. code-block:: text
+
+   ────────────────────────────────────────────────────────────
+   >>> current
+   ────────────────────────────────────────────────────────────
+   Current State: System.Idle
+   Variables:
+     counter = 0
+     temperature = 25.0
+
+   ────────────────────────────────────────────────────────────
+   >>> cycle Start
+   ────────────────────────────────────────────────────────────
+   Current State: System.Running.Active
+   Variables:
+     counter = 1
+     temperature = 25.1
+
+   ────────────────────────────────────────────────────────────
+   >>> events
+   ────────────────────────────────────────────────────────────
+   Available Events:
+     • Stop (System.Events.Stop)
+     • Pause (System.Events.Pause)
+
+Batch mode is useful for automated testing, CI/CD pipelines, and scripting.
+
+Configuration Settings
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table::
+   :header-rows: 1
+   :widths: 25 20 55
+
+   * - Setting
+     - Default
+     - Description
+   * - ``table_max_rows``
+     - 20
+     - Maximum rows displayed in tables
+   * - ``history_size``
+     - 100
+     - Maximum history entries to keep
+   * - ``color``
+     - on
+     - Enable/disable color output (on/off)
+   * - ``log_level``
+     - info
+     - Logging verbosity (debug/info/warning/error/off)
+
+Example:
+
+.. code-block:: text
+
+   simulate> setting
+   Current Settings:
+     table_max_rows = 20
+     history_size = 100
+     color = on
+     log_level = info
+
+   simulate> setting log_level debug
+   Setting 'log_level' set to: debug
+
+Export Formats
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table::
+   :header-rows: 1
+   :widths: 20 80
+
+   * - Format
+     - Description
+   * - CSV
+     - Semicolon-separated values with headers (``cycle;state;var1;var2;...``)
+   * - JSON
+     - JSON array with objects containing ``cycle``, ``state``, and ``vars``
+   * - YAML
+     - YAML array with the same structure as JSON
+   * - JSONL
+     - JSON Lines format (one JSON object per line)
+
+Example:
+
+.. code-block:: bash
+
+   simulate> export history.csv
+   Exported 6 history entries to history.csv
+
+Command Line Options
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table::
+   :header-rows: 1
+   :widths: 35 65
+
+   * - Option
+     - Description
+   * - ``-i, --input-code <file>``
+     - State machine DSL file path (required)
+   * - ``-e, --execute <commands>``
+     - Execute batch commands (semicolon-separated) and exit
+   * - ``--no-color``
+     - Disable color output
+
 Execution Semantics
 ---------------------------------------
 

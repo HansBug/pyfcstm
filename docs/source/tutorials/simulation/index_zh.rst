@@ -114,6 +114,226 @@ Python 用法
        # 访问运行时
        runtime = ctx.get_runtime()
 
+CLI 用法
+---------------------------------------
+
+``pyfcstm simulate`` 命令提供了一个交互式 REPL，用于测试状态机而无需编写 Python 代码。
+
+启动模拟器
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+使用 DSL 文件启动模拟器：
+
+.. code-block:: bash
+
+   pyfcstm simulate -i example.fcstm
+
+这将启动一个具有命令历史、自动补全和语法高亮的交互式会话。
+
+可用命令
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - 命令
+     - 说明
+   * - ``cycle [count] [events...]``
+     - 执行一个或多个周期，可选事件。示例：``cycle``、``cycle 5``、``cycle 3 Start Stop``
+   * - ``current``
+     - 显示当前状态和所有变量
+   * - ``events``
+     - 列出当前状态中的可用事件
+   * - ``history [n|all]``
+     - 显示执行历史（默认：最近 10 条）。使用 ``all`` 显示完整历史
+   * - ``setting [key] [value]``
+     - 查看或更改设置。不带参数时显示所有设置
+   * - ``export <filename>``
+     - 导出历史到文件。支持格式：CSV、JSON、YAML、JSONL（根据扩展名自动检测）
+   * - ``help``
+     - 显示帮助信息和命令列表
+   * - ``quit`` / ``exit``
+     - 退出模拟器
+
+交互功能
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+- **Tab 补全**：按 Tab 键补全命令、事件和设置
+- **历史搜索**：按 Ctrl+R 搜索命令历史
+- **自动建议**：先前的命令显示为灰色建议
+- **彩色输出**：状态、变量和事件的语法高亮
+
+示例会话
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: text
+
+   $ pyfcstm simulate -i example.fcstm
+
+   ╔══════════════════════════════════════════════════════════╗
+   ║  State Machine Interactive Simulator                     ║
+   ╟──────────────────────────────────────────────────────────╢
+   ║  Type 'help' to see available commands                   ║
+   ╚══════════════════════════════════════════════════════════╝
+
+   simulate> current
+   Cycle: 0
+   Current State: System.Idle
+   Variables:
+     counter = 0
+     temperature = 25.0
+
+   simulate> events
+   Available Events:
+     • Start (System.Events.Start)
+     • Reset (System.Events.Reset)
+
+   simulate> cycle Start
+   Cycle: 1
+   Current State: System.Running.Active
+   Variables:
+     counter = 1
+     temperature = 25.1
+
+   simulate> cycle 5
+    Cycle     State      counter  temperature
+   --------------------------------------------
+      2    Root.Active     2         25.2
+      3    Root.Active     3         25.3
+      4    Root.Active     4         25.4
+      5    Root.Active     5         25.5
+      6    Root.Active     6         25.6
+
+   simulate> history 3
+    Cycle     State      counter  temperature
+   --------------------------------------------
+      4    Root.Active     4         25.4
+      5    Root.Active     5         25.5
+      6    Root.Active     6         25.6
+
+   simulate> export history.csv
+   Exported 6 history entries to history.csv
+
+   simulate> quit
+   Goodbye!
+
+批处理模式
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+使用 ``-e`` 标志非交互式执行命令：
+
+.. code-block:: bash
+
+   pyfcstm simulate -i example.fcstm -e "current; cycle Start; current; events"
+
+输出：
+
+.. code-block:: text
+
+   ────────────────────────────────────────────────────────────
+   >>> current
+   ────────────────────────────────────────────────────────────
+   Current State: System.Idle
+   Variables:
+     counter = 0
+     temperature = 25.0
+
+   ────────────────────────────────────────────────────────────
+   >>> cycle Start
+   ────────────────────────────────────────────────────────────
+   Current State: System.Running.Active
+   Variables:
+     counter = 1
+     temperature = 25.1
+
+   ────────────────────────────────────────────────────────────
+   >>> events
+   ────────────────────────────────────────────────────────────
+   Available Events:
+     • Stop (System.Events.Stop)
+     • Pause (System.Events.Pause)
+
+批处理模式适用于自动化测试、CI/CD 流水线和脚本编写。
+
+配置设置
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table::
+   :header-rows: 1
+   :widths: 25 20 55
+
+   * - 设置项
+     - 默认值
+     - 说明
+   * - ``table_max_rows``
+     - 20
+     - 表格显示的最大行数
+   * - ``history_size``
+     - 100
+     - 保留的最大历史条目数
+   * - ``color``
+     - on
+     - 启用/禁用彩色输出（on/off）
+   * - ``log_level``
+     - info
+     - 日志详细程度（debug/info/warning/error/off）
+
+示例：
+
+.. code-block:: text
+
+   simulate> setting
+   Current Settings:
+     table_max_rows = 20
+     history_size = 100
+     color = on
+     log_level = info
+
+   simulate> setting log_level debug
+   Setting 'log_level' set to: debug
+
+导出格式
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table::
+   :header-rows: 1
+   :widths: 20 80
+
+   * - 格式
+     - 说明
+   * - CSV
+     - 分号分隔值，带标题行（``cycle;state;var1;var2;...``）
+   * - JSON
+     - JSON 数组，对象包含 ``cycle``、``state`` 和 ``vars``
+   * - YAML
+     - YAML 数组，结构与 JSON 相同
+   * - JSONL
+     - JSON Lines 格式（每行一个 JSON 对象）
+
+示例：
+
+.. code-block:: bash
+
+   simulate> export history.csv
+   Exported 6 history entries to history.csv
+
+命令行选项
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table::
+   :header-rows: 1
+   :widths: 35 65
+
+   * - 选项
+     - 说明
+   * - ``-i, --input-code <file>``
+     - 状态机 DSL 文件路径（必需）
+   * - ``-e, --execute <commands>``
+     - 执行批处理命令（分号分隔）并退出
+   * - ``--no-color``
+     - 禁用彩色输出
+
 执行语义
 ---------------------------------------
 

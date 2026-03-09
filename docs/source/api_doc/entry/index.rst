@@ -14,4 +14,5 @@ pyfcstm.entry
     dispatch
     generate
     plantuml
+    simulate/index
 

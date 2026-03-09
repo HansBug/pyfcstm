@@ -286,7 +286,7 @@ class TestCommandProcessor:
 
     def test_initialization(self, command_processor):
         """Test command processor initialization."""
-        assert command_processor.log_level == LogLevel.INFO
+        assert command_processor.settings.log_level == LogLevel.INFO
         assert command_processor.display is not None
 
     def test_process_empty_input(self, command_processor):
@@ -415,23 +415,23 @@ class TestCommandProcessor:
         assert "Start" in result.output
         assert not result.should_exit
 
-    def test_handle_log_get(self, command_processor):
-        """Test /log command without arguments."""
-        result = command_processor.process("/log")
+    def test_handle_setting_log_level_get(self, command_processor):
+        """Test /setting log_level command."""
+        result = command_processor.process("/setting log_level")
         assert "info" in result.output
         assert not result.should_exit
 
-    def test_handle_log_set(self, command_processor):
-        """Test /log command with level."""
-        result = command_processor.process("/log debug")
+    def test_handle_setting_log_level_set(self, command_processor):
+        """Test /setting log_level with value."""
+        result = command_processor.process("/setting log_level debug")
         assert "debug" in result.output
-        assert command_processor.log_level == LogLevel.DEBUG
+        assert command_processor.settings.log_level == LogLevel.DEBUG
         assert not result.should_exit
 
-    def test_handle_log_invalid(self, command_processor):
-        """Test /log command with invalid level."""
-        result = command_processor.process("/log invalid")
-        assert "Invalid log level" in result.output
+    def test_handle_setting_log_level_invalid(self, command_processor):
+        """Test /setting log_level with invalid value."""
+        result = command_processor.process("/setting log_level invalid")
+        assert "Invalid log level" in result.output or "Error" in result.output
         assert not result.should_exit
 
     def test_handle_help(self, command_processor):
@@ -668,17 +668,17 @@ class TestSimulationCompleter:
         assert 'ycle' in texts or '/cycle' in texts
         assert 'lear' in texts or '/clear' in texts
 
-    def test_log_level_completion(self, runtime):
-        """Test log level completion."""
+    def test_setting_key_completion(self, runtime):
+        """Test setting key completion."""
         from pyfcstm.entry.simulate.completer import SimulationCompleter
         from prompt_toolkit.document import Document
 
         completer = SimulationCompleter(runtime)
-        document = Document('/log d')
+        document = Document('/setting log')
         completions = list(completer.get_completions(document, None))
-        # Should suggest debug
+        # Should suggest log_level
         texts = [c.text for c in completions]
-        assert 'ebug' in texts or 'debug' in texts
+        assert '_level' in texts or 'log_level' in texts
 
     def test_event_completion(self, runtime):
         """Test event completion."""

@@ -253,7 +253,7 @@ class CommandProcessor:
 
             # Single cycle - use simple format
             if count == 1:
-                if self.log_level == LogLevel.DEBUG:
+                if self.settings.log_level == LogLevel.DEBUG:
                     self.display.log(f"Executing cycle with events: {event_list if event_list else 'none'}", "debug")
                 self.runtime.cycle(event_list if event_list else None)
                 return CommandResult(self.display.format_current_state(self.runtime))
@@ -291,7 +291,7 @@ class CommandProcessor:
         # Collect data for all cycles
         table_data = []
         for i in range(count):
-            if self.log_level == LogLevel.DEBUG:
+            if self.settings.log_level == LogLevel.DEBUG:
                 self.display.log(f"Executing cycle {i+1}/{count} with events: {event_list if event_list else 'none'}", "debug")
 
             self.runtime.cycle(event_list if event_list else None)
@@ -340,7 +340,7 @@ class CommandProcessor:
         # Recreate the runtime to reset state
         from ...simulate import SimulationRuntime
         self.runtime = SimulationRuntime(self.runtime.state_machine)
-        if self.log_level in [LogLevel.DEBUG, LogLevel.INFO]:
+        if self.settings.log_level in [LogLevel.DEBUG, LogLevel.INFO]:
             self.display.log("State machine reset to initial state", "info")
         return CommandResult(self.display.format_current_state(self.runtime))
 

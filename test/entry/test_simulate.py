@@ -167,6 +167,53 @@ class TestCommandProcessor:
         assert "System.Running" in result.output
         assert not result.should_exit
 
+    def test_handle_cycle_with_count(self, command_processor, runtime):
+        """Test /cycle command with count parameter."""
+        result = command_processor.process("/cycle 3")
+        # Should execute 3 cycles and show 3 states
+        assert result.output.count("Current State:") == 3
+        assert "System.Idle" in result.output
+        assert not result.should_exit
+
+    def test_handle_cycle_with_count_and_event(self, command_processor, runtime):
+        """Test /cycle command with count and event."""
+        # Execute 2 cycles without events first
+        result = command_processor.process("/cycle 2")
+        # Should show 2 states, both at Idle
+        assert result.output.count("Current State:") == 2
+        assert "System.Idle" in result.output
+        assert not result.should_exit
+
+    def test_handle_cycle_with_large_count(self, command_processor, runtime):
+        """Test /cycle command with large count shows summary."""
+        result = command_processor.process("/cycle 10")
+        # Should show summary message and only first/last state
+        assert "Executing 10 cycles" in result.output
+        assert result.output.count("Current State:") == 1  # Only last state
+        assert not result.should_exit
+
+    def test_handle_cycle_with_zero_count(self, command_processor, runtime):
+        """Test /cycle command with zero count."""
+        result = command_processor.process("/cycle 0")
+        assert "Error" in result.output
+        assert "positive integer" in result.output
+        assert not result.should_exit
+
+    def test_handle_cycle_with_negative_count(self, command_processor, runtime):
+        """Test /cycle command with negative count."""
+        result = command_processor.process("/cycle -5")
+        assert "Error" in result.output
+        assert "positive integer" in result.output
+        assert not result.should_exit
+
+    def test_handle_cycle_with_invalid_count(self, command_processor, runtime):
+        """Test /cycle command with invalid count."""
+        # Non-numeric first argument should be treated as event name
+        result = command_processor.process("/cycle abc")
+        # This will fail because 'abc' is not a valid event
+        assert "failed" in result.output.lower() or "error" in result.output.lower()
+        assert not result.should_exit
+
     def test_handle_clear(self, command_processor, runtime):
         """Test /clear command."""
         runtime.cycle()  # Move to Idle

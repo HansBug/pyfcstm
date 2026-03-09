@@ -109,19 +109,54 @@ class CommandProcessor:
 
     def _handle_cycle(self, events: List[str]) -> CommandResult:
         """
-        Handle /cycle command.
+        Handle /cycle command with optional count parameter.
 
-        :param events: List of event names to trigger
+        Supports two formats:
+        - /cycle [events...] - Execute 1 cycle with optional events
+        - /cycle [count] [events...] - Execute count cycles with optional events
+
+        :param events: List containing optional count and event names
         :type events: List[str]
         :return: Command result with current state
         :rtype: CommandResult
         """
         try:
-            if self.log_level == LogLevel.DEBUG:
-                self.display.log(f"Executing cycle with events: {events if events else 'none'}", "debug")
+            # Parse arguments: first arg might be count
+            count = 1
+            event_list = events
 
-            self.runtime.cycle(events if events else None)
-            return CommandResult(self.display.format_current_state(self.runtime))
+            if events:
+                # Check if first argument looks like a number
+                first_arg = events[0]
+                if first_arg.lstrip('-').isdigit():
+                    # First argument is a number
+                    try:
+                        count = int(first_arg)
+                        if count <= 0:
+                            return CommandResult("Error: cycle count must be a positive integer")
+                        event_list = events[1:]
+                    except ValueError:
+                        return CommandResult(f"Error: invalid cycle count '{first_arg}'")
+
+            # Execute cycles
+            outputs = []
+            for i in range(count):
+                if self.log_level == LogLevel.DEBUG:
+                    cycle_num = f" (cycle {i+1}/{count})" if count > 1 else ""
+                    self.display.log(f"Executing cycle{cycle_num} with events: {event_list if event_list else 'none'}", "debug")
+
+                self.runtime.cycle(event_list if event_list else None)
+
+                # Show state after each cycle (or only last one for large counts)
+                if count <= 5 or i == count - 1:
+                    outputs.append(self.display.format_current_state(self.runtime))
+
+            # If we skipped some outputs, add a summary
+            if count > 5:
+                skipped = count - 1
+                outputs.insert(0, f"Executing {count} cycles... (showing first and last state)")
+
+            return CommandResult("\n\n".join(outputs))
         except Exception as e:
             return CommandResult(f"Cycle execution failed: {e}")
 
@@ -186,13 +221,15 @@ class CommandProcessor:
         :rtype: CommandResult
         """
         help_text = """Available commands:
-  /cycle [events...]  - Execute one cycle with optional events
-  /clear              - Reset to initial state
-  /current            - Show current state and all variables
-  /events             - List available events in current state
-  /log [level]        - Set or display log level (debug, info, warning, error, off)
-  /help               - Show this help message
-  /quit, /exit        - Exit simulator"""
+  /cycle [count] [events...]  - Execute cycle(s) with optional events
+                                count: number of cycles (default: 1)
+                                Examples: /cycle, /cycle 5, /cycle 3 Start
+  /clear                      - Reset to initial state
+  /current                    - Show current state and all variables
+  /events                     - List available events in current state
+  /log [level]                - Set or display log level (debug, info, warning, error, off)
+  /help                       - Show this help message
+  /quit, /exit                - Exit simulator"""
         return CommandResult(help_text)
 
     def _get_current_events(self) -> List[Tuple[str, Optional[str]]]:

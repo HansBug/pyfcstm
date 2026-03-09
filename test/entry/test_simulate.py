@@ -1166,6 +1166,7 @@ class TestSimulationCompleter:
         test_dir.mkdir()
         (test_dir / "data.csv").touch()
         (test_dir / "results.json").touch()
+        (test_dir / "readme.txt").touch()  # Non-supported format
         (test_dir / "subdir").mkdir()
 
         completer = SimulationCompleter(runtime)
@@ -1182,14 +1183,81 @@ class TestSimulationCompleter:
             # Should suggest the directory with trailing separator
             assert any('test_exports' in t for t in texts)
 
-            # Test file completion in subdirectory
+            # Test file completion in subdirectory with priority
             document = Document(f'export test_exports{os.sep}')
             completions = list(completer.get_completions(document, None))
             texts = [c.text for c in completions]
+
             # Should suggest files in the directory
             assert any('data.csv' in t for t in texts)
             assert any('results.json' in t for t in texts)
             assert any('subdir' in t for t in texts)
+            assert any('readme.txt' in t for t in texts)
+
+            # Check priority: directories and supported formats should come first
+            # Find indices
+            csv_idx = next((i for i, t in enumerate(texts) if 'data.csv' in t), None)
+            json_idx = next((i for i, t in enumerate(texts) if 'results.json' in t), None)
+            txt_idx = next((i for i, t in enumerate(texts) if 'readme.txt' in t), None)
+            dir_idx = next((i for i, t in enumerate(texts) if 'subdir' in t), None)
+
+            # Supported formats and directories should come before unsupported formats
+            if csv_idx is not None and txt_idx is not None:
+                assert csv_idx < txt_idx, "CSV file should have higher priority than TXT file"
+            if json_idx is not None and txt_idx is not None:
+                assert json_idx < txt_idx, "JSON file should have higher priority than TXT file"
+            if dir_idx is not None and txt_idx is not None:
+                assert dir_idx < txt_idx, "Directory should have higher priority than TXT file"
+
+        finally:
+            os.chdir(original_cwd)
+
+    def test_export_current_directory_completion(self, runtime, tmp_path):
+        """Test export completion from current directory when no dirname."""
+        from pyfcstm.entry.simulate.completer import SimulationCompleter
+        from prompt_toolkit.document import Document
+        import os
+
+        # Create test files in current directory
+        original_cwd = os.getcwd()
+        try:
+            os.chdir(tmp_path)
+
+            # Create test files
+            (tmp_path / "export.csv").touch()
+            (tmp_path / "data.json").touch()
+            (tmp_path / "notes.txt").touch()
+            (tmp_path / "testdir").mkdir()
+
+            completer = SimulationCompleter(runtime)
+
+            # Test completion with no dirname (should search current directory)
+            document = Document('export e')
+            completions = list(completer.get_completions(document, None))
+            texts = [c.text for c in completions]
+
+            # Should find files in current directory
+            assert any('export.csv' in t for t in texts)
+
+            # Test completion with empty prefix (should show current directory)
+            document = Document('export ')
+            completions = list(completer.get_completions(document, None))
+            texts = [c.text for c in completions]
+
+            # Should suggest history.* files first, then current directory files
+            assert 'history.csv' in texts
+            assert 'history.json' in texts
+
+            # Should also show current directory files
+            assert any('export.csv' in t for t in texts)
+            assert any('data.json' in t for t in texts)
+            assert any('testdir' in t for t in texts)
+
+            # Check priority: history.* should come first
+            history_csv_idx = texts.index('history.csv')
+            export_csv_idx = next((i for i, t in enumerate(texts) if t == 'export.csv'), None)
+            if export_csv_idx is not None:
+                assert history_csv_idx < export_csv_idx, "history.csv should come before export.csv"
 
         finally:
             os.chdir(original_cwd)

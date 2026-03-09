@@ -186,20 +186,11 @@ class SimulationCompleter(Completer):
             if len(words) == 1 or (len(words) == 2 and not text.endswith(' ')):
                 prefix = words[1] if len(words) == 2 else ''
 
-                # First, suggest common filenames if no path separator in prefix
-                if not any(sep in prefix for sep in ['/', '\\']):
-                    for ext in ['.csv', '.json', '.yaml', '.jsonl']:
-                        filename = f'history{ext}'
-                        if filename.startswith(prefix):
-                            yield Completion(
-                                filename,
-                                start_position=-len(prefix),
-                                display_meta=f'{ext[1:].upper()} format'
-                            )
-
-                # Then, provide filesystem-based completions
                 import os
                 from pathlib import Path
+
+                # Supported export formats
+                SUPPORTED_EXTENSIONS = {'.csv', '.json', '.yaml', '.jsonl'}
 
                 # Parse the prefix to get directory and filename parts
                 if prefix:
@@ -212,14 +203,23 @@ class SimulationCompleter(Completer):
                         # User typed a trailing slash, complete files in that directory
                         search_dir = prefix_path
                         file_prefix = ''
+                        has_dirname = True
                     else:
                         # Split into directory and filename parts
-                        search_dir = prefix_path.parent if prefix_path.parent != prefix_path else Path('.')
+                        parent = prefix_path.parent
+                        # Check if parent is different from current path (has dirname)
+                        has_dirname = str(parent) != '.'
+                        search_dir = parent if has_dirname else Path('.')
                         file_prefix = prefix_path.name
                 else:
                     # No prefix, search current directory
                     search_dir = Path('.')
                     file_prefix = ''
+                    has_dirname = False
+
+                # Collect completions with priority
+                priority_completions = []  # Directories and supported format files
+                other_completions = []     # Other files
 
                 # Get completions from filesystem
                 try:
@@ -229,7 +229,7 @@ class SimulationCompleter(Completer):
                             # Check if item matches the prefix
                             if item_name.startswith(file_prefix):
                                 # Build the completion text
-                                if prefix:
+                                if prefix and has_dirname:
                                     # Calculate the relative path from prefix
                                     if prefix.endswith(os.sep) or prefix.endswith('/') or prefix.endswith('\\'):
                                         completion_text = item_name
@@ -241,23 +241,52 @@ class SimulationCompleter(Completer):
                                 else:
                                     completion_text = item_name
 
-                                # Add trailing separator for directories
+                                # Determine priority and metadata
                                 if item.is_dir():
                                     completion_text += os.sep
                                     meta = 'directory'
+                                    is_priority = True
                                 else:
                                     # Show file extension as metadata
-                                    ext = item.suffix.upper()
-                                    meta = f'{ext[1:]} file' if ext else 'file'
+                                    ext = item.suffix.lower()
+                                    is_priority = ext in SUPPORTED_EXTENSIONS
+                                    ext_upper = item.suffix.upper()
+                                    meta = f'{ext_upper[1:]} file' if ext_upper else 'file'
 
-                                yield Completion(
+                                completion = Completion(
                                     completion_text,
                                     start_position=-len(prefix),
                                     display_meta=meta
                                 )
+
+                                if is_priority:
+                                    priority_completions.append(completion)
+                                else:
+                                    other_completions.append(completion)
                 except (OSError, PermissionError):
                     # Ignore filesystem errors
                     pass
+
+                # If no dirname in prefix, also suggest common filenames
+                if not has_dirname and not any(sep in prefix for sep in ['/', '\\']):
+                    for ext in ['.csv', '.json', '.yaml', '.jsonl']:
+                        filename = f'history{ext}'
+                        if filename.startswith(prefix):
+                            # Add to priority completions if not already present
+                            completion = Completion(
+                                filename,
+                                start_position=-len(prefix),
+                                display_meta=f'{ext[1:].upper()} format'
+                            )
+                            # Check if not duplicate
+                            if not any(c.text == filename for c in priority_completions):
+                                priority_completions.insert(0, completion)
+
+                # Yield priority completions first, then others
+                for completion in priority_completions:
+                    yield completion
+                for completion in other_completions:
+                    yield completion
 
     def _get_current_events(self) -> list:
         """

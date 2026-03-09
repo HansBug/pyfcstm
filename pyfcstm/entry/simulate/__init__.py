@@ -73,22 +73,7 @@ def _add_simulate_subcommand(cli: click.Group) -> click.Group:
         # Batch mode
         if batch_commands:
             processor = BatchProcessor(runtime, use_color=not no_color)
-            result = processor.execute_commands(batch_commands)
-            # Handle Unicode output on Windows (cp1252 encoding issue)
-            import sys
-            if sys.platform == 'win32':
-                try:
-                    # Try to write directly to binary stdout with UTF-8
-                    if hasattr(sys.stdout, 'buffer'):
-                        sys.stdout.buffer.write(result.encode('utf-8'))
-                        sys.stdout.buffer.write(b'\n')
-                        sys.stdout.flush()
-                    else:
-                        click.echo(result)
-                except (UnicodeEncodeError, AttributeError):
-                    click.echo(result)
-            else:
-                click.echo(result)
+            processor.execute_commands(batch_commands)
             return
 
         # Interactive mode

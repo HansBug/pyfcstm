@@ -6,6 +6,7 @@ functionality of the interactive state machine simulator.
 """
 
 import logging
+import sys
 
 import pytest
 
@@ -64,6 +65,20 @@ def command_processor(runtime):
 def batch_processor(runtime):
     """Create a batch processor instance."""
     return BatchProcessor(runtime, use_color=False)
+
+
+def _collect_batch_output(batch_processor, commands):
+    """Helper to collect batch processor output."""
+    output_lines = []
+
+    def collector(text):
+        output_lines.append(text)
+
+    # Create a new processor with the collector
+    from pyfcstm.entry.simulate.batch import BatchProcessor
+    processor = BatchProcessor(batch_processor.runtime, use_color=False, output_func=collector)
+    processor.execute_commands(commands)
+    return '\n'.join(output_lines)
 
 
 @pytest.mark.unittest
@@ -251,7 +266,17 @@ class TestStateDisplay:
         assert "GlobalEvent" in output
 
     def test_log_output(self, display, capsys):
-        """Test log output."""
+        """Test log output with logger."""
+        import logging
+        # Create a logger with a handler that writes to stdout for testing
+        logger = logging.getLogger('test_display_log')
+        logger.handlers.clear()
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setFormatter(logging.Formatter('[%(levelname)s] %(message)s'))
+        logger.addHandler(handler)
+        logger.setLevel(logging.INFO)
+
+        display.logger = logger
         display.log("Test message", "info")
         captured = capsys.readouterr()
         assert "Test message" in captured.out
@@ -684,41 +709,41 @@ class TestBatchProcessor:
 
     def test_execute_single_command(self, batch_processor):
         """Test executing single command."""
-        result = batch_processor.execute_commands("current")
+        result = _collect_batch_output(batch_processor, "current")
         assert "System" in result
         assert "counter" in result
 
     def test_execute_multiple_commands(self, batch_processor, runtime):
         """Test executing multiple commands."""
-        result = batch_processor.execute_commands("cycle; current")
+        result = _collect_batch_output(batch_processor, "cycle; current")
         assert "System.Idle" in result
 
     def test_execute_with_slash_prefix(self, batch_processor):
         """Test commands with explicit / prefix."""
-        result = batch_processor.execute_commands("/current")
+        result = _collect_batch_output(batch_processor, "/current")
         assert "System" in result
 
     def test_execute_mixed_prefix(self, batch_processor):
         """Test mixed commands with and without prefix."""
-        result = batch_processor.execute_commands("current; /current")
+        result = _collect_batch_output(batch_processor, "current; /current")
         # Should have two outputs
         assert result.count("System") >= 2
 
     def test_execute_with_exit(self, batch_processor):
         """Test batch execution stops on exit."""
-        result = batch_processor.execute_commands("current; quit; current")
+        result = _collect_batch_output(batch_processor, "current; quit; current")
         # Should only have one current output before quit
         assert result.count("System") == 1
         assert "Goodbye" in result
 
     def test_execute_empty_commands(self, batch_processor):
         """Test executing empty command string."""
-        result = batch_processor.execute_commands("")
+        result = _collect_batch_output(batch_processor, "")
         assert result == ""
 
     def test_execute_with_whitespace(self, batch_processor):
         """Test commands with extra whitespace."""
-        result = batch_processor.execute_commands("  current  ;  current  ")
+        result = _collect_batch_output(batch_processor, "  current  ;  current  ")
         assert "System" in result
 
 
@@ -1046,7 +1071,7 @@ class TestPlatformCompatibility:
         from pyfcstm.entry.simulate.batch import BatchProcessor
 
         processor = BatchProcessor(runtime, use_color=False)
-        result = processor.execute_commands("current; cycle; current")
+        result = _collect_batch_output(processor, "current; cycle; current")
 
         # Should work without ANSI codes
         assert "System" in result
@@ -1112,6 +1137,16 @@ class TestTerminalCompatibility:
 
     def test_log_output_levels(self, display, capsys):
         """Test log output with different levels."""
+        import logging
+        # Create a logger with a handler that writes to stdout for testing
+        logger = logging.getLogger('test_display_log_levels')
+        logger.handlers.clear()
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setFormatter(logging.Formatter('[%(levelname)s] %(message)s'))
+        logger.addHandler(handler)
+        logger.setLevel(logging.DEBUG)
+
+        display.logger = logger
         levels = ['debug', 'info', 'warning', 'error']
 
         for level in levels:
@@ -1435,7 +1470,7 @@ class TestIntegration:
     def test_batch_workflow(self, batch_processor):
         """Test batch command workflow."""
         commands = "cycle; current; cycle Start; current; cycle Stop; current"
-        result = batch_processor.execute_commands(commands)
+        result = _collect_batch_output(batch_processor, commands)
 
         # Each command produces output, cycle also shows current state
         assert "System.Idle" in result

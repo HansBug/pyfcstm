@@ -162,7 +162,7 @@ class CommandProcessor:
         self.runtime = runtime
         self.settings = Settings()
         self.settings.color = use_color
-        self.display = StateDisplay(use_color=use_color)
+        self.display = StateDisplay(use_color=use_color, logger=runtime.logger)
 
         configure_simulate_cli_logger(self.runtime.logger, use_color=use_color)
 

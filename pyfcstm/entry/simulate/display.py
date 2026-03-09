@@ -5,6 +5,7 @@ This module provides the StateDisplay class for formatting state machine
 information with ANSI color support for terminal output.
 """
 
+import logging
 import os
 import sys
 from typing import List, Tuple, Optional
@@ -20,6 +21,8 @@ class StateDisplay:
 
     :ivar use_color: Whether to use ANSI color codes
     :vartype use_color: bool
+    :ivar logger: Logger instance for log messages
+    :vartype logger: logging.Logger
     """
 
     # ANSI color codes - compatible with both light and dark themes
@@ -34,15 +37,18 @@ class StateDisplay:
         'gray': '\033[90m',  # Gray - secondary info
     }
 
-    def __init__(self, use_color: bool = True):
+    def __init__(self, use_color: bool = True, logger: Optional[logging.Logger] = None):
         """
         Initialize the state display formatter.
 
         :param use_color: Whether to use ANSI colors, defaults to True
         :type use_color: bool, optional
+        :param logger: Logger instance for log messages, defaults to None
+        :type logger: logging.Logger, optional
         """
         # Check if colors should be used
         self.use_color = use_color and self._supports_color()
+        self.logger = logger
 
     def _supports_color(self) -> bool:
         """
@@ -143,22 +149,27 @@ class StateDisplay:
 
     def log(self, message: str, level: str = "info"):
         """
-        Output log message with level-based coloring.
+        Output log message using the configured logger.
+
+        This method delegates to the logger instance configured during initialization.
+        If no logger is configured, the message is silently ignored.
 
         :param message: The log message
         :type message: str
         :param level: Log level (debug, info, warning, error), defaults to "info"
         :type level: str, optional
         """
-        color_map = {
-            'debug': 'gray',
-            'info': 'cyan',
-            'warning': 'yellow',
-            'error': 'red',
+        if self.logger is None:
+            return
+
+        level_map = {
+            'debug': logging.DEBUG,
+            'info': logging.INFO,
+            'warning': logging.WARNING,
+            'error': logging.ERROR,
         }
-        color = color_map.get(level, 'reset')
-        prefix = f"[{level.upper()}]" if level != 'info' else ""
-        print(f"{self._colorize(prefix, color)} {message}".strip())
+        log_level = level_map.get(level, logging.INFO)
+        self.logger.log(log_level, message)
 
     def format_table(self, headers: list, rows: list, var_names: list = None) -> str:
         """

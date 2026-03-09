@@ -1,8 +1,9 @@
 """
 Entry-side logging presentation helpers for simulate CLI.
 
-This module keeps runtime logging on the Python standard library while adding
-an optional Rich-based presentation layer for CLI output.
+This module configures the runtime logger (pyfcstm.simulate) with CLI-specific
+presentation handlers. The entry layer and runtime share the same logger instance
+to ensure consistent highlighting and formatting.
 """
 
 import logging
@@ -127,10 +128,15 @@ def configure_simulate_cli_logger(logger: logging.Logger, use_color: bool = True
     """
     Configure a runtime logger for CLI presentation.
 
+    This function configures the runtime logger (typically pyfcstm.simulate) with
+    CLI-specific handlers and formatting. Both the entry layer and runtime share
+    this logger instance, ensuring consistent highlighting and formatting across
+    all log messages.
+
     This function replaces existing handlers with a single CLI-facing handler so
     output is not duplicated when multiple command processors are created.
 
-    :param logger: Runtime logger to configure.
+    :param logger: Runtime logger to configure (typically runtime.logger).
     :type logger: logging.Logger
     :param use_color: Whether colored terminal output is enabled.
     :type use_color: bool

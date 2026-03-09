@@ -13,5 +13,6 @@ pyfcstm.entry.simulate
     commands
     completer
     display
+    logging
     repl
 

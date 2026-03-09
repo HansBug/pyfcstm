@@ -302,7 +302,6 @@ class TestSimulateLogging:
         assert len(runtime.logger.handlers) == 1
         assert isinstance(runtime.logger.handlers[0], SimulatePlainLogHandler)
         assert runtime.logger.handlers[0] is not first_handlers[0]
-        assert runtime.logger.propagate is False
 
     def test_command_processor_configures_runtime_logger(self, runtime):
         """Command processor should configure the runtime logger for CLI output."""

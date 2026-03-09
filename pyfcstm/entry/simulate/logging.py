@@ -141,4 +141,3 @@ def configure_simulate_cli_logger(logger: logging.Logger, use_color: bool = True
         logger.removeHandler(handler)
 
     logger.addHandler(create_simulate_log_handler(use_color=use_color))
-    logger.propagate = False

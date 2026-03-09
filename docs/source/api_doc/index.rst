@@ -15,5 +15,6 @@ pyfcstm
     highlight/index
     model/index
     render/index
+    simulate/index
     utils/index
 

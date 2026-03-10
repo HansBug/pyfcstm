@@ -16,9 +16,9 @@ state_definition
     ;
 
 transition_definition
-    : '[*]' '->' to_state=ID (|(':'|'::') chain_id|':' 'if' '[' cond_expression ']') (';'|'effect' '{' operational_statement* '}')                   # entryTransitionDefinition
-    | from_state=ID '->' to_state=ID (|'::' from_id=ID|':' chain_id|':' 'if' '[' cond_expression ']') (';'|'effect' '{' operational_statement* '}')  # normalTransitionDefinition
-    | from_state=ID '->' '[*]' (|'::' from_id=ID|':' chain_id|':' 'if' '[' cond_expression ']') (';'|'effect' '{' operational_statement* '}')        # exitTransitionDefinition
+    : '[*]' '->' to_state=ID (|(':'|'::') chain_id|':' 'if' '[' cond_expression ']') (';'|'effect' '{' operational_statement_set '}')                   # entryTransitionDefinition
+    | from_state=ID '->' to_state=ID (|'::' from_id=ID|':' chain_id|':' 'if' '[' cond_expression ']') (';'|'effect' '{' operational_statement_set '}')  # normalTransitionDefinition
+    | from_state=ID '->' '[*]' (|'::' from_id=ID|':' chain_id|':' 'if' '[' cond_expression ']') (';'|'effect' '{' operational_statement_set '}')        # exitTransitionDefinition
     ;
 
 transition_force_definition
@@ -29,28 +29,28 @@ transition_force_definition
     ;
 
 enter_definition
-    : 'enter' (func_name=ID)? '{' operational_statement* '}'        # enterOperations
+    : 'enter' (func_name=ID)? '{' operational_statement_set '}'        # enterOperations
     | 'enter' 'abstract' func_name=ID ';'                           # enterAbstractFunc
     | 'enter' 'abstract' (func_name=ID)? raw_doc=MULTILINE_COMMENT  # enterAbstractFunc
     | 'enter' (func_name=ID)? 'ref' chain_id ';'                    # enterRefFunc
     ;
 
 exit_definition
-    : 'exit' (func_name=ID)? '{' operational_statement* '}'        # exitOperations
+    : 'exit' (func_name=ID)? '{' operational_statement_set '}'        # exitOperations
     | 'exit' 'abstract' func_name=ID ';'                           # exitAbstractFunc
     | 'exit' 'abstract' (func_name=ID)? raw_doc=MULTILINE_COMMENT  # exitAbstractFunc
     | 'exit' (func_name=ID)? 'ref' chain_id ';'                    # exitRefFunc
     ;
 
 during_definition
-    : 'during' aspect=('before'|'after')? (func_name=ID)? '{' operational_statement* '}'        # duringOperations
+    : 'during' aspect=('before'|'after')? (func_name=ID)? '{' operational_statement_set '}'        # duringOperations
     | 'during' aspect=('before'|'after')? 'abstract' func_name=ID ';'                           # duringAbstractFunc
     | 'during' aspect=('before'|'after')? 'abstract' (func_name=ID)? raw_doc=MULTILINE_COMMENT  # duringAbstractFunc
     | 'during' aspect=('before'|'after')? (func_name=ID)? 'ref' chain_id ';'                    # duringRefFunc
     ;
 
 during_aspect_definition
-    : '>>' 'during' aspect=('before'|'after') (func_name=ID)? '{' operational_statement* '}'        # duringAspectOperations
+    : '>>' 'during' aspect=('before'|'after') (func_name=ID)? '{' operational_statement_set '}'        # duringAspectOperations
     | '>>' 'during' aspect=('before'|'after') 'abstract' func_name=ID ';'                           # duringAspectAbstractFunc
     | '>>' 'during' aspect=('before'|'after') 'abstract' (func_name=ID)? raw_doc=MULTILINE_COMMENT  # duringAspectAbstractFunc
     | '>>' 'during' aspect=('before'|'after') (func_name=ID)? 'ref' chain_id ';'                    # duringAspectRefFunc
@@ -63,6 +63,10 @@ operation_assignment: ID '=' num_expression ';';
 operational_statement
     : operation_assignment
     | ';'
+    ;
+
+operational_statement_set
+    : operational_statement*
     ;
 
 state_inner_statement

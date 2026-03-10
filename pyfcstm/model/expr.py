@@ -892,6 +892,9 @@ def parse_expr(
         - :class:`Expr` object: returned directly without modification
         - :class:`dsl_nodes.Expr` AST node: converted using :func:`parse_expr_node_to_expr`
         - :class:`str`: parsed using :func:`parse_expr_from_string` with the specified mode
+        - :class:`bool`: converted to :class:`Boolean` literal
+        - :class:`int`: converted to :class:`Integer` literal
+        - :class:`float`: converted to :class:`Float` literal
     :type expr_input: Any
     :param mode: Parsing mode for string inputs, one of ``'generic'``, ``'numeric'``, or ``'logical'``, defaults to ``'generic'``
     :type mode: Literal['generic', 'numeric', 'logical'], optional
@@ -926,6 +929,16 @@ def parse_expr(
         >>> expr = parse_expr("x > 5 && y < 10", mode='logical')
         >>> isinstance(expr, BinaryOp)
         True
+        >>> # Parse from Python literals
+        >>> expr = parse_expr(42)
+        >>> isinstance(expr, Integer)
+        True
+        >>> expr = parse_expr(3.14)
+        >>> isinstance(expr, Float)
+        True
+        >>> expr = parse_expr(True)
+        >>> isinstance(expr, Boolean)
+        True
     """
     # Check if mode is non-default for non-string inputs
     if mode != 'generic' and not isinstance(expr_input, str):
@@ -948,8 +961,20 @@ def parse_expr(
     if isinstance(expr_input, str):
         return parse_expr_from_string(expr_input, mode=mode)
 
+    # If bool (must check before int, as bool is subclass of int)
+    if isinstance(expr_input, bool):
+        return Boolean(value=expr_input)
+
+    # If int
+    if isinstance(expr_input, int):
+        return Integer(value=expr_input)
+
+    # If float
+    if isinstance(expr_input, float):
+        return Float(value=expr_input)
+
     # Unsupported type
     raise TypeError(
         f"Unsupported input type: {type(expr_input).__name__}. "
-        f"Expected Expr, dsl_nodes.Expr, or str."
+        f"Expected Expr, dsl_nodes.Expr, str, bool, int, or float."
     )

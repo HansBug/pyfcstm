@@ -3850,13 +3850,16 @@ class TestModelExpr:
     def test_parse_expr_with_invalid_type(self):
         """Test parse_expr with unsupported type raises TypeError."""
         with pytest.raises(TypeError, match="Unsupported input type"):
-            parse_expr(123)
-
-        with pytest.raises(TypeError, match="Unsupported input type"):
             parse_expr([1, 2, 3])
 
         with pytest.raises(TypeError, match="Unsupported input type"):
             parse_expr({"key": "value"})
+
+        with pytest.raises(TypeError, match="Unsupported input type"):
+            parse_expr(None)
+
+        with pytest.raises(TypeError, match="Unsupported input type"):
+            parse_expr(object())
 
     @pytest.mark.parametrize(
         ["input_value", "expected_type"],
@@ -3915,4 +3918,91 @@ class TestModelExpr:
             warnings.simplefilter("error")  # Turn warnings into errors
             result = parse_expr("x + 5", mode='numeric')
             expected = BinaryOp(x=Variable(name="x"), op="+", y=Integer(value=5))
+            assert pytest.approx(expected) == result
+
+    def test_parse_expr_with_bool_literal(self):
+        """Test parse_expr with bool literal."""
+        # True
+        result = parse_expr(True)
+        expected = Boolean(value=True)
+        assert pytest.approx(expected) == result
+
+        # False
+        result = parse_expr(False)
+        expected = Boolean(value=False)
+        assert pytest.approx(expected) == result
+
+    def test_parse_expr_with_int_literal(self):
+        """Test parse_expr with int literal."""
+        # Positive integer
+        result = parse_expr(42)
+        expected = Integer(value=42)
+        assert pytest.approx(expected) == result
+
+        # Negative integer
+        result = parse_expr(-10)
+        expected = Integer(value=-10)
+        assert pytest.approx(expected) == result
+
+        # Zero
+        result = parse_expr(0)
+        expected = Integer(value=0)
+        assert pytest.approx(expected) == result
+
+    def test_parse_expr_with_float_literal(self):
+        """Test parse_expr with float literal."""
+        # Positive float
+        result = parse_expr(3.14)
+        expected = Float(value=3.14)
+        assert pytest.approx(expected) == result
+
+        # Negative float
+        result = parse_expr(-2.5)
+        expected = Float(value=-2.5)
+        assert pytest.approx(expected) == result
+
+        # Zero float
+        result = parse_expr(0.0)
+        expected = Float(value=0.0)
+        assert pytest.approx(expected) == result
+
+    def test_parse_expr_bool_checked_before_int(self):
+        """Test parse_expr checks bool before int (since bool is subclass of int)."""
+        # This is important because bool is a subclass of int in Python
+        result = parse_expr(True)
+        assert isinstance(result, Boolean)
+        assert not isinstance(result, Integer)
+
+        result = parse_expr(False)
+        assert isinstance(result, Boolean)
+        assert not isinstance(result, Integer)
+
+    @pytest.mark.parametrize(
+        ["literal_value", "expected_expr"],
+        [
+            (True, Boolean(value=True)),
+            (False, Boolean(value=False)),
+            (0, Integer(value=0)),
+            (42, Integer(value=42)),
+            (-10, Integer(value=-10)),
+            (0.0, Float(value=0.0)),
+            (3.14, Float(value=3.14)),
+            (-2.5, Float(value=-2.5)),
+        ],
+    )
+    def test_parse_expr_with_python_literals(self, literal_value, expected_expr):
+        """Test parse_expr with various Python literal values."""
+        result = parse_expr(literal_value)
+        assert pytest.approx(expected_expr) == result
+
+    def test_parse_expr_literals_warn_with_non_default_mode(self):
+        """Test parse_expr warns when mode is non-default for literal inputs."""
+        with pytest.warns(UserWarning, match="The 'mode' parameter.*has no effect for non-string inputs"):
+            result = parse_expr(42, mode='numeric')
+            expected = Integer(value=42)
+            assert pytest.approx(expected) == result
+
+        with pytest.warns(UserWarning, match="The 'mode' parameter.*has no effect for non-string inputs"):
+            result = parse_expr(3.14, mode='logical')
+            expected = Float(value=3.14)
             assert pytest.approx(expected) == result

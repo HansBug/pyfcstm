@@ -170,6 +170,169 @@ class Expr(AstExportable):
         """
         raise NotImplementedError  # pragma: no cover
 
+    # Arithmetic operators
+    def __add__(self, other: Any) -> 'BinaryOp':
+        """Addition operator (+)."""
+        return BinaryOp(x=self, op='+', y=parse_expr(other))
+
+    def __radd__(self, other: Any) -> 'BinaryOp':
+        """Reverse addition operator (+)."""
+        return BinaryOp(x=parse_expr(other), op='+', y=self)
+
+    def __sub__(self, other: Any) -> 'BinaryOp':
+        """Subtraction operator (-)."""
+        return BinaryOp(x=self, op='-', y=parse_expr(other))
+
+    def __rsub__(self, other: Any) -> 'BinaryOp':
+        """Reverse subtraction operator (-)."""
+        return BinaryOp(x=parse_expr(other), op='-', y=self)
+
+    def __mul__(self, other: Any) -> 'BinaryOp':
+        """Multiplication operator (*)."""
+        return BinaryOp(x=self, op='*', y=parse_expr(other))
+
+    def __rmul__(self, other: Any) -> 'BinaryOp':
+        """Reverse multiplication operator (*)."""
+        return BinaryOp(x=parse_expr(other), op='*', y=self)
+
+    def __truediv__(self, other: Any) -> 'BinaryOp':
+        """Division operator (/)."""
+        return BinaryOp(x=self, op='/', y=parse_expr(other))
+
+    def __rtruediv__(self, other: Any) -> 'BinaryOp':
+        """Reverse division operator (/)."""
+        return BinaryOp(x=parse_expr(other), op='/', y=self)
+
+    def __mod__(self, other: Any) -> 'BinaryOp':
+        """Modulo operator (%)."""
+        return BinaryOp(x=self, op='%', y=parse_expr(other))
+
+    def __rmod__(self, other: Any) -> 'BinaryOp':
+        """Reverse modulo operator (%)."""
+        return BinaryOp(x=parse_expr(other), op='%', y=self)
+
+    def __pow__(self, other: Any) -> 'BinaryOp':
+        """Power operator (**)."""
+        return BinaryOp(x=self, op='**', y=parse_expr(other))
+
+    def __rpow__(self, other: Any) -> 'BinaryOp':
+        """Reverse power operator (**)."""
+        return BinaryOp(x=parse_expr(other), op='**', y=self)
+
+    # Unary operators
+    def __neg__(self) -> 'UnaryOp':
+        """Unary negation operator (-)."""
+        return UnaryOp(op='-', x=self)
+
+    def __pos__(self) -> 'UnaryOp':
+        """Unary positive operator (+)."""
+        return UnaryOp(op='+', x=self)
+
+    # Bitwise operators
+    def __lshift__(self, other: Any) -> 'BinaryOp':
+        """Left shift operator (<<)."""
+        return BinaryOp(x=self, op='<<', y=parse_expr(other))
+
+    def __rlshift__(self, other: Any) -> 'BinaryOp':
+        """Reverse left shift operator (<<)."""
+        return BinaryOp(x=parse_expr(other), op='<<', y=self)
+
+    def __rshift__(self, other: Any) -> 'BinaryOp':
+        """Right shift operator (>>)."""
+        return BinaryOp(x=self, op='>>', y=parse_expr(other))
+
+    def __rrshift__(self, other: Any) -> 'BinaryOp':
+        """Reverse right shift operator (>>)."""
+        return BinaryOp(x=parse_expr(other), op='>>', y=self)
+
+    def __and__(self, other: Any) -> 'BinaryOp':
+        """Bitwise AND operator (&)."""
+        return BinaryOp(x=self, op='&', y=parse_expr(other))
+
+    def __rand__(self, other: Any) -> 'BinaryOp':
+        """Reverse bitwise AND operator (&)."""
+        return BinaryOp(x=parse_expr(other), op='&', y=self)
+
+    def __or__(self, other: Any) -> 'BinaryOp':
+        """Bitwise OR operator (|)."""
+        return BinaryOp(x=self, op='|', y=parse_expr(other))
+
+    def __ror__(self, other: Any) -> 'BinaryOp':
+        """Reverse bitwise OR operator (|)."""
+        return BinaryOp(x=parse_expr(other), op='|', y=self)
+
+    def __xor__(self, other: Any) -> 'BinaryOp':
+        """Bitwise XOR operator (^)."""
+        return BinaryOp(x=self, op='^', y=parse_expr(other))
+
+    def __rxor__(self, other: Any) -> 'BinaryOp':
+        """Reverse bitwise XOR operator (^)."""
+        return BinaryOp(x=parse_expr(other), op='^', y=self)
+
+    # Comparison operators
+    def __lt__(self, other: Any) -> 'BinaryOp':
+        """Less than operator (<)."""
+        return BinaryOp(x=self, op='<', y=parse_expr(other))
+
+    def __le__(self, other: Any) -> 'BinaryOp':
+        """Less than or equal operator (<=)."""
+        return BinaryOp(x=self, op='<=', y=parse_expr(other))
+
+    def __gt__(self, other: Any) -> 'BinaryOp':
+        """Greater than operator (>)."""
+        return BinaryOp(x=self, op='>', y=parse_expr(other))
+
+    def __ge__(self, other: Any) -> 'BinaryOp':
+        """Greater than or equal operator (>=)."""
+        return BinaryOp(x=self, op='>=', y=parse_expr(other))
+
+    # Note: __eq__ and __ne__ are not overridden as they conflict with Python's
+    # object equality comparison and dataclass equality. Use eq() and ne() methods instead.
+
+    def eq(self, other: Any) -> 'BinaryOp':
+        """
+        Equality comparison (==).
+
+        This method creates an equality comparison expression. It cannot use
+        the ``__eq__`` magic method as that conflicts with Python's object
+        equality comparison.
+
+        :param other: Right operand
+        :type other: Any
+        :return: Binary operation expression
+        :rtype: BinaryOp
+
+        Example::
+
+            >>> x = Variable("x")
+            >>> expr = x.eq(5)  # Creates: x == 5
+            >>> expr(x=5)
+            True
+        """
+        return BinaryOp(x=self, op='==', y=parse_expr(other))
+
+    def ne(self, other: Any) -> 'BinaryOp':
+        """
+        Not equal comparison (!=).
+
+        This method creates a not-equal comparison expression. It cannot use
+        the ``__ne__`` magic method as that conflicts with Python's object
+        inequality comparison.
+
+        :param other: Right operand
+        :type other: Any
+        :return: Binary operation expression
+        :rtype: BinaryOp
+
+        Example::
+
+            >>> x = Variable("x")
+            >>> expr = x.ne(5)  # Creates: x != 5
+            >>> expr(x=10)
+            True
+        """
+        return BinaryOp(x=self, op='!=', y=parse_expr(other))
+
 
 @dataclass
 class Integer(Expr):

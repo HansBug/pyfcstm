@@ -16,7 +16,7 @@ Expr
 -----------------------------------------------------
 
 .. autoclass:: Expr
-    :members: list_variables,__call__,__str__,to_ast_node
+    :members: list_variables,__call__,__str__,to_ast_node,__add__,__radd__,__sub__,__rsub__,__mul__,__rmul__,__truediv__,__rtruediv__,__mod__,__rmod__,__pow__,__rpow__,__neg__,__pos__,__lshift__,__rlshift__,__rshift__,__rrshift__,__and__,__rand__,__or__,__ror__,__xor__,__rxor__,__lt__,__le__,__gt__,__ge__,eq,ne
 
 
 Integer

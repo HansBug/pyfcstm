@@ -4006,3 +4006,432 @@ class TestModelExpr:
             result = parse_expr(3.14, mode='logical')
             expected = Float(value=3.14)
             assert pytest.approx(expected) == result
+
+    def test_expr_arithmetic_operators(self):
+        """Test Expr arithmetic operators."""
+        x = Variable(name="x")
+        y = Variable(name="y")
+
+        # Addition
+        expr = x + 5
+        expected = BinaryOp(x=Variable(name="x"), op="+", y=Integer(value=5))
+        assert expr == expected
+        assert expr(x=10) == 15
+
+        # Subtraction
+        expr = x - 3
+        expected = BinaryOp(x=Variable(name="x"), op="-", y=Integer(value=3))
+        assert expr == expected
+        assert expr(x=10) == 7
+
+        # Multiplication
+        expr = x * 2
+        expected = BinaryOp(x=Variable(name="x"), op="*", y=Integer(value=2))
+        assert expr == expected
+        assert expr(x=5) == 10
+
+        # Division
+        expr = x / 2
+        expected = BinaryOp(x=Variable(name="x"), op="/", y=Integer(value=2))
+        assert expr == expected
+        assert expr(x=10) == 5.0
+
+        # Modulo
+        expr = x % 3
+        expected = BinaryOp(x=Variable(name="x"), op="%", y=Integer(value=3))
+        assert expr == expected
+        assert expr(x=10) == 1
+
+        # Power
+        expr = x ** 2
+        expected = BinaryOp(x=Variable(name="x"), op="**", y=Integer(value=2))
+        assert expr == expected
+        assert expr(x=3) == 9
+
+    def test_expr_unary_operators(self):
+        """Test Expr unary operators."""
+        x = Variable(name="x")
+
+        # Negation
+        expr = -x
+        expected = UnaryOp(op="-", x=Variable(name="x"))
+        assert expr == expected
+        assert expr(x=5) == -5
+
+        # Positive
+        expr = +x
+        expected = UnaryOp(op="+", x=Variable(name="x"))
+        assert expr == expected
+        assert expr(x=5) == 5
+
+    def test_expr_bitwise_operators(self):
+        """Test Expr bitwise operators."""
+        x = Variable(name="x")
+
+        # Left shift
+        expr = x << 2
+        expected = BinaryOp(x=Variable(name="x"), op="<<", y=Integer(value=2))
+        assert expr == expected
+        assert expr(x=5) == 20
+
+        # Right shift
+        expr = x >> 1
+        expected = BinaryOp(x=Variable(name="x"), op=">>", y=Integer(value=1))
+        assert expr == expected
+        assert expr(x=10) == 5
+
+        # Bitwise AND
+        expr = x & 0xFF
+        expected = BinaryOp(x=Variable(name="x"), op="&", y=Integer(value=255))
+        assert expr == expected
+        assert expr(x=0x1234) == 0x34
+
+        # Bitwise OR
+        expr = x | 0x0F
+        expected = BinaryOp(x=Variable(name="x"), op="|", y=Integer(value=15))
+        assert expr == expected
+        assert expr(x=0xF0) == 0xFF
+
+        # Bitwise XOR
+        expr = x ^ 0xFF
+        expected = BinaryOp(x=Variable(name="x"), op="^", y=Integer(value=255))
+        assert expr == expected
+        assert expr(x=0xAA) == 0x55
+
+    def test_expr_comparison_operators(self):
+        """Test Expr comparison operators."""
+        x = Variable(name="x")
+
+        # Less than
+        expr = x < 10
+        expected = BinaryOp(x=Variable(name="x"), op="<", y=Integer(value=10))
+        assert expr == expected
+        assert expr(x=5) is True
+        assert expr(x=15) is False
+
+        # Less than or equal
+        expr = x <= 10
+        expected = BinaryOp(x=Variable(name="x"), op="<=", y=Integer(value=10))
+        assert expr == expected
+        assert expr(x=10) is True
+
+        # Greater than
+        expr = x > 5
+        expected = BinaryOp(x=Variable(name="x"), op=">", y=Integer(value=5))
+        assert expr == expected
+        assert expr(x=10) is True
+
+        # Greater than or equal
+        expr = x >= 5
+        expected = BinaryOp(x=Variable(name="x"), op=">=", y=Integer(value=5))
+        assert expr == expected
+        assert expr(x=5) is True
+
+        # Equality (using .eq() method)
+        expr = x.eq(5)
+        expected = BinaryOp(x=Variable(name="x"), op="==", y=Integer(value=5))
+        assert expr == expected
+        assert expr(x=5) is True
+        assert expr(x=10) is False
+
+        # Not equal (using .ne() method)
+        expr = x.ne(5)
+        expected = BinaryOp(x=Variable(name="x"), op="!=", y=Integer(value=5))
+        assert expr == expected
+        assert expr(x=10) is True
+        assert expr(x=5) is False
+
+    def test_expr_reverse_operators(self):
+        """Test Expr reverse operators."""
+        x = Variable(name="x")
+
+        # Reverse addition
+        expr = 5 + x
+        expected = BinaryOp(x=Integer(value=5), op="+", y=Variable(name="x"))
+        assert expr == expected
+        assert expr(x=10) == 15
+
+        # Reverse subtraction
+        expr = 10 - x
+        expected = BinaryOp(x=Integer(value=10), op="-", y=Variable(name="x"))
+        assert expr == expected
+        assert expr(x=3) == 7
+
+        # Reverse multiplication
+        expr = 3 * x
+        expected = BinaryOp(x=Integer(value=3), op="*", y=Variable(name="x"))
+        assert expr == expected
+        assert expr(x=4) == 12
+
+        # Reverse power
+        expr = 2 ** x
+        expected = BinaryOp(x=Integer(value=2), op="**", y=Variable(name="x"))
+        assert expr == expected
+        assert expr(x=3) == 8
+
+    def test_expr_complex_expressions(self):
+        """Test complex expressions with multiple operators."""
+        x = Variable(name="x")
+        y = Variable(name="y")
+
+        # (x + 5) * 2
+        expr = (x + 5) * 2
+        assert expr(x=3) == 16
+
+        # x ** 2 + y ** 2
+        expr = x ** 2 + y ** 2
+        assert expr(x=3, y=4) == 25
+
+        # -x + y
+        expr = -x + y
+        assert expr(x=5, y=10) == 5
+
+        # (x << 2) | (y & 0xFF)
+        expr = (x << 2) | (y & 0xFF)
+        assert expr(x=1, y=0x12) == 0x16
+
+    def test_expr_operators_with_expr_objects(self):
+        """Test operators between two Expr objects."""
+        x = Variable(name="x")
+        y = Variable(name="y")
+
+        # x + y
+        expr = x + y
+        expected = BinaryOp(x=Variable(name="x"), op="+", y=Variable(name="y"))
+        assert expr == expected
+        assert expr(x=3, y=7) == 10
+
+        # x * y
+        expr = x * y
+        expected = BinaryOp(x=Variable(name="x"), op="*", y=Variable(name="y"))
+        assert expr == expected
+        assert expr(x=4, y=5) == 20
+
+    def test_expr_all_reverse_operators_coverage(self):
+        """Test all reverse operators for complete coverage."""
+        x = Variable(name="x")
+
+        # __radd__
+        expr = 5 + x
+        assert isinstance(expr, BinaryOp) and expr.op == "+"
+        assert expr(x=10) == 15
+
+        # __rsub__
+        expr = 10 - x
+        assert isinstance(expr, BinaryOp) and expr.op == "-"
+        assert expr(x=3) == 7
+
+        # __rmul__
+        expr = 3 * x
+        assert isinstance(expr, BinaryOp) and expr.op == "*"
+        assert expr(x=4) == 12
+
+        # __rtruediv__
+        expr = 20 / x
+        assert isinstance(expr, BinaryOp) and expr.op == "/"
+        assert expr(x=4) == 5.0
+
+        # __rmod__
+        expr = 10 % x
+        assert isinstance(expr, BinaryOp) and expr.op == "%"
+        assert expr(x=3) == 1
+
+        # __rpow__
+        expr = 2 ** x
+        assert isinstance(expr, BinaryOp) and expr.op == "**"
+        assert expr(x=3) == 8
+
+        # __rlshift__
+        expr = 5 << x
+        assert isinstance(expr, BinaryOp) and expr.op == "<<"
+        assert expr(x=2) == 20
+
+        # __rrshift__
+        expr = 20 >> x
+        assert isinstance(expr, BinaryOp) and expr.op == ">>"
+        assert expr(x=2) == 5
+
+        # __rand__
+        expr = 0xFF & x
+        assert isinstance(expr, BinaryOp) and expr.op == "&"
+        assert expr(x=0x1234) == 0x34
+
+        # __ror__
+        expr = 0xF0 | x
+        assert isinstance(expr, BinaryOp) and expr.op == "|"
+        assert expr(x=0x0F) == 0xFF
+
+        # __rxor__
+        expr = 0xFF ^ x
+        assert isinstance(expr, BinaryOp) and expr.op == "^"
+        assert expr(x=0xAA) == 0x55
+
+    def test_expr_all_forward_operators_coverage(self):
+        """Test all forward operators for complete coverage."""
+        x = Variable(name="x")
+
+        # __add__
+        expr = x + 5
+        assert isinstance(expr, BinaryOp) and expr.op == "+"
+        assert expr(x=10) == 15
+
+        # __sub__
+        expr = x - 3
+        assert isinstance(expr, BinaryOp) and expr.op == "-"
+        assert expr(x=10) == 7
+
+        # __mul__
+        expr = x * 2
+        assert isinstance(expr, BinaryOp) and expr.op == "*"
+        assert expr(x=5) == 10
+
+        # __truediv__
+        expr = x / 2
+        assert isinstance(expr, BinaryOp) and expr.op == "/"
+        assert expr(x=10) == 5.0
+
+        # __mod__
+        expr = x % 3
+        assert isinstance(expr, BinaryOp) and expr.op == "%"
+        assert expr(x=10) == 1
+
+        # __pow__
+        expr = x ** 2
+        assert isinstance(expr, BinaryOp) and expr.op == "**"
+        assert expr(x=3) == 9
+
+        # __neg__
+        expr = -x
+        assert isinstance(expr, UnaryOp) and expr.op == "-"
+        assert expr(x=5) == -5
+
+        # __pos__
+        expr = +x
+        assert isinstance(expr, UnaryOp) and expr.op == "+"
+        assert expr(x=5) == 5
+
+        # __lshift__
+        expr = x << 2
+        assert isinstance(expr, BinaryOp) and expr.op == "<<"
+        assert expr(x=5) == 20
+
+        # __rshift__
+        expr = x >> 1
+        assert isinstance(expr, BinaryOp) and expr.op == ">>"
+        assert expr(x=10) == 5
+
+        # __and__
+        expr = x & 0xFF
+        assert isinstance(expr, BinaryOp) and expr.op == "&"
+        assert expr(x=0x1234) == 0x34
+
+        # __or__
+        expr = x | 0x0F
+        assert isinstance(expr, BinaryOp) and expr.op == "|"
+        assert expr(x=0xF0) == 0xFF
+
+        # __xor__
+        expr = x ^ 0xFF
+        assert isinstance(expr, BinaryOp) and expr.op == "^"
+        assert expr(x=0xAA) == 0x55
+
+        # __lt__
+        expr = x < 10
+        assert isinstance(expr, BinaryOp) and expr.op == "<"
+        assert expr(x=5) is True
+
+        # __le__
+        expr = x <= 10
+        assert isinstance(expr, BinaryOp) and expr.op == "<="
+        assert expr(x=10) is True
+
+        # __gt__
+        expr = x > 5
+        assert isinstance(expr, BinaryOp) and expr.op == ">"
+        assert expr(x=10) is True
+
+        # __ge__
+        expr = x >= 5
+        assert isinstance(expr, BinaryOp) and expr.op == ">="
+        assert expr(x=5) is True
+
+        # eq() method
+        expr = x.eq(5)
+        assert isinstance(expr, BinaryOp) and expr.op == "=="
+        assert expr(x=5) is True
+
+        # ne() method
+        expr = x.ne(5)
+        assert isinstance(expr, BinaryOp) and expr.op == "!="
+        assert expr(x=10) is True
+
+    @pytest.mark.parametrize(
+        ["operator_func", "op_symbol", "left_val", "right_val", "expected_result"],
+        [
+            # Arithmetic operators
+            (lambda x, y: x + y, "+", 10, 5, 15),
+            (lambda x, y: x - y, "-", 10, 5, 5),
+            (lambda x, y: x * y, "*", 10, 5, 50),
+            (lambda x, y: x / y, "/", 10, 5, 2.0),
+            (lambda x, y: x % y, "%", 10, 3, 1),
+            (lambda x, y: x ** y, "**", 2, 3, 8),
+            # Bitwise operators
+            (lambda x, y: x << y, "<<", 5, 2, 20),
+            (lambda x, y: x >> y, ">>", 20, 2, 5),
+            (lambda x, y: x & y, "&", 0xFF, 0x0F, 0x0F),
+            (lambda x, y: x | y, "|", 0xF0, 0x0F, 0xFF),
+            (lambda x, y: x ^ y, "^", 0xFF, 0xAA, 0x55),
+        ],
+    )
+    def test_expr_operators_parameterized(
+        self, operator_func, op_symbol, left_val, right_val, expected_result
+    ):
+        """Parameterized test for all binary operators."""
+        x = Variable(name="x")
+        y = Variable(name="y")
+
+        expr = operator_func(x, y)
+        assert isinstance(expr, BinaryOp)
+        assert expr.op == op_symbol
+        assert expr(x=left_val, y=right_val) == expected_result
+
+    @pytest.mark.parametrize(
+        ["operator_func", "op_symbol", "value", "expected_result"],
+        [
+            (lambda x: -x, "-", 5, -5),
+            (lambda x: +x, "+", 5, 5),
+        ],
+    )
+    def test_expr_unary_operators_parameterized(
+        self, operator_func, op_symbol, value, expected_result
+    ):
+        """Parameterized test for all unary operators."""
+        x = Variable(name="x")
+
+        expr = operator_func(x)
+        assert isinstance(expr, UnaryOp)
+        assert expr.op == op_symbol
+        assert expr(x=value) == expected_result
+
+    @pytest.mark.parametrize(
+        ["operator_func", "op_symbol", "left_val", "right_val", "expected_result"],
+        [
+            (lambda x, y: x < y, "<", 5, 10, True),
+            (lambda x, y: x <= y, "<=", 10, 10, True),
+            (lambda x, y: x > y, ">", 10, 5, True),
+            (lambda x, y: x >= y, ">=", 5, 5, True),
+            (lambda x, y: x.eq(y), "==", 5, 5, True),
+            (lambda x, y: x.ne(y), "!=", 5, 10, True),
+        ],
+    )
+    def test_expr_comparison_operators_parameterized(
+        self, operator_func, op_symbol, left_val, right_val, expected_result
+    ):
+        """Parameterized test for all comparison operators."""
+        x = Variable(name="x")
+        y = Variable(name="y")
+
+        expr = operator_func(x, y)
+        assert isinstance(expr, BinaryOp)
+        assert expr.op == op_symbol
+        assert expr(x=left_val, y=right_val) == expected_result

@@ -10,4 +10,5 @@ pyfcstm.solver
     :maxdepth: 3
 
     expr
+    solve
 

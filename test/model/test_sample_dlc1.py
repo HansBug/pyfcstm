@@ -219,6 +219,7 @@ class TestModelStateTrafficLight:
         assert state_trafficlight.named_functions["FFT"].parent_ref().path == (
             "TrafficLight",
         )
+        assert state_trafficlight.named_functions["FFT"].func_name == "TrafficLight.FFT"
         assert state_trafficlight.named_functions["FFT"].is_aspect
         assert not state_trafficlight.named_functions["FFT"].is_ref
         assert state_trafficlight.named_functions["FFT"].parent.name == "TrafficLight"
@@ -244,6 +245,7 @@ class TestModelStateTrafficLight:
         assert state_trafficlight.named_functions["TTT"].parent_ref().path == (
             "TrafficLight",
         )
+        assert state_trafficlight.named_functions["TTT"].func_name == "TrafficLight.TTT"
         assert state_trafficlight.named_functions["TTT"].is_aspect
         assert not state_trafficlight.named_functions["TTT"].is_ref
         assert state_trafficlight.named_functions["TTT"].parent.name == "TrafficLight"
@@ -274,6 +276,10 @@ class TestModelStateTrafficLight:
         assert state_trafficlight.on_during_aspects[0].parent_ref().path == (
             "TrafficLight",
         )
+        assert (
+            state_trafficlight.on_during_aspects[0].func_name
+            == "TrafficLight.<unnamed>"
+        )
         assert state_trafficlight.on_during_aspects[0].is_aspect
         assert not state_trafficlight.on_during_aspects[0].is_ref
         assert state_trafficlight.on_during_aspects[0].parent.name == "TrafficLight"
@@ -296,6 +302,7 @@ class TestModelStateTrafficLight:
         assert state_trafficlight.on_during_aspects[1].parent_ref().path == (
             "TrafficLight",
         )
+        assert state_trafficlight.on_during_aspects[1].func_name == "TrafficLight.FFT"
         assert state_trafficlight.on_during_aspects[1].is_aspect
         assert not state_trafficlight.on_during_aspects[1].is_ref
         assert state_trafficlight.on_during_aspects[1].parent.name == "TrafficLight"
@@ -318,6 +325,7 @@ class TestModelStateTrafficLight:
         assert state_trafficlight.on_during_aspects[2].parent_ref().path == (
             "TrafficLight",
         )
+        assert state_trafficlight.on_during_aspects[2].func_name == "TrafficLight.TTT"
         assert state_trafficlight.on_during_aspects[2].is_aspect
         assert not state_trafficlight.on_during_aspects[2].is_ref
         assert state_trafficlight.on_during_aspects[2].parent.name == "TrafficLight"
@@ -342,6 +350,10 @@ class TestModelStateTrafficLight:
         )
         assert state_trafficlight.on_during_aspects[3].parent_ref().path == (
             "TrafficLight",
+        )
+        assert (
+            state_trafficlight.on_during_aspects[3].func_name
+            == "TrafficLight.<unnamed>"
         )
         assert state_trafficlight.on_during_aspects[3].is_aspect
         assert not state_trafficlight.on_during_aspects[3].is_ref
@@ -370,6 +382,10 @@ class TestModelStateTrafficLight:
         )
         assert state_trafficlight.abstract_on_during_aspects[0].parent_ref().path == (
             "TrafficLight",
+        )
+        assert (
+            state_trafficlight.abstract_on_during_aspects[0].func_name
+            == "TrafficLight.FFT"
         )
         assert state_trafficlight.abstract_on_during_aspects[0].is_aspect
         assert not state_trafficlight.abstract_on_during_aspects[0].is_ref
@@ -400,6 +416,10 @@ class TestModelStateTrafficLight:
         )
         assert state_trafficlight.abstract_on_during_aspects[1].parent_ref().path == (
             "TrafficLight",
+        )
+        assert (
+            state_trafficlight.abstract_on_during_aspects[1].func_name
+            == "TrafficLight.TTT"
         )
         assert state_trafficlight.abstract_on_during_aspects[1].is_aspect
         assert not state_trafficlight.abstract_on_during_aspects[1].is_ref
@@ -452,6 +472,10 @@ class TestModelStateTrafficLight:
         assert state_trafficlight.non_abstract_on_during_aspects[
             0
         ].parent_ref().path == ("TrafficLight",)
+        assert (
+            state_trafficlight.non_abstract_on_during_aspects[0].func_name
+            == "TrafficLight.<unnamed>"
+        )
         assert state_trafficlight.non_abstract_on_during_aspects[0].is_aspect
         assert not state_trafficlight.non_abstract_on_during_aspects[0].is_ref
         assert (
@@ -485,6 +509,10 @@ class TestModelStateTrafficLight:
         assert state_trafficlight.non_abstract_on_during_aspects[
             1
         ].parent_ref().path == ("TrafficLight",)
+        assert (
+            state_trafficlight.non_abstract_on_during_aspects[1].func_name
+            == "TrafficLight.<unnamed>"
+        )
         assert state_trafficlight.non_abstract_on_during_aspects[1].is_aspect
         assert not state_trafficlight.non_abstract_on_during_aspects[1].is_ref
         assert (
@@ -870,6 +898,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "TrafficLight"
         assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.func_name == "TrafficLight.<unnamed>"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "TrafficLight"
@@ -886,6 +915,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "TrafficLight"
         assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.func_name == "TrafficLight.FFT"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "TrafficLight"
@@ -902,6 +932,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "TrafficLight"
         assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.func_name == "TrafficLight.TTT"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "TrafficLight"
@@ -921,6 +952,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "TrafficLight"
         assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.func_name == "TrafficLight.<unnamed>"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "TrafficLight"
@@ -940,6 +972,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "TrafficLight"
         assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.func_name == "TrafficLight.<unnamed>"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "TrafficLight"
@@ -956,6 +989,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "TrafficLight"
         assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.func_name == "TrafficLight.FFT"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "TrafficLight"
@@ -972,6 +1006,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "TrafficLight"
         assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.func_name == "TrafficLight.TTT"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "TrafficLight"
@@ -994,6 +1029,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "TrafficLight"
         assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.func_name == "TrafficLight.<unnamed>"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "TrafficLight"
@@ -1013,6 +1049,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "TrafficLight"
         assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.func_name == "TrafficLight.<unnamed>"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "TrafficLight"
@@ -1032,6 +1069,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "TrafficLight"
         assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.func_name == "TrafficLight.<unnamed>"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "TrafficLight"
@@ -1053,6 +1091,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "TrafficLight"
         assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.func_name == "TrafficLight.<unnamed>"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "TrafficLight"
@@ -1077,6 +1116,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "TrafficLight"
         assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.func_name == "TrafficLight.<unnamed>"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "TrafficLight"
@@ -1096,6 +1136,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "TrafficLight"
         assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.func_name == "TrafficLight.FFT"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "TrafficLight"
@@ -1112,6 +1153,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "TrafficLight"
         assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.func_name == "TrafficLight.TTT"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "TrafficLight"
@@ -1133,6 +1175,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "TrafficLight"
         assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.func_name == "TrafficLight.FFT"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "TrafficLight"
@@ -1149,6 +1192,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "TrafficLight"
         assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.func_name == "TrafficLight.TTT"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "TrafficLight"
@@ -1327,6 +1371,12 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice.named_functions[
             "InServiceAbstractEnter"
         ].parent_ref().path == ("TrafficLight", "InService")
+        assert (
+            state_trafficlight_inservice.named_functions[
+                "InServiceAbstractEnter"
+            ].func_name
+            == "TrafficLight.InService.InServiceAbstractEnter"
+        )
         assert not state_trafficlight_inservice.named_functions[
             "InServiceAbstractEnter"
         ].is_aspect
@@ -1399,6 +1449,12 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice.named_functions[
             "InServiceBeforeEnterChild"
         ].parent_ref().path == ("TrafficLight", "InService")
+        assert (
+            state_trafficlight_inservice.named_functions[
+                "InServiceBeforeEnterChild"
+            ].func_name
+            == "TrafficLight.InService.InServiceBeforeEnterChild"
+        )
         assert not state_trafficlight_inservice.named_functions[
             "InServiceBeforeEnterChild"
         ].is_aspect
@@ -1467,6 +1523,12 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice.named_functions[
             "InServiceAfterEnterChild"
         ].parent_ref().path == ("TrafficLight", "InService")
+        assert (
+            state_trafficlight_inservice.named_functions[
+                "InServiceAfterEnterChild"
+            ].func_name
+            == "TrafficLight.InService.InServiceAfterEnterChild"
+        )
         assert not state_trafficlight_inservice.named_functions[
             "InServiceAfterEnterChild"
         ].is_aspect
@@ -1529,6 +1591,12 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice.named_functions[
             "InServiceAbstractExit"
         ].parent_ref().path == ("TrafficLight", "InService")
+        assert (
+            state_trafficlight_inservice.named_functions[
+                "InServiceAbstractExit"
+            ].func_name
+            == "TrafficLight.InService.InServiceAbstractExit"
+        )
         assert not state_trafficlight_inservice.named_functions[
             "InServiceAbstractExit"
         ].is_aspect
@@ -1569,6 +1637,10 @@ class TestModelStateTrafficLight:
             "TrafficLight",
             "InService",
         )
+        assert (
+            state_trafficlight_inservice.on_enters[0].func_name
+            == "TrafficLight.InService.<unnamed>"
+        )
         assert not state_trafficlight_inservice.on_enters[0].is_aspect
         assert not state_trafficlight_inservice.on_enters[0].is_ref
         assert state_trafficlight_inservice.on_enters[0].parent.name == "InService"
@@ -1600,6 +1672,10 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice.on_enters[1].parent_ref().path == (
             "TrafficLight",
             "InService",
+        )
+        assert (
+            state_trafficlight_inservice.on_enters[1].func_name
+            == "TrafficLight.InService.InServiceAbstractEnter"
         )
         assert not state_trafficlight_inservice.on_enters[1].is_aspect
         assert not state_trafficlight_inservice.on_enters[1].is_ref
@@ -1635,6 +1711,10 @@ class TestModelStateTrafficLight:
             "TrafficLight",
             "InService",
         )
+        assert (
+            state_trafficlight_inservice.on_durings[0].func_name
+            == "TrafficLight.InService.InServiceBeforeEnterChild"
+        )
         assert not state_trafficlight_inservice.on_durings[0].is_aspect
         assert not state_trafficlight_inservice.on_durings[0].is_ref
         assert state_trafficlight_inservice.on_durings[0].parent.name == "InService"
@@ -1668,6 +1748,10 @@ class TestModelStateTrafficLight:
             "TrafficLight",
             "InService",
         )
+        assert (
+            state_trafficlight_inservice.on_durings[1].func_name
+            == "TrafficLight.InService.InServiceAfterEnterChild"
+        )
         assert not state_trafficlight_inservice.on_durings[1].is_aspect
         assert not state_trafficlight_inservice.on_durings[1].is_ref
         assert state_trafficlight_inservice.on_durings[1].parent.name == "InService"
@@ -1696,6 +1780,10 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice.on_exits[0].parent_ref().path == (
             "TrafficLight",
             "InService",
+        )
+        assert (
+            state_trafficlight_inservice.on_exits[0].func_name
+            == "TrafficLight.InService.InServiceAbstractExit"
         )
         assert not state_trafficlight_inservice.on_exits[0].is_aspect
         assert not state_trafficlight_inservice.on_exits[0].is_ref
@@ -1744,6 +1832,10 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice.abstract_on_durings[
             0
         ].parent_ref().path == ("TrafficLight", "InService")
+        assert (
+            state_trafficlight_inservice.abstract_on_durings[0].func_name
+            == "TrafficLight.InService.InServiceBeforeEnterChild"
+        )
         assert not state_trafficlight_inservice.abstract_on_durings[0].is_aspect
         assert not state_trafficlight_inservice.abstract_on_durings[0].is_ref
         assert (
@@ -1782,6 +1874,10 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice.abstract_on_durings[
             1
         ].parent_ref().path == ("TrafficLight", "InService")
+        assert (
+            state_trafficlight_inservice.abstract_on_durings[1].func_name
+            == "TrafficLight.InService.InServiceAfterEnterChild"
+        )
         assert not state_trafficlight_inservice.abstract_on_durings[1].is_aspect
         assert not state_trafficlight_inservice.abstract_on_durings[1].is_ref
         assert (
@@ -1820,6 +1916,10 @@ class TestModelStateTrafficLight:
             "TrafficLight",
             "InService",
         )
+        assert (
+            state_trafficlight_inservice.abstract_on_enters[0].func_name
+            == "TrafficLight.InService.InServiceAbstractEnter"
+        )
         assert not state_trafficlight_inservice.abstract_on_enters[0].is_aspect
         assert not state_trafficlight_inservice.abstract_on_enters[0].is_ref
         assert (
@@ -1857,6 +1957,10 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice.abstract_on_exits[0].parent_ref().path == (
             "TrafficLight",
             "InService",
+        )
+        assert (
+            state_trafficlight_inservice.abstract_on_exits[0].func_name
+            == "TrafficLight.InService.InServiceAbstractExit"
         )
         assert not state_trafficlight_inservice.abstract_on_exits[0].is_aspect
         assert not state_trafficlight_inservice.abstract_on_exits[0].is_ref
@@ -1918,6 +2022,10 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice.non_abstract_on_enters[
             0
         ].parent_ref().path == ("TrafficLight", "InService")
+        assert (
+            state_trafficlight_inservice.non_abstract_on_enters[0].func_name
+            == "TrafficLight.InService.<unnamed>"
+        )
         assert not state_trafficlight_inservice.non_abstract_on_enters[0].is_aspect
         assert not state_trafficlight_inservice.non_abstract_on_enters[0].is_ref
         assert (
@@ -2237,6 +2345,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "InService"
         assert on_stage.parent_ref().path == ("TrafficLight", "InService")
+        assert on_stage.func_name == "TrafficLight.InService.<unnamed>"
         assert not on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "InService"
@@ -2260,6 +2369,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "InService"
         assert on_stage.parent_ref().path == ("TrafficLight", "InService")
+        assert on_stage.func_name == "TrafficLight.InService.InServiceAbstractEnter"
         assert not on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "InService"
@@ -2283,6 +2393,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "InService"
         assert on_stage.parent_ref().path == ("TrafficLight", "InService")
+        assert on_stage.func_name == "TrafficLight.InService.<unnamed>"
         assert not on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "InService"
@@ -2306,6 +2417,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "InService"
         assert on_stage.parent_ref().path == ("TrafficLight", "InService")
+        assert on_stage.func_name == "TrafficLight.InService.InServiceAbstractEnter"
         assert not on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "InService"
@@ -2330,6 +2442,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "InService"
         assert on_stage.parent_ref().path == ("TrafficLight", "InService")
+        assert on_stage.func_name == "TrafficLight.InService.<unnamed>"
         assert not on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "InService"
@@ -2354,6 +2467,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "InService"
         assert on_stage.parent_ref().path == ("TrafficLight", "InService")
+        assert on_stage.func_name == "TrafficLight.InService.InServiceAbstractEnter"
         assert not on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "InService"
@@ -2377,6 +2491,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "InService"
         assert on_stage.parent_ref().path == ("TrafficLight", "InService")
+        assert on_stage.func_name == "TrafficLight.InService.<unnamed>"
         assert not on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "InService"
@@ -2402,6 +2517,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "InService"
         assert on_stage.parent_ref().path == ("TrafficLight", "InService")
+        assert on_stage.func_name == "TrafficLight.InService.<unnamed>"
         assert not on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "InService"
@@ -2428,6 +2544,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "InService"
         assert on_stage.parent_ref().path == ("TrafficLight", "InService")
+        assert on_stage.func_name == "TrafficLight.InService.<unnamed>"
         assert not on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "InService"
@@ -2454,6 +2571,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "InService"
         assert on_stage.parent_ref().path == ("TrafficLight", "InService")
+        assert on_stage.func_name == "TrafficLight.InService.InServiceAbstractEnter"
         assert not on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "InService"
@@ -2482,6 +2600,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "InService"
         assert on_stage.parent_ref().path == ("TrafficLight", "InService")
+        assert on_stage.func_name == "TrafficLight.InService.InServiceAbstractEnter"
         assert not on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "InService"
@@ -2511,6 +2630,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "InService"
         assert on_stage.parent_ref().path == ("TrafficLight", "InService")
+        assert on_stage.func_name == "TrafficLight.InService.InServiceAbstractEnter"
         assert not on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "InService"
@@ -2592,6 +2712,10 @@ class TestModelStateTrafficLight:
             "InService",
             "Red",
         )
+        assert (
+            state_trafficlight_inservice_red.on_durings[0].func_name
+            == "TrafficLight.InService.Red.<unnamed>"
+        )
         assert not state_trafficlight_inservice_red.on_durings[0].is_aspect
         assert not state_trafficlight_inservice_red.on_durings[0].is_ref
         assert state_trafficlight_inservice_red.on_durings[0].parent.name == "Red"
@@ -2657,6 +2781,10 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice_red.non_abstract_on_durings[
             0
         ].parent_ref().path == ("TrafficLight", "InService", "Red")
+        assert (
+            state_trafficlight_inservice_red.non_abstract_on_durings[0].func_name
+            == "TrafficLight.InService.Red.<unnamed>"
+        )
         assert not state_trafficlight_inservice_red.non_abstract_on_durings[0].is_aspect
         assert not state_trafficlight_inservice_red.non_abstract_on_durings[0].is_ref
         assert (
@@ -2871,6 +2999,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "TrafficLight"
         assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.func_name == "TrafficLight.<unnamed>"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "TrafficLight"
@@ -2889,6 +3018,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "TrafficLight"
         assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.func_name == "TrafficLight.FFT"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "TrafficLight"
@@ -2907,6 +3037,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "TrafficLight"
         assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.func_name == "TrafficLight.TTT"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "TrafficLight"
@@ -2930,6 +3061,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "Red"
         assert on_stage.parent_ref().path == ("TrafficLight", "InService", "Red")
+        assert on_stage.func_name == "TrafficLight.InService.Red.<unnamed>"
         assert not on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "Red"
@@ -2951,6 +3083,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "TrafficLight"
         assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.func_name == "TrafficLight.<unnamed>"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "TrafficLight"
@@ -2975,6 +3108,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "TrafficLight"
         assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.func_name == "TrafficLight.<unnamed>"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "TrafficLight"
@@ -2994,6 +3128,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "TrafficLight"
         assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.func_name == "TrafficLight.FFT"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "TrafficLight"
@@ -3013,6 +3148,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "TrafficLight"
         assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.func_name == "TrafficLight.TTT"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "TrafficLight"
@@ -3037,6 +3173,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "Red"
         assert on_stage.parent_ref().path == ("TrafficLight", "InService", "Red")
+        assert on_stage.func_name == "TrafficLight.InService.Red.<unnamed>"
         assert not on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "Red"
@@ -3059,6 +3196,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "TrafficLight"
         assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.func_name == "TrafficLight.<unnamed>"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "TrafficLight"
@@ -3339,6 +3477,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "TrafficLight"
         assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.func_name == "TrafficLight.<unnamed>"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "TrafficLight"
@@ -3357,6 +3496,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "TrafficLight"
         assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.func_name == "TrafficLight.FFT"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "TrafficLight"
@@ -3375,6 +3515,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "TrafficLight"
         assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.func_name == "TrafficLight.TTT"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "TrafficLight"
@@ -3396,6 +3537,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "TrafficLight"
         assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.func_name == "TrafficLight.<unnamed>"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "TrafficLight"
@@ -3420,6 +3562,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "TrafficLight"
         assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.func_name == "TrafficLight.<unnamed>"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "TrafficLight"
@@ -3439,6 +3582,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "TrafficLight"
         assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.func_name == "TrafficLight.FFT"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "TrafficLight"
@@ -3458,6 +3602,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "TrafficLight"
         assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.func_name == "TrafficLight.TTT"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "TrafficLight"
@@ -3480,6 +3625,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "TrafficLight"
         assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.func_name == "TrafficLight.<unnamed>"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "TrafficLight"
@@ -3710,6 +3856,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "TrafficLight"
         assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.func_name == "TrafficLight.<unnamed>"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "TrafficLight"
@@ -3728,6 +3875,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "TrafficLight"
         assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.func_name == "TrafficLight.FFT"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "TrafficLight"
@@ -3746,6 +3894,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "TrafficLight"
         assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.func_name == "TrafficLight.TTT"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "TrafficLight"
@@ -3767,6 +3916,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "TrafficLight"
         assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.func_name == "TrafficLight.<unnamed>"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "TrafficLight"
@@ -3791,6 +3941,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "TrafficLight"
         assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.func_name == "TrafficLight.<unnamed>"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "TrafficLight"
@@ -3810,6 +3961,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "TrafficLight"
         assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.func_name == "TrafficLight.FFT"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "TrafficLight"
@@ -3829,6 +3981,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "TrafficLight"
         assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.func_name == "TrafficLight.TTT"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "TrafficLight"
@@ -3851,6 +4004,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "TrafficLight"
         assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.func_name == "TrafficLight.<unnamed>"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "TrafficLight"
@@ -4051,6 +4205,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "TrafficLight"
         assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.func_name == "TrafficLight.<unnamed>"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "TrafficLight"
@@ -4069,6 +4224,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "TrafficLight"
         assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.func_name == "TrafficLight.FFT"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "TrafficLight"
@@ -4087,6 +4243,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "TrafficLight"
         assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.func_name == "TrafficLight.TTT"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "TrafficLight"
@@ -4108,6 +4265,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "TrafficLight"
         assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.func_name == "TrafficLight.<unnamed>"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "TrafficLight"
@@ -4130,6 +4288,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "TrafficLight"
         assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.func_name == "TrafficLight.<unnamed>"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "TrafficLight"
@@ -4149,6 +4308,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "TrafficLight"
         assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.func_name == "TrafficLight.FFT"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "TrafficLight"
@@ -4168,6 +4328,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "TrafficLight"
         assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.func_name == "TrafficLight.TTT"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "TrafficLight"
@@ -4190,6 +4351,7 @@ class TestModelStateTrafficLight:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "TrafficLight"
         assert on_stage.parent_ref().path == ("TrafficLight",)
+        assert on_stage.func_name == "TrafficLight.<unnamed>"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "TrafficLight"

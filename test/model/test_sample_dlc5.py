@@ -118,6 +118,7 @@ class TestModelStateL1:
         assert state_l1.named_functions["mock"].ref_state_path is None
         assert state_l1.named_functions["mock"].parent_ref().name == "L1"
         assert state_l1.named_functions["mock"].parent_ref().path == ("L1",)
+        assert state_l1.named_functions["mock"].func_name == "L1.mock"
         assert not state_l1.named_functions["mock"].is_aspect
         assert not state_l1.named_functions["mock"].is_ref
         assert state_l1.named_functions["mock"].parent.name == "L1"
@@ -133,6 +134,7 @@ class TestModelStateL1:
         assert state_l1.named_functions["user_B"].ref_state_path is None
         assert state_l1.named_functions["user_B"].parent_ref().name == "L1"
         assert state_l1.named_functions["user_B"].parent_ref().path == ("L1",)
+        assert state_l1.named_functions["user_B"].func_name == "L1.user_B"
         assert state_l1.named_functions["user_B"].is_aspect
         assert not state_l1.named_functions["user_B"].is_ref
         assert state_l1.named_functions["user_B"].parent.name == "L1"
@@ -148,6 +150,7 @@ class TestModelStateL1:
         assert state_l1.named_functions["user_A"].ref_state_path is None
         assert state_l1.named_functions["user_A"].parent_ref().name == "L1"
         assert state_l1.named_functions["user_A"].parent_ref().path == ("L1",)
+        assert state_l1.named_functions["user_A"].func_name == "L1.user_A"
         assert state_l1.named_functions["user_A"].is_aspect
         assert not state_l1.named_functions["user_A"].is_ref
         assert state_l1.named_functions["user_A"].parent.name == "L1"
@@ -167,6 +170,7 @@ class TestModelStateL1:
         assert state_l1.on_durings[0].ref_state_path is None
         assert state_l1.on_durings[0].parent_ref().name == "L1"
         assert state_l1.on_durings[0].parent_ref().path == ("L1",)
+        assert state_l1.on_durings[0].func_name == "L1.<unnamed>"
         assert not state_l1.on_durings[0].is_aspect
         assert not state_l1.on_durings[0].is_ref
         assert state_l1.on_durings[0].parent.name == "L1"
@@ -182,6 +186,7 @@ class TestModelStateL1:
         assert state_l1.on_durings[1].ref_state_path is None
         assert state_l1.on_durings[1].parent_ref().name == "L1"
         assert state_l1.on_durings[1].parent_ref().path == ("L1",)
+        assert state_l1.on_durings[1].func_name == "L1.mock"
         assert not state_l1.on_durings[1].is_aspect
         assert not state_l1.on_durings[1].is_ref
         assert state_l1.on_durings[1].parent.name == "L1"
@@ -199,6 +204,7 @@ class TestModelStateL1:
         assert state_l1.on_during_aspects[0].ref_state_path is None
         assert state_l1.on_during_aspects[0].parent_ref().name == "L1"
         assert state_l1.on_during_aspects[0].parent_ref().path == ("L1",)
+        assert state_l1.on_during_aspects[0].func_name == "L1.user_B"
         assert state_l1.on_during_aspects[0].is_aspect
         assert not state_l1.on_during_aspects[0].is_ref
         assert state_l1.on_during_aspects[0].parent.name == "L1"
@@ -214,6 +220,7 @@ class TestModelStateL1:
         assert state_l1.on_during_aspects[1].ref_state_path is None
         assert state_l1.on_during_aspects[1].parent_ref().name == "L1"
         assert state_l1.on_during_aspects[1].parent_ref().path == ("L1",)
+        assert state_l1.on_during_aspects[1].func_name == "L1.user_A"
         assert state_l1.on_during_aspects[1].is_aspect
         assert not state_l1.on_during_aspects[1].is_ref
         assert state_l1.on_during_aspects[1].parent.name == "L1"
@@ -234,6 +241,7 @@ class TestModelStateL1:
         assert state_l1.abstract_on_during_aspects[0].ref_state_path is None
         assert state_l1.abstract_on_during_aspects[0].parent_ref().name == "L1"
         assert state_l1.abstract_on_during_aspects[0].parent_ref().path == ("L1",)
+        assert state_l1.abstract_on_during_aspects[0].func_name == "L1.user_B"
         assert state_l1.abstract_on_during_aspects[0].is_aspect
         assert not state_l1.abstract_on_during_aspects[0].is_ref
         assert state_l1.abstract_on_during_aspects[0].parent.name == "L1"
@@ -249,6 +257,7 @@ class TestModelStateL1:
         assert state_l1.abstract_on_during_aspects[1].ref_state_path is None
         assert state_l1.abstract_on_during_aspects[1].parent_ref().name == "L1"
         assert state_l1.abstract_on_during_aspects[1].parent_ref().path == ("L1",)
+        assert state_l1.abstract_on_during_aspects[1].func_name == "L1.user_A"
         assert state_l1.abstract_on_during_aspects[1].is_aspect
         assert not state_l1.abstract_on_during_aspects[1].is_ref
         assert state_l1.abstract_on_during_aspects[1].parent.name == "L1"
@@ -265,6 +274,7 @@ class TestModelStateL1:
         assert state_l1.abstract_on_durings[0].ref_state_path is None
         assert state_l1.abstract_on_durings[0].parent_ref().name == "L1"
         assert state_l1.abstract_on_durings[0].parent_ref().path == ("L1",)
+        assert state_l1.abstract_on_durings[0].func_name == "L1.mock"
         assert not state_l1.abstract_on_durings[0].is_aspect
         assert not state_l1.abstract_on_durings[0].is_ref
         assert state_l1.abstract_on_durings[0].parent.name == "L1"
@@ -297,6 +307,7 @@ class TestModelStateL1:
         assert state_l1.non_abstract_on_durings[0].ref_state_path is None
         assert state_l1.non_abstract_on_durings[0].parent_ref().name == "L1"
         assert state_l1.non_abstract_on_durings[0].parent_ref().path == ("L1",)
+        assert state_l1.non_abstract_on_durings[0].func_name == "L1.<unnamed>"
         assert not state_l1.non_abstract_on_durings[0].is_aspect
         assert not state_l1.non_abstract_on_durings[0].is_ref
         assert state_l1.non_abstract_on_durings[0].parent.name == "L1"
@@ -515,6 +526,7 @@ class TestModelStateL1:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "L1"
         assert on_stage.parent_ref().path == ("L1",)
+        assert on_stage.func_name == "L1.user_B"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "L1"
@@ -531,6 +543,7 @@ class TestModelStateL1:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "L1"
         assert on_stage.parent_ref().path == ("L1",)
+        assert on_stage.func_name == "L1.user_A"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "L1"
@@ -550,6 +563,7 @@ class TestModelStateL1:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "L1"
         assert on_stage.parent_ref().path == ("L1",)
+        assert on_stage.func_name == "L1.user_B"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "L1"
@@ -566,6 +580,7 @@ class TestModelStateL1:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "L1"
         assert on_stage.parent_ref().path == ("L1",)
+        assert on_stage.func_name == "L1.user_A"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "L1"
@@ -597,6 +612,7 @@ class TestModelStateL1:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "L1"
         assert on_stage.parent_ref().path == ("L1",)
+        assert on_stage.func_name == "L1.user_B"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "L1"
@@ -613,6 +629,7 @@ class TestModelStateL1:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "L1"
         assert on_stage.parent_ref().path == ("L1",)
+        assert on_stage.func_name == "L1.user_A"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "L1"
@@ -632,6 +649,7 @@ class TestModelStateL1:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "L1"
         assert on_stage.parent_ref().path == ("L1",)
+        assert on_stage.func_name == "L1.user_B"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "L1"
@@ -648,6 +666,7 @@ class TestModelStateL1:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "L1"
         assert on_stage.parent_ref().path == ("L1",)
+        assert on_stage.func_name == "L1.user_A"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "L1"
@@ -703,6 +722,7 @@ class TestModelStateL1:
         assert state_l1_l2.named_functions["user_B"].ref_state_path is None
         assert state_l1_l2.named_functions["user_B"].parent_ref().name == "L2"
         assert state_l1_l2.named_functions["user_B"].parent_ref().path == ("L1", "L2")
+        assert state_l1_l2.named_functions["user_B"].func_name == "L1.L2.user_B"
         assert state_l1_l2.named_functions["user_B"].is_aspect
         assert not state_l1_l2.named_functions["user_B"].is_ref
         assert state_l1_l2.named_functions["user_B"].parent.name == "L2"
@@ -722,6 +742,7 @@ class TestModelStateL1:
         assert state_l1_l2.named_functions["user_A"].ref_state_path is None
         assert state_l1_l2.named_functions["user_A"].parent_ref().name == "L2"
         assert state_l1_l2.named_functions["user_A"].parent_ref().path == ("L1", "L2")
+        assert state_l1_l2.named_functions["user_A"].func_name == "L1.L2.user_A"
         assert state_l1_l2.named_functions["user_A"].is_aspect
         assert not state_l1_l2.named_functions["user_A"].is_ref
         assert state_l1_l2.named_functions["user_A"].parent.name == "L2"
@@ -741,6 +762,7 @@ class TestModelStateL1:
         assert state_l1_l2.on_during_aspects[0].ref_state_path is None
         assert state_l1_l2.on_during_aspects[0].parent_ref().name == "L2"
         assert state_l1_l2.on_during_aspects[0].parent_ref().path == ("L1", "L2")
+        assert state_l1_l2.on_during_aspects[0].func_name == "L1.L2.user_B"
         assert state_l1_l2.on_during_aspects[0].is_aspect
         assert not state_l1_l2.on_during_aspects[0].is_ref
         assert state_l1_l2.on_during_aspects[0].parent.name == "L2"
@@ -756,6 +778,7 @@ class TestModelStateL1:
         assert state_l1_l2.on_during_aspects[1].ref_state_path is None
         assert state_l1_l2.on_during_aspects[1].parent_ref().name == "L2"
         assert state_l1_l2.on_during_aspects[1].parent_ref().path == ("L1", "L2")
+        assert state_l1_l2.on_during_aspects[1].func_name == "L1.L2.user_A"
         assert state_l1_l2.on_during_aspects[1].is_aspect
         assert not state_l1_l2.on_during_aspects[1].is_ref
         assert state_l1_l2.on_during_aspects[1].parent.name == "L2"
@@ -784,6 +807,7 @@ class TestModelStateL1:
             "L1",
             "L2",
         )
+        assert state_l1_l2.abstract_on_during_aspects[0].func_name == "L1.L2.user_B"
         assert state_l1_l2.abstract_on_during_aspects[0].is_aspect
         assert not state_l1_l2.abstract_on_during_aspects[0].is_ref
         assert state_l1_l2.abstract_on_during_aspects[0].parent.name == "L2"
@@ -806,6 +830,7 @@ class TestModelStateL1:
             "L1",
             "L2",
         )
+        assert state_l1_l2.abstract_on_during_aspects[1].func_name == "L1.L2.user_A"
         assert state_l1_l2.abstract_on_during_aspects[1].is_aspect
         assert not state_l1_l2.abstract_on_during_aspects[1].is_ref
         assert state_l1_l2.abstract_on_during_aspects[1].parent.name == "L2"
@@ -989,6 +1014,7 @@ class TestModelStateL1:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "L2"
         assert on_stage.parent_ref().path == ("L1", "L2")
+        assert on_stage.func_name == "L1.L2.user_B"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "L2"
@@ -1005,6 +1031,7 @@ class TestModelStateL1:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "L2"
         assert on_stage.parent_ref().path == ("L1", "L2")
+        assert on_stage.func_name == "L1.L2.user_A"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "L2"
@@ -1024,6 +1051,7 @@ class TestModelStateL1:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "L2"
         assert on_stage.parent_ref().path == ("L1", "L2")
+        assert on_stage.func_name == "L1.L2.user_B"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "L2"
@@ -1040,6 +1068,7 @@ class TestModelStateL1:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "L2"
         assert on_stage.parent_ref().path == ("L1", "L2")
+        assert on_stage.func_name == "L1.L2.user_A"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "L2"
@@ -1071,6 +1100,7 @@ class TestModelStateL1:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "L2"
         assert on_stage.parent_ref().path == ("L1", "L2")
+        assert on_stage.func_name == "L1.L2.user_B"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "L2"
@@ -1087,6 +1117,7 @@ class TestModelStateL1:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "L2"
         assert on_stage.parent_ref().path == ("L1", "L2")
+        assert on_stage.func_name == "L1.L2.user_A"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "L2"
@@ -1106,6 +1137,7 @@ class TestModelStateL1:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "L2"
         assert on_stage.parent_ref().path == ("L1", "L2")
+        assert on_stage.func_name == "L1.L2.user_B"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "L2"
@@ -1122,6 +1154,7 @@ class TestModelStateL1:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "L2"
         assert on_stage.parent_ref().path == ("L1", "L2")
+        assert on_stage.func_name == "L1.L2.user_A"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "L2"
@@ -1408,6 +1441,7 @@ class TestModelStateL1:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "L1"
         assert on_stage.parent_ref().path == ("L1",)
+        assert on_stage.func_name == "L1.user_B"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "L1"
@@ -1426,6 +1460,7 @@ class TestModelStateL1:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "L1"
         assert on_stage.parent_ref().path == ("L1",)
+        assert on_stage.func_name == "L1.user_A"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "L1"
@@ -1444,6 +1479,7 @@ class TestModelStateL1:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "L2"
         assert on_stage.parent_ref().path == ("L1", "L2")
+        assert on_stage.func_name == "L1.L2.user_B"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "L2"
@@ -1462,6 +1498,7 @@ class TestModelStateL1:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "L2"
         assert on_stage.parent_ref().path == ("L1", "L2")
+        assert on_stage.func_name == "L1.L2.user_A"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "L2"
@@ -1484,6 +1521,7 @@ class TestModelStateL1:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "L1"
         assert on_stage.parent_ref().path == ("L1",)
+        assert on_stage.func_name == "L1.user_B"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "L1"
@@ -1503,6 +1541,7 @@ class TestModelStateL1:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "L1"
         assert on_stage.parent_ref().path == ("L1",)
+        assert on_stage.func_name == "L1.user_A"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "L1"
@@ -1522,6 +1561,7 @@ class TestModelStateL1:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "L2"
         assert on_stage.parent_ref().path == ("L1", "L2")
+        assert on_stage.func_name == "L1.L2.user_B"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "L2"
@@ -1541,6 +1581,7 @@ class TestModelStateL1:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "L2"
         assert on_stage.parent_ref().path == ("L1", "L2")
+        assert on_stage.func_name == "L1.L2.user_A"
         assert on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "L2"

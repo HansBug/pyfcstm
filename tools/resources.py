@@ -53,9 +53,10 @@ def get_resources_from_mine():
 
 
 def get_resource_files():
-    # Only collect project's own resource files, excluding z3
-    # z3 library is not used in the project, removed to reduce executable size
+    # Collect project's own resource files and z3 library resources
     yield from get_resources_from_mine()
+    # Include z3 library resources for constraint solving
+    yield from get_resources_from_package('z3')
     # for pack_name in list_installed_packages():
     #     yield from get_resource_files_from_package(pack_name)
 

@@ -105,17 +105,20 @@ class SimulationREPL:
     :vartype session: PromptSession
     """
 
-    def __init__(self, runtime, use_color: bool = True):
+    def __init__(self, runtime, state_machine=None, use_color: bool = True):
         """
         Initialize the REPL with prompt_toolkit features.
 
         :param runtime: The simulation runtime instance
         :type runtime: SimulationRuntime
+        :param state_machine: The state machine model (required for init command)
+        :type state_machine: StateMachine, optional
         :param use_color: Whether to use ANSI colors, defaults to True
         :type use_color: bool, optional
         """
         self.runtime = runtime
-        self.command_processor = CommandProcessor(runtime, use_color=use_color)
+        self.state_machine = state_machine if state_machine is not None else runtime.state_machine
+        self.command_processor = CommandProcessor(runtime, state_machine=self.state_machine, use_color=use_color)
         self.history = self._get_history()
         self.completer = SimulationCompleter(runtime)
         self.session = PromptSession(

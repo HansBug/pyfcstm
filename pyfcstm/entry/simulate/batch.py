@@ -58,19 +58,22 @@ class BatchProcessor:
     :vartype command_processor: CommandProcessor
     """
 
-    def __init__(self, runtime, use_color: bool = True, output_func: Callable[[str], None] = None):
+    def __init__(self, runtime, state_machine=None, use_color: bool = True, output_func: Callable[[str], None] = None):
         """
         Initialize the batch processor.
 
         :param runtime: The simulation runtime instance
         :type runtime: SimulationRuntime
+        :param state_machine: The state machine model (required for init command)
+        :type state_machine: StateMachine, optional
         :param use_color: Whether to use ANSI colors, defaults to True
         :type use_color: bool, optional
         :param output_func: Function to output text, defaults to cross-platform output
         :type output_func: Callable[[str], None], optional
         """
         self.runtime = runtime
-        self.command_processor = CommandProcessor(runtime, use_color=use_color)
+        self.state_machine = state_machine if state_machine is not None else runtime.state_machine
+        self.command_processor = CommandProcessor(runtime, state_machine=self.state_machine, use_color=use_color)
         self.output_func = output_func or create_cross_platform_output_func()
 
     def execute_commands(self, command_string: str) -> None:

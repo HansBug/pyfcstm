@@ -97,6 +97,21 @@ pyfcstm generate -i input.fcstm -t template_dir/ -o output_dir/
 
 # Clear output directory before generation
 pyfcstm generate -i input.fcstm -t template_dir/ -o output_dir/ --clear
+
+# Interactive state machine simulator
+pyfcstm simulate -i input.fcstm
+
+# Batch mode execution
+pyfcstm simulate -i input.fcstm -e "cycle; cycle Start; current"
+
+# Hot start from specific state (in interactive mode)
+pyfcstm simulate -i input.fcstm
+> init System.Active counter=10 flag=1
+> cycle
+> cycle
+
+# Hot start with batch mode
+pyfcstm simulate -i input.fcstm -e "init System.Active counter=10; cycle 5"
 ```
 
 ## Architecture Overview

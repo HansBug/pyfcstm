@@ -150,16 +150,19 @@ class CommandProcessor:
     :vartype log_level: LogLevel
     """
 
-    def __init__(self, runtime, use_color: bool = True):
+    def __init__(self, runtime, state_machine=None, use_color: bool = True):
         """
         Initialize the command processor.
 
         :param runtime: The simulation runtime instance
         :type runtime: SimulationRuntime
+        :param state_machine: The state machine model (required for init command)
+        :type state_machine: StateMachine, optional
         :param use_color: Whether to use ANSI colors, defaults to True
         :type use_color: bool, optional
         """
         self.runtime = runtime
+        self.state_machine = state_machine if state_machine is not None else runtime.state_machine
         self.settings = Settings()
         self.settings.color = use_color
         self.display = StateDisplay(use_color=use_color, logger=runtime.logger)
@@ -202,6 +205,8 @@ class CommandProcessor:
         try:
             if command == 'cycle':
                 return self._handle_cycle(args)
+            elif command == 'init':
+                return self._handle_init(args)
             elif command == 'clear':
                 return self._handle_clear()
             elif command == 'current':
@@ -278,6 +283,132 @@ class CommandProcessor:
                 )
             else:
                 return CommandResult(f"Cycle execution failed: {e}")
+
+    def _handle_init(self, args: List[str]) -> CommandResult:
+        """
+        Handle init command to hot start from a specific state.
+
+        Syntax: init <state_path> [var1=value1 var2=value2 ...]
+
+        This command creates a new runtime instance starting from the specified
+        state without executing enter actions. All variables must be provided.
+
+        :param args: Command arguments [state_path, var_assignments...]
+        :type args: List[str]
+        :return: Command result with new current state
+        :rtype: CommandResult
+        """
+        if not args:
+            return CommandResult(
+                "Usage: init <state_path> [var1=value1 ...]\n"
+                "Example: init System.Active counter=10 flag=1\n"
+                "Note: All variables must be provided when using init."
+            )
+
+        state_path = args[0]
+        var_assignments = args[1:]
+
+        # Parse variable assignments
+        initial_vars = {}
+        for assignment in var_assignments:
+            if '=' not in assignment:
+                return CommandResult(
+                    f"Error: invalid variable assignment '{assignment}'. "
+                    f"Expected format: var=value"
+                )
+            var_name, var_value_str = assignment.split('=', 1)
+            var_name = var_name.strip()
+            var_value_str = var_value_str.strip()
+
+            # Parse value
+            try:
+                var_value = self._parse_value(var_value_str)
+            except ValueError as e:
+                return CommandResult(f"Error: {e}")
+
+            initial_vars[var_name] = var_value
+
+        # Validate that all variables are provided
+        if initial_vars:
+            missing_vars = set(self.runtime.vars.keys()) - set(initial_vars.keys())
+            if missing_vars:
+                return CommandResult(
+                    f"Error: All variables must be provided. Missing: {sorted(missing_vars)}\n"
+                    f"Available variables: {sorted(self.runtime.vars.keys())}"
+                )
+
+        # Create new runtime with hot start
+        try:
+            # Import here to avoid circular dependency
+            from ...simulate import SimulationRuntime
+
+            new_runtime = SimulationRuntime(
+                self.state_machine,
+                initial_state=state_path,
+                initial_vars=initial_vars if initial_vars else None,
+                abstract_error_mode=self.runtime._abstract_error_mode,
+                history_size=self.runtime.history_size
+            )
+
+            # Replace runtime
+            self.runtime = new_runtime
+
+            # Reconfigure display with new runtime logger
+            self.display = StateDisplay(use_color=self.settings.color, logger=new_runtime.logger)
+            configure_simulate_cli_logger(new_runtime.logger, use_color=self.settings.color)
+            self._sync_log_level()
+
+            return CommandResult(
+                f"Initialized from state: {state_path}\n" +
+                self.display.format_current_state(self.runtime)
+            )
+        except Exception as e:
+            return CommandResult(f"Initialization failed: {e}")
+
+    def _parse_value(self, value_str: str) -> float:
+        """
+        Parse a numeric value from string.
+
+        Supports:
+        - Integers: 10, -5
+        - Hexadecimal: 0xFF, 0x10
+        - Binary: 0b1010, 0b11
+        - Floats: 3.14, -2.5
+        - Scientific notation: 1e-3, 2.5e2
+
+        :param value_str: String representation of the value
+        :type value_str: str
+        :return: Parsed numeric value (int or float)
+        :rtype: Union[int, float]
+        :raises ValueError: If the value cannot be parsed
+        """
+        value_str = value_str.strip()
+
+        # Hexadecimal
+        if value_str.startswith(('0x', '0X')):
+            try:
+                return int(value_str, 16)
+            except ValueError:
+                raise ValueError(f"Invalid hexadecimal value: {value_str}")
+
+        # Binary
+        if value_str.startswith(('0b', '0B')):
+            try:
+                return int(value_str, 2)
+            except ValueError:
+                raise ValueError(f"Invalid binary value: {value_str}")
+
+        # Try integer first
+        try:
+            return int(value_str)
+        except ValueError:
+            pass
+
+        # Try float
+        try:
+            return float(value_str)
+        except ValueError:
+            raise ValueError(f"Invalid numeric value: {value_str}")
 
     def _handle_multiple_cycles(self, count: int, event_list: List[str]) -> CommandResult:
         """
@@ -379,6 +510,10 @@ class CommandProcessor:
   cycle [count] [events...]  - Execute cycle(s) with optional events
                                count: number of cycles (default: 1)
                                Examples: cycle, cycle 5, cycle 3 Start
+  init <state> [vars...]     - Hot start from specific state with variables
+                               All variables must be provided
+                               Examples: init System.Active counter=10 flag=1
+                               Supports: hex (0xFF), binary (0b1010), float (3.14)
   clear                      - Reset to initial state
   current                    - Show current state and all variables
   events                     - List available events in current state

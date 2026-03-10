@@ -74,12 +74,12 @@ def _add_simulate_subcommand(cli: click.Group) -> click.Group:
 
         # Batch mode
         if batch_commands:
-            processor = BatchProcessor(runtime, use_color=not no_color)
+            processor = BatchProcessor(runtime, state_machine=model, use_color=not no_color)
             processor.execute_commands(batch_commands)
             return
 
         # Interactive mode
-        repl = SimulationREPL(runtime, use_color=not no_color)
+        repl = SimulationREPL(runtime, state_machine=model, use_color=not no_color)
 
         # Print banner with Unicode box-drawing characters
         banner_lines = [

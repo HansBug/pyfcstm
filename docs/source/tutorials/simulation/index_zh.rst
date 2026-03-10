@@ -81,6 +81,33 @@ Python 用法
 - ``:`` 创建链式事件（作用域为父状态）
 - ``/`` 创建绝对事件（作用域为根状态）
 
+从特定状态热启动
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+使用 ``initial_state`` 和 ``initial_vars`` 参数从任意状态启动执行，而不执行 enter 动作：
+
+.. code-block:: python
+
+   # 从 Active 状态热启动，使用自定义变量值
+   runtime = SimulationRuntime(
+       sm,
+       initial_state="System.Active",
+       initial_vars={"counter": 100, "flag": 1}
+   )
+
+   # 第一个周期从 Active 状态开始（不执行 enter 动作）
+   runtime.cycle()
+   print(f"State: {'.'.join(runtime.current_state.path)}")
+   print(f"Counter: {runtime.vars['counter']}")  # 110 (100 + 10)
+
+**关键点** ：
+
+- ``initial_state`` 接受字符串路径（``"System.Active"``）、元组路径（``('System', 'Active')``）或 State 对象
+- ``initial_vars`` 必须提供 **所有** 变量（不支持部分覆盖）
+- 路径中所有状态的 enter 动作都被跳过
+- during 动作从第一个周期开始正常执行
+- 对于复合状态，运行时会自动执行初始转换以找到可停止的叶状态
+
 实现抽象处理器
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -141,6 +168,8 @@ CLI 用法
      - 说明
    * - ``cycle [count] [events...]``
      - 执行一个或多个周期，可选事件。示例：``cycle``、``cycle 5``、``cycle 3 Start Stop``
+   * - ``init <state_path> [var=value...]``
+     - 从特定状态热启动，带变量值。示例：``init System.Active counter=10``、``init Root.Heating temp=52``
    * - ``current``
      - 显示当前状态和所有变量
    * - ``events``
@@ -155,6 +184,14 @@ CLI 用法
      - 显示帮助信息和命令列表
    * - ``quit`` / ``exit``
      - 退出模拟器
+
+**init 命令的变量值格式** ：
+
+- 十进制整数：``counter=10``
+- 十六进制：``flags=0xFF`` (255)
+- 二进制：``mask=0b1010`` (10)
+- 浮点数：``temp=25.5``
+- 科学计数法：``value=1.5e2`` (150.0)
 
 交互功能
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1207,6 +1244,277 @@ DFS 验证机制
 
 **关键点** ：复合状态必须至少有一个初始转换可以到达可停止状态。验证检查路径上的所有守卫和事件要求。如果不存在有效路径，转换被拒绝，状态机保持在当前状态。
 
+热启动功能
+---------------------------------------
+
+热启动功能允许从任意状态开始执行，而不执行 enter 动作。本节通过具体示例演示热启动机制，展示运行时如何构造执行栈以及如何影响生命周期动作的执行。
+
+示例 14：从叶状态热启动
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+此示例演示从叶状态热启动，展示运行时如何跳过 enter 动作但正常执行 during 动作。
+
+.. code-block:: fcstm
+   :caption: 简单计数器状态机
+
+   def int counter = 0;
+   def int enter_count = 0;
+
+   state System {
+       state Idle {
+           enter { enter_count = enter_count + 1; }
+           during { counter = counter + 1; }
+       }
+       state Active {
+           enter { enter_count = enter_count + 1; }
+           during { counter = counter + 10; }
+       }
+       [*] -> Idle;
+   }
+
+**场景 A：正常初始化** （用于对比）
+
+.. list-table::
+   :header-rows: 1
+   :widths: 8 15 15 15 47
+
+   * - 周期
+     - 状态
+     - counter
+     - enter_count
+     - 执行细节
+   * - 0
+     - System
+     - 0
+     - 0
+     - 初始状态，第一个周期之前
+   * - 1
+     - System.Idle
+     - 1
+     - 1
+     - **Enter**：``enter_count = 0 + 1 = 1``。**During**：``counter = 0 + 1 = 1``
+   * - 2
+     - System.Idle
+     - 2
+     - 1
+     - **During**：``counter = 1 + 1 = 2``
+
+**场景 B：从 Active 状态热启动**
+
+热启动配置：``initial_state="System.Active"``，``initial_vars={"counter": 100, "enter_count": 0}``
+
+.. list-table::
+   :header-rows: 1
+   :widths: 8 15 15 15 47
+
+   * - 周期
+     - 状态
+     - counter
+     - enter_count
+     - 执行细节
+   * - 0
+     - System.Active
+     - 100
+     - 0
+     - **热启动**：栈直接构造到 Active。**未执行 enter 动作**
+   * - 1
+     - System.Active
+     - 110
+     - 0
+     - **During**：``counter = 100 + 10 = 110``。注意：``enter_count`` 保持为 0（enter 被跳过）
+   * - 2
+     - System.Active
+     - 120
+     - 0
+     - **During**：``counter = 110 + 10 = 120``
+
+**关键观察** ：
+
+- 热启动跳过 ``Active.enter`` 动作（``enter_count`` 保持为 0）
+- ``Active.during`` 从第一个周期开始正常执行
+- 栈以 ``'active'`` 模式构造 ``Active``
+- 行为就像已经进入并稳定在 Active 状态
+
+示例 15：带切面动作的热启动
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+此示例展示切面动作（``>> during before/after``）在热启动期间正常执行，而 enter 动作被跳过。
+
+.. code-block:: fcstm
+   :caption: 带切面动作的状态机
+
+   def int counter = 0;
+   def int aspect_count = 0;
+   def int enter_count = 0;
+
+   state Root {
+       >> during before {
+           aspect_count = aspect_count + 1;
+       }
+
+       state A {
+           enter { enter_count = enter_count + 1; }
+           during { counter = counter + 1; }
+       }
+
+       state B {
+           enter { enter_count = enter_count + 1; }
+           during { counter = counter + 10; }
+       }
+
+       [*] -> A;
+   }
+
+**场景：从状态 B 热启动**
+
+热启动配置：``initial_state="Root.B"``，``initial_vars={"counter": 50, "aspect_count": 0, "enter_count": 0}``
+
+.. list-table::
+   :header-rows: 1
+   :widths: 8 12 12 15 15 38
+
+   * - 周期
+     - 状态
+     - counter
+     - aspect_count
+     - enter_count
+     - 执行细节
+   * - 0
+     - Root.B
+     - 50
+     - 0
+     - 0
+     - **热启动**：栈 = [Root(active), B(active)]。**Enter 动作被跳过**
+   * - 1
+     - Root.B
+     - 60
+     - 1
+     - 0
+     - **Aspect before**：``aspect_count = 0 + 1 = 1``。**During**：``counter = 50 + 10 = 60``
+   * - 2
+     - Root.B
+     - 70
+     - 2
+     - 0
+     - **Aspect before**：``aspect_count = 1 + 1 = 2``。**During**：``counter = 60 + 10 = 70``
+
+**关键观察** ：
+
+- Enter 动作被跳过（``enter_count`` = 0）
+- 切面动作（``>> during before``）正常执行
+- During 动作正常执行
+- 切面动作应用于所有后代叶状态，包括热启动的状态
+
+示例 16：从复合状态热启动
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+此示例演示从复合状态热启动，展示运行时如何自动执行初始转换以找到可停止的叶状态。
+
+.. code-block:: fcstm
+   :caption: 嵌套状态机
+
+   def int counter = 0;
+   def int ready = 1;
+
+   state System {
+       state SubSystem {
+           state Idle {
+               during { counter = counter + 1; }
+           }
+           state Ready {
+               during { counter = counter + 10; }
+           }
+           [*] -> Idle : if [ready == 0];
+           [*] -> Ready : if [ready == 1];
+       }
+       [*] -> SubSystem;
+   }
+
+**场景 A：ready=1 时热启动**
+
+热启动配置：``initial_state="System.SubSystem"``，``initial_vars={"counter": 0, "ready": 1}``
+
+.. list-table::
+   :header-rows: 1
+   :widths: 8 20 12 12 46
+
+   * - 周期
+     - 状态
+     - counter
+     - ready
+     - 执行细节
+   * - 0
+     - System.SubSystem
+     - 0
+     - 1
+     - **热启动**：栈 = [System(active), SubSystem(init_wait)]
+   * - 1
+     - System.SubSystem.Ready
+     - 10
+     - 1
+     - **触发 DFS**：检查 ``[*] -> Idle`` 守卫（``ready == 0``）：**false**。检查 ``[*] -> Ready`` 守卫（``ready == 1``）：**true**。转换到 Ready。**During**：``counter = 0 + 10 = 10``
+   * - 2
+     - System.SubSystem.Ready
+     - 20
+     - 1
+     - **During**：``counter = 10 + 10 = 20``
+
+**场景 B：ready=0 时热启动**
+
+热启动配置：``initial_state="System.SubSystem"``，``initial_vars={"counter": 0, "ready": 0}``
+
+.. list-table::
+   :header-rows: 1
+   :widths: 8 20 12 12 46
+
+   * - 周期
+     - 状态
+     - counter
+     - ready
+     - 执行细节
+   * - 0
+     - System.SubSystem
+     - 0
+     - 0
+     - **热启动**：栈 = [System(active), SubSystem(init_wait)]
+   * - 1
+     - System.SubSystem.Idle
+     - 1
+     - 0
+     - **触发 DFS**：检查 ``[*] -> Idle`` 守卫（``ready == 0``）：**true**。转换到 Idle。**During**：``counter = 0 + 1 = 1``
+   * - 2
+     - System.SubSystem.Idle
+     - 2
+     - 0
+     - **During**：``counter = 1 + 1 = 2``
+
+**关键观察** ：
+
+- 复合状态热启动使用 ``'init_wait'`` 模式
+- 第一个周期触发 DFS 查找初始转换
+- 评估守卫条件以选择正确路径
+- 自动导航到可停止的叶状态
+- 如果不存在有效的初始转换，验证失败
+
+**栈构造总结** ：
+
+.. list-table::
+   :header-rows: 1
+   :widths: 25 25 50
+
+   * - 目标状态类型
+     - 帧模式
+     - 行为
+   * - 叶状态（目标）
+     - ``'active'``
+     - 第一个周期执行 during 链（包括切面动作）
+   * - 复合状态（目标）
+     - ``'init_wait'``
+     - 第一个周期触发 DFS 查找初始转换
+   * - 祖先状态（路径）
+     - ``'active'``
+     - 表示子状态正在运行，切面动作执行
+
 真实业务例子
 ---------------------------------------
 
@@ -1842,6 +2150,70 @@ DFS 验证机制
 - 每个周期后打印状态和变量以进行调试
 - 使用抽象处理器跟踪执行
 - 使用 ``runtime.get_current_state_object()`` 检查状态对象
+
+**使用热启动进行测试**
+
+热启动功能允许直接跳转到特定状态进行针对性测试，而无需执行完整的初始化序列。
+
+*调试特定状态* ：
+
+.. code-block:: python
+
+   # 直接跳转到错误处理器以测试恢复逻辑
+   runtime = SimulationRuntime(
+       sm,
+       initial_state="System.ErrorHandler",
+       initial_vars={"error_code": 42, "retry_count": 3}
+   )
+   runtime.cycle()
+   # 测试错误恢复而无需触发实际错误
+
+*状态检查点和恢复* ：
+
+.. code-block:: python
+
+   # 保存当前状态以便稍后恢复
+   checkpoint = {
+       'state': runtime.current_state.path,
+       'vars': runtime.vars.copy()
+   }
+
+   # 稍后：从检查点恢复
+   runtime = SimulationRuntime(
+       sm,
+       initial_state=checkpoint['state'],
+       initial_vars=checkpoint['vars']
+   )
+   runtime.cycle()  # 从保存点继续
+
+*测试状态特定逻辑* ：
+
+.. code-block:: python
+
+   # 在特定温度下测试加热逻辑
+   runtime = SimulationRuntime(
+       sm,
+       initial_state="WaterHeater.Heating",
+       initial_vars={"water_temp": 52, "draw_count": 0}
+   )
+
+   # 验证多个周期的行为
+   for i in range(5):
+       runtime.cycle()
+       assert runtime.vars['water_temp'] == 52 + (i+1) * 4
+
+*CLI 交互式测试* ：
+
+.. code-block:: bash
+
+   $ pyfcstm simulate -i water_heater.fcstm
+
+   # 热启动到特定状态
+   > init WaterHeater.Heating water_temp=52 draw_count=0
+   > cycle 3
+   # 快速测试加热行为
+
+**重要提示** ：热启动会跳过进入动作。确保进入动作不包含关键的初始化逻辑，或手动验证行为。
 
 处理器实现
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

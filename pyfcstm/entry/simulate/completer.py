@@ -32,7 +32,7 @@ class SimulationCompleter(Completer):
     """
 
     COMMANDS = [
-        'cycle', 'clear', 'current', 'events',
+        'cycle', 'init', 'clear', 'current', 'events',
         'history', 'setting', 'export', 'help', 'quit', 'exit'
     ]
 
@@ -111,6 +111,77 @@ class SimulationCompleter(Completer):
                             start_position=-len(prefix),
                             display_meta='event name'
                         )
+
+        # init command - complete with state paths and variable assignments
+        elif command == 'init':
+            # First argument - state path
+            if len(words) == 1 or (len(words) == 2 and not text.endswith(' ')):
+                prefix = words[1] if len(words) == 2 else ''
+
+                # Get all available state paths
+                state_paths = self._get_all_state_paths()
+                for state_path in state_paths:
+                    if state_path.startswith(prefix):
+                        # Determine if it's a leaf or composite state
+                        state = self._find_state_by_path(state_path)
+                        if state:
+                            meta = 'leaf state' if state.is_leaf_state else 'composite state'
+                        else:
+                            meta = 'state'
+
+                        yield Completion(
+                            state_path,
+                            start_position=-len(prefix),
+                            display_meta=meta
+                        )
+
+            # Subsequent arguments - variable assignments
+            else:
+                # Get the last word being typed
+                prefix = words[-1] if not text.endswith(' ') else ''
+
+                # Check if we're in the middle of typing a variable assignment
+                if '=' in prefix:
+                    # User is typing the value part, suggest value formats
+                    var_name, value_prefix = prefix.split('=', 1)
+                    var_name = var_name.strip()
+
+                    # Get variable type
+                    var_type = self._get_variable_type(var_name)
+                    if var_type:
+                        # Suggest example values based on type
+                        if var_type == 'int':
+                            examples = ['0', '1', '10', '100', '0xFF', '0b1010']
+                        else:  # float
+                            examples = ['0.0', '1.0', '10.5', '1e-3']
+
+                        for example in examples:
+                            if example.startswith(value_prefix):
+                                yield Completion(
+                                    f"{var_name}={example}",
+                                    start_position=-len(prefix),
+                                    display_meta=f'{var_type} value'
+                                )
+                else:
+                    # User is typing variable name, suggest all variables
+                    var_names = self._get_all_variable_names()
+
+                    # Filter out already assigned variables
+                    assigned_vars = set()
+                    for word in words[2:]:  # Skip 'init' and state_path
+                        if '=' in word:
+                            var_name = word.split('=')[0].strip()
+                            assigned_vars.add(var_name)
+
+                    for var_name in var_names:
+                        if var_name not in assigned_vars and var_name.startswith(prefix):
+                            var_type = self._get_variable_type(var_name)
+                            # Suggest with '=' appended for convenience
+                            yield Completion(
+                                f"{var_name}=",
+                                start_position=-len(prefix),
+                                display_meta=f'{var_type} variable'
+                            )
 
         # history command - complete with count or 'all'
         elif command == 'history':
@@ -329,6 +400,7 @@ class SimulationCompleter(Completer):
         """
         help_map = {
             'cycle': 'Execute cycle(s) with optional events',
+            'init': 'Hot start from specific state',
             'clear': 'Reset to initial state',
             'current': 'Show current state and variables',
             'events': 'List available events',
@@ -357,3 +429,86 @@ class SimulationCompleter(Completer):
             'log_level': 'logging level (debug/info/warning/error/off)',
         }
         return help_map.get(key, '')
+
+    def _get_all_state_paths(self) -> list:
+        """
+        Get all state paths in the state machine.
+
+        Returns a list of dot-separated state paths from root to each state.
+
+        :return: List of state paths
+        :rtype: list
+        """
+        paths = []
+
+        def collect_paths(state, current_path):
+            """Recursively collect all state paths."""
+            paths.append(current_path)
+            # Recursively collect substates
+            for substate in state.substates.values():
+                subpath = f"{current_path}.{substate.name}"
+                collect_paths(substate, subpath)
+
+        # Start from root state
+        if hasattr(self.runtime, 'state_machine') and self.runtime.state_machine:
+            root = self.runtime.state_machine.root_state
+            collect_paths(root, root.name)
+
+        return sorted(paths)
+
+    def _find_state_by_path(self, state_path: str):
+        """
+        Find a state by its dot-separated path.
+
+        :param state_path: Dot-separated state path (e.g., "Root.System.Active")
+        :type state_path: str
+        :return: State object or None
+        :rtype: State or None
+        """
+        if not hasattr(self.runtime, 'state_machine') or not self.runtime.state_machine:
+            return None
+
+        parts = state_path.split('.')
+        current = self.runtime.state_machine.root_state
+
+        # Verify root name matches
+        if parts[0] != current.name:
+            return None
+
+        # Traverse the path
+        for part in parts[1:]:
+            if part in current.substates:
+                current = current.substates[part]
+            else:
+                return None
+
+        return current
+
+    def _get_all_variable_names(self) -> list:
+        """
+        Get all variable names defined in the state machine.
+
+        :return: List of variable names
+        :rtype: list
+        """
+        if hasattr(self.runtime, 'vars'):
+            return sorted(self.runtime.vars.keys())
+        return []
+
+    def _get_variable_type(self, var_name: str) -> str:
+        """
+        Get the type of a variable.
+
+        :param var_name: Variable name
+        :type var_name: str
+        :return: Variable type ('int' or 'float') or empty string if not found
+        :rtype: str
+        """
+        if not hasattr(self.runtime, 'state_machine') or not self.runtime.state_machine:
+            return ''
+
+        defines = self.runtime.state_machine.defines
+        if var_name in defines:
+            return defines[var_name].type
+
+        return ''

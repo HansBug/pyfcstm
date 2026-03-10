@@ -35,6 +35,21 @@ Abstract actions can be implemented by registering Python handlers that receive
 read-only execution context. Handlers can be registered individually or organized
 in classes using the @abstract_handler decorator.
 
+**Hot Start Feature**:
+
+The runtime supports "hot start" mode, which allows starting execution from an
+arbitrary state without executing enter actions. This is useful for:
+
+* **Debugging**: Jump directly to a specific state to test behavior
+* **State Recovery**: Resume execution from a known state and variable configuration
+* **Testing**: Verify state-specific logic without executing full initialization
+
+Hot start is enabled by providing ``initial_state`` and ``initial_vars`` parameters
+to the constructor. The runtime constructs the execution stack directly to the
+target state, bypassing all enter actions. For composite states, the runtime
+automatically performs initial transitions during the first cycle to find a
+stoppable leaf state.
+
 Basic usage::
 
     from pyfcstm.simulate import SimulationRuntime
@@ -46,6 +61,17 @@ Basic usage::
     # Access state and variables
     current_state = runtime.current_state
     variables = runtime.vars
+
+Hot start usage::
+
+    # Start from a specific state with custom variable values
+    runtime = SimulationRuntime(
+        state_machine,
+        initial_state="System.Active",
+        initial_vars={"counter": 10, "flag": 1}
+    )
+    # First cycle starts from Active state without executing enter actions
+    runtime.cycle()
 
 Abstract handler registration::
 
@@ -302,7 +328,9 @@ class SimulationRuntime:
             self,
             state_machine: StateMachine,
             abstract_error_mode: Literal['raise', 'log'] = 'raise',
-            history_size: Optional[int] = None
+            history_size: Optional[int] = None,
+            initial_state: Optional[Union[str, Tuple[str, ...], State]] = None,
+            initial_vars: Optional[Dict[str, Union[int, float]]] = None
     ):
         """
         Initialize the simulation runtime with a state machine model.
@@ -318,6 +346,14 @@ class SimulationRuntime:
         initialization (entering the root state and executing lifecycle actions)
         is deferred until the first :meth:`cycle` call.
 
+        **Hot Start Mode**:
+
+        If ``initial_state`` is provided, the runtime performs a "hot start"
+        by directly constructing the execution stack to the specified state
+        without executing enter actions. This simulates having already entered
+        and stabilized at that state. The ``initial_vars`` parameter allows
+        overriding variable values for the hot start.
+
         :param state_machine: The state machine model to simulate.
         :type state_machine: StateMachine
         :param abstract_error_mode: Error handling mode for abstract handler exceptions.
@@ -327,10 +363,20 @@ class SimulationRuntime:
         :param history_size: Maximum number of history entries to keep.
             ``None`` (default) means unlimited history.
         :type history_size: Optional[int]
+        :param initial_state: Optional initial state for hot start. If provided,
+            the runtime will start from this state without executing enter actions.
+            Supports string path (``"System.Active"``), tuple path
+            (``('System', 'Active')``), or State object. Defaults to ``None``
+            (start from root state).
+        :type initial_state: Optional[Union[str, Tuple[str, ...], State]]
+        :param initial_vars: Optional variable overrides for hot start. Only
+            variables defined in the state machine can be overridden. Defaults
+            to ``None``.
+        :type initial_vars: Optional[Dict[str, Union[int, float]]]
         :return: ``None``.
         :rtype: None
 
-        Example::
+        Example - Default initialization::
 
             >>> from pyfcstm.dsl import parse_with_grammar_entry
             >>> from pyfcstm.model import parse_dsl_node_to_state_machine
@@ -355,11 +401,47 @@ class SimulationRuntime:
             >>> runtime.current_state.path
             ('Root',)
 
+        Example - Hot start from specific state::
+
+            >>> dsl_code = '''
+            ... def int counter = 0;
+            ... state System {
+            ...     state Idle {
+            ...         during { counter = counter + 1; }
+            ...     }
+            ...     state Active {
+            ...         during { counter = counter + 10; }
+            ...     }
+            ...     [*] -> Idle;
+            ...     Idle -> Active :: Start;
+            ... }
+            ... '''
+            >>> ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+            >>> sm = parse_dsl_node_to_state_machine(ast)
+            >>> runtime = SimulationRuntime(
+            ...     sm,
+            ...     initial_state="System.Active",
+            ...     initial_vars={"counter": 10}
+            ... )
+            >>> runtime.current_state.path
+            ('System', 'Active')
+            >>> runtime.vars['counter']
+            10
+            >>> runtime.cycle()  # First cycle starts from Active state
+            >>> runtime.vars['counter']
+            20
+
         .. note::
            Variable initialization and stack setup happen during construction,
            but state entry actions are deferred until the first :meth:`cycle`
            call. This allows inspection of initial variable values and the
            root state before execution begins.
+
+        .. note::
+           Hot start mode constructs the stack without executing enter actions,
+           simulating having already entered the target state. For composite
+           states, the runtime will automatically attempt initial transitions
+           to find a stoppable leaf state during the first cycle.
         """
         self.state_machine = state_machine
         self.stack: List[_Frame] = []
@@ -393,8 +475,213 @@ class SimulationRuntime:
         self._is_error_state = False
         self._error_info: Optional[Tuple[str, Exception]] = None
 
-        # Initialize stack with root state to allow current_state access before first cycle
-        self.stack.append(_Frame(self.state_machine.root_state, 'init_wait'))
+        # Handle initial_vars (always effective if provided)
+        if initial_vars is not None:
+            # Validate all variables are provided
+            missing_vars = set(self.vars.keys()) - set(initial_vars.keys())
+            if missing_vars:
+                raise ValueError(
+                    f"initial_vars must provide all variables. Missing: {sorted(missing_vars)}"
+                )
+
+            # Override all variables
+            for name, value in initial_vars.items():
+                if name not in self.vars:
+                    available_vars = list(self.vars.keys())
+                    raise ValueError(
+                        f"Variable '{name}' not defined in state machine. "
+                        f"Available variables: {available_vars}"
+                    )
+
+                # Type checking and conversion
+                define = self.state_machine.defines[name]
+                if define.type == 'int' and isinstance(value, float):
+                    if value != int(value):
+                        raise ValueError(
+                            f"Variable '{name}' is int type, cannot assign float {value}"
+                        )
+                    value = int(value)
+
+                self.vars[name] = value
+
+        # Initialize stack - hot start or default
+        if initial_state is not None:
+            # Hot start mode - requires initial_vars
+            if initial_vars is None:
+                raise ValueError(
+                    "initial_vars must be provided when initial_state is specified"
+                )
+
+            target_state = self._resolve_initial_state(initial_state)
+
+            # Build hot start stack
+            self.stack = self._build_hot_start_stack(target_state)
+            self._initialized = True
+        else:
+            # Default mode: start from root state
+            self.stack.append(_Frame(self.state_machine.root_state, 'init_wait'))
+
+    def _state_belongs_to_machine(self, state: State) -> bool:
+        """
+        Check if a State object belongs to this state machine.
+
+        This method verifies that the provided State object is part of the
+        current state machine's hierarchy by traversing up to the root state
+        and comparing it with the state machine's root.
+
+        :param state: The state to verify
+        :type state: State
+        :return: ``True`` if the state belongs to this state machine, ``False`` otherwise
+        :rtype: bool
+
+        Example::
+
+            >>> # Assuming we have a state from the state machine
+            >>> runtime = SimulationRuntime(state_machine)
+            >>> some_state = state_machine.root_state.substates['System']
+            >>> runtime._state_belongs_to_machine(some_state)
+            True
+        """
+        current = state
+        while current.parent is not None:
+            current = current.parent
+        return current is self.state_machine.root_state
+
+    def _resolve_initial_state(
+            self,
+            state_ref: Union[str, Tuple[str, ...], State]
+    ) -> State:
+        """
+        Resolve an initial state reference to a State object.
+
+        This method accepts three types of state references:
+        - String path: ``"System.Active"`` (dot-separated state names)
+        - Tuple path: ``('System', 'Active')`` (tuple of state names)
+        - State object: Direct State instance (must belong to this state machine)
+
+        The path must start from the root state and traverse down the hierarchy.
+
+        :param state_ref: State reference (string path, tuple path, or State object)
+        :type state_ref: Union[str, Tuple[str, ...], State]
+        :return: The resolved State object
+        :rtype: State
+        :raises ValueError: If the state path is invalid or state not found
+        :raises TypeError: If state_ref is not a supported type
+
+        Example::
+
+            >>> runtime = SimulationRuntime(state_machine)
+            >>> # String path
+            >>> state = runtime._resolve_initial_state("System.Active")
+            >>> # Tuple path
+            >>> state = runtime._resolve_initial_state(('System', 'Active'))
+            >>> # State object
+            >>> state_obj = state_machine.root_state.substates['System']
+            >>> state = runtime._resolve_initial_state(state_obj)
+        """
+        # Handle State object
+        if isinstance(state_ref, State):
+            if not self._state_belongs_to_machine(state_ref):
+                raise ValueError(
+                    "Provided State object does not belong to this state machine"
+                )
+            return state_ref
+
+        # Convert string to tuple
+        if isinstance(state_ref, str):
+            if not state_ref:
+                raise ValueError("State path cannot be empty")
+            path = tuple(state_ref.split('.'))
+        elif isinstance(state_ref, tuple):
+            path = state_ref
+        else:
+            raise TypeError(
+                f"state_ref must be str, tuple, or State, got {type(state_ref).__name__}"
+            )
+
+        if len(path) == 0:
+            raise ValueError("State path cannot be empty")
+
+        # Start from root state
+        current = self.state_machine.root_state
+
+        # Verify root state name matches
+        if path[0] != current.name:
+            raise ValueError(
+                f"State path root '{path[0]}' does not match "
+                f"state machine root '{current.name}'"
+            )
+
+        # Traverse the path
+        for i in range(1, len(path)):
+            state_name = path[i]
+            if state_name not in current.substates:
+                available = list(current.substates.keys())
+                raise ValueError(
+                    f"State '{state_name}' not found in '{'.'.join(current.path)}'. "
+                    f"Available substates: {available}"
+                )
+            current = current.substates[state_name]
+
+        return current
+
+    def _build_hot_start_stack(self, target_state: State) -> List[_Frame]:
+        """
+        Build a hot start stack from root to target state.
+
+        This method constructs a Frame stack that simulates having already
+        entered and stabilized at the target state, without executing any
+        enter actions. The stack represents the active state hierarchy from
+        root to the target state.
+
+        **Frame Mode Rules**:
+
+        - **Leaf states** (target): ``'active'`` - Will execute during chain on first cycle
+        - **Composite states** (ancestors): ``'active'`` - Child state is running
+        - **Composite states** (target): ``'init_wait'`` - Trigger initial transition via DFS
+
+        :param target_state: The target state to start from
+        :type target_state: State
+        :return: Frame stack from root to target state
+        :rtype: List[_Frame]
+
+        Example::
+
+            >>> runtime = SimulationRuntime(state_machine)
+            >>> target = state_machine.root_state.substates['System'].substates['Active']
+            >>> stack = runtime._build_hot_start_stack(target)
+            >>> len(stack)
+            3  # Root, System, Active
+            >>> stack[-1].state.name
+            'Active'
+            >>> stack[-1].mode
+            'active'
+        """
+        # Collect path from target to root
+        path_states = []
+        current = target_state
+        while current is not None:
+            path_states.insert(0, current)
+            current = current.parent
+
+        # Build stack with appropriate modes
+        stack = []
+        for i, state in enumerate(path_states):
+            is_target = (i == len(path_states) - 1)
+
+            if state.is_leaf_state:
+                # Leaf state: active (will execute during on first cycle)
+                stack.append(_Frame(state, 'active'))
+            else:
+                # Composite state
+                if is_target:
+                    # Target composite state: init_wait (trigger DFS)
+                    stack.append(_Frame(state, 'init_wait'))
+                else:
+                    # Ancestor composite state: active (child running)
+                    stack.append(_Frame(state, 'active'))
+
+        return stack
 
     def _parse_event(self, event: Union[str, Event]) -> Event:
         """
@@ -570,7 +857,8 @@ class SimulationRuntime:
             return
 
         if is_validation_mode:
-            self.logger.debug(f'[VALIDATION] Execute transition effect for {transition.from_state} -> {transition.to_state}')
+            self.logger.debug(
+                f'[VALIDATION] Execute transition effect for {transition.from_state} -> {transition.to_state}')
             for effect in transition.effects:
                 vars_[effect.var_name] = effect.expr(**vars_)
         else:
@@ -678,7 +966,7 @@ class SimulationRuntime:
             if is_validation_mode:
                 if handlers:
                     self.logger.debug(f'[VALIDATION] Skip abstract function {func_path} '
-                                     f'({len(handlers)} handler(s) registered but not executed in validation mode)')
+                                      f'({len(handlers)} handler(s) registered but not executed in validation mode)')
                 else:
                     self.logger.debug(f'[VALIDATION] Skip abstract function {func_path} (no handlers registered)')
                 return

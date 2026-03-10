@@ -81,6 +81,33 @@ Output:
 - ``:`` creates chain events (scoped to parent state)
 - ``/`` creates absolute events (scoped to root state)
 
+Hot Start from Specific State
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Use the ``initial_state`` and ``initial_vars`` parameters to start execution from an arbitrary state without executing enter actions:
+
+.. code-block:: python
+
+   # Hot start from Active state with custom variable values
+   runtime = SimulationRuntime(
+       sm,
+       initial_state="System.Active",
+       initial_vars={"counter": 100, "flag": 1}
+   )
+
+   # First cycle starts from Active state (no enter actions executed)
+   runtime.cycle()
+   print(f"State: {'.'.join(runtime.current_state.path)}")
+   print(f"Counter: {runtime.vars['counter']}")  # 110 (100 + 10)
+
+**Key Points**:
+
+- ``initial_state`` accepts string path (``"System.Active"``), tuple path (``('System', 'Active')``), or State object
+- ``initial_vars`` must provide **all** variables (partial override not supported)
+- Enter actions are skipped for all states in the path
+- During actions execute normally starting from the first cycle
+- For composite states, the runtime automatically performs initial transitions to find a stoppable leaf state
+
 Implementing Abstract Handlers
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -141,6 +168,8 @@ Available Commands
      - Description
    * - ``cycle [count] [events...]``
      - Execute one or more cycles with optional events. Examples: ``cycle``, ``cycle 5``, ``cycle 3 Start Stop``
+   * - ``init <state_path> [var=value...]``
+     - Hot start from specific state with variable values. Examples: ``init System.Active counter=10``, ``init Root.Heating temp=52``
    * - ``current``
      - Show current state and all variables
    * - ``events``
@@ -155,6 +184,14 @@ Available Commands
      - Show help message with command list
    * - ``quit`` / ``exit``
      - Exit the simulator
+
+**Variable Value Formats for init command**:
+
+- Decimal integers: ``counter=10``
+- Hexadecimal: ``flags=0xFF`` (255)
+- Binary: ``mask=0b1010`` (10)
+- Floating point: ``temp=25.5``
+- Scientific notation: ``value=1.5e2`` (150.0)
 
 Interactive Features
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1207,6 +1244,277 @@ When a composite state's initial transitions cannot reach a stoppable state, the
 
 **Key Point**: Composite states must have at least one initial transition that can reach a stoppable state. The validation checks all guards and event requirements along the path. If no valid path exists, the transition is rejected and the state machine remains in the current state.
 
+Hot Start Feature
+---------------------------------------
+
+The hot start feature allows starting execution from an arbitrary state without executing enter actions. This section demonstrates the mechanism through concrete examples showing how hot start constructs the execution stack and affects lifecycle action execution.
+
+Example 14: Hot Start from Leaf State
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+This example demonstrates hot starting from a leaf state, showing how the runtime skips enter actions but executes during actions normally.
+
+.. code-block:: fcstm
+   :caption: Simple counter state machine
+
+   def int counter = 0;
+   def int enter_count = 0;
+
+   state System {
+       state Idle {
+           enter { enter_count = enter_count + 1; }
+           during { counter = counter + 1; }
+       }
+       state Active {
+           enter { enter_count = enter_count + 1; }
+           during { counter = counter + 10; }
+       }
+       [*] -> Idle;
+   }
+
+**Scenario A: Normal Initialization** (for comparison)
+
+.. list-table::
+   :header-rows: 1
+   :widths: 8 15 15 15 47
+
+   * - Cycle
+     - State
+     - counter
+     - enter_count
+     - Execution Details
+   * - 0
+     - System
+     - 0
+     - 0
+     - Initial state, before first cycle
+   * - 1
+     - System.Idle
+     - 1
+     - 1
+     - **Enter**: ``enter_count = 0 + 1 = 1``. **During**: ``counter = 0 + 1 = 1``
+   * - 2
+     - System.Idle
+     - 2
+     - 1
+     - **During**: ``counter = 1 + 1 = 2``
+
+**Scenario B: Hot Start from Active State**
+
+Hot start configuration: ``initial_state="System.Active"``, ``initial_vars={"counter": 100, "enter_count": 0}``
+
+.. list-table::
+   :header-rows: 1
+   :widths: 8 15 15 15 47
+
+   * - Cycle
+     - State
+     - counter
+     - enter_count
+     - Execution Details
+   * - 0
+     - System.Active
+     - 100
+     - 0
+     - **Hot start**: Stack constructed directly to Active. **No enter actions executed**
+   * - 1
+     - System.Active
+     - 110
+     - 0
+     - **During**: ``counter = 100 + 10 = 110``. Note: ``enter_count`` remains 0 (enter skipped)
+   * - 2
+     - System.Active
+     - 120
+     - 0
+     - **During**: ``counter = 110 + 10 = 120``
+
+**Key Observations**:
+
+- Hot start skips ``Active.enter`` action (``enter_count`` stays 0)
+- ``Active.during`` executes normally from first cycle
+- Stack is constructed with ``Active`` in ``'active'`` mode
+- Behaves as if already entered and stabilized at Active state
+
+Example 15: Hot Start with Aspect Actions
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+This example shows how aspect actions (``>> during before/after``) execute normally during hot start, while enter actions are skipped.
+
+.. code-block:: fcstm
+   :caption: State machine with aspect actions
+
+   def int counter = 0;
+   def int aspect_count = 0;
+   def int enter_count = 0;
+
+   state Root {
+       >> during before {
+           aspect_count = aspect_count + 1;
+       }
+
+       state A {
+           enter { enter_count = enter_count + 1; }
+           during { counter = counter + 1; }
+       }
+
+       state B {
+           enter { enter_count = enter_count + 1; }
+           during { counter = counter + 10; }
+       }
+
+       [*] -> A;
+   }
+
+**Scenario: Hot Start from State B**
+
+Hot start configuration: ``initial_state="Root.B"``, ``initial_vars={"counter": 50, "aspect_count": 0, "enter_count": 0}``
+
+.. list-table::
+   :header-rows: 1
+   :widths: 8 12 12 15 15 38
+
+   * - Cycle
+     - State
+     - counter
+     - aspect_count
+     - enter_count
+     - Execution Details
+   * - 0
+     - Root.B
+     - 50
+     - 0
+     - 0
+     - **Hot start**: Stack = [Root(active), B(active)]. **Enter actions skipped**
+   * - 1
+     - Root.B
+     - 60
+     - 1
+     - 0
+     - **Aspect before**: ``aspect_count = 0 + 1 = 1``. **During**: ``counter = 50 + 10 = 60``
+   * - 2
+     - Root.B
+     - 70
+     - 2
+     - 0
+     - **Aspect before**: ``aspect_count = 1 + 1 = 2``. **During**: ``counter = 60 + 10 = 70``
+
+**Key Observations**:
+
+- Enter actions skipped (``enter_count`` = 0)
+- Aspect actions (``>> during before``) execute normally
+- During actions execute normally
+- Aspect actions apply to all descendant leaf states, including hot-started states
+
+Example 16: Hot Start from Composite State
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+This example demonstrates hot starting from a composite state, showing how the runtime automatically performs initial transitions to find a stoppable leaf state.
+
+.. code-block:: fcstm
+   :caption: Nested state machine
+
+   def int counter = 0;
+   def int ready = 1;
+
+   state System {
+       state SubSystem {
+           state Idle {
+               during { counter = counter + 1; }
+           }
+           state Ready {
+               during { counter = counter + 10; }
+           }
+           [*] -> Idle : if [ready == 0];
+           [*] -> Ready : if [ready == 1];
+       }
+       [*] -> SubSystem;
+   }
+
+**Scenario A: Hot Start with ready=1**
+
+Hot start configuration: ``initial_state="System.SubSystem"``, ``initial_vars={"counter": 0, "ready": 1}``
+
+.. list-table::
+   :header-rows: 1
+   :widths: 8 20 12 12 46
+
+   * - Cycle
+     - State
+     - counter
+     - ready
+     - Execution Details
+   * - 0
+     - System.SubSystem
+     - 0
+     - 1
+     - **Hot start**: Stack = [System(active), SubSystem(init_wait)]
+   * - 1
+     - System.SubSystem.Ready
+     - 10
+     - 1
+     - **DFS triggered**: Check ``[*] -> Idle`` guard (``ready == 0``): **false**. Check ``[*] -> Ready`` guard (``ready == 1``): **true**. Transition to Ready. **During**: ``counter = 0 + 10 = 10``
+   * - 2
+     - System.SubSystem.Ready
+     - 20
+     - 1
+     - **During**: ``counter = 10 + 10 = 20``
+
+**Scenario B: Hot Start with ready=0**
+
+Hot start configuration: ``initial_state="System.SubSystem"``, ``initial_vars={"counter": 0, "ready": 0}``
+
+.. list-table::
+   :header-rows: 1
+   :widths: 8 20 12 12 46
+
+   * - Cycle
+     - State
+     - counter
+     - ready
+     - Execution Details
+   * - 0
+     - System.SubSystem
+     - 0
+     - 0
+     - **Hot start**: Stack = [System(active), SubSystem(init_wait)]
+   * - 1
+     - System.SubSystem.Idle
+     - 1
+     - 0
+     - **DFS triggered**: Check ``[*] -> Idle`` guard (``ready == 0``): **true**. Transition to Idle. **During**: ``counter = 0 + 1 = 1``
+   * - 2
+     - System.SubSystem.Idle
+     - 2
+     - 0
+     - **During**: ``counter = 1 + 1 = 2``
+
+**Key Observations**:
+
+- Composite state hot start uses ``'init_wait'`` mode
+- First cycle triggers DFS to find initial transition
+- Guard conditions evaluated to select correct path
+- Automatically navigates to stoppable leaf state
+- If no valid initial transition exists, validation fails
+
+**Stack Construction Summary**:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 25 25 50
+
+   * - Target State Type
+     - Frame Mode
+     - Behavior
+   * - Leaf state (target)
+     - ``'active'``
+     - First cycle executes during chain (including aspect actions)
+   * - Composite state (target)
+     - ``'init_wait'``
+     - First cycle triggers DFS for initial transition
+   * - Ancestor states (path)
+     - ``'active'``
+     - Represent child states running, aspect actions execute
+
 Real-World Business Examples
 ---------------------------------------
 
@@ -1842,6 +2150,70 @@ Testing and Debugging
 - Print state and variables after each cycle for debugging
 - Use abstract handlers to trace execution
 - Inspect state objects with ``runtime.get_current_state_object()``
+
+**Using Hot Start for Testing**
+
+Hot start allows jumping directly to specific states for targeted testing without executing full initialization sequences.
+
+*Debugging Specific States*:
+
+.. code-block:: python
+
+   # Jump directly to error handler to test recovery logic
+   runtime = SimulationRuntime(
+       sm,
+       initial_state="System.ErrorHandler",
+       initial_vars={"error_code": 42, "retry_count": 3}
+   )
+   runtime.cycle()
+   # Test error recovery without triggering the actual error
+
+*State Checkpointing and Recovery*:
+
+.. code-block:: python
+
+   # Save current state for later restoration
+   checkpoint = {
+       'state': runtime.current_state.path,
+       'vars': runtime.vars.copy()
+   }
+
+   # Later: restore from checkpoint
+   runtime = SimulationRuntime(
+       sm,
+       initial_state=checkpoint['state'],
+       initial_vars=checkpoint['vars']
+   )
+   runtime.cycle()  # Continue from saved point
+
+*Testing State-Specific Logic*:
+
+.. code-block:: python
+
+   # Test heating logic at specific temperature
+   runtime = SimulationRuntime(
+       sm,
+       initial_state="WaterHeater.Heating",
+       initial_vars={"water_temp": 52, "draw_count": 0}
+   )
+
+   # Verify behavior over multiple cycles
+   for i in range(5):
+       runtime.cycle()
+       assert runtime.vars['water_temp'] == 52 + (i+1) * 4
+
+*CLI Interactive Testing*:
+
+.. code-block:: bash
+
+   $ pyfcstm simulate -i water_heater.fcstm
+
+   # Hot start to specific state
+   > init WaterHeater.Heating water_temp=52 draw_count=0
+   > cycle 3
+   # Quickly test heating behavior
+
+**Important**: Hot start skips enter actions. Ensure enter actions don't contain critical initialization logic, or verify behavior manually.
 
 Handler Implementation
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

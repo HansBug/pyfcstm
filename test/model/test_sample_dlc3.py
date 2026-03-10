@@ -145,6 +145,7 @@ class TestModelStateLx:
         assert state_lx.named_functions["act1"].ref_state_path is None
         assert state_lx.named_functions["act1"].parent_ref().name == "LX"
         assert state_lx.named_functions["act1"].parent_ref().path == ("LX",)
+        assert state_lx.named_functions["act1"].func_name == "LX.act1"
         assert not state_lx.named_functions["act1"].is_aspect
         assert not state_lx.named_functions["act1"].is_ref
         assert state_lx.named_functions["act1"].parent.name == "LX"
@@ -161,6 +162,7 @@ class TestModelStateLx:
         assert state_lx.on_enters[0].ref_state_path is None
         assert state_lx.on_enters[0].parent_ref().name == "LX"
         assert state_lx.on_enters[0].parent_ref().path == ("LX",)
+        assert state_lx.on_enters[0].func_name == "LX.<unnamed>"
         assert not state_lx.on_enters[0].is_aspect
         assert not state_lx.on_enters[0].is_ref
         assert state_lx.on_enters[0].parent.name == "LX"
@@ -176,6 +178,7 @@ class TestModelStateLx:
         assert state_lx.on_enters[1].ref_state_path is None
         assert state_lx.on_enters[1].parent_ref().name == "LX"
         assert state_lx.on_enters[1].parent_ref().path == ("LX",)
+        assert state_lx.on_enters[1].func_name == "LX.act1"
         assert not state_lx.on_enters[1].is_aspect
         assert not state_lx.on_enters[1].is_ref
         assert state_lx.on_enters[1].parent.name == "LX"
@@ -201,6 +204,7 @@ class TestModelStateLx:
         assert state_lx.abstract_on_enters[0].ref_state_path is None
         assert state_lx.abstract_on_enters[0].parent_ref().name == "LX"
         assert state_lx.abstract_on_enters[0].parent_ref().path == ("LX",)
+        assert state_lx.abstract_on_enters[0].func_name == "LX.act1"
         assert not state_lx.abstract_on_enters[0].is_aspect
         assert not state_lx.abstract_on_enters[0].is_ref
         assert state_lx.abstract_on_enters[0].parent.name == "LX"
@@ -231,6 +235,7 @@ class TestModelStateLx:
         assert state_lx.non_abstract_on_enters[0].ref_state_path is None
         assert state_lx.non_abstract_on_enters[0].parent_ref().name == "LX"
         assert state_lx.non_abstract_on_enters[0].parent_ref().path == ("LX",)
+        assert state_lx.non_abstract_on_enters[0].func_name == "LX.<unnamed>"
         assert not state_lx.non_abstract_on_enters[0].is_aspect
         assert not state_lx.non_abstract_on_enters[0].is_ref
         assert state_lx.non_abstract_on_enters[0].parent.name == "LX"
@@ -457,6 +462,7 @@ class TestModelStateLx:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "LX"
         assert on_stage.parent_ref().path == ("LX",)
+        assert on_stage.func_name == "LX.<unnamed>"
         assert not on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "LX"
@@ -473,6 +479,7 @@ class TestModelStateLx:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "LX"
         assert on_stage.parent_ref().path == ("LX",)
+        assert on_stage.func_name == "LX.act1"
         assert not on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "LX"
@@ -492,6 +499,7 @@ class TestModelStateLx:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "LX"
         assert on_stage.parent_ref().path == ("LX",)
+        assert on_stage.func_name == "LX.<unnamed>"
         assert not on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "LX"
@@ -508,6 +516,7 @@ class TestModelStateLx:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "LX"
         assert on_stage.parent_ref().path == ("LX",)
+        assert on_stage.func_name == "LX.act1"
         assert not on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "LX"
@@ -528,6 +537,7 @@ class TestModelStateLx:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "LX"
         assert on_stage.parent_ref().path == ("LX",)
+        assert on_stage.func_name == "LX.<unnamed>"
         assert not on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "LX"
@@ -545,6 +555,7 @@ class TestModelStateLx:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "LX"
         assert on_stage.parent_ref().path == ("LX",)
+        assert on_stage.func_name == "LX.act1"
         assert not on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "LX"
@@ -564,6 +575,7 @@ class TestModelStateLx:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "LX"
         assert on_stage.parent_ref().path == ("LX",)
+        assert on_stage.func_name == "LX.<unnamed>"
         assert not on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "LX"
@@ -583,6 +595,7 @@ class TestModelStateLx:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "LX"
         assert on_stage.parent_ref().path == ("LX",)
+        assert on_stage.func_name == "LX.<unnamed>"
         assert not on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "LX"
@@ -603,6 +616,7 @@ class TestModelStateLx:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "LX"
         assert on_stage.parent_ref().path == ("LX",)
+        assert on_stage.func_name == "LX.<unnamed>"
         assert not on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "LX"
@@ -622,6 +636,7 @@ class TestModelStateLx:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "LX"
         assert on_stage.parent_ref().path == ("LX",)
+        assert on_stage.func_name == "LX.act1"
         assert not on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "LX"
@@ -641,6 +656,7 @@ class TestModelStateLx:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "LX"
         assert on_stage.parent_ref().path == ("LX",)
+        assert on_stage.func_name == "LX.act1"
         assert not on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "LX"
@@ -661,6 +677,7 @@ class TestModelStateLx:
         assert on_stage.ref_state_path is None
         assert on_stage.parent_ref().name == "LX"
         assert on_stage.parent_ref().path == ("LX",)
+        assert on_stage.func_name == "LX.act1"
         assert not on_stage.is_aspect
         assert not on_stage.is_ref
         assert on_stage.parent.name == "LX"

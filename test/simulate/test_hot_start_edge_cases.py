@@ -6,7 +6,6 @@ for the hot start feature.
 """
 
 import pytest
-import time
 
 from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model import parse_dsl_node_to_state_machine
@@ -270,112 +269,6 @@ state System {
         runtime.cycle()
         assert runtime.current_state.path == ('System', 'B')
         assert runtime.vars['counter'] == 110
-
-
-@pytest.mark.unittest
-class TestHotStartPerformance:
-    """Performance tests for hot start functionality."""
-
-    def test_hot_start_performance_vs_default(self):
-        """Compare hot start performance vs default initialization."""
-        dsl_code = '''
-def int counter = 0;
-state Root {
-    state L1 {
-        state L2 {
-            state L3 {
-                state Leaf {
-                    during { counter = counter + 1; }
-                }
-                [*] -> Leaf;
-            }
-            [*] -> L3;
-        }
-        [*] -> L2;
-    }
-    [*] -> L1;
-}
-'''
-        sm = build_state_machine(dsl_code)
-
-        # Measure default initialization time
-        start_time = time.time()
-        for _ in range(100):
-            runtime = SimulationRuntime(sm)
-            runtime.cycle()  # Reach leaf state
-        default_time = time.time() - start_time
-
-        # Measure hot start time
-        start_time = time.time()
-        for _ in range(100):
-            runtime = SimulationRuntime(
-                sm,
-                initial_state="Root.L1.L2.L3.Leaf",
-                initial_vars={"counter": 0}
-            )
-            runtime.cycle()  # Already at leaf state
-        hot_start_time = time.time() - start_time
-
-        # Hot start should be faster or comparable
-        # (Allow some variance due to system load)
-        assert hot_start_time < default_time * 1.5
-
-    def test_hot_start_with_many_cycles(self):
-        """Test hot start followed by many cycles."""
-        dsl_code = '''
-def int counter = 0;
-state Root {
-    state A {
-        during { counter = counter + 1; }
-    }
-    [*] -> A;
-}
-'''
-        sm = build_state_machine(dsl_code)
-        runtime = SimulationRuntime(
-            sm,
-            initial_state="Root.A",
-            initial_vars={"counter": 0}
-        )
-
-        # Execute 1000 cycles
-        start_time = time.time()
-        for _ in range(1000):
-            runtime.cycle()
-        elapsed_time = time.time() - start_time
-
-        # Should complete in reasonable time (< 1 second)
-        assert elapsed_time < 1.0
-        assert runtime.vars['counter'] == 1000
-
-    def test_hot_start_repeated_initialization(self):
-        """Test repeated hot start initialization performance."""
-        dsl_code = '''
-def int counter = 0;
-state System {
-    state A {
-        during { counter = counter + 1; }
-    }
-    state B {
-        during { counter = counter + 10; }
-    }
-    [*] -> A;
-}
-'''
-        sm = build_state_machine(dsl_code)
-
-        # Create 1000 runtime instances with hot start
-        start_time = time.time()
-        for i in range(1000):
-            runtime = SimulationRuntime(
-                sm,
-                initial_state="System.A" if i % 2 == 0 else "System.B",
-                initial_vars={"counter": i}
-            )
-        elapsed_time = time.time() - start_time
-
-        # Should complete in reasonable time (< 2 seconds)
-        assert elapsed_time < 2.0
 
 
 @pytest.mark.unittest

@@ -18,6 +18,10 @@ make unittest RANGE_DIR=./config                     # Specific directory
 make unittest COV_TYPES="xml term-missing"           # With coverage types
 make unittest MIN_COVERAGE=80                        # With minimum coverage
 make unittest WORKERS=4                              # With parallel workers
+
+# Run a single test file or function directly:
+pytest test/simulate/test_runtime.py -v
+pytest test/simulate/test_runtime.py::TestClassName::test_method -v
 ```
 
 ### Building and Packaging
@@ -120,12 +124,20 @@ pyfcstm simulate -i input.fcstm -e "init System.Active counter=10; cycle 5"  # H
 - `context.py`: Read-only execution context for abstract handlers
 - `decorators.py`: `@abstract_handler` decorator for handler registration
 
+**Constraint Solver** (`pyfcstm/solver/`)
+
+- `expr.py`: Translates model expressions into Z3 constraint expressions
+- `solve.py`: Z3-based constraint solving for guard reachability analysis
+- `operation.py`: Converts state machine operations into solver constraints
+- Uses `z3-solver` library; enables static analysis of transition guard satisfiability
+
 **Entry Points** (`pyfcstm/entry/`)
 
 - `cli.py`: Click-based CLI; `pyfcstmcli()` registered as console script
 - `plantuml.py`: PlantUML diagram generation from state machine models
 - `generate.py`: Orchestrates parsing DSL, building model, and rendering with templates
 - `dispatch.py`: Command dispatching logic for CLI subcommands
+- `simulate/`: Interactive simulation REPL (sub-package) with `repl.py`, `commands.py`, `completer.py`, `display.py`, `batch.py`, `logging.py`
 
 **Configuration** (`pyfcstm/config/`)
 
@@ -714,6 +726,7 @@ Use `{{ expr | expr_render(style='c') }}` to render expressions in target langua
 ### Testing Strategy
 
 - Tests in `test/`; use `@pytest.mark.unittest`
+- Shared test utilities and fixtures in `test/testings/`
 - Sample DSL files in `test/testfile/sample_codes/` (auto-generate tests via `make sample`)
 - Negative cases in `test/testfile/sample_neg_codes/`
 - Test timeout: 300 seconds (configured in `pytest.ini`)
@@ -721,7 +734,8 @@ Use `{{ expr | expr_render(style='c') }}` to render expressions in target langua
 ### Dependencies
 
 Core (`requirements.txt`): `antlr4-python3-runtime==4.9.3`, `jinja2>=3`, `pyyaml`, `click>=8`, `hbutils>=0.14.0`,
-`pathspec`. Development (`requirements-dev.txt`): `ruff`.
+`pathspec`, `z3-solver<=4.15.4` (constraint solver), `prompt_toolkit>=3.0.0` + `rich>=13,<14` (simulation REPL UI),
+`pygments>=2.10.0` (syntax highlighting), `unidecode`, `chardet`. Development (`requirements-dev.txt`): `ruff`.
 
 ### Documentation Editing
 

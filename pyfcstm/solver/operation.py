@@ -26,12 +26,13 @@ Example::
 """
 
 from typing import List, Dict, Optional, Union
+
 import z3
 
-from ..dsl.parse import parse_with_grammar_entry
-from ..model.model import Operation
-from ..model.expr import parse_expr_node_to_expr, Variable
 from .expr import expr_to_z3
+from ..dsl.parse import parse_with_grammar_entry
+from ..model.expr import parse_expr_node_to_expr
+from ..model.model import Operation
 
 
 def parse_operations(

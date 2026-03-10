@@ -34,11 +34,12 @@ Example::
     >>> result = solve(constraints, max_solutions=1)
 """
 
+import warnings
 from dataclasses import dataclass
 from typing import Union, List, Dict, Optional, Literal
-import warnings
-from natsort import natsorted
+
 import z3
+from natsort import natsorted
 
 
 @dataclass(frozen=True)

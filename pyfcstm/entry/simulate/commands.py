@@ -6,8 +6,8 @@ state machine simulator.
 """
 
 from dataclasses import dataclass
-from typing import List, Optional, Tuple, Dict, Any
 from enum import Enum
+from typing import List, Optional, Tuple, Dict, Any
 
 from .display import StateDisplay
 from .logging import configure_simulate_cli_logger

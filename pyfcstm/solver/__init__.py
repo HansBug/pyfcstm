@@ -43,5 +43,5 @@ Example::
 """
 
 from .expr import expr_to_z3, create_z3_vars_from_models
-from .solve import solve, SolveResult
 from .operation import parse_operations, execute_operations
+from .solve import solve, SolveResult

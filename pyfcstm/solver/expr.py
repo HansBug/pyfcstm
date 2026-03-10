@@ -32,8 +32,9 @@ Example::
     >>> z3_expr = expr_to_z3(expr, z3_vars)
 """
 
-from typing import Dict, List, Union
 import warnings
+from typing import Dict, List, Union
+
 import z3
 
 from ..model.expr import (

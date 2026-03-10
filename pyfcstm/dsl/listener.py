@@ -32,7 +32,7 @@ Example::
     >>> program_node = listener.nodes[tree]
 """
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from .grammar import GrammarListener, GrammarParser
 from .node import *

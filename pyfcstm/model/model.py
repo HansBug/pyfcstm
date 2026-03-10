@@ -48,7 +48,7 @@ from typing import Optional, Union, List, Dict, Tuple, Iterator
 
 from .base import AstExportable, PlantUMLExportable
 from .expr import Expr, parse_expr_node_to_expr
-from .plantuml import PlantUMLOptions, PlantUMLOptionsInput, format_state_name, format_event_name
+from .plantuml import PlantUMLOptions, PlantUMLOptionsInput, format_state_name
 from ..dsl import node as dsl_nodes, INIT_STATE, EXIT_STATE
 
 __all__ = [

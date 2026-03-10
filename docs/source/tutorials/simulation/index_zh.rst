@@ -81,6 +81,33 @@ Python 用法
 - ``:`` 创建链式事件（作用域为父状态）
 - ``/`` 创建绝对事件（作用域为根状态）
 
+从特定状态热启动
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+使用 ``initial_state`` 和 ``initial_vars`` 参数从任意状态启动执行，而不执行 enter 动作：
+
+.. code-block:: python
+
+   # 从 Active 状态热启动，使用自定义变量值
+   runtime = SimulationRuntime(
+       sm,
+       initial_state="System.Active",
+       initial_vars={"counter": 100, "flag": 1}
+   )
+
+   # 第一个周期从 Active 状态开始（不执行 enter 动作）
+   runtime.cycle()
+   print(f"State: {'.'.join(runtime.current_state.path)}")
+   print(f"Counter: {runtime.vars['counter']}")  # 110 (100 + 10)
+
+**关键点** ：
+
+- ``initial_state`` 接受字符串路径（``"System.Active"``）、元组路径（``('System', 'Active')``）或 State 对象
+- ``initial_vars`` 必须提供 **所有** 变量（不支持部分覆盖）
+- 路径中所有状态的 enter 动作都被跳过
+- during 动作从第一个周期开始正常执行
+- 对于复合状态，运行时会自动执行初始转换以找到可停止的叶状态
+
 实现抽象处理器
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -141,6 +168,8 @@ CLI 用法
      - 说明
    * - ``cycle [count] [events...]``
      - 执行一个或多个周期，可选事件。示例：``cycle``、``cycle 5``、``cycle 3 Start Stop``
+   * - ``init <state_path> [var=value...]``
+     - 从特定状态热启动，带变量值。示例：``init System.Active counter=10``、``init Root.Heating temp=52``
    * - ``current``
      - 显示当前状态和所有变量
    * - ``events``
@@ -155,6 +184,14 @@ CLI 用法
      - 显示帮助信息和命令列表
    * - ``quit`` / ``exit``
      - 退出模拟器
+
+**init 命令的变量值格式** ：
+
+- 十进制整数：``counter=10``
+- 十六进制：``flags=0xFF`` (255)
+- 二进制：``mask=0b1010`` (10)
+- 浮点数：``temp=25.5``
+- 科学计数法：``value=1.5e2`` (150.0)
 
 交互功能
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1206,6 +1243,164 @@ DFS 验证机制
 - **结果** ：``state = Root.A``，``counter = 2``，``ready = 0``
 
 **关键点** ：复合状态必须至少有一个初始转换可以到达可停止状态。验证检查路径上的所有守卫和事件要求。如果不存在有效路径，转换被拒绝，状态机保持在当前状态。
+
+热启动功能
+---------------------------------------
+
+热启动功能允许从任意状态开始执行，而不执行 enter 动作。本节解释机制、实现细节和实际用例。
+
+机制与实现
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**什么是热启动？**
+
+热启动直接构造执行栈到目标状态，绕过所有 enter 动作。这模拟了已经进入并稳定在该状态的情况。运行时的行为就像已经执行了完整的初始化序列，但实际上没有运行 enter 动作代码。
+
+**栈构造规则** ：
+
+热启动到目标状态时，运行时从根到目标构建帧栈：
+
+1. **叶状态** （目标）：使用 ``'active'`` 模式
+   - 第一个周期执行 during 链（包括切面动作）
+   - 行为类似正常的可停止状态
+
+2. **复合状态** （目标）：使用 ``'init_wait'`` 模式
+   - 第一个周期触发 DFS 查找初始转换
+   - 自动导航到可停止的叶状态
+   - 如果不存在有效的初始转换，验证失败
+
+3. **祖先状态** （到目标的路径）：使用 ``'active'`` 模式
+   - 表示子状态正在运行
+   - 切面动作（``>> during before/after``）正常执行
+
+**变量覆盖** ：
+
+- ``initial_vars`` 必须提供 **所有** 变量（不支持部分覆盖）
+- 变量在栈构造之前设置
+- 强制类型检查（int vs float）
+
+**生命周期动作行为** ：
+
+- **Enter 动作** ：路径中所有状态的 enter 动作都被跳过
+- **During 动作** ：从第一个周期开始正常执行
+- **切面动作** ：正常执行（``>> during before/after``）
+- **Exit 动作** ：离开状态时正常执行
+
+用例示例
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**示例 1：调试特定状态**
+
+直接跳转到有问题的状态以测试行为，无需完整初始化：
+
+.. code-block:: python
+
+   # 调试错误处理而不触发错误
+   runtime = SimulationRuntime(
+       sm,
+       initial_state="System.ErrorHandler",
+       initial_vars={"error_code": 42, "retry_count": 3}
+   )
+
+   # 直接测试错误恢复逻辑
+   runtime.cycle()
+   print(f"错误代码：{runtime.vars['error_code']}")
+   print(f"重试次数：{runtime.vars['retry_count']}")
+
+**示例 2：状态恢复和检查点**
+
+保存和恢复执行状态以进行测试或恢复：
+
+.. code-block:: python
+
+   # 保存当前状态
+   checkpoint = {
+       'state': runtime.current_state.path,
+       'vars': runtime.vars.copy()
+   }
+
+   # 稍后：从检查点恢复
+   runtime = SimulationRuntime(
+       sm,
+       initial_state=checkpoint['state'],
+       initial_vars=checkpoint['vars']
+   )
+
+   # 从保存点继续执行
+   runtime.cycle()
+
+**示例 3：测试状态特定逻辑**
+
+测试特定状态行为，无需依赖先前状态：
+
+.. code-block:: python
+
+   # 测试热水器加热逻辑在特定温度
+   runtime = SimulationRuntime(
+       sm,
+       initial_state="WaterHeater.Heating",
+       initial_vars={"water_temp": 52, "draw_count": 0}
+   )
+
+   # 验证多个周期的加热行为
+   for i in range(5):
+       runtime.cycle()
+       temp = runtime.vars['water_temp']
+       print(f"周期 {i+1}：温度 = {temp}°C")
+
+       # 验证温度每周期增加 4
+       assert temp == 52 + (i+1) * 4
+
+**示例 4：测试复合状态初始转换**
+
+从复合状态热启动以验证初始转换逻辑：
+
+.. code-block:: python
+
+   # 从复合状态热启动
+   runtime = SimulationRuntime(
+       sm,
+       initial_state="System.SubSystem",
+       initial_vars={"ready": 1, "counter": 0}
+   )
+
+   # 第一个周期触发初始转换
+   runtime.cycle()
+
+   # 验证到达正确的叶状态
+   assert runtime.current_state.path == ('System', 'SubSystem', 'Ready')
+
+**示例 5：CLI 热启动用于交互测试**
+
+在 CLI 中使用 ``init`` 命令进行快速测试：
+
+.. code-block:: bash
+
+   $ pyfcstm simulate -i water_heater.fcstm
+
+   # 热启动到 Heating 状态，低温
+   > init WaterHeater.Heating water_temp=52 draw_count=0
+   Initialized from state: WaterHeater.Heating
+   Current state: WaterHeater.Heating
+   Variables: water_temp=52, draw_count=0
+
+   # 执行周期以测试加热
+   > cycle 3
+    Cycle     State                water_temp  draw_count
+   --------------------------------------------------------
+      1    WaterHeater.Heating        56           0
+      2    WaterHeater.Heating        60           0
+      3    WaterHeater.Standby        59           0
+
+   # 温度达到 60，转换到 Standby
+
+**重要注意事项** ：
+
+- 热启动用于测试和调试，不用于生产执行
+- Enter 动作可能包含关键初始化逻辑 - 验证行为
+- 对于复合状态，确保存在有效的初始转换
+- CLI 的 ``init`` 命令创建新运行时（历史被清除）
+- 必须提供所有变量（不支持部分覆盖）
 
 真实业务例子
 ---------------------------------------

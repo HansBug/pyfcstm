@@ -6,6 +6,13 @@ pyfcstm.entry.simulate.repl
 .. automodule:: pyfcstm.entry.simulate.repl
 
 
+AutoSuggestFromCompleter
+-----------------------------------------------------
+
+.. autoclass:: AutoSuggestFromCompleter
+    :members: __init__,get_suggestion
+
+
 SimulationREPL
 -----------------------------------------------------
 

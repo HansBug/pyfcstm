@@ -32,7 +32,7 @@ Example::
     >>> program_node = listener.nodes[tree]
 """
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from .grammar import GrammarListener, GrammarParser
 from .node import *
@@ -565,7 +565,7 @@ class GrammarParseListener(GrammarListener):
             to_state=ctx.to_state.text,
             event_id=self.nodes[ctx.chain_id()] if ctx.chain_id() else None,
             condition_expr=self.nodes[ctx.cond_expression()] if ctx.cond_expression() else None,
-            post_operations=[self.nodes[item] for item in ctx.operational_statement() if item in self.nodes]
+            post_operations=self.nodes[ctx.operational_statement_set()] if ctx.operational_statement_set() else []
         )
 
     def exitNormalTransitionDefinition(
@@ -588,7 +588,7 @@ class GrammarParseListener(GrammarListener):
             to_state=ctx.to_state.text,
             event_id=event_id,
             condition_expr=self.nodes[ctx.cond_expression()] if ctx.cond_expression() else None,
-            post_operations=[self.nodes[item] for item in ctx.operational_statement() if item in self.nodes]
+            post_operations=self.nodes[ctx.operational_statement_set()] if ctx.operational_statement_set() else []
         )
 
     def exitExitTransitionDefinition(
@@ -611,7 +611,7 @@ class GrammarParseListener(GrammarListener):
             to_state=EXIT_STATE,
             event_id=event_id,
             condition_expr=self.nodes[ctx.cond_expression()] if ctx.cond_expression() else None,
-            post_operations=[self.nodes[item] for item in ctx.operational_statement() if item in self.nodes]
+            post_operations=self.nodes[ctx.operational_statement_set()] if ctx.operational_statement_set() else []
         )
 
     def exitChain_id(self, ctx: GrammarParser.Chain_idContext) -> None:
@@ -639,6 +639,18 @@ class GrammarParseListener(GrammarListener):
         super().exitOperational_statement(ctx)
         if ctx.operation_assignment():
             self.nodes[ctx] = self.nodes[ctx.operation_assignment()]
+
+    def exitOperational_statement_set(
+        self, ctx: GrammarParser.Operational_statement_setContext
+    ) -> None:
+        """
+        Build a list of operational statements from the statement set.
+
+        :param ctx: Parse context for the operational statement set.
+        :type ctx: GrammarParser.Operational_statement_setContext
+        """
+        super().exitOperational_statement_set(ctx)
+        self.nodes[ctx] = [self.nodes[item] for item in ctx.operational_statement() if item in self.nodes]
 
     def exitState_inner_statement(
         self, ctx: GrammarParser.State_inner_statementContext
@@ -694,7 +706,7 @@ class GrammarParseListener(GrammarListener):
         super().exitEnterOperations(ctx)
         self.nodes[ctx] = EnterOperations(
             name=ctx.func_name.text if ctx.func_name else None,
-            operations=[self.nodes[item] for item in ctx.operational_statement() if item in self.nodes],
+            operations=self.nodes[ctx.operational_statement_set()] if ctx.operational_statement_set() else [],
         )
 
     def exitEnterAbstractFunc(
@@ -735,7 +747,7 @@ class GrammarParseListener(GrammarListener):
         super().exitExitOperations(ctx)
         self.nodes[ctx] = ExitOperations(
             name=ctx.func_name.text if ctx.func_name else None,
-            operations=[self.nodes[item] for item in ctx.operational_statement() if item in self.nodes]
+            operations=self.nodes[ctx.operational_statement_set()] if ctx.operational_statement_set() else []
         )
 
     def exitExitAbstractFunc(
@@ -779,7 +791,7 @@ class GrammarParseListener(GrammarListener):
         self.nodes[ctx] = DuringOperations(
             name=ctx.func_name.text if ctx.func_name else None,
             aspect=ctx.aspect.text if ctx.aspect else None,
-            operations=[self.nodes[item] for item in ctx.operational_statement() if item in self.nodes]
+            operations=self.nodes[ctx.operational_statement_set()] if ctx.operational_statement_set() else []
         )
 
     def exitDuringAbstractFunc(
@@ -839,7 +851,7 @@ class GrammarParseListener(GrammarListener):
         self.nodes[ctx] = DuringAspectOperations(
             name=ctx.func_name.text if ctx.func_name else None,
             aspect=ctx.aspect.text if ctx.aspect else None,
-            operations=[self.nodes[item] for item in ctx.operational_statement() if item in self.nodes]
+            operations=self.nodes[ctx.operational_statement_set()] if ctx.operational_statement_set() else []
         )
 
     def exitDuringAspectAbstractFunc(

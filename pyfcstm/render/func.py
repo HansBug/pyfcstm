@@ -35,7 +35,7 @@ Example::
     4.0
 """
 
-from typing import Any, Dict
+from typing import Any
 
 import jinja2
 from hbutils.reflection import quick_import_object

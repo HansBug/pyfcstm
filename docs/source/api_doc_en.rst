@@ -9,5 +9,6 @@
     api_doc/model/index
     api_doc/render/index
     api_doc/simulate/index
+    api_doc/solver/index
     api_doc/utils/index
 

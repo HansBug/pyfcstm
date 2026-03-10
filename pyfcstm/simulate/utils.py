@@ -28,11 +28,6 @@ Example::
 """
 
 
-from typing import Union
-
-from ..model import OnStage, OnAspect
-
-
 def is_state_resolve_event_path(path: str) -> bool:
     """
     Check if an event path string is definitely for State.resolve_event.

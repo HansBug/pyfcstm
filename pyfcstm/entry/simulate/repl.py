@@ -9,10 +9,10 @@ import os
 from pathlib import Path
 
 from prompt_toolkit import PromptSession
-from prompt_toolkit.history import FileHistory
 from prompt_toolkit.auto_suggest import AutoSuggest, Suggestion
-from prompt_toolkit.styles import Style
 from prompt_toolkit.document import Document
+from prompt_toolkit.history import FileHistory
+from prompt_toolkit.styles import Style
 
 from .commands import CommandProcessor
 from .completer import SimulationCompleter

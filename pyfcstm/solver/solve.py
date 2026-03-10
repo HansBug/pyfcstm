@@ -36,7 +36,12 @@ Example::
 
 import warnings
 from dataclasses import dataclass
-from typing import Union, List, Dict, Optional, Literal
+from typing import Union, List, Dict, Optional
+
+try:
+    from typing import Literal
+except ImportError:
+    from typing_extensions import Literal
 
 import z3
 from natsort import natsorted

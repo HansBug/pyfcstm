@@ -3644,3 +3644,149 @@ class TestModelExpr:
         ast_node = parse_with_grammar_entry(expr_text, entry_name="cond_expression")
         expr = parse_expr_node_to_expr(ast_node)
         assert pytest.approx(expected_value) == expr(a=a, b=b, c=c)
+
+    @pytest.mark.parametrize(
+        ["expr_string", "mode", "expected_expr"],
+        [
+            # Generic mode tests - numeric expressions
+            ("x + 5", "generic", BinaryOp(x=Variable(name="x"), op="+", y=Integer(value=5))),
+            ("x * 2", "generic", BinaryOp(x=Variable(name="x"), op="*", y=Integer(value=2))),
+            # Generic mode tests - logical expressions
+            (
+                "x > 5 && y < 10",
+                "generic",
+                BinaryOp(
+                    x=BinaryOp(x=Variable(name="x"), op=">", y=Integer(value=5)),
+                    op="&&",
+                    y=BinaryOp(x=Variable(name="y"), op="<", y=Integer(value=10)),
+                ),
+            ),
+            (
+                "a == b || c != d",
+                "generic",
+                BinaryOp(
+                    x=BinaryOp(x=Variable(name="a"), op="==", y=Variable(name="b")),
+                    op="||",
+                    y=BinaryOp(x=Variable(name="c"), op="!=", y=Variable(name="d")),
+                ),
+            ),
+            # Numeric mode tests
+            (
+                "x * 2 + 3",
+                "numeric",
+                BinaryOp(
+                    x=BinaryOp(x=Variable(name="x"), op="*", y=Integer(value=2)),
+                    op="+",
+                    y=Integer(value=3),
+                ),
+            ),
+            (
+                "sqrt(x ** 2 + y ** 2)",
+                "numeric",
+                UFunc(
+                    func="sqrt",
+                    x=BinaryOp(
+                        x=BinaryOp(x=Variable(name="x"), op="**", y=Integer(value=2)),
+                        op="+",
+                        y=BinaryOp(x=Variable(name="y"), op="**", y=Integer(value=2)),
+                    ),
+                ),
+            ),
+            (
+                "flags & 0xFF",
+                "numeric",
+                BinaryOp(x=Variable(name="flags"), op="&", y=Integer(value=255)),
+            ),
+            (
+                "(x > 0) ? x : -x",
+                "numeric",
+                ConditionalOp(
+                    cond=BinaryOp(x=Variable(name="x"), op=">", y=Integer(value=0)),
+                    if_true=Variable(name="x"),
+                    if_false=UnaryOp(op="-", x=Variable(name="x")),
+                ),
+            ),
+            (
+                "(a + b) * (c - d) / 2",
+                "numeric",
+                BinaryOp(
+                    x=BinaryOp(
+                        x=BinaryOp(x=Variable(name="a"), op="+", y=Variable(name="b")),
+                        op="*",
+                        y=BinaryOp(x=Variable(name="c"), op="-", y=Variable(name="d")),
+                    ),
+                    op="/",
+                    y=Integer(value=2),
+                ),
+            ),
+            # Logical mode tests
+            (
+                "x > 5 && y < 10",
+                "logical",
+                BinaryOp(
+                    x=BinaryOp(x=Variable(name="x"), op=">", y=Integer(value=5)),
+                    op="&&",
+                    y=BinaryOp(x=Variable(name="y"), op="<", y=Integer(value=10)),
+                ),
+            ),
+            (
+                "!(x > 5) || (a == b)",
+                "logical",
+                BinaryOp(
+                    x=UnaryOp(
+                        op="!",
+                        x=BinaryOp(x=Variable(name="x"), op=">", y=Integer(value=5)),
+                    ),
+                    op="||",
+                    y=BinaryOp(x=Variable(name="a"), op="==", y=Variable(name="b")),
+                ),
+            ),
+            (
+                "true && !false",
+                "logical",
+                BinaryOp(
+                    x=Boolean(value=True),
+                    op="&&",
+                    y=UnaryOp(op="!", x=Boolean(value=False)),
+                ),
+            ),
+            (
+                "(x > 0 && y > 0) || (x < 0 && y < 0)",
+                "logical",
+                BinaryOp(
+                    x=BinaryOp(
+                        x=BinaryOp(x=Variable(name="x"), op=">", y=Integer(value=0)),
+                        op="&&",
+                        y=BinaryOp(x=Variable(name="y"), op=">", y=Integer(value=0)),
+                    ),
+                    op="||",
+                    y=BinaryOp(
+                        x=BinaryOp(x=Variable(name="x"), op="<", y=Integer(value=0)),
+                        op="&&",
+                        y=BinaryOp(x=Variable(name="y"), op="<", y=Integer(value=0)),
+                    ),
+                ),
+            ),
+        ],
+    )
+    def test_parse_expr_from_string(self, expr_string, mode, expected_expr):
+        """Test parse_expr_from_string with different modes."""
+        expr = parse_expr_from_string(expr_string, mode=mode)
+        assert pytest.approx(expected_expr) == expr
+
+    def test_parse_expr_from_string_default_mode(self):
+        """Test parse_expr_from_string with default mode (generic)."""
+        # Should work with both numeric and logical expressions
+        expr1 = parse_expr_from_string("x + 5")
+        assert isinstance(expr1, BinaryOp)
+        assert expr1(x=10) == 15
+
+        expr2 = parse_expr_from_string("x > 5")
+        assert isinstance(expr2, BinaryOp)
+        assert expr2(x=10) is True
+        assert expr2(x=3) is False
+
+    def test_parse_expr_from_string_invalid_mode(self):
+        """Test parse_expr_from_string with invalid mode raises ValueError."""
+        with pytest.raises(ValueError, match="Invalid mode 'invalid'"):
+            parse_expr_from_string("x + 5", mode="invalid")

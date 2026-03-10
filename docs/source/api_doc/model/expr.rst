@@ -88,3 +88,9 @@ parse\_expr\_node\_to\_expr
 .. autofunction:: parse_expr_node_to_expr
 
 
+parse\_expr\_from\_string
+-----------------------------------------------------
+
+.. autofunction:: parse_expr_from_string
+
+

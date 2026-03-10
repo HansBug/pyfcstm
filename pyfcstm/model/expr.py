@@ -20,6 +20,7 @@ The module contains the following public components:
 * :class:`UFunc` - Unary mathematical function expression.
 * :class:`Variable` - Variable reference expression.
 * :func:`parse_expr_node_to_expr` - Convert DSL AST nodes to expression objects.
+* :func:`parse_expr_from_string` - Parse DSL expression strings to expression objects.
 
 .. note::
    Operator precedence is respected when converting to AST nodes. Parentheses
@@ -34,6 +35,11 @@ Example::
     >>> func_expr = UFunc(func="sqrt", x=Integer(9))
     >>> func_expr()
     3.0
+    >>> # Parse expressions from DSL strings
+    >>> from pyfcstm.model.expr import parse_expr_from_string
+    >>> expr = parse_expr_from_string("x * 2 + 3", mode='numeric')
+    >>> expr(x=5)
+    13
 
 """
 
@@ -41,6 +47,11 @@ import math
 import operator
 from dataclasses import dataclass
 from typing import Iterator, List, Any
+
+try:
+    from typing import Literal
+except ImportError:
+    from typing_extensions import Literal
 
 from .base import AstExportable
 from ..dsl import node as dsl_nodes
@@ -57,6 +68,7 @@ __all__ = [
     'UFunc',
     'Variable',
     'parse_expr_node_to_expr',
+    'parse_expr_from_string',
 ]
 
 
@@ -793,3 +805,67 @@ def parse_expr_node_to_expr(node: dsl_nodes.Expr) -> Expr:
         )
     else:
         raise TypeError(f'Unknown node type - {node!r}.')  # pragma: no cover
+
+
+def parse_expr_from_string(expr_string: str, mode: Literal['generic', 'numeric', 'logical'] = 'generic') -> Expr:
+    """
+    Parse a DSL expression string into an :class:`Expr` object.
+
+    This function parses a DSL expression string using one of three grammar entry points
+    based on the specified mode:
+
+    * ``'generic'`` - Uses ``generic_expression`` rule (accepts both numeric and conditional expressions)
+    * ``'numeric'`` - Uses ``num_expression`` rule (arithmetic, bitwise, variables, functions, ternary)
+    * ``'logical'`` - Uses ``cond_expression`` rule (comparisons, logical operators, boolean literals)
+
+    :param expr_string: DSL expression string to parse
+    :type expr_string: str
+    :param mode: Parsing mode, one of ``'generic'``, ``'numeric'``, or ``'logical'``, defaults to ``'generic'``
+    :type mode: str, optional
+    :return: Parsed expression object
+    :rtype: Expr
+    :raises ValueError: If mode is not one of the valid options
+    :raises pyfcstm.dsl.error.GrammarParseError: If parsing fails
+
+    Example::
+
+        >>> from pyfcstm.model.expr import parse_expr_from_string
+        >>> # Generic mode (default) - accepts both numeric and logical
+        >>> expr = parse_expr_from_string("x + 5")
+        >>> isinstance(expr, BinaryOp)
+        True
+        >>> expr = parse_expr_from_string("x > 5 && y < 10")
+        >>> isinstance(expr, BinaryOp)
+        True
+        >>> # Numeric mode - arithmetic and bitwise operations
+        >>> expr = parse_expr_from_string("x * 2 + 3", mode='numeric')
+        >>> isinstance(expr, BinaryOp)
+        True
+        >>> expr = parse_expr_from_string("sqrt(x ** 2 + y ** 2)", mode='numeric')
+        >>> isinstance(expr, UFunc)
+        True
+        >>> # Logical mode - boolean expressions
+        >>> expr = parse_expr_from_string("x > 5 && y < 10", mode='logical')
+        >>> isinstance(expr, BinaryOp)
+        True
+        >>> expr = parse_expr_from_string("!flag || (a == b)", mode='logical')
+        >>> isinstance(expr, BinaryOp)
+        True
+    """
+    from ..dsl.parse import parse_with_grammar_entry
+
+    # Map mode to grammar entry point
+    mode_to_entry = {
+        'generic': 'generic_expression',
+        'numeric': 'num_expression',
+        'logical': 'cond_expression',
+    }
+
+    if mode not in mode_to_entry:
+        raise ValueError(
+            f"Invalid mode '{mode}'. Must be one of: {', '.join(repr(m) for m in mode_to_entry.keys())}"
+        )
+
+    entry_point = mode_to_entry[mode]
+    ast_node = parse_with_grammar_entry(expr_string, entry_point)
+    return parse_expr_node_to_expr(ast_node)

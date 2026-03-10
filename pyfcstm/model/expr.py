@@ -333,6 +333,136 @@ class Expr(AstExportable):
         """
         return BinaryOp(x=self, op='!=', y=parse_expr(other))
 
+    # Logical operators
+    # Note: Python's 'and'/'or' keywords cannot be overloaded, and __and__/__or__
+    # are already used for bitwise operators. Use and_/or_/not_ methods instead.
+
+    def and_(self, other: Any) -> 'BinaryOp':
+        """
+        Logical AND (&&).
+
+        This method creates a logical AND expression. It cannot use the ``&``
+        operator as that is reserved for bitwise AND operations.
+
+        :param other: Right operand
+        :type other: Any
+        :return: Binary operation expression with '&&' operator
+        :rtype: BinaryOp
+
+        Example::
+
+            >>> x = Variable("x")
+            >>> y = Variable("y")
+            >>> expr = x.gt(0).and_(y.gt(0))  # Creates: (x > 0) && (y > 0)
+            >>> expr(x=5, y=10)
+            True
+            >>> expr(x=5, y=-1)
+            False
+        """
+        return BinaryOp(x=self, op='&&', y=parse_expr(other))
+
+    def or_(self, other: Any) -> 'BinaryOp':
+        """
+        Logical OR (||).
+
+        This method creates a logical OR expression. It cannot use the ``|``
+        operator as that is reserved for bitwise OR operations.
+
+        :param other: Right operand
+        :type other: Any
+        :return: Binary operation expression with '||' operator
+        :rtype: BinaryOp
+
+        Example::
+
+            >>> x = Variable("x")
+            >>> y = Variable("y")
+            >>> expr = x.gt(0).or_(y.gt(0))  # Creates: (x > 0) || (y > 0)
+            >>> expr(x=5, y=-1)
+            True
+            >>> expr(x=-1, y=-2)
+            False
+        """
+        return BinaryOp(x=self, op='||', y=parse_expr(other))
+
+    def not_(self) -> 'UnaryOp':
+        """
+        Logical NOT (!).
+
+        This method creates a logical NOT expression. Python's ``not`` keyword
+        cannot be overloaded, so this method provides the functionality.
+
+        :return: Unary operation expression with '!' operator
+        :rtype: UnaryOp
+
+        Example::
+
+            >>> x = Variable("x")
+            >>> expr = x.eq(0).not_()  # Creates: !(x == 0)
+            >>> expr(x=5)
+            True
+            >>> expr(x=0)
+            False
+        """
+        return UnaryOp(op='!', x=self)
+
+    # Conditional/ternary operator
+
+    def select(self, true_value: Any, false_value: Any) -> 'ConditionalOp':
+        """
+        Conditional (ternary) operator (? :).
+
+        This method creates a conditional expression that evaluates to
+        ``true_value`` if the condition is true, otherwise ``false_value``.
+
+        :param true_value: Expression to evaluate if condition is true
+        :type true_value: Any
+        :param false_value: Expression to evaluate if condition is false
+        :type false_value: Any
+        :return: Conditional operation expression
+        :rtype: ConditionalOp
+
+        Example::
+
+            >>> x = Variable("x")
+            >>> expr = x.gt(0).select(x, -x)  # Creates: (x > 0) ? x : -x
+            >>> expr(x=5)
+            5
+            >>> expr(x=-3)
+            3
+        """
+        return ConditionalOp(
+            cond=self,
+            if_true=parse_expr(true_value),
+            if_false=parse_expr(false_value)
+        )
+
+    def if_then_else(self, true_value: Any, false_value: Any) -> 'ConditionalOp':
+        """
+        Conditional (ternary) operator (? :) - alias for select.
+
+        This is an alias for :meth:`select`. It creates a conditional
+        expression that evaluates to ``true_value`` if the condition is
+        true, otherwise ``false_value``.
+
+        :param true_value: Expression to evaluate if condition is true
+        :type true_value: Any
+        :param false_value: Expression to evaluate if condition is false
+        :type false_value: Any
+        :return: Conditional operation expression
+        :rtype: ConditionalOp
+
+        Example::
+
+            >>> x = Variable("x")
+            >>> expr = x.gt(0).if_then_else(x, -x)  # Creates: (x > 0) ? x : -x
+            >>> expr(x=5)
+            5
+            >>> expr(x=-3)
+            3
+        """
+        return self.select(true_value, false_value)
+
 
 @dataclass
 class Integer(Expr):

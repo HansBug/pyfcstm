@@ -4435,3 +4435,168 @@ class TestModelExpr:
         assert isinstance(expr, BinaryOp)
         assert expr.op == op_symbol
         assert expr(x=left_val, y=right_val) == expected_result
+
+    def test_expr_logical_operators(self):
+        """Test Expr logical operators (and_, or_, not_)."""
+        x = Variable(name="x")
+        y = Variable(name="y")
+
+        # Logical AND
+        expr = (x > 0).and_(y > 0)
+        expected = BinaryOp(
+            x=BinaryOp(x=Variable(name="x"), op=">", y=Integer(value=0)),
+            op="&&",
+            y=BinaryOp(x=Variable(name="y"), op=">", y=Integer(value=0)),
+        )
+        assert expr == expected
+        assert expr(x=5, y=10) is True
+        assert expr(x=5, y=-1) is False
+        assert expr(x=-1, y=10) is False
+        assert expr(x=-1, y=-1) is False
+
+        # Logical OR
+        expr = (x > 0).or_(y > 0)
+        expected = BinaryOp(
+            x=BinaryOp(x=Variable(name="x"), op=">", y=Integer(value=0)),
+            op="||",
+            y=BinaryOp(x=Variable(name="y"), op=">", y=Integer(value=0)),
+        )
+        assert expr == expected
+        assert expr(x=5, y=10) is True
+        assert expr(x=5, y=-1) is True
+        assert expr(x=-1, y=10) is True
+        assert expr(x=-1, y=-1) is False
+
+        # Logical NOT
+        expr = x.eq(0).not_()
+        expected = UnaryOp(
+            op="!", x=BinaryOp(x=Variable(name="x"), op="==", y=Integer(value=0))
+        )
+        assert expr == expected
+        assert expr(x=5) is True
+        assert expr(x=0) is False
+
+    def test_expr_logical_operators_with_literals(self):
+        """Test logical operators with Python literals."""
+        x = Variable(name="x")
+
+        # and_ with literal
+        expr = (x > 0).and_(True)
+        assert isinstance(expr, BinaryOp) and expr.op == "&&"
+        assert expr(x=5) is True
+        assert expr(x=-1) is False
+
+        # or_ with literal
+        expr = (x > 0).or_(False)
+        assert isinstance(expr, BinaryOp) and expr.op == "||"
+        assert expr(x=5) is True
+        assert expr(x=-1) is False
+
+    def test_expr_conditional_select(self):
+        """Test Expr conditional operator (select method)."""
+        x = Variable(name="x")
+        y = Variable(name="y")
+
+        # Simple conditional: (x > 0) ? x : -x
+        expr = (x > 0).select(x, -x)
+        expected = ConditionalOp(
+            cond=BinaryOp(x=Variable(name="x"), op=">", y=Integer(value=0)),
+            if_true=Variable(name="x"),
+            if_false=UnaryOp(op="-", x=Variable(name="x")),
+        )
+        assert expr == expected
+        assert expr(x=5) == 5
+        assert expr(x=-3) == 3
+        assert expr(x=0) == 0
+
+        # Conditional with two variables: (x > y) ? x : y
+        expr = (x > y).select(x, y)
+        expected = ConditionalOp(
+            cond=BinaryOp(x=Variable(name="x"), op=">", y=Variable(name="y")),
+            if_true=Variable(name="x"),
+            if_false=Variable(name="y"),
+        )
+        assert expr == expected
+        assert expr(x=10, y=5) == 10
+        assert expr(x=3, y=7) == 7
+
+        # Conditional with literals
+        expr = (x > 0).select(1, 0)
+        expected = ConditionalOp(
+            cond=BinaryOp(x=Variable(name="x"), op=">", y=Integer(value=0)),
+            if_true=Integer(value=1),
+            if_false=Integer(value=0),
+        )
+        assert expr == expected
+        assert expr(x=5) == 1
+        assert expr(x=-1) == 0
+
+    def test_expr_conditional_if_then_else(self):
+        """Test Expr conditional operator (if_then_else alias)."""
+        x = Variable(name="x")
+
+        # if_then_else should work the same as select
+        expr1 = (x > 0).select(x, -x)
+        expr2 = (x > 0).if_then_else(x, -x)
+        assert expr1 == expr2
+        assert expr1(x=5) == expr2(x=5)
+        assert expr1(x=-3) == expr2(x=-3)
+
+    def test_expr_complex_logical_expressions(self):
+        """Test complex expressions with logical operators."""
+        x = Variable(name="x")
+        y = Variable(name="y")
+        z = Variable(name="z")
+
+        # (x > 0) && (y > 0) || (z > 0)
+        expr = (x > 0).and_(y > 0).or_(z > 0)
+        assert expr(x=1, y=1, z=0) is True
+        assert expr(x=1, y=-1, z=1) is True
+        assert expr(x=-1, y=-1, z=-1) is False
+
+        # !((x == 0) && (y == 0))
+        expr = x.eq(0).and_(y.eq(0)).not_()
+        assert expr(x=0, y=0) is False
+        assert expr(x=1, y=0) is True
+        assert expr(x=0, y=1) is True
+
+    def test_expr_nested_conditionals(self):
+        """Test nested conditional expressions."""
+        x = Variable(name="x")
+
+        # Nested: (x > 0) ? ((x > 10) ? 2 : 1) : 0
+        expr = (x > 0).select((x > 10).select(2, 1), 0)
+        assert expr(x=15) == 2
+        assert expr(x=5) == 1
+        assert expr(x=-5) == 0
+
+    def test_expr_all_logical_and_conditional_coverage(self):
+        """Test coverage for all logical and conditional methods."""
+        x = Variable(name="x")
+        y = Variable(name="y")
+
+        # and_
+        expr = (x > 0).and_(y > 0)
+        assert isinstance(expr, BinaryOp) and expr.op == "&&"
+        assert expr(x=1, y=1) is True
+
+        # or_
+        expr = (x > 0).or_(y > 0)
+        assert isinstance(expr, BinaryOp) and expr.op == "||"
+        assert expr(x=1, y=-1) is True
+
+        # not_
+        expr = x.eq(0).not_()
+        assert isinstance(expr, UnaryOp) and expr.op == "!"
+        assert expr(x=1) is True
+
+        # select
+        expr = (x > 0).select(1, 0)
+        assert isinstance(expr, ConditionalOp)
+        assert expr(x=1) == 1
+
+        # if_then_else
+        expr = (x > 0).if_then_else(1, 0)
+        assert isinstance(expr, ConditionalOp)
+        assert expr(x=1) == 1
+

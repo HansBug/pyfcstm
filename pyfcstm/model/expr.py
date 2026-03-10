@@ -21,6 +21,7 @@ The module contains the following public components:
 * :class:`Variable` - Variable reference expression.
 * :func:`parse_expr_node_to_expr` - Convert DSL AST nodes to expression objects.
 * :func:`parse_expr_from_string` - Parse DSL expression strings to expression objects.
+* :func:`parse_expr` - Unified parser supporting multiple input types.
 
 .. note::
    Operator precedence is respected when converting to AST nodes. Parentheses
@@ -40,11 +41,16 @@ Example::
     >>> expr = parse_expr_from_string("x * 2 + 3", mode='numeric')
     >>> expr(x=5)
     13
+    >>> # Unified parsing with parse_expr
+    >>> from pyfcstm.model.expr import parse_expr
+    >>> expr = parse_expr("x + 5")  # from string
+    >>> expr = parse_expr(expr)  # from Expr object (returns directly)
 
 """
 
 import math
 import operator
+import warnings
 from dataclasses import dataclass
 from typing import Iterator, List, Any
 
@@ -69,6 +75,7 @@ __all__ = [
     'Variable',
     'parse_expr_node_to_expr',
     'parse_expr_from_string',
+    'parse_expr',
 ]
 
 
@@ -869,3 +876,80 @@ def parse_expr_from_string(expr_string: str, mode: Literal['generic', 'numeric',
     entry_point = mode_to_entry[mode]
     ast_node = parse_with_grammar_entry(expr_string, entry_point)
     return parse_expr_node_to_expr(ast_node)
+
+
+def parse_expr(
+    expr_input: Any,
+    mode: Literal['generic', 'numeric', 'logical'] = 'generic'
+) -> Expr:
+    """
+    Parse various input types into an :class:`Expr` object.
+
+    This function provides a unified interface for parsing expressions from multiple
+    input types. It accepts DSL AST nodes, expression strings, or existing Expr objects.
+
+    :param expr_input: Input to parse - can be:
+        - :class:`Expr` object: returned directly without modification
+        - :class:`dsl_nodes.Expr` AST node: converted using :func:`parse_expr_node_to_expr`
+        - :class:`str`: parsed using :func:`parse_expr_from_string` with the specified mode
+    :type expr_input: Any
+    :param mode: Parsing mode for string inputs, one of ``'generic'``, ``'numeric'``, or ``'logical'``, defaults to ``'generic'``
+    :type mode: Literal['generic', 'numeric', 'logical'], optional
+    :return: Parsed expression object
+    :rtype: Expr
+    :raises TypeError: If input type is not supported
+    :raises ValueError: If mode is invalid (for string inputs)
+    :raises pyfcstm.dsl.error.GrammarParseError: If string parsing fails
+
+    .. warning::
+       The ``mode`` parameter only affects string inputs. If a non-default mode is
+       specified with an Expr object or AST node input, a warning will be issued.
+
+    Example::
+
+        >>> from pyfcstm.model.expr import parse_expr, Variable, Integer, BinaryOp
+        >>> from pyfcstm.dsl.node import Integer as IntNode
+        >>> # Parse from Expr object (returns directly)
+        >>> expr_obj = BinaryOp(x=Variable("x"), op="+", y=Integer(5))
+        >>> result = parse_expr(expr_obj)
+        >>> result is expr_obj
+        True
+        >>> # Parse from DSL AST node
+        >>> ast_node = IntNode(raw="42")
+        >>> expr = parse_expr(ast_node)
+        >>> isinstance(expr, Integer)
+        True
+        >>> # Parse from string
+        >>> expr = parse_expr("x + 5")
+        >>> isinstance(expr, BinaryOp)
+        True
+        >>> expr = parse_expr("x > 5 && y < 10", mode='logical')
+        >>> isinstance(expr, BinaryOp)
+        True
+    """
+    # Check if mode is non-default for non-string inputs
+    if mode != 'generic' and not isinstance(expr_input, str):
+        warnings.warn(
+            f"The 'mode' parameter ({mode!r}) has no effect for non-string inputs. "
+            f"It only applies when parsing from strings.",
+            UserWarning,
+            stacklevel=2
+        )
+
+    # If already an Expr object, return directly
+    if isinstance(expr_input, Expr):
+        return expr_input
+
+    # If DSL AST node, convert to Expr
+    if isinstance(expr_input, dsl_nodes.Expr):
+        return parse_expr_node_to_expr(expr_input)
+
+    # If string, parse with specified mode
+    if isinstance(expr_input, str):
+        return parse_expr_from_string(expr_input, mode=mode)
+
+    # Unsupported type
+    raise TypeError(
+        f"Unsupported input type: {type(expr_input).__name__}. "
+        f"Expected Expr, dsl_nodes.Expr, or str."
+    )

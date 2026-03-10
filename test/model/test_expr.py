@@ -1,4 +1,5 @@
 import pytest
+import warnings
 
 from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model.expr import *
@@ -3790,3 +3791,128 @@ class TestModelExpr:
         """Test parse_expr_from_string with invalid mode raises ValueError."""
         with pytest.raises(ValueError, match="Invalid mode 'invalid'"):
             parse_expr_from_string("x + 5", mode="invalid")
+
+    def test_parse_expr_with_expr_object(self):
+        """Test parse_expr with Expr object returns directly."""
+        original_expr = BinaryOp(x=Variable(name="x"), op="+", y=Integer(value=5))
+        result = parse_expr(original_expr)
+        assert result is original_expr
+        assert pytest.approx(original_expr) == result
+
+    def test_parse_expr_with_ast_node(self):
+        """Test parse_expr with DSL AST node."""
+        from pyfcstm.dsl.node import Integer as IntNode, BinaryOp as BinaryOpNode, Name
+
+        # Simple integer node
+        ast_node = IntNode(raw="42")
+        expr = parse_expr(ast_node)
+        expected = Integer(value=42)
+        assert pytest.approx(expected) == expr
+
+        # Binary operation node
+        ast_node = BinaryOpNode(
+            expr1=Name(name="x"),
+            op="+",
+            expr2=IntNode(raw="5")
+        )
+        expr = parse_expr(ast_node)
+        expected = BinaryOp(x=Variable(name="x"), op="+", y=Integer(value=5))
+        assert pytest.approx(expected) == expr
+
+    def test_parse_expr_with_string(self):
+        """Test parse_expr with string input."""
+        # Default mode (generic)
+        expr = parse_expr("x + 5")
+        expected = BinaryOp(x=Variable(name="x"), op="+", y=Integer(value=5))
+        assert pytest.approx(expected) == expr
+
+        # Numeric mode
+        expr = parse_expr("sqrt(x ** 2 + y ** 2)", mode='numeric')
+        expected = UFunc(
+            func="sqrt",
+            x=BinaryOp(
+                x=BinaryOp(x=Variable(name="x"), op="**", y=Integer(value=2)),
+                op="+",
+                y=BinaryOp(x=Variable(name="y"), op="**", y=Integer(value=2)),
+            ),
+        )
+        assert pytest.approx(expected) == expr
+
+        # Logical mode
+        expr = parse_expr("x > 5 && y < 10", mode='logical')
+        expected = BinaryOp(
+            x=BinaryOp(x=Variable(name="x"), op=">", y=Integer(value=5)),
+            op="&&",
+            y=BinaryOp(x=Variable(name="y"), op="<", y=Integer(value=10)),
+        )
+        assert pytest.approx(expected) == expr
+
+    def test_parse_expr_with_invalid_type(self):
+        """Test parse_expr with unsupported type raises TypeError."""
+        with pytest.raises(TypeError, match="Unsupported input type"):
+            parse_expr(123)
+
+        with pytest.raises(TypeError, match="Unsupported input type"):
+            parse_expr([1, 2, 3])
+
+        with pytest.raises(TypeError, match="Unsupported input type"):
+            parse_expr({"key": "value"})
+
+    @pytest.mark.parametrize(
+        ["input_value", "expected_type"],
+        [
+            # Expr objects
+            (BinaryOp(x=Variable(name="x"), op="+", y=Integer(value=5)), BinaryOp),
+            (Variable(name="x"), Variable),
+            (Integer(value=42), Integer),
+            (Float(value=3.14), Float),
+            (Boolean(value=True), Boolean),
+            (UnaryOp(op="-", x=Integer(value=5)), UnaryOp),
+            (UFunc(func="sqrt", x=Integer(value=9)), UFunc),
+        ],
+    )
+    def test_parse_expr_returns_same_object(self, input_value, expected_type):
+        """Test parse_expr returns the same object for Expr inputs."""
+        result = parse_expr(input_value)
+        assert result is input_value
+        assert isinstance(result, expected_type)
+
+    def test_parse_expr_warns_on_non_default_mode_with_expr(self):
+        """Test parse_expr warns when mode is non-default for Expr input."""
+        expr_obj = BinaryOp(x=Variable(name="x"), op="+", y=Integer(value=5))
+
+        with pytest.warns(UserWarning, match="The 'mode' parameter.*has no effect for non-string inputs"):
+            result = parse_expr(expr_obj, mode='numeric')
+            assert result is expr_obj
+            assert pytest.approx(expr_obj) == result
+
+    def test_parse_expr_warns_on_non_default_mode_with_ast_node(self):
+        """Test parse_expr warns when mode is non-default for AST node input."""
+        from pyfcstm.dsl.node import Integer as IntNode
+
+        ast_node = IntNode(raw="42")
+
+        with pytest.warns(UserWarning, match="The 'mode' parameter.*has no effect for non-string inputs"):
+            result = parse_expr(ast_node, mode='logical')
+            expected = Integer(value=42)
+            assert pytest.approx(expected) == result
+
+    def test_parse_expr_no_warning_with_default_mode(self):
+        """Test parse_expr does not warn with default mode for non-string inputs."""
+        expr_obj = BinaryOp(x=Variable(name="x"), op="+", y=Integer(value=5))
+
+        # Should not produce any warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")  # Turn warnings into errors
+            result = parse_expr(expr_obj)  # mode='generic' is default
+            assert result is expr_obj
+            assert pytest.approx(expr_obj) == result
+
+    def test_parse_expr_no_warning_with_string_and_non_default_mode(self):
+        """Test parse_expr does not warn when using non-default mode with string."""
+        # Should not produce any warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")  # Turn warnings into errors
+            result = parse_expr("x + 5", mode='numeric')
+            expected = BinaryOp(x=Variable(name="x"), op="+", y=Integer(value=5))
+            assert pytest.approx(expected) == result

@@ -94,3 +94,9 @@ parse\_expr\_from\_string
 .. autofunction:: parse_expr_from_string
 
 
+parse\_expr
+-----------------------------------------------------
+
+.. autofunction:: parse_expr
+
+

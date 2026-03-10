@@ -20,6 +20,8 @@ The module contains the following public components:
 * :class:`UFunc` - Unary mathematical function expression.
 * :class:`Variable` - Variable reference expression.
 * :func:`parse_expr_node_to_expr` - Convert DSL AST nodes to expression objects.
+* :func:`parse_expr_from_string` - Parse DSL expression strings to expression objects.
+* :func:`parse_expr` - Unified parser supporting multiple input types.
 
 .. note::
    Operator precedence is respected when converting to AST nodes. Parentheses
@@ -34,13 +36,28 @@ Example::
     >>> func_expr = UFunc(func="sqrt", x=Integer(9))
     >>> func_expr()
     3.0
+    >>> # Parse expressions from DSL strings
+    >>> from pyfcstm.model.expr import parse_expr_from_string
+    >>> expr = parse_expr_from_string("x * 2 + 3", mode='numeric')
+    >>> expr(x=5)
+    13
+    >>> # Unified parsing with parse_expr
+    >>> from pyfcstm.model.expr import parse_expr
+    >>> expr = parse_expr("x + 5")  # from string
+    >>> expr = parse_expr(expr)  # from Expr object (returns directly)
 
 """
 
 import math
 import operator
+import warnings
 from dataclasses import dataclass
 from typing import Iterator, List, Any
+
+try:
+    from typing import Literal
+except ImportError:
+    from typing_extensions import Literal
 
 from .base import AstExportable
 from ..dsl import node as dsl_nodes
@@ -57,6 +74,8 @@ __all__ = [
     'UFunc',
     'Variable',
     'parse_expr_node_to_expr',
+    'parse_expr_from_string',
+    'parse_expr',
 ]
 
 
@@ -67,9 +86,90 @@ class Expr(AstExportable):
 
     This abstract class defines the common interface for all expression types.
     It provides methods for traversing the expression tree, evaluating expressions,
-    and converting expressions to AST nodes.
+    and converting expressions to AST nodes. The class supports operator overloading
+    for building complex expressions using natural Python syntax.
+
+    **Operator Support:**
+
+    The Expr class provides comprehensive operator overloading for building DSL
+    expressions using Python syntax. All operators automatically convert their
+    operands using :func:`parse_expr`, supporting Expr objects, Python literals
+    (bool, int, float), DSL strings, and DSL AST nodes.
+
+    **Arithmetic Operators:**
+
+    - ``expr + other`` - Addition
+    - ``expr - other`` - Subtraction
+    - ``expr * other`` - Multiplication
+    - ``expr / other`` - Division
+    - ``expr % other`` - Modulo
+    - ``expr ** other`` - Exponentiation
+    - ``-expr`` - Unary negation
+    - ``+expr`` - Unary positive
+
+    **Bitwise Operators:**
+
+    - ``expr << other`` - Left shift
+    - ``expr >> other`` - Right shift
+    - ``expr & other`` - Bitwise AND
+    - ``expr | other`` - Bitwise OR
+    - ``expr ^ other`` - Bitwise XOR
+
+    **Comparison Operators:**
+
+    - ``expr < other`` - Less than
+    - ``expr <= other`` - Less than or equal
+    - ``expr > other`` - Greater than
+    - ``expr >= other`` - Greater than or equal
+    - ``expr.eq(other)`` - Equality (==) - method form to avoid conflict with Python's object equality
+    - ``expr.ne(other)`` - Not equal (!=) - method form to avoid conflict with Python's object inequality
+
+    **Logical Operators:**
+
+    - ``expr.and_(other)`` - Logical AND (&&)
+    - ``expr.or_(other)`` - Logical OR (||)
+    - ``expr.not_()`` - Logical NOT (!)
+
+    Note: Python's ``and``/``or`` keywords cannot be overloaded, and ``&``/``|``
+    operators are reserved for bitwise operations. Use the method forms instead.
+
+    **Conditional Operator:**
+
+    - ``expr.select(true_value, false_value)`` - Ternary operator (? :)
+    - ``expr.if_then_else(true_value, false_value)`` - Alias for select()
+
+    **Reverse Operators:**
+
+    All binary operators support reverse operations (e.g., ``5 + expr``) through
+    corresponding ``__radd__``, ``__rsub__``, etc. magic methods.
 
     :rtype: Expr
+
+    Example::
+
+        >>> from pyfcstm.model.expr import Variable
+        >>> x = Variable("x")
+        >>> y = Variable("y")
+        >>>
+        >>> # Arithmetic operations
+        >>> expr = x * 2 + y
+        >>> expr(x=3, y=4)
+        10
+        >>>
+        >>> # Comparison and logical operations
+        >>> expr = (x > 0).and_(y > 0)
+        >>> expr(x=5, y=10)
+        True
+        >>>
+        >>> # Conditional expression
+        >>> expr = (x > 0).select(x, -x)  # abs(x)
+        >>> expr(x=-5)
+        5
+        >>>
+        >>> # Complex nested expression
+        >>> expr = (x > y).select(x, y)  # max(x, y)
+        >>> expr(x=10, y=5)
+        10
     """
 
     def _iter_subs(self) -> Iterator['Expr']:
@@ -150,6 +250,775 @@ class Expr(AstExportable):
         :raises NotImplementedError: Must be implemented by subclasses
         """
         raise NotImplementedError  # pragma: no cover
+
+    # Arithmetic operators
+    def __add__(self, other: Any) -> 'BinaryOp':
+        """
+        Addition operator (+).
+
+        Creates a binary addition expression. The operand is automatically
+        converted using :func:`parse_expr`.
+
+        :param other: Right operand (Expr, literal, string, or AST node)
+        :type other: Any
+        :return: Binary operation expression
+        :rtype: BinaryOp
+
+        Example::
+
+            >>> x = Variable("x")
+            >>> expr = x + 5
+            >>> expr(x=10)
+            15
+        """
+        return BinaryOp(x=self, op='+', y=parse_expr(other))
+
+    def __radd__(self, other: Any) -> 'BinaryOp':
+        """
+        Reverse addition operator (+).
+
+        Enables addition when the expression is on the right side.
+        The operand is automatically converted using :func:`parse_expr`.
+
+        :param other: Left operand (Expr, literal, string, or AST node)
+        :type other: Any
+        :return: Binary operation expression
+        :rtype: BinaryOp
+
+        Example::
+
+            >>> x = Variable("x")
+            >>> expr = 5 + x
+            >>> expr(x=10)
+            15
+        """
+        return BinaryOp(x=parse_expr(other), op='+', y=self)
+
+    def __sub__(self, other: Any) -> 'BinaryOp':
+        """
+        Subtraction operator (-).
+
+        Creates a binary subtraction expression. The operand is automatically
+        converted using :func:`parse_expr`.
+
+        :param other: Right operand (Expr, literal, string, or AST node)
+        :type other: Any
+        :return: Binary operation expression
+        :rtype: BinaryOp
+
+        Example::
+
+            >>> x = Variable("x")
+            >>> expr = x - 3
+            >>> expr(x=10)
+            7
+        """
+        return BinaryOp(x=self, op='-', y=parse_expr(other))
+
+    def __rsub__(self, other: Any) -> 'BinaryOp':
+        """
+        Reverse subtraction operator (-).
+
+        Enables subtraction when the expression is on the right side.
+        The operand is automatically converted using :func:`parse_expr`.
+
+        :param other: Left operand (Expr, literal, string, or AST node)
+        :type other: Any
+        :return: Binary operation expression
+        :rtype: BinaryOp
+
+        Example::
+
+            >>> x = Variable("x")
+            >>> expr = 10 - x
+            >>> expr(x=3)
+            7
+        """
+        return BinaryOp(x=parse_expr(other), op='-', y=self)
+
+    def __mul__(self, other: Any) -> 'BinaryOp':
+        """
+        Multiplication operator (*).
+
+        Creates a binary multiplication expression. The operand is automatically
+        converted using :func:`parse_expr`.
+
+        :param other: Right operand (Expr, literal, string, or AST node)
+        :type other: Any
+        :return: Binary operation expression
+        :rtype: BinaryOp
+
+        Example::
+
+            >>> x = Variable("x")
+            >>> expr = x * 2
+            >>> expr(x=5)
+            10
+        """
+        return BinaryOp(x=self, op='*', y=parse_expr(other))
+
+    def __rmul__(self, other: Any) -> 'BinaryOp':
+        """
+        Reverse multiplication operator (*).
+
+        Enables multiplication when the expression is on the right side.
+        The operand is automatically converted using :func:`parse_expr`.
+
+        :param other: Left operand (Expr, literal, string, or AST node)
+        :type other: Any
+        :return: Binary operation expression
+        :rtype: BinaryOp
+
+        Example::
+
+            >>> x = Variable("x")
+            >>> expr = 3 * x
+            >>> expr(x=4)
+            12
+        """
+        return BinaryOp(x=parse_expr(other), op='*', y=self)
+
+    def __truediv__(self, other: Any) -> 'BinaryOp':
+        """
+        Division operator (/).
+
+        Creates a binary division expression. The operand is automatically
+        converted using :func:`parse_expr`.
+
+        :param other: Right operand (Expr, literal, string, or AST node)
+        :type other: Any
+        :return: Binary operation expression
+        :rtype: BinaryOp
+
+        Example::
+
+            >>> x = Variable("x")
+            >>> expr = x / 2
+            >>> expr(x=10)
+            5.0
+        """
+        return BinaryOp(x=self, op='/', y=parse_expr(other))
+
+    def __rtruediv__(self, other: Any) -> 'BinaryOp':
+        """
+        Reverse division operator (/).
+
+        Enables division when the expression is on the right side.
+        The operand is automatically converted using :func:`parse_expr`.
+
+        :param other: Left operand (Expr, literal, string, or AST node)
+        :type other: Any
+        :return: Binary operation expression
+        :rtype: BinaryOp
+
+        Example::
+
+            >>> x = Variable("x")
+            >>> expr = 20 / x
+            >>> expr(x=4)
+            5.0
+        """
+        return BinaryOp(x=parse_expr(other), op='/', y=self)
+
+    def __mod__(self, other: Any) -> 'BinaryOp':
+        """
+        Modulo operator (%).
+
+        Creates a binary modulo expression. The operand is automatically
+        converted using :func:`parse_expr`.
+
+        :param other: Right operand (Expr, literal, string, or AST node)
+        :type other: Any
+        :return: Binary operation expression
+        :rtype: BinaryOp
+
+        Example::
+
+            >>> x = Variable("x")
+            >>> expr = x % 3
+            >>> expr(x=10)
+            1
+        """
+        return BinaryOp(x=self, op='%', y=parse_expr(other))
+
+    def __rmod__(self, other: Any) -> 'BinaryOp':
+        """
+        Reverse modulo operator (%).
+
+        Enables modulo when the expression is on the right side.
+        The operand is automatically converted using :func:`parse_expr`.
+
+        :param other: Left operand (Expr, literal, string, or AST node)
+        :type other: Any
+        :return: Binary operation expression
+        :rtype: BinaryOp
+
+        Example::
+
+            >>> x = Variable("x")
+            >>> expr = 10 % x
+            >>> expr(x=3)
+            1
+        """
+        return BinaryOp(x=parse_expr(other), op='%', y=self)
+
+    def __pow__(self, other: Any) -> 'BinaryOp':
+        """
+        Power operator (**).
+
+        Creates a binary exponentiation expression. The operand is automatically
+        converted using :func:`parse_expr`.
+
+        :param other: Right operand (Expr, literal, string, or AST node)
+        :type other: Any
+        :return: Binary operation expression
+        :rtype: BinaryOp
+
+        Example::
+
+            >>> x = Variable("x")
+            >>> expr = x ** 2
+            >>> expr(x=3)
+            9
+        """
+        return BinaryOp(x=self, op='**', y=parse_expr(other))
+
+    def __rpow__(self, other: Any) -> 'BinaryOp':
+        """
+        Reverse power operator (**).
+
+        Enables exponentiation when the expression is on the right side.
+        The operand is automatically converted using :func:`parse_expr`.
+
+        :param other: Left operand (Expr, literal, string, or AST node)
+        :type other: Any
+        :return: Binary operation expression
+        :rtype: BinaryOp
+
+        Example::
+
+            >>> x = Variable("x")
+            >>> expr = 2 ** x
+            >>> expr(x=3)
+            8
+        """
+        return BinaryOp(x=parse_expr(other), op='**', y=self)
+
+    # Unary operators
+    def __neg__(self) -> 'UnaryOp':
+        """
+        Unary negation operator (-).
+
+        Creates a unary negation expression.
+
+        :return: Unary operation expression
+        :rtype: UnaryOp
+
+        Example::
+
+            >>> x = Variable("x")
+            >>> expr = -x
+            >>> expr(x=5)
+            -5
+        """
+        return UnaryOp(op='-', x=self)
+
+    def __pos__(self) -> 'UnaryOp':
+        """
+        Unary positive operator (+).
+
+        Creates a unary positive expression.
+
+        :return: Unary operation expression
+        :rtype: UnaryOp
+
+        Example::
+
+            >>> x = Variable("x")
+            >>> expr = +x
+            >>> expr(x=5)
+            5
+        """
+        return UnaryOp(op='+', x=self)
+
+    # Bitwise operators
+    def __lshift__(self, other: Any) -> 'BinaryOp':
+        """
+        Left shift operator (<<).
+
+        Creates a binary left shift expression. The operand is automatically
+        converted using :func:`parse_expr`.
+
+        :param other: Right operand (Expr, literal, string, or AST node)
+        :type other: Any
+        :return: Binary operation expression
+        :rtype: BinaryOp
+
+        Example::
+
+            >>> x = Variable("x")
+            >>> expr = x << 2
+            >>> expr(x=5)
+            20
+        """
+        return BinaryOp(x=self, op='<<', y=parse_expr(other))
+
+    def __rlshift__(self, other: Any) -> 'BinaryOp':
+        """
+        Reverse left shift operator (<<).
+
+        Enables left shift when the expression is on the right side.
+        The operand is automatically converted using :func:`parse_expr`.
+
+        :param other: Left operand (Expr, literal, string, or AST node)
+        :type other: Any
+        :return: Binary operation expression
+        :rtype: BinaryOp
+
+        Example::
+
+            >>> x = Variable("x")
+            >>> expr = 5 << x
+            >>> expr(x=2)
+            20
+        """
+        return BinaryOp(x=parse_expr(other), op='<<', y=self)
+
+    def __rshift__(self, other: Any) -> 'BinaryOp':
+        """
+        Right shift operator (>>).
+
+        Creates a binary right shift expression. The operand is automatically
+        converted using :func:`parse_expr`.
+
+        :param other: Right operand (Expr, literal, string, or AST node)
+        :type other: Any
+        :return: Binary operation expression
+        :rtype: BinaryOp
+
+        Example::
+
+            >>> x = Variable("x")
+            >>> expr = x >> 1
+            >>> expr(x=10)
+            5
+        """
+        return BinaryOp(x=self, op='>>', y=parse_expr(other))
+
+    def __rrshift__(self, other: Any) -> 'BinaryOp':
+        """
+        Reverse right shift operator (>>).
+
+        Enables right shift when the expression is on the right side.
+        The operand is automatically converted using :func:`parse_expr`.
+
+        :param other: Left operand (Expr, literal, string, or AST node)
+        :type other: Any
+        :return: Binary operation expression
+        :rtype: BinaryOp
+
+        Example::
+
+            >>> x = Variable("x")
+            >>> expr = 20 >> x
+            >>> expr(x=2)
+            5
+        """
+        return BinaryOp(x=parse_expr(other), op='>>', y=self)
+
+    def __and__(self, other: Any) -> 'BinaryOp':
+        """
+        Bitwise AND operator (&).
+
+        Creates a binary bitwise AND expression. The operand is automatically
+        converted using :func:`parse_expr`.
+
+        :param other: Right operand (Expr, literal, string, or AST node)
+        :type other: Any
+        :return: Binary operation expression
+        :rtype: BinaryOp
+
+        Example::
+
+            >>> x = Variable("x")
+            >>> expr = x & 0xFF
+            >>> expr(x=0x1234)
+            52
+        """
+        return BinaryOp(x=self, op='&', y=parse_expr(other))
+
+    def __rand__(self, other: Any) -> 'BinaryOp':
+        """
+        Reverse bitwise AND operator (&).
+
+        Enables bitwise AND when the expression is on the right side.
+        The operand is automatically converted using :func:`parse_expr`.
+
+        :param other: Left operand (Expr, literal, string, or AST node)
+        :type other: Any
+        :return: Binary operation expression
+        :rtype: BinaryOp
+
+        Example::
+
+            >>> x = Variable("x")
+            >>> expr = 0xFF & x
+            >>> expr(x=0x1234)
+            52
+        """
+        return BinaryOp(x=parse_expr(other), op='&', y=self)
+
+    def __or__(self, other: Any) -> 'BinaryOp':
+        """
+        Bitwise OR operator (|).
+
+        Creates a binary bitwise OR expression. The operand is automatically
+        converted using :func:`parse_expr`.
+
+        :param other: Right operand (Expr, literal, string, or AST node)
+        :type other: Any
+        :return: Binary operation expression
+        :rtype: BinaryOp
+
+        Example::
+
+            >>> x = Variable("x")
+            >>> expr = x | 0x0F
+            >>> expr(x=0xF0)
+            255
+        """
+        return BinaryOp(x=self, op='|', y=parse_expr(other))
+
+    def __ror__(self, other: Any) -> 'BinaryOp':
+        """
+        Reverse bitwise OR operator (|).
+
+        Enables bitwise OR when the expression is on the right side.
+        The operand is automatically converted using :func:`parse_expr`.
+
+        :param other: Left operand (Expr, literal, string, or AST node)
+        :type other: Any
+        :return: Binary operation expression
+        :rtype: BinaryOp
+
+        Example::
+
+            >>> x = Variable("x")
+            >>> expr = 0xF0 | x
+            >>> expr(x=0x0F)
+            255
+        """
+        return BinaryOp(x=parse_expr(other), op='|', y=self)
+
+    def __xor__(self, other: Any) -> 'BinaryOp':
+        """
+        Bitwise XOR operator (^).
+
+        Creates a binary bitwise XOR expression. The operand is automatically
+        converted using :func:`parse_expr`.
+
+        :param other: Right operand (Expr, literal, string, or AST node)
+        :type other: Any
+        :return: Binary operation expression
+        :rtype: BinaryOp
+
+        Example::
+
+            >>> x = Variable("x")
+            >>> expr = x ^ 0xFF
+            >>> expr(x=0xAA)
+            85
+        """
+        return BinaryOp(x=self, op='^', y=parse_expr(other))
+
+    def __rxor__(self, other: Any) -> 'BinaryOp':
+        """
+        Reverse bitwise XOR operator (^).
+
+        Enables bitwise XOR when the expression is on the right side.
+        The operand is automatically converted using :func:`parse_expr`.
+
+        :param other: Left operand (Expr, literal, string, or AST node)
+        :type other: Any
+        :return: Binary operation expression
+        :rtype: BinaryOp
+
+        Example::
+
+            >>> x = Variable("x")
+            >>> expr = 0xFF ^ x
+            >>> expr(x=0xAA)
+            85
+        """
+        return BinaryOp(x=parse_expr(other), op='^', y=self)
+
+    # Comparison operators
+    def __lt__(self, other: Any) -> 'BinaryOp':
+        """
+        Less than operator (<).
+
+        Creates a binary less than comparison expression. The operand is
+        automatically converted using :func:`parse_expr`.
+
+        :param other: Right operand (Expr, literal, string, or AST node)
+        :type other: Any
+        :return: Binary operation expression
+        :rtype: BinaryOp
+
+        Example::
+
+            >>> x = Variable("x")
+            >>> expr = x < 10
+            >>> expr(x=5)
+            True
+        """
+        return BinaryOp(x=self, op='<', y=parse_expr(other))
+
+    def __le__(self, other: Any) -> 'BinaryOp':
+        """
+        Less than or equal operator (<=).
+
+        Creates a binary less than or equal comparison expression. The operand
+        is automatically converted using :func:`parse_expr`.
+
+        :param other: Right operand (Expr, literal, string, or AST node)
+        :type other: Any
+        :return: Binary operation expression
+        :rtype: BinaryOp
+
+        Example::
+
+            >>> x = Variable("x")
+            >>> expr = x <= 10
+            >>> expr(x=10)
+            True
+        """
+        return BinaryOp(x=self, op='<=', y=parse_expr(other))
+
+    def __gt__(self, other: Any) -> 'BinaryOp':
+        """
+        Greater than operator (>).
+
+        Creates a binary greater than comparison expression. The operand is
+        automatically converted using :func:`parse_expr`.
+
+        :param other: Right operand (Expr, literal, string, or AST node)
+        :type other: Any
+        :return: Binary operation expression
+        :rtype: BinaryOp
+
+        Example::
+
+            >>> x = Variable("x")
+            >>> expr = x > 5
+            >>> expr(x=10)
+            True
+        """
+        return BinaryOp(x=self, op='>', y=parse_expr(other))
+
+    def __ge__(self, other: Any) -> 'BinaryOp':
+        """
+        Greater than or equal operator (>=).
+
+        Creates a binary greater than or equal comparison expression. The operand
+        is automatically converted using :func:`parse_expr`.
+
+        :param other: Right operand (Expr, literal, string, or AST node)
+        :type other: Any
+        :return: Binary operation expression
+        :rtype: BinaryOp
+
+        Example::
+
+            >>> x = Variable("x")
+            >>> expr = x >= 5
+            >>> expr(x=5)
+            True
+        """
+        return BinaryOp(x=self, op='>=', y=parse_expr(other))
+
+    # Note: __eq__ and __ne__ are not overridden as they conflict with Python's
+    # object equality comparison and dataclass equality. Use eq() and ne() methods instead.
+
+    def eq(self, other: Any) -> 'BinaryOp':
+        """
+        Equality comparison (==).
+
+        This method creates an equality comparison expression. It cannot use
+        the ``__eq__`` magic method as that conflicts with Python's object
+        equality comparison. The operand is automatically converted using
+        :func:`parse_expr`.
+
+        :param other: Right operand (Expr, literal, string, or AST node)
+        :type other: Any
+        :return: Binary operation expression
+        :rtype: BinaryOp
+
+        Example::
+
+            >>> x = Variable("x")
+            >>> expr = x.eq(5)  # Creates: x == 5
+            >>> expr(x=5)
+            True
+            >>> expr(x=10)
+            False
+        """
+        return BinaryOp(x=self, op='==', y=parse_expr(other))
+
+    def ne(self, other: Any) -> 'BinaryOp':
+        """
+        Not equal comparison (!=).
+
+        This method creates a not-equal comparison expression. It cannot use
+        the ``__ne__`` magic method as that conflicts with Python's object
+        inequality comparison. The operand is automatically converted using
+        :func:`parse_expr`.
+
+        :param other: Right operand (Expr, literal, string, or AST node)
+        :type other: Any
+        :return: Binary operation expression
+        :rtype: BinaryOp
+
+        Example::
+
+            >>> x = Variable("x")
+            >>> expr = x.ne(5)  # Creates: x != 5
+            >>> expr(x=10)
+            True
+            >>> expr(x=5)
+            False
+        """
+        return BinaryOp(x=self, op='!=', y=parse_expr(other))
+
+    # Logical operators
+    # Note: Python's 'and'/'or' keywords cannot be overloaded, and __and__/__or__
+    # are already used for bitwise operators. Use and_/or_/not_ methods instead.
+
+    def and_(self, other: Any) -> 'BinaryOp':
+        """
+        Logical AND (&&).
+
+        This method creates a logical AND expression. It cannot use the ``&``
+        operator as that is reserved for bitwise AND operations.
+
+        :param other: Right operand
+        :type other: Any
+        :return: Binary operation expression with '&&' operator
+        :rtype: BinaryOp
+
+        Example::
+
+            >>> x = Variable("x")
+            >>> y = Variable("y")
+            >>> expr = x.gt(0).and_(y.gt(0))  # Creates: (x > 0) && (y > 0)
+            >>> expr(x=5, y=10)
+            True
+            >>> expr(x=5, y=-1)
+            False
+        """
+        return BinaryOp(x=self, op='&&', y=parse_expr(other))
+
+    def or_(self, other: Any) -> 'BinaryOp':
+        """
+        Logical OR (||).
+
+        This method creates a logical OR expression. It cannot use the ``|``
+        operator as that is reserved for bitwise OR operations.
+
+        :param other: Right operand
+        :type other: Any
+        :return: Binary operation expression with '||' operator
+        :rtype: BinaryOp
+
+        Example::
+
+            >>> x = Variable("x")
+            >>> y = Variable("y")
+            >>> expr = x.gt(0).or_(y.gt(0))  # Creates: (x > 0) || (y > 0)
+            >>> expr(x=5, y=-1)
+            True
+            >>> expr(x=-1, y=-2)
+            False
+        """
+        return BinaryOp(x=self, op='||', y=parse_expr(other))
+
+    def not_(self) -> 'UnaryOp':
+        """
+        Logical NOT (!).
+
+        This method creates a logical NOT expression. Python's ``not`` keyword
+        cannot be overloaded, so this method provides the functionality.
+
+        :return: Unary operation expression with '!' operator
+        :rtype: UnaryOp
+
+        Example::
+
+            >>> x = Variable("x")
+            >>> expr = x.eq(0).not_()  # Creates: !(x == 0)
+            >>> expr(x=5)
+            True
+            >>> expr(x=0)
+            False
+        """
+        return UnaryOp(op='!', x=self)
+
+    # Conditional/ternary operator
+
+    def select(self, true_value: Any, false_value: Any) -> 'ConditionalOp':
+        """
+        Conditional (ternary) operator (? :).
+
+        This method creates a conditional expression that evaluates to
+        ``true_value`` if the condition is true, otherwise ``false_value``.
+
+        :param true_value: Expression to evaluate if condition is true
+        :type true_value: Any
+        :param false_value: Expression to evaluate if condition is false
+        :type false_value: Any
+        :return: Conditional operation expression
+        :rtype: ConditionalOp
+
+        Example::
+
+            >>> x = Variable("x")
+            >>> expr = x.gt(0).select(x, -x)  # Creates: (x > 0) ? x : -x
+            >>> expr(x=5)
+            5
+            >>> expr(x=-3)
+            3
+        """
+        return ConditionalOp(
+            cond=self,
+            if_true=parse_expr(true_value),
+            if_false=parse_expr(false_value)
+        )
+
+    def if_then_else(self, true_value: Any, false_value: Any) -> 'ConditionalOp':
+        """
+        Conditional (ternary) operator (? :) - alias for select.
+
+        This is an alias for :meth:`select`. It creates a conditional
+        expression that evaluates to ``true_value`` if the condition is
+        true, otherwise ``false_value``.
+
+        :param true_value: Expression to evaluate if condition is true
+        :type true_value: Any
+        :param false_value: Expression to evaluate if condition is false
+        :type false_value: Any
+        :return: Conditional operation expression
+        :rtype: ConditionalOp
+
+        Example::
+
+            >>> x = Variable("x")
+            >>> expr = x.gt(0).if_then_else(x, -x)  # Creates: (x > 0) ? x : -x
+            >>> expr(x=5)
+            5
+            >>> expr(x=-3)
+            3
+        """
+        return self.select(true_value, false_value)
 
 
 @dataclass
@@ -793,3 +1662,169 @@ def parse_expr_node_to_expr(node: dsl_nodes.Expr) -> Expr:
         )
     else:
         raise TypeError(f'Unknown node type - {node!r}.')  # pragma: no cover
+
+
+def parse_expr_from_string(expr_string: str, mode: Literal['generic', 'numeric', 'logical'] = 'generic') -> Expr:
+    """
+    Parse a DSL expression string into an :class:`Expr` object.
+
+    This function parses a DSL expression string using one of three grammar entry points
+    based on the specified mode:
+
+    * ``'generic'`` - Uses ``generic_expression`` rule (accepts both numeric and conditional expressions)
+    * ``'numeric'`` - Uses ``num_expression`` rule (arithmetic, bitwise, variables, functions, ternary)
+    * ``'logical'`` - Uses ``cond_expression`` rule (comparisons, logical operators, boolean literals)
+
+    :param expr_string: DSL expression string to parse
+    :type expr_string: str
+    :param mode: Parsing mode, one of ``'generic'``, ``'numeric'``, or ``'logical'``, defaults to ``'generic'``
+    :type mode: str, optional
+    :return: Parsed expression object
+    :rtype: Expr
+    :raises ValueError: If mode is not one of the valid options
+    :raises pyfcstm.dsl.error.GrammarParseError: If parsing fails
+
+    Example::
+
+        >>> from pyfcstm.model.expr import parse_expr_from_string
+        >>> # Generic mode (default) - accepts both numeric and logical
+        >>> expr = parse_expr_from_string("x + 5")
+        >>> isinstance(expr, BinaryOp)
+        True
+        >>> expr = parse_expr_from_string("x > 5 && y < 10")
+        >>> isinstance(expr, BinaryOp)
+        True
+        >>> # Numeric mode - arithmetic and bitwise operations
+        >>> expr = parse_expr_from_string("x * 2 + 3", mode='numeric')
+        >>> isinstance(expr, BinaryOp)
+        True
+        >>> expr = parse_expr_from_string("sqrt(x ** 2 + y ** 2)", mode='numeric')
+        >>> isinstance(expr, UFunc)
+        True
+        >>> # Logical mode - boolean expressions
+        >>> expr = parse_expr_from_string("x > 5 && y < 10", mode='logical')
+        >>> isinstance(expr, BinaryOp)
+        True
+        >>> expr = parse_expr_from_string("!flag || (a == b)", mode='logical')
+        >>> isinstance(expr, BinaryOp)
+        True
+    """
+    from ..dsl.parse import parse_with_grammar_entry
+
+    # Map mode to grammar entry point
+    mode_to_entry = {
+        'generic': 'generic_expression',
+        'numeric': 'num_expression',
+        'logical': 'cond_expression',
+    }
+
+    if mode not in mode_to_entry:
+        raise ValueError(
+            f"Invalid mode '{mode}'. Must be one of: {', '.join(repr(m) for m in mode_to_entry.keys())}"
+        )
+
+    entry_point = mode_to_entry[mode]
+    ast_node = parse_with_grammar_entry(expr_string, entry_point)
+    return parse_expr_node_to_expr(ast_node)
+
+
+def parse_expr(
+    expr_input: Any,
+    mode: Literal['generic', 'numeric', 'logical'] = 'generic'
+) -> Expr:
+    """
+    Parse various input types into an :class:`Expr` object.
+
+    This function provides a unified interface for parsing expressions from multiple
+    input types. It accepts DSL AST nodes, expression strings, or existing Expr objects.
+
+    :param expr_input: Input to parse - can be:
+        - :class:`Expr` object: returned directly without modification
+        - :class:`dsl_nodes.Expr` AST node: converted using :func:`parse_expr_node_to_expr`
+        - :class:`str`: parsed using :func:`parse_expr_from_string` with the specified mode
+        - :class:`bool`: converted to :class:`Boolean` literal
+        - :class:`int`: converted to :class:`Integer` literal
+        - :class:`float`: converted to :class:`Float` literal
+    :type expr_input: Any
+    :param mode: Parsing mode for string inputs, one of ``'generic'``, ``'numeric'``, or ``'logical'``, defaults to ``'generic'``
+    :type mode: Literal['generic', 'numeric', 'logical'], optional
+    :return: Parsed expression object
+    :rtype: Expr
+    :raises TypeError: If input type is not supported
+    :raises ValueError: If mode is invalid (for string inputs)
+    :raises pyfcstm.dsl.error.GrammarParseError: If string parsing fails
+
+    .. warning::
+       The ``mode`` parameter only affects string inputs. If a non-default mode is
+       specified with an Expr object or AST node input, a warning will be issued.
+
+    Example::
+
+        >>> from pyfcstm.model.expr import parse_expr, Variable, Integer, BinaryOp
+        >>> from pyfcstm.dsl.node import Integer as IntNode
+        >>> # Parse from Expr object (returns directly)
+        >>> expr_obj = BinaryOp(x=Variable("x"), op="+", y=Integer(5))
+        >>> result = parse_expr(expr_obj)
+        >>> result is expr_obj
+        True
+        >>> # Parse from DSL AST node
+        >>> ast_node = IntNode(raw="42")
+        >>> expr = parse_expr(ast_node)
+        >>> isinstance(expr, Integer)
+        True
+        >>> # Parse from string
+        >>> expr = parse_expr("x + 5")
+        >>> isinstance(expr, BinaryOp)
+        True
+        >>> expr = parse_expr("x > 5 && y < 10", mode='logical')
+        >>> isinstance(expr, BinaryOp)
+        True
+        >>> # Parse from Python literals
+        >>> expr = parse_expr(42)
+        >>> isinstance(expr, Integer)
+        True
+        >>> expr = parse_expr(3.14)
+        >>> isinstance(expr, Float)
+        True
+        >>> expr = parse_expr(True)
+        >>> isinstance(expr, Boolean)
+        True
+    """
+    # Check if mode is non-default for non-string inputs
+    if mode != 'generic' and not isinstance(expr_input, str):
+        warnings.warn(
+            f"The 'mode' parameter ({mode!r}) has no effect for non-string inputs. "
+            f"It only applies when parsing from strings.",
+            UserWarning,
+            stacklevel=2
+        )
+
+    # If already an Expr object, return directly
+    if isinstance(expr_input, Expr):
+        return expr_input
+
+    # If DSL AST node, convert to Expr
+    if isinstance(expr_input, dsl_nodes.Expr):
+        return parse_expr_node_to_expr(expr_input)
+
+    # If string, parse with specified mode
+    if isinstance(expr_input, str):
+        return parse_expr_from_string(expr_input, mode=mode)
+
+    # If bool (must check before int, as bool is subclass of int)
+    if isinstance(expr_input, bool):
+        return Boolean(value=expr_input)
+
+    # If int
+    if isinstance(expr_input, int):
+        return Integer(value=expr_input)
+
+    # If float
+    if isinstance(expr_input, float):
+        return Float(value=expr_input)
+
+    # Unsupported type
+    raise TypeError(
+        f"Unsupported input type: {type(expr_input).__name__}. "
+        f"Expected Expr, dsl_nodes.Expr, str, bool, int, or float."
+    )

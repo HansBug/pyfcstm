@@ -1207,6 +1207,161 @@ When a composite state's initial transitions cannot reach a stoppable state, the
 
 **Key Point**: Composite states must have at least one initial transition that can reach a stoppable state. The validation checks all guards and event requirements along the path. If no valid path exists, the transition is rejected and the state machine remains in the current state.
 
+Hot Start Feature
+---------------------------------------
+
+The hot start feature allows starting execution from an arbitrary state without executing enter actions. This is useful for debugging, testing, and state recovery scenarios.
+
+Python API - Hot Start
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Use the ``initial_state`` and ``initial_vars`` parameters to perform a hot start:
+
+.. code-block:: python
+
+   from pyfcstm.dsl import parse_with_grammar_entry
+   from pyfcstm.model import parse_dsl_node_to_state_machine
+   from pyfcstm.simulate import SimulationRuntime
+
+   dsl_code = '''
+   def int counter = 0;
+   def int flag = 0;
+   state System {
+       state Idle {
+           during { counter = counter + 1; }
+       }
+       state Active {
+           during { counter = counter + 10; }
+       }
+       [*] -> Idle;
+       Idle -> Active :: Start;
+   }
+   '''
+
+   ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+   sm = parse_dsl_node_to_state_machine(ast)
+
+   # Hot start from Active state with custom variable values
+   runtime = SimulationRuntime(
+       sm,
+       initial_state="System.Active",
+       initial_vars={"counter": 100, "flag": 1}
+   )
+
+   # First cycle starts from Active state (no enter actions executed)
+   runtime.cycle()
+   print(f"State: {'.'.join(runtime.current_state.path)}")
+   print(f"Counter: {runtime.vars['counter']}")  # 110 (100 + 10)
+
+**Key Points**:
+
+- ``initial_state`` accepts string path (``"System.Active"``), tuple path (``('System', 'Active')``), or State object
+- ``initial_vars`` must provide **all** variables (partial override not supported)
+- Enter actions are skipped for all states in the path
+- During actions execute normally starting from the first cycle
+- For composite states, the runtime automatically performs initial transitions to find a stoppable leaf state
+
+CLI - Hot Start with init Command
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The ``init`` command provides hot start functionality in the interactive REPL:
+
+.. code-block:: bash
+
+   $ pyfcstm simulate -i example.fcstm
+   > init System.Active counter=100 flag=1
+   Initialized from state: System.Active
+   Current state: System.Active
+   Variables: counter=100, flag=1
+
+   > cycle
+   Executed 1 cycle
+   Current state: System.Active
+   Variables: counter=110, flag=1
+
+**Syntax**:
+
+.. code-block:: text
+
+   init <state_path> [var1=value1 var2=value2 ...]
+
+**Variable Value Formats**:
+
+- Decimal integers: ``counter=10``
+- Hexadecimal: ``flags=0xFF`` (255)
+- Binary: ``mask=0b1010`` (10)
+- Floating point: ``temp=25.5``
+- Scientific notation: ``value=1.5e2`` (150.0)
+
+**Auto-completion Support**:
+
+The ``init`` command provides intelligent auto-completion:
+
+- State paths with leaf/composite metadata
+- Variable names with type information
+- Value format suggestions based on variable type
+- Filters out already-assigned variables
+
+Hot Start Use Cases
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**Scenario 1: Debugging Specific States**
+
+Jump directly to a problematic state to test behavior without executing full initialization:
+
+.. code-block:: python
+
+   # Debug the error handling state
+   runtime = SimulationRuntime(
+       sm,
+       initial_state="System.ErrorHandler",
+       initial_vars={"error_code": 42, "retry_count": 3}
+   )
+   runtime.cycle()  # Test error handling logic directly
+
+**Scenario 2: State Recovery**
+
+Resume execution from a known state and variable configuration:
+
+.. code-block:: python
+
+   # Save state
+   saved_state = runtime.current_state.path
+   saved_vars = runtime.vars.copy()
+
+   # Later: restore state
+   runtime = SimulationRuntime(
+       sm,
+       initial_state=saved_state,
+       initial_vars=saved_vars
+   )
+
+**Scenario 3: Testing State-Specific Behavior**
+
+Test specific state logic without dependencies on previous states:
+
+.. code-block:: python
+
+   # Test heating logic with specific temperature
+   runtime = SimulationRuntime(
+       sm,
+       initial_state="WaterHeater.Heating",
+       initial_vars={"water_temp": 52, "draw_count": 0}
+   )
+
+   # Execute multiple cycles to verify heating behavior
+   for _ in range(5):
+       runtime.cycle()
+       print(f"Temperature: {runtime.vars['water_temp']}")
+
+**Important Notes**:
+
+- Hot start skips **all** enter actions in the state path
+- During actions execute normally (including aspect actions)
+- Exit actions execute normally when leaving states
+- For composite states, initial transitions are attempted during the first cycle
+- The ``init`` command in CLI creates a **new** runtime instance (history is cleared)
+
 Real-World Business Examples
 ---------------------------------------
 

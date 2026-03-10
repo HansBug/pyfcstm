@@ -387,13 +387,13 @@
 
 ---
 
-## Phase 2: 文档更新 (P1)
+## Phase 2: 文档更新 (P1) ✅ **已完成**
 
 ### 任务清单
 
 #### 2.1 代码文档更新
 
-* [ ] **更新 `SimulationRuntime.__init__` docstring**
+* [x] **更新 `SimulationRuntime.__init__` docstring**
   - 添加 `initial_state` 参数说明
   - 添加 `initial_vars` 参数说明
   - 添加热启动使用示例
@@ -422,14 +422,14 @@
         10
     ```
 
-* [ ] **更新模块级 docstring**
+* [x] **更新模块级 docstring**
   - 在 `pyfcstm/simulate/runtime.py` 顶部添加热启动说明
   - 添加完整的使用示例
   - 说明热启动的应用场景
 
 #### 2.2 用户文档更新
 
-* [ ] **更新 `docs/source/tutorials/simulation/` 文档**
+* [x] **更新 `docs/source/tutorials/simulation/` 文档**
   - **Python 使用部分**：
     - 添加"热启动"小节
     - 说明 `initial_state` 和 `initial_vars` 参数
@@ -448,7 +448,7 @@
 
 #### 2.3 CLAUDE.md 更新
 
-* [ ] **更新 "Common Commands" 部分**
+* [x] **更新 "Common Commands" 部分**
   - 添加热启动示例：
     ```bash
     # Python API 热启动
@@ -464,7 +464,7 @@
     > cycle
     ```
 
-* [ ] **更新 "Architecture Overview" 部分**
+* [x] **更新 "Architecture Overview" 部分**
   - 在 "Simulation Runtime" 小节添加热启动机制说明
   - 说明栈构造规则
   - 说明 DFS 逻辑复用

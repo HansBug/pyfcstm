@@ -35,6 +35,21 @@ Abstract actions can be implemented by registering Python handlers that receive
 read-only execution context. Handlers can be registered individually or organized
 in classes using the @abstract_handler decorator.
 
+**Hot Start Feature**:
+
+The runtime supports "hot start" mode, which allows starting execution from an
+arbitrary state without executing enter actions. This is useful for:
+
+* **Debugging**: Jump directly to a specific state to test behavior
+* **State Recovery**: Resume execution from a known state and variable configuration
+* **Testing**: Verify state-specific logic without executing full initialization
+
+Hot start is enabled by providing ``initial_state`` and ``initial_vars`` parameters
+to the constructor. The runtime constructs the execution stack directly to the
+target state, bypassing all enter actions. For composite states, the runtime
+automatically performs initial transitions during the first cycle to find a
+stoppable leaf state.
+
 Basic usage::
 
     from pyfcstm.simulate import SimulationRuntime
@@ -46,6 +61,17 @@ Basic usage::
     # Access state and variables
     current_state = runtime.current_state
     variables = runtime.vars
+
+Hot start usage::
+
+    # Start from a specific state with custom variable values
+    runtime = SimulationRuntime(
+        state_machine,
+        initial_state="System.Active",
+        initial_vars={"counter": 10, "flag": 1}
+    )
+    # First cycle starts from Active state without executing enter actions
+    runtime.cycle()
 
 Abstract handler registration::
 

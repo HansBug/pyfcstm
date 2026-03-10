@@ -174,6 +174,31 @@ The model layer converts AST nodes from the parser into a structured, queryable 
 The rendering engine reads template directories with `config.yaml` and `.j2` files, then renders the state machine model
 into target code using Jinja2 templating with custom expression styles.
 
+**Simulation Runtime** (`pyfcstm/simulate/`)
+
+- `runtime.py`: Core `SimulationRuntime` class for cycle-based execution
+    - Maintains execution stack of active states from root to current leaf
+    - Implements speculative validation to ensure transitions reach stoppable states
+    - Supports abstract action handlers for implementing lifecycle actions in Python
+    - **Hot Start Feature**: Start execution from arbitrary state without enter actions
+        - Stack construction: Builds frame stack directly to target state
+        - Leaf states use `'active'` mode (execute during chain on first cycle)
+        - Composite states use `'init_wait'` mode (trigger DFS for initial transition)
+        - Variable override: `initial_vars` must provide all variables
+        - Use cases: debugging specific states, state recovery, testing
+    - DFS logic: Automatically finds stoppable paths from composite states
+    - Safety limits: 1000 steps max, 64 stack depth max
+- `context.py`: Read-only execution context for abstract handlers
+    - Provides safe access to current state, variables, and stack
+    - Prevents handlers from directly modifying runtime state
+- `decorators.py`: `@abstract_handler` decorator for handler registration
+    - Enables class-based handler organization
+    - Metadata-driven registration system
+
+The simulation runtime executes state machines cycle-by-cycle, maintaining lifecycle
+semantics and validating transitions before execution. Hot start mode enables jumping
+to specific states for debugging and testing without full initialization.
+
 **Entry Points** (`pyfcstm/entry/`)
 
 - `cli.py`: Command-line interface implementation using Click framework

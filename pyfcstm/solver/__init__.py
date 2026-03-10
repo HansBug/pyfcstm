@@ -11,6 +11,8 @@ The module contains the following main components:
 * :func:`create_z3_vars_from_models` - Create Z3 variables from model objects
 * :func:`solve` - Solve Z3 constraint expressions with flexible solution enumeration
 * :class:`SolveResult` - Dataclass containing solve results
+* :func:`parse_operations` - Parse DSL operation code string to list of Operations
+* :func:`execute_operations` - Execute operations on Z3 variable expression dictionary (symbolic execution)
 
 Example::
 
@@ -29,7 +31,17 @@ Example::
     >>> result = solve([z3_expr == 10, z3_vars['y'] > 0], max_solutions=5)
     >>> result.status
     'sat'
+    >>>
+    >>> # Parse and execute operations symbolically
+    >>> from pyfcstm.solver import parse_operations, execute_operations
+    >>> ops = parse_operations("x = x + 2; y = y + x;", allowed_vars=['x', 'y'])
+    >>> x, y = z3.Int('x'), z3.Int('y')
+    >>> var_exprs = {'x': x, 'y': y}
+    >>> new_exprs = execute_operations(ops, var_exprs)
+    >>> # new_exprs['x'] is: x + 2
+    >>> # new_exprs['y'] is: y + (x + 2)
 """
 
 from .expr import expr_to_z3, create_z3_vars_from_models
 from .solve import solve, SolveResult
+from .operation import parse_operations, execute_operations

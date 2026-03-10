@@ -38,6 +38,9 @@ make package
 # Build standalone executable with PyInstaller
 make build
 
+# Test CLI executable
+make test_cli
+
 # Clean build artifacts
 make clean
 ```
@@ -45,10 +48,14 @@ make clean
 ### Documentation
 
 ```bash
-# Build documentation locally
+# Build documentation locally (auto-detects language)
 make docs
 
-# Build production documentation
+# Build documentation for specific language
+make docs_en                # Build English documentation
+make docs_zh                # Build Chinese documentation
+
+# Build production documentation with versioning
 make pdocs
 
 # Generate RST documentation from Python source files
@@ -84,6 +91,26 @@ make sample
 
 # Clean generated sample tests
 make sample_clean
+```
+
+### VSCode Extension
+
+```bash
+# Build VSCode extension package
+make vscode
+
+# Clean VSCode extension build artifacts
+make vscode_clean
+```
+
+### Logo Generation
+
+```bash
+# Generate PNG logos from SVG sources
+make logos
+
+# Clean generated PNG logos
+make logos_clean
 ```
 
 ### CLI Usage

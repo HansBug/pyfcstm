@@ -523,6 +523,24 @@ class TestModelModel:
             ("LX", "LX1", "LX11"),
         ]
 
+    def test_resolve_state(self, demo_model_1, root_state_1, state_LX_LX1, state_LX_LX1_LX11):
+        assert demo_model_1.resolve_state("LX") is root_state_1
+        assert demo_model_1.resolve_state("LX.LX1") is state_LX_LX1
+        assert demo_model_1.resolve_state("LX.LX1.LX11") is state_LX_LX1_LX11
+
+    def test_resolve_state_errors(self, demo_model_1):
+        with pytest.raises(ValueError, match="State path cannot be empty"):
+            demo_model_1.resolve_state("")
+
+        with pytest.raises(ValueError, match=r"Invalid state path: 'LX\.\.LX1'"):
+            demo_model_1.resolve_state("LX..LX1")
+
+        with pytest.raises(LookupError, match=r"State path root 'RX' does not match state machine root 'LX'"):
+            demo_model_1.resolve_state("RX.LX1")
+
+        with pytest.raises(LookupError, match=r"State 'LX3' not found in state 'LX'"):
+            demo_model_1.resolve_state("LX.LX3")
+
     def test_var_defines(self, var_define_a, var_define_b):
         assert var_define_a.name == "a"
         assert var_define_a.type == "int"

@@ -1,4 +1,4 @@
-.PHONY: docs test unittest resource antlr antlr_build build package clean docs_auto todos_auto tests_auto rst_auto vscode vscode_clean logos logos_clean help
+.PHONY: docs test unittest resource antlr antlr_build build package clean docs_auto todos_auto tests_auto rst_auto vscode vscode_clean vscode_install vscode_uninstall logos logos_clean help
 
 PYTHON := $(shell which python)
 
@@ -95,8 +95,10 @@ help:
 	@echo "  make sample_clean - Remove generated sample tests"
 	@echo ""
 	@echo "VSCode Extension:"
-	@echo "  make vscode       - Build VSCode extension package"
-	@echo "  make vscode_clean - Clean VSCode extension build artifacts"
+	@echo "  make vscode          - Build VSCode extension package"
+	@echo "  make vscode_clean    - Clean VSCode extension build artifacts"
+	@echo "  make vscode_install  - Build and install VSCode extension via 'code' CLI"
+	@echo "  make vscode_uninstall - Uninstall VSCode extension via 'code' CLI"
 	@echo ""
 	@echo "Logos:"
 	@echo "  make logos        - Generate PNG logos from SVG sources"
@@ -205,6 +207,16 @@ vscode:
 
 vscode_clean:
 	$(MAKE) -C ${VSCODE_EXT_DIR} clean
+
+vscode_install: vscode
+	@echo "Installing VSCode extension..."
+	code --install-extension $(shell ls ${VSCODE_EXT_DIR}/build/*.vsix | tail -1)
+	@echo "VSCode extension installed successfully."
+
+vscode_uninstall:
+	@echo "Uninstalling VSCode extension..."
+	code --uninstall-extension hansbug.fcstm-language-support
+	@echo "VSCode extension uninstalled successfully."
 
 # Logo generation targets
 LOGO_SVG_FILES := ${LOGOS_DIR}/logo.svg ${LOGOS_DIR}/logo_banner.svg

@@ -12,6 +12,7 @@ pyfcstm.utils
     binary
     decode
     doc
+    fixed
     jinja2
     json
     logging

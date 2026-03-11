@@ -1,15 +1,49 @@
 """
-Fixed-width integer types matching C/C++/Java behavior.
+Fixed-width integer types matching C/C++/Java and Z3 BitVec behavior.
 
 This module provides immutable fixed-width integer types (int8, int16, int32, int64,
 uint8, uint16, uint32, uint64) that wrap ctypes and replicate the overflow/underflow
-behavior of C/C++/Java integer arithmetic.
+behavior of C/C++/Java integer arithmetic. All operations are designed to align
+exactly with Z3 ``BitVec`` semantics for use alongside the constraint solver.
 
-All arithmetic operations follow C/C++/Java semantics including:
+All arithmetic operations follow C/C++/Java and Z3 BitVec semantics including:
+
 * Two's complement representation for signed integers
 * Wraparound on overflow/underflow
 * Bitwise operations
 * Implicit conversion when operating with Python int
+
+**Z3 BitVec operation correspondence**:
+
++---------------------+----------------------+------------------------------------------+
+| Python operator     | Z3 equivalent        | Notes                                    |
++=====================+======================+==========================================+
+| ``//``, ``/`` (s)   | ``/`` (SDiv/bvsdiv)  | Truncate toward zero; INT_MIN//-1 wraps  |
++---------------------+----------------------+------------------------------------------+
+| ``%`` (signed)      | ``SRem`` (bvsrem)    | Sign follows *dividend*; differs from    |
+|                     |                      | Z3's ``%`` (bvsmod, sign follows divisor)|
++---------------------+----------------------+------------------------------------------+
+| ``//``, ``/`` (u)   | ``UDiv`` (bvudiv)    | Standard unsigned division               |
++---------------------+----------------------+------------------------------------------+
+| ``%`` (unsigned)    | ``URem`` (bvurem)    | Standard unsigned remainder; differs     |
+|                     |                      | from Z3's ``%`` (bvsmod)                 |
++---------------------+----------------------+------------------------------------------+
+| ``>>`` (signed)     | ``>>`` (bvashr)      | Arithmetic: fills with sign bit          |
++---------------------+----------------------+------------------------------------------+
+| ``>>`` (unsigned)   | ``LShR`` (bvlshr)    | Logical: fills with 0                    |
++---------------------+----------------------+------------------------------------------+
+| ``<<``              | ``<<`` (bvshl)       | Shift >= bit-width yields 0              |
++---------------------+----------------------+------------------------------------------+
+| ``~``               | ``~``                | Bitwise NOT (complement all bits)        |
++---------------------+----------------------+------------------------------------------+
+| Unary ``-``         | Unary ``-``          | Two's complement; ``-INT_MIN == INT_MIN``|
++---------------------+----------------------+------------------------------------------+
+
+**Shift amount convention**: When a :class:`_FixedInt` value is used as the shift
+amount, its bit pattern is interpreted as unsigned (matching Z3 ``bvshl``/``bvashr``/
+``bvlshr``). For example, ``Int8(1) << Int8(-1)`` shifts by 255 positions (the unsigned
+value of the 8-bit pattern ``0xFF``), yielding ``Int8(0)``. Plain Python :class:`int`
+shift amounts retain standard Python behaviour (negative values raise :exc:`ValueError`).
 
 Example::
 
@@ -276,15 +310,28 @@ class _FixedInt:
 
     def __floordiv__(self, other) -> '_FixedInt':
         """
-        Floor division matching C/C++/Java truncation toward zero.
+        Integer division truncating toward zero (C/C++/Java and Z3 ``SDiv`` semantics).
 
         Unlike Python's ``//`` which rounds toward negative infinity, this
-        truncates toward zero to match C integer division semantics.
+        truncates toward zero to match C integer division semantics. For signed
+        types this is equivalent to Z3's ``/`` operator (``bvsdiv``); for unsigned
+        types it is equivalent to Z3's ``UDiv`` (``bvudiv``).
+
+        **Overflow**: dividing ``INT_MIN`` by ``-1`` cannot be represented and wraps
+        around to ``INT_MIN`` — the same behaviour as Z3's ``bvsdiv``.  For example,
+        ``Int8(-128) // Int8(-1) == Int8(-128)``.
 
         :param other: Divisor
         :return: New instance with result
         :rtype: _FixedInt
         :raises ZeroDivisionError: If divisor is zero
+
+        Example::
+
+            >>> Int8(-7) // Int8(2)
+            Int8(-3)
+            >>> Int8(-128) // Int8(-1)
+            Int8(-128)
         """
         if isinstance(other, (_FixedInt, int)):
             divisor = int(other)
@@ -342,15 +389,36 @@ class _FixedInt:
 
     def __mod__(self, other) -> '_FixedInt':
         """
-        Modulo operation matching C/C++/Java behavior.
+        Modulo matching C/C++/Java and Z3 ``SRem``/``URem`` semantics.
 
-        The sign of the result follows the dividend (not the divisor), matching
-        C semantics: ``(-7) % 3 == -1`` (not ``2`` as in Python).
+        For **signed** types the sign of the result follows the *dividend* (not the
+        divisor), matching C semantics and Z3's ``SRem`` (``bvsrem``) function.
+        For example, ``Int8(-7) % Int8(3) == Int8(-1)``.
+
+        .. important::
+
+           This is **not** the same as Z3's ``%`` operator, which uses ``bvsmod``
+           (sign follows the *divisor*, like Python ``%``).  The Z3 ``%`` operator
+           would return ``2`` for ``(-7) % 3``, whereas this method returns ``-1``.
+
+        For **unsigned** types the remainder is always non-negative, equivalent to
+        Z3's ``URem`` (``bvurem``).  For example, ``UInt8(255) % UInt8(3) == UInt8(0)``
+        (255 = 85 × 3 + 0).  This differs from Z3's ``%`` operator, which treats the
+        bit pattern as signed and would return ``2`` (interpreting 255 as -1).
 
         :param other: Divisor
         :return: New instance with result
         :rtype: _FixedInt
         :raises ZeroDivisionError: If divisor is zero
+
+        Example::
+
+            >>> Int8(-7) % Int8(3)
+            Int8(-1)
+            >>> Int8(7) % Int8(-3)
+            Int8(1)
+            >>> UInt8(255) % UInt8(3)
+            UInt8(0)
         """
         if isinstance(other, (_FixedInt, int)):
             divisor = int(other)
@@ -417,14 +485,36 @@ class _FixedInt:
 
     def __lshift__(self, other) -> '_FixedInt':
         """
-        Left bit shift.
+        Left bit shift matching Z3 ``bvshl`` semantics.
+
+        When the shift amount is a :class:`_FixedInt`, its bit pattern is
+        interpreted as **unsigned** — exactly as Z3 ``bvshl`` does.  For example,
+        ``Int8(1) << Int8(-1)`` shifts by 255 positions (the unsigned value of
+        the 8-bit pattern ``0xFF``) and yields ``Int8(0)``.
+
+        Shift amounts greater than or equal to the bit width always yield ``0``,
+        matching Z3 ``bvshl``.  When *other* is a plain :class:`int`, Python's
+        standard shift semantics apply (negative shift count raises
+        :exc:`ValueError`).
 
         :param other: Shift amount
         :return: New instance with result
         :rtype: _FixedInt
+
+        Example::
+
+            >>> Int8(1) << Int8(7)
+            Int8(-128)
+            >>> Int8(1) << Int8(8)
+            Int8(0)
+            >>> Int8(1) << Int8(-1)
+            Int8(0)
         """
         if isinstance(other, (_FixedInt, int)):
-            return type(self)(int(self) << int(other))
+            shift_int = int(other)
+            if isinstance(other, _FixedInt) and shift_int < 0:
+                shift_int += 1 << (ctypes.sizeof(other._ctype) * 8)
+            return type(self)(int(self) << shift_int)
         return NotImplemented
 
     def __rlshift__(self, other) -> '_FixedInt':
@@ -441,14 +531,44 @@ class _FixedInt:
 
     def __rshift__(self, other) -> '_FixedInt':
         """
-        Right bit shift (arithmetic for signed, logical for unsigned).
+        Right bit shift: arithmetic for signed types, logical for unsigned types.
+
+        Signed types fill vacated bits with the sign bit, equivalent to Z3's
+        ``>>`` (``bvashr``).  Unsigned types fill with ``0``, equivalent to
+        Z3's ``LShR`` (``bvlshr``).
+
+        When the shift amount is a :class:`_FixedInt`, its bit pattern is
+        interpreted as **unsigned** — exactly as Z3's ``bvashr``/``bvlshr``
+        does.  For example, ``Int8(-1) >> Int8(-1)`` shifts arithmetically by
+        255 positions and yields ``Int8(-1)``; ``UInt8(255) >> Int8(-1)`` shifts
+        logically by 255 positions and yields ``UInt8(0)``.
+
+        Shift amounts greater than or equal to the bit width yield ``0`` (logical)
+        or the sign-extended value (arithmetic, e.g. ``-1`` for all-ones inputs),
+        matching Z3 semantics.  When *other* is a plain :class:`int`, Python's
+        standard shift semantics apply (negative shift count raises
+        :exc:`ValueError`).
 
         :param other: Shift amount
         :return: New instance with result
         :rtype: _FixedInt
+
+        Example::
+
+            >>> Int8(-128) >> Int8(7)
+            Int8(-1)
+            >>> UInt8(128) >> UInt8(7)
+            UInt8(1)
+            >>> Int8(-1) >> Int8(-1)
+            Int8(-1)
+            >>> UInt8(255) >> Int8(-1)
+            UInt8(0)
         """
         if isinstance(other, (_FixedInt, int)):
-            return type(self)(int(self) >> int(other))
+            shift_int = int(other)
+            if isinstance(other, _FixedInt) and shift_int < 0:
+                shift_int += 1 << (ctypes.sizeof(other._ctype) * 8)
+            return type(self)(int(self) >> shift_int)
         return NotImplemented
 
     def __rrshift__(self, other) -> '_FixedInt':
@@ -531,10 +651,22 @@ class _FixedInt:
 
     def __neg__(self) -> '_FixedInt':
         """
-        Unary negation.
+        Unary two's-complement negation.
+
+        Matches Z3's unary ``-`` on ``BitVec``.  The result wraps on overflow:
+        negating ``INT_MIN`` produces ``INT_MIN`` (e.g. ``-Int8(-128) == Int8(-128)``).
+        For unsigned types the result is ``(2^N - x) % 2^N``
+        (e.g. ``-UInt8(1) == UInt8(255)``).
 
         :return: New instance with negated value
         :rtype: _FixedInt
+
+        Example::
+
+            >>> -Int8(-128)
+            Int8(-128)
+            >>> -UInt8(1)
+            UInt8(255)
         """
         return type(self)(-int(self))
 

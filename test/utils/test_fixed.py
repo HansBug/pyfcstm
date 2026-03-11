@@ -1261,3 +1261,177 @@ class TestFixedIntEdgeCases:
         from pyfcstm.utils import Int8 as I8, UInt8 as U8
         assert int(I8(127) + 1) == -128
         assert int(U8(255) + 1) == 0
+
+
+# ---------------------------------------------------------------------------
+# Z3 BitVec alignment
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unittest
+class TestFixedIntZ3BitVecAlignment:
+    """
+    Tests verifying exact alignment with Z3 ``BitVec`` semantics, derived from
+    running the Z3 solver and comparing results.
+
+    Operator correspondence (see module docstring for the full table):
+
+    * ``//`` / ``/`` (signed) ↔ Z3 ``/`` (``bvsdiv``, truncate toward zero)
+    * ``%`` (signed) ↔ Z3 ``SRem`` (``bvsrem``, sign follows dividend)
+    * ``%`` (unsigned) ↔ Z3 ``URem`` (``bvurem``)
+    * ``>>`` (signed) ↔ Z3 ``>>`` (``bvashr``, arithmetic, fills with sign bit)
+    * ``>>`` (unsigned) ↔ Z3 ``LShR`` (``bvlshr``, logical, fills with 0)
+    * ``<<`` ↔ Z3 ``<<`` (``bvshl``)
+
+    .. note::
+
+       Z3's ``%`` operator uses ``bvsmod`` (sign follows *divisor*), which differs
+       from this module's ``__mod__`` (``SRem``/``URem``).
+    """
+
+    # ------------------------------------------------------------------
+    # SDiv — INT_MIN // -1 wraps around (bvsdiv overflow)
+    # ------------------------------------------------------------------
+
+    @pytest.mark.parametrize("cls,min_val", [
+        (Int8,  -128),
+        (Int16, -32768),
+        (Int32, -2147483648),
+        (Int64, -9223372036854775808),
+    ])
+    def test_sdiv_int_min_over_neg1_wraps(self, cls, min_val):
+        # Z3: BitVecVal(INT_MIN, n) / BitVecVal(-1, n) == INT_MIN  (bvsdiv overflow)
+        assert int(cls(min_val) // cls(-1)) == min_val
+
+    # ------------------------------------------------------------------
+    # SDiv — truncation toward zero (not Python floor division)
+    # ------------------------------------------------------------------
+
+    @pytest.mark.parametrize("a,b,expected", [
+        # Z3 bvsdiv vs Python // for negative operands
+        (-7, 2, -3),     # bvsdiv truncates to -3; Python // gives -4
+        (-7, 3, -2),     # bvsdiv truncates to -2; Python // gives -3
+        (7, -3, -2),     # bvsdiv truncates to -2; Python // gives -3
+        (-10, 3, -3),    # bvsdiv truncates to -3; Python // gives -4
+        (-10, -3, 3),    # bvsdiv truncates to  3; Python // gives  3 (same)
+    ])
+    def test_sdiv_truncates_toward_zero(self, a, b, expected):
+        # Z3: BitVecVal(a, 8) / BitVecVal(b, 8)  (bvsdiv)
+        assert int(Int8(a) // Int8(b)) == expected
+
+    # ------------------------------------------------------------------
+    # SRem (bvsrem) — sign follows dividend, NOT divisor
+    # ------------------------------------------------------------------
+
+    @pytest.mark.parametrize("a,b,srem,note", [
+        (-7, 3, -1, "Z3 % (bvsmod) gives  2; SRem gives -1"),
+        (7, -3, 1, "Z3 % (bvsmod) gives -2; SRem gives  1"),
+        (-7, -3, -1, "both give -1 here"),
+        (-128, 3, -2, "Z3 % (bvsmod) gives  1; SRem gives -2"),
+        (127, -128, 127, "Z3 % (bvsmod) gives -1; SRem gives 127"),
+        (-128, 127, -1, "Z3 % (bvsmod) gives 126; SRem gives -1"),
+    ])
+    def test_signed_mod_matches_srem_not_smod(self, a, b, srem, note):
+        # Z3 SRem(a, b) — sign of result follows the *dividend*
+        assert int(Int8(a) % Int8(b)) == srem, note
+
+    # ------------------------------------------------------------------
+    # URem (bvurem) — standard unsigned remainder
+    # ------------------------------------------------------------------
+
+    @pytest.mark.parametrize("a,b,urem,note", [
+        (255, 3,   0, "URem=0 (255=85×3); Z3 % (bvsmod treating 255 as -1) gives 2"),
+        (128, 3,   2, "URem=2 (128=42×3+2); Z3 % (bvsmod treating 128 as -128) gives 1"),
+        (200, 7,   4, "URem=4 (200=28×7+4)"),
+        (128, 127, 1, "URem=1; Z3 % (bvsmod) gives 126"),
+    ])
+    def test_unsigned_mod_matches_urem_not_smod(self, a, b, urem, note):
+        # Z3 URem(a, b) — values treated as unsigned
+        assert int(UInt8(a) % UInt8(b)) == urem, note
+
+    # ------------------------------------------------------------------
+    # Arithmetic right shift — bvashr (fills with sign bit)
+    # ------------------------------------------------------------------
+
+    @pytest.mark.parametrize("value,shift,expected", [
+        (-128, 7, -1),    # 0x80 >> 7 = 0xFF = -1
+        (-1, 1, -1),      # 0xFF >> 1 = 0xFF = -1
+        (  -1, 7,  -1),   # 0xFF >> 7 = 0xFF = -1
+        ( -64, 2, -16),   # 0xC0 >> 2 = 0xF0 = -16
+        (-100, 2, -25),   # 0x9C >> 2 = 0xE7 = -25
+        (-128, 8,  -1),   # shift >= width: arithmetic fills, Z3 bvashr gives -1
+    ])
+    def test_signed_rshift_arithmetic_matches_z3_bvashr(self, value, shift, expected):
+        # Z3: BitVecVal(value, 8) >> BitVecVal(shift, 8)  (bvashr)
+        assert int(Int8(value) >> Int8(shift)) == expected
+
+    # ------------------------------------------------------------------
+    # Logical right shift — bvlshr / LShR (fills with 0)
+    # ------------------------------------------------------------------
+
+    @pytest.mark.parametrize("value,shift,expected", [
+        (128, 7, 1),    # 0x80 >> 7 = 0x01
+        (255, 7, 1),    # 0xFF >> 7 = 0x01
+        (200, 3, 25),   # 0xC8 >> 3 = 0x19 = 25
+        (255, 8, 0),    # shift >= width: logical gives 0
+        (128, 8, 0),    # shift >= width: logical gives 0
+    ])
+    def test_unsigned_rshift_logical_matches_z3_lshr(self, value, shift, expected):
+        # Z3: LShR(BitVecVal(value, 8), BitVecVal(shift, 8))  (bvlshr)
+        assert int(UInt8(value) >> UInt8(shift)) == expected
+
+    # ------------------------------------------------------------------
+    # _FixedInt shift amounts treated as unsigned bit patterns (bvshl / bvashr / bvlshr)
+    # ------------------------------------------------------------------
+
+    @pytest.mark.parametrize("cls,value,neg_shift_val,expected_lshift,expected_rshift", [
+        # Int8(-1) as shift = bit pattern 0xFF = 255 unsigned (>= 8 → all-zero or sign-fill)
+        (Int8, 1, -1, 0, 0),       # 1 << 255 = 0; 1 >> 255 (arith) = 0
+        (Int8, -1, -1, 0, -1),     # (-1) << 255 = 0; (-1) >> 255 (arith) = -1
+        (UInt8, 1, -1, 0, 0),      # 1 << 255 = 0; 1 >> 255 (logical) = 0
+        (UInt8, 255, -1, 0, 0),    # 255 << 255 = 0; 255 >> 255 (logical) = 0
+        # Int8(-8) as shift = bit pattern 0xF8 = 248 unsigned (>= 8 → all-zero or sign-fill)
+        (Int8, 1, -8, 0, 0),
+        (Int8, -1, -8, 0, -1),
+    ])
+    def test_negative_fixedint_shift_treated_as_unsigned(
+        self, cls, value, neg_shift_val, expected_lshift, expected_rshift
+    ):
+        """
+        Z3 interprets a ``BitVec`` shift amount as unsigned.
+        ``Int8(-1)`` has bit pattern ``0xFF`` = 255, so shifting by ``Int8(-1)``
+        is equivalent to shifting by 255 positions.
+        """
+        shift = Int8(neg_shift_val)
+        assert int(cls(value) << shift) == expected_lshift
+        assert int(cls(value) >> shift) == expected_rshift
+
+    # ------------------------------------------------------------------
+    # Negation overflow: -INT_MIN == INT_MIN  (Z3 unary -)
+    # ------------------------------------------------------------------
+
+    @pytest.mark.parametrize("cls,min_val", [
+        (Int8,  -128),
+        (Int16, -32768),
+        (Int32, -2147483648),
+        (Int64, -9223372036854775808),
+    ])
+    def test_neg_int_min_wraps(self, cls, min_val):
+        # Z3: -BitVecVal(INT_MIN, n) == INT_MIN  (two's complement overflow)
+        assert int(-cls(min_val)) == min_val
+
+    # ------------------------------------------------------------------
+    # Unsigned negation: -UInt(x) == (2^N - x) % 2^N  (Z3 unary -)
+    # ------------------------------------------------------------------
+
+    @pytest.mark.parametrize("cls,value,expected", [
+        (UInt8,   1, 255),
+        (UInt8, 127, 129),
+        (UInt8, 128, 128),
+        (UInt8, 255,   1),
+        (UInt16,     1, 65535),
+        (UInt32,     1, 4294967295),
+        (UInt64,     1, 18446744073709551615),
+    ])
+    def test_unsigned_neg_wraps(self, cls, value, expected):
+        # Z3: -BitVecVal(value, N) == (2^N - value) % 2^N
+        assert int(-cls(value)) == expected

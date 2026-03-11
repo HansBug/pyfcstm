@@ -1,4 +1,7 @@
+import ctypes
+
 import pytest
+import z3
 
 from pyfcstm.utils.fixed import (
     Int8, Int16, Int32, Int64,
@@ -19,6 +22,47 @@ _TYPE_INFO = [
     (UInt32,  0,                    4294967295,           32),
     (UInt64,  0,                    18446744073709551615, 64),
 ]
+
+
+# ---------------------------------------------------------------------------
+# Z3 BitVec alignment helpers
+# ---------------------------------------------------------------------------
+
+def _to_bitvec(v):
+    """Convert a _FixedInt instance to a Z3 BitVecVal with matching bit width."""
+    bits = ctypes.sizeof(type(v)._ctype) * 8
+    return z3.BitVecVal(int(v), bits)
+
+
+def _bitvec_unsigned_val(bv):
+    """Return the unsigned integer value of a Z3 BitVec constant."""
+    return z3.simplify(bv).as_long()
+
+
+def _fixed_unsigned_val(v):
+    """Return the unsigned bit-pattern value of a _FixedInt instance."""
+    bits = ctypes.sizeof(type(v)._ctype) * 8
+    return int(v) & ((1 << bits) - 1)
+
+
+def _fixed_bit_width(v):
+    """Return the bit width of a _FixedInt instance."""
+    return ctypes.sizeof(type(v)._ctype) * 8
+
+
+def _to_bitvec_width(v, bits):
+    """Convert a _FixedInt to a Z3 BitVecVal of *bits* width (truncates/sign-wraps as needed)."""
+    return z3.BitVecVal(int(v), bits)
+
+
+def _assert_z3_match(fixed_result, z3_result):
+    """Assert that _FixedInt result matches Z3 BitVec result in both value and bit width."""
+    fixed_bits = _fixed_bit_width(fixed_result)
+    assert z3_result.size() == fixed_bits, \
+        f"bit width mismatch: Z3={z3_result.size()} vs FixedInt={fixed_bits}"
+    assert _bitvec_unsigned_val(z3_result) == _fixed_unsigned_val(fixed_result), \
+        f"value mismatch: Z3={_bitvec_unsigned_val(z3_result):#x} " \
+        f"vs FixedInt={_fixed_unsigned_val(fixed_result):#x}"
 
 
 # ---------------------------------------------------------------------------
@@ -1270,8 +1314,10 @@ class TestFixedIntEdgeCases:
 @pytest.mark.unittest
 class TestFixedIntZ3BitVecAlignment:
     """
-    Tests verifying exact alignment with Z3 ``BitVec`` semantics, derived from
-    running the Z3 solver and comparing results.
+    Tests verifying exact alignment with Z3 ``BitVec`` semantics by converting
+    operands to Z3 BitVec, computing results with the Z3 solver, then asserting
+    that the :class:`_FixedInt` result matches in both **numeric value** and
+    **bit width**.
 
     Operator correspondence (see module docstring for the full table):
 
@@ -1300,7 +1346,10 @@ class TestFixedIntZ3BitVecAlignment:
     ])
     def test_sdiv_int_min_over_neg1_wraps(self, cls, min_val):
         # Z3: BitVecVal(INT_MIN, n) / BitVecVal(-1, n) == INT_MIN  (bvsdiv overflow)
-        assert int(cls(min_val) // cls(-1)) == min_val
+        a, b = cls(min_val), cls(-1)
+        result = a // b
+        bv_a, bv_b = _to_bitvec(a), _to_bitvec(b)
+        _assert_z3_match(result, bv_a / bv_b)
 
     # ------------------------------------------------------------------
     # SDiv — truncation toward zero (not Python floor division)
@@ -1316,7 +1365,10 @@ class TestFixedIntZ3BitVecAlignment:
     ])
     def test_sdiv_truncates_toward_zero(self, a, b, expected):
         # Z3: BitVecVal(a, 8) / BitVecVal(b, 8)  (bvsdiv)
-        assert int(Int8(a) // Int8(b)) == expected
+        result = Int8(a) // Int8(b)
+        bv_a = z3.BitVecVal(a, 8)
+        bv_b = z3.BitVecVal(b, 8)
+        _assert_z3_match(result, bv_a / bv_b)
 
     # ------------------------------------------------------------------
     # SRem (bvsrem) — sign follows dividend, NOT divisor
@@ -1332,7 +1384,10 @@ class TestFixedIntZ3BitVecAlignment:
     ])
     def test_signed_mod_matches_srem_not_smod(self, a, b, srem, note):
         # Z3 SRem(a, b) — sign of result follows the *dividend*
-        assert int(Int8(a) % Int8(b)) == srem, note
+        result = Int8(a) % Int8(b)
+        bv_a = z3.BitVecVal(a, 8)
+        bv_b = z3.BitVecVal(b, 8)
+        _assert_z3_match(result, z3.SRem(bv_a, bv_b))
 
     # ------------------------------------------------------------------
     # URem (bvurem) — standard unsigned remainder
@@ -1346,7 +1401,10 @@ class TestFixedIntZ3BitVecAlignment:
     ])
     def test_unsigned_mod_matches_urem_not_smod(self, a, b, urem, note):
         # Z3 URem(a, b) — values treated as unsigned
-        assert int(UInt8(a) % UInt8(b)) == urem, note
+        result = UInt8(a) % UInt8(b)
+        bv_a = z3.BitVecVal(a, 8)
+        bv_b = z3.BitVecVal(b, 8)
+        _assert_z3_match(result, z3.URem(bv_a, bv_b))
 
     # ------------------------------------------------------------------
     # Arithmetic right shift — bvashr (fills with sign bit)
@@ -1362,7 +1420,10 @@ class TestFixedIntZ3BitVecAlignment:
     ])
     def test_signed_rshift_arithmetic_matches_z3_bvashr(self, value, shift, expected):
         # Z3: BitVecVal(value, 8) >> BitVecVal(shift, 8)  (bvashr)
-        assert int(Int8(value) >> Int8(shift)) == expected
+        result = Int8(value) >> Int8(shift)
+        bv_v = z3.BitVecVal(value, 8)
+        bv_s = z3.BitVecVal(shift, 8)
+        _assert_z3_match(result, bv_v >> bv_s)
 
     # ------------------------------------------------------------------
     # Logical right shift — bvlshr / LShR (fills with 0)
@@ -1377,7 +1438,10 @@ class TestFixedIntZ3BitVecAlignment:
     ])
     def test_unsigned_rshift_logical_matches_z3_lshr(self, value, shift, expected):
         # Z3: LShR(BitVecVal(value, 8), BitVecVal(shift, 8))  (bvlshr)
-        assert int(UInt8(value) >> UInt8(shift)) == expected
+        result = UInt8(value) >> UInt8(shift)
+        bv_v = z3.BitVecVal(value, 8)
+        bv_s = z3.BitVecVal(shift, 8)
+        _assert_z3_match(result, z3.LShR(bv_v, bv_s))
 
     # ------------------------------------------------------------------
     # _FixedInt shift amounts treated as unsigned bit patterns (bvshl / bvashr / bvlshr)
@@ -1402,8 +1466,15 @@ class TestFixedIntZ3BitVecAlignment:
         is equivalent to shifting by 255 positions.
         """
         shift = Int8(neg_shift_val)
-        assert int(cls(value) << shift) == expected_lshift
-        assert int(cls(value) >> shift) == expected_rshift
+        bv_value = _to_bitvec(cls(value))
+        bv_shift = _to_bitvec(shift)
+
+        lshift_result = cls(value) << shift
+        _assert_z3_match(lshift_result, bv_value << bv_shift)
+
+        rshift_result = cls(value) >> shift
+        z3_rshift = bv_value >> bv_shift if cls._is_signed else z3.LShR(bv_value, bv_shift)
+        _assert_z3_match(rshift_result, z3_rshift)
 
     # ------------------------------------------------------------------
     # Negation overflow: -INT_MIN == INT_MIN  (Z3 unary -)
@@ -1417,7 +1488,10 @@ class TestFixedIntZ3BitVecAlignment:
     ])
     def test_neg_int_min_wraps(self, cls, min_val):
         # Z3: -BitVecVal(INT_MIN, n) == INT_MIN  (two's complement overflow)
-        assert int(-cls(min_val)) == min_val
+        v = cls(min_val)
+        result = -v
+        bv = _to_bitvec(v)
+        _assert_z3_match(result, -bv)
 
     # ------------------------------------------------------------------
     # Unsigned negation: -UInt(x) == (2^N - x) % 2^N  (Z3 unary -)
@@ -1434,4 +1508,105 @@ class TestFixedIntZ3BitVecAlignment:
     ])
     def test_unsigned_neg_wraps(self, cls, value, expected):
         # Z3: -BitVecVal(value, N) == (2^N - value) % 2^N
-        assert int(-cls(value)) == expected
+        v = cls(value)
+        result = -v
+        bv = _to_bitvec(v)
+        _assert_z3_match(result, -bv)
+
+    # ------------------------------------------------------------------
+    # Cross-type arithmetic: result type == left operand type
+    # Rule: LeftType(a) op RightType(b)  ≡  LeftType(int(a) op int(b))
+    # Z3 equivalent: convert right's Python-int value to left's bit width,
+    # then apply the Z3 operation — correct because both are mod 2^left_bits.
+    # ------------------------------------------------------------------
+
+    @pytest.mark.parametrize("cls_l, a, cls_r, b", [
+        # same signedness, different widths
+        (Int8,    50,  Int16,   100),   # 150 -> -106
+        (Int8,   -50,  Int16,   100),   # 50
+        (Int8,   127,  Int16,     1),   # 128 -> -128
+        (Int16, 32767, Int8,      1),   # 32768 -> -32768
+        (Int16,    -1, Int8,     10),   # 9
+        (Int32, 2147483647, Int16,  1), # overflow
+        (Int64, 9223372036854775807, Int32, 1),   # overflow
+        (UInt8,  250,  UInt16,   10),   # 260 -> 4
+        (UInt8,  255,  UInt32,    1),   # overflow -> 0
+        (UInt16, 65535, UInt8,    1),   # overflow -> 0
+        (UInt32, 4294967295, UInt64, 1),  # overflow -> 0
+        (UInt64, 18446744073709551615, UInt8, 1),  # overflow -> 0
+        # mixed signedness
+        (Int8,    -1,  UInt8,    1),    # 0
+        (Int8,    -1,  UInt16,   2),    # 1
+        (UInt8,  200,  Int8,   -10),    # 190
+        (UInt8,  255,  Int8,     1),    # 256 -> 0
+        (Int16,   -1,  UInt8,  255),    # 254
+        (UInt16, 100,  Int8,   -50),    # 50
+        (UInt32, 100,  Int16, -200),    # -100 -> 4294967196
+        (Int32,   50,  UInt32,  100),   # 150
+    ])
+    def test_cross_type_add(self, cls_l, a, cls_r, b):
+        result = cls_l(a) + cls_r(b)
+        left_bits = _fixed_bit_width(cls_l(a))
+        bv_a = _to_bitvec(cls_l(a))
+        bv_b = _to_bitvec_width(cls_r(b), left_bits)
+        _assert_z3_match(result, bv_a + bv_b)
+
+    @pytest.mark.parametrize("cls_l, a, cls_r, b", [
+        # same signedness, different widths
+        (Int8,    10,  Int16,    20),   # -10
+        (Int8,  -128,  Int16,     1),   # -129 -> 127
+        (Int8,   127,  Int16,    -1),   # 128 -> -128
+        (Int16, -32768, Int8,     1),   # underflow -> 32767
+        (Int32, -2147483648, Int16,  1),  # underflow -> 2147483647
+        (Int64, -9223372036854775808, Int8, 1),  # underflow -> max
+        (UInt8,  255,  UInt16, 256),    # 255 - 256 = -1 -> 255
+        (UInt16,   0,  UInt8,    1),    # 0 - 1 -> 65535
+        (UInt32,   0,  UInt64,   1),    # wraparound -> 4294967295
+        (UInt64,   0,  UInt8,    1),    # wraparound -> max
+        # mixed signedness
+        (Int8,     0,  UInt8,    1),    # -1
+        (Int8,   127,  UInt8,  128),    # -1
+        (UInt8,    5,  Int8,    10),    # 5-10=-5 -> 251
+        (UInt8,  100,  Int16,  200),    # -100 -> 156
+        (UInt8,    0,  Int16,    1),    # -1 -> 255
+        (Int32,   50,  UInt32,  100),   # -50
+        (UInt32, 100,  Int16,  -200),   # 300 -> 300
+        (Int16,  100,  UInt32, 200),    # -100
+        (UInt64,  10,  Int8,    20),    # -10 -> 18446744073709551606
+    ])
+    def test_cross_type_sub(self, cls_l, a, cls_r, b):
+        result = cls_l(a) - cls_r(b)
+        left_bits = _fixed_bit_width(cls_l(a))
+        bv_a = _to_bitvec(cls_l(a))
+        bv_b = _to_bitvec_width(cls_r(b), left_bits)
+        _assert_z3_match(result, bv_a - bv_b)
+
+    @pytest.mark.parametrize("cls_l, a, cls_r, b", [
+        # same signedness, different widths
+        (Int8,    10,  Int16,    13),   # 130 -> -126
+        (Int8,    -1,  Int16,    -1),   # 1
+        (Int8,     2,  Int32,    64),   # 128 -> -128
+        (Int16,  100,  Int8,     50),   # 5000
+        (Int16,  200,  Int8,    200),   # 40000 -> -25536
+        (Int32, 100000, Int16,  100),   # 10000000
+        (Int64, 4611686018427387904, Int32, 2),  # overflow -> min
+        (UInt8,   16,  UInt16,   16),   # 256 -> 0
+        (UInt8,  100,  UInt16,    3),   # 300 -> 44
+        (UInt16, 1000, UInt8,   256),   # 1000 * 256 = 256000 -> 256000 % 65536
+        (UInt32, 100000, UInt64, 100),  # 10000000
+        (UInt64, 9223372036854775808, UInt8, 2),  # overflow -> 0
+        # mixed signedness
+        (Int8,   -10,  UInt8,    20),   # -200 -> 56
+        (Int8,   127,  UInt16,  127),   # 16129 % 256 = 1
+        (UInt8,  200,  Int8,     -2),   # -400 -> 112
+        (UInt16, 1000, Int8,     -3),   # -3000 -> 62536
+        (UInt32, 1000, Int16,  -100),   # -100000 -> 4294867296
+        (Int32,  100,  UInt8,   255),   # 25500
+        (Int16, -100,  UInt8,    10),   # -1000
+    ])
+    def test_cross_type_mul(self, cls_l, a, cls_r, b):
+        result = cls_l(a) * cls_r(b)
+        left_bits = _fixed_bit_width(cls_l(a))
+        bv_a = _to_bitvec(cls_l(a))
+        bv_b = _to_bitvec_width(cls_r(b), left_bits)
+        _assert_z3_match(result, bv_a * bv_b)

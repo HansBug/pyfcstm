@@ -16,5 +16,6 @@ pyfcstm
     model/index
     render/index
     simulate/index
+    solver/index
     utils/index
 

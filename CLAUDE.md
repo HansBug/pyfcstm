@@ -688,6 +688,11 @@ pyfcstm/
 4. **Version Control** - Commit generated documentation separately from code changes
 5. **API Token Security** - Never commit `.llmconfig.yaml` to git
 
+**Commit Message Style**: Follow the dominant repository convention: prefer `type(scope): imperative summary`, such as
+`feat(model): add StateMachine.resolve_state path resolver` or `docs(simulate): reorganize hot start documentation`.
+Use short lowercase types like `feat`, `fix`, `docs`, `test`, `refactor`, `chore`; keep the summary concise and action-oriented;
+omit the scope only when the change truly spans the whole repository.
+
 See `LLM_DOCS_README.md` for detailed documentation.
 
 ### ANTLR Grammar Modifications

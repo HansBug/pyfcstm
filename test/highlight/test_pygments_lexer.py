@@ -1236,6 +1236,848 @@ _LANGCHECK_POSITIVE_CASES = [
     ),
 ]
 
+_LANGCHECK_POSITIVE_CASES += [
+    (
+        '36. Enter Keyword Spray',
+        dedent('''\
+            def int allowmixing = 0;
+            def int object = 0;
+            def int class = 0;
+            def int package = 0;
+            def int impl = 0;
+            def int public = 0;
+            def int export = 0;
+            def int struct = 0;
+            def int module = 0;
+            def int const = 0;
+            state Root {
+                [*] -> Work;
+                state Work {
+                    enter {
+                        allowmixing = 1;
+                        object = 2;
+                        class = 3;
+                        package = 4;
+                        impl = 5;
+                        public = 6;
+                        export = 7;
+                        struct = 8;
+                        module = 9;
+                        const = 10;
+                    }
+                }
+            }
+        '''),
+    ),
+    (
+        '37. Exit Keyword Spray',
+        dedent('''\
+            def int allowmixing = 0;
+            def int boundary = 0;
+            def int type = 0;
+            def int trait = 0;
+            def int private = 0;
+            def int interface = 0;
+            def int nullptr = 0;
+            def int end = 0;
+            def int let = 0;
+            state Root {
+                [*] -> Work;
+                state Work {
+                    exit {
+                        allowmixing = 1;
+                        boundary = 2;
+                        type = 3;
+                        trait = 4;
+                        private = 5;
+                        interface = 6;
+                        nullptr = 7;
+                        end = 8;
+                        let = 9;
+                    }
+                }
+            }
+        '''),
+    ),
+    (
+        '38. Composite During-Before Keyword Spray',
+        dedent('''\
+            def int allowmixing = 0;
+            def int annotation = 0;
+            def int func = 0;
+            def int pub = 0;
+            def int protected = 0;
+            def int namespace = 0;
+            def int typedef = 0;
+            def int function = 0;
+            def int module = 0;
+            state Root {
+                [*] -> Work;
+                during before {
+                    allowmixing = 1;
+                    annotation = 2;
+                    func = 3;
+                    pub = 4;
+                    protected = 5;
+                    namespace = 6;
+                    typedef = 7;
+                    function = 8;
+                    module = 9;
+                }
+                state Work;
+            }
+        '''),
+    ),
+    (
+        '39. Composite During-After Keyword Spray',
+        dedent('''\
+            def int allowmixing = 0;
+            def int database = 0;
+            def int var = 0;
+            def int impl = 0;
+            def int public = 0;
+            def int globalThis = 0;
+            def int struct = 0;
+            def int module = 0;
+            def int try = 0;
+            state Root {
+                [*] -> Work;
+                during after {
+                    allowmixing = 1;
+                    database = 2;
+                    var = 3;
+                    impl = 4;
+                    public = 5;
+                    globalThis = 6;
+                    struct = 7;
+                    module = 8;
+                    try = 9;
+                }
+                state Work;
+            }
+        '''),
+    ),
+    (
+        '40. Aspect-Before Keyword Spray',
+        dedent('''\
+            def int allowmixing = 0;
+            def int object = 0;
+            def int class = 0;
+            def int package = 0;
+            def int impl = 0;
+            def int public = 0;
+            def int export = 0;
+            def int struct = 0;
+            def int module = 0;
+            def int const = 0;
+            state Root {
+                [*] -> Work;
+                state Work {
+                    >> during before {
+                        allowmixing = 1;
+                        object = 2;
+                        class = 3;
+                        package = 4;
+                        impl = 5;
+                        public = 6;
+                        export = 7;
+                        struct = 8;
+                        module = 9;
+                        const = 10;
+                    }
+                }
+            }
+        '''),
+    ),
+    (
+        '41. Aspect-After Keyword Spray',
+        dedent('''\
+            def int allowmixing = 0;
+            def int boundary = 0;
+            def int type = 0;
+            def int trait = 0;
+            def int private = 0;
+            def int interface = 0;
+            def int nullptr = 0;
+            def int end = 0;
+            def int let = 0;
+            state Root {
+                [*] -> Work;
+                >> during after {
+                    allowmixing = 1;
+                    boundary = 2;
+                    type = 3;
+                    trait = 4;
+                    private = 5;
+                    interface = 6;
+                    nullptr = 7;
+                    end = 8;
+                    let = 9;
+                }
+                state Work;
+            }
+        '''),
+    ),
+    (
+        '42. Entry Effect Keyword Spray',
+        dedent('''\
+            def int allowmixing = 0;
+            def int annotation = 0;
+            def int func = 0;
+            def int pub = 0;
+            def int protected = 0;
+            def int namespace = 0;
+            def int typedef = 0;
+            def int function = 0;
+            def int module = 0;
+            state Root {
+                [*] -> Work effect {
+                    allowmixing = 1;
+                    annotation = 2;
+                    func = 3;
+                    pub = 4;
+                    protected = 5;
+                    namespace = 6;
+                    typedef = 7;
+                    function = 8;
+                    module = 9;
+                }
+                state Work;
+            }
+        '''),
+    ),
+    (
+        '43. Normal Effect Keyword Spray',
+        dedent('''\
+            def int allowmixing = 0;
+            def int database = 0;
+            def int var = 0;
+            def int impl = 0;
+            def int public = 0;
+            def int globalThis = 0;
+            def int struct = 0;
+            def int module = 0;
+            def int try = 0;
+            state Root {
+                [*] -> A;
+                A -> B effect {
+                    allowmixing = 1;
+                    database = 2;
+                    var = 3;
+                    impl = 4;
+                    public = 5;
+                    globalThis = 6;
+                    struct = 7;
+                    module = 8;
+                    try = 9;
+                }
+                state A;
+                state B;
+            }
+        '''),
+    ),
+    (
+        '44. Exit Effect Keyword Spray',
+        dedent('''\
+            def int allowmixing = 0;
+            def int object = 0;
+            def int class = 0;
+            def int package = 0;
+            def int impl = 0;
+            def int public = 0;
+            def int export = 0;
+            def int struct = 0;
+            def int module = 0;
+            def int const = 0;
+            state Root {
+                [*] -> A;
+                A -> [*] effect {
+                    allowmixing = 1;
+                    object = 2;
+                    class = 3;
+                    package = 4;
+                    impl = 5;
+                    public = 6;
+                    export = 7;
+                    struct = 8;
+                    module = 9;
+                    const = 10;
+                }
+                state A;
+            }
+        '''),
+    ),
+    (
+        '45. Nested Effect Keyword Spray',
+        dedent('''\
+            def int allowmixing = 0;
+            def int boundary = 0;
+            def int type = 0;
+            def int trait = 0;
+            def int private = 0;
+            def int interface = 0;
+            def int nullptr = 0;
+            def int end = 0;
+            def int let = 0;
+            state Root {
+                [*] -> A;
+                state A {
+                    [*] -> B;
+                    B -> C effect {
+                        allowmixing = 1;
+                        boundary = 2;
+                        type = 3;
+                        trait = 4;
+                        private = 5;
+                        interface = 6;
+                        nullptr = 7;
+                        end = 8;
+                        let = 9;
+                    }
+                    state B;
+                    state C;
+                }
+            }
+        '''),
+    ),
+    (
+        '46. Foreign-Named Transition Chain',
+        dedent('''\
+            state Root {
+                [*] -> allowmixing;
+                allowmixing -> do;
+                object -> class;
+                package -> impl;
+                public -> export;
+                struct -> module;
+                const -> do;
+                state allowmixing;
+                state do;
+                state object;
+                state class;
+                state package;
+                state impl;
+                state public;
+                state export;
+                state struct;
+                state module;
+                state const;
+            }
+        '''),
+    ),
+    (
+        '47. Forced Foreign-Named Transition Chain',
+        dedent('''\
+            state Root {
+                [*] -> allowmixing;
+                ! object -> class;
+                allowmixing -> do;
+                package -> impl;
+                public -> export;
+                struct -> module;
+                const -> do;
+                state allowmixing;
+                state object;
+                state class;
+                state package;
+                state impl;
+                state public;
+                state export;
+                state struct;
+                state module;
+                state const;
+                state do;
+            }
+        '''),
+    ),
+    (
+        '48. All-Force Into Do',
+        dedent('''\
+            state Root {
+                [*] -> object;
+                ! * -> do;
+                allowmixing -> class;
+                package -> impl;
+                public -> export;
+                struct -> module;
+                const -> do;
+                state object;
+                state do;
+                state allowmixing;
+                state class;
+                state package;
+                state impl;
+                state public;
+                state export;
+                state struct;
+                state module;
+                state const;
+            }
+        '''),
+    ),
+    (
+        '49. Exit Cascade With Keyword Sources',
+        dedent('''\
+            state Root {
+                [*] -> allowmixing;
+                class -> [*];
+                object -> class;
+                package -> impl;
+                public -> do;
+                struct -> module;
+                state allowmixing;
+                state class;
+                state object;
+                state package;
+                state impl;
+                state public;
+                state struct;
+                state module;
+                state do;
+            }
+        '''),
+    ),
+    (
+        '50. Class Colon Trap',
+        dedent('''\
+            state Root {
+                [*] -> class;
+                class -> do :
+                    /Tick;
+                allowmixing -> object;
+                package -> impl;
+                public -> export;
+                struct -> module;
+                state class;
+                state do;
+                state allowmixing;
+                state object;
+                state package;
+                state impl;
+                state public;
+                state export;
+                state struct;
+                state module;
+            }
+        '''),
+    ),
+    (
+        '51. For Colon Trap',
+        dedent('''\
+            state Root {
+                [*] -> for;
+                for -> do :
+                    /Tick;
+                allowmixing -> object;
+                package -> impl;
+                public -> export;
+                struct -> module;
+                state for;
+                state do;
+                state allowmixing;
+                state object;
+                state package;
+                state impl;
+                state public;
+                state export;
+                state struct;
+                state module;
+            }
+        '''),
+    ),
+    (
+        '52. Finally Colon Trap',
+        dedent('''\
+            state Root {
+                [*] -> finally;
+                finally -> do :
+                    /Tick;
+                allowmixing -> object;
+                class -> package;
+                impl -> public;
+                export -> struct;
+                state finally;
+                state do;
+                state allowmixing;
+                state object;
+                state class;
+                state package;
+                state impl;
+                state public;
+                state export;
+                state struct;
+            }
+        '''),
+    ),
+    (
+        '53. Scoped Event GlobalThis',
+        dedent('''\
+            state Root {
+                [*] -> allowmixing;
+                object -> class :: globalThis;
+                package -> impl;
+                public -> export;
+                struct -> module;
+                const -> do;
+                state allowmixing;
+                state object;
+                state class;
+                state package;
+                state impl;
+                state public;
+                state export;
+                state struct;
+                state module;
+                state const;
+                state do;
+            }
+        '''),
+    ),
+    (
+        '54. Absolute Event java.util.function',
+        dedent('''\
+            state Root {
+                [*] -> allowmixing;
+                allowmixing -> do : /java.util.function;
+                object -> class;
+                package -> impl;
+                public -> export;
+                struct -> module;
+                state allowmixing;
+                state do;
+                state object;
+                state class;
+                state package;
+                state impl;
+                state public;
+                state export;
+                state struct;
+                state module;
+                state java {
+                    [*] -> util;
+                    state util;
+                }
+            }
+        '''),
+    ),
+    (
+        '55. Absolute Event String.raw',
+        dedent('''\
+            state Root {
+                [*] -> allowmixing;
+                allowmixing -> do : /String.raw;
+                object -> class;
+                package -> impl;
+                public -> export;
+                struct -> module;
+                state allowmixing;
+                state do;
+                state object;
+                state class;
+                state package;
+                state impl;
+                state public;
+                state export;
+                state struct;
+                state module;
+                state String;
+            }
+        '''),
+    ),
+    (
+        '56. Ref Path globalThis.bridge',
+        dedent('''\
+            state Root {
+                [*] -> allowmixing;
+                allowmixing -> do;
+                object -> class;
+                package -> impl;
+                public -> export;
+                struct -> module;
+                state allowmixing;
+                state do;
+                state object;
+                state class;
+                state package;
+                state impl;
+                state public;
+                state export;
+                state struct;
+                state module;
+                state globalThis {
+                    enter abstract bridge;
+                }
+                state Worker {
+                    enter alias ref /globalThis.bridge;
+                }
+            }
+        '''),
+    ),
+    (
+        '57. Ref Path String.raw',
+        dedent('''\
+            state Root {
+                [*] -> allowmixing;
+                allowmixing -> do;
+                object -> class;
+                package -> impl;
+                public -> export;
+                struct -> module;
+                state allowmixing;
+                state do;
+                state object;
+                state class;
+                state package;
+                state impl;
+                state public;
+                state export;
+                state struct;
+                state module;
+                state String {
+                    exit abstract raw;
+                }
+                state Worker {
+                    exit alias ref /String.raw;
+                }
+            }
+        '''),
+    ),
+    (
+        '58. Ref Path java.util.function',
+        dedent('''\
+            state Root {
+                [*] -> allowmixing;
+                allowmixing -> do;
+                object -> class;
+                package -> impl;
+                public -> export;
+                struct -> module;
+                state allowmixing;
+                state do;
+                state object;
+                state class;
+                state package;
+                state impl;
+                state public;
+                state export;
+                state struct;
+                state module;
+                state java {
+                    [*] -> util;
+                    state util {
+                        enter abstract function;
+                    }
+                }
+                state Worker {
+                    enter alias ref /java.util.function;
+                }
+            }
+        '''),
+    ),
+    (
+        '59. Dense Pseudo-Named-Abstract-Ref-Effect Line',
+        dedent('''\
+            def int allowmixing = 0;
+            def int object = 0;
+            def int class = 0;
+            def int package = 0;
+            def int impl = 0;
+            def int public = 0;
+            def int export = 0;
+            def int struct = 0;
+            def int module = 0;
+            def int const = 0;
+            state Root {
+                pseudo state Meta named "m"; [*] -> allowmixing effect { allowmixing = 1; object = 2; class = 3; package = 4; impl = 5; public = 6; export = 7; struct = 8; module = 9; const = 10; } enter abstract hook; exit alias ref hook;
+                allowmixing -> do;
+                state allowmixing {
+                    enter {
+                        allowmixing = 1;
+                        object = 2;
+                        class = 3;
+                        package = 4;
+                        impl = 5;
+                        public = 6;
+                        export = 7;
+                        struct = 8;
+                        module = 9;
+                        const = 10;
+                    }
+                }
+                state do;
+            }
+        '''),
+    ),
+    (
+        '60. Dense Line Plus String.raw Ref',
+        dedent('''\
+            def int allowmixing = 0;
+            def int boundary = 0;
+            def int type = 0;
+            def int trait = 0;
+            def int private = 0;
+            def int interface = 0;
+            def int nullptr = 0;
+            def int end = 0;
+            def int let = 0;
+            state Root {
+                pseudo state Meta named "m"; [*] -> Work effect { allowmixing = 1; boundary = 2; type = 3; trait = 4; private = 5; interface = 6; nullptr = 7; end = 8; let = 9; } enter abstract hook; state String { exit abstract raw; } state Work { exit alias ref /String.raw; }
+                allowmixing -> do;
+                state allowmixing;
+                state do;
+                state Sink {
+                    exit {
+                        allowmixing = 1;
+                        boundary = 2;
+                        type = 3;
+                        trait = 4;
+                        private = 5;
+                        interface = 6;
+                        nullptr = 7;
+                        end = 8;
+                        let = 9;
+                    }
+                }
+            }
+        '''),
+    ),
+    (
+        '61. Dense Line Plus java.util.function Event',
+        dedent('''\
+            def int allowmixing = 0;
+            def int annotation = 0;
+            def int func = 0;
+            def int pub = 0;
+            def int protected = 0;
+            def int namespace = 0;
+            def int typedef = 0;
+            def int function = 0;
+            def int module = 0;
+            state Root {
+                pseudo state Meta named "m"; [*] -> Work effect { allowmixing = 1; annotation = 2; func = 3; pub = 4; protected = 5; namespace = 6; typedef = 7; function = 8; module = 9; } enter abstract hook; exit alias ref hook; state java { [*] -> util; state util; } state Work;
+                allowmixing -> do : /java.util.function;
+                state allowmixing;
+                state do;
+                >> during after {
+                    allowmixing = 1;
+                    annotation = 2;
+                    func = 3;
+                    pub = 4;
+                    protected = 5;
+                    namespace = 6;
+                    typedef = 7;
+                    function = 8;
+                    module = 9;
+                }
+            }
+        '''),
+    ),
+    (
+        '62. Pseudo Sibling Plus Keyword Chain',
+        dedent('''\
+            state Root {
+                [*] -> allowmixing;
+                allowmixing -> do;
+                object -> class;
+                package -> impl;
+                public -> export;
+                struct -> module;
+                pseudo state pseudoNode;
+                state allowmixing;
+                state do;
+                state object;
+                state class;
+                state package;
+                state impl;
+                state public;
+                state export;
+                state struct;
+                state module;
+            }
+        '''),
+    ),
+    (
+        '63. Named State Plus Local Event Keyword Bait',
+        dedent('''\
+            state Root {
+                [*] -> allowmixing;
+                allowmixing -> do;
+                object -> class :: globalThis;
+                package -> impl;
+                public -> export;
+                struct -> module;
+                state allowmixing named "live";
+                state do;
+                state object;
+                state class;
+                state package;
+                state impl;
+                state public;
+                state export named "pub";
+                state struct;
+                state module;
+            }
+        '''),
+    ),
+    (
+        '64. Deep Hierarchy Keyword Parents',
+        dedent('''\
+            state Root {
+                [*] -> allowmixing;
+                allowmixing -> do : /module.const.Tick;
+                object -> class;
+                package -> impl;
+                public -> export;
+                struct -> module;
+                state allowmixing;
+                state do;
+                state object;
+                state class;
+                state package;
+                state impl;
+                state public;
+                state export;
+                state struct;
+                state module {
+                    [*] -> const;
+                    state const;
+                }
+            }
+        '''),
+    ),
+    (
+        '65. Mixed Ref And Colon Trap',
+        dedent('''\
+            state Root {
+                [*] -> class;
+                class -> do :
+                    /namespace.Tick;
+                allowmixing -> object;
+                package -> impl;
+                public -> export;
+                struct -> module;
+                state class;
+                state do;
+                state allowmixing;
+                state object;
+                state package;
+                state impl;
+                state public;
+                state export;
+                state struct;
+                state module;
+                state globalThis {
+                    enter abstract bridge;
+                }
+                state Worker {
+                    enter alias ref /globalThis.bridge;
+                }
+                state namespace;
+            }
+        '''),
+    ),
+]
+
 
 _SAMPLE_CODE_FILES = sorted(_SAMPLE_CODE_DIR.glob('*.fcstm'))
 
@@ -1256,7 +2098,7 @@ class TestFcstmLexerAnalyseText:
         assert 'parse_dsl_node_to_state_machine' not in source
 
     def test_langcheck_positive_examples_are_embedded_completely(self):
-        assert len(_LANGCHECK_POSITIVE_CASES) == 35
+        assert len(_LANGCHECK_POSITIVE_CASES) == 65
         assert [title for title, _ in _LANGCHECK_POSITIVE_CASES] == [
             '1. Minimal Leaf Stair-Step',
             '2. Pseudo Leaf Stair-Step',
@@ -1293,6 +2135,36 @@ class TestFcstmLexerAnalyseText:
             '33. Mixed Comments And No-Op Statements',
             '34. Split Dotted Ref Path',
             '35. Deep Hierarchy Auto-Created Path Event',
+            '36. Enter Keyword Spray',
+            '37. Exit Keyword Spray',
+            '38. Composite During-Before Keyword Spray',
+            '39. Composite During-After Keyword Spray',
+            '40. Aspect-Before Keyword Spray',
+            '41. Aspect-After Keyword Spray',
+            '42. Entry Effect Keyword Spray',
+            '43. Normal Effect Keyword Spray',
+            '44. Exit Effect Keyword Spray',
+            '45. Nested Effect Keyword Spray',
+            '46. Foreign-Named Transition Chain',
+            '47. Forced Foreign-Named Transition Chain',
+            '48. All-Force Into Do',
+            '49. Exit Cascade With Keyword Sources',
+            '50. Class Colon Trap',
+            '51. For Colon Trap',
+            '52. Finally Colon Trap',
+            '53. Scoped Event GlobalThis',
+            '54. Absolute Event java.util.function',
+            '55. Absolute Event String.raw',
+            '56. Ref Path globalThis.bridge',
+            '57. Ref Path String.raw',
+            '58. Ref Path java.util.function',
+            '59. Dense Pseudo-Named-Abstract-Ref-Effect Line',
+            '60. Dense Line Plus String.raw Ref',
+            '61. Dense Line Plus java.util.function Event',
+            '62. Pseudo Sibling Plus Keyword Chain',
+            '63. Named State Plus Local Event Keyword Bait',
+            '64. Deep Hierarchy Keyword Parents',
+            '65. Mixed Ref And Colon Trap',
         ]
 
     @pytest.mark.parametrize(

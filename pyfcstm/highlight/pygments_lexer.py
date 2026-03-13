@@ -99,21 +99,75 @@ class FcstmLexer(RegexLexer):
     )
 
     _ANALYSIS_NEGATIVE_PATTERNS = (
-        (re.compile(r'(?m)^\s*@startuml\b|^\s*@enduml\b|^\s*allowmixing\b'), 0.45),
-        (re.compile(r'(?m)^\s*(?:participant|actor|boundary|control|entity|database|annotation|object)\b'), 0.25),
-        (re.compile(r'(?m)^\s*(?:abstract\s+class|class)\b'), 0.20),
-        (re.compile(r'(?m)^\s*package\s+main\b|^\s*func\s+main\s*\(|^\s*package\b|^\s*func\b|^\s*var\b|^\s*type\b'), 0.25),
-        (re.compile(r'(?m)^\s*fn\s+\w+\s*\(|^\s*impl\b|^\s*trait\b|^\s*pub\b'), 0.30),
-        (re.compile(r'(?m)^\s*(?:public|private|protected)\b|^\s*package\s+[A-Za-z_][\w.]*\s*;|\bjava\.util\.function\b'), 0.25),
-        (re.compile(r'(?m)^\s*(?:export\b|interface\b|namespace\b|type\b)|\bglobalThis\b|\bString\.raw\b|\bRecord\s*<|=>'), 0.25),
+        (re.compile(r'(?m)^\s*@startuml\b|^\s*@enduml\b|^\s*allowmixing\s*$'), 0.45),
+        (
+            re.compile(
+                r'(?m)^\s*(?:participant|actor|boundary|control|entity|database|annotation|object)\s+'
+                r'(?:\"[^\"]+\"|[A-Za-z_][\w.]*)(?:\s+as\s+[A-Za-z_]\w*)?(?:\s*\{|$)'
+            ),
+            0.25,
+        ),
+        (re.compile(r'(?m)^\s*(?:abstract\s+class|class)\s+[A-Za-z_][\w.]*\b(?!\s*(?:=|->))'), 0.20),
+        (
+            re.compile(
+                r'(?m)^\s*package\s+[A-Za-z_]\w*\b|^\s*func\s+\w+\s*\(|^\s*var\s+\w+\b|^\s*type\s+\w+\b'
+            ),
+            0.25,
+        ),
+        (
+            re.compile(
+                r'(?m)^\s*fn\s+\w+\s*\(|^\s*impl(?:\s*<[^>]+>)?\s+\w|^\s*trait\s+\w|'
+                r'^\s*pub(?:\s*\([^)]*\))?\s+(?:fn|struct|enum|mod|trait|type|use|const|static|impl)\b'
+            ),
+            0.30,
+        ),
+        (
+            re.compile(
+                r'(?m)^\s*(?:public|private|protected)\s+(?:class|interface|enum|record|static|final|abstract|'
+                r'synchronized|void|[A-Za-z_]\w*(?:<[^>]+>)?)\b|^\s*package\s+[A-Za-z_][\w.]*\s*;|(?<!/)\bjava\.util\.function\b'
+            ),
+            0.25,
+        ),
+        (
+            re.compile(
+                r'(?m)^\s*export\s+(?:default\b|const\b|let\b|var\b|function\b|class\b|interface\b|type\b|namespace\b|\{)|'
+                r'^\s*interface\s+\w|^\s*namespace\s+\w|^\s*type\s+\w+\s*=|(?<!/)\bglobalThis\s*(?:\.|=)|'
+                r'(?<!/)\bString\.raw\b|\bRecord\s*<|=>'
+            ),
+            0.25,
+        ),
         (re.compile(r'(?m)^\s*def[^\S\n]+\w+\s*\(|^\s*from\s+\w+\s+import\b|^\s*import\s+\w+\b'), 0.25),
-        (re.compile(r'(?m)^\s*#include\b|\bstd::\b|\btemplate\s*<|\busing\s+namespace\b|^\s*using\s+[A-Za-z_]\w*\s*=|\btypedef\b|^\s*struct\b|\bnullptr\b'), 0.30),
+        (
+            re.compile(
+                r'(?m)^\s*#include\b|\bstd::\w|\btemplate\s*<|^\s*using\s+namespace\b|^\s*using\s+[A-Za-z_]\w*\s*=|'
+                r'^\s*typedef\b(?!\s*=)|^\s*struct\s+[A-Za-z_]\w*|\bnullptr\b(?!\s*=)'
+            ),
+            0.30,
+        ),
         (re.compile(r'(?m)\bmacro_rules!'), 0.35),
         (re.compile(r'(?m)\b[A-Za-z_]\w*!\s*[\(\[{]'), 0.35),
-        (re.compile(r'(?m)^(?=.*\bpseudo\b)(?=.*\bnamed\b)(?=.*\babstract\b)(?=.*\bref\b)(?=.*\beffect\b).*(?:=|,|:).*$'), 0.25),
-        (re.compile(r'(?m)^\s*(?:module\b|BEGIN\s*\{|end\b)|->\s*do\b'), 0.20),
-        (re.compile(r'(?m)^\s*(?:const|let|var|function|try|finally)\b'), 0.20),
-        (re.compile(r'(?m)^\s*(?:if|for|while|try|except|finally|class)\b.*:\s*$'), 0.15),
+        (
+            re.compile(
+                r'(?m)^(?=.*\bpseudo\b)(?=.*\bnamed\b)(?=.*\babstract\b)(?=.*\bref\b)(?=.*\beffect\b)'
+                r'(?!.*\bstate\b)(?!.*->).*(?:=|,|:).*$'
+            ),
+            0.25,
+        ),
+        (
+            re.compile(
+                r'(?m)^\s*pseudo\s*=.*\bnamed\s*=.*\babstract\s*=.*\bref\s*=.*\beffect\s*=.*$'
+            ),
+            0.30,
+        ),
+        (re.compile(r'(?m)^\s*module\s+[A-Za-z_]\w*\b|^\s*BEGIN\s*\{|^\s*end\s*$|->\s*do\b(?!\s*[;:])'), 0.20),
+        (
+            re.compile(
+                r'(?m)^\s*const\s+\w+\s*=|^\s*let\s+\w+\s*=|^\s*var\s+\w+\s*=|^\s*function\s+\w+\s*\(|'
+                r'^\s*try\b(?:\s*\{|$)|^\s*finally\b(?!.*->)(?:\s*:|\s*\{|$)'
+            ),
+            0.20,
+        ),
+        (re.compile(r'(?m)^\s*(?:if|for|while|try|except|finally|class)\b(?!.*->).*:\s*$'), 0.15),
     )
 
     _ANALYSIS_TOKEN_PATTERN = re.compile(

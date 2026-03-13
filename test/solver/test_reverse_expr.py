@@ -46,8 +46,11 @@ class TestZ3ToExpr:
             (z3.BoolVal(True), Boolean(True)),
             (z3.BoolVal(False), Boolean(False)),
             (z3.RealVal('2.0'), Float(2.0)),
-            (z3.RealVal('3.14'), BinaryOp(x=Float(157.0), op='/', y=Float(50.0))),
-            (z3.RealVal('1/3'), BinaryOp(x=Float(1.0), op='/', y=Float(3.0))),
+            (z3.RealVal('3.14'), Float(3.14)),
+            (z3.RealVal('1/8'), Float(0.125)),
+            (z3.RealVal('-7/40'), Float(-0.175)),
+            (z3.RealVal('1/3'), BinaryOp(x=Integer(1), op='/', y=Integer(3))),
+            (z3.RealVal('-1/3'), BinaryOp(x=Integer(-1), op='/', y=Integer(3))),
             (z3.Int('i'), Variable('i')),
             (-z3.Int('i'), UnaryOp(op='-', x=Variable('i'))),
             (z3.Int('i') + 5, BinaryOp(x=Variable('i'), op='+', y=Integer(5))),
@@ -386,6 +389,13 @@ class TestZ3ToExpr:
 
         assert reverse_expr._is_numeric_literal(-z3.IntVal(5), -5) is True
         assert reverse_expr._extract_zero_compare_operand(-x_var, z3.Z3_OP_GE) is None
+        assert reverse_expr._z3_real_value_to_expr(z3.RealVal('7/40')) == Float(0.175)
+        assert reverse_expr._z3_real_value_to_expr(z3.RealVal('-9/20')) == Float(-0.45)
+        assert reverse_expr._z3_real_value_to_expr(z3.RealVal('2/3')) == BinaryOp(
+            x=Integer(2),
+            op='/',
+            y=Integer(3),
+        )
 
         with pytest.raises(ValueError, match='Cannot fold an empty Z3 expression sequence'):
             reverse_expr._fold_binary_expr('+', [])

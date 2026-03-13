@@ -131,10 +131,18 @@ def _z3_real_value_to_expr(z3_expr: z3.RatNumRef) -> Expr:
     if denominator == 1:
         return Float(float(numerator))
 
+    finite_denominator = denominator
+    while finite_denominator % 2 == 0:
+        finite_denominator //= 2
+    while finite_denominator % 5 == 0:
+        finite_denominator //= 5
+    if finite_denominator == 1:
+        return Float(float(numerator) / float(denominator))
+
     return BinaryOp(
-        x=Float(float(numerator)),
+        x=Integer(numerator),
         op='/',
-        y=Float(float(denominator)),
+        y=Integer(denominator),
     )
 
 

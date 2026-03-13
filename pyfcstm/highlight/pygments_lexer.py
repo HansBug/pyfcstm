@@ -34,6 +34,8 @@ Usage in Sphinx documentation::
         }
 """
 
+import re
+
 from pygments.lexer import RegexLexer, words, include
 from pygments.token import (
     Comment, Operator, Keyword, Name, String, Number,
@@ -79,6 +81,29 @@ class FcstmLexer(RegexLexer):
     aliases = ['fcstm', 'fcsm']
     filenames = ['*.fcstm']
     mimetypes = ['text/x-fcstm']
+
+    _ANALYSIS_MASK_PATTERNS = (
+        re.compile(r'(?s)R"(?P<delim>[^ ()\\\t\r\n]{0,16})\((.*?)\)(?P=delim)"'),
+        re.compile(r'(?is)(?<!\w)(?:[rubf]{0,3})"""(.*?)"""'),
+        re.compile(r"(?is)(?<!\w)(?:[rubf]{0,3})'''(.*?)'''"),
+        re.compile(r'(?s)\br(?P<hashes>#{0,16})"(?!")(.*?)"(?P=hashes)'),
+        re.compile(r'(?ms)<<[-~]?(?P<quote>[\'"]?)(?P<label>[A-Za-z_]\w*)(?P=quote)\n.*?^\s*(?P=label)\s*$'),
+        re.compile(r'(?s)%(?:q|Q)(?P<delim>[^A-Za-z0-9\s])(.*?)(?P=delim)'),
+        re.compile(r'(?s)`(?:\\.|[^`])*`'),
+        re.compile(r'(?s)/\*.*?\*/'),
+        re.compile(r'"(?:\\.|[^"\\\n])*"'),
+        re.compile(r"'(?:\\.|[^'\\\n])*'"),
+    )
+
+    _ANALYSIS_NEGATIVE_PATTERNS = (
+        (re.compile(r'(?m)^\s*@startuml\b|^\s*@enduml\b|^\s*(?:participant|actor|boundary|control|entity|database)\b'), 0.40),
+        (re.compile(r'(?m)^\s*package\s+main\b|^\s*func\s+main\s*\('), 0.30),
+        (re.compile(r'(?m)^\s*fn\s+\w+\s*\(|^\s*impl\b|^\s*trait\b|^\s*pub\b'), 0.30),
+        (re.compile(r'(?m)^\s*(?:public|private|protected)\b|^\s*package\s+[A-Za-z_][\w.]*\s*;'), 0.25),
+        (re.compile(r'(?m)^\s*(?:export\b|interface\b)|\bglobalThis\b|\bString\.raw\b'), 0.25),
+        (re.compile(r'(?m)^\s*def\s+\w+\s*\(|^\s*from\s+\w+\s+import\b|^\s*import\s+\w+\b'), 0.25),
+        (re.compile(r'(?m)^\s*#include\b|\bstd::\b|\btemplate\s*<|\busing\s+namespace\b'), 0.25),
+    )
 
     tokens = {
         'root': [
@@ -210,6 +235,91 @@ class FcstmLexer(RegexLexer):
         ],
     }
 
+    @staticmethod
+    def _mask_analysis_text(fragment: str) -> str:
+        """Replace non-newline characters with spaces to preserve line layout."""
+        return re.sub(r'[^\n]', ' ', fragment)
+
+    @classmethod
+    def _mask_disabled_preprocessor_blocks(cls, text: str) -> str:
+        """Hide ``#if 0 ... #endif`` regions which are not active code."""
+        lines = text.splitlines(keepends=True)
+        masked = []
+        disabled_depth = 0
+
+        for line in lines:
+            stripped = line.lstrip()
+
+            if disabled_depth:
+                masked.append(cls._mask_analysis_text(line))
+                if re.match(r'#if(?:n?def)?\b', stripped):
+                    disabled_depth += 1
+                elif re.match(r'#endif\b', stripped):
+                    disabled_depth -= 1
+                continue
+
+            if re.match(r'#if\s+0\b', stripped):
+                disabled_depth = 1
+                masked.append(cls._mask_analysis_text(line))
+            else:
+                masked.append(line)
+
+        return ''.join(masked)
+
+    @classmethod
+    def _mask_plantuml_blocks(cls, text: str) -> str:
+        """Hide PlantUML note and legend payload blocks."""
+        lines = text.splitlines(keepends=True)
+        masked = []
+        block_kind = None
+
+        for line in lines:
+            stripped = line.strip().lower()
+
+            if block_kind is not None:
+                masked.append(cls._mask_analysis_text(line))
+                if (block_kind == 'note' and stripped == 'end note') or (
+                    block_kind == 'legend' and stripped == 'endlegend'
+                ):
+                    block_kind = None
+                continue
+
+            if re.match(r'(?i)^note\b', stripped):
+                block_kind = 'note'
+                masked.append(cls._mask_analysis_text(line))
+                continue
+
+            if re.match(r'(?i)^legend\b', stripped):
+                block_kind = 'legend'
+                masked.append(cls._mask_analysis_text(line))
+                continue
+
+            masked.append(line)
+
+        return ''.join(masked)
+
+    @classmethod
+    def _strip_non_semantic_regions(cls, text: str) -> str:
+        """
+        Remove comment/string-like bait so scoring only sees live code structure.
+        """
+        text = text.replace('\r\n', '\n').replace('\r', '\n')
+        text = cls._mask_disabled_preprocessor_blocks(text)
+        text = cls._mask_plantuml_blocks(text)
+        text = re.sub(
+            r'(?ms)^[ \t]*=begin\b.*?^[ \t]*=end\b[^\n]*(?:\n|$)',
+            lambda match: cls._mask_analysis_text(match.group(0)),
+            text,
+        )
+
+        for pattern in cls._ANALYSIS_MASK_PATTERNS:
+            text = pattern.sub(lambda match: cls._mask_analysis_text(match.group(0)), text)
+
+        text = re.sub(r'(?m)//[^\n]*', lambda match: cls._mask_analysis_text(match.group(0)), text)
+        text = re.sub(r'(?m)#[^\n]*', lambda match: cls._mask_analysis_text(match.group(0)), text)
+        text = re.sub(r"(?m)^[ \t]*'[^\n]*", lambda match: cls._mask_analysis_text(match.group(0)), text)
+        return text
+
     def analyse_text(text: str) -> float:
         """
         Analyze text to determine if it is likely FCSTM code.
@@ -228,7 +338,7 @@ class FcstmLexer(RegexLexer):
 
         Example::
 
-            >>> # FCSTM code - should score high (0.95)
+            >>> # FCSTM code - should score high
             >>> fcstm_code = '''
             ... def int counter = 0;
             ... state MyState {
@@ -237,9 +347,9 @@ class FcstmLexer(RegexLexer):
             ... }
             ... '''
             >>> FcstmLexer.analyse_text(fcstm_code)
-            0.95
+            1.0
 
-            >>> # C++ code - should score low (0.00)
+            >>> # C++ code - should score low
             >>> cpp_code = '''
             ... class MyClass {
             ...     void enter() { counter = 0; }
@@ -249,7 +359,7 @@ class FcstmLexer(RegexLexer):
             >>> FcstmLexer.analyse_text(cpp_code)
             0.0
 
-            >>> # Python code - should score low (0.00)
+            >>> # Python code - should score low
             >>> python_code = '''
             ... def enter():
             ...     counter = 0
@@ -258,7 +368,7 @@ class FcstmLexer(RegexLexer):
             >>> FcstmLexer.analyse_text(python_code)
             0.0
 
-            >>> # Java code - should score low (0.00)
+            >>> # Java code - should score low
             >>> java_code = '''
             ... public class State {
             ...     private int counter = 0;
@@ -268,7 +378,7 @@ class FcstmLexer(RegexLexer):
             >>> FcstmLexer.analyse_text(java_code)
             0.0
 
-            >>> # Rust code - should score low (0.00)
+            >>> # Rust code - should score low
             >>> rust_code = '''
             ... struct State {
             ...     counter: i32,
@@ -280,82 +390,61 @@ class FcstmLexer(RegexLexer):
             >>> FcstmLexer.analyse_text(rust_code)
             0.0
         """
-        import re
-
+        analysis_text = FcstmLexer._strip_non_semantic_regions(text)
         score = 0.0
 
-        # Very strong FCSTM-specific indicators (unique to FCSTM)
-        # Pseudo-state marker [*] is highly distinctive
-        if re.search(r'\[\s*\*\s*\]', text):
-            score += 0.25
+        # FCSTM structural signals. These are scored only after comments/strings
+        # and similar bait regions are masked out.
+        if re.search(r'\[\s*\*\s*\]', analysis_text):
+            score += 0.12
 
-        # State transition with arrow (state-like keyword followed by ->)
-        if re.search(r'\bstate\s+\w+\s*\{', text):
-            score += 0.25
+        if re.search(
+            r'\b(?:pseudo\s+)?state\s+[A-Za-z_][A-Za-z0-9_]*\b'
+            r'(?:[^\S\n]+named\b[^\n;{]*)?\s*(?:;|\{|[\n]+\s*\{)',
+            analysis_text,
+        ):
+            score += 0.35
 
-        # Variable definition with FCSTM syntax (def int/float)
-        if re.search(r'\bdef\s+(int|float)\s+\w+\s*=', text):
-            score += 0.25
+        if re.search(r'(?m)^\s*event\s+[A-Za-z_][A-Za-z0-9_]*\b(?:[^\n;{]*)?;', analysis_text):
+            score += 0.12
 
-        # Lifecycle actions with braces (enter/exit/during followed by {)
-        lifecycle_pattern = r'\b(enter|exit|during)\s*(\w+\s*)?\{'
-        if re.search(lifecycle_pattern, text):
-            score += 0.2
+        if re.search(r'(?m)^\s*def\s+(?:int|float)\s+[A-Za-z_][A-Za-z0-9_]*\s*(?:=|;)', analysis_text):
+            score += 0.20
 
-        # Strong indicators (common in FCSTM, rare in other languages)
-        # Aspect operator >> followed by lifecycle keyword
-        if re.search(r'>>\s*(during|enter|exit)', text):
+        if re.search(
+            r'(?m)^\s*(?:enter|during|exit)\b(?:[^\S\n]+(?:before|after|abstract|ref)\b(?:[^\n{;]*)?)?\s*(?:\{|;)',
+            analysis_text,
+        ):
+            score += 0.20
+
+        if re.search(r'(?m)^\s*>>\s*(?:during|enter|exit)\b(?:[^\S\n]+(?:before|after))?\s*\{', analysis_text):
             score += 0.15
 
-        # Event scope operator :: (but check it's not C++ scope resolution)
-        if '::' in text:
-            # Reduce score if it looks like C++ namespace usage
-            if not re.search(r'\b(std|boost|using|namespace|template|class)\b', text):
-                score += 0.1
-            else:
-                score += 0.02  # Small boost even if C++-like
+        if re.search(
+            r'(?m)^\s*(?:!\s*\*?|!\s*[A-Za-z_][\w./]*|\[\s*\*\s*\]|[A-Za-z_][\w./]*)\s*->\s*'
+            r'(?:\[\s*\*\s*\]|[A-Za-z_][\w./]*)\b.*;\s*$',
+            analysis_text,
+        ):
+            score += 0.20
 
-        # Transition arrow -> (but check it's not C++ pointer dereference)
-        if '->' in text:
-            # Check if it's used in state transition context
-            if re.search(r'\w+\s*->\s*\w+', text):
-                # Reduce confidence if C++ indicators present
-                if not re.search(r'\b(class|struct|template|typename|nullptr)\b', text):
-                    score += 0.1
-                else:
-                    score += 0.02
+        if re.search(
+            r'(?m)^\s*(?:!\s*\*?|!\s*[A-Za-z_][\w./]*|\[\s*\*\s*\]|[A-Za-z_][\w./]*)\s*->\s*'
+            r'(?:\[\s*\*\s*\]|[A-Za-z_][\w./]*)\b[^\n;]*(?::|::)\s*[A-Za-z_][A-Za-z0-9_]*',
+            analysis_text,
+        ):
+            score += 0.08
 
-        # Medium indicators (present in FCSTM but also in other languages)
-        # Keywords that are distinctive when combined
-        fcstm_keywords = ['state', 'pseudo', 'named', 'abstract', 'ref', 'effect']
-        keyword_count = sum(1 for kw in fcstm_keywords if re.search(rf'\b{kw}\b', text))
+        keyword_count = sum(
+            1
+            for keyword in ('pseudo', 'named', 'abstract', 'ref', 'effect', 'event')
+            if re.search(rf'\b{keyword}\b', analysis_text)
+        )
         if keyword_count >= 2:
-            score += 0.1 * min(keyword_count - 1, 3)  # Cap at 0.3
+            score += 0.05 * min(keyword_count - 1, 4)
 
-        # Forced transition operator ! at start of line or after whitespace
-        if re.search(r'(^|\s)!\s*\*?\s*->', text, re.MULTILINE):
-            score += 0.1
-
-        # Negative indicators (reduce score if other language patterns detected)
-        # C/C++/Java class definitions
-        if re.search(r'\b(class|struct|interface|enum)\s+\w+\s*[:{]', text):
-            score -= 0.15
-
-        # Python-specific patterns
-        if re.search(r'\b(def\s+\w+\s*\(|import\s+\w+|from\s+\w+\s+import)\b', text):
-            score -= 0.2
-
-        # Rust-specific patterns
-        if re.search(r'\b(fn\s+\w+|impl\s+\w+|trait\s+\w+|pub\s+struct)\b', text):
-            score -= 0.2
-
-        # JavaScript/TypeScript patterns
-        if re.search(r'\b(function\s+\w+|const\s+\w+\s*=|let\s+\w+\s*=|var\s+\w+\s*=)\b', text):
-            score -= 0.15
-
-        # Java-specific patterns
-        if re.search(r'\b(public|private|protected)\s+(static\s+)?(void|int|String)', text):
-            score -= 0.15
+        for pattern, penalty in FcstmLexer._ANALYSIS_NEGATIVE_PATTERNS:
+            if pattern.search(analysis_text):
+                score -= penalty
 
         # Ensure score stays in valid range
         return max(0.0, min(score, 1.0))

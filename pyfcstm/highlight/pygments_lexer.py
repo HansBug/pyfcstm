@@ -37,6 +37,7 @@ Usage in Sphinx documentation::
 """
 
 import re
+from typing import List, Tuple
 
 from pygments.lexer import RegexLexer, words, include
 from pygments.token import (
@@ -344,7 +345,7 @@ class FcstmLexer(RegexLexer):
         return text
 
     @classmethod
-    def _analysis_tokenize(cls, text: str) -> list[str]:
+    def _analysis_tokenize(cls, text: str) -> List[str]:
         """Tokenize live code into a lightweight FCSTM-oriented token stream."""
         return cls._ANALYSIS_TOKEN_PATTERN.findall(text)
 
@@ -354,7 +355,7 @@ class FcstmLexer(RegexLexer):
         return bool(cls._ANALYSIS_IDENTIFIER_PATTERN.match(token)) and token not in cls._ANALYSIS_RESERVED_WORDS
 
     @classmethod
-    def _analysis_collect_state_spans(cls, tokens: list[str]) -> list[tuple[int, int, bool, bool]]:
+    def _analysis_collect_state_spans(cls, tokens: List[str]) -> List[Tuple[int, int, bool, bool]]:
         """
         Collect spans for ``state`` declarations/blocks in the token stream.
 
@@ -397,7 +398,7 @@ class FcstmLexer(RegexLexer):
         return spans
 
     @classmethod
-    def _analysis_collect_event_spans(cls, tokens: list[str]) -> list[tuple[int, int]]:
+    def _analysis_collect_event_spans(cls, tokens: List[str]) -> List[Tuple[int, int]]:
         """Collect spans for ``event`` declarations."""
         spans = []
 
@@ -417,7 +418,7 @@ class FcstmLexer(RegexLexer):
         return spans
 
     @classmethod
-    def _analysis_collect_def_spans(cls, tokens: list[str]) -> list[tuple[int, int]]:
+    def _analysis_collect_def_spans(cls, tokens: List[str]) -> List[Tuple[int, int]]:
         """Collect spans for ``def int/float`` declarations."""
         spans = []
 
@@ -440,8 +441,8 @@ class FcstmLexer(RegexLexer):
     @classmethod
     def _analysis_collect_lifecycle_spans(
         cls,
-        tokens: list[str],
-    ) -> list[tuple[int, int, bool, bool]]:
+        tokens: List[str],
+    ) -> List[Tuple[int, int, bool, bool]]:
         """Collect spans for ``enter``/``during``/``exit`` handler-like constructs."""
         spans = []
 
@@ -475,7 +476,7 @@ class FcstmLexer(RegexLexer):
         return spans
 
     @classmethod
-    def _analysis_collect_aspect_spans(cls, tokens: list[str]) -> list[tuple[int, int, bool]]:
+    def _analysis_collect_aspect_spans(cls, tokens: List[str]) -> List[Tuple[int, int, bool]]:
         """Collect spans for ``>>`` aspect handlers."""
         spans = []
 
@@ -507,7 +508,7 @@ class FcstmLexer(RegexLexer):
         return spans
 
     @classmethod
-    def _analysis_collect_transition_spans(cls, tokens: list[str]) -> list[tuple[int, int, bool]]:
+    def _analysis_collect_transition_spans(cls, tokens: List[str]) -> List[Tuple[int, int, bool]]:
         """
         Collect spans for FCSTM-like transitions.
 
@@ -561,7 +562,7 @@ class FcstmLexer(RegexLexer):
         return spans
 
     @classmethod
-    def _analysis_has_leading_construct(cls, tokens: list[str]) -> bool:
+    def _analysis_has_leading_construct(cls, tokens: List[str]) -> bool:
         """Check whether the file starts like a top-level FCSTM declaration."""
         if len(tokens) >= 3 and tokens[0] == 'state' and cls._analysis_is_identifier(tokens[1]):
             return tokens[2] in {';', '{'} or (
@@ -582,7 +583,7 @@ class FcstmLexer(RegexLexer):
         return False
 
     @staticmethod
-    def _analysis_span_density(token_count: int, spans: list[tuple[int, int, object]]) -> float:
+    def _analysis_span_density(token_count: int, spans: List[Tuple[int, int, object]]) -> float:
         """Compute coverage ratio of recognised FCSTM spans over the token stream."""
         covered = set()
         for span in spans:

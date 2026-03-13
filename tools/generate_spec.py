@@ -7,6 +7,49 @@ import sys
 from pathlib import Path
 
 
+EXCLUDED_MODULES = [
+    # GUI, data-science, and notebook stacks that are not used by the CLI.
+    'tkinter',
+    'matplotlib',
+    'numpy',
+    'pandas',
+    'scipy',
+    'IPython',
+    'jupyter',
+    'notebook',
+    # Test and documentation helpers that should never ship in the standalone build.
+    'pytest',
+    'unittest',
+    'doctest',
+    'pydoc',
+    # Packaging and installer tooling that is only present in the build environment.
+    'PyInstaller',
+    '_pyinstaller_hooks_contrib',
+    'altgraph',
+    'macholib',
+    'pefile',
+    'win32ctypes',
+    'distutils',
+    'setuptools',
+    'pip',
+    # Icon generation dependencies observed in Release Test environments.
+    'PIL',
+    'cairosvg',
+    'cairocffi',
+    'cffi',
+    '_cffi_backend',
+    'cssselect2',
+    'defusedxml',
+    'tinycss2',
+    'webencodings',
+    # Miscellaneous stdlib/test helpers that are not required by the CLI runtime.
+    'xmlrpc',
+    'http.server',
+    '_pytest',
+    'py',
+]
+
+
 def collect_datas(bundle_icon=None):
     """Collect data files that need to be packaged"""
     datas = []
@@ -67,29 +110,7 @@ a = Analysis(
     hooksconfig={{}},
     runtime_hooks=[],
     # Exclude unnecessary modules to reduce size
-    excludes=[
-        'tkinter',           # GUI library
-        'matplotlib',        # Plotting library
-        'numpy',             # Numerical computing
-        'pandas',            # Data analysis
-        'scipy',             # Scientific computing
-        'PIL',               # Image processing
-        'IPython',           # Interactive shell
-        'jupyter',           # Notebook
-        'notebook',
-        'pytest',            # Testing framework
-        'unittest',
-        'doctest',
-        'pydoc',
-        'xmlrpc',            # XML-RPC
-        # 'email',           # Email handling - REMOVED: needed by pkg_resources
-        'http.server',       # HTTP server
-        'distutils',         # Packaging tools
-        'setuptools',
-        'pip',
-        '_pytest',
-        'py',
-    ],
+    excludes={EXCLUDED_MODULES!r},
     noarchive=False,
 )
 

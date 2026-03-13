@@ -8,6 +8,7 @@ import z3
 from pyfcstm.solver.logic import (
     z3_or,
     z3_and,
+    z3_not,
     is_satisfiable,
     contributes_to_solution_space,
     are_equivalent,
@@ -57,6 +58,33 @@ class TestLogicalCombinationHelpers:
         solver = z3.Solver()
         solver.add(expr, x == 2)
         assert solver.check() == z3.sat
+
+    def test_z3_not_true_constant(self):
+        """Test NOT over a true constant."""
+        result = z3_not(z3.BoolVal(True))
+        assert z3.is_false(result)
+
+    def test_z3_not_false_constant(self):
+        """Test NOT over a false constant."""
+        result = z3_not(z3.BoolVal(False))
+        assert z3.is_true(result)
+
+    def test_z3_not_regular_expression(self):
+        """Test NOT over a normal expression."""
+        x = z3.Int('x')
+        expr = z3_not(x > 0)
+
+        solver = z3.Solver()
+        solver.add(expr, x == 0)
+        assert solver.check() == z3.sat
+
+    def test_z3_not_double_negation(self):
+        """Test NOT removes a double negation wrapper."""
+        x = z3.Int('x')
+        inner = x > 0
+        result = z3_not(z3.Not(inner))
+
+        assert result.eq(inner)
 
 
 @pytest.mark.unittest

@@ -12,6 +12,7 @@ The module contains the following main components:
 * :func:`create_z3_vars_from_models` - Create Z3 variables from model objects
 * :func:`z3_or` - Combine boolean expressions with logical OR
 * :func:`z3_and` - Combine boolean expressions with logical AND
+* :func:`z3_not` - Negate a boolean expression
 * :func:`is_satisfiable` - Check whether a boolean expression is satisfiable
 * :func:`contributes_to_solution_space` - Check whether one expression adds new solutions to another
 * :func:`are_equivalent` - Check whether two boolean expressions are logically equivalent
@@ -52,6 +53,7 @@ from .expr import expr_to_z3, create_z3_vars_from_models
 from .logic import (
     z3_or,
     z3_and,
+    z3_not,
     is_satisfiable,
     contributes_to_solution_space,
     are_equivalent,

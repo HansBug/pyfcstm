@@ -10,6 +10,7 @@ The module contains the following main components:
 
 * :func:`z3_or` - Build an n-ary logical OR from boolean expressions
 * :func:`z3_and` - Build an n-ary logical AND from boolean expressions
+* :func:`z3_not` - Build a logical NOT from a boolean expression
 * :func:`is_satisfiable` - Check whether a boolean expression is satisfiable
 * :func:`contributes_to_solution_space` - Check whether ``y`` adds solutions beyond ``x``
 * :func:`are_equivalent` - Check whether two boolean expressions are equivalent
@@ -97,6 +98,43 @@ def z3_and(expressions: List[z3.BoolRef]) -> z3.BoolRef:
     if len(expressions) == 1:
         return expressions[0]
     return z3.And(*expressions)
+
+
+def z3_not(expression: z3.BoolRef) -> z3.BoolRef:
+    """
+    Build a logical NOT from a boolean expression.
+
+    For solver friendliness, this function avoids creating unnecessary wrapper
+    nodes for the most common degenerate cases:
+
+    - ``True`` becomes ``False``
+    - ``False`` becomes ``True``
+    - ``Not(Not(x))`` returns ``x`` directly
+    - Otherwise, returns ``z3.Not(expression)``
+
+    The function does not rewrite the inner structure of non-degenerate input
+    expressions.
+
+    :param expression: Boolean expression to negate
+    :type expression: z3.BoolRef
+    :return: Negated boolean expression
+    :rtype: z3.BoolRef
+
+    Example::
+
+        >>> import z3
+        >>> x = z3.Int('x')
+        >>> expr = z3_not(x > 0)
+        >>> isinstance(expr, z3.BoolRef)
+        True
+    """
+    if z3.is_true(expression):
+        return z3.BoolVal(False)
+    if z3.is_false(expression):
+        return z3.BoolVal(True)
+    if z3.is_not(expression):
+        return expression.arg(0)
+    return z3.Not(expression)
 
 
 def _check_sat(*constraints: z3.BoolRef) -> z3.CheckSatResult:

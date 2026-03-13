@@ -1,7 +1,7 @@
-# pyfcstm
+# pyfcstm (Python Finite Control State Machine Framework)
 
 <div align="center">
-  <img src="logos/logo_banner.svg" alt="pyfcstm - Python Finite State Machine Framework" width="800"/>
+  <img src="logos/logo_banner.svg" alt="pyfcstm - Python Finite Control State Machine Framework" width="800"/>
 </div>
 
 <div align="center">
@@ -34,10 +34,11 @@
 
 ---
 
-**pyfcstm** is a powerful **Python framework** for parsing **Finite State Machine (FSM) Domain-Specific Language (DSL)**
-and generating executable code in multiple target languages. It specializes in modeling **Hierarchical State Machines (
-Harel Statecharts)** with a flexible Jinja2-based template system, making it ideal for embedded systems, protocol
-implementations, game AI, workflow engines, and complex control logic.
+**pyfcstm** is the **Python Finite Control State Machine Framework**, a powerful Python framework for parsing the
+**FCSTM (Finite Control State Machine) Domain-Specific Language (DSL)** and generating executable code in multiple
+target languages. It specializes in modeling **Hierarchical State Machines (Harel Statecharts)** with a flexible
+Jinja2-based template system, making it ideal for embedded systems, protocol implementations, game AI, workflow
+engines, and complex control logic.
 
 ## Table of Contents
 

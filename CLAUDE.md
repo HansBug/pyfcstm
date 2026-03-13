@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**pyfcstm** is a Python framework for parsing Finite State Machine (FSM) Domain-Specific Language (DSL) and generating
-executable code in multiple target languages. It focuses on modeling Hierarchical State Machines (Harel Statecharts)
-with a Jinja2-based templated code generation system.
+**pyfcstm** is the Python Finite Control State Machine Framework. It parses the **FCSTM (Finite Control State
+Machine) Domain-Specific Language (DSL)** and generates executable code in multiple target languages. It focuses on
+modeling Hierarchical State Machines (Harel Statecharts) with a Jinja2-based templated code generation system.
 
 ## Common Commands
 

@@ -113,8 +113,12 @@ jobs:
           choco install tree cloc wget curl make zip
       - name: Set up system dependencies on MacOS
         if: ${{ env.OS_NAME == 'MacOS' }}
+        shell: bash
         run: |
-          brew install tree cloc wget curl make zip
+          brew install tree cloc wget curl make zip cairo pkg-config
+          BREW_PREFIX="$(brew --prefix)"
+          echo "PKG_CONFIG_PATH=${BREW_PREFIX}/lib/pkgconfig${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}" >> $GITHUB_ENV
+          echo "DYLD_FALLBACK_LIBRARY_PATH=${BREW_PREFIX}/lib${DYLD_FALLBACK_LIBRARY_PATH:+:${DYLD_FALLBACK_LIBRARY_PATH}}" >> $GITHUB_ENV
       - name: Set up python ${{ matrix.python-version }}
         uses: actions/setup-python@v2
         with:
@@ -174,8 +178,8 @@ jobs:
           zip -r ${{ env.ZIP_NAME }}.zip ${{ env.CLI_NAME }}
           cd ..
           ls -al dist
-          dist/pyfcstm -v
-          dist/pyfcstm -h
+          dist/pyfcstm.exe -v
+          dist/pyfcstm.exe -h
       - name: Test CLI executable on Windows
         if: ${{ env.OS_NAME == 'Windows' }}
         shell: bash
@@ -212,7 +216,7 @@ jobs:
       - name: Install Python dependencies
         run: |
           pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements.txt -r requirements-dev.txt -r requirements-build.txt
 
       - name: Download ANTLR
         run: |

@@ -96,14 +96,54 @@ class FcstmLexer(RegexLexer):
     )
 
     _ANALYSIS_NEGATIVE_PATTERNS = (
-        (re.compile(r'(?m)^\s*@startuml\b|^\s*@enduml\b|^\s*(?:participant|actor|boundary|control|entity|database)\b'), 0.40),
-        (re.compile(r'(?m)^\s*package\s+main\b|^\s*func\s+main\s*\('), 0.30),
+        (re.compile(r'(?m)^\s*@startuml\b|^\s*@enduml\b|^\s*allowmixing\b'), 0.45),
+        (re.compile(r'(?m)^\s*(?:participant|actor|boundary|control|entity|database|annotation|object)\b'), 0.25),
+        (re.compile(r'(?m)^\s*(?:abstract\s+class|class)\b'), 0.20),
+        (re.compile(r'(?m)^\s*package\s+main\b|^\s*func\s+main\s*\(|^\s*package\b|^\s*func\b|^\s*var\b|^\s*type\b'), 0.25),
         (re.compile(r'(?m)^\s*fn\s+\w+\s*\(|^\s*impl\b|^\s*trait\b|^\s*pub\b'), 0.30),
-        (re.compile(r'(?m)^\s*(?:public|private|protected)\b|^\s*package\s+[A-Za-z_][\w.]*\s*;'), 0.25),
-        (re.compile(r'(?m)^\s*(?:export\b|interface\b)|\bglobalThis\b|\bString\.raw\b'), 0.25),
-        (re.compile(r'(?m)^\s*def\s+\w+\s*\(|^\s*from\s+\w+\s+import\b|^\s*import\s+\w+\b'), 0.25),
-        (re.compile(r'(?m)^\s*#include\b|\bstd::\b|\btemplate\s*<|\busing\s+namespace\b'), 0.25),
+        (re.compile(r'(?m)^\s*(?:public|private|protected)\b|^\s*package\s+[A-Za-z_][\w.]*\s*;|\bjava\.util\.function\b'), 0.25),
+        (re.compile(r'(?m)^\s*(?:export\b|interface\b|namespace\b|type\b)|\bglobalThis\b|\bString\.raw\b|\bRecord\s*<|=>'), 0.25),
+        (re.compile(r'(?m)^\s*def[^\S\n]+\w+\s*\(|^\s*from\s+\w+\s+import\b|^\s*import\s+\w+\b'), 0.25),
+        (re.compile(r'(?m)^\s*#include\b|\bstd::\b|\btemplate\s*<|\busing\s+namespace\b|^\s*using\s+[A-Za-z_]\w*\s*=|\btypedef\b|^\s*struct\b|\bnullptr\b'), 0.30),
+        (re.compile(r'(?m)\bmacro_rules!'), 0.35),
+        (re.compile(r'(?m)\b[A-Za-z_]\w*!\s*[\(\[{]'), 0.35),
+        (re.compile(r'(?m)^(?=.*\bpseudo\b)(?=.*\bnamed\b)(?=.*\babstract\b)(?=.*\bref\b)(?=.*\beffect\b).*(?:=|,|:).*$'), 0.25),
+        (re.compile(r'(?m)^\s*(?:module\b|BEGIN\s*\{|end\b)|->\s*do\b'), 0.20),
+        (re.compile(r'(?m)^\s*(?:const|let|var|function|try|finally)\b'), 0.20),
+        (re.compile(r'(?m)^\s*(?:if|for|while|try|except|finally|class)\b.*:\s*$'), 0.15),
     )
+
+    _ANALYSIS_STATE_BLOCK_PATTERN = re.compile(
+        r'(?m)^\s*(?:pseudo[^\S\n]+)?state[^\S\n]+[A-Za-z_][A-Za-z0-9_]*\b'
+        r'(?:[^\n;{]*)?(?:\{|\n[^\S\n]*\{)'
+    )
+    _ANALYSIS_STATE_DECL_PATTERN = re.compile(
+        r'(?m)^\s*(?:pseudo[^\S\n]+)?state[^\S\n]+[A-Za-z_][A-Za-z0-9_]*\b'
+        r'(?:[^\n{;]*)?;'
+    )
+    _ANALYSIS_EVENT_DECL_PATTERN = re.compile(
+        r'(?m)^\s*event[^\S\n]+[A-Za-z_][A-Za-z0-9_]*\b(?:[^\n;{]*)?;'
+    )
+    _ANALYSIS_DEF_DECL_PATTERN = re.compile(
+        r'(?m)^\s*def[^\S\n]+(?:int|float)[^\S\n]+[A-Za-z_][A-Za-z0-9_]*\b[^\n;]*;'
+    )
+    _ANALYSIS_LIFECYCLE_BLOCK_PATTERN = re.compile(
+        r'(?m)^\s*(?:enter|during|exit)\b(?:[^\S\n]+[^\n{;]+)*\s*(?:\{|\n[^\S\n]*\{)'
+    )
+    _ANALYSIS_LIFECYCLE_DECL_PATTERN = re.compile(
+        r'(?m)^\s*(?:enter|during|exit)\b(?:[^\S\n]+[^\n;{]+)+\s*;'
+    )
+    _ANALYSIS_LIFECYCLE_BARE_PATTERN = re.compile(
+        r'(?m)^\s*(?:enter|during|exit)\s*;'
+    )
+    _ANALYSIS_ASPECT_PATTERN = re.compile(
+        r'(?m)^\s*>>\s*(?:during|enter|exit)\b(?:[^\S\n]+[^\n{;]+)*\s*(?:\{|;)'
+    )
+    _ANALYSIS_TRANSITION_PATTERN = re.compile(
+        r'(?m)^\s*(?P<source>!\s*\*?|!\s*[A-Za-z_][\w./]*|\[\s*\*\s*\]|[A-Za-z_][\w./]*)\s*->\s*'
+        r'(?P<target>\[\s*\*\s*\]|[A-Za-z_][\w./]*)\b(?P<tail>[^\n;]*);\s*$'
+    )
+    _ANALYSIS_KEYWORDS = ('pseudo', 'named', 'abstract', 'ref', 'effect')
 
     tokens = {
         'root': [
@@ -320,6 +360,22 @@ class FcstmLexer(RegexLexer):
         text = re.sub(r"(?m)^[ \t]*'[^\n]*", lambda match: cls._mask_analysis_text(match.group(0)), text)
         return text
 
+    @classmethod
+    def _analysis_has_transition(cls, text: str, *, rich: bool) -> bool:
+        """Detect FCSTM-style transition statements and classify weak vs rich forms."""
+        for match in cls._ANALYSIS_TRANSITION_PATTERN.finditer(text):
+            source = re.sub(r'\s+', '', match.group('source'))
+            target = re.sub(r'\s+', '', match.group('target'))
+            tail = match.group('tail')
+            is_rich = (
+                '[*]' in source or '[*]' in target or source.startswith('!')
+                or '::' in tail or ':' in tail or re.search(r'\beffect\b', tail) is not None
+            )
+            if is_rich == rich:
+                return True
+
+        return False
+
     def analyse_text(text: str) -> float:
         """
         Analyze text to determine if it is likely FCSTM code.
@@ -393,54 +449,62 @@ class FcstmLexer(RegexLexer):
         analysis_text = FcstmLexer._strip_non_semantic_regions(text)
         score = 0.0
 
+        has_state_block = FcstmLexer._ANALYSIS_STATE_BLOCK_PATTERN.search(analysis_text) is not None
+        has_state_decl = FcstmLexer._ANALYSIS_STATE_DECL_PATTERN.search(analysis_text) is not None
+        has_event_decl = FcstmLexer._ANALYSIS_EVENT_DECL_PATTERN.search(analysis_text) is not None
+        has_def_decl = FcstmLexer._ANALYSIS_DEF_DECL_PATTERN.search(analysis_text) is not None
+        has_lifecycle_block = FcstmLexer._ANALYSIS_LIFECYCLE_BLOCK_PATTERN.search(analysis_text) is not None
+        has_lifecycle_decl = FcstmLexer._ANALYSIS_LIFECYCLE_DECL_PATTERN.search(analysis_text) is not None
+        has_lifecycle_bare = FcstmLexer._ANALYSIS_LIFECYCLE_BARE_PATTERN.search(analysis_text) is not None
+        has_aspect = FcstmLexer._ANALYSIS_ASPECT_PATTERN.search(analysis_text) is not None
+        has_rich_transition = FcstmLexer._analysis_has_transition(analysis_text, rich=True)
+        has_plain_transition = FcstmLexer._analysis_has_transition(analysis_text, rich=False)
+
         # FCSTM structural signals. These are scored only after comments/strings
         # and similar bait regions are masked out.
-        if re.search(r'\[\s*\*\s*\]', analysis_text):
-            score += 0.12
+        if has_state_block:
+            score += 0.40
+        elif has_state_decl:
+            score += 0.08
 
-        if re.search(
-            r'\b(?:pseudo\s+)?state\s+[A-Za-z_][A-Za-z0-9_]*\b'
-            r'(?:[^\S\n]+named\b[^\n;{]*)?\s*(?:;|\{|[\n]+\s*\{)',
-            analysis_text,
-        ):
-            score += 0.35
+        if has_event_decl:
+            score += 0.06
 
-        if re.search(r'(?m)^\s*event\s+[A-Za-z_][A-Za-z0-9_]*\b(?:[^\n;{]*)?;', analysis_text):
-            score += 0.12
+        if has_def_decl:
+            score += 0.14
 
-        if re.search(r'(?m)^\s*def\s+(?:int|float)\s+[A-Za-z_][A-Za-z0-9_]*\s*(?:=|;)', analysis_text):
-            score += 0.20
+        if has_lifecycle_block or has_lifecycle_decl:
+            score += 0.15
+        elif has_lifecycle_bare:
+            score += 0.04
 
-        if re.search(
-            r'(?m)^\s*(?:enter|during|exit)\b(?:[^\S\n]+(?:before|after|abstract|ref)\b(?:[^\n{;]*)?)?\s*(?:\{|;)',
-            analysis_text,
-        ):
-            score += 0.20
-
-        if re.search(r'(?m)^\s*>>\s*(?:during|enter|exit)\b(?:[^\S\n]+(?:before|after))?\s*\{', analysis_text):
+        if has_aspect:
             score += 0.15
 
-        if re.search(
-            r'(?m)^\s*(?:!\s*\*?|!\s*[A-Za-z_][\w./]*|\[\s*\*\s*\]|[A-Za-z_][\w./]*)\s*->\s*'
-            r'(?:\[\s*\*\s*\]|[A-Za-z_][\w./]*)\b.*;\s*$',
-            analysis_text,
-        ):
-            score += 0.20
+        if has_rich_transition:
+            score += 0.30
 
-        if re.search(
-            r'(?m)^\s*(?:!\s*\*?|!\s*[A-Za-z_][\w./]*|\[\s*\*\s*\]|[A-Za-z_][\w./]*)\s*->\s*'
-            r'(?:\[\s*\*\s*\]|[A-Za-z_][\w./]*)\b[^\n;]*(?::|::)\s*[A-Za-z_][A-Za-z0-9_]*',
-            analysis_text,
-        ):
+        if has_plain_transition:
             score += 0.08
 
         keyword_count = sum(
             1
-            for keyword in ('pseudo', 'named', 'abstract', 'ref', 'effect', 'event')
+            for keyword in FcstmLexer._ANALYSIS_KEYWORDS
             if re.search(rf'\b{keyword}\b', analysis_text)
         )
-        if keyword_count >= 2:
-            score += 0.05 * min(keyword_count - 1, 4)
+        if keyword_count >= 2 and any((
+            has_state_block,
+            has_state_decl,
+            has_event_decl,
+            has_def_decl,
+            has_lifecycle_block,
+            has_lifecycle_decl,
+            has_lifecycle_bare,
+            has_aspect,
+            has_rich_transition,
+            has_plain_transition,
+        )):
+            score += 0.02 * min(keyword_count - 1, 2)
 
         for pattern, penalty in FcstmLexer._ANALYSIS_NEGATIVE_PATTERNS:
             if pattern.search(analysis_text):

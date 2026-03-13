@@ -6,12 +6,14 @@
 # The only allowed external inputs are real FCSTM positive samples stored
 # under test/testfile; do not add Markdown/docs-based fixtures here.
 
+import inspect
 from pathlib import Path
 from textwrap import dedent
 
 import pytest
 
 from pyfcstm.highlight import FcstmLexer
+from pyfcstm.highlight import pygments_lexer as pygments_lexer_module
 from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model import StateMachine, parse_dsl_node_to_state_machine
 
@@ -1247,6 +1249,12 @@ def _parse_state_machine(code: str) -> StateMachine:
 
 @pytest.mark.unittest
 class TestFcstmLexerAnalyseText:
+    def test_analyse_text_remains_string_based(self):
+        source = inspect.getsource(pygments_lexer_module)
+
+        assert 'parse_with_grammar_entry' not in source
+        assert 'parse_dsl_node_to_state_machine' not in source
+
     def test_langcheck_positive_examples_are_embedded_completely(self):
         assert len(_LANGCHECK_POSITIVE_CASES) == 35
         assert [title for title, _ in _LANGCHECK_POSITIVE_CASES] == [

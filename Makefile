@@ -43,6 +43,7 @@ APP_ICON_SOURCE := ${LOGOS_DIR}/logo.png
 PYINSTALLER_ICON_ICO := ${APP_ICON_DIR}/pyfcstm.ico
 PYINSTALLER_ICON_ICNS := ${APP_ICON_DIR}/pyfcstm.icns
 PYINSTALLER_BUNDLE_ICON := ${APP_ICON_DIR}/pyfcstm.png
+PYINSTALLER_BIN := ${DIST_DIR}/pyfcstm$(if ${IS_WIN},.exe,)
 VSCODE_ICON := ${VSCODE_EXT_DIR}/resources/icon.png
 APP_ICON_STAMP := ${APP_ICON_DIR}/.stamp
 
@@ -127,7 +128,7 @@ build: ${APP_ICON_STAMP}
 	$(PYTHON) -m tools.generate_spec -o pyfcstm.spec --icon-dir ${APP_ICON_DIR}
 	pyinstaller pyfcstm.spec
 	@echo "Verifying bundled PyInstaller icon asset..."
-	@pyi-archive_viewer -l ${DIST_DIR}/pyfcstm | grep -q "pyfcstm.png" && echo "✓ Bundled icon asset included in PyInstaller executable" || (echo "✗ Bundled icon asset missing from PyInstaller executable" && exit 1)
+	@pyi-archive_viewer -l ${PYINSTALLER_BIN} | grep -q "pyfcstm.png" && echo "✓ Bundled icon asset included in PyInstaller executable" || (echo "✗ Bundled icon asset missing from PyInstaller executable" && exit 1)
 
 test_cli:
 	python -m tools.test_cli dist/pyfcstm \

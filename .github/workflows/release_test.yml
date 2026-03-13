@@ -178,8 +178,8 @@ jobs:
           zip -r ${{ env.ZIP_NAME }}.zip ${{ env.CLI_NAME }}
           cd ..
           ls -al dist
-          dist/pyfcstm -v
-          dist/pyfcstm -h
+          dist/pyfcstm.exe -v
+          dist/pyfcstm.exe -h
       - name: Test CLI executable on Windows
         if: ${{ env.OS_NAME == 'Windows' }}
         shell: bash

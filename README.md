@@ -1,7 +1,7 @@
-# pyfcstm
+# pyfcstm (Python Finite Control State Machine Framework)
 
 <div align="center">
-  <img src="logos/logo_banner.svg" alt="pyfcstm - Python Finite State Machine Framework" width="800"/>
+  <img src="logos/logo_banner.svg" alt="pyfcstm - Python Finite Control State Machine Framework" width="800"/>
 </div>
 
 <div align="center">
@@ -28,16 +28,20 @@
 [![GitHub issues](https://img.shields.io/github/issues/hansbug/pyfcstm)](https://github.com/hansbug/pyfcstm/issues)
 [![GitHub pulls](https://img.shields.io/github/issues-pr/hansbug/pyfcstm)](https://github.com/hansbug/pyfcstm/pulls)
 [![Contributors](https://img.shields.io/github/contributors/hansbug/pyfcstm)](https://github.com/hansbug/pyfcstm/graphs/contributors)
-[![GitHub license](https://img.shields.io/github/license/hansbug/pyfcstm)](https://github.com/hansbug/pyfcstm/blob/master/LICENSE)
+[![GitHub license](https://img.shields.io/github/license/hansbug/pyfcstm)](https://github.com/hansbug/pyfcstm/blob/main/LICENSE)
 
 </div>
 
 ---
 
-**pyfcstm** is a powerful **Python framework** for parsing **Finite State Machine (FSM) Domain-Specific Language (DSL)**
-and generating executable code in multiple target languages. It specializes in modeling **Hierarchical State Machines (
-Harel Statecharts)** with a flexible Jinja2-based template system, making it ideal for embedded systems, protocol
-implementations, game AI, workflow engines, and complex control logic.
+**pyfcstm** is the **Python Finite Control State Machine Framework**, a powerful Python framework for parsing the
+**FCSTM (Finite Control State Machine) Domain-Specific Language (DSL)** and generating executable code in multiple
+target languages. It specializes in modeling **Hierarchical State Machines (Harel Statecharts)** with a flexible
+Jinja2-based template system, making it ideal for embedded systems, protocol implementations, game AI, workflow
+engines, and complex control logic.
+
+Out of the box, pyfcstm can parse, visualize, and simulate FCSTM state machines. For source-code generation, pyfcstm
+provides the rendering engine and model API, while you provide the target-language template directory.
 
 ## Table of Contents
 
@@ -65,28 +69,50 @@ pyfcstm aims to provide a complete solution from conceptual design to code imple
 | **Expression System**           | Built-in mathematical and logical expression parser supporting variable definition, conditional guards, and state effects (`effect`). | Allows defining the state machine's internal data and behavior at the DSL level.                               | [DSL Syntax Tutorial - Expression System](https://pyfcstm.readthedocs.io/en/latest/tutorials/dsl/index.html)  |
 | **Templated Code Generation**   | Based on the **Jinja2** template engine, rendering the state machine model into target code (e.g., C/C++, Python, Rust).              | Extremely high flexibility, supporting code generation for virtually any programming language.                 | [Template Tutorial](https://pyfcstm.readthedocs.io/en/latest/tutorials/render/index.html)                     |
 | **Cross-Language Support**      | Easily enables state machine code generation for embedded or high-performance languages like **C/C++** through the template system.   | Suitable for scenarios where state machine logic needs to be deployed across different platforms or languages. | [Template Tutorial - Expression Styles](https://pyfcstm.readthedocs.io/en/latest/tutorials/render/index.html) |
-| **PlantUML Integration**        | Directly converts DSL files into **PlantUML** code for generating state diagram visualizations.                                       | Facilitates design review and documentation generation.                                                        | [CLI Guide - plantuml](https://pyfcstm.readthedocs.io/en/latest/tutorials/cli/index.html)                     |
+| **PlantUML Integration**        | Directly converts DSL files into **PlantUML** code, with preset detail levels and fine-grained visualization options.                | Facilitates design review and documentation generation.                                                        | [Visualization Guide](https://pyfcstm.readthedocs.io/en/latest/tutorials/visualization/index.html)            |
+| **Simulation Runtime**          | Runs FCSTM models directly in Python or from an interactive CLI REPL / batch executor.                                                | Lets you validate behavior before committing to generated code.                                                | [Simulation Guide](https://pyfcstm.readthedocs.io/en/latest/tutorials/simulation/index.html)                  |
+| **Syntax Highlighting**         | Includes FCSTM syntax highlighting for Pygments and editor integrations, including a VS Code extension in this repository.            | Improves authoring, documentation, and review workflows around `.fcstm` files.                                 | [Syntax Highlighting Guide](https://pyfcstm.readthedocs.io/en/latest/tutorials/grammar/index.html)            |
 
 ## Installation
 
 ### Basic Installation
 
-Install pyfcstm from PyPI using pip:
+pyfcstm requires Python 3.7+ and is published on PyPI:
 
 ```shell
 pip install pyfcstm
 ```
 
+You can invoke the CLI either as `pyfcstm` or as a Python module:
+
+```shell
+python -m pyfcstm --help
+```
+
+### Install the Latest Main Branch
+
+If you want the newest code before the next release:
+
+```shell
+pip install -U git+https://github.com/hansbug/pyfcstm@main
+```
+
 ### Development Installation
 
-For development work, clone the repository and install with development dependencies:
+For local development, install the package itself in editable mode first, then add the extra dependency groups you
+need:
 
 ```shell
 git clone https://github.com/HansBug/pyfcstm.git
 cd pyfcstm
-pip install -r requirements.txt
-pip install -r requirements-dev.txt
-pip install -r requirements-test.txt
+pip install -e .
+pip install -e ".[dev,test,doc]"
+```
+
+If you also need packaging helpers, install the build extras as well:
+
+```shell
+pip install -e ".[build]"
 ```
 
 ### Verify Installation
@@ -96,6 +122,7 @@ After installation, verify that pyfcstm is working correctly:
 ```shell
 pyfcstm --version
 pyfcstm --help
+python -m pyfcstm --help
 ```
 
 **More Information**: See
@@ -106,47 +133,99 @@ detailed steps and environment requirements.
 
 ### 1. Using the Command Line Interface (CLI)
 
-pyfcstm provides two main command-line subcommands: `plantuml` for visualization and `generate` for code generation.
+pyfcstm provides three main command-line subcommands:
+
+- `plantuml` for visualization
+- `generate` for template-based code generation
+- `simulate` for interactive or batch execution
+
+Before using them, create a small FCSTM file such as `traffic_light.fcstm`:
+
+```fcstm
+def int timer = 0;
+
+state TrafficLight {
+    [*] -> Red;
+
+    state Red {
+        during {
+            timer = timer + 1;
+        }
+    }
+
+    state Yellow {
+        during {
+            timer = timer + 1;
+        }
+    }
+
+    state Green {
+        during {
+            timer = timer + 1;
+        }
+    }
+
+    Red -> Green : if [timer >= 30] effect { timer = 0; };
+    Green -> Yellow : if [timer >= 25] effect { timer = 0; };
+    Yellow -> Red : if [timer >= 5] effect { timer = 0; };
+}
+```
 
 #### Generate PlantUML State Diagram
 
-Use the `plantuml` subcommand to convert a DSL file into PlantUML format, which can then be used to generate a state
-diagram:
+Use the `plantuml` subcommand to convert a DSL file into PlantUML format:
 
 ```shell
-# Assuming your DSL code is saved in test_dsl_code.fcstm
-pyfcstm plantuml -i test_dsl_code.fcstm -o traffic_light.puml
+pyfcstm plantuml -i traffic_light.fcstm -o traffic_light.puml
+
+# Use a full-detail preset and override specific options
+pyfcstm plantuml -i traffic_light.fcstm -l full \
+  -c show_variable_definitions=true \
+  -c show_lifecycle_actions=true \
+  -o traffic_light_full.puml
 ```
 
 **Tip**: The generated `.puml` file can be rendered online at [PlantUML Server](https://www.plantuml.com/plantuml/uml/)
-or locally using the PlantUML tool.
+or locally using the PlantUML tool. If `-o/--output` is omitted, PlantUML is written to stdout.
+
+#### Run the State Machine in the CLI Simulator
+
+Use the `simulate` subcommand when you want to validate the DSL behavior before writing templates:
+
+```shell
+# Interactive REPL
+pyfcstm simulate -i traffic_light.fcstm
+
+# Batch mode
+pyfcstm simulate -i traffic_light.fcstm -e "current; cycle 3; history 3"
+```
+
+In interactive mode, useful commands include `cycle`, `current`, `events`, `history`, `init`, and `export`.
 
 #### Templated Code Generation
 
 Use the `generate` subcommand, along with a template directory, to generate target language code:
 
 ```shell
-# -i: Input DSL file
-# -t: Path to the template directory
-# -o: Output directory for the generated code
-pyfcstm generate -i test_dsl_code.fcstm -t template_dir/ -o generated_code_dir/
+pyfcstm generate -i traffic_light.fcstm -t ./templates/c -o ./generated/c --clear
 ```
 
-**Note**: You can add the `--clear` flag to clear the output directory before generation.
+**Important**: `generate` expects a template directory that you provide. At minimum, that directory should contain a
+`config.yaml`; any `.j2` files are rendered, and non-template files are copied as-is.
 
 ### 2. Using the Python API
 
 You can integrate pyfcstm directly into your Python projects for custom parsing and rendering workflows.
 
-#### Basic API Usage
+#### Parse, Inspect, and Visualize a Model
 
 ```python
 from pyfcstm.dsl import parse_with_grammar_entry
-from pyfcstm.model.model import parse_dsl_node_to_state_machine
-from pyfcstm.render import StateMachineCodeRenderer
+from pyfcstm.model import parse_dsl_node_to_state_machine
+from pyfcstm.model.plantuml import PlantUMLOptions
 
 # 1. Load DSL code from file or string
-with open('state_machine.fcstm', 'r') as f:
+with open('traffic_light.fcstm', 'r', encoding='utf-8') as f:
     dsl_code = f.read()
 
 # 2. Parse the DSL code to generate an Abstract Syntax Tree (AST)
@@ -155,57 +234,40 @@ ast_node = parse_with_grammar_entry(dsl_code, entry_name='state_machine_dsl')
 # 3. Convert the AST into a State Machine Model
 model = parse_dsl_node_to_state_machine(ast_node)
 
-# 4. Initialize the renderer with your template directory
-renderer = StateMachineCodeRenderer(template_dir='./my_templates')
+# 4. Inspect the parsed model
+print(f"Root state: {model.root_state.name}")
+print(f"Variables: {list(model.defines)}")
 
-# 5. Render the model to generate code
-renderer.render(model, output_dir='./generated_code')
-```
-
-#### Advanced API Usage
-
-```python
-from pyfcstm.dsl import parse_with_grammar_entry
-from pyfcstm.model.model import parse_dsl_node_to_state_machine
-
-# Parse DSL
-dsl_code = """
-def int counter = 0;
-state MyStateMachine {
-    state Idle;
-    state Active;
-    [*] -> Idle;
-    Idle -> Active :: Start;
-}
-"""
-
-ast_node = parse_with_grammar_entry(dsl_code, entry_name='state_machine_dsl')
-model = parse_dsl_node_to_state_machine(ast_node)
-
-# Explore the model programmatically
-print(f"State machine name: {model.name}")
-print(f"Variables: {[var.name for var in model.variables]}")
-
-# Iterate through all states
 for state in model.walk_states():
-    print(f"State: {state.name}, Is leaf: {state.is_leaf_state}")
+    print(f"State: {'.'.join(state.path)} (leaf={state.is_leaf_state})")
 
-    # Access transitions
-    for transition in state.transitions:
-        print(f"  Transition: {transition.from_state.name} -> {transition.to_state.name}")
-        if transition.event:
-            print(f"    Event: {transition.event.name}")
-        if transition.guard:
-            print(f"    Guard: {transition.guard}")
-
-# Export to PlantUML
-plantuml_code = model.export_to_plantuml()
-with open('diagram.puml', 'w') as f:
+# 5. Export to PlantUML
+plantuml_code = model.to_plantuml(
+    PlantUMLOptions(detail_level='full', show_lifecycle_actions=True)
+)
+with open('diagram.puml', 'w', encoding='utf-8') as f:
     f.write(plantuml_code)
 
-# Export back to DSL
-dsl_export = model.export_to_dsl()
-print(dsl_export)
+# 6. Export back to DSL text
+print(str(model.to_ast_node()))
+```
+
+#### Render Code and Simulate in Python
+
+```python
+from pyfcstm.render import StateMachineCodeRenderer
+from pyfcstm.simulate import SimulationRuntime
+
+# Reuse the `model` object from the previous example.
+
+renderer = StateMachineCodeRenderer(template_dir='./templates/c')
+renderer.render(model, output_dir='./generated/c', clear_previous_directory=True)
+
+runtime = SimulationRuntime(model)
+runtime.cycle()
+
+print(f"Current state: {'.'.join(runtime.current_state.path)}")
+print(f"Variables: {runtime.vars}")
 ```
 
 ### 3. Example DSL Code (Traffic Light Example)
@@ -299,8 +361,9 @@ The pyfcstm DSL syntax is inspired by UML Statecharts and supports the following
 | **Variable Definition** | `def int/float`           | Defines integer or float variables for the state machine's internal data.                                                              | `def int counter = 0;`          | [Variable Definitions](https://pyfcstm.readthedocs.io/en/latest/tutorials/dsl/index.html)   |
 | **State**               | `state`                   | Defines a state, supporting **Leaf States** and **Composite States** (nesting).                                                        | `state Running { ... }`         | [State Definitions](https://pyfcstm.readthedocs.io/en/latest/tutorials/dsl/index.html)      |
 | **Transition**          | `->`                      | Defines transitions between states, supporting **Entry** (`[*]`) and **Exit** (`[*]`) transitions.                                     | `Red -> Green;`                 | [Transition Definitions](https://pyfcstm.readthedocs.io/en/latest/tutorials/dsl/index.html) |
-| **Forced Transition**   | `!`                       | Defines a forced transition, which bypasses the source state's `exit` action.                                                          | `!InService -> [*] :: Error;`   | [Transition Definitions](https://pyfcstm.readthedocs.io/en/latest/tutorials/dsl/index.html) |
-| **Event**               | `::` or `:`               | The event that triggers a transition, supporting **Local Events** (`::`) and **Global Events** (`:` or `/`).                           | `Red -> Green :: Timer;`        | [Transition Definitions](https://pyfcstm.readthedocs.io/en/latest/tutorials/dsl/index.html) |
+| **Forced Transition**   | `!`                       | A shorthand that expands into one or more normal transitions; exit actions still execute normally.                                     | `! * -> ErrorHandler :: Error;` | [Transition Definitions](https://pyfcstm.readthedocs.io/en/latest/tutorials/dsl/index.html) |
+| **Event Definition**    | `event`                   | Optionally declares an event explicitly, including a display name for visualization.                                                   | `event Start named "Start";`    | [Event Definitions](https://pyfcstm.readthedocs.io/en/latest/tutorials/dsl/index.html)      |
+| **Event Reference**     | `::`, `:`, `/`            | Triggers a transition with local (`::`), chain (`:`), or root-relative absolute (`/`) event scoping.                                  | `Red -> Green :: Timer;`        | [Event Scoping](https://pyfcstm.readthedocs.io/en/latest/tutorials/dsl/index.html)          |
 | **Guard Condition**     | `if [...]`                | A condition that must be true for the transition to occur.                                                                             | `Yellow -> Red : if [a >= 10];` | [Expression System](https://pyfcstm.readthedocs.io/en/latest/tutorials/dsl/index.html)      |
 | **Effect**              | `effect { ... }`          | Operations (variable assignments) executed when the transition occurs.                                                                 | `effect { b = 0x1; }`           | [Operational Statements](https://pyfcstm.readthedocs.io/en/latest/tutorials/dsl/index.html) |
 | **Lifecycle Actions**   | `enter`, `during`, `exit` | Actions executed when a state is entered, active, or exited.                                                                           | `enter { a = 0; }`              | [Lifecycle Actions](https://pyfcstm.readthedocs.io/en/latest/tutorials/dsl/index.html)      |
@@ -455,11 +518,14 @@ Note: `SubSystem.during before/after` do **NOT** execute during the `during` pha
 Transitions can be triggered by events with different scopes:
 
 * **Local Event (`::`)**: The event is scoped to the source state's namespace. E.g., `StateA -> StateB :: EventX` means
-  the event is `StateA.EventX`.
-* **Global Event (`: /`)**: The event is scoped from the root of the state machine.
-  E.g., `StateA -> StateB : /GlobalEvent` means the event is `GlobalEvent`.
-* **Chain ID (`:`)**: The event is scoped relative to the current state's parent.
-  E.g., `StateA -> StateB : Parent.EventY`.
+  the event becomes `Root.StateA.EventX`.
+* **Chain Event (`:`)**: The event is scoped to the parent state's namespace, so sibling transitions can share it.
+  E.g., `StateA -> StateB : EventX` means the event becomes `Root.EventX`.
+* **Absolute Event (`: /...`)**: The event is resolved from the root state explicitly.
+  E.g., `StateA -> StateB : /System.Reset` means the event path is `Root.System.Reset`.
+
+If you want an event to appear with a human-friendly label in diagrams, declare it explicitly first, for example
+`event Reset named "System Reset";`.
 
 ## Code Generation Template System
 
@@ -468,8 +534,8 @@ structure and content of the generated code.
 
 ### Template Directory Structure
 
-The template directory follows the convention over configuration principle, containing template files and a
-configuration file:
+The template directory follows the convention-over-configuration principle and contains a required configuration file
+plus any mix of renderable or static assets:
 
 ```
 template_directory/
@@ -478,6 +544,9 @@ template_directory/
 ├── *.c                  # Static files, copied directly to the output directory
 └── ...                  # Directory structure is preserved
 ```
+
+pyfcstm does not ship a universal built-in code template set. In practice, you prepare a template directory for your
+own runtime/framework and pass it to `pyfcstm generate`.
 
 **More Information**:
 See [Template System Architecture Details](https://pyfcstm.readthedocs.io/en/latest/tutorials/render/index.html) for a
@@ -509,8 +578,9 @@ combined with custom filters and global functions to generate code.
 
 **Key Model Objects**:
 
-* `model`: The root state machine object.
-* `state`: A state object, with properties like `name`, `is_leaf_state`, `transitions`, and `parent`.
+* `model`: The root state machine object, with `model.defines`, `model.root_state`, and `model.walk_states()`.
+* `state`: A state object, with properties like `name`, `path`, `is_leaf_state`, `transitions`, and helper methods
+  such as `list_on_enters()` / `list_on_durings()` / `list_on_exits()`.
 * `transition`: A transition object, with properties like `from_state`, `to_state`, `guard`, and `effects`.
 
 **Example Template Snippet (Jinja2)**:
@@ -518,14 +588,14 @@ combined with custom filters and global functions to generate code.
 ```jinja2
 {% for state in model.walk_states() %}
 void {{ state.name }}_enter() {
-    // Concrete enter actions
-    {% for op in state.enter_operations %}
+    {% for id, enter in state.list_on_enters(with_ids=True) %}
+    {% if enter.is_abstract %}
+    {{ enter.name }}();
+    {% else %}
+    {% for op in enter.operations %}
     {{ op.var_name }} = {{ op.expr | expr_render(style='c') }};
     {% endfor %}
-    
-    // Abstract enter actions
-    {% for abstract_func in state.enter_abstract_functions %}
-    {{ abstract_func.name }}(); // {{ abstract_func.doc }}
+    {% endif %}
     {% endfor %}
 }
 {% endfor %}
@@ -572,24 +642,29 @@ pyfcstm is designed for a wide range of applications where state machines are es
 ## Documentation
 
 - **Full Documentation**: [https://pyfcstm.readthedocs.io/](https://pyfcstm.readthedocs.io/)
+- **Installation Guide**: [Installation](https://pyfcstm.readthedocs.io/en/latest/tutorials/installation/index.html)
+- **Project Structure Guide**: [Structure](https://pyfcstm.readthedocs.io/en/latest/tutorials/structure/index.html)
 - **DSL Syntax Tutorial**: [DSL Reference](https://pyfcstm.readthedocs.io/en/latest/tutorials/dsl/index.html)
+- **Visualization Guide**: [PlantUML Visualization](https://pyfcstm.readthedocs.io/en/latest/tutorials/visualization/index.html)
+- **Simulation Guide**: [Simulation Runtime](https://pyfcstm.readthedocs.io/en/latest/tutorials/simulation/index.html)
 - **Template System Guide**: [Template Tutorial](https://pyfcstm.readthedocs.io/en/latest/tutorials/render/index.html)
 - **CLI Reference**: [CLI Guide](https://pyfcstm.readthedocs.io/en/latest/tutorials/cli/index.html)
-- **API Documentation**: [API Reference](https://pyfcstm.readthedocs.io/en/latest/api/index.html)
+- **Syntax Highlighting Guide**: [Grammar and Editor Support](https://pyfcstm.readthedocs.io/en/latest/tutorials/grammar/index.html)
+- **API Documentation**: [API Reference](https://pyfcstm.readthedocs.io/en/latest/api_doc/index.html)
 
 ## Contribution & Support
 
 pyfcstm is an open-source project under the LGPLv3 license, and contributions are welcome:
 
 - **Report Bugs**: Submit issues on [GitHub Issues](https://github.com/hansbug/pyfcstm/issues)
-- **Submit Pull Requests**: See [CONTRIBUTING.md](https://github.com/hansbug/pyfcstm/blob/master/CONTRIBUTING.md) for
+- **Submit Pull Requests**: See [CONTRIBUTING.md](https://github.com/hansbug/pyfcstm/blob/main/CONTRIBUTING.md) for
   guidelines
 - **Suggest Features**: Discuss feature ideas in the Issues section
-- **Ask Questions**: Use GitHub Discussions or Issues for questions
+- **Ask Questions**: Open an issue if you need help with the DSL, templates, or simulator
 
 **Source Code**: [https://github.com/HansBug/pyfcstm](https://github.com/HansBug/pyfcstm)
 
 ## License
 
 This project is licensed under
-the [GNU Lesser General Public License v3 (LGPLv3)](https://github.com/hansbug/pyfcstm/blob/master/LICENSE).
+the [GNU Lesser General Public License v3 (LGPLv3)](https://github.com/hansbug/pyfcstm/blob/main/LICENSE).

@@ -335,7 +335,7 @@ CLI 可视化
 
    最小：仅基本状态结构，无动作或详细信息
 
-**普通详细级别**（默认）
+**普通详细级别**\ （默认）
 
 .. figure:: output_normal.puml.svg
    :alt: 普通详细级别可视化
@@ -361,7 +361,7 @@ CLI 可视化
 **配置选项**
 
 - ``show_variable_definitions`` (bool)：在顶部显示变量定义（所有详细级别默认为 True）
-- ``variable_display_mode`` (str)：显示模式 - ``'note'``、``'legend'`` 或 ``'hide'``（默认：``'legend'``）
+- ``variable_display_mode`` (str)：显示模式 - ``'note'``、``'legend'`` 或 ``'hide'``\ （默认：``'legend'``）
 - ``variable_legend_position`` (str)：使用 ``'legend'`` 模式时的图例位置（默认：``'top left'``）
 
   - 可用位置：``'top left'``、``'top center'``、``'top right'``、``'bottom left'``、``'bottom center'``、``'bottom right'``、``'left'``、``'right'``、``'center'``

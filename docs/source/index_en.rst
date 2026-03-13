@@ -1,15 +1,15 @@
-Welcome to pyfcstm's Documentation
-=========================================================
+Welcome to pyfcstm (Python Finite Control State Machine Framework)
+==================================================================
 
 .. image:: _static/logos/logo_banner.svg
-   :alt: pyfcstm - Python Finite State Machine Framework
+   :alt: pyfcstm - Python Finite Control State Machine Framework
    :align: center
    :width: 800px
 
 Overview
 -------------
 
-**pyfcstm** is a powerful Python framework for parsing Finite State Machine (FSM) Domain-Specific Language (DSL) and generating executable code in multiple target languages. It specializes in modeling **Hierarchical State Machines (Harel Statecharts)** with a flexible Jinja2-based template system.
+**pyfcstm** (Python Finite Control State Machine Framework) is a powerful Python framework for parsing the **FCSTM (Finite Control State Machine) Domain-Specific Language (DSL)** and generating executable code in multiple target languages. It specializes in modeling **Hierarchical State Machines (Harel Statecharts)** with a flexible Jinja2-based template system.
 
 Key Features
 ~~~~~~~~~~~~~
@@ -106,12 +106,13 @@ The framework provides:
 * **Rendering Engine** (``pyfcstm.render``): Template-based code generation with expression styles
 * **CLI Tools** (``pyfcstm.entry``): Command-line interface for common operations
 
-Documentation Structure
+Tutorials
 -------------------------
 
 .. toctree::
     :maxdepth: 2
     :caption: Tutorials
+    :hidden:
 
     tutorials/installation/index
     tutorials/structure/index
@@ -122,15 +123,23 @@ Documentation Structure
     tutorials/cli/index
     tutorials/grammar/index
 
+* :doc:`tutorials/installation/index`
+* :doc:`tutorials/structure/index`
+* :doc:`tutorials/dsl/index`
+* :doc:`tutorials/render/index`
+* :doc:`tutorials/simulation/index`
+* :doc:`tutorials/visualization/index`
+* :doc:`tutorials/cli/index`
+* :doc:`tutorials/grammar/index`
+
+Best Practice
+-------------------------
+
 .. toctree::
     :maxdepth: 2
     :caption: Best Practice
 
 .. include:: api_doc_en.rst
-
-.. toctree::
-    :maxdepth: 2
-    :caption: Contributor Guide
 
 Community and Support
 -----------------------

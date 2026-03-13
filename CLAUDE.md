@@ -526,6 +526,79 @@ class DataClassName:
 - Instance variables: `:ivar:` / `:vartype:`; Class variables: `:cvar:` / `:type:`
 - Inline code: double backticks `` ``value`` `` (not single backticks)
 
+### Inline Markup Boundary Rules
+
+**CRITICAL**: In reST/Sphinx, inline strong emphasis (`**bold**`) and inline literals (``code``) need valid
+boundaries on both sides. If plain text touches the opening marker from the left or the closing marker from the right,
+the markup may fail to parse and render literally.
+
+**Incorrect**:
+- `prefix**text**`
+- `**text**suffix`
+- `建模**层次状态机**。`
+- `前文``code``后文`
+- ``code``suffix
+- `中文**加粗**文本`
+- `中文``code``文本`
+
+**Correct**:
+- `prefix **text**`
+- `**text** suffix`
+- `prefix ``code`` suffix`
+- `建模\ **层次状态机**。`
+- `**text**.`
+- `前文 **加粗** 后文`
+- `前文 ``code`` 后文`
+- `**加粗**\ 后文`
+- ``code``\ 后文
+
+**Preferred Safe Default For Chinese Prose Or Tight Inline Text**:
+- `前文\ **加粗**\ 后文`
+- `前文\ ``code``\ 后文`
+
+If visible whitespace or punctuation is acceptable, plain spaces or punctuation are fine. If you want the rendered
+output to stay visually tight to surrounding Chinese text, prefer `\ ` on both sides as the safest default. Do not
+use single backticks for inline code in reST.
+
+**Additional Practical Rules From This Codebase**:
+- Do not assume full-width Chinese punctuation is a safe boundary for inline markup. In practice, patterns like
+  `**text**（...）` and ``code``（...） may still render as problematic in Sphinx/docutils.
+- For inline literals specifically, the most common failure pattern in Chinese docs is a valid opening marker with an
+  invalid trailing boundary, especially ``literal`` immediately followed by full-width `（`.
+- Common real failure patterns:
+  - `**普通详细级别**（默认）`
+  - `**1. pip 安装**（推荐）：`
+  - `1. **本地事件**（``::``）：作用域限定于源状态的命名空间`
+  - `**场景 1：初始进入**（``HierarchyDemo -> Parent -> ChildA``）`
+  - ``A.enter``（未定义）
+  - `执行 ``A.enter``（未定义）`
+  - `检查转换：``A -> B :: Go``（事件匹配！）`
+  - `**整数：** ``123``、``0xFF``（十六进制）、``0b1010``（二进制）`
+  - `- ``variable_display_mode`` (str)：显示模式 - ``'note'``、``'legend'`` 或 ``'hide'``（默认：``'legend'``）`
+- Safe fixes:
+  - `**普通详细级别**\ （默认）`
+  - `**1. pip 安装**\ （推荐）：`
+  - `1. **本地事件**\ （``::``）：作用域限定于源状态的命名空间`
+  - `**场景 1：初始进入**\ （``HierarchyDemo -> Parent -> ChildA``）`
+  - ``A.enter``\ （未定义）
+  - `执行 ``A.enter``\ （未定义）`
+  - `检查转换：``A -> B :: Go``\ （事件匹配！）`
+  - `**整数：** ``123``、``0xFF``\ （十六进制）、``0b1010``\ （二进制）`
+  - `- ``variable_display_mode`` (str)：显示模式 - ``'note'``、``'legend'`` 或 ``'hide'``\ （默认：``'legend'``）`
+
+**Inline Literal Repair Heuristic**:
+- If HTML shows a literal leaking as raw ```` and the source already has a valid left boundary, first check whether the
+  closing `` is glued to `（`.
+- In that case, prefer the minimal repair: add trailing `\ ` after the literal, for example
+  `执行 ``A.enter``\ （未定义）`.
+- If multiple literals appear in one sentence, repair each bad trailing boundary independently.
+
+**Verification Rule**:
+- For bulk `.rst` cleanup, do not trust source regex checks alone.
+- Rebuild Sphinx HTML and inspect rendered output for `class="problematic"` spans or literal `**` / ```` that leaked
+  through parsing.
+- Treat generated HTML as the source of truth when deciding whether inline markup cleanup is complete.
+
 ### Examples in Docstrings
 
 ```python
@@ -590,12 +663,17 @@ def generate(input_code_file: str, template_dir: str, output_dir: str, clear_dir
 - [ ] Cross-references use reST roles (`:class:`, `:func:`, etc.)
 - [ ] Examples for public APIs
 - [ ] Inline code uses double backticks
+- [ ] Inline `**strong**` and ``literal`` markup has valid left/right boundaries; in Chinese prose or tight inline text, prefer `\ **strong**\` and `\ ``literal``\`
+- [ ] Do not leave closing `**` or ```` directly before full-width Chinese punctuation such as `（`; use `\ ` when in doubt
+- [ ] For large markup cleanup, verify against generated HTML and look for `class="problematic"`
 - [ ] Optional params marked with `, optional`; defaults shown in description
 
 ### Anti-Patterns
 
 **DON'T**: Google/NumPy style; omit types (always include `:type:` and `:rtype:`); single backticks for inline code;
-vague descriptions ("Does something"); bare class/function names without reST roles; volatile implementation details.
+`**strong**` or ``literal`` markup glued directly to adjacent text; assuming only the trailing boundary matters;
+vague descriptions ("Does something");
+bare class/function names without reST roles; volatile implementation details.
 
 **DO**: reST format consistently; explain "why" and "what"; use cross-references; include practical examples;
 update docstrings when code changes.
@@ -748,6 +826,50 @@ Files in `docs/source/`:
 - `*.mk`: Makefile fragments for resource generation
 - `conf.py`: Sphinx configuration
 - Subdirectories: `tutorials/`, `information/`, `api_doc/`, etc.
+
+#### reST Inline Markup Rules
+
+**CRITICAL**: For `.rst` content, check both the left boundary of the opening marker and the right boundary of the
+closing marker for inline strong emphasis (`**text**`) and inline literals (``code``).
+
+- Wrong: `prefix**text**`, `**text**suffix`, `建模**层次状态机**。`, `前文``code``后文`
+- Correct: `prefix **text**`, `**text** suffix`, `建模\ **层次状态机**。`, `前文 ``code`` 后文`
+- Safe default for Chinese prose: `前文\ **加粗**\ 后文`, `前文\ ``code``\ 后文`
+- Do not trust full-width Chinese punctuation as a safe boundary. Real broken cases in this repo included:
+  - `**普通详细级别**（默认）`
+  - `**1. pip 安装**（推荐）：`
+  - `1. **本地事件**（``::``）：...`
+  - `**场景 1：初始进入**（``HierarchyDemo -> Parent -> ChildA``）`
+  - ``A.enter``（未定义）
+  - `执行 ``A.enter``（未定义）`
+  - `检查转换：``A -> B :: Go``（事件匹配！）`
+  - `**整数：** ``123``、``0xFF``（十六进制）、``0b1010``（二进制）`
+  - `- ``variable_display_mode`` ... ``'hide'``（默认：``'legend'``）`
+- Safe forms for those cases:
+  - `**普通详细级别**\ （默认）`
+  - `**1. pip 安装**\ （推荐）：`
+  - `1. **本地事件**\ （``::``）：...`
+  - `**场景 1：初始进入**\ （``HierarchyDemo -> Parent -> ChildA``）`
+  - ``A.enter``\ （未定义）
+  - `执行 ``A.enter``\ （未定义）`
+  - `检查转换：``A -> B :: Go``\ （事件匹配！）`
+  - `**整数：** ``123``、``0xFF``\ （十六进制）、``0b1010``\ （二进制）`
+  - `- ``variable_display_mode`` ... ``'hide'``\ （默认：``'legend'``）`
+
+If you do not want visible spaces in rendered Chinese text, prefer `\ ` on both sides as the default safe pattern.
+
+Do not use single backticks for inline code in reST. Use double backticks only: ``code``.
+
+#### reST Verification Workflow
+
+- When fixing inline markup at scale, rebuild Sphinx HTML instead of relying only on source scans.
+- Preferred check command:
+  `NO_CONTENTS_BUILD=1 READTHEDOCS_LANGUAGE=zh sphinx-build -b html docs/source /tmp/pyfcstm-html-check-zh`
+- Then inspect generated HTML for parse failures:
+  `rg -n 'class="problematic"|\\*\\*[^<]*\\*\\*' /tmp/pyfcstm-html-check-zh -g '*.html'`
+- If you are specifically checking inline literals, also use:
+  `rg -n '<span class="problematic"[^\\n]*>``</span>|<span class="problematic"[^\\n]*>`</span>' /tmp/pyfcstm-html-check-zh -g '*.html'`
+- Use rendered HTML as the final authority for whether `**` / ```` issues are actually fixed.
 
 #### File Generation Rules
 

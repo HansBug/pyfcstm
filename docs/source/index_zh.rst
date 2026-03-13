@@ -9,9 +9,9 @@
 概述
 -------------
 
-**pyfcstm**（Python Finite Control State Machine Framework）是一个强大的 Python 框架，用于解析
-**FCSTM（Finite Control State Machine）** 领域特定语言（DSL）并生成多种目标语言的可执行代码。它专注于使用
-灵活的 Jinja2 模板系统建模**层次状态机（Harel 状态图）**。
+\ **pyfcstm**\ （Python Finite Control State Machine Framework）是一个强大的 Python 框架，用于解析
+\ **FCSTM（Finite Control State Machine）**\ 领域特定语言（DSL）并生成多种目标语言的可执行代码。它专注于使用
+灵活的 Jinja2 模板系统建模\ **层次状态机（Harel 状态图）**\ 。
 
 核心特性
 ~~~~~~~~~~~~~

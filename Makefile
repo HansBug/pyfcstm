@@ -1,4 +1,4 @@
-.PHONY: docs test unittest resource antlr antlr_build build package clean docs_auto todos_auto tests_auto rst_auto vscode vscode_clean vscode_install vscode_uninstall logos logos_clean help
+.PHONY: docs test unittest resource antlr antlr_build build package clean docs_auto todos_auto tests_auto rst_auto vscode vscode_clean vscode_install vscode_uninstall logos logos_clean app_icons app_icons_clean help
 
 PYTHON := $(shell which python)
 
@@ -38,6 +38,13 @@ ANTLR_GRAMMAR_FILE := ${ANTLR_GRAMMAR_DIR}/Grammar.g4
 
 # VSCode extension variables
 VSCODE_EXT_DIR := ${PROJ_DIR}/editors/vscode
+APP_ICON_DIR := ${BUILD_DIR}/icons
+APP_ICON_SOURCE := ${LOGOS_DIR}/logo.png
+PYINSTALLER_ICON_ICO := ${APP_ICON_DIR}/pyfcstm.ico
+PYINSTALLER_ICON_ICNS := ${APP_ICON_DIR}/pyfcstm.icns
+PYINSTALLER_BUNDLE_ICON := ${APP_ICON_DIR}/pyfcstm.png
+VSCODE_ICON := ${VSCODE_EXT_DIR}/resources/icon.png
+APP_ICON_STAMP := ${APP_ICON_DIR}/.stamp
 
 # Sample test generation related variables
 MODEL_TEST_DIR   := ${TEST_DIR}/model
@@ -99,6 +106,8 @@ help:
 	@echo "  make vscode_clean    - Clean VSCode extension build artifacts"
 	@echo "  make vscode_install  - Build and install VSCode extension via 'code' CLI"
 	@echo "  make vscode_uninstall - Uninstall VSCode extension via 'code' CLI"
+	@echo "  make app_icons       - Generate PyInstaller and VSCode application icons"
+	@echo "  make app_icons_clean - Remove generated application icons"
 	@echo ""
 	@echo "Logos:"
 	@echo "  make logos        - Generate PNG logos from SVG sources"
@@ -114,9 +123,11 @@ help:
 
 package:
 	$(PYTHON) -m build --sdist --wheel --outdir ${DIST_DIR}
-build:
-	python -m tools.generate_spec -o pyfcstm.spec
+build: ${APP_ICON_STAMP}
+	$(PYTHON) -m tools.generate_spec -o pyfcstm.spec --icon-dir ${APP_ICON_DIR}
 	pyinstaller pyfcstm.spec
+	@echo "Verifying bundled PyInstaller icon asset..."
+	@pyi-archive_viewer -l ${DIST_DIR}/pyfcstm | grep -q "pyfcstm.png" && echo "✓ Bundled icon asset included in PyInstaller executable" || (echo "✗ Bundled icon asset missing from PyInstaller executable" && exit 1)
 
 test_cli:
 	python -m tools.test_cli dist/pyfcstm \
@@ -125,6 +136,8 @@ test_cli:
 clean:
 	rm -rf ${DIST_DIR} ${BUILD_DIR} *.egg-info
 	rm -rf build dist pyfcstm.spec
+	rm -f ${VSCODE_ICON}
+	@rmdir --ignore-fail-on-non-empty ${VSCODE_EXT_DIR}/resources 2>/dev/null || true
 
 test: unittest
 
@@ -207,6 +220,7 @@ vscode:
 
 vscode_clean:
 	$(MAKE) -C ${VSCODE_EXT_DIR} clean
+	$(MAKE) app_icons_clean
 
 vscode_install: vscode
 	@echo "Installing VSCode extension..."
@@ -217,6 +231,23 @@ vscode_uninstall:
 	@echo "Uninstalling VSCode extension..."
 	code --uninstall-extension hansbug.fcstm-language-support
 	@echo "VSCode extension uninstalled successfully."
+
+app_icons: ${APP_ICON_STAMP}
+
+${APP_ICON_STAMP}: ${APP_ICON_SOURCE} tools/generate_app_icons.py
+	@mkdir -p ${APP_ICON_DIR}
+	$(PYTHON) tools/generate_app_icons.py \
+		--input $< \
+		--pyinstaller-ico ${PYINSTALLER_ICON_ICO} \
+		--pyinstaller-icns ${PYINSTALLER_ICON_ICNS} \
+		--pyinstaller-png ${PYINSTALLER_BUNDLE_ICON} \
+		--vscode-png ${VSCODE_ICON}
+	@touch $@
+
+app_icons_clean:
+	rm -rf ${APP_ICON_DIR}
+	rm -f ${VSCODE_ICON}
+	@rmdir --ignore-fail-on-non-empty ${VSCODE_EXT_DIR}/resources 2>/dev/null || true
 
 # Logo generation targets
 LOGO_SVG_FILES := ${LOGOS_DIR}/logo.svg ${LOGOS_DIR}/logo_banner.svg

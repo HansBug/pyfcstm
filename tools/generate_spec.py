@@ -4,9 +4,10 @@ Generate optimized PyInstaller spec file with all necessary resource files
 """
 import argparse
 import sys
+from pathlib import Path
 
 
-def collect_datas():
+def collect_datas(bundle_icon=None):
     """Collect data files that need to be packaged"""
     datas = []
 
@@ -18,12 +19,38 @@ def collect_datas():
     except Exception as e:
         print(f"Warning: Could not collect resources from tools.resources: {e}", file=sys.stderr)
 
+    if bundle_icon:
+        bundle_icon_path = Path(bundle_icon)
+        if bundle_icon_path.exists():
+            datas.append((str(bundle_icon_path), 'icons'))
+        else:
+            print(f"Warning: Could not find bundled icon: {bundle_icon_path}", file=sys.stderr)
+
     return datas
 
 
-def generate_spec():
+def resolve_executable_icon(icon_dir):
+    """Resolve the native executable icon path for the current platform."""
+    icon_root = Path(icon_dir)
+    if sys.platform.startswith('win'):
+        icon_path = icon_root / 'pyfcstm.ico'
+    elif sys.platform == 'darwin':
+        icon_path = icon_root / 'pyfcstm.icns'
+    else:
+        return None
+
+    if icon_path.exists():
+        return str(icon_path)
+
+    print(f"Warning: Could not find executable icon: {icon_path}", file=sys.stderr)
+    return None
+
+
+def generate_spec(icon_dir='build/icons'):
     """Generate spec file content"""
-    datas = collect_datas()
+    icon_root = Path(icon_dir)
+    datas = collect_datas(bundle_icon=icon_root / 'pyfcstm.png')
+    executable_icon = resolve_executable_icon(icon_root)
 
     spec_content = f'''# -*- mode: python ; coding: utf-8 -*-
 
@@ -92,10 +119,11 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon={executable_icon!r},
 )
 '''
 
-    return spec_content
+    return spec_content, len(datas)
 
 
 if __name__ == '__main__':
@@ -107,12 +135,17 @@ if __name__ == '__main__':
         default='pyfcstm.spec',
         help='Output spec file path (default: pyfcstm.spec)'
     )
+    parser.add_argument(
+        '--icon-dir',
+        default='build/icons',
+        help='Generated application icon directory (default: build/icons)'
+    )
     args = parser.parse_args()
 
-    spec_content = generate_spec()
+    spec_content, data_count = generate_spec(icon_dir=args.icon_dir)
 
     # Write spec file
     with open(args.output, 'w', encoding='utf-8') as f:
         f.write(spec_content)
 
-    print(f"Generated {args.output} with {len(collect_datas())} data files")
+    print(f"Generated {args.output} with {data_count} data files")

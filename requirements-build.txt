@@ -1,3 +1,4 @@
 pyinstaller>=4.7
 setuptools
 hbutils
+Pillow

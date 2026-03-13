@@ -1,7 +1,7 @@
 # Makefile for FCSTM VSCode Extension
 # This file provides commands for building and maintaining the extension
 
-.PHONY: all parser clean install build package verify-p0.2 verify-p0.3 verify-p0.4 verify-p0.5 verify-p0.6 verify-p1.b verify test-e2e help syntaxes
+.PHONY: all parser clean install build package verify-p0.2 verify-p0.3 verify-p0.4 verify-p0.5 verify-p0.6 verify-p1.b verify test-e2e help syntaxes icons
 
 # ANTLR configuration
 ANTLR_VERSION := 4.9.3
@@ -17,6 +17,7 @@ TEXTMATE_DST := $(SYNTAXES_DIR)/fcstm.tmLanguage.json
 # Node/npm configuration
 NPM := npm
 TSC := npx tsc
+ROOT_DIR := ../..
 
 help:
 	@echo "FCSTM VSCode Extension Build Commands"
@@ -39,6 +40,7 @@ help:
 	@echo "  make package      - Build VSIX package (runs all prerequisites)"
 	@echo "  make clean        - Remove generated files"
 	@echo "  make all          - Install deps, copy syntaxes, generate parser, and build"
+	@echo "  make icons        - Generate the packaged extension marketplace icon"
 	@echo ""
 	@echo "Prerequisites:"
 	@echo "  - Java (for ANTLR)"
@@ -46,7 +48,11 @@ help:
 	@echo "  - ANTLR jar at $(ANTLR_JAR)"
 	@echo ""
 
-all: install syntaxes parser build
+all: icons install syntaxes parser build
+
+icons:
+	@echo "Generating VSCode extension icon..."
+	$(MAKE) -C $(ROOT_DIR) app_icons
 
 install:
 	@echo "Installing npm dependencies..."
@@ -76,12 +82,12 @@ parser: $(ANTLR_JAR) $(GRAMMAR_FILE)
 	@echo "Generated files:"
 	@ls -1 $(PARSER_OUTPUT_DIR)/*.js 2>/dev/null || echo "  (none yet - check for errors above)"
 
-build: syntaxes parser
+build: icons syntaxes parser
 	@echo "Building extension with esbuild..."
 	node esbuild.config.js --production
 	@echo "Build complete. Output in ./dist/"
 
-build-dev: syntaxes parser
+build-dev: icons syntaxes parser
 	@echo "Building extension (development mode)..."
 	node esbuild.config.js
 	@echo "Development build complete. Output in ./dist/"
@@ -139,6 +145,7 @@ package: all
 	@echo ""
 	@echo "Verifying package contents..."
 	@unzip -l ./build/*.vsix | grep -q "dist/extension.js" && echo "✓ Bundled extension.js included" || echo "✗ WARNING: extension.js not found in package!"
+	@unzip -l ./build/*.vsix | grep -q "resources/icon.png" && echo "✓ Extension icon included in package" || (echo "✗ Extension icon missing from package!" && exit 1)
 	@echo "Package size:"
 	@ls -lh ./build/*.vsix | awk '{print "  " $$9 ": " $$5}'
 
@@ -155,6 +162,5 @@ clean:
 
 # Check if ANTLR jar exists
 $(ANTLR_JAR):
-	@echo "Error: ANTLR jar not found at $(ANTLR_JAR)"
-	@echo "Please run 'make antlr' from the project root to download it."
-	@exit 1
+	@echo "ANTLR jar not found at $(ANTLR_JAR), downloading it from the project root..."
+	$(MAKE) -C $(ROOT_DIR) antlr-$(ANTLR_VERSION).jar

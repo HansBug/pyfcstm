@@ -563,18 +563,35 @@ use single backticks for inline code in reST.
 **Additional Practical Rules From This Codebase**:
 - Do not assume full-width Chinese punctuation is a safe boundary for inline markup. In practice, patterns like
   `**text**（...）` and ``code``（...） may still render as problematic in Sphinx/docutils.
+- For inline literals specifically, the most common failure pattern in Chinese docs is a valid opening marker with an
+  invalid trailing boundary, especially ``literal`` immediately followed by full-width `（`.
 - Common real failure patterns:
   - `**普通详细级别**（默认）`
   - `**1. pip 安装**（推荐）：`
   - `1. **本地事件**（``::``）：作用域限定于源状态的命名空间`
   - `**场景 1：初始进入**（``HierarchyDemo -> Parent -> ChildA``）`
   - ``A.enter``（未定义）
+  - `执行 ``A.enter``（未定义）`
+  - `检查转换：``A -> B :: Go``（事件匹配！）`
+  - `**整数：** ``123``、``0xFF``（十六进制）、``0b1010``（二进制）`
+  - `- ``variable_display_mode`` (str)：显示模式 - ``'note'``、``'legend'`` 或 ``'hide'``（默认：``'legend'``）`
 - Safe fixes:
   - `**普通详细级别**\ （默认）`
   - `**1. pip 安装**\ （推荐）：`
   - `1. **本地事件**\ （``::``）：作用域限定于源状态的命名空间`
   - `**场景 1：初始进入**\ （``HierarchyDemo -> Parent -> ChildA``）`
   - ``A.enter``\ （未定义）
+  - `执行 ``A.enter``\ （未定义）`
+  - `检查转换：``A -> B :: Go``\ （事件匹配！）`
+  - `**整数：** ``123``、``0xFF``\ （十六进制）、``0b1010``\ （二进制）`
+  - `- ``variable_display_mode`` (str)：显示模式 - ``'note'``、``'legend'`` 或 ``'hide'``\ （默认：``'legend'``）`
+
+**Inline Literal Repair Heuristic**:
+- If HTML shows a literal leaking as raw ```` and the source already has a valid left boundary, first check whether the
+  closing `` is glued to `（`.
+- In that case, prefer the minimal repair: add trailing `\ ` after the literal, for example
+  `执行 ``A.enter``\ （未定义）`.
+- If multiple literals appear in one sentence, repair each bad trailing boundary independently.
 
 **Verification Rule**:
 - For bulk `.rst` cleanup, do not trust source regex checks alone.
@@ -824,12 +841,20 @@ closing marker for inline strong emphasis (`**text**`) and inline literals (``co
   - `1. **本地事件**（``::``）：...`
   - `**场景 1：初始进入**（``HierarchyDemo -> Parent -> ChildA``）`
   - ``A.enter``（未定义）
+  - `执行 ``A.enter``（未定义）`
+  - `检查转换：``A -> B :: Go``（事件匹配！）`
+  - `**整数：** ``123``、``0xFF``（十六进制）、``0b1010``（二进制）`
+  - `- ``variable_display_mode`` ... ``'hide'``（默认：``'legend'``）`
 - Safe forms for those cases:
   - `**普通详细级别**\ （默认）`
   - `**1. pip 安装**\ （推荐）：`
   - `1. **本地事件**\ （``::``）：...`
   - `**场景 1：初始进入**\ （``HierarchyDemo -> Parent -> ChildA``）`
   - ``A.enter``\ （未定义）
+  - `执行 ``A.enter``\ （未定义）`
+  - `检查转换：``A -> B :: Go``\ （事件匹配！）`
+  - `**整数：** ``123``、``0xFF``\ （十六进制）、``0b1010``\ （二进制）`
+  - `- ``variable_display_mode`` ... ``'hide'``\ （默认：``'legend'``）`
 
 If you do not want visible spaces in rendered Chinese text, prefer `\ ` on both sides as the default safe pattern.
 
@@ -842,6 +867,8 @@ Do not use single backticks for inline code in reST. Use double backticks only: 
   `NO_CONTENTS_BUILD=1 READTHEDOCS_LANGUAGE=zh sphinx-build -b html docs/source /tmp/pyfcstm-html-check-zh`
 - Then inspect generated HTML for parse failures:
   `rg -n 'class="problematic"|\\*\\*[^<]*\\*\\*' /tmp/pyfcstm-html-check-zh -g '*.html'`
+- If you are specifically checking inline literals, also use:
+  `rg -n '<span class="problematic"[^\\n]*>``</span>|<span class="problematic"[^\\n]*>`</span>' /tmp/pyfcstm-html-check-zh -g '*.html'`
 - Use rendered HTML as the final authority for whether `**` / ```` issues are actually fixed.
 
 #### File Generation Rules

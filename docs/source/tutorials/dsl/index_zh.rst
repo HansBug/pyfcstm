@@ -350,7 +350,7 @@ DSL 支持两种基本类型的状态定义：
 3. 根 ``>> during after`` 执行（``aspect_counter += 100``）
 4. **每个周期的总增量**：111
 
-当 ``SpecialState``（伪状态）处于活动状态时：
+当 ``SpecialState``\ （伪状态）处于活动状态时：
 
 1. 根 ``>> during before`` **跳过**
 2. ``SpecialState.during`` 执行（``aspect_counter += 10``）
@@ -386,7 +386,7 @@ DSL 支持两种基本类型的状态定义：
 2. **入口转换**：复合状态必须至少有一个入口转换（``[*] -> state``）
 3. **状态引用**：所有转换目标必须引用当前作用域中的现有状态
 4. **层次一致性**：嵌套状态遵循正确的父子关系
-5. **切面限制**：``during before/after``（不带 ``>>``）仅适用于复合状态
+5. **切面限制**：``during before/after``\ （不带 ``>>``）仅适用于复合状态
 
 .. tip::
    **为什么有这些规则？**
@@ -1840,9 +1840,9 @@ Exit 动作在离开状态到外部时执行。
 
 **GrandChild 的执行顺序：**
 
-1. ``Root >> during before``（``global_counter += 1``）
-2. ``GrandChild.during``（``local_counter += 10``）
-3. ``Root >> during after``（``global_counter += 100``）
+1. ``Root >> during before``\ （``global_counter += 1``）
+2. ``GrandChild.during``\ （``local_counter += 10``）
+3. ``Root >> during after``\ （``global_counter += 100``）
 
 层次化执行顺序
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1865,35 +1865,35 @@ Exit 动作在离开状态到外部时执行。
 
    **场景 1：初始进入**\ （``HierarchyDemo -> Parent -> ChildA``）
 
-   1. ``HierarchyDemo.enter``（如果定义）
-   2. ``Parent.enter``（如果定义）
+   1. ``HierarchyDemo.enter``\ （如果定义）
+   2. ``Parent.enter``\ （如果定义）
    3. ``Parent.during before`` 执行（``execution_log += 100``）
-   4. ``ChildA.enter``（如果定义）
+   4. ``ChildA.enter``\ （如果定义）
 
    **场景 2：During 阶段**\ （当 ``ChildA`` 活动时，每个周期）
 
-   1. ``HierarchyDemo >> during before``（``execution_log += 1000``）
-   2. ``Parent >> during before``（``execution_log += 10``）
-   3. ``ChildA.during``（``execution_log += 1``）
-   4. ``Parent >> during after``（``execution_log += 90``）
-   5. ``HierarchyDemo >> during after``（``execution_log += 9000``）
+   1. ``HierarchyDemo >> during before``\ （``execution_log += 1000``）
+   2. ``Parent >> during before``\ （``execution_log += 10``）
+   3. ``ChildA.during``\ （``execution_log += 1``）
+   4. ``Parent >> during after``\ （``execution_log += 90``）
+   5. ``HierarchyDemo >> during after``\ （``execution_log += 9000``）
 
    **每个周期总计**：10101
 
    **场景 3：子状态之间的转换**\ （``ChildA -> ChildB :: Switch``）
 
-   1. ``ChildA.exit``（如果定义）
+   1. ``ChildA.exit``\ （如果定义）
    2. 转换效果（如果有）
-   3. ``ChildB.enter``（如果定义）
+   3. ``ChildB.enter``\ （如果定义）
 
    **关键**：``Parent.during before/after``\ **不**\ 执行！
 
    **场景 4：从复合状态退出**\ （``ChildB -> [*] :: Exit``）
 
-   1. ``ChildB.exit``（如果定义）
+   1. ``ChildB.exit``\ （如果定义）
    2. ``Parent.during after`` 执行（``execution_log += 900``）
-   3. ``Parent.exit``（如果定义）
-   4. ``HierarchyDemo.exit``（如果定义）
+   3. ``Parent.exit``\ （如果定义）
+   4. ``HierarchyDemo.exit``\ （如果定义）
 
 **生命周期流程图：**
 

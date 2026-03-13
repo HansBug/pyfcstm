@@ -42,6 +42,7 @@
       "description": "Star pyfcstm on GitHub"
     }
   ],
+  "icon": "resources/icon.png",
   "main": "./dist/extension.js",
   "activationEvents": [
     "onLanguage:fcstm"

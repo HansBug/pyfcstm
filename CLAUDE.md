@@ -8,6 +8,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Machine) Domain-Specific Language (DSL)** and generates executable code in multiple target languages. It focuses on
 modeling Hierarchical State Machines (Harel Statecharts) with a Jinja2-based templated code generation system.
 
+This repository must support cross-platform environments (Windows, mainstream Linux distributions, and macOS), older system platforms (for example Windows 7), older Python versions (for example Python 3.7), and a broad Python version range (3.7-3.14), so always account for that compatibility envelope when writing code or introducing dependencies.
+
 ## Common Commands
 
 ### Testing

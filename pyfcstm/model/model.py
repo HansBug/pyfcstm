@@ -1698,6 +1698,32 @@ class StateMachine(AstExportable, PlantUMLExportable):
         """
         yield from self.root_state.walk_states()
 
+    def state_belongs_to_machine(self, state: State) -> bool:
+        """
+        Check whether a state object belongs to this state machine.
+
+        The check follows the state's parent chain to its root and compares the
+        final root object with :attr:`root_state` by identity. States from a
+        different parsed state machine therefore return ``False`` even if they
+        have the same path.
+
+        :param state: State object to verify
+        :type state: State
+        :return: ``True`` if the state is this machine's root or one of its descendants,
+            otherwise ``False``
+        :rtype: bool
+
+        Example::
+
+            >>> sm = StateMachine(defines={}, root_state=root_state)
+            >>> sm.state_belongs_to_machine(root_state)
+            True
+        """
+        current_state = state
+        while current_state.parent is not None:
+            current_state = current_state.parent
+        return current_state is self.root_state
+
     def resolve_state(self, state_path: str) -> State:
         """
         Resolve a full state path to an existing :class:`State` object.

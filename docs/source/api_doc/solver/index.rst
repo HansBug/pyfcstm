@@ -12,4 +12,5 @@ pyfcstm.solver
     expr
     operation
     solve
+    vars
 

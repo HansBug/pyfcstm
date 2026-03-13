@@ -528,6 +528,26 @@ class TestModelModel:
         assert demo_model_1.resolve_state("LX.LX1") is state_LX_LX1
         assert demo_model_1.resolve_state("LX.LX1.LX11") is state_LX_LX1_LX11
 
+    def test_state_belongs_to_machine(self, demo_model_1, root_state_1, state_LX_LX1_LX11):
+        other_ast_node = parse_with_grammar_entry(
+            """
+        state LX {
+            state LX1 {
+                state LX11;
+                [*] -> LX11;
+            }
+            [*] -> LX1;
+        }
+        """,
+            entry_name="state_machine_dsl",
+        )
+        other_model = parse_dsl_node_to_state_machine(other_ast_node)
+        other_state = other_model.resolve_state("LX.LX1.LX11")
+
+        assert demo_model_1.state_belongs_to_machine(root_state_1)
+        assert demo_model_1.state_belongs_to_machine(state_LX_LX1_LX11)
+        assert not demo_model_1.state_belongs_to_machine(other_state)
+
     def test_resolve_state_errors(self, demo_model_1):
         with pytest.raises(ValueError, match="State path cannot be empty"):
             demo_model_1.resolve_state("")

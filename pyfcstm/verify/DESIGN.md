@@ -383,7 +383,7 @@ def generate_transition_successors(node, transitions):
 
     # 如果当前状态是stoppable，添加驻停后继
     # 驻停的条件是：所有转换都未触发
-    if node.node_type == 'leaf' and node.state.is_stoppable:
+    if node.type == 'leaf' and node.state.is_stoppable:
         stay_successor = generate_stay_successor_with_constraint(
             node,
             accumulated_negation  # 所有转换都未触发的条件
@@ -557,15 +557,15 @@ visited: Dict[Tuple[Optional[State], NodeType], z3.BoolRef] = {}
 
 ```python
 def verify_reachability(
-    state_machine: StateMachine,
-    initial_state: State,
-    initial_constraint: z3.BoolRef,
-    initial_vars: Dict[str, z3.ArithRef],
-    target_state: State,
-    target_node_type: NodeType,
-    max_depth: int = 1000,
-    max_cycle: int = 100,
-    max_solutions: int = 10
+        state_machine: StateMachine,
+        initial_state: State,
+        initial_constraint: z3.BoolRef,
+        initial_vars: Dict[str, z3.ArithRef],
+        target_state: State,
+        target_node_type: NodeType,
+        max_depth: int = 1000,
+        max_cycle: int = 100,
+        max_solutions: int = 10
 ) -> Optional[VerificationResult]:
     """
     验证从初始状态是否能到达目标状态
@@ -599,7 +599,7 @@ def verify_reachability(
             continue
 
         # 检查剪枝
-        key = (current_node.state, current_node.node_type)
+        key = (current_node.state, current_node.type)
         if not should_explore(current_constraint, visited.get(key)):
             continue
 
@@ -747,9 +747,9 @@ BFS循环 {
 
 ```python
 def generate_successors(
-    node: VerificationStateNode,
-    constraint: z3.BoolRef,
-    state_machine: StateMachine
+        node: VerificationStateNode,
+        constraint: z3.BoolRef,
+        state_machine: StateMachine
 ) -> List[Tuple[VerificationStateNode, z3.BoolRef]]:
     """
     生成当前节点的所有后继节点
@@ -761,7 +761,7 @@ def generate_successors(
     """
     successors = []
 
-    if node.node_type == 'leaf':
+    if node.type == 'leaf':
         # 叶子状态的后继
         if node.state.is_stoppable:
             # 1. 驻停（执行during chain）
@@ -774,29 +774,30 @@ def generate_successors(
         )
         successors.extend(transition_successors)
 
-    elif node.node_type == 'composite_in':
+    elif node.type == 'composite_in':
         # 复合状态入口的后继：初始转换（考虑转换顺序）
         init_successors = generate_transition_successors(
             node, constraint, node.state.init_transitions
         )
         successors.extend(init_successors)
 
-    elif node.node_type == 'composite_out':
+    elif node.type == 'composite_out':
         # 复合状态出口的后继：父级转换（考虑转换顺序）
         transition_successors = generate_transition_successors(
             node, constraint, node.state.transitions_from
         )
         successors.extend(transition_successors)
 
-    elif node.node_type == 'end':
+    elif node.type == 'end':
         # 终止状态无后继
         pass
 
     return successors
 
+
 def generate_stay_successor(
-    node: VerificationStateNode,
-    constraint: z3.BoolRef
+        node: VerificationStateNode,
+        constraint: z3.BoolRef
 ) -> Tuple[VerificationStateNode, z3.BoolRef]:
     """
     生成驻停后继节点（只适用于stoppable状态）

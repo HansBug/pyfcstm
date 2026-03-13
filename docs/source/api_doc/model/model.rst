@@ -65,7 +65,7 @@ StateMachine
 -----------------------------------------------------
 
 .. autoclass:: StateMachine
-    :members: to_ast_node,to_plantuml,walk_states,resolve_state,resolve_event,defines,root_state
+    :members: to_ast_node,to_plantuml,walk_states,state_belongs_to_machine,resolve_state,resolve_event,defines,root_state
 
 
 parse\_dsl\_node\_to\_state\_machine

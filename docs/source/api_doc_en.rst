@@ -26,4 +26,5 @@ API Documentation
 * :doc:`api_doc/simulate/index`
 * :doc:`api_doc/solver/index`
 * :doc:`api_doc/utils/index`
+* :doc:`api_doc/verify/index`
 

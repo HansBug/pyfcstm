@@ -6,3 +6,8 @@ pyfcstm.verify
 .. automodule:: pyfcstm.verify
 
 
+.. toctree::
+    :maxdepth: 3
+
+    search
+

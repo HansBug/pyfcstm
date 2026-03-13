@@ -542,10 +542,7 @@ class SimulationRuntime:
             >>> runtime._state_belongs_to_machine(some_state)
             True
         """
-        current = state
-        while current.parent is not None:
-            current = current.parent
-        return current is self.state_machine.root_state
+        return self.state_machine.state_belongs_to_machine(state)
 
     def _resolve_initial_state(
             self,

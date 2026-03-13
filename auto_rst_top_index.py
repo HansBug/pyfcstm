@@ -18,18 +18,16 @@ import os
 from natsort import natsorted
 
 
-def generate_rst_index(input_dir, output_file, caption, language='en'):
+def generate_rst_index(input_dir, output_file, title):
     """
-    Generate a single RST index file with toctree.
+    Generate a single RST index file with a titled toctree.
 
     :param input_dir: Input Python project directory to scan
     :type input_dir: str
     :param output_file: Output RST documentation index file path
     :type output_file: str
-    :param caption: Caption text for the toctree
-    :type caption: str
-    :param language: Language code ('en' or 'zh')
-    :type language: str
+    :param title: Section title shown before the toctree
+    :type title: str
     """
     rel_names = []
     for name in os.listdir(input_dir):
@@ -47,11 +45,14 @@ def generate_rst_index(input_dir, output_file, caption, language='en'):
     # Sort names naturally (e.g., module1, module2, module10)
     rel_names = natsorted(rel_names)
 
-    # Write the RST toctree to output file
+    # Write the titled RST toctree to output file
     with open(output_file, 'w') as f:
+        print(f'{title}', file=f)
+        print(f'-------------------------', file=f)
+        print(f'', file=f)
         print(f'.. toctree::', file=f)
         print(f'    :maxdepth: 2', file=f)
-        print(f'    :caption: {caption}', file=f)
+        print(f'    :caption: {title}', file=f)
         print(f'', file=f)
         for name in rel_names:
             # Packages get /index suffix, modules don't
@@ -93,12 +94,12 @@ def main():
 
     # Generate English version
     output_en = os.path.join(args.output_dir, 'api_doc_en.rst')
-    generate_rst_index(args.input_dir, output_en, 'API Documentation', language='en')
+    generate_rst_index(args.input_dir, output_en, 'API Documentation')
     print(f'Generated: {output_en}')
 
     # Generate Chinese version
     output_zh = os.path.join(args.output_dir, 'api_doc_zh.rst')
-    generate_rst_index(args.input_dir, output_zh, 'API 文档', language='zh')
+    generate_rst_index(args.input_dir, output_zh, 'API 文档')
     print(f'Generated: {output_zh}')
 
 

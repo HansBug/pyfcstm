@@ -109,6 +109,9 @@ The framework provides:
 Documentation Structure
 -------------------------
 
+Tutorials
+-------------------------
+
 .. toctree::
     :maxdepth: 2
     :caption: Tutorials
@@ -122,15 +125,14 @@ Documentation Structure
     tutorials/cli/index
     tutorials/grammar/index
 
+Best Practice
+-------------------------
+
 .. toctree::
     :maxdepth: 2
     :caption: Best Practice
 
 .. include:: api_doc_en.rst
-
-.. toctree::
-    :maxdepth: 2
-    :caption: Contributor Guide
 
 Community and Support
 -----------------------

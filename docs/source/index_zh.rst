@@ -111,6 +111,9 @@ pyfcstm 遵循三阶段流水线：
 文档结构
 -------------------------
 
+教程
+-------------------------
+
 .. toctree::
     :maxdepth: 2
     :caption: 教程
@@ -124,15 +127,14 @@ pyfcstm 遵循三阶段流水线：
     tutorials/cli/index_zh
     tutorials/grammar/index_zh
 
+最佳实践
+-------------------------
+
 .. toctree::
     :maxdepth: 2
     :caption: 最佳实践
 
 .. include:: api_doc_zh.rst
-
-.. toctree::
-    :maxdepth: 2
-    :caption: 贡献者指南
 
 社区和支持
 -----------------------

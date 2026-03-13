@@ -9,11 +9,7 @@ pyfcstm.entry.base
 CONTEXT\_SETTINGS
 -----------------------------------------------------
 
-.. py:data:: CONTEXT_SETTINGS
-   :module: pyfcstm.entry.base
-   :value: {'help_option_names': ['-h', '--help']}
-
-   Shared Click context settings for the CLI entrypoints.
+.. autodata:: CONTEXT_SETTINGS
 
 
 P
@@ -59,4 +55,5 @@ command\_wrap
 -----------------------------------------------------
 
 .. autofunction:: command_wrap
+
 

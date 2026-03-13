@@ -7,10 +7,13 @@
 # under test/testfile; do not add Markdown/docs-based fixtures here.
 
 from pathlib import Path
+from textwrap import dedent
 
 import pytest
 
 from pyfcstm.highlight import FcstmLexer
+from pyfcstm.dsl import parse_with_grammar_entry
+from pyfcstm.model import StateMachine, parse_dsl_node_to_state_machine
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SAMPLE_CODE_DIR = _REPO_ROOT / 'test' / 'testfile' / 'sample_codes'
@@ -517,12 +520,788 @@ _LANGCHECK_HACK_CASES = [
     ),
 ]
 
+_LANGCHECK_POSITIVE_CASES = [
+    (
+        '1. Minimal Leaf Stair-Step',
+        'state\nS\n;\n',
+    ),
+    (
+        '2. Pseudo Leaf Stair-Step',
+        'pseudo\nstate\nP\n;\n',
+    ),
+    (
+        '3. Named Leaf Stair-Step',
+        'state\nNamed\nnamed\n"alias"\n;\n',
+    ),
+    (
+        '4. Slash-Comment Split Leaf',
+        'state // split\nSlash\n;\n',
+    ),
+    (
+        '5. Hash-Comment Split Leaf',
+        'state # split\nHash\n;\n',
+    ),
+    (
+        '6. Composite With Split Entry',
+        dedent('''\
+            state
+            Root
+            {
+                [*]
+                ->
+                A
+                ;
+                state
+                A
+                ;
+            }
+        '''),
+    ),
+    (
+        '7. Composite With Split Normal Transition',
+        dedent('''\
+            state
+            Root
+            {
+                [*]
+                ->
+                A
+                ;
+                A
+                ->
+                B
+                ;
+                state
+                A
+                ;
+                state
+                B
+                ;
+            }
+        '''),
+    ),
+    (
+        '8. Composite With Split Exit Transition',
+        dedent('''\
+            state
+            Root
+            {
+                [*]
+                ->
+                A
+                ;
+                A
+                ->
+                [*]
+                ;
+                state
+                A
+                ;
+            }
+        '''),
+    ),
+    (
+        '9. Split Force Transition',
+        dedent('''\
+            state
+            Root
+            {
+                !
+                A
+                ->
+                B
+                ;
+                [*]
+                ->
+                A
+                ;
+                state
+                A
+                ;
+                state
+                B
+                ;
+            }
+        '''),
+    ),
+    (
+        '10. Split All-Force Transition',
+        dedent('''\
+            state
+            Root
+            {
+                !
+                *
+                ->
+                [*]
+                ;
+                [*]
+                ->
+                A
+                ;
+                state
+                A
+                ;
+            }
+        '''),
+    ),
+    (
+        '11. Multiline Int Def',
+        dedent('''\
+            def
+            int
+            x
+            =
+            0
+            ;
+            state
+            S
+            ;
+        '''),
+    ),
+    (
+        '12. Multiline Float Def Expr',
+        dedent('''\
+            def
+            float
+            gain
+            =
+            1
+            +
+            2
+            /
+            3
+            ;
+            state
+            S
+            ;
+        '''),
+    ),
+    (
+        '13. Split Event Declaration',
+        dedent('''\
+            state
+            Root
+            {
+                [*]
+                ->
+                A
+                ;
+                event
+                Tick
+                ;
+                state
+                A
+                ;
+            }
+        '''),
+    ),
+    (
+        '14. Split Named Event Declaration',
+        dedent('''\
+            state
+            Root
+            {
+                [*]
+                ->
+                A
+                ;
+                event
+                Tick
+                named
+                "tick"
+                ;
+                state
+                A
+                ;
+            }
+        '''),
+    ),
+    (
+        '15. Split Enter Operations',
+        dedent('''\
+            def
+            int
+            x
+            =
+            0
+            ;
+            state
+            Leaf
+            {
+                enter
+                hook
+                {
+                    x
+                    =
+                    1
+                    ;
+                }
+            }
+        '''),
+    ),
+    (
+        '16. Split Enter Abstract',
+        dedent('''\
+            state
+            Leaf
+            {
+                enter
+                abstract
+                hook
+                ;
+            }
+        '''),
+    ),
+    (
+        '17. Split Enter Ref',
+        dedent('''\
+            state
+            Leaf
+            {
+                exit
+                abstract
+                base
+                ;
+                enter
+                alias
+                ref
+                base
+                ;
+            }
+        '''),
+    ),
+    (
+        '18. Split Exit Operations',
+        dedent('''\
+            def
+            int
+            x
+            =
+            0
+            ;
+            state
+            Leaf
+            {
+                exit
+                hook
+                {
+                    x
+                    =
+                    2
+                    ;
+                }
+            }
+        '''),
+    ),
+    (
+        '19. Split Exit Abstract Doc',
+        dedent('''\
+            state
+            Leaf
+            {
+                exit
+                abstract
+                hook
+                /* doc */
+            }
+        '''),
+    ),
+    (
+        '20. Split Exit Ref Absolute',
+        dedent('''\
+            state
+            Leaf
+            {
+                enter
+                abstract
+                base
+                ;
+                exit
+                alias
+                ref
+                /
+                base
+                ;
+            }
+        '''),
+    ),
+    (
+        '21. Split Leaf During Operations',
+        dedent('''\
+            def
+            int
+            x
+            =
+            0
+            ;
+            state
+            Leaf
+            {
+                during
+                hook
+                {
+                    x
+                    =
+                    x
+                    +
+                    1
+                    ;
+                }
+            }
+        '''),
+    ),
+    (
+        '22. Split Composite During Before Ops',
+        dedent('''\
+            def
+            int
+            x
+            =
+            0
+            ;
+            state
+            Root
+            {
+                [*]
+                ->
+                A
+                ;
+                during
+                before
+                hook
+                {
+                    x
+                    =
+                    1
+                    ;
+                }
+                state
+                A
+                ;
+            }
+        '''),
+    ),
+    (
+        '23. Split Composite During After Abstract',
+        dedent('''\
+            state
+            Root
+            {
+                [*]
+                ->
+                A
+                ;
+                during
+                after
+                abstract
+                hook
+                ;
+                state
+                A
+                ;
+            }
+        '''),
+    ),
+    (
+        '24. Split Composite During Before Ref',
+        dedent('''\
+            state
+            Root
+            {
+                [*]
+                ->
+                A
+                ;
+                during
+                before
+                abstract
+                base
+                ;
+                during
+                before
+                alias
+                ref
+                base
+                ;
+                state
+                A
+                ;
+            }
+        '''),
+    ),
+    (
+        '25. Split During Aspect Ops',
+        dedent('''\
+            def
+            int
+            x
+            =
+            0
+            ;
+            state
+            Leaf
+            {
+                >>
+                during
+                before
+                hook
+                {
+                    x
+                    =
+                    1
+                    ;
+                }
+            }
+        '''),
+    ),
+    (
+        '26. Split During Aspect Abstract Doc',
+        dedent('''\
+            state
+            Leaf
+            {
+                >>
+                during
+                after
+                abstract
+                hook
+                /* doc */
+            }
+        '''),
+    ),
+    (
+        '27. Split Transition Event Auto-Create',
+        dedent('''\
+            state
+            Root
+            {
+                [*]
+                ->
+                A
+                ;
+                A
+                ->
+                B
+                ::
+                Tick
+                ;
+                state
+                A
+                ;
+                state
+                B
+                ;
+            }
+        '''),
+    ),
+    (
+        '28. Split Transition Absolute Event Path',
+        dedent('''\
+            state
+            Root
+            {
+                [*]
+                ->
+                A
+                ;
+                A
+                ->
+                B
+                :
+                /
+                Tick
+                ;
+                state
+                A
+                ;
+                state
+                B
+                ;
+            }
+        '''),
+    ),
+    (
+        '29. Split Transition Guard',
+        dedent('''\
+            def
+            int
+            x
+            =
+            0
+            ;
+            state
+            Root
+            {
+                [*]
+                ->
+                A
+                ;
+                A
+                ->
+                B
+                :
+                if
+                [
+                    x
+                    >
+                    0
+                ]
+                ;
+                state
+                A
+                ;
+                state
+                B
+                ;
+            }
+        '''),
+    ),
+    (
+        '30. Split Transition Effect Block',
+        dedent('''\
+            def
+            int
+            x
+            =
+            0
+            ;
+            state
+            Root
+            {
+                [*]
+                ->
+                A
+                ;
+                A
+                ->
+                B
+                effect
+                {
+                    x
+                    =
+                    3
+                    ;
+                }
+                state
+                A
+                ;
+                state
+                B
+                ;
+            }
+        '''),
+    ),
+    (
+        '31. Nested Absolute Ref',
+        dedent('''\
+            state
+            Root
+            {
+                [*]
+                ->
+                A
+                ;
+                enter
+                abstract
+                helper
+                ;
+                state
+                A
+                {
+                    [*]
+                    ->
+                    B
+                    ;
+                    enter
+                    alias
+                    ref
+                    /
+                    helper
+                    ;
+                    state
+                    B
+                    ;
+                }
+            }
+        '''),
+    ),
+    (
+        '32. Pseudo Substate With Split Entry',
+        dedent('''\
+            state
+            Root
+            {
+                [*]
+                ->
+                P
+                ;
+                pseudo
+                state
+                P
+                ;
+            }
+        '''),
+    ),
+    (
+        '33. Mixed Comments And No-Op Statements',
+        dedent('''\
+            state
+            Root
+            {
+                ;
+                [*] // init source
+                ->
+                A
+                ;
+                ;
+                state # child decl
+                A
+                ;
+                ;
+            }
+        '''),
+    ),
+    (
+        '34. Split Dotted Ref Path',
+        dedent('''\
+            state
+            Root
+            {
+                [*]
+                ->
+                A
+                ;
+                state
+                A
+                {
+                    [*]
+                    ->
+                    B
+                    ;
+                    exit
+                    abstract
+                    helper
+                    ;
+                    state
+                    B
+                    {
+                        enter
+                        alias
+                        ref
+                        /
+                        A
+                        .
+                        helper
+                        ;
+                    }
+                }
+            }
+        '''),
+    ),
+    (
+        '35. Deep Hierarchy Auto-Created Path Event',
+        dedent('''\
+            state
+            Root
+            {
+                [*]
+                ->
+                A
+                ;
+                state
+                A
+                {
+                    [*]
+                    ->
+                    B
+                    ;
+                    B
+                    ->
+                    [*]
+                    :
+                    /
+                    A
+                    .
+                    Tick
+                    ;
+                    state
+                    B
+                    ;
+                }
+            }
+        '''),
+    ),
+]
+
 
 _SAMPLE_CODE_FILES = sorted(_SAMPLE_CODE_DIR.glob('*.fcstm'))
 
 
+def _parse_state_machine(code: str) -> StateMachine:
+    ast = parse_with_grammar_entry(code, 'state_machine_dsl')
+    state_machine = parse_dsl_node_to_state_machine(ast)
+    assert isinstance(state_machine, StateMachine)
+    return state_machine
+
+
 @pytest.mark.unittest
 class TestFcstmLexerAnalyseText:
+    def test_langcheck_positive_examples_are_embedded_completely(self):
+        assert len(_LANGCHECK_POSITIVE_CASES) == 35
+        assert [title for title, _ in _LANGCHECK_POSITIVE_CASES] == [
+            '1. Minimal Leaf Stair-Step',
+            '2. Pseudo Leaf Stair-Step',
+            '3. Named Leaf Stair-Step',
+            '4. Slash-Comment Split Leaf',
+            '5. Hash-Comment Split Leaf',
+            '6. Composite With Split Entry',
+            '7. Composite With Split Normal Transition',
+            '8. Composite With Split Exit Transition',
+            '9. Split Force Transition',
+            '10. Split All-Force Transition',
+            '11. Multiline Int Def',
+            '12. Multiline Float Def Expr',
+            '13. Split Event Declaration',
+            '14. Split Named Event Declaration',
+            '15. Split Enter Operations',
+            '16. Split Enter Abstract',
+            '17. Split Enter Ref',
+            '18. Split Exit Operations',
+            '19. Split Exit Abstract Doc',
+            '20. Split Exit Ref Absolute',
+            '21. Split Leaf During Operations',
+            '22. Split Composite During Before Ops',
+            '23. Split Composite During After Abstract',
+            '24. Split Composite During Before Ref',
+            '25. Split During Aspect Ops',
+            '26. Split During Aspect Abstract Doc',
+            '27. Split Transition Event Auto-Create',
+            '28. Split Transition Absolute Event Path',
+            '29. Split Transition Guard',
+            '30. Split Transition Effect Block',
+            '31. Nested Absolute Ref',
+            '32. Pseudo Substate With Split Entry',
+            '33. Mixed Comments And No-Op Statements',
+            '34. Split Dotted Ref Path',
+            '35. Deep Hierarchy Auto-Created Path Event',
+        ]
+
+    @pytest.mark.parametrize(
+        ('title', 'code'),
+        _LANGCHECK_POSITIVE_CASES,
+        ids=[title for title, _ in _LANGCHECK_POSITIVE_CASES],
+    )
+    def test_langcheck_positive_examples_are_detected_as_fcstm(self, title, code):
+        state_machine = _parse_state_machine(code)
+        score = FcstmLexer.analyse_text(code)
+
+        assert isinstance(state_machine, StateMachine), f'{title} should round-trip into a StateMachine.'
+        assert score >= 0.95, (
+            f'{title} is valid FCSTM input and should keep a strong score, '
+            f'but analyse_text returned {score:.2f}.'
+        )
+
     def test_langcheck_hack_examples_are_embedded_completely(self):
         assert len(_LANGCHECK_HACK_CASES) == 100
         assert [title for title, _, _ in _LANGCHECK_HACK_CASES] == [

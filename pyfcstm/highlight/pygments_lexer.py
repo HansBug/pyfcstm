@@ -376,6 +376,29 @@ class FcstmLexer(RegexLexer):
 
         return False
 
+    @staticmethod
+    def _analysis_is_valid_state_machine(text: str) -> bool:
+        """
+        Confirm whether the full input can be parsed and loaded as FCSTM.
+
+        This parser-backed check covers valid FCSTM files that use aggressive
+        whitespace/comment splitting which the regex heuristic alone may score
+        too low. Non-FCSTM text falls back to the lightweight heuristic path.
+        """
+        if re.search(r'\bstate\b', text) is None:
+            return False
+
+        try:
+            from ..dsl import parse_with_grammar_entry
+            from ..model import parse_dsl_node_to_state_machine
+
+            ast = parse_with_grammar_entry(text, 'state_machine_dsl')
+            parse_dsl_node_to_state_machine(ast)
+        except Exception:
+            return False
+        else:
+            return True
+
     def analyse_text(text: str) -> float:
         """
         Analyze text to determine if it is likely FCSTM code.
@@ -386,6 +409,9 @@ class FcstmLexer(RegexLexer):
 
         The heuristic balances recall (detecting FCSTM files) with precision
         (avoiding false positives from other languages like C++, Rust, Java).
+        It first attempts a real FCSTM parse/load round-trip for strong
+        confirmation, then falls back to regex heuristics for incomplete
+        snippets that are still useful to highlight.
 
         :param text: Text content to analyze
         :type text: str
@@ -446,6 +472,9 @@ class FcstmLexer(RegexLexer):
             >>> FcstmLexer.analyse_text(rust_code)
             0.0
         """
+        if FcstmLexer._analysis_is_valid_state_machine(text):
+            return 1.0
+
         analysis_text = FcstmLexer._strip_non_semantic_regions(text)
         score = 0.0
 

@@ -108,15 +108,13 @@ pyfcstm 遵循三阶段流水线：
 * **渲染引擎** (``pyfcstm.render``)：基于模板的代码生成，支持表达式样式
 * **CLI 工具** (``pyfcstm.entry``)：常用操作的命令行界面
 
-文档结构
--------------------------
-
 教程
 -------------------------
 
 .. toctree::
     :maxdepth: 2
     :caption: 教程
+    :hidden:
 
     tutorials/installation/index_zh
     tutorials/structure/index_zh
@@ -126,6 +124,15 @@ pyfcstm 遵循三阶段流水线：
     tutorials/visualization/index_zh
     tutorials/cli/index_zh
     tutorials/grammar/index_zh
+
+* :doc:`tutorials/installation/index_zh`
+* :doc:`tutorials/structure/index_zh`
+* :doc:`tutorials/dsl/index_zh`
+* :doc:`tutorials/render/index`
+* :doc:`tutorials/simulation/index_zh`
+* :doc:`tutorials/visualization/index_zh`
+* :doc:`tutorials/cli/index_zh`
+* :doc:`tutorials/grammar/index_zh`
 
 最佳实践
 -------------------------

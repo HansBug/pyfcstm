@@ -106,15 +106,13 @@ The framework provides:
 * **Rendering Engine** (``pyfcstm.render``): Template-based code generation with expression styles
 * **CLI Tools** (``pyfcstm.entry``): Command-line interface for common operations
 
-Documentation Structure
--------------------------
-
 Tutorials
 -------------------------
 
 .. toctree::
     :maxdepth: 2
     :caption: Tutorials
+    :hidden:
 
     tutorials/installation/index
     tutorials/structure/index
@@ -124,6 +122,15 @@ Tutorials
     tutorials/visualization/index
     tutorials/cli/index
     tutorials/grammar/index
+
+* :doc:`tutorials/installation/index`
+* :doc:`tutorials/structure/index`
+* :doc:`tutorials/dsl/index`
+* :doc:`tutorials/render/index`
+* :doc:`tutorials/simulation/index`
+* :doc:`tutorials/visualization/index`
+* :doc:`tutorials/cli/index`
+* :doc:`tutorials/grammar/index`
 
 Best Practice
 -------------------------

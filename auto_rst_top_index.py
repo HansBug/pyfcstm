@@ -53,6 +53,7 @@ def generate_rst_index(input_dir, output_file, title):
         print(f'.. toctree::', file=f)
         print(f'    :maxdepth: 2', file=f)
         print(f'    :caption: {title}', file=f)
+        print(f'    :hidden:', file=f)
         print(f'', file=f)
         for name in rel_names:
             # Packages get /index suffix, modules don't
@@ -60,6 +61,12 @@ def generate_rst_index(input_dir, output_file, title):
                 print(f'    api_doc/{name}/index', file=f)
             else:
                 print(f'    api_doc/{name}', file=f)
+        print(f'', file=f)
+        for name in rel_names:
+            if os.path.exists(os.path.join(input_dir, name, '__init__.py')):
+                print(f'* :doc:`api_doc/{name}/index`', file=f)
+            else:
+                print(f'* :doc:`api_doc/{name}`', file=f)
         print(f'', file=f)
 
 

@@ -12,9 +12,9 @@ from textwrap import dedent
 
 import pytest
 
+from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.highlight import FcstmLexer
 from pyfcstm.highlight import pygments_lexer as pygments_lexer_module
-from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model import StateMachine, parse_dsl_node_to_state_machine
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -1734,7 +1734,7 @@ _LANGCHECK_POSITIVE_CASES += [
         '''),
     ),
     (
-        '54. Absolute Event java.util.function',
+        '54. Absolute Event `java.util.function`',
         dedent('''\
             state Root {
                 [*] -> allowmixing;
@@ -1761,7 +1761,7 @@ _LANGCHECK_POSITIVE_CASES += [
         '''),
     ),
     (
-        '55. Absolute Event String.raw',
+        '55. Absolute Event `String.raw`',
         dedent('''\
             state Root {
                 [*] -> allowmixing;
@@ -1785,7 +1785,7 @@ _LANGCHECK_POSITIVE_CASES += [
         '''),
     ),
     (
-        '56. Ref Path globalThis.bridge',
+        '56. Ref Path `globalThis.bridge`',
         dedent('''\
             state Root {
                 [*] -> allowmixing;
@@ -1814,7 +1814,7 @@ _LANGCHECK_POSITIVE_CASES += [
         '''),
     ),
     (
-        '57. Ref Path String.raw',
+        '57. Ref Path `String.raw`',
         dedent('''\
             state Root {
                 [*] -> allowmixing;
@@ -1843,7 +1843,7 @@ _LANGCHECK_POSITIVE_CASES += [
         '''),
     ),
     (
-        '58. Ref Path java.util.function',
+        '58. Ref Path `java.util.function`',
         dedent('''\
             state Root {
                 [*] -> allowmixing;
@@ -1909,7 +1909,7 @@ _LANGCHECK_POSITIVE_CASES += [
         '''),
     ),
     (
-        '60. Dense Line Plus String.raw Ref',
+        '60. Dense Line Plus `String.raw` Ref',
         dedent('''\
             def int allowmixing = 0;
             def int boundary = 0;
@@ -1942,7 +1942,7 @@ _LANGCHECK_POSITIVE_CASES += [
         '''),
     ),
     (
-        '61. Dense Line Plus java.util.function Event',
+        '61. Dense Line Plus `java.util.function` Event',
         dedent('''\
             def int allowmixing = 0;
             def int annotation = 0;
@@ -2076,8 +2076,1971 @@ _LANGCHECK_POSITIVE_CASES += [
             }
         '''),
     ),
-]
+    (
+        '66. Elevator Door Reopen Cycle',
+        dedent('''\
+            // Elevator door controller with obstruction reopen logic
+            def int door_pos = 0;
+            def int hold_ticks = 0;
+            def int reopen_count = 0;
 
+            state ElevatorDoor {
+                state Closed;
+
+                state Opening {
+                    during {
+                        door_pos = door_pos + 50;
+                    }
+                }
+
+                state Opened {
+                    during {
+                        hold_ticks = hold_ticks + 1;
+                    }
+                }
+
+                state Closing {
+                    during {
+                        door_pos = door_pos - 50;
+                    }
+                }
+
+                [*] -> Closed;
+                Closed -> Opening : HallCall effect {
+                    hold_ticks = 0;
+                };
+                Opening -> Opened : if [door_pos >= 100] effect {
+                    door_pos = 100;
+                    hold_ticks = 0;
+                };
+                Opened -> Closing : if [hold_ticks >= 2];
+                Closing -> Opened : BeamBlocked effect {
+                    reopen_count = reopen_count + 1;
+                    door_pos = 100;
+                    hold_ticks = 0;
+                };
+                Closing -> Closed : if [door_pos <= 0] effect {
+                    door_pos = 0;
+                };
+            }
+        '''),
+    ),
+    (
+        '67. Two-Phase Traffic Signal',
+        dedent('''\
+            // Main road plus pedestrian request phase
+            def int green_ticks = 0;
+            def int yellow_ticks = 0;
+            def int walk_ticks = 0;
+            def int ped_waiting = 0;
+
+            state TrafficSignal {
+                state MainGreen {
+                    during {
+                        green_ticks = green_ticks + 1;
+                    }
+                }
+
+                state PedestrianPhase {
+                    state MainYellow {
+                        during {
+                            yellow_ticks = yellow_ticks + 1;
+                        }
+                    }
+
+                    state Walk {
+                        during {
+                            walk_ticks = walk_ticks + 1;
+                        }
+                    }
+
+                    [*] -> MainYellow;
+                    MainYellow -> Walk : if [yellow_ticks >= 1];
+                    Walk -> [*] : if [walk_ticks >= 2];
+                }
+
+                [*] -> MainGreen;
+                MainGreen -> PedestrianPhase : if [ped_waiting == 1 && green_ticks >= 3] effect {
+                    ped_waiting = 0;
+                    yellow_ticks = 0;
+                    walk_ticks = 0;
+                };
+                MainGreen -> MainGreen : PedestrianRequest effect {
+                    ped_waiting = 1;
+                };
+                PedestrianPhase -> MainGreen effect {
+                    green_ticks = 0;
+                };
+            }
+        '''),
+    ),
+    (
+        '68. Water Tank Fill Controller',
+        dedent('''\
+            // Maintain tank level and stop on overflow
+            def int level = 55;
+            def int fill_cycles = 0;
+            def int overflow_count = 0;
+
+            state WaterTank {
+                state Idle {
+                    during {
+                        level = level - 1;
+                    }
+                }
+
+                state Filling {
+                    during {
+                        level = level + 4;
+                        fill_cycles = fill_cycles + 1;
+                    }
+                }
+
+                state Alarm {
+                    enter {
+                        overflow_count = overflow_count + 1;
+                    }
+                }
+
+                [*] -> Idle;
+                Idle -> Filling : if [level <= 40];
+                Filling -> Idle : if [level >= 70];
+                Filling -> Alarm : if [level > 90];
+                Alarm -> Idle : Reset effect {
+                    level = 60;
+                };
+            }
+        '''),
+    ),
+    (
+        '69. Batch Mixer Recipe Flow',
+        dedent('''\
+            // Mixing skid with load, mix and discharge phases
+            def int mix_ticks = 0;
+            def int discharge_ticks = 0;
+            def int batch_count = 0;
+
+            state MixerSkid {
+                state Ready;
+
+                state BatchCycle {
+                    state Load {
+                        enter {
+                            mix_ticks = 0;
+                            discharge_ticks = 0;
+                        }
+                    }
+
+                    state Mix {
+                        during {
+                            mix_ticks = mix_ticks + 1;
+                        }
+                    }
+
+                    state Discharge {
+                        during {
+                            discharge_ticks = discharge_ticks + 1;
+                        }
+                    }
+
+                    [*] -> Load;
+                    Load -> Mix : IngredientsReady;
+                    Mix -> Discharge : if [mix_ticks >= 3];
+                    Discharge -> [*] : if [discharge_ticks >= 2];
+                }
+
+                [*] -> Ready;
+                Ready -> BatchCycle : StartBatch;
+                BatchCycle -> Ready effect {
+                    batch_count = batch_count + 1;
+                };
+            }
+        '''),
+    ),
+    (
+        '70. Turnstile Entry Control',
+        dedent('''\
+            // Standard paid-entry turnstile
+            def int passage_count = 0;
+            def int alarm_count = 0;
+
+            state Turnstile {
+                state Locked;
+                state Unlocked;
+
+                state Alarm {
+                    enter {
+                        alarm_count = alarm_count + 1;
+                    }
+                }
+
+                [*] -> Locked;
+                Locked -> Unlocked : Coin;
+                Locked -> Alarm : Push;
+                Unlocked -> Locked : Push effect {
+                    passage_count = passage_count + 1;
+                };
+                Alarm -> Locked : Reset;
+            }
+        '''),
+    ),
+    (
+        '71. Vending Machine Dispense Cycle',
+        dedent('''\
+            // Simple snack vending workflow
+            def int credit = 0;
+            def int stock = 5;
+            def int vend_count = 0;
+
+            state VendingMachine {
+                state Idle;
+
+                state CreditReady {
+                    during {
+                        credit = credit + 0;
+                    }
+                }
+
+                state Dispensing {
+                    enter {
+                        stock = stock - 1;
+                        vend_count = vend_count + 1;
+                    }
+                }
+
+                state OutOfService;
+
+                [*] -> Idle;
+                Idle -> CreditReady : InsertCoin effect {
+                    credit = credit + 1;
+                };
+                CreditReady -> Dispensing : SelectItem effect {
+                    credit = credit - 1;
+                };
+                Dispensing -> Idle : DispenseDone;
+                Dispensing -> OutOfService : if [stock <= 0];
+                OutOfService -> Idle : Refill effect {
+                    stock = 5;
+                };
+            }
+        '''),
+    ),
+    (
+        '72. Smart Lock Auto Relock',
+        dedent('''\
+            // Badge access lock with timed relock
+            def int relock_ticks = 0;
+            def int invalid_tries = 0;
+
+            state SmartLock {
+                state Locked;
+
+                state Unlocked {
+                    during {
+                        relock_ticks = relock_ticks + 1;
+                    }
+                }
+
+                state Alarm {
+                    enter {
+                        invalid_tries = invalid_tries + 1;
+                    }
+                }
+
+                [*] -> Locked;
+                Locked -> Unlocked : ValidBadge effect {
+                    relock_ticks = 0;
+                };
+                Locked -> Alarm : InvalidBadge;
+                Unlocked -> Locked : if [relock_ticks >= 3];
+                Alarm -> Locked : MasterReset effect {
+                    invalid_tries = 0;
+                };
+            }
+        '''),
+    ),
+    (
+        '73. Conveyor Jam Recovery',
+        dedent('''\
+            // Conveyor with manual jam clearing sequence
+            def int run_ticks = 0;
+            def int clear_ticks = 0;
+            def int jam_count = 0;
+
+            state ConveyorLine {
+                state Stopped;
+
+                state Running {
+                    during {
+                        run_ticks = run_ticks + 1;
+                    }
+                }
+
+                state Jam {
+                    enter {
+                        jam_count = jam_count + 1;
+                    }
+                }
+
+                state Clearing {
+                    during {
+                        clear_ticks = clear_ticks + 1;
+                    }
+                }
+
+                [*] -> Stopped;
+                Stopped -> Running : StartCommand effect {
+                    run_ticks = 0;
+                };
+                Running -> Stopped : StopCommand;
+                Running -> Jam : JamDetected;
+                Jam -> Clearing : ClearJam effect {
+                    clear_ticks = 0;
+                };
+                Clearing -> Running : if [clear_ticks >= 2] effect {
+                    run_ticks = 0;
+                };
+            }
+        '''),
+    ),
+    (
+        '74. HVAC Occupancy Scheduler',
+        dedent('''\
+            // Occupancy-based zone conditioning schedule
+            def int setpoint = 26;
+            def int prestart_ticks = 0;
+            def int occupied_ticks = 0;
+
+            state ZoneScheduler {
+                event OccupancyStart named "occupancy-start";
+                event OccupancyEnd named "occupancy-end";
+
+                state Unoccupied {
+                    during {
+                        prestart_ticks = prestart_ticks + 1;
+                    }
+                }
+
+                state PreCool {
+                    during {
+                        setpoint = 23;
+                    }
+                }
+
+                state Occupied named "day-mode" {
+                    during {
+                        occupied_ticks = occupied_ticks + 1;
+                    }
+                }
+
+                [*] -> Unoccupied;
+                Unoccupied -> PreCool : if [prestart_ticks >= 2];
+                PreCool -> Occupied : OccupancyStart effect {
+                    occupied_ticks = 0;
+                };
+                Occupied -> Unoccupied : OccupancyEnd effect {
+                    setpoint = 26;
+                    prestart_ticks = 0;
+                };
+            }
+        '''),
+    ),
+    (
+        '75. Battery Charger Three Stage',
+        dedent('''\
+            // Bulk, absorption and float charging controller
+            def int pack_voltage = 300;
+            def int charge_ticks = 0;
+            def int temp_c = 25;
+            def int fault_count = 0;
+
+            state BatteryCharger {
+                state Idle;
+
+                state Bulk {
+                    during {
+                        pack_voltage = pack_voltage + 20;
+                        charge_ticks = charge_ticks + 1;
+                    }
+                }
+
+                state Absorption {
+                    during {
+                        pack_voltage = pack_voltage + 5;
+                        charge_ticks = charge_ticks + 1;
+                    }
+                }
+
+                state Float;
+
+                state Fault {
+                    enter {
+                        fault_count = fault_count + 1;
+                    }
+                }
+
+                [*] -> Idle;
+                Idle -> Bulk : PlugIn effect {
+                    charge_ticks = 0;
+                };
+                Bulk -> Absorption : if [pack_voltage >= 360];
+                Absorption -> Float : if [charge_ticks >= 4];
+                Bulk -> Fault : if [temp_c > 60];
+                Absorption -> Fault : if [temp_c > 60];
+                Float -> Idle : Unplug;
+                Fault -> Idle : Reset effect {
+                    temp_c = 25;
+                };
+            }
+        '''),
+    ),
+    (
+        '76. Garage Door Obstacle Handling',
+        dedent('''\
+            // Residential garage door with obstacle reversal
+            def int travel = 0;
+            def int open_hold = 0;
+
+            state GarageDoor named "garage-door" {
+                event RemotePulse named "remote-pulse";
+                state Closed;
+
+                state Opening {
+                    during {
+                        travel = travel + 25;
+                    }
+                }
+
+                state Open {
+                    during {
+                        open_hold = open_hold + 1;
+                    }
+                }
+
+                state Closing {
+                    during {
+                        travel = travel - 25;
+                    }
+                }
+
+                [*] -> Closed;
+                Closed -> Opening : RemotePulse;
+                Opening -> Open : if [travel >= 100] effect {
+                    travel = 100;
+                    open_hold = 0;
+                };
+                Open -> Closing : if [open_hold >= 2];
+                Closing -> Opening : Obstruction effect {
+                    travel = 25;
+                };
+                Closing -> Closed : if [travel <= 0] effect {
+                    travel = 0;
+                };
+            }
+        '''),
+    ),
+    (
+        '77. Printer Job Lifecycle',
+        dedent('''\
+            // Office printer with pause and jam handling
+            def int pages_left = 0;
+            def int completed_jobs = 0;
+            def int error_count = 0;
+
+            state PrintServer {
+                state Idle;
+
+                state Printing {
+                    during {
+                        pages_left = pages_left - 1;
+                    }
+                }
+
+                state Paused;
+
+                state Error {
+                    enter {
+                        error_count = error_count + 1;
+                    }
+                }
+
+                [*] -> Idle;
+                Idle -> Printing : SubmitJob effect {
+                    pages_left = 3;
+                };
+                Printing -> Paused : PauseJob;
+                Paused -> Printing : ResumeJob;
+                Printing -> Idle : if [pages_left <= 0] effect {
+                    completed_jobs = completed_jobs + 1;
+                };
+                Printing -> Error : JamDetected;
+                Error -> Idle : ClearJam effect {
+                    pages_left = 0;
+                };
+            }
+        '''),
+    ),
+    (
+        '78. Network Link Reconnect Backoff',
+        dedent('''\
+            // Client retries with an increasing reconnect delay
+            def int retries = 0;
+            def int backoff_ticks = 0;
+            def int online_ticks = 0;
+
+            state NetworkClient {
+                state Disconnected;
+                state Connecting;
+
+                state Online {
+                    during {
+                        online_ticks = online_ticks + 1;
+                    }
+                }
+
+                state Backoff {
+                    during {
+                        backoff_ticks = backoff_ticks + 1;
+                    }
+                }
+
+                [*] -> Disconnected;
+                Disconnected -> Connecting : StartLink;
+                Connecting -> Online : LinkUp effect {
+                    retries = 0;
+                    online_ticks = 0;
+                };
+                Connecting -> Backoff : LinkFailed effect {
+                    retries = retries + 1;
+                    backoff_ticks = 0;
+                };
+                Online -> Connecting : LinkDropped;
+                Backoff -> Connecting : if [backoff_ticks >= retries + 1];
+            }
+        '''),
+    ),
+    (
+        '79. Boiler Burner Lockout',
+        dedent('''\
+            // Burner start-up with purge, ignition and lockout
+            def int purge_ticks = 0;
+            def int trial_count = 0;
+            def int run_ticks = 0;
+            def int lockouts = 0;
+
+            state BoilerBurner {
+                state Idle;
+
+                state Purge {
+                    during {
+                        purge_ticks = purge_ticks + 1;
+                    }
+                }
+
+                state Igniting;
+
+                state Run {
+                    during {
+                        run_ticks = run_ticks + 1;
+                    }
+                }
+
+                state Lockout {
+                    enter {
+                        lockouts = lockouts + 1;
+                    }
+                }
+
+                [*] -> Idle;
+                Idle -> Purge : HeatDemand effect {
+                    purge_ticks = 0;
+                };
+                Purge -> Igniting : if [purge_ticks >= 2];
+                Igniting -> Run : FlameProven effect {
+                    run_ticks = 0;
+                };
+                Igniting -> Lockout : IgnitionFailed effect {
+                    trial_count = trial_count + 1;
+                };
+                Run -> Idle : DemandSatisfied;
+                Lockout -> Idle : ResetBurner effect {
+                    trial_count = 0;
+                };
+            }
+        '''),
+    ),
+    (
+        '80. EV Charger Session Flow',
+        dedent('''\
+            // Public charger session from plug-in to fault reset
+            def int energy_pulses = 0;
+            def int auth_ok = 0;
+            def int fault_count = 0;
+
+            state EVCharger {
+                state Available;
+                state Handshake;
+
+                state Charging {
+                    during {
+                        energy_pulses = energy_pulses + 1;
+                    }
+                }
+
+                state Fault {
+                    enter {
+                        fault_count = fault_count + 1;
+                    }
+                }
+
+                [*] -> Available;
+                Available -> Handshake : PlugIn;
+                Handshake -> Charging : Authorize effect {
+                    auth_ok = 1;
+                    energy_pulses = 0;
+                };
+                Handshake -> Available : CancelSession;
+                Charging -> Available : Unplug effect {
+                    auth_ok = 0;
+                };
+                Charging -> Fault : GroundFault;
+                Fault -> Available : ResetFault effect {
+                    auth_ok = 0;
+                };
+            }
+        '''),
+    ),
+    (
+        '81. Refrigerator Defrost Cycle',
+        dedent('''\
+            // Refrigeration loop with defrost and drain wait
+            def int compressor_ticks = 0;
+            def int frost_level = 0;
+            def int drain_ticks = 0;
+
+            state Refrigerator {
+                state Cooling {
+                    during {
+                        compressor_ticks = compressor_ticks + 1;
+                        frost_level = frost_level + 1;
+                    }
+                }
+
+                state Defrost {
+                    during {
+                        frost_level = frost_level - 2;
+                    }
+                }
+
+                state DrainWait {
+                    during {
+                        drain_ticks = drain_ticks + 1;
+                    }
+                }
+
+                [*] -> Cooling;
+                Cooling -> Defrost : if [frost_level >= 5] effect {
+                    drain_ticks = 0;
+                };
+                Defrost -> DrainWait : if [frost_level <= 0];
+                DrainWait -> Cooling : if [drain_ticks >= 2] effect {
+                    compressor_ticks = 0;
+                };
+            }
+        '''),
+    ),
+    (
+        '82. Railway Crossing Gate',
+        dedent('''\
+            // Road crossing gate around train approach events
+            def int warning_ticks = 0;
+            def int gate_cycles = 0;
+            def int train_detected = 0;
+
+            state RailCrossing {
+                state Clear;
+
+                state Warning {
+                    during {
+                        warning_ticks = warning_ticks + 1;
+                    }
+                }
+
+                state Lowered;
+                state Raising;
+
+                [*] -> Clear;
+                Clear -> Warning : TrackOccupied effect {
+                    train_detected = 1;
+                    warning_ticks = 0;
+                };
+                Warning -> Lowered : if [warning_ticks >= 2];
+                Lowered -> Raising : TrackClear effect {
+                    train_detected = 0;
+                };
+                Raising -> Clear : GateUp effect {
+                    gate_cycles = gate_cycles + 1;
+                };
+            }
+        '''),
+    ),
+    (
+        '83. Pump Lead-Lag Swap',
+        dedent('''\
+            // Alternate duty between primary and secondary pumps
+            def int primary_starts = 0;
+            def int secondary_starts = 0;
+            def int demand = 0;
+            def int fault_count = 0;
+
+            state PumpPair {
+                state Standby;
+
+                state PrimaryRun {
+                    enter {
+                        primary_starts = primary_starts + 1;
+                    }
+                }
+
+                state SecondaryRun {
+                    enter {
+                        secondary_starts = secondary_starts + 1;
+                    }
+                }
+
+                state Fault {
+                    enter {
+                        fault_count = fault_count + 1;
+                    }
+                }
+
+                [*] -> Standby;
+                Standby -> PrimaryRun : StartDemand effect {
+                    demand = 1;
+                };
+                PrimaryRun -> Standby : StopDemand effect {
+                    demand = 0;
+                };
+                PrimaryRun -> SecondaryRun : PrimaryFault;
+                SecondaryRun -> Standby : StopDemand effect {
+                    demand = 0;
+                };
+                SecondaryRun -> Fault : SecondaryFault;
+                Fault -> Standby : ResetPumps;
+            }
+        '''),
+    ),
+    (
+        '84. AGV Docking Procedure',
+        dedent('''\
+            // Automated guided vehicle docking and verification
+            def int align_ticks = 0;
+            def int dock_ticks = 0;
+            def int mission_count = 0;
+            def int dock_ok = 1;
+
+            state AGVDocking {
+                state Idle;
+                state Navigate;
+
+                state Align {
+                    during {
+                        align_ticks = align_ticks + 1;
+                    }
+                }
+
+                pseudo state VerifyDock;
+
+                state Docked {
+                    during {
+                        dock_ticks = dock_ticks + 1;
+                    }
+                }
+
+                state Error;
+
+                [*] -> Idle;
+                Idle -> Navigate : DispatchToDock;
+                Navigate -> Align : AtStation effect {
+                    align_ticks = 0;
+                };
+                Align -> VerifyDock : if [align_ticks >= 2];
+                VerifyDock -> Docked : if [dock_ok == 1];
+                VerifyDock -> Error : if [dock_ok == 0];
+                Docked -> Idle : Undock effect {
+                    mission_count = mission_count + 1;
+                };
+                Error -> Navigate : RetryDock;
+            }
+        '''),
+    ),
+    (
+        '85. Air Compressor Pressure Band',
+        dedent('''\
+            // Compressor starts and stops on pressure bands
+            def int pressure = 85;
+            def int cooldown_ticks = 0;
+            def int high_temp_count = 0;
+
+            state AirCompressor {
+                state Off {
+                    during {
+                        pressure = pressure - 2;
+                    }
+                }
+
+                state Running {
+                    during {
+                        pressure = pressure + 4;
+                    }
+                }
+
+                state Cooldown {
+                    during {
+                        cooldown_ticks = cooldown_ticks + 1;
+                    }
+                }
+
+                state Fault {
+                    enter {
+                        high_temp_count = high_temp_count + 1;
+                    }
+                }
+
+                [*] -> Off;
+                Off -> Running : if [pressure <= 70];
+                Running -> Cooldown : if [pressure >= 95] effect {
+                    cooldown_ticks = 0;
+                };
+                Running -> Fault : OverTemp;
+                Cooldown -> Off : if [cooldown_ticks >= 2];
+                Fault -> Off : ResetCompressor effect {
+                    pressure = 85;
+                };
+            }
+        '''),
+    ),
+    (
+        '86. Security Alarm Arming Flow',
+        dedent('''\
+            // Intrusion panel with exit and entry delays
+            def int exit_delay = 0;
+            def int entry_delay = 0;
+            def int siren_count = 0;
+
+            state SecurityPanel {
+                event ArmAway named "arm-away";
+                event Disarm named "disarm";
+
+                state Disarmed;
+
+                state ExitDelay {
+                    during {
+                        exit_delay = exit_delay + 1;
+                    }
+                }
+
+                state Armed;
+
+                state EntryDelay {
+                    during {
+                        entry_delay = entry_delay + 1;
+                    }
+                }
+
+                state Alarm {
+                    enter {
+                        siren_count = siren_count + 1;
+                    }
+                }
+
+                [*] -> Disarmed;
+                Disarmed -> ExitDelay : ArmAway effect {
+                    exit_delay = 0;
+                };
+                ExitDelay -> Armed : if [exit_delay >= 2];
+                Armed -> EntryDelay : DoorOpen effect {
+                    entry_delay = 0;
+                };
+                EntryDelay -> Alarm : if [entry_delay >= 2];
+                EntryDelay -> Disarmed : Disarm;
+                Armed -> Disarmed : Disarm;
+                Alarm -> Disarmed : Disarm;
+            }
+        '''),
+    ),
+    (
+        '87. Camera Recording Policy',
+        dedent('''\
+            // Recorder with prebuffer, clip close and upload
+            def int motion_ticks = 0;
+            def int clip_count = 0;
+            def int upload_ticks = 0;
+
+            state CameraRecorder {
+                event MotionStart named "motion-start";
+                event MotionEnd named "motion-end";
+
+                state Standby;
+
+                state Prebuffer {
+                    during {
+                        motion_ticks = motion_ticks + 1;
+                    }
+                }
+
+                state Recording {
+                    during {
+                        motion_ticks = motion_ticks + 1;
+                    }
+                }
+
+                state Uploading {
+                    during {
+                        upload_ticks = upload_ticks + 1;
+                    }
+                }
+
+                [*] -> Standby;
+                Standby -> Prebuffer : MotionStart effect {
+                    motion_ticks = 0;
+                };
+                Prebuffer -> Recording : if [motion_ticks >= 1];
+                Recording -> Uploading : MotionEnd effect {
+                    clip_count = clip_count + 1;
+                    upload_ticks = 0;
+                };
+                Uploading -> Standby : if [upload_ticks >= 2];
+            }
+        '''),
+    ),
+    (
+        '88. Solar Inverter Grid Support',
+        dedent('''\
+            // PV inverter from sunrise wait to generation and fault
+            def int irradiance = 0;
+            def int sync_ticks = 0;
+            def int fault_count = 0;
+
+            state SolarInverter {
+                state WaitingSun;
+
+                state Sync {
+                    during {
+                        sync_ticks = sync_ticks + 1;
+                    }
+                }
+
+                state Generating {
+                    during {
+                        irradiance = irradiance + 0;
+                    }
+                }
+
+                state Fault {
+                    enter {
+                        fault_count = fault_count + 1;
+                    }
+                }
+
+                [*] -> WaitingSun;
+                WaitingSun -> Sync : if [irradiance >= 4] effect {
+                    sync_ticks = 0;
+                };
+                Sync -> Generating : if [sync_ticks >= 2];
+                Generating -> WaitingSun : if [irradiance <= 1];
+                Generating -> Fault : GridFault;
+                Fault -> WaitingSun : ResetGridFault;
+            }
+        '''),
+    ),
+    (
+        '89. Cleanroom Airlock Interlock',
+        dedent('''\
+            // Personnel airlock keeps only one door sequence active
+            def int transfer_ticks = 0;
+            def int cycle_count = 0;
+
+            state Airlock named "airlock-1" {
+                state Idle;
+                state OuterOpen;
+
+                state Transfer {
+                    during {
+                        transfer_ticks = transfer_ticks + 1;
+                    }
+                }
+
+                state InnerOpen;
+
+                [*] -> Idle;
+                Idle -> OuterOpen : OuterRequest;
+                OuterOpen -> Transfer : OuterClosed effect {
+                    transfer_ticks = 0;
+                };
+                Transfer -> InnerOpen : if [transfer_ticks >= 1];
+                InnerOpen -> Idle : InnerClosed effect {
+                    cycle_count = cycle_count + 1;
+                };
+            }
+        '''),
+    ),
+    (
+        '90. Fire Pump Weekly Test',
+        dedent('''\
+            // Scheduled weekly churn test for a fire pump
+            def int test_ticks = 0;
+            def int ready_flag = 0;
+            def int fail_count = 0;
+
+            state FirePumpTest {
+                state Idle;
+
+                state Testing {
+                    during {
+                        test_ticks = test_ticks + 1;
+                    }
+                }
+
+                state Ready {
+                    enter {
+                        ready_flag = 1;
+                    }
+                }
+
+                state Fault {
+                    enter {
+                        fail_count = fail_count + 1;
+                    }
+                }
+
+                [*] -> Idle;
+                Idle -> Testing : WeeklySchedule effect {
+                    test_ticks = 0;
+                    ready_flag = 0;
+                };
+                Testing -> Ready : if [test_ticks >= 2];
+                Testing -> Fault : TestFail;
+                Ready -> Idle : TestComplete effect {
+                    ready_flag = 0;
+                };
+                Fault -> Idle : ResetTest;
+            }
+        '''),
+    ),
+    (
+        '91. Escalator Energy Save',
+        dedent('''\
+            // Escalator wakes on demand and idles after cooldown
+            def int people_seen = 0;
+            def int run_ticks = 0;
+            def int cooldown_ticks = 0;
+
+            state Escalator {
+                state Sleep;
+                state Starting;
+
+                state Running {
+                    during {
+                        run_ticks = run_ticks + 1;
+                    }
+                }
+
+                state Cooldown {
+                    during {
+                        cooldown_ticks = cooldown_ticks + 1;
+                    }
+                }
+
+                state Fault;
+
+                [*] -> Sleep;
+                Sleep -> Starting : PersonDetected effect {
+                    people_seen = people_seen + 1;
+                };
+                Starting -> Running : MotorReady effect {
+                    run_ticks = 0;
+                };
+                Running -> Cooldown : NoPassenger effect {
+                    cooldown_ticks = 0;
+                };
+                Cooldown -> Sleep : if [cooldown_ticks >= 2];
+                Running -> Fault : SafetyTrip;
+                Fault -> Sleep : ResetEscalator;
+            }
+        '''),
+    ),
+    (
+        '92. Pipeline Valve Remote Local',
+        dedent('''\
+            // Remote/local handover for a pipeline block valve
+            def int command_source = 0;
+            def int cycle_count = 0;
+
+            state PipelineValve named "remote-valve" {
+                event RemoteOpen named "remote-open";
+                event RemoteClose named "remote-close";
+
+                state Local;
+                state RemoteClosed named "closed";
+                state RemoteOpenState named "open";
+
+                [*] -> Local;
+                Local -> RemoteClosed : HandToRemote effect {
+                    command_source = 1;
+                };
+                RemoteClosed -> RemoteOpenState : RemoteOpen effect {
+                    cycle_count = cycle_count + 1;
+                };
+                RemoteOpenState -> RemoteClosed : RemoteClose effect {
+                    cycle_count = cycle_count + 1;
+                };
+                RemoteClosed -> Local : HandToLocal effect {
+                    command_source = 0;
+                };
+                RemoteOpenState -> Local : HandToLocal effect {
+                    command_source = 0;
+                };
+            }
+        '''),
+    ),
+    (
+        '93. Medical Infusion Pump',
+        dedent('''\
+            // Infusion pump from prime to infusion and KVO
+            def int prime_ticks = 0;
+            def int volume_left = 20;
+            def int alarm_count = 0;
+
+            state InfusionPump {
+                state Idle;
+
+                state Priming {
+                    during {
+                        prime_ticks = prime_ticks + 1;
+                    }
+                }
+
+                state Infusing {
+                    during {
+                        volume_left = volume_left - 2;
+                    }
+                }
+
+                state KVO;
+
+                state Alarm {
+                    enter {
+                        alarm_count = alarm_count + 1;
+                    }
+                }
+
+                [*] -> Idle;
+                Idle -> Priming : StartSet effect {
+                    prime_ticks = 0;
+                    volume_left = 20;
+                };
+                Priming -> Infusing : if [prime_ticks >= 2];
+                Infusing -> KVO : if [volume_left <= 0];
+                Infusing -> Alarm : OcclusionDetected;
+                KVO -> Idle : StopInfusion;
+                Alarm -> Idle : AcknowledgeAlarm;
+            }
+        '''),
+    ),
+    (
+        '94. Data Center UPS Transfer',
+        dedent('''\
+            // UPS transfers between mains, battery and bypass
+            def int battery_level = 100;
+            def int transfer_count = 0;
+            def int bypass_count = 0;
+
+            state UPSController {
+                state Normal {
+                    during {
+                        battery_level = battery_level + 0;
+                    }
+                }
+
+                state OnBattery {
+                    during {
+                        battery_level = battery_level - 5;
+                    }
+                }
+
+                state Bypass {
+                    enter {
+                        bypass_count = bypass_count + 1;
+                    }
+                }
+
+                state Fault;
+
+                [*] -> Normal;
+                Normal -> OnBattery : MainsLost effect {
+                    transfer_count = transfer_count + 1;
+                };
+                OnBattery -> Normal : MainsRestored;
+                OnBattery -> Bypass : if [battery_level <= 20];
+                OnBattery -> Fault : BatteryFault;
+                Bypass -> Normal : ManualReturn;
+                Fault -> Normal : ResetUPS effect {
+                    battery_level = 100;
+                };
+            }
+        '''),
+    ),
+    (
+        '95. Warehouse Sorter Merge',
+        dedent('''\
+            // Merge sorter alternates between induction and diverting
+            def int cartons_seen = 0;
+            def int divert_ticks = 0;
+            def int jam_count = 0;
+
+            state SorterMerge {
+                state Idle;
+
+                state Inducting {
+                    during {
+                        cartons_seen = cartons_seen + 1;
+                    }
+                }
+
+                state Diverting {
+                    during {
+                        divert_ticks = divert_ticks + 1;
+                    }
+                }
+
+                state Jam {
+                    enter {
+                        jam_count = jam_count + 1;
+                    }
+                }
+
+                [*] -> Idle;
+                Idle -> Inducting : StartWave;
+                Inducting -> Diverting : DivertCommand effect {
+                    divert_ticks = 0;
+                };
+                Diverting -> Inducting : if [divert_ticks >= 1];
+                Inducting -> Jam : MergeBlocked;
+                Jam -> Idle : ClearSorter;
+            }
+        '''),
+    ),
+    (
+        '96. Robot Cell Maintenance Mode',
+        dedent('''\
+            // Robot cell switches between auto, manual and fault states
+            def int part_count = 0;
+            def int fault_count = 0;
+
+            state RobotCell {
+                enter abstract LockCell;
+                exit abstract UnlockCell;
+                >> during before abstract AuditCell;
+
+                state Auto {
+                    state Load;
+
+                    state Process {
+                        during {
+                            part_count = part_count + 1;
+                        }
+                    }
+
+                    [*] -> Load;
+                    Load -> Process : PartPresent;
+                    Process -> Load : CycleComplete;
+                }
+
+                state Manual {
+                    enter ref /LockCell;
+                    exit ref /UnlockCell;
+                }
+
+                state Fault {
+                    enter {
+                        fault_count = fault_count + 1;
+                    }
+                }
+
+                [*] -> Auto;
+                Auto -> Manual : MaintenanceRequest;
+                Manual -> Auto : ResumeAuto;
+                Auto -> Fault : SafetyGateOpen;
+                Fault -> Manual : ResetCell;
+            }
+        '''),
+    ),
+    (
+        '97. Heat Pump Defrost Recovery',
+        dedent('''\
+            // Heat pump periodically defrosts the outdoor coil
+            def int coil_temp = -5;
+            def int defrost_ticks = 0;
+            def int room_heat = 0;
+
+            state HeatPump {
+                state Heating {
+                    during {
+                        coil_temp = coil_temp - 1;
+                        room_heat = room_heat + 1;
+                    }
+                }
+
+                state Defrost {
+                    during {
+                        coil_temp = coil_temp + 3;
+                        defrost_ticks = defrost_ticks + 1;
+                    }
+                }
+
+                state DripDelay {
+                    during {
+                        defrost_ticks = defrost_ticks + 1;
+                    }
+                }
+
+                state Fault;
+
+                [*] -> Heating;
+                Heating -> Defrost : if [coil_temp <= -10] effect {
+                    defrost_ticks = 0;
+                };
+                Defrost -> DripDelay : if [coil_temp >= 2] effect {
+                    defrost_ticks = 0;
+                };
+                DripDelay -> Heating : if [defrost_ticks >= 1];
+                Heating -> Fault : SensorFault;
+                Fault -> Heating : ResetHeatPump effect {
+                    coil_temp = -5;
+                };
+            }
+        '''),
+    ),
+    (
+        '98. Reactor Temperature Control',
+        dedent('''\
+            // Batch reactor with heat, hold and cool phases
+            def int temp = 20;
+            def int hold_ticks = 0;
+            def int batch_done = 0;
+
+            state ReactorControl {
+                state Idle;
+
+                state Batch {
+                    state Heat {
+                        during {
+                            temp = temp + 10;
+                        }
+                    }
+
+                    state Hold {
+                        during {
+                            hold_ticks = hold_ticks + 1;
+                        }
+                    }
+
+                    state Cool {
+                        during {
+                            temp = temp - 8;
+                        }
+                    }
+
+                    [*] -> Heat;
+                    Heat -> Hold : if [temp >= 80] effect {
+                        hold_ticks = 0;
+                    };
+                    Hold -> Cool : if [hold_ticks >= 3];
+                    Cool -> [*] : if [temp <= 30];
+                }
+
+                state Abort;
+
+                [*] -> Idle;
+                Idle -> Batch : StartBatch effect {
+                    temp = 20;
+                };
+                Batch -> Idle effect {
+                    batch_done = batch_done + 1;
+                };
+                Batch -> Abort : EmergencyStop;
+                Abort -> Idle : ResetReactor effect {
+                    temp = 20;
+                };
+            }
+        '''),
+    ),
+    (
+        '99. Loading Dock Leveler',
+        dedent('''\
+            // Dock leveler deploys, serves a truck and returns home
+            def int platform_pos = 0;
+            def int service_ticks = 0;
+            def int fault_count = 0;
+
+            state DockLeveler {
+                state Stored;
+
+                state Deploying {
+                    during {
+                        platform_pos = platform_pos + 50;
+                    }
+                }
+
+                state Service {
+                    during {
+                        service_ticks = service_ticks + 1;
+                    }
+                }
+
+                state Returning {
+                    during {
+                        platform_pos = platform_pos - 50;
+                    }
+                }
+
+                state Fault {
+                    enter {
+                        fault_count = fault_count + 1;
+                    }
+                }
+
+                [*] -> Stored;
+                Stored -> Deploying : DockTruck;
+                Deploying -> Service : if [platform_pos >= 100] effect {
+                    platform_pos = 100;
+                    service_ticks = 0;
+                };
+                Service -> Returning : LoadComplete;
+                Returning -> Stored : if [platform_pos <= 0] effect {
+                    platform_pos = 0;
+                };
+                Service -> Fault : VehicleMoved;
+                Fault -> Stored : ResetLeveler effect {
+                    platform_pos = 0;
+                };
+            }
+        '''),
+    ),
+    (
+        '100. Wind Turbine Yaw Alignment',
+        dedent('''\
+            // Wind turbine aligns nacelle before generating power
+            def int yaw_error = 12;
+            def int power_ticks = 0;
+            def int storm_count = 0;
+
+            state WindTurbine {
+                state Parked;
+
+                state Yawing {
+                    during {
+                        yaw_error = yaw_error - 4;
+                    }
+                }
+
+                state Generating {
+                    during {
+                        power_ticks = power_ticks + 1;
+                    }
+                }
+
+                state StormLock {
+                    enter {
+                        storm_count = storm_count + 1;
+                    }
+                }
+
+                [*] -> Parked;
+                Parked -> Yawing : WindAvailable;
+                Yawing -> Generating : if [yaw_error <= 0] effect {
+                    power_ticks = 0;
+                };
+                Generating -> Parked : WindGone effect {
+                    yaw_error = 12;
+                };
+                Generating -> StormLock : HighWind;
+                StormLock -> Parked : ResetTurbine effect {
+                    yaw_error = 12;
+                };
+            }
+        '''),
+    ),
+    (
+        '101. Reservoir Level Band Control',
+        dedent('''\
+            // Reservoir fill control with normal, full and alarm bands
+            def int level = 50;
+            def int fill_ticks = 0;
+            def int alarm_count = 0;
+
+            state Reservoir {
+                state Normal {
+                    during {
+                        level = level - 1;
+                    }
+                }
+
+                state Filling {
+                    during {
+                        level = level + 3;
+                        fill_ticks = fill_ticks + 1;
+                    }
+                }
+
+                state Full;
+
+                state Alarm {
+                    enter {
+                        alarm_count = alarm_count + 1;
+                    }
+                }
+
+                [*] -> Normal;
+                Normal -> Filling : if [level <= 35] effect {
+                    fill_ticks = 0;
+                };
+                Filling -> Full : if [level >= 70];
+                Full -> Normal : DemandDraw effect {
+                    level = 60;
+                };
+                Filling -> Alarm : if [fill_ticks >= 20];
+                Alarm -> Normal : ResetReservoir effect {
+                    level = 50;
+                };
+            }
+        '''),
+    ),
+    (
+        '102. Parcel Locker Pickup Session',
+        dedent('''\
+            // Locker reservation expires if pickup never happens
+            def int reserve_ticks = 0;
+            def int door_ticks = 0;
+            def int expired_count = 0;
+
+            state ParcelLocker {
+                event PickupCode named "pickup-code";
+
+                state Available;
+
+                state Reserved {
+                    during {
+                        reserve_ticks = reserve_ticks + 1;
+                    }
+                }
+
+                state DoorOpen {
+                    during {
+                        door_ticks = door_ticks + 1;
+                    }
+                }
+
+                state Expired {
+                    enter {
+                        expired_count = expired_count + 1;
+                    }
+                }
+
+                state Fault;
+
+                [*] -> Available;
+                Available -> Reserved : PlaceParcel effect {
+                    reserve_ticks = 0;
+                };
+                Reserved -> DoorOpen : PickupCode effect {
+                    door_ticks = 0;
+                };
+                Reserved -> Expired : if [reserve_ticks >= 3];
+                DoorOpen -> Available : if [door_ticks >= 1];
+                DoorOpen -> Fault : DoorForced;
+                Expired -> Available : ClearExpired;
+                Fault -> Available : ResetLocker;
+            }
+        '''),
+    ),
+    (
+        '103. CNC Spindle Warmup Sequence',
+        dedent('''\
+            // CNC spindle warms up before cutting production parts
+            def int warm_ticks = 0;
+            def int cut_ticks = 0;
+            def int part_count = 0;
+            def int fault_count = 0;
+
+            state CNCMachine {
+                >> during before abstract SampleSpindle;
+
+                state Idle;
+
+                state Warmup {
+                    during {
+                        warm_ticks = warm_ticks + 1;
+                    }
+                }
+
+                state Ready;
+
+                state Cutting {
+                    during {
+                        cut_ticks = cut_ticks + 1;
+                    }
+                }
+
+                state Fault {
+                    enter {
+                        fault_count = fault_count + 1;
+                    }
+                }
+
+                [*] -> Idle;
+                Idle -> Warmup : StartMachine effect {
+                    warm_ticks = 0;
+                };
+                Warmup -> Ready : if [warm_ticks >= 2];
+                Ready -> Cutting : StartCycle effect {
+                    cut_ticks = 0;
+                };
+                Cutting -> Ready : if [cut_ticks >= 3] effect {
+                    part_count = part_count + 1;
+                };
+                Cutting -> Fault : SpindleTrip;
+                Fault -> Idle : ResetMachine;
+            }
+        '''),
+    ),
+    (
+        '104. Building Access Visitor Flow',
+        dedent('''\
+            // Lobby visitor flow from badge scan to door release
+            def int approval_ticks = 0;
+            def int release_ticks = 0;
+            def int alarm_count = 0;
+
+            state VisitorAccess {
+                state Idle;
+                state BadgeScan;
+
+                state Approval {
+                    during {
+                        approval_ticks = approval_ticks + 1;
+                    }
+                }
+
+                state DoorRelease {
+                    during {
+                        release_ticks = release_ticks + 1;
+                    }
+                }
+
+                state Alarm {
+                    enter {
+                        alarm_count = alarm_count + 1;
+                    }
+                }
+
+                [*] -> Idle;
+                Idle -> BadgeScan : BadgePresented;
+                BadgeScan -> Approval : VisitorSelected effect {
+                    approval_ticks = 0;
+                };
+                Approval -> DoorRelease : HostApproved effect {
+                    release_ticks = 0;
+                };
+                Approval -> Alarm : if [approval_ticks >= 3];
+                DoorRelease -> Idle : if [release_ticks >= 1];
+                Alarm -> Idle : ResetLobby;
+            }
+        '''),
+    ),
+    (
+        '105. Machine Vision Inspection Cell',
+        dedent('''\
+            // Inspection cell captures an image and branches on result
+            def int capture_ticks = 0;
+            def int reject_count = 0;
+            def int inspection_ok = 1;
+
+            state VisionCell {
+                state Waiting;
+
+                state Capture {
+                    during {
+                        capture_ticks = capture_ticks + 1;
+                    }
+                }
+
+                pseudo state DecideGrade;
+                state Pass;
+
+                state Reject {
+                    enter {
+                        reject_count = reject_count + 1;
+                    }
+                }
+
+                state Fault;
+
+                [*] -> Waiting;
+                Waiting -> Capture : PartArrived effect {
+                    capture_ticks = 0;
+                };
+                Capture -> DecideGrade : if [capture_ticks >= 1];
+                DecideGrade -> Pass : if [inspection_ok == 1];
+                DecideGrade -> Reject : if [inspection_ok == 0];
+                Pass -> Waiting : TransferPart;
+                Reject -> Waiting : BinReject;
+                Capture -> Fault : CameraFault;
+                Fault -> Waiting : ResetVision;
+            }
+        '''),
+    ),
+    (
+        '106. Fleet Drone Mission Supervisor',
+        dedent('''\
+            // Drone mission with takeoff, mission, return and error handling
+            def int leg_ticks = 0;
+            def int sortie_count = 0;
+            def int battery_low = 0;
+
+            state DroneMission {
+                state Ready;
+
+                state Takeoff {
+                    during {
+                        leg_ticks = leg_ticks + 1;
+                    }
+                }
+
+                state Mission {
+                    state Survey {
+                        during {
+                            leg_ticks = leg_ticks + 1;
+                        }
+                    }
+
+                    state Deliver;
+
+                    [*] -> Survey;
+                    Survey -> Deliver : WaypointReached;
+                    Deliver -> [*] : PackageDropped;
+                }
+
+                state ReturnHome;
+                state Error;
+
+                [*] -> Ready;
+                Ready -> Takeoff : Launch effect {
+                    leg_ticks = 0;
+                };
+                Takeoff -> Mission : if [leg_ticks >= 1] effect {
+                    leg_ticks = 0;
+                };
+                Mission -> ReturnHome : if [battery_low == 1];
+                ReturnHome -> Ready : Landed effect {
+                    sortie_count = sortie_count + 1;
+                };
+                Mission -> Error : LostLink;
+                Error -> Ready : ResetDrone effect {
+                    battery_low = 0;
+                };
+            }
+        '''),
+    ),
+    (
+        '107. Water Treatment Backwash',
+        dedent('''\
+            // Filter train backwashes when pressure drop rises too high
+            def int filter_dp = 0;
+            def int rinse_ticks = 0;
+            def int service_count = 0;
+            def int fault_count = 0;
+
+            state FilterTrain {
+                state Filtering {
+                    during {
+                        filter_dp = filter_dp + 1;
+                    }
+                }
+
+                state Backwash {
+                    during {
+                        filter_dp = filter_dp - 2;
+                    }
+                }
+
+                state Rinse {
+                    during {
+                        rinse_ticks = rinse_ticks + 1;
+                    }
+                }
+
+                state Service;
+
+                state Fault {
+                    enter {
+                        fault_count = fault_count + 1;
+                    }
+                }
+
+                [*] -> Filtering;
+                Filtering -> Backwash : if [filter_dp >= 5] effect {
+                    rinse_ticks = 0;
+                };
+                Backwash -> Rinse : if [filter_dp <= 0];
+                Rinse -> Service : if [rinse_ticks >= 2] effect {
+                    service_count = service_count + 1;
+                };
+                Service -> Filtering : ReturnToFilter;
+                Filtering -> Fault : PumpTrip;
+                Fault -> Filtering : ResetTrain effect {
+                    filter_dp = 0;
+                };
+            }
+        '''),
+    ),
+    (
+        '108. Cold Storage Door Alarm',
+        dedent('''\
+            // Cold room alarm when the insulated door stays open too long
+            def int open_ticks = 0;
+            def int alarm_count = 0;
+
+            state ColdRoomDoor {
+                state Closed;
+
+                state Open {
+                    during {
+                        open_ticks = open_ticks + 1;
+                    }
+                }
+
+                state Alarm {
+                    enter {
+                        alarm_count = alarm_count + 1;
+                    }
+                }
+
+                state Acked;
+
+                [*] -> Closed;
+                Closed -> Open : DoorOpened effect {
+                    open_ticks = 0;
+                };
+                Open -> Closed : DoorClosed;
+                Open -> Alarm : if [open_ticks >= 2];
+                Alarm -> Acked : SilenceAlarm;
+                Acked -> Closed : DoorClosed;
+            }
+        '''),
+    ),
+    (
+        '109. Microgrid Islanding Controller',
+        dedent('''\
+            // Microgrid islands on utility loss and later resynchronizes
+            def int sync_ticks = 0;
+            def int island_count = 0;
+            def int fault_count = 0;
+
+            state Microgrid {
+                event UtilityRecovered named "utility-recovered";
+
+                state GridTied;
+
+                state IslandPrep {
+                    during {
+                        sync_ticks = sync_ticks + 1;
+                    }
+                }
+
+                state Islanded;
+
+                state Resync {
+                    during {
+                        sync_ticks = sync_ticks + 1;
+                    }
+                }
+
+                state Fault {
+                    enter {
+                        fault_count = fault_count + 1;
+                    }
+                }
+
+                [*] -> GridTied;
+                GridTied -> IslandPrep : UtilityLost effect {
+                    sync_ticks = 0;
+                };
+                IslandPrep -> Islanded : if [sync_ticks >= 1] effect {
+                    island_count = island_count + 1;
+                };
+                Islanded -> Resync : UtilityRecovered effect {
+                    sync_ticks = 0;
+                };
+                Resync -> GridTied : if [sync_ticks >= 2];
+                Islanded -> Fault : InverterFault;
+                Fault -> GridTied : ResetMicrogrid;
+            }
+        '''),
+    ),
+    (
+        '110. Packaging Cartoner Changeover',
+        dedent('''\
+            // Cartoner line handles starvation, recipe change and jam reset
+            def int carton_count = 0;
+            def int starve_ticks = 0;
+            def int changeover_ticks = 0;
+            def int fault_count = 0;
+
+            state Cartoner {
+                state Production {
+                    during {
+                        carton_count = carton_count + 1;
+                    }
+                }
+
+                state Starve {
+                    during {
+                        starve_ticks = starve_ticks + 1;
+                    }
+                }
+
+                state Changeover named "recipe-change" {
+                    during {
+                        changeover_ticks = changeover_ticks + 1;
+                    }
+                }
+
+                state Ready;
+
+                state Fault {
+                    enter {
+                        fault_count = fault_count + 1;
+                    }
+                }
+
+                [*] -> Production;
+                Production -> Starve : NoInfeed effect {
+                    starve_ticks = 0;
+                };
+                Starve -> Production : ProductArrived;
+                Production -> Changeover : RecipeChange effect {
+                    changeover_ticks = 0;
+                };
+                Changeover -> Ready : if [changeover_ticks >= 2];
+                Ready -> Production : ResumeRun;
+                Production -> Fault : CartonJam;
+                Fault -> Ready : ResetCartoner;
+            }
+        '''),
+    ),
+]
 
 _SAMPLE_CODE_FILES = sorted(_SAMPLE_CODE_DIR.glob('*.fcstm'))
 
@@ -2098,74 +4061,13 @@ class TestFcstmLexerAnalyseText:
         assert 'parse_dsl_node_to_state_machine' not in source
 
     def test_langcheck_positive_examples_are_embedded_completely(self):
-        assert len(_LANGCHECK_POSITIVE_CASES) == 65
-        assert [title for title, _ in _LANGCHECK_POSITIVE_CASES] == [
-            '1. Minimal Leaf Stair-Step',
-            '2. Pseudo Leaf Stair-Step',
-            '3. Named Leaf Stair-Step',
-            '4. Slash-Comment Split Leaf',
-            '5. Hash-Comment Split Leaf',
-            '6. Composite With Split Entry',
-            '7. Composite With Split Normal Transition',
-            '8. Composite With Split Exit Transition',
-            '9. Split Force Transition',
-            '10. Split All-Force Transition',
-            '11. Multiline Int Def',
-            '12. Multiline Float Def Expr',
-            '13. Split Event Declaration',
-            '14. Split Named Event Declaration',
-            '15. Split Enter Operations',
-            '16. Split Enter Abstract',
-            '17. Split Enter Ref',
-            '18. Split Exit Operations',
-            '19. Split Exit Abstract Doc',
-            '20. Split Exit Ref Absolute',
-            '21. Split Leaf During Operations',
-            '22. Split Composite During Before Ops',
-            '23. Split Composite During After Abstract',
-            '24. Split Composite During Before Ref',
-            '25. Split During Aspect Ops',
-            '26. Split During Aspect Abstract Doc',
-            '27. Split Transition Event Auto-Create',
-            '28. Split Transition Absolute Event Path',
-            '29. Split Transition Guard',
-            '30. Split Transition Effect Block',
-            '31. Nested Absolute Ref',
-            '32. Pseudo Substate With Split Entry',
-            '33. Mixed Comments And No-Op Statements',
-            '34. Split Dotted Ref Path',
-            '35. Deep Hierarchy Auto-Created Path Event',
-            '36. Enter Keyword Spray',
-            '37. Exit Keyword Spray',
-            '38. Composite During-Before Keyword Spray',
-            '39. Composite During-After Keyword Spray',
-            '40. Aspect-Before Keyword Spray',
-            '41. Aspect-After Keyword Spray',
-            '42. Entry Effect Keyword Spray',
-            '43. Normal Effect Keyword Spray',
-            '44. Exit Effect Keyword Spray',
-            '45. Nested Effect Keyword Spray',
-            '46. Foreign-Named Transition Chain',
-            '47. Forced Foreign-Named Transition Chain',
-            '48. All-Force Into Do',
-            '49. Exit Cascade With Keyword Sources',
-            '50. Class Colon Trap',
-            '51. For Colon Trap',
-            '52. Finally Colon Trap',
-            '53. Scoped Event GlobalThis',
-            '54. Absolute Event java.util.function',
-            '55. Absolute Event String.raw',
-            '56. Ref Path globalThis.bridge',
-            '57. Ref Path String.raw',
-            '58. Ref Path java.util.function',
-            '59. Dense Pseudo-Named-Abstract-Ref-Effect Line',
-            '60. Dense Line Plus String.raw Ref',
-            '61. Dense Line Plus java.util.function Event',
-            '62. Pseudo Sibling Plus Keyword Chain',
-            '63. Named State Plus Local Event Keyword Bait',
-            '64. Deep Hierarchy Keyword Parents',
-            '65. Mixed Ref And Colon Trap',
-        ]
+        titles = [title for title, _ in _LANGCHECK_POSITIVE_CASES]
+
+        assert len(_LANGCHECK_POSITIVE_CASES) == 110
+        assert titles[0] == '1. Minimal Leaf Stair-Step'
+        assert titles[-1] == '110. Packaging Cartoner Changeover'
+        assert len(set(titles)) == 110
+        assert [int(title.split('.', 1)[0]) for title in titles] == list(range(1, 111))
 
     @pytest.mark.parametrize(
         ('title', 'code'),

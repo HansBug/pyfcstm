@@ -1,3 +1,11 @@
+# NOTE:
+# Keep this regression file fully self-contained.
+# Do not load cases or case metadata from LANGCHECK_HACK.md or any other
+# external document/source file. All regression examples and identifying
+# information must stay encoded directly in this test module.
+# The only allowed external inputs are real FCSTM positive samples stored
+# under test/testfile; do not add Markdown/docs-based fixtures here.
+
 from pathlib import Path
 
 import pytest

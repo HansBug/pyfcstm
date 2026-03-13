@@ -1,4 +1,3 @@
-import re
 from pathlib import Path
 
 import pytest
@@ -7,7 +6,6 @@ from pyfcstm.highlight import FcstmLexer
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SAMPLE_CODE_DIR = _REPO_ROOT / 'test' / 'testfile' / 'sample_codes'
-_LANGCHECK_HACK_PATH = _REPO_ROOT / 'LANGCHECK_HACK.md'
 _LANGCHECK_HACK_CASES = [
     (
         'C-1 Block Comment (1.00)',
@@ -511,29 +509,6 @@ _LANGCHECK_HACK_CASES = [
     ),
 ]
 
-_LANGCHECK_HACK_SECTION_PATTERN = re.compile(
-    r'^###\s+(?P<title>.+?)\n(?P<body>.*?)(?=^###\s+|\Z)',
-    re.MULTILINE | re.DOTALL,
-)
-_LANGCHECK_HACK_CODE_PATTERN = re.compile(
-    r'```[^\n]*\n(?P<code>.*?)\n```',
-    re.DOTALL,
-)
-
-
-def _load_langcheck_hack_cases_from_markdown():
-    cases = []
-    markdown_text = _LANGCHECK_HACK_PATH.read_text(encoding='utf-8')
-
-    for section in _LANGCHECK_HACK_SECTION_PATTERN.finditer(markdown_text):
-        code_match = _LANGCHECK_HACK_CODE_PATTERN.search(section.group('body'))
-        if code_match is None:
-            continue
-
-        cases.append((section.group('title').strip(), code_match.group('code') + '\n'))
-
-    return cases
-
 
 _SAMPLE_CODE_FILES = sorted(_SAMPLE_CODE_DIR.glob('*.fcstm'))
 
@@ -542,9 +517,108 @@ _SAMPLE_CODE_FILES = sorted(_SAMPLE_CODE_DIR.glob('*.fcstm'))
 class TestFcstmLexerAnalyseText:
     def test_langcheck_hack_examples_are_embedded_completely(self):
         assert len(_LANGCHECK_HACK_CASES) == 100
-        assert [
-            (title, code) for title, _, code in _LANGCHECK_HACK_CASES
-        ] == _load_langcheck_hack_cases_from_markdown()
+        assert [title for title, _, _ in _LANGCHECK_HACK_CASES] == [
+            'C-1 Block Comment (1.00)',
+            'C-2 Line Comment (1.00)',
+            'C-3 String Literal (1.00)',
+            'C-4 Disabled Preprocessor Block (1.00)',
+            'C-5 Function-Local Comment (1.00)',
+            'CXX-1 Block Comment (1.00)',
+            'CXX-2 Line Comment (1.00)',
+            'CXX-3 Raw String (1.00)',
+            'CXX-4 String Literal (1.00)',
+            'CXX-5 Disabled Preprocessor Block (1.00)',
+            'JAVA-1 Package Plus Block Comment (1.00)',
+            'JAVA-2 Package Plus Line Comment (1.00)',
+            'JAVA-3 Concatenated String (1.00)',
+            'JAVA-4 String.join (1.00)',
+            'JAVA-5 Javadoc And Class (1.00)',
+            'JS-1 Block Comment (1.00)',
+            'JS-2 Line Comment (1.00)',
+            'JS-3 Template Literal (1.00)',
+            'JS-4 String.raw Tagged Template (1.00)',
+            'JS-5 Array Join (1.00)',
+            'TS-1 Block Comment (1.00)',
+            'TS-2 Line Comment (1.00)',
+            'TS-3 Typed Template Literal (1.00)',
+            'TS-4 Interface Wrapper (1.00)',
+            'TS-5 Typed String.raw (1.00)',
+            'PY-1 Module Docstring (1.00)',
+            'PY-2 Triple Quoted String (1.00)',
+            'PY-3 Raw Triple Quoted String (1.00)',
+            'PY-4 Line Comment (1.00)',
+            'PY-5 Implicit Concatenation (1.00)',
+            'RB-1 begin/end Comment (1.00)',
+            'RB-2 Line Comment (1.00)',
+            'RB-3 Heredoc (1.00)',
+            'RB-4 Percent String (1.00)',
+            'RB-5 Array Join (1.00)',
+            'RS-1 Block Comment (1.00)',
+            'RS-2 Line Comment (1.00)',
+            'RS-3 Raw String (1.00)',
+            'RS-4 concat! Macro (1.00)',
+            'RS-5 Crate Doc Comment (1.00)',
+            'GO-1 Block Comment (1.00)',
+            'GO-2 Line Comment (1.00)',
+            'GO-3 Raw String (1.00)',
+            'GO-4 Concatenated String (1.00)',
+            'GO-5 Function-Local Comment (1.00)',
+            'PUML-1 Sequence Diagram Comments (1.00)',
+            'PUML-2 Floating Note (1.00)',
+            'PUML-3 Legend Block (1.00)',
+            'PUML-4 State Note (1.00)',
+            'PUML-5 State Diagram Comments (1.00)',
+            '51. C-6 Typedef Globals And Main (1.00)',
+            '52. C-7 Struct Holder Plus during (1.00)',
+            '53. C-8 Local State/Event Decls (1.00)',
+            '54. C-9 Mixed Alias And Pointer Target (1.00)',
+            '55. C-10 Function-Local Typedefs (1.00)',
+            '56. CXX-6 Using Aliases And Main (1.00)',
+            '57. CXX-7 Member Fields Plus during (1.00)',
+            '58. CXX-8 Local Aliases In Helper (1.00)',
+            '59. CXX-9 Lambda Body Payload (1.00)',
+            '60. CXX-10 Constructor Body Payload (1.00)',
+            '61. JAVA-6 Fields Plus Method Reference Lambda (0.95)',
+            '62. JAVA-7 Instance Initializer Payload (0.95)',
+            '63. JAVA-8 Static Initializer Payload (0.95)',
+            '64. JAVA-9 Constructor-Local Payload (0.95)',
+            '65. JAVA-10 Anonymous Inner Class Fields (0.95)',
+            '66. JS-6 Top-Level Newline Stitching (1.00)',
+            '67. JS-7 Function Body Newline Stitching (1.00)',
+            '68. JS-8 IIFE Payload (1.00)',
+            '69. JS-9 Class Static Block (1.00)',
+            '70. JS-10 try/finally Wrapper (1.00)',
+            '71. TS-6 Typed Prelude Plus Newline Stitching (1.00)',
+            '72. TS-7 Function Body Payload (1.00)',
+            '73. TS-8 Namespace Wrapper (1.00)',
+            '74. TS-9 Class Static Block (1.00)',
+            '75. TS-10 try/finally Wrapper (1.00)',
+            '76. PY-6 Top-Level Bare Expressions (0.87)',
+            '77. PY-7 Class Body Bare Expressions (0.87)',
+            '78. PY-8 if-Block Bare Expressions (0.87)',
+            '79. PY-9 for-Block Bare Expressions (0.87)',
+            '80. PY-10 try/finally Bare Expressions (0.87)',
+            '81. RB-6 Top-Level Regex Literal Plus Calls (0.99)',
+            '82. RB-7 Class Body Payload (0.99)',
+            '83. RB-8 Module Body Payload (0.99)',
+            '84. RB-9 Lambda Body Payload (0.99)',
+            '85. RB-10 BEGIN Block Payload (0.99)',
+            '86. RS-6 Item Macro With Braces (1.00)',
+            '87. RS-7 Item Macro With Parentheses (1.00)',
+            '88. RS-8 Item Macro With Brackets (1.00)',
+            '89. RS-9 Const Block Wrapper (1.00)',
+            '90. RS-10 Nested Token Tree Wrapper (1.00)',
+            '91. GO-6 Named Struct Fields (0.87)',
+            '92. GO-7 Anonymous Struct Variable (0.87)',
+            '93. GO-8 Function-Local Type Declaration (0.87)',
+            '94. GO-9 Nested Struct Field (0.87)',
+            '95. GO-10 Slice Of Anonymous Structs (0.87)',
+            '96. PUML-6 allowmixing Plus Class Body (0.87)',
+            '97. PUML-7 allowmixing Plus Abstract Class Body (0.87)',
+            '98. PUML-8 allowmixing Plus Annotation Body (0.87)',
+            '99. PUML-9 allowmixing Plus Entity Body (0.87)',
+            '100. PUML-10 allowmixing Plus Object Body (0.87)',
+        ]
 
     @pytest.mark.parametrize(
         ('title', 'language', 'code'),

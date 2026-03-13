@@ -1698,6 +1698,53 @@ class StateMachine(AstExportable, PlantUMLExportable):
         """
         yield from self.root_state.walk_states()
 
+    def resolve_state(self, state_path: str) -> State:
+        """
+        Resolve a full state path to an existing :class:`State` object.
+
+        This method requires a complete state path in the format
+        ``State1.State2.State3``, where the path must include all states from
+        the root to the target state.
+
+        :param state_path: The complete state path (e.g., ``"Root.System.Active"``)
+        :type state_path: str
+        :return: The resolved state from the hierarchy
+        :rtype: State
+        :raises ValueError: If the state path is invalid or empty
+        :raises LookupError: If any state in the path does not exist
+
+        Example::
+
+            >>> sm = StateMachine(defines={}, root_state=root_state)
+            >>> state = sm.resolve_state("Root.System.Active")
+            >>> state.name
+            'Active'
+        """
+        if not state_path:
+            raise ValueError("State path cannot be empty")
+
+        path_parts = state_path.split('.')
+        if not all(path_parts):
+            raise ValueError(f"Invalid state path: {state_path!r} (contains empty parts)")
+
+        current_state = self.root_state
+        if path_parts[0] != current_state.name:
+            raise LookupError(
+                f"State path root '{path_parts[0]}' does not match "
+                f"state machine root '{current_state.name}' "
+                f"while resolving state path {state_path!r}"
+            )
+
+        for i, state_name in enumerate(path_parts[1:], 1):
+            if state_name not in current_state.substates:
+                raise LookupError(
+                    f"State '{state_name}' not found in state '{'.'.join(path_parts[:i])}' "
+                    f"while resolving state path {state_path!r}"
+                )
+            current_state = current_state.substates[state_name]
+
+        return current_state
+
     def resolve_event(self, event_path: str) -> Event:
         """
         Resolve a full event path to an existing Event object in the state machine.

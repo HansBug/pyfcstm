@@ -79,7 +79,7 @@ class SolveResult:
         >>> len(result.solutions)
         2
         >>> print(result)
-        SolveResult(sat, 2 solutions, variables=['x', 'y'])
+        SolveResult(sat, 2 solutions, variables=['x', 'y'], solutions=[{'x': 1, 'y': 9}, {'x': 2, 'y': 8}])
     """
     status: Literal['sat', 'unsat', 'unknown']
     solutions: List[Dict[str, Union[int, float]]]
@@ -215,11 +215,10 @@ def solve(
         >>> # All solutions (WARNING: use with caution!)
         >>> result = solve([x + y == 10, x > 0, x < 3], max_solutions=None)
         >>>
-        >>> # Unconstrained variable handling
-        >>> z = z3.Int('z')
-        >>> result = solve([x == 5], max_solutions=1)
-        >>> 'x' in result.solutions[0]
-        True
+        >>> # Unsatisfiable constraints
+        >>> result = solve([x > 10, x < 5], max_solutions=1)
+        >>> result.status
+        'unsat'
     """
     # Validate parameters
     if max_solutions is not None and max_solutions < 1:
@@ -268,11 +267,16 @@ def solve(
 
 def _extract_variables(constraints: List[z3.ExprRef]) -> List[z3.ExprRef]:
     """
-    Extract all variables from a list of Z3 constraints.
+    Extract all unique variables from a list of Z3 constraints.
 
-    :param constraints: List of Z3 expressions
+    Performs a recursive depth-first traversal of each constraint expression
+    tree, collecting leaf nodes that are uninterpreted constants (i.e., solver
+    variables). Quantified variables and interpreted constants (numeric
+    literals, boolean values) are ignored.
+
+    :param constraints: List of Z3 expressions to inspect
     :type constraints: List[z3.ExprRef]
-    :return: List of unique variables
+    :return: List of unique Z3 variable expressions found in the constraints
     :rtype: List[z3.ExprRef]
     """
     variables = set()
@@ -443,7 +447,7 @@ def _extract_solution(
     model: z3.ModelRef,
     variables: List[z3.ExprRef],
     var_names: List[str]
-) -> Dict[str, Union[int, float]]:
+) -> Dict[str, Union[int, float, bool]]:
     """
     Extract solution values from a Z3 model.
 
@@ -460,7 +464,7 @@ def _extract_solution(
     :param var_names: List of variable names (strings, already natsorted)
     :type var_names: List[str]
     :return: Dictionary mapping variable names to values in natsorted order
-    :rtype: Dict[str, Union[int, float]]
+    :rtype: Dict[str, Union[int, float, bool]]
     """
     solution = {}
 
@@ -474,7 +478,11 @@ def _extract_solution(
             value = model.eval(var, model_completion=True)
 
         # Convert Z3 value to Python type
-        if z3.is_int_value(value):
+        if z3.is_true(value):
+            solution[name] = True
+        elif z3.is_false(value):
+            solution[name] = False
+        elif z3.is_int_value(value):
             solution[name] = value.as_long()
         elif z3.is_rational_value(value):
             # Z3 Real values are rationals

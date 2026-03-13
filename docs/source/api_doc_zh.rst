@@ -15,6 +15,7 @@ API 文档
     api_doc/simulate/index
     api_doc/solver/index
     api_doc/utils/index
+    api_doc/verify/index
 
 * :doc:`api_doc/config/index`
 * :doc:`api_doc/dsl/index`

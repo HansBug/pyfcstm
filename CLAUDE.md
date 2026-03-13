@@ -766,6 +766,23 @@ pyfcstm/
 4. **Version Control** - Commit generated documentation separately from code changes
 5. **API Token Security** - Never commit `.llmconfig.yaml` to git
 
+**Commit Message Style**: Follow the dominant repository convention from recent history.
+
+- For normal commits, prefer `type(scope): imperative summary`, such as
+  `feat(model): add StateMachine.resolve_state path resolver` or
+  `test(utils): strengthen fixed-int tests with live Z3 BitVec alignment`.
+- Use short lowercase types such as `feat`, `fix`, `docs`, `test`, `refactor`, `chore`; keep the scope lowercase when present
+  (`model`, `solver`, `utils`, `makefile`, `verify`, etc.). Omit the scope only when the change genuinely spans the whole repository.
+- Write the summary as a concise imperative phrase starting with a lowercase verb (`add`, `update`, `improve`, `align`, `compress`,
+  `clean up`); do not add a trailing period.
+- For non-trivial changes, add a blank line and then a body. Match the common repository pattern:
+  a short overview sentence or paragraph first, followed by `-` bullet points for concrete changes, tests, compatibility notes,
+  docs updates, or behavior clarifications.
+- When a bullet needs to wrap, continue it on the next line with indentation rather than starting a new bullet.
+- Preserve standard trailers when applicable, especially `Co-Authored-By: Name <email>`.
+- Merge commits should keep the generated style used in history, such as `Merge branch 'main' into dev/...` or
+  `Merge pull request #52 from HansBug/dev/fixed`.
+
 See `LLM_DOCS_README.md` for detailed documentation.
 
 ### ANTLR Grammar Modifications

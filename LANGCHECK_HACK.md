@@ -1036,3 +1036,1037 @@ state Dummy
 Dummy --> Dummy : ok
 @enduml
 ```
+
+## 追加样例（51-100，基于当前实现复测）
+
+下面这 50 个样例针对的是**当前仓库版本**里的 `FcstmLexer.analyse_text`。
+它们不再依赖已经被屏蔽掉的注释、字符串、heredoc、raw string、PlantUML note/legend，而是直接利用“活代码表面文本”继续撞正向规则。
+
+- 共同利用点 1：大量规则把 `\s` 当成任意空白，换行也会被拼接进 `state / event / def` 之类的模式。
+- 共同利用点 2：类型声明、字段声明、lambda、macro token tree、PlantUML class body 里的自由成员文本都还会被分析器看见。
+- 本轮实测得到的最高分：
+  - `1.00`：C、C++、JavaScript、TypeScript、Rust
+  - `0.99`：Ruby
+  - `0.95`：Java
+  - `0.87`：Python、Go、PlantUML
+
+## C（追加 51-55）
+
+### 51. C-6 Typedef Globals And Main (1.00)
+
+把 `state S;`、`event Tick;`、`enter;`、`a -> b;` 全部做成活代码。
+
+```c
+typedef int state;
+typedef int event;
+
+struct sink { int b; };
+
+int pseudo, named, abstract, ref, effect, enter;
+struct sink *a;
+state S;
+event Tick;
+
+int main(void) {
+    enter;
+    a -> b;
+    return 0;
+}
+```
+
+### 52. C-7 Struct Holder Plus during (1.00)
+
+把关键词计数塞进结构体字段，生命周期命中改成 `during;`。
+
+```c
+typedef int state;
+typedef int event;
+
+struct sink { int b; };
+
+struct bag {
+    state S;
+    event Tick;
+    int pseudo, named, abstract, ref, effect;
+};
+
+int during;
+struct sink *a;
+
+int probe(void) {
+    during;
+    a -> b;
+    return 0;
+}
+```
+
+### 53. C-8 Local State/Event Decls (1.00)
+
+把 `state S;` 和 `event Tick;` 下沉到函数体里也一样满分。
+
+```c
+typedef int state;
+typedef int event;
+
+struct sink { int b; };
+
+int pseudo, named, abstract, ref, effect, exit;
+struct sink *a;
+
+void probe(void) {
+    state S;
+    event Tick;
+    exit;
+    a -> b;
+}
+```
+
+### 54. C-9 Mixed Alias And Pointer Target (1.00)
+
+只要源码表面出现这些形状，别名和真实类型是否相关并不重要。
+
+```c
+typedef struct sink { int b; } sink;
+typedef int state;
+typedef sink *event;
+
+int pseudo, named, abstract, ref, effect, enter;
+state S;
+event Tick;
+
+int probe(void) {
+    sink *a = Tick;
+    enter;
+    a -> b;
+    return S;
+}
+```
+
+### 55. C-10 Function-Local Typedefs (1.00)
+
+把 typedef 放进函数局部作用域，分数依旧封顶。
+
+```c
+struct sink { int b; };
+
+int pseudo, named, abstract, ref, effect;
+
+int probe(void) {
+    typedef int state;
+    typedef int event;
+    state S;
+    event Tick;
+    int enter;
+    struct sink *a = 0;
+
+    enter;
+    a -> b;
+    return Tick + S;
+}
+```
+
+## C++（追加 56-60）
+
+### 56. CXX-6 Using Aliases And Main (1.00)
+
+`using` 别名加成员访问，C++ 同样可以重新打满。
+
+```cpp
+using state = int;
+using event = int;
+
+struct sink { int b; };
+
+int pseudo, named, abstract, ref, effect, enter;
+sink *a;
+state S;
+event Tick;
+
+int main() {
+    enter;
+    a -> b;
+    return 0;
+}
+```
+
+### 57. CXX-7 Member Fields Plus during (1.00)
+
+字段声明承担 `state/event/keyword`，成员函数承担 `during;` 与 `a -> b;`。
+
+```cpp
+using state = int;
+using event = int;
+
+struct sink { int b; };
+
+struct bag {
+    state S;
+    event Tick;
+    int pseudo, named, abstract, ref, effect;
+    int during;
+    sink *a;
+
+    void probe() {
+        during;
+        a -> b;
+    }
+};
+```
+
+### 58. CXX-8 Local Aliases In Helper (1.00)
+
+本地 `using` 加普通表达式语句，仍然足够把检测器拉满。
+
+```cpp
+struct sink { int b; };
+
+void probe() {
+    using state = int;
+    using event = int;
+
+    int pseudo, named, abstract, ref, effect, exit;
+    sink *a = nullptr;
+    state S;
+    event Tick;
+
+    exit;
+    a -> b;
+}
+```
+
+### 59. CXX-9 Lambda Body Payload (1.00)
+
+lambda 体里的局部代码也会被原样命中。
+
+```cpp
+using state = int;
+using event = int;
+
+struct sink { int b; };
+
+auto probe = [] {
+    int pseudo, named, abstract, ref, effect, enter;
+    sink *a = nullptr;
+    state S;
+    event Tick;
+
+    enter;
+    a -> b;
+};
+```
+
+### 60. CXX-10 Constructor Body Payload (1.00)
+
+把诱饵埋进构造函数体，照样是活代码误判。
+
+```cpp
+using state = int;
+using event = int;
+
+struct sink { int b; };
+
+struct probe {
+    int pseudo, named, abstract, ref, effect, enter;
+    sink *a;
+    state S;
+    event Tick;
+
+    probe() : a(nullptr) {
+        enter;
+        a -> b;
+    }
+};
+```
+
+## Java（追加 61-65）
+
+### 61. JAVA-6 Fields Plus Method Reference Lambda (0.95)
+
+`state S;` 和 `event Tick;` 作为字段，`a -> effect::build;` 命中转移规则。
+
+```java
+abstract class pseudo {}
+class named {}
+class ref {}
+class effect {
+    static String build() { return ""; }
+}
+class state {}
+class event {}
+
+class Demo {
+    state S;
+    event Tick;
+    java.util.function.Function<Object, java.util.function.Supplier<String>> f =
+        a -> effect::build;
+}
+```
+
+### 62. JAVA-7 Instance Initializer Payload (0.95)
+
+实例初始化块里放同一组形状，分数不变。
+
+```java
+abstract class pseudo {}
+class named {}
+class ref {}
+class effect {
+    static String build() { return ""; }
+}
+class state {}
+class event {}
+
+class Demo {
+    {
+        state S;
+        event Tick;
+        java.util.function.Function<Object, java.util.function.Supplier<String>> f =
+            a -> effect::build;
+    }
+}
+```
+
+### 63. JAVA-8 Static Initializer Payload (0.95)
+
+静态初始化块同样可行，不需要 `package` 也不需要 `public`。
+
+```java
+abstract class pseudo {}
+class named {}
+class ref {}
+class effect {
+    static String build() { return ""; }
+}
+class state {}
+class event {}
+
+class Demo {
+    static {
+        state S;
+        event Tick;
+        java.util.function.Function<Object, java.util.function.Supplier<String>> f =
+            a -> effect::build;
+    }
+}
+```
+
+### 64. JAVA-9 Constructor-Local Payload (0.95)
+
+构造函数里的局部变量声明也能稳定命中。
+
+```java
+abstract class pseudo {}
+class named {}
+class ref {}
+class effect {
+    static String build() { return ""; }
+}
+class state {}
+class event {}
+
+class Demo {
+    Demo() {
+        state S;
+        event Tick;
+        java.util.function.Function<Object, java.util.function.Supplier<String>> f =
+            a -> effect::build;
+    }
+}
+```
+
+### 65. JAVA-10 Anonymous Inner Class Fields (0.95)
+
+匿名内部类字段同样能提供 `state/event` 两个强正向特征。
+
+```java
+abstract class pseudo {}
+class named {}
+class ref {}
+class effect {
+    static String build() { return ""; }
+}
+class state {}
+class event {}
+
+class Demo {
+    Object box = new Object() {
+        state S;
+        event Tick;
+        java.util.function.Function<Object, java.util.function.Supplier<String>> f =
+            a -> effect::build;
+    };
+}
+```
+
+## JavaScript（追加 66-70）
+
+### 66. JS-6 Top-Level Newline Stitching (1.00)
+
+这里直接利用换行把多条独立语句拼成 `state / event / def`。
+
+```javascript
+const pseudo = 1, named = 2, abstract = 3, ref = 4, effect = 5;
+/[*]/;
+state
+S;
+event
+Tick;
+def
+int
+x = 1;
+enter;
+```
+
+### 67. JS-7 Function Body Newline Stitching (1.00)
+
+把同样的形状搬进函数体，分数仍然封顶。
+
+```javascript
+const pseudo = 1, named = 2, abstract = 3, ref = 4, effect = 5;
+
+function demo() {
+  /[*]/;
+  state
+  S;
+  event
+  Tick;
+  def
+  int
+  x = 1;
+  during;
+}
+```
+
+### 68. JS-8 IIFE Payload (1.00)
+
+IIFE 只改变包裹壳，不影响换行拼接命中。
+
+```javascript
+const pseudo = 1, named = 2, abstract = 3, ref = 4, effect = 5;
+
+(() => {
+  /[*]/;
+  state
+  S;
+  event
+  Tick;
+  def
+  int
+  x = 1;
+  exit;
+})();
+```
+
+### 69. JS-9 Class Static Block (1.00)
+
+类静态块里一样可以塞满全部正向特征。
+
+```javascript
+const pseudo = 1, named = 2, abstract = 3, ref = 4, effect = 5;
+
+class Demo {
+  static {
+    /[*]/;
+    state
+    S;
+    event
+    Tick;
+    def
+    int
+    x = 1;
+    enter;
+  }
+}
+```
+
+### 70. JS-10 try/finally Wrapper (1.00)
+
+`try` 块只是壳，核心仍是裸表达式和换行拼接。
+
+```javascript
+const pseudo = 1, named = 2, abstract = 3, ref = 4, effect = 5;
+
+try {
+  /[*]/;
+  state
+  S;
+  event
+  Tick;
+  def
+  int
+  x = 1;
+  enter;
+} finally {}
+```
+
+## TypeScript（追加 71-75）
+
+### 71. TS-6 Typed Prelude Plus Newline Stitching (1.00)
+
+即便前面放了类型标注，后面的 JS 子集拼接照样满分。
+
+```typescript
+let x: number;
+const tags: Record<string, number> = { pseudo: 1, named: 2, abstract: 3, ref: 4, effect: 5 };
+/[*]/;
+state
+S;
+event
+Tick;
+def
+int
+x = 1;
+enter;
+```
+
+### 72. TS-7 Function Body Payload (1.00)
+
+函数体里继续利用换行把 `def / int / x = 1;` 串起来。
+
+```typescript
+const tags: Record<string, number> = { pseudo: 1, named: 2, abstract: 3, ref: 4, effect: 5 };
+
+function demo(): void {
+  let x: number;
+  /[*]/;
+  state
+  S;
+  event
+  Tick;
+  def
+  int
+  x = 1;
+  during;
+}
+```
+
+### 73. TS-8 Namespace Wrapper (1.00)
+
+命名空间不会削弱这些文本特征。
+
+```typescript
+namespace demo {
+  let x: number;
+  const tags: Record<string, number> = { pseudo: 1, named: 2, abstract: 3, ref: 4, effect: 5 };
+  /[*]/;
+  state
+  S;
+  event
+  Tick;
+  def
+  int
+  x = 1;
+  exit;
+}
+```
+
+### 74. TS-9 Class Static Block (1.00)
+
+TypeScript 的类静态块与 JavaScript 版本一样稳定。
+
+```typescript
+const tags: Record<string, number> = { pseudo: 1, named: 2, abstract: 3, ref: 4, effect: 5 };
+
+class Demo {
+  static {
+    let x: number;
+    /[*]/;
+    state
+    S;
+    event
+    Tick;
+    def
+    int
+    x = 1;
+    enter;
+  }
+}
+```
+
+### 75. TS-10 try/finally Wrapper (1.00)
+
+即使只用 TS 文件里的 JS 子集，误判上限也已经够高。
+
+```typescript
+const tags: Record<string, number> = { pseudo: 1, named: 2, abstract: 3, ref: 4, effect: 5 };
+
+try {
+  let x: number;
+  /[*]/;
+  state
+  S;
+  event
+  Tick;
+  def
+  int
+  x = 1;
+  enter;
+} finally {}
+```
+
+## Python（追加 76-80）
+
+### 76. PY-6 Top-Level Bare Expressions (0.87)
+
+Python 里拿不到 `def int x = 1;`，但 `state / event / enter` 仍能靠裸表达式命中。
+
+```python
+pseudo = named = abstract = ref = effect = event = state = S = Tick = enter = 1
+
+state
+S;
+event
+Tick;
+enter;
+```
+
+### 77. PY-7 Class Body Bare Expressions (0.87)
+
+类体里的表达式语句同样会被拼接成正向模式。
+
+```python
+class Box:
+    pseudo = named = abstract = ref = effect = event = state = S = Tick = during = 1
+
+    state
+    S;
+    event
+    Tick;
+    during;
+```
+
+### 78. PY-8 if-Block Bare Expressions (0.87)
+
+`if True:` 只是外壳，核心仍是多行裸表达式。
+
+```python
+if True:
+    pseudo = named = abstract = ref = effect = event = state = S = Tick = exit = 1
+
+    state
+    S;
+    event
+    Tick;
+    exit;
+```
+
+### 79. PY-9 for-Block Bare Expressions (0.87)
+
+循环体里同样可以稳定打出 `0.87`。
+
+```python
+for _ in [0]:
+    pseudo = named = abstract = ref = effect = event = state = S = Tick = enter = 1
+
+    state
+    S;
+    event
+    Tick;
+    enter;
+```
+
+### 80. PY-10 try/finally Bare Expressions (0.87)
+
+异常块里也不会阻止这些正则跨行拼接。
+
+```python
+try:
+    pseudo = named = abstract = ref = effect = event = state = S = Tick = enter = 1
+
+    state
+    S;
+    event
+    Tick;
+    enter;
+finally:
+    pass
+```
+
+## Ruby（追加 81-85）
+
+### 81. RB-6 Top-Level Regex Literal Plus Calls (0.99)
+
+Ruby 里 `/[*]/` 提供 `[*]`，`state S;` / `event Tick;` / `enter;` 都可以是真实方法调用语法。
+
+```ruby
+pseudo = named = abstract = ref = effect = 1
+/[*]/
+state S;
+event Tick;
+enter;
+```
+
+### 82. RB-7 Class Body Payload (0.99)
+
+类体里继续放同样的调用形状，分数不掉。
+
+```ruby
+class Box
+  pseudo = named = abstract = ref = effect = 1
+  /[*]/
+  state S;
+  event Tick;
+  during;
+end
+```
+
+### 83. RB-8 Module Body Payload (0.99)
+
+模块体同样能稳定提供所有高分特征。
+
+```ruby
+module Box
+  pseudo = named = abstract = ref = effect = 1
+  /[*]/
+  state S;
+  event Tick;
+  exit;
+end
+```
+
+### 84. RB-9 Lambda Body Payload (0.99)
+
+lambda 块只是另一层壳，方法调用诱饵照旧。
+
+```ruby
+probe = -> do
+  pseudo = named = abstract = ref = effect = 1
+  /[*]/
+  state S;
+  event Tick;
+  enter;
+end
+```
+
+### 85. RB-10 BEGIN Block Payload (0.99)
+
+`BEGIN { ... }` 里也可以稳定维持 `0.99`。
+
+```ruby
+BEGIN {
+  pseudo = named = abstract = ref = effect = 1
+  /[*]/
+  state S;
+  event Tick;
+  enter;
+}
+```
+
+## Rust（追加 86-90）
+
+### 86. RS-6 Item Macro With Braces (1.00)
+
+Rust 最大的剩余利用面是 macro token tree：里面的 token 不会被语义区屏蔽。
+
+```rust
+macro_rules! bait { ($($tt:tt)*) => {}; }
+
+bait! {
+    [*]
+    state S;
+    event Tick;
+    def int x = 1;
+    enter;
+    >> enter {}
+    a -> b::c;
+    pseudo named abstract ref effect
+}
+```
+
+### 87. RS-7 Item Macro With Parentheses (1.00)
+
+把同样的 payload 换成 `()` 分隔符，分数依旧封顶。
+
+```rust
+macro_rules! bait { ($($tt:tt)*) => {}; }
+
+bait!(
+    [*]
+    state S;
+    event Tick;
+    def int x = 1;
+    during;
+    a -> b::c;
+    pseudo named abstract ref effect
+);
+```
+
+### 88. RS-8 Item Macro With Brackets (1.00)
+
+`[]` 版本同样可行，说明关键在 token tree 本身。
+
+```rust
+macro_rules! bait { ($($tt:tt)*) => {}; }
+
+bait![
+    [*]
+    state S;
+    event Tick;
+    def int x = 1;
+    exit;
+    a -> b::c;
+    pseudo named abstract ref effect
+];
+```
+
+### 89. RS-9 Const Block Wrapper (1.00)
+
+放进 `const` 块里，payload 仍会被完整扫描。
+
+```rust
+macro_rules! bait { ($($tt:tt)*) => {}; }
+
+const _: () = {
+    bait! {
+        [*]
+        state S;
+        event Tick;
+        def int x = 1;
+        enter;
+        a -> b::c;
+        pseudo named abstract ref effect
+    }
+};
+```
+
+### 90. RS-10 Nested Token Tree Wrapper (1.00)
+
+即便再包一层自定义 token group，也不会影响误判得分。
+
+```rust
+macro_rules! bait { ($($tt:tt)*) => {}; }
+
+bait! {
+    wrapper {
+        [*]
+        state S;
+        event Tick;
+        def int x = 1;
+        enter;
+        a -> b::c;
+        pseudo named abstract ref effect
+    }
+}
+```
+
+## Go（追加 91-95）
+
+### 91. GO-6 Named Struct Fields (0.87)
+
+Go 里最稳的活代码利用点是结构体字段列表。
+
+```go
+package bait
+
+type state int
+type event int
+type enter int
+type S int
+type Tick int
+
+type Box struct {
+    state S;
+    event Tick;
+    enter;
+    pseudo, named, abstract, ref, effect int;
+}
+```
+
+### 92. GO-7 Anonymous Struct Variable (0.87)
+
+匿名结构体字面量同样能提供 `state/event/enter` 三组强特征。
+
+```go
+package bait
+
+type state int
+type event int
+type enter int
+type S int
+type Tick int
+
+var _ = struct {
+    state S;
+    event Tick;
+    enter;
+    pseudo, named, abstract, ref, effect int;
+}{}
+```
+
+### 93. GO-8 Function-Local Type Declaration (0.87)
+
+类型声明下沉到普通函数里，得分不变。
+
+```go
+package bait
+
+type state int
+type event int
+type enter int
+type S int
+type Tick int
+
+func probe() {
+    type Box struct {
+        state S;
+        event Tick;
+        enter;
+        pseudo, named, abstract, ref, effect int;
+    }
+
+    _ = Box{}
+}
+```
+
+### 94. GO-9 Nested Struct Field (0.87)
+
+把 payload 藏进外层结构体的匿名内嵌 struct 里也一样成立。
+
+```go
+package bait
+
+type state int
+type event int
+type enter int
+type S int
+type Tick int
+
+type Outer struct {
+    inner struct {
+        state S;
+        event Tick;
+        enter;
+        pseudo, named, abstract, ref, effect int;
+    };
+}
+```
+
+### 95. GO-10 Slice Of Anonymous Structs (0.87)
+
+切片元素类型写成匿名 struct，分数同样稳定。
+
+```go
+package bait
+
+type state int
+type event int
+type enter int
+type S int
+type Tick int
+
+var _ = []struct {
+    state S;
+    event Tick;
+    enter;
+    pseudo, named, abstract, ref, effect int;
+}{
+    {},
+}
+```
+
+## PlantUML（追加 96-100）
+
+### 96. PUML-6 allowmixing Plus Class Body (0.87)
+
+`allowmixing` 允许把状态图箭头和类体自由成员文本放在同一份源码里。
+
+```plantuml
+@startuml
+allowmixing
+class Dummy {
+  state S;
+  event Tick;
+  enter;
+  pseudo
+  named
+  abstract
+  ref
+  effect
+}
+[*] -> Dummy : ref;
+@enduml
+```
+
+### 97. PUML-7 allowmixing Plus Abstract Class Body (0.87)
+
+把承载体换成 `abstract class`，仍然是同一套高分结构。
+
+```plantuml
+@startuml
+allowmixing
+abstract class Harness {
+  state S;
+  event Tick;
+  enter;
+  pseudo
+  named
+  abstract
+  ref
+  effect
+}
+[*] -> Harness : ref;
+@enduml
+```
+
+### 98. PUML-8 allowmixing Plus Annotation Body (0.87)
+
+把载体换成 `annotation`，可以避开全局 `interface` 负向项，同时保留同样的高分结构。
+
+```plantuml
+@startuml
+allowmixing
+annotation Gateway {
+  state S;
+  event Tick;
+  enter;
+  pseudo
+  named
+  abstract
+  ref
+  effect
+}
+[*] -> Gateway : ref;
+@enduml
+```
+
+### 99. PUML-9 allowmixing Plus Entity Body (0.87)
+
+`entity` 壳同样可用，说明关键是 class-like body 的自由文本。
+
+```plantuml
+@startuml
+allowmixing
+entity Ledger {
+  state S;
+  event Tick;
+  enter;
+  pseudo
+  named
+  abstract
+  ref
+  effect
+}
+[*] -> Ledger : ref;
+@enduml
+```
+
+### 100. PUML-10 allowmixing Plus Object Body (0.87)
+
+对象体再配合一个 `[*] -> ... : ref;`，就能把 PlantUML 拉到当前上限。
+
+```plantuml
+@startuml
+allowmixing
+object Cache {
+  state S;
+  event Tick;
+  enter;
+  pseudo
+  named
+  abstract
+  ref
+  effect
+}
+[*] -> Cache : ref;
+@enduml
+```

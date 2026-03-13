@@ -10,6 +10,7 @@ pyfcstm.solver
     :maxdepth: 3
 
     expr
+    logic
     operation
     solve
     vars

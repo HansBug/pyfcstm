@@ -10,6 +10,11 @@ The module contains the following main components:
 * :func:`expr_to_z3` - Convert pyfcstm expressions to Z3 expressions
 * :func:`create_z3_vars_from_state_machine` - Create Z3 variables from a state machine
 * :func:`create_z3_vars_from_models` - Create Z3 variables from model objects
+* :func:`z3_or` - Combine boolean expressions with logical OR
+* :func:`z3_and` - Combine boolean expressions with logical AND
+* :func:`is_satisfiable` - Check whether a boolean expression is satisfiable
+* :func:`contributes_to_solution_space` - Check whether one expression adds new solutions to another
+* :func:`are_equivalent` - Check whether two boolean expressions are logically equivalent
 * :func:`solve` - Solve Z3 constraint expressions with flexible solution enumeration
 * :class:`SolveResult` - Dataclass containing solve results
 * :func:`parse_operations` - Parse DSL operation code string to list of Operations
@@ -44,6 +49,13 @@ Example::
 """
 
 from .expr import expr_to_z3, create_z3_vars_from_models
+from .logic import (
+    z3_or,
+    z3_and,
+    is_satisfiable,
+    contributes_to_solution_space,
+    are_equivalent,
+)
 from .operation import parse_operations, execute_operations
 from .solve import solve, SolveResult
 from .vars import create_z3_vars_from_state_machine

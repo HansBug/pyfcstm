@@ -46,6 +46,8 @@ except ImportError:
 import z3
 from natsort import natsorted
 
+from .logic import z3_or
+
 
 @dataclass(frozen=True)
 class SolveResult:
@@ -523,4 +525,4 @@ def _create_blocking_clause(
         constraints.append(var != value)
 
     # At least one variable must differ
-    return z3.Or(constraints)
+    return z3_or(constraints)

@@ -8,6 +8,7 @@ capabilities for state machine models.
 The module contains the following main components:
 
 * :func:`expr_to_z3` - Convert pyfcstm expressions to Z3 expressions
+* :func:`z3_to_expr` - Convert Z3 expressions back to pyfcstm expressions
 * :func:`create_z3_vars_from_state_machine` - Create Z3 variables from a state machine
 * :func:`create_z3_vars_from_models` - Create Z3 variables from model objects
 * :func:`z3_or` - Combine boolean expressions with logical OR
@@ -59,5 +60,6 @@ from .logic import (
     are_equivalent,
 )
 from .operation import parse_operations, execute_operations
+from .reverse_expr import z3_to_expr
 from .solve import solve, SolveResult
 from .vars import create_z3_vars_from_state_machine

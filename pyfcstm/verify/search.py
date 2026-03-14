@@ -41,17 +41,17 @@ Example::
     True
 """
 
+import warnings
 from collections import deque
 from dataclasses import dataclass, field
 from typing import Optional, Dict, Union, Tuple, List
-import warnings
 
 import z3
 
 from pyfcstm.dsl import GrammarParseError, EXIT_STATE
 from pyfcstm.model import State, StateMachine, parse_expr, Expr, Event, OnAspect, OnStage
 from pyfcstm.solver import expr_to_z3, create_z3_vars_from_state_machine, z3_or, z3_not, z3_and, execute_operations, \
-    contributes_to_solution_space
+    contributes_to_solution_space, solve as solve_constraints, SolveResult
 
 try:
     from typing import Literal
@@ -141,6 +141,97 @@ class SearchFrame:
     depth: int
     cycle: int  # 到达此节点经过的周期数
     prev_frame: Optional['SearchFrame'] = None
+
+    def get_history(self) -> List['SearchFrame']:
+        """
+        Reconstruct the complete frame history in forward order.
+
+        This walks :attr:`prev_frame` links back to the initial frame and
+        returns the resulting path ordered from the oldest frame to ``self``.
+        The returned list always includes the current frame.
+
+        :return: Complete symbolic history from the initial frame to ``self``.
+        :rtype: List[SearchFrame]
+
+        Example::
+
+            >>> frame0 = SearchFrame(
+            ...     state=None,
+            ...     type='end',
+            ...     var_state={},
+            ...     constraints=z3.BoolVal(True),
+            ...     event=None,
+            ...     depth=0,
+            ...     cycle=0,
+            ... )
+            >>> frame1 = SearchFrame(
+            ...     state=None,
+            ...     type='end',
+            ...     var_state={},
+            ...     constraints=z3.BoolVal(True),
+            ...     event=None,
+            ...     depth=1,
+            ...     cycle=1,
+            ...     prev_frame=frame0,
+            ... )
+            >>> [frame.depth for frame in frame1.get_history()]
+            [0, 1]
+        """
+        history = []
+        current = self
+        while current is not None:
+            history.append(current)
+            current = current.prev_frame
+
+        history.reverse()
+        return history
+
+    def solve(
+            self,
+            max_solutions: Optional[int] = 10,
+            timeout: Optional[int] = None,
+            warn_threshold: int = 1000,
+    ) -> SolveResult:
+        """
+        Solve the reachability constraint represented by this frame.
+
+        This is a thin convenience wrapper over :func:`pyfcstm.solver.solve`
+        that forwards :attr:`constraints` directly to the solver and returns
+        the resulting :class:`pyfcstm.solver.SolveResult`.
+
+        :param max_solutions: Maximum number of solutions to enumerate.
+            Defaults to ``10``.
+        :type max_solutions: Optional[int], optional
+        :param timeout: Solver timeout in milliseconds. ``None`` means no
+            timeout. Defaults to ``None``.
+        :type timeout: Optional[int], optional
+        :param warn_threshold: Warning threshold used when
+            ``max_solutions=None``. Defaults to ``1000``.
+        :type warn_threshold: int, optional
+        :return: Solve result for this frame's reachability constraint.
+        :rtype: pyfcstm.solver.SolveResult
+
+        Example::
+
+            >>> x = z3.Int('x')
+            >>> frame = SearchFrame(
+            ...     state=None,
+            ...     type='end',
+            ...     var_state={'x': x},
+            ...     constraints=x == 3,
+            ...     event=None,
+            ...     depth=0,
+            ...     cycle=0,
+            ... )
+            >>> frame.solve(max_solutions=1).solutions
+            [{'x': 3}]
+        """
+        return solve_constraints(
+            constraints=self.constraints,
+            max_solutions=max_solutions,
+            timeout=timeout,
+            warn_threshold=warn_threshold,
+        )
 
 
 @dataclass

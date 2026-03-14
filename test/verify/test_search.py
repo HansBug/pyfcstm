@@ -1,9 +1,11 @@
 from types import SimpleNamespace
 
+import z3
 import pytest
 
 from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model import parse_dsl_node_to_state_machine, parse_expr
+from pyfcstm.solver import SolveResult
 from pyfcstm.verify import search as verify_search
 
 
@@ -200,3 +202,65 @@ class TestBfsSearchLimits:
         assert any("max_depth=2 and max_cycle=None" in message for message in messages)
         assert ('Root.Gamma', 'leaf') in ctx.spaces
         assert ('Root.Delta', 'leaf') not in ctx.spaces
+
+
+@pytest.mark.unittest
+class TestSearchFrameHelpers:
+    def test_get_history_returns_frames_in_forward_order(self):
+        state_machine = build_state_machine()
+        state = state_machine.resolve_state('Root.Idle')
+
+        frame0 = verify_search.SearchFrame(
+            state=state,
+            type='leaf',
+            var_state={},
+            constraints=z3.BoolVal(True),
+            event=None,
+            depth=0,
+            cycle=0,
+            prev_frame=None,
+        )
+        frame1 = verify_search.SearchFrame(
+            state=state,
+            type='leaf',
+            var_state={},
+            constraints=z3.BoolVal(True),
+            event=None,
+            depth=1,
+            cycle=1,
+            prev_frame=frame0,
+        )
+        frame2 = verify_search.SearchFrame(
+            state=state,
+            type='leaf',
+            var_state={},
+            constraints=z3.BoolVal(True),
+            event=None,
+            depth=2,
+            cycle=2,
+            prev_frame=frame1,
+        )
+
+        history = frame2.get_history()
+
+        assert history == [frame0, frame1, frame2]
+
+    def test_solve_delegates_to_solver_and_returns_result(self):
+        x = z3.Int('x')
+        frame = verify_search.SearchFrame(
+            state=None,
+            type='end',
+            var_state={'x': x},
+            constraints=x == 3,
+            event=None,
+            depth=0,
+            cycle=0,
+            prev_frame=None,
+        )
+
+        result = frame.solve(max_solutions=1)
+
+        assert isinstance(result, SolveResult)
+        assert result.status == 'sat'
+        assert result.variables == ['x']
+        assert result.solutions == [{'x': 3}]

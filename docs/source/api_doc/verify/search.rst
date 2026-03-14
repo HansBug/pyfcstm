@@ -16,7 +16,7 @@ SearchFrame
 -----------------------------------------------------
 
 .. autoclass:: SearchFrame
-    :members: state,type,var_state,constraints,event,depth,cycle,prev_frame
+    :members: get_history,solve,state,type,var_state,constraints,event,depth,cycle,prev_frame
 
 
 StateSearchSpace
@@ -37,5 +37,4 @@ bfs\_search
 -----------------------------------------------------
 
 .. autofunction:: bfs_search
-
 

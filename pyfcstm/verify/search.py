@@ -22,6 +22,7 @@ The module contains:
 * :class:`StateSearchSpace` - Collected frames for one state/type bucket.
 * :class:`StateSearchContext` - Search queue, buckets, and symbolic event vars.
 * :func:`get_z3_event_key_and_var_name` - Normalize one cycle/event pair.
+* :func:`is_z3_event_var_name` - Check whether a name matches the event format.
 * :func:`parse_z3_event_var_name` - Parse a symbolic event variable name.
 * :func:`bfs_search` - Run symbolic breadth-first exploration.
 
@@ -163,6 +164,35 @@ def parse_z3_event_var_name(var_name_or_var: Union[str, z3.ExprRef]) -> Tuple[in
         )
 
     return int(match.group('cycle')), match.group('event')
+
+
+def is_z3_event_var_name(var_name_or_var: object) -> bool:
+    """
+    Check whether a string or Z3 variable matches the symbolic event format.
+
+    This helper uses :func:`parse_z3_event_var_name` internally and converts
+    its validation result into a boolean.
+
+    :param var_name_or_var: Candidate event variable name string or Z3
+        variable.
+    :type var_name_or_var: object
+    :return: ``True`` if the input matches ``_E_C<cycle>__<event_path>``,
+        otherwise ``False``.
+    :rtype: bool
+
+    Example::
+
+        >>> is_z3_event_var_name('_E_C6__Root.System.Tick')
+        True
+        >>> is_z3_event_var_name('Root.System.Tick')
+        False
+    """
+    try:
+        parse_z3_event_var_name(var_name_or_var)
+    except (TypeError, ValueError):
+        return False
+    else:
+        return True
 
 
 @dataclass

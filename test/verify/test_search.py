@@ -268,6 +268,17 @@ class TestSearchFrameHelpers:
 
 @pytest.mark.unittest
 class TestZ3EventVarNameHelpers:
+    def test_detects_valid_event_var_name_string(self):
+        assert verify_search.is_z3_event_var_name('_E_C6__Root.System.Tick') is True
+
+    def test_detects_valid_event_var_name_z3_variable(self):
+        assert verify_search.is_z3_event_var_name(z3.Bool('_E_C7__Root.System.Tick')) is True
+
+    def test_rejects_invalid_event_var_name_via_bool_helper(self):
+        assert verify_search.is_z3_event_var_name('Root.System.Tick') is False
+        assert verify_search.is_z3_event_var_name(z3.Not(z3.Bool('_E_C1__Root.System.Tick'))) is False
+        assert verify_search.is_z3_event_var_name(123) is False
+
     def test_builds_event_key_and_var_name_from_string(self):
         key, var_name = verify_search.get_z3_event_key_and_var_name(
             cycle=2,

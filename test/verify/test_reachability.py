@@ -27,6 +27,18 @@ state Root {
 }
 '''
 
+EARLY_STOP_REACHABILITY_DSL = '''
+def int counter = 0;
+state Root {
+    state Start;
+    state Target;
+    state After;
+    [*] -> Start;
+    Start -> Target : if [counter >= 1];
+    Target -> After;
+}
+'''
+
 WATER_HEATER_DSL = '''
 def int water_temp = 55;
 def int draw_count = 0;
@@ -485,6 +497,36 @@ class TestVerifyReachability:
             f"multi-init witness should choose counter >= 1, got solution {result.solution!r}"
         )
         assert_runtime_matches_cycle_only_concrete_path(state_machine, result.concrete_path)
+
+    def test_stops_bfs_as_soon_as_target_frame_has_one_solution(self):
+        state_machine = build_state_machine(EARLY_STOP_REACHABILITY_DSL)
+
+        result = verify_reachability(
+            state_machine=state_machine,
+            init=('Root.Start', 'counter >= 1'),
+            target_state='Root.Target',
+            max_cycle=3,
+        )
+
+        assert result.reachable is True, f'early-stop case should be reachable, got {result.reachable!r}'
+        assert result.target_frame is not None, 'early-stop case should expose a target frame'
+        assert result.target_frame.state.path == ('Root', 'Target'), (
+            f"early-stop case should end at ('Root', 'Target'), got {result.target_frame.state.path!r}"
+        )
+        assert ('Root.Target', 'leaf') in result.search_context.spaces, (
+            f"early-stop case should retain ('Root.Target', 'leaf'), available={list(result.search_context.spaces)!r}"
+        )
+        assert ('Root.After', 'leaf') not in result.search_context.spaces, (
+            'reachability search should stop before expanding the target successor state'
+        )
+        assert result.solution == {'counter': 1}, (
+            f"early-stop case should solve to {{'counter': 1}}, got {result.solution!r}"
+        )
+        assert result.concrete_path is not None, 'early-stop case should expose a concrete witness path'
+        assert [frame.state.path for frame in result.concrete_path] == [
+            ('Root', 'Start'),
+            ('Root', 'Target'),
+        ], f'early-stop witness should be Start -> Target, got {[frame.state.path for frame in result.concrete_path]!r}'
 
     def test_water_heater_standby_at_threshold_can_reach_heating(self):
         state_machine = build_state_machine(WATER_HEATER_DSL)

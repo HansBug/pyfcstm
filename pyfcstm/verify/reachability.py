@@ -67,11 +67,11 @@ def verify_reachability(
     """
     Verify whether a target state is reachable within the given search bounds.
 
-    This function runs :func:`pyfcstm.verify.search.bfs_search`, collects all
-    retained symbolic frames whose state matches ``target_state``, and then
-    solves those frames in ascending ``(cycle, depth)`` order. The first
-    satisfiable target frame is returned together with one concrete witness
-    path reconstructed from that frame.
+    This function runs :func:`pyfcstm.verify.search.bfs_search` and uses its
+    ``fn_on_enqueue`` callback to inspect every retained symbolic frame as soon
+    as it is enqueued. Once a frame whose state matches ``target_state``
+    produces one satisfiable solution, the BFS stops immediately and that
+    witness is returned.
 
     :param state_machine: State machine to verify.
     :type state_machine: StateMachine
@@ -85,6 +85,12 @@ def verify_reachability(
     :type max_cycle: Optional[int], optional
     :param max_depth: Maximum search depth to expand. Defaults to ``None``.
     :type max_depth: Optional[int], optional
+
+    .. note::
+       When reachability is established early, the returned
+       :attr:`ReachabilityResult.search_context` contains only the explored
+       prefix of the bounded search space.
+
     :return: Reachability result with one witness path when reachable.
     :rtype: ReachabilityResult
     :raises TypeError: If ``target_state`` has an unsupported type.
@@ -97,32 +103,42 @@ def verify_reachability(
         source_name="'target_state'",
     )
 
+    found_target_frame: Optional[SearchFrame] = None
+    found_solution: Optional[Dict[str, ConcreteLiteralTyping]] = None
+    found_concrete_path: Optional[List[SearchConcreteFrame]] = None
+
+    def _stop_when_target_becomes_sat(ctx: StateSearchContext) -> bool:
+        nonlocal found_target_frame, found_solution, found_concrete_path
+
+        frame = ctx.queue[-1]
+        if frame.state is not target_state:
+            return False
+
+        solve_result = frame.solve(max_solutions=1)
+        if solve_result.status != 'sat' or not solve_result.solutions:
+            return False
+
+        found_target_frame = frame
+        found_solution = solve_result.solutions[0]
+        found_concrete_path = frame.to_concrete_frames(found_solution)
+        return True
+
     ctx = bfs_search(
         state_machine=state_machine,
         init=init,
         max_cycle=max_cycle,
         max_depth=max_depth,
+        fn_on_enqueue=_stop_when_target_becomes_sat,
     )
 
-    candidate_frames: List[SearchFrame] = []
-    for space in ctx.spaces.values():
-        if space.state is target_state:
-            candidate_frames.extend(space.frames)
-
-    candidate_frames.sort(key=lambda frame: (frame.cycle, frame.depth))
-
-    for frame in candidate_frames:
-        solve_result = frame.solve(max_solutions=1)
-        if solve_result.status != 'sat' or not solve_result.solutions:
-            continue
-
-        solution = solve_result.solutions[0]
-        concrete_path = frame.to_concrete_frames(solution)
+    if found_target_frame is not None:
+        assert found_solution is not None
+        assert found_concrete_path is not None
         return ReachabilityResult(
             reachable=True,
-            target_frame=frame,
-            concrete_path=concrete_path,
-            solution=solution,
+            target_frame=found_target_frame,
+            concrete_path=found_concrete_path,
+            solution=found_solution,
             search_context=ctx,
         )
 

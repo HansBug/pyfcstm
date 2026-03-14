@@ -354,3 +354,324 @@
 - 完成性 / 终止性
 
 其中前五类最值得优先进入正式的 verify 能力清单。
+
+
+## 8. 针对当前 BFS 方案之外的更优验证路线
+
+对于 pyfcstm 这种带有：
+
+- 层次状态机结构
+- guard / effect / lifecycle action
+- 整数 / 浮点数据路径
+- event 驱动与 cycle 驱动混合语义
+
+的模型，单纯依赖 `BFS + symbolic pruning + Z3` 并不是最强路线。
+
+它的优点是：
+
+- 实现直观
+- witness 易于生成
+- 对 bounded reachability 很自然
+- 便于与 simulate 语义对齐
+
+但它的主要弱点也很明显：
+
+- 对不可达 / 安全性证明能力弱
+- 很依赖“目标较早出现”
+- 搜索过程中需要频繁做 solver 判定
+- 对同一状态反复产生新符号区域时容易退化
+
+因此，如果目标是“最起码比 BFS 更好”，更值得重点考虑的是下面几类现有方法。
+
+
+### 8.1 SMT-Based BMC
+
+这是最直接、最现实、也最适合作为当前 BFS 替代品的方案。
+
+基本思路是：
+
+- 将 `0..k` 个 cycle 一次性展开成一个大公式
+- 为每个时刻建立状态位置变量和数据变量
+- 将 transition relation、guard、effect、lifecycle actions 编进公式
+- 将“目标状态可达”或“坏性质成立”编码为终点条件
+
+相比 BFS，它的优势通常是：
+
+- 不需要显式维护 frontier
+- 不需要对每个候选 frame 单独做一次“是否扩展解空间”的剪枝 SAT 判定
+- 对 bounded reachability 和 bounded counterexample 通常更强
+- 对“寻找一条长度不超过 `k` 的 witness path”尤其合适
+
+对 pyfcstm 来说，这条路线很现实，因为现有代码已经具备：
+
+- `expr -> z3` 转换
+- `operation -> symbolic update`
+- cycle 语义
+- witness 路径思路
+
+也就是说，现有 verify 基础设施已经覆盖了 BMC 所需的一大块底层能力。
+
+它的局限主要是：
+
+- 擅长“找反例 / 找可达路径”，不擅长直接“证明无解”
+- `k` 很大时公式可能膨胀
+- 更适合 bounded query，而不是无界证明
+
+如果只选一个比 BFS 更值得优先实现的方法，`SMT-based BMC` 是第一选择。
+
+
+### 8.2 k-Induction
+
+如果要做的不是“找路径”，而是“证明某性质一直成立”，那么 `k-induction` 通常比 BFS 更适合。
+
+其基本结构是：
+
+- Base case：前 `k` 步内性质成立
+- Inductive step：若连续 `k` 步都成立，则下一步也成立
+
+适合的问题包括：
+
+- 不变量
+- 安全性
+- 状态相关输出约束
+- 变量范围约束
+
+相比 BFS，它的优势是：
+
+- 不依赖枚举所有 bounded 路径
+- 对“证明坏状态不可达”更有形式化意义
+- 对线性整数类控制逻辑通常很实用
+
+局限包括：
+
+- 不是所有性质都容易归纳
+- 有时需要辅助 invariant
+- 对“找最短 witness”不如 BMC / BFS 自然
+
+如果后续要把 `verify_invariant` 做成真正有证明能力的接口，而不是 bounded bug hunting，那么 `k-induction` 很值得尽早纳入设计。
+
+
+### 8.3 IC3 / PDR
+
+这类方法是更强的一档安全性证明路线。
+
+它的核心思想不是逐层穷举路径，而是：
+
+- 逐步构造 reachable states 的 over-approximation
+- 不断阻塞通往 bad states 的前驱
+- 最终要么找到 counterexample，要么构造出归纳不变量证明 bad state 不可达
+
+相比 BFS，它更强的点在于：
+
+- 对安全性证明通常更有威力
+- 不需要预先给定很大的展开深度
+- 常常能避免深路径显式展开
+
+但对 pyfcstm 当前阶段来说，这条路线的现实问题是：
+
+- 实现复杂度明显更高
+- 对纯布尔或有限状态系统最成熟
+- 对 SMT theory 版本虽然也存在，但工程门槛较高
+- 对层次状态机 + 数据路径 + lifecycle semantics 的直接自研成本不低
+
+因此它更适合作为中长期方向，而不是当前 BFS 的第一替代品。
+
+
+### 8.4 Predicate Abstraction / CEGAR
+
+如果模型的状态空间主要是被数据变量拉大，而不是被控制状态数量拉大，那么抽象路线通常比 BFS 更有上限。
+
+典型做法是：
+
+- 先把变量空间抽象为区间、谓词或模板
+- 在抽象模型上验证
+- 如果得到伪反例，再 refinement
+
+这类路线的典型价值在于：
+
+- 可以把“很大甚至无穷”的数据域压缩到较小抽象空间
+- 特别适合阈值型 guard 主导的控制系统
+
+对 pyfcstm 而言，这一点很有吸引力，因为很多 DSL 模型的 guard 天然是这种风格：
+
+- `x >= 10`
+- `temp <= 50`
+- `retry_count < 3`
+
+不过，这条路线的实现门槛也不低：
+
+- 抽象域设计需要经验
+- witness 还原比 BFS / BMC 更复杂
+- refinement 策略需要仔细设计
+
+因此更适合作为中长期路线，而不是当前版本的近期替代方案。
+
+
+### 8.5 组合式 / 层次化验证
+
+对于层次状态机，一个常见问题是：
+
+- 如果完全 flatten 再验证，状态空间会迅速膨胀
+
+因此更高级的路线通常会考虑：
+
+- 保留 hierarchy
+- 按子系统 / 子状态机 / 模式分块验证
+- 引入 assume-guarantee 或 compositional reasoning
+
+这条路线的价值不是“换个 solver”，而是从建模结构上降低爆炸。
+
+但目前 pyfcstm 的 DSL 和 verify 仍更接近单体状态机验证框架，因此这条路线暂时更像未来架构方向，而不是短期替换 BFS 的首选。
+
+
+### 8.6 Timed Automata / UPPAAL
+
+如果后续 verify 的目标扩展到这些时间性质：
+
+- timeout
+- deadline
+- 最小驻留时间
+- watchdog
+- bounded response time
+
+那么继续沿着当前 cycle-BFS 路线硬扩展通常不划算。
+
+这时更自然的方案往往是：
+
+- timed automata
+- UPPAAL
+
+这类工具对时间性质更原生，通常也比在当前 BFS 框架里手工编码时钟语义更可靠。
+
+
+## 9. 常见现成工具与适配方向
+
+### 9.1 nuXmv / SMV 系列
+
+优点：
+
+- 工业成熟
+- 对安全性、可达性、CTL/LTL 都有成熟支持
+- 具有符号模型检验和证明能力
+
+潜在问题：
+
+- pyfcstm DSL 需要先降成标准 transition system
+- 对复杂算术和浮点的适配不如 SMT 路线自然
+- hierarchy 需要做语义映射
+
+
+### 9.2 UPPAAL
+
+优点：
+
+- 对 timed automata 很成熟
+- 很适合 timeout、响应时间、deadline 一类问题
+
+潜在问题：
+
+- 对一般数据路径算术验证并不是万能方案
+- 需要先明确 pyfcstm 的时钟语义与时间推进语义
+
+
+### 9.3 SPIN / Promela
+
+优点：
+
+- 对并发协议、消息交互、离散控制流很强
+
+潜在问题：
+
+- pyfcstm 当前模型更偏“层次状态机 + 数据路径”
+- 不一定是最贴合的直接后端
+
+
+### 9.4 TLA+ / Apalache
+
+优点：
+
+- 规格层表达能力强
+- 适合高层行为约束建模
+
+潜在问题：
+
+- 更适合作为规格级工具
+- 不太像直接吃现有 pyfcstm DSL 的工程化后端
+
+
+## 10. 针对 pyfcstm 的推荐演进路线
+
+如果目标是“找到一条显著强于当前 BFS 的路线”，建议优先级如下。
+
+### 10.1 短期路线
+
+保留当前 BFS，但不要继续把它当成唯一主力引擎。
+
+更合适的短期策略是：
+
+1. 保留 BFS 作为：
+   - 小模型 reachability
+   - witness replay
+   - 调试与语义核对工具
+2. 新增 `SMT-based BMC` 作为：
+   - bounded reachability
+   - bounded safety counterexample
+   - bounded response / recovery
+
+这一步往往就能覆盖当前 verify 里最常见的高价值需求。
+
+
+### 10.2 中期路线
+
+在 BMC 之外，增加更强的“证明”能力。
+
+建议优先考虑：
+
+- `k-induction`
+
+优先支持的性质可以包括：
+
+- 变量范围不变量
+- 状态相关输出约束
+- 基本安全性
+
+如果要提升稳定性，还可以考虑对 verify 支持的表达式子集做约束，例如优先聚焦：
+
+- 布尔
+- 整数
+- 线性算术
+
+而将下列高风险表达式视作“高级模式”：
+
+- 浮点
+- 位运算
+- 幂运算
+- 复杂非线性表达式
+
+
+### 10.3 长期路线
+
+长期如果要把 verify 做成 pyfcstm 的核心优势，可以考虑三条更重型的路线：
+
+- 自研 `IC3/PDR-like` 安全性证明引擎
+- 做 `predicate abstraction + CEGAR`
+- 导出到 `nuXmv` / `UPPAAL` 这类成熟工具
+
+三者各有取舍：
+
+- 自研证明引擎：可深度贴合 DSL，但开发成本最高
+- 抽象验证：数据域上限更强，但实现复杂
+- 导出现成工具：可快速获得成熟算法，但需要做可靠的语义映射
+
+
+## 11. 一个更现实的结论
+
+如果问题是“对于 pyfcstm 这种状态机模型，现有更好的做法是什么”，那么最务实的答案不是一个“万能更优算法”，而是按问题类型分层：
+
+- bounded reachability：优先 `SMT-based BMC`
+- invariant / safety proving：优先 `k-induction`
+- 更强安全性证明：长期考虑 `IC3/PDR`
+- 数据域主导的爆炸：长期考虑 `predicate abstraction / CEGAR`
+- 时间性质：优先 `UPPAAL`
+
+换句话说，真正比 BFS 更好的路线，并不是单点替代，而是把 pyfcstm 的 verify 能力从“单一 BFS 引擎”升级为“按性质选择后端”的架构。

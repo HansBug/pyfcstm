@@ -7,9 +7,9 @@ objects that represent leaf states, composite-state entry boundaries,
 composite-state exit boundaries, and the terminal ``<end>`` marker.
 
 Each frame carries symbolic variable expressions, accumulated Z3 path
-constraints, the triggering event for the last transition, and a link to the
-previous frame so complete symbolic paths can be reconstructed after the
-search completes.
+constraints, the triggering event variable for the last transition, and a
+link to the previous frame so complete symbolic paths can be reconstructed
+after the search completes.
 
 The main entry point is :func:`bfs_search`, which expands transitions in
 declaration order, applies lifecycle actions and transition effects
@@ -222,9 +222,10 @@ class SearchFrame:
     :param constraints: Z3 constraint describing all conditions required to
         reach this frame.
     :type constraints: z3.BoolRef
-    :param event: Event that triggered the transition into this frame, or
-        ``None`` if the edge was guard-driven or unconditional.
-    :type event: Optional[Event]
+    :param event_var: Z3 boolean variable for the event that triggered the
+        transition into this frame, or ``None`` if the edge was guard-driven
+        or unconditional.
+    :type event_var: Optional[z3.BoolRef]
     :param depth: Search depth from the initial frame.
     :type depth: int
     :param cycle: Cycle count consumed when reaching this frame.
@@ -241,8 +242,8 @@ class SearchFrame:
     :vartype var_state: Dict[str, z3.ArithRef]
     :ivar constraints: Reachability constraint for this frame.
     :vartype constraints: z3.BoolRef
-    :ivar event: Transition event that led to this frame, if any.
-    :vartype event: Optional[Event]
+    :ivar event_var: Transition event variable that led to this frame, if any.
+    :vartype event_var: Optional[z3.BoolRef]
     :ivar depth: Search depth from the initial frame.
     :vartype depth: int
     :ivar cycle: Cycle count consumed at this frame.
@@ -257,7 +258,7 @@ class SearchFrame:
         ...     type='end',
         ...     var_state={},
         ...     constraints=z3.BoolVal(True),
-        ...     event=None,
+        ...     event_var=None,
         ...     depth=1,
         ...     cycle=1,
         ... )
@@ -269,10 +270,38 @@ class SearchFrame:
 
     var_state: Dict[str, z3.ArithRef]
     constraints: z3.BoolRef
-    event: Optional[Event]
+    event_var: Optional[z3.BoolRef]
     depth: int
     cycle: int
     prev_frame: Optional['SearchFrame'] = None
+
+    @property
+    def event_cycle(self) -> Optional[int]:
+        """
+        Return the cycle encoded in :attr:`event_var`, if present.
+
+        :return: Event cycle from :attr:`event_var`, or ``None``.
+        :rtype: Optional[int]
+        """
+        if self.event_var is None:
+            return None
+
+        cycle, _ = parse_z3_event_var_name(self.event_var)
+        return cycle
+
+    @property
+    def event_path_name(self) -> Optional[str]:
+        """
+        Return the full event path encoded in :attr:`event_var`, if present.
+
+        :return: Full event path from :attr:`event_var`, or ``None``.
+        :rtype: Optional[str]
+        """
+        if self.event_var is None:
+            return None
+
+        _, event_path_name = parse_z3_event_var_name(self.event_var)
+        return event_path_name
 
     def get_history(self) -> List['SearchFrame']:
         """
@@ -292,7 +321,7 @@ class SearchFrame:
             ...     type='end',
             ...     var_state={},
             ...     constraints=z3.BoolVal(True),
-            ...     event=None,
+            ...     event_var=None,
             ...     depth=0,
             ...     cycle=0,
             ... )
@@ -301,7 +330,7 @@ class SearchFrame:
             ...     type='end',
             ...     var_state={},
             ...     constraints=z3.BoolVal(True),
-            ...     event=None,
+            ...     event_var=None,
             ...     depth=1,
             ...     cycle=1,
             ...     prev_frame=frame0,
@@ -351,7 +380,7 @@ class SearchFrame:
             ...     type='end',
             ...     var_state={'x': x},
             ...     constraints=x == 3,
-            ...     event=None,
+            ...     event_var=None,
             ...     depth=0,
             ...     cycle=0,
             ... )
@@ -376,10 +405,10 @@ class SearchFrame:
         variable expressions and reachability constraints are substituted with
         the provided solver solution item and must resolve to Python literals.
 
-        Event handling differs from :attr:`event` on symbolic frames. A
-        symbolic frame stores the event on the destination edge, but the actual
-        event belongs to ``prev_frame.cycle``. This method therefore groups
-        triggered events by their concrete cycle and attaches that cycle-level
+        Event handling differs from :attr:`event_var` on symbolic frames. A
+        symbolic frame stores the event variable on the destination edge. This
+        method parses the cycle and event path from that variable name, groups
+        triggered events by their concrete cycle, and attaches that cycle-level
         event list to every concrete frame at the same cycle.
 
         :param solution_item: One solution mapping as returned in
@@ -398,7 +427,7 @@ class SearchFrame:
             ...     type='end',
             ...     var_state={'x': x},
             ...     constraints=x == 3,
-            ...     event=None,
+            ...     event_var=None,
             ...     depth=0,
             ...     cycle=0,
             ... )
@@ -428,33 +457,42 @@ class SearchFrame:
             )
 
         for frame in history:
-            if frame.event is None:
+            if frame.event_var is None:
                 continue
             if frame.prev_frame is None:
                 raise ValueError(
                     "SearchFrame.to_concrete_frames() encountered a frame with "
-                    f"event {frame.event.path_name!r} but no prev_frame. "
+                    f"event variable {frame.event_path_name!r} but no prev_frame. "
                     "Event-bearing frames must represent transitions from a previous frame."
                 )
 
-            actual_cycle = frame.prev_frame.cycle
-            _, event_var_name = get_z3_event_key_and_var_name(actual_cycle, frame.event)
+            actual_cycle = frame.event_cycle
+            event_path_name = frame.event_path_name
+            if actual_cycle is None or event_path_name is None:  # pragma: no cover
+                raise ValueError(
+                    "SearchFrame.to_concrete_frames() failed to parse the event metadata "
+                    f"from symbolic variable {frame.event_var!r}."
+                )
             event_triggered = _literalize(
-                value=z3.Bool(event_var_name),
-                source_name=f"event variable {event_var_name!r}",
+                value=frame.event_var,
+                source_name=f"event variable {str(frame.event_var)!r}",
                 frame=frame,
             )
             if not isinstance(event_triggered, bool):
                 raise ValueError(  # pragma: no cover
                     "SearchFrame.to_concrete_frames() expected event variables to resolve "
-                    f"to bool, but got {event_triggered!r} for {event_var_name!r}."
+                    f"to bool, but got {event_triggered!r} for {str(frame.event_var)!r}."
                 )
 
             if event_triggered:
                 seen_names = event_names_by_cycle.setdefault(actual_cycle, set())
-                if frame.event.path_name not in seen_names:
-                    events_by_cycle.setdefault(actual_cycle, []).append(frame.event)
-                    seen_names.add(frame.event.path_name)
+                if event_path_name not in seen_names:
+                    event_parts = event_path_name.split('.')
+                    events_by_cycle.setdefault(actual_cycle, []).append(Event(
+                        name=event_parts[-1],
+                        state_path=tuple(event_parts[:-1]),
+                    ))
+                    seen_names.add(event_path_name)
 
         concrete_frames: List['SearchConcreteFrame'] = []
         prev_concrete_frame: Optional['SearchConcreteFrame'] = None
@@ -895,7 +933,7 @@ def bfs_search(
         type='leaf' if init_state.is_leaf_state else 'composite_in',
         var_state=z3_vars,
         constraints=init_constraints,
-        event=None,
+        event_var=None,
         depth=0,
         cycle=0,
         prev_frame=None,
@@ -980,13 +1018,13 @@ def bfs_search(
 
             if transition.guard:
                 condition = expr_to_z3(expr=transition.guard, z3_vars=head.var_state)
-                event = None
+                event_var = None
             elif transition.event:
                 condition = ctx.get_z3_event(head.cycle, transition.event, force=True)
-                event = transition.event
+                event_var = condition
             else:
                 condition = z3.BoolVal(True)
-                event = None
+                event_var = None
             actual_condition = z3_and([z3_not(z3_or(prev_conditions)), condition])
 
             z3_vars = head.var_state
@@ -1035,7 +1073,7 @@ def bfs_search(
                 type=to_type,
                 var_state=z3_vars,
                 constraints=z3_and([head.constraints, actual_condition]),
-                event=event,
+                event_var=event_var,
                 depth=head.depth + 1,
                 cycle=head.cycle + (1 if to_state is None or to_state.is_stoppable else 0),
                 prev_frame=head,
@@ -1058,7 +1096,7 @@ def bfs_search(
                 type=head.type,
                 var_state=z3_vars,
                 constraints=z3_and([head.constraints, actual_condition]),
-                event=None,
+                event_var=None,
                 depth=head.depth + 1,
                 cycle=head.cycle + 1,
                 prev_frame=head,

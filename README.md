@@ -77,7 +77,7 @@ pyfcstm aims to provide a complete solution from conceptual design to code imple
 
 ### Basic Installation
 
-pyfcstm requires Python 3.7+ and is published on PyPI:
+pyfcstm requires Python 3.7+ and is tested on CPython 3.7 through 3.14. It is published on PyPI:
 
 ```shell
 pip install pyfcstm
@@ -88,6 +88,8 @@ You can invoke the CLI either as `pyfcstm` or as a Python module:
 ```shell
 python -m pyfcstm --help
 ```
+
+The GitHub Actions unit test matrix covers CPython 3.7 through 3.14 on Linux, Windows, and macOS.
 
 ### Install the Latest Main Branch
 

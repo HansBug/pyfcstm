@@ -1,7 +1,7 @@
 安装
 ===================
 
-pyfcstm 目前托管在 PyPI 上，需要 python >= 3.7。
+pyfcstm 目前托管在 PyPI 上，需要 Python >= 3.7，并且已在 CPython 3.7 到 3.14 上完成测试。
 
 你可以使用以下命令从 PyPI 简单安装 pyfcstm：
 

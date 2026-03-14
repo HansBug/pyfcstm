@@ -26,7 +26,7 @@ of others when contributing.
 
 Before you begin, ensure you have the following installed:
 
-- **Python 3.7+**: pyfcstm supports Python 3.7 and above
+- **Python 3.7+**: pyfcstm supports Python 3.7 and above, and CI currently tests CPython 3.7 through 3.14
 - **Git**: For version control
 - **Java Runtime Environment (JRE)**: Required only if you plan to modify the ANTLR grammar
 

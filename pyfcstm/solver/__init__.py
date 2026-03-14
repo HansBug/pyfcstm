@@ -19,6 +19,7 @@ The module contains the following main components:
 * :func:`are_equivalent` - Check whether two boolean expressions are logically equivalent
 * :func:`solve` - Solve Z3 constraint expressions with flexible solution enumeration
 * :class:`SolveResult` - Dataclass containing solve results
+* :func:`substitute_and_literalize` - Substitute named values and fold grounded Z3 subexpressions
 * :func:`parse_operations` - Parse DSL operation code string to list of Operations
 * :func:`execute_operations` - Execute operations on Z3 variable expression dictionary (symbolic execution)
 
@@ -62,4 +63,5 @@ from .logic import (
 from .operation import parse_operations, execute_operations
 from .reverse_expr import z3_to_expr
 from .solve import solve, SolveResult
+from .substitute import substitute_and_literalize
 from .vars import create_z3_vars_from_state_machine

@@ -420,6 +420,281 @@
 如果只选一个比 BFS 更值得优先实现的方法，`SMT-based BMC` 是第一选择。
 
 
+#### 8.1.1 具体示例：将 water heater 状态机编成 BMC 公式
+
+下面用一个具体状态机说明 BMC 到底是如何落地编码的。
+
+示例 DSL：
+
+.. code-block:: fcstm
+
+    def int water_temp = 55;
+    def int draw_count = 0;
+
+    state Root {
+        state Standby {
+            during {
+                water_temp = water_temp - 1;
+            }
+        }
+
+        state Heating {
+            during {
+                water_temp = water_temp + 4;
+            }
+        }
+
+        [*] -> Standby;
+        Standby -> Heating : if [water_temp <= 50];
+        Standby -> Standby :: HotWaterDraw effect {
+            water_temp = water_temp - 8;
+            draw_count = draw_count + 1;
+        };
+        Heating -> Standby : if [water_temp >= 60];
+        Heating -> Heating :: HotWaterDraw effect {
+            water_temp = water_temp - 8;
+            draw_count = draw_count + 1;
+        };
+    }
+
+为了让示例更聚焦，这里采用如下建模约定：
+
+- `state[i]`、`water_temp[i]`、`draw_count[i]` 表示第 `i` 个 cycle 结束后的稳定边界
+- `hot_water_draw[i]` 表示第 `i` 个 cycle 中外部是否给了 `HotWaterDraw` 事件
+- 初始状态直接从 `[*] -> Standby` 之后的稳定边界开始
+
+这相当于将状态机的执行编码为：
+
+1. 初始约束 `Init(0)`
+2. 每一步的 transition relation `Trans(i, i+1)`
+3. 最后再附加“目标状态在 `0..k` 范围内出现”的 reachability 公式
+
+下面是一个对应的 Python + Z3 示例：
+
+```python
+import z3
+
+
+def build_water_heater_bmc(max_cycles: int):
+    # 1. 控制状态枚举
+    State, (Standby, Heating) = z3.EnumSort("State", ["Standby", "Heating"])
+
+    # 2. 按时间展开的变量
+    state = [z3.Const(f"state_{i}", State) for i in range(max_cycles + 1)]
+    water_temp = [z3.Int(f"water_temp_{i}") for i in range(max_cycles + 1)]
+    draw_count = [z3.Int(f"draw_count_{i}") for i in range(max_cycles + 1)]
+
+    # 外部事件：第 i 个 cycle 是否发生 HotWaterDraw
+    hot_water_draw = [z3.Bool(f"hot_water_draw_{i}") for i in range(max_cycles)]
+
+    s = z3.Solver()
+
+    # 3. 初始条件
+    s.add(state[0] == Standby)
+    s.add(water_temp[0] == 55)
+    s.add(draw_count[0] == 0)
+
+    # 可选的基本域约束
+    for i in range(max_cycles + 1):
+        s.add(draw_count[i] >= 0)
+
+    # 4. 逐步编码 transition relation
+    for i in range(max_cycles):
+        in_standby = state[i] == Standby
+        in_heating = state[i] == Heating
+
+        # Standby 中按声明顺序：
+        # 1. Standby -> Heating : if [water_temp <= 50];
+        # 2. Standby -> Standby :: HotWaterDraw effect { ... };
+        # 所以第二条只有在第一条不触发时才有机会生效。
+        standby_to_heating = z3.And(
+            in_standby,
+            water_temp[i] <= 50,
+        )
+
+        standby_hot_draw = z3.And(
+            in_standby,
+            water_temp[i] > 50,      # 前一条没有触发
+            hot_water_draw[i],       # 事件发生
+        )
+
+        standby_stay = z3.And(
+            in_standby,
+            water_temp[i] > 50,      # 前两条都没触发
+            z3.Not(hot_water_draw[i]),
+        )
+
+        # Heating 中按声明顺序：
+        # 1. Heating -> Standby : if [water_temp >= 60];
+        # 2. Heating -> Heating :: HotWaterDraw effect { ... };
+        heating_to_standby = z3.And(
+            in_heating,
+            water_temp[i] >= 60,
+        )
+
+        heating_hot_draw = z3.And(
+            in_heating,
+            water_temp[i] < 60,      # 前一条没有触发
+            hot_water_draw[i],
+        )
+
+        heating_stay = z3.And(
+            in_heating,
+            water_temp[i] < 60,
+            z3.Not(hot_water_draw[i]),
+        )
+
+        cases = [
+            standby_to_heating,
+            standby_hot_draw,
+            standby_stay,
+            heating_to_standby,
+            heating_hot_draw,
+            heating_stay,
+        ]
+
+        # 每一步必须且只能命中一个 case
+        s.add(z3.PbEq([(c, 1) for c in cases], 1))
+
+        # 5. 每个 case 的后继状态更新
+        # 这里同时编码 effect 和目标叶状态的 during
+
+        # Standby -> Heating
+        # effect: 无
+        # Heating.during: water_temp = water_temp + 4
+        s.add(z3.Implies(
+            standby_to_heating,
+            z3.And(
+                state[i + 1] == Heating,
+                water_temp[i + 1] == water_temp[i] + 4,
+                draw_count[i + 1] == draw_count[i],
+            )
+        ))
+
+        # Standby -> Standby :: HotWaterDraw
+        # effect:
+        #   water_temp = water_temp - 8
+        #   draw_count = draw_count + 1
+        # 然后目标还是 Standby，同 cycle 执行 Standby.during:
+        #   water_temp = water_temp - 1
+        # 所以净效果是 water_temp - 9, draw_count + 1
+        s.add(z3.Implies(
+            standby_hot_draw,
+            z3.And(
+                state[i + 1] == Standby,
+                water_temp[i + 1] == water_temp[i] - 9,
+                draw_count[i + 1] == draw_count[i] + 1,
+            )
+        ))
+
+        # Standby 无 transition，执行 Standby.during
+        s.add(z3.Implies(
+            standby_stay,
+            z3.And(
+                state[i + 1] == Standby,
+                water_temp[i + 1] == water_temp[i] - 1,
+                draw_count[i + 1] == draw_count[i],
+            )
+        ))
+
+        # Heating -> Standby
+        # effect: 无
+        # 然后执行 Standby.during: water_temp - 1
+        s.add(z3.Implies(
+            heating_to_standby,
+            z3.And(
+                state[i + 1] == Standby,
+                water_temp[i + 1] == water_temp[i] - 1,
+                draw_count[i + 1] == draw_count[i],
+            )
+        ))
+
+        # Heating -> Heating :: HotWaterDraw
+        # effect:
+        #   water_temp = water_temp - 8
+        #   draw_count = draw_count + 1
+        # 然后执行 Heating.during: water_temp + 4
+        # 净效果：water_temp - 4, draw_count + 1
+        s.add(z3.Implies(
+            heating_hot_draw,
+            z3.And(
+                state[i + 1] == Heating,
+                water_temp[i + 1] == water_temp[i] - 4,
+                draw_count[i + 1] == draw_count[i] + 1,
+            )
+        ))
+
+        # Heating 无 transition，执行 Heating.during
+        s.add(z3.Implies(
+            heating_stay,
+            z3.And(
+                state[i + 1] == Heating,
+                water_temp[i + 1] == water_temp[i] + 4,
+                draw_count[i + 1] == draw_count[i],
+            )
+        ))
+
+    return s, State, Standby, Heating, state, water_temp, draw_count, hot_water_draw
+
+
+def solve_reach_heating(max_cycles: int):
+    s, _, _, Heating, state, water_temp, draw_count, hot_water_draw = build_water_heater_bmc(max_cycles)
+
+    # 6. BMC 查询：是否存在一条长度 <= max_cycles 的路径，到达 Heating
+    reach_heating = z3.Or([state[i] == Heating for i in range(1, max_cycles + 1)])
+    s.add(reach_heating)
+
+    if s.check() != z3.sat:
+        print(f"UNSAT: cannot reach Heating within {max_cycles} cycles")
+        return
+
+    m = s.model()
+    print(f"SAT: can reach Heating within {max_cycles} cycles")
+
+    first_heating_step = None
+    for i in range(1, max_cycles + 1):
+        if z3.is_true(m.eval(state[i] == Heating, model_completion=True)):
+            first_heating_step = i
+            break
+
+    print(f"first Heating step = {first_heating_step}")
+    print()
+
+    for i in range(max_cycles + 1):
+        st = m.eval(state[i], model_completion=True)
+        wt = m.eval(water_temp[i], model_completion=True)
+        dc = m.eval(draw_count[i], model_completion=True)
+        print(f"step {i}: state={st}, water_temp={wt}, draw_count={dc}")
+        if i < max_cycles:
+            evt = m.eval(hot_water_draw[i], model_completion=True)
+            print(f"        hot_water_draw[{i}] = {evt}")
+
+
+if __name__ == "__main__":
+    print("=== query: reach Heating within 1 cycle ===")
+    solve_reach_heating(1)
+
+    print("\\n=== query: reach Heating within 2 cycles ===")
+    solve_reach_heating(2)
+```
+
+这段代码体现了 BMC 的核心套路：
+
+1. 将状态机按时间展开为 `state_0 .. state_k`
+2. 将变量按时间展开为 `water_temp_0 .. water_temp_k`、`draw_count_0 .. draw_count_k`
+3. 将外部事件按时间展开为 `hot_water_draw_0 .. hot_water_draw_{k-1}`
+4. 对每个 cycle 编写一组 mutually-exclusive 的 case split，体现 transition declaration order
+5. 将 effect、目标状态 during、以及未触发 transition 时的驻留 during 全部写进后继更新
+6. 最后附加 reachability query，例如 `Or(state_1 == Heating, ..., state_k == Heating)`
+
+从这个例子还能看出 BMC 与 BFS 的一个直观差异：
+
+- BFS 是从初始状态开始一层层扩展后继
+- BMC 是直接问 solver：“是否存在一组 `state_i`、`var_i`、`event_i` 的赋值，使得整条 `0..k` 执行链合法并且命中目标”
+
+对于 pyfcstm 当前最常见的 bounded reachability / bounded safety 问题，这种编码方式通常比逐 frame 的 BFS 搜索更适合作为主力后端。
+
+
 ### 8.2 k-Induction
 
 如果要做的不是“找路径”，而是“证明某性质一直成立”，那么 `k-induction` 通常比 BFS 更适合。

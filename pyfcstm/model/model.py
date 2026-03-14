@@ -252,6 +252,50 @@ class Transition(AstExportable):
         else:
             self.parent_ref = weakref.ref(new_parent)
 
+    @property
+    def from_state_obj(self) -> Union['State', dsl_nodes._StateSingletonMark]:
+        """
+        Resolve :attr:`from_state` to its concrete state object when applicable.
+
+        String endpoints are resolved from the transition parent's substates.
+        :data:`INIT_STATE` and :data:`EXIT_STATE` are returned unchanged.
+
+        :return: The resolved source state object, or the original singleton marker
+        :rtype: Union[State, dsl_nodes._StateSingletonMark]
+        :raises LookupError: If the source state string cannot be resolved
+        """
+        if self.from_state is INIT_STATE or self.from_state is EXIT_STATE:
+            return self.from_state
+        if self.parent is None:
+            raise LookupError(f"Cannot resolve from_state {self.from_state!r} without parent state.")
+        if self.from_state not in self.parent.substates:
+            raise LookupError(
+                f"State {self.from_state!r} not found in parent state {'.'.join(self.parent.path)!r}."
+            )
+        return self.parent.substates[self.from_state]
+
+    @property
+    def to_state_obj(self) -> Union['State', dsl_nodes._StateSingletonMark]:
+        """
+        Resolve :attr:`to_state` to its concrete state object when applicable.
+
+        String endpoints are resolved from the transition parent's substates.
+        :data:`INIT_STATE` and :data:`EXIT_STATE` are returned unchanged.
+
+        :return: The resolved target state object, or the original singleton marker
+        :rtype: Union[State, dsl_nodes._StateSingletonMark]
+        :raises LookupError: If the target state string cannot be resolved
+        """
+        if self.to_state is INIT_STATE or self.to_state is EXIT_STATE:
+            return self.to_state
+        if self.parent is None:
+            raise LookupError(f"Cannot resolve to_state {self.to_state!r} without parent state.")
+        if self.to_state not in self.parent.substates:
+            raise LookupError(
+                f"State {self.to_state!r} not found in parent state {'.'.join(self.parent.path)!r}."
+            )
+        return self.parent.substates[self.to_state]
+
     def to_ast_node(self) -> dsl_nodes.TransitionDefinition:
         """
         Convert this transition to an AST node.

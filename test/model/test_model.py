@@ -939,6 +939,33 @@ class TestModelModel:
             post_operations=[],
         )
 
+    def test_transition_resolve_state_endpoints(
+            self,
+            transition_1,
+            transition_2,
+            transition_3,
+            transition_5,
+            transition_6,
+            root_state_1,
+            state_LX_LX1,
+    ):
+        assert transition_1.from_state_obj is dsl_nodes.INIT_STATE
+        with pytest.raises(LookupError, match="Cannot resolve to_state 'LX' without parent state"):
+            _ = transition_1.to_state_obj
+
+        with pytest.raises(LookupError, match="Cannot resolve from_state 'LX' without parent state"):
+            _ = transition_2.from_state_obj
+        assert transition_2.to_state_obj is dsl_nodes.EXIT_STATE
+
+        assert transition_3.from_state_obj is dsl_nodes.INIT_STATE
+        assert transition_3.to_state_obj is root_state_1.substates["LX1"]
+
+        assert transition_5.from_state_obj is state_LX_LX1.substates["LX12"]
+        assert transition_5.to_state_obj is state_LX_LX1.substates["LX14"]
+
+        assert transition_6.from_state_obj is state_LX_LX1.substates["LX13"]
+        assert transition_6.to_state_obj is dsl_nodes.EXIT_STATE
+
     def test_parse_duplicate_defs(self):
         ast_node = parse_with_grammar_entry(
             """

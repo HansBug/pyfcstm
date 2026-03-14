@@ -528,7 +528,9 @@ visited: Dict[Tuple[Optional[State], NodeType], z3.BoolRef] = {}
 
 **优化**: 为了避免频繁的求解器调用，可以使用以下策略：
 - 如果 `new_constraint` 在语法上与 `old_constraint` 相同，直接剪枝
-- 维护一个约束的"规范化"形式，便于比较
+- 路径约束优先维护为扁平的约束列表，检查时使用 `solver.add(*constraints)`，避免在搜索过程中反复构造巨大的嵌套 `And(...)`
+- `visited[(state, node_type)]` 的析取约束不要每次立刻合并并化简，优先采用"已汇总表达式 + 待合并分支"的延迟累积方式
+- 不要求维护昂贵的全量"规范化"形式；只做低成本的语法相等检查和必要时的批量化简
 - 使用超时机制，避免复杂约束的求解时间过长
 
 ### 5.3 为什么这个剪枝策略有效
@@ -893,14 +895,62 @@ def execute_operations_symbolic(
     return new_state
 ```
 
-### 7.3 约束简化
+### 7.3 约束简化策略
 
-**问题**: 随着BFS深度增加，约束会变得越来越复杂
+**问题**: 随着 BFS 深度增加，约束会越来越复杂；但如果在热路径中频繁调用化简，化简本身也可能成为主要开销。
 
-**优化策略**:
-1. **定期简化**: 使用 `z3.simplify()` 简化约束
-2. **约束分解**: 将大的约束分解为多个小约束
-3. **冗余消除**: 检测并移除冗余约束
+**核心原则**:
+
+1. **默认基线是不主动化简**: 搜索阶段默认直接构造约束，不对每一步新产生的约束调用 `z3.simplify()`
+2. **避免热路径高频化简**: 不要在每次生成后继、每次更新 `visited`、每次做包含性检查之前都调用化简
+3. **只做低成本重写**: 如确实需要化简，仅使用默认 `z3.simplify()`；不要在 BFS 热路径中使用 `ctx-simplify`、`ctx-solver-simplify` 等高成本 tactic
+4. **不显式转换为 CNF/DNF**: 搜索阶段不主动将复杂逻辑表达式转换为标准合取范式或析取范式，避免额外的结构膨胀
+
+**约束表示策略**:
+
+- **路径约束使用扁平合取列表**:
+  - 使用 `List[z3.BoolRef]` 保存当前路径上的 guard、event 和其他布尔约束
+  - 求解或剪枝检查时直接使用 `solver.add(*constraint_atoms)`
+  - 只有在必须得到单个 `BoolRef` 时，才临时构造 `z3.And(*constraint_atoms)`
+- **visited 约束使用延迟析取累积**:
+  - 为每个 `(state, node_type)` 维护一个累积器，而不是每次立即执行 `visited = z3.Or(old, new)`
+  - 累积器至少包含：
+    - `base_expr`: 已批量汇总过的析取表达式
+    - `pending_exprs`: 最近新增、尚未 flush 的分支列表
+  - 对外使用的等价约束为 `base_expr` 与 `pending_exprs` 的逻辑析取
+
+**化简触发策略**:
+
+- 默认不化简，只有满足以下条件之一时才执行一次批量化简：
+  - `pending_exprs` 的数量达到阈值，例如 `32` 或 `64`
+  - 当前节点的析取表达式 AST 大小相对上次 flush 明显增长，例如翻倍
+  - 到达目标状态，准备执行最终 `solve()`
+  - 某个状态的包含性检查明显成为热点，需要主动压缩表达式体积
+- flush 时统一执行一次：
+
+```python
+merged_expr = z3.Or(base_expr, *pending_exprs)
+base_expr = z3.simplify(merged_expr)
+pending_exprs.clear()
+```
+
+**推荐默认参数**:
+
+- `simplify_every = 64`
+- `force_simplify_before_solve = True`
+- BFS 热路径中禁用 `ctx-simplify` 和 `ctx-solver-simplify`
+
+**为什么采用这个策略**:
+
+- 对 Z3 而言，最终 `check()` 之前本来就会执行内部预处理，因此"每步都手工化简"通常收益有限
+- 对本设计而言，真正的风险不是"完全不化简无法求解"，而是搜索阶段因为高频化简而拖慢 BFS 主循环
+- 因此应将"不化简"作为默认基线，将"低频批量化简"作为控制表达式膨胀的补充措施，而不是常规步骤
+
+**实现要求**:
+
+1. 第一版实现应以"默认不化简"为基线，先确保 BFS 主循环足够轻量
+2. 如表达式膨胀明显，再启用低频批量 `z3.simplify()` 作为可选优化
+3. 最终求解前允许对目标约束执行一次 `z3.simplify()`，但不应在搜索过程的每一步重复执行
 
 ### 7.4 性能优化
 
@@ -1355,4 +1405,3 @@ def test_leaf_to_leaf_transition():
 - 添加转换顺序处理逻辑（考虑前序转换未触发条件）
 - 添加max_cycle参数（主要限制条件）和max_depth参数（防御性限制）
 - 明确cycle计数规则：stoppable状态+1，pseudo和composite状态不变
-

@@ -277,6 +277,7 @@ class TestSearchFrameHelpers:
         _, start_var_name = verify_search.get_z3_event_key_and_var_name(0, event_start)
         _, pause_var_name = verify_search.get_z3_event_key_and_var_name(1, event_pause)
         _, resume_var_name = verify_search.get_z3_event_key_and_var_name(2, event_resume)
+        _, unrelated_var_name = verify_search.get_z3_event_key_and_var_name(1, 'Root.Idle.Unrelated')
 
         start_var = z3.Bool(start_var_name)
         pause_var = z3.Bool(pause_var_name)
@@ -387,6 +388,7 @@ class TestSearchFrameHelpers:
             start_var_name: True,
             pause_var_name: True,
             resume_var_name: True,
+            unrelated_var_name: True,
         })
 
         assert len(concrete_frames) == 9
@@ -394,18 +396,125 @@ class TestSearchFrameHelpers:
         assert [frame.cycle for frame in concrete_frames] == [0, 0, 0, 1, 1, 1, 2, 2, 3]
         assert [frame.var_state['counter'] for frame in concrete_frames] == [10, 11, 12, 13, 14, 15, 16, 17, 18]
         assert all(frame.satisfied is True for frame in concrete_frames)
-        assert [event.path_name for event in concrete_frames[0].events] == ['Root.Idle.Start']
-        assert [event.path_name for event in concrete_frames[1].events] == ['Root.Idle.Start']
-        assert [event.path_name for event in concrete_frames[2].events] == ['Root.Idle.Start']
-        assert [event.path_name for event in concrete_frames[3].events] == ['Root.Idle.Pause']
-        assert [event.path_name for event in concrete_frames[4].events] == ['Root.Idle.Pause']
-        assert [event.path_name for event in concrete_frames[5].events] == ['Root.Idle.Pause']
-        assert [event.path_name for event in concrete_frames[6].events] == ['Root.Idle.Resume']
-        assert [event.path_name for event in concrete_frames[7].events] == ['Root.Idle.Resume']
+        assert concrete_frames[0].events == ['Root.Idle.Start']
+        assert concrete_frames[1].events == ['Root.Idle.Start']
+        assert concrete_frames[2].events == ['Root.Idle.Start']
+        assert concrete_frames[3].events == ['Root.Idle.Pause']
+        assert concrete_frames[4].events == ['Root.Idle.Pause']
+        assert concrete_frames[5].events == ['Root.Idle.Pause']
+        assert concrete_frames[6].events == ['Root.Idle.Resume']
+        assert concrete_frames[7].events == ['Root.Idle.Resume']
         assert concrete_frames[8].events == []
         assert concrete_frames[0].prev_frame is None
         assert concrete_frames[1].prev_frame is concrete_frames[0]
         assert concrete_frames[8].prev_frame is concrete_frames[7]
+
+    def test_to_concrete_frames_collects_multiple_events_in_same_cycle(self):
+        state_machine = build_state_machine()
+        state = state_machine.resolve_state('Root.Idle')
+        base = z3.Int('base')
+
+        event_alpha = Event(name='Alpha', state_path=('Root', 'Idle'))
+        event_beta = Event(name='Beta', state_path=('Root', 'Idle'))
+        event_gamma = Event(name='Gamma', state_path=('Root', 'Idle'))
+
+        _, alpha_var_name = verify_search.get_z3_event_key_and_var_name(1, event_alpha)
+        _, beta_var_name = verify_search.get_z3_event_key_and_var_name(1, event_beta)
+        _, gamma_var_name = verify_search.get_z3_event_key_and_var_name(1, event_gamma)
+
+        alpha_var = z3.Bool(alpha_var_name)
+        beta_var = z3.Bool(beta_var_name)
+        gamma_var = z3.Bool(gamma_var_name)
+
+        frame0 = verify_search.SearchFrame(
+            state=state,
+            type='leaf',
+            var_state={'counter': base},
+            constraints=base == 20,
+            event_var=None,
+            depth=0,
+            cycle=0,
+            prev_frame=None,
+        )
+        frame1 = verify_search.SearchFrame(
+            state=state,
+            type='leaf',
+            var_state={'counter': base + 1},
+            constraints=base == 20,
+            event_var=None,
+            depth=1,
+            cycle=1,
+            prev_frame=frame0,
+        )
+        frame2 = verify_search.SearchFrame(
+            state=state,
+            type='leaf',
+            var_state={'counter': base + 2},
+            constraints=z3.And(base == 20, alpha_var),
+            event_var=alpha_var,
+            depth=2,
+            cycle=1,
+            prev_frame=frame1,
+        )
+        frame3 = verify_search.SearchFrame(
+            state=state,
+            type='leaf',
+            var_state={'counter': base + 3},
+            constraints=z3.And(base == 20, alpha_var, beta_var),
+            event_var=beta_var,
+            depth=3,
+            cycle=1,
+            prev_frame=frame2,
+        )
+        frame4 = verify_search.SearchFrame(
+            state=state,
+            type='leaf',
+            var_state={'counter': base + 4},
+            constraints=z3.And(base == 20, alpha_var, beta_var),
+            event_var=alpha_var,
+            depth=4,
+            cycle=1,
+            prev_frame=frame3,
+        )
+        frame5 = verify_search.SearchFrame(
+            state=state,
+            type='leaf',
+            var_state={'counter': base + 5},
+            constraints=z3.And(base == 20, alpha_var, beta_var),
+            event_var=gamma_var,
+            depth=5,
+            cycle=1,
+            prev_frame=frame4,
+        )
+        frame6 = verify_search.SearchFrame(
+            state=state,
+            type='leaf',
+            var_state={'counter': base + 6},
+            constraints=z3.And(base == 20, alpha_var, beta_var),
+            event_var=None,
+            depth=6,
+            cycle=2,
+            prev_frame=frame5,
+        )
+
+        concrete_frames = frame6.to_concrete_frames({
+            'base': 20,
+            alpha_var_name: True,
+            beta_var_name: True,
+            gamma_var_name: False,
+        })
+
+        assert len(concrete_frames) == 7
+        assert [frame.cycle for frame in concrete_frames] == [0, 1, 1, 1, 1, 1, 2]
+        assert [frame.var_state['counter'] for frame in concrete_frames] == [20, 21, 22, 23, 24, 25, 26]
+        assert concrete_frames[0].events == []
+        assert concrete_frames[1].events == ['Root.Idle.Alpha', 'Root.Idle.Beta']
+        assert concrete_frames[2].events == ['Root.Idle.Alpha', 'Root.Idle.Beta']
+        assert concrete_frames[3].events == ['Root.Idle.Alpha', 'Root.Idle.Beta']
+        assert concrete_frames[4].events == ['Root.Idle.Alpha', 'Root.Idle.Beta']
+        assert concrete_frames[5].events == ['Root.Idle.Alpha', 'Root.Idle.Beta']
+        assert concrete_frames[6].events == []
+        assert all('Root.Idle.Gamma' not in frame.events for frame in concrete_frames)
 
 
 @pytest.mark.unittest

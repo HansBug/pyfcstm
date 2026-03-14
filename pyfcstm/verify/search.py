@@ -405,11 +405,12 @@ class SearchFrame:
         variable expressions and reachability constraints are substituted with
         the provided solver solution item and must resolve to Python literals.
 
-        Event handling differs from :attr:`event_var` on symbolic frames. A
-        symbolic frame stores the event variable on the destination edge. This
-        method parses the cycle and event path from that variable name, groups
-        triggered events by their concrete cycle, and attaches that cycle-level
-        event list to every concrete frame at the same cycle.
+        Event handling is limited to event variables that actually appear in
+        the current symbolic history. This method first collects that set of
+        interested event variables, then evaluates only those variables against
+        the provided solution item, groups the ``True`` ones by cycle, and
+        attaches the resulting event path names to every concrete frame at the
+        same cycle.
 
         :param solution_item: One solution mapping as returned in
             :attr:`pyfcstm.solver.SolveResult.solutions`.
@@ -436,8 +437,7 @@ class SearchFrame:
             3
         """
         history = self.get_history()
-        events_by_cycle: Dict[int, List[Event]] = {}
-        event_names_by_cycle: Dict[int, set] = {}
+        events_by_cycle: Dict[int, List[str]] = {}
 
         def _literalize(
                 value: object,
@@ -456,43 +456,32 @@ class SearchFrame:
                 "Provide a solution item that grounds every referenced symbolic variable."
             )
 
+        interested_event_vars: List[z3.BoolRef] = []
+        interested_event_var_names = set()
         for frame in history:
             if frame.event_var is None:
                 continue
-            if frame.prev_frame is None:
-                raise ValueError(
-                    "SearchFrame.to_concrete_frames() encountered a frame with "
-                    f"event variable {frame.event_path_name!r} but no prev_frame. "
-                    "Event-bearing frames must represent transitions from a previous frame."
-                )
 
-            actual_cycle = frame.event_cycle
-            event_path_name = frame.event_path_name
-            if actual_cycle is None or event_path_name is None:  # pragma: no cover
-                raise ValueError(
-                    "SearchFrame.to_concrete_frames() failed to parse the event metadata "
-                    f"from symbolic variable {frame.event_var!r}."
-                )
+            event_var_name = str(frame.event_var)
+            if event_var_name not in interested_event_var_names:
+                interested_event_vars.append(frame.event_var)
+                interested_event_var_names.add(event_var_name)
+
+        for event_var in interested_event_vars:
+            actual_cycle, event_path_name = parse_z3_event_var_name(event_var)
             event_triggered = _literalize(
-                value=frame.event_var,
-                source_name=f"event variable {str(frame.event_var)!r}",
-                frame=frame,
+                value=event_var,
+                source_name=f"event variable {str(event_var)!r}",
+                frame=self,
             )
             if not isinstance(event_triggered, bool):
                 raise ValueError(  # pragma: no cover
                     "SearchFrame.to_concrete_frames() expected event variables to resolve "
-                    f"to bool, but got {event_triggered!r} for {str(frame.event_var)!r}."
+                    f"to bool, but got {event_triggered!r} for {str(event_var)!r}."
                 )
 
             if event_triggered:
-                seen_names = event_names_by_cycle.setdefault(actual_cycle, set())
-                if event_path_name not in seen_names:
-                    event_parts = event_path_name.split('.')
-                    events_by_cycle.setdefault(actual_cycle, []).append(Event(
-                        name=event_parts[-1],
-                        state_path=tuple(event_parts[:-1]),
-                    ))
-                    seen_names.add(event_path_name)
+                events_by_cycle.setdefault(actual_cycle, []).append(event_path_name)
 
         concrete_frames: List['SearchConcreteFrame'] = []
         prev_concrete_frame: Optional['SearchConcreteFrame'] = None
@@ -547,8 +536,10 @@ class SearchConcreteFrame:
     :param satisfied: Concrete truth value of this frame's reachability
         constraint.
     :type satisfied: bool
-    :param events: Concrete events realized on the path up to this frame.
-    :type events: List[Event]
+    :param events: Concrete event path names that evaluate to ``True`` at this
+        frame's cycle among the interested event variables from the symbolic
+        history.
+    :type events: List[str]
     :param depth: Search depth from the initial frame.
     :type depth: int
     :param cycle: Cycle count consumed when reaching this frame.
@@ -566,8 +557,9 @@ class SearchConcreteFrame:
     :ivar satisfied: Concrete truth value of this frame's reachability
         constraint.
     :vartype satisfied: bool
-    :ivar events: Concrete events realized on the path up to this frame.
-    :vartype events: List[Event]
+    :ivar events: Concrete event path names that evaluate to ``True`` at this
+        frame's cycle.
+    :vartype events: List[str]
     :ivar depth: Search depth from the initial frame.
     :vartype depth: int
     :ivar cycle: Cycle count consumed at this frame.
@@ -580,7 +572,7 @@ class SearchConcreteFrame:
 
     var_state: Dict[str, ConcreteLiteralTyping]
     satisfied: bool
-    events: List[Event]
+    events: List[str]
     depth: int
     cycle: int
     prev_frame: Optional['SearchConcreteFrame'] = None

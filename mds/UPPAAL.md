@@ -1823,7 +1823,262 @@ bool busy = false;
 - 保留 query
 - 不重写表达式语义
 
-## 45. 参考资料
+## 45. 已知命令行用法
+
+下面这一节补充当前已经确认过的 UPPAAL 命令行用法。这里的信息来自三部分：
+
+- 本机安装的 `Uppaal-5.0.0.desktop`
+- 本机 `/home/hansbug/.uppaal/uppaal-5.0.0-linux64/` 下实际存在的脚本与 `verifyta.sh -h`
+- 官方文档 `Tools & API / verifyta` 与 `File Formats`
+
+这里特别说明一下本机环境：
+
+- 桌面启动器实际指向 `/home/hansbug/.uppaal/uppaal-5.0.0-linux64/uppaal`
+- 直接运行 `bin/verifyta` 会因为宿主机 `glibc` 版本偏低而失败
+- 但 `bin/verifyta.sh` 可以正常打印帮助并工作到许可证检查阶段
+- 当前本机许可证状态不足以真正执行验证，实测会报：
+  - `License does not cover verifier.`
+  - 或 `the license has expired, please re-apply for a new license`
+
+因此，当前机器上**应优先使用包装脚本**而不是裸二进制：
+
+- `bin/verifyta.sh`
+- `bin/server.sh`
+- `bin/socketserver.sh`
+
+### 45.1 GUI 启动
+
+UPPAAL 图形界面的启动脚本是：
+
+```bash
+/home/hansbug/.uppaal/uppaal-5.0.0-linux64/uppaal
+```
+
+它本质上是执行：
+
+```bash
+java -jar /home/hansbug/.uppaal/uppaal-5.0.0-linux64/uppaal.jar
+```
+
+已确认的用法有：
+
+```bash
+# 查看 GUI 脚本帮助
+/home/hansbug/.uppaal/uppaal-5.0.0-linux64/uppaal --help
+
+# 打开一个模型文件
+/home/hansbug/.uppaal/uppaal-5.0.0-linux64/uppaal model.xml
+
+# 直接用 Java 启动 GUI
+java -jar /home/hansbug/.uppaal/uppaal-5.0.0-linux64/uppaal.jar
+```
+
+`uppaal --help` 当前能确认的参数很少，主要是：
+
+- `--help`
+- `--antialias`
+- `--no-antialias`
+- `--font-scale <number>`
+
+### 45.2 `verifyta` 的基本调用形式
+
+本机实际可用的入口应写成：
+
+```bash
+/home/hansbug/.uppaal/uppaal-5.0.0-linux64/bin/verifyta.sh [OPTION]... MODEL [QUERY]
+```
+
+帮助里给出的基本形式是：
+
+```text
+verifyta [OPTION]... MODEL QUERY
+where MODEL is a model file and QUERY is a query file.
+If QUERY is missing it will be guessed.
+```
+
+这里有几个实用结论：
+
+- `MODEL` 通常是 `*.xml`
+- `QUERY` 可以单独给一个 query 文件
+- 如果不显式提供 `QUERY`，`verifyta` 会尝试自动猜测
+- 许多模型也可以把 query 直接嵌在 XML 的 `<queries>` 段里
+- 帮助里明确写了：**`The ordering of options is significant.`**
+
+例如 demo 里的 `fischer.xml` 就自带：
+
+- `A[] forall (i:id_t) forall (j:id_t) P(i).cs && P(j).cs imply i == j`
+- `A[] not deadlock`
+
+### 45.3 最常用的 `verifyta` 命令
+
+下面这些是当前最值得先记住的命令形式。
+
+```bash
+# 查看帮助
+/home/hansbug/.uppaal/uppaal-5.0.0-linux64/bin/verifyta.sh -h
+
+# 查看版本
+/home/hansbug/.uppaal/uppaal-5.0.0-linux64/bin/verifyta.sh -v
+
+# 验证模型（若 query 缺省则尝试从模型或关联文件中猜测）
+/home/hansbug/.uppaal/uppaal-5.0.0-linux64/bin/verifyta.sh model.xml
+
+# 显式指定 query 文件
+/home/hansbug/.uppaal/uppaal-5.0.0-linux64/bin/verifyta.sh model.xml queries.q
+
+# 只验证第 n 条 query
+/home/hansbug/.uppaal/uppaal-5.0.0-linux64/bin/verifyta.sh --query-index 2 model.xml
+
+# 生成诊断轨迹
+/home/hansbug/.uppaal/uppaal-5.0.0-linux64/bin/verifyta.sh -t 1 model.xml
+
+# 将轨迹写入 prefix-n.xtr
+/home/hansbug/.uppaal/uppaal-5.0.0-linux64/bin/verifyta.sh -t 1 -f trace model.xml
+
+# 将符号轨迹导出成 XML
+/home/hansbug/.uppaal/uppaal-5.0.0-linux64/bin/verifyta.sh -t 1 -X trace model.xml
+
+# 静默进度条，并在结尾输出 summary
+/home/hansbug/.uppaal/uppaal-5.0.0-linux64/bin/verifyta.sh -s -u model.xml
+
+# 把规范化后的文档重新保存为 XML
+/home/hansbug/.uppaal/uppaal-5.0.0-linux64/bin/verifyta.sh -x normalized.xml model.xml
+```
+
+### 45.4 已确认的高频参数
+
+按帮助输出，目前已经确认的高频参数大致可以这样记。
+
+本机通过 `verifyta.sh -v` 实际确认到的版本是：
+
+- `UPPAAL 5.0.0 (rev. 714BA9DB36F49691), June 2023`
+
+基础与输出：
+
+- `-h`, `--help`
+- `-v`, `--version`
+- `--query-index <n>`
+- `-s`, `--silence-progress`
+- `-u`, `--summary`
+- `-q`, `--nosummary`
+- `-W` 关闭 warnings
+- `-x`, `--save-document <file>`
+- `-X`, `--save-trace <prefix>`
+- `-f`, `--prefix <prefix>`
+
+诊断与搜索：
+
+- `-t <0|1|2>` 生成诊断信息
+  - `0` 一些 trace
+  - `1` 最短 trace
+  - `2` 最快 trace
+- `-o <0|1|2|3|4>` 搜索顺序
+  - `0` BFS
+  - `1` DFS
+  - `3` Optimal first
+- `-n <0|1|2|3|4>` 外推算子
+- `--exploration <0|1>` 穷举 or 随机化探索
+- `--state-representation <0|1|2|3>`
+- `-S <0|1|2|3>` 降低状态空间内存消耗
+- `-T` 多个性质间复用状态空间
+
+轨迹展示：
+
+- `-y`, `--post-symbolic`
+- `-Y`, `--pre-symbolic`
+
+SMC / 随机模拟相关：
+
+- `-r`, `--seed <n>`
+- `-a`, `--alpha`
+- `-B`, `--beta`
+- `-E`, `--epsilon`
+- `-p`, `--lower-delta`
+- `-P`, `--upper-delta`
+- `-F`, `--sampling-time <file>`
+- `-O`, `--simulation-format <std|csv>`
+
+TIGA / strategy 相关：
+
+- `--generate-strategy`
+- `--strategy-store`
+- `--learning-method`
+- `--good-runs`
+- `--total-runs`
+- `--eval-runs`
+
+如果要看完整参数列表，当前最可靠的方式仍然是直接执行：
+
+```bash
+/home/hansbug/.uppaal/uppaal-5.0.0-linux64/bin/verifyta.sh -h
+```
+
+### 45.5 轨迹与文件格式
+
+官方文档已经明确提到几类常见文件：
+
+- 模型文件：通常是 XML
+- query 文件：可以单独提供给 `verifyta`
+- trace 文件：常见是 `.xtr`
+
+结合 `verifyta -f` / `-X`，可以把轨迹输出为：
+
+- `prefix-n.xtr`
+- `prefixPropertynumber.xml`
+
+这意味着比较稳妥的工作流通常是：
+
+1. 用 `verifyta.sh model.xml [query.q]` 跑验证
+2. 需要诊断轨迹时加 `-t 1` 或 `-t 2`
+3. 需要落盘时加 `-f prefix` 或 `-X prefix`
+
+### 45.6 环境变量开关
+
+帮助输出里还确认了一组环境变量式开关，只要定义变量即可生效：
+
+- `UPPAAL_DUMP_STATE`
+- `UPPAAL_DISABLE_SWEEPLINE`
+- `UPPAAL_DISABLE_OPTIMISER`
+- `UPPAAL_DISABLE_SYMMETRY`
+- `UPPAAL_COMPILE_ONLY`
+- `UPPAAL_OLD_SYNTAX`
+
+例如：
+
+```bash
+UPPAAL_COMPILE_ONLY=1 \
+/home/hansbug/.uppaal/uppaal-5.0.0-linux64/bin/verifyta.sh model.xml
+```
+
+它的语义是“只编译模型并输出结果，然后停止”。
+
+### 45.7 `socketserver` 的已知用法
+
+本机还能确认到一个 socket server 入口：
+
+```bash
+/home/hansbug/.uppaal/uppaal-5.0.0-linux64/bin/socketserver.sh
+```
+
+实测 `socketserver.sh` 打印的 synopsis 是：
+
+```text
+socketserver [-n] [-p<P1>] [command]...
+socketserver -h
+```
+
+已确认参数：
+
+- `-h` 打印帮助
+- `-n` native mode
+- `-p<P1>` 指定端口，默认 `2350`
+- `-d` 将通信写入当前目录的 debug 文件
+- `-m` 将通信写到标准输出
+- `[command]...` 指定作为服务端执行的命令
+
+而 `server.sh` 当前看起来更像底层协议进程，不适合作为“人手工直接调用”的常规入口。
+
+## 46. 参考资料
 
 - UPPAAL System Description  
   https://docs.uppaal.org/language-reference/system-description/
@@ -1841,6 +2096,10 @@ bool busy = false;
 - UPPAAL Symbolic Query Syntax / Semantics  
   https://docs.uppaal.org/language-reference/query-syntax/symbolic_queries/  
   https://docs.uppaal.org/language-reference/query-semantics/symb_queries/
+- UPPAAL Tools & API / verifyta / File Formats  
+  https://docs.uppaal.org/toolsandapi/  
+  https://docs.uppaal.org/toolsandapi/verifyta/  
+  https://docs.uppaal.org/toolsandapi/file-formats/
 - UPPAAL Expressions  
   https://docs.uppaal.org/language-reference/expressions/
 - UTAP Parser Source  

@@ -1112,7 +1112,7 @@ class TestModelModel:
         assert "Unknown transition operation variable c in transition:" in err.msg
         assert "b = b * (c + 2);" in err.msg
 
-    def test_parse_unknown_transition_effect_set_var(self):
+    def test_parse_transition_effect_temporary_variable(self):
         ast_node = parse_with_grammar_entry(
             """
         def int a = 0;
@@ -1125,19 +1125,21 @@ class TestModelModel:
             LX1 -> [*] effect {
                 a = b + 3;
                 c = a * (b + 2);
+                b = c + 1;
             };
         }
         """,
             entry_name="state_machine_dsl",
         )
 
-        with pytest.raises(SyntaxError) as ei:
-            parse_dsl_node_to_state_machine(ast_node)
-
-        err = ei.value
-        assert isinstance(err, SyntaxError)
-        assert "Unknown transition operation variable c in transition:" in err.msg
-        assert "c = a * (b + 2);" in err.msg
+        state_machine = parse_dsl_node_to_state_machine(ast_node)
+        transition = state_machine.root_state.transitions[1]
+        assert [op.var_name for op in transition.effects] == ["a", "c", "b"]
+        assert transition.effects[2].expr == BinaryOp(
+            x=Variable(name="c"),
+            op="+",
+            y=Integer(value=1),
+        )
 
     def test_parse_unknown_no_enter_transition(self):
         ast_node = parse_with_grammar_entry(
@@ -1201,7 +1203,7 @@ class TestModelModel:
         assert "Unknown enter operation variable c in transition:" in err.msg
         assert "b = a + c;" in err.msg
 
-    def test_parse_unknown_non_abstract_enter_set_var(self):
+    def test_parse_non_abstract_enter_temporary_variable(self):
         ast_node = parse_with_grammar_entry(
             """
         def int a = 0;
@@ -1211,6 +1213,7 @@ class TestModelModel:
                 enter {
                     a = b + a * 2;
                     c = a + 2;
+                    b = c * 2;
                 }
             }
             state LX2;
@@ -1225,13 +1228,14 @@ class TestModelModel:
             entry_name="state_machine_dsl",
         )
 
-        with pytest.raises(SyntaxError) as ei:
-            parse_dsl_node_to_state_machine(ast_node)
-
-        err = ei.value
-        assert isinstance(err, SyntaxError)
-        assert "Unknown enter operation variable c in transition:" in err.msg
-        assert "c = a + 2;" in err.msg
+        state_machine = parse_dsl_node_to_state_machine(ast_node)
+        operations = state_machine.root_state.substates["LX1"].on_enters[0].operations
+        assert [op.var_name for op in operations] == ["a", "c", "b"]
+        assert operations[2].expr == BinaryOp(
+            x=Variable(name="c"),
+            op="*",
+            y=Integer(value=2),
+        )
 
     def test_parse_unknown_non_abstract_during_non_leaf_aspect(self):
         ast_node = parse_with_grammar_entry(
@@ -1368,7 +1372,7 @@ class TestModelModel:
         assert "Unknown during operation variable c in transition:" in err.msg
         assert "b = a + c;" in err.msg
 
-    def test_parse_unknown_non_abstract_during_set_var(self):
+    def test_parse_non_abstract_during_temporary_variable(self):
         ast_node = parse_with_grammar_entry(
             """
         def int a = 0;
@@ -1378,6 +1382,7 @@ class TestModelModel:
                 during {
                     a = b + a * 2;
                     c = a + 2;
+                    b = c - 1;
                 }
             }
             state LX2;
@@ -1392,13 +1397,14 @@ class TestModelModel:
             entry_name="state_machine_dsl",
         )
 
-        with pytest.raises(SyntaxError) as ei:
-            parse_dsl_node_to_state_machine(ast_node)
-
-        err = ei.value
-        assert isinstance(err, SyntaxError)
-        assert "Unknown during operation variable c in transition:" in err.msg
-        assert "c = a + 2;" in err.msg
+        state_machine = parse_dsl_node_to_state_machine(ast_node)
+        operations = state_machine.root_state.substates["LX1"].on_durings[0].operations
+        assert [op.var_name for op in operations] == ["a", "c", "b"]
+        assert operations[2].expr == BinaryOp(
+            x=Variable(name="c"),
+            op="-",
+            y=Integer(value=1),
+        )
 
     def test_parse_unknown_non_abstract_exit_variable(self):
         ast_node = parse_with_grammar_entry(
@@ -1432,7 +1438,7 @@ class TestModelModel:
         assert "Unknown exit operation variable c in transition:" in err.msg
         assert "b = a + c;" in err.msg
 
-    def test_parse_unknown_non_abstract_exit_set_var(self):
+    def test_parse_non_abstract_exit_temporary_variable(self):
         ast_node = parse_with_grammar_entry(
             """
         def int a = 0;
@@ -1442,6 +1448,7 @@ class TestModelModel:
                 exit {
                     a = b + a * 2;
                     c = a + 2;
+                    b = c / 2;
                 }
             }
             state LX2;
@@ -1456,13 +1463,14 @@ class TestModelModel:
             entry_name="state_machine_dsl",
         )
 
-        with pytest.raises(SyntaxError) as ei:
-            parse_dsl_node_to_state_machine(ast_node)
-
-        err = ei.value
-        assert isinstance(err, SyntaxError)
-        assert "Unknown exit operation variable c in transition:" in err.msg
-        assert "c = a + 2;" in err.msg
+        state_machine = parse_dsl_node_to_state_machine(ast_node)
+        operations = state_machine.root_state.substates["LX1"].on_exits[0].operations
+        assert [op.var_name for op in operations] == ["a", "c", "b"]
+        assert operations[2].expr == BinaryOp(
+            x=Variable(name="c"),
+            op="/",
+            y=Integer(value=2),
+        )
 
     def test_to_plantuml(self, demo_model_1, expected_plantuml_code, text_aligner):
         text_aligner.assert_equal(
@@ -1502,7 +1510,7 @@ class TestModelModel:
         assert "Unknown during aspect variable c in transition:" in err.msg
         assert "b = a + c;" in err.msg
 
-    def test_parse_unknown_non_abstract_during_aspect_variable_set(self):
+    def test_parse_non_abstract_during_aspect_temporary_variable(self):
         ast_node = parse_with_grammar_entry(
             """
         def int a = 0;
@@ -1512,6 +1520,7 @@ class TestModelModel:
                 >> during before {
                     a = b + a * 2;
                     c = a + 2;
+                    b = c + 5;
                 }
             }
             state LX2;
@@ -1526,10 +1535,38 @@ class TestModelModel:
             entry_name="state_machine_dsl",
         )
 
+        state_machine = parse_dsl_node_to_state_machine(ast_node)
+        operations = state_machine.root_state.substates["LX1"].on_during_aspects[0].operations
+        assert [op.var_name for op in operations] == ["a", "c", "b"]
+        assert operations[2].expr == BinaryOp(
+            x=Variable(name="c"),
+            op="+",
+            y=Integer(value=5),
+        )
+
+    def test_parse_transition_effect_temp_var_used_before_assignment(self):
+        ast_node = parse_with_grammar_entry(
+            """
+        def int a = 0;
+        def int b = 2;
+        state LX {
+            state LX1;
+            state LX2;
+
+            [*] -> LX2 : if [a == 0];
+            LX1 -> [*] effect {
+                b = c + 1;
+                c = a * (b + 2);
+            };
+        }
+        """,
+            entry_name="state_machine_dsl",
+        )
+
         with pytest.raises(SyntaxError) as ei:
             parse_dsl_node_to_state_machine(ast_node)
 
         err = ei.value
         assert isinstance(err, SyntaxError)
-        assert "Unknown during aspect variable c in transition:" in err.msg
-        assert "c = a + 2;" in err.msg
+        assert "Unknown transition operation variable c in transition:" in err.msg
+        assert "b = c + 1;" in err.msg

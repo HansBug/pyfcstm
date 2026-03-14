@@ -294,6 +294,42 @@ state Parent {
 `ref` resolves to a previously named lifecycle action (not a state or event reference).
 Relative paths from current state; `/` from root. Use `ref` for sharing behavior; `abstract` for generated code.
 
+### Block-Local Temporary Variables
+
+Concrete operation blocks support temporary variables in:
+
+- `enter { ... }`
+- `during { ... }`
+- `exit { ... }`
+- `effect { ... }`
+
+Rules:
+
+- Assigning to an undeclared name creates a **temporary variable** local to that block
+- The temporary variable can be used by later statements in the same block
+- Using a temporary variable before its first assignment is still invalid
+- When the block finishes, temporary variables are discarded and do not become part of machine state
+- Assigning to an already declared variable still updates the global state variable normally
+
+Example:
+
+```
+def float target_temp = 22.0;
+def float measured_temp = 19.5;
+def float heating_power = 0.0;
+
+state HeatingControl {
+    during {
+        error = target_temp - measured_temp;                  // temporary
+        proportional_power = abs(error) * 15.0;              // temporary
+        heating_power = (error > 0.0) ? proportional_power : 0.0;
+    }
+}
+```
+
+This is useful when a block needs intermediate calculations, but those intermediate values are not
+meaningful persistent state.
+
 ### Expression System
 
 **IMPORTANT**: Arithmetic (`num_expression`) and logical (`cond_expression`) are strictly separated. You cannot mix

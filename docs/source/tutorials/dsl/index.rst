@@ -1122,6 +1122,102 @@ Transition effects are blocks of operations executed during a transition, after 
        counter = counter + 1;
    };
 
+Operation Blocks and Temporary Variables
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Concrete operation blocks all share the same execution model:
+
+- Transition effects (``effect { ... }``)
+- Enter actions (``enter { ... }``)
+- During actions (``during { ... }``)
+- Exit actions (``exit { ... }``)
+
+Within one block, you may assign to a previously undeclared name to create a
+**temporary variable**. That temporary variable is visible only to later
+statements in the same block.
+
+.. code-block:: fcstm
+
+   state Example {
+       during {
+           x = x + 1;     // global variable update
+           tmp = x + y;   // tmp is a temporary variable
+           y = tmp / 2;   // valid: tmp was assigned earlier in this block
+       }
+   }
+
+Temporary variables follow three important rules:
+
+1. They are available only **after** their first assignment in the current block
+2. They are discarded when the block finishes
+3. They never become part of the machine's persistent global variable set
+
+So this is valid:
+
+.. code-block:: fcstm
+
+   effect {
+       z = a + b;
+       result = z * 2;
+   }
+
+But this is still invalid:
+
+.. code-block:: fcstm
+
+   effect {
+       result = z * 2;  // ERROR: z not assigned yet in this block
+       z = a + b;
+   }
+
+.. important::
+   Temporary variables are a convenience for local calculations, not hidden
+   machine state. If a name is already declared globally with ``def``, assigning
+   to it updates that global variable as usual. Only previously undeclared names
+   are treated as temporaries.
+
+.. tip::
+   **Design Philosophy**
+
+   Use global variables for persistent state that matters outside the current
+   action or transition. Use temporary variables for one-off intermediate
+   calculations that would otherwise force you to repeat the same expression or
+   clutter the state machine with bookkeeping variables that have no meaning once
+   the block completes.
+
+Practical Example: Heating Controller
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+This feature is especially useful when control logic needs intermediate values
+that are meaningful only during one control step.
+
+Consider a room heating controller. The machine should compute heating power
+from the current temperature error, but the intermediate control terms should
+not be stored as persistent state because they are recalculated every cycle.
+
+.. code-block:: fcstm
+
+   def float target_temp = 22.0;
+   def float measured_temp = 19.5;
+   def float heating_power = 0.0;
+
+   state HeatingControl {
+       during {
+           error = target_temp - measured_temp;                  // temporary
+           proportional_power = abs(error) * 15.0;              // temporary
+           heating_power = (error > 0.0) ? proportional_power : 0.0;
+       }
+   }
+
+In this example:
+
+- ``error`` is useful for expressing the control intent clearly
+- ``proportional_power`` avoids repeating the formula
+- only ``heating_power`` is persistent machine state
+
+This keeps the model readable without promoting purely local math steps into
+global variables.
+
 Combined Guards and Effects
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -1163,18 +1259,18 @@ Semantic Rules
 Transitions must satisfy these semantic constraints:
 
 1. **State Existence**: Both source and target states must exist in the current scope
-2. **Variable Validity**: All variables in conditions and effects must be declared
+2. **Variable Validity**: Variables in guards must be declared globally; variables in operation blocks must be declared globally or assigned earlier in the same block as temporaries
 3. **Expression Types**: Guard conditions must evaluate to boolean values
 4. **Entry Requirements**: Composite states require at least one entry transition
-5. **Effect Scope**: Effects can only assign to declared variables
+5. **Effect Scope**: Effects and lifecycle action blocks may create temporary variables, but only declared global variables persist after the block ends
 
 **Why These Rules?**
 
 - **State Existence**: Prevents dangling transitions
-- **Variable Validity**: Ensures all references are resolvable
+- **Variable Validity**: Ensures every reference is resolvable at the point where it is used
 - **Expression Types**: Maintains type safety in guard evaluation
 - **Entry Requirements**: Ensures deterministic composite state entry
-- **Effect Scope**: Prevents undefined behavior in generated code
+- **Effect Scope**: Keeps persistent machine state explicit while still allowing readable local calculations
 
 Common Errors
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1581,6 +1677,10 @@ Lifecycle Actions
    - **Exit Actions**: Execute once when leaving a state
 
    For composite states, lifecycle actions can have **aspects** (``before``/``after``) that control execution order relative to child states.
+
+   Concrete lifecycle action blocks use the same operation semantics as transition
+   effects, including support for block-local temporary variables introduced by
+   assignment inside one ``enter``/``during``/``exit`` block.
 
 Action Types
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -2282,4 +2382,3 @@ This tutorial has covered the complete PyFCSTM DSL syntax, including:
    - Test suite: ``test/testfile/sample_codes/``
 
    For implementation details, refer to the grammar definition, parsing pipeline, and model system documentation. The test suite provides additional examples and validation patterns for complex use cases.
-

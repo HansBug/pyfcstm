@@ -598,6 +598,13 @@ Here's a comprehensive example demonstrating all syntax elements:
        Error -> [*] : if [error_count > 5];
    }
 
+.. note::
+   In any concrete operation block (``enter { ... }``, ``during { ... }``,
+   ``exit { ... }``, or ``effect { ... }``), assigning to a previously
+   undeclared name creates a block-local temporary variable. It can be reused by
+   later statements in the same block, but it disappears when that block
+   finishes and cannot be referenced from other blocks or guards.
+
 Validation and Testing
 ---------------------------------------
 

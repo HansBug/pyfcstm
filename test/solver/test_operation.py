@@ -65,15 +65,20 @@ class TestParseOperations:
         ops = parse_operations("x = x + 1; y = x * 2;", allowed_vars=['x', 'y'])
         assert len(ops) == 2
 
-    def test_restricted_mode_invalid_assignment_target(self):
-        """Test restricted mode with invalid assignment target."""
-        with pytest.raises(ValueError, match="Variable 'z' is not in allowed variables"):
-            parse_operations("z = 10;", allowed_vars=['x', 'y'])
+    def test_restricted_mode_temporary_assignment_target(self):
+        """Test restricted mode allows temporary assignment targets."""
+        ops = parse_operations("z = x + 1; y = z * 2;", allowed_vars=['x', 'y'])
+        assert [op.var_name for op in ops] == ['z', 'y']
 
     def test_restricted_mode_invalid_expression_variable(self):
         """Test restricted mode with invalid variable in expression."""
         with pytest.raises(ValueError, match="Variable 'z' is not in allowed variables"):
             parse_operations("x = z + 1;", allowed_vars=['x', 'y'])
+
+    def test_restricted_mode_variable_used_before_assignment(self):
+        """Test restricted mode rejects temporary variables used before assignment."""
+        with pytest.raises(ValueError, match="Variable 'z' is not in allowed variables"):
+            parse_operations("y = z + 1; z = x + 1;", allowed_vars=['x', 'y'])
 
     def test_parse_with_bitwise_operators(self):
         """Test parsing operations with bitwise operators."""
@@ -200,6 +205,27 @@ class TestExecuteOperations:
         solver.add(new_exprs['z'] == 30)
         assert solver.check() == z3.sat
 
+    def test_execute_with_temporary_variable(self):
+        """Test executing operations with temporary variables that do not leak."""
+        ops = [
+            Operation(var_name='tmp', expr=BinaryOp(x=Variable('x'), op='+', y=Variable('y'))),
+            Operation(var_name='x', expr=BinaryOp(x=Variable('tmp'), op='+', y=Integer(1))),
+        ]
+        x = z3.Int('x')
+        y = z3.Int('y')
+        var_exprs = {'x': x, 'y': y}
+
+        new_exprs = execute_operations(ops, var_exprs)
+
+        assert set(new_exprs.keys()) == {'x', 'y'}
+        assert 'tmp' not in new_exprs
+
+        solver = z3.Solver()
+        solver.add(x == 5, y == 10)
+        solver.add(new_exprs['x'] == 16)
+        solver.add(new_exprs['y'] == 10)
+        assert solver.check() == z3.sat
+
     def test_execute_with_bitwise_operations(self):
         """Test executing operations with bitwise operators."""
         # Note: Z3 IntVal doesn't support bitwise operations with concrete values
@@ -266,4 +292,27 @@ class TestIntegration:
         solver.add(counter == 0)
         solver.add(new_exprs['counter'] == 1)  # 0 + 1
         solver.add(new_exprs['result'] == 10)  # 1 * 10
+        assert solver.check() == z3.sat
+
+    def test_parse_and_execute_with_temporary_variable(self):
+        """Test parsing and executing operations with a temporary variable."""
+        code = """
+        temp = x + y;
+        y = temp * 2;
+        """
+        ops = parse_operations(code, allowed_vars=['x', 'y'])
+
+        x = z3.Int('x')
+        y = z3.Int('y')
+        var_exprs = {'x': x, 'y': y}
+
+        new_exprs = execute_operations(ops, var_exprs)
+
+        assert set(new_exprs.keys()) == {'x', 'y'}
+        assert 'temp' not in new_exprs
+
+        solver = z3.Solver()
+        solver.add(x == 3, y == 4)
+        solver.add(new_exprs['x'] == 3)
+        solver.add(new_exprs['y'] == 14)
         assert solver.check() == z3.sat

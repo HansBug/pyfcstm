@@ -39,6 +39,18 @@ class TestZ3ToExpr:
         recovered_expr = z3_to_expr(z3_expr)
         assert recovered_expr == expected_expr
 
+    @staticmethod
+    def _assert_structural_ast_string(z3_expr, expected_text):
+        """
+        Assert DSL-facing AST string conversion for a Z3 AST.
+
+        :param z3_expr: Z3 expression to parse.
+        :param expected_text: Expected AST string after reverse conversion.
+        :return: ``None``.
+        """
+        recovered_expr = z3_to_expr(z3_expr)
+        assert str(recovered_expr.to_ast_node()) == expected_text
+
     @pytest.mark.parametrize(
         ('z3_expr', 'expected_expr'),
         [
@@ -141,6 +153,54 @@ class TestZ3ToExpr:
     def test_public_structural_parse(self, z3_expr, expected_expr):
         """Test canonical public structural parsing across supported Z3 forms."""
         self._assert_structural_parse(z3_expr, expected_expr)
+
+    @pytest.mark.parametrize(
+        ('z3_expr', 'expected_text'),
+        [
+            (z3.IntVal(42), '42'),
+            (z3.RealVal('3.14'), '3.14'),
+            (z3.RealVal('1/8'), '0.125'),
+            (z3.RealVal('1/3'), '1 / 3'),
+            (z3.RealVal('-1/3'), '-1 / 3'),
+            (-z3.Int('i'), '-i'),
+            (z3.Int('i') * (z3.Int('j') + 2), 'i * (j + 2)'),
+            (z3.And(z3.Int('i') > 0, z3.Int('j') < 10), 'i > 0 && j < 10'),
+            (z3.Not(z3.Int('i') > 0), '!(i > 0)'),
+            (z3.If(z3.Int('i') > 0, z3.Int('i'), z3.Int('j')), '(i > 0) ? i : j'),
+            (z3.If(z3.Int('i') >= 0, z3.Int('i'), -z3.Int('i')), 'abs(i)'),
+            (
+                z3.If(
+                    z3.RealVal(0) <= z3.Real('r'),
+                    z3.ToInt(z3.Real('r')),
+                    -z3.ToInt(-z3.Real('r')),
+                ),
+                'trunc(r)',
+            ),
+            (
+                z3.ToInt((z3.Real('r') + z3.Real('s')) + z3.RealVal('0.5')),
+                'round(r + s)',
+            ),
+            (
+                z3.Sqrt(z3.ToReal((z3.Int('i') + 1) * (z3.Int('j') - 2))),
+                'sqrt((i + 1) * (j - 2))',
+            ),
+            (
+                z3.BitVec('bx', 8) & z3.BitVec('by', 8),
+                'bx & by',
+            ),
+            (
+                z3.If(
+                    z3.And(z3.Int('i') > 0, z3.Or(z3.Int('j') < 3, z3.Int('k') > 5)),
+                    z3.Sum(z3.Int('i'), z3.Int('j'), z3.Int('k')),
+                    z3.Int('m') - 1,
+                ),
+                '(i > 0 && (j < 3 || k > 5)) ? i + j + k : m - 1',
+            ),
+        ],
+    )
+    def test_public_structural_parse_to_ast_string(self, z3_expr, expected_text):
+        """Test user-facing AST string serialization after reverse conversion."""
+        self._assert_structural_ast_string(z3_expr, expected_text)
 
     @pytest.mark.parametrize(
         ('z3_expr', 'expected_expr'),

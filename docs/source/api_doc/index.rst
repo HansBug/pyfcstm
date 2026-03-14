@@ -18,4 +18,5 @@ pyfcstm
     simulate/index
     solver/index
     utils/index
+    verify/index
 

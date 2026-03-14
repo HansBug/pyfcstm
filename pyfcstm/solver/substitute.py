@@ -30,7 +30,8 @@ Example::
 """
 
 from fractions import Fraction
-from typing import Any, Dict, List, Set, Tuple, Union
+import math
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import z3
 
@@ -86,9 +87,33 @@ def _basic_simplify(expr: z3.ExprRef) -> z3.ExprRef:
     return z3.simplify(expr, **_SIMPLIFY_KWARGS)
 
 
-def _expr_key(expr: z3.ExprRef) -> str:
-    """Return a deterministic key for structural sorting and deduplication."""
-    return expr.sexpr()
+def _expr_hash(expr: z3.ExprRef) -> int:
+    """Return a stable structural hash for bucketing equivalent expressions."""
+    return expr.hash()
+
+
+def _find_equivalent_index(
+    expr: z3.ExprRef,
+    items: List[z3.ExprRef],
+    buckets: Dict[int, List[int]],
+) -> Optional[int]:
+    """Find the first structurally equivalent expression index in ``items``."""
+    for index in buckets.get(_expr_hash(expr), ()):
+        if items[index].eq(expr):
+            return index
+    return None
+
+
+def _append_equivalent_item(
+    expr: z3.ExprRef,
+    items: List[z3.ExprRef],
+    buckets: Dict[int, List[int]],
+) -> int:
+    """Append one expression to an ordered equivalence bucket list."""
+    index = len(items)
+    items.append(expr)
+    buckets.setdefault(_expr_hash(expr), []).append(index)
+    return index
 
 
 def _make_zero(sort: z3.SortRef) -> z3.ExprRef:
@@ -102,20 +127,181 @@ def _make_zero(sort: z3.SortRef) -> z3.ExprRef:
     raise TypeError(f"Unsupported zero sort {_sort_label(sort)}.")
 
 
-def _is_ground_arith_numeral(expr: z3.ExprRef) -> bool:
-    """Return whether the expression is an Int or Real numeral."""
-    expr = _basic_simplify(expr)
-    return z3.is_int_value(expr) or z3.is_rational_value(expr)
-
-
-def _arith_numeral_to_fraction(expr: z3.ExprRef) -> Fraction:
-    """Convert an arithmetic Z3 numeral to :class:`fractions.Fraction`."""
-    expr = _basic_simplify(expr)
+def _try_arith_fraction(expr: z3.ExprRef) -> Optional[Fraction]:
+    """Try to evaluate one ground arithmetic expression into a fraction."""
     if z3.is_int_value(expr):
         return Fraction(expr.as_long(), 1)
     if z3.is_rational_value(expr):
         return Fraction(expr.numerator_as_long(), expr.denominator_as_long())
-    raise TypeError(f"Expression {expr!r} is not an arithmetic numeral.")
+    if not z3.is_app(expr):
+        return None
+
+    kind = expr.decl().kind()
+    children = expr.children()
+    if kind == z3.Z3_OP_UMINUS and len(children) == 1:
+        value = _try_arith_fraction(children[0])
+        return None if value is None else -value
+    if kind == z3.Z3_OP_ADD:
+        total = Fraction(0, 1)
+        for child in children:
+            value = _try_arith_fraction(child)
+            if value is None:
+                return None
+            total += value
+        return total
+    if kind == z3.Z3_OP_SUB and children:
+        value = _try_arith_fraction(children[0])
+        if value is None:
+            return None
+        for child in children[1:]:
+            child_value = _try_arith_fraction(child)
+            if child_value is None:
+                return None
+            value -= child_value
+        return value
+    if kind == z3.Z3_OP_MUL:
+        total = Fraction(1, 1)
+        for child in children:
+            value = _try_arith_fraction(child)
+            if value is None:
+                return None
+            total *= value
+        return total
+    if kind == z3.Z3_OP_DIV and len(children) == 2:
+        numerator = _try_arith_fraction(children[0])
+        denominator = _try_arith_fraction(children[1])
+        if numerator is None or denominator in (None, 0):
+            return None
+        return numerator / denominator
+    if kind == z3.Z3_OP_TO_REAL and len(children) == 1:
+        return _try_arith_fraction(children[0])
+    if kind == z3.Z3_OP_TO_INT and len(children) == 1:
+        value = _try_arith_fraction(children[0])
+        if value is None:
+            return None
+        return Fraction(math.floor(value), 1)
+    return None
+
+
+def _try_bool_value(expr: z3.ExprRef) -> Optional[bool]:
+    """Try to evaluate one ground boolean expression into a Python bool."""
+    if z3.is_true(expr):
+        return True
+    if z3.is_false(expr):
+        return False
+    return None
+
+
+def _normalize_not(expr: z3.ExprRef) -> z3.ExprRef:
+    """Normalize a boolean negation with only local linear-time rules."""
+    child = expr.children()[0]
+    child_value = _try_bool_value(child)
+    if child_value is not None:
+        return z3.BoolVal(not child_value)
+    if z3.is_app(child) and child.decl().kind() == z3.Z3_OP_NOT:
+        return child.children()[0]
+    return expr
+
+
+def _compare_ground_literals(left: z3.ExprRef, right: z3.ExprRef) -> Optional[int]:
+    """Compare two ground arithmetic or bitvector literals."""
+    left_fraction = _try_arith_fraction(left)
+    right_fraction = _try_arith_fraction(right)
+    if left_fraction is not None and right_fraction is not None:
+        if left_fraction < right_fraction:
+            return -1
+        if left_fraction > right_fraction:
+            return 1
+        return 0
+    if z3.is_bv_value(left) and z3.is_bv_value(right):
+        left_value = left.as_long()
+        right_value = right.as_long()
+        if left_value < right_value:
+            return -1
+        if left_value > right_value:
+            return 1
+        return 0
+    return None
+
+
+def _fold_nonfamily_root(expr: z3.ExprRef) -> z3.ExprRef:
+    """Fold one non-family expression root using local linear-time rules."""
+    if not z3.is_app(expr):
+        return expr
+
+    kind = expr.decl().kind()
+    children = expr.children()
+    if kind == z3.Z3_OP_NOT and len(children) == 1:
+        return _normalize_not(expr)
+    if kind == z3.Z3_OP_ITE and len(children) == 3:
+        condition, when_true, when_false = children
+        condition_value = _try_bool_value(condition)
+        if condition_value is True:
+            return when_true
+        if condition_value is False:
+            return when_false
+        if when_true.eq(when_false):
+            return when_true
+        return expr
+    if kind == z3.Z3_OP_EQ and len(children) == 2:
+        left, right = children
+        if left.eq(right):
+            return z3.BoolVal(True)
+        comparison = _compare_ground_literals(left, right)
+        if comparison is not None:
+            return z3.BoolVal(comparison == 0)
+        left_bool = _try_bool_value(left)
+        right_bool = _try_bool_value(right)
+        if left_bool is not None and right_bool is not None:
+            return z3.BoolVal(left_bool == right_bool)
+        return expr
+    if kind == z3.Z3_OP_DISTINCT and len(children) == 2:
+        left, right = children
+        if left.eq(right):
+            return z3.BoolVal(False)
+        comparison = _compare_ground_literals(left, right)
+        if comparison is not None:
+            return z3.BoolVal(comparison != 0)
+        left_bool = _try_bool_value(left)
+        right_bool = _try_bool_value(right)
+        if left_bool is not None and right_bool is not None:
+            return z3.BoolVal(left_bool != right_bool)
+        return expr
+    if kind in (z3.Z3_OP_LE, z3.Z3_OP_LT, z3.Z3_OP_GE, z3.Z3_OP_GT) and len(children) == 2:
+        comparison = _compare_ground_literals(children[0], children[1])
+        if comparison is None:
+            return expr
+        if kind == z3.Z3_OP_LE:
+            return z3.BoolVal(comparison <= 0)
+        if kind == z3.Z3_OP_LT:
+            return z3.BoolVal(comparison < 0)
+        if kind == z3.Z3_OP_GE:
+            return z3.BoolVal(comparison >= 0)
+        return z3.BoolVal(comparison > 0)
+    if kind == z3.Z3_OP_TO_REAL and len(children) == 1:
+        value = _try_arith_fraction(children[0])
+        if value is not None:
+            return _fraction_to_arith_value(value, z3.RealSort())
+        return expr
+    if kind == z3.Z3_OP_TO_INT and len(children) == 1:
+        value = _try_arith_fraction(children[0])
+        if value is not None:
+            return z3.IntVal(math.floor(value))
+        return expr
+    return expr
+
+
+def _is_ground_arith_numeral(expr: z3.ExprRef) -> bool:
+    """Return whether the expression is an Int or Real numeral."""
+    return _try_arith_fraction(expr) is not None
+
+
+def _arith_numeral_to_fraction(expr: z3.ExprRef) -> Fraction:
+    """Convert an arithmetic Z3 numeral to :class:`fractions.Fraction`."""
+    value = _try_arith_fraction(expr)
+    if value is None:
+        raise TypeError(f"Expression {expr!r} is not an arithmetic numeral.")
+    return value
 
 
 def _fraction_to_arith_value(value: Fraction, sort: z3.SortRef) -> z3.ExprRef:
@@ -144,11 +330,18 @@ def _flatten_same_kind(expr: z3.ExprRef, kind: int) -> List[z3.ExprRef]:
 
 
 def _build_sorted_product(factors: List[z3.ExprRef]) -> z3.ExprRef:
-    """Build a deterministic left-associated product from non-numeric factors."""
-    sorted_factors = sorted(factors, key=_expr_key)
-    result = sorted_factors[0]
-    for factor in sorted_factors[1:]:
+    """Build a left-associated product from non-numeric factors in encounter order."""
+    result = factors[0]
+    for factor in factors[1:]:
         result = result * factor
+    return result
+
+
+def _build_bool_xor_chain(args: List[z3.ExprRef]) -> z3.ExprRef:
+    """Build a left-associated boolean XOR chain."""
+    result = args[0]
+    for arg in args[1:]:
+        result = z3.Xor(result, arg)
     return result
 
 
@@ -159,17 +352,21 @@ def _extract_additive_term(expr: z3.ExprRef) -> Tuple[Fraction, Union[z3.ExprRef
     The function pulls numeric multipliers out of product terms. Nonlinear cores
     are kept as opaque symbolic factors.
     """
-    expr = _basic_simplify(expr)
-    if _is_ground_arith_numeral(expr):
-        return _arith_numeral_to_fraction(expr), None
+    value = _try_arith_fraction(expr)
+    if value is not None:
+        return value, None
+
+    if z3.is_app(expr) and expr.decl().kind() == z3.Z3_OP_UMINUS:
+        coeff, core = _extract_additive_term(expr.children()[0])
+        return -coeff, core
 
     if z3.is_app(expr) and expr.decl().kind() == z3.Z3_OP_MUL:
         coeff = Fraction(1, 1)
         factors: List[z3.ExprRef] = []
         for child in expr.children():
-            child = _basic_simplify(child)
-            if _is_ground_arith_numeral(child):
-                coeff *= _arith_numeral_to_fraction(child)
+            child_value = _try_arith_fraction(child)
+            if child_value is not None:
+                coeff *= child_value
             else:
                 factors.append(child)
 
@@ -179,48 +376,93 @@ def _extract_additive_term(expr: z3.ExprRef) -> Tuple[Fraction, Union[z3.ExprRef
         core = factors[0] if len(factors) == 1 else _build_sorted_product(factors)
         return coeff, core
 
+    if (
+        _is_real_sort(expr.sort())
+        and z3.is_app(expr)
+        and expr.decl().kind() == z3.Z3_OP_DIV
+    ):
+        numerator, denominator = expr.children()
+        denominator_value = _try_arith_fraction(denominator)
+        if denominator_value not in (None, 0):
+            coeff, core = _extract_additive_term(numerator)
+            return coeff / denominator_value, core
+
     return Fraction(1, 1), expr
 
 
 def _collect_additive_terms(
     expr: z3.ExprRef,
     sign: int,
-    terms: Dict[str, Fraction],
-    representatives: Dict[str, z3.ExprRef],
+    representatives: List[z3.ExprRef],
+    coefficients: List[Fraction],
+    buckets: Dict[int, List[int]],
 ) -> Fraction:
     """Collect a flattened additive linear form and return the constant part."""
-    expr = _basic_simplify(expr)
     if z3.is_app(expr) and expr.decl().kind() == z3.Z3_OP_ADD:
         constant = Fraction(0, 1)
         for child in expr.children():
-            constant += _collect_additive_terms(child, sign, terms, representatives)
+            constant += _collect_additive_terms(
+                child,
+                sign,
+                representatives,
+                coefficients,
+                buckets,
+            )
         return constant
+    if z3.is_app(expr) and expr.decl().kind() == z3.Z3_OP_SUB:
+        children = expr.children()
+        constant = _collect_additive_terms(
+            children[0],
+            sign,
+            representatives,
+            coefficients,
+            buckets,
+        )
+        for child in children[1:]:
+            constant += _collect_additive_terms(
+                child,
+                -sign,
+                representatives,
+                coefficients,
+                buckets,
+            )
+        return constant
+    if z3.is_app(expr) and expr.decl().kind() == z3.Z3_OP_UMINUS:
+        return _collect_additive_terms(
+            expr.children()[0],
+            -sign,
+            representatives,
+            coefficients,
+            buckets,
+        )
 
     coeff, core = _extract_additive_term(expr)
     coeff *= sign
     if core is None:
         return coeff
 
-    key = _expr_key(core)
-    terms[key] = terms.get(key, Fraction(0, 1)) + coeff
-    representatives[key] = core
+    index = _find_equivalent_index(core, representatives, buckets)
+    if index is None:
+        _append_equivalent_item(core, representatives, buckets)
+        coefficients.append(coeff)
+    else:
+        coefficients[index] += coeff
     return Fraction(0, 1)
 
 
 def _build_linear_expr(sort: z3.SortRef, expr: z3.ExprRef) -> z3.ExprRef:
     """Rebuild an arithmetic additive expression in a compact deterministic form."""
-    terms: Dict[str, Fraction] = {}
-    representatives: Dict[str, z3.ExprRef] = {}
-    constant = _collect_additive_terms(expr, 1, terms, representatives)
+    representatives: List[z3.ExprRef] = []
+    coefficients: List[Fraction] = []
+    buckets: Dict[int, List[int]] = {}
+    constant = _collect_additive_terms(expr, 1, representatives, coefficients, buckets)
 
     positive_terms: List[z3.ExprRef] = []
     negative_terms: List[z3.ExprRef] = []
-    for key in sorted(terms):
-        coeff = terms[key]
+    for term_expr, coeff in zip(representatives, coefficients):
         if coeff == 0:  # pragma: no cover
             continue
 
-        term_expr = representatives[key]
         abs_coeff = abs(coeff)
         if abs_coeff != 1:
             term_expr = _fraction_to_arith_value(abs_coeff, sort) * term_expr
@@ -270,9 +512,13 @@ def _extract_product_scalars(
     Numeric division is only pulled across the top-level core when the divisor is
     already a ground numeral. Symbolic division nodes remain opaque factors.
     """
-    expr = _basic_simplify(expr)
-    if _is_ground_arith_numeral(expr):
-        return _arith_numeral_to_fraction(expr), []
+    value = _try_arith_fraction(expr)
+    if value is not None:
+        return value, []
+
+    if z3.is_app(expr) and expr.decl().kind() == z3.Z3_OP_UMINUS:
+        scalar, cores = _extract_product_scalars(expr.children()[0], allow_numeric_division)
+        return -scalar, cores
 
     if z3.is_app(expr) and expr.decl().kind() == z3.Z3_OP_MUL:
         scalar = Fraction(1, 1)
@@ -282,6 +528,13 @@ def _extract_product_scalars(
             scalar *= child_scalar
             cores.extend(child_cores)
         return scalar, cores
+
+    if allow_numeric_division and z3.is_app(expr) and expr.decl().kind() == z3.Z3_OP_DIV:
+        numerator, denominator = expr.children()
+        denominator_value = _try_arith_fraction(denominator)
+        if denominator_value not in (None, 0):
+            scalar, cores = _extract_product_scalars(numerator, allow_numeric_division)
+            return scalar / denominator_value, cores
 
     return Fraction(1, 1), [expr]
 
@@ -317,11 +570,13 @@ def _normalize_bool_family(expr: z3.ExprRef) -> z3.ExprRef:
     if kind in (z3.Z3_OP_AND, z3.Z3_OP_OR):
         identity = True if kind == z3.Z3_OP_AND else False
         annihilator = False if kind == z3.Z3_OP_AND else True
-        seen_positive: Dict[str, z3.ExprRef] = {}
-        seen_negative: Dict[str, z3.ExprRef] = {}
+        args: List[z3.ExprRef] = []
+        positive_args: List[z3.ExprRef] = []
+        positive_buckets: Dict[int, List[int]] = {}
+        negative_bases: List[z3.ExprRef] = []
+        negative_buckets: Dict[int, List[int]] = {}
 
         for arg in _flatten_same_kind(expr, kind):
-            arg = _basic_simplify(arg)
             if z3.is_true(arg):
                 if not identity:
                     return z3.BoolVal(True)
@@ -333,20 +588,17 @@ def _normalize_bool_family(expr: z3.ExprRef) -> z3.ExprRef:
 
             if z3.is_app(arg) and arg.decl().kind() == z3.Z3_OP_NOT:
                 base = arg.children()[0]
-                key = _expr_key(base)
-                if key in seen_positive:
+                if _find_equivalent_index(base, positive_args, positive_buckets) is not None:
                     return z3.BoolVal(annihilator)
-                seen_negative[key] = arg
+                if _find_equivalent_index(base, negative_bases, negative_buckets) is None:
+                    _append_equivalent_item(base, negative_bases, negative_buckets)
+                    args.append(arg)
             else:
-                key = _expr_key(arg)
-                if key in seen_negative:
+                if _find_equivalent_index(arg, negative_bases, negative_buckets) is not None:
                     return z3.BoolVal(annihilator)
-                seen_positive[key] = arg
-
-        args = sorted(
-            list(seen_positive.values()) + list(seen_negative.values()),
-            key=_expr_key,
-        )
+                if _find_equivalent_index(arg, positive_args, positive_buckets) is None:
+                    _append_equivalent_item(arg, positive_args, positive_buckets)
+                    args.append(arg)
         if not args:
             return z3.BoolVal(identity)
         if len(args) == 1:
@@ -355,34 +607,37 @@ def _normalize_bool_family(expr: z3.ExprRef) -> z3.ExprRef:
 
     if kind == z3.Z3_OP_XOR:
         parity = 0
-        seen: Dict[str, z3.ExprRef] = {}
-        active: Dict[str, bool] = {}
+        entries: List[z3.ExprRef] = []
+        active: List[bool] = []
+        buckets: Dict[int, List[int]] = {}
         for arg in _flatten_same_kind(expr, kind):
-            arg = _basic_simplify(arg)
             if z3.is_true(arg):
                 parity ^= 1
                 continue
             if z3.is_false(arg):
                 continue
 
-            key = _expr_key(arg)
-            seen[key] = arg
-            active[key] = not active.get(key, False)
+            index = _find_equivalent_index(arg, entries, buckets)
+            if index is None:
+                _append_equivalent_item(arg, entries, buckets)
+                active.append(True)
+            else:
+                active[index] = not active[index]
 
         args = [
-            seen[key]
-            for key in sorted(active)
-            if active[key]
+            item
+            for item, is_active in zip(entries, active)
+            if is_active
         ]
         if not args:
             base = z3.BoolVal(False)
         elif len(args) == 1:
             base = args[0]
         else:
-            base = z3.Xor(*args)
+            base = _build_bool_xor_chain(args)
 
         if parity:
-            return _basic_simplify(z3.Not(base))
+            return _normalize_not(z3.Not(base))
         return base
 
     return expr
@@ -401,11 +656,13 @@ def _normalize_bv_bitwise_family(expr: z3.ExprRef) -> z3.ExprRef:
         literal = all_ones if kind == z3.Z3_OP_BAND else 0
         identity = all_ones if kind == z3.Z3_OP_BAND else 0
         annihilator = 0 if kind == z3.Z3_OP_BAND else all_ones
-        seen_positive: Dict[str, z3.ExprRef] = {}
-        seen_negative: Dict[str, z3.ExprRef] = {}
+        args: List[z3.ExprRef] = []
+        positive_args: List[z3.ExprRef] = []
+        positive_buckets: Dict[int, List[int]] = {}
+        negative_bases: List[z3.ExprRef] = []
+        negative_buckets: Dict[int, List[int]] = {}
 
         for arg in _flatten_same_kind(expr, kind):
-            arg = _basic_simplify(arg)
             if z3.is_bv_value(arg):
                 value = arg.as_long()
                 literal = (literal & value) if kind == z3.Z3_OP_BAND else (literal | value)
@@ -415,20 +672,17 @@ def _normalize_bv_bitwise_family(expr: z3.ExprRef) -> z3.ExprRef:
 
             if z3.is_app(arg) and arg.decl().kind() == z3.Z3_OP_BNOT:
                 base = arg.children()[0]
-                key = _expr_key(base)
-                if key in seen_positive:
+                if _find_equivalent_index(base, positive_args, positive_buckets) is not None:
                     return z3.BitVecVal(annihilator, width)
-                seen_negative[key] = arg
+                if _find_equivalent_index(base, negative_bases, negative_buckets) is None:
+                    _append_equivalent_item(base, negative_bases, negative_buckets)
+                    args.append(arg)
             else:
-                key = _expr_key(arg)
-                if key in seen_negative:
+                if _find_equivalent_index(arg, negative_bases, negative_buckets) is not None:
                     return z3.BitVecVal(annihilator, width)
-                seen_positive[key] = arg
-
-        args = sorted(
-            list(seen_positive.values()) + list(seen_negative.values()),
-            key=_expr_key,
-        )
+                if _find_equivalent_index(arg, positive_args, positive_buckets) is None:
+                    _append_equivalent_item(arg, positive_args, positive_buckets)
+                    args.append(arg)
         if literal != identity or not args:
             args.append(z3.BitVecVal(literal, width))
 
@@ -439,23 +693,26 @@ def _normalize_bv_bitwise_family(expr: z3.ExprRef) -> z3.ExprRef:
 
     if kind == z3.Z3_OP_BXOR:
         literal = 0
-        seen: Dict[str, z3.ExprRef] = {}
-        active: Dict[str, bool] = {}
+        entries: List[z3.ExprRef] = []
+        active: List[bool] = []
+        buckets: Dict[int, List[int]] = {}
         for arg in _flatten_same_kind(expr, kind):
-            arg = _basic_simplify(arg)
             if z3.is_bv_value(arg):
                 literal ^= arg.as_long()
                 literal &= all_ones
                 continue
 
-            key = _expr_key(arg)
-            seen[key] = arg
-            active[key] = not active.get(key, False)
+            index = _find_equivalent_index(arg, entries, buckets)
+            if index is None:
+                _append_equivalent_item(arg, entries, buckets)
+                active.append(True)
+            else:
+                active[index] = not active[index]
 
         args = [
-            seen[key]
-            for key in sorted(active)
-            if active[key]
+            item
+            for item, is_active in zip(entries, active)
+            if is_active
         ]
         if literal != 0 or not args:
             args.append(z3.BitVecVal(literal, width))
@@ -601,7 +858,10 @@ def _coerce_z3_expr_to_sort(expr: z3.ExprRef, target_sort: z3.SortRef) -> z3.Exp
     )
 
 
-def _contains_unknowns(expr: z3.ExprRef) -> bool:
+def _contains_unknowns(
+    expr: z3.ExprRef,
+    seen: Optional[Dict[int, bool]] = None,
+) -> bool:
     """
     Check whether the expression still contains uninterpreted unknown symbols.
 
@@ -610,13 +870,24 @@ def _contains_unknowns(expr: z3.ExprRef) -> bool:
     :return: Whether any unknown symbol remains
     :rtype: bool
     """
+    if seen is None:
+        seen = {}
+
+    expr_id = expr.get_id()
+    if expr_id in seen:
+        return seen[expr_id]
+
     if z3.is_const(expr) and expr.decl().kind() == z3.Z3_OP_UNINTERPRETED:
+        seen[expr_id] = True
         return True
 
     if z3.is_app(expr) and expr.decl().kind() == z3.Z3_OP_UNINTERPRETED and expr.num_args() > 0:
+        seen[expr_id] = True
         return True
 
-    return any(_contains_unknowns(child) for child in expr.children())
+    result = any(_contains_unknowns(child, seen) for child in expr.children())
+    seen[expr_id] = result
+    return result
 
 
 def _algebraic_to_float(expr: z3.AlgebraicNumRef) -> float:
@@ -634,8 +905,6 @@ def _z3_expr_to_python_literal(expr: z3.ExprRef) -> LiteralValue:
     :rtype: LiteralValue
     :raises TypeError: If the expression does not simplify to a supported literal
     """
-    expr = _basic_simplify(expr)
-
     if z3.is_true(expr):
         return True
     if z3.is_false(expr):
@@ -653,6 +922,20 @@ def _z3_expr_to_python_literal(expr: z3.ExprRef) -> LiteralValue:
     if z3.is_algebraic_value(expr):
         return _algebraic_to_float(expr)
 
+    arith_value = _try_arith_fraction(expr)
+    if arith_value is not None:
+        if arith_value.denominator == 1:
+            return arith_value.numerator
+        return float(arith_value.numerator) / float(arith_value.denominator)
+
+    folded = _fold_nonfamily_root(expr)
+    if not folded.eq(expr):
+        return _z3_expr_to_python_literal(folded)
+
+    simplified = _basic_simplify(expr)
+    if not simplified.eq(expr):
+        return _z3_expr_to_python_literal(simplified)
+
     raise TypeError(
         f"Cannot convert simplified Z3 expression {expr!r} to a Python literal."
     )
@@ -664,6 +947,7 @@ def _resolve_substitution_value(
     substitutions: Dict[str, SubstitutionValue],
     visiting: Set[str],
     cache: Dict[Tuple[str, str], z3.ExprRef],
+    expr_cache: Dict[Tuple[int, Optional[str]], z3.ExprRef],
 ) -> z3.ExprRef:
     """
     Resolve one substitution entry into a Z3 expression matching ``target_sort``.
@@ -694,7 +978,13 @@ def _resolve_substitution_value(
     elif z3.is_expr(value):
         visiting.add(name)
         try:
-            resolved = _substitute_expr_to_z3(value, substitutions, visiting, cache)
+            resolved = _substitute_expr_to_z3(
+                value,
+                substitutions,
+                visiting,
+                cache,
+                expr_cache=expr_cache,
+            )
         finally:
             visiting.remove(name)
         resolved = _coerce_z3_expr_to_sort(resolved, target_sort)
@@ -714,6 +1004,7 @@ def _substitute_expr_to_z3(
     visiting: Set[str],
     cache: Dict[Tuple[str, str], z3.ExprRef],
     parent_family: Union[str, None] = None,
+    expr_cache: Optional[Dict[Tuple[int, Optional[str]], z3.ExprRef]] = None,
 ) -> z3.ExprRef:
     """
     Substitute known variables inside ``expr`` and simplify bottom-up.
@@ -729,20 +1020,32 @@ def _substitute_expr_to_z3(
     :return: Simplified Z3 expression
     :rtype: z3.ExprRef
     """
+    if expr_cache is None:
+        expr_cache = {}
+
+    cache_key = (expr.get_id(), parent_family)
+    if cache_key in expr_cache:
+        return expr_cache[cache_key]
+
     if z3.is_const(expr) and expr.decl().kind() == z3.Z3_OP_UNINTERPRETED:
         name = str(expr)
         if name in substitutions:
-            return _resolve_substitution_value(
+            result = _resolve_substitution_value(
                 name=name,
                 target_sort=expr.sort(),
                 substitutions=substitutions,
                 visiting=visiting,
                 cache=cache,
+                expr_cache=expr_cache,
             )
-        return expr
+        else:
+            result = expr
+        expr_cache[cache_key] = result
+        return result
 
     children = expr.children()
     if not children:
+        expr_cache[cache_key] = expr
         return expr
 
     new_children = [
@@ -752,6 +1055,7 @@ def _substitute_expr_to_z3(
             visiting,
             cache,
             parent_family=_expr_family(expr),
+            expr_cache=expr_cache,
         )
         for child in children
     ]
@@ -766,14 +1070,16 @@ def _substitute_expr_to_z3(
     family = _expr_family(expr)
     if family:
         if family != parent_family:
-            return _normalize_symbolic_root(expr)
+            expr = _normalize_symbolic_root(expr)
+        expr_cache[cache_key] = expr
         return expr
 
-    expr = _basic_simplify(expr)
+    expr = _fold_nonfamily_root(expr)
     family = _expr_family(expr)
     if family and family != parent_family:
         expr = _normalize_symbolic_root(expr)
 
+    expr_cache[cache_key] = expr
     return expr
 
 
@@ -813,6 +1119,7 @@ def _substitute_and_literalize_expr(
         substitutions=substitutions,
         visiting=set(),
         cache={},
+        expr_cache={},
     )
     if _contains_unknowns(simplified):
         return simplified

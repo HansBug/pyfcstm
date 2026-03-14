@@ -21,6 +21,8 @@ The module contains:
 * :class:`SearchFrame` - A single symbolic node in the search graph.
 * :class:`StateSearchSpace` - Collected frames for one state/type bucket.
 * :class:`StateSearchContext` - Search queue, buckets, and symbolic event vars.
+* :func:`get_z3_event_key_and_var_name` - Normalize one cycle/event pair.
+* :func:`parse_z3_event_var_name` - Parse a symbolic event variable name.
 * :func:`bfs_search` - Run symbolic breadth-first exploration.
 
 Example::
@@ -41,6 +43,7 @@ Example::
     True
 """
 
+import re
 import warnings
 from collections import deque
 from dataclasses import dataclass, field
@@ -59,6 +62,107 @@ except (ImportError, ModuleNotFoundError):
     from typing_extensions import Literal
 
 FrameTypeTyping = Literal['leaf', 'composite_in', 'composite_out', 'end']
+_Z3_EVENT_VAR_NAME_PATTERN = re.compile(r'^_E_C(?P<cycle>\d+)__(?P<event>.+)$')
+
+
+def get_z3_event_key_and_var_name(cycle: int, event: Union[str, Event]) -> Tuple[Tuple[int, str], str]:
+    """
+    Normalize one symbolic event identifier into its key and Z3 name.
+
+    Event-triggered transitions are represented with one Z3 boolean variable
+    per ``(cycle, event_path)`` pair. This helper canonicalizes the event path
+    and returns both the dictionary key and the generated Z3 variable name.
+
+    :param cycle: Cycle index for the event variable.
+    :type cycle: int
+    :param event: Event object or fully qualified event path string.
+    :type event: Union[str, Event]
+    :return: ``((cycle, event_path), var_name)`` tuple.
+    :rtype: Tuple[Tuple[int, str], str]
+    :raises TypeError: If ``cycle`` is not an integer or ``event`` is neither
+        a string nor an :class:`pyfcstm.model.Event`.
+    :raises ValueError: If ``cycle`` is negative or the event path is empty.
+
+    Example::
+
+        >>> get_z3_event_key_and_var_name(2, 'Root.System.Tick')
+        ((2, 'Root.System.Tick'), '_E_C2__Root.System.Tick')
+    """
+    if isinstance(cycle, bool) or not isinstance(cycle, int):
+        raise TypeError(
+            "get_z3_event_key_and_var_name() expected 'cycle' to be an int, "
+            f"but got {type(cycle).__name__}: {cycle!r}."
+        )
+    if cycle < 0:
+        raise ValueError(
+            "get_z3_event_key_and_var_name() expected 'cycle' to be a non-negative int, "
+            f"but got {cycle!r}."
+        )
+
+    if isinstance(event, Event):
+        event = event.path_name
+    elif not isinstance(event, str):
+        raise TypeError(
+            "get_z3_event_key_and_var_name() expected 'event' to be a string or Event, "
+            f"but got {type(event).__name__}: {event!r}."
+        )
+
+    if not event:
+        raise ValueError(
+            "get_z3_event_key_and_var_name() expected 'event' to be a non-empty event path string."
+        )
+
+    key = (cycle, event)
+    var_name = f'_E_C{cycle}__{event}'
+    return key, var_name
+
+
+def parse_z3_event_var_name(var_name_or_var: Union[str, z3.ExprRef]) -> Tuple[int, str]:
+    """
+    Parse a symbolic event variable name back into ``(cycle, event_path)``.
+
+    The input may be the raw variable name string or a Z3 symbolic variable.
+    Only uninterpreted Z3 variables are accepted. The expected variable name
+    format is ``_E_C<cycle>__<event_path>``.
+
+    :param var_name_or_var: Event variable name string or Z3 variable.
+    :type var_name_or_var: Union[str, z3.ExprRef]
+    :return: Parsed ``(cycle, event_path)`` tuple.
+    :rtype: Tuple[int, str]
+    :raises TypeError: If the input is neither a string nor a Z3 variable.
+    :raises ValueError: If the input does not follow the expected event
+        variable naming format.
+
+    Example::
+
+        >>> parse_z3_event_var_name('_E_C3__Root.System.Tick')
+        (3, 'Root.System.Tick')
+    """
+    if isinstance(var_name_or_var, str):
+        var_name = var_name_or_var
+    elif isinstance(var_name_or_var, z3.ExprRef):
+        if not z3.is_const(var_name_or_var) or var_name_or_var.decl().kind() != z3.Z3_OP_UNINTERPRETED:
+            raise TypeError(
+                "parse_z3_event_var_name() expected a string or a Z3 symbolic variable, "
+                f"but got expression {var_name_or_var!r}."
+            )
+        var_name = str(var_name_or_var.decl().name())
+    else:
+        raise TypeError(
+            "parse_z3_event_var_name() expected a string or a Z3 symbolic variable, "
+            f"but got {type(var_name_or_var).__name__}: {var_name_or_var!r}."
+        )
+
+    match = _Z3_EVENT_VAR_NAME_PATTERN.fullmatch(var_name)
+    if not match:
+        raise ValueError(
+            "Failed to parse a Z3 event variable name. "
+            f"Received {var_name!r}. "
+            "Expected format '_E_C<cycle>__<event_path>', for example "
+            "'_E_C2__Root.System.Tick'."
+        )
+
+    return int(match.group('cycle')), match.group('event')
 
 
 @dataclass
@@ -339,10 +443,7 @@ class StateSearchContext:
             >>> str(event_var)
             '_E_C1__Root.System.Tick'
         """
-        if isinstance(event, Event):
-            event = event.path_name
-        key = (cycle, event)
-        var_name = f'_E_C{cycle}__{event}'
+        key, var_name = get_z3_event_key_and_var_name(cycle=cycle, event=event)
         if force and key not in self.z3_events:
             self.z3_events[key] = z3.Bool(var_name)
         return self.z3_events.get(key, None)

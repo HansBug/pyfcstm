@@ -4,7 +4,7 @@ import z3
 import pytest
 
 from pyfcstm.dsl import parse_with_grammar_entry
-from pyfcstm.model import parse_dsl_node_to_state_machine, parse_expr
+from pyfcstm.model import parse_dsl_node_to_state_machine, parse_expr, Event
 from pyfcstm.solver import SolveResult
 from pyfcstm.verify import search as verify_search
 
@@ -264,3 +264,64 @@ class TestSearchFrameHelpers:
         assert result.status == 'sat'
         assert result.variables == ['x']
         assert result.solutions == [{'x': 3}]
+
+
+@pytest.mark.unittest
+class TestZ3EventVarNameHelpers:
+    def test_builds_event_key_and_var_name_from_string(self):
+        key, var_name = verify_search.get_z3_event_key_and_var_name(
+            cycle=2,
+            event='Root.Idle.Resume',
+        )
+
+        assert key == (2, 'Root.Idle.Resume')
+        assert var_name == '_E_C2__Root.Idle.Resume'
+
+    def test_builds_event_key_and_var_name_from_event_object(self):
+        key, var_name = verify_search.get_z3_event_key_and_var_name(
+            cycle=3,
+            event=Event(name='Resume', state_path=('Root', 'Idle')),
+        )
+
+        assert key == (3, 'Root.Idle.Resume')
+        assert var_name == '_E_C3__Root.Idle.Resume'
+
+    def test_parses_event_var_name_from_string(self):
+        cycle, event_name = verify_search.parse_z3_event_var_name('_E_C4__Root.Idle.Resume')
+
+        assert cycle == 4
+        assert event_name == 'Root.Idle.Resume'
+
+    def test_parses_event_var_name_from_z3_variable(self):
+        cycle, event_name = verify_search.parse_z3_event_var_name(
+            z3.Bool('_E_C5__Root.System.Tick'),
+        )
+
+        assert cycle == 5
+        assert event_name == 'Root.System.Tick'
+
+    def test_rejects_invalid_event_var_name_string(self):
+        with pytest.raises(ValueError) as exc_info:
+            verify_search.parse_z3_event_var_name('Root.System.Tick')
+
+        message = str(exc_info.value)
+        assert "Failed to parse a Z3 event variable name" in message
+        assert "Expected format '_E_C<cycle>__<event_path>'" in message
+
+    def test_rejects_non_variable_z3_expression(self):
+        with pytest.raises(TypeError) as exc_info:
+            verify_search.parse_z3_event_var_name(z3.Not(z3.Bool('_E_C1__Root.System.Tick')))
+
+        message = str(exc_info.value)
+        assert "expected a string or a Z3 symbolic variable" in message
+
+    def test_rejects_invalid_forward_inputs(self):
+        with pytest.raises(TypeError) as exc_info:
+            verify_search.get_z3_event_key_and_var_name(cycle='1', event='Root.System.Tick')
+
+        assert "expected 'cycle' to be an int" in str(exc_info.value)
+
+        with pytest.raises(ValueError) as exc_info:
+            verify_search.get_z3_event_key_and_var_name(cycle=1, event='')
+
+        assert "non-empty event path string" in str(exc_info.value)

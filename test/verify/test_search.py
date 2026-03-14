@@ -41,14 +41,14 @@ def build_state_machine(dsl_code: str = TEST_DSL):
 
 @pytest.mark.unittest
 class TestBfsSearchErrors:
-    def test_rejects_invalid_init_state_type(self):
+    def test_rejects_invalid_init_type(self):
         state_machine = build_state_machine()
 
         with pytest.raises(TypeError) as exc_info:
             verify_search.bfs_search(state_machine, 123)
 
         message = str(exc_info.value)
-        assert "expected 'init_state' to be a State object or a full state path string" in message
+        assert "expected 'init[0]'" in message
         assert "got int: 123" in message
         assert "Root.System.Active" in message
 
@@ -72,7 +72,7 @@ class TestBfsSearchErrors:
             verify_search.bfs_search(state_machine, 'Root.Missing')
 
         message = str(exc_info.value)
-        assert "Failed to resolve 'init_state' for bfs_search()" in message
+        assert "Failed to resolve 'init[0]'" in message
         assert "'Root.Missing'" in message
         assert "starts from the state machine root" in message
 
@@ -80,12 +80,31 @@ class TestBfsSearchErrors:
         state_machine = build_state_machine()
 
         with pytest.raises(TypeError) as exc_info:
-            verify_search.bfs_search(state_machine, 'Root.Idle', init_constraints=['counter > 0'])
+            verify_search.bfs_search(state_machine, ('Root.Idle', ['counter > 0']))
 
         message = str(exc_info.value)
-        assert "expected 'init_constraints' to be None" in message
+        assert "expected 'init[0][1]' to be None" in message
         assert "got list: ['counter > 0']" in message
         assert "logical condition such as 'counter > 0 && enabled'" in message
+
+    def test_rejects_invalid_init_tuple_shape(self):
+        state_machine = build_state_machine()
+
+        with pytest.raises(TypeError) as exc_info:
+            verify_search.bfs_search(state_machine, ('Root.Idle', 'counter > 0', 'extra'))
+
+        message = str(exc_info.value)
+        assert "expected each tuple item in 'init' to have exactly two elements" in message
+        assert "3 elements" in message
+
+    def test_rejects_empty_init_list(self):
+        state_machine = build_state_machine()
+
+        with pytest.raises(ValueError) as exc_info:
+            verify_search.bfs_search(state_machine, [])
+
+        message = str(exc_info.value)
+        assert "expected 'init' to contain at least one initial state entry" in message
 
     def test_rejects_invalid_fn_on_enqueue_type(self):
         state_machine = build_state_machine()
@@ -101,10 +120,10 @@ class TestBfsSearchErrors:
         state_machine = build_state_machine()
 
         with pytest.raises(ValueError) as exc_info:
-            verify_search.bfs_search(state_machine, 'Root.Idle', init_constraints='counter + 1')
+            verify_search.bfs_search(state_machine, ('Root.Idle', 'counter + 1'))
 
         message = str(exc_info.value)
-        assert "Failed to parse 'init_constraints' for bfs_search()" in message
+        assert "Failed to parse 'init[0][1]'" in message
         assert "'counter + 1'" in message
         assert "must be a logical DSL condition" in message
 
@@ -114,8 +133,7 @@ class TestBfsSearchErrors:
         with pytest.raises(ValueError) as exc_info:
             verify_search.bfs_search(
                 state_machine,
-                'Root.Idle',
-                init_constraints=parse_expr('counter + 1'),
+                ('Root.Idle', parse_expr('counter + 1')),
             )
 
         message = str(exc_info.value)
@@ -144,6 +162,33 @@ class TestBfsSearchErrors:
 
 @pytest.mark.unittest
 class TestBfsSearchLimits:
+    def test_accepts_single_init_tuple_with_constraints(self):
+        state_machine = build_state_machine()
+
+        ctx = verify_search.bfs_search(
+            state_machine,
+            ('Root.Idle', 'counter >= 0'),
+            max_cycle=1,
+        )
+
+        frame = ctx.spaces[('Root.Idle', 'leaf')].frames[0]
+        assert 'counter' in str(frame.constraints)
+
+    def test_accepts_multi_init_list(self):
+        state_machine = build_state_machine(PSEUDO_CHAIN_DSL)
+
+        ctx = verify_search.bfs_search(
+            state_machine,
+            [
+                'Root.Alpha',
+                ('Root.Beta', z3.BoolVal(True)),
+            ],
+            max_cycle=0,
+        )
+
+        assert ('Root.Alpha', 'leaf') in ctx.spaces
+        assert ('Root.Beta', 'leaf') in ctx.spaces
+
     def test_warns_when_max_cycle_and_max_depth_are_both_unbounded(self):
         state_machine = build_state_machine(PSEUDO_CHAIN_DSL)
 

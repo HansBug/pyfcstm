@@ -40,7 +40,7 @@ Example::
     ... '''
     >>> ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
     >>> sm = parse_dsl_node_to_state_machine(ast)
-    >>> ctx = bfs_search(sm, 'Root.Idle', init_constraints='counter >= 0', max_cycle=2)
+    >>> ctx = bfs_search(sm, ('Root.Idle', 'counter >= 0'), max_cycle=2)
     >>> ('Root.Idle', 'leaf') in ctx.spaces
     True
 """
@@ -65,6 +65,10 @@ except (ImportError, ModuleNotFoundError):
 
 FrameTypeTyping = Literal['leaf', 'composite_in', 'composite_out', 'end']
 ConcreteLiteralTyping = Union[bool, int, float]
+InitConstraintTyping = Union[str, z3.BoolRef, Expr]
+InitStateTyping = Union[State, str]
+InitItemTyping = Union[InitStateTyping, Tuple[InitStateTyping, InitConstraintTyping]]
+InitTyping = Union[InitItemTyping, List[InitItemTyping]]
 _Z3_EVENT_VAR_NAME_PATTERN = re.compile(r'^_E_C(?P<cycle>\d+)__(?P<event>.+)$')
 
 
@@ -865,10 +869,176 @@ def _normalize_search_limits(
     return max_cycle, effective_max_depth
 
 
+def _normalize_bfs_init_state(
+        state_machine: StateMachine,
+        raw_init_state: InitStateTyping,
+        source_name: str,
+) -> State:
+    """
+    Normalize one bfs_search init state reference into a concrete state.
+
+    :param state_machine: State machine used for state validation.
+    :type state_machine: StateMachine
+    :param raw_init_state: Initial state reference as a state object or full
+        path string.
+    :type raw_init_state: InitStateTyping
+    :param source_name: Human-readable argument location used in diagnostics.
+    :type source_name: str
+    :return: Resolved state belonging to ``state_machine``.
+    :rtype: State
+    :raises TypeError: If ``raw_init_state`` has an unsupported type.
+    :raises LookupError: If a string path cannot be resolved.
+    :raises ValueError: If the provided state object belongs to another state
+        machine.
+    """
+    if isinstance(raw_init_state, str):
+        try:
+            return state_machine.resolve_state(raw_init_state)
+        except (ValueError, LookupError) as err:
+            raise type(err)(
+                f"Failed to resolve {source_name} for bfs_search(). "
+                f"Received state path {raw_init_state!r}. "
+                f"{err} "
+                "Make sure the path is complete, starts from the state machine root, "
+                "and points to an existing state, for example 'Root.System.Active'."
+            ) from err
+    if isinstance(raw_init_state, State):
+        if not state_machine.state_belongs_to_machine(raw_init_state):
+            raise ValueError(
+                f"bfs_search() received a State object in {source_name} that does not belong "
+                f"to the provided state machine. Received state {_format_state_path(raw_init_state)!r}. "
+                "This usually means the State object came from a different parsed state machine "
+                "instance. Use a State returned by this 'state_machine', or pass a full state "
+                "path string instead."
+            )
+        return raw_init_state
+
+    raise TypeError(
+        f"bfs_search() expected {source_name} to be a State object or a full state path "
+        f"string, but got {type(raw_init_state).__name__}: {raw_init_state!r}. "
+        "Pass a State from this state machine, or a string like 'Root.System.Active'."
+    )
+
+
+def _normalize_bfs_init_constraint(
+        raw_init_constraints: Optional[InitConstraintTyping],
+        z3_vars: Dict[str, z3.ArithRef],
+        source_name: str,
+) -> z3.BoolRef:
+    """
+    Normalize one bfs_search init constraint into a boolean Z3 expression.
+
+    :param raw_init_constraints: Raw constraint value, or ``None`` for
+        ``True``.
+    :type raw_init_constraints: Optional[InitConstraintTyping]
+    :param z3_vars: Symbolic variable mapping used for expression conversion.
+    :type z3_vars: Dict[str, z3.ArithRef]
+    :param source_name: Human-readable argument location used in diagnostics.
+    :type source_name: str
+    :return: Normalized boolean Z3 constraint.
+    :rtype: z3.BoolRef
+    :raises TypeError: If the constraint type is unsupported.
+    :raises ValueError: If the DSL expression cannot be parsed or does not
+        produce a boolean condition.
+    """
+    if isinstance(raw_init_constraints, str):
+        try:
+            init_constraints_expr = parse_expr(raw_init_constraints, mode='logical')
+        except GrammarParseError as err:
+            raise ValueError(
+                f"Failed to parse {source_name} for bfs_search(). "
+                f"Received {raw_init_constraints!r}. "
+                "This argument must be a logical DSL condition, not an arithmetic expression "
+                "or statement. Examples: 'counter > 0', 'ready && retries < 3'."
+            ) from err
+        return _ensure_boolean_constraint(
+            constraint=expr_to_z3(expr=init_constraints_expr, z3_vars=z3_vars),
+            source_name=repr(source_name),
+            source_value=raw_init_constraints,
+        )
+    if isinstance(raw_init_constraints, z3.BoolRef):
+        return raw_init_constraints
+    if isinstance(raw_init_constraints, Expr):
+        return _ensure_boolean_constraint(
+            constraint=expr_to_z3(expr=raw_init_constraints, z3_vars=z3_vars),
+            source_name=repr(source_name),
+            source_value=raw_init_constraints,
+        )
+    if raw_init_constraints is None:
+        return z3.BoolVal(True)
+
+    raise TypeError(
+        f"bfs_search() expected {source_name} to be None, a logical DSL expression "
+        "string, a Z3 BoolRef, or a pyfcstm Expr object, "
+        f"but got {type(raw_init_constraints).__name__}: {raw_init_constraints!r}. "
+        "If you want to pass DSL text, use a logical condition such as "
+        "'counter > 0 && enabled'."
+    )
+
+
+def _normalize_bfs_init_items(
+        state_machine: StateMachine,
+        init: InitTyping,
+        z3_vars: Dict[str, z3.ArithRef],
+) -> List[Tuple[State, z3.BoolRef]]:
+    """
+    Normalize bfs_search init input into a list of concrete state/constraint pairs.
+
+    :param state_machine: State machine used for state validation.
+    :type state_machine: StateMachine
+    :param init: Raw bfs_search init argument.
+    :type init: InitTyping
+    :param z3_vars: Symbolic variable mapping used for constraint conversion.
+    :type z3_vars: Dict[str, z3.ArithRef]
+    :return: Normalized initial state/constraint pairs.
+    :rtype: List[Tuple[State, z3.BoolRef]]
+    :raises TypeError: If ``init`` or one of its items has an unsupported
+        shape or type.
+    :raises ValueError: If a state or constraint item cannot be normalized.
+    """
+    raw_items = init if isinstance(init, list) else [init]
+    if len(raw_items) == 0:
+        raise ValueError(
+            "bfs_search() expected 'init' to contain at least one initial state entry, "
+            "but received an empty list."
+        )
+
+    normalized_items: List[Tuple[State, z3.BoolRef]] = []
+    for index, raw_item in enumerate(raw_items):
+        state_source_name = f"'init[{index}]'"
+        constraint_source_name = f"'init[{index}][1]'"
+
+        if isinstance(raw_item, tuple):
+            if len(raw_item) != 2:
+                raise TypeError(
+                    "bfs_search() expected each tuple item in 'init' to have exactly two "
+                    f"elements '(state, constraints)', but got {len(raw_item)} elements: "
+                    f"{raw_item!r}."
+                )
+            raw_state, raw_constraints = raw_item
+            state_source_name = f"'init[{index}][0]'"
+        else:
+            raw_state, raw_constraints = raw_item, None
+
+        normalized_items.append((
+            _normalize_bfs_init_state(
+                state_machine=state_machine,
+                raw_init_state=raw_state,
+                source_name=state_source_name,
+            ),
+            _normalize_bfs_init_constraint(
+                raw_init_constraints=raw_constraints,
+                z3_vars=z3_vars,
+                source_name=constraint_source_name,
+            ),
+        ))
+
+    return normalized_items
+
+
 def bfs_search(
         state_machine: StateMachine,
-        init_state: Union[State, str],
-        init_constraints: Optional[Union[str, z3.BoolRef, Expr]] = None,
+        init: InitTyping,
         max_cycle: Optional[int] = 100,
         max_depth: Optional[int] = None,
         fn_on_enqueue: Optional[Callable[['StateSearchContext'], bool]] = None,
@@ -876,9 +1046,10 @@ def bfs_search(
     """
     Explore a state machine symbolically with breadth-first search.
 
-    This function performs symbolic exploration starting from ``init_state``.
-    It models guards and events as Z3 constraints, executes lifecycle actions
-    and transition effects symbolically, and records every retained frame in a
+    This function performs symbolic exploration starting from one or more
+    initial state entries provided through ``init``. It models guards and
+    events as Z3 constraints, executes lifecycle actions and transition
+    effects symbolically, and records every retained frame in a
     :class:`StateSearchContext`.
 
     Search frames are expanded in declaration order. For each state/type
@@ -888,13 +1059,12 @@ def bfs_search(
 
     :param state_machine: State machine to explore.
     :type state_machine: StateMachine
-    :param init_state: Initial state as a :class:`State` object from the same
-        machine or as a full dotted state path.
-    :type init_state: Union[State, str]
-    :param init_constraints: Optional initial reachability constraint. This may
-        be a logical DSL expression string, a Z3 boolean expression, or a
-        :class:`pyfcstm.model.Expr` object. Defaults to ``None``.
-    :type init_constraints: Optional[Union[str, z3.BoolRef, pyfcstm.model.Expr]], optional
+    :param init: Initial search entry specification. Supported forms are a
+        single state reference ``State`` or dotted path string, a
+        ``(state, constraints)`` tuple, or a list mixing those two item
+        shapes. Constraint values may be a logical DSL expression string, a
+        Z3 boolean expression, or a :class:`pyfcstm.model.Expr` object.
+    :type init: InitTyping
     :param max_cycle: Maximum number of cycles to expand. Frames at or beyond
         this cycle limit are not expanded further. Use ``None`` to disable the
         cycle limit. Defaults to ``100``.
@@ -912,12 +1082,15 @@ def bfs_search(
     :return: Search context containing the explored state-space buckets,
         retained frames, and symbolic event variables.
     :rtype: StateSearchContext
-    :raises TypeError: If ``init_state`` or ``init_constraints`` has an
-        unsupported type, or if ``fn_on_enqueue`` is not callable.
-    :raises LookupError: If ``init_state`` is a path that cannot be resolved.
-    :raises ValueError: If ``init_state`` belongs to another state machine, if
-        ``init_constraints`` cannot be parsed as a logical condition, or if an
-        internal frame contributes a non-boolean constraint.
+    :raises TypeError: If ``init`` has an unsupported type or shape, if one of
+        its state/constraint items has an unsupported type, or if
+        ``fn_on_enqueue`` is not callable.
+    :raises LookupError: If an initial state path in ``init`` cannot be
+        resolved.
+    :raises ValueError: If an initial state belongs to another state machine,
+        if an initial constraint cannot be parsed as a logical condition, if
+        ``init`` is an empty list, or if an internal frame contributes a
+        non-boolean constraint.
     :raises RuntimeError: If the internal search queue contains an invalid
         frame type or a non-terminal frame with ``state=None``.
 
@@ -934,7 +1107,7 @@ def bfs_search(
         ... '''
         >>> ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
         >>> sm = parse_dsl_node_to_state_machine(ast)
-        >>> ctx = bfs_search(sm, 'Root.Idle', init_constraints='counter >= 0', max_cycle=1)
+        >>> ctx = bfs_search(sm, ('Root.Idle', 'counter >= 0'), max_cycle=1)
         >>> list(ctx.spaces.keys())
         [('Root.Idle', 'leaf')]
     """
@@ -951,66 +1124,11 @@ def bfs_search(
             f"{type(fn_on_enqueue).__name__}: {fn_on_enqueue!r}."
         )
 
-    if isinstance(init_state, str):
-        try:
-            init_state = state_machine.resolve_state(init_state)
-        except (ValueError, LookupError) as err:
-            raise type(err)(
-                "Failed to resolve 'init_state' for bfs_search(). "
-                f"Received state path {init_state!r}. "
-                f"{err} "
-                "Make sure the path is complete, starts from the state machine root, "
-                "and points to an existing state, for example 'Root.System.Active'."
-            ) from err
-    elif isinstance(init_state, State):
-        if not state_machine.state_belongs_to_machine(init_state):
-            raise ValueError(
-                "bfs_search() received a State object in 'init_state' that does not belong "
-                f"to the provided state machine. Received state {_format_state_path(init_state)!r}. "
-                "This usually means the State object came from a different parsed state machine "
-                "instance. Use a State returned by this 'state_machine', or pass a full state "
-                "path string instead."
-            )
-    else:
-        raise TypeError(
-            "bfs_search() expected 'init_state' to be a State object or a full state path "
-            f"string, but got {type(init_state).__name__}: {init_state!r}. "
-            "Pass a State from this state machine, or a string like 'Root.System.Active'."
-        )
-
-    if isinstance(init_constraints, str):
-        try:
-            init_constraints_expr = parse_expr(init_constraints, mode='logical')
-        except GrammarParseError as err:
-            raise ValueError(
-                "Failed to parse 'init_constraints' for bfs_search(). "
-                f"Received {init_constraints!r}. "
-                "This argument must be a logical DSL condition, not an arithmetic expression "
-                "or statement. Examples: 'counter > 0', 'ready && retries < 3'."
-            ) from err
-        init_constraints = _ensure_boolean_constraint(
-            constraint=expr_to_z3(expr=init_constraints_expr, z3_vars=z3_vars),
-            source_name="'init_constraints'",
-            source_value=init_constraints,
-        )
-    elif isinstance(init_constraints, z3.BoolRef):
-        pass
-    elif isinstance(init_constraints, Expr):
-        init_constraints = _ensure_boolean_constraint(
-            constraint=expr_to_z3(expr=init_constraints, z3_vars=z3_vars),
-            source_name="'init_constraints'",
-            source_value=init_constraints,
-        )
-    elif init_constraints is None:
-        init_constraints = z3.BoolVal(True)
-    else:
-        raise TypeError(
-            "bfs_search() expected 'init_constraints' to be None, a logical DSL expression "
-            "string, a Z3 BoolRef, or a pyfcstm Expr object, "
-            f"but got {type(init_constraints).__name__}: {init_constraints!r}. "
-            "If you want to pass DSL text, use a logical condition such as "
-            "'counter > 0 && enabled'."
-        )
+    normalized_init_items = _normalize_bfs_init_items(
+        state_machine=state_machine,
+        init=init,
+        z3_vars=z3_vars,
+    )
 
     def _should_stop_search(ctx: StateSearchContext) -> bool:
         if fn_on_enqueue is None:
@@ -1025,19 +1143,19 @@ def bfs_search(
         return should_stop
 
     ctx = StateSearchContext()
-    init_frame = SearchFrame(
-        state=init_state,
-        type='leaf' if init_state.is_leaf_state else 'composite_in',
-        var_state=z3_vars,
-        constraints=init_constraints,
-        event_var=None,
-        depth=0,
-        cycle=0,
-        prev_frame=None,
-    )
-    ctx.try_append_frame(init_frame)
-    if _should_stop_search(ctx):
-        return ctx
+    for init_state, init_constraints in normalized_init_items:
+        init_frame = SearchFrame(
+            state=init_state,
+            type='leaf' if init_state.is_leaf_state else 'composite_in',
+            var_state=z3_vars,
+            constraints=init_constraints,
+            event_var=None,
+            depth=0,
+            cycle=0,
+            prev_frame=None,
+        )
+        if ctx.try_append_frame(init_frame) and _should_stop_search(ctx):
+            return ctx
 
     while len(ctx.queue) > 0:
         head: SearchFrame = ctx.queue.popleft()

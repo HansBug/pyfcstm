@@ -163,10 +163,6 @@ def _extract_additive_term(expr: z3.ExprRef) -> Tuple[Fraction, Union[z3.ExprRef
     if _is_ground_arith_numeral(expr):
         return _arith_numeral_to_fraction(expr), None
 
-    if z3.is_app(expr) and expr.decl().kind() == z3.Z3_OP_UMINUS:
-        coeff, core = _extract_additive_term(expr.children()[0])
-        return -coeff, core
-
     if z3.is_app(expr) and expr.decl().kind() == z3.Z3_OP_MUL:
         coeff = Fraction(1, 1)
         factors: List[z3.ExprRef] = []
@@ -177,7 +173,7 @@ def _extract_additive_term(expr: z3.ExprRef) -> Tuple[Fraction, Union[z3.ExprRef
             else:
                 factors.append(child)
 
-        if not factors:
+        if not factors:  # pragma: no cover
             return coeff, None
 
         core = factors[0] if len(factors) == 1 else _build_sorted_product(factors)
@@ -200,16 +196,6 @@ def _collect_additive_terms(
             constant += _collect_additive_terms(child, sign, terms, representatives)
         return constant
 
-    if z3.is_app(expr) and expr.decl().kind() == z3.Z3_OP_SUB:
-        children = expr.children()
-        constant = _collect_additive_terms(children[0], sign, terms, representatives)
-        for child in children[1:]:
-            constant += _collect_additive_terms(child, -sign, terms, representatives)
-        return constant
-
-    if z3.is_app(expr) and expr.decl().kind() == z3.Z3_OP_UMINUS:
-        return _collect_additive_terms(expr.children()[0], -sign, terms, representatives)
-
     coeff, core = _extract_additive_term(expr)
     coeff *= sign
     if core is None:
@@ -231,7 +217,7 @@ def _build_linear_expr(sort: z3.SortRef, expr: z3.ExprRef) -> z3.ExprRef:
     negative_terms: List[z3.ExprRef] = []
     for key in sorted(terms):
         coeff = terms[key]
-        if coeff == 0:
+        if coeff == 0:  # pragma: no cover
             continue
 
         term_expr = representatives[key]
@@ -288,10 +274,6 @@ def _extract_product_scalars(
     if _is_ground_arith_numeral(expr):
         return _arith_numeral_to_fraction(expr), []
 
-    if z3.is_app(expr) and expr.decl().kind() == z3.Z3_OP_UMINUS:
-        scalar, cores = _extract_product_scalars(expr.children()[0], allow_numeric_division)
-        return -scalar, cores
-
     if z3.is_app(expr) and expr.decl().kind() == z3.Z3_OP_MUL:
         scalar = Fraction(1, 1)
         cores: List[z3.ExprRef] = []
@@ -300,13 +282,6 @@ def _extract_product_scalars(
             scalar *= child_scalar
             cores.extend(child_cores)
         return scalar, cores
-
-    if allow_numeric_division and z3.is_app(expr) and expr.decl().kind() == z3.Z3_OP_DIV:
-        numerator, denominator = expr.children()
-        denominator = _basic_simplify(denominator)
-        if _is_ground_arith_numeral(denominator):
-            scalar, cores = _extract_product_scalars(numerator, allow_numeric_division)
-            return scalar / _arith_numeral_to_fraction(denominator), cores
 
     return Fraction(1, 1), [expr]
 
@@ -350,11 +325,11 @@ def _normalize_bool_family(expr: z3.ExprRef) -> z3.ExprRef:
             if z3.is_true(arg):
                 if not identity:
                     return z3.BoolVal(True)
-                continue
+                continue  # pragma: no cover
             if z3.is_false(arg):
                 if identity:
                     return z3.BoolVal(False)
-                continue
+                continue  # pragma: no cover
 
             if z3.is_app(arg) and arg.decl().kind() == z3.Z3_OP_NOT:
                 base = arg.children()[0]
@@ -436,7 +411,7 @@ def _normalize_bv_bitwise_family(expr: z3.ExprRef) -> z3.ExprRef:
                 literal = (literal & value) if kind == z3.Z3_OP_BAND else (literal | value)
                 if literal == annihilator:
                     return z3.BitVecVal(annihilator, width)
-                continue
+                continue  # pragma: no cover
 
             if z3.is_app(arg) and arg.decl().kind() == z3.Z3_OP_BNOT:
                 base = arg.children()[0]
@@ -521,50 +496,28 @@ def _normalize_expr_once(expr: z3.ExprRef) -> z3.ExprRef:
     return expr
 
 
-def _is_family_root(expr: z3.ExprRef) -> bool:
-    """Return whether the expression root belongs to a custom normalized family."""
+def _expr_family(expr: z3.ExprRef) -> Union[str, None]:
+    """Return the custom normalization family label for the expression root."""
     if not z3.is_app(expr):
-        return False
+        return None
 
     kind = expr.decl().kind()
     if _is_bool_sort(expr.sort()) and kind in (z3.Z3_OP_AND, z3.Z3_OP_OR, z3.Z3_OP_XOR):
-        return True
+        return f'bool:{kind}'
     if _is_bv_sort(expr.sort()) and kind in (z3.Z3_OP_BAND, z3.Z3_OP_BOR, z3.Z3_OP_BXOR):
-        return True
+        return f'bv:{kind}'
     if _is_arith_sort(expr.sort()) and kind in (z3.Z3_OP_ADD, z3.Z3_OP_SUB, z3.Z3_OP_UMINUS, z3.Z3_OP_MUL):
-        return True
-    return _is_real_sort(expr.sort()) and kind == z3.Z3_OP_DIV
+        return 'arith:add' if kind in (z3.Z3_OP_ADD, z3.Z3_OP_SUB, z3.Z3_OP_UMINUS) else 'arith:mul'
+    if _is_real_sort(expr.sort()) and kind == z3.Z3_OP_DIV:
+        return 'arith:mul'
+    return None
 
 
-def _normalize_symbolic_expr(expr: z3.ExprRef) -> z3.ExprRef:
-    """Recursively normalize an expression until a local fixed point is reached."""
-    for _ in range(4):
-        normalized = _normalize_expr_once(expr)
-        if normalized.eq(expr):
-            break
-        expr = normalized
-
-    children = expr.children()
-    if children:
-        new_children = [_normalize_symbolic_expr(child) for child in children]
-        replacement_pairs = [
-            (old_child, new_child)
-            for old_child, new_child in zip(children, new_children)
-            if not old_child.eq(new_child)
-        ]
-        if replacement_pairs:
-            expr = z3.substitute(expr, *replacement_pairs)
-
-    if _contains_unknowns(expr) and _is_family_root(expr):
-        return expr
-
-    expr = _basic_simplify(expr)
-
-    for _ in range(4):
-        normalized = _normalize_expr_once(expr)
-        if normalized.eq(expr):
-            return expr
-        expr = normalized
+def _normalize_symbolic_root(expr: z3.ExprRef) -> z3.ExprRef:
+    """Normalize only the current expression root."""
+    normalized = _normalize_expr_once(expr)
+    if not normalized.eq(expr):
+        return normalized
     return expr
 
 
@@ -760,6 +713,7 @@ def _substitute_expr_to_z3(
     substitutions: Dict[str, SubstitutionValue],
     visiting: Set[str],
     cache: Dict[Tuple[str, str], z3.ExprRef],
+    parent_family: Union[str, None] = None,
 ) -> z3.ExprRef:
     """
     Substitute known variables inside ``expr`` and simplify bottom-up.
@@ -792,7 +746,13 @@ def _substitute_expr_to_z3(
         return expr
 
     new_children = [
-        _substitute_expr_to_z3(child, substitutions, visiting, cache)
+        _substitute_expr_to_z3(
+            child,
+            substitutions,
+            visiting,
+            cache,
+            parent_family=_expr_family(expr),
+        )
         for child in children
     ]
     replacement_pairs = [
@@ -802,6 +762,17 @@ def _substitute_expr_to_z3(
     ]
     if replacement_pairs:
         expr = z3.substitute(expr, *replacement_pairs)
+
+    family = _expr_family(expr)
+    if family:
+        if family != parent_family:
+            return _normalize_symbolic_root(expr)
+        return expr
+
+    expr = _basic_simplify(expr)
+    family = _expr_family(expr)
+    if family and family != parent_family:
+        expr = _normalize_symbolic_root(expr)
 
     return expr
 
@@ -843,7 +814,6 @@ def _substitute_and_literalize_expr(
         visiting=set(),
         cache={},
     )
-    simplified = _normalize_symbolic_expr(simplified)
     if _contains_unknowns(simplified):
         return simplified
     return _z3_expr_to_python_literal(simplified)

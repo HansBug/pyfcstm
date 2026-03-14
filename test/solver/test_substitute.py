@@ -2,11 +2,34 @@
 Unit tests for Z3 substitution and literalization helpers.
 """
 
+from fractions import Fraction
+
 import pytest
 import z3
 
 from pyfcstm.solver.substitute import (
+    _algebraic_to_float,
+    _arith_numeral_to_fraction,
+    _build_linear_expr,
+    _build_product_expr,
+    _build_sorted_product,
+    _coerce_z3_expr_to_sort,
+    _collect_additive_terms,
+    _contains_unknowns,
+    _expr_family,
+    _extract_additive_term,
+    _extract_product_scalars,
+    _flatten_same_kind,
+    _fraction_to_arith_value,
+    _make_zero,
+    _normalize_arith_family,
+    _normalize_bool_family,
+    _normalize_bv_bitwise_family,
+    _python_literal_to_z3,
+    _resolve_substitution_value,
+    _sort_label,
     _substitute_and_literalize_expr,
+    _z3_expr_to_python_literal,
     substitute_and_literalize,
 )
 
@@ -275,3 +298,198 @@ class TestPublicSubstituteAndLiteralize:
         _assert_exprs_equivalent(result['nested'][1][0], z3.Or(A, B))
         assert str(result['nested'][1][1]) == 'by'
         _assert_exprs_equivalent(result['nested'][1][1], BY)
+
+    def test_processes_long_arithmetic_chain_without_losing_compaction(self):
+        """Test a longer arithmetic chain still compacts to a short symbolic form."""
+        expr = X
+        expected = X
+        constant = 0
+        for index in range(1, 41):
+            expr = expr + index - Y * 2 + Y * 2
+            constant += index
+        expr = expr - 17 + 9 - 5 + 3
+        constant += -17 + 9 - 5 + 3
+
+        result = substitute_and_literalize(expr, {})
+
+        assert z3.is_expr(result)
+        assert str(result) == f'x + {constant}'
+        _assert_exprs_equivalent(result, expected + constant)
+
+
+@pytest.mark.unittest
+class TestSubstitutePrivateHelpers:
+    """Test private helper branches directly for coverage and regression locking."""
+
+    def test_sort_and_zero_helpers_cover_supported_and_error_paths(self):
+        """Test sort labels and zero construction across supported sorts."""
+        assert _sort_label(z3.BoolSort()) == 'Bool'
+        assert str(_make_zero(z3.IntSort())) == '0'
+        assert str(_make_zero(z3.RealSort())) == '0'
+        assert str(_make_zero(z3.BitVecSort(8))) == '0'
+
+        with pytest.raises(TypeError, match='Unsupported zero sort'):
+            _make_zero(z3.BoolSort())
+
+    def test_arithmetic_literal_conversion_helpers_cover_success_and_error_paths(self):
+        """Test arithmetic numeral conversions and their defensive branches."""
+        assert _arith_numeral_to_fraction(z3.RealVal('3/2')) == Fraction(3, 2)
+        assert str(_fraction_to_arith_value(Fraction(3, 2), z3.RealSort())) == '3/2'
+
+        with pytest.raises(TypeError, match='not an arithmetic numeral'):
+            _arith_numeral_to_fraction(X)
+        with pytest.raises(TypeError, match='non-integer fraction'):
+            _fraction_to_arith_value(Fraction(3, 2), z3.IntSort())
+        with pytest.raises(TypeError, match='Unsupported arithmetic sort'):
+            _fraction_to_arith_value(Fraction(1, 1), z3.BoolSort())
+
+    def test_flatten_and_product_builders_handle_nested_and_sorted_inputs(self):
+        """Test flattening and sorted product rebuilding helpers."""
+        flattened = _flatten_same_kind(X + Y + 1, z3.Z3_OP_ADD)
+        assert [str(item) for item in flattened] == ['x', 'y', '1']
+        assert str(_build_sorted_product([Y, X])) == 'x*y'
+
+    def test_additive_helpers_cover_uminus_subtraction_zero_and_negative_paths(self):
+        """Test additive helper branches that are hard to hit through public APIs."""
+        terms = {}
+        representatives = {}
+
+        coeff, core = _extract_additive_term(-X)
+        assert coeff == Fraction(-1, 1)
+        assert str(core) == 'x'
+
+        coeff, core = _extract_additive_term(z3.IntVal(2) * z3.IntVal(3))
+        assert coeff == Fraction(6, 1)
+        assert core is None
+
+        constant = _collect_additive_terms(X - Y - 3, 1, terms, representatives)
+        assert constant == Fraction(-3, 1)
+        assert terms[_sort_label(X.sort()).replace('Int', X.sexpr()) if False else X.sexpr()] == Fraction(1, 1)
+        assert terms[Y.sexpr()] == Fraction(-1, 1)
+
+        terms = {}
+        representatives = {}
+        constant = _collect_additive_terms(-X, 1, terms, representatives)
+        assert constant == 0
+        assert terms[X.sexpr()] == Fraction(-1, 1)
+
+        assert str(_build_linear_expr(z3.IntSort(), X - X + Y)) == 'y'
+        assert str(_build_linear_expr(z3.IntSort(), X + Y + 1)) == 'x + y + 1'
+        assert str(_build_linear_expr(z3.IntSort(), z3.IntVal(-3))) == '-3'
+        assert str(_build_linear_expr(z3.IntSort(), -X - Y)) == '-x - y'
+        assert str(_build_linear_expr(z3.IntSort(), z3.IntVal(0))) == '0'
+
+    def test_product_helpers_cover_scalar_extraction_and_edge_cases(self):
+        """Test multiplicative helper branches that drive lightweight compaction."""
+        scalar, cores = _extract_product_scalars(-X, allow_numeric_division=False)
+        assert scalar == Fraction(-1, 1)
+        assert [str(item) for item in cores] == ['x']
+
+        scalar, cores = _extract_product_scalars(R / 4, allow_numeric_division=True)
+        assert scalar == Fraction(1, 4)
+        assert [str(item) for item in cores] == ['r']
+
+        assert str(_build_product_expr(z3.IntSort(), z3.IntVal(0) * X)) == '0'
+        assert str(_build_product_expr(z3.IntSort(), X)) == 'x'
+        assert str(_build_product_expr(z3.IntSort(), -X)) == '-x'
+
+    @pytest.mark.parametrize(
+        ('expr', 'expected_text'),
+        [
+            (z3.Or(A, z3.BoolVal(True), B), 'True'),
+            (z3.And(A, z3.BoolVal(False), B), 'False'),
+            (z3.And(z3.BoolVal(True), A), 'a'),
+            (z3.Or(z3.BoolVal(False), A), 'a'),
+            (z3.And(z3.Not(A), B), 'And(Not(a), b)'),
+            (z3.And(z3.Not(A), A), 'False'),
+            (z3.And(z3.BoolVal(True), z3.BoolVal(True)), 'True'),
+            (z3.Xor(A, z3.BoolVal(False)), 'a'),
+            (z3.Xor(z3.BoolVal(False), z3.BoolVal(False)), 'False'),
+            (z3.Xor(A, B), 'Xor(a, b)'),
+        ],
+    )
+    def test_boolean_family_normalizer_covers_identity_annihilator_and_xor_paths(
+        self,
+        expr,
+        expected_text,
+    ):
+        """Test direct boolean family normalization branches."""
+        assert str(_normalize_bool_family(expr)) == expected_text
+
+    def test_boolean_family_normalizer_returns_input_for_unsupported_bool_ops(self):
+        """Test unsupported boolean root kinds fall back to the original expression."""
+        expr = X > 0
+
+        assert _normalize_bool_family(expr).eq(expr)
+
+    @pytest.mark.parametrize(
+        ('expr', 'expected_text'),
+        [
+            (BX & z3.BitVecVal(0, 8), '0'),
+            (~BX & BY, '~bx & by'),
+            (~BX & BX, '0'),
+            (BX & z3.BitVecVal(0x0F, 8), 'bx & 15'),
+            (BX ^ BY, 'bx ^ by'),
+            (BX + BY, 'bx + by'),
+        ],
+    )
+    def test_bitvector_family_normalizer_covers_conflicts_literals_and_fallbacks(
+        self,
+        expr,
+        expected_text,
+    ):
+        """Test direct bitvector family normalization branches."""
+        assert str(_normalize_bv_bitwise_family(expr)) == expected_text
+
+    def test_bitvector_family_normalizer_keeps_non_annihilating_literals(self):
+        """Test bitvector literal factors survive when they do not collapse the result."""
+        expr = BX & z3.BitVecVal(0x0F, 8) & BY
+
+        assert str(_normalize_bv_bitwise_family(expr)) == 'bx & by & 15'
+
+    def test_arith_family_and_family_detection_cover_non_matching_paths(self):
+        """Test arithmetic family dispatch and unsupported-family fallbacks."""
+        quantifier = z3.ForAll([X], X > 0)
+
+        assert str(_normalize_arith_family(z3.BoolVal(True))) == 'True'
+        assert str(_normalize_arith_family(X % 3)) == 'x%3'
+        assert _expr_family(quantifier) is None
+
+    def test_literal_coercion_unknown_detection_and_python_literalization_branches(self):
+        """Test literal/coercion helpers including unsupported and algebraic cases."""
+        algebraic = z3.simplify(z3.Sqrt(z3.RealVal(2)))
+
+        assert str(_python_literal_to_z3(3, z3.IntSort())) == '3'
+        assert str(_python_literal_to_z3(3, z3.RealSort())) == '3'
+        assert str(_python_literal_to_z3(3, z3.BitVecSort(8))) == '3'
+        assert _coerce_z3_expr_to_sort(z3.IntVal(3), z3.RealSort()).sort().eq(z3.RealSort())
+        assert _contains_unknowns(z3.Function('f', z3.IntSort(), z3.IntSort())(X)) is True
+        assert _algebraic_to_float(algebraic) == pytest.approx(2 ** 0.5)
+        assert _z3_expr_to_python_literal(z3.RealVal(2)) == 2
+        assert _z3_expr_to_python_literal(algebraic) == pytest.approx(2 ** 0.5)
+
+        with pytest.raises(TypeError, match='Expected a bool literal'):
+            _python_literal_to_z3(1, z3.BoolSort())
+        with pytest.raises(TypeError, match='Cannot substitute Python bool literal'):
+            _python_literal_to_z3(True, z3.IntSort())
+        with pytest.raises(TypeError, match='Expected an int or float literal'):
+            _python_literal_to_z3('x', z3.RealSort())
+        with pytest.raises(TypeError, match='Expected an int literal'):
+            _python_literal_to_z3(1.5, z3.BitVecSort(8))
+        with pytest.raises(TypeError, match='unsupported Z3 sort'):
+            _python_literal_to_z3(1, z3.ArraySort(z3.IntSort(), z3.IntSort()))
+        with pytest.raises(TypeError, match='Cannot substitute Z3 expression of sort'):
+            _coerce_z3_expr_to_sort(z3.BoolVal(True), z3.IntSort())
+        with pytest.raises(TypeError, match='Cannot convert simplified Z3 expression'):
+            _z3_expr_to_python_literal(X + 1)
+
+    def test_resolve_substitution_value_rejects_unsupported_value_type(self):
+        """Test substitution resolution rejects unsupported mapping values."""
+        with pytest.raises(TypeError, match='Unsupported substitution value type'):
+            _resolve_substitution_value(
+                name='x',
+                target_sort=z3.IntSort(),
+                substitutions={'x': object()},
+                visiting=set(),
+                cache={},
+            )

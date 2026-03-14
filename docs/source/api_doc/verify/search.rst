@@ -18,6 +18,30 @@ ConcreteLiteralTyping
 .. autodata:: ConcreteLiteralTyping
 
 
+InitConstraintTyping
+-----------------------------------------------------
+
+.. autodata:: InitConstraintTyping
+
+
+InitStateTyping
+-----------------------------------------------------
+
+.. autodata:: InitStateTyping
+
+
+InitItemTyping
+-----------------------------------------------------
+
+.. autodata:: InitItemTyping
+
+
+InitTyping
+-----------------------------------------------------
+
+.. autodata:: InitTyping
+
+
 SearchFrame
 -----------------------------------------------------
 

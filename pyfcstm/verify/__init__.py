@@ -10,9 +10,12 @@ variables.
 The package exports:
 
 * :class:`SearchFrame` - One symbolic frame in the explored search graph.
+* :class:`SearchConcreteFrame` - One concrete frame in a witness path.
 * :class:`StateSearchSpace` - Retained frames for one state/type bucket.
 * :class:`StateSearchContext` - Search queue, state buckets, and event vars.
+* :class:`ReachabilityResult` - Reachability verdict and one witness path.
 * :func:`bfs_search` - Symbolically explore a state machine with BFS.
+* :func:`verify_reachability` - Check bounded reachability to a target state.
 
 Example::
 
@@ -32,11 +35,15 @@ Example::
     True
 """
 
-from .search import SearchFrame, StateSearchSpace, StateSearchContext, bfs_search
+from .search import SearchFrame, SearchConcreteFrame, StateSearchSpace, StateSearchContext, bfs_search
+from .reachability import ReachabilityResult, verify_reachability
 
 __all__ = [
     'SearchFrame',
+    'SearchConcreteFrame',
     'StateSearchSpace',
     'StateSearchContext',
+    'ReachabilityResult',
     'bfs_search',
+    'verify_reachability',
 ]

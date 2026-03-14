@@ -9,5 +9,5 @@ pyfcstm.verify
 .. toctree::
     :maxdepth: 3
 
+    reachability
     search
-

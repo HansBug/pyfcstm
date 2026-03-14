@@ -183,6 +183,73 @@ state Root {
 }
 '''
 
+NESTED_BOUNDARY_REACHABILITY_DSL = '''
+def int token = 0;
+state Root {
+    state Launch;
+
+    state Session {
+        enter {
+            token = token + 1;
+        }
+        during before {
+            token = token + 10;
+        }
+        during after {
+            token = token + 100;
+        }
+        exit {
+            token = token + 1000;
+        }
+
+        state Gate {
+            enter {
+                token = token + 20;
+            }
+            during before {
+                token = token + 200;
+            }
+            during after {
+                token = token + 2000;
+            }
+            exit {
+                token = token + 20000;
+            }
+
+            state Leaf {
+                enter {
+                    token = token + 30;
+                }
+            }
+
+            [*] -> Leaf;
+            Leaf -> [*];
+        }
+
+        [*] -> Gate;
+        Gate -> [*];
+    }
+
+    state Done;
+
+    [*] -> Launch;
+    Launch -> Session;
+    Session -> Done;
+}
+'''
+
+UNCONDITIONAL_FALLBACK_REACHABILITY_DSL = '''
+def int selector = 0;
+state Root {
+    state Idle;
+    state Fast;
+    state Slow;
+    [*] -> Idle;
+    Idle -> Fast : if [selector >= 1];
+    Idle -> Slow;
+}
+'''
+
 
 def build_state_machine(dsl_code: str = SIMPLE_REACHABILITY_DSL):
     ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
@@ -769,3 +836,160 @@ class TestVerifyReachability:
         assert result.target_frame is None, f'compact complex tight-budget case should not expose a target frame, got {result.target_frame!r}'
         assert result.concrete_path is None, f'compact complex tight-budget case should not expose a concrete path, got {result.concrete_path!r}'
         assert result.solution is None, f'compact complex tight-budget case should not expose a solver solution, got {result.solution!r}'
+
+    def test_nested_composite_boundaries_produce_full_witness_and_runtime_replay(self):
+        state_machine = build_state_machine(NESTED_BOUNDARY_REACHABILITY_DSL)
+
+        result = verify_reachability(
+            state_machine=state_machine,
+            init=('Root.Launch', 'token == 0'),
+            target_state=state_machine.resolve_state('Root.Done'),
+            max_cycle=10,
+        )
+
+        assert result.reachable is True, f'nested composite boundary case should be reachable, got {result.reachable!r}'
+        assert result.solution == {'token': 0}, (
+            f"nested composite boundary case should solve to {{'token': 0}}, got {result.solution!r}"
+        )
+        assert result.target_frame is not None, 'nested composite boundary case should expose a target frame'
+        assert result.target_frame.state.path == ('Root', 'Done'), (
+            f"nested composite boundary case should end at ('Root', 'Done'), got {result.target_frame.state.path!r}"
+        )
+        assert result.target_frame.type == 'leaf', (
+            f"nested composite boundary target frame type should be 'leaf', got {result.target_frame.type!r}"
+        )
+        assert result.target_frame.depth == 6, (
+            f'nested composite boundary target depth should be 6, got {result.target_frame.depth!r}'
+        )
+        assert result.target_frame.cycle == 2, (
+            f'nested composite boundary target cycle should be 2, got {result.target_frame.cycle!r}'
+        )
+        assert result.concrete_path is not None, 'nested composite boundary case should expose a concrete witness path'
+        assert [frame.state.path for frame in result.concrete_path] == [
+            ('Root', 'Launch'),
+            ('Root', 'Session'),
+            ('Root', 'Session', 'Gate'),
+            ('Root', 'Session', 'Gate', 'Leaf'),
+            ('Root', 'Session', 'Gate'),
+            ('Root', 'Session'),
+            ('Root', 'Done'),
+        ], f'nested composite boundary path mismatch, got {[frame.state.path for frame in result.concrete_path]!r}'
+        assert [frame.type for frame in result.concrete_path] == [
+            'leaf',
+            'composite_in',
+            'composite_in',
+            'leaf',
+            'composite_out',
+            'composite_out',
+            'leaf',
+        ], f'nested composite boundary frame types mismatch, got {[frame.type for frame in result.concrete_path]!r}'
+        assert [frame.cycle for frame in result.concrete_path] == [0, 0, 0, 1, 1, 1, 2], (
+            f'nested composite boundary cycle trace mismatch, got {[frame.cycle for frame in result.concrete_path]!r}'
+        )
+        assert [frame.depth for frame in result.concrete_path] == [0, 1, 2, 3, 4, 5, 6], (
+            f'nested composite boundary depth trace mismatch, got {[frame.depth for frame in result.concrete_path]!r}'
+        )
+        assert [frame.var_state for frame in result.concrete_path] == [
+            {'token': 0},
+            {'token': 1},
+            {'token': 31},
+            {'token': 261},
+            {'token': 2261},
+            {'token': 22361},
+            {'token': 23361},
+        ], f'nested composite boundary variable trace mismatch, got {[frame.var_state for frame in result.concrete_path]!r}'
+        assert [frame.events for frame in result.concrete_path] == [[], [], [], [], [], [], []], (
+            f'nested composite boundary case should not require events, got {[frame.events for frame in result.concrete_path]!r}'
+        )
+        assert result.concrete_path[-1].get_history() == result.concrete_path, (
+            'nested composite boundary full history should reconstruct the concrete path'
+        )
+        assert ('Root.Session', 'composite_in') in result.search_context.spaces, (
+            f"nested composite boundary search should retain ('Root.Session', 'composite_in'), "
+            f"available={list(result.search_context.spaces)!r}"
+        )
+        assert ('Root.Session.Gate', 'composite_in') in result.search_context.spaces, (
+            f"nested composite boundary search should retain ('Root.Session.Gate', 'composite_in'), "
+            f"available={list(result.search_context.spaces)!r}"
+        )
+        assert ('Root.Session.Gate', 'composite_out') in result.search_context.spaces, (
+            f"nested composite boundary search should retain ('Root.Session.Gate', 'composite_out'), "
+            f"available={list(result.search_context.spaces)!r}"
+        )
+        assert ('Root.Session', 'composite_out') in result.search_context.spaces, (
+            f"nested composite boundary search should retain ('Root.Session', 'composite_out'), "
+            f"available={list(result.search_context.spaces)!r}"
+        )
+
+        runtime = SimulationRuntime(
+            state_machine,
+            initial_state='Root.Launch',
+            initial_vars={'token': 0},
+        )
+        runtime.cycle([])
+        assert runtime.current_state.path == result.concrete_path[3].state.path, (
+            f'nested composite boundary runtime state mismatch after first replay cycle: '
+            f'expected {result.concrete_path[3].state.path!r}, got {runtime.current_state.path!r}'
+        )
+        assert runtime.vars == result.concrete_path[3].var_state, (
+            f'nested composite boundary runtime variables mismatch after first replay cycle: '
+            f'expected {result.concrete_path[3].var_state!r}, got {runtime.vars!r}'
+        )
+        runtime.cycle([])
+        assert runtime.current_state.path == result.concrete_path[6].state.path, (
+            f'nested composite boundary runtime state mismatch after second replay cycle: '
+            f'expected {result.concrete_path[6].state.path!r}, got {runtime.current_state.path!r}'
+        )
+        assert runtime.vars == result.concrete_path[6].var_state, (
+            f'nested composite boundary runtime variables mismatch after second replay cycle: '
+            f'expected {result.concrete_path[6].var_state!r}, got {runtime.vars!r}'
+        )
+
+    def test_unconditional_fallback_branch_produces_sat_second_transition_witness(self):
+        state_machine = build_state_machine(UNCONDITIONAL_FALLBACK_REACHABILITY_DSL)
+
+        result = verify_reachability(
+            state_machine=state_machine,
+            init=('Root.Idle', 'selector == 0'),
+            target_state='Root.Slow',
+            max_cycle=10,
+        )
+
+        assert result.reachable is True, f'unconditional fallback case should be reachable, got {result.reachable!r}'
+        assert result.solution == {'selector': 0}, (
+            f"unconditional fallback case should solve to {{'selector': 0}}, got {result.solution!r}"
+        )
+        assert result.target_frame is not None, 'unconditional fallback case should expose a target frame'
+        assert result.target_frame.state.path == ('Root', 'Slow'), (
+            f"unconditional fallback case should end at ('Root', 'Slow'), got {result.target_frame.state.path!r}"
+        )
+        assert result.target_frame.depth == 1, (
+            f'unconditional fallback target depth should be 1, got {result.target_frame.depth!r}'
+        )
+        assert result.target_frame.cycle == 1, (
+            f'unconditional fallback target cycle should be 1, got {result.target_frame.cycle!r}'
+        )
+        assert result.concrete_path is not None, 'unconditional fallback case should expose a concrete witness path'
+        assert [frame.state.path for frame in result.concrete_path] == [
+            ('Root', 'Idle'),
+            ('Root', 'Slow'),
+        ], f'unconditional fallback path mismatch, got {[frame.state.path for frame in result.concrete_path]!r}'
+        assert [frame.var_state for frame in result.concrete_path] == [
+            {'selector': 0},
+            {'selector': 0},
+        ], f'unconditional fallback variable trace mismatch, got {[frame.var_state for frame in result.concrete_path]!r}'
+        assert [frame.events for frame in result.concrete_path] == [[], []], (
+            f'unconditional fallback case should not require events, got {[frame.events for frame in result.concrete_path]!r}'
+        )
+        assert ('Root.Fast', 'leaf') in result.search_context.spaces, (
+            f"unconditional fallback search should retain ('Root.Fast', 'leaf'), "
+            f"available={list(result.search_context.spaces)!r}"
+        )
+        fast_frames = result.search_context.spaces[('Root.Fast', 'leaf')].frames
+        assert len(fast_frames) == 1, (
+            f'unconditional fallback search should retain exactly one Root.Fast frame, got {len(fast_frames)!r}'
+        )
+        assert fast_frames[0].solve(max_solutions=1).status == 'unsat', (
+            f"unconditional fallback Root.Fast frame should be unsat, got {fast_frames[0].solve(max_solutions=1).status!r}"
+        )
+        assert_runtime_matches_cycle_only_concrete_path(state_machine, result.concrete_path)

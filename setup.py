@@ -1,21 +1,19 @@
 import os
 import re
-from codecs import open
-from distutils.core import setup
 
-from setuptools import find_packages
+from setuptools import find_packages, setup
 
 _MODULE_NAME = "pyfcstm"
 _PACKAGE_NAME = 'pyfcstm'
 
 here = os.path.abspath(os.path.dirname(__file__))
 meta = {}
-with open(os.path.join(here, _MODULE_NAME, 'config', 'meta.py'), 'r', 'utf-8') as f:
+with open(os.path.join(here, _MODULE_NAME, 'config', 'meta.py'), 'r', encoding='utf-8') as f:
     exec(f.read(), meta)
 
 
 def _load_req(file: str):
-    with open(file, 'r', 'utf-8') as f:
+    with open(file, 'r', encoding='utf-8') as f:
         return [line.strip() for line in f.readlines() if line.strip()]
 
 
@@ -29,7 +27,7 @@ group_requirements = {
     if item.group(1) not in _REQ_BLACKLIST
 }
 
-with open('README.md', 'r', 'utf-8') as f:
+with open('README.md', 'r', encoding='utf-8') as f:
     readme = f.read()
 
 setup(
@@ -53,7 +51,6 @@ setup(
     # environment
     python_requires=">=3.7",
     install_requires=requirements,
-    tests_require=group_requirements['test'],
     extras_require=group_requirements,
     classifiers=[
         'Development Status :: 5 - Production/Stable',
@@ -78,6 +75,7 @@ setup(
         'Programming Language :: Python :: 3.11',
         'Programming Language :: Python :: 3.12',
         'Programming Language :: Python :: 3.13',
+        'Programming Language :: Python :: 3.14',
 
         # Operating System
         'Operating System :: OS Independent',

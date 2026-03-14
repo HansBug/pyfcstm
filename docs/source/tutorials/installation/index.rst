@@ -1,7 +1,7 @@
 Installation
 ===================
 
-pyfcstm is currently hosted on PyPI. It required python >= 3.7.
+pyfcstm is currently hosted on PyPI. It requires Python >= 3.7 and is tested on CPython 3.7 through 3.14.
 
 You can simply install pyfcstm from PyPI with the following command:
 

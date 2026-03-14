@@ -1805,6 +1805,30 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
         else:
             raise SyntaxError(f'Duplicated variable definition - {def_item}.')
 
+    def _parse_operation_block(
+            op_nodes: List[dsl_nodes.OperationAssignment],
+            unknown_var_message: str,
+            owner_node: AstExportable,
+    ) -> List[Operation]:
+        operations = []
+        available_vars = set(d_defines)
+        for op_item in op_nodes:
+            operation_val = parse_expr_node_to_expr(op_item.expr)
+            unknown_vars = []
+            for var in operation_val.list_variables():
+                if var.name not in available_vars and var.name not in unknown_vars:
+                    unknown_vars.append(var.name)
+
+            if unknown_vars:
+                raise SyntaxError(
+                    f'{unknown_var_message} {", ".join(unknown_vars)} in transition:\n{owner_node}'
+                )
+
+            operations.append(Operation(var_name=op_item.name, expr=operation_val))
+            available_vars.add(op_item.name)
+
+        return operations
+
     def _recursive_build_states(node: dsl_nodes.StateDefinition, current_path: Tuple[str, ...]) -> State:
         current_path = tuple((*current_path, node.name))
         d_substates = {}
@@ -1820,19 +1844,11 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
         for enter_item in node.enters:
             on_stage = None
             if isinstance(enter_item, dsl_nodes.EnterOperations):
-                enter_operations = []
-                for op_item in enter_item.operations:
-                    operation_val = parse_expr_node_to_expr(op_item.expr)
-                    unknown_vars = []
-                    for var in operation_val.list_variables():
-                        if var.name not in d_defines:
-                            unknown_vars.append(var.name)
-                    if op_item.name not in d_defines and op_item.name not in unknown_vars:
-                        unknown_vars.append(op_item.name)
-                    if unknown_vars:
-                        raise SyntaxError(
-                            f'Unknown enter operation variable {", ".join(unknown_vars)} in transition:\n{enter_item}')
-                    enter_operations.append(Operation(var_name=op_item.name, expr=operation_val))
+                enter_operations = _parse_operation_block(
+                    enter_item.operations,
+                    'Unknown enter operation variable',
+                    enter_item,
+                )
                 on_stage = OnStage(
                     stage='enter',
                     aspect=None,
@@ -1890,19 +1906,11 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
 
             on_stage = None
             if isinstance(during_item, dsl_nodes.DuringOperations):
-                during_operations = []
-                for op_item in during_item.operations:
-                    operation_val = parse_expr_node_to_expr(op_item.expr)
-                    unknown_vars = []
-                    for var in operation_val.list_variables():
-                        if var.name not in d_defines:
-                            unknown_vars.append(var.name)
-                    if op_item.name not in d_defines and op_item.name not in unknown_vars:
-                        unknown_vars.append(op_item.name)
-                    if unknown_vars:
-                        raise SyntaxError(
-                            f'Unknown during operation variable {", ".join(unknown_vars)} in transition:\n{during_item}')
-                    during_operations.append(Operation(var_name=op_item.name, expr=operation_val))
+                during_operations = _parse_operation_block(
+                    during_item.operations,
+                    'Unknown during operation variable',
+                    during_item,
+                )
                 on_stage = OnStage(
                     stage='during',
                     aspect=during_item.aspect,
@@ -1953,19 +1961,11 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
         for exit_item in node.exits:
             on_stage = None
             if isinstance(exit_item, dsl_nodes.ExitOperations):
-                exit_operations = []
-                for op_item in exit_item.operations:
-                    operation_val = parse_expr_node_to_expr(op_item.expr)
-                    unknown_vars = []
-                    for var in operation_val.list_variables():
-                        if var.name not in d_defines:
-                            unknown_vars.append(var.name)
-                    if op_item.name not in d_defines and op_item.name not in unknown_vars:
-                        unknown_vars.append(op_item.name)
-                    if unknown_vars:
-                        raise SyntaxError(
-                            f'Unknown exit operation variable {", ".join(unknown_vars)} in transition:\n{exit_item}')
-                    exit_operations.append(Operation(var_name=op_item.name, expr=operation_val))
+                exit_operations = _parse_operation_block(
+                    exit_item.operations,
+                    'Unknown exit operation variable',
+                    exit_item,
+                )
                 on_stage = OnStage(
                     stage='exit',
                     aspect=None,
@@ -2016,19 +2016,11 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
         for during_aspect_item in node.during_aspects:
             on_aspect = None
             if isinstance(during_aspect_item, dsl_nodes.DuringAspectOperations):
-                during_operations = []
-                for op_item in during_aspect_item.operations:
-                    operation_val = parse_expr_node_to_expr(op_item.expr)
-                    unknown_vars = []
-                    for var in operation_val.list_variables():
-                        if var.name not in d_defines:
-                            unknown_vars.append(var.name)
-                    if op_item.name not in d_defines and op_item.name not in unknown_vars:
-                        unknown_vars.append(op_item.name)
-                    if unknown_vars:
-                        raise SyntaxError(
-                            f'Unknown during aspect variable {", ".join(unknown_vars)} in transition:\n{during_aspect_item}')
-                    during_operations.append(Operation(var_name=op_item.name, expr=operation_val))
+                during_operations = _parse_operation_block(
+                    during_aspect_item.operations,
+                    'Unknown during aspect variable',
+                    during_aspect_item,
+                )
                 on_aspect = OnAspect(
                     stage='during',
                     aspect=during_aspect_item.aspect,
@@ -2241,19 +2233,11 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                 if unknown_vars:
                     raise SyntaxError(f'Unknown guard variable {", ".join(unknown_vars)} in transition:\n{transnode}')
 
-            post_operations = []
-            for op_item in transnode.post_operations:
-                operation_val = parse_expr_node_to_expr(op_item.expr)
-                unknown_vars = []
-                for var in operation_val.list_variables():
-                    if var.name not in d_defines:
-                        unknown_vars.append(var.name)
-                if op_item.name not in d_defines and op_item.name not in unknown_vars:
-                    unknown_vars.append(op_item.name)
-                if unknown_vars:
-                    raise SyntaxError(
-                        f'Unknown transition operation variable {", ".join(unknown_vars)} in transition:\n{transnode}')
-                post_operations.append(Operation(var_name=op_item.name, expr=operation_val))
+            post_operations = _parse_operation_block(
+                transnode.post_operations,
+                'Unknown transition operation variable',
+                transnode,
+            )
 
             transition = Transition(
                 from_state=from_state,

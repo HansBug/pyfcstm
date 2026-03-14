@@ -1941,3 +1941,41 @@ state System {
         runtime.cycle()
         assert runtime.current_state.path == ('System', 'Active')
         assert runtime.vars['counter'] == 35
+
+
+@pytest.mark.unittest
+class TestTemporaryVariables:
+    def test_temporary_variables_are_block_local(self):
+        dsl_code = '''
+def int x = 0;
+def int y = 0;
+state Root {
+    state A {
+        during {
+            tmp = x + 1;
+            x = tmp;
+        }
+    }
+    state B {
+        enter {
+            tmp = x + y;
+            y = tmp + 1;
+        }
+    }
+
+    [*] -> A;
+    A -> B :: Go effect {
+        tmp = x + 10;
+        x = tmp;
+    };
+}
+'''
+        runtime = build_runtime(dsl_code)
+
+        run_cycle_and_assert(runtime, current_path=('Root', 'A'), vars={'x': 1, 'y': 0})
+        assert set(runtime.vars.keys()) == {'x', 'y'}
+        assert 'tmp' not in runtime.vars
+
+        run_cycle_and_assert(runtime, ['Root.A.Go'], current_path=('Root', 'B'), vars={'x': 11, 'y': 12})
+        assert set(runtime.vars.keys()) == {'x', 'y'}
+        assert 'tmp' not in runtime.vars

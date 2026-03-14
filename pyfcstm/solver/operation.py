@@ -44,15 +44,17 @@ def parse_operations(
 
     This function parses a DSL code string containing operation statements
     (variable assignments) and converts them into Operation objects. It can
-    optionally validate that only allowed variables are used.
+    optionally validate that expressions only reference variables that are
+    already available at that point in the block. Unknown assignment targets
+    are treated as block-local temporary variables.
 
     :param code: DSL operation code string to parse
     :type code: str
-    :param allowed_vars: List of allowed variable names, or ``None`` for free mode
+    :param allowed_vars: List of initially available variable names, or ``None`` for free mode
     :type allowed_vars: Optional[List[str]]
     :return: List of parsed Operation objects
     :rtype: List[Operation]
-    :raises ValueError: If a variable is used that is not in allowed_vars
+    :raises ValueError: If an expression references a variable that is not yet available
     :raises pyfcstm.dsl.error.GrammarParseError: If DSL parsing fails
 
     Example::
@@ -66,8 +68,8 @@ def parse_operations(
         >>> # Free mode - no variable restrictions
         >>> ops = parse_operations("a = b + c;", allowed_vars=None)
 
-        >>> # Restricted mode - raises ValueError for unknown variables
-        >>> ops = parse_operations("z = 1;", allowed_vars=['x', 'y'])
+        >>> # Restricted mode - raises ValueError for variables used before assignment
+        >>> ops = parse_operations("y = z + 1; z = 1;", allowed_vars=['x', 'y'])
         Traceback (most recent call last):
             ...
         ValueError: Variable 'z' is not in allowed variables: ['x', 'y']
@@ -93,18 +95,14 @@ def parse_operations(
         allowed_set = set(allowed_vars)
 
         for operation in operations:
-            # Check assignment target variable
-            if operation.var_name not in allowed_set:
-                raise ValueError(
-                    f"Variable '{operation.var_name}' is not in allowed variables: {allowed_vars}"
-                )
-
             # Check variables used in expression
             for var in operation.expr.list_variables():
                 if var.name not in allowed_set:
                     raise ValueError(
                         f"Variable '{var.name}' is not in allowed variables: {allowed_vars}"
                     )
+
+            allowed_set.add(operation.var_name)
 
     return operations
 
@@ -128,9 +126,9 @@ def execute_operations(
     :type operations: Union[Operation, List[Operation]]
     :param var_exprs: Dictionary mapping variable names to current Z3 expressions
     :type var_exprs: Dict[str, Union[z3.ArithRef, z3.BoolRef]]
-    :return: New variable expression dictionary with updated Z3 expressions
+    :return: New variable expression dictionary with updated global Z3 expressions
     :rtype: Dict[str, Union[z3.ArithRef, z3.BoolRef]]
-    :raises ValueError: If a variable referenced in an expression is not in var_exprs
+    :raises ValueError: If a variable referenced in an expression is not available in the current block scope
 
     Example::
 
@@ -164,6 +162,8 @@ def execute_operations(
     if isinstance(operations, Operation):
         operations = [operations]
 
+    original_var_names = list(var_exprs.keys())
+
     # Create a copy of the state to avoid modifying the original
     current_exprs = dict(var_exprs)
 
@@ -175,4 +175,4 @@ def execute_operations(
         # Update the expressions with the new expression
         current_exprs[operation.var_name] = z3_expr
 
-    return current_exprs
+    return {name: current_exprs[name] for name in original_var_names}

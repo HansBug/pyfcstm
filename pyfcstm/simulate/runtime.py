@@ -856,19 +856,63 @@ class SimulationRuntime:
         if not transition.effects:
             return
 
+        self._execute_operation_block(
+            transition.effects,
+            vars_,
+            validation_message=(
+                f'[VALIDATION] Execute transition effect for {transition.from_state} -> {transition.to_state}'
+            ),
+            execute_message=f'Execute transition effect for {transition.from_state} -> {transition.to_state}',
+            is_validation_mode=is_validation_mode,
+        )
+
+    def _execute_operation_block(
+            self,
+            operations,
+            vars_: Dict[str, Union[int, float]],
+            validation_message: str,
+            execute_message: str,
+            is_validation_mode: bool = False,
+    ) -> None:
+        """
+        Execute a single operation block with block-local temporary variables.
+
+        The block sees a local working scope seeded from ``vars_``. Assignments to
+        previously unknown names create temporary variables that are visible only
+        to later operations in the same block. After execution finishes, only
+        globally defined state-machine variables are written back into ``vars_``.
+
+        :param operations: Operations to execute sequentially.
+        :type operations: List[Operation]
+        :param vars_: Global variable mapping to update.
+        :type vars_: Dict[str, Union[int, float]]
+        :param validation_message: Log message for validation mode.
+        :type validation_message: str
+        :param execute_message: Log message for normal execution mode.
+        :type execute_message: str
+        :param is_validation_mode: Whether this is validation mode.
+        :type is_validation_mode: bool
+        :return: ``None``.
+        :rtype: None
+        """
+        global_var_names = list(self.state_machine.defines.keys())
+        local_scope = dict(vars_)
+
         if is_validation_mode:
-            self.logger.debug(
-                f'[VALIDATION] Execute transition effect for {transition.from_state} -> {transition.to_state}')
-            for effect in transition.effects:
-                vars_[effect.var_name] = effect.expr(**vars_)
+            self.logger.debug(validation_message)
         else:
-            old_vars = dict(vars_)
-            for effect in transition.effects:
-                vars_[effect.var_name] = effect.expr(**vars_)
-            changes = self._format_var_changes(old_vars, vars_)
-            self.logger.info(
-                f'Execute transition effect for {transition.from_state} -> {transition.to_state}{changes}'
-            )
+            old_vars = {name: vars_[name] for name in global_var_names}
+
+        for operation in operations:
+            local_scope[operation.var_name] = operation.expr(**local_scope)
+
+        for name in global_var_names:
+            vars_[name] = local_scope[name]
+
+        if not is_validation_mode:
+            new_vars = {name: vars_[name] for name in global_var_names}
+            changes = self._format_var_changes(old_vars, new_vars)
+            self.logger.info(f'{execute_message}{changes}')
 
     def _format_var_changes(
             self,
@@ -1008,16 +1052,13 @@ class SimulationRuntime:
                                           f'(continuing in log mode): {e}')
         else:
             # Concrete function with operations
-            if is_validation_mode:
-                self.logger.debug(f'[VALIDATION] Execute function {func.func_name}')
-                for op in (func.operations or []):
-                    vars_[op.var_name] = op.expr(**vars_)
-            else:
-                old_vars = dict(vars_)
-                for op in (func.operations or []):
-                    vars_[op.var_name] = op.expr(**vars_)
-                changes = self._format_var_changes(old_vars, vars_)
-                self.logger.info(f'Execute function {func.func_name}{changes}')
+            self._execute_operation_block(
+                func.operations or [],
+                vars_,
+                validation_message=f'[VALIDATION] Execute function {func.func_name}',
+                execute_message=f'Execute function {func.func_name}',
+                is_validation_mode=is_validation_mode,
+            )
 
     def _transition_matches_event(self, transition: Transition, d_events: Dict[str, Event]) -> bool:
         """

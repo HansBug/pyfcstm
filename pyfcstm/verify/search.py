@@ -183,5 +183,5 @@ def bfs_search(
             )
 
         for transiton in transitions:
-            transiton.to_state.
+            
             pass

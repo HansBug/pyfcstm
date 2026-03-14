@@ -49,7 +49,7 @@ import re
 import warnings
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Optional, Dict, Union, Tuple, List
+from typing import Optional, Dict, Union, Tuple, List, Callable
 
 import z3
 
@@ -577,6 +577,26 @@ class SearchConcreteFrame:
     cycle: int
     prev_frame: Optional['SearchConcreteFrame'] = None
 
+    def get_history(self) -> List['SearchConcreteFrame']:
+        """
+        Reconstruct the complete concrete frame history in forward order.
+
+        This walks :attr:`prev_frame` links back to the initial concrete frame
+        and returns the resulting path ordered from the oldest frame to
+        ``self``. The returned list always includes the current frame.
+
+        :return: Complete concrete history from the initial frame to ``self``.
+        :rtype: List[SearchConcreteFrame]
+        """
+        history = []
+        current = self
+        while current is not None:
+            history.append(current)
+            current = current.prev_frame
+
+        history.reverse()
+        return history
+
 
 @dataclass
 class StateSearchSpace:
@@ -688,6 +708,41 @@ class StateSearchContext:
             self.z3_events[key] = z3.Bool(var_name)
         return self.z3_events.get(key, None)
 
+    def try_append_frame(self, frame: SearchFrame) -> bool:
+        """
+        Retain and enqueue a new frame only if it expands the search space.
+
+        Frames are grouped by formatted state path and frame type. A frame is
+        appended to the corresponding bucket and queue when the bucket is new,
+        or when its constraint contributes solutions beyond the already
+        retained frames in that bucket.
+
+        :param frame: Candidate frame to retain and enqueue.
+        :type frame: SearchFrame
+        :return: ``True`` if the frame was retained and added to
+            :attr:`queue`, otherwise ``False``.
+        :rtype: bool
+        """
+        space_key = (_format_state_path(frame.state), frame.type)
+        if space_key in self.spaces:
+            space = self.spaces[space_key]
+            current_cond = z3_or([f.constraints for f in space.frames])
+            if contributes_to_solution_space(
+                    x=current_cond,
+                    y=frame.constraints,
+            ):
+                space.frames.append(frame)
+                self.queue.append(frame)
+                return True
+            return False
+
+        self.spaces[space_key] = StateSearchSpace(
+            state=frame.state,
+            frames=[frame],
+        )
+        self.queue.append(frame)
+        return True
+
 
 def _format_state_path(state: Optional[State]) -> str:
     """
@@ -791,6 +846,7 @@ def bfs_search(
         init_constraints: Optional[Union[str, z3.BoolRef, Expr]] = None,
         max_cycle: Optional[int] = 100,
         max_depth: Optional[int] = None,
+        fn_on_enqueue: Optional[Callable[['StateSearchContext'], bool]] = None,
 ) -> StateSearchContext:
     """
     Explore a state machine symbolically with breadth-first search.
@@ -823,11 +879,16 @@ def bfs_search(
         effective depth limit is also ``None`` if ``max_cycle`` is ``None``,
         otherwise ``int(max_cycle * 3)``. Defaults to ``None``.
     :type max_depth: Optional[int], optional
+    :param fn_on_enqueue: Optional callback invoked every time a new frame is
+        actually appended to :attr:`StateSearchContext.queue`. The callback
+        receives the current context and must return ``True`` to stop the
+        search early, or ``False`` to continue. Defaults to ``None``.
+    :type fn_on_enqueue: Optional[Callable[[StateSearchContext], bool]], optional
     :return: Search context containing the explored state-space buckets,
         retained frames, and symbolic event variables.
     :rtype: StateSearchContext
     :raises TypeError: If ``init_state`` or ``init_constraints`` has an
-        unsupported type.
+        unsupported type, or if ``fn_on_enqueue`` is not callable.
     :raises LookupError: If ``init_state`` is a path that cannot be resolved.
     :raises ValueError: If ``init_state`` belongs to another state machine, if
         ``init_constraints`` cannot be parsed as a logical condition, or if an
@@ -857,6 +918,13 @@ def bfs_search(
         max_cycle=max_cycle,
         max_depth=max_depth,
     )
+
+    if fn_on_enqueue is not None and not callable(fn_on_enqueue):
+        raise TypeError(
+            "bfs_search() expected 'fn_on_enqueue' to be None or a callable "
+            f"accepting one StateSearchContext argument, but got "
+            f"{type(fn_on_enqueue).__name__}: {fn_on_enqueue!r}."
+        )
 
     if isinstance(init_state, str):
         try:
@@ -919,6 +987,18 @@ def bfs_search(
             "'counter > 0 && enabled'."
         )
 
+    def _should_stop_search(ctx: StateSearchContext) -> bool:
+        if fn_on_enqueue is None:
+            return False
+
+        should_stop = fn_on_enqueue(ctx)
+        if not isinstance(should_stop, bool):
+            raise TypeError(
+                "bfs_search() expected 'fn_on_enqueue' to return a bool, "
+                f"but got {type(should_stop).__name__}: {should_stop!r}."
+            )
+        return should_stop
+
     ctx = StateSearchContext()
     init_frame = SearchFrame(
         state=init_state,
@@ -930,30 +1010,9 @@ def bfs_search(
         cycle=0,
         prev_frame=None,
     )
-    ctx.queue.append(init_frame)
-    init_type = 'leaf' if init_state.is_leaf_state else 'composite_in'
-    ctx.spaces[(_format_state_path(init_state), init_type)] = StateSearchSpace(
-        state=init_state,
-        frames=[init_frame],
-    )
-
-    def _try_append_frame(frame: SearchFrame):
-        space_key = (_format_state_path(frame.state), frame.type)
-        if space_key in ctx.spaces:
-            space = ctx.spaces[space_key]
-            current_cond = z3_or([f.constraints for f in space.frames])
-            if contributes_to_solution_space(
-                    x=current_cond,
-                    y=frame.constraints,
-            ):
-                space.frames.append(frame)
-                ctx.queue.append(frame)
-        else:
-            ctx.spaces[space_key] = StateSearchSpace(
-                state=frame.state,
-                frames=[frame],
-            )
-            ctx.queue.append(frame)
+    ctx.try_append_frame(init_frame)
+    if _should_stop_search(ctx):
+        return ctx
 
     while len(ctx.queue) > 0:
         head: SearchFrame = ctx.queue.popleft()
@@ -1070,7 +1129,8 @@ def bfs_search(
                 cycle=head.cycle + (1 if to_state is None or to_state.is_stoppable else 0),
                 prev_frame=head,
             )
-            _try_append_frame(new_frame)
+            if ctx.try_append_frame(new_frame) and _should_stop_search(ctx):
+                return ctx
             prev_conditions.append(condition)
 
         if head.type == 'leaf' and head.state.is_stoppable:
@@ -1093,6 +1153,7 @@ def bfs_search(
                 cycle=head.cycle + 1,
                 prev_frame=head,
             )
-            _try_append_frame(new_frame)
+            if ctx.try_append_frame(new_frame) and _should_stop_search(ctx):
+                return ctx
 
     return ctx

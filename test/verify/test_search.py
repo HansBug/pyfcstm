@@ -87,6 +87,16 @@ class TestBfsSearchErrors:
         assert "got list: ['counter > 0']" in message
         assert "logical condition such as 'counter > 0 && enabled'" in message
 
+    def test_rejects_invalid_fn_on_enqueue_type(self):
+        state_machine = build_state_machine()
+
+        with pytest.raises(TypeError) as exc_info:
+            verify_search.bfs_search(state_machine, 'Root.Idle', fn_on_enqueue=123)
+
+        message = str(exc_info.value)
+        assert "expected 'fn_on_enqueue' to be None or a callable" in message
+        assert "got int: 123" in message
+
     def test_rejects_non_logical_constraint_string(self):
         state_machine = build_state_machine()
 
@@ -203,9 +213,77 @@ class TestBfsSearchLimits:
         assert ('Root.Gamma', 'leaf') in ctx.spaces
         assert ('Root.Delta', 'leaf') not in ctx.spaces
 
+    def test_fn_on_enqueue_can_stop_search_early(self):
+        state_machine = build_state_machine(PSEUDO_CHAIN_DSL)
+        seen_space_keys = []
+
+        def _stop_when_beta_enqueued(ctx):
+            seen_space_keys.append(sorted(ctx.spaces.keys()))
+            return ('Root.Beta', 'leaf') in ctx.spaces
+
+        ctx = verify_search.bfs_search(
+            state_machine,
+            'Root.Alpha',
+            max_cycle=5,
+            fn_on_enqueue=_stop_when_beta_enqueued,
+        )
+
+        assert len(seen_space_keys) >= 2
+        assert seen_space_keys[0] == [('Root.Alpha', 'leaf')]
+        assert ('Root.Beta', 'leaf') in seen_space_keys[-1]
+        assert ('Root.Alpha', 'leaf') in ctx.spaces
+        assert ('Root.Beta', 'leaf') in ctx.spaces
+        assert ('Root.Gamma', 'leaf') not in ctx.spaces
+        assert list(ctx.queue) == [ctx.spaces[('Root.Beta', 'leaf')].frames[0]]
+
+    def test_rejects_non_bool_fn_on_enqueue_result(self):
+        state_machine = build_state_machine()
+
+        with pytest.raises(TypeError) as exc_info:
+            verify_search.bfs_search(
+                state_machine,
+                'Root.Idle',
+                fn_on_enqueue=lambda ctx: 'stop',
+            )
+
+        message = str(exc_info.value)
+        assert "expected 'fn_on_enqueue' to return a bool" in message
+        assert "'stop'" in message
+
 
 @pytest.mark.unittest
 class TestSearchFrameHelpers:
+    def test_state_search_context_try_append_frame_retains_new_space_once(self):
+        state_machine = build_state_machine()
+        state = state_machine.resolve_state('Root.Idle')
+        ctx = verify_search.StateSearchContext()
+
+        frame0 = verify_search.SearchFrame(
+            state=state,
+            type='leaf',
+            var_state={},
+            constraints=z3.BoolVal(True),
+            event_var=None,
+            depth=0,
+            cycle=0,
+            prev_frame=None,
+        )
+        frame1 = verify_search.SearchFrame(
+            state=state,
+            type='leaf',
+            var_state={},
+            constraints=z3.BoolVal(False),
+            event_var=None,
+            depth=1,
+            cycle=1,
+            prev_frame=frame0,
+        )
+
+        assert ctx.try_append_frame(frame0) is True
+        assert ctx.try_append_frame(frame1) is False
+        assert list(ctx.queue) == [frame0]
+        assert ctx.spaces[('Root.Idle', 'leaf')].frames == [frame0]
+
     def test_get_history_returns_frames_in_forward_order(self):
         state_machine = build_state_machine()
         state = state_machine.resolve_state('Root.Idle')
@@ -405,6 +483,7 @@ class TestSearchFrameHelpers:
         assert concrete_frames[6].events == ['Root.Idle.Resume']
         assert concrete_frames[7].events == ['Root.Idle.Resume']
         assert concrete_frames[8].events == []
+        assert concrete_frames[8].get_history() == concrete_frames
         assert concrete_frames[0].prev_frame is None
         assert concrete_frames[1].prev_frame is concrete_frames[0]
         assert concrete_frames[8].prev_frame is concrete_frames[7]

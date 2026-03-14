@@ -12,11 +12,17 @@ FrameTypeTyping
 .. autodata:: FrameTypeTyping
 
 
+ConcreteLiteralTyping
+-----------------------------------------------------
+
+.. autodata:: ConcreteLiteralTyping
+
+
 SearchFrame
 -----------------------------------------------------
 
 .. autoclass:: SearchFrame
-    :members: get_history,solve,to_concrete_frames,state,type,var_state,constraints,event,depth,cycle,prev_frame
+    :members: event_cycle,event_path_name,get_history,solve,to_concrete_frames,state,type,var_state,constraints,event_var,depth,cycle,prev_frame
 
 
 SearchConcreteFrame
@@ -37,7 +43,7 @@ StateSearchContext
 -----------------------------------------------------
 
 .. autoclass:: StateSearchContext
-    :members: get_z3_event,queue,spaces,z3_events
+    :members: get_z3_event,try_append_frame,queue,spaces,z3_events
 
 
 get\_z3\_event\_key\_and\_var\_name
@@ -62,3 +68,5 @@ bfs\_search
 -----------------------------------------------------
 
 .. autofunction:: bfs_search
+
+

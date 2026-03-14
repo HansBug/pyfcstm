@@ -19,6 +19,7 @@ space for a given state and frame type.
 The module contains:
 
 * :class:`SearchFrame` - A single symbolic node in the search graph.
+* :class:`SearchConcreteFrame` - A concrete frame reconstructed from a model.
 * :class:`StateSearchSpace` - Collected frames for one state/type bucket.
 * :class:`StateSearchContext` - Search queue, buckets, and symbolic event vars.
 * :func:`get_z3_event_key_and_var_name` - Normalize one cycle/event pair.
@@ -55,7 +56,7 @@ import z3
 from pyfcstm.dsl import GrammarParseError, EXIT_STATE
 from pyfcstm.model import State, StateMachine, parse_expr, Expr, Event, OnAspect, OnStage
 from pyfcstm.solver import expr_to_z3, create_z3_vars_from_state_machine, z3_or, z3_not, z3_and, execute_operations, \
-    contributes_to_solution_space, solve as solve_constraints, SolveResult
+    contributes_to_solution_space, solve as solve_constraints, SolveResult, substitute_and_literalize
 
 try:
     from typing import Literal
@@ -63,6 +64,7 @@ except (ImportError, ModuleNotFoundError):
     from typing_extensions import Literal
 
 FrameTypeTyping = Literal['leaf', 'composite_in', 'composite_out', 'end']
+ConcreteLiteralTyping = Union[bool, int, float]
 _Z3_EVENT_VAR_NAME_PATTERN = re.compile(r'^_E_C(?P<cycle>\d+)__(?P<event>.+)$')
 
 
@@ -262,18 +264,14 @@ class SearchFrame:
         >>> frame.type
         'end'
     """
-    state: Optional[State]  # 对应的状态机状态（end节点时为None）
+    state: Optional[State]
     type: FrameTypeTyping
-    # leaf: 叶子状态（包括pseudo和stoppable）
-    # composite_in: 复合状态的入口（刚进入复合状态，尚未进入子状态）
-    # composite_out: 复合状态的出口（子状态已退出，尚未离开复合状态）
-    # end: 终止状态（状态机结束，state为None）
 
-    var_state: Dict[str, z3.ArithRef]  # 到达此节点时的变量状态（符号表达式）
+    var_state: Dict[str, z3.ArithRef]
     constraints: z3.BoolRef
     event: Optional[Event]
     depth: int
-    cycle: int  # 到达此节点经过的周期数
+    cycle: int
     prev_frame: Optional['SearchFrame'] = None
 
     def get_history(self) -> List['SearchFrame']:
@@ -366,6 +364,188 @@ class SearchFrame:
             timeout=timeout,
             warn_threshold=warn_threshold,
         )
+
+    def to_concrete_frames(
+            self,
+            solution_item: Dict[str, ConcreteLiteralTyping],
+    ) -> List['SearchConcreteFrame']:
+        """
+        Materialize this symbolic frame history into concrete path frames.
+
+        The returned frames follow the full :meth:`get_history` order. Symbolic
+        variable expressions and reachability constraints are substituted with
+        the provided solver solution item and must resolve to Python literals.
+
+        Event handling differs from :attr:`event` on symbolic frames. A
+        symbolic frame stores the event on the destination edge, but the actual
+        event belongs to ``prev_frame.cycle``. This method therefore groups
+        triggered events by their concrete cycle and attaches that cycle-level
+        event list to every concrete frame at the same cycle.
+
+        :param solution_item: One solution mapping as returned in
+            :attr:`pyfcstm.solver.SolveResult.solutions`.
+        :type solution_item: Dict[str, Union[bool, int, float]]
+        :return: Concrete frame history in forward order.
+        :rtype: List[SearchConcreteFrame]
+        :raises ValueError: If the provided solution does not fully ground all
+            symbolic variable states, constraints, or event variables.
+
+        Example::
+
+            >>> x = z3.Int('x')
+            >>> frame = SearchFrame(
+            ...     state=None,
+            ...     type='end',
+            ...     var_state={'x': x},
+            ...     constraints=x == 3,
+            ...     event=None,
+            ...     depth=0,
+            ...     cycle=0,
+            ... )
+            >>> concrete_frames = frame.to_concrete_frames({'x': 3})
+            >>> concrete_frames[0].var_state['x']
+            3
+        """
+        history = self.get_history()
+        events_by_cycle: Dict[int, List[Event]] = {}
+        event_names_by_cycle: Dict[int, set] = {}
+
+        def _literalize(
+                value: object,
+                source_name: str,
+                frame: 'SearchFrame',
+        ) -> ConcreteLiteralTyping:
+            concrete_value = substitute_and_literalize(value, solution_item)
+            if isinstance(concrete_value, bool) or isinstance(concrete_value, (int, float)):
+                return concrete_value
+
+            raise ValueError(
+                "SearchFrame.to_concrete_frames() could not fully materialize "
+                f"{source_name} for frame at state {_format_state_path(frame.state)!r}, "
+                f"type={frame.type!r}, depth={frame.depth}, cycle={frame.cycle}. "
+                f"Received unresolved value {concrete_value!r}. "
+                "Provide a solution item that grounds every referenced symbolic variable."
+            )
+
+        for frame in history:
+            if frame.event is None:
+                continue
+            if frame.prev_frame is None:
+                raise ValueError(
+                    "SearchFrame.to_concrete_frames() encountered a frame with "
+                    f"event {frame.event.path_name!r} but no prev_frame. "
+                    "Event-bearing frames must represent transitions from a previous frame."
+                )
+
+            actual_cycle = frame.prev_frame.cycle
+            _, event_var_name = get_z3_event_key_and_var_name(actual_cycle, frame.event)
+            event_triggered = _literalize(
+                value=z3.Bool(event_var_name),
+                source_name=f"event variable {event_var_name!r}",
+                frame=frame,
+            )
+            if not isinstance(event_triggered, bool):
+                raise ValueError(  # pragma: no cover
+                    "SearchFrame.to_concrete_frames() expected event variables to resolve "
+                    f"to bool, but got {event_triggered!r} for {event_var_name!r}."
+                )
+
+            if event_triggered:
+                seen_names = event_names_by_cycle.setdefault(actual_cycle, set())
+                if frame.event.path_name not in seen_names:
+                    events_by_cycle.setdefault(actual_cycle, []).append(frame.event)
+                    seen_names.add(frame.event.path_name)
+
+        concrete_frames: List['SearchConcreteFrame'] = []
+        prev_concrete_frame: Optional['SearchConcreteFrame'] = None
+        for frame in history:
+            concrete_var_state: Dict[str, ConcreteLiteralTyping] = {
+                var_name: _literalize(var_expr, f"var_state[{var_name!r}]", frame)
+                for var_name, var_expr in frame.var_state.items()
+            }
+            concrete_satisfied = _literalize(
+                value=frame.constraints,
+                source_name='constraints',
+                frame=frame,
+            )
+            if not isinstance(concrete_satisfied, bool):
+                raise ValueError(  # pragma: no cover
+                    "SearchFrame.to_concrete_frames() expected substituted constraints "
+                    f"to resolve to bool, but got {concrete_satisfied!r}."
+                )
+
+            concrete_frame = SearchConcreteFrame(
+                state=frame.state,
+                type=frame.type,
+                var_state=concrete_var_state,
+                satisfied=concrete_satisfied,
+                events=list(events_by_cycle.get(frame.cycle, [])),
+                depth=frame.depth,
+                cycle=frame.cycle,
+                prev_frame=prev_concrete_frame,
+            )
+            concrete_frames.append(concrete_frame)
+            prev_concrete_frame = concrete_frame
+
+        return concrete_frames
+
+
+@dataclass
+class SearchConcreteFrame:
+    """
+    Concrete execution frame reconstructed from a symbolic search result.
+
+    This structure mirrors :class:`SearchFrame` but stores concrete variable
+    values and the realized event sequence instead of symbolic Z3 expressions.
+
+    :param state: State represented by this frame. ``None`` is only valid for
+        the terminal ``'end'`` frame type.
+    :type state: Optional[State]
+    :param type: Internal frame category. Supported values are ``'leaf'``,
+        ``'composite_in'``, ``'composite_out'``, and ``'end'``.
+    :type type: FrameTypeTyping
+    :param var_state: Concrete variable mapping at this frame.
+    :type var_state: Dict[str, Union[bool, int, float]]
+    :param satisfied: Concrete truth value of this frame's reachability
+        constraint.
+    :type satisfied: bool
+    :param events: Concrete events realized on the path up to this frame.
+    :type events: List[Event]
+    :param depth: Search depth from the initial frame.
+    :type depth: int
+    :param cycle: Cycle count consumed when reaching this frame.
+    :type cycle: int
+    :param prev_frame: Previous concrete frame in the reconstructed path.
+        Defaults to ``None``.
+    :type prev_frame: Optional[SearchConcreteFrame], optional
+
+    :ivar state: State represented by this frame.
+    :vartype state: Optional[State]
+    :ivar type: Internal frame category.
+    :vartype type: FrameTypeTyping
+    :ivar var_state: Concrete variable mapping at this frame.
+    :vartype var_state: Dict[str, Union[bool, int, float]]
+    :ivar satisfied: Concrete truth value of this frame's reachability
+        constraint.
+    :vartype satisfied: bool
+    :ivar events: Concrete events realized on the path up to this frame.
+    :vartype events: List[Event]
+    :ivar depth: Search depth from the initial frame.
+    :vartype depth: int
+    :ivar cycle: Cycle count consumed at this frame.
+    :vartype cycle: int
+    :ivar prev_frame: Previous concrete frame in the reconstructed path.
+    :vartype prev_frame: Optional[SearchConcreteFrame]
+    """
+    state: Optional[State]
+    type: FrameTypeTyping
+
+    var_state: Dict[str, ConcreteLiteralTyping]
+    satisfied: bool
+    events: List[Event]
+    depth: int
+    cycle: int
+    prev_frame: Optional['SearchConcreteFrame'] = None
 
 
 @dataclass

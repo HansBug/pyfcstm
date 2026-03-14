@@ -12,6 +12,8 @@ pyfcstm.solver
     expr
     logic
     operation
+    reverse_expr
     solve
+    substitute
     vars
 

@@ -6,18 +6,31 @@ pyfcstm.verify.search
 .. automodule:: pyfcstm.verify.search
 
 
+FrameTypeTyping
+-----------------------------------------------------
+
+.. autodata:: FrameTypeTyping
+
+
 SearchFrame
 -----------------------------------------------------
 
 .. autoclass:: SearchFrame
-    :members: state,type,var_state,constraints,depth,cycle,previous_state
+    :members: state,type,var_state,constraints,event,depth,cycle,prev_frame
 
 
 StateSearchSpace
 -----------------------------------------------------
 
 .. autoclass:: StateSearchSpace
-    :members: state,constraints,frames
+    :members: state,frames
+
+
+StateSearchContext
+-----------------------------------------------------
+
+.. autoclass:: StateSearchContext
+    :members: get_z3_event,queue,spaces,z3_events
 
 
 bfs\_search

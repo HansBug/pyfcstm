@@ -30,7 +30,7 @@ Transition
 -----------------------------------------------------
 
 .. autoclass:: Transition
-    :members: parent,parent,to_ast_node,from_state,to_state,event,guard,effects,parent_ref
+    :members: parent,parent,from_state_obj,to_state_obj,to_ast_node,from_state,to_state,event,guard,effects,parent_ref
 
 
 OnStage

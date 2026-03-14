@@ -377,7 +377,8 @@ def create_z3_vars_from_models(models: Union[StateMachine, VarDefine, List[VarDe
     - VarDefine: creates a single Z3 variable
     - List[VarDefine]: creates Z3 variables for all definitions in the list
 
-    Integer types map to Z3 Int, float types map to Z3 Real.
+    Integer types map to Z3 Int, float types map to Z3 Real, and bool types
+    map to Z3 Bool.
 
     :param models: Model object(s) containing variable definitions
     :type models: Union[StateMachine, VarDefine, List[VarDefine]]

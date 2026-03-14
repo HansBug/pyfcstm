@@ -54,10 +54,12 @@ def _create_z3_vars_from_var_defines(var_defines: Iterable[VarDefine]) -> Dict[s
             z3_vars[var_name] = z3.Int(var_name)
         elif var_type == 'float':
             z3_vars[var_name] = z3.Real(var_name)
+        elif var_type == 'bool':
+            z3_vars[var_name] = z3.Bool(var_name)
         else:
             raise ValueError(
                 f"Unsupported variable type '{var_type}' for variable '{var_name}'. "
-                f"Supported types: int, float"
+                f"Supported types: int, float, bool"
             )
 
     return z3_vars
@@ -68,9 +70,10 @@ def create_z3_vars_from_state_machine(state_machine: StateMachine) -> Dict[str, 
     Create a dictionary of Z3 variables from a state machine.
 
     The returned dictionary uses variable names from
-    :attr:`pyfcstm.model.model.StateMachine.defines` as keys. DSL ``int``
-    variables become :func:`z3.Int` variables and DSL ``float`` variables
-    become :func:`z3.Real` variables.
+    :attr:`pyfcstm.model.model.StateMachine.defines` as keys. ``int``
+    variables become :func:`z3.Int` variables, ``float`` variables become
+    :func:`z3.Real` variables, and ``bool`` variables become :func:`z3.Bool`
+    variables.
 
     :param state_machine: State machine containing variable definitions
     :type state_machine: StateMachine

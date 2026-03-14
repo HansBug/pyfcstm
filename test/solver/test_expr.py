@@ -464,6 +464,30 @@ class TestCreateZ3Vars:
         assert z3.is_int(z3_vars['counter'])
         assert z3.is_real(z3_vars['temperature'])
 
+    def test_create_z3_vars_from_list_of_vardefines_bool(self):
+        """Test creating Z3 boolean variables from manual VarDefine models."""
+        z3_vars = create_z3_vars_from_models([
+            VarDefine(name='enabled', type='bool', init=Boolean(False)),
+            VarDefine(name='ready', type='bool', init=Boolean(True)),
+        ])
+
+        assert len(z3_vars) == 2
+        assert z3.is_bool(z3_vars['enabled'])
+        assert z3.is_bool(z3_vars['ready'])
+
+    def test_create_z3_vars_from_list_of_vardefines_mixed_with_bool(self):
+        """Test creating mixed Z3 variables including boolean definitions."""
+        z3_vars = create_z3_vars_from_models([
+            VarDefine(name='counter', type='int', init=Integer(0)),
+            VarDefine(name='temperature', type='float', init=Float(25.0)),
+            VarDefine(name='enabled', type='bool', init=Boolean(False)),
+        ])
+
+        assert len(z3_vars) == 3
+        assert z3.is_int(z3_vars['counter'])
+        assert z3.is_real(z3_vars['temperature'])
+        assert z3.is_bool(z3_vars['enabled'])
+
     def test_create_z3_vars_from_single_vardefine(self):
         """Test creating Z3 variables from single VarDefine."""
         dsl_code = '''

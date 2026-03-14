@@ -484,6 +484,21 @@ class TestSearchFrameHelpers:
         assert concrete_frames[7].events == ['Root.Idle.Resume']
         assert concrete_frames[8].events == []
         assert concrete_frames[8].get_history() == concrete_frames
+        assert concrete_frames[8].get_history(cycle_only=True) == [
+            concrete_frames[2],
+            concrete_frames[5],
+            concrete_frames[7],
+            concrete_frames[8],
+        ]
+        assert concrete_frames[0].prev_cycle_frame is None
+        assert concrete_frames[1].prev_cycle_frame is None
+        assert concrete_frames[2].prev_cycle_frame is None
+        assert concrete_frames[3].prev_cycle_frame is concrete_frames[2]
+        assert concrete_frames[4].prev_cycle_frame is concrete_frames[2]
+        assert concrete_frames[5].prev_cycle_frame is concrete_frames[2]
+        assert concrete_frames[6].prev_cycle_frame is concrete_frames[5]
+        assert concrete_frames[7].prev_cycle_frame is concrete_frames[5]
+        assert concrete_frames[8].prev_cycle_frame is concrete_frames[7]
         assert concrete_frames[0].prev_frame is None
         assert concrete_frames[1].prev_frame is concrete_frames[0]
         assert concrete_frames[8].prev_frame is concrete_frames[7]

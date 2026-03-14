@@ -29,7 +29,7 @@ SearchConcreteFrame
 -----------------------------------------------------
 
 .. autoclass:: SearchConcreteFrame
-    :members: state,type,var_state,satisfied,events,depth,cycle,prev_frame
+    :members: get_history,state,type,var_state,satisfied,events,depth,cycle,prev_frame,prev_cycle_frame
 
 
 StateSearchSpace

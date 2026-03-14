@@ -485,7 +485,17 @@ class SearchFrame:
 
         concrete_frames: List['SearchConcreteFrame'] = []
         prev_concrete_frame: Optional['SearchConcreteFrame'] = None
+        latest_prev_cycle_frame: Optional['SearchConcreteFrame'] = None
         for frame in history:
+            if prev_concrete_frame is None:
+                latest_prev_cycle_frame = None
+            elif prev_concrete_frame.cycle == frame.cycle:
+                pass
+            elif prev_concrete_frame.cycle == frame.cycle - 1:
+                latest_prev_cycle_frame = prev_concrete_frame
+            else:
+                latest_prev_cycle_frame = None
+
             concrete_var_state: Dict[str, ConcreteLiteralTyping] = {
                 var_name: _literalize(var_expr, f"var_state[{var_name!r}]", frame)
                 for var_name, var_expr in frame.var_state.items()
@@ -510,6 +520,7 @@ class SearchFrame:
                 depth=frame.depth,
                 cycle=frame.cycle,
                 prev_frame=prev_concrete_frame,
+                prev_cycle_frame=latest_prev_cycle_frame,
             )
             concrete_frames.append(concrete_frame)
             prev_concrete_frame = concrete_frame
@@ -547,6 +558,9 @@ class SearchConcreteFrame:
     :param prev_frame: Previous concrete frame in the reconstructed path.
         Defaults to ``None``.
     :type prev_frame: Optional[SearchConcreteFrame], optional
+    :param prev_cycle_frame: Most recent concrete frame whose cycle equals
+        ``self.cycle - 1``. Defaults to ``None``.
+    :type prev_cycle_frame: Optional[SearchConcreteFrame], optional
 
     :ivar state: State represented by this frame.
     :vartype state: Optional[State]
@@ -566,6 +580,9 @@ class SearchConcreteFrame:
     :vartype cycle: int
     :ivar prev_frame: Previous concrete frame in the reconstructed path.
     :vartype prev_frame: Optional[SearchConcreteFrame]
+    :ivar prev_cycle_frame: Most recent concrete frame from the previous
+        cycle, if present.
+    :vartype prev_cycle_frame: Optional[SearchConcreteFrame]
     """
     state: Optional[State]
     type: FrameTypeTyping
@@ -576,23 +593,31 @@ class SearchConcreteFrame:
     depth: int
     cycle: int
     prev_frame: Optional['SearchConcreteFrame'] = None
+    prev_cycle_frame: Optional['SearchConcreteFrame'] = None
 
-    def get_history(self) -> List['SearchConcreteFrame']:
+    def get_history(self, cycle_only: bool = False) -> List['SearchConcreteFrame']:
         """
-        Reconstruct the complete concrete frame history in forward order.
+        Reconstruct the concrete frame history in forward order.
 
-        This walks :attr:`prev_frame` links back to the initial concrete frame
-        and returns the resulting path ordered from the oldest frame to
-        ``self``. The returned list always includes the current frame.
+        By default this walks :attr:`prev_frame` links back to the initial
+        concrete frame and returns the resulting path ordered from the oldest
+        frame to ``self``. When ``cycle_only`` is ``True``, the method walks
+        :attr:`prev_cycle_frame` instead so the result keeps only one frame per
+        visited cycle boundary. The returned list always includes the current
+        frame.
 
-        :return: Complete concrete history from the initial frame to ``self``.
+        :param cycle_only: Whether to walk :attr:`prev_cycle_frame` instead of
+            :attr:`prev_frame`. Defaults to ``False``.
+        :type cycle_only: bool, optional
+        :return: Concrete history from the chosen predecessor chain to
+            ``self``.
         :rtype: List[SearchConcreteFrame]
         """
         history = []
         current = self
         while current is not None:
             history.append(current)
-            current = current.prev_frame
+            current = current.prev_cycle_frame if cycle_only else current.prev_frame
 
         history.reverse()
         return history

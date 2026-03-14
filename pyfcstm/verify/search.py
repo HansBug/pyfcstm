@@ -166,7 +166,7 @@ def parse_z3_event_var_name(var_name_or_var: Union[str, z3.ExprRef]) -> Tuple[in
     return int(match.group('cycle')), match.group('event')
 
 
-def is_z3_event_var_name(var_name_or_var: object) -> bool:
+def is_z3_event_var_name(var_name_or_var: Union[str, z3.ExprRef]) -> bool:
     """
     Check whether a string or Z3 variable matches the symbolic event format.
 
@@ -175,7 +175,7 @@ def is_z3_event_var_name(var_name_or_var: object) -> bool:
 
     :param var_name_or_var: Candidate event variable name string or Z3
         variable.
-    :type var_name_or_var: object
+    :type var_name_or_var: Union[str, z3.ExprRef]
     :return: ``True`` if the input matches ``_E_C<cycle>__<event_path>``,
         otherwise ``False``.
     :rtype: bool

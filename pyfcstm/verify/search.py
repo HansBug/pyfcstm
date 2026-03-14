@@ -44,6 +44,7 @@ Example::
 from collections import deque
 from dataclasses import dataclass, field
 from typing import Optional, Dict, Union, Tuple, List
+import warnings
 
 import z3
 
@@ -300,11 +301,64 @@ def _ensure_boolean_constraint(
     )
 
 
+def _normalize_search_limits(
+        max_cycle: Optional[int],
+        max_depth: Optional[int],
+) -> Tuple[Optional[int], Optional[int]]:
+    """
+    Normalize BFS cycle/depth limits and emit warnings for risky settings.
+
+    ``max_cycle`` remains the primary user-facing limit. When ``max_depth`` is
+    omitted, this helper derives a defensive default from ``max_cycle`` to
+    prevent long chains of non-stoppable states from expanding without bound.
+
+    :param max_cycle: Maximum cycle expansion limit, or ``None`` for no cycle
+        limit.
+    :type max_cycle: Optional[int]
+    :param max_depth: Maximum search depth, or ``None`` to derive a default.
+    :type max_depth: Optional[int]
+    :return: Normalized ``(max_cycle, max_depth)`` tuple.
+    :rtype: Tuple[Optional[int], Optional[int]]
+    """
+    if max_cycle is None:
+        if max_depth is None:
+            warnings.warn(
+                "bfs_search() received max_cycle=None and max_depth=None. "
+                "The search has no cycle or depth limit and may not terminate "
+                "for state machines with unbounded symbolic paths.",
+                UserWarning,
+                stacklevel=3,
+            )
+        else:
+            warnings.warn(
+                f"bfs_search() received max_cycle=None. Cycle expansion is unlimited, "
+                f"and the search is bounded only by max_depth={max_depth}. "
+                "This may still explore a very large state space.",
+                UserWarning,
+                stacklevel=3,
+            )
+        effective_max_depth = max_depth
+    else:
+        effective_max_depth = int(max_cycle * 3) if max_depth is None else max_depth
+
+    if effective_max_depth is not None and (max_cycle is None or effective_max_depth < max_cycle):
+        warnings.warn(
+            f"bfs_search() has max_depth={effective_max_depth} and max_cycle={max_cycle!r}. "
+            "The depth limit is stricter than the cycle limit, so search expansion "
+            "may stop on depth before the configured cycle budget is exhausted.",
+            UserWarning,
+            stacklevel=3,
+        )
+
+    return max_cycle, effective_max_depth
+
+
 def bfs_search(
         state_machine: StateMachine,
         init_state: Union[State, str],
         init_constraints: Optional[Union[str, z3.BoolRef, Expr]] = None,
-        max_cycle: int = 100,
+        max_cycle: Optional[int] = 100,
+        max_depth: Optional[int] = None,
 ) -> StateSearchContext:
     """
     Explore a state machine symbolically with breadth-first search.
@@ -329,8 +383,14 @@ def bfs_search(
         :class:`pyfcstm.model.Expr` object. Defaults to ``None``.
     :type init_constraints: Optional[Union[str, z3.BoolRef, pyfcstm.model.Expr]], optional
     :param max_cycle: Maximum number of cycles to expand. Frames at or beyond
-        this cycle limit are not expanded further. Defaults to ``100``.
-    :type max_cycle: int, optional
+        this cycle limit are not expanded further. Use ``None`` to disable the
+        cycle limit. Defaults to ``100``.
+    :type max_cycle: Optional[int], optional
+    :param max_depth: Maximum search depth to expand. Frames at or beyond this
+        depth limit are not expanded further. When set to ``None``, the
+        effective depth limit is also ``None`` if ``max_cycle`` is ``None``,
+        otherwise ``int(max_cycle * 3)``. Defaults to ``None``.
+    :type max_depth: Optional[int], optional
     :return: Search context containing the explored state-space buckets,
         retained frames, and symbolic event variables.
     :rtype: StateSearchContext
@@ -361,6 +421,10 @@ def bfs_search(
         [('Root.Idle', 'leaf')]
     """
     z3_vars = create_z3_vars_from_state_machine(state_machine)
+    max_cycle, max_depth = _normalize_search_limits(
+        max_cycle=max_cycle,
+        max_depth=max_depth,
+    )
 
     if isinstance(init_state, str):
         try:
@@ -461,7 +525,9 @@ def bfs_search(
 
     while len(ctx.queue) > 0:
         head: SearchFrame = ctx.queue.popleft()
-        if head.cycle >= max_cycle:
+        if max_depth is not None and head.depth >= max_depth:
+            continue
+        if max_cycle is not None and head.cycle >= max_cycle:
             continue
 
         if head.type != 'end' and head.state is None:

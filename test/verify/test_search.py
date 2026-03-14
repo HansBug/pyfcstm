@@ -15,6 +15,22 @@ state Root {
 }
 '''
 
+PSEUDO_CHAIN_DSL = '''
+state Root {
+    pseudo state Alpha;
+    pseudo state Beta;
+    pseudo state Gamma;
+    pseudo state Delta;
+    pseudo state Omega;
+
+    [*] -> Alpha;
+    Alpha -> Beta;
+    Beta -> Gamma;
+    Gamma -> Delta;
+    Delta -> Omega;
+}
+'''
+
 
 def build_state_machine(dsl_code: str = TEST_DSL):
     ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
@@ -112,3 +128,75 @@ class TestBfsSearchErrors:
         assert "unsupported type 'broken'" in message
         assert "'Root.Idle'" in message
         assert "Supported frame types are 'leaf', 'composite_in', 'composite_out', and 'end'" in message
+
+
+@pytest.mark.unittest
+class TestBfsSearchLimits:
+    def test_warns_when_max_cycle_and_max_depth_are_both_unbounded(self):
+        state_machine = build_state_machine(PSEUDO_CHAIN_DSL)
+
+        with pytest.warns(
+                UserWarning,
+                match=r"max_cycle=None and max_depth=None",
+        ):
+            ctx = verify_search.bfs_search(
+                state_machine,
+                'Root.Alpha',
+                max_cycle=None,
+                max_depth=None,
+            )
+
+        assert ('Root.Omega', 'leaf') in ctx.spaces
+
+    def test_derives_default_max_depth_from_max_cycle(self):
+        state_machine = build_state_machine(PSEUDO_CHAIN_DSL)
+
+        ctx = verify_search.bfs_search(
+            state_machine,
+            'Root.Alpha',
+            max_cycle=1,
+            max_depth=None,
+        )
+
+        assert ('Root.Alpha', 'leaf') in ctx.spaces
+        assert ('Root.Beta', 'leaf') in ctx.spaces
+        assert ('Root.Gamma', 'leaf') in ctx.spaces
+        assert ('Root.Delta', 'leaf') in ctx.spaces
+        assert ('Root.Omega', 'leaf') not in ctx.spaces
+
+    def test_explicit_max_depth_overrides_derived_default(self):
+        state_machine = build_state_machine(PSEUDO_CHAIN_DSL)
+
+        with pytest.warns(
+                UserWarning,
+                match=r"max_depth=2 and max_cycle=5",
+        ):
+            ctx = verify_search.bfs_search(
+                state_machine,
+                'Root.Alpha',
+                max_cycle=5,
+                max_depth=2,
+            )
+
+        assert ('Root.Alpha', 'leaf') in ctx.spaces
+        assert ('Root.Beta', 'leaf') in ctx.spaces
+        assert ('Root.Gamma', 'leaf') in ctx.spaces
+        assert ('Root.Delta', 'leaf') not in ctx.spaces
+
+    def test_warns_when_max_cycle_is_unbounded_but_max_depth_is_finite(self):
+        state_machine = build_state_machine(PSEUDO_CHAIN_DSL)
+
+        with pytest.warns(UserWarning) as warnings_info:
+            ctx = verify_search.bfs_search(
+                state_machine,
+                'Root.Alpha',
+                max_cycle=None,
+                max_depth=2,
+            )
+
+        messages = [str(item.message) for item in warnings_info]
+        assert len(messages) == 2
+        assert any("max_cycle=None. Cycle expansion is unlimited" in message for message in messages)
+        assert any("max_depth=2 and max_cycle=None" in message for message in messages)
+        assert ('Root.Gamma', 'leaf') in ctx.spaces
+        assert ('Root.Delta', 'leaf') not in ctx.spaces

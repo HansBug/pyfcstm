@@ -1138,6 +1138,131 @@ pyfcstm 的 pseudo state 有三个关键语义：
 
 如果后续要把 `verify_invariant` 做成真正有证明能力的接口，而不是 bounded bug hunting，那么 `k-induction` 很值得尽早纳入设计。
 
+#### 8.2.1 基于现有基建的可行性
+
+从 8.2 之后这些路线里看，`k-induction` 是和当前 pyfcstm 基建衔接最自然的一条。
+
+原因是现有代码已经具备了以下可直接复用的底层能力：
+
+- 表达式到 Z3 的转换
+- 变量定义到 Z3 变量的映射
+- effect / lifecycle action 的符号执行
+- 当前 BFS 中已经显式编码过的状态机 operational semantics
+
+换句话说，`k-induction` 缺的不是 solver 积木，而是：
+
+- 一层统一的 `Init(s)` / `Trans(s, s')` / `Prop(s)` 构造器
+- 一套“当前状态变量”和“下一状态变量”的 priming 机制
+
+只要这层补起来，`k-induction` 的基本框架就有了很强的落地可能性。
+
+#### 8.2.2 实现难度
+
+实现难度我会评估为**中偏高**。
+
+真正的难点主要不在于写出 base case 和 inductive step 这两个 solver 查询，而在于：
+
+- 如何把当前 BFS 中分散在扩展逻辑里的语义，抽象成统一的 transition relation
+- 如何处理 pyfcstm 特有的 leaf / pseudo / composite boundary 语义
+- 如何把“状态相关性质”稳定地编译成 `Prop(s)` 公式
+
+如果只做一个最小可用版，难度不算特别高；但如果要做到：
+
+- 反例路径可读
+- 支持多个 init
+- 支持环境约束
+- 和未来 BMC 共享统一语义层
+
+那么工程工作量就会明显上升。
+
+#### 8.2.3 现有可复用基建
+
+最值得直接复用的是下面几类组件：
+
+- `pyfcstm.solver.expr`：表达式转 Z3
+- `pyfcstm.solver.vars`：从状态机变量定义创建 Z3 变量
+- `pyfcstm.solver.operation`：effect / during / enter / exit 的符号执行
+- `pyfcstm.verify.search`：当前 operational semantics 的语义参考实现
+
+尤其是 `verify.search` 这一层，虽然它目前是 BFS 驱动的，但实际上已经把很多关键语义写清楚了：
+
+- transition declaration order
+- pseudo state 的 cycle 语义
+- composite 入口/出口边界
+- aspect 与普通 during 的执行顺序
+
+这会让 `k-induction` 的 transition relation 建模比“从零发明语义”容易很多。
+
+#### 8.2.4 主要缺口
+
+当前最关键的缺口，是**没有显式的 transition-system builder**。
+
+也就是说，现在有的是：
+
+- “如何从一个 frame 扩展到后继 frame”
+
+但还没有：
+
+- “如何一次性构造 `Trans(s, s')` 这类关系公式”
+
+如果要支持 `k-induction`，至少需要补下面这些公共基建：
+
+- control-location 编码
+- primed / unprimed 变量命名与映射
+- `Init(s)` 构造器
+- `Trans(s, s')` 构造器
+- `Prop(s)` / `Bad(s)` 编译器
+- 结果对象：区分 `proved` / `counterexample` / `unknown`
+
+此外，最好还要有：
+
+- witness path replay
+- 反例从 Z3 model 回译到 pyfcstm path 的工具
+- 对 induction 失败原因的区分（base-case 失败、step-case 失败、solver timeout）
+
+#### 8.2.5 需要补的 DSL 语义
+
+首版 `k-induction` 不一定非要新增 DSL 语义。
+
+如果只想验证：
+
+- invariant
+- state predicate
+- 基本 safety
+
+那么复用现有 DSL 表达式系统就够了。
+
+但如果想把这条路线做得真正可用，我认为最好补下面几类语义或至少补出对应 API：
+
+- 环境 assumptions
+- 变量域 / 取值范围约束
+- 正式的 property 输入形式
+
+原因很简单：很多 induction 是否能成功，很依赖：
+
+- 初始条件是否足够明确
+- 环境输入是否被合理约束
+- 变量空间是否有工程上已知的界限
+
+没有这些信息时，很多原本在业务上显然为真的性质，在形式上会很难归纳。
+
+#### 8.2.6 更现实的首批落地边界
+
+我更推荐的首批支持边界是：
+
+- 变量类型优先支持 `bool` / `int`
+- `float` 先按 Z3 `Real` 语义处理，并明确这不是 IEEE 浮点精确语义
+- 表达式优先支持线性算术和简单比较
+- 先支持 `verify_invariant` / `verify_state_predicate`
+
+暂时不建议一开始就承诺：
+
+- 复杂非线性
+- 强位运算语义
+- 全量浮点精确证明
+
+如果先把这条线做好，它会是 8.2 之后最有现实产出的一个后端。
+
 
 ### 8.3 IC3 / PDR
 
@@ -1163,6 +1288,113 @@ pyfcstm 的 pseudo state 有三个关键语义：
 - 对层次状态机 + 数据路径 + lifecycle semantics 的直接自研成本不低
 
 因此它更适合作为中长期方向，而不是当前 BFS 的第一替代品。
+
+#### 8.3.1 基于现有基建的可行性
+
+如果问题是“能不能基于现有基建往这边走”，答案是：
+
+- **不是完全不可行**
+- 但当前基建距离可用的 IC3 / PDR 还差得非常远
+
+现有基建能提供的是：
+
+- 表达式与约束层
+- 部分 operational semantics 参考
+- 一些基本 solver 工具
+
+但 IC3 / PDR 真正依赖的是另一套能力：
+
+- predecessor blocking
+- generalized cube learning
+- 归纳 frame 序列
+- 安全性证明过程中的 generalized clause strengthening
+
+这些都不在当前 verify/solver 的能力范围里。
+
+#### 8.3.2 实现难度
+
+实现难度我会评估为**很高**。
+
+尤其是对 pyfcstm 这种模型，困难不只是算法本身，而是算法与 DSL 语义的耦合：
+
+- hierarchy
+- pseudo / composite boundary
+- 事件驱动与 cycle 驱动混合
+- 整数 / 实数数据路径
+
+如果是纯布尔、有限状态、扁平 transition system，IC3/PDR 的落地门槛已经不低；对当前 pyfcstm 这种 richer semantics 的模型，自研成本会进一步抬高。
+
+#### 8.3.3 现有可复用基建
+
+可复用的部分主要还停留在“底层积木”：
+
+- `expr_to_z3`
+- 变量创建
+- 基本逻辑关系检查
+- operation 的符号执行
+
+这些组件对 IC3 / PDR 是必要的，但远远不够。
+
+也就是说，当前基建最多能解决：
+
+- 状态和公式怎么表示
+
+但解决不了：
+
+- 如何做 PDR 主循环
+- 如何做 blocking/generalization
+- 如何构造 inductive strengthening
+
+#### 8.3.4 主要缺口
+
+如果未来真的要做这条路线，至少需要补：
+
+- 明确的 `Init/Trans/Bad` 公式层
+- predecessor 查询接口
+- cube / region 表示
+- generalized blocking 机制
+- frame 序列管理
+- 证明对象或归纳不变量提取
+
+此外，还很可能需要更强的 solver 支撑，例如：
+
+- unsat core
+- model-based projection
+- 更强的 generalization 辅助
+
+否则做出来的版本很容易停留在“概念存在、稳定性不足”的阶段。
+
+#### 8.3.5 需要补的 DSL 语义
+
+这条路线如果想可控，几乎一定需要**限制 DSL 子集**，而不是无条件吃全量语义。
+
+更适合作为首批目标的子集通常是：
+
+- 布尔
+- 有界整数或至少较容易抽象的整数
+- 线性算术
+- 相对简单的控制流
+
+而对下面这些特性，应当非常谨慎：
+
+- 复杂非线性
+- 强浮点语义
+- 复杂位运算
+- 过于自由的无限域数据路径
+
+如果不加限制，PDR 的理论优势在工程实现中很容易被语义复杂度抵消掉。
+
+#### 8.3.6 更现实的落地方式
+
+更现实的路线不是“直接自研一整套 IC3/PDR”，而是：
+
+1. 先把 `Init/Trans/Prop` 这层补好
+2. 先把 BMC / `k-induction` 做稳
+3. 再决定是：
+   - 自研一个受限子集的 PDR-like 引擎
+   - 还是尽量复用现有 solver/外部后端提供的固定点或 Horn 能力
+
+所以，这条路线更像长期增强方向，而不是近期里程碑。
 
 
 ### 8.4 Predicate Abstraction / CEGAR
@@ -1194,6 +1426,109 @@ pyfcstm 的 pseudo state 有三个关键语义：
 
 因此更适合作为中长期路线，而不是当前版本的近期替代方案。
 
+#### 8.4.1 基于现有基建的可行性
+
+如果只看 8.2 之后几条路线里“哪条和 pyfcstm DSL 的 guard 风格最契合”，我反而会把这一条排得很靠前。
+
+原因是很多 pyfcstm 模型天然就是阈值驱动的：
+
+- `x >= 10`
+- `temp <= 50`
+- `retry_count < 3`
+
+这类 guard 很适合抽象成谓词。
+
+因此，基于当前基建做 Predicate Abstraction / CEGAR，**可行性是中到高**的。
+
+它比 IC3/PDR 更贴近你现在的数据路径形态，也比 timed automata 需要更少的新 DSL 语义。
+
+#### 8.4.2 实现难度
+
+实现难度我会评估为**中偏高**。
+
+主要挑战不是 solver 不够，而是需要补一整套“抽象层”和“refinement 层”：
+
+- 谓词收集
+- abstract state 表示
+- abstract successor 计算
+- spurious counterexample replay
+- predicate refinement
+
+好消息是，这些工作虽然多，但大多是工程构造问题，不像 PDR 那样对底层证明算法依赖那么强。
+
+#### 8.4.3 现有可复用基建
+
+当前最适合复用的有三类：
+
+- 现有 solver 层：用于 concrete feasibility check
+- 现有 BFS 或未来 BMC：用于生成 candidate counterexample
+- 现有 guard/effect 表达式：用于抽取初始谓词集合
+
+特别是当前 DSL guard 的风格，本身就可以作为谓词候选来源。
+
+也就是说，这条路线和现有 pyfcstm 的契合点在于：
+
+- 控制状态保持精确
+- 数据状态做抽象
+
+这恰好符合当前模型的结构特征。
+
+#### 8.4.4 主要缺口
+
+如果未来要做这条路线，当前缺的主要是：
+
+- predicate manager
+- abstract state 表示
+- abstract transition relation
+- spurious path replay
+- refinement engine
+
+此外，还需要一个关键设计决策：
+
+- 控制状态是否保持精确
+- 数据状态是否只做谓词抽象
+
+对 pyfcstm 来说，我更推荐：
+
+- **控制结构精确保留**
+- **数据路径做抽象**
+
+否则 hierarchy / pseudo / boundary 这些语义会一起被抽象掉，结果很容易失真。
+
+#### 8.4.5 需要补的 DSL 语义
+
+首版其实不一定需要新增 DSL 语义。
+
+因为谓词可以先从下列来源自动提取：
+
+- transition guards
+- target predicate
+- invariant / safety property
+
+但如果想提升工程可用性，最好补出下面这些能力：
+
+- 用户显式提供 predicates
+- 变量范围或阈值注解
+- 环境 assumptions
+
+这样 refinement 才不会完全依赖自动猜测。
+
+#### 8.4.6 更现实的落地方式
+
+我更推荐的落地方式是：
+
+1. 先做“控制状态精确 + 数据谓词抽象”的 MVP
+2. 用现有 solver 做 concrete replay，排除伪反例
+3. refinement 先从“把反例路径中出现的 guard/比较加入谓词集”开始
+
+这样做的好处是：
+
+- 不需要一开始就实现很强的自动谓词发现
+- 可以尽量复用现有搜索与求解器能力
+- 和 pyfcstm 当前的 guard 风格很匹配
+
+从中期路线看，这条线很值得认真评估。
+
 
 ### 8.5 组合式 / 层次化验证
 
@@ -1210,6 +1545,115 @@ pyfcstm 的 pseudo state 有三个关键语义：
 这条路线的价值不是“换个 solver”，而是从建模结构上降低爆炸。
 
 但目前 pyfcstm 的 DSL 和 verify 仍更接近单体状态机验证框架，因此这条路线暂时更像未来架构方向，而不是短期替换 BFS 的首选。
+
+#### 8.5.1 基于现有基建的可行性
+
+这里要区分两件事：
+
+- 保留 hierarchy 做摘要或优化
+- 真正做 assume-guarantee compositional verification
+
+前者基于现有基建是**中等可行**的；
+后者基于现有基建则是**较低可行**的。
+
+原因在于，当前 verify/search 已经显式把 hierarchy 的边界节点保留了：
+
+- composite_in
+- composite_out
+
+这意味着“做复合状态摘要”并不是毫无基础。
+
+但当前 DSL 和 verify 还没有：
+
+- 组件接口
+- assume / guarantee
+- 模块化环境边界
+
+所以距离真正的 compositional reasoning 还差很远。
+
+#### 8.5.2 实现难度
+
+如果目标只是：
+
+- 利用 hierarchy 做状态空间压缩
+- 为 composite state 生成 summary
+
+那么实现难度大致是**中等**。
+
+但如果目标升级为：
+
+- 子系统分块验证
+- assume-guarantee
+- 局部证明后自动组合成全局证明
+
+那难度会迅速上升到**很高**，而且挑战主要在语义设计，不在 solver。
+
+#### 8.5.3 现有可复用基建
+
+这条路线最值得复用的，其实不是 solver，而是当前 BFS 已经显式化的 hierarchy 语义：
+
+- 复合状态入口边界
+- 复合状态出口边界
+- 边界动作
+- pseudo / stoppable / composite 的区分
+
+也就是说，当前 verify/search 其实已经把“层次边界”作为第一类对象建模了。
+
+这对做：
+
+- entry-to-exit summary
+- child-to-parent continuation summary
+- hierarchy-preserving compression
+
+都是很好的基础。
+
+#### 8.5.4 主要缺口
+
+如果未来要认真推进这条路线，缺口主要在下面这些方面：
+
+- summary 形式定义
+- 子状态机接口定义
+- 组件局部环境的语义
+- contract 检查器
+- 组合规则
+
+换句话说，现在缺的不是“如何表示状态”，而是：
+
+- “如何切分系统”
+- “如何描述切分后的边界”
+- “如何证明局部结论能安全组合”
+
+这类问题不补清楚，组合式验证就很容易只停留在概念层面。
+
+#### 8.5.5 需要补的 DSL 语义
+
+如果只做 hierarchy-preserving summary，首版不一定非要新增 DSL。
+
+但如果要做更正式的 compositional verification，几乎一定需要补：
+
+- 模块或组件边界
+- 输入 / 输出事件或接口语义
+- 变量可见性与读写边界
+- assume / guarantee 语法或至少对应 API
+
+没有这些，就很难让“局部证明”具备明确的组合意义。
+
+#### 8.5.6 更现实的落地方式
+
+这条路线更现实的第一步不是“做完整 assume-guarantee”，而是：
+
+- 先做复合状态摘要
+- 先把 hierarchy 用来压缩搜索和公式规模
+
+也就是说，它更像：
+
+- 先作为 BFS/BMC 的优化技术
+- 再逐步演进成真正的组合式验证框架
+
+如果按阶段推进，我会把它放在：
+
+- BMC / `k-induction` 之后
+- 真正的 timed / compositional 大扩展之前
 
 
 ### 8.6 Timed Automata / UPPAAL
@@ -1230,6 +1674,112 @@ pyfcstm 的 pseudo state 有三个关键语义：
 - UPPAAL
 
 这类工具对时间性质更原生，通常也比在当前 BFS 框架里手工编码时钟语义更可靠。
+
+#### 8.6.1 基于现有基建的可行性
+
+如果不扩 DSL 时间语义，单靠当前基建直接走 timed automata / UPPAAL，**可行性是比较低的**。
+
+原因很直接：
+
+- 当前 pyfcstm 有 cycle 语义
+- 但还没有真正的 clock / time-elapse / state invariant 语义
+
+也就是说，现在离“可以做 timed automata 导出”之间，还隔着一层更根本的工作：
+
+- 先把时间语义本身定义出来
+
+#### 8.6.2 实现难度
+
+如果只是说“把已经存在的 timed semantics 导出给现成工具”，实现难度并不一定最高。
+
+真正困难的是：
+
+- 当前还没有完整 timed semantics
+- 需要先扩 DSL
+- 还要让 simulate / verify 都理解这套时间语义
+
+因此，从整体工作量看，这条路线是**高难度**的，而且难点更多在语义设计与一致性维护，而不只是 exporter。
+
+#### 8.6.3 现有可复用基建
+
+当前可复用的部分主要有：
+
+- 现有控制状态结构
+- guard/effect 表达式系统
+- hierarchy 语义
+
+但这些只能算“控制流基底”。
+
+真正 timed automata 核心依赖的那些东西，目前都还没有，例如：
+
+- 时钟变量
+- 时钟重置
+- 状态不变式
+- 时间推进规则
+- timeout/deadline/min-dwell 语义
+
+所以这条路线的可复用度其实没有前几条那么高。
+
+#### 8.6.4 主要缺口
+
+如果未来真的要走 timed automata / UPPAAL，这里缺的不是一个小模块，而是一整块新的语义层：
+
+- clock domain
+- time elapse semantics
+- state invariant
+- clock guard
+- reset 规则
+- timed property 编译器
+
+此外，还需要考虑：
+
+- hierarchy 如何降成 timed automata
+- 事件语义如何映射到同步或离散跳转
+- continuous-time / dense-time 还是 discrete-time
+
+这些都不是当前 verify/BFS 里顺手补几行代码就能解决的。
+
+#### 8.6.5 需要补的 DSL 语义
+
+这条路线如果要认真做，DSL 基本一定要新增以下至少一部分：
+
+- `clock` 或其他明确的时钟变量类型
+- clock reset 语法
+- 基于时钟的 guard
+- 状态不变式
+- timeout / deadline / 最小驻留时间语义
+- urgent / committed 一类时间推进控制语义（如果要贴近 timed automata 习惯）
+
+没有这些，所谓“导出到 timed automata”大概率只是把 cycle 计数器换个名字，而不是真正的 timed semantics。
+
+#### 8.6.6 更现实的落地方式
+
+如果后续确定要走这条路线，我更建议的实现策略是：
+
+1. 先在 pyfcstm 内部明确时间语义
+2. 先让 simulator 和 verify 对这套语义达成一致
+3. 再考虑导出和对接外部 timed 后端
+
+并且，基于你现在的想法，我认为这里最值得优先评估的是：
+
+- **尽量复用 UPPAAL 官方提供的验证引擎 / 算法库**
+- **避免从零自研 zone / DBM / timed reachability 核心算法**
+
+原因很现实：
+
+- timed automata 的核心算法本身已经很成熟
+- 自研时间区域/zone 算法成本高、踩坑多、验证难
+- pyfcstm 更适合把精力放在 DSL 语义映射、模型降级和 counterexample 回译上
+
+也就是说，这条路线更像：
+
+- 先补时间语义
+- 再做可靠的模型映射
+- 最后尽量挂接官方后端
+
+而不是：
+
+- 一开始就在 pyfcstm 内部重做一套完整 timed model checking 核心
 
 
 ## 9. 常见现成工具与适配方向

@@ -381,6 +381,159 @@
 - 搜索过程中需要频繁做 solver 判定
 - 对同一状态反复产生新符号区域时容易退化
 
+不过，这里也要避免把当前 BFS 理解成“只是一个性能更差的 BMC”。
+
+基于 pyfcstm 现有这套基建，BFS 其实还承担了一个更像**分析底座**的角色，而不只是单次 reachability 查询引擎。
+
+### 8.0 当前 BFS 方案相对 BMC 的额外价值
+
+如果只从“理论表达能力”看，足够增强的 BMC 通过增加辅助变量、micro-step 索引和额外 instrumentation，通常可以编码掉很多 BFS 当前能表达的东西。
+
+但是，从“当前实现形态”和“工程上天然擅长什么”来看，BFS 仍然有几类价值并不是单次 BMC 查询天然提供的。
+
+#### 8.0.1 不必先固定一个唯一的 `k`
+
+BMC 的基本问题形态是：
+
+- 给定一个 bound `k`
+- 询问在 `0..k` 内是否存在 witness
+
+而当前 BFS 的工作方式更接近：
+
+- 在给定 cycle/depth 限制下逐层扩展
+- 只要还能产生新的可达 frame，就继续探索
+- 如果不显式给定严格的 `k`，也仍然可以继续做“尽量展开直到当前抽象下收敛”
+
+这意味着 BFS 更适合承担如下角色：
+
+- 作为“当前可达空间”的构建器
+- 作为后续多种分析的公共前端
+
+换句话说，BMC 天然更像“有界判定器”，而 BFS 更像“可达空间探索器”。
+
+
+#### 8.0.2 reachable space 本身就是产物
+
+当前 BFS 最大的一个实际优势在于：
+
+- 它不只是返回 sat / unsat
+- 它还显式保留了搜索上下文、状态分桶和 symbolic frame
+
+这件事非常重要，因为很多后续 verify 能力本质上都可以表述为：
+
+- “先得到一批可达 frame”
+- “再对这些 frame 做进一步检查”
+
+例如：
+
+- invariant 反例搜索
+- 状态相关输出约束检查
+- transition deadness / shadowing
+- dead-end / zero-cycle livelock 诊断
+
+对这类任务来说，BFS 的结果不是一个临时中间物，而是直接可复用的分析资产。
+
+
+#### 8.0.3 更自然支持在线、过程式查询
+
+当前 BFS 的一个很实用的特点是：
+
+- 搜索过程中每当有新 frame 被保留，就可以立即做额外判断
+- 一旦命中目标条件，就可以提前停止
+
+这使它很适合承载一些“不一定事先写成单个大公式”的查询方式，例如：
+
+- 一旦发现某类 frame 就停止
+- 一旦某个 bucket 的可达条件被扩展到某个程度就停止
+- 一旦发现某种 cycle/depth 模式就报告
+
+这种“边探索边做任意 Python 逻辑判断”的能力，在工程上非常灵活。
+
+BMC 当然也可以通过“外部循环 + 多次求解”去模拟，但那已经不是单次 BMC 查询天然擅长的工作方式了。
+
+
+#### 8.0.4 中间语义边界是第一类对象
+
+pyfcstm 不是一个纯平面的 FSM，它的执行边界里还包含：
+
+- leaf state
+- composite 入口边界
+- composite 退出边界
+- terminal `<end>`
+
+当前 BFS 显式把这些边界节点保留下来，而不是把它们全部压扁到“某个时刻的整体状态变量”里。
+
+这带来的好处是：
+
+- 可以直接观察 composite 进入/退出的可达性
+- 可以直接分析 parent boundary 上的卡死与后继
+- 可以直接保留 pseudo / boundary 链中的中间 frame
+
+对很多调试和诊断型任务来说，这些中间点本身就是用户关心的对象，而不只是实现内部细节。
+
+
+#### 8.0.5 对 zero-cycle 问题更自然
+
+在 pyfcstm 里，pseudo state 和某些 composite boundary 会导致：
+
+- `depth` 增长
+- 但 `cycle` 不增长
+
+这正是 zero-cycle livelock / pseudo-chain 问题的核心结构。
+
+当前 BFS 直接保留：
+
+- 每个 frame 的 `depth`
+- 每个 frame 的 `cycle`
+- frame 之间的 predecessor history
+
+因此，像下面这类问题就更自然：
+
+- 是否存在一直增长 `depth` 但不增长 `cycle` 的循环
+- 是否卡在 pseudo / composite boundary 内无法回到稳定边界
+- 哪一段 zero-cycle 链导致某个状态机设计陷阱
+
+如果用 BMC 来做，同样可以编码，但往往需要引入额外的 micro-step 维度和额外性质定义；这不是它最自然的工作模式。
+
+
+#### 8.0.6 部分结果仍然有价值
+
+BFS 还有一个经常被低估的优点：
+
+- 即使搜索被边界截断
+- 即使还没有完全证明某个全局性质
+- 只要已经探索出一部分 reachable buckets / frames
+
+这部分结果本身就已经可以拿来做分析和调试。
+
+而 BMC 更常见的交互模式通常是：
+
+- 构造一个公式
+- 扔给 solver
+- 等待 sat / unsat / unknown / timeout
+
+如果超时或中途停止，往往更难直接得到一个结构化的“已探索可达空间前缀”。
+
+因此，从工具体验上看：
+
+- BFS 更像 exploration / diagnosis platform
+- BMC 更像 property query engine
+
+
+#### 8.0.7 更准确的角色划分
+
+基于当前实现，更准确的理解通常应该是：
+
+- BFS 不只是“慢版 reachability”
+- BFS 更像 verify 的分析底座
+- BMC 更像未来 bounded reachability / bounded counterexample 的高效主力后端
+
+所以，如果未来真的引入 BMC，更合理的演进方式通常不是“把 BFS 整体删掉”，而是：
+
+- 保留 BFS 作为 reachable-space exploration、语义调试、结构诊断的平台
+- 用 BMC 去承担最核心的 bounded reachability / bounded safety 查询
+- 在更需要“证明”的地方再引入 `k-induction` 或更强方法
+
 因此，如果目标是“最起码比 BFS 更好”，更值得重点考虑的是下面几类现有方法。
 
 
@@ -693,6 +846,266 @@ if __name__ == "__main__":
 - BMC 是直接问 solver：“是否存在一组 `state_i`、`var_i`、`event_i` 的赋值，使得整条 `0..k` 执行链合法并且命中目标”
 
 对于 pyfcstm 当前最常见的 bounded reachability / bounded safety 问题，这种编码方式通常比逐 frame 的 BFS 搜索更适合作为主力后端。
+
+
+#### 8.1.2 `max_cycle`、伪状态与公式膨胀
+
+上面的 water heater 例子故意选了一个没有 pseudo state、没有 composite boundary 的情形，因此它看起来几乎就是标准的“按 cycle 逐层展开”。
+
+但对 pyfcstm 来说，真正需要提前说明的是：
+
+- `max_cycle` 没有一个固定的“理论支持上限”
+- 真正的上限通常取决于求解时间和内存，而不是 API 签名
+- 当 `max_cycle` 很大、pseudo state 很多、zero-cycle 链很长时，BMC 公式会明显膨胀
+
+换句话说，BMC 更像是在回答：
+
+- “在给定 `k` 的前提下，这个问题能不能在可接受时间内求出来？”
+
+而不是：
+
+- “这个后端天然支持到多大的 `k`？”
+
+
+##### 8.1.2.1 没有 pseudo state 时的增长趋势
+
+如果模型只在稳定边界上推进，也就是：
+
+- 每个 cycle 结束时一定落在一个 stoppable state 或 `<end>`
+- 中间没有需要额外展开的 zero-cycle 内部步骤
+
+那么一个朴素 BMC 的规模通常近似为：
+
+- 变量数量：`O(k * (|V| + |E| + 1))`
+- 约束数量：`O(k * |T|)`
+
+其中：
+
+- `k` 是 `max_cycle`
+- `|V|` 是数据变量数量
+- `|E|` 是每个 cycle 中被建模的事件布尔变量数量
+- `|T|` 是每一步需要区分的 transition case 数量
+
+在这种情况下，公式规模通常是**随 `max_cycle` 线性增长**的。只要 guard/effect 主要是线性整数约束，这类 BMC 在工程上往往是比较可控的。
+
+
+##### 8.1.2.2 有 pseudo state 时为什么更容易膨胀
+
+pyfcstm 的 pseudo state 有三个关键语义：
+
+- 进入 pseudo state 不增加 cycle
+- pseudo state 不能驻停，必须继续前进直到到达 stoppable state 或 `<end>`
+- pseudo state 跳过祖先 aspect during actions，但仍然可能执行自己的 enter/during，以及后续状态的边界动作
+
+因此，只用 `state[i] -> state[i+1]` 的单层编码往往不够。
+
+更通用的编码通常需要两层索引：
+
+- `cycle = 0..k`
+- `micro_step = 0..M`
+
+也就是在一个 cycle 内继续展开 zero-cycle 的内部迁移，例如：
+
+- `loc[c, m]`：第 `c` 个 cycle 内第 `m` 个 micro-step 所在的位置
+- `vars[c, m]`：对应的数据变量状态
+
+这时，规模大致会变成：
+
+- 变量数量：`O(k * M * (|V| + 1) + k * |E|)`
+- 约束数量：`O(k * M * |T_step|)`
+
+这里最敏感的量不再只是 `k`，而是 `k * M`。
+
+其中 `M` 近似代表：
+
+- 一个 cycle 内可能经历的 pseudo state 数量
+- composite 入口/出口边界数量
+- zero-cycle chain 的最大长度
+
+所以对 pyfcstm 这类模型来说，**伪状态多不一定直接导致不可做，但会把原本按 `k` 线性增长的问题，变成按 `k * M` 增长的问题**。
+
+
+##### 8.1.2.3 伪状态链为什么尤其危险
+
+例如下面这类链：
+
+.. code-block:: fcstm
+
+    state A;
+    pseudo state P1;
+    pseudo state P2;
+    state B;
+
+    A -> P1 :: Go1;
+    P1 -> P2 :: Go2;
+    P2 -> B  :: Go3;
+
+如果从稳定状态 `A` 出发，在一个 cycle 内必须连续经过 `P1 -> P2 -> B` 才能落到下一个稳定边界，那么这 3 条 zero-cycle 迁移都会被编码进同一个 cycle 的展开里。
+
+如果再叠加：
+
+- 多层 composite 进入/退出
+- 带 guard 的 pseudo chain 分支
+- 多个事件组合
+
+那么同一个 cycle 内的 case split 数量会迅速上升。
+
+更麻烦的是 zero-cycle 环，例如：
+
+.. code-block:: fcstm
+
+    pseudo state P1;
+    pseudo state P2;
+
+    P1 -> P2;
+    P2 -> P1;
+
+这种结构不会增加 cycle，但会增加搜索深度或 micro-step 深度。对 BMC 来说，这意味着：
+
+- 必须额外给每个 cycle 设置 `M` 上界
+- 或者先做专门的 zero-cycle livelock 检测
+
+否则公式会为了表示“同一个 cycle 内可能走很多步”而迅速膨胀，甚至失去收敛性。
+
+
+##### 8.1.2.4 还有哪些因素会放大膨胀
+
+除了 `k` 和 pseudo/composite 的 zero-cycle 链，下面这些因素也会明显影响 BMC 可扩展性：
+
+- transition declaration order 带来的 mutually-exclusive case split
+- 事件变量数量过多，导致每个 cycle 的布尔选择空间扩大
+- guard/effect 中包含复杂非线性算术
+- 浮点、幂运算、位运算等对 SMT 不够友好的表达式
+
+对 pyfcstm 来说，这一点尤其值得提前说明，因为现有 `pyfcstm.solver.expr` 已经明确提示了一些表达式的代价，例如：
+
+- `x ** y` 这类双变量幂运算会很慢
+- `Int` 上的位运算支持有限
+- 某些数学函数需要额外近似或根本无法直接支持
+
+因此，同样的 `max_cycle=50`：
+
+- 如果模型主要是线性整数 guard/effect，通常还比较现实
+- 如果模型里混入大量非线性或复杂数值操作，求解难度可能会陡增
+
+
+##### 8.1.2.5 一个务实的规模判断
+
+从工程角度，更合理的预期通常是：
+
+- 不要把“能支持多大的 `max_cycle`”理解成固定常数
+- 应该把它理解为“在当前模型结构和表达式复杂度下，solver 能承受多大的 horizon”
+
+比较保守地说：
+
+- 对小到中等规模、以线性整数为主、pseudo 链不长的模型，`k = 50..200` 往往是有希望的
+- 对大量 pseudo/composite zero-cycle 链的模型，如果采用朴素 `cycle x micro-step` 展开，`k = 10..50` 就可能开始吃力
+- 如果再叠加重非线性表达式，那么可行的 `k` 还会进一步下降
+
+这些数字不是承诺，只是说明**瓶颈主要来自公式膨胀和 theory 难度，而不是某个写死的后端上限**。
+
+
+#### 8.1.3 控制膨胀的更合适建模方式
+
+如果 pyfcstm 未来真的实现 BMC，那么对带 pseudo state 的状态机，最关键的不是“能不能展开”，而是“如何避免无谓展开”。
+
+我更倾向于优先采用下面的策略。
+
+
+##### 8.1.3.1 优先压缩 zero-cycle 链
+
+对于 pseudo state 和 composite boundary，最好不要一上来就做完全朴素的 `cycle x micro-step` 编码。
+
+更值得优先尝试的是：
+
+- 先把一个稳定边界到下一个稳定边界之间的 zero-cycle 链做静态压缩
+- 将这段链视为一个“宏迁移”进行编码
+
+也就是说，把：
+
+- `A -> P1 -> P2 -> B`
+
+尽量压成：
+
+- `A ==[same cycle]==> B`
+
+并将中间的：
+
+- `P1.enter`
+- `P1/P2` 的 during
+- composite 的边界动作
+- transition effect
+
+都合并进这个宏迁移的更新式中。
+
+这样做的直接收益是：
+
+- 变量数量更接近 `O(k * |V|)` 而不是 `O(k * M * |V|)`
+- 求解器看到的是“稳定边界之间的后继关系”，更接近真正的 bounded reachability 问题
+
+
+##### 8.1.3.2 先做 zero-cycle 环检测
+
+如果模型中存在明显的 pseudo/composite zero-cycle 环，那么在进入 BMC 之前，最好先单独做结构检查，例如：
+
+- `verify_zero_cycle_loop`
+- `verify_dead_end`
+
+因为这类问题让 SMT 去硬扛并不划算：
+
+- 它们本质上更像结构错误或语义陷阱
+- 提前报错通常比把它们编码进大公式更有效
+
+
+##### 8.1.3.3 使用 incremental BMC，而不是一次把 `k` 拉很大
+
+更务实的方式通常是：
+
+1. 从 `k = 1` 开始
+2. 逐步增加到 `k = 2, 3, 4, ...`
+3. 一旦找到 witness 就提前停止
+
+这样做至少有两个好处：
+
+- 对 reachability / counterexample 查询非常自然
+- 避免一开始就构造一个过大的公式
+
+
+##### 8.1.3.4 限制首批支持的表达式子集
+
+如果要让 BMC 版本尽快变得可用，首批支持的表达式最好优先聚焦：
+
+- 布尔逻辑
+- 整数
+- 线性算术
+- 简单比较
+
+而对下面这些特性至少要谨慎看待：
+
+- 浮点
+- 位运算
+- 双变量幂运算
+- 复杂非线性表达式
+
+这不是语义上“不能支持”，而是从可扩展性上看，它们很容易让 BMC 退化得过于严重。
+
+
+##### 8.1.3.5 BMC 更适合 bounded bug hunting，不适合单独承担证明任务
+
+最后还要明确一点：
+
+- BMC 很适合 bounded reachability
+- BMC 很适合 bounded safety counterexample
+- BMC 很适合 bounded response / bounded recovery
+
+但它并不擅长独立承担“大 `k` 下的不可达证明”。
+
+因此，一个更现实的 verify 架构通常是：
+
+- BMC 负责“找得到路径吗”
+- `k-induction` 或更强方法负责“能证明永远到不了吗”
+
+这也正是为什么对 pyfcstm 来说，`SMT-based BMC` 更像是 BFS 的近期替代主力，而不是唯一的长期后端。
 
 
 ### 8.2 k-Induction

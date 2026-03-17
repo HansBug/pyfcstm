@@ -108,7 +108,7 @@ def resolve_visualize_output_path(
                 )
         else:
             output_path = output_path.with_suffix(suffix)
-        return output_path.expanduser().resolve()
+        return pathlib.Path(os.path.abspath(str(output_path.expanduser())))
 
     input_path = pathlib.Path(input_code_file).expanduser()
     digest = hashlib.sha1(str(input_path.resolve()).encode('utf-8')).hexdigest()[:12]

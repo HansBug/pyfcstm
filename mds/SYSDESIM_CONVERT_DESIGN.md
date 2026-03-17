@@ -1015,13 +1015,14 @@ route flag 相关 transition 应有足够优先级以保证整条链能闭合。
 第一阶段建议只支持：
 
 - `leaf source -> 任意 target`
-- `trigger 为 signal 或 none`
+- `trigger 为 signal`、`none` 或已在 Phase 3 中完成 timer guard lowering 的 `time`
 - `guard 可为空`
 
 对于更复杂情况：
 
 - composite source 的跨层迁移
 - 跨并发 region 迁移
+- 以祖先状态作为 target 的跨层迁移
 - 多层条件 init 冲突
 
 第一阶段可先报 unsupported。
@@ -1373,17 +1374,17 @@ Phase 3 checklist：
 
 Phase 4 checklist：
 
-- [ ] 能识别跨层 transition
-- [ ] 能计算 source 与 target 的 LCA
-- [ ] 能为原始跨层 transition 分配 route flag
-- [ ] route flag 名称包含 source 路径与稳定唯一后缀
-- [ ] 第一跳只负责置 flag 和退出
-- [ ] 中间退出链不重复 effect
-- [ ] 桥接 transition 可把控制流带到目标分支
-- [ ] 条件化 init 可把进入路径导到目标叶子
-- [ ] 最终目标状态能清理 flag
-- [ ] route 相关 transition 具备足够优先级
-- [ ] 具备针对跨层 lowering 的单元测试
+- [x] 能识别跨层 transition
+- [x] 能计算 source 与 target 的 LCA
+- [x] 能为原始跨层 transition 分配 route flag
+- [x] route flag 名称包含 source 路径与稳定唯一后缀
+- [x] 第一跳只负责置 flag 和退出或直达目标分支首层桥接
+- [x] 中间退出链不重复 effect
+- [x] 桥接 transition 可把控制流带到目标分支
+- [x] 条件化 init 可把进入路径导到目标叶子
+- [x] 最终目标状态能清理 flag
+- [x] route 相关 transition 具备足够优先级
+- [x] 具备针对跨层 lowering 的单元测试
 
 ### Phase 5: parallel split
 
@@ -1467,6 +1468,33 @@ Phase 6 checklist：
 - parallel split 测试
 - unsupported 检测测试
 
+### 19.1.1 正向导出测试的统一断言约定
+
+对所有“应成功导出 FCSTM DSL”的单元测试，后续统一要求：
+
+1. 先准备完整 `expected_dsl` 文本
+2. 对导出的 `dsl_code` 做规范化换行后的**整段全文相等断言**
+   - 推荐形式：`assert _normalize_newlines(dsl_code) == expected_dsl`
+3. 若测试同时构建了 AST `program`，则也应断言：
+   - `assert _normalize_newlines(str(program)) == expected_dsl`
+4. 必须对导出的 DSL 文本执行 parser + model 回读：
+   - `parsed_program = parse_with_grammar_entry(dsl_code, entry_name='state_machine_dsl')`
+   - `model = parse_dsl_node_to_state_machine(parsed_program)`
+5. 在完成全文相等与回读检查后，才追加少量结构性断言
+   - 例如 route flag 名称、init 顺序、transition 类型、target clear 行为
+
+不应只依赖：
+
+- 子串存在断言
+- transition 顺序的局部断言
+- 仅对 AST 结构断言而不检查最终 DSL 文本
+
+原因是转换器的最终交付物是 DSL 文本，全文断言与 parser/model 回读才能稳定覆盖：
+
+- AST 到文本的序列化正确性
+- lowering 的整体布局、顺序与缩进
+- 导出结果在现有 FCSTM 解析与建模链路中的真实可用性
+
 ### 19.2 样例测试组织建议
 
 建议准备一组最小 XML 片段样例，而不是只依赖大样例文件：
@@ -1485,8 +1513,9 @@ Phase 6 checklist：
 
 1. parser 回读
 2. model 构建
-3. AST round-trip
-4. 必要时使用 `SimulationRuntime` 进行最小行为验证
+3. `dsl_code == expected_dsl` 的全文断言
+4. AST round-trip
+5. 必要时使用 `SimulationRuntime` 进行最小行为验证
 
 ---
 

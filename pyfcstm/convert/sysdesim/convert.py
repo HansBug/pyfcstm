@@ -1,16 +1,17 @@
 """
-SysDeSim XML to FCSTM phase0-3 conversion helpers.
+SysDeSim XML to FCSTM phase0-4 conversion helpers.
 
-This module contains the full phase0-3 pipeline:
+This module contains the full phase0-4 pipeline:
 
 1. Parse SysDeSim XML into the dataclass IR.
 2. Normalize names, variables, and guard expressions.
 3. Build FCSTM DSL AST for the supported subset.
 4. Emit DSL text and validate it with the existing parser/model stack.
 
-The implementation intentionally stops before cross-level lowering and
-parallel-region splitting. Those cases are rejected explicitly so the
-supported boundary stays clear.
+The implementation supports single-region cross-level lowering with route
+flags, synthetic exit chains, bridge transitions, and conditional init entry
+paths. Parallel-region splitting is still outside the supported boundary and is
+rejected explicitly.
 
 The module contains:
 
@@ -107,7 +108,7 @@ class _LoweredExitChainTransition:
 @dataclass
 class _AstBuildContext:
     """
-    Internal AST-build context containing phase3 lowering products.
+    Internal AST-build context containing phase3-4 lowering products.
 
     :param time_transitions_by_id: Lowered time transitions keyed by original
         transition identifier.
@@ -120,12 +121,38 @@ class _AstBuildContext:
     :param propagated_exit_chains: Synthetic exit transitions keyed by the
         composite state that owns the containing region.
     :type propagated_exit_chains: dict[str, list[_LoweredExitChainTransition]]
+    :param route_flag_names_in_order: Generated route-flag definitions in stable
+        lowering order.
+    :type route_flag_names_in_order: list[str]
+    :param appended_regular_transitions_by_scope_id: Synthetic first-hop
+        transitions appended inside their source scopes.
+    :type appended_regular_transitions_by_scope_id: dict[str, list[pyfcstm.dsl.node.TransitionDefinition]]
+    :param appended_timeout_transitions_by_scope_id: Synthetic first-hop time
+        transitions appended in timeout-tail order inside their source scopes.
+    :type appended_timeout_transitions_by_scope_id: dict[str, list[pyfcstm.dsl.node.TransitionDefinition]]
+    :param prepended_transitions_by_scope_id: Synthetic transitions that must be
+        prepended in a given state scope.
+    :type prepended_transitions_by_scope_id: dict[str, list[pyfcstm.dsl.node.TransitionDefinition]]
+    :param route_flag_clear_operations_by_target_id: Enter-time flag clear
+        operations keyed by the final target state identifier.
+    :type route_flag_clear_operations_by_target_id: dict[str, list[pyfcstm.dsl.node.OperationAssignment]]
     """
 
     time_transitions_by_id: Dict[str, _LoweredTimeTransition] = field(default_factory=dict)
     time_transitions_in_order: List[_LoweredTimeTransition] = field(default_factory=list)
     time_transitions_by_source_id: Dict[str, List[_LoweredTimeTransition]] = field(default_factory=dict)
     propagated_exit_chains: Dict[str, List[_LoweredExitChainTransition]] = field(default_factory=dict)
+    route_flag_names_in_order: List[str] = field(default_factory=list)
+    appended_regular_transitions_by_scope_id: Dict[str, List[dsl_nodes.TransitionDefinition]] = field(
+        default_factory=dict
+    )
+    appended_timeout_transitions_by_scope_id: Dict[str, List[dsl_nodes.TransitionDefinition]] = field(
+        default_factory=dict
+    )
+    prepended_transitions_by_scope_id: Dict[str, List[dsl_nodes.TransitionDefinition]] = field(default_factory=dict)
+    route_flag_clear_operations_by_target_id: Dict[str, List[dsl_nodes.OperationAssignment]] = field(
+        default_factory=dict
+    )
 
 
 def _xmi_id(element: ET.Element) -> str:
@@ -897,6 +924,22 @@ def _make_time_event_timer_name(machine: IrMachine, transition: IrTransition) ->
     return f"__sysdesim_after_{scope_part}__tx_{transition_suffix}_ticks"
 
 
+def _make_route_flag_name(machine: IrMachine, transition: IrTransition) -> str:
+    """
+    Build the synthetic route-flag name for one cross-level transition.
+
+    :param machine: Normalized machine containing the transition.
+    :type machine: IrMachine
+    :param transition: Original cross-level transition.
+    :type transition: IrTransition
+    :return: Reserved route-flag variable name.
+    :rtype: str
+    """
+    scope_part = "_".join(_timeout_source_scope_tokens(machine, transition.source_id))
+    transition_suffix = _stable_suffix(transition.transition_id).lower()
+    return f"__sysdesim_flag_route_{scope_part}__tx_{transition_suffix}"
+
+
 def _convert_time_event_to_ticks(time_event: IrTimeEvent, tick_duration_ms: float) -> int:
     """
     Convert one normalized UML time literal into runtime ticks.
@@ -931,6 +974,22 @@ def _convert_time_event_to_ticks(time_event: IrTimeEvent, tick_duration_ms: floa
     return int(math.ceil(delay_us / tick_us))
 
 
+def _build_route_flag_guard_expr(route_flag_name: str) -> dsl_nodes.Expr:
+    """
+    Build the guard expression that checks whether a route flag is active.
+
+    :param route_flag_name: Generated route-flag variable name.
+    :type route_flag_name: str
+    :return: Guard expression testing whether the flag is set.
+    :rtype: pyfcstm.dsl.node.Expr
+    """
+    return dsl_nodes.BinaryOp(
+        dsl_nodes.Name(route_flag_name),
+        ">",
+        dsl_nodes.Integer("0"),
+    )
+
+
 def _build_timeout_guard_expr(
     timer_name: str,
     ticks: int,
@@ -956,6 +1015,22 @@ def _build_timeout_guard_expr(
     if original_guard is None:
         return timeout_guard
     return dsl_nodes.BinaryOp(dsl_nodes.Paren(timeout_guard), "&&", original_guard)
+
+
+def _build_signal_event_id(machine: IrMachine, transition: IrTransition) -> dsl_nodes.ChainID:
+    """
+    Build the FCSTM event reference for a signal-triggered transition.
+
+    :param machine: Normalized machine containing the signal lookup indexes.
+    :type machine: IrMachine
+    :param transition: Signal-triggered transition.
+    :type transition: IrTransition
+    :return: Absolute FCSTM event identifier.
+    :rtype: pyfcstm.dsl.node.ChainID
+    """
+    signal_event = machine.get_signal_event(transition.trigger_ref_id)
+    signal = machine.get_signal(signal_event.signal_id)
+    return dsl_nodes.ChainID([signal.safe_name], is_absolute=True)
 
 
 def _register_propagated_timeout_exit_chain(
@@ -992,9 +1067,214 @@ def _register_propagated_timeout_exit_chain(
             _register_propagated_timeout_exit_chain(machine, child, guard_expr, sink)
 
 
+def _append_prepended_transition(
+    context: _AstBuildContext,
+    scope_state_id: str,
+    transition: dsl_nodes.TransitionDefinition,
+) -> None:
+    """
+    Append one synthetic prepended transition to a state scope.
+
+    :param context: AST-build context being populated.
+    :type context: _AstBuildContext
+    :param scope_state_id: Identifier of the state that owns the target region.
+    :type scope_state_id: str
+    :param transition: Synthetic transition to prepend inside that scope.
+    :type transition: pyfcstm.dsl.node.TransitionDefinition
+    :return: ``None``.
+    :rtype: None
+    """
+    context.prepended_transitions_by_scope_id.setdefault(scope_state_id, []).append(transition)
+
+
+def _append_regular_transition(
+    context: _AstBuildContext,
+    scope_state_id: str,
+    transition: dsl_nodes.TransitionDefinition,
+) -> None:
+    """
+    Append one synthetic regular-priority transition to a state scope.
+
+    :param context: AST-build context being populated.
+    :type context: _AstBuildContext
+    :param scope_state_id: Identifier of the state that owns the target region.
+    :type scope_state_id: str
+    :param transition: Synthetic transition to append inside that scope.
+    :type transition: pyfcstm.dsl.node.TransitionDefinition
+    :return: ``None``.
+    :rtype: None
+    """
+    context.appended_regular_transitions_by_scope_id.setdefault(scope_state_id, []).append(transition)
+
+
+def _append_timeout_transition(
+    context: _AstBuildContext,
+    scope_state_id: str,
+    transition: dsl_nodes.TransitionDefinition,
+) -> None:
+    """
+    Append one synthetic timeout-tail transition to a state scope.
+
+    :param context: AST-build context being populated.
+    :type context: _AstBuildContext
+    :param scope_state_id: Identifier of the state that owns the target region.
+    :type scope_state_id: str
+    :param transition: Synthetic timeout transition to append inside that scope.
+    :type transition: pyfcstm.dsl.node.TransitionDefinition
+    :return: ``None``.
+    :rtype: None
+    """
+    context.appended_timeout_transitions_by_scope_id.setdefault(scope_state_id, []).append(transition)
+
+
+def _scope_state_id_for_region(machine: IrMachine, region_id: str) -> str:
+    """
+    Return the AST scope identifier that owns a region.
+
+    :param machine: Normalized machine containing the region.
+    :type machine: IrMachine
+    :param region_id: Region identifier whose owning scope should be resolved.
+    :type region_id: str
+    :return: State identifier used as the scope key during AST emission.
+    :rtype: str
+    """
+    owner_state_id = machine.get_region(region_id).owner_state_id
+    return owner_state_id if owner_state_id is not None else machine.machine_id
+
+
+def _lower_cross_level_transition(
+    machine: IrMachine,
+    transition: IrTransition,
+    context: _AstBuildContext,
+) -> None:
+    """
+    Register all synthetic products required for one cross-level transition.
+
+    :param machine: Normalized machine containing the transition.
+    :type machine: IrMachine
+    :param transition: Original cross-level transition.
+    :type transition: IrTransition
+    :param context: AST-build context that receives synthetic artifacts.
+    :type context: _AstBuildContext
+    :return: ``None``.
+    :rtype: None
+    :raises NotImplementedError: If the cross-level transition shape is still
+        outside the supported phase4 subset.
+    """
+    source = machine.get_vertex(transition.source_id)
+    target = machine.get_vertex(transition.target_id)
+    if source.vertex_type != "state" or target.vertex_type != "state":
+        raise NotImplementedError(
+            f"Phase4 only supports state-to-state cross-level transitions: {transition.transition_id}"
+        )
+    if source.is_composite:
+        raise NotImplementedError(
+            f"Phase4 only supports leaf-source cross-level transitions: {transition.transition_id}"
+        )
+    if transition.effect_action is not None:
+        raise NotImplementedError(
+            f"Phase4 does not lower transition effects yet: {transition.transition_id}"
+        )
+    if transition.trigger_kind == "signal" and transition.guard_expr_ir is not None:
+        raise NotImplementedError(
+            f"Phase4 does not support cross-level transitions with both signal and guard: {transition.transition_id}"
+        )
+    if transition.trigger_kind not in {"none", "signal", "time"}:
+        raise NotImplementedError(
+            f"Phase4 only supports signal/none/time cross-level transitions: {transition.transition_id}"
+        )
+    if transition.trigger_kind == "time" and transition.transition_id not in context.time_transitions_by_id:
+        raise RuntimeError(f"Missing lowered time-transition metadata: {transition.transition_id}")
+
+    source_path = machine.state_id_path(transition.source_id)
+    target_path = machine.state_id_path(transition.target_id)
+    lca_state_id = machine.lca_state_id(transition.source_id, transition.target_id)
+    lca_index = source_path.index(lca_state_id) if lca_state_id is not None else -1
+    source_suffix_path = source_path[lca_index + 1:]
+    target_suffix_path = target_path[lca_index + 1:]
+    if not source_suffix_path or not target_suffix_path:
+        raise NotImplementedError(
+            f"Phase4 does not support ancestor-target cross-level transitions yet: {transition.transition_id}"
+        )
+
+    source_branch_id = source_suffix_path[0]
+    target_branch_id = target_suffix_path[0]
+    route_flag_name = _make_route_flag_name(machine, transition)
+    route_flag_guard = _build_route_flag_guard_expr(route_flag_name)
+    first_hop_target_state_id = target_branch_id if source_branch_id == transition.source_id else None
+    if transition.trigger_kind == "time":
+        first_hop_guard_expr = context.time_transitions_by_id[transition.transition_id].guard_expr
+    else:
+        first_hop_guard_expr = transition.guard_expr_ir
+
+    context.route_flag_names_in_order.append(route_flag_name)
+    first_hop_transition = dsl_nodes.TransitionDefinition(
+        from_state=source.safe_name,
+        to_state=(
+            machine.get_vertex(first_hop_target_state_id).safe_name
+            if first_hop_target_state_id is not None
+            else dsl_nodes.EXIT_STATE
+        ),
+        event_id=_build_signal_event_id(machine, transition) if transition.trigger_kind == "signal" else None,
+        condition_expr=first_hop_guard_expr,
+        post_operations=[dsl_nodes.OperationAssignment(route_flag_name, dsl_nodes.Integer("1"))],
+    )
+    source_scope_id = _scope_state_id_for_region(machine, source.parent_region_id)
+    if transition.trigger_kind == "time":
+        _append_timeout_transition(context, source_scope_id, first_hop_transition)
+    else:
+        _append_regular_transition(context, source_scope_id, first_hop_transition)
+
+    if source_branch_id != transition.source_id:
+        for state_id in reversed(source_path[lca_index + 2:-1]):
+            _append_prepended_transition(
+                context,
+                _scope_state_id_for_region(machine, machine.get_vertex(state_id).parent_region_id),
+                dsl_nodes.TransitionDefinition(
+                    from_state=machine.get_vertex(state_id).safe_name,
+                    to_state=dsl_nodes.EXIT_STATE,
+                    event_id=None,
+                    condition_expr=route_flag_guard,
+                    post_operations=[],
+                ),
+            )
+
+        bridge_scope_id = lca_state_id if lca_state_id is not None else machine.machine_id
+        _append_prepended_transition(
+            context,
+            bridge_scope_id,
+            dsl_nodes.TransitionDefinition(
+                from_state=machine.get_vertex(source_branch_id).safe_name,
+                to_state=machine.get_vertex(target_branch_id).safe_name,
+                event_id=None,
+                condition_expr=route_flag_guard,
+                post_operations=[],
+            ),
+        )
+
+    if len(target_suffix_path) > 1:
+        target_path_after_branch = target_suffix_path
+        for owner_state_id, child_state_id in zip(target_path_after_branch[:-1], target_path_after_branch[1:]):
+            _append_prepended_transition(
+                context,
+                owner_state_id,
+                dsl_nodes.TransitionDefinition(
+                    from_state=dsl_nodes.INIT_STATE,
+                    to_state=machine.get_vertex(child_state_id).safe_name,
+                    event_id=None,
+                    condition_expr=route_flag_guard,
+                    post_operations=[],
+                ),
+            )
+
+    context.route_flag_clear_operations_by_target_id.setdefault(transition.target_id, []).append(
+        dsl_nodes.OperationAssignment(route_flag_name, dsl_nodes.Integer("0"))
+    )
+
+
 def _build_ast_context(machine: IrMachine, tick_duration_ms: Optional[float]) -> _AstBuildContext:
     """
-    Build the internal lowering context required for phase3 AST emission.
+    Build the internal lowering context required for phase3-4 AST emission.
 
     :param machine: Normalized machine to lower.
     :type machine: IrMachine
@@ -1005,53 +1285,55 @@ def _build_ast_context(machine: IrMachine, tick_duration_ms: Optional[float]) ->
     :rtype: _AstBuildContext
     :raises ValueError: If time-triggered transitions exist without a valid
         ``tick_duration_ms`` value.
-    :raises NotImplementedError: If a time event is attached to an unsupported
-        source shape.
+    :raises NotImplementedError: If a time event or cross-level transition uses
+        an unsupported shape.
     """
     time_transitions = [transition for transition in machine.walk_transitions() if transition.trigger_kind == "time"]
-    if not time_transitions:
-        return _AstBuildContext()
-
-    if tick_duration_ms is None:
-        raise ValueError("tick_duration_ms is required when lowering uml:TimeEvent transitions.")
-    if tick_duration_ms <= 0:
-        raise ValueError("tick_duration_ms must be greater than 0.")
-
     context = _AstBuildContext()
-    for transition in time_transitions:
-        source = machine.get_vertex(transition.source_id)
-        if source.vertex_type != "state":
-            raise NotImplementedError(
-                f"Phase3 only supports state-backed uml:TimeEvent sources: {transition.transition_id}"
-            )
-        if transition.effect_action is not None:
-            raise NotImplementedError(
-                f"Phase3 does not lower transition effects yet: {transition.transition_id}"
-            )
+    if time_transitions:
+        if tick_duration_ms is None:
+            raise ValueError("tick_duration_ms is required when lowering uml:TimeEvent transitions.")
+        if tick_duration_ms <= 0:
+            raise ValueError("tick_duration_ms must be greater than 0.")
 
-        time_event = machine.get_time_event(transition.trigger_ref_id)
-        timer_name = _make_time_event_timer_name(machine, transition)
-        ticks = _convert_time_event_to_ticks(time_event, tick_duration_ms)
-        guard_expr = _build_timeout_guard_expr(timer_name, ticks, transition.guard_expr_ir)
+        for transition in time_transitions:
+            source = machine.get_vertex(transition.source_id)
+            if source.vertex_type != "state":
+                raise NotImplementedError(
+                    f"Phase3 only supports state-backed uml:TimeEvent sources: {transition.transition_id}"
+                )
+            if transition.effect_action is not None:
+                raise NotImplementedError(
+                    f"Phase3 does not lower transition effects yet: {transition.transition_id}"
+                )
 
-        lowered = _LoweredTimeTransition(
-            transition_id=transition.transition_id,
-            source_id=transition.source_id,
-            timer_name=timer_name,
-            ticks=ticks,
-            guard_expr=guard_expr,
-        )
-        context.time_transitions_by_id[transition.transition_id] = lowered
-        context.time_transitions_in_order.append(lowered)
-        context.time_transitions_by_source_id.setdefault(transition.source_id, []).append(lowered)
+            time_event = machine.get_time_event(transition.trigger_ref_id)
+            timer_name = _make_time_event_timer_name(machine, transition)
+            ticks = _convert_time_event_to_ticks(time_event, tick_duration_ms)
+            guard_expr = _build_timeout_guard_expr(timer_name, ticks, transition.guard_expr_ir)
 
-        if source.is_composite:
-            _register_propagated_timeout_exit_chain(
-                machine,
-                source,
-                guard_expr,
-                context.propagated_exit_chains,
+            lowered = _LoweredTimeTransition(
+                transition_id=transition.transition_id,
+                source_id=transition.source_id,
+                timer_name=timer_name,
+                ticks=ticks,
+                guard_expr=guard_expr,
             )
+            context.time_transitions_by_id[transition.transition_id] = lowered
+            context.time_transitions_in_order.append(lowered)
+            context.time_transitions_by_source_id.setdefault(transition.source_id, []).append(lowered)
+
+            if source.is_composite:
+                _register_propagated_timeout_exit_chain(
+                    machine,
+                    source,
+                    guard_expr,
+                    context.propagated_exit_chains,
+                )
+
+    for transition in machine.walk_transitions():
+        if transition.is_cross_level:
+            _lower_cross_level_transition(machine, transition, context)
 
     return context
 
@@ -1104,7 +1386,7 @@ def _is_init_pseudostate(machine: IrMachine, region: IrRegion, vertex: IrVertex)
 
 def _validate_phase2_region(machine: IrMachine, region: IrRegion) -> None:
     """
-    Reject structures that are outside the phase2 support boundary.
+    Reject structures that are outside the phase2/4 shared support boundary.
 
     :param machine: Machine being validated.
     :type machine: IrMachine
@@ -1113,8 +1395,7 @@ def _validate_phase2_region(machine: IrMachine, region: IrRegion) -> None:
     :return: ``None``.
     :rtype: None
     :raises NotImplementedError: If the region requires unsupported lowering
-        features such as parallel regions, unsupported pseudostates, or
-        cross-level transitions.
+        features such as parallel regions or unsupported pseudostates.
     :raises ValueError: If a composite region does not define exactly one init
         pseudostate.
     """
@@ -1136,12 +1417,6 @@ def _validate_phase2_region(machine: IrMachine, region: IrRegion) -> None:
 
     if region.owner_state_id is not None and region.vertices and len(init_pseudostates) != 1:
         raise ValueError(f"Composite state region {region.region_id} must have exactly one init pseudostate.")
-
-    for transition in region.transitions:
-        if transition.is_cross_region or transition.is_cross_level:
-            raise NotImplementedError(
-                f"Phase2 does not support cross-level/cross-region transitions: {transition.transition_id}"
-            )
 
 
 def _build_transition(
@@ -1210,11 +1485,7 @@ def _build_transition(
             f"Phase2 only supports init pseudostate and state-to-state transitions: {transition.transition_id}"
         )
 
-    event_id = None
-    if transition.trigger_kind == "signal":
-        signal_event = machine.get_signal_event(transition.trigger_ref_id)
-        signal = machine.get_signal(signal_event.signal_id)
-        event_id = dsl_nodes.ChainID([signal.safe_name], is_absolute=True)
+    event_id = _build_signal_event_id(machine, transition) if transition.trigger_kind == "signal" else None
 
     return dsl_nodes.TransitionDefinition(
         from_state=source.safe_name,
@@ -1250,6 +1521,9 @@ def _build_state(
     durings: List[dsl_nodes.DuringStatement] = []
     exits = []
     during_aspects: List[dsl_nodes.DuringAspectStatement] = []
+    route_flag_clear_operations = context.route_flag_clear_operations_by_target_id.get(vertex.vertex_id, [])
+    if route_flag_clear_operations:
+        enters.append(dsl_nodes.EnterOperations(route_flag_clear_operations))
     if vertex.entry_action is not None:
         enters.append(dsl_nodes.EnterAbstractFunction(vertex.entry_action.safe_name, None))
     if vertex.exit_action is not None:
@@ -1289,11 +1563,14 @@ def _build_state(
         for child in region.vertices:
             if child.vertex_type == "state":
                 substates.append(_build_state(machine, child, context))
+        transitions.extend(context.prepended_transitions_by_scope_id.get(vertex.vertex_id, []))
         regular_transitions: List[dsl_nodes.TransitionDefinition] = []
         lowered_timeout_transitions: List[dsl_nodes.TransitionDefinition] = []
         for transition in region.transitions:
             if transition.source_id in init_pseudostates:
                 regular_transitions.append(_build_transition(machine, transition, context))
+                continue
+            if transition.is_cross_level:
                 continue
             source = machine.get_vertex(transition.source_id)
             target = machine.get_vertex(transition.target_id)
@@ -1303,6 +1580,8 @@ def _build_state(
                     lowered_timeout_transitions.append(built_transition)
                 else:
                     regular_transitions.append(built_transition)
+        regular_transitions.extend(context.appended_regular_transitions_by_scope_id.get(vertex.vertex_id, []))
+        lowered_timeout_transitions.extend(context.appended_timeout_transitions_by_scope_id.get(vertex.vertex_id, []))
         transitions.extend(regular_transitions)
         transitions.extend(lowered_timeout_transitions)
         if vertex.vertex_id in context.propagated_exit_chains:
@@ -1338,13 +1617,15 @@ def build_machine_ast(
     tick_duration_ms: Optional[float] = None,
 ) -> dsl_nodes.StateMachineDSLProgram:
     """
-    Build a phase3 FCSTM AST program from a normalized IR machine.
+    Build a phase4 FCSTM AST program from a normalized IR machine.
 
     The input machine is expected to have already passed
     :func:`normalize_machine`. This function validates the supported subset,
     converts variables to ``def`` assignments, hoists root signals to FCSTM
     event definitions, lowers ``uml:TimeEvent`` triggers into internal timer
-    variables and guards, and recursively lowers states and transitions.
+    variables and guards, lowers supported cross-level transitions into route
+    flags plus synthetic bridge/init chains, and recursively lowers states and
+    transitions.
 
     :param machine: Normalized machine IR object.
     :type machine: IrMachine
@@ -1396,6 +1677,14 @@ def build_machine_ast(
         else:
             raise ValueError(f"Unsupported variable type {variable.type_name!r}.")
         definitions.append(dsl_nodes.DefAssignment(name=variable.safe_name, type=variable.type_name, expr=expr))
+    for route_flag_name in context.route_flag_names_in_order:
+        definitions.append(
+            dsl_nodes.DefAssignment(
+                name=route_flag_name,
+                type="int",
+                expr=dsl_nodes.Integer("0"),
+            )
+        )
     for lowered_time_transition in context.time_transitions_in_order:
         definitions.append(
             dsl_nodes.DefAssignment(

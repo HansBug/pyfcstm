@@ -1678,8 +1678,8 @@ class TestSysDeSimCoverageScenarios:
                 <packagedElement xmi:type="uml:Class" xmi:id="class_1" name="Cross Region" classifierBehavior="machine_1">
                   <ownedBehavior xmi:type="uml:StateMachine" xmi:id="machine_1" name="Cross Region">
                     <region xmi:type="uml:Region" xmi:id="region_root" name="">
-                      <transition xmi:type="uml:Transition" xmi:id="tx_init" source="init_1" target="state_outer"/>
-                      <transition xmi:type="uml:Transition" xmi:id="tx_cross" source="state_outer" target="state_inner"/>
+                      <transition xmi:type="uml:Transition" xmi:id="tx_init" source="init_1" target="state_parent"/>
+                      <transition xmi:type="uml:Transition" xmi:id="tx_cross" source="state_parent" target="state_inner"/>
                       <subvertex xmi:type="uml:Pseudostate" xmi:id="init_1"/>
                       <subvertex xmi:type="uml:State" xmi:id="state_outer" name="Outer"/>
                       <subvertex xmi:type="uml:State" xmi:id="state_parent" name="Parent">
@@ -1695,7 +1695,7 @@ class TestSysDeSimCoverageScenarios:
               </uml:Model>
             </xmi:XMI>
             """,
-            "cross-level/cross-region transitions",
+            "leaf-source cross-level transitions",
         ),
         (
             """

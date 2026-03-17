@@ -1,7 +1,7 @@
 """
 Public conversion entry points exposed by :mod:`pyfcstm.convert`.
 
-This package currently re-exports the SysDeSim phase0-3 conversion helpers from
+This package currently re-exports the SysDeSim phase0-4 conversion helpers from
 :mod:`pyfcstm.convert.sysdesim`. The exported functions cover the full
 ``XML -> IR -> normalized IR -> FCSTM AST -> DSL`` pipeline for the supported
 SysDeSim subset.

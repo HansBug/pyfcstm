@@ -11,7 +11,9 @@ from pyfcstm.convert.sysdesim import (
     convert_sysdesim_xml_to_dsl,
     load_sysdesim_machine,
     normalize_machine,
+    validate_program_roundtrip,
 )
+from pyfcstm.convert.sysdesim.ir import IrMachine, IrRegion, IrTimeEvent, IrTransition, IrVertex
 from pyfcstm.dsl import node as dsl_nodes
 from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model.model import StateMachine, parse_dsl_node_to_state_machine
@@ -408,10 +410,215 @@ def test_phase3_composite_time_event_lowering_builds_exit_chain_and_aspect_timer
     assert dsl_model.root_state.name == "CompositeTimer"
 
 
+def test_phase3_time_lowering_uses_safe_name_tokens_for_unnamed_source_state(tmp_path: Path):
+    """Unnamed source states should derive timer scope tokens from the normalized public state name."""
+    xml_file = _write_xml(
+        tmp_path,
+        """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <xmi:XMI xmi:version="20131001"
+                 xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
+                 xmlns:uml="http://www.eclipse.org/uml2/5.0.0/UML">
+          <uml:Model xmi:id="model_1" name="model">
+            <packagedElement xmi:type="uml:Class" xmi:id="class_1" name="Unnamed Timer" classifierBehavior="machine_1">
+              <ownedBehavior xmi:type="uml:StateMachine" xmi:id="machine_1" name="Unnamed Timer">
+                <region xmi:type="uml:Region" xmi:id="region_root" name="">
+                  <transition xmi:type="uml:Transition" xmi:id="tx_init" source="init_root" target="state_empty"/>
+                  <transition xmi:type="uml:Transition" xmi:id="tx_timeout_GGGGGG" source="state_empty" target="state_done">
+                    <trigger xmi:type="uml:Trigger" xmi:id="trigger_timeout" event="time_evt_timeout"/>
+                  </transition>
+                  <subvertex xmi:type="uml:Pseudostate" xmi:id="init_root"/>
+                  <subvertex xmi:type="uml:State" xmi:id="state_empty" name=""/>
+                  <subvertex xmi:type="uml:State" xmi:id="state_done" name="Done"/>
+                </region>
+              </ownedBehavior>
+            </packagedElement>
+            <packagedElement xmi:type="uml:TimeEvent" xmi:id="time_evt_timeout" name="" isRelative="true">
+              <when xmi:type="uml:TimeExpression" xmi:id="time_expr_timeout" name="timeExpression">
+                <expr xmi:type="uml:LiteralString" xmi:id="time_expr_timeout_value" name="Literal" value="1s"/>
+              </when>
+            </packagedElement>
+          </uml:Model>
+        </xmi:XMI>
+        """,
+    )
+
+    dsl_code = convert_sysdesim_xml_to_dsl(str(xml_file), tick_duration_ms=1000.0)
+    expected_dsl = dedent(
+        """\
+        def int __sysdesim_after_sysdesim_state_eempty__tx_gggggg_ticks = 0;
+        state UnnamedTimer named 'Unnamed Timer' {
+            state __sysdesim_state_eempty {
+                enter {
+                    __sysdesim_after_sysdesim_state_eempty__tx_gggggg_ticks = 0;
+                }
+                during {
+                    __sysdesim_after_sysdesim_state_eempty__tx_gggggg_ticks = __sysdesim_after_sysdesim_state_eempty__tx_gggggg_ticks + 1;
+                }
+            }
+            state Done;
+            [*] -> __sysdesim_state_eempty;
+            __sysdesim_state_eempty -> Done : if [__sysdesim_after_sysdesim_state_eempty__tx_gggggg_ticks >= 1];
+        }"""
+    )
+
+    assert _normalize_newlines(dsl_code) == expected_dsl
+    dsl_model = _assert_dsl_code_loads_to_state_machine(dsl_code)
+    assert dsl_model.root_state.name == "UnnamedTimer"
+
+
+def test_phase3_time_lowering_uses_stable_suffix_when_public_ir_state_path_has_no_tokens():
+    """Public IR inputs with tokenless source paths should fall back to a stable suffix-based timer scope."""
+    machine = IrMachine(
+        machine_id="machine_public_suffix",
+        name="Manual Fallback",
+        root_region=IrRegion(
+            region_id="region_root",
+            owner_state_id=None,
+            vertices=[
+                IrVertex(vertex_id="init_root", vertex_type="pseudostate", raw_name="", parent_region_id="region_root"),
+                IrVertex(
+                    vertex_id="!!!",
+                    vertex_type="state",
+                    raw_name="",
+                    safe_name="__",
+                    display_name="",
+                    parent_region_id="region_root",
+                ),
+                IrVertex(
+                    vertex_id="state_done",
+                    vertex_type="state",
+                    raw_name="Done",
+                    safe_name="Done",
+                    display_name="Done",
+                    parent_region_id="region_root",
+                ),
+            ],
+            transitions=[
+                IrTransition(
+                    transition_id="tx_init",
+                    source_id="init_root",
+                    target_id="!!!",
+                    trigger_kind="none",
+                    trigger_ref_id=None,
+                    guard_expr_raw=None,
+                ),
+                IrTransition(
+                    transition_id="tx_timeout_HHHHHH",
+                    source_id="!!!",
+                    target_id="state_done",
+                    trigger_kind="time",
+                    trigger_ref_id="time_evt_timeout",
+                    guard_expr_raw=None,
+                ),
+            ],
+        ),
+        time_events=[
+            IrTimeEvent(
+                time_event_id="time_evt_timeout",
+                raw_literal="1ms",
+                is_relative=True,
+                normalized_delay=1.0,
+                normalized_unit="ms",
+            )
+        ],
+        safe_name="ManualFallback",
+        display_name="Manual Fallback",
+    )
+
+    program = build_machine_ast(machine, tick_duration_ms=1.0)
+    parsed_program, model = validate_program_roundtrip(program)
+
+    assert [definition.name for definition in program.definitions] == ["__sysdesim_after_sdesim__tx_hhhhhh_ticks"]
+    assert str(program.root_state.transitions[1]) == "__ -> Done : if [__sysdesim_after_sdesim__tx_hhhhhh_ticks >= 1];"
+    assert str(parsed_program.root_state.transitions[1]) == "__ -> Done : if [__sysdesim_after_sdesim__tx_hhhhhh_ticks >= 1];"
+    assert isinstance(model, StateMachine)
+    assert model.root_state.name == "ManualFallback"
+
+
+def test_phase3_public_ir_composite_timeout_without_regions_skips_exit_chain_registration():
+    """Public IR inputs may mark a state composite before child regions exist; that path should still build safely."""
+    machine = IrMachine(
+        machine_id="machine_public_composite",
+        name="Public Composite",
+        root_region=IrRegion(
+            region_id="region_root",
+            owner_state_id=None,
+            vertices=[
+                IrVertex(vertex_id="init_root", vertex_type="pseudostate", raw_name="", parent_region_id="region_root"),
+                IrVertex(
+                    vertex_id="state_source",
+                    vertex_type="state",
+                    raw_name="Source",
+                    safe_name="Source",
+                    display_name="Source",
+                    parent_region_id="region_root",
+                    is_composite=True,
+                    regions=[],
+                ),
+                IrVertex(
+                    vertex_id="state_done",
+                    vertex_type="state",
+                    raw_name="Done",
+                    safe_name="Done",
+                    display_name="Done",
+                    parent_region_id="region_root",
+                ),
+            ],
+            transitions=[
+                IrTransition(
+                    transition_id="tx_init",
+                    source_id="init_root",
+                    target_id="state_source",
+                    trigger_kind="none",
+                    trigger_ref_id=None,
+                    guard_expr_raw=None,
+                ),
+                IrTransition(
+                    transition_id="tx_timeout_IIIIII",
+                    source_id="state_source",
+                    target_id="state_done",
+                    trigger_kind="time",
+                    trigger_ref_id="time_evt_timeout",
+                    guard_expr_raw=None,
+                ),
+            ],
+        ),
+        time_events=[
+            IrTimeEvent(
+                time_event_id="time_evt_timeout",
+                raw_literal="1ms",
+                is_relative=True,
+                normalized_delay=1.0,
+                normalized_unit="ms",
+            )
+        ],
+        safe_name="PublicComposite",
+        display_name="Public Composite",
+    )
+
+    program = build_machine_ast(machine, tick_duration_ms=1.0)
+    parsed_program, model = validate_program_roundtrip(program)
+    source_state = next(state for state in program.root_state.substates if state.name == "Source")
+
+    assert source_state.transitions == []
+    assert len(source_state.during_aspects) == 1
+    assert str(source_state.during_aspects[0]) == dedent(
+        """\
+        >> during after {
+            __sysdesim_after_source__tx_iiiiii_ticks = __sysdesim_after_source__tx_iiiiii_ticks + 1;
+        }"""
+    )
+    assert str(program.root_state.transitions[1]) == "Source -> Done : if [__sysdesim_after_source__tx_iiiiii_ticks >= 1];"
+    assert isinstance(model, StateMachine)
+    assert parsed_program.root_state.name == "PublicComposite"
+
+
 @pytest.mark.parametrize(
     ("literal", "is_relative", "tick_duration_ms", "expected_exception", "expected_message"),
     [
         ("0.5s", True, None, ValueError, "tick_duration_ms is required"),
+        ("0.5s", True, 0.0, ValueError, "tick_duration_ms must be greater than 0"),
         ("0.5s", False, 100.0, NotImplementedError, "only supports relative uml:TimeEvent"),
         ("3min", True, 100.0, ValueError, "Unsupported uml:TimeEvent literal"),
     ],
@@ -458,3 +665,64 @@ def test_phase3_rejects_invalid_time_event_configuration(
 
     with pytest.raises(expected_exception, match=expected_message):
         convert_sysdesim_xml_to_ast(str(xml_file), tick_duration_ms=tick_duration_ms)
+
+
+@pytest.mark.parametrize(
+    ("transition_body", "expected_message"),
+    [
+        (
+            """
+            <transition xmi:type="uml:Transition" xmi:id="tx_timeout_JJJJJJ" source="init_root" target="state_done">
+              <trigger xmi:type="uml:Trigger" xmi:id="trigger_timeout" event="time_evt_timeout"/>
+            </transition>
+            """,
+            "state-backed uml:TimeEvent sources",
+        ),
+        (
+            """
+            <transition xmi:type="uml:Transition" xmi:id="tx_timeout_KKKKKK" source="state_wait" target="state_done">
+              <trigger xmi:type="uml:Trigger" xmi:id="trigger_timeout" event="time_evt_timeout"/>
+              <effect xmi:type="uml:Activity" xmi:id="effect_timeout" name="DoSideEffect"/>
+            </transition>
+            """,
+            "does not lower transition effects yet",
+        ),
+    ],
+)
+def test_phase3_rejects_public_time_event_shapes_not_supported_yet(
+    tmp_path: Path,
+    transition_body: str,
+    expected_message: str,
+):
+    """Public XML inputs should reject unsupported time-event source and effect shapes."""
+    xml_file = _write_xml(
+        tmp_path,
+        f"""
+        <?xml version="1.0" encoding="UTF-8"?>
+        <xmi:XMI xmi:version="20131001"
+                 xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
+                 xmlns:uml="http://www.eclipse.org/uml2/5.0.0/UML">
+          <uml:Model xmi:id="model_1" name="model">
+            <packagedElement xmi:type="uml:Class" xmi:id="class_1" name="Unsupported Timer Shape" classifierBehavior="machine_1">
+              <ownedBehavior xmi:type="uml:StateMachine" xmi:id="machine_1" name="Unsupported Timer Shape">
+                <region xmi:type="uml:Region" xmi:id="region_root" name="">
+                  <transition xmi:type="uml:Transition" xmi:id="tx_init" source="init_root" target="state_wait"/>
+                  {transition_body}
+                  <subvertex xmi:type="uml:Pseudostate" xmi:id="init_root"/>
+                  <subvertex xmi:type="uml:State" xmi:id="state_wait" name="Wait"/>
+                  <subvertex xmi:type="uml:State" xmi:id="state_done" name="Done"/>
+                </region>
+              </ownedBehavior>
+            </packagedElement>
+            <packagedElement xmi:type="uml:TimeEvent" xmi:id="time_evt_timeout" name="" isRelative="true">
+              <when xmi:type="uml:TimeExpression" xmi:id="time_expr_timeout" name="timeExpression">
+                <expr xmi:type="uml:LiteralString" xmi:id="time_expr_timeout_value" name="Literal" value="1s"/>
+              </when>
+            </packagedElement>
+          </uml:Model>
+        </xmi:XMI>
+        """,
+    )
+
+    with pytest.raises(NotImplementedError, match=expected_message):
+        convert_sysdesim_xml_to_ast(str(xml_file), tick_duration_ms=1000.0)

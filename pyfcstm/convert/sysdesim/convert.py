@@ -1168,11 +1168,11 @@ def _build_transition(
     if transition.trigger_kind == "time":
         if lowered_time_transition is None:  # pragma: no cover - build_machine_ast prepares this eagerly
             raise RuntimeError(f"Missing lowered time-transition metadata: {transition.transition_id}")
-        if transition.effect_action is not None:
+        if transition.effect_action is not None:  # pragma: no cover - validated earlier by _build_ast_context
             raise NotImplementedError(
                 f"Phase3 does not lower transition effects yet: {transition.transition_id}"
             )
-        if source.vertex_type != "state" or target.vertex_type != "state":
+        if source.vertex_type != "state" or target.vertex_type != "state":  # pragma: no cover
             raise NotImplementedError(
                 f"Phase3 only supports state-to-state uml:TimeEvent transitions: {transition.transition_id}"
             )

@@ -1335,20 +1335,20 @@ Phase 2 checklist：
 
 Phase 3 checklist：
 
-- [ ] 可识别 `uml:TimeEvent`
-- [ ] 可读取原始时间字面量
-- [ ] 支持 `s`
-- [ ] 支持 `ms`
-- [ ] 支持 `us`
-- [ ] 可按 `tick_duration_ms` 折算 tick
-- [ ] 同一 source 多条 time transition 可生成彼此独立的 tick 变量
-- [ ] tick 变量名包含 source 路径与稳定唯一后缀
-- [ ] leaf source 会在 `enter` 重置 timer
-- [ ] leaf source 会在 `during` 尾部累加 timer
-- [ ] composite source 会在 `>> during after` 尾部累加 timer
-- [ ] timeout guard 全链一致
-- [ ] timeout lowering transition 为尾插
-- [ ] 具备针对 time-event lowering 的单元测试
+- [x] 可识别 `uml:TimeEvent`
+- [x] 可读取原始时间字面量
+- [x] 支持 `s`
+- [x] 支持 `ms`
+- [x] 支持 `us`
+- [x] 可按 `tick_duration_ms` 折算 tick
+- [x] 同一 source 多条 time transition 可生成彼此独立的 tick 变量
+- [x] tick 变量名包含 source 路径与稳定唯一后缀
+- [x] leaf source 会在 `enter` 重置 timer
+- [x] leaf source 会在 `during` 尾部累加 timer
+- [x] composite source 会在 `>> during after` 尾部累加 timer
+- [x] timeout guard 全链一致
+- [x] timeout lowering transition 为尾插
+- [x] 具备针对 time-event lowering 的单元测试
 
 ### Phase 4: 跨层 transition lowering
 

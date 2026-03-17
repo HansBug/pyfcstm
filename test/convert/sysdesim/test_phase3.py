@@ -410,6 +410,95 @@ def test_phase3_composite_time_event_lowering_builds_exit_chain_and_aspect_timer
     assert dsl_model.root_state.name == "CompositeTimer"
 
 
+def test_phase3_composite_timeout_guard_stays_identical_across_full_exit_chain(tmp_path: Path):
+    """Composite timeout lowering should reuse the same merged timeout guard on every synthetic exit step."""
+    xml_file = _write_xml(
+        tmp_path,
+        """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <xmi:XMI xmi:version="20131001"
+                 xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
+                 xmlns:uml="http://www.eclipse.org/uml2/5.0.0/UML">
+          <uml:Model xmi:id="model_1" name="model">
+            <packagedElement xmi:type="uml:Class" xmi:id="class_1" name="Guard Chain" classifierBehavior="machine_1">
+              <ownedBehavior xmi:type="uml:StateMachine" xmi:id="machine_1" name="Guard Chain">
+                <region xmi:type="uml:Region" xmi:id="region_root" name="">
+                  <transition xmi:type="uml:Transition" xmi:id="tx_init" source="init_root" target="state_parent"/>
+                  <transition xmi:type="uml:Transition" xmi:id="tx_timeout_LLLLLL" source="state_parent" target="state_done">
+                    <trigger xmi:type="uml:Trigger" xmi:id="trigger_timeout" event="time_evt_timeout"/>
+                    <ownedRule xmi:type="uml:Constraint" xmi:id="guard_rule_timeout">
+                      <specification xmi:type="uml:OpaqueExpression" xmi:id="guard_expr_timeout">
+                        <body> ready &gt; 0 </body>
+                      </specification>
+                    </ownedRule>
+                  </transition>
+                  <subvertex xmi:type="uml:Pseudostate" xmi:id="init_root"/>
+                  <subvertex xmi:type="uml:State" xmi:id="state_parent" name="Parent">
+                    <region xmi:type="uml:Region" xmi:id="region_parent" name="">
+                      <transition xmi:type="uml:Transition" xmi:id="tx_parent_init" source="init_parent" target="state_leaf"/>
+                      <subvertex xmi:type="uml:Pseudostate" xmi:id="init_parent"/>
+                      <subvertex xmi:type="uml:State" xmi:id="state_leaf" name="Leaf"/>
+                      <subvertex xmi:type="uml:State" xmi:id="state_nested" name="Nested">
+                        <region xmi:type="uml:Region" xmi:id="region_nested" name="">
+                          <transition xmi:type="uml:Transition" xmi:id="tx_nested_init" source="init_nested" target="state_deep"/>
+                          <subvertex xmi:type="uml:Pseudostate" xmi:id="init_nested"/>
+                          <subvertex xmi:type="uml:State" xmi:id="state_deep" name="Deep"/>
+                        </region>
+                      </subvertex>
+                    </region>
+                  </subvertex>
+                  <subvertex xmi:type="uml:State" xmi:id="state_done" name="Done"/>
+                </region>
+              </ownedBehavior>
+              <ownedAttribute xmi:type="uml:Property" xmi:id="var_ready" name="ready">
+                <type xmi:type="uml:PrimitiveType" href="pathmap://UML_LIBRARIES/UMLPrimitiveTypes.library.uml#Integer"/>
+                <defaultValue xmi:type="uml:LiteralInteger" xmi:id="var_ready_default" value="0"/>
+              </ownedAttribute>
+            </packagedElement>
+            <packagedElement xmi:type="uml:TimeEvent" xmi:id="time_evt_timeout" name="" isRelative="true">
+              <when xmi:type="uml:TimeExpression" xmi:id="time_expr_timeout" name="timeExpression">
+                <expr xmi:type="uml:LiteralString" xmi:id="time_expr_timeout_value" name="Literal" value="1s"/>
+              </when>
+            </packagedElement>
+          </uml:Model>
+        </xmi:XMI>
+        """,
+    )
+
+    dsl_code = convert_sysdesim_xml_to_dsl(str(xml_file), tick_duration_ms=1000.0)
+    expected_dsl = dedent(
+        """\
+        def int ready = 0;
+        def int __sysdesim_after_parent__tx_llllll_ticks = 0;
+        state GuardChain named 'Guard Chain' {
+            state Parent {
+                enter {
+                    __sysdesim_after_parent__tx_llllll_ticks = 0;
+                }
+                >> during after {
+                    __sysdesim_after_parent__tx_llllll_ticks = __sysdesim_after_parent__tx_llllll_ticks + 1;
+                }
+                state Leaf;
+                state Nested {
+                    state Deep;
+                    [*] -> Deep;
+                    Deep -> [*] : if [(__sysdesim_after_parent__tx_llllll_ticks >= 1) && ready > 0];
+                }
+                [*] -> Leaf;
+                Leaf -> [*] : if [(__sysdesim_after_parent__tx_llllll_ticks >= 1) && ready > 0];
+                Nested -> [*] : if [(__sysdesim_after_parent__tx_llllll_ticks >= 1) && ready > 0];
+            }
+            state Done;
+            [*] -> Parent;
+            Parent -> Done : if [(__sysdesim_after_parent__tx_llllll_ticks >= 1) && ready > 0];
+        }"""
+    )
+
+    assert _normalize_newlines(dsl_code) == expected_dsl
+    dsl_model = _assert_dsl_code_loads_to_state_machine(dsl_code)
+    assert dsl_model.root_state.name == "GuardChain"
+
+
 def test_phase3_time_lowering_uses_safe_name_tokens_for_unnamed_source_state(tmp_path: Path):
     """Unnamed source states should derive timer scope tokens from the normalized public state name."""
     xml_file = _write_xml(

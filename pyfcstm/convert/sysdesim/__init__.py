@@ -1,12 +1,34 @@
 """
 Public API for SysDeSim conversion helpers.
 
-The package currently exposes the phase0-2 pipeline only. Internals are kept in
-three files to avoid unnecessary fragmentation:
+This package exposes the phase0-2 conversion pipeline for the subset of
+SysDeSim UML state machines that can be mapped directly into FCSTM. The public
+surface is intentionally small:
+
+* :func:`load_sysdesim_xml` and :func:`load_sysdesim_machine` load the XML/XMI
+  source into the dataclass IR.
+* :func:`normalize_machine` prepares names, variables, and guard expressions
+  for FCSTM export.
+* :func:`build_machine_ast`, :func:`emit_program`,
+  :func:`convert_sysdesim_xml_to_ast`, and
+  :func:`convert_sysdesim_xml_to_dsl` produce FCSTM output.
+* :func:`make_internal_name` provides deterministic reserved names for
+  converter-generated artifacts.
+* :func:`validate_program_roundtrip` verifies that emitted DSL can be parsed
+  back through the existing parser/model stack.
+
+Internals are kept in three files to avoid unnecessary fragmentation:
 
 - ``ir.py`` for the dataclass IR
 - ``convert.py`` for loading, normalization, AST building, and validation
 - ``__init__.py`` for the stable public surface
+
+Example::
+
+    >>> from pyfcstm.convert.sysdesim import load_sysdesim_machine, normalize_machine
+    >>> machine = load_sysdesim_machine("sample.sysdesim.xml")
+    >>> normalize_machine(machine)
+    IrMachine(...)
 """
 
 from __future__ import annotations

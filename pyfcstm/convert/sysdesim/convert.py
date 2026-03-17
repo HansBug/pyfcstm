@@ -11,6 +11,23 @@ This module contains the full phase0-2 pipeline:
 The implementation intentionally stops before time-event lowering, cross-level
 lowering, and parallel-region splitting. Those cases are rejected explicitly so
 the supported boundary stays clear.
+
+The module contains:
+
+* :func:`load_sysdesim_xml` and :func:`load_sysdesim_machine` for XML loading.
+* :func:`normalize_machine` for identifier and guard normalization.
+* :func:`build_machine_ast` and :func:`emit_program` for FCSTM emission.
+* :func:`validate_program_roundtrip` for parser/model validation.
+* :func:`convert_sysdesim_xml_to_ast` and
+  :func:`convert_sysdesim_xml_to_dsl` for one-shot conversion.
+
+Example::
+
+    >>> from pyfcstm.convert.sysdesim.convert import load_sysdesim_machine, normalize_machine
+    >>> machine = load_sysdesim_machine("sample.sysdesim.xml")
+    >>> machine = normalize_machine(machine)
+    >>> machine.safe_name is not None
+    True
 """
 
 from __future__ import annotations
@@ -47,17 +64,39 @@ _DEFAULT_INT = {"uml:LiteralInteger", "uml:LiteralNatural"}
 
 
 def _xmi_id(element: ET.Element) -> str:
-    """Return the XMI identifier of an XML element."""
+    """
+    Return the XMI identifier of an XML element.
+
+    :param element: XML element expected to carry an XMI identifier.
+    :type element: xml.etree.ElementTree.Element
+    :return: Value of the ``xmi:id`` attribute.
+    :rtype: str
+    :raises KeyError: If the element does not define ``xmi:id``.
+    """
     return element.attrib[_XMI_ID]
 
 
 def _xmi_type(element: ET.Element) -> str:
-    """Return the UML/XMI type tag of an XML element."""
+    """
+    Return the UML/XMI type tag of an XML element.
+
+    :param element: XML element that may carry an ``xmi:type`` attribute.
+    :type element: xml.etree.ElementTree.Element
+    :return: Raw ``xmi:type`` value, or ``''`` when missing.
+    :rtype: str
+    """
     return element.attrib.get(_XMI_TYPE, "")
 
 
 def _text_or_none(text: Optional[str]) -> Optional[str]:
-    """Return stripped text or ``None`` for empty values."""
+    """
+    Return stripped text or ``None`` for empty values.
+
+    :param text: Input text that may contain surrounding whitespace.
+    :type text: str, optional
+    :return: Stripped non-empty text, or ``None`` when the input is empty.
+    :rtype: str, optional
+    """
     if text is None:
         return None
     text = text.strip()
@@ -65,7 +104,14 @@ def _text_or_none(text: Optional[str]) -> Optional[str]:
 
 
 def _parse_action_ref(element: Optional[ET.Element]) -> Optional[IrActionRef]:
-    """Build an action reference from an XML action node."""
+    """
+    Build an action reference from an XML action node.
+
+    :param element: XML element describing an entry, exit, or effect action.
+    :type element: xml.etree.ElementTree.Element, optional
+    :return: Parsed action reference, or ``None`` when the element is absent.
+    :rtype: IrActionRef, optional
+    """
     if element is None:
         return None
     return IrActionRef(
@@ -75,7 +121,14 @@ def _parse_action_ref(element: Optional[ET.Element]) -> Optional[IrActionRef]:
 
 
 def _parse_constraint_body(container: ET.Element) -> Optional[str]:
-    """Extract the first non-empty opaque-expression body from a UML container."""
+    """
+    Extract the first non-empty opaque-expression body from a UML container.
+
+    :param container: UML element that may own one or more ``ownedRule`` nodes.
+    :type container: xml.etree.ElementTree.Element
+    :return: First non-empty rule body, or ``None`` when not found.
+    :rtype: str, optional
+    """
     for rule in container.findall("ownedRule"):
         specification = rule.find("specification")
         if specification is None:
@@ -87,7 +140,14 @@ def _parse_constraint_body(container: ET.Element) -> Optional[str]:
 
 
 def _parse_default_value(element: ET.Element) -> Optional[str]:
-    """Parse a primitive default value from a UML property element."""
+    """
+    Parse a primitive default value from a UML property element.
+
+    :param element: UML property element that may define ``defaultValue``.
+    :type element: xml.etree.ElementTree.Element
+    :return: Default value as source text, or ``None`` when absent.
+    :rtype: str, optional
+    """
     default = element.find("defaultValue")
     if default is None:
         return None
@@ -104,7 +164,16 @@ def _parse_default_value(element: ET.Element) -> Optional[str]:
 def _parse_primitive_type_name(
     element: ET.Element, xmi_index: Dict[str, ET.Element]
 ) -> Optional[str]:
-    """Map a UML primitive type reference to the FCSTM type name."""
+    """
+    Map a UML primitive type reference to the FCSTM type name.
+
+    :param element: UML property element containing a type reference.
+    :type element: xml.etree.ElementTree.Element
+    :param xmi_index: Index of XML elements keyed by ``xmi:id``.
+    :type xmi_index: dict[str, xml.etree.ElementTree.Element]
+    :return: Normalized FCSTM type name, or ``None`` when no type is available.
+    :rtype: str, optional
+    """
     type_ref = element.attrib.get("type")
     if type_ref and type_ref in xmi_index:
         name = xmi_index[type_ref].attrib.get("name", "")
@@ -145,7 +214,18 @@ def _parse_variables(
     parent_map: Dict[ET.Element, ET.Element],
     xmi_index: Dict[str, ET.Element],
 ) -> List[IrVariable]:
-    """Parse explicit UML properties owned by the machine's owning class."""
+    """
+    Parse explicit UML properties owned by the machine's owning class.
+
+    :param machine_element: UML state machine element.
+    :type machine_element: xml.etree.ElementTree.Element
+    :param parent_map: Lookup table from child element to parent element.
+    :type parent_map: dict[xml.etree.ElementTree.Element, xml.etree.ElementTree.Element]
+    :param xmi_index: Index of XML elements keyed by ``xmi:id``.
+    :type xmi_index: dict[str, xml.etree.ElementTree.Element]
+    :return: Parsed variable definitions owned by the surrounding class.
+    :rtype: list[IrVariable]
+    """
     owner = parent_map.get(machine_element)
     if owner is None:
         return []
@@ -167,7 +247,14 @@ def _parse_variables(
 
 
 def _parse_time_event(element: ET.Element) -> IrTimeEvent:
-    """Parse one UML ``TimeEvent`` element."""
+    """
+    Parse one UML ``TimeEvent`` element.
+
+    :param element: XML element describing a UML time event.
+    :type element: xml.etree.ElementTree.Element
+    :return: Parsed time-event IR object.
+    :rtype: IrTimeEvent
+    """
     raw_literal = ""
     when_element = element.find("when")
     if when_element is not None:
@@ -186,7 +273,19 @@ def _parse_region(
     owner_state_id: Optional[str],
     event_types: Dict[str, str],
 ) -> IrRegion:
-    """Recursively parse one UML region into IR."""
+    """
+    Recursively parse one UML region into IR.
+
+    :param region_element: XML region element to parse.
+    :type region_element: xml.etree.ElementTree.Element
+    :param owner_state_id: Owning composite-state identifier, or ``None`` for
+        the root region
+    :type owner_state_id: str, optional
+    :param event_types: Mapping from event identifiers to trigger kinds.
+    :type event_types: dict[str, str]
+    :return: Parsed region IR, including nested vertices and child regions.
+    :rtype: IrRegion
+    """
     region = IrRegion(region_id=_xmi_id(region_element), owner_state_id=owner_state_id)
 
     for subvertex in region_element.findall("subvertex"):
@@ -253,7 +352,26 @@ def _parse_region(
 
 
 def load_sysdesim_xml(xml_path: str) -> List[IrMachine]:
-    """Parse all UML state machines from a SysDeSim XML/XMI file."""
+    """
+    Parse all UML state machines from a SysDeSim XML/XMI file.
+
+    The loader scans the document for UML signals, signal events, time events,
+    and state machines, then builds :class:`IrMachine` objects for every
+    ``uml:StateMachine`` that has at least one region.
+
+    :param xml_path: Path to the SysDeSim XML/XMI file.
+    :type xml_path: str
+    :return: Parsed state machines in document order.
+    :rtype: list[IrMachine]
+    :raises OSError: If the file cannot be read.
+    :raises xml.etree.ElementTree.ParseError: If the XML is malformed.
+
+    Example::
+
+        >>> machines = load_sysdesim_xml("sample.sysdesim.xml")
+        >>> isinstance(machines, list)
+        True
+    """
     tree = ET.parse(xml_path)
     root = tree.getroot()
     parent_map = {child: parent for parent in root.iter() for child in parent}
@@ -319,7 +437,33 @@ def load_sysdesim_machine(
     machine_name: Optional[str] = None,
     machine_id: Optional[str] = None,
 ) -> IrMachine:
-    """Load one state machine from a SysDeSim XML/XMI file."""
+    """
+    Load one state machine from a SysDeSim XML/XMI file.
+
+    When ``machine_id`` is provided it takes precedence over ``machine_name``.
+    If neither selector is given, the first parsed machine is returned.
+
+    :param xml_path: Path to the SysDeSim XML/XMI file.
+    :type xml_path: str
+    :param machine_name: Exact UML state-machine name to load, defaults to
+        ``None``
+    :type machine_name: str, optional
+    :param machine_id: Exact UML state-machine ``xmi:id`` to load, defaults to
+        ``None``
+    :type machine_id: str, optional
+    :return: Matching state-machine IR object.
+    :rtype: IrMachine
+    :raises KeyError: If the requested machine name or identifier is not found.
+    :raises ValueError: If the file contains no ``uml:StateMachine`` elements.
+    :raises OSError: If the file cannot be read.
+    :raises xml.etree.ElementTree.ParseError: If the XML is malformed.
+
+    Example::
+
+        >>> machine = load_sysdesim_machine("sample.sysdesim.xml", machine_name="Door Cycle")
+        >>> machine.name
+        'Door Cycle'
+    """
     machines = load_sysdesim_xml(xml_path)
     if machine_id is not None:
         for machine in machines:
@@ -337,7 +481,17 @@ def load_sysdesim_machine(
 
 
 def _stable_suffix(raw_id: str, length: int = 6) -> str:
-    """Return a short stable suffix derived from a source identifier."""
+    """
+    Return a short stable suffix derived from a source identifier.
+
+    :param raw_id: Source identifier used as the entropy source.
+    :type raw_id: str
+    :param length: Number of trailing alphanumeric characters to keep, defaults
+        to ``6``
+    :type length: int
+    :return: Sanitized suffix suitable for generated identifiers.
+    :rtype: str
+    """
     text = re.sub(r"[^A-Za-z0-9]+", "", raw_id)
     if not text:
         text = "sysdesim"
@@ -345,37 +499,81 @@ def _stable_suffix(raw_id: str, length: int = 6) -> str:
 
 
 def _tokenize_name(raw_name: str) -> List[str]:
-    """Tokenize a raw label into ASCII name parts via transliteration."""
+    """
+    Tokenize a raw label into ASCII name parts via transliteration.
+
+    :param raw_name: Raw source label.
+    :type raw_name: str
+    :return: Alphanumeric tokens derived from the transliterated label.
+    :rtype: list[str]
+    """
     text = unidecode(raw_name or "")
     return [token for token in re.split(r"[^A-Za-z0-9]+", text) if token]
 
 
 def _base_upper_camel(raw_name: str) -> str:
-    """Normalize a label to UpperCamelCase."""
+    """
+    Normalize a label to ``UpperCamelCase``.
+
+    :param raw_name: Raw source label.
+    :type raw_name: str
+    :return: Camel-cased identifier base.
+    :rtype: str
+    """
     tokens = _tokenize_name(raw_name)
     return "".join(token[:1].upper() + token[1:] for token in tokens)
 
 
 def _base_upper_snake(raw_name: str) -> str:
-    """Normalize a label to UPPER_SNAKE_CASE."""
+    """
+    Normalize a label to ``UPPER_SNAKE_CASE``.
+
+    :param raw_name: Raw source label.
+    :type raw_name: str
+    :return: Upper-snake identifier base.
+    :rtype: str
+    """
     tokens = _tokenize_name(raw_name)
     return "_".join(token.upper() for token in tokens)
 
 
 def _base_lower_snake(raw_name: str) -> str:
-    """Normalize a label to lower_snake_case."""
+    """
+    Normalize a label to ``lower_snake_case``.
+
+    :param raw_name: Raw source label.
+    :type raw_name: str
+    :return: Lower-snake identifier base.
+    :rtype: str
+    """
     tokens = _tokenize_name(raw_name)
     return "_".join(token.lower() for token in tokens)
 
 
 def _with_unique_suffix(base: str, stable_id: str) -> str:
-    """Append a deterministic suffix when a normalized name collides."""
+    """
+    Append a deterministic suffix when a normalized name collides.
+
+    :param base: Candidate normalized name.
+    :type base: str
+    :param stable_id: Source identifier used to derive the suffix.
+    :type stable_id: str
+    :return: Unique candidate name with a deterministic suffix when needed.
+    :rtype: str
+    """
     suffix = _stable_suffix(stable_id)
     return f"{base}_{suffix}" if base else suffix
 
 
 def _make_state_name(vertex: IrVertex) -> str:
-    """Build the FCSTM identifier for a state-like vertex."""
+    """
+    Build the FCSTM identifier for a state-like vertex.
+
+    :param vertex: Vertex whose name should be normalized.
+    :type vertex: IrVertex
+    :return: FCSTM-safe state identifier.
+    :rtype: str
+    """
     base = _base_upper_camel(vertex.raw_name)
     if base:
         return base
@@ -383,7 +581,14 @@ def _make_state_name(vertex: IrVertex) -> str:
 
 
 def _make_action_name(action: IrActionRef) -> str:
-    """Build the FCSTM identifier for an action placeholder."""
+    """
+    Build the FCSTM identifier for an action placeholder.
+
+    :param action: Action reference whose name should be normalized.
+    :type action: IrActionRef
+    :return: FCSTM-safe action identifier.
+    :rtype: str
+    """
     base = _base_upper_camel(action.raw_name)
     if base:
         return base
@@ -391,7 +596,16 @@ def _make_action_name(action: IrActionRef) -> str:
 
 
 def _make_event_name(raw_name: str, stable_id: str) -> str:
-    """Build the FCSTM identifier for a signal-derived event."""
+    """
+    Build the FCSTM identifier for a signal-derived event.
+
+    :param raw_name: Raw source event or signal name.
+    :type raw_name: str
+    :param stable_id: Source identifier used for collision-resistant fallback.
+    :type stable_id: str
+    :return: FCSTM-safe event identifier.
+    :rtype: str
+    """
     base = _base_upper_snake(raw_name)
     if base:
         return base
@@ -399,7 +613,24 @@ def _make_event_name(raw_name: str, stable_id: str) -> str:
 
 
 def make_internal_name(prefix: str, scope_tokens: Iterable[str], stable_id: str) -> str:
-    """Create a deterministic ``__sysdesim_*`` internal identifier."""
+    """
+    Create a deterministic ``__sysdesim_*`` internal identifier.
+
+    :param prefix: Category prefix such as ``'var'`` or ``'flag_route'``.
+    :type prefix: str
+    :param scope_tokens: Additional normalized scope tokens to embed in the
+        name.
+    :type scope_tokens: collections.abc.Iterable[str]
+    :param stable_id: Source identifier used to derive the trailing suffix.
+    :type stable_id: str
+    :return: Internal identifier reserved for converter-generated artifacts.
+    :rtype: str
+
+    Example::
+
+        >>> make_internal_name("flag_route", ["pump_loop"], "transition-001").startswith("__sysdesim_")
+        True
+    """
     scope_part = "_".join(token for token in scope_tokens if token)
     suffix = _stable_suffix(stable_id).lower()
     if scope_part:
@@ -408,7 +639,14 @@ def make_internal_name(prefix: str, scope_tokens: Iterable[str], stable_id: str)
 
 
 def _normalize_region_vertices(vertices: List[IrVertex]) -> None:
-    """Normalize names for all vertices in a region subtree."""
+    """
+    Normalize names for all vertices in a region subtree.
+
+    :param vertices: Vertices in the current region subtree.
+    :type vertices: list[IrVertex]
+    :return: ``None``.
+    :rtype: None
+    """
     seen = {}
     for vertex in vertices:
         if vertex.vertex_type == "state":
@@ -430,7 +668,19 @@ def _normalize_region_vertices(vertices: List[IrVertex]) -> None:
 
 
 def _normalize_variables(variables: List[IrVariable]) -> None:
-    """Validate and normalize explicit and synthetic variables."""
+    """
+    Validate and normalize explicit and synthetic variables.
+
+    Explicit variables must already use legal ASCII FCSTM identifiers and must
+    declare ``int`` or ``float`` types. Synthetic variables are renamed into the
+    reserved ``__sysdesim_*`` namespace.
+
+    :param variables: Variables to validate and normalize in place.
+    :type variables: list[IrVariable]
+    :return: ``None``.
+    :rtype: None
+    :raises ValueError: If an explicit variable name or type is unsupported.
+    """
     for variable in variables:
         variable.display_name = variable.raw_name
         if variable.is_synthetic:
@@ -455,7 +705,14 @@ def _normalize_variables(variables: List[IrVariable]) -> None:
 
 
 def _normalize_events(machine: IrMachine) -> None:
-    """Normalize signal and event names for FCSTM export."""
+    """
+    Normalize signal and event names for FCSTM export.
+
+    :param machine: Machine whose signal names should be normalized in place.
+    :type machine: IrMachine
+    :return: ``None``.
+    :rtype: None
+    """
     seen = {}
     for signal in machine.signals:
         base = _make_event_name(signal.raw_name, signal.signal_id)
@@ -471,7 +728,14 @@ def _normalize_events(machine: IrMachine) -> None:
 
 
 def _normalize_time_events(machine: IrMachine) -> None:
-    """Parse supported time literal formats into normalized delay/unit fields."""
+    """
+    Parse supported time literal formats into normalized delay/unit fields.
+
+    :param machine: Machine whose time events should be normalized in place.
+    :type machine: IrMachine
+    :return: ``None``.
+    :rtype: None
+    """
     for time_event in machine.time_events:
         if not time_event.raw_literal:
             continue
@@ -482,7 +746,28 @@ def _normalize_time_events(machine: IrMachine) -> None:
 
 
 def normalize_machine(machine: IrMachine) -> IrMachine:
-    """Normalize names, variables, events, and parsed guards for one IR machine."""
+    """
+    Normalize names, variables, events, and parsed guards for one IR machine.
+
+    This step assigns FCSTM-safe names, parses guard expressions into the
+    existing DSL condition AST, and refreshes indexes so later phases can rely
+    on normalized metadata.
+
+    :param machine: Machine IR object to normalize.
+    :type machine: IrMachine
+    :return: The same machine instance after in-place normalization.
+    :rtype: IrMachine
+    :raises ValueError: If explicit variables use unsupported names or types.
+    :raises pyfcstm.dsl.error.GrammarParseError: If a guard expression fails to
+        parse.
+
+    Example::
+
+        >>> machine = load_sysdesim_machine("sample.sysdesim.xml")
+        >>> normalized = normalize_machine(machine)
+        >>> normalized is machine
+        True
+    """
     machine.safe_name = _make_state_name(
         IrVertex(vertex_id=machine.machine_id, vertex_type="state", raw_name=machine.name)
     )
@@ -504,14 +789,39 @@ def normalize_machine(machine: IrMachine) -> IrMachine:
 
 
 def _display_name_or_none(raw_name: Optional[str], safe_name: Optional[str]) -> Optional[str]:
-    """Return the display name only when it differs from the FCSTM identifier."""
+    """
+    Return the display name only when it differs from the FCSTM identifier.
+
+    :param raw_name: Original source name.
+    :type raw_name: str, optional
+    :param safe_name: Normalized FCSTM-safe identifier.
+    :type safe_name: str, optional
+    :return: Display name to emit in a ``named`` clause, or ``None`` when the
+        names already match.
+    :rtype: str, optional
+    """
     if not raw_name or raw_name == safe_name:
         return None
     return raw_name
 
 
 def _is_init_pseudostate(machine: IrMachine, region: IrRegion, vertex: IrVertex) -> bool:
-    """Return whether a pseudostate matches the phase2 init-state heuristic."""
+    """
+    Return whether a pseudostate matches the phase2 init-state heuristic.
+
+    The phase2 pipeline only supports unnamed pseudostates with no incoming
+    transitions and at least one outgoing transition.
+
+    :param machine: Machine containing the region. The argument is accepted for
+        interface consistency with other validation helpers.
+    :type machine: IrMachine
+    :param region: Region that owns the candidate pseudostate.
+    :type region: IrRegion
+    :param vertex: Candidate vertex.
+    :type vertex: IrVertex
+    :return: Whether the vertex can be treated as the region's init pseudostate.
+    :rtype: bool
+    """
     if vertex.vertex_type != "pseudostate":
         return False
     incoming = 0
@@ -525,7 +835,21 @@ def _is_init_pseudostate(machine: IrMachine, region: IrRegion, vertex: IrVertex)
 
 
 def _validate_phase2_region(machine: IrMachine, region: IrRegion) -> None:
-    """Reject structures that are outside the phase2 support boundary."""
+    """
+    Reject structures that are outside the phase2 support boundary.
+
+    :param machine: Machine being validated.
+    :type machine: IrMachine
+    :param region: Region to validate recursively.
+    :type region: IrRegion
+    :return: ``None``.
+    :rtype: None
+    :raises NotImplementedError: If the region requires unsupported lowering
+        features such as parallel regions, unsupported pseudostates, or
+        cross-level transitions.
+    :raises ValueError: If a composite region does not define exactly one init
+        pseudostate.
+    """
     init_pseudostates = []
     for vertex in region.vertices:
         if vertex.vertex_type == "state":
@@ -553,7 +877,18 @@ def _validate_phase2_region(machine: IrMachine, region: IrRegion) -> None:
 
 
 def _build_transition(machine: IrMachine, transition: IrTransition) -> dsl_nodes.TransitionDefinition:
-    """Convert a supported IR transition to a DSL transition node."""
+    """
+    Convert a supported IR transition to a DSL transition node.
+
+    :param machine: Normalized machine containing the transition.
+    :type machine: IrMachine
+    :param transition: Transition to convert.
+    :type transition: IrTransition
+    :return: FCSTM DSL transition definition.
+    :rtype: pyfcstm.dsl.node.TransitionDefinition
+    :raises NotImplementedError: If the transition uses unsupported trigger,
+        effect, or topology features.
+    """
     source = machine.get_vertex(transition.source_id)
     target = machine.get_vertex(transition.target_id)
 
@@ -609,7 +944,20 @@ def _build_state(
     *,
     event_definitions: Optional[List[dsl_nodes.EventDefinition]] = None,
 ) -> dsl_nodes.StateDefinition:
-    """Recursively build a DSL state subtree from a normalized IR vertex."""
+    """
+    Recursively build a DSL state subtree from a normalized IR vertex.
+
+    :param machine: Normalized machine containing the vertex.
+    :type machine: IrMachine
+    :param vertex: State vertex to convert.
+    :type vertex: IrVertex
+    :param event_definitions: Event definitions to attach to the current state,
+        defaults to ``None``
+    :type event_definitions: list[pyfcstm.dsl.node.EventDefinition], optional
+    :return: FCSTM DSL state definition.
+    :rtype: pyfcstm.dsl.node.StateDefinition
+    :raises NotImplementedError: If the state owns unsupported parallel regions.
+    """
     enters = []
     exits = []
     if vertex.entry_action is not None:
@@ -653,7 +1001,28 @@ def _build_state(
 
 
 def build_machine_ast(machine: IrMachine) -> dsl_nodes.StateMachineDSLProgram:
-    """Build a phase2 FCSTM AST program from a normalized IR machine."""
+    """
+    Build a phase2 FCSTM AST program from a normalized IR machine.
+
+    The input machine is expected to have already passed
+    :func:`normalize_machine`. This function validates the supported phase2
+    subset, converts variables to ``def`` assignments, hoists root signals to
+    FCSTM event definitions, and recursively lowers states and transitions.
+
+    :param machine: Normalized machine IR object.
+    :type machine: IrMachine
+    :return: FCSTM DSL program AST.
+    :rtype: pyfcstm.dsl.node.StateMachineDSLProgram
+    :raises ValueError: If the machine violates a phase2 structural invariant.
+    :raises NotImplementedError: If the machine requires unsupported lowering.
+
+    Example::
+
+        >>> machine = normalize_machine(load_sysdesim_machine("sample.sysdesim.xml"))
+        >>> program = build_machine_ast(machine)
+        >>> program.root_state.name == machine.safe_name
+        True
+    """
     machine.rebuild_indexes()
     _validate_phase2_region(machine, machine.root_region)
 
@@ -693,12 +1062,34 @@ def build_machine_ast(machine: IrMachine) -> dsl_nodes.StateMachineDSLProgram:
 
 
 def emit_program(program: dsl_nodes.StateMachineDSLProgram) -> str:
-    """Serialize a DSL program AST to FCSTM text."""
+    """
+    Serialize a DSL program AST to FCSTM text.
+
+    :param program: FCSTM DSL AST program.
+    :type program: pyfcstm.dsl.node.StateMachineDSLProgram
+    :return: Rendered FCSTM DSL source code.
+    :rtype: str
+    """
     return str(program)
 
 
 def validate_program_roundtrip(program: dsl_nodes.StateMachineDSLProgram) -> Tuple[dsl_nodes.StateMachineDSLProgram, object]:
-    """Round-trip the emitted DSL through the parser and model builder."""
+    """
+    Round-trip the emitted DSL through the parser and model builder.
+
+    This helper serializes the program, parses it back through the grammar
+    entry ``state_machine_dsl``, and then builds the runtime model object used
+    elsewhere in the codebase.
+
+    :param program: FCSTM DSL AST program to validate.
+    :type program: pyfcstm.dsl.node.StateMachineDSLProgram
+    :return: Tuple of parsed DSL AST and built state-machine model.
+    :rtype: tuple[pyfcstm.dsl.node.StateMachineDSLProgram, object]
+    :raises pyfcstm.dsl.error.GrammarParseError: If the emitted DSL cannot be
+        parsed.
+    :raises pyfcstm.utils.validate.ModelValidationError: If the parsed program
+        cannot be converted into a valid model.
+    """
     dsl_code = str(program)
     parsed = parse_with_grammar_entry(dsl_code, entry_name="state_machine_dsl")
     model = parse_dsl_node_to_state_machine(parsed)
@@ -711,7 +1102,35 @@ def convert_sysdesim_xml_to_ast(
     machine_name: Optional[str] = None,
     machine_id: Optional[str] = None,
 ) -> dsl_nodes.StateMachineDSLProgram:
-    """Load, normalize, validate, and convert one SysDeSim machine to FCSTM AST."""
+    """
+    Load, normalize, validate, and convert one SysDeSim machine to FCSTM AST.
+
+    :param xml_path: Path to the SysDeSim XML/XMI file.
+    :type xml_path: str
+    :param machine_name: Exact UML state-machine name to load, defaults to
+        ``None``
+    :type machine_name: str, optional
+    :param machine_id: Exact UML state-machine ``xmi:id`` to load, defaults to
+        ``None``
+    :type machine_id: str, optional
+    :return: Converted FCSTM DSL AST program.
+    :rtype: pyfcstm.dsl.node.StateMachineDSLProgram
+    :raises KeyError: If the requested machine cannot be found.
+    :raises ValueError: If the source file contains no state machine or violates
+        a phase2 structural invariant.
+    :raises NotImplementedError: If the source machine requires unsupported
+        lowering features.
+    :raises OSError: If the file cannot be read.
+    :raises xml.etree.ElementTree.ParseError: If the XML is malformed.
+    :raises pyfcstm.dsl.error.GrammarParseError: If emitted DSL fails parser
+        validation.
+
+    Example::
+
+        >>> program = convert_sysdesim_xml_to_ast("sample.sysdesim.xml")
+        >>> hasattr(program, "root_state")
+        True
+    """
     machine = load_sysdesim_machine(xml_path, machine_name=machine_name, machine_id=machine_id)
     normalize_machine(machine)
     program = build_machine_ast(machine)
@@ -725,7 +1144,35 @@ def convert_sysdesim_xml_to_dsl(
     machine_name: Optional[str] = None,
     machine_id: Optional[str] = None,
 ) -> str:
-    """Load, normalize, validate, and convert one SysDeSim machine to FCSTM DSL text."""
+    """
+    Load, normalize, validate, and convert one SysDeSim machine to FCSTM DSL text.
+
+    :param xml_path: Path to the SysDeSim XML/XMI file.
+    :type xml_path: str
+    :param machine_name: Exact UML state-machine name to load, defaults to
+        ``None``
+    :type machine_name: str, optional
+    :param machine_id: Exact UML state-machine ``xmi:id`` to load, defaults to
+        ``None``
+    :type machine_id: str, optional
+    :return: Rendered FCSTM DSL text for the selected machine.
+    :rtype: str
+    :raises KeyError: If the requested machine cannot be found.
+    :raises ValueError: If the source file contains no state machine or violates
+        a phase2 structural invariant.
+    :raises NotImplementedError: If the source machine requires unsupported
+        lowering features.
+    :raises OSError: If the file cannot be read.
+    :raises xml.etree.ElementTree.ParseError: If the XML is malformed.
+    :raises pyfcstm.dsl.error.GrammarParseError: If emitted DSL fails parser
+        validation.
+
+    Example::
+
+        >>> dsl_code = convert_sysdesim_xml_to_dsl("sample.sysdesim.xml")
+        >>> isinstance(dsl_code, str)
+        True
+    """
     return emit_program(
         convert_sysdesim_xml_to_ast(
             xml_path,

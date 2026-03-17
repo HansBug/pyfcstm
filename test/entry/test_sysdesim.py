@@ -1,6 +1,7 @@
 """Tests for the SysDeSim CLI conversion entry."""
 
 import json
+import re
 from pathlib import Path
 from textwrap import dedent
 
@@ -10,6 +11,8 @@ from click.testing import CliRunner
 from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.entry import pyfcstmcli
 from pyfcstm.model.model import StateMachine, parse_dsl_node_to_state_machine
+
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
 
 def _write_xml(tmp_path: Path, content: str) -> Path:
@@ -30,6 +33,11 @@ def _assert_dsl_code_loads_to_state_machine(dsl_code: str) -> StateMachine:
     model = parse_dsl_node_to_state_machine(parsed_program)
     assert isinstance(model, StateMachine)
     return model
+
+
+def _strip_ansi(text: str) -> str:
+    """Strip ANSI escape sequences for stable CLI assertions."""
+    return _ANSI_RE.sub("", text)
 
 
 @pytest.mark.unittest
@@ -76,9 +84,12 @@ def test_sysdesim_cli_writes_outputs_and_report(tmp_path: Path):
     result = CliRunner().invoke(
         pyfcstmcli,
         ["sysdesim", "-i", str(xml_file), "-o", str(output_dir)],
+        color=True,
     )
 
     assert result.exit_code == 0, result.output
+    assert "\x1b[" in result.output
+    plain_output = _strip_ansi(result.output)
     expected_outputs = {
         "ParallelSplit": dedent(
             """\
@@ -129,7 +140,14 @@ def test_sysdesim_cli_writes_outputs_and_report(tmp_path: Path):
     assert all(item["guard_variables_defined"] for item in report_data["outputs"])
     assert all(item["event_paths_valid"] for item in report_data["outputs"])
     assert all(item["composite_states_have_init"] for item in report_data["outputs"])
-    assert "Converted SysDeSim machine 'Parallel Split' into 3 FCSTM output(s)." in result.output
+    assert "Converted SysDeSim machine 'Parallel Split' into 3 FCSTM output(s)." in plain_output
+    assert "SysDeSim Conversion Complete" in plain_output
+    assert "Machine: Parallel Split [machine_1]" in plain_output
+    assert "Tick: not required" in plain_output
+    assert "Outputs: 3" in plain_output
+    assert "validation: parser=OK model=OK guards=OK events=OK init=OK" in plain_output
+    assert "semantic: Parallel-region main output is a semantic downgrade" in plain_output
+    assert "diagnostics: parallel_main_machine_semantic_downgrade" in plain_output
 
 
 @pytest.mark.unittest
@@ -169,10 +187,12 @@ def test_sysdesim_cli_reports_missing_tick_duration_for_timeevent(tmp_path: Path
     result = CliRunner().invoke(
         pyfcstmcli,
         ["sysdesim", "-i", str(xml_file), "-o", str(tmp_path / "out")],
+        color=True,
     )
 
     assert result.exit_code != 0
-    assert "please provide --tick-duration-ms" in result.output
+    assert "\x1b[" in result.output
+    assert "please provide --tick-duration-ms" in _strip_ansi(result.output)
 
 
 @pytest.mark.unittest
@@ -208,9 +228,11 @@ def test_sysdesim_cli_ignores_transition_effects_with_report_diagnostic(tmp_path
     result = CliRunner().invoke(
         pyfcstmcli,
         ["sysdesim", "-i", str(xml_file), "-o", str(output_dir)],
+        color=True,
     )
 
     assert result.exit_code == 0, result.output
+    plain_output = _strip_ansi(result.output)
     expected_dsl = dedent(
         """\
         state EffectSample named 'Effect Sample' {
@@ -227,3 +249,4 @@ def test_sysdesim_cli_ignores_transition_effects_with_report_diagnostic(tmp_path
     report_data = json.loads((output_dir / "sysdesim_conversion_report.json").read_text(encoding="utf-8"))
     assert report_data["output_count"] == 1
     assert report_data["outputs"][0]["diagnostics"][-1]["code"] == "transition_effect_semantic_downgrade"
+    assert "diagnostics: transition_effect_semantic_downgrade" in plain_output

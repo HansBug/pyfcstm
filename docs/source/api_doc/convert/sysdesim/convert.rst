@@ -6,6 +6,27 @@ pyfcstm.convert.sysdesim.convert
 .. automodule:: pyfcstm.convert.sysdesim.convert
 
 
+SysDeSimPreparedMachine
+-----------------------------------------------------
+
+.. autoclass:: SysDeSimPreparedMachine
+    :members: output_name,machine,semantic_note
+
+
+SysDeSimOutputValidationReport
+-----------------------------------------------------
+
+.. autoclass:: SysDeSimOutputValidationReport
+    :members: to_dict,output_name,parser_roundtrip_ok,model_build_ok,guard_variables_defined,event_paths_valid,composite_states_have_init,dsl_line_count,semantic_note,diagnostics
+
+
+SysDeSimConversionReport
+-----------------------------------------------------
+
+.. autoclass:: SysDeSimConversionReport
+    :members: output_count,to_dict,source_xml_path,requested_machine_name,requested_machine_id,selected_machine_name,selected_machine_id,tick_duration_ms,outputs
+
+
 load\_sysdesim\_xml
 -----------------------------------------------------
 
@@ -46,6 +67,30 @@ validate\_program\_roundtrip
 -----------------------------------------------------
 
 .. autofunction:: validate_program_roundtrip
+
+
+prepare\_sysdesim\_output\_machines
+-----------------------------------------------------
+
+.. autofunction:: prepare_sysdesim_output_machines
+
+
+convert\_sysdesim\_xml\_to\_asts
+-----------------------------------------------------
+
+.. autofunction:: convert_sysdesim_xml_to_asts
+
+
+convert\_sysdesim\_xml\_to\_dsls
+-----------------------------------------------------
+
+.. autofunction:: convert_sysdesim_xml_to_dsls
+
+
+build\_sysdesim\_conversion\_report
+-----------------------------------------------------
+
+.. autofunction:: build_sysdesim_conversion_report
 
 
 convert\_sysdesim\_xml\_to\_ast

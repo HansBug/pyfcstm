@@ -20,7 +20,7 @@ from __future__ import annotations
 import json
 import shutil
 from pathlib import Path
-from typing import Optional
+from typing import Dict, Optional
 
 import click
 
@@ -47,6 +47,106 @@ def _format_sysdesim_cli_error(err: BaseException) -> str:
     if isinstance(err, NotImplementedError) and "cross-region transitions under parallel owner" in message:
         return "SysDeSim conversion does not support cross-region transitions under one parallel owner."
     return message
+
+
+def _status_text(ok: bool) -> str:
+    """
+    Build a colored status label for CLI output.
+
+    :param ok: Whether the represented check succeeded.
+    :type ok: bool
+    :return: ANSI-colored status label.
+    :rtype: str
+    """
+    return click.style("OK", fg="green", bold=True) if ok else click.style("FAIL", fg="red", bold=True)
+
+
+def _emit_sysdesim_cli_summary(report, output_file_by_name: Dict[str, str], report_path: Path) -> None:
+    """
+    Print a colored phase6 summary for the conversion report.
+
+    :param report: Structured conversion report.
+    :type report: pyfcstm.convert.sysdesim.convert.SysDeSimConversionReport
+    :param output_file_by_name: Mapping from output name to emitted file path.
+    :type output_file_by_name: dict[str, str]
+    :param report_path: Path to the JSON report file.
+    :type report_path: pathlib.Path
+    :return: ``None``.
+    :rtype: None
+    """
+    click.secho("SysDeSim Conversion Complete", fg="green", bold=True)
+    click.echo(
+        "{label}: {name} [{machine_id}]".format(
+            label=click.style("Machine", fg="cyan", bold=True),
+            name=report.selected_machine_name,
+            machine_id=report.selected_machine_id,
+        )
+    )
+    click.echo(
+        "{label}: {source}".format(
+            label=click.style("Source", fg="cyan", bold=True),
+            source=report.source_xml_path,
+        )
+    )
+    click.echo(
+        "{label}: {tick}".format(
+            label=click.style("Tick", fg="cyan", bold=True),
+            tick=(
+                f"{report.tick_duration_ms:g} ms"
+                if report.tick_duration_ms is not None
+                else "not required"
+            ),
+        )
+    )
+    click.echo(
+        "{label}: {count}".format(
+            label=click.style("Outputs", fg="cyan", bold=True),
+            count=click.style(str(report.output_count), fg="magenta", bold=True),
+        )
+    )
+    click.echo(
+        "{label}: {path}".format(
+            label=click.style("Report", fg="cyan", bold=True),
+            path=report_path,
+        )
+    )
+
+    for item in report.outputs:
+        click.echo(
+            "{label}: {path}".format(
+                label=click.style(item.output_name, fg="blue", bold=True),
+                path=output_file_by_name[item.output_name],
+            )
+        )
+        click.echo(
+            "  validation: parser={parser} model={model} guards={guards} events={events} init={init}".format(
+                parser=_status_text(item.parser_roundtrip_ok),
+                model=_status_text(item.model_build_ok),
+                guards=_status_text(item.guard_variables_defined),
+                events=_status_text(item.event_paths_valid),
+                init=_status_text(item.composite_states_have_init),
+            )
+        )
+        click.echo(
+            "  lines: {lines}".format(
+                lines=click.style(str(item.dsl_line_count), fg="white", bold=True),
+            )
+        )
+        if item.semantic_note:
+            click.echo(
+                "  {label}: {message}".format(
+                    label=click.style("semantic", fg="yellow", bold=True),
+                    message=item.semantic_note,
+                )
+            )
+        if item.diagnostics:
+            codes = ", ".join(item.code for item in item.diagnostics)
+            click.echo(
+                "  {label}: {codes}".format(
+                    label=click.style("diagnostics", fg="yellow", bold=True),
+                    codes=codes,
+                )
+            )
 
 
 def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
@@ -190,8 +290,6 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
                 count=len(output_files),
             )
         )
-        for output_name, output_file in output_files:
-            click.echo(f"{output_name}: {output_file}")
-        click.echo(f"Report: {report_path}")
+        _emit_sysdesim_cli_summary(report, output_file_by_name, report_path)
 
     return cli

@@ -1,5 +1,7 @@
 # CLAUDE.md
 
+AGENTS.md is a symbolic link to CLAUDE.md, so do not modify both files separately.
+
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Project Overview

@@ -861,6 +861,7 @@ Use `{{ expr | expr_render(style='c') }}` to render expressions in target langua
 ### Testing Strategy
 
 - Tests in `test/`; use `@pytest.mark.unittest`
+- Unit tests must not depend on local files ignored by version control (for example, gitignored files).
 - Shared test utilities and fixtures in `test/testings/`
 - Sample DSL files in `test/testfile/sample_codes/` (auto-generate tests via `make sample`)
 - Negative cases in `test/testfile/sample_neg_codes/`

@@ -1704,36 +1704,6 @@ class TestSysDeSimCoverageScenarios:
                      xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
                      xmlns:uml="http://www.eclipse.org/uml2/5.0.0/UML">
               <uml:Model xmi:id="model_1" name="model">
-                <packagedElement xmi:type="uml:Class" xmi:id="class_1" name="Timed" classifierBehavior="machine_1">
-                  <ownedBehavior xmi:type="uml:StateMachine" xmi:id="machine_1" name="Timed">
-                    <region xmi:type="uml:Region" xmi:id="region_root" name="">
-                      <transition xmi:type="uml:Transition" xmi:id="tx_init" source="init_1" target="state_idle"/>
-                      <transition xmi:type="uml:Transition" xmi:id="tx_time" source="state_idle" target="state_fire">
-                        <trigger xmi:type="uml:Trigger" xmi:id="trigger_time" event="time_event_1"/>
-                      </transition>
-                      <subvertex xmi:type="uml:Pseudostate" xmi:id="init_1"/>
-                      <subvertex xmi:type="uml:State" xmi:id="state_idle" name="Idle"/>
-                      <subvertex xmi:type="uml:State" xmi:id="state_fire" name="Fire"/>
-                    </region>
-                  </ownedBehavior>
-                </packagedElement>
-                <packagedElement xmi:type="uml:TimeEvent" xmi:id="time_event_1" name="" isRelative="true">
-                  <when xmi:type="uml:TimeExpression" xmi:id="time_expr_1">
-                    <expr xmi:type="uml:LiteralString" xmi:id="time_expr_value_1" value="1s"/>
-                  </when>
-                </packagedElement>
-              </uml:Model>
-            </xmi:XMI>
-            """,
-            "uml:TimeEvent transitions",
-        ),
-        (
-            """
-            <?xml version="1.0" encoding="UTF-8"?>
-            <xmi:XMI xmi:version="20131001"
-                     xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
-                     xmlns:uml="http://www.eclipse.org/uml2/5.0.0/UML">
-              <uml:Model xmi:id="model_1" name="model">
                 <packagedElement xmi:type="uml:Class" xmi:id="class_1" name="Unknown Trigger" classifierBehavior="machine_1">
                   <ownedBehavior xmi:type="uml:StateMachine" xmi:id="machine_1" name="Unknown Trigger">
                     <region xmi:type="uml:Region" xmi:id="region_root" name="">

@@ -1,7 +1,7 @@
 """
 Public API for SysDeSim conversion helpers.
 
-This package exposes the phase0-2 conversion pipeline for the subset of
+This package exposes the phase0-3 conversion pipeline for the subset of
 SysDeSim UML state machines that can be mapped directly into FCSTM. The public
 surface is intentionally small:
 
@@ -11,7 +11,8 @@ surface is intentionally small:
   for FCSTM export.
 * :func:`build_machine_ast`, :func:`emit_program`,
   :func:`convert_sysdesim_xml_to_ast`, and
-  :func:`convert_sysdesim_xml_to_dsl` produce FCSTM output.
+  :func:`convert_sysdesim_xml_to_dsl` produce FCSTM output, including
+  ``uml:TimeEvent`` lowering when ``tick_duration_ms`` is supplied.
 * :func:`make_internal_name` provides deterministic reserved names for
   converter-generated artifacts.
 * :func:`validate_program_roundtrip` verifies that emitted DSL can be parsed

@@ -1,16 +1,16 @@
 """
-SysDeSim XML to FCSTM phase0-2 conversion helpers.
+SysDeSim XML to FCSTM phase0-3 conversion helpers.
 
-This module contains the full phase0-2 pipeline:
+This module contains the full phase0-3 pipeline:
 
 1. Parse SysDeSim XML into the dataclass IR.
 2. Normalize names, variables, and guard expressions.
 3. Build FCSTM DSL AST for the supported subset.
 4. Emit DSL text and validate it with the existing parser/model stack.
 
-The implementation intentionally stops before time-event lowering, cross-level
-lowering, and parallel-region splitting. Those cases are rejected explicitly so
-the supported boundary stays clear.
+The implementation intentionally stops before cross-level lowering and
+parallel-region splitting. Those cases are rejected explicitly so the
+supported boundary stays clear.
 
 The module contains:
 
@@ -32,8 +32,10 @@ Example::
 
 from __future__ import annotations
 
+import math
 import re
 import xml.etree.ElementTree as ET
+from dataclasses import dataclass, field
 from typing import Dict, Iterable, List, Optional, Tuple
 
 from unidecode import unidecode
@@ -61,6 +63,69 @@ _VALID_FCSTM_ID = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _TIME_LITERAL = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*(s|ms|us)\s*$")
 _DEFAULT_FLOAT = {"uml:LiteralReal", "uml:LiteralUnlimitedNatural"}
 _DEFAULT_INT = {"uml:LiteralInteger", "uml:LiteralNatural"}
+
+
+@dataclass(frozen=True)
+class _LoweredTimeTransition:
+    """
+    Internal lowering metadata for one original UML time-triggered transition.
+
+    :param transition_id: Original transition identifier.
+    :type transition_id: str
+    :param source_id: Source state identifier.
+    :type source_id: str
+    :param timer_name: Generated timer variable name.
+    :type timer_name: str
+    :param ticks: Timer threshold in runtime ticks.
+    :type ticks: int
+    :param guard_expr: Final lowered guard expression.
+    :type guard_expr: pyfcstm.dsl.node.Expr
+    """
+
+    transition_id: str
+    source_id: str
+    timer_name: str
+    ticks: int
+    guard_expr: dsl_nodes.Expr
+
+
+@dataclass(frozen=True)
+class _LoweredExitChainTransition:
+    """
+    Internal synthetic exit transition produced for composite timeout lowering.
+
+    :param source_id: Direct child state that should exit upward.
+    :type source_id: str
+    :param guard_expr: Guard shared by the full propagated timeout chain.
+    :type guard_expr: pyfcstm.dsl.node.Expr
+    """
+
+    source_id: str
+    guard_expr: dsl_nodes.Expr
+
+
+@dataclass
+class _AstBuildContext:
+    """
+    Internal AST-build context containing phase3 lowering products.
+
+    :param time_transitions_by_id: Lowered time transitions keyed by original
+        transition identifier.
+    :type time_transitions_by_id: dict[str, _LoweredTimeTransition]
+    :param time_transitions_in_order: Lowered time transitions in source order.
+    :type time_transitions_in_order: list[_LoweredTimeTransition]
+    :param time_transitions_by_source_id: Lowered time transitions keyed by
+        source state identifier.
+    :type time_transitions_by_source_id: dict[str, list[_LoweredTimeTransition]]
+    :param propagated_exit_chains: Synthetic exit transitions keyed by the
+        composite state that owns the containing region.
+    :type propagated_exit_chains: dict[str, list[_LoweredExitChainTransition]]
+    """
+
+    time_transitions_by_id: Dict[str, _LoweredTimeTransition] = field(default_factory=dict)
+    time_transitions_in_order: List[_LoweredTimeTransition] = field(default_factory=list)
+    time_transitions_by_source_id: Dict[str, List[_LoweredTimeTransition]] = field(default_factory=dict)
+    propagated_exit_chains: Dict[str, List[_LoweredExitChainTransition]] = field(default_factory=dict)
 
 
 def _xmi_id(element: ET.Element) -> str:
@@ -788,6 +853,209 @@ def normalize_machine(machine: IrMachine) -> IrMachine:
     return machine
 
 
+def _timeout_source_scope_tokens(machine: IrMachine, source_id: str) -> List[str]:
+    """
+    Build normalized source-path tokens used in time-lowering timer names.
+
+    :param machine: Normalized machine containing the source state.
+    :type machine: IrMachine
+    :param source_id: Source state identifier.
+    :type source_id: str
+    :return: Lower-snake tokens derived from the full source-state path.
+    :rtype: list[str]
+    """
+    raw_path = machine.state_path(source_id, use_safe_name=False)
+    safe_path = machine.state_path(source_id, use_safe_name=True)
+    tokens = []
+    for raw_name, safe_name in zip(raw_path, safe_path):
+        token = _base_lower_snake(raw_name)
+        if not token and safe_name is not None:
+            token = _base_lower_snake(safe_name)
+        if token:
+            tokens.append(token)
+    if tokens:
+        return tokens
+
+    source = machine.get_vertex(source_id)
+    fallback = _base_lower_snake(source.safe_name or source.vertex_id)
+    return [fallback] if fallback else [_stable_suffix(source.vertex_id).lower()]
+
+
+def _make_time_event_timer_name(machine: IrMachine, transition: IrTransition) -> str:
+    """
+    Build the synthetic timer variable name for one UML time transition.
+
+    :param machine: Normalized machine containing the transition.
+    :type machine: IrMachine
+    :param transition: Original time-triggered transition.
+    :type transition: IrTransition
+    :return: Reserved timer variable name.
+    :rtype: str
+    """
+    scope_part = "_".join(_timeout_source_scope_tokens(machine, transition.source_id))
+    transition_suffix = _stable_suffix(transition.transition_id).lower()
+    return f"__sysdesim_after_{scope_part}__tx_{transition_suffix}_ticks"
+
+
+def _convert_time_event_to_ticks(time_event: IrTimeEvent, tick_duration_ms: float) -> int:
+    """
+    Convert one normalized UML time literal into runtime ticks.
+
+    :param time_event: Time-event metadata with parsed delay and unit.
+    :type time_event: IrTimeEvent
+    :param tick_duration_ms: Configured duration of one runtime tick in
+        milliseconds.
+    :type tick_duration_ms: float
+    :return: Required runtime ticks computed with ``ceil`` rounding.
+    :rtype: int
+    :raises NotImplementedError: If the event is absolute rather than relative.
+    :raises ValueError: If the literal cannot be parsed into a supported unit.
+    """
+    if not time_event.is_relative:
+        raise NotImplementedError(
+            f"Phase3 only supports relative uml:TimeEvent values: {time_event.time_event_id}"
+        )
+    if time_event.normalized_delay is None or time_event.normalized_unit is None:
+        raise ValueError(f"Unsupported uml:TimeEvent literal {time_event.raw_literal!r}.")
+
+    unit_factor_us = {
+        "s": 1_000_000.0,
+        "ms": 1_000.0,
+        "us": 1.0,
+    }.get(time_event.normalized_unit)
+    if unit_factor_us is None:  # pragma: no cover - guarded by _TIME_LITERAL
+        raise ValueError(f"Unsupported uml:TimeEvent unit {time_event.normalized_unit!r}.")
+
+    delay_us = time_event.normalized_delay * unit_factor_us
+    tick_us = tick_duration_ms * 1_000.0
+    return int(math.ceil(delay_us / tick_us))
+
+
+def _build_timeout_guard_expr(
+    timer_name: str,
+    ticks: int,
+    original_guard: Optional[dsl_nodes.Expr],
+) -> dsl_nodes.Expr:
+    """
+    Build the final guard expression used by a lowered timeout transition.
+
+    :param timer_name: Generated timer variable name.
+    :type timer_name: str
+    :param ticks: Timer threshold in runtime ticks.
+    :type ticks: int
+    :param original_guard: Original transition guard, defaults to ``None``
+    :type original_guard: pyfcstm.dsl.node.Expr, optional
+    :return: Lowered timeout guard.
+    :rtype: pyfcstm.dsl.node.Expr
+    """
+    timeout_guard = dsl_nodes.BinaryOp(
+        dsl_nodes.Name(timer_name),
+        ">=",
+        dsl_nodes.Integer(str(ticks)),
+    )
+    if original_guard is None:
+        return timeout_guard
+    return dsl_nodes.BinaryOp(dsl_nodes.Paren(timeout_guard), "&&", original_guard)
+
+
+def _register_propagated_timeout_exit_chain(
+    machine: IrMachine,
+    composite_source: IrVertex,
+    guard_expr: dsl_nodes.Expr,
+    sink: Dict[str, List[_LoweredExitChainTransition]],
+) -> None:
+    """
+    Register synthetic upward-exit transitions for one composite timeout source.
+
+    :param machine: Normalized machine containing the composite subtree.
+    :type machine: IrMachine
+    :param composite_source: Composite source state that owns the timeout.
+    :type composite_source: IrVertex
+    :param guard_expr: Guard shared by the full timeout exit chain.
+    :type guard_expr: pyfcstm.dsl.node.Expr
+    :param sink: Output mapping keyed by composite owner state identifier.
+    :type sink: dict[str, list[_LoweredExitChainTransition]]
+    :return: ``None``.
+    :rtype: None
+    """
+    if not composite_source.regions:
+        return
+
+    region = composite_source.regions[0]
+    for child in region.vertices:
+        if child.vertex_type != "state":
+            continue
+        sink.setdefault(composite_source.vertex_id, []).append(
+            _LoweredExitChainTransition(source_id=child.vertex_id, guard_expr=guard_expr)
+        )
+        if child.is_composite:
+            _register_propagated_timeout_exit_chain(machine, child, guard_expr, sink)
+
+
+def _build_ast_context(machine: IrMachine, tick_duration_ms: Optional[float]) -> _AstBuildContext:
+    """
+    Build the internal lowering context required for phase3 AST emission.
+
+    :param machine: Normalized machine to lower.
+    :type machine: IrMachine
+    :param tick_duration_ms: Configured duration of one runtime tick in
+        milliseconds, or ``None`` when no time event is expected.
+    :type tick_duration_ms: float, optional
+    :return: Internal AST-build context.
+    :rtype: _AstBuildContext
+    :raises ValueError: If time-triggered transitions exist without a valid
+        ``tick_duration_ms`` value.
+    :raises NotImplementedError: If a time event is attached to an unsupported
+        source shape.
+    """
+    time_transitions = [transition for transition in machine.walk_transitions() if transition.trigger_kind == "time"]
+    if not time_transitions:
+        return _AstBuildContext()
+
+    if tick_duration_ms is None:
+        raise ValueError("tick_duration_ms is required when lowering uml:TimeEvent transitions.")
+    if tick_duration_ms <= 0:
+        raise ValueError("tick_duration_ms must be greater than 0.")
+
+    context = _AstBuildContext()
+    for transition in time_transitions:
+        source = machine.get_vertex(transition.source_id)
+        if source.vertex_type != "state":
+            raise NotImplementedError(
+                f"Phase3 only supports state-backed uml:TimeEvent sources: {transition.transition_id}"
+            )
+        if transition.effect_action is not None:
+            raise NotImplementedError(
+                f"Phase3 does not lower transition effects yet: {transition.transition_id}"
+            )
+
+        time_event = machine.get_time_event(transition.trigger_ref_id)
+        timer_name = _make_time_event_timer_name(machine, transition)
+        ticks = _convert_time_event_to_ticks(time_event, tick_duration_ms)
+        guard_expr = _build_timeout_guard_expr(timer_name, ticks, transition.guard_expr_ir)
+
+        lowered = _LoweredTimeTransition(
+            transition_id=transition.transition_id,
+            source_id=transition.source_id,
+            timer_name=timer_name,
+            ticks=ticks,
+            guard_expr=guard_expr,
+        )
+        context.time_transitions_by_id[transition.transition_id] = lowered
+        context.time_transitions_in_order.append(lowered)
+        context.time_transitions_by_source_id.setdefault(transition.source_id, []).append(lowered)
+
+        if source.is_composite:
+            _register_propagated_timeout_exit_chain(
+                machine,
+                source,
+                guard_expr,
+                context.propagated_exit_chains,
+            )
+
+    return context
+
+
 def _display_name_or_none(raw_name: Optional[str], safe_name: Optional[str]) -> Optional[str]:
     """
     Return the display name only when it differs from the FCSTM identifier.
@@ -876,7 +1144,11 @@ def _validate_phase2_region(machine: IrMachine, region: IrRegion) -> None:
             )
 
 
-def _build_transition(machine: IrMachine, transition: IrTransition) -> dsl_nodes.TransitionDefinition:
+def _build_transition(
+    machine: IrMachine,
+    transition: IrTransition,
+    context: _AstBuildContext,
+) -> dsl_nodes.TransitionDefinition:
     """
     Convert a supported IR transition to a DSL transition node.
 
@@ -892,9 +1164,24 @@ def _build_transition(machine: IrMachine, transition: IrTransition) -> dsl_nodes
     source = machine.get_vertex(transition.source_id)
     target = machine.get_vertex(transition.target_id)
 
+    lowered_time_transition = context.time_transitions_by_id.get(transition.transition_id)
     if transition.trigger_kind == "time":
-        raise NotImplementedError(
-            f"Phase2 does not support uml:TimeEvent transitions yet: {transition.transition_id}"
+        if lowered_time_transition is None:  # pragma: no cover - build_machine_ast prepares this eagerly
+            raise RuntimeError(f"Missing lowered time-transition metadata: {transition.transition_id}")
+        if transition.effect_action is not None:
+            raise NotImplementedError(
+                f"Phase3 does not lower transition effects yet: {transition.transition_id}"
+            )
+        if source.vertex_type != "state" or target.vertex_type != "state":
+            raise NotImplementedError(
+                f"Phase3 only supports state-to-state uml:TimeEvent transitions: {transition.transition_id}"
+            )
+        return dsl_nodes.TransitionDefinition(
+            from_state=source.safe_name,
+            to_state=target.safe_name,
+            event_id=None,
+            condition_expr=lowered_time_transition.guard_expr,
+            post_operations=[],
         )
     if transition.trigger_kind not in {"signal", "none"}:
         raise NotImplementedError(
@@ -941,6 +1228,7 @@ def _build_transition(machine: IrMachine, transition: IrTransition) -> dsl_nodes
 def _build_state(
     machine: IrMachine,
     vertex: IrVertex,
+    context: _AstBuildContext,
     *,
     event_definitions: Optional[List[dsl_nodes.EventDefinition]] = None,
 ) -> dsl_nodes.StateDefinition:
@@ -959,11 +1247,32 @@ def _build_state(
     :raises NotImplementedError: If the state owns unsupported parallel regions.
     """
     enters = []
+    durings: List[dsl_nodes.DuringStatement] = []
     exits = []
+    during_aspects: List[dsl_nodes.DuringAspectStatement] = []
     if vertex.entry_action is not None:
         enters.append(dsl_nodes.EnterAbstractFunction(vertex.entry_action.safe_name, None))
     if vertex.exit_action is not None:
         exits.append(dsl_nodes.ExitAbstractFunction(vertex.exit_action.safe_name, None))
+
+    time_transitions = context.time_transitions_by_source_id.get(vertex.vertex_id, [])
+    if time_transitions:
+        enters.append(
+            dsl_nodes.EnterOperations(
+                [dsl_nodes.OperationAssignment(item.timer_name, dsl_nodes.Integer("0")) for item in time_transitions]
+            )
+        )
+        increment_operations = [
+            dsl_nodes.OperationAssignment(
+                item.timer_name,
+                dsl_nodes.BinaryOp(dsl_nodes.Name(item.timer_name), "+", dsl_nodes.Integer("1")),
+            )
+            for item in time_transitions
+        ]
+        if vertex.is_composite:
+            during_aspects.append(dsl_nodes.DuringAspectOperations("after", increment_operations))
+        else:
+            durings.append(dsl_nodes.DuringOperations(None, increment_operations))
 
     substates: List[dsl_nodes.StateDefinition] = []
     transitions: List[dsl_nodes.TransitionDefinition] = []
@@ -979,15 +1288,36 @@ def _build_state(
         }
         for child in region.vertices:
             if child.vertex_type == "state":
-                substates.append(_build_state(machine, child))
+                substates.append(_build_state(machine, child, context))
+        regular_transitions: List[dsl_nodes.TransitionDefinition] = []
+        lowered_timeout_transitions: List[dsl_nodes.TransitionDefinition] = []
         for transition in region.transitions:
             if transition.source_id in init_pseudostates:
-                transitions.append(_build_transition(machine, transition))
+                regular_transitions.append(_build_transition(machine, transition, context))
                 continue
             source = machine.get_vertex(transition.source_id)
             target = machine.get_vertex(transition.target_id)
             if source.parent_region_id == region.region_id and target.parent_region_id == region.region_id:
-                transitions.append(_build_transition(machine, transition))
+                built_transition = _build_transition(machine, transition, context)
+                if transition.trigger_kind == "time":
+                    lowered_timeout_transitions.append(built_transition)
+                else:
+                    regular_transitions.append(built_transition)
+        transitions.extend(regular_transitions)
+        transitions.extend(lowered_timeout_transitions)
+        if vertex.vertex_id in context.propagated_exit_chains:
+            transitions.extend(
+                [
+                    dsl_nodes.TransitionDefinition(
+                        from_state=machine.get_vertex(item.source_id).safe_name,
+                        to_state=dsl_nodes.EXIT_STATE,
+                        event_id=None,
+                        condition_expr=item.guard_expr,
+                        post_operations=[],
+                    )
+                    for item in context.propagated_exit_chains[vertex.vertex_id]
+                ]
+            )
 
     return dsl_nodes.StateDefinition(
         name=vertex.safe_name,
@@ -996,24 +1326,35 @@ def _build_state(
         substates=substates,
         transitions=transitions,
         enters=enters,
+        durings=durings,
         exits=exits,
+        during_aspects=during_aspects,
     )
 
 
-def build_machine_ast(machine: IrMachine) -> dsl_nodes.StateMachineDSLProgram:
+def build_machine_ast(
+    machine: IrMachine,
+    *,
+    tick_duration_ms: Optional[float] = None,
+) -> dsl_nodes.StateMachineDSLProgram:
     """
-    Build a phase2 FCSTM AST program from a normalized IR machine.
+    Build a phase3 FCSTM AST program from a normalized IR machine.
 
     The input machine is expected to have already passed
-    :func:`normalize_machine`. This function validates the supported phase2
-    subset, converts variables to ``def`` assignments, hoists root signals to
-    FCSTM event definitions, and recursively lowers states and transitions.
+    :func:`normalize_machine`. This function validates the supported subset,
+    converts variables to ``def`` assignments, hoists root signals to FCSTM
+    event definitions, lowers ``uml:TimeEvent`` triggers into internal timer
+    variables and guards, and recursively lowers states and transitions.
 
     :param machine: Normalized machine IR object.
     :type machine: IrMachine
+    :param tick_duration_ms: Duration of one runtime tick in milliseconds when
+        lowering ``uml:TimeEvent`` transitions, defaults to ``None``
+    :type tick_duration_ms: float, optional
     :return: FCSTM DSL program AST.
     :rtype: pyfcstm.dsl.node.StateMachineDSLProgram
-    :raises ValueError: If the machine violates a phase2 structural invariant.
+    :raises ValueError: If the machine violates a structural invariant or time
+        lowering requires missing/invalid configuration.
     :raises NotImplementedError: If the machine requires unsupported lowering.
 
     Example::
@@ -1025,6 +1366,7 @@ def build_machine_ast(machine: IrMachine) -> dsl_nodes.StateMachineDSLProgram:
     """
     machine.rebuild_indexes()
     _validate_phase2_region(machine, machine.root_region)
+    context = _build_ast_context(machine, tick_duration_ms)
 
     root_vertex = IrVertex(
         vertex_id=machine.machine_id,
@@ -1054,10 +1396,18 @@ def build_machine_ast(machine: IrMachine) -> dsl_nodes.StateMachineDSLProgram:
         else:
             raise ValueError(f"Unsupported variable type {variable.type_name!r}.")
         definitions.append(dsl_nodes.DefAssignment(name=variable.safe_name, type=variable.type_name, expr=expr))
+    for lowered_time_transition in context.time_transitions_in_order:
+        definitions.append(
+            dsl_nodes.DefAssignment(
+                name=lowered_time_transition.timer_name,
+                type="int",
+                expr=dsl_nodes.Integer("0"),
+            )
+        )
 
     return dsl_nodes.StateMachineDSLProgram(
         definitions=definitions,
-        root_state=_build_state(machine, root_vertex, event_definitions=root_events),
+        root_state=_build_state(machine, root_vertex, context, event_definitions=root_events),
     )
 
 
@@ -1101,6 +1451,7 @@ def convert_sysdesim_xml_to_ast(
     *,
     machine_name: Optional[str] = None,
     machine_id: Optional[str] = None,
+    tick_duration_ms: Optional[float] = None,
 ) -> dsl_nodes.StateMachineDSLProgram:
     """
     Load, normalize, validate, and convert one SysDeSim machine to FCSTM AST.
@@ -1113,6 +1464,9 @@ def convert_sysdesim_xml_to_ast(
     :param machine_id: Exact UML state-machine ``xmi:id`` to load, defaults to
         ``None``
     :type machine_id: str, optional
+    :param tick_duration_ms: Duration of one runtime tick in milliseconds when
+        lowering ``uml:TimeEvent`` transitions, defaults to ``None``
+    :type tick_duration_ms: float, optional
     :return: Converted FCSTM DSL AST program.
     :rtype: pyfcstm.dsl.node.StateMachineDSLProgram
     :raises KeyError: If the requested machine cannot be found.
@@ -1133,7 +1487,7 @@ def convert_sysdesim_xml_to_ast(
     """
     machine = load_sysdesim_machine(xml_path, machine_name=machine_name, machine_id=machine_id)
     normalize_machine(machine)
-    program = build_machine_ast(machine)
+    program = build_machine_ast(machine, tick_duration_ms=tick_duration_ms)
     validate_program_roundtrip(program)
     return program
 
@@ -1143,6 +1497,7 @@ def convert_sysdesim_xml_to_dsl(
     *,
     machine_name: Optional[str] = None,
     machine_id: Optional[str] = None,
+    tick_duration_ms: Optional[float] = None,
 ) -> str:
     """
     Load, normalize, validate, and convert one SysDeSim machine to FCSTM DSL text.
@@ -1155,6 +1510,9 @@ def convert_sysdesim_xml_to_dsl(
     :param machine_id: Exact UML state-machine ``xmi:id`` to load, defaults to
         ``None``
     :type machine_id: str, optional
+    :param tick_duration_ms: Duration of one runtime tick in milliseconds when
+        lowering ``uml:TimeEvent`` transitions, defaults to ``None``
+    :type tick_duration_ms: float, optional
     :return: Rendered FCSTM DSL text for the selected machine.
     :rtype: str
     :raises KeyError: If the requested machine cannot be found.
@@ -1178,5 +1536,6 @@ def convert_sysdesim_xml_to_dsl(
             xml_path,
             machine_name=machine_name,
             machine_id=machine_id,
+            tick_duration_ms=tick_duration_ms,
         )
     )

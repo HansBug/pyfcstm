@@ -368,6 +368,42 @@ def test_phase0_can_parse_graph_structure_and_events(tmp_path: Path):
     assert machine_dict["time_events"][0]["raw_literal"] == "0.5s"
 
 
+def test_phase0_time_event_loader_tolerates_missing_when_and_missing_expr(tmp_path: Path):
+    """Phase0 should preserve empty time literals when UML omits ``when`` or ``expr`` nodes."""
+    xml_file = _write_xml(
+        tmp_path,
+        """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <xmi:XMI xmi:version="20131001"
+                 xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
+                 xmlns:uml="http://www.eclipse.org/uml2/5.0.0/UML">
+          <uml:Model xmi:id="model_1" name="model">
+            <packagedElement xmi:type="uml:Class" xmi:id="class_1" name="Time Edge Cases" classifierBehavior="machine_1">
+              <ownedBehavior xmi:type="uml:StateMachine" xmi:id="machine_1" name="Time Edge Cases">
+                <region xmi:type="uml:Region" xmi:id="region_1" name="">
+                  <transition xmi:type="uml:Transition" xmi:id="tx_init" source="init_1" target="state_idle"/>
+                  <subvertex xmi:type="uml:Pseudostate" xmi:id="init_1"/>
+                  <subvertex xmi:type="uml:State" xmi:id="state_idle" name="Idle"/>
+                </region>
+              </ownedBehavior>
+            </packagedElement>
+            <packagedElement xmi:type="uml:TimeEvent" xmi:id="time_evt_no_when" name="" isRelative="true"/>
+            <packagedElement xmi:type="uml:TimeEvent" xmi:id="time_evt_no_expr" name="" isRelative="false">
+              <when xmi:type="uml:TimeExpression" xmi:id="time_expr_missing" name="timeExpression"/>
+            </packagedElement>
+          </uml:Model>
+        </xmi:XMI>
+        """,
+    )
+
+    machine = load_sysdesim_machine(str(xml_file))
+
+    assert machine.get_time_event("time_evt_no_when").raw_literal == ""
+    assert machine.get_time_event("time_evt_no_when").is_relative is True
+    assert machine.get_time_event("time_evt_no_expr").raw_literal == ""
+    assert machine.get_time_event("time_evt_no_expr").is_relative is False
+
+
 def test_phase1_normalize_names_and_variables(tmp_path: Path):
     """Phase1 should normalize state and event names while keeping legal variables unchanged."""
     xml_file = _write_xml(
@@ -430,6 +466,43 @@ def test_phase1_normalize_names_and_variables(tmp_path: Path):
     assert make_internal_name("flag_route", ["pump_loop"], "transition-001") == (
         "__sysdesim_flag_route_pump_loop_ion001"
     )
+
+
+def test_phase1_state_id_path_ignores_non_state_vertices(tmp_path: Path):
+    """State-id paths should be empty for non-state vertices such as init pseudostates."""
+    xml_file = _write_xml(
+        tmp_path,
+        """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <xmi:XMI xmi:version="20131001"
+                 xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
+                 xmlns:uml="http://www.eclipse.org/uml2/5.0.0/UML">
+          <uml:Model xmi:id="model_1" name="model">
+            <packagedElement xmi:type="uml:Class" xmi:id="class_1" name="Path Filter" classifierBehavior="machine_1">
+              <ownedBehavior xmi:type="uml:StateMachine" xmi:id="machine_1" name="Path Filter">
+                <region xmi:type="uml:Region" xmi:id="region_root" name="">
+                  <transition xmi:type="uml:Transition" xmi:id="tx_init" source="init_root" target="state_parent"/>
+                  <subvertex xmi:type="uml:Pseudostate" xmi:id="init_root"/>
+                  <subvertex xmi:type="uml:State" xmi:id="state_parent" name="Parent">
+                    <region xmi:type="uml:Region" xmi:id="region_child" name="">
+                      <transition xmi:type="uml:Transition" xmi:id="tx_child_init" source="init_child" target="state_leaf"/>
+                      <subvertex xmi:type="uml:Pseudostate" xmi:id="init_child"/>
+                      <subvertex xmi:type="uml:State" xmi:id="state_leaf" name="Leaf"/>
+                    </region>
+                  </subvertex>
+                </region>
+              </ownedBehavior>
+            </packagedElement>
+          </uml:Model>
+        </xmi:XMI>
+        """,
+    )
+
+    machine = normalize_machine(load_sysdesim_machine(str(xml_file)))
+
+    assert machine.state_id_path("init_root") == ()
+    assert machine.state_id_path("init_child") == ("state_parent",)
+    assert machine.state_path("init_child", use_safe_name=True) == ("Parent",)
 
 
 def test_phase1_rejects_illegal_explicit_variable_name():
@@ -1570,6 +1643,62 @@ class TestSysDeSimCoverageScenarios:
         )
         with pytest.raises(ValueError, match="Unsupported variable type"):
             build_machine_ast(unsupported_type_machine)
+
+    def test_phase2_ignores_same_region_transition_misplaced_on_outer_region(self, tmp_path: Path):
+        """Phase2 should skip malformed transitions attached to the wrong region scope."""
+        xml_file = _write_xml(
+            tmp_path,
+            """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <xmi:XMI xmi:version="20131001"
+                     xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
+                     xmlns:uml="http://www.eclipse.org/uml2/5.0.0/UML">
+              <uml:Model xmi:id="model_1" name="model">
+                <packagedElement xmi:type="uml:Class" xmi:id="class_1" name="Misplaced Transition" classifierBehavior="machine_1">
+                  <ownedBehavior xmi:type="uml:StateMachine" xmi:id="machine_1" name="Misplaced Transition">
+                    <region xmi:type="uml:Region" xmi:id="region_root" name="">
+                      <transition xmi:type="uml:Transition" xmi:id="tx_init" source="init_root" target="state_parent"/>
+                      <transition xmi:type="uml:Transition" xmi:id="tx_misplaced" source="state_left" target="state_right"/>
+                      <subvertex xmi:type="uml:Pseudostate" xmi:id="init_root"/>
+                      <subvertex xmi:type="uml:State" xmi:id="state_parent" name="Parent">
+                        <region xmi:type="uml:Region" xmi:id="region_child" name="">
+                          <transition xmi:type="uml:Transition" xmi:id="tx_child_init" source="init_child" target="state_left"/>
+                          <subvertex xmi:type="uml:Pseudostate" xmi:id="init_child"/>
+                          <subvertex xmi:type="uml:State" xmi:id="state_left" name="Left"/>
+                          <subvertex xmi:type="uml:State" xmi:id="state_right" name="Right"/>
+                        </region>
+                      </subvertex>
+                    </region>
+                  </ownedBehavior>
+                </packagedElement>
+              </uml:Model>
+            </xmi:XMI>
+            """,
+        )
+
+        machine = normalize_machine(load_sysdesim_machine(str(xml_file)))
+        program = build_machine_ast(machine)
+        dsl_code = convert_sysdesim_xml_to_dsl(str(xml_file))
+        parsed, model = validate_program_roundtrip(program)
+        expected_dsl = dedent(
+            """\
+            state MisplacedTransition named 'Misplaced Transition' {
+                state Parent {
+                    state Left;
+                    state Right;
+                    [*] -> Left;
+                }
+                [*] -> Parent;
+            }"""
+        )
+
+        assert _normalize_newlines(dsl_code) == expected_dsl
+        assert _normalize_newlines(str(program)) == expected_dsl
+        assert _normalize_newlines(str(parsed)) == expected_dsl
+        assert model.root_state.name == "MisplacedTransition"
+        assert [item.name for item in program.root_state.substates] == ["Parent"]
+        assert [str(item) for item in program.root_state.transitions] == ["[*] -> Parent;"]
+        assert [str(item) for item in program.root_state.substates[0].transitions] == ["[*] -> Left;"]
 
     def test_phase2_output_loads_into_public_state_machine_model(self, tmp_path: Path):
         """Phase2 output should be loadable into the public StateMachine model API."""

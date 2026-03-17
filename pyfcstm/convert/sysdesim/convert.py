@@ -1183,7 +1183,7 @@ def _lower_cross_level_transition(
         raise NotImplementedError(
             f"Phase4 only supports signal/none/time cross-level transitions: {transition.transition_id}"
         )
-    if transition.trigger_kind == "time" and transition.transition_id not in context.time_transitions_by_id:
+    if transition.trigger_kind == "time" and transition.transition_id not in context.time_transitions_by_id:  # pragma: no cover
         raise RuntimeError(f"Missing lowered time-transition metadata: {transition.transition_id}")
 
     source_path = machine.state_id_path(transition.source_id)

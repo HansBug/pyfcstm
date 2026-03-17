@@ -380,3 +380,151 @@ def test_phase4_ancestor_target_cross_level_transition_is_still_rejected(tmp_pat
 
     with pytest.raises(NotImplementedError, match="ancestor-target cross-level transitions"):
         convert_sysdesim_xml_to_dsl(str(xml_file))
+
+
+@pytest.mark.parametrize(
+    ("xml_content", "expected_message"),
+    [
+        (
+            """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <xmi:XMI xmi:version="20131001"
+                     xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
+                     xmlns:uml="http://www.eclipse.org/uml2/5.0.0/UML">
+              <uml:Model xmi:id="model_1" name="model">
+                <packagedElement xmi:type="uml:Class" xmi:id="class_1" name="Cross Final" classifierBehavior="machine_1">
+                  <ownedBehavior xmi:type="uml:StateMachine" xmi:id="machine_1" name="Cross Final">
+                    <region xmi:type="uml:Region" xmi:id="region_root" name="">
+                      <transition xmi:type="uml:Transition" xmi:id="tx_init" source="init_root" target="state_parent"/>
+                      <transition xmi:type="uml:Transition" xmi:id="tx_cross_EEEEEE" source="state_source" target="final_target"/>
+                      <subvertex xmi:type="uml:Pseudostate" xmi:id="init_root"/>
+                      <subvertex xmi:type="uml:State" xmi:id="state_parent" name="Parent">
+                        <region xmi:type="uml:Region" xmi:id="region_parent" name="">
+                          <transition xmi:type="uml:Transition" xmi:id="tx_parent_init" source="init_parent" target="state_source"/>
+                          <subvertex xmi:type="uml:Pseudostate" xmi:id="init_parent"/>
+                          <subvertex xmi:type="uml:State" xmi:id="state_source" name="Source"/>
+                        </region>
+                      </subvertex>
+                      <subvertex xmi:type="uml:FinalState" xmi:id="final_target" name=""/>
+                    </region>
+                  </ownedBehavior>
+                </packagedElement>
+              </uml:Model>
+            </xmi:XMI>
+            """,
+            "state-to-state cross-level transitions",
+        ),
+        (
+            """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <xmi:XMI xmi:version="20131001"
+                     xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
+                     xmlns:uml="http://www.eclipse.org/uml2/5.0.0/UML">
+              <uml:Model xmi:id="model_1" name="model">
+                <packagedElement xmi:type="uml:Class" xmi:id="class_1" name="Cross Effect" classifierBehavior="machine_1">
+                  <ownedBehavior xmi:type="uml:StateMachine" xmi:id="machine_1" name="Cross Effect">
+                    <region xmi:type="uml:Region" xmi:id="region_root" name="">
+                      <transition xmi:type="uml:Transition" xmi:id="tx_init" source="init_root" target="state_left"/>
+                      <transition xmi:type="uml:Transition" xmi:id="tx_cross_FFFFFF" source="state_source" target="state_ready">
+                        <effect xmi:type="uml:Activity" xmi:id="effect_cross" name="DoEffect"/>
+                      </transition>
+                      <subvertex xmi:type="uml:Pseudostate" xmi:id="init_root"/>
+                      <subvertex xmi:type="uml:State" xmi:id="state_left" name="Left">
+                        <region xmi:type="uml:Region" xmi:id="region_left" name="">
+                          <transition xmi:type="uml:Transition" xmi:id="tx_left_init" source="init_left" target="state_source"/>
+                          <subvertex xmi:type="uml:Pseudostate" xmi:id="init_left"/>
+                          <subvertex xmi:type="uml:State" xmi:id="state_source" name="Source"/>
+                        </region>
+                      </subvertex>
+                      <subvertex xmi:type="uml:State" xmi:id="state_ready" name="Ready"/>
+                    </region>
+                  </ownedBehavior>
+                </packagedElement>
+              </uml:Model>
+            </xmi:XMI>
+            """,
+            "does not lower transition effects yet",
+        ),
+        (
+            """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <xmi:XMI xmi:version="20131001"
+                     xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
+                     xmlns:uml="http://www.eclipse.org/uml2/5.0.0/UML">
+              <uml:Model xmi:id="model_1" name="model">
+                <packagedElement xmi:type="uml:Class" xmi:id="class_1" name="Cross Signal Guard" classifierBehavior="machine_1">
+                  <ownedBehavior xmi:type="uml:StateMachine" xmi:id="machine_1" name="Cross Signal Guard">
+                    <region xmi:type="uml:Region" xmi:id="region_root" name="">
+                      <transition xmi:type="uml:Transition" xmi:id="tx_init" source="init_root" target="state_left"/>
+                      <transition xmi:type="uml:Transition" xmi:id="tx_cross_GGGGGG" source="state_source" target="state_ready">
+                        <trigger xmi:type="uml:Trigger" xmi:id="trigger_go" event="signal_evt_go"/>
+                        <ownedRule xmi:type="uml:Constraint" xmi:id="guard_rule_cross">
+                          <specification xmi:type="uml:OpaqueExpression" xmi:id="guard_expr_cross">
+                            <body> counter &gt; 0 </body>
+                          </specification>
+                        </ownedRule>
+                      </transition>
+                      <subvertex xmi:type="uml:Pseudostate" xmi:id="init_root"/>
+                      <subvertex xmi:type="uml:State" xmi:id="state_left" name="Left">
+                        <region xmi:type="uml:Region" xmi:id="region_left" name="">
+                          <transition xmi:type="uml:Transition" xmi:id="tx_left_init" source="init_left" target="state_source"/>
+                          <subvertex xmi:type="uml:Pseudostate" xmi:id="init_left"/>
+                          <subvertex xmi:type="uml:State" xmi:id="state_source" name="Source"/>
+                        </region>
+                      </subvertex>
+                      <subvertex xmi:type="uml:State" xmi:id="state_ready" name="Ready"/>
+                    </region>
+                  </ownedBehavior>
+                  <ownedAttribute xmi:type="uml:Property" xmi:id="var_counter" name="counter">
+                    <type xmi:type="uml:PrimitiveType" href="pathmap://UML_LIBRARIES/UMLPrimitiveTypes.library.uml#Integer"/>
+                    <defaultValue xmi:type="uml:LiteralInteger" xmi:id="var_counter_default" value="0"/>
+                  </ownedAttribute>
+                </packagedElement>
+                <packagedElement xmi:type="uml:Signal" xmi:id="signal_go" name="Go Signal"/>
+                <packagedElement xmi:type="uml:SignalEvent" xmi:id="signal_evt_go" name="" signal="signal_go"/>
+              </uml:Model>
+            </xmi:XMI>
+            """,
+            "does not support cross-level transitions with both signal and guard",
+        ),
+        (
+            """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <xmi:XMI xmi:version="20131001"
+                     xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
+                     xmlns:uml="http://www.eclipse.org/uml2/5.0.0/UML">
+              <uml:Model xmi:id="model_1" name="model">
+                <packagedElement xmi:type="uml:Class" xmi:id="class_1" name="Cross Unknown Trigger" classifierBehavior="machine_1">
+                  <ownedBehavior xmi:type="uml:StateMachine" xmi:id="machine_1" name="Cross Unknown Trigger">
+                    <region xmi:type="uml:Region" xmi:id="region_root" name="">
+                      <transition xmi:type="uml:Transition" xmi:id="tx_init" source="init_root" target="state_left"/>
+                      <transition xmi:type="uml:Transition" xmi:id="tx_cross_HHHHHH" source="state_source" target="state_ready">
+                        <trigger xmi:type="uml:Trigger" xmi:id="trigger_unknown" event="missing_event"/>
+                      </transition>
+                      <subvertex xmi:type="uml:Pseudostate" xmi:id="init_root"/>
+                      <subvertex xmi:type="uml:State" xmi:id="state_left" name="Left">
+                        <region xmi:type="uml:Region" xmi:id="region_left" name="">
+                          <transition xmi:type="uml:Transition" xmi:id="tx_left_init" source="init_left" target="state_source"/>
+                          <subvertex xmi:type="uml:Pseudostate" xmi:id="init_left"/>
+                          <subvertex xmi:type="uml:State" xmi:id="state_source" name="Source"/>
+                        </region>
+                      </subvertex>
+                      <subvertex xmi:type="uml:State" xmi:id="state_ready" name="Ready"/>
+                    </region>
+                  </ownedBehavior>
+                </packagedElement>
+              </uml:Model>
+            </xmi:XMI>
+            """,
+            "only supports signal/none/time cross-level transitions",
+        ),
+    ],
+)
+def test_phase4_public_unsupported_cross_level_shapes_report_clear_errors(
+    tmp_path: Path, xml_content: str, expected_message: str
+):
+    """Phase4 should reject still-unsupported public cross-level shapes with stable messages."""
+    xml_file = _write_xml(tmp_path, xml_content)
+
+    with pytest.raises(NotImplementedError, match=expected_message):
+        convert_sysdesim_xml_to_ast(str(xml_file))

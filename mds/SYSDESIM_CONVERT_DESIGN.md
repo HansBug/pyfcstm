@@ -1234,16 +1234,16 @@ FeiKong__QiKong_region3.fcstm
 
 Phase 0 checklist：
 
-- [ ] 能读取 `uml:StateMachine`
-- [ ] 能读取所有 `region`
-- [ ] 能读取所有 `subvertex`
-- [ ] 能读取所有 `transition`
-- [ ] 能关联 `source` 与 `target`
-- [ ] 能解析 `Signal` 与 `SignalEvent`
-- [ ] 能解析 `TimeEvent`
-- [ ] 能读取 `entry`、`exit`、`effect`
-- [ ] 能建立 `xmi:id -> element` 索引
-- [ ] 具备针对解析层的单元测试
+- [x] 能读取 `uml:StateMachine`
+- [x] 能读取所有 `region`
+- [x] 能读取所有 `subvertex`
+- [x] 能读取所有 `transition`
+- [x] 能关联 `source` 与 `target`
+- [x] 能解析 `Signal` 与 `SignalEvent`
+- [x] 能解析 `TimeEvent`
+- [x] 能读取 `entry`、`exit`、`effect`
+- [x] 能建立 `xmi:id -> element` 索引
+- [x] 具备针对解析层的单元测试
 
 ### Phase 1: IR dataclass、命名与变量映射
 
@@ -1269,16 +1269,16 @@ Phase 0 checklist：
 
 Phase 1 checklist：
 
-- [ ] IR 使用 `@dataclass`
-- [ ] 中文状态名可稳定转成 UpperCamelCase
-- [ ] 中文事件名可稳定转成 UPPER_SNAKE_CASE
-- [ ] 中文显示名统一通过 `named` 保留
-- [ ] 显式变量在合法时按原名保留
-- [ ] 显式变量按原类型保留
-- [ ] 非法显式变量名会报错而不是自动改名
-- [ ] 合成变量统一使用 `__sysdesim_*`
-- [ ] 所有 `__sysdesim_*` 名称都带稳定唯一后缀，不仅依赖短名
-- [ ] 具备针对命名与变量映射的单元测试
+- [x] IR 使用 `@dataclass`
+- [x] 中文状态名可稳定转成 UpperCamelCase
+- [x] 中文事件名可稳定转成 UPPER_SNAKE_CASE
+- [x] 中文显示名统一通过 `named` 保留
+- [x] 显式变量在合法时按原名保留
+- [x] 显式变量按原类型保留
+- [x] 非法显式变量名会报错而不是自动改名
+- [x] 合成变量统一使用 `__sysdesim_*`
+- [x] 所有 `__sysdesim_*` 名称都带稳定唯一后缀，不仅依赖短名
+- [x] 具备针对命名与变量映射的单元测试
 
 ### Phase 2: 单 region 基础结构与 AST 构建
 
@@ -1305,13 +1305,13 @@ Phase 1 checklist：
 
 Phase 2 checklist：
 
-- [ ] init 伪状态可识别
-- [ ] 复合状态缺失 init 时可报错
-- [ ] 同层 transition 可导出
-- [ ] signal trigger 可导出为事件引用
-- [ ] 能构建 `StateMachineDSLProgram`
-- [ ] AST 输出 DSL 后可被 parser 回读
-- [ ] 具备针对 AST 构建层的单元测试
+- [x] init 伪状态可识别
+- [x] 复合状态缺失 init 时可报错
+- [x] 同层 transition 可导出
+- [x] signal trigger 可导出为事件引用
+- [x] 能构建 `StateMachineDSLProgram`
+- [x] AST 输出 DSL 后可被 parser 回读
+- [x] 具备针对 AST 构建层的单元测试
 
 ### Phase 3: TimeEvent lowering
 

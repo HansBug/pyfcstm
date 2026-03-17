@@ -7,6 +7,7 @@ from textwrap import dedent
 
 import pytest
 
+from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.dsl import node as dsl_nodes
 from pyfcstm.convert.sysdesim import (
     build_machine_ast,
@@ -31,6 +32,7 @@ from pyfcstm.convert.sysdesim.ir import (
     IrVertex,
 )
 from pyfcstm.model import expr as model_expr
+from pyfcstm.model.model import StateMachine, parse_dsl_node_to_state_machine
 
 pytestmark = pytest.mark.unittest
 
@@ -57,6 +59,21 @@ def _assert_property_names(obj, expected_names) -> None:
     assert tuple(
         name for name, value in inspect.getmembers(type(obj)) if isinstance(value, property)
     ) == tuple(expected_names)
+
+
+def _assert_program_loads_to_state_machine(
+    program: dsl_nodes.StateMachineDSLProgram,
+) -> StateMachine:
+    """Assert that a DSL program can be loaded into the public StateMachine model."""
+    model = parse_dsl_node_to_state_machine(program)
+    assert isinstance(model, StateMachine)
+    return model
+
+
+def _assert_dsl_code_loads_to_state_machine(dsl_code: str) -> StateMachine:
+    """Assert that DSL text can be parsed and loaded into the public StateMachine model."""
+    parsed_program = parse_with_grammar_entry(dsl_code, entry_name="state_machine_dsl")
+    return _assert_program_loads_to_state_machine(parsed_program)
 
 
 def test_phase0_can_parse_graph_structure_and_events(tmp_path: Path):
@@ -498,6 +515,9 @@ def test_phase2_build_ast_and_roundtrip(tmp_path: Path):
     assert dsl_code == expected_dsl
     assert _normalize_newlines(emit_program(program)) == expected_dsl
     assert _normalize_newlines(str(parsed)) == expected_dsl
+    assert _assert_program_loads_to_state_machine(program).root_state.name == "MixerPanel"
+    assert _assert_program_loads_to_state_machine(parsed).root_state.name == "MixerPanel"
+    assert _assert_dsl_code_loads_to_state_machine(dsl_code).root_state.name == "MixerPanel"
 
     _assert_dataclass_field_names(program, ("definitions", "root_state"))
     assert len(program.definitions) == 1
@@ -1150,6 +1170,7 @@ def test_convert_sysdesim_xml_to_dsl_runs_end_to_end(tmp_path: Path):
         }"""
     )
     assert _normalize_newlines(dsl_code) == expected_dsl
+    assert _assert_dsl_code_loads_to_state_machine(dsl_code).root_state.name == "DoorCycle"
 
 
 class TestSysDeSimCoverageScenarios:
@@ -1526,6 +1547,8 @@ class TestSysDeSimCoverageScenarios:
                 Ready -> Hot : if [temperature > 30.0];
             }"""
         )
+        assert _assert_program_loads_to_state_machine(program).root_state.name == "FloatMachine"
+        assert _assert_dsl_code_loads_to_state_machine(str(program)).root_state.name == "FloatMachine"
 
         unsupported_type_machine = IrMachine(
             machine_id="unsupported_type_machine",
@@ -1547,6 +1570,39 @@ class TestSysDeSimCoverageScenarios:
         )
         with pytest.raises(ValueError, match="Unsupported variable type"):
             build_machine_ast(unsupported_type_machine)
+
+    def test_phase2_output_loads_into_public_state_machine_model(self, tmp_path: Path):
+        """Phase2 output should be loadable into the public StateMachine model API."""
+        xml_file = _write_xml(
+            tmp_path,
+            """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <xmi:XMI xmi:version="20131001"
+                     xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
+                     xmlns:uml="http://www.eclipse.org/uml2/5.0.0/UML">
+              <uml:Model xmi:id="model_1" name="model">
+                <packagedElement xmi:type="uml:Class" xmi:id="class_1" name="Loader Check" classifierBehavior="machine_1">
+                  <ownedBehavior xmi:type="uml:StateMachine" xmi:id="machine_1" name="Loader Check">
+                    <region xmi:type="uml:Region" xmi:id="region_1" name="">
+                      <transition xmi:type="uml:Transition" xmi:id="tx_init" source="init_1" target="state_ready"/>
+                      <subvertex xmi:type="uml:Pseudostate" xmi:id="init_1"/>
+                      <subvertex xmi:type="uml:State" xmi:id="state_ready" name="Ready"/>
+                    </region>
+                  </ownedBehavior>
+                </packagedElement>
+              </uml:Model>
+            </xmi:XMI>
+            """,
+        )
+        machine = normalize_machine(load_sysdesim_machine(str(xml_file)))
+
+        program = build_machine_ast(machine)
+        model = _assert_program_loads_to_state_machine(program)
+
+        assert program.root_state.name == "LoaderCheck"
+        assert isinstance(model, StateMachine)
+        assert model.root_state.name == "LoaderCheck"
+        assert _assert_dsl_code_loads_to_state_machine(str(program)).root_state.name == "LoaderCheck"
 
     @pytest.mark.parametrize(
         ("xml_content", "expected_message"),

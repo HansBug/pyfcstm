@@ -1,26 +1,29 @@
 """
-SysDeSim XML to FCSTM phase0-4 conversion helpers.
+SysDeSim XML to FCSTM phase0-5 conversion helpers.
 
-This module contains the full phase0-4 pipeline:
+This module contains the full phase0-5 pipeline:
 
 1. Parse SysDeSim XML into the dataclass IR.
 2. Normalize names, variables, and guard expressions.
-3. Build FCSTM DSL AST for the supported subset.
-4. Emit DSL text and validate it with the existing parser/model stack.
+3. Preserve one main-machine view and split parallel regions into additional
+   region-level output views.
+4. Build FCSTM DSL AST for the supported subset.
+5. Emit DSL text and validate it with the existing parser/model stack.
 
 The implementation supports single-region cross-level lowering with route
-flags, synthetic exit chains, bridge transitions, and conditional init entry
-paths. Parallel-region splitting is still outside the supported boundary and is
-rejected explicitly.
+flags, synthetic exit chains, bridge transitions, conditional init entry
+paths, and phase5 parallel-region splitting into multiple output machines.
 
 The module contains:
 
 * :func:`load_sysdesim_xml` and :func:`load_sysdesim_machine` for XML loading.
 * :func:`normalize_machine` for identifier and guard normalization.
+* :func:`prepare_sysdesim_output_machines` for split-aware machine preparation.
 * :func:`build_machine_ast` and :func:`emit_program` for FCSTM emission.
 * :func:`validate_program_roundtrip` for parser/model validation.
-* :func:`convert_sysdesim_xml_to_ast` and
-  :func:`convert_sysdesim_xml_to_dsl` for one-shot conversion.
+* :func:`convert_sysdesim_xml_to_ast`, :func:`convert_sysdesim_xml_to_dsl`,
+  :func:`convert_sysdesim_xml_to_asts`, and
+  :func:`convert_sysdesim_xml_to_dsls` for one-shot conversion.
 
 Example::
 
@@ -33,6 +36,7 @@ Example::
 
 from __future__ import annotations
 
+import copy
 import math
 import re
 import xml.etree.ElementTree as ET
@@ -153,6 +157,25 @@ class _AstBuildContext:
     route_flag_clear_operations_by_target_id: Dict[str, List[dsl_nodes.OperationAssignment]] = field(
         default_factory=dict
     )
+
+
+@dataclass(frozen=True)
+class SysDeSimPreparedMachine:
+    """
+    Prepared output machine produced after normalization and optional splitting.
+
+    :param output_name: Stable output name suitable for filenames or map keys.
+    :type output_name: str
+    :param machine: Normalized IR machine ready for AST building.
+    :type machine: IrMachine
+    :param semantic_note: Optional note describing semantic downgrades applied
+        during preparation, defaults to ``None``
+    :type semantic_note: str, optional
+    """
+
+    output_name: str
+    machine: IrMachine
+    semantic_note: Optional[str] = None
 
 
 def _xmi_id(element: ET.Element) -> str:
@@ -878,6 +901,270 @@ def normalize_machine(machine: IrMachine) -> IrMachine:
 
     machine.rebuild_indexes()
     return machine
+
+
+def _direct_child_region_under_owner(machine: IrMachine, owner_state_id: str, vertex_id: str) -> Optional[str]:
+    """
+    Return the direct child region of a parallel owner that contains a vertex.
+
+    :param machine: Machine containing the owner and vertex.
+    :type machine: IrMachine
+    :param owner_state_id: Identifier of the candidate parallel owner.
+    :type owner_state_id: str
+    :param vertex_id: Vertex whose containing child region should be resolved.
+    :type vertex_id: str
+    :return: Child-region identifier directly under ``owner_state_id``, or
+        ``None`` when the vertex is outside the owner subtree.
+    :rtype: str, optional
+    """
+    current = machine.get_vertex(vertex_id)
+    region_id = current.parent_region_id
+    while region_id is not None:
+        region = machine.get_region(region_id)
+        if region.owner_state_id == owner_state_id:
+            return region_id
+        if region.owner_state_id is None:
+            return None
+        current = machine.get_vertex(region.owner_state_id)
+        region_id = current.parent_region_id
+    return None  # pragma: no cover - parsed XML vertices always belong to some region chain
+
+
+def _validate_parallel_split_compatibility(machine: IrMachine) -> None:
+    """
+    Reject transitions that cross between sibling regions of one parallel owner.
+
+    :param machine: Normalized machine to validate before parallel splitting.
+    :type machine: IrMachine
+    :return: ``None``.
+    :rtype: None
+    :raises NotImplementedError: If a transition crosses between child regions
+        of the same multi-region owner.
+    """
+    parallel_owners = [vertex for vertex in machine.walk_vertices() if vertex.vertex_type == "state" and vertex.is_parallel_owner]
+    for transition in machine.walk_transitions():
+        for owner in parallel_owners:
+            source_region_id = _direct_child_region_under_owner(machine, owner.vertex_id, transition.source_id)
+            target_region_id = _direct_child_region_under_owner(machine, owner.vertex_id, transition.target_id)
+            if source_region_id is None or target_region_id is None or source_region_id == target_region_id:
+                continue
+            raise NotImplementedError(
+                f"Phase5 does not support cross-region transitions under parallel owner {owner.vertex_id}: "
+                f"{transition.transition_id}"
+            )
+
+
+def _find_first_parallel_owner(machine: IrMachine) -> Optional[IrVertex]:
+    """
+    Return the first multi-region owner in depth-first machine order.
+
+    :param machine: Normalized machine to inspect.
+    :type machine: IrMachine
+    :return: First parallel-owner state, or ``None`` when absent.
+    :rtype: IrVertex, optional
+    """
+    for vertex in machine.walk_vertices():
+        if vertex.vertex_type == "state" and vertex.is_parallel_owner:
+            return vertex
+    return None
+
+
+def _collect_reachable_vertex_ids(machine: IrMachine) -> set[str]:
+    """
+    Collect all vertex identifiers reachable from the current machine tree.
+
+    :param machine: Machine whose retained vertex set should be computed.
+    :type machine: IrMachine
+    :return: Set of reachable vertex identifiers.
+    :rtype: set[str]
+    """
+    return {vertex.vertex_id for vertex in machine.walk_vertices()}
+
+
+def _prune_transitions_for_retained_vertices(machine: IrMachine) -> None:
+    """
+    Drop transitions whose source or target vertices were removed by splitting.
+
+    :param machine: Machine whose region transitions should be pruned in place.
+    :type machine: IrMachine
+    :return: ``None``.
+    :rtype: None
+    """
+    valid_vertex_ids = _collect_reachable_vertex_ids(machine)
+    for region in machine.walk_regions():
+        region.transitions = [
+            transition
+            for transition in region.transitions
+            if transition.source_id in valid_vertex_ids and transition.target_id in valid_vertex_ids
+        ]
+
+
+def _clone_machine_for_main_output(
+    machine: IrMachine,
+    *,
+    output_name: Optional[str] = None,
+) -> SysDeSimPreparedMachine:
+    """
+    Clone a machine while collapsing every parallel owner into one atomic state.
+
+    :param machine: Normalized machine to clone for the main output.
+    :type machine: IrMachine
+    :param output_name: Stable output name to use for the prepared machine,
+        defaults to ``None``
+    :type output_name: str, optional
+    :return: Prepared main-output machine with parallel owners collapsed.
+    :rtype: SysDeSimPreparedMachine
+    """
+    cloned = copy.deepcopy(machine)
+    collapsed_owner_state_ids = []
+    for vertex in list(cloned.walk_vertices()):
+        if vertex.vertex_type != "state" or not vertex.is_parallel_owner:
+            continue
+        collapsed_owner_state_ids.append(vertex.vertex_id)
+        vertex.regions = []
+        vertex.is_parallel_owner = False
+        vertex.is_composite = False
+
+    semantic_note = None
+    if collapsed_owner_state_ids:
+        collapsed_state_paths = [".".join(cloned.state_path(state_id)) for state_id in collapsed_owner_state_ids]
+        semantic_note = (
+            "Parallel-region main output is a semantic downgrade; nested multi-region owners are preserved as "
+            "atomic states in the main machine while region-level behavior is emitted into separate outputs."
+        )
+        cloned.diagnostics.append(
+            IrDiagnostic(
+                level="warning",
+                code="parallel_main_machine_semantic_downgrade",
+                message=semantic_note,
+                source_id=collapsed_owner_state_ids[0],
+                state_path=tuple(collapsed_state_paths),
+            )
+        )
+    else:
+        for diagnostic in reversed(cloned.diagnostics):
+            if diagnostic.code in {"parallel_split_semantic_downgrade", "parallel_main_machine_semantic_downgrade"}:
+                semantic_note = diagnostic.message
+                break
+
+    _prune_transitions_for_retained_vertices(cloned)
+    cloned.rebuild_indexes()
+    return SysDeSimPreparedMachine(
+        output_name=output_name or cloned.safe_name,
+        machine=cloned,
+        semantic_note=semantic_note,
+    )
+
+
+def _make_split_output_name(
+    machine: IrMachine,
+    owner_state_id: str,
+    region_index: int,
+    prefix: Optional[str] = None,
+) -> str:
+    """
+    Build the stable output name for one split region view.
+
+    :param machine: Normalized machine being split.
+    :type machine: IrMachine
+    :param owner_state_id: Identifier of the parallel owner being split.
+    :type owner_state_id: str
+    :param region_index: One-based region index under the owner.
+    :type region_index: int
+    :param prefix: Existing output-name prefix for recursive splitting,
+        defaults to ``None``
+    :type prefix: str, optional
+    :return: Stable ASCII output name.
+    :rtype: str
+    """
+    owner_safe_name = machine.get_vertex(owner_state_id).safe_name
+    if prefix is None:
+        owner_path = machine.state_path(owner_state_id, use_safe_name=True)
+        owner_part = "__".join(owner_path) if owner_path else owner_safe_name
+        return f"{machine.safe_name}__{owner_part}_region{region_index}"
+    return f"{prefix}__{owner_safe_name}_region{region_index}"
+
+
+def _clone_machine_for_parallel_region(
+    machine: IrMachine,
+    owner_state_id: str,
+    region_index: int,
+    *,
+    output_prefix: Optional[str] = None,
+) -> SysDeSimPreparedMachine:
+    """
+    Clone a machine while keeping only one selected region under a parallel owner.
+
+    :param machine: Normalized machine to clone.
+    :type machine: IrMachine
+    :param owner_state_id: Identifier of the parallel owner being split.
+    :type owner_state_id: str
+    :param region_index: Zero-based child-region index to retain.
+    :type region_index: int
+    :param output_prefix: Existing output-name prefix for recursive splitting,
+        defaults to ``None``
+    :type output_prefix: str, optional
+    :return: Prepared split machine with stable output naming metadata.
+    :rtype: SysDeSimPreparedMachine
+    """
+    cloned = copy.deepcopy(machine)
+    owner = cloned.get_vertex(owner_state_id)
+    owner.regions = [owner.regions[region_index]]
+    owner.is_parallel_owner = False
+    owner.is_composite = bool(owner.regions)
+    _prune_transitions_for_retained_vertices(cloned)
+    cloned.diagnostics.append(
+        IrDiagnostic(
+            level="warning",
+            code="parallel_split_semantic_downgrade",
+            message=(
+                "Parallel-region splitting is a semantic downgrade; the emitted machine preserves only one region view "
+                "and does not model UML concurrency or synchronization."
+            ),
+            source_id=owner_state_id,
+            state_path=machine.state_path(owner_state_id),
+        )
+    )
+    cloned.rebuild_indexes()
+    return SysDeSimPreparedMachine(
+        output_name=_make_split_output_name(cloned, owner_state_id, region_index + 1, prefix=output_prefix),
+        machine=cloned,
+        semantic_note=cloned.diagnostics[-1].message,
+    )
+
+
+def _prepare_split_output_machines(
+    machine: IrMachine,
+    *,
+    output_prefix: Optional[str] = None,
+) -> List[SysDeSimPreparedMachine]:
+    """
+    Normalize parallel owners into a main output plus zero or more region-level
+    prepared machines.
+
+    :param machine: Normalized machine to prepare for AST conversion.
+    :type machine: IrMachine
+    :return: Prepared output machines in stable order, with the main-machine
+        view first and any region-level split views after it.
+    :rtype: list[SysDeSimPreparedMachine]
+    :raises NotImplementedError: If the machine contains unsupported
+        cross-region transitions.
+    """
+    _validate_parallel_split_compatibility(machine)
+    prepared_outputs = [_clone_machine_for_main_output(machine, output_name=output_prefix or machine.safe_name)]
+    parallel_owner = _find_first_parallel_owner(machine)
+    if parallel_owner is None:
+        return prepared_outputs
+
+    for region_index, _ in enumerate(parallel_owner.regions):
+        prepared = _clone_machine_for_parallel_region(
+            machine,
+            parallel_owner.vertex_id,
+            region_index,
+            output_prefix=output_prefix,
+        )
+        prepared_outputs.extend(_prepare_split_output_machines(prepared.machine, output_prefix=prepared.output_name))
+    return prepared_outputs
 
 
 def _timeout_source_scope_tokens(machine: IrMachine, source_id: str) -> List[str]:
@@ -1735,6 +2022,99 @@ def validate_program_roundtrip(program: dsl_nodes.StateMachineDSLProgram) -> Tup
     return parsed, model
 
 
+def prepare_sysdesim_output_machines(
+    xml_path: str,
+    *,
+    machine_name: Optional[str] = None,
+    machine_id: Optional[str] = None,
+) -> List[SysDeSimPreparedMachine]:
+    """
+    Load, normalize, and split one SysDeSim machine into prepared outputs.
+
+    :param xml_path: Path to the SysDeSim XML/XMI file.
+    :type xml_path: str
+    :param machine_name: Exact UML state-machine name to load, defaults to
+        ``None``
+    :type machine_name: str, optional
+    :param machine_id: Exact UML state-machine ``xmi:id`` to load, defaults to
+        ``None``
+    :type machine_id: str, optional
+    :return: Prepared output machines in stable order.
+    :rtype: list[SysDeSimPreparedMachine]
+    :raises KeyError: If the requested machine cannot be found.
+    :raises ValueError: If the source file contains no state machine.
+    :raises NotImplementedError: If the source machine requires unsupported
+        parallel-splitting behavior.
+    """
+    machine = load_sysdesim_machine(xml_path, machine_name=machine_name, machine_id=machine_id)
+    normalize_machine(machine)
+    return _prepare_split_output_machines(machine)
+
+
+def convert_sysdesim_xml_to_asts(
+    xml_path: str,
+    *,
+    machine_name: Optional[str] = None,
+    machine_id: Optional[str] = None,
+    tick_duration_ms: Optional[float] = None,
+) -> Dict[str, dsl_nodes.StateMachineDSLProgram]:
+    """
+    Convert one SysDeSim machine to one or more FCSTM AST outputs.
+
+    :param xml_path: Path to the SysDeSim XML/XMI file.
+    :type xml_path: str
+    :param machine_name: Exact UML state-machine name to load, defaults to
+        ``None``
+    :type machine_name: str, optional
+    :param machine_id: Exact UML state-machine ``xmi:id`` to load, defaults to
+        ``None``
+    :type machine_id: str, optional
+    :param tick_duration_ms: Duration of one runtime tick in milliseconds when
+        lowering ``uml:TimeEvent`` transitions, defaults to ``None``
+    :type tick_duration_ms: float, optional
+    :return: Mapping from stable output names to converted FCSTM AST programs.
+    :rtype: dict[str, pyfcstm.dsl.node.StateMachineDSLProgram]
+    """
+    programs = {}
+    for prepared in prepare_sysdesim_output_machines(xml_path, machine_name=machine_name, machine_id=machine_id):
+        program = build_machine_ast(prepared.machine, tick_duration_ms=tick_duration_ms)
+        validate_program_roundtrip(program)
+        programs[prepared.output_name] = program
+    return programs
+
+
+def convert_sysdesim_xml_to_dsls(
+    xml_path: str,
+    *,
+    machine_name: Optional[str] = None,
+    machine_id: Optional[str] = None,
+    tick_duration_ms: Optional[float] = None,
+) -> Dict[str, str]:
+    """
+    Convert one SysDeSim machine to one or more FCSTM DSL text outputs.
+
+    :param xml_path: Path to the SysDeSim XML/XMI file.
+    :type xml_path: str
+    :param machine_name: Exact UML state-machine name to load, defaults to
+        ``None``
+    :type machine_name: str, optional
+    :param machine_id: Exact UML state-machine ``xmi:id`` to load, defaults to
+        ``None``
+    :type machine_id: str, optional
+    :param tick_duration_ms: Duration of one runtime tick in milliseconds when
+        lowering ``uml:TimeEvent`` transitions, defaults to ``None``
+    :type tick_duration_ms: float, optional
+    :return: Mapping from stable output names to rendered FCSTM DSL text.
+    :rtype: dict[str, str]
+    """
+    return {output_name: emit_program(program) for output_name, program in convert_sysdesim_xml_to_asts(
+        xml_path,
+        machine_name=machine_name,
+        machine_id=machine_id,
+        tick_duration_ms=tick_duration_ms,
+    ).items()}
+
+
 def convert_sysdesim_xml_to_ast(
     xml_path: str,
     *,
@@ -1759,8 +2139,9 @@ def convert_sysdesim_xml_to_ast(
     :return: Converted FCSTM DSL AST program.
     :rtype: pyfcstm.dsl.node.StateMachineDSLProgram
     :raises KeyError: If the requested machine cannot be found.
-    :raises ValueError: If the source file contains no state machine or violates
-        a phase2 structural invariant.
+    :raises ValueError: If the source file contains no state machine, violates
+        a structural invariant, or expands to multiple outputs after parallel
+        splitting.
     :raises NotImplementedError: If the source machine requires unsupported
         lowering features.
     :raises OSError: If the file cannot be read.
@@ -1774,11 +2155,18 @@ def convert_sysdesim_xml_to_ast(
         >>> hasattr(program, "root_state")
         True
     """
-    machine = load_sysdesim_machine(xml_path, machine_name=machine_name, machine_id=machine_id)
-    normalize_machine(machine)
-    program = build_machine_ast(machine, tick_duration_ms=tick_duration_ms)
-    validate_program_roundtrip(program)
-    return program
+    programs = convert_sysdesim_xml_to_asts(
+        xml_path,
+        machine_name=machine_name,
+        machine_id=machine_id,
+        tick_duration_ms=tick_duration_ms,
+    )
+    if len(programs) != 1:
+        raise ValueError(
+            f"Selected SysDeSim machine expands to {len(programs)} outputs due to parallel split; "
+            f"use convert_sysdesim_xml_to_asts() instead."
+        )
+    return next(iter(programs.values()))
 
 
 def convert_sysdesim_xml_to_dsl(
@@ -1805,8 +2193,9 @@ def convert_sysdesim_xml_to_dsl(
     :return: Rendered FCSTM DSL text for the selected machine.
     :rtype: str
     :raises KeyError: If the requested machine cannot be found.
-    :raises ValueError: If the source file contains no state machine or violates
-        a phase2 structural invariant.
+    :raises ValueError: If the source file contains no state machine, violates
+        a structural invariant, or expands to multiple outputs after parallel
+        splitting.
     :raises NotImplementedError: If the source machine requires unsupported
         lowering features.
     :raises OSError: If the file cannot be read.
@@ -1820,11 +2209,15 @@ def convert_sysdesim_xml_to_dsl(
         >>> isinstance(dsl_code, str)
         True
     """
-    return emit_program(
-        convert_sysdesim_xml_to_ast(
-            xml_path,
-            machine_name=machine_name,
-            machine_id=machine_id,
-            tick_duration_ms=tick_duration_ms,
-        )
+    dsl_outputs = convert_sysdesim_xml_to_dsls(
+        xml_path,
+        machine_name=machine_name,
+        machine_id=machine_id,
+        tick_duration_ms=tick_duration_ms,
     )
+    if len(dsl_outputs) != 1:
+        raise ValueError(
+            f"Selected SysDeSim machine expands to {len(dsl_outputs)} outputs due to parallel split; "
+            f"use convert_sysdesim_xml_to_dsls() instead."
+        )
+    return next(iter(dsl_outputs.values()))

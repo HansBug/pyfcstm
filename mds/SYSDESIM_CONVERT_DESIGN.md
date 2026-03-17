@@ -1390,30 +1390,33 @@ Phase 4 checklist：
 
 目标：
 
-- 支持 multi-region owner 的拆分导出
+- 支持 multi-region owner 的拆分导出，同时保留一份完整主状态机输出
 
 交付：
 
+- 主状态机降级保留策略
 - 并发 owner 检测
-- 按 region 切分 machine
+- 按 region 切分 region-level machine
 - 命名和输出组织策略
 - cross-region unsupported 检查
 - Phase 5 单元测试
 
 验收标准：
 
-- 样例中的 `启控` 可拆成 3 份 machine
-- 每份 machine 可独立解析
+- 样例中的 `启控` 会导出 1 份主状态机和 3 份 region-level machine
+- 主状态机中 `启控` 外围的层级、变量、事件与外层 transition 会被保留
+- 每份输出 machine 可独立解析
 
 Phase 5 checklist：
 
-- [ ] 能检测多 region owner
-- [ ] 能为每个 region 切出独立 machine
-- [ ] 能复制祖先路径
-- [ ] 能稳定命名拆分后的输出
-- [ ] 可检测并拒绝 cross-region transition
-- [ ] 转换报告会说明并发拆分是降级语义
-- [ ] 具备针对 parallel split 的单元测试
+- [x] 能检测多 region owner
+- [x] 能保留完整主状态机输出
+- [x] 能为每个 region 切出独立 machine
+- [x] 能复制祖先路径
+- [x] 能稳定命名拆分后的输出
+- [x] 可检测并拒绝 cross-region transition
+- [x] 转换报告会说明并发拆分是降级语义
+- [x] 具备针对 parallel split 的单元测试
 
 ### Phase 6: 完整校验与 CLI 接入
 
@@ -1482,6 +1485,9 @@ Phase 6 checklist：
    - `model = parse_dsl_node_to_state_machine(parsed_program)`
 5. 在完成全文相等与回读检查后，才追加少量结构性断言
    - 例如 route flag 名称、init 顺序、transition 类型、target clear 行为
+6. 对 `parallel split` 一类多输出正向测试，必须覆盖嵌套 multi-region 场景
+   - 至少有一个 case 让 multi-region 出现在多层级子状态内
+   - 断言 split 后不仅 region 子树正确，而且外围主状态机结构、变量、事件、外层 transition 仍完整保留
 
 不应只依赖：
 
@@ -1504,6 +1510,7 @@ Phase 6 checklist：
 - `timeevent_composite.xml`
 - `crosslevel_leaf_to_ancestor_sibling.xml`
 - `parallel_two_regions.xml`
+- `parallel_nested_regions_keep_outer_structure.xml`
 - `cross_region_unsupported.xml`
 - `explicit_variables_keep_name.xml`
 

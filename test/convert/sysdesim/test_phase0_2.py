@@ -10,14 +10,26 @@ import pytest
 from pyfcstm.dsl import node as dsl_nodes
 from pyfcstm.convert.sysdesim import (
     build_machine_ast,
+    convert_sysdesim_xml_to_ast,
     convert_sysdesim_xml_to_dsl,
     emit_program,
     load_sysdesim_machine,
+    load_sysdesim_xml,
+    make_internal_name,
     normalize_machine,
     validate_program_roundtrip,
 )
-from pyfcstm.convert.sysdesim.convert import make_internal_name
-from pyfcstm.convert.sysdesim.ir import IrMachine, IrRegion, IrVariable
+from pyfcstm.convert.sysdesim.ir import (
+    IrActionRef,
+    IrMachine,
+    IrRegion,
+    IrSignal,
+    IrSignalEvent,
+    IrTimeEvent,
+    IrTransition,
+    IrVariable,
+    IrVertex,
+)
 from pyfcstm.model import expr as model_expr
 
 pytestmark = pytest.mark.unittest
@@ -1138,3 +1150,666 @@ def test_convert_sysdesim_xml_to_dsl_runs_end_to_end(tmp_path: Path):
         }"""
     )
     assert _normalize_newlines(dsl_code) == expected_dsl
+
+
+class TestSysDeSimCoverageScenarios:
+    def test_phase0_load_parses_type_default_and_machine_selection_variants(self, tmp_path: Path):
+        """Phase0 should cover XML parsing variants through the public loading APIs."""
+        xml_file = _write_xml(
+            tmp_path,
+            """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <xmi:XMI xmi:version="20131001"
+                     xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
+                     xmlns:uml="http://www.eclipse.org/uml2/5.0.0/UML">
+              <packagedElement xmi:type="uml:PrimitiveType" xmi:id="primitive_int" name="Integer"/>
+              <packagedElement xmi:type="uml:PrimitiveType" xmi:id="primitive_real" name="Real"/>
+              <packagedElement xmi:type="uml:PrimitiveType" xmi:id="primitive_mode" name="Mode"/>
+
+              <packagedElement xmi:type="uml:Class" xmi:id="class_skip" name="Skip Holder" classifierBehavior="machine_skip">
+                <ownedBehavior xmi:type="uml:StateMachine" xmi:id="machine_skip" name="Skip Holder"/>
+              </packagedElement>
+
+              <packagedElement xmi:type="uml:Class" xmi:id="class_parse" name="Parse Variants" classifierBehavior="machine_parse">
+                <ownedBehavior xmi:type="uml:StateMachine" xmi:id="machine_parse" name="Parse Variants">
+                  <region xmi:type="uml:Region" xmi:id="region_parse_root" name="">
+                    <transition xmi:type="uml:Transition" xmi:id="tx_init" source="init_root" target="state_alpha"/>
+                    <transition xmi:type="uml:Transition" xmi:id="tx_alpha_beta" source="state_alpha" target="state_beta">
+                      <ownedRule xmi:type="uml:Constraint" xmi:id="guard_alpha_beta">
+                        <specification xmi:type="uml:OpaqueExpression" xmi:id="guard_alpha_beta_expr">
+                          <body> count &gt; 0 </body>
+                        </specification>
+                      </ownedRule>
+                    </transition>
+                    <subvertex xmi:type="uml:Pseudostate" xmi:id="init_root"/>
+                    <subvertex xmi:type="uml:State" xmi:id="state_alpha" name="Alpha">
+                      <ownedRule xmi:type="uml:Constraint" xmi:id="alpha_rule_missing_spec"/>
+                      <ownedRule xmi:type="uml:Constraint" xmi:id="alpha_rule_missing_body">
+                        <specification xmi:type="uml:OpaqueExpression" xmi:id="alpha_expr_missing_body"/>
+                      </ownedRule>
+                      <ownedRule xmi:type="uml:Constraint" xmi:id="alpha_rule">
+                        <specification xmi:type="uml:OpaqueExpression" xmi:id="alpha_expr">
+                          <body>   </body>
+                        </specification>
+                      </ownedRule>
+                    </subvertex>
+                    <subvertex xmi:type="uml:State" xmi:id="state_beta" name="Beta">
+                      <ownedRule xmi:type="uml:Constraint" xmi:id="beta_rule">
+                        <specification xmi:type="uml:OpaqueExpression" xmi:id="beta_expr">
+                          <body> temperature &gt; 10 </body>
+                        </specification>
+                      </ownedRule>
+                    </subvertex>
+                    <subvertex xmi:type="uml:FinalState" xmi:id="final_done" name="Done"/>
+                    <subvertex xmi:type="uml:TerminatePseudoState" xmi:id="unknown_1" name="Mystery"/>
+                  </region>
+                  <region xmi:type="uml:Region" xmi:id="region_parse_unused" name="">
+                    <subvertex xmi:type="uml:State" xmi:id="unused_state" name="Unused"/>
+                  </region>
+                </ownedBehavior>
+
+                <ownedAttribute xmi:type="uml:Port" xmi:id="port_ignore" name="ignoredPort"/>
+
+                <ownedAttribute xmi:type="uml:Property" xmi:id="var_ref_int" name="ref_int" type="primitive_int">
+                  <defaultValue xmi:type="uml:LiteralInteger" xmi:id="var_ref_int_default" value="1"/>
+                </ownedAttribute>
+                <ownedAttribute xmi:type="uml:Property" xmi:id="var_ref_float" name="ref_float" type="primitive_real">
+                  <defaultValue xmi:type="uml:LiteralReal" xmi:id="var_ref_float_default" value="2.5"/>
+                </ownedAttribute>
+                <ownedAttribute xmi:type="uml:Property" xmi:id="var_ref_other" name="ref_other" type="primitive_mode">
+                  <defaultValue xmi:type="uml:LiteralString" xmi:id="var_ref_other_default" value="MODE_A"/>
+                </ownedAttribute>
+                <ownedAttribute xmi:type="uml:Property" xmi:id="var_href_float" name="href_float">
+                  <type xmi:type="uml:PrimitiveType" href="pathmap://UML_LIBRARIES/UMLPrimitiveTypes.library.uml#Double"/>
+                  <defaultValue xmi:type="uml:LiteralUnlimitedNatural" xmi:id="var_href_float_default" value="3.0"/>
+                </ownedAttribute>
+                <ownedAttribute xmi:type="uml:Property" xmi:id="var_href_other" name="href_other">
+                  <type xmi:type="uml:PrimitiveType" href="pathmap://UML_LIBRARIES/UMLPrimitiveTypes.library.uml#CustomType"/>
+                  <defaultValue xmi:type="uml:OpaqueExpression" xmi:id="var_href_other_default">text_default</defaultValue>
+                </ownedAttribute>
+                <ownedAttribute xmi:type="uml:Property" xmi:id="var_name_float" name="name_float">
+                  <type xmi:type="uml:PrimitiveType" name="Double"/>
+                  <defaultValue xmi:type="uml:LiteralInteger" xmi:id="var_name_float_default" value="4"/>
+                </ownedAttribute>
+                <ownedAttribute xmi:type="uml:Property" xmi:id="var_name_int" name="name_int">
+                  <type xmi:type="uml:PrimitiveType" name="Integer"/>
+                  <defaultValue xmi:type="uml:LiteralInteger" xmi:id="var_name_int_default" value="5"/>
+                </ownedAttribute>
+                <ownedAttribute xmi:type="uml:Property" xmi:id="var_name_other" name="name_other">
+                  <type xmi:type="uml:PrimitiveType" name="Token"/>
+                  <defaultValue xmi:type="uml:LiteralString" xmi:id="var_name_other_default" value="TOKEN"/>
+                </ownedAttribute>
+                <ownedAttribute xmi:type="uml:Property" xmi:id="var_no_default" name="no_default" type="primitive_int"/>
+                <ownedAttribute xmi:type="uml:Property" xmi:id="var_untyped" name="untyped">
+                  <defaultValue xmi:type="uml:LiteralString" xmi:id="var_untyped_default" value="9"/>
+                </ownedAttribute>
+                <ownedAttribute xmi:type="uml:Property" xmi:id="var_empty_type" name="empty_type">
+                  <type xmi:type="uml:PrimitiveType"/>
+                  <defaultValue xmi:type="uml:LiteralString" xmi:id="var_empty_type_default" value="10"/>
+                </ownedAttribute>
+              </packagedElement>
+
+              <packagedElement xmi:type="uml:Class" xmi:id="class_select" name="Selected Machine" classifierBehavior="machine_select">
+                <ownedBehavior xmi:type="uml:StateMachine" xmi:id="machine_select" name="Selected Machine">
+                  <region xmi:type="uml:Region" xmi:id="region_select" name="">
+                    <transition xmi:type="uml:Transition" xmi:id="tx_select_init" source="select_init" target="select_state"/>
+                    <subvertex xmi:type="uml:Pseudostate" xmi:id="select_init"/>
+                    <subvertex xmi:type="uml:State" xmi:id="select_state" name="Ready"/>
+                  </region>
+                </ownedBehavior>
+              </packagedElement>
+            </xmi:XMI>
+            """,
+        )
+
+        machines = load_sysdesim_xml(str(xml_file))
+        assert [machine.machine_id for machine in machines] == ["machine_parse", "machine_select"]
+
+        parse_machine = load_sysdesim_machine(str(xml_file), machine_id="machine_parse")
+        assert parse_machine.name == "Parse Variants"
+        assert len(parse_machine.diagnostics) == 1
+        assert parse_machine.diagnostics[0].level == "warning"
+        assert parse_machine.diagnostics[0].code == "multiple_root_regions"
+        assert parse_machine.diagnostics[0].source_id == "machine_parse"
+        assert parse_machine.root_region.region_id == "region_parse_root"
+        assert [vertex.vertex_type for vertex in parse_machine.root_region.vertices] == [
+            "pseudostate",
+            "state",
+            "state",
+            "final",
+            "terminatepseudostate",
+        ]
+        assert parse_machine.get_vertex("state_alpha").state_invariant is None
+        assert parse_machine.get_vertex("state_beta").state_invariant == "temperature > 10"
+        assert parse_machine.get_transition("tx_alpha_beta").guard_expr_raw == "count > 0"
+        assert parse_machine.get_variable("var_ref_int").type_name == "int"
+        assert parse_machine.get_variable("var_ref_int").default_value == "1"
+        assert parse_machine.get_variable("var_ref_float").type_name == "float"
+        assert parse_machine.get_variable("var_ref_float").default_value == "2.5"
+        assert parse_machine.get_variable("var_ref_other").type_name == "mode"
+        assert parse_machine.get_variable("var_ref_other").default_value == "MODE_A"
+        assert parse_machine.get_variable("var_href_float").type_name == "float"
+        assert parse_machine.get_variable("var_href_float").default_value == "3.0"
+        assert parse_machine.get_variable("var_href_other").type_name == "customtype"
+        assert parse_machine.get_variable("var_href_other").default_value == "text_default"
+        assert parse_machine.get_variable("var_name_float").type_name == "float"
+        assert parse_machine.get_variable("var_name_float").default_value == "4"
+        assert parse_machine.get_variable("var_name_int").type_name == "int"
+        assert parse_machine.get_variable("var_name_int").default_value == "5"
+        assert parse_machine.get_variable("var_name_other").type_name == "token"
+        assert parse_machine.get_variable("var_name_other").default_value == "TOKEN"
+        assert parse_machine.get_variable("var_no_default").type_name == "int"
+        assert parse_machine.get_variable("var_no_default").default_value is None
+        assert parse_machine.get_variable("var_untyped").type_name is None
+        assert parse_machine.get_variable("var_untyped").default_value == "9"
+        assert parse_machine.get_variable("var_empty_type").type_name is None
+        assert parse_machine.get_variable("var_empty_type").default_value == "10"
+
+        assert load_sysdesim_machine(str(xml_file), machine_name="Selected Machine").machine_id == "machine_select"
+        with pytest.raises(KeyError, match="machine id"):
+            load_sysdesim_machine(str(xml_file), machine_id="missing_machine")
+        with pytest.raises(KeyError, match="machine name"):
+            load_sysdesim_machine(str(xml_file), machine_name="Missing Machine")
+
+        empty_file = _write_xml(
+            tmp_path,
+            """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <xmi:XMI xmi:version="20131001"
+                     xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
+                     xmlns:uml="http://www.eclipse.org/uml2/5.0.0/UML">
+              <packagedElement xmi:type="uml:Class" xmi:id="class_empty" name="Empty Holder" classifierBehavior="machine_empty">
+                <ownedBehavior xmi:type="uml:StateMachine" xmi:id="machine_empty" name="Empty Holder"/>
+              </packagedElement>
+            </xmi:XMI>
+            """,
+        )
+        with pytest.raises(ValueError, match="No uml:StateMachine found"):
+            load_sysdesim_machine(str(empty_file))
+
+    def test_phase0_load_supports_root_state_machine_without_owner(self, tmp_path: Path):
+        """A state machine can be loaded directly from the XML root without owned attributes."""
+        xml_path = tmp_path / "root_machine.sysdesim.xml"
+        xml_path.write_text(
+            dedent(
+                """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <uml:StateMachine xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
+                                  xmlns:uml="http://www.eclipse.org/uml2/5.0.0/UML"
+                                  xmi:type="uml:StateMachine"
+                                  xmi:id="machine_root"
+                                  name="Root Machine">
+                  <region xmi:type="uml:Region" xmi:id="region_root" name="">
+                    <transition xmi:type="uml:Transition" xmi:id="tx_init" source="init_1" target="state_ready"/>
+                    <subvertex xmi:type="uml:Pseudostate" xmi:id="init_1"/>
+                    <subvertex xmi:type="uml:State" xmi:id="state_ready" name="Ready"/>
+                  </region>
+                </uml:StateMachine>
+                """
+            ).strip()
+            + "\n",
+            encoding="utf-8",
+        )
+
+        machine = load_sysdesim_machine(str(xml_path))
+        assert machine.machine_id == "machine_root"
+        assert machine.name == "Root Machine"
+        assert machine.variables == []
+
+    def test_phase1_normalize_covers_collisions_fallbacks_time_and_guards(self):
+        """Normalization should cover public collision, fallback, and parsing behavior."""
+        machine = IrMachine(
+            machine_id="!!!",
+            name="",
+            root_region=IrRegion(
+                region_id="region_root",
+                owner_state_id=None,
+                vertices=[
+                    IrVertex(vertex_id="init_1", vertex_type="pseudostate", raw_name="", parent_region_id="region_root"),
+                    IrVertex(vertex_id="state_same_1", vertex_type="state", raw_name="Same Name", parent_region_id="region_root"),
+                    IrVertex(vertex_id="state_same_2", vertex_type="state", raw_name="Same Name", parent_region_id="region_root"),
+                    IrVertex(
+                        vertex_id="state_empty",
+                        vertex_type="state",
+                        raw_name="",
+                        parent_region_id="region_root",
+                        entry_action=IrActionRef(action_id="!!!", raw_name=""),
+                    ),
+                ],
+                transitions=[
+                    IrTransition(
+                        transition_id="tx_init",
+                        source_id="init_1",
+                        target_id="state_same_1",
+                        trigger_kind="none",
+                        trigger_ref_id=None,
+                        guard_expr_raw=None,
+                    ),
+                    IrTransition(
+                        transition_id="tx_guard",
+                        source_id="state_same_1",
+                        target_id="state_empty",
+                        trigger_kind="none",
+                        trigger_ref_id=None,
+                        guard_expr_raw="counter >= 10",
+                    ),
+                ],
+            ),
+            signals=[
+                IrSignal(signal_id="signal_same_1", raw_name="same event"),
+                IrSignal(signal_id="signal_same_2", raw_name="same event"),
+                IrSignal(signal_id="!!!", raw_name=""),
+            ],
+            signal_events=[
+                IrSignalEvent(event_id="event_same_1", signal_id="signal_same_1"),
+                IrSignalEvent(event_id="event_same_2", signal_id="signal_same_2"),
+                IrSignalEvent(event_id="event_empty", signal_id="!!!"),
+            ],
+            time_events=[
+                IrTimeEvent(time_event_id="time_valid", raw_literal="250 ms", is_relative=True),
+                IrTimeEvent(time_event_id="time_empty", raw_literal="", is_relative=False),
+            ],
+            variables=[
+                IrVariable(
+                    variable_id="synthetic_var",
+                    raw_name="Temp Value",
+                    type_name="int",
+                    default_value="1",
+                    is_synthetic=True,
+                ),
+            ],
+        )
+
+        normalized = normalize_machine(machine)
+
+        assert normalized is machine
+        assert machine.safe_name == "__sysdesim_state_sdesim"
+        assert machine.display_name == ""
+        assert machine.get_vertex("state_same_1").safe_name == "SameName"
+        assert machine.get_vertex("state_same_2").safe_name == "SameName_esame2"
+        assert machine.get_vertex("state_empty").safe_name == "__sysdesim_state_eempty"
+        assert machine.get_vertex("state_empty").entry_action.safe_name == "__sysdesim_action_sdesim"
+        assert machine.get_signal("signal_same_1").safe_name == "SAME_EVENT"
+        assert machine.get_signal("signal_same_2").safe_name == "SAME_EVENT_lsame2"
+        assert machine.get_signal("!!!").safe_name == "__sysdesim_evt_SDESIM"
+        assert machine.get_signal_event("event_same_1").safe_name == "SAME_EVENT"
+        assert machine.get_signal_event("event_same_2").safe_name == "SAME_EVENT_lsame2"
+        assert machine.get_signal_event("event_empty").safe_name == "__sysdesim_evt_SDESIM"
+        assert machine.get_time_event("time_valid").normalized_delay == 250.0
+        assert machine.get_time_event("time_valid").normalized_unit == "ms"
+        assert machine.get_time_event("time_empty").normalized_delay is None
+        assert machine.get_time_event("time_empty").normalized_unit is None
+        assert machine.get_transition("tx_guard").guard_expr_raw == "counter >= 10"
+        assert machine.get_transition("tx_guard").guard_expr_ir is not None
+        assert machine.get_variable("synthetic_var").safe_name == "__sysdesim_var_temp_value_ticvar"
+        assert machine.get_variable("synthetic_var").display_name == "Temp Value"
+        assert make_internal_name("flag", [], "!!!") == "__sysdesim_flag_sdesim"
+
+        invalid_machine = IrMachine(
+            machine_id="invalid_type_machine",
+            name="Invalid Type",
+            root_region=IrRegion(region_id="invalid_region", owner_state_id=None),
+            variables=[
+                IrVariable(
+                    variable_id="invalid_var",
+                    raw_name="counter",
+                    type_name="bool",
+                    default_value="0",
+                    is_synthetic=False,
+                )
+            ],
+        )
+        with pytest.raises(ValueError, match="Unsupported explicit variable type"):
+            normalize_machine(invalid_machine)
+
+    def test_phase2_build_ast_supports_float_variables_and_skips_incomplete_ones(self, tmp_path: Path):
+        """Phase2 should emit float definitions and skip variables that are incomplete."""
+        xml_file = _write_xml(
+            tmp_path,
+            """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <xmi:XMI xmi:version="20131001"
+                     xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
+                     xmlns:uml="http://www.eclipse.org/uml2/5.0.0/UML">
+              <uml:Model xmi:id="model_1" name="model">
+                <packagedElement xmi:type="uml:Class" xmi:id="class_1" name="Float Machine" classifierBehavior="machine_1">
+                  <ownedBehavior xmi:type="uml:StateMachine" xmi:id="machine_1" name="Float Machine">
+                    <region xmi:type="uml:Region" xmi:id="region_1" name="">
+                      <transition xmi:type="uml:Transition" xmi:id="tx_init" source="init_1" target="state_ready"/>
+                      <transition xmi:type="uml:Transition" xmi:id="tx_guard" source="state_ready" target="state_hot">
+                        <ownedRule xmi:type="uml:Constraint" xmi:id="guard_rule">
+                          <specification xmi:type="uml:OpaqueExpression" xmi:id="guard_expr">
+                            <body> temperature &gt; 30.0 </body>
+                          </specification>
+                        </ownedRule>
+                      </transition>
+                      <subvertex xmi:type="uml:Pseudostate" xmi:id="init_1"/>
+                      <subvertex xmi:type="uml:State" xmi:id="state_ready" name="Ready"/>
+                      <subvertex xmi:type="uml:State" xmi:id="state_hot" name="Hot"/>
+                    </region>
+                  </ownedBehavior>
+                  <ownedAttribute xmi:type="uml:Property" xmi:id="var_count" name="count">
+                    <type xmi:type="uml:PrimitiveType" href="pathmap://UML_LIBRARIES/UMLPrimitiveTypes.library.uml#Integer"/>
+                    <defaultValue xmi:type="uml:LiteralInteger" xmi:id="var_count_default" value="1"/>
+                  </ownedAttribute>
+                  <ownedAttribute xmi:type="uml:Property" xmi:id="var_temperature" name="temperature">
+                    <type xmi:type="uml:PrimitiveType" href="pathmap://UML_LIBRARIES/UMLPrimitiveTypes.library.uml#Real"/>
+                    <defaultValue xmi:type="uml:LiteralReal" xmi:id="var_temperature_default" value="42.5"/>
+                  </ownedAttribute>
+                  <ownedAttribute xmi:type="uml:Property" xmi:id="var_missing_default" name="pending">
+                    <type xmi:type="uml:PrimitiveType" href="pathmap://UML_LIBRARIES/UMLPrimitiveTypes.library.uml#Integer"/>
+                  </ownedAttribute>
+                  <ownedAttribute xmi:type="uml:Property" xmi:id="var_missing_type" name="unknown_type">
+                    <defaultValue xmi:type="uml:LiteralString" xmi:id="var_missing_type_default" value="9"/>
+                  </ownedAttribute>
+                </packagedElement>
+              </uml:Model>
+            </xmi:XMI>
+            """,
+        )
+
+        program = convert_sysdesim_xml_to_ast(str(xml_file))
+        assert [definition.name for definition in program.definitions] == ["count", "temperature"]
+        assert [definition.type for definition in program.definitions] == ["int", "float"]
+        assert isinstance(program.definitions[0].expr, dsl_nodes.Integer)
+        assert program.definitions[0].expr.raw == "1"
+        assert isinstance(program.definitions[1].expr, dsl_nodes.Float)
+        assert program.definitions[1].expr.raw == "42.5"
+        assert _normalize_newlines(str(program)) == dedent(
+            """\
+            def int count = 1;
+            def float temperature = 42.5;
+            state FloatMachine named 'Float Machine' {
+                state Ready;
+                state Hot;
+                [*] -> Ready;
+                Ready -> Hot : if [temperature > 30.0];
+            }"""
+        )
+
+        unsupported_type_machine = IrMachine(
+            machine_id="unsupported_type_machine",
+            name="Unsupported Type",
+            root_region=IrRegion(region_id="unsupported_region", owner_state_id=None),
+            variables=[
+                IrVariable(
+                    variable_id="bad_var",
+                    raw_name="bad_var",
+                    safe_name="bad_var",
+                    display_name="bad_var",
+                    type_name="token",
+                    default_value="1",
+                    is_synthetic=False,
+                )
+            ],
+            safe_name="UnsupportedType",
+            display_name="Unsupported Type",
+        )
+        with pytest.raises(ValueError, match="Unsupported variable type"):
+            build_machine_ast(unsupported_type_machine)
+
+    @pytest.mark.parametrize(
+        ("xml_content", "expected_message"),
+        [
+        (
+            """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <xmi:XMI xmi:version="20131001"
+                     xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
+                     xmlns:uml="http://www.eclipse.org/uml2/5.0.0/UML">
+              <uml:Model xmi:id="model_1" name="model">
+                <packagedElement xmi:type="uml:Class" xmi:id="class_1" name="Parallel Holder" classifierBehavior="machine_1">
+                  <ownedBehavior xmi:type="uml:StateMachine" xmi:id="machine_1" name="Parallel Holder">
+                    <region xmi:type="uml:Region" xmi:id="region_root" name="">
+                      <transition xmi:type="uml:Transition" xmi:id="tx_init" source="init_1" target="state_parent"/>
+                      <subvertex xmi:type="uml:Pseudostate" xmi:id="init_1"/>
+                      <subvertex xmi:type="uml:State" xmi:id="state_parent" name="Parent">
+                        <region xmi:type="uml:Region" xmi:id="region_a" name="">
+                          <transition xmi:type="uml:Transition" xmi:id="tx_a" source="init_a" target="state_a"/>
+                          <subvertex xmi:type="uml:Pseudostate" xmi:id="init_a"/>
+                          <subvertex xmi:type="uml:State" xmi:id="state_a" name="A"/>
+                        </region>
+                        <region xmi:type="uml:Region" xmi:id="region_b" name="">
+                          <transition xmi:type="uml:Transition" xmi:id="tx_b" source="init_b" target="state_b"/>
+                          <subvertex xmi:type="uml:Pseudostate" xmi:id="init_b"/>
+                          <subvertex xmi:type="uml:State" xmi:id="state_b" name="B"/>
+                        </region>
+                      </subvertex>
+                    </region>
+                  </ownedBehavior>
+                </packagedElement>
+              </uml:Model>
+            </xmi:XMI>
+            """,
+            "multi-region composite state",
+        ),
+        (
+            """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <xmi:XMI xmi:version="20131001"
+                     xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
+                     xmlns:uml="http://www.eclipse.org/uml2/5.0.0/UML">
+              <uml:Model xmi:id="model_1" name="model">
+                <packagedElement xmi:type="uml:Class" xmi:id="class_1" name="Pseudo Holder" classifierBehavior="machine_1">
+                  <ownedBehavior xmi:type="uml:StateMachine" xmi:id="machine_1" name="Pseudo Holder">
+                    <region xmi:type="uml:Region" xmi:id="region_root" name="">
+                      <transition xmi:type="uml:Transition" xmi:id="tx_init" source="init_1" target="state_parent"/>
+                      <subvertex xmi:type="uml:Pseudostate" xmi:id="init_1"/>
+                      <subvertex xmi:type="uml:State" xmi:id="state_parent" name="Parent">
+                        <region xmi:type="uml:Region" xmi:id="region_child" name="">
+                          <transition xmi:type="uml:Transition" xmi:id="tx_child_init" source="init_child" target="state_child"/>
+                          <transition xmi:type="uml:Transition" xmi:id="tx_into_named" source="state_child" target="named_pseudo"/>
+                          <subvertex xmi:type="uml:Pseudostate" xmi:id="init_child"/>
+                          <subvertex xmi:type="uml:Pseudostate" xmi:id="named_pseudo" name="Checkpoint"/>
+                          <subvertex xmi:type="uml:State" xmi:id="state_child" name="Child"/>
+                        </region>
+                      </subvertex>
+                    </region>
+                  </ownedBehavior>
+                </packagedElement>
+              </uml:Model>
+            </xmi:XMI>
+            """,
+            "init-pseudostate lowering",
+        ),
+        (
+            """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <xmi:XMI xmi:version="20131001"
+                     xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
+                     xmlns:uml="http://www.eclipse.org/uml2/5.0.0/UML">
+              <uml:Model xmi:id="model_1" name="model">
+                <packagedElement xmi:type="uml:Class" xmi:id="class_1" name="Cross Region" classifierBehavior="machine_1">
+                  <ownedBehavior xmi:type="uml:StateMachine" xmi:id="machine_1" name="Cross Region">
+                    <region xmi:type="uml:Region" xmi:id="region_root" name="">
+                      <transition xmi:type="uml:Transition" xmi:id="tx_init" source="init_1" target="state_outer"/>
+                      <transition xmi:type="uml:Transition" xmi:id="tx_cross" source="state_outer" target="state_inner"/>
+                      <subvertex xmi:type="uml:Pseudostate" xmi:id="init_1"/>
+                      <subvertex xmi:type="uml:State" xmi:id="state_outer" name="Outer"/>
+                      <subvertex xmi:type="uml:State" xmi:id="state_parent" name="Parent">
+                        <region xmi:type="uml:Region" xmi:id="region_child" name="">
+                          <transition xmi:type="uml:Transition" xmi:id="tx_child_init" source="init_child" target="state_inner"/>
+                          <subvertex xmi:type="uml:Pseudostate" xmi:id="init_child"/>
+                          <subvertex xmi:type="uml:State" xmi:id="state_inner" name="Inner"/>
+                        </region>
+                      </subvertex>
+                    </region>
+                  </ownedBehavior>
+                </packagedElement>
+              </uml:Model>
+            </xmi:XMI>
+            """,
+            "cross-level/cross-region transitions",
+        ),
+        (
+            """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <xmi:XMI xmi:version="20131001"
+                     xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
+                     xmlns:uml="http://www.eclipse.org/uml2/5.0.0/UML">
+              <uml:Model xmi:id="model_1" name="model">
+                <packagedElement xmi:type="uml:Class" xmi:id="class_1" name="Timed" classifierBehavior="machine_1">
+                  <ownedBehavior xmi:type="uml:StateMachine" xmi:id="machine_1" name="Timed">
+                    <region xmi:type="uml:Region" xmi:id="region_root" name="">
+                      <transition xmi:type="uml:Transition" xmi:id="tx_init" source="init_1" target="state_idle"/>
+                      <transition xmi:type="uml:Transition" xmi:id="tx_time" source="state_idle" target="state_fire">
+                        <trigger xmi:type="uml:Trigger" xmi:id="trigger_time" event="time_event_1"/>
+                      </transition>
+                      <subvertex xmi:type="uml:Pseudostate" xmi:id="init_1"/>
+                      <subvertex xmi:type="uml:State" xmi:id="state_idle" name="Idle"/>
+                      <subvertex xmi:type="uml:State" xmi:id="state_fire" name="Fire"/>
+                    </region>
+                  </ownedBehavior>
+                </packagedElement>
+                <packagedElement xmi:type="uml:TimeEvent" xmi:id="time_event_1" name="" isRelative="true">
+                  <when xmi:type="uml:TimeExpression" xmi:id="time_expr_1">
+                    <expr xmi:type="uml:LiteralString" xmi:id="time_expr_value_1" value="1s"/>
+                  </when>
+                </packagedElement>
+              </uml:Model>
+            </xmi:XMI>
+            """,
+            "uml:TimeEvent transitions",
+        ),
+        (
+            """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <xmi:XMI xmi:version="20131001"
+                     xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
+                     xmlns:uml="http://www.eclipse.org/uml2/5.0.0/UML">
+              <uml:Model xmi:id="model_1" name="model">
+                <packagedElement xmi:type="uml:Class" xmi:id="class_1" name="Unknown Trigger" classifierBehavior="machine_1">
+                  <ownedBehavior xmi:type="uml:StateMachine" xmi:id="machine_1" name="Unknown Trigger">
+                    <region xmi:type="uml:Region" xmi:id="region_root" name="">
+                      <transition xmi:type="uml:Transition" xmi:id="tx_init" source="init_1" target="state_idle"/>
+                      <transition xmi:type="uml:Transition" xmi:id="tx_unknown" source="state_idle" target="state_fire">
+                        <trigger xmi:type="uml:Trigger" xmi:id="trigger_unknown" event="missing_event"/>
+                      </transition>
+                      <subvertex xmi:type="uml:Pseudostate" xmi:id="init_1"/>
+                      <subvertex xmi:type="uml:State" xmi:id="state_idle" name="Idle"/>
+                      <subvertex xmi:type="uml:State" xmi:id="state_fire" name="Fire"/>
+                    </region>
+                  </ownedBehavior>
+                </packagedElement>
+              </uml:Model>
+            </xmi:XMI>
+            """,
+            "signal/none triggers",
+        ),
+        (
+            """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <xmi:XMI xmi:version="20131001"
+                     xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
+                     xmlns:uml="http://www.eclipse.org/uml2/5.0.0/UML">
+              <uml:Model xmi:id="model_1" name="model">
+                <packagedElement xmi:type="uml:Class" xmi:id="class_1" name="Signal Guard" classifierBehavior="machine_1">
+                  <ownedBehavior xmi:type="uml:StateMachine" xmi:id="machine_1" name="Signal Guard">
+                    <region xmi:type="uml:Region" xmi:id="region_root" name="">
+                      <transition xmi:type="uml:Transition" xmi:id="tx_init" source="init_1" target="state_idle"/>
+                      <transition xmi:type="uml:Transition" xmi:id="tx_guarded_signal" source="state_idle" target="state_fire">
+                        <trigger xmi:type="uml:Trigger" xmi:id="trigger_signal" event="signal_event_1"/>
+                        <ownedRule xmi:type="uml:Constraint" xmi:id="signal_guard_rule">
+                          <specification xmi:type="uml:OpaqueExpression" xmi:id="signal_guard_expr">
+                            <body> count &gt; 0 </body>
+                          </specification>
+                        </ownedRule>
+                      </transition>
+                      <subvertex xmi:type="uml:Pseudostate" xmi:id="init_1"/>
+                      <subvertex xmi:type="uml:State" xmi:id="state_idle" name="Idle"/>
+                      <subvertex xmi:type="uml:State" xmi:id="state_fire" name="Fire"/>
+                    </region>
+                  </ownedBehavior>
+                </packagedElement>
+                <packagedElement xmi:type="uml:Signal" xmi:id="signal_1" name="Go"/>
+                <packagedElement xmi:type="uml:SignalEvent" xmi:id="signal_event_1" name="" signal="signal_1"/>
+              </uml:Model>
+            </xmi:XMI>
+            """,
+            "both signal and guard",
+        ),
+        (
+            """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <xmi:XMI xmi:version="20131001"
+                     xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
+                     xmlns:uml="http://www.eclipse.org/uml2/5.0.0/UML">
+              <uml:Model xmi:id="model_1" name="model">
+                <packagedElement xmi:type="uml:Class" xmi:id="class_1" name="Effects" classifierBehavior="machine_1">
+                  <ownedBehavior xmi:type="uml:StateMachine" xmi:id="machine_1" name="Effects">
+                    <region xmi:type="uml:Region" xmi:id="region_root" name="">
+                      <transition xmi:type="uml:Transition" xmi:id="tx_init" source="init_1" target="state_idle"/>
+                      <transition xmi:type="uml:Transition" xmi:id="tx_effect" source="state_idle" target="state_fire">
+                        <effect xmi:type="uml:Activity" xmi:id="effect_1" name="DoSideEffect"/>
+                      </transition>
+                      <subvertex xmi:type="uml:Pseudostate" xmi:id="init_1"/>
+                      <subvertex xmi:type="uml:State" xmi:id="state_idle" name="Idle"/>
+                      <subvertex xmi:type="uml:State" xmi:id="state_fire" name="Fire"/>
+                    </region>
+                  </ownedBehavior>
+                </packagedElement>
+              </uml:Model>
+            </xmi:XMI>
+            """,
+            "transition effects",
+        ),
+        (
+            """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <xmi:XMI xmi:version="20131001"
+                     xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
+                     xmlns:uml="http://www.eclipse.org/uml2/5.0.0/UML">
+              <uml:Model xmi:id="model_1" name="model">
+                <packagedElement xmi:type="uml:Class" xmi:id="class_1" name="Final Target" classifierBehavior="machine_1">
+                  <ownedBehavior xmi:type="uml:StateMachine" xmi:id="machine_1" name="Final Target">
+                    <region xmi:type="uml:Region" xmi:id="region_root" name="">
+                      <transition xmi:type="uml:Transition" xmi:id="tx_init" source="init_1" target="state_idle"/>
+                      <transition xmi:type="uml:Transition" xmi:id="tx_finish" source="state_idle" target="final_1"/>
+                      <subvertex xmi:type="uml:Pseudostate" xmi:id="init_1"/>
+                      <subvertex xmi:type="uml:State" xmi:id="state_idle" name="Idle"/>
+                      <subvertex xmi:type="uml:FinalState" xmi:id="final_1" name="Done"/>
+                    </region>
+                  </ownedBehavior>
+                </packagedElement>
+              </uml:Model>
+            </xmi:XMI>
+            """,
+            "state-to-state transitions",
+        ),
+        ],
+    )
+    def test_phase2_rejects_unsupported_public_scenarios(
+        self, tmp_path: Path, xml_content: str, expected_message: str
+    ):
+        """Unsupported phase2 structures should fail through the public build API."""
+        xml_file = _write_xml(tmp_path, xml_content)
+        machine = load_sysdesim_machine(str(xml_file))
+        normalize_machine(machine)
+
+        with pytest.raises(NotImplementedError, match=expected_message):
+            build_machine_ast(machine)
+
+    def test_ir_public_helpers_cover_root_and_variable_lookup_paths(self):
+        """Public IR helpers should cover the remaining observable traversal paths."""
+        machine = IrMachine(
+            machine_id="machine_public",
+            name="Public Machine",
+            root_region=IrRegion(
+                region_id="region_public",
+                owner_state_id=None,
+                vertices=[IrVertex(vertex_id="root_state", vertex_type="state", raw_name="Root", parent_region_id=None)],
+                transitions=[],
+            ),
+            variables=[
+                IrVariable(
+                    variable_id="counter_var",
+                    raw_name="counter",
+                    type_name="int",
+                    default_value="0",
+                    is_synthetic=False,
+                )
+            ],
+        )
+
+        assert machine.get_variable("counter_var").raw_name == "counter"
+        assert machine.state_id_path("root_state") == ("root_state",)

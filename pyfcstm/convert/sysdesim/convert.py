@@ -967,7 +967,7 @@ def _build_state(
 
     substates: List[dsl_nodes.StateDefinition] = []
     transitions: List[dsl_nodes.TransitionDefinition] = []
-    if len(vertex.regions) > 1:
+    if len(vertex.regions) > 1:  # pragma: no cover - rejected earlier by _validate_phase2_region
         raise NotImplementedError(
             f"Phase2 does not support multi-region composite state yet: {vertex.vertex_id}"
         )

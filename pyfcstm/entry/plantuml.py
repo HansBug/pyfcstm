@@ -31,7 +31,7 @@ from typing import Optional, Tuple, Dict, Union
 
 import click
 
-from .base import CONTEXT_SETTINGS
+from .base import CONTEXT_SETTINGS, ClickErrorException
 from ..dsl import parse_with_grammar_entry
 from ..model import parse_dsl_node_to_state_machine
 from ..model.plantuml import PlantUMLOptions
@@ -67,6 +67,60 @@ PLANTUML_OPTION_TYPES: Dict[str, Union[type, str]] = {
     'use_skinparam': bool,
     'use_stereotypes': bool,
 }
+
+
+def build_plantuml_output(
+    input_code_file: str,
+    detail_level: str = 'normal',
+    config_options: Tuple[str, ...] = (),
+) -> str:
+    """
+    Build PlantUML text from a state machine DSL file.
+
+    This helper centralizes the common CLI workflow for reading DSL code,
+    parsing the state machine model, applying PlantUML options, and rendering
+    the final PlantUML text representation.
+
+    :param input_code_file: Path to the input DSL file.
+    :type input_code_file: str
+    :param detail_level: PlantUML detail level preset, defaults to ``'normal'``.
+    :type detail_level: str, optional
+    :param config_options: Additional PlantUML configuration options in
+        ``key=value`` format.
+    :type config_options: Tuple[str, ...], optional
+    :return: Rendered PlantUML text.
+    :rtype: str
+    :raises pyfcstm.entry.base.ClickErrorException: If the input file cannot be
+        read or a config option is invalid.
+    :raises UnicodeDecodeError: If the input file cannot be decoded.
+    :raises pyfcstm.dsl.error.GrammarParseError: If DSL parsing fails.
+    :raises SyntaxError: If the parsed DSL contains invalid state machine
+        constructs.
+
+    Example::
+
+        >>> plantuml_text = build_plantuml_output('traffic_light.fcstm', detail_level='minimal')
+        >>> plantuml_text.startswith('@startuml')
+        True
+    """
+    input_path = pathlib.Path(input_code_file)
+    try:
+        code = auto_decode(input_path.read_bytes())
+    except FileNotFoundError:
+        raise ClickErrorException(f'Input DSL file not found: {input_code_file}')
+    except OSError as err:
+        raise ClickErrorException(f'Failed to read input DSL file {input_code_file}: {err}')
+
+    ast_node = parse_with_grammar_entry(code, entry_name='state_machine_dsl')
+    model = parse_dsl_node_to_state_machine(ast_node)
+
+    try:
+        parsed_options = parse_key_value_pairs(config_options, type_hints=PLANTUML_OPTION_TYPES)
+    except ValueError as err:
+        raise ClickErrorException(str(err))
+
+    options = PlantUMLOptions(detail_level=detail_level, **parsed_options)
+    return model.to_plantuml(options)
 
 
 def _add_plantuml_subcommand(cli: click.Group) -> click.Group:
@@ -183,23 +237,15 @@ def _add_plantuml_subcommand(cli: click.Group) -> click.Group:
             >>> # Combine preset with overrides
             >>> # pyfcstm plantuml -i example.dsl -l full -c max_depth=3 -c event_visualization_mode=color
         """
-        # Parse DSL code
-        code = auto_decode(pathlib.Path(input_code_file).read_bytes())
-        ast_node = parse_with_grammar_entry(code, entry_name='state_machine_dsl')
-        model = parse_dsl_node_to_state_machine(ast_node)
-
-        # Parse configuration options with type hints
-        parsed_options = parse_key_value_pairs(config_options, type_hints=PLANTUML_OPTION_TYPES)
-
-        # Create PlantUMLOptions with detail level and overrides
-        options = PlantUMLOptions(detail_level=detail_level, **parsed_options)
-
-        # Generate PlantUML output
-        plantuml_output = model.to_plantuml(options)
+        plantuml_output = build_plantuml_output(
+            input_code_file=input_code_file,
+            detail_level=detail_level,
+            config_options=config_options,
+        )
 
         # Write output
         if output_file is not None:
-            with open(output_file, 'w') as f:
+            with open(output_file, 'w', encoding='utf-8') as f:
                 f.write(plantuml_output)
         else:
             click.echo(plantuml_output)

@@ -1,7 +1,7 @@
 """
 Public API for SysDeSim conversion helpers.
 
-This package exposes the phase0-5 conversion pipeline for the subset of
+This package exposes the phase0-6 conversion pipeline for the subset of
 SysDeSim UML state machines that can be mapped directly into FCSTM. The public
 surface is intentionally small:
 
@@ -22,6 +22,8 @@ surface is intentionally small:
   converter-generated artifacts.
 * :func:`validate_program_roundtrip` verifies that emitted DSL can be parsed
   back through the existing parser/model stack.
+* :func:`build_sysdesim_conversion_report` produces a structured phase6
+  diagnostics report for CLI and regression use.
 
 Internals are kept in three files to avoid unnecessary fragmentation:
 
@@ -40,8 +42,11 @@ Example::
 from __future__ import annotations
 
 from .convert import (
+    SysDeSimConversionReport,
+    SysDeSimOutputValidationReport,
     SysDeSimPreparedMachine,
     build_machine_ast,
+    build_sysdesim_conversion_report,
     convert_sysdesim_xml_to_ast,
     convert_sysdesim_xml_to_asts,
     convert_sysdesim_xml_to_dsl,
@@ -57,8 +62,11 @@ from .convert import (
 
 
 __all__ = [
+    "SysDeSimConversionReport",
+    "SysDeSimOutputValidationReport",
     "SysDeSimPreparedMachine",
     "build_machine_ast",
+    "build_sysdesim_conversion_report",
     "convert_sysdesim_xml_to_ast",
     "convert_sysdesim_xml_to_asts",
     "convert_sysdesim_xml_to_dsl",

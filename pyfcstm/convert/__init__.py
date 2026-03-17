@@ -1,7 +1,7 @@
 """
 Public conversion entry points exposed by :mod:`pyfcstm.convert`.
 
-This package currently re-exports the SysDeSim phase0-5 conversion helpers from
+This package currently re-exports the SysDeSim phase0-6 conversion helpers from
 :mod:`pyfcstm.convert.sysdesim`. The exported functions cover the full
 ``XML -> IR -> normalized IR -> FCSTM AST -> DSL`` pipeline for the supported
 SysDeSim subset.
@@ -9,6 +9,7 @@ SysDeSim subset.
 The package exports:
 
 * :func:`build_machine_ast` - Build an FCSTM DSL AST from normalized IR.
+* :func:`build_sysdesim_conversion_report` - Build a structured conversion validation report.
 * :func:`convert_sysdesim_xml_to_ast` - Perform the full XML-to-AST conversion.
 * :func:`convert_sysdesim_xml_to_asts` - Perform split-aware XML-to-AST conversion.
 * :func:`convert_sysdesim_xml_to_dsl` - Perform the full XML-to-DSL conversion.
@@ -29,8 +30,11 @@ Example::
 """
 
 from .sysdesim import (
+    SysDeSimConversionReport,
+    SysDeSimOutputValidationReport,
     SysDeSimPreparedMachine,
     build_machine_ast,
+    build_sysdesim_conversion_report,
     convert_sysdesim_xml_to_ast,
     convert_sysdesim_xml_to_asts,
     convert_sysdesim_xml_to_dsl,
@@ -44,8 +48,11 @@ from .sysdesim import (
 )
 
 __all__ = [
+    "SysDeSimConversionReport",
+    "SysDeSimOutputValidationReport",
     "SysDeSimPreparedMachine",
     "build_machine_ast",
+    "build_sysdesim_conversion_report",
     "convert_sysdesim_xml_to_ast",
     "convert_sysdesim_xml_to_asts",
     "convert_sysdesim_xml_to_dsl",

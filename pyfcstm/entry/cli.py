@@ -30,11 +30,13 @@ from .dispatch import pyfcstmcli
 from .generate import _add_generate_subcommand
 from .plantuml import _add_plantuml_subcommand
 from .simulate import _add_simulate_subcommand
+from .sysdesim import _add_sysdesim_subcommand
 
 _DECORATORS: List[Callable[[click.Group], click.Group]] = [
     _add_generate_subcommand,
     _add_plantuml_subcommand,
     _add_simulate_subcommand,
+    _add_sysdesim_subcommand,
 ]
 
 cli: click.Group = pyfcstmcli

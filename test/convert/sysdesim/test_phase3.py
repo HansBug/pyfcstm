@@ -767,15 +767,6 @@ def test_phase3_rejects_invalid_time_event_configuration(
             """,
             "state-backed uml:TimeEvent sources",
         ),
-        (
-            """
-            <transition xmi:type="uml:Transition" xmi:id="tx_timeout_KKKKKK" source="state_wait" target="state_done">
-              <trigger xmi:type="uml:Trigger" xmi:id="trigger_timeout" event="time_evt_timeout"/>
-              <effect xmi:type="uml:Activity" xmi:id="effect_timeout" name="DoSideEffect"/>
-            </transition>
-            """,
-            "does not lower transition effects yet",
-        ),
     ],
 )
 def test_phase3_rejects_public_time_event_shapes_not_supported_yet(
@@ -783,7 +774,7 @@ def test_phase3_rejects_public_time_event_shapes_not_supported_yet(
     transition_body: str,
     expected_message: str,
 ):
-    """Public XML inputs should reject unsupported time-event source and effect shapes."""
+    """Public XML inputs should reject unsupported time-event source shapes."""
     xml_file = _write_xml(
         tmp_path,
         f"""

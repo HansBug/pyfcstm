@@ -1890,31 +1890,6 @@ class TestSysDeSimCoverageScenarios:
                      xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
                      xmlns:uml="http://www.eclipse.org/uml2/5.0.0/UML">
               <uml:Model xmi:id="model_1" name="model">
-                <packagedElement xmi:type="uml:Class" xmi:id="class_1" name="Effects" classifierBehavior="machine_1">
-                  <ownedBehavior xmi:type="uml:StateMachine" xmi:id="machine_1" name="Effects">
-                    <region xmi:type="uml:Region" xmi:id="region_root" name="">
-                      <transition xmi:type="uml:Transition" xmi:id="tx_init" source="init_1" target="state_idle"/>
-                      <transition xmi:type="uml:Transition" xmi:id="tx_effect" source="state_idle" target="state_fire">
-                        <effect xmi:type="uml:Activity" xmi:id="effect_1" name="DoSideEffect"/>
-                      </transition>
-                      <subvertex xmi:type="uml:Pseudostate" xmi:id="init_1"/>
-                      <subvertex xmi:type="uml:State" xmi:id="state_idle" name="Idle"/>
-                      <subvertex xmi:type="uml:State" xmi:id="state_fire" name="Fire"/>
-                    </region>
-                  </ownedBehavior>
-                </packagedElement>
-              </uml:Model>
-            </xmi:XMI>
-            """,
-            "transition effects",
-        ),
-        (
-            """
-            <?xml version="1.0" encoding="UTF-8"?>
-            <xmi:XMI xmi:version="20131001"
-                     xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
-                     xmlns:uml="http://www.eclipse.org/uml2/5.0.0/UML">
-              <uml:Model xmi:id="model_1" name="model">
                 <packagedElement xmi:type="uml:Class" xmi:id="class_1" name="Final Target" classifierBehavior="machine_1">
                   <ownedBehavior xmi:type="uml:StateMachine" xmi:id="machine_1" name="Final Target">
                     <region xmi:type="uml:Region" xmi:id="region_root" name="">

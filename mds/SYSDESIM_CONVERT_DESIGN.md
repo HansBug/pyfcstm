@@ -1437,18 +1437,20 @@ Phase 5 checklist：
 
 - 用户可从命令行直接完成转换
 - 关键样例具备稳定回归测试
+- `python -m pyfcstm sysdesim -i test_com.sysdesim.metamodel.model.xml -o <dir> --tick-duration-ms 100`
+  可成功导出 1 份主状态机、3 份 region-level 状态机和 1 份 JSON 报告
 
 Phase 6 checklist：
 
-- [ ] 导出 DSL 后可被 parser 回读
-- [ ] model 构建成功
-- [ ] 所有 guard 变量都有定义
-- [ ] 所有事件路径合法
-- [ ] 所有复合状态都有 init
-- [ ] 样例文件具备稳定回归测试
-- [ ] unsupported 场景有明确错误消息
-- [ ] 提供 CLI 命令入口
-- [ ] 具备针对 CLI 与整体回归的单元测试
+- [x] 导出 DSL 后可被 parser 回读
+- [x] model 构建成功
+- [x] 所有 guard 变量都有定义
+- [x] 所有事件路径合法
+- [x] 所有复合状态都有 init
+- [x] 样例文件具备稳定回归测试
+- [x] unsupported 场景有明确错误消息
+- [x] 提供 CLI 命令入口
+- [x] 具备针对 CLI 与整体回归的单元测试
 
 ---
 

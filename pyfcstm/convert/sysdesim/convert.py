@@ -1,7 +1,7 @@
 """
-SysDeSim XML to FCSTM phase0-5 conversion helpers.
+SysDeSim XML to FCSTM phase0-6 conversion helpers.
 
-This module contains the full phase0-5 pipeline:
+This module contains the full phase0-6 pipeline:
 
 1. Parse SysDeSim XML into the dataclass IR.
 2. Normalize names, variables, and guard expressions.
@@ -24,6 +24,8 @@ The module contains:
 * :func:`convert_sysdesim_xml_to_ast`, :func:`convert_sysdesim_xml_to_dsl`,
   :func:`convert_sysdesim_xml_to_asts`, and
   :func:`convert_sysdesim_xml_to_dsls` for one-shot conversion.
+* :func:`build_sysdesim_conversion_report` for structured phase6 validation and
+  diagnostics.
 
 Example::
 
@@ -41,7 +43,7 @@ import math
 import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from unidecode import unidecode
 
@@ -176,6 +178,153 @@ class SysDeSimPreparedMachine:
     output_name: str
     machine: IrMachine
     semantic_note: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class SysDeSimOutputValidationReport:
+    """
+    Structured validation summary for one emitted FCSTM output.
+
+    :param output_name: Stable output name used for this artifact.
+    :type output_name: str
+    :param parser_roundtrip_ok: Whether the emitted DSL parsed successfully.
+    :type parser_roundtrip_ok: bool
+    :param model_build_ok: Whether the parsed DSL built a valid runtime model.
+    :type model_build_ok: bool
+    :param guard_variables_defined: Whether guard expressions resolved against
+        defined variables.
+    :type guard_variables_defined: bool
+    :param event_paths_valid: Whether event references remained model-valid.
+    :type event_paths_valid: bool
+    :param composite_states_have_init: Whether all composite states retained a
+        valid init transition.
+    :type composite_states_have_init: bool
+    :param dsl_line_count: Number of emitted DSL lines for this output.
+    :type dsl_line_count: int
+    :param semantic_note: Optional semantic-downgrade note, defaults to
+        ``None``
+    :type semantic_note: str, optional
+    :param diagnostics: Diagnostics carried by the prepared output machine,
+        defaults to an empty tuple
+    :type diagnostics: tuple[IrDiagnostic, ...]
+    """
+
+    output_name: str
+    parser_roundtrip_ok: bool
+    model_build_ok: bool
+    guard_variables_defined: bool
+    event_paths_valid: bool
+    composite_states_have_init: bool
+    dsl_line_count: int
+    semantic_note: Optional[str] = None
+    diagnostics: Tuple[IrDiagnostic, ...] = ()
+
+    def to_dict(self) -> Dict[str, Any]:
+        """
+        Convert this validation report into a JSON-serializable dictionary.
+
+        :return: Dictionary representation of the output report.
+        :rtype: dict[str, typing.Any]
+        """
+        return {
+            "output_name": self.output_name,
+            "parser_roundtrip_ok": self.parser_roundtrip_ok,
+            "model_build_ok": self.model_build_ok,
+            "guard_variables_defined": self.guard_variables_defined,
+            "event_paths_valid": self.event_paths_valid,
+            "composite_states_have_init": self.composite_states_have_init,
+            "dsl_line_count": self.dsl_line_count,
+            "semantic_note": self.semantic_note,
+            "diagnostics": [
+                {
+                    "level": item.level,
+                    "code": item.code,
+                    "message": item.message,
+                    "source_id": item.source_id,
+                    "state_path": list(item.state_path) if item.state_path is not None else None,
+                }
+                for item in self.diagnostics
+            ],
+        }
+
+
+@dataclass(frozen=True)
+class SysDeSimConversionReport:
+    """
+    Phase6 conversion report for one selected SysDeSim state machine.
+
+    :param source_xml_path: Source XML/XMI path passed to the converter.
+    :type source_xml_path: str
+    :param requested_machine_name: Requested UML state-machine name filter,
+        defaults to ``None``
+    :type requested_machine_name: str, optional
+    :param requested_machine_id: Requested UML state-machine id filter,
+        defaults to ``None``
+    :type requested_machine_id: str, optional
+    :param selected_machine_name: Actual selected UML machine name.
+    :type selected_machine_name: str
+    :param selected_machine_id: Actual selected UML machine id.
+    :type selected_machine_id: str
+    :param tick_duration_ms: Tick duration used for time lowering, defaults to
+        ``None``
+    :type tick_duration_ms: float, optional
+    :param outputs: Output-level validation reports in stable emission order.
+    :type outputs: tuple[SysDeSimOutputValidationReport, ...]
+    """
+
+    source_xml_path: str
+    requested_machine_name: Optional[str]
+    requested_machine_id: Optional[str]
+    selected_machine_name: str
+    selected_machine_id: str
+    tick_duration_ms: Optional[float]
+    outputs: Tuple[SysDeSimOutputValidationReport, ...]
+
+    @property
+    def output_count(self) -> int:
+        """
+        Return the number of emitted FCSTM outputs recorded in this report.
+
+        :return: Number of output report items.
+        :rtype: int
+        """
+        return len(self.outputs)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """
+        Convert this conversion report into a JSON-serializable dictionary.
+
+        :return: Dictionary representation of the conversion report.
+        :rtype: dict[str, typing.Any]
+        """
+        return {
+            "source_xml_path": self.source_xml_path,
+            "requested_machine_name": self.requested_machine_name,
+            "requested_machine_id": self.requested_machine_id,
+            "selected_machine_name": self.selected_machine_name,
+            "selected_machine_id": self.selected_machine_id,
+            "tick_duration_ms": self.tick_duration_ms,
+            "output_count": self.output_count,
+            "outputs": [item.to_dict() for item in self.outputs],
+        }
+
+
+@dataclass(frozen=True)
+class _ConvertedPreparedOutput:
+    """
+    Internal conversion artifact for one prepared output machine.
+
+    :param prepared: Prepared machine metadata.
+    :type prepared: SysDeSimPreparedMachine
+    :param program: Emitted FCSTM AST.
+    :type program: pyfcstm.dsl.node.StateMachineDSLProgram
+    :param dsl_code: Serialized FCSTM DSL text.
+    :type dsl_code: str
+    """
+
+    prepared: SysDeSimPreparedMachine
+    program: dsl_nodes.StateMachineDSLProgram
+    dsl_code: str
 
 
 def _xmi_id(element: ET.Element) -> str:
@@ -710,6 +859,26 @@ def _make_action_name(action: IrActionRef) -> str:
     return f"__sysdesim_action_{_stable_suffix(action.action_id)}"
 
 
+def _assign_unique_action_names(actions: List[Optional[IrActionRef]]) -> None:
+    """
+    Assign stable action names while avoiding collisions within one local scope.
+
+    :param actions: Action references that share one naming scope.
+    :type actions: list[IrActionRef | None]
+    :return: ``None``.
+    :rtype: None
+    """
+    seen = {}
+    for action in actions:
+        if action is None:
+            continue
+        base = _make_action_name(action)
+        candidate = base if base not in seen else _with_unique_suffix(base, action.action_id)
+        seen[candidate] = action.action_id
+        action.safe_name = candidate
+        action.display_name = action.raw_name
+
+
 def _make_event_name(raw_name: str, stable_id: str) -> str:
     """
     Build the FCSTM identifier for a signal-derived event.
@@ -773,10 +942,7 @@ def _normalize_region_vertices(vertices: List[IrVertex]) -> None:
             vertex.safe_name = _make_state_name(vertex)
         vertex.display_name = vertex.raw_name
 
-        for action in [vertex.entry_action, vertex.exit_action]:
-            if action is not None:
-                action.safe_name = _make_action_name(action)
-                action.display_name = action.raw_name
+        _assign_unique_action_names([vertex.entry_action, vertex.exit_action])
 
         for region in vertex.regions:
             _normalize_region_vertices(region.vertices)
@@ -893,6 +1059,25 @@ def normalize_machine(machine: IrMachine) -> IrMachine:
     _normalize_time_events(machine)
 
     for transition in machine.walk_transitions():
+        if transition.effect_action is not None:
+            transition.effect_action.safe_name = _make_action_name(transition.effect_action)
+            transition.effect_action.display_name = transition.effect_action.raw_name
+            if not any(
+                item.code == "transition_effect_semantic_downgrade" and item.source_id == transition.transition_id
+                for item in machine.diagnostics
+            ):
+                machine.diagnostics.append(
+                    IrDiagnostic(
+                        level="warning",
+                        code="transition_effect_semantic_downgrade",
+                        message=(
+                            "Transition effect activities are ignored during SysDeSim export because the current FCSTM "
+                            "subset only supports concrete inline effect blocks."
+                        ),
+                        source_id=transition.transition_id,
+                        state_path=machine.state_path(transition.source_id),
+                    )
+                )
         if transition.guard_expr_raw and transition.guard_expr_raw.strip():
             transition.guard_expr_ir = parse_condition(transition.guard_expr_raw).expr
         else:
@@ -1458,10 +1643,6 @@ def _lower_cross_level_transition(
         raise NotImplementedError(
             f"Phase4 only supports leaf-source cross-level transitions: {transition.transition_id}"
         )
-    if transition.effect_action is not None:
-        raise NotImplementedError(
-            f"Phase4 does not lower transition effects yet: {transition.transition_id}"
-        )
     if transition.trigger_kind == "signal" and transition.guard_expr_ir is not None:
         raise NotImplementedError(
             f"Phase4 does not support cross-level transitions with both signal and guard: {transition.transition_id}"
@@ -1589,11 +1770,6 @@ def _build_ast_context(machine: IrMachine, tick_duration_ms: Optional[float]) ->
                 raise NotImplementedError(
                     f"Phase3 only supports state-backed uml:TimeEvent sources: {transition.transition_id}"
                 )
-            if transition.effect_action is not None:
-                raise NotImplementedError(
-                    f"Phase3 does not lower transition effects yet: {transition.transition_id}"
-                )
-
             time_event = machine.get_time_event(transition.trigger_ref_id)
             timer_name = _make_time_event_timer_name(machine, transition)
             ticks = _convert_time_event_to_ticks(time_event, tick_duration_ms)
@@ -1730,10 +1906,6 @@ def _build_transition(
     if transition.trigger_kind == "time":
         if lowered_time_transition is None:  # pragma: no cover - build_machine_ast prepares this eagerly
             raise RuntimeError(f"Missing lowered time-transition metadata: {transition.transition_id}")
-        if transition.effect_action is not None:  # pragma: no cover - validated earlier by _build_ast_context
-            raise NotImplementedError(
-                f"Phase3 does not lower transition effects yet: {transition.transition_id}"
-            )
         if source.vertex_type != "state" or target.vertex_type != "state":  # pragma: no cover
             raise NotImplementedError(
                 f"Phase3 only supports state-to-state uml:TimeEvent transitions: {transition.transition_id}"
@@ -1753,11 +1925,6 @@ def _build_transition(
         raise NotImplementedError(
             f"Phase2 does not support transitions with both signal and guard: {transition.transition_id}"
         )
-    if transition.effect_action is not None:
-        raise NotImplementedError(
-            f"Phase2 does not lower transition effects yet: {transition.transition_id}"
-        )
-
     if source.vertex_type == "pseudostate":
         return dsl_nodes.TransitionDefinition(
             from_state=dsl_nodes.INIT_STATE,
@@ -2051,6 +2218,61 @@ def prepare_sysdesim_output_machines(
     return _prepare_split_output_machines(machine)
 
 
+def _load_and_prepare_sysdesim_machine(
+    xml_path: str,
+    *,
+    machine_name: Optional[str] = None,
+    machine_id: Optional[str] = None,
+) -> Tuple[IrMachine, List[SysDeSimPreparedMachine]]:
+    """
+    Load one SysDeSim machine and prepare all main/split outputs.
+
+    :param xml_path: Path to the SysDeSim XML/XMI file.
+    :type xml_path: str
+    :param machine_name: Exact UML state-machine name to load, defaults to
+        ``None``
+    :type machine_name: str, optional
+    :param machine_id: Exact UML state-machine ``xmi:id`` to load, defaults to
+        ``None``
+    :type machine_id: str, optional
+    :return: Tuple of the normalized selected machine and prepared outputs.
+    :rtype: tuple[IrMachine, list[SysDeSimPreparedMachine]]
+    """
+    machine = load_sysdesim_machine(xml_path, machine_name=machine_name, machine_id=machine_id)
+    normalize_machine(machine)
+    return machine, _prepare_split_output_machines(machine)
+
+
+def _convert_prepared_outputs(
+    prepared_outputs: Iterable[SysDeSimPreparedMachine],
+    *,
+    tick_duration_ms: Optional[float] = None,
+) -> List[_ConvertedPreparedOutput]:
+    """
+    Convert prepared outputs into validated AST and DSL artifacts.
+
+    :param prepared_outputs: Prepared output machines in stable order.
+    :type prepared_outputs: collections.abc.Iterable[SysDeSimPreparedMachine]
+    :param tick_duration_ms: Duration of one runtime tick in milliseconds when
+        lowering ``uml:TimeEvent`` transitions, defaults to ``None``
+    :type tick_duration_ms: float, optional
+    :return: Converted output artifacts.
+    :rtype: list[_ConvertedPreparedOutput]
+    """
+    converted_outputs = []
+    for prepared in prepared_outputs:
+        program = build_machine_ast(prepared.machine, tick_duration_ms=tick_duration_ms)
+        validate_program_roundtrip(program)
+        converted_outputs.append(
+            _ConvertedPreparedOutput(
+                prepared=prepared,
+                program=program,
+                dsl_code=emit_program(program),
+            )
+        )
+    return converted_outputs
+
+
 def convert_sysdesim_xml_to_asts(
     xml_path: str,
     *,
@@ -2075,12 +2297,15 @@ def convert_sysdesim_xml_to_asts(
     :return: Mapping from stable output names to converted FCSTM AST programs.
     :rtype: dict[str, pyfcstm.dsl.node.StateMachineDSLProgram]
     """
-    programs = {}
-    for prepared in prepare_sysdesim_output_machines(xml_path, machine_name=machine_name, machine_id=machine_id):
-        program = build_machine_ast(prepared.machine, tick_duration_ms=tick_duration_ms)
-        validate_program_roundtrip(program)
-        programs[prepared.output_name] = program
-    return programs
+    _, prepared_outputs = _load_and_prepare_sysdesim_machine(
+        xml_path,
+        machine_name=machine_name,
+        machine_id=machine_id,
+    )
+    return {
+        item.prepared.output_name: item.program
+        for item in _convert_prepared_outputs(prepared_outputs, tick_duration_ms=tick_duration_ms)
+    }
 
 
 def convert_sysdesim_xml_to_dsls(
@@ -2107,12 +2332,74 @@ def convert_sysdesim_xml_to_dsls(
     :return: Mapping from stable output names to rendered FCSTM DSL text.
     :rtype: dict[str, str]
     """
-    return {output_name: emit_program(program) for output_name, program in convert_sysdesim_xml_to_asts(
+    _, prepared_outputs = _load_and_prepare_sysdesim_machine(
         xml_path,
         machine_name=machine_name,
         machine_id=machine_id,
+    )
+    return {
+        item.prepared.output_name: item.dsl_code
+        for item in _convert_prepared_outputs(prepared_outputs, tick_duration_ms=tick_duration_ms)
+    }
+
+
+def build_sysdesim_conversion_report(
+    xml_path: str,
+    *,
+    machine_name: Optional[str] = None,
+    machine_id: Optional[str] = None,
+    tick_duration_ms: Optional[float] = None,
+) -> SysDeSimConversionReport:
+    """
+    Build a phase6 validation and diagnostics report for one SysDeSim machine.
+
+    This helper runs the same parser/model round-trip validation used by the
+    main conversion entry points and records one report item per emitted output.
+
+    :param xml_path: Path to the SysDeSim XML/XMI file.
+    :type xml_path: str
+    :param machine_name: Exact UML state-machine name to load, defaults to
+        ``None``
+    :type machine_name: str, optional
+    :param machine_id: Exact UML state-machine ``xmi:id`` to load, defaults to
+        ``None``
+    :type machine_id: str, optional
+    :param tick_duration_ms: Duration of one runtime tick in milliseconds when
+        lowering ``uml:TimeEvent`` transitions, defaults to ``None``
+    :type tick_duration_ms: float, optional
+    :return: Structured conversion report for the selected machine.
+    :rtype: SysDeSimConversionReport
+    """
+    machine, prepared_outputs = _load_and_prepare_sysdesim_machine(
+        xml_path,
+        machine_name=machine_name,
+        machine_id=machine_id,
+    )
+    converted_outputs = _convert_prepared_outputs(prepared_outputs, tick_duration_ms=tick_duration_ms)
+    output_reports = []
+    for item in converted_outputs:
+        output_reports.append(
+            SysDeSimOutputValidationReport(
+                output_name=item.prepared.output_name,
+                parser_roundtrip_ok=True,
+                model_build_ok=True,
+                guard_variables_defined=True,
+                event_paths_valid=True,
+                composite_states_have_init=True,
+                dsl_line_count=len(item.dsl_code.splitlines()),
+                semantic_note=item.prepared.semantic_note,
+                diagnostics=tuple(item.prepared.machine.diagnostics),
+            )
+        )
+    return SysDeSimConversionReport(
+        source_xml_path=xml_path,
+        requested_machine_name=machine_name,
+        requested_machine_id=machine_id,
+        selected_machine_name=machine.name,
+        selected_machine_id=machine.machine_id,
         tick_duration_ms=tick_duration_ms,
-    ).items()}
+        outputs=tuple(output_reports),
+    )
 
 
 def convert_sysdesim_xml_to_ast(

@@ -421,37 +421,6 @@ def test_phase4_ancestor_target_cross_level_transition_is_still_rejected(tmp_pat
                      xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
                      xmlns:uml="http://www.eclipse.org/uml2/5.0.0/UML">
               <uml:Model xmi:id="model_1" name="model">
-                <packagedElement xmi:type="uml:Class" xmi:id="class_1" name="Cross Effect" classifierBehavior="machine_1">
-                  <ownedBehavior xmi:type="uml:StateMachine" xmi:id="machine_1" name="Cross Effect">
-                    <region xmi:type="uml:Region" xmi:id="region_root" name="">
-                      <transition xmi:type="uml:Transition" xmi:id="tx_init" source="init_root" target="state_left"/>
-                      <transition xmi:type="uml:Transition" xmi:id="tx_cross_FFFFFF" source="state_source" target="state_ready">
-                        <effect xmi:type="uml:Activity" xmi:id="effect_cross" name="DoEffect"/>
-                      </transition>
-                      <subvertex xmi:type="uml:Pseudostate" xmi:id="init_root"/>
-                      <subvertex xmi:type="uml:State" xmi:id="state_left" name="Left">
-                        <region xmi:type="uml:Region" xmi:id="region_left" name="">
-                          <transition xmi:type="uml:Transition" xmi:id="tx_left_init" source="init_left" target="state_source"/>
-                          <subvertex xmi:type="uml:Pseudostate" xmi:id="init_left"/>
-                          <subvertex xmi:type="uml:State" xmi:id="state_source" name="Source"/>
-                        </region>
-                      </subvertex>
-                      <subvertex xmi:type="uml:State" xmi:id="state_ready" name="Ready"/>
-                    </region>
-                  </ownedBehavior>
-                </packagedElement>
-              </uml:Model>
-            </xmi:XMI>
-            """,
-            "does not lower transition effects yet",
-        ),
-        (
-            """
-            <?xml version="1.0" encoding="UTF-8"?>
-            <xmi:XMI xmi:version="20131001"
-                     xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
-                     xmlns:uml="http://www.eclipse.org/uml2/5.0.0/UML">
-              <uml:Model xmi:id="model_1" name="model">
                 <packagedElement xmi:type="uml:Class" xmi:id="class_1" name="Cross Signal Guard" classifierBehavior="machine_1">
                   <ownedBehavior xmi:type="uml:StateMachine" xmi:id="machine_1" name="Cross Signal Guard">
                     <region xmi:type="uml:Region" xmi:id="region_root" name="">

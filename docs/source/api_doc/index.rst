@@ -10,6 +10,7 @@ pyfcstm
     :maxdepth: 3
 
     config/index
+    convert/index
     dsl/index
     entry/index
     highlight/index

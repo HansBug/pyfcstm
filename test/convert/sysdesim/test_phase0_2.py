@@ -1644,8 +1644,8 @@ class TestSysDeSimCoverageScenarios:
         with pytest.raises(ValueError, match="Unsupported variable type"):
             build_machine_ast(unsupported_type_machine)
 
-    def test_phase2_ignores_same_region_transition_misplaced_on_outer_region(self, tmp_path: Path):
-        """Phase2 should skip malformed transitions attached to the wrong region scope."""
+    def test_phase2_recovers_same_region_transition_misplaced_on_outer_region(self, tmp_path: Path):
+        """Phase2 should recover same-region transitions even when XML mounts them on an ancestor region."""
         xml_file = _write_xml(
             tmp_path,
             """
@@ -1687,6 +1687,7 @@ class TestSysDeSimCoverageScenarios:
                     state Left;
                     state Right;
                     [*] -> Left;
+                    Left -> Right;
                 }
                 [*] -> Parent;
             }"""
@@ -1698,7 +1699,7 @@ class TestSysDeSimCoverageScenarios:
         assert model.root_state.name == "MisplacedTransition"
         assert [item.name for item in program.root_state.substates] == ["Parent"]
         assert [str(item) for item in program.root_state.transitions] == ["[*] -> Parent;"]
-        assert [str(item) for item in program.root_state.substates[0].transitions] == ["[*] -> Left;"]
+        assert [str(item) for item in program.root_state.substates[0].transitions] == ["[*] -> Left;", "Left -> Right;"]
 
     def test_phase2_output_loads_into_public_state_machine_model(self, tmp_path: Path):
         """Phase2 output should be loadable into the public StateMachine model API."""

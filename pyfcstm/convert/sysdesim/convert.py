@@ -1950,6 +1950,67 @@ def _build_transition(
     )
 
 
+def _logical_regular_transition_region_id(machine: IrMachine, transition: IrTransition) -> Optional[str]:
+    """
+    Return the region that should own a regular emitted transition.
+
+    SysDeSim samples may attach a same-region transition to an ancestor region
+    instead of the region that directly owns both endpoints. FCSTM emission is
+    driven by the logical sibling scope, so this helper resolves that scope from
+    the transition endpoints rather than from the XML container alone.
+
+    :param machine: Normalized machine containing the transition.
+    :type machine: IrMachine
+    :param transition: Transition whose logical owner should be resolved.
+    :type transition: IrTransition
+    :return: Region identifier that should emit this transition, or ``None``
+        when the transition does not map to a direct same-region emission.
+    :rtype: str, optional
+    """
+    source = machine.get_vertex(transition.source_id)
+    target = machine.get_vertex(transition.target_id)
+    if source.parent_region_id is None or target.parent_region_id is None:
+        return None
+    if source.parent_region_id != target.parent_region_id:
+        return None
+    return source.parent_region_id
+
+
+def _iter_emittable_region_transitions(machine: IrMachine, region: IrRegion) -> Iterable[IrTransition]:
+    """
+    Yield transitions that should be emitted inside one region scope.
+
+    The iterator includes transitions declared directly on ``region`` plus
+    same-region transitions declared on ancestor regions when their source and
+    target vertices are both direct children of ``region``.
+
+    :param machine: Normalized machine containing the region tree.
+    :type machine: IrMachine
+    :param region: Region whose direct transition set should be emitted.
+    :type region: IrRegion
+    :return: Iterator over transitions that logically belong to ``region``.
+    :rtype: collections.abc.Iterable[IrTransition]
+    """
+    seen_transition_ids = set()
+    current_region: Optional[IrRegion] = region
+    while current_region is not None:
+        for transition in current_region.transitions:
+            if transition.transition_id in seen_transition_ids:
+                continue
+            if _logical_regular_transition_region_id(machine, transition) != region.region_id:
+                continue
+            seen_transition_ids.add(transition.transition_id)
+            yield transition
+
+        if current_region.owner_state_id is None:
+            current_region = None
+            continue
+
+        owner = machine.get_vertex(current_region.owner_state_id)
+        parent_region_id = owner.parent_region_id
+        current_region = machine.get_region(parent_region_id) if parent_region_id is not None else None
+
+
 def _build_state(
     machine: IrMachine,
     vertex: IrVertex,
@@ -2018,22 +2079,21 @@ def _build_state(
             if child.vertex_type == "state":
                 substates.append(_build_state(machine, child, context))
         transitions.extend(context.prepended_transitions_by_scope_id.get(vertex.vertex_id, []))
+        init_transitions: List[dsl_nodes.TransitionDefinition] = []
         regular_transitions: List[dsl_nodes.TransitionDefinition] = []
         lowered_timeout_transitions: List[dsl_nodes.TransitionDefinition] = []
-        for transition in region.transitions:
+        for transition in _iter_emittable_region_transitions(machine, region):
             if transition.source_id in init_pseudostates:
-                regular_transitions.append(_build_transition(machine, transition, context))
+                init_transitions.append(_build_transition(machine, transition, context))
                 continue
             if transition.is_cross_level:
                 continue
-            source = machine.get_vertex(transition.source_id)
-            target = machine.get_vertex(transition.target_id)
-            if source.parent_region_id == region.region_id and target.parent_region_id == region.region_id:
-                built_transition = _build_transition(machine, transition, context)
-                if transition.trigger_kind == "time":
-                    lowered_timeout_transitions.append(built_transition)
-                else:
-                    regular_transitions.append(built_transition)
+            built_transition = _build_transition(machine, transition, context)
+            if transition.trigger_kind == "time":
+                lowered_timeout_transitions.append(built_transition)
+            else:
+                regular_transitions.append(built_transition)
+        transitions.extend(init_transitions)
         regular_transitions.extend(context.appended_regular_transitions_by_scope_id.get(vertex.vertex_id, []))
         lowered_timeout_transitions.extend(context.appended_timeout_transitions_by_scope_id.get(vertex.vertex_id, []))
         transitions.extend(regular_transitions)

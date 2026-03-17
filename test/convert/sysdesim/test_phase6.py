@@ -14,6 +14,7 @@ from pyfcstm.convert.sysdesim import (
     prepare_sysdesim_output_machines,
 )
 from pyfcstm.dsl import parse_with_grammar_entry
+from pyfcstm.dsl import node as dsl_nodes
 from pyfcstm.model.model import StateMachine, parse_dsl_node_to_state_machine
 
 pytestmark = pytest.mark.unittest
@@ -37,6 +38,13 @@ def _assert_dsl_code_loads_to_state_machine(dsl_code: str) -> StateMachine:
     model = parse_dsl_node_to_state_machine(parsed_program)
     assert isinstance(model, StateMachine)
     return model
+
+
+def _walk_state_definitions(state_definition):
+    """Yield one AST state definition and every nested child state definition."""
+    yield state_definition
+    for child_state in state_definition.substates:
+        yield from _walk_state_definitions(child_state)
 
 
 def test_phase6_builds_conversion_report_for_main_and_region_outputs(tmp_path: Path):
@@ -134,10 +142,11 @@ def test_phase6_builds_conversion_report_for_main_and_region_outputs(tmp_path: P
 
 
 def test_phase6_real_sample_prepare_regression_keeps_one_main_and_three_region_outputs():
-    """The repository sample should still prepare one main output plus three region-level outputs."""
+    """The repository sample should still prepare connected main and region-level outputs."""
     xml_file = Path("test_com.sysdesim.metamodel.model.xml")
 
     prepared_outputs = prepare_sysdesim_output_machines(str(xml_file))
+    dsl_outputs = list(convert_sysdesim_xml_to_dsls(str(xml_file), tick_duration_ms=100.0).items())
 
     assert len(prepared_outputs) == 4
     assert prepared_outputs[0].output_name == prepared_outputs[0].machine.safe_name
@@ -148,6 +157,30 @@ def test_phase6_real_sample_prepare_regression_keeps_one_main_and_three_region_o
     assert all(item.semantic_note is not None for item in prepared_outputs[1:])
     assert prepared_outputs[0].machine.diagnostics[-1].code == "parallel_main_machine_semantic_downgrade"
     assert all(item.machine.diagnostics[-1].code == "parallel_split_semantic_downgrade" for item in prepared_outputs[1:])
+
+    connected_two_state_region_outputs = []
+    for output_name, dsl_code in dsl_outputs:
+        parsed_program = parse_with_grammar_entry(dsl_code, entry_name="state_machine_dsl")
+        model = parse_dsl_node_to_state_machine(parsed_program)
+        assert isinstance(model, StateMachine)
+
+        has_connected_two_state_scope = any(
+            len(state_definition.substates) == 2
+            and len(state_definition.transitions) == 2
+            and any(transition.from_state == dsl_nodes.INIT_STATE for transition in state_definition.transitions)
+            and any(
+                transition.from_state != dsl_nodes.INIT_STATE
+                and transition.to_state in {child_state.name for child_state in state_definition.substates}
+                and transition.event_id is not None
+                for transition in state_definition.transitions
+            )
+            for state_definition in _walk_state_definitions(parsed_program.root_state)
+        )
+        if has_connected_two_state_scope:
+            connected_two_state_region_outputs.append(output_name)
+
+    assert len(connected_two_state_region_outputs) == 2
+    assert connected_two_state_region_outputs == [dsl_outputs[2][0], dsl_outputs[3][0]]
 
 
 def test_phase6_time_transition_effects_are_ignored_with_validation_report(tmp_path: Path):

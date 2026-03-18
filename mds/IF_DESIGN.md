@@ -1470,19 +1470,33 @@ Checklist：
 
 Checklist：
 
-- [ ] 运行 parser / model / simulate / solver 全量相关测试
-- [ ] 新增至少一个端到端 DSL 样例覆盖 nested if 与临时变量
-- [ ] 检查文档术语是否统一使用 `statement` / `branch` / `temporary variable`
-- [ ] 检查代码注释与 docstring 是否与最终实现一致
-- [ ] 检查是否仍有旧代码假设 operation block 仅包含赋值
-- [ ] 检查模板或导出路径上是否仍直接访问 `.var_name` / `.expr`
-- [ ] 整理最终变更说明与后续可选增强项
+- [x] 运行 parser / model / simulate / solver 全量相关测试
+- [x] 新增至少一个端到端 DSL 样例覆盖 nested if 与临时变量
+- [x] 检查文档术语是否统一使用 `statement` / `branch` / `temporary variable`
+- [x] 检查代码注释与 docstring 是否与最终实现一致
+- [x] 检查是否仍有旧代码假设 operation block 仅包含赋值
+- [x] 检查模板或导出路径上是否仍直接访问 `.var_name` / `.expr`
+- [x] 整理最终变更说明与后续可选增强项
 
 完成标准：
 
 - 关键路径无语义分叉
 - 文档、测试、实现三者一致
 - 可以开始讨论 V2 扩展项而不是继续修 V1 语义漏洞
+
+最终变更说明：
+
+- operation block 已从平铺赋值列表升级为递归 `statement tree`
+- parser / model / runtime / solver 四层已经统一支持 `if / else if / else / nested if`
+- branch 内新临时变量保持 block-local，不向外层泄漏
+- solver 最终结果保持外层状态变量上的扁平状态更新关系
+- 模板、PlantUML、Pygments、TextMate、VSCode、教程文档都已对齐 statement 语义
+
+后续可选增强项：
+
+- V2 可评估是否支持 definite assignment 合流分析，使“所有 branch 都定义的新名字”在 `if` 后可选地可见
+- V2 可评估是否为模板层补充更结构化的 statement visitor / dispatcher，而不只依赖字符串渲染 helper
+- V2 可评估是否增加更多端到端样例，覆盖 transition effect、enter / exit、以及更深层 nested if 组合
 
 ---
 

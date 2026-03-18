@@ -415,11 +415,16 @@ Transition objects encapsulate the logic for moving between states:
        Condition: {{ transition.guard.to_ast_node() }}
      {% endif %}
 
-     {# Effect operations #}
-     {% for operation in transition.effects %}
-       Operation: {{ operation.var_name }} = {{ operation.expr.to_ast_node() }}
+     {# Effect statements #}
+     {% for statement in transition.effects %}
+       Effect Statement: {{ statement | operation_stmt_render }}
      {% endfor %}
    {% endfor %}
+
+When a transition effect may contain ``if / else if / else`` blocks, render it as
+an operation statement tree rather than assuming every item is a plain assignment.
+The ``operation_stmt_render`` and ``operation_stmts_render`` helpers are designed
+for this phase-aligned statement model.
 
 This comprehensive API supports rendering both simple and complex transition logic.
 

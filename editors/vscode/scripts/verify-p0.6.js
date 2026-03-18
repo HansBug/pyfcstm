@@ -8,7 +8,7 @@
  * - Pseudo-state marker ([*])
  * - Keywords (pseudo, effect, abstract, ref, etc.)
  * - Lifecycle aspects (during before/after, >> during before/after)
- * - Other keywords (named, enter, during, exit, if, def, state, event)
+ * - Other keywords (named, enter, during, exit, if, else, def, state, event)
  * - Edge cases (multi-character operators, context sensitivity)
  */
 
@@ -351,6 +351,14 @@ const testCases = [
 
     new TestCase(
         'P0.6-21',
+        'Hover on else keyword',
+        'state Root {\n    during {\n        if [counter > 0] {\n            counter = 1;\n        } else {\n            counter = 0;\n        }\n    }\n}',
+        { line: 4, character: 11 },  // Middle of "else"
+        'Else Branch'
+    ),
+
+    new TestCase(
+        'P0.6-22',
         'Hover on def keyword',
         'def int counter = 0;',
         { line: 0, character: 3 },  // Middle of "def"
@@ -358,7 +366,7 @@ const testCases = [
     ),
 
     new TestCase(
-        'P0.6-22',
+        'P0.6-23',
         'Hover on state keyword',
         'state Idle;',
         { line: 0, character: 3 },  // Middle of "state"
@@ -366,7 +374,7 @@ const testCases = [
     ),
 
     new TestCase(
-        'P0.6-23',
+        'P0.6-24',
         'Hover on event keyword',
         'event Start;',
         { line: 0, character: 3 },  // Middle of "event"
@@ -375,7 +383,7 @@ const testCases = [
 
     // Edge case tests - no hover expected
     new TestCase(
-        'P0.6-24',
+        'P0.6-25',
         'No hover on variable name',
         'def int counter = 0;',
         { line: 0, character: 10 },
@@ -383,7 +391,7 @@ const testCases = [
     ),
 
     new TestCase(
-        'P0.6-25',
+        'P0.6-26',
         'No hover on state name',
         'state Running;',
         { line: 0, character: 8 },
@@ -391,7 +399,7 @@ const testCases = [
     ),
 
     new TestCase(
-        'P0.6-26',
+        'P0.6-27',
         'No hover on number literal',
         'def int x = 123;',
         { line: 0, character: 13 },
@@ -399,7 +407,7 @@ const testCases = [
     ),
 
     new TestCase(
-        'P0.6-27',
+        'P0.6-28',
         'No hover in whitespace',
         'state A;    state B;',
         { line: 0, character: 10 },
@@ -408,7 +416,7 @@ const testCases = [
 
     // Context-specific tests
     new TestCase(
-        'P0.6-28',
+        'P0.6-29',
         'Hover on :: in transition',
         'A -> B :: E;',
         { line: 0, character: 7 },
@@ -416,7 +424,7 @@ const testCases = [
     ),
 
     new TestCase(
-        'P0.6-29',
+        'P0.6-30',
         'Hover on : in transition (not ::)',
         'A -> B :E;',  // No space after : to match hover implementation
         { line: 0, character: 7 },
@@ -424,7 +432,7 @@ const testCases = [
     ),
 
     new TestCase(
-        'P0.6-30',
+        'P0.6-31',
         'Hover on effect in transition',
         'A -> B effect { x = 0; }',
         { line: 0, character: 10 },  // Middle of "effect"
@@ -433,7 +441,7 @@ const testCases = [
 
     // Additional operator tests
     new TestCase(
-        'P0.6-31',
+        'P0.6-32',
         'Hover on first : in ::',
         'StateA -> StateB :: Event;',
         { line: 0, character: 17 },  // First : in ::
@@ -441,7 +449,7 @@ const testCases = [
     ),
 
     new TestCase(
-        'P0.6-32',
+        'P0.6-33',
         'Hover on second : in ::',
         'StateA -> StateB :: Event;',
         { line: 0, character: 17 },
@@ -449,7 +457,7 @@ const testCases = [
     ),
 
     new TestCase(
-        'P0.6-33',
+        'P0.6-34',
         'Hover on / in absolute path',
         'enter ref /GlobalAction;',
         { line: 0, character: 10 },
@@ -457,7 +465,7 @@ const testCases = [
     ),
 
     new TestCase(
-        'P0.6-34',
+        'P0.6-35',
         'Hover on abstract in enter context',
         'state S {\n    enter abstract Init;\n}',
         { line: 1, character: 13 },  // Middle of "abstract"
@@ -465,7 +473,7 @@ const testCases = [
     ),
 
     new TestCase(
-        'P0.6-35',
+        'P0.6-36',
         'Hover on ref in exit context',
         'state S {\n    exit ref Cleanup;\n}',
         { line: 1, character: 12 },  // Middle of "ref"

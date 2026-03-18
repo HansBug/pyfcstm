@@ -1447,14 +1447,14 @@ Checklist：
 
 Checklist：
 
-- [ ] DSL 导出支持递归 statement 渲染
-- [ ] PlantUML 相关展示不因 if 结构断裂
-- [ ] 模板层不再假设 effect item 必有 `var_name` / `expr`
-- [ ] 统一 statement renderer 或 filter 落地
-- [ ] Pygments 高亮支持 `if` / `else`
-- [ ] VSCode grammar 支持 `if` / `else`
-- [ ] DSL 教程补充 if block 用法
-- [ ] 临时变量与 branch 作用域规则写入文档
+- [x] DSL 导出支持递归 statement 渲染
+- [x] PlantUML 相关展示不因 if 结构断裂
+- [x] 模板层不再假设 effect item 必有 `var_name` / `expr`
+- [x] 统一 statement renderer 或 filter 落地
+- [x] Pygments 高亮支持 `if` / `else`
+- [x] VSCode grammar 支持 `if` / `else`
+- [x] DSL 教程补充 if block 用法
+- [x] 临时变量与 branch 作用域规则写入文档
 
 完成标准：
 

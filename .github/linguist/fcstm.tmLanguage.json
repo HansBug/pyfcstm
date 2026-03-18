@@ -40,7 +40,7 @@
       "patterns": [
         {
           "name": "keyword.control.fcstm",
-          "match": "\\b(state|pseudo|named|def|event|if)\\b"
+          "match": "\\b(state|pseudo|named|def|event|if|else)\\b"
         },
         {
           "name": "keyword.other.lifecycle.fcstm",

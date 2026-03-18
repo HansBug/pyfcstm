@@ -556,6 +556,23 @@ state Root {
             { label: 'not', kind: vscode.CompletionItemKind.Keyword }
         ]
     ),
+
+    new TestCase(
+        'P0.5-31',
+        'Complete else keyword inside operation block',
+        `def int counter = 0;
+state Root {
+    during {
+        if [counter > 0] {
+            counter = 1;
+        } 
+    }
+}`,
+        { line: 5, character: 8 },
+        [
+            { label: 'else', kind: vscode.CompletionItemKind.Keyword }
+        ]
+    ),
 ];
 
 /**

@@ -14,7 +14,7 @@ import os
 import re
 import sys
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Pattern, Tuple
 
 # Add parent directory to path to import pyfcstm
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -163,6 +163,13 @@ state System named "System State Machine" {
 
             // Ternary conditional (conditionalCStyleExprNum)
             counter = (temperature > 25.0) ? 1 : 0;
+
+            // Operation-block control flow
+            if [counter > 0] {
+                mode = 1;
+            } else {
+                mode = 0;
+            }
         }
 
         during after abstract PostProcess;
@@ -393,9 +400,10 @@ SHARED_CHECKPOINT_SPECS: List[Dict[str, Any]] = [
     },
     {
         'name': 'Keywords - Control',
-        'description': 'if keyword',
+        'description': 'if, else keywords',
         'items': [
             SharedExpectation('if', Token.Keyword.Reserved, 'keywords', 'keyword.control.fcstm'),
+            SharedExpectation('else', Token.Keyword.Reserved, 'keywords', 'keyword.control.fcstm'),
         ],
     },
     {
@@ -601,7 +609,7 @@ def _load_json(file_path: str) -> Dict[str, Any]:
         return json.load(file)
 
 
-def _compile_pattern(pattern: str) -> re.Pattern[str]:
+def _compile_pattern(pattern: str) -> Pattern[str]:
     return re.compile(pattern)
 
 

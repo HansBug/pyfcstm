@@ -109,6 +109,11 @@ const HOVER_DOCS: Record<string, { title: string; description: string; example?:
         description: 'Specifies a condition that must be true for a transition to be taken. Evaluated at runtime.',
         example: '```fcstm\nStateA -> StateB : if [counter >= 10];\n```'
     },
+    'else': {
+        title: 'Else Branch',
+        description: 'Selects the fallback branch in an operation-block if statement when all earlier conditions are false.',
+        example: '```fcstm\nduring {\n    if [counter > 0] {\n        level = 1;\n    } else {\n        level = 0;\n    }\n}\n```'
+    },
     'def': {
         title: 'Variable Definition',
         description: 'Defines a state machine variable with a type and initial value. Variables must be defined before states.',

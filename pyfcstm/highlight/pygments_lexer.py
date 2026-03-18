@@ -177,7 +177,7 @@ class FcstmLexer(RegexLexer):
     _ANALYSIS_IDENTIFIER_PATTERN = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
     _ANALYSIS_RESERVED_WORDS = frozenset((
         'abstract', 'after', 'before', 'def', 'during', 'effect', 'enter',
-        'event', 'exit', 'float', 'if', 'int', 'named', 'pseudo', 'ref',
+        'else', 'event', 'exit', 'float', 'if', 'int', 'named', 'pseudo', 'ref',
         'state',
     ))
     _ANALYSIS_LIFECYCLE_KEYWORDS = frozenset(('enter', 'during', 'exit'))
@@ -210,7 +210,7 @@ class FcstmLexer(RegexLexer):
 
             # Keywords - control flow
             (words((
-                'if',
+                'if', 'else',
             ), suffix=r'\b'), Keyword.Reserved),
 
             # Keywords - logical operators (word form)

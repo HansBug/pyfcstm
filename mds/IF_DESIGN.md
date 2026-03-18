@@ -1200,65 +1200,289 @@ x = (cond) ? a : b;
 
 ---
 
-## 13. 分阶段实施建议
+## 13. 工作分 Phase 任务安排
 
-## 13.1 第一阶段：语法与 AST
+建议把实现工作拆成 6 个 phase，严格按顺序推进。前一阶段未稳定前，不建议进入后一阶段的大规模编码。
+
+总体原则：
+
+- 每个 phase 都应先补测试，再补实现，再做文档或外围收尾
+- 每个 phase 结束时都应保证主分支语义仍然自洽，不留下“parser 已支持但 runtime 还不支持”的半完成状态
+- 若某 phase 中发现上游语义定义不够清晰，应先回补本设计文档，再继续编码
+
+## 13.1 Phase 0：设计冻结与改动面盘点
 
 目标：
 
-- grammar 支持 `if`
-- listener 构造 AST
-- AST 能 `__str__()`
+- 把语义边界固定下来
+- 把本次改动涉及的模块、文件、测试入口盘点完整
+- 为后续每个 phase 准备明确的写入范围
 
-交付标准：
+建议关注文件：
+
+- `mds/IF_DESIGN.md`
+- `pyfcstm/dsl/grammar/Grammar.g4`
+- `pyfcstm/dsl/listener.py`
+- `pyfcstm/dsl/node.py`
+- `pyfcstm/model/model.py`
+- `pyfcstm/simulate/runtime.py`
+- `pyfcstm/solver/operation.py`
+- `test/dsl/`
+- `test/model/`
+- `test/simulate/`
+- `test/solver/`
+
+Checklist：
+
+- [ ] 确认 V1 语法仅支持 `if / else if / else`
+- [ ] 确认 V1 不支持 `elif`
+- [ ] 确认 branch 新临时变量不向 `if` 外泄漏
+- [ ] 确认 solver 最终结果必须扁平化为 `(x', y', z', ...) = f(x, y, z, ...)`
+- [ ] 确认所有 operation block 承载位置都要从“赋值列表”升级为“statement 列表”
+- [ ] 列出需要同步更新的测试目录和现有断言风格
+
+完成标准：
+
+- 文档语义无明显冲突
+- 后续编码涉及的核心文件已盘点完整
+- 团队对 V1 语义边界没有悬而未决的问题
+
+## 13.2 Phase 1：Grammar、AST 与 Parser 打通
+
+目标：
+
+- 让 DSL 真正能 parse 出 `if` statement tree
+- 让 AST 能完整表达并回导出 `if / else if / else / nested if`
+
+建议改动范围：
+
+- `pyfcstm/dsl/grammar/Grammar.g4`
+- 重新生成的 `pyfcstm/dsl/grammar/*`
+- `pyfcstm/dsl/node.py`
+- `pyfcstm/dsl/listener.py`
+- parser 相关测试
+
+Checklist：
+
+- [ ] 新增 `operation_block`
+- [ ] 新增 `if_statement`
+- [ ] 将 `operational_statement` 从 assignment-only 升级为 statement union
+- [ ] AST 中新增 `OperationalStatement`
+- [ ] AST 中新增 `OperationIfBranch`
+- [ ] AST 中新增 `OperationIf`
+- [ ] 所有承载 operation block 的 AST 字段类型改为 statement list
+- [ ] listener 能正确构造 assignment 与 if 两类 statement
+- [ ] `__str__()` / DSL 导出支持 nested if 缩进输出
+- [ ] parser 入口不再假设 statement 一定有 `.name` / `.expr`
+- [ ] 为合法与非法语法各补最小测试用例
+
+建议测试清单：
+
+- [ ] 单层 `if`
+- [ ] `if + else`
+- [ ] `if + else if + else`
+- [ ] nested if
+- [ ] 空 branch
+- [ ] branch 内空语句
+- [ ] `if [cond] a = 1;` 报错
+- [ ] 孤立 `else` 报错
+- [ ] `if [num_expr]` 报错
+- [ ] AST round-trip 成立
+
+完成标准：
 
 - parser 测试通过
-- DSL round-trip 成立
+- AST round-trip 成立
+- 任何 operation block 的 AST 输出不再丢失 if 结构
 
-## 13.2 第二阶段：model 静态分析
-
-目标：
-
-- statement tree 映射到 model
-- 递归作用域检查
-- nested if 校验稳定
-
-交付标准：
-
-- model 测试覆盖条件与作用域规则
-
-## 13.3 第三阶段：simulate 执行器
+## 13.3 Phase 2：Model 语句树与递归静态分析
 
 目标：
 
-- concrete execution 支持 if / nested if
-- block 内临时变量语义与设计一致
+- 把 AST statement tree 映射到 model statement tree
+- 固化临时变量与 branch 作用域规则
 
-交付标准：
+建议改动范围：
+
+- `pyfcstm/model/model.py`
+- 可能涉及的 model export / import 逻辑
+- model 相关测试
+
+Checklist：
+
+- [ ] 在 model 中引入 `OperationStatement` 抽象
+- [ ] 保留 `Operation` 作为赋值语句节点
+- [ ] 新增 `IfBlockBranch`
+- [ ] 新增 `IfBlock`
+- [ ] `Transition.effects` 升级为 `List[OperationStatement]`
+- [ ] `OnStage.operations` 升级为 `List[OperationStatement]`
+- [ ] `OnAspect.operations` 升级为 `List[OperationStatement]`
+- [ ] `_parse_operation_block()` 升级为递归版本
+- [ ] 分离 `_parse_operation_statement(...)`
+- [ ] 分离 `_parse_if_block(...)`
+- [ ] `available_vars` 由外层传入并在递归中维护
+- [ ] 条件表达式只允许引用进入 `if` 前可见名字
+- [ ] branch 内新临时变量仅在该 branch 内可见
+- [ ] 外层已有变量或临时变量允许在 branch 中被更新
+- [ ] `to_ast_node()` 支持 `IfBlock` 与 `IfBlockBranch`
+
+建议测试清单：
+
+- [ ] 条件中未知变量报错
+- [ ] branch 内先用后定义报错
+- [ ] branch 内新临时变量可在该 branch 后续语句中使用
+- [ ] branch 新临时变量离开 branch 后不可使用
+- [ ] 两个 branch 都定义同名新临时变量，`if` 外仍报错
+- [ ] 外层已有临时变量在 branch 中修改后可继续使用
+- [ ] nested if 内层可见外层 branch 临时变量
+- [ ] nested if 内层新临时变量不外泄
+- [ ] model -> AST -> DSL 的导出保持结构一致
+
+完成标准：
+
+- model 测试覆盖作用域边界
+- model 层已经可以作为 runtime / solver 的共同语义基线
+
+## 13.4 Phase 3：Runtime 递归解释器
+
+目标：
+
+- 让 concrete execution 正确执行 statement tree
+- 保证运行期局部 scope 语义与 model 静态规则一致
+
+建议改动范围：
+
+- `pyfcstm/simulate/runtime.py`
+- runtime 相关测试
+
+Checklist：
+
+- [ ] `_execute_operation_block(...)` 输入升级为 statement list
+- [ ] 新增 `_execute_operation_statements(...)`
+- [ ] 新增 `_execute_operation_statement(...)`
+- [ ] 赋值语句继续按当前顺序语义执行
+- [ ] `if` 条件在当前 `local_scope` 上求值
+- [ ] 命中 branch 时复制 `branch_scope`
+- [ ] branch 执行结束后只同步进入前已有名字
+- [ ] 未命中且无 `else` 时保持 no-op
+- [ ] nested if 通过递归自动支持
+- [ ] 日志输出在 if 引入后仍然可读
+
+建议测试清单：
+
+- [ ] 单层 `if` 命中路径
+- [ ] 单层 `if` 未命中路径
+- [ ] `if / else`
+- [ ] `else if` 链
+- [ ] nested if 多路径覆盖
+- [ ] branch 内临时变量不泄漏到 block 外
+- [ ] 外层已有临时变量被 branch 修改后可继续使用
+- [ ] `if` 无 `else` 时 no-op 语义正确
+- [ ] 多变量更新顺序仍正确
+
+完成标准：
 
 - runtime 测试稳定
+- concrete execution 行为与文档第 8、9 节一致
 
-## 13.4 第四阶段：solver 符号执行
+## 13.5 Phase 4：Solver 扁平化状态转移
 
 目标：
 
-- branch symbolic execution
-- `z3.If` merge
-- nested if 最终收敛为扁平状态更新函数
+- 让 symbolic execution 支持 statement tree
+- 最终把任意 operation block 收敛为扁平状态更新函数
 
-交付标准：
+建议改动范围：
+
+- `pyfcstm/solver/operation.py`
+- 如有必要涉及 `pyfcstm/solver/expr.py`
+- solver 相关测试
+
+Checklist：
+
+- [ ] `execute_operations(...)` 接受 `OperationStatement` 或 statement list
+- [ ] 新增 `_execute_operation_statements_symbolically(...)`
+- [ ] 新增 `_execute_if_block_symbolically(...)`
+- [ ] branch 进入时复制 `base_exprs`
+- [ ] branch 内允许创建局部临时表达式槽位
+- [ ] merge 时仅对 `visible_names` 做条件化合并
+- [ ] `if` 无 `else` 时回落到 `base_exprs`
+- [ ] `else if` 形成链式 `z3.If`
+- [ ] nested if 形成嵌套条件表达式
+- [ ] 最终结果收敛为 `(x', y', z', ...) = f(x, y, z, ...)`
+- [ ] branch 局部临时变量不会进入最终输出环境
+- [ ] 外层已有临时变量若进入前已可见，则应参与 merge
+
+建议测试清单：
+
+- [ ] `if` 无 `else` 的 no-op merge
+- [ ] `if / else` 生成 `z3.If`
+- [ ] `else if` 链式 merge
+- [ ] nested if 生成嵌套 `z3.If`
+- [ ] branch 内局部临时变量不泄漏到最终环境
+- [ ] 外层已有临时变量参与 merge
+- [ ] 多变量同时更新时最终表达式正确
+- [ ] 扁平状态更新函数与 runtime concrete execution 可相互印证
+
+完成标准：
 
 - solver 测试稳定
-- 与 runtime 语义一致
+- runtime 与 solver 对同一 block 的语义一致
+- 最终 solver 输出不残留纯 branch 局部临时变量
 
-## 13.5 第五阶段：外围生态
+## 13.6 Phase 5：导出、模板与外围生态
 
 目标：
 
-- 高亮
-- VSCode
-- 文档
-- 模板兼容性
+- 让新 statement tree 不破坏导出、渲染、编辑器支持
+- 补齐用户可见层面的体验
+
+建议改动范围：
+
+- DSL / PlantUML 导出逻辑
+- Jinja2 render 相关逻辑
+- Pygments lexer
+- VSCode extension grammar
+- 教程与文档
+
+Checklist：
+
+- [ ] DSL 导出支持递归 statement 渲染
+- [ ] PlantUML 相关展示不因 if 结构断裂
+- [ ] 模板层不再假设 effect item 必有 `var_name` / `expr`
+- [ ] 统一 statement renderer 或 filter 落地
+- [ ] Pygments 高亮支持 `if` / `else`
+- [ ] VSCode grammar 支持 `if` / `else`
+- [ ] DSL 教程补充 if block 用法
+- [ ] 临时变量与 branch 作用域规则写入文档
+
+完成标准：
+
+- round-trip、导出、模板渲染都可处理 if block
+- 用户文档与编辑器支持达到可用状态
+
+## 13.7 Phase 6：联调、回归与收尾
+
+目标：
+
+- 做跨层联调
+- 清理遗留命名、注释、文档不一致项
+
+Checklist：
+
+- [ ] 运行 parser / model / simulate / solver 全量相关测试
+- [ ] 新增至少一个端到端 DSL 样例覆盖 nested if 与临时变量
+- [ ] 检查文档术语是否统一使用 `statement` / `branch` / `temporary variable`
+- [ ] 检查代码注释与 docstring 是否与最终实现一致
+- [ ] 检查是否仍有旧代码假设 operation block 仅包含赋值
+- [ ] 检查模板或导出路径上是否仍直接访问 `.var_name` / `.expr`
+- [ ] 整理最终变更说明与后续可选增强项
+
+完成标准：
+
+- 关键路径无语义分叉
+- 文档、测试、实现三者一致
+- 可以开始讨论 V2 扩展项而不是继续修 V1 语义漏洞
 
 ---
 
@@ -1278,25 +1502,28 @@ x = (cond) ? a : b;
 6. runtime 与 solver 在实现上都可以采用递归执行，但 solver 的**最终结果**必须是外层状态变量上的扁平更新关系
 7. solver 的本质方案是“**branch 独立执行 + 对外层可见名字做 `z3.If` merge + 最终收敛为 `(x', y', z', ...) = f(x, y, z, ...)`**”
 8. branch 内临时变量只作为构造 `f(...)` 的中间载体，不进入最终 solver 输出接口
-9. 该结构为后续扩展其他 operation statement 留出了明确空间
+9. Phase 1 到 Phase 6 的顺序本身就是这次工作的风险控制手段，不建议跳 phase 并行推进核心语义实现
+10. 该结构为后续扩展其他 operation statement 留出了明确空间
 
 ---
 
-## 15. 推荐后续实现顺序
+## 15. 推荐执行策略
 
-如果开始正式编码，建议严格按下面顺序推进：
+如果后续正式开始编码，建议按下面节奏推进：
 
-1. grammar + listener + AST
-2. model statement tree + 递归静态校验
-3. simulate 递归解释器
-4. solver 递归 symbolic execution 与 merge
-5. 高亮 / 文档 / 模板 / VSCode
+1. 先完成 Phase 0，冻结语义与改动面
+2. 再完成 Phase 1，确保 parser / AST 稳定
+3. Phase 2 完成后再进入 runtime 和 solver
+4. Phase 3 先作为 concrete semantic 基线
+5. 在 Phase 4 中用 solver 去对齐并扁平化这套语义
+6. 最后再做 Phase 5 与 Phase 6 的外围收尾和全链路联调
 
-这样做的原因是：
+这样安排的原因是：
 
 - 先把语法树打通，后续各层讨论对象才稳定
 - model 先把语义边界钉死，runtime 和 solver 才不会各自发明规则
-- runtime 通常更容易调试，适合作为 solver 前的 concrete semantic 基线
+- runtime 更容易调试，适合作为 solver 的 concrete baseline
+- 把模板、高亮、文档放到后面，可以避免前面语义反复变动导致外围重复返工
 
 ---
 

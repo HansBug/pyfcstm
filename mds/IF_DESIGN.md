@@ -1400,29 +1400,29 @@ Checklist：
 
 Checklist：
 
-- [ ] `execute_operations(...)` 接受 `OperationStatement` 或 statement list
-- [ ] 新增 `_execute_operation_statements_symbolically(...)`
-- [ ] 新增 `_execute_if_block_symbolically(...)`
-- [ ] branch 进入时复制 `base_exprs`
-- [ ] branch 内允许创建局部临时表达式槽位
-- [ ] merge 时仅对 `visible_names` 做条件化合并
-- [ ] `if` 无 `else` 时回落到 `base_exprs`
-- [ ] `else if` 形成链式 `z3.If`
-- [ ] nested if 形成嵌套条件表达式
-- [ ] 最终结果收敛为 `(x', y', z', ...) = f(x, y, z, ...)`
-- [ ] branch 局部临时变量不会进入最终输出环境
-- [ ] 外层已有临时变量若进入前已可见，则应参与 merge
+- [x] `execute_operations(...)` 接受 `OperationStatement` 或 statement list
+- [x] 新增 `_execute_operation_statements_symbolically(...)`
+- [x] 新增 `_execute_if_block_symbolically(...)`
+- [x] branch 进入时复制 `base_exprs`
+- [x] branch 内允许创建局部临时表达式槽位
+- [x] merge 时仅对 `visible_names` 做条件化合并
+- [x] `if` 无 `else` 时回落到 `base_exprs`
+- [x] `else if` 形成链式 `z3.If`
+- [x] nested if 形成嵌套条件表达式
+- [x] 最终结果收敛为 `(x', y', z', ...) = f(x, y, z, ...)`
+- [x] branch 局部临时变量不会进入最终输出环境
+- [x] 外层已有临时变量若进入前已可见，则应参与 merge
 
 建议测试清单：
 
-- [ ] `if` 无 `else` 的 no-op merge
-- [ ] `if / else` 生成 `z3.If`
-- [ ] `else if` 链式 merge
-- [ ] nested if 生成嵌套 `z3.If`
-- [ ] branch 内局部临时变量不泄漏到最终环境
-- [ ] 外层已有临时变量参与 merge
-- [ ] 多变量同时更新时最终表达式正确
-- [ ] 扁平状态更新函数与 runtime concrete execution 可相互印证
+- [x] `if` 无 `else` 的 no-op merge
+- [x] `if / else` 生成 `z3.If`
+- [x] `else if` 链式 merge
+- [x] nested if 生成嵌套 `z3.If`
+- [x] branch 内局部临时变量不泄漏到最终环境
+- [x] 外层已有临时变量参与 merge
+- [x] 多变量同时更新时最终表达式正确
+- [x] 扁平状态更新函数与 runtime concrete execution 可相互印证
 
 完成标准：
 

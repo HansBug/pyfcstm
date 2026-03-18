@@ -2,25 +2,25 @@
 Operation parsing and execution utilities for Z3 solver integration.
 
 This module provides functions to parse DSL operation code strings into
-Operation objects and execute operations on Z3 variable dictionaries.
+operation statements and execute them on Z3 variable dictionaries.
 
 The module contains the following main components:
 
-* :func:`parse_operations` - Parse DSL operation code string to list of Operations
-* :func:`execute_operations` - Execute operations on Z3 variable dictionary
+* :func:`parse_operations` - Parse DSL operation code string to statement tree
+* :func:`execute_operations` - Execute operation statements on a Z3 variable dictionary
 
 Example::
 
     >>> from pyfcstm.solver.operation import parse_operations, execute_operations
     >>> import z3
     >>>
-    >>> # Parse operations from DSL string
+    >>> # Parse operation statements from DSL string
     >>> ops = parse_operations("x = x + 1; y = x * 2;", allowed_vars=['x', 'y'])
     >>>
     >>> # Execute operations on Z3 variables
     >>> z3_vars = {'x': z3.Int('x'), 'y': z3.Int('y')}
     >>> z3_state = {'x': z3.IntVal(5), 'y': z3.IntVal(0)}
-    >>> new_state = execute_operations(ops, z3_state, z3_vars)
+    >>> new_state = execute_operations(ops, z3_state)
     >>> # new_state['x'] represents the Z3 expression: 5 + 1
     >>> # new_state['y'] represents the Z3 expression: (5 + 1) * 2
 """
@@ -31,29 +31,30 @@ import z3
 
 from .expr import expr_to_z3
 from ..dsl.parse import parse_with_grammar_entry
+from ..dsl import node as dsl_nodes
 from ..model.expr import parse_expr_node_to_expr
-from ..model.model import Operation
+from ..model.model import IfBlock, IfBlockBranch, Operation, OperationStatement
 
 
 def parse_operations(
     code: str,
     allowed_vars: Optional[List[str]] = None
-) -> List[Operation]:
+) -> List[OperationStatement]:
     """
-    Parse DSL operation code string into a list of Operation objects.
+    Parse DSL operation code string into a list of operation statements.
 
     This function parses a DSL code string containing operation statements
-    (variable assignments) and converts them into Operation objects. It can
-    optionally validate that expressions only reference variables that are
-    already available at that point in the block. Unknown assignment targets
-    are treated as block-local temporary variables.
+    (assignments and ``if`` blocks) and converts them into model-layer
+    operation statements. It can optionally validate that expressions only
+    reference variables that are already available at that point in the block.
+    Unknown assignment targets are treated as block-local temporary variables.
 
     :param code: DSL operation code string to parse
     :type code: str
     :param allowed_vars: List of initially available variable names, or ``None`` for free mode
     :type allowed_vars: Optional[List[str]]
-    :return: List of parsed Operation objects
-    :rtype: List[Operation]
+    :return: List of parsed operation statements
+    :rtype: List[OperationStatement]
     :raises ValueError: If an expression references a variable that is not yet available
     :raises pyfcstm.dsl.error.GrammarParseError: If DSL parsing fails
 
@@ -74,56 +75,155 @@ def parse_operations(
             ...
         ValueError: Variable 'z' is not in allowed variables: ['x', 'y']
     """
-    # Parse the DSL code using operational_statement_set entry point
     parsed_node = parse_with_grammar_entry(code, "operational_statement_set")
 
-    # Convert parsed nodes to Operation objects
-    operations = []
-    for op_node in parsed_node:
-        # Convert expression node to Expr object
-        expr = parse_expr_node_to_expr(op_node.expr)
+    def _validate_expression_variables(expr, available_names: set) -> None:
+        for var in expr.list_variables():
+            if var.name not in available_names:
+                raise ValueError(
+                    f"Variable '{var.name}' is not in allowed variables: {allowed_vars}"
+                )
 
-        # Create Operation object
-        operation = Operation(
-            var_name=op_node.name,
-            expr=expr
-        )
-        operations.append(operation)
+    def _convert_statements(
+            statements: List[dsl_nodes.OperationalStatement],
+            available_names: Optional[set],
+    ) -> List[OperationStatement]:
+        converted = []
+        current_names = None if available_names is None else set(available_names)
 
-    # Validate variables if allowed_vars is specified
-    if allowed_vars is not None:
-        allowed_set = set(allowed_vars)
+        for statement in statements:
+            if isinstance(statement, dsl_nodes.OperationAssignment):
+                expr = parse_expr_node_to_expr(statement.expr)
+                if current_names is not None:
+                    _validate_expression_variables(expr, current_names)
+                    current_names.add(statement.name)
 
-        for operation in operations:
-            # Check variables used in expression
-            for var in operation.expr.list_variables():
-                if var.name not in allowed_set:
-                    raise ValueError(
-                        f"Variable '{var.name}' is not in allowed variables: {allowed_vars}"
+                converted.append(Operation(var_name=statement.name, expr=expr))
+                continue
+
+            if isinstance(statement, dsl_nodes.OperationIf):
+                base_names = None if current_names is None else set(current_names)
+                branches = []
+
+                for branch in statement.branches:
+                    condition = None
+                    if branch.condition is not None:
+                        condition = parse_expr_node_to_expr(branch.condition)
+                        if base_names is not None:
+                            _validate_expression_variables(condition, base_names)
+
+                    branch_names = None if base_names is None else set(base_names)
+                    branch_statements = _convert_statements(branch.statements, branch_names)
+                    branches.append(
+                        IfBlockBranch(
+                            condition=condition,
+                            statements=branch_statements,
+                        )
                     )
 
-            allowed_set.add(operation.var_name)
+                converted.append(IfBlock(branches=branches))
+                continue
 
-    return operations
+            raise TypeError(f'Unknown operational statement node type {type(statement)!r}.')
+
+        return converted
+
+    initial_names = None if allowed_vars is None else set(allowed_vars)
+    return _convert_statements(parsed_node, initial_names)
+
+
+def _execute_operation_statements_symbolically(
+        statements: List[OperationStatement],
+        exprs: Dict[str, Union[z3.ArithRef, z3.BoolRef]],
+) -> Dict[str, Union[z3.ArithRef, z3.BoolRef]]:
+    """
+    Execute a sequence of operation statements symbolically.
+
+    :param statements: Statements to execute in order.
+    :type statements: List[OperationStatement]
+    :param exprs: Current symbolic environment.
+    :type exprs: Dict[str, Union[z3.ArithRef, z3.BoolRef]]
+    :return: Updated symbolic environment.
+    :rtype: Dict[str, Union[z3.ArithRef, z3.BoolRef]]
+    """
+    current_exprs = dict(exprs)
+
+    for statement in statements:
+        if isinstance(statement, Operation):
+            current_exprs[statement.var_name] = expr_to_z3(statement.expr, current_exprs)
+        elif isinstance(statement, IfBlock):
+            current_exprs = _execute_if_block_symbolically(statement, current_exprs)
+        else:
+            raise TypeError(f'Unknown operation statement type {type(statement)!r}.')
+
+    return current_exprs
+
+
+def _execute_if_block_symbolically(
+        if_block: IfBlock,
+        exprs: Dict[str, Union[z3.ArithRef, z3.BoolRef]],
+) -> Dict[str, Union[z3.ArithRef, z3.BoolRef]]:
+    """
+    Execute an ``if`` block symbolically with branch-local merge semantics.
+
+    Each branch is symbolically executed from the same pre-``if`` environment.
+    Only names that were already visible before entering the ``if`` block
+    participate in the final merge. This keeps branch-local temporary
+    variables out of the merged outer environment.
+
+    :param if_block: If-block to execute.
+    :type if_block: IfBlock
+    :param exprs: Current symbolic environment.
+    :type exprs: Dict[str, Union[z3.ArithRef, z3.BoolRef]]
+    :return: Merged symbolic environment after the if-block.
+    :rtype: Dict[str, Union[z3.ArithRef, z3.BoolRef]]
+    """
+    base_exprs = dict(exprs)
+    visible_names = tuple(base_exprs.keys())
+    branch_results = []
+
+    for branch in if_block.branches:
+        branch_results.append((
+            expr_to_z3(branch.condition, base_exprs)
+            if branch.condition is not None
+            else None,
+            _execute_operation_statements_symbolically(branch.statements, base_exprs),
+        ))
+
+    merged_exprs = dict(base_exprs)
+    for name in visible_names:
+        merged_value = base_exprs[name]
+        for branch_condition, branch_exprs in reversed(branch_results):
+            if branch_condition is None:
+                merged_value = branch_exprs[name]
+            else:
+                merged_value = z3.If(branch_condition, branch_exprs[name], merged_value)
+
+        merged_exprs[name] = merged_value
+
+    return merged_exprs
 
 
 def execute_operations(
-    operations: Union[Operation, List[Operation]],
+    operations: Union[OperationStatement, List[OperationStatement]],
     var_exprs: Dict[str, Union[z3.ArithRef, z3.BoolRef]]
 ) -> Dict[str, Union[z3.ArithRef, z3.BoolRef]]:
     """
-    Execute operations on a Z3 variable expression dictionary.
+    Execute operation statements on a Z3 variable expression dictionary.
 
-    This function takes a list of operations and executes them sequentially
-    on a variable expression dictionary. Each operation updates the state by
-    assigning a new Z3 expression to a variable. The operations are executed
-    in order, so later operations can reference the results of earlier operations.
+    This function takes one operation statement or a statement list and
+    symbolically executes it against a variable-expression dictionary.
+    Assignments update the current symbolic environment directly, while ``if``
+    blocks evaluate each branch from the same pre-``if`` environment and then
+    merge only the names that were already visible before entering the block.
+    Statements are executed in order, so later statements can reference the
+    results of earlier ones.
 
     This performs symbolic execution - expressions are built up symbolically
     rather than being evaluated to concrete values.
 
-    :param operations: Single operation or list of operations to execute
-    :type operations: Union[Operation, List[Operation]]
+    :param operations: Single statement or list of statements to execute
+    :type operations: Union[OperationStatement, List[OperationStatement]]
     :param var_exprs: Dictionary mapping variable names to current Z3 expressions
     :type var_exprs: Dict[str, Union[z3.ArithRef, z3.BoolRef]]
     :return: New variable expression dictionary with updated global Z3 expressions
@@ -158,21 +258,10 @@ def execute_operations(
         >>> solver.check()
         sat
     """
-    # Handle single operation
-    if isinstance(operations, Operation):
+    if isinstance(operations, OperationStatement):
         operations = [operations]
 
     original_var_names = list(var_exprs.keys())
-
-    # Create a copy of the state to avoid modifying the original
-    current_exprs = dict(var_exprs)
-
-    # Execute each operation in sequence
-    for operation in operations:
-        # Convert the operation's expression to Z3 using current expressions
-        z3_expr = expr_to_z3(operation.expr, current_exprs)
-
-        # Update the expressions with the new expression
-        current_exprs[operation.var_name] = z3_expr
+    current_exprs = _execute_operation_statements_symbolically(operations, var_exprs)
 
     return {name: current_exprs[name] for name in original_var_names}

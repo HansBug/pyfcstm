@@ -1,5 +1,9 @@
 # operation block 中 if block 设计文档
 
+关联 PR：
+
+- https://github.com/HansBug/pyfcstm/pull/67
+
 ## 版本历史
 
 | 版本 | 日期 | 修改内容 | 作者 |

@@ -60,8 +60,19 @@ event_definition: 'event' event_name=ID ('named' extra_name=STRING)? ';';
 
 operation_assignment: ID '=' num_expression ';';
 
+operation_block
+    : '{' operational_statement_set '}'
+    ;
+
+if_statement
+    : 'if' '[' cond_expression ']' operation_block
+      ('else' 'if' '[' cond_expression ']' operation_block)*
+      ('else' operation_block)?
+    ;
+
 operational_statement
     : operation_assignment
+    | if_statement
     | ';'
     ;
 

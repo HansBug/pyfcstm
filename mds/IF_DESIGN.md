@@ -1234,12 +1234,12 @@ x = (cond) ? a : b;
 
 Checklist：
 
-- [ ] 确认 V1 语法仅支持 `if / else if / else`
-- [ ] 确认 V1 不支持 `elif`
-- [ ] 确认 branch 新临时变量不向 `if` 外泄漏
-- [ ] 确认 solver 最终结果必须扁平化为 `(x', y', z', ...) = f(x, y, z, ...)`
-- [ ] 确认所有 operation block 承载位置都要从“赋值列表”升级为“statement 列表”
-- [ ] 列出需要同步更新的测试目录和现有断言风格
+- [x] 确认 V1 语法仅支持 `if / else if / else`
+- [x] 确认 V1 不支持 `elif`
+- [x] 确认 branch 新临时变量不向 `if` 外泄漏
+- [x] 确认 solver 最终结果必须扁平化为 `(x', y', z', ...) = f(x, y, z, ...)`
+- [x] 确认所有 operation block 承载位置都要从“赋值列表”升级为“statement 列表”
+- [x] 列出需要同步更新的测试目录和现有断言风格
 
 完成标准：
 
@@ -1264,30 +1264,30 @@ Checklist：
 
 Checklist：
 
-- [ ] 新增 `operation_block`
-- [ ] 新增 `if_statement`
-- [ ] 将 `operational_statement` 从 assignment-only 升级为 statement union
-- [ ] AST 中新增 `OperationalStatement`
-- [ ] AST 中新增 `OperationIfBranch`
-- [ ] AST 中新增 `OperationIf`
-- [ ] 所有承载 operation block 的 AST 字段类型改为 statement list
-- [ ] listener 能正确构造 assignment 与 if 两类 statement
-- [ ] `__str__()` / DSL 导出支持 nested if 缩进输出
-- [ ] parser 入口不再假设 statement 一定有 `.name` / `.expr`
-- [ ] 为合法与非法语法各补最小测试用例
+- [x] 新增 `operation_block`
+- [x] 新增 `if_statement`
+- [x] 将 `operational_statement` 从 assignment-only 升级为 statement union
+- [x] AST 中新增 `OperationalStatement`
+- [x] AST 中新增 `OperationIfBranch`
+- [x] AST 中新增 `OperationIf`
+- [x] 所有承载 operation block 的 AST 字段类型改为 statement list
+- [x] listener 能正确构造 assignment 与 if 两类 statement
+- [x] `__str__()` / DSL 导出支持 nested if 缩进输出
+- [x] parser 入口不再假设 statement 一定有 `.name` / `.expr`
+- [x] 为合法与非法语法各补最小测试用例
 
 建议测试清单：
 
-- [ ] 单层 `if`
-- [ ] `if + else`
-- [ ] `if + else if + else`
-- [ ] nested if
-- [ ] 空 branch
-- [ ] branch 内空语句
-- [ ] `if [cond] a = 1;` 报错
-- [ ] 孤立 `else` 报错
-- [ ] `if [num_expr]` 报错
-- [ ] AST round-trip 成立
+- [x] 单层 `if`
+- [x] `if + else`
+- [x] `if + else if + else`
+- [x] nested if
+- [x] 空 branch
+- [x] branch 内空语句
+- [x] `if [cond] a = 1;` 报错
+- [x] 孤立 `else` 报错
+- [x] `if [num_expr]` 报错
+- [x] AST round-trip 成立
 
 完成标准：
 

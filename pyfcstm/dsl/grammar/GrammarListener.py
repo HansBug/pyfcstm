@@ -257,6 +257,22 @@ class GrammarListener(ParseTreeListener):
     def exitOperation_assignment(self, ctx: GrammarParser.Operation_assignmentContext):
         pass
 
+    # Enter a parse tree produced by GrammarParser#operation_block.
+    def enterOperation_block(self, ctx: GrammarParser.Operation_blockContext):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#operation_block.
+    def exitOperation_block(self, ctx: GrammarParser.Operation_blockContext):
+        pass
+
+    # Enter a parse tree produced by GrammarParser#if_statement.
+    def enterIf_statement(self, ctx: GrammarParser.If_statementContext):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#if_statement.
+    def exitIf_statement(self, ctx: GrammarParser.If_statementContext):
+        pass
+
     # Enter a parse tree produced by GrammarParser#operational_statement.
     def enterOperational_statement(
         self, ctx: GrammarParser.Operational_statementContext

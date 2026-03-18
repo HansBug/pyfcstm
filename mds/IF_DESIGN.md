@@ -1310,33 +1310,33 @@ Checklist：
 
 Checklist：
 
-- [ ] 在 model 中引入 `OperationStatement` 抽象
-- [ ] 保留 `Operation` 作为赋值语句节点
-- [ ] 新增 `IfBlockBranch`
-- [ ] 新增 `IfBlock`
-- [ ] `Transition.effects` 升级为 `List[OperationStatement]`
-- [ ] `OnStage.operations` 升级为 `List[OperationStatement]`
-- [ ] `OnAspect.operations` 升级为 `List[OperationStatement]`
-- [ ] `_parse_operation_block()` 升级为递归版本
-- [ ] 分离 `_parse_operation_statement(...)`
-- [ ] 分离 `_parse_if_block(...)`
-- [ ] `available_vars` 由外层传入并在递归中维护
-- [ ] 条件表达式只允许引用进入 `if` 前可见名字
-- [ ] branch 内新临时变量仅在该 branch 内可见
-- [ ] 外层已有变量或临时变量允许在 branch 中被更新
-- [ ] `to_ast_node()` 支持 `IfBlock` 与 `IfBlockBranch`
+- [x] 在 model 中引入 `OperationStatement` 抽象
+- [x] 保留 `Operation` 作为赋值语句节点
+- [x] 新增 `IfBlockBranch`
+- [x] 新增 `IfBlock`
+- [x] `Transition.effects` 升级为 `List[OperationStatement]`
+- [x] `OnStage.operations` 升级为 `List[OperationStatement]`
+- [x] `OnAspect.operations` 升级为 `List[OperationStatement]`
+- [x] `_parse_operation_block()` 升级为递归版本
+- [x] 分离 `_parse_operation_statement(...)`
+- [x] 分离 `_parse_if_block(...)`
+- [x] `available_vars` 由外层传入并在递归中维护
+- [x] 条件表达式只允许引用进入 `if` 前可见名字
+- [x] branch 内新临时变量仅在该 branch 内可见
+- [x] 外层已有变量或临时变量允许在 branch 中被更新
+- [x] `to_ast_node()` 支持 `IfBlock` 与 `IfBlockBranch`
 
 建议测试清单：
 
-- [ ] 条件中未知变量报错
-- [ ] branch 内先用后定义报错
-- [ ] branch 内新临时变量可在该 branch 后续语句中使用
-- [ ] branch 新临时变量离开 branch 后不可使用
-- [ ] 两个 branch 都定义同名新临时变量，`if` 外仍报错
-- [ ] 外层已有临时变量在 branch 中修改后可继续使用
-- [ ] nested if 内层可见外层 branch 临时变量
-- [ ] nested if 内层新临时变量不外泄
-- [ ] model -> AST -> DSL 的导出保持结构一致
+- [x] 条件中未知变量报错
+- [x] branch 内先用后定义报错
+- [x] branch 内新临时变量可在该 branch 后续语句中使用
+- [x] branch 新临时变量离开 branch 后不可使用
+- [x] 两个 branch 都定义同名新临时变量，`if` 外仍报错
+- [x] 外层已有临时变量在 branch 中修改后可继续使用
+- [x] nested if 内层可见外层 branch 临时变量
+- [x] nested if 内层新临时变量不外泄
+- [x] model -> AST -> DSL 的导出保持结构一致
 
 完成标准：
 

@@ -97,6 +97,12 @@ CLI 可视化
 
 命令行界面提供快速访问可视化功能，配置灵活。
 
+.. note::
+
+   本页主要介绍 ``pyfcstm plantuml`` 和 ``pyfcstm visualize`` 共享的
+   PlantUML 输出配置。如果你关注渲染后端选择、直接输出 ``png`` / ``svg`` /
+   ``pdf``、后端检查或自动打开行为，请参见 :doc:`/tutorials/cli/index_zh`。
+
 **基本用法**
 
 .. literalinclude:: cli_basic.demo.sh

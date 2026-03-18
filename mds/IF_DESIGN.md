@@ -1357,28 +1357,28 @@ Checklist：
 
 Checklist：
 
-- [ ] `_execute_operation_block(...)` 输入升级为 statement list
-- [ ] 新增 `_execute_operation_statements(...)`
-- [ ] 新增 `_execute_operation_statement(...)`
-- [ ] 赋值语句继续按当前顺序语义执行
-- [ ] `if` 条件在当前 `local_scope` 上求值
-- [ ] 命中 branch 时复制 `branch_scope`
-- [ ] branch 执行结束后只同步进入前已有名字
-- [ ] 未命中且无 `else` 时保持 no-op
-- [ ] nested if 通过递归自动支持
-- [ ] 日志输出在 if 引入后仍然可读
+- [x] `_execute_operation_block(...)` 输入升级为 statement list
+- [x] 新增 `_execute_operation_statements(...)`
+- [x] 新增 `_execute_operation_statement(...)`
+- [x] 赋值语句继续按当前顺序语义执行
+- [x] `if` 条件在当前 `local_scope` 上求值
+- [x] 命中 branch 时复制 `branch_scope`
+- [x] branch 执行结束后只同步进入前已有名字
+- [x] 未命中且无 `else` 时保持 no-op
+- [x] nested if 通过递归自动支持
+- [x] 日志输出在 if 引入后仍然可读
 
 建议测试清单：
 
-- [ ] 单层 `if` 命中路径
-- [ ] 单层 `if` 未命中路径
-- [ ] `if / else`
-- [ ] `else if` 链
-- [ ] nested if 多路径覆盖
-- [ ] branch 内临时变量不泄漏到 block 外
-- [ ] 外层已有临时变量被 branch 修改后可继续使用
-- [ ] `if` 无 `else` 时 no-op 语义正确
-- [ ] 多变量更新顺序仍正确
+- [x] 单层 `if` 命中路径
+- [x] 单层 `if` 未命中路径
+- [x] `if / else`
+- [x] `else if` 链
+- [x] nested if 多路径覆盖
+- [x] branch 内临时变量不泄漏到 block 外
+- [x] 外层已有临时变量被 branch 修改后可继续使用
+- [x] `if` 无 `else` 时 no-op 语义正确
+- [x] 多变量更新顺序仍正确
 
 完成标准：
 

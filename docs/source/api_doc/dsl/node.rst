@@ -144,6 +144,12 @@ Statement
 .. autoclass:: Statement
 
 
+OperationalStatement
+-----------------------------------------------------
+
+.. autoclass:: OperationalStatement
+
+
 ConstantDefinition
 -----------------------------------------------------
 
@@ -219,6 +225,20 @@ OperationAssignment
 
 .. autoclass:: OperationAssignment
     :members: __str__,name,expr
+
+
+OperationIfBranch
+-----------------------------------------------------
+
+.. autoclass:: OperationIfBranch
+    :members: condition,statements
+
+
+OperationIf
+-----------------------------------------------------
+
+.. autoclass:: OperationIf
+    :members: __str__,branches
 
 
 EventDefinition

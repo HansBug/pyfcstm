@@ -453,6 +453,109 @@ if [cond] {
 5. branch 可以写回外层已存在的变量
 6. branch 可以写回外层已存在的临时变量
 
+可以把这套规则进一步压缩成一句实现层最重要的语义约束：
+
+- **只有进入某个 block / branch 之前已经可见的名字，才有资格在该 block / branch 结束后继续存在；在其中新引入的名字，只在该 block / branch 内有效**
+
+这句话同时约束：
+
+- model 的静态可见性分析
+- runtime 的 branch 回写范围
+- solver 的 branch merge 范围
+
+## 8.3.1 “后面允不允许用”的精确定义
+
+“后面”需要区分三个层次：
+
+1. **同一 branch 内的后续语句**
+2. **该 branch 结束后，但仍在外层 branch 内**
+3. **整个 `if` 语句结束后**
+
+建议规则如下：
+
+- 若 `tmp` 是在某个 branch 中首次引入的临时变量，则它可以在该 branch 内后续语句中继续使用
+- 若 `tmp` 是在外层 branch 中引入，而内层 nested if 进入时已可见，则内层 branch 可以继续读取和写回它
+- 若 `tmp` 是在某个 branch 中首次引入，则离开这个 branch 后立即失效
+- 若 `tmp` 在进入当前 `if` 前已经可见，则该 `if` 的任意 branch 都可以修改它，而 `if` 结束后它仍然可见
+
+也就是说，下面这段代码中，`tmp` 在 branch 内可用：
+
+```fcstm
+if [cond] {
+    tmp = x + 1;
+    y = tmp * 2;
+}
+```
+
+但在 `if` 之后不可用：
+
+```fcstm
+if [cond] {
+    tmp = x + 1;
+}
+y = tmp * 2;   // V1 建议报错
+```
+
+## 8.3.2 branch 内已有临时变量与新临时变量的区别
+
+这两个场景必须严格区分：
+
+### 场景 A：branch 中首次引入新临时变量
+
+```fcstm
+if [cond] {
+    tmp = 1;
+    y = tmp + 1;
+}
+z = tmp + 1;   // 非法
+```
+
+这里 `tmp` 的生命周期只覆盖该 branch。
+
+### 场景 B：外层已经存在临时变量，branch 只是修改它
+
+```fcstm
+tmp = 0;
+if [cond] {
+    tmp = 1;
+} else {
+    tmp = 2;
+}
+y = tmp + 1;   // 合法
+```
+
+这里 `tmp` 不是 branch 新建，而是外层 block 中已经存在的名字，因此：
+
+- branch 可以写它
+- `if` 结束后仍然可见
+- runtime 和 solver 都应把它纳入 merge / 回写
+
+## 8.3.3 “每个 branch 都定义了同名新临时变量”仍不外泄
+
+下面这种形式在很多通用编程语言中可以通过 definite assignment 分析放行：
+
+```fcstm
+if [x > 0] {
+    tmp = 1;
+} else {
+    tmp = 2;
+}
+y = tmp + 1;
+```
+
+但本设计在 V1 中建议仍然将其视为**非法**。
+
+原因不是它“做不到”，而是它会显著抬高三层实现复杂度：
+
+- model 需要递归计算 branch 定义集合并取交集
+- nested if 会引入多层合流分析
+- solver 需要在“是否进入最终可见集”上做和 runtime 完全一致的递归判定
+- 用户会开始关心更多边界问题，例如“三个 branch 中只有两个定义时怎么办”
+
+因此，V1 推荐把规则钉死为：
+
+- **branch 新引入的名字，不因为“多个 branch 都定义了它”而自动获得向外泄漏资格**
+
 ## 8.4 明确不做的能力
 
 V1 不建议做“跨 branch 的 definite assignment 合流分析”。
@@ -478,6 +581,13 @@ y = tmp + 1;
 V1 建议保持简单规则：
 
 - **branch 内新引入的临时变量永不泄漏到 if 外**
+
+换句话说，`if` 不是“定义临时变量的并集作用域”或“交集作用域”，而是：
+
+- 进入 `if` 前可见的名字，按 branch 执行结果做条件化更新
+- 进入 `if` 前不可见的名字，即使在 branch 中出现，也只属于 branch 局部
+
+这一定义比“看所有 branch 的定义情况再决定是否放行”更容易解释，也更容易保持 runtime / solver 一致。
 
 上面的正确写法应为：
 
@@ -512,6 +622,31 @@ if [a > 0] {
 - 内层 `if [b > 0]` 合法，因为 `b` 是外层 branch 里已可见变量
 - `c` 只存在于内层 `if` 的 branch 中，不可在内层 `if` 之后直接使用
 - `d = b + 2` 合法，因为 `b` 在外层 branch 内仍可见
+
+还可以再看一个更完整的 nested if 例子：
+
+```fcstm
+if [a > 0] {
+    tmp = 10;
+
+    if [b > 0] {
+        inner = tmp + 1;
+        tmp = inner + 1;
+    } else {
+        tmp = tmp + 2;
+    }
+
+    y = tmp;
+}
+z = tmp;   // 非法
+```
+
+这里：
+
+- 外层 branch 中引入的 `tmp`，在内层 `if` 中可见
+- 内层 branch 中新引入的 `inner`，只在那个内层 branch 中可见
+- `y = tmp` 合法，因为仍处于外层 branch 中
+- `z = tmp` 非法，因为外层 branch 自己引入的 `tmp` 也不会越过该外层 branch 泄漏到 `if` 之外
 
 ## 8.6 建议的 model 递归分析接口
 
@@ -617,6 +752,51 @@ for name in outer_names:
     local_scope[name] = branch_scope[name]
 ```
 
+这个“原本已存在名字”的判断建议一律以**进入该 branch 时的 scope key 集**为准，而不是以“某个名字最终是否在多个 branch 里都出现过”为准。
+
+这样 runtime 行为会非常稳定：
+
+- branch 命中时，只修改进入 branch 前就有的名字
+- branch 内首次出现的局部临时变量，在 branch 执行结束后直接丢弃
+- 未命中的 branch 对外层 scope 没有任何影响
+
+特别是下面这个例子：
+
+```fcstm
+tmp = 10;
+if [x > 0] {
+    tmp = 20;
+} else {
+    inner = 1;
+}
+y = tmp;
+```
+
+建议语义是：
+
+- 若 `x > 0`，则后续 `tmp == 20`
+- 若 `x <= 0`，则后续 `tmp == 10`
+- `inner` 永远不会出现在 `if` 之后的外层 scope 中
+
+## 9.5.1 `if` 无 `else` 时的 no-op 语义
+
+`if` 没有 `else` 时，未命中意味着“对外层 scope 不做任何修改”，而不是“产生未定义状态”。
+
+例如：
+
+```fcstm
+tmp = 10;
+if [x > 0] {
+    tmp = 20;
+}
+y = tmp;
+```
+
+这里 `y = tmp` 合法，而且语义明确：
+
+- `x > 0` 时，`y` 看到的是更新后的 `tmp = 20`
+- `x <= 0` 时，`y` 看到的是原值 `tmp = 10`
+
 ## 9.6 nested if 的运行语义
 
 nested if 不需要特殊规则，递归解释即可。
@@ -625,6 +805,12 @@ nested if 不需要特殊规则，递归解释即可。
 
 - 内层分支可见外层 branch 里的临时变量
 - 内层新建临时变量不会穿透回外层 branch 之外
+
+这与 model 的静态规则是一一对应的：
+
+- runtime 不需要额外维护复杂的“分支定义交集”
+- 只要递归复制 scope，并在返回时仅同步进入前已有名字即可
+- nested if 的所有边界都可由相同机制自然覆盖
 
 ---
 
@@ -650,6 +836,25 @@ nested if 不需要特殊规则，递归解释即可。
 
 - 在每个 branch 上独立符号执行
 - 然后用 `z3.If(...)` 对外层可见变量逐一 merge
+
+但这里需要补一个更重要的约束：
+
+- **无论 block 内部有多少层 nested if、多少个临时变量，最终 solver 对外暴露的结果都必须能够写成外层状态变量上的扁平状态转移函数**
+
+也就是说，对于任意 operation block，solver 最终应能得到：
+
+```python
+(x', y', z', ...) = f(x, y, z, ...)
+```
+
+其中：
+
+- `x, y, z, ...` 是进入 block 前外层可见的名字
+- `x', y', z', ...` 是 block 执行完成后的新状态表达式
+- branch 内引入的临时变量只是在构造 `f(...)` 过程中短暂存在的中间载体
+- 最终输出接口中不应残留这些纯局部临时变量
+
+因此，从实现视角看可以递归执行；但从 solver 语义产物看，结果必须是**扁平化后的状态更新关系**。
 
 ## 10.3 基本示例
 
@@ -717,6 +922,13 @@ def _execute_if_block_symbolically(
 
 然后只对进入 `if` 前已经可见的名字 `visible_names = set(base_exprs.keys())` 做 merge。
 
+这里的 `visible_names` 建议明确解释为：
+
+- 不是“所有 branch 执行后出现过的名字”
+- 而是“进入当前 `if` 之前就已经存在于符号环境中的名字”
+
+这和 runtime 的 selective writeback 应保持完全同构。
+
 ### 10.5.1 只有 if，无 else
 
 ```python
@@ -756,9 +968,52 @@ if [x > 0] {
 
 这与 runtime 的“只回写外层原有名字”保持一致。
 
+因此下面这种情况中，`tmp` 不应出现在 merge 后环境中：
+
+```fcstm
+if [x > 0] {
+    tmp = x + 1;
+    y = tmp * 2;
+} else {
+    y = 0;
+}
+```
+
+而下面这种情况中，`tmp` 则应参与 merge：
+
+```fcstm
+tmp = 0;
+if [x > 0] {
+    tmp = x + 1;
+} else {
+    tmp = 2;
+}
+y = tmp;
+```
+
+此时 solver 语义应是：
+
+```python
+tmp' = z3.If(x > 0, x + 1, 2)
+y' = tmp'
+```
+
 ## 10.7 nested if 的 Z3 语义
 
-nested if 同样不需要额外机制，只需递归执行 branch 即可。
+nested if 在实现上仍然可以通过递归 symbolic execution 完成，但最终结果应当被视为一次普通的外层状态更新，也就是把整个 block 扁平化成：
+
+```python
+(x', y', z', ...) = f(x, y, z, ...)
+```
+
+nested if 只是影响 `f(...)` 的内部结构，不改变这一最终形式。
+
+换句话说：
+
+- nested if 可以在求解过程中形成嵌套的 `z3.If(...)`
+- 但这些嵌套条件表达式最终都只是 `f(...)` 的一部分
+- 临时变量可以参与推导 `f(...)`
+- 临时变量本身不应作为最终 solver 环境的输出分量
 
 例如：
 
@@ -782,6 +1037,28 @@ x' = If(a > 0,
         3)
 ```
 
+如果 block 中同时更新多个变量，那么也应把它们一起看成同一个扁平状态转移：
+
+```fcstm
+if [a > 0] {
+    tmp = 1;
+    x = tmp + 1;
+    y = tmp + 2;
+} else {
+    x = 10;
+    y = 20;
+}
+```
+
+其最终 solver 结果应理解为：
+
+```python
+x' = z3.If(a > 0, 2, 10)
+y' = z3.If(a > 0, 3, 20)
+```
+
+而不是把 `tmp` 继续保留为某个最终状态槽位。`tmp` 只是在构造 `x'` 与 `y'` 时的中间载体。
+
 ## 10.8 为什么不直接把 if 降解成三元表达式赋值
 
 虽然某些简单情况可以转换成：
@@ -797,7 +1074,36 @@ x = (cond) ? a : b;
 - branch 内可能创建临时变量
 - nested if 会形成 statement tree，而不是单一 expression tree
 
-因此 solver 必须做 statement 级 symbolic execution，而不是仅靠表达式重写。
+因此，**实现层面**不能一开始就把 block `if` 机械地降成“单条赋值的三元表达式替换”；solver 仍然需要 statement 级 symbolic execution，正确处理：
+
+- 多语句 branch 的顺序依赖
+- branch 内临时变量
+- nested if 的局部作用域
+- 只对进入前已可见名字做 merge
+
+但从**最终产物**看，用户的理解应当是扁平化的：
+
+- 整个 operation block 最终都要归约为外层状态变量的新表达式
+- 临时变量在最终结果中应被消去
+- nested if 最终只是这些新表达式内部的条件结构
+
+所以更准确的说法不是“不要扁平化”，而是：
+
+- **不要在语义尚未建立前过早做错误的语法级扁平化**
+- **但在 symbolic execution 完成后，最终结果必须落成扁平化的状态更新函数**
+
+若强行在过早阶段把 block `if` 降成表达式级三元，临时变量的生命周期就会被错误处理，导致：
+
+- branch 局部临时变量看起来像是外层表达式环境中的普通名字
+- runtime 与 solver 对“哪些名字应在 `if` 之后仍可见”的判断可能分叉
+- nested if 中的局部名字更难保持和实际执行一致
+
+所以 solver 的准确工作流应表述为：
+
+1. 先按 statement tree 进行正确的 symbolic execution
+2. 在 branch 边界上只对进入前已可见名字做条件化 merge
+3. 最终把整个 block 收敛为扁平化的状态更新函数 `(x', y', z', ...) = f(x, y, z, ...)`
+4. 在这个最终函数中消去纯局部临时变量
 
 ---
 
@@ -938,7 +1244,7 @@ x = (cond) ? a : b;
 
 - branch symbolic execution
 - `z3.If` merge
-- nested if 递归成立
+- nested if 最终收敛为扁平状态更新函数
 
 交付标准：
 
@@ -969,9 +1275,10 @@ x = (cond) ? a : b;
    - nested if
 4. V1 不支持 `elif`
 5. V1 不支持 branch 新临时变量向 if 外泄漏
-6. runtime 与 solver 都采用“**递归执行 / 递归符号执行**”
-7. solver 的本质方案是“**branch 独立执行 + 对外层可见名字做 `z3.If` merge**”
-8. 该结构为后续扩展其他 operation statement 留出了明确空间
+6. runtime 与 solver 在实现上都可以采用递归执行，但 solver 的**最终结果**必须是外层状态变量上的扁平更新关系
+7. solver 的本质方案是“**branch 独立执行 + 对外层可见名字做 `z3.If` merge + 最终收敛为 `(x', y', z', ...) = f(x, y, z, ...)`**”
+8. branch 内临时变量只作为构造 `f(...)` 的中间载体，不进入最终 solver 输出接口
+9. 该结构为后续扩展其他 operation statement 留出了明确空间
 
 ---
 

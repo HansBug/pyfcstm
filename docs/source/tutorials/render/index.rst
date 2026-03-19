@@ -6,8 +6,11 @@ an existing built-in template, but to understand how pyfcstm turns a state
 machine model into generated files so you can design, test, and maintain your
 own templates.
 
+Understand The Template System
+------------------------------
+
 What The Template System Does
------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 pyfcstm follows a clear separation of responsibilities:
 
@@ -32,7 +35,7 @@ The simplest mental model is:
 Template authors should think in terms of "model in, file tree out".
 
 Current Rendering Boundaries
-----------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 The current renderer has a few important boundaries that shape template design:
 
@@ -49,7 +52,7 @@ control output file names dynamically. If you need a file called
 need renderer support for templated output paths.
 
 Template Directory Anatomy
---------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 A template directory is usually small and explicit:
 
@@ -76,8 +79,11 @@ Typical file roles:
 This distinction matters. Template-maintainer docs explain how the template is
 organized. Generated docs explain how to use the generated artifact.
 
+Build The Template Foundation
+-----------------------------
+
 Jinja2 Essentials For Template Authors
---------------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 pyfcstm uses Jinja2 as the template language. You do not need advanced Jinja2
 metaprogramming to be productive, but you should be comfortable with:
@@ -149,7 +155,7 @@ Two practical rules are worth calling out:
    for repeated naming and renderer-facing logic.
 
 The Role Of ``config.yaml``
----------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 ``config.yaml`` is the main integration point between the renderer and your
 template. It usually contains:
@@ -199,8 +205,11 @@ How to think about each section:
 Use ``config.yaml`` when the logic is renderer-oriented or naming-oriented.
 Use a Jinja2 macro when the logic is mainly about repeated file structure.
 
+Use The Rendering Interfaces
+----------------------------
+
 Understanding ``expr_render``
------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 ``expr_render`` is the expression-level renderer. Use it when you need one DSL
 expression rendered into a target-language expression string.
@@ -273,7 +282,7 @@ If you need executable statement output, use ``stmt_render`` or
 ``stmts_render`` instead.
 
 How ``expr_render`` Resolves Template Keys
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 This is the part template authors usually need spelled out. When you override
 ``expr_styles`` in ``config.yaml``, you are not replacing "a whole language".
@@ -413,7 +422,7 @@ One more practical detail matters in real templates:
   sites no longer need to spell out ``style='python'`` repeatedly
 
 How To Override Those Keys
-^^^^^^^^^^^^^^^^^^^^^^^^^^
+~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 The most common override cases are these.
 
@@ -503,7 +512,7 @@ Effect:
 - fewer chances to forget or mismatch the intended style
 
 Understanding ``stmt_render`` And ``stmts_render``
---------------------------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 ``stmt_render`` and ``stmts_render`` are the statement-level counterparts to
 ``expr_render``.
@@ -725,7 +734,7 @@ Common mistakes:
   rather than DSL echo text
 
 Template Context: What You Can Access
--------------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Rendered templates receive the state machine model as ``model``. In practice,
 template authors often use:
@@ -759,8 +768,11 @@ That API documentation is the right place to inspect:
 - what is available on states, transitions, events, and lifecycle-action objects
 - how model objects and expression nodes are organized
 
+Design Real Templates
+---------------------
+
 Generation Scale And Template Shape
------------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Template authors need a clear idea of how output size scales:
 
@@ -782,7 +794,7 @@ template should not rely on a formatter as a crutch for fundamentally messy
 structure.
 
 Minimal Template From Scratch
------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 The fastest way to learn the system is to write a tiny template first.
 
@@ -859,8 +871,11 @@ Then the rendered ``out/summary.txt`` will look like:
 That kind of concrete output check is useful because it lets you see the
 generated shape immediately instead of reasoning only from template source.
 
+Test And Consolidate
+--------------------
+
 Testing Templates
------------------
+^^^^^^^^^^^^^^^^^
 
 Template work should be tested at multiple levels.
 
@@ -876,7 +891,7 @@ Do not debug a new template against a large state machine first. Template bugs
 and model complexity compound very quickly.
 
 Renderer-Level Tests
-^^^^^^^^^^^^^^^^^^^^
+~~~~~~~~~~~~~~~~~~~~
 
 Use :class:`pyfcstm.render.StateMachineCodeRenderer` directly when you want to
 check file output for a controlled model.
@@ -889,7 +904,7 @@ Typical checks:
 - custom ``expr_styles`` and ``stmt_styles`` behave correctly
 
 Generated-Artifact Tests
-^^^^^^^^^^^^^^^^^^^^^^^^
+~~~~~~~~~~~~~~~~~~~~~~~~
 
 For runtime templates, do not stop at string comparison. Import the generated
 artifact and execute it.
@@ -901,7 +916,7 @@ Typical checks:
 - generated code behaves correctly on simple state-machine scenarios
 
 Behavior-Alignment Tests
-^^^^^^^^^^^^^^^^^^^^^^^^
+~~~~~~~~~~~~~~~~~~~~~~~~
 
 If a template is intended to match :class:`pyfcstm.simulate.SimulationRuntime`,
 keep alignment tests that compare both runtimes on the same DSL samples.
@@ -916,7 +931,7 @@ This level catches semantic drift in:
 - temporary-variable scope
 
 CLI End-To-End Tests
-^^^^^^^^^^^^^^^^^^^^
+~~~~~~~~~~~~~~~~~~~~
 
 Add CLI tests when your template is intended to be used through the command line:
 
@@ -933,7 +948,7 @@ When template debugging gets stuck, a good triage order is:
 4. if the generated file text looks correct but behavior is wrong, move to generated-artifact tests
 
 When To Put Logic Where
------------------------
+^^^^^^^^^^^^^^^^^^^^^^^
 
 A common source of template sprawl is putting logic in the wrong place.
 
@@ -956,7 +971,7 @@ Inline logic in a ``.j2`` file only when:
 - extracting it would make the template harder to read
 
 Case Study: The Built-In ``python`` Template
---------------------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 The built-in ``python`` template is a good example of how the template system
 comes together, but it is still just one instance.
@@ -981,7 +996,7 @@ If you want to build your own template, study the ``python`` template as an
 example of one solution, not as the definition of the entire template system.
 
 Summary
--------
+^^^^^^^
 
 The key ideas for template authors are:
 

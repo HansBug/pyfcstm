@@ -1170,6 +1170,64 @@ But this is still invalid:
        z = a + b;
    }
 
+If Blocks Inside Operation Blocks
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Concrete operation blocks also support structured control flow:
+
+- ``if [condition] { ... }``
+- ``else if [condition] { ... }``
+- ``else { ... }``
+
+The condition syntax is the same boolean condition syntax used by transition
+guards.
+
+.. code-block:: fcstm
+
+   during {
+       tmp = target - measured;
+       if [tmp > 0] {
+           drive = tmp * 10;
+       } else {
+           drive = 0;
+       }
+       output = drive;
+   }
+
+Branch scope follows the same temporary-variable rules as the rest of the
+block, with one extra boundary:
+
+1. A temporary created **before** the ``if`` remains visible inside every branch
+2. A temporary created **inside** one branch is visible only to later statements
+   in that same branch
+3. A branch-local temporary does **not** become visible after the ``if`` block,
+   even if multiple branches assign the same name
+
+So this is valid:
+
+.. code-block:: fcstm
+
+   effect {
+       tmp = x + 1;
+       if [x > 0] {
+           tmp = tmp + 10;
+       }
+       y = tmp;
+   }
+
+But this is invalid:
+
+.. code-block:: fcstm
+
+   effect {
+       if [x > 0] {
+           tmp = x + 1;
+       } else {
+           tmp = x + 2;
+       }
+       y = tmp;  // ERROR: tmp was introduced only inside branches
+   }
+
 .. important::
    Temporary variables are a convenience for local calculations, not hidden
    machine state. If a name is already declared globally with ``def``, assigning

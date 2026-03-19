@@ -55,7 +55,7 @@ The TextMate grammar (`editors/fcstm.tmLanguage.json`) provides syntax highlight
 
 Both implementations support the complete FCSTM syntax:
 
-**Keywords:** `state`, `pseudo`, `named`, `def`, `event`, `enter`, `during`, `exit`, `before`, `after`, `abstract`, `ref`, `effect`, `if`, `and`, `or`, `not`
+**Keywords:** `state`, `pseudo`, `named`, `def`, `event`, `enter`, `during`, `exit`, `before`, `after`, `abstract`, `ref`, `effect`, `if`, `else`, `and`, `or`, `not`
 
 **Types:** `int`, `float`
 

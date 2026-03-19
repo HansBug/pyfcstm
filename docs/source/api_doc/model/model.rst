@@ -12,11 +12,31 @@ pyfcstm.model.model
 .. autodata:: __all__
 
 
+OperationStatement
+-----------------------------------------------------
+
+.. autoclass:: OperationStatement
+
+
 Operation
 -----------------------------------------------------
 
 .. autoclass:: Operation
     :members: to_ast_node,var_name_to_ast_node,var_name,expr
+
+
+IfBlockBranch
+-----------------------------------------------------
+
+.. autoclass:: IfBlockBranch
+    :members: to_ast_node,condition,statements
+
+
+IfBlock
+-----------------------------------------------------
+
+.. autoclass:: IfBlock
+    :members: to_ast_node,branches
 
 
 Event

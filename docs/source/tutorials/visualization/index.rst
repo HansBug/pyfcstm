@@ -97,6 +97,13 @@ CLI Visualization
 
 The command-line interface provides quick access to visualization with flexible configuration.
 
+.. note::
+
+   This page focuses on the shared PlantUML output configuration used by both
+   ``pyfcstm plantuml`` and ``pyfcstm visualize``. If you need renderer
+   selection, direct ``png`` / ``svg`` / ``pdf`` rendering, backend checks, or
+   auto-open behavior, see :doc:`/tutorials/cli/index`.
+
 **Basic Usage**
 
 .. literalinclude:: cli_basic.demo.sh

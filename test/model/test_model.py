@@ -344,16 +344,16 @@ class TestModelModel:
 
         assert len(root_state_1.transitions_entering_children) == 2
         assert (
-                root_state_1.transitions_entering_children[0].from_state
-                == dsl_nodes.INIT_STATE
+            root_state_1.transitions_entering_children[0].from_state
+            == dsl_nodes.INIT_STATE
         )
         assert root_state_1.transitions_entering_children[0].to_state == "LX1"
         assert root_state_1.transitions_entering_children[0].event is None
         assert root_state_1.transitions_entering_children[0].guard is None
         assert root_state_1.transitions_entering_children[0].parent is root_state_1
         assert (
-                root_state_1.transitions_entering_children[1].from_state
-                == dsl_nodes.INIT_STATE
+            root_state_1.transitions_entering_children[1].from_state
+            == dsl_nodes.INIT_STATE
         )
         assert root_state_1.transitions_entering_children[1].to_state == "LX2"
         assert root_state_1.transitions_entering_children[1].event is not None
@@ -362,21 +362,21 @@ class TestModelModel:
 
         assert len(root_state_1.transitions_entering_children_simplified) == 1
         assert (
-                root_state_1.transitions_entering_children_simplified[0].from_state
-                == dsl_nodes.INIT_STATE
+            root_state_1.transitions_entering_children_simplified[0].from_state
+            == dsl_nodes.INIT_STATE
         )
         assert (
-                root_state_1.transitions_entering_children_simplified[0].to_state == "LX1"
+            root_state_1.transitions_entering_children_simplified[0].to_state == "LX1"
         )
         assert root_state_1.transitions_entering_children_simplified[0].event is None
         assert root_state_1.transitions_entering_children_simplified[0].guard is None
         assert (
-                root_state_1.transitions_entering_children_simplified[0].parent
-                is root_state_1
+            root_state_1.transitions_entering_children_simplified[0].parent
+            is root_state_1
         )
 
         assert len(root_state_1.on_enters) == 1
-        assert root_state_1.on_enters[0].stage == 'enter'
+        assert root_state_1.on_enters[0].stage == "enter"
         assert root_state_1.on_enters[0].aspect is None
         assert root_state_1.on_enters[0].name is None
         assert root_state_1.on_enters[0].doc is None
@@ -393,25 +393,23 @@ class TestModelModel:
                     y=BinaryOp(
                         x=Variable(name="a"),
                         op="*",
-                        y=BinaryOp(
-                            x=Integer(value=2), op="+", y=Variable(name="b")
-                        ),
+                        y=BinaryOp(x=Integer(value=2), op="+", y=Variable(name="b")),
                     ),
                 ),
             ),
         ]
         assert not root_state_1.on_enters[0].is_abstract
-        assert root_state_1.on_enters[0].state_path == ('LX', None)
+        assert root_state_1.on_enters[0].state_path == ("LX", None)
         assert root_state_1.on_enters[0].ref_state_path is None
         assert root_state_1.on_enters[0].ref is None
-        assert root_state_1.on_enters[0].parent.name == 'LX'
-        assert root_state_1.on_enters[0].parent.path == ('LX',)
-        assert root_state_1.on_enters[0].parent_ref().name == 'LX'
-        assert root_state_1.on_enters[0].parent_ref().path == ('LX',)
+        assert root_state_1.on_enters[0].parent.name == "LX"
+        assert root_state_1.on_enters[0].parent.path == ("LX",)
+        assert root_state_1.on_enters[0].parent_ref().name == "LX"
+        assert root_state_1.on_enters[0].parent_ref().path == ("LX",)
 
         assert root_state_1.on_durings == []
         assert len(root_state_1.on_exits) == 1
-        assert root_state_1.on_exits[0].stage == 'exit'
+        assert root_state_1.on_exits[0].stage == "exit"
         assert root_state_1.on_exits[0].aspect is None
         assert root_state_1.on_exits[0].name is None
         assert root_state_1.on_exits[0].doc is None
@@ -419,17 +417,15 @@ class TestModelModel:
             Operation(var_name="b", expr=Integer(value=0)),
             Operation(
                 var_name="b",
-                expr=BinaryOp(
-                    x=Variable(name="a"), op="<<", y=Integer(value=2)
-                ),
+                expr=BinaryOp(x=Variable(name="a"), op="<<", y=Integer(value=2)),
             ),
         ]
         assert not root_state_1.on_exits[0].is_abstract
-        assert root_state_1.on_exits[0].state_path == ('LX', None)
-        assert root_state_1.on_exits[0].parent.name == 'LX'
-        assert root_state_1.on_exits[0].parent.path == ('LX',)
-        assert root_state_1.on_exits[0].parent_ref().name == 'LX'
-        assert root_state_1.on_exits[0].parent_ref().path == ('LX',)
+        assert root_state_1.on_exits[0].state_path == ("LX", None)
+        assert root_state_1.on_exits[0].parent.name == "LX"
+        assert root_state_1.on_exits[0].parent.path == ("LX",)
+        assert root_state_1.on_exits[0].parent_ref().name == "LX"
+        assert root_state_1.on_exits[0].parent_ref().path == ("LX",)
 
         assert root_state_1.abstract_on_enters == []
         assert root_state_1.non_abstract_on_enters == root_state_1.on_enters
@@ -484,7 +480,7 @@ class TestModelModel:
         assert operation_2.var_name_to_ast_node() == dsl_nodes.Name(name="b")
 
     def test_walk_states(
-            self, demo_model_1, root_state_1, state_LX_LX1, state_LX_LX1_LX11
+        self, demo_model_1, root_state_1, state_LX_LX1, state_LX_LX1_LX11
     ):
         assert [state.path for state in demo_model_1.walk_states()] == [
             ("LX",),
@@ -728,8 +724,8 @@ class TestModelModel:
 
         assert len(state_LX_LX1.transitions_entering_children) == 1
         assert (
-                state_LX_LX1.transitions_entering_children[0].from_state
-                == dsl_nodes.INIT_STATE
+            state_LX_LX1.transitions_entering_children[0].from_state
+            == dsl_nodes.INIT_STATE
         )
         assert state_LX_LX1.transitions_entering_children[0].to_state == "LX11"
         assert state_LX_LX1.transitions_entering_children[0].event is None
@@ -739,20 +735,20 @@ class TestModelModel:
 
         assert len(state_LX_LX1.transitions_entering_children_simplified) == 1
         assert (
-                state_LX_LX1.transitions_entering_children_simplified[0].from_state
-                == dsl_nodes.INIT_STATE
+            state_LX_LX1.transitions_entering_children_simplified[0].from_state
+            == dsl_nodes.INIT_STATE
         )
         assert (
-                state_LX_LX1.transitions_entering_children_simplified[0].to_state == "LX11"
+            state_LX_LX1.transitions_entering_children_simplified[0].to_state == "LX11"
         )
         assert state_LX_LX1.transitions_entering_children_simplified[0].event is None
         assert state_LX_LX1.transitions_entering_children_simplified[0].guard is None
         assert (
-                len(state_LX_LX1.transitions_entering_children_simplified[0].effects) == 0
+            len(state_LX_LX1.transitions_entering_children_simplified[0].effects) == 0
         )
         assert (
-                state_LX_LX1.transitions_entering_children_simplified[0].parent
-                is state_LX_LX1
+            state_LX_LX1.transitions_entering_children_simplified[0].parent
+            is state_LX_LX1
         )
 
     def test_state_LX_LX1_LX11(self, state_LX_LX1_LX11):
@@ -822,16 +818,16 @@ class TestModelModel:
         #         print(f'assert state_LX_LX1_LX11.transitions_to[{i}] is None')
 
     def test_transitions(
-            self,
-            transition_1,
-            transition_2,
-            transition_3,
-            transition_4,
-            transition_5,
-            transition_6,
-            transition_7,
-            root_state_1,
-            state_LX_LX1,
+        self,
+        transition_1,
+        transition_2,
+        transition_3,
+        transition_4,
+        transition_5,
+        transition_6,
+        transition_7,
+        root_state_1,
+        state_LX_LX1,
     ):
         assert transition_1.from_state == dsl_nodes.INIT_STATE
         assert transition_1.to_state == "LX"
@@ -1166,8 +1162,8 @@ class TestModelModel:
         err = ei.value
         assert isinstance(err, SyntaxError)
         assert (
-                "At least 1 entry transition should be assigned in non-leaf state 'LX':"
-                in err.msg
+            "At least 1 entry transition should be assigned in non-leaf state 'LX':"
+            in err.msg
         )
         assert "state LX {" in err.msg
 
@@ -1268,8 +1264,8 @@ class TestModelModel:
         err = ei.value
         assert isinstance(err, SyntaxError)
         assert (
-                "For composite state 'LX', during must assign aspect to either 'before' or 'after':"
-                in err.msg
+            "For composite state 'LX', during must assign aspect to either 'before' or 'after':"
+            in err.msg
         )
         assert "during {" in err.msg
         assert "b = a + b;" in err.msg
@@ -1475,7 +1471,7 @@ class TestModelModel:
     def test_to_plantuml(self, demo_model_1, expected_plantuml_code, text_aligner):
         text_aligner.assert_equal(
             expect=expected_plantuml_code,
-            actual=demo_model_1.to_plantuml(PlantUMLOptions(detail_level='full')),
+            actual=demo_model_1.to_plantuml(PlantUMLOptions(detail_level="full")),
         )
 
     def test_parse_unknown_non_abstract_during_aspect_variable(self):
@@ -1536,12 +1532,418 @@ class TestModelModel:
         )
 
         state_machine = parse_dsl_node_to_state_machine(ast_node)
-        operations = state_machine.root_state.substates["LX1"].on_during_aspects[0].operations
+        operations = (
+            state_machine.root_state.substates["LX1"].on_during_aspects[0].operations
+        )
         assert [op.var_name for op in operations] == ["a", "c", "b"]
         assert operations[2].expr == BinaryOp(
             x=Variable(name="c"),
             op="+",
             y=Integer(value=5),
+        )
+
+    def test_if_block_to_ast_node(self):
+        if_block = IfBlock(
+            branches=[
+                IfBlockBranch(
+                    condition=BinaryOp(
+                        x=Variable(name="x"),
+                        op=">",
+                        y=Integer(value=0),
+                    ),
+                    statements=[
+                        Operation(var_name="y", expr=Integer(value=1)),
+                    ],
+                ),
+                IfBlockBranch(
+                    condition=None,
+                    statements=[
+                        Operation(var_name="y", expr=Integer(value=0)),
+                    ],
+                ),
+            ]
+        )
+
+        assert if_block.to_ast_node() == dsl_nodes.OperationIf(
+            branches=[
+                dsl_nodes.OperationIfBranch(
+                    condition=dsl_nodes.BinaryOp(
+                        expr1=dsl_nodes.Name(name="x"),
+                        op=">",
+                        expr2=dsl_nodes.Integer(raw="0"),
+                    ),
+                    statements=[
+                        dsl_nodes.OperationAssignment(
+                            name="y",
+                            expr=dsl_nodes.Integer(raw="1"),
+                        )
+                    ],
+                ),
+                dsl_nodes.OperationIfBranch(
+                    condition=None,
+                    statements=[
+                        dsl_nodes.OperationAssignment(
+                            name="y",
+                            expr=dsl_nodes.Integer(raw="0"),
+                        )
+                    ],
+                ),
+            ]
+        )
+
+    def test_parse_transition_effect_if_block(self):
+        ast_node = parse_with_grammar_entry(
+            """
+        def int a = 0;
+        def int b = 2;
+        state LX {
+            state LX1;
+            state LX2;
+
+            [*] -> LX2;
+            LX1 -> [*] effect {
+                if [a == 0] {
+                    a = 1;
+                } else {
+                    a = 2;
+                }
+                b = a + 1;
+            };
+        }
+        """,
+            entry_name="state_machine_dsl",
+        )
+
+        state_machine = parse_dsl_node_to_state_machine(ast_node)
+        transition = state_machine.root_state.transitions[1]
+        assert isinstance(transition.effects[0], IfBlock)
+        assert transition.effects[0].branches == [
+            IfBlockBranch(
+                condition=BinaryOp(
+                    x=Variable(name="a"),
+                    op="==",
+                    y=Integer(value=0),
+                ),
+                statements=[Operation(var_name="a", expr=Integer(value=1))],
+            ),
+            IfBlockBranch(
+                condition=None,
+                statements=[Operation(var_name="a", expr=Integer(value=2))],
+            ),
+        ]
+        assert transition.effects[1] == Operation(
+            var_name="b",
+            expr=BinaryOp(
+                x=Variable(name="a"),
+                op="+",
+                y=Integer(value=1),
+            ),
+        )
+
+    def test_parse_transition_effect_if_branch_temporary_variable(self):
+        ast_node = parse_with_grammar_entry(
+            """
+        def int a = 0;
+        def int b = 2;
+        state LX {
+            state LX1;
+            state LX2;
+
+            [*] -> LX2;
+            LX1 -> [*] effect {
+                if [a == 0] {
+                    tmp = b + 1;
+                    a = tmp + 2;
+                } else {
+                    a = 3;
+                }
+                b = a + 1;
+            };
+        }
+        """,
+            entry_name="state_machine_dsl",
+        )
+
+        state_machine = parse_dsl_node_to_state_machine(ast_node)
+        transition = state_machine.root_state.transitions[1]
+        if_block = transition.effects[0]
+        assert isinstance(if_block, IfBlock)
+        assert if_block.branches[0].statements == [
+            Operation(
+                var_name="tmp",
+                expr=BinaryOp(
+                    x=Variable(name="b"),
+                    op="+",
+                    y=Integer(value=1),
+                ),
+            ),
+            Operation(
+                var_name="a",
+                expr=BinaryOp(
+                    x=Variable(name="tmp"),
+                    op="+",
+                    y=Integer(value=2),
+                ),
+            ),
+        ]
+        assert transition.effects[1] == Operation(
+            var_name="b",
+            expr=BinaryOp(
+                x=Variable(name="a"),
+                op="+",
+                y=Integer(value=1),
+            ),
+        )
+
+    def test_parse_transition_effect_if_branch_temporary_variable_not_visible_after_if(
+        self,
+    ):
+        ast_node = parse_with_grammar_entry(
+            """
+        def int a = 0;
+        def int b = 2;
+        state LX {
+            state LX1;
+            state LX2;
+
+            [*] -> LX2;
+            LX1 -> [*] effect {
+                if [a == 0] {
+                    tmp = b + 1;
+                }
+                b = tmp + 1;
+            };
+        }
+        """,
+            entry_name="state_machine_dsl",
+        )
+
+        with pytest.raises(SyntaxError) as ei:
+            parse_dsl_node_to_state_machine(ast_node)
+
+        err = ei.value
+        assert "Unknown transition operation variable tmp in transition:" in err.msg
+        assert "b = tmp + 1;" in err.msg
+
+    def test_parse_transition_effect_if_branchs_same_temp_still_not_visible_after_if(
+        self,
+    ):
+        ast_node = parse_with_grammar_entry(
+            """
+        def int a = 0;
+        def int b = 2;
+        state LX {
+            state LX1;
+            state LX2;
+
+            [*] -> LX2;
+            LX1 -> [*] effect {
+                if [a == 0] {
+                    tmp = 1;
+                } else {
+                    tmp = 2;
+                }
+                b = tmp + 1;
+            };
+        }
+        """,
+            entry_name="state_machine_dsl",
+        )
+
+        with pytest.raises(SyntaxError) as ei:
+            parse_dsl_node_to_state_machine(ast_node)
+
+        err = ei.value
+        assert "Unknown transition operation variable tmp in transition:" in err.msg
+        assert "b = tmp + 1;" in err.msg
+
+    def test_parse_transition_effect_outer_temporary_variable_visible_across_if(self):
+        ast_node = parse_with_grammar_entry(
+            """
+        def int a = 0;
+        def int b = 2;
+        state LX {
+            state LX1;
+            state LX2;
+
+            [*] -> LX2;
+            LX1 -> [*] effect {
+                tmp = 0;
+                if [a == 0] {
+                    tmp = b + 1;
+                } else {
+                    tmp = 2;
+                }
+                b = tmp + 1;
+            };
+        }
+        """,
+            entry_name="state_machine_dsl",
+        )
+
+        state_machine = parse_dsl_node_to_state_machine(ast_node)
+        transition = state_machine.root_state.transitions[1]
+        assert transition.effects[0] == Operation(
+            var_name="tmp",
+            expr=Integer(value=0),
+        )
+        assert isinstance(transition.effects[1], IfBlock)
+        assert transition.effects[2] == Operation(
+            var_name="b",
+            expr=BinaryOp(
+                x=Variable(name="tmp"),
+                op="+",
+                y=Integer(value=1),
+            ),
+        )
+
+    def test_parse_transition_effect_if_condition_unknown_variable(self):
+        ast_node = parse_with_grammar_entry(
+            """
+        def int a = 0;
+        def int b = 2;
+        state LX {
+            state LX1;
+            state LX2;
+
+            [*] -> LX2;
+            LX1 -> [*] effect {
+                if [c == 0] {
+                    a = 1;
+                }
+                b = a + 1;
+            };
+        }
+        """,
+            entry_name="state_machine_dsl",
+        )
+
+        with pytest.raises(SyntaxError) as ei:
+            parse_dsl_node_to_state_machine(ast_node)
+
+        err = ei.value
+        assert "Unknown transition operation variable c in transition:" in err.msg
+        assert "if [c == 0]" in err.msg
+
+    def test_parse_transition_effect_nested_if_outer_temporary_visible_in_inner_branch(
+        self,
+    ):
+        ast_node = parse_with_grammar_entry(
+            """
+        def int a = 0;
+        def int b = 2;
+        state LX {
+            state LX1;
+            state LX2;
+
+            [*] -> LX2;
+            LX1 -> [*] effect {
+                if [a == 0] {
+                    tmp = 1;
+                    if [tmp > 0] {
+                        b = tmp + 1;
+                    }
+                }
+            };
+        }
+        """,
+            entry_name="state_machine_dsl",
+        )
+
+        state_machine = parse_dsl_node_to_state_machine(ast_node)
+        transition = state_machine.root_state.transitions[1]
+        outer_if = transition.effects[0]
+        assert isinstance(outer_if, IfBlock)
+        assert isinstance(outer_if.branches[0].statements[1], IfBlock)
+        inner_if = outer_if.branches[0].statements[1]
+        assert inner_if.branches[0].condition == BinaryOp(
+            x=Variable(name="tmp"),
+            op=">",
+            y=Integer(value=0),
+        )
+
+    def test_parse_transition_effect_nested_if_inner_temporary_not_visible_after_inner_if(
+        self,
+    ):
+        ast_node = parse_with_grammar_entry(
+            """
+        def int a = 0;
+        def int b = 2;
+        state LX {
+            state LX1;
+            state LX2;
+
+            [*] -> LX2;
+            LX1 -> [*] effect {
+                if [a == 0] {
+                    if [b > 0] {
+                        inner = 1;
+                    }
+                    a = inner + 1;
+                }
+            };
+        }
+        """,
+            entry_name="state_machine_dsl",
+        )
+
+        with pytest.raises(SyntaxError) as ei:
+            parse_dsl_node_to_state_machine(ast_node)
+
+        err = ei.value
+        assert "Unknown transition operation variable inner in transition:" in err.msg
+        assert "a = inner + 1;" in err.msg
+
+    def test_parse_enter_if_block_to_ast_node(self):
+        ast_node = parse_with_grammar_entry(
+            """
+        def int a = 0;
+        state LX {
+            enter {
+                if [a == 0] {
+                    a = 1;
+                } else {
+                    a = 2;
+                }
+            }
+        }
+        """,
+            entry_name="state_machine_dsl",
+        )
+
+        state_machine = parse_dsl_node_to_state_machine(ast_node)
+        enter_func = state_machine.root_state.on_enters[0]
+        assert isinstance(enter_func.operations[0], IfBlock)
+        assert enter_func.to_ast_node() == dsl_nodes.EnterOperations(
+            name=None,
+            operations=[
+                dsl_nodes.OperationIf(
+                    branches=[
+                        dsl_nodes.OperationIfBranch(
+                            condition=dsl_nodes.BinaryOp(
+                                expr1=dsl_nodes.Name(name="a"),
+                                op="==",
+                                expr2=dsl_nodes.Integer(raw="0"),
+                            ),
+                            statements=[
+                                dsl_nodes.OperationAssignment(
+                                    name="a",
+                                    expr=dsl_nodes.Integer(raw="1"),
+                                )
+                            ],
+                        ),
+                        dsl_nodes.OperationIfBranch(
+                            condition=None,
+                            statements=[
+                                dsl_nodes.OperationAssignment(
+                                    name="a",
+                                    expr=dsl_nodes.Integer(raw="2"),
+                                )
+                            ],
+                        ),
+                    ]
+                )
+            ],
         )
 
     def test_parse_transition_effect_temp_var_used_before_assignment(self):

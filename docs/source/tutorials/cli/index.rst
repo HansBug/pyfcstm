@@ -3,6 +3,12 @@ PyFCSTM Command Line Interface Guide
 
 pyfcstm is a powerful state machine DSL tool that provides a command-line interface for parsing, visualizing, and generating code from hierarchical finite state machines.
 
+The most common documentation-facing commands are:
+
+- ``pyfcstm plantuml``: Generate raw PlantUML text
+- ``pyfcstm visualize``: Render a final diagram file directly
+- ``pyfcstm generate``: Generate source code from templates
+
 Installation
 ---------------------------------------
 
@@ -146,6 +152,61 @@ This is useful for:
 - Piping output to other tools
 - Integration with CI/CD pipelines
 
+visualize Command
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Render a state machine DSL file directly into a final diagram file and optionally open it with the system default viewer.
+
+Compared with ``plantuml``:
+
+- ``pyfcstm plantuml`` emits PlantUML source text and is better when you want to inspect, version, or post-process the ``.puml`` output
+- ``pyfcstm visualize`` renders the final artifact directly through ``plantumlcli`` and is better for local preview or quick export to images and PDF
+
+**Syntax**:
+
+.. code-block:: bash
+
+   pyfcstm visualize -i <input_file> [-o <output_file>] [-t png|svg|pdf] \
+     [--renderer auto|local|remote] [--open/--no-open] [--check]
+
+**Parameters**:
+
+- ``-i, --input-code``: Path to input state machine DSL file (required unless ``--check`` is used)
+- ``-o, --output``: Rendered diagram output path (optional, uses a cache directory when omitted)
+- ``-l, --level``: PlantUML detail preset shared with ``plantuml`` (``minimal``/``normal``/``full``)
+- ``-c, --config``: PlantUML option overrides in ``key=value`` format, can be specified multiple times
+- ``-t, --type``: Rendered output type, one of ``png``, ``svg``, or ``pdf``
+- ``--renderer``: Backend selection, one of ``auto``, ``local``, or ``remote``
+- ``--check``: Check backend availability and exit without rendering
+- ``--open/--no-open``: Enable or disable automatic opening after rendering
+- ``--strict-open``: Treat viewer launch failure as an error
+- ``-j, --java``: Java executable path for the local renderer
+- ``-p, --plantuml-jar``: PlantUML jar path for the local renderer, also readable from ``PLANTUML_JAR``
+- ``-r, --remote-host``: Remote PlantUML service host, also readable from ``PLANTUML_HOST``
+
+**Examples**:
+
+.. code-block:: bash
+
+   # Render a PNG and let pyfcstm open it when GUI is available
+   pyfcstm visualize -i simple_machine.fcstm
+
+   # Export an SVG file without opening a viewer
+   pyfcstm visualize -i simple_machine.fcstm -t svg -o simple_machine.svg --no-open
+
+   # Check whether local or remote backends are available
+   pyfcstm visualize --check --renderer auto
+
+**Renderer behavior**
+
+- ``auto`` tries the local PlantUML backend first and falls back to the remote backend
+- ``local`` uses Java plus a PlantUML jar file
+- ``remote`` uses a PlantUML server, which is useful on machines without Java
+
+If the process runs in a headless environment such as CI, rendering still works but automatic viewer launch is skipped.
+
+``visualize`` reuses the same ``-l/--level`` and ``-c/--config`` PlantUML output configuration as ``plantuml``. For the full option reference and rendered examples, see :doc:`/tutorials/visualization/index`.
+
 generate Command
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -233,11 +294,11 @@ Visualize your state machine design:
    # 1. Write your state machine DSL
    vim my_machine.fcstm
 
-   # 2. Generate PlantUML
-   pyfcstm plantuml -i my_machine.fcstm -o my_machine.puml
+   # 2. Render a preview directly
+   pyfcstm visualize -i my_machine.fcstm -t svg -o my_machine.svg --no-open
 
-   # 3. Render diagram (online or local)
-   plantuml my_machine.puml
+   # 3. Or generate raw PlantUML when you need the source text
+   pyfcstm plantuml -i my_machine.fcstm -o my_machine.puml
 
 Workflow 2: DSL to Code
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

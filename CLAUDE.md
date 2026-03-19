@@ -1,5 +1,7 @@
 # CLAUDE.md
 
+AGENTS.md is a symbolic link to CLAUDE.md, so do not modify both files separately.
+
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Project Overview
@@ -859,6 +861,7 @@ Use `{{ expr | expr_render(style='c') }}` to render expressions in target langua
 ### Testing Strategy
 
 - Tests in `test/`; use `@pytest.mark.unittest`
+- Unit tests must not depend on local files ignored by version control (for example, gitignored files).
 - Shared test utilities and fixtures in `test/testings/`
 - Sample DSL files in `test/testfile/sample_codes/` (auto-generate tests via `make sample`)
 - Negative cases in `test/testfile/sample_neg_codes/`

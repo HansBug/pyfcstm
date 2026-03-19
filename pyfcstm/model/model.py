@@ -39,12 +39,13 @@ Example::
     'root'
 
 """
+
 import io
 import json
 import weakref
 from dataclasses import dataclass
 from textwrap import indent
-from typing import Optional, Union, List, Dict, Tuple, Iterator
+from typing import Optional, Union, List, Dict, Tuple, Iterator, Set
 
 from .base import AstExportable, PlantUMLExportable
 from .expr import Expr, parse_expr_node_to_expr
@@ -52,22 +53,39 @@ from .plantuml import PlantUMLOptions, PlantUMLOptionsInput, format_state_name
 from ..dsl import node as dsl_nodes, INIT_STATE, EXIT_STATE
 
 __all__ = [
-    'Operation',
-    'Event',
-    'Transition',
-    'OnStage',
-    'OnAspect',
-    'State',
-    'VarDefine',
-    'StateMachine',
-    'parse_dsl_node_to_state_machine',
+    "OperationStatement",
+    "Operation",
+    "IfBlockBranch",
+    "IfBlock",
+    "Event",
+    "Transition",
+    "OnStage",
+    "OnAspect",
+    "State",
+    "VarDefine",
+    "StateMachine",
+    "parse_dsl_node_to_state_machine",
 ]
 
 from ..utils import sequence_safe
 
 
 @dataclass
-class Operation(AstExportable):
+class OperationStatement(AstExportable):
+    """
+    Abstract base class for executable statements inside operation blocks.
+
+    Operation statements may be plain assignments or nested control-flow
+    structures such as ``if`` blocks.
+
+    :rtype: OperationStatement
+    """
+
+    pass
+
+
+@dataclass
+class Operation(OperationStatement):
     """
     Represents an operation that assigns a value to a variable.
 
@@ -85,6 +103,7 @@ class Operation(AstExportable):
         >>> op.var_name
         'counter'
     """
+
     var_name: str
     expr: Expr
 
@@ -111,6 +130,58 @@ class Operation(AstExportable):
 
 
 @dataclass
+class IfBlockBranch(AstExportable):
+    """
+    Represents a single branch inside a model-layer ``if`` block.
+
+    :param condition: Branch condition, or ``None`` for the final ``else`` branch
+    :type condition: Optional[Expr]
+    :param statements: Statements executed when the branch is selected
+    :type statements: List[OperationStatement]
+    """
+
+    condition: Optional[Expr]
+    statements: List[OperationStatement]
+
+    def to_ast_node(self) -> dsl_nodes.OperationIfBranch:
+        """
+        Convert this branch back to a DSL AST node.
+
+        :return: Operation-if branch AST node
+        :rtype: dsl_nodes.OperationIfBranch
+        """
+        return dsl_nodes.OperationIfBranch(
+            condition=self.condition.to_ast_node()
+            if self.condition is not None
+            else None,
+            statements=[item.to_ast_node() for item in self.statements],
+        )
+
+
+@dataclass
+class IfBlock(OperationStatement):
+    """
+    Represents an ``if / else if / else`` statement in a model operation block.
+
+    :param branches: Ordered branch list
+    :type branches: List[IfBlockBranch]
+    """
+
+    branches: List[IfBlockBranch]
+
+    def to_ast_node(self) -> dsl_nodes.OperationIf:
+        """
+        Convert this if-block back to a DSL AST node.
+
+        :return: Operation-if AST node
+        :rtype: dsl_nodes.OperationIf
+        """
+        return dsl_nodes.OperationIf(
+            branches=[item.to_ast_node() for item in self.branches],
+        )
+
+
+@dataclass
 class Event:
     """
     Represents an event that can trigger state transitions.
@@ -131,6 +202,7 @@ class Event:
         >>> event.path
         ('root', 'idle', 'button_pressed')
     """
+
     name: str
     state_path: Tuple[str, ...]
     extra_name: Optional[str] = None
@@ -172,7 +244,7 @@ class Event:
            building the event dictionary for transition matching. The returned
            string must be stable and unique within the state machine.
         """
-        return '.'.join(self.path)
+        return ".".join(self.path)
 
     def to_ast_node(self) -> dsl_nodes.EventDefinition:
         """
@@ -204,8 +276,8 @@ class Transition(AstExportable):
     :type event: Optional[Event]
     :param guard: The condition that must be true for the transition to occur, if any
     :type guard: Optional[Expr]
-    :param effects: Operations to execute when the transition occurs
-    :type effects: List[Operation]
+    :param effects: Operation statements to execute when the transition occurs
+    :type effects: List[OperationStatement]
     :param parent_ref: Weak reference to the parent state
     :type parent_ref: Optional[weakref.ReferenceType]
 
@@ -219,15 +291,16 @@ class Transition(AstExportable):
         ...     effects=[]
         ... )
     """
+
     from_state: Union[str, dsl_nodes._StateSingletonMark]
     to_state: Union[str, dsl_nodes._StateSingletonMark]
     event: Optional[Event]
     guard: Optional[Expr]
-    effects: List[Operation]
+    effects: List[OperationStatement]
     parent_ref: Optional[weakref.ReferenceType] = None
 
     @property
-    def parent(self) -> Optional['State']:
+    def parent(self) -> Optional["State"]:
         """
         Get the parent state of this transition.
 
@@ -240,7 +313,7 @@ class Transition(AstExportable):
             return self.parent_ref()
 
     @parent.setter
-    def parent(self, new_parent: Optional['State']) -> None:
+    def parent(self, new_parent: Optional["State"]) -> None:
         """
         Set the parent state of this transition.
 
@@ -322,8 +395,8 @@ class OnStage(AstExportable):
     :type name: Optional[str]
     :param doc: For abstract functions, the documentation string
     :type doc: Optional[str]
-    :param operations: For concrete actions, the list of operations to execute
-    :type operations: List[Operation]
+    :param operations: For concrete actions, the list of operation statements to execute
+    :type operations: List[OperationStatement]
     :param is_abstract: Whether this is an abstract function declaration
     :type is_abstract: bool
     :param state_path: The path to the state that owns this action
@@ -347,19 +420,20 @@ class OnStage(AstExportable):
         ...     state_path=("root", "init_counter")
         ... )
     """
+
     stage: str
     aspect: Optional[str]
     name: Optional[str]
     doc: Optional[str]
-    operations: List[Operation]
+    operations: List[OperationStatement]
     is_abstract: bool
     state_path: Tuple[Optional[str], ...]
-    ref: Union['OnStage', 'OnAspect', None] = None
+    ref: Union["OnStage", "OnAspect", None] = None
     ref_state_path: Optional[Tuple[str, ...]] = None
     parent_ref: Optional[weakref.ReferenceType] = None
 
     @property
-    def parent(self) -> Optional['State']:
+    def parent(self) -> Optional["State"]:
         """
         Get the parent state of this action.
 
@@ -372,7 +446,7 @@ class OnStage(AstExportable):
             return self.parent_ref()
 
     @parent.setter
-    def parent(self, new_parent: Optional['State']) -> None:
+    def parent(self, new_parent: Optional["State"]) -> None:
         """
         Set the parent state of this action.
 
@@ -430,10 +504,14 @@ class OnStage(AstExportable):
         """
         sp = self.state_path
         if sp[-1] is None:
-            sp = tuple((*sp[:-1], '<unnamed>'))
-        return '.'.join(sp)
+            sp = tuple((*sp[:-1], "<unnamed>"))
+        return ".".join(sp)
 
-    def to_ast_node(self) -> Union[dsl_nodes.EnterStatement, dsl_nodes.DuringStatement, dsl_nodes.ExitStatement]:
+    def to_ast_node(
+        self,
+    ) -> Union[
+        dsl_nodes.EnterStatement, dsl_nodes.DuringStatement, dsl_nodes.ExitStatement
+    ]:
         """
         Convert this OnStage to an appropriate AST node based on the stage.
 
@@ -441,7 +519,7 @@ class OnStage(AstExportable):
         :rtype: Union[dsl_nodes.EnterStatement, dsl_nodes.DuringStatement, dsl_nodes.ExitStatement]
         :raises ValueError: If the stage is not one of 'enter', 'during', or 'exit'
         """
-        if self.stage == 'enter':
+        if self.stage == "enter":
             if self.is_abstract:
                 return dsl_nodes.EnterAbstractFunction(
                     name=self.name,
@@ -449,21 +527,22 @@ class OnStage(AstExportable):
                 )
             elif self.is_ref:
                 spath = self.state_path[:-1]
-                if self.ref_state_path[:len(spath)] == spath:
-                    ref = dsl_nodes.ChainID(path=list(self.ref_state_path[len(spath):]), is_absolute=False)
+                if self.ref_state_path[: len(spath)] == spath:
+                    ref = dsl_nodes.ChainID(
+                        path=list(self.ref_state_path[len(spath) :]), is_absolute=False
+                    )
                 else:
-                    ref = dsl_nodes.ChainID(path=list(self.ref_state_path[1:]), is_absolute=True)
-                return dsl_nodes.EnterRefFunction(
-                    name=self.name,
-                    ref=ref
-                )
+                    ref = dsl_nodes.ChainID(
+                        path=list(self.ref_state_path[1:]), is_absolute=True
+                    )
+                return dsl_nodes.EnterRefFunction(name=self.name, ref=ref)
             else:
                 return dsl_nodes.EnterOperations(
                     name=self.name,
                     operations=[item.to_ast_node() for item in self.operations],
                 )
 
-        elif self.stage == 'during':
+        elif self.stage == "during":
             if self.is_abstract:
                 return dsl_nodes.DuringAbstractFunction(
                     name=self.name,
@@ -472,14 +551,16 @@ class OnStage(AstExportable):
                 )
             elif self.is_ref:
                 spath = self.state_path[:-1]
-                if self.ref_state_path[:len(spath)] == spath:
-                    ref = dsl_nodes.ChainID(path=list(self.ref_state_path[len(spath):]), is_absolute=False)
+                if self.ref_state_path[: len(spath)] == spath:
+                    ref = dsl_nodes.ChainID(
+                        path=list(self.ref_state_path[len(spath) :]), is_absolute=False
+                    )
                 else:
-                    ref = dsl_nodes.ChainID(path=list(self.ref_state_path[1:]), is_absolute=True)
+                    ref = dsl_nodes.ChainID(
+                        path=list(self.ref_state_path[1:]), is_absolute=True
+                    )
                 return dsl_nodes.DuringRefFunction(
-                    name=self.name,
-                    aspect=self.aspect,
-                    ref=ref
+                    name=self.name, aspect=self.aspect, ref=ref
                 )
             else:
                 return dsl_nodes.DuringOperations(
@@ -488,7 +569,7 @@ class OnStage(AstExportable):
                     operations=[item.to_ast_node() for item in self.operations],
                 )
 
-        elif self.stage == 'exit':
+        elif self.stage == "exit":
             if self.is_abstract:
                 return dsl_nodes.ExitAbstractFunction(
                     name=self.name,
@@ -496,21 +577,22 @@ class OnStage(AstExportable):
                 )
             elif self.is_ref:
                 spath = self.state_path[:-1]
-                if self.ref_state_path[:len(spath)] == spath:
-                    ref = dsl_nodes.ChainID(path=list(self.ref_state_path[len(spath):]), is_absolute=False)
+                if self.ref_state_path[: len(spath)] == spath:
+                    ref = dsl_nodes.ChainID(
+                        path=list(self.ref_state_path[len(spath) :]), is_absolute=False
+                    )
                 else:
-                    ref = dsl_nodes.ChainID(path=list(self.ref_state_path[1:]), is_absolute=True)
-                return dsl_nodes.ExitRefFunction(
-                    name=self.name,
-                    ref=ref
-                )
+                    ref = dsl_nodes.ChainID(
+                        path=list(self.ref_state_path[1:]), is_absolute=True
+                    )
+                return dsl_nodes.ExitRefFunction(name=self.name, ref=ref)
             else:
                 return dsl_nodes.ExitOperations(
                     name=self.name,
                     operations=[item.to_ast_node() for item in self.operations],
                 )
         else:
-            raise ValueError(f'Unknown stage - {self.stage!r}.')  # pragma: no cover
+            raise ValueError(f"Unknown stage - {self.stage!r}.")  # pragma: no cover
 
 
 @dataclass
@@ -529,8 +611,8 @@ class OnAspect(AstExportable):
     :type name: Optional[str]
     :param doc: For abstract functions, the documentation string
     :type doc: Optional[str]
-    :param operations: For concrete actions, the list of operations to execute
-    :type operations: List[Operation]
+    :param operations: For concrete actions, the list of operation statements to execute
+    :type operations: List[OperationStatement]
     :param is_abstract: Whether this is an abstract function declaration
     :type is_abstract: bool
     :param state_path: The path to the state that owns this action
@@ -554,19 +636,20 @@ class OnAspect(AstExportable):
         ...     state_path=("root", "log_entry")
         ... )
     """
+
     stage: str
     aspect: Optional[str]
     name: Optional[str]
     doc: Optional[str]
-    operations: List[Operation]
+    operations: List[OperationStatement]
     is_abstract: bool
     state_path: Tuple[Optional[str], ...]
-    ref: Union['OnStage', 'OnAspect', None] = None
+    ref: Union["OnStage", "OnAspect", None] = None
     ref_state_path: Optional[Tuple[str, ...]] = None
     parent_ref: Optional[weakref.ReferenceType] = None
 
     @property
-    def parent(self) -> Optional['State']:
+    def parent(self) -> Optional["State"]:
         """
         Get the parent state of this aspect action.
 
@@ -579,7 +662,7 @@ class OnAspect(AstExportable):
             return self.parent_ref()
 
     @parent.setter
-    def parent(self, new_parent: Optional['State']) -> None:
+    def parent(self, new_parent: Optional["State"]) -> None:
         """
         Set the parent state of this aspect action.
 
@@ -637,8 +720,8 @@ class OnAspect(AstExportable):
         """
         sp = self.state_path
         if sp[-1] is None:
-            sp = tuple((*sp[:-1], '<unnamed>'))
-        return '.'.join(sp)
+            sp = tuple((*sp[:-1], "<unnamed>"))
+        return ".".join(sp)
 
     def to_ast_node(self) -> Union[dsl_nodes.DuringAspectStatement]:
         """
@@ -648,7 +731,7 @@ class OnAspect(AstExportable):
         :rtype: Union[dsl_nodes.DuringAspectStatement]
         :raises ValueError: If the stage is not 'during'
         """
-        if self.stage == 'during':
+        if self.stage == "during":
             if self.is_abstract:
                 return dsl_nodes.DuringAspectAbstractFunction(
                     name=self.name,
@@ -657,14 +740,16 @@ class OnAspect(AstExportable):
                 )
             elif self.is_ref:
                 spath = self.state_path[:-1]
-                if self.ref_state_path[:len(spath)] == spath:
-                    ref = dsl_nodes.ChainID(path=list(self.ref_state_path[len(spath):]), is_absolute=False)
+                if self.ref_state_path[: len(spath)] == spath:
+                    ref = dsl_nodes.ChainID(
+                        path=list(self.ref_state_path[len(spath) :]), is_absolute=False
+                    )
                 else:
-                    ref = dsl_nodes.ChainID(path=list(self.ref_state_path[1:]), is_absolute=True)
+                    ref = dsl_nodes.ChainID(
+                        path=list(self.ref_state_path[1:]), is_absolute=True
+                    )
                 return dsl_nodes.DuringAspectRefFunction(
-                    name=self.name,
-                    aspect=self.aspect,
-                    ref=ref
+                    name=self.name, aspect=self.aspect, ref=ref
                 )
             else:
                 return dsl_nodes.DuringAspectOperations(
@@ -674,7 +759,7 @@ class OnAspect(AstExportable):
                 )
 
         else:
-            raise ValueError(f'Unknown aspect - {self.stage!r}.')  # pragma: no cover
+            raise ValueError(f"Unknown aspect - {self.stage!r}.")  # pragma: no cover
 
 
 @dataclass
@@ -724,9 +809,10 @@ class State(AstExportable, PlantUMLExportable):
         >>> state.is_leaf_state
         True
     """
+
     name: str
     path: Tuple[str, ...]
-    substates: Dict[str, 'State']
+    substates: Dict[str, "State"]
     events: Dict[str, Event] = None
     transitions: List[Transition] = None
     named_functions: Dict[str, Union[OnStage, OnAspect]] = None
@@ -750,7 +836,9 @@ class State(AstExportable, PlantUMLExportable):
         self.on_durings = self.on_durings or []
         self.on_exits = self.on_exits or []
         self.on_during_aspects = self.on_during_aspects or []
-        self.substate_name_to_id = {name: i for i, (name, _) in enumerate(self.substates.items())}
+        self.substate_name_to_id = {
+            name: i for i, (name, _) in enumerate(self.substates.items())
+        }
 
     @property
     def is_leaf_state(self) -> bool:
@@ -773,7 +861,7 @@ class State(AstExportable, PlantUMLExportable):
         return self.is_leaf_state and not self.is_pseudo
 
     @property
-    def parent(self) -> Optional['State']:
+    def parent(self) -> Optional["State"]:
         """
         Get the parent state of this state.
 
@@ -786,7 +874,7 @@ class State(AstExportable, PlantUMLExportable):
             return self.parent_ref()
 
     @parent.setter
-    def parent(self, new_parent: Optional['State']) -> None:
+    def parent(self, new_parent: Optional["State"]) -> None:
         """
         Set the parent state of this state.
 
@@ -840,14 +928,16 @@ class State(AstExportable, PlantUMLExportable):
                 if transition.from_state == self.name:
                     retval.append(transition)
         else:
-            retval.append(Transition(
-                from_state=self.name,
-                to_state=EXIT_STATE,
-                event=None,
-                guard=None,
-                effects=[],
-                parent_ref=self.parent_ref,
-            ))
+            retval.append(
+                Transition(
+                    from_state=self.name,
+                    to_state=EXIT_STATE,
+                    event=None,
+                    guard=None,
+                    effects=[],
+                    parent_ref=self.parent_ref,
+                )
+            )
         return retval
 
     @property
@@ -868,14 +958,16 @@ class State(AstExportable, PlantUMLExportable):
                 if transition.to_state == self.name:
                     retval.append(transition)
         else:
-            retval.append(Transition(
-                from_state=INIT_STATE,
-                to_state=self.name,
-                event=None,
-                guard=None,
-                effects=[],
-                parent_ref=self.parent_ref,
-            ))
+            retval.append(
+                Transition(
+                    from_state=INIT_STATE,
+                    to_state=self.name,
+                    event=None,
+                    guard=None,
+                    effects=[],
+                    parent_ref=self.parent_ref,
+                )
+            )
 
         return retval
 
@@ -890,7 +982,8 @@ class State(AstExportable, PlantUMLExportable):
         :rtype: List[Transition]
         """
         return [
-            transition for transition in self.transitions
+            transition
+            for transition in self.transitions
             if transition.from_state is INIT_STATE
         ]
 
@@ -911,12 +1004,15 @@ class State(AstExportable, PlantUMLExportable):
                 retval.append(transition)
                 if transition.event is None and transition.guard is None:
                     break
-        if not retval or (retval and not (retval[-1].event is None and retval[-1].guard is None)):
+        if not retval or (
+            retval and not (retval[-1].event is None and retval[-1].guard is None)
+        ):
             retval.append(None)
         return retval
 
-    def list_on_enters(self, is_abstract: Optional[bool] = None, with_ids: bool = False) \
-            -> List[Union[Tuple[int, OnStage], OnStage]]:
+    def list_on_enters(
+        self, is_abstract: Optional[bool] = None, with_ids: bool = False
+    ) -> List[Union[Tuple[int, OnStage], OnStage]]:
         """
         Get a list of enter actions, optionally filtered by abstract status and with IDs.
 
@@ -929,8 +1025,10 @@ class State(AstExportable, PlantUMLExportable):
         """
         retval = []
         for id_, item in enumerate(self.on_enters, 1):
-            if (is_abstract is not None and
-                    ((item.is_abstract and not is_abstract) or (not item.is_abstract and is_abstract))):
+            if is_abstract is not None and (
+                (item.is_abstract and not is_abstract)
+                or (not item.is_abstract and is_abstract)
+            ):
                 continue
             if with_ids:
                 retval.append((id_, item))
@@ -958,8 +1056,12 @@ class State(AstExportable, PlantUMLExportable):
         """
         return self.list_on_enters(is_abstract=False, with_ids=False)
 
-    def list_on_durings(self, is_abstract: Optional[bool] = None, aspect: Optional[str] = None,
-                        with_ids: bool = False) -> List[Union[Tuple[int, OnStage], OnStage]]:
+    def list_on_durings(
+        self,
+        is_abstract: Optional[bool] = None,
+        aspect: Optional[str] = None,
+        with_ids: bool = False,
+    ) -> List[Union[Tuple[int, OnStage], OnStage]]:
         """
         Get a list of during actions, optionally filtered by abstract status, aspect, and with IDs.
 
@@ -974,8 +1076,10 @@ class State(AstExportable, PlantUMLExportable):
         """
         retval = []
         for id_, item in enumerate(self.on_durings, 1):
-            if (is_abstract is not None and
-                    ((item.is_abstract and not is_abstract) or (not item.is_abstract and is_abstract))):
+            if is_abstract is not None and (
+                (item.is_abstract and not is_abstract)
+                or (not item.is_abstract and is_abstract)
+            ):
                 continue
             if aspect is not None and item.aspect != aspect:
                 continue
@@ -1006,8 +1110,9 @@ class State(AstExportable, PlantUMLExportable):
         """
         return self.list_on_durings(is_abstract=False, with_ids=False)
 
-    def list_on_exits(self, is_abstract: Optional[bool] = None, with_ids: bool = False) \
-            -> List[Union[Tuple[int, OnStage], OnStage]]:
+    def list_on_exits(
+        self, is_abstract: Optional[bool] = None, with_ids: bool = False
+    ) -> List[Union[Tuple[int, OnStage], OnStage]]:
         """
         Get a list of exit actions, optionally filtered by abstract status and with IDs.
 
@@ -1020,8 +1125,10 @@ class State(AstExportable, PlantUMLExportable):
         """
         retval = []
         for id_, item in enumerate(self.on_exits, 1):
-            if (is_abstract is not None and
-                    ((item.is_abstract and not is_abstract) or (not item.is_abstract and is_abstract))):
+            if is_abstract is not None and (
+                (item.is_abstract and not is_abstract)
+                or (not item.is_abstract and is_abstract)
+            ):
                 continue
             if with_ids:
                 retval.append((id_, item))
@@ -1049,8 +1156,12 @@ class State(AstExportable, PlantUMLExportable):
         """
         return self.list_on_exits(is_abstract=False, with_ids=False)
 
-    def list_on_during_aspects(self, is_abstract: Optional[bool] = None, aspect: Optional[str] = None,
-                               with_ids: bool = False) -> List[Union[Tuple[int, OnAspect], OnAspect]]:
+    def list_on_during_aspects(
+        self,
+        is_abstract: Optional[bool] = None,
+        aspect: Optional[str] = None,
+        with_ids: bool = False,
+    ) -> List[Union[Tuple[int, OnAspect], OnAspect]]:
         """
         Get a list of during aspect actions, optionally filtered by abstract status, aspect, and with IDs.
 
@@ -1065,8 +1176,10 @@ class State(AstExportable, PlantUMLExportable):
         """
         retval = []
         for id_, item in enumerate(self.on_during_aspects, 1):
-            if (is_abstract is not None and
-                    ((item.is_abstract and not is_abstract) or (not item.is_abstract and is_abstract))):
+            if is_abstract is not None and (
+                (item.is_abstract and not is_abstract)
+                or (not item.is_abstract and is_abstract)
+            ):
                 continue
             if aspect is not None and item.aspect != aspect:
                 continue
@@ -1097,8 +1210,14 @@ class State(AstExportable, PlantUMLExportable):
         """
         return self.list_on_during_aspects(is_abstract=False, with_ids=False)
 
-    def iter_on_during_before_aspect_recursively(self, is_abstract: Optional[bool] = None, with_ids: bool = False) \
-            -> Iterator[Union[Tuple[int, 'State', Union[OnAspect, OnStage]], Tuple['State', Union[OnAspect, OnStage]]]]:
+    def iter_on_during_before_aspect_recursively(
+        self, is_abstract: Optional[bool] = None, with_ids: bool = False
+    ) -> Iterator[
+        Union[
+            Tuple[int, "State", Union[OnAspect, OnStage]],
+            Tuple["State", Union[OnAspect, OnStage]],
+        ]
+    ]:
         """
         Recursively iterate through 'before' aspect during actions from parent states to this state.
 
@@ -1113,16 +1232,28 @@ class State(AstExportable, PlantUMLExportable):
         :rtype: Iterator[Union[Tuple[int, 'State', Union[OnAspect, OnStage]], Tuple['State', Union[OnAspect, OnStage]]]]
         """
         if self.parent is not None:
-            yield from self.parent.iter_on_during_before_aspect_recursively(is_abstract=is_abstract, with_ids=with_ids)
+            yield from self.parent.iter_on_during_before_aspect_recursively(
+                is_abstract=is_abstract, with_ids=with_ids
+            )
         if with_ids:
-            for id_, item in self.list_on_during_aspects(is_abstract=is_abstract, aspect='before', with_ids=with_ids):
+            for id_, item in self.list_on_during_aspects(
+                is_abstract=is_abstract, aspect="before", with_ids=with_ids
+            ):
                 yield id_, self, item
         else:
-            for item in self.list_on_during_aspects(is_abstract=is_abstract, aspect='before', with_ids=with_ids):
+            for item in self.list_on_during_aspects(
+                is_abstract=is_abstract, aspect="before", with_ids=with_ids
+            ):
                 yield self, item
 
-    def iter_on_during_after_aspect_recursively(self, is_abstract: Optional[bool] = None, with_ids: bool = False) \
-            -> Iterator[Union[Tuple[int, 'State', Union[OnAspect, OnStage]], Tuple['State', Union[OnAspect, OnStage]]]]:
+    def iter_on_during_after_aspect_recursively(
+        self, is_abstract: Optional[bool] = None, with_ids: bool = False
+    ) -> Iterator[
+        Union[
+            Tuple[int, "State", Union[OnAspect, OnStage]],
+            Tuple["State", Union[OnAspect, OnStage]],
+        ]
+    ]:
         """
         Recursively iterate through 'after' aspect during actions from this state to the root state.
 
@@ -1137,16 +1268,28 @@ class State(AstExportable, PlantUMLExportable):
         :rtype: Iterator[Union[Tuple[int, 'State', Union[OnAspect, OnStage]], Tuple['State', Union[OnAspect, OnStage]]]]
         """
         if with_ids:
-            for id_, item in self.list_on_during_aspects(is_abstract=is_abstract, aspect='after', with_ids=with_ids):
+            for id_, item in self.list_on_during_aspects(
+                is_abstract=is_abstract, aspect="after", with_ids=with_ids
+            ):
                 yield id_, self, item
         else:
-            for item in self.list_on_during_aspects(is_abstract=is_abstract, aspect='after', with_ids=with_ids):
+            for item in self.list_on_during_aspects(
+                is_abstract=is_abstract, aspect="after", with_ids=with_ids
+            ):
                 yield self, item
         if self.parent is not None:
-            yield from self.parent.iter_on_during_after_aspect_recursively(is_abstract=is_abstract, with_ids=with_ids)
+            yield from self.parent.iter_on_during_after_aspect_recursively(
+                is_abstract=is_abstract, with_ids=with_ids
+            )
 
-    def iter_on_during_aspect_recursively(self, is_abstract: Optional[bool] = None, with_ids: bool = False) \
-            -> Iterator[Union[Tuple[int, 'State', Union[OnAspect, OnStage]], Tuple['State', Union[OnAspect, OnStage]]]]:
+    def iter_on_during_aspect_recursively(
+        self, is_abstract: Optional[bool] = None, with_ids: bool = False
+    ) -> Iterator[
+        Union[
+            Tuple[int, "State", Union[OnAspect, OnStage]],
+            Tuple["State", Union[OnAspect, OnStage]],
+        ]
+    ]:
         """
         Recursively iterate through all during actions in the proper execution order.
 
@@ -1164,18 +1307,32 @@ class State(AstExportable, PlantUMLExportable):
         :rtype: Iterator[Union[Tuple[int, 'State', Union[OnAspect, OnStage]], Tuple['State', Union[OnAspect, OnStage]]]]
         """
         if not self.is_pseudo:
-            yield from self.iter_on_during_before_aspect_recursively(is_abstract=is_abstract, with_ids=with_ids)
+            yield from self.iter_on_during_before_aspect_recursively(
+                is_abstract=is_abstract, with_ids=with_ids
+            )
         if with_ids:
-            for id_, item in self.list_on_durings(is_abstract=is_abstract, aspect=None, with_ids=with_ids):
+            for id_, item in self.list_on_durings(
+                is_abstract=is_abstract, aspect=None, with_ids=with_ids
+            ):
                 yield id_, self, item
         else:
-            for item in self.list_on_durings(is_abstract=is_abstract, aspect=None, with_ids=with_ids):
+            for item in self.list_on_durings(
+                is_abstract=is_abstract, aspect=None, with_ids=with_ids
+            ):
                 yield self, item
         if not self.is_pseudo:
-            yield from self.iter_on_during_after_aspect_recursively(is_abstract=is_abstract, with_ids=with_ids)
+            yield from self.iter_on_during_after_aspect_recursively(
+                is_abstract=is_abstract, with_ids=with_ids
+            )
 
-    def list_on_during_aspect_recursively(self, is_abstract: Optional[bool] = None, with_ids: bool = False) \
-            -> List[Union[Tuple[int, 'State', Union[OnAspect, OnStage]], Tuple['State', Union[OnAspect, OnStage]]]]:
+    def list_on_during_aspect_recursively(
+        self, is_abstract: Optional[bool] = None, with_ids: bool = False
+    ) -> List[
+        Union[
+            Tuple[int, "State", Union[OnAspect, OnStage]],
+            Tuple["State", Union[OnAspect, OnStage]],
+        ]
+    ]:
         """
         Get a list of all during actions in the proper execution order.
 
@@ -1191,7 +1348,9 @@ class State(AstExportable, PlantUMLExportable):
         return list(self.iter_on_during_aspect_recursively(is_abstract, with_ids))
 
     @classmethod
-    def transition_to_ast_node(cls, self: Optional['State'], transition: Transition) -> dsl_nodes.TransitionDefinition:
+    def transition_to_ast_node(
+        cls, self: Optional["State"], transition: Transition
+    ) -> dsl_nodes.TransitionDefinition:
         """
         Convert a transition to an AST node, considering the context of its parent state.
 
@@ -1208,10 +1367,17 @@ class State(AstExportable, PlantUMLExportable):
             cur_path = ()
 
         if transition.event:
-            if len(transition.event.path) > len(cur_path) and transition.event.path[:len(cur_path)] == cur_path:
-                event_id = dsl_nodes.ChainID(path=list(transition.event.path[len(cur_path):]), is_absolute=False)
+            if (
+                len(transition.event.path) > len(cur_path)
+                and transition.event.path[: len(cur_path)] == cur_path
+            ):
+                event_id = dsl_nodes.ChainID(
+                    path=list(transition.event.path[len(cur_path) :]), is_absolute=False
+                )
             else:
-                event_id = dsl_nodes.ChainID(path=list(transition.event.path[1:]), is_absolute=True)
+                event_id = dsl_nodes.ChainID(
+                    path=list(transition.event.path[1:]), is_absolute=True
+                )
         else:
             event_id = None
 
@@ -1219,14 +1385,15 @@ class State(AstExportable, PlantUMLExportable):
             from_state=transition.from_state,
             to_state=transition.to_state,
             event_id=event_id,
-            condition_expr=transition.guard.to_ast_node() if transition.guard is not None else None,
-            post_operations=[
-                item.to_ast_node()
-                for item in transition.effects
-            ]
+            condition_expr=transition.guard.to_ast_node()
+            if transition.guard is not None
+            else None,
+            post_operations=[item.to_ast_node() for item in transition.effects],
         )
 
-    def to_transition_ast_node(self, transition: Transition) -> dsl_nodes.TransitionDefinition:
+    def to_transition_ast_node(
+        self, transition: Transition
+    ) -> dsl_nodes.TransitionDefinition:
         """
         Convert a transition to an AST node in the context of this state.
 
@@ -1248,8 +1415,12 @@ class State(AstExportable, PlantUMLExportable):
             name=self.name,
             extra_name=self.extra_name,
             events=[event.to_ast_node() for _, event in self.events.items()],
-            substates=[substate.to_ast_node() for _, substate in self.substates.items()],
-            transitions=[self.to_transition_ast_node(trans) for trans in self.transitions],
+            substates=[
+                substate.to_ast_node() for _, substate in self.substates.items()
+            ],
+            transitions=[
+                self.to_transition_ast_node(trans) for trans in self.transitions
+            ],
             enters=[item.to_ast_node() for item in self.on_enters],
             durings=[item.to_ast_node() for item in self.on_durings],
             exits=[item.to_ast_node() for item in self.on_exits],
@@ -1257,7 +1428,12 @@ class State(AstExportable, PlantUMLExportable):
             is_pseudo=bool(self.is_pseudo),
         )
 
-    def to_plantuml(self, options: PlantUMLOptionsInput = None, current_depth: int = 0, event_colors: Optional[Dict[str, str]] = None) -> str:
+    def to_plantuml(
+        self,
+        options: PlantUMLOptionsInput = None,
+        current_depth: int = 0,
+        event_colors: Optional[Dict[str, str]] = None,
+    ) -> str:
         """
         Convert this state to PlantUML notation.
 
@@ -1285,116 +1461,171 @@ class State(AstExportable, PlantUMLExportable):
 
         # Check if this is an empty state (for collapse_empty_states)
         is_empty_state = (
-            not self.on_enters and
-            not self.on_durings and
-            not self.on_exits and
-            not self.on_during_aspects
+            not self.on_enters
+            and not self.on_durings
+            and not self.on_exits
+            and not self.on_during_aspects
         )
 
         state_style_marks = []
         if self.is_pseudo and config.show_pseudo_state_style:
-            state_style_marks.append('line.dotted')
-        state_style_mark_str = " #" + ";".join(state_style_marks) if state_style_marks else ""
+            state_style_marks.append("line.dotted")
+        state_style_mark_str = (
+            " #" + ";".join(state_style_marks) if state_style_marks else ""
+        )
 
         # Build stereotype string
         stereotype_parts = []
         if config.use_stereotypes:
             if self.is_pseudo:
-                stereotype_parts.append('pseudo')
+                stereotype_parts.append("pseudo")
             if not self.is_leaf_state:
-                stereotype_parts.append('composite')
-        stereotype_str = f' <<{",".join(stereotype_parts)}>>' if stereotype_parts else ""
+                stereotype_parts.append("composite")
+        stereotype_str = (
+            f' <<{",".join(stereotype_parts)}>>' if stereotype_parts else ""
+        )
 
         with io.StringIO() as sf:
             # Format state name according to configuration
             shown_name = format_state_name(self, config.state_name_format)
 
-            print(f'state {json.dumps(shown_name, ensure_ascii=False)} as {_name_safe()}{stereotype_str}{state_style_mark_str}',
-                  file=sf, end='')
+            print(
+                f"state {json.dumps(shown_name, ensure_ascii=False)} as {_name_safe()}{stereotype_str}{state_style_mark_str}",
+                file=sf,
+                end="",
+            )
 
             if not self.is_leaf_state:
-                print(f' {{', file=sf)
+                print(f" {{", file=sf)
 
                 # Check if we should expand substates or collapse them
                 should_expand_substates = (
-                    config.max_depth is None or
-                    current_depth < config.max_depth
+                    config.max_depth is None or current_depth < config.max_depth
                 )
 
                 if should_expand_substates:
                     # Expand substates normally
                     for state in self.substates.values():
-                        print(indent(state.to_plantuml(options, current_depth=current_depth + 1, event_colors=event_colors), prefix='    '), file=sf)
+                        print(
+                            indent(
+                                state.to_plantuml(
+                                    options,
+                                    current_depth=current_depth + 1,
+                                    event_colors=event_colors,
+                                ),
+                                prefix="    ",
+                            ),
+                            file=sf,
+                        )
                 else:
                     # Collapsed: show marker state
                     marker_name = config.collapsed_state_marker
-                    marker_safe_name = sequence_safe([*self.path, '__collapsed__'])
-                    print(f'    state {json.dumps(marker_name, ensure_ascii=False)} as {marker_safe_name}', file=sf)
+                    marker_safe_name = sequence_safe([*self.path, "__collapsed__"])
+                    print(
+                        f"    state {json.dumps(marker_name, ensure_ascii=False)} as {marker_safe_name}",
+                        file=sf,
+                    )
 
                 for trans in self.transitions:
                     with io.StringIO() as tf:
-                        print('[*]' if trans.from_state is dsl_nodes.INIT_STATE
-                              else _name_safe(trans.from_state), file=tf, end='')
+                        print(
+                            "[*]"
+                            if trans.from_state is dsl_nodes.INIT_STATE
+                            else _name_safe(trans.from_state),
+                            file=tf,
+                            end="",
+                        )
 
                         # Apply event_visualization_mode colors to arrow
-                        arrow_str = ' -->'
-                        if config.event_visualization_mode in ('color', 'both') and trans.event is not None:
-                            event_path = '.'.join(trans.event.path)
+                        arrow_str = " -->"
+                        if (
+                            config.event_visualization_mode in ("color", "both")
+                            and trans.event is not None
+                        ):
+                            event_path = ".".join(trans.event.path)
                             if event_path in event_colors:
                                 color = event_colors[event_path]
-                                arrow_str = f' -[{color}]->'
+                                arrow_str = f" -[{color}]->"
 
-                        print(arrow_str, file=tf, end=' ')
-                        print('[*]' if trans.to_state is dsl_nodes.EXIT_STATE
-                              else _name_safe(trans.to_state), file=tf, end='')
+                        print(arrow_str, file=tf, end=" ")
+                        print(
+                            "[*]"
+                            if trans.to_state is dsl_nodes.EXIT_STATE
+                            else _name_safe(trans.to_state),
+                            file=tf,
+                            end="",
+                        )
 
                         trans_node: dsl_nodes.TransitionDefinition = trans.to_ast_node()
 
                         # Show event if enabled
                         if config.show_events and trans.event is not None:
                             from .plantuml import format_event_name
-                            formatted_event = format_event_name(trans.event, config.event_name_format, trans_node=trans_node)
-                            print(f' : {formatted_event}', file=tf, end='')
+
+                            formatted_event = format_event_name(
+                                trans.event,
+                                config.event_name_format,
+                                trans_node=trans_node,
+                            )
+                            print(f" : {formatted_event}", file=tf, end="")
                         elif config.show_transition_guards and trans.guard is not None:
-                            print(f' : {trans.guard.to_ast_node()}', file=tf, end='')
+                            print(f" : {trans.guard.to_ast_node()}", file=tf, end="")
 
                         # Show transition effects if enabled
                         if config.show_transition_effects and len(trans.effects) > 0:
-                            if config.transition_effect_mode == 'note':
-                                print('', file=tf)
-                                print('note on link', file=tf)
-                                print('effect {', file=tf)
+                            if config.transition_effect_mode == "note":
+                                print("", file=tf)
+                                print("note on link", file=tf)
+                                print("effect {", file=tf)
                                 for operation in trans.effects:
-                                    print(f'    {operation.to_ast_node()}', file=tf)
-                                print('}', file=tf)
-                                print('end note', file=tf, end='')
-                            elif config.transition_effect_mode == 'inline':
+                                    print(f"    {operation.to_ast_node()}", file=tf)
+                                print("}", file=tf)
+                                print("end note", file=tf, end="")
+                            elif config.transition_effect_mode == "inline":
                                 # Display effects inline on the transition arrow
-                                effect_strs = [str(operation.to_ast_node()) for operation in trans.effects]
-                                effect_text = '; '.join(effect_strs)
+                                effect_strs = [
+                                    str(operation.to_ast_node())
+                                    for operation in trans.effects
+                                ]
+                                effect_text = "; ".join(effect_strs)
                                 # Append to existing label or create new one
-                                print(f' / {effect_text}', file=tf, end='')
+                                print(f" / {effect_text}", file=tf, end="")
 
                         trans_text = tf.getvalue()
-                    print(indent(trans_text, prefix='    '), file=sf)
+                    print(indent(trans_text, prefix="    "), file=sf)
 
-                print(f'}}', file=sf, end='')
+                print(f"}}", file=sf, end="")
 
             # Show lifecycle actions if enabled (skip if collapse_empty_states is True and state is empty)
-            should_show_actions = (
-                not (config.collapse_empty_states and is_empty_state) and
+            should_show_actions = not (
+                config.collapse_empty_states and is_empty_state
+            ) and (
                 (
-                    (config.show_lifecycle_actions and config.show_enter_actions and self.on_enters) or
-                    (config.show_lifecycle_actions and config.show_during_actions and self.on_durings) or
-                    (config.show_lifecycle_actions and config.show_exit_actions and self.on_exits) or
-                    (config.show_lifecycle_actions and config.show_aspect_actions and self.on_during_aspects)
+                    config.show_lifecycle_actions
+                    and config.show_enter_actions
+                    and self.on_enters
+                )
+                or (
+                    config.show_lifecycle_actions
+                    and config.show_during_actions
+                    and self.on_durings
+                )
+                or (
+                    config.show_lifecycle_actions
+                    and config.show_exit_actions
+                    and self.on_exits
+                )
+                or (
+                    config.show_lifecycle_actions
+                    and config.show_aspect_actions
+                    and self.on_during_aspects
                 )
             )
 
             if should_show_actions:
                 from .plantuml import should_show_action, format_action_text
 
-                print('', file=sf)
+                print("", file=sf)
                 with io.StringIO() as tf:
                     if config.show_enter_actions:
                         for enter_item in self.on_enters:
@@ -1415,17 +1646,21 @@ class State(AstExportable, PlantUMLExportable):
                     if config.show_aspect_actions:
                         for during_aspect_item in self.on_during_aspects:
                             if should_show_action(during_aspect_item, config):
-                                formatted_text = format_action_text(during_aspect_item, config)
+                                formatted_text = format_action_text(
+                                    during_aspect_item, config
+                                )
                                 print(formatted_text, file=tf)
 
-                    action_text = tf.getvalue().rstrip().replace('\r\n', '\n').replace('\r', '\n')
+                    action_text = (
+                        tf.getvalue().rstrip().replace("\r\n", "\n").replace("\r", "\n")
+                    )
                     if action_text:  # Only show if there's actual content
-                        text = json.dumps(action_text).strip("\"")
-                        print(f'{_name_safe()} : {text}', file=sf, end='')
+                        text = json.dumps(action_text).strip('"')
+                        print(f"{_name_safe()} : {text}", file=sf, end="")
 
             return sf.getvalue()
 
-    def walk_states(self) -> Iterator['State']:
+    def walk_states(self) -> Iterator["State"]:
         """
         Iterate through this state and all its substates recursively.
 
@@ -1481,7 +1716,7 @@ class State(AstExportable, PlantUMLExportable):
         event_name = None
 
         # Handle absolute events (starting with '/')
-        if event_ref.startswith('/'):
+        if event_ref.startswith("/"):
             # Remove leading '/' and resolve from root
             relative_path = event_ref[1:]
             if not relative_path:
@@ -1493,7 +1728,7 @@ class State(AstExportable, PlantUMLExportable):
                 root_state = root_state.parent
 
             # Split the path
-            path_parts = relative_path.split('.')
+            path_parts = relative_path.split(".")
             if not all(path_parts):
                 raise ValueError(f"Invalid absolute event reference: {event_ref!r}")
 
@@ -1501,11 +1736,11 @@ class State(AstExportable, PlantUMLExportable):
             target_state_path = root_state.path + tuple(path_parts[:-1])
 
         # Handle parent-relative events (starting with '.')
-        elif event_ref.startswith('.'):
+        elif event_ref.startswith("."):
             # Count leading dots
             dot_count = 0
             for char in event_ref:
-                if char == '.':
+                if char == ".":
                     dot_count += 1
                 else:
                     break
@@ -1513,7 +1748,9 @@ class State(AstExportable, PlantUMLExportable):
             # Get the remaining path after dots
             remaining_path = event_ref[dot_count:]
             if not remaining_path:
-                raise ValueError(f"Parent-relative event reference cannot end with dots: {event_ref!r}")
+                raise ValueError(
+                    f"Parent-relative event reference cannot end with dots: {event_ref!r}"
+                )
 
             # Move up the hierarchy
             current_state = self
@@ -1526,16 +1763,18 @@ class State(AstExportable, PlantUMLExportable):
                 current_state = current_state.parent
 
             # Split the remaining path
-            path_parts = remaining_path.split('.')
+            path_parts = remaining_path.split(".")
             if not all(path_parts):
-                raise ValueError(f"Invalid parent-relative event reference: {event_ref!r}")
+                raise ValueError(
+                    f"Invalid parent-relative event reference: {event_ref!r}"
+                )
 
             event_name = path_parts[-1]
             target_state_path = current_state.path + tuple(path_parts[:-1])
 
         # Handle relative events (no leading '/' or '.')
         else:
-            path_parts = event_ref.split('.')
+            path_parts = event_ref.split(".")
             if not all(path_parts):
                 raise ValueError(f"Invalid relative event reference: {event_ref!r}")
 
@@ -1586,6 +1825,7 @@ class VarDefine(AstExportable):
         >>> var_def.name
         'counter'
     """
+
     name: str
     type: str
     init: Expr
@@ -1629,6 +1869,7 @@ class StateMachine(AstExportable, PlantUMLExportable):
         >>> list(sm.walk_states())  # Get all states in the machine
         [...]
     """
+
     defines: Dict[str, VarDefine]
     root_state: State
 
@@ -1641,8 +1882,7 @@ class StateMachine(AstExportable, PlantUMLExportable):
         """
         return dsl_nodes.StateMachineDSLProgram(
             definitions=[
-                def_item.to_ast_node()
-                for _, def_item in self.defines.items()
+                def_item.to_ast_node() for _, def_item in self.defines.items()
             ],
             root_state=self.root_state.to_ast_node(),
         )
@@ -1661,76 +1901,90 @@ class StateMachine(AstExportable, PlantUMLExportable):
         config = options.to_config()
 
         with io.StringIO() as sf:
-            print('@startuml', file=sf)
-            print('hide empty description', file=sf)
+            print("@startuml", file=sf)
+            print("hide empty description", file=sf)
 
             # Add skinparam styling if enabled
             if config.use_skinparam:
-                print('', file=sf)
-                print('skinparam state {', file=sf)
-                print('  BackgroundColor<<pseudo>> LightGray', file=sf)
-                print('  BackgroundColor<<composite>> LightBlue', file=sf)
-                print('  BorderColor<<pseudo>> Gray', file=sf)
-                print('  FontStyle<<pseudo>> italic', file=sf)
-                print('}', file=sf)
-                print('', file=sf)
+                print("", file=sf)
+                print("skinparam state {", file=sf)
+                print("  BackgroundColor<<pseudo>> LightGray", file=sf)
+                print("  BackgroundColor<<composite>> LightBlue", file=sf)
+                print("  BorderColor<<pseudo>> Gray", file=sf)
+                print("  FontStyle<<pseudo>> italic", file=sf)
+                print("}", file=sf)
+                print("", file=sf)
 
             # Show variable definitions if enabled
             if config.show_variable_definitions and self.defines:
-                if config.variable_display_mode == 'note':
-                    print('note as DefinitionNote', file=sf)
-                    print('defines {', file=sf)
+                if config.variable_display_mode == "note":
+                    print("note as DefinitionNote", file=sf)
+                    print("defines {", file=sf)
                     for def_item in self.defines.values():
-                        print(f'    {def_item.to_ast_node()}', file=sf)
-                    print('}', file=sf)
-                    print('end note', file=sf)
-                    print('', file=sf)
-                elif config.variable_display_mode == 'legend':
+                        print(f"    {def_item.to_ast_node()}", file=sf)
+                    print("}", file=sf)
+                    print("end note", file=sf)
+                    print("", file=sf)
+                elif config.variable_display_mode == "legend":
                     # Display variables as a legend
                     from .plantuml import escape_plantuml_table_cell
+
                     # Use configured legend position
-                    print(f'legend {config.variable_legend_position}', file=sf)
+                    print(f"legend {config.variable_legend_position}", file=sf)
                     # Header row
-                    print('|= Variable |= Type |= Initial Value |', file=sf)
+                    print("|= Variable |= Type |= Initial Value |", file=sf)
                     for def_item in self.defines.values():
                         var_name = def_item.name
                         var_type = def_item.type
-                        var_init = def_item.init.to_ast_node() if def_item.init else 'N/A'
+                        var_init = (
+                            def_item.init.to_ast_node() if def_item.init else "N/A"
+                        )
                         # Escape pipe characters in the initial value
                         var_init_escaped = escape_plantuml_table_cell(str(var_init))
                         # All columns left-aligned
-                        print(f'| {var_name} | {var_type} | {var_init_escaped} |', file=sf)
-                    print('endlegend', file=sf)
-                    print('', file=sf)
+                        print(
+                            f"| {var_name} | {var_type} | {var_init_escaped} |", file=sf
+                        )
+                    print("endlegend", file=sf)
+                    print("", file=sf)
 
             # Collect events and assign colors if event visualization is enabled
             event_colors = {}
             event_map = {}
-            if config.event_visualization_mode != 'none':
+            if config.event_visualization_mode != "none":
                 from .plantuml import collect_event_transitions, assign_event_colors
+
                 event_map = collect_event_transitions(self)
                 event_colors = assign_event_colors(event_map, config.custom_colors)
 
             # Add event legend if event_visualization_mode is 'legend' or 'both'
-            if config.event_visualization_mode in ('legend', 'both') and event_map:
-                print(f'legend {config.event_legend_position}', file=sf)
-                print('**Event Scoping**', file=sf)
-                print('----', file=sf)
+            if config.event_visualization_mode in ("legend", "both") and event_map:
+                print(f"legend {config.event_legend_position}", file=sf)
+                print("**Event Scoping**", file=sf)
+                print("----", file=sf)
                 for event_path in sorted(event_map.keys()):
                     transitions = event_map[event_path]
-                    color = event_colors.get(event_path, '#000000')
+                    color = event_colors.get(event_path, "#000000")
                     # Show event name and count
-                    event_name = event_path.split('.')[-1]
-                    print(f'<color:{color}>■</color> **{event_name}** ({len(transitions)} transitions)', file=sf)
+                    event_name = event_path.split(".")[-1]
+                    print(
+                        f"<color:{color}>■</color> **{event_name}** ({len(transitions)} transitions)",
+                        file=sf,
+                    )
                     # Show event path
-                    print(f'  <size:10><color:gray>/{".".join(event_path.split(".")[1:])}</color></size>', file=sf)
-                print('endlegend', file=sf)
-                print('', file=sf)
+                    print(
+                        f'  <size:10><color:gray>/{".".join(event_path.split(".")[1:])}</color></size>',
+                        file=sf,
+                    )
+                print("endlegend", file=sf)
+                print("", file=sf)
 
-            print(self.root_state.to_plantuml(options, event_colors=event_colors), file=sf)
-            print(f'[*] --> {sequence_safe(self.root_state.path)}', file=sf)
-            print(f'{sequence_safe(self.root_state.path)} --> [*]', file=sf)
-            print('@enduml', file=sf, end='')
+            print(
+                self.root_state.to_plantuml(options, event_colors=event_colors), file=sf
+            )
+            print(f"[*] --> {sequence_safe(self.root_state.path)}", file=sf)
+            print(f"{sequence_safe(self.root_state.path)} --> [*]", file=sf)
+            print("@enduml", file=sf, end="")
             return sf.getvalue()
 
     def walk_states(self) -> Iterator[State]:
@@ -1843,9 +2097,11 @@ class StateMachine(AstExportable, PlantUMLExportable):
             raise ValueError("Event path cannot be empty")
 
         # Split the path into components
-        path_parts = event_path.split('.')
+        path_parts = event_path.split(".")
         if not all(path_parts):
-            raise ValueError(f"Invalid event path: {event_path!r} (contains empty parts)")
+            raise ValueError(
+                f"Invalid event path: {event_path!r} (contains empty parts)"
+            )
 
         if len(path_parts) < 2:
             raise ValueError(
@@ -1887,7 +2143,9 @@ class StateMachine(AstExportable, PlantUMLExportable):
         return current_state.events[event_name]
 
 
-def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> StateMachine:
+def parse_dsl_node_to_state_machine(
+    dnode: dsl_nodes.StateMachineDSLProgram,
+) -> StateMachine:
     """
     Parse a state machine DSL program AST node into a StateMachine object.
 
@@ -1920,16 +2178,35 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                 init=parse_expr_node_to_expr(def_item.expr),
             )
         else:
-            raise SyntaxError(f'Duplicated variable definition - {def_item}.')
+            raise SyntaxError(f"Duplicated variable definition - {def_item}.")
 
     def _parse_operation_block(
-            op_nodes: List[dsl_nodes.OperationAssignment],
-            unknown_var_message: str,
-            owner_node: AstExportable,
-    ) -> List[Operation]:
+        op_nodes: List[dsl_nodes.OperationalStatement],
+        unknown_var_message: str,
+        owner_node,
+        available_vars: Optional[Set[str]] = None,
+    ) -> List[OperationStatement]:
+        available_vars = set(available_vars or d_defines)
         operations = []
-        available_vars = set(d_defines)
         for op_item in op_nodes:
+            operations.append(
+                _parse_operation_statement(
+                    op_item=op_item,
+                    unknown_var_message=unknown_var_message,
+                    owner_node=owner_node,
+                    available_vars=available_vars,
+                )
+            )
+
+        return operations
+
+    def _parse_operation_statement(
+        op_item: dsl_nodes.OperationalStatement,
+        unknown_var_message: str,
+        owner_node,
+        available_vars: Set[str],
+    ) -> OperationStatement:
+        if isinstance(op_item, dsl_nodes.OperationAssignment):
             operation_val = parse_expr_node_to_expr(op_item.expr)
             unknown_vars = []
             for var in operation_val.list_variables():
@@ -1941,20 +2218,71 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                     f'{unknown_var_message} {", ".join(unknown_vars)} in transition:\n{owner_node}'
                 )
 
-            operations.append(Operation(var_name=op_item.name, expr=operation_val))
+            operation = Operation(var_name=op_item.name, expr=operation_val)
             available_vars.add(op_item.name)
+            return operation
+        elif isinstance(op_item, dsl_nodes.OperationIf):
+            return _parse_if_block(
+                if_node=op_item,
+                unknown_var_message=unknown_var_message,
+                owner_node=owner_node,
+                available_vars=available_vars,
+            )
+        else:
+            raise TypeError(f"Unknown operation statement node - {op_item!r}.")
 
-        return operations
+    def _parse_if_block(
+        if_node: dsl_nodes.OperationIf,
+        unknown_var_message: str,
+        owner_node,
+        available_vars: Set[str],
+    ) -> IfBlock:
+        base_available_vars = set(available_vars)
+        branches = []
+        for branch in if_node.branches:
+            condition = None
+            if branch.condition is not None:
+                condition = parse_expr_node_to_expr(branch.condition)
+                unknown_vars = []
+                for var in condition.list_variables():
+                    if (
+                        var.name not in base_available_vars
+                        and var.name not in unknown_vars
+                    ):
+                        unknown_vars.append(var.name)
+                if unknown_vars:
+                    raise SyntaxError(
+                        f'{unknown_var_message} {", ".join(unknown_vars)} in transition:\n{owner_node}'
+                    )
 
-    def _recursive_build_states(node: dsl_nodes.StateDefinition, current_path: Tuple[str, ...]) -> State:
+            branch_available_vars = set(base_available_vars)
+            branch_statements = _parse_operation_block(
+                op_nodes=branch.statements,
+                unknown_var_message=unknown_var_message,
+                owner_node=owner_node,
+                available_vars=branch_available_vars,
+            )
+            branches.append(
+                IfBlockBranch(condition=condition, statements=branch_statements)
+            )
+
+        return IfBlock(branches=branches)
+
+    def _recursive_build_states(
+        node: dsl_nodes.StateDefinition, current_path: Tuple[str, ...]
+    ) -> State:
         current_path = tuple((*current_path, node.name))
         d_substates = {}
 
         for subnode in node.substates:
             if subnode.name not in d_substates:
-                d_substates[subnode.name] = _recursive_build_states(subnode, current_path=current_path)
+                d_substates[subnode.name] = _recursive_build_states(
+                    subnode, current_path=current_path
+                )
             else:
-                raise SyntaxError(f'Duplicate state name in namespace {".".join(current_path)!r}:\n{subnode}')
+                raise SyntaxError(
+                    f'Duplicate state name in namespace {".".join(current_path)!r}:\n{subnode}'
+                )
 
         named_functions = {}
         on_enters = []
@@ -1963,11 +2291,11 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
             if isinstance(enter_item, dsl_nodes.EnterOperations):
                 enter_operations = _parse_operation_block(
                     enter_item.operations,
-                    'Unknown enter operation variable',
+                    "Unknown enter operation variable",
                     enter_item,
                 )
                 on_stage = OnStage(
-                    stage='enter',
+                    stage="enter",
                     aspect=None,
                     name=enter_item.name,
                     doc=None,
@@ -1979,7 +2307,7 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                 )
             elif isinstance(enter_item, dsl_nodes.EnterAbstractFunction):
                 on_stage = OnStage(
-                    stage='enter',
+                    stage="enter",
                     aspect=None,
                     name=enter_item.name,
                     doc=enter_item.doc,
@@ -1991,7 +2319,7 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                 )
             elif isinstance(enter_item, dsl_nodes.EnterRefFunction):
                 on_stage = OnStage(
-                    stage='enter',
+                    stage="enter",
                     aspect=None,
                     name=enter_item.name,
                     doc=None,
@@ -2000,15 +2328,21 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                     state_path=(*current_path, enter_item.name),
                     ref=None,
                     ref_state_path=(
-                        *((dnode.root_state.name,) if enter_item.ref.is_absolute else current_path),
-                        *enter_item.ref.path
+                        *(
+                            (dnode.root_state.name,)
+                            if enter_item.ref.is_absolute
+                            else current_path
+                        ),
+                        *enter_item.ref.path,
                     ),
                 )
 
             if on_stage is not None:
                 if on_stage.name:
                     if on_stage.name in named_functions:
-                        raise SyntaxError(f'Duplicate function name {on_stage.name!r} in state:\n{node}')
+                        raise SyntaxError(
+                            f"Duplicate function name {on_stage.name!r} in state:\n{node}"
+                        )
                     named_functions[on_stage.name] = on_stage
                 on_enters.append(on_stage)
 
@@ -2016,20 +2350,22 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
         for during_item in node.durings:
             if not d_substates and during_item.aspect is not None:
                 raise SyntaxError(
-                    f'For leaf state {node.name!r}, during cannot assign aspect {during_item.aspect!r}:\n{during_item}')
+                    f"For leaf state {node.name!r}, during cannot assign aspect {during_item.aspect!r}:\n{during_item}"
+                )
             if d_substates and during_item.aspect is None:
                 raise SyntaxError(
-                    f'For composite state {node.name!r}, during must assign aspect to either \'before\' or \'after\':\n{during_item}')
+                    f"For composite state {node.name!r}, during must assign aspect to either 'before' or 'after':\n{during_item}"
+                )
 
             on_stage = None
             if isinstance(during_item, dsl_nodes.DuringOperations):
                 during_operations = _parse_operation_block(
                     during_item.operations,
-                    'Unknown during operation variable',
+                    "Unknown during operation variable",
                     during_item,
                 )
                 on_stage = OnStage(
-                    stage='during',
+                    stage="during",
                     aspect=during_item.aspect,
                     name=during_item.name,
                     doc=None,
@@ -2041,7 +2377,7 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                 )
             elif isinstance(during_item, dsl_nodes.DuringAbstractFunction):
                 on_stage = OnStage(
-                    stage='during',
+                    stage="during",
                     aspect=during_item.aspect,
                     name=during_item.name,
                     doc=during_item.doc,
@@ -2053,7 +2389,7 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                 )
             elif isinstance(during_item, dsl_nodes.DuringRefFunction):
                 on_stage = OnStage(
-                    stage='during',
+                    stage="during",
                     aspect=during_item.aspect,
                     name=during_item.name,
                     doc=None,
@@ -2062,15 +2398,21 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                     state_path=(*current_path, during_item.name),
                     ref=None,
                     ref_state_path=(
-                        *((dnode.root_state.name,) if during_item.ref.is_absolute else current_path),
-                        *during_item.ref.path
+                        *(
+                            (dnode.root_state.name,)
+                            if during_item.ref.is_absolute
+                            else current_path
+                        ),
+                        *during_item.ref.path,
                     ),
                 )
 
             if on_stage is not None:
                 if on_stage.name:
                     if on_stage.name in named_functions:
-                        raise SyntaxError(f'Duplicate function name {on_stage.name!r} in state:\n{node}')
+                        raise SyntaxError(
+                            f"Duplicate function name {on_stage.name!r} in state:\n{node}"
+                        )
                     named_functions[on_stage.name] = on_stage
                 on_durings.append(on_stage)
 
@@ -2080,11 +2422,11 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
             if isinstance(exit_item, dsl_nodes.ExitOperations):
                 exit_operations = _parse_operation_block(
                     exit_item.operations,
-                    'Unknown exit operation variable',
+                    "Unknown exit operation variable",
                     exit_item,
                 )
                 on_stage = OnStage(
-                    stage='exit',
+                    stage="exit",
                     aspect=None,
                     name=exit_item.name,
                     doc=None,
@@ -2096,7 +2438,7 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                 )
             elif isinstance(exit_item, dsl_nodes.ExitAbstractFunction):
                 on_stage = OnStage(
-                    stage='exit',
+                    stage="exit",
                     aspect=None,
                     name=exit_item.name,
                     doc=exit_item.doc,
@@ -2108,7 +2450,7 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                 )
             elif isinstance(exit_item, dsl_nodes.ExitRefFunction):
                 on_stage = OnStage(
-                    stage='exit',
+                    stage="exit",
                     aspect=None,
                     name=exit_item.name,
                     doc=None,
@@ -2117,15 +2459,21 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                     state_path=(*current_path, exit_item.name),
                     ref=None,
                     ref_state_path=(
-                        *((dnode.root_state.name,) if exit_item.ref.is_absolute else current_path),
-                        *exit_item.ref.path
+                        *(
+                            (dnode.root_state.name,)
+                            if exit_item.ref.is_absolute
+                            else current_path
+                        ),
+                        *exit_item.ref.path,
                     ),
                 )
 
             if on_stage is not None:
                 if on_stage.name:
                     if on_stage.name in named_functions:
-                        raise SyntaxError(f'Duplicate function name {on_stage.name!r} in state:\n{node}')
+                        raise SyntaxError(
+                            f"Duplicate function name {on_stage.name!r} in state:\n{node}"
+                        )
                     named_functions[on_stage.name] = on_stage
                 on_exits.append(on_stage)
 
@@ -2135,11 +2483,11 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
             if isinstance(during_aspect_item, dsl_nodes.DuringAspectOperations):
                 during_operations = _parse_operation_block(
                     during_aspect_item.operations,
-                    'Unknown during aspect variable',
+                    "Unknown during aspect variable",
                     during_aspect_item,
                 )
                 on_aspect = OnAspect(
-                    stage='during',
+                    stage="during",
                     aspect=during_aspect_item.aspect,
                     name=during_aspect_item.name,
                     doc=None,
@@ -2151,7 +2499,7 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                 )
             elif isinstance(during_aspect_item, dsl_nodes.DuringAspectAbstractFunction):
                 on_aspect = OnAspect(
-                    stage='during',
+                    stage="during",
                     aspect=during_aspect_item.aspect,
                     name=during_aspect_item.name,
                     doc=during_aspect_item.doc,
@@ -2163,7 +2511,7 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                 )
             elif isinstance(during_aspect_item, dsl_nodes.DuringAspectRefFunction):
                 on_aspect = OnAspect(
-                    stage='during',
+                    stage="during",
                     aspect=during_aspect_item.aspect,
                     name=during_aspect_item.name,
                     doc=None,
@@ -2172,15 +2520,21 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                     state_path=(*current_path, during_aspect_item.name),
                     ref=None,
                     ref_state_path=(
-                        *((dnode.root_state.name,) if during_aspect_item.ref.is_absolute else current_path),
-                        *during_aspect_item.ref.path
+                        *(
+                            (dnode.root_state.name,)
+                            if during_aspect_item.ref.is_absolute
+                            else current_path
+                        ),
+                        *during_aspect_item.ref.path,
                     ),
                 )
 
             if on_aspect is not None:
                 if on_aspect.name:
                     if on_aspect.name in named_functions:
-                        raise SyntaxError(f'Duplicate function name {on_aspect.name!r} in state:\n{node}')
+                        raise SyntaxError(
+                            f"Duplicate function name {on_aspect.name!r} in state:\n{node}"
+                        )
                     named_functions[on_aspect.name] = on_aspect
                 on_during_aspects.append(on_aspect)
 
@@ -2206,8 +2560,15 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
             named_functions=named_functions,
         )
         if my_state.is_pseudo and not my_state.is_leaf_state:
-            raise SyntaxError(f'Pseudo state {".".join(current_path)} must be a leaf state:\n{node}')
-        for func_item in [*my_state.on_enters, *my_state.on_durings, *my_state.on_exits, *my_state.on_during_aspects]:
+            raise SyntaxError(
+                f'Pseudo state {".".join(current_path)} must be a leaf state:\n{node}'
+            )
+        for func_item in [
+            *my_state.on_enters,
+            *my_state.on_durings,
+            *my_state.on_exits,
+            *my_state.on_during_aspects,
+        ]:
             func_item.parent = my_state
         for _, substate in d_substates.items():
             substate.parent = my_state
@@ -2215,8 +2576,12 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
 
     root_state = _recursive_build_states(dnode.root_state, current_path=())
 
-    def _recursive_finish_states(node: dsl_nodes.StateDefinition, current_state: State, current_path: Tuple[str, ...],
-                                 force_transitions: Optional[List[dsl_nodes.ForceTransitionDefinition]] = None) -> None:
+    def _recursive_finish_states(
+        node: dsl_nodes.StateDefinition,
+        current_state: State,
+        current_path: Tuple[str, ...],
+        force_transitions: Optional[List[dsl_nodes.ForceTransitionDefinition]] = None,
+    ) -> None:
         current_path = tuple((*current_path, current_state.name))
         force_transitions = list(force_transitions or [])
 
@@ -2227,14 +2592,18 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
             else:
                 from_state = f_transnode.from_state
                 if from_state not in current_state.substates:
-                    raise SyntaxError(f'Unknown from state {from_state!r} of force transition:\n{f_transnode}')
+                    raise SyntaxError(
+                        f"Unknown from state {from_state!r} of force transition:\n{f_transnode}"
+                    )
 
             if f_transnode.to_state is dsl_nodes.EXIT_STATE:
                 to_state = dsl_nodes.EXIT_STATE
             else:
                 to_state = f_transnode.to_state
                 if to_state not in current_state.substates:
-                    raise SyntaxError(f'Unknown to state {to_state!r} of force transition:\n{f_transnode}')
+                    raise SyntaxError(
+                        f"Unknown to state {to_state!r} of force transition:\n{f_transnode}"
+                    )
 
             my_event_id, trans_event = None, None
             if f_transnode.event_id is not None:
@@ -2242,7 +2611,7 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                 if not my_event_id.is_absolute:
                     my_event_id = dsl_nodes.ChainID(
                         path=[*current_state.path[1:], *my_event_id.path],
-                        is_absolute=True
+                        is_absolute=True,
                     )
                 start_state = root_state
                 base_path = (root_state.name,)
@@ -2251,7 +2620,8 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                         start_state = start_state.substates[seg]
                     else:
                         raise SyntaxError(
-                            f'Cannot find state {".".join((*base_path, *my_event_id.path[:-1]))} for transition:\n{f_transnode}')
+                            f'Cannot find state {".".join((*base_path, *my_event_id.path[:-1]))} for transition:\n{f_transnode}'
+                        )
 
                 suffix_name = my_event_id.path[-1]
                 if suffix_name not in start_state.events:
@@ -2270,29 +2640,42 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                         unknown_vars.append(var.name)
                 if unknown_vars:
                     raise SyntaxError(
-                        f'Unknown guard variable {", ".join(unknown_vars)} in force transition:\n{f_transnode}')
+                        f'Unknown guard variable {", ".join(unknown_vars)} in force transition:\n{f_transnode}'
+                    )
 
             force_transition_tuples_to_inherit.append(
-                (from_state, to_state, my_event_id, trans_event, condition_expr, guard))
+                (from_state, to_state, my_event_id, trans_event, condition_expr, guard)
+            )
 
         transitions = current_state.transitions
         for subnode in node.substates:
             _inner_force_transitions = []
-            for from_state, to_state, my_event_id, trans_event, condition_expr, guard in force_transition_tuples_to_inherit:
+            for (
+                from_state,
+                to_state,
+                my_event_id,
+                trans_event,
+                condition_expr,
+                guard,
+            ) in force_transition_tuples_to_inherit:
                 if from_state is dsl_nodes.ALL or from_state == subnode.name:
-                    transitions.append(Transition(
-                        from_state=subnode.name,
-                        to_state=to_state,
-                        event=trans_event,
-                        guard=guard,
-                        effects=[],
-                    ))
-                    _inner_force_transitions.append(dsl_nodes.ForceTransitionDefinition(
-                        from_state=dsl_nodes.ALL,
-                        to_state=dsl_nodes.EXIT_STATE,
-                        event_id=my_event_id,
-                        condition_expr=condition_expr,
-                    ))
+                    transitions.append(
+                        Transition(
+                            from_state=subnode.name,
+                            to_state=to_state,
+                            event=trans_event,
+                            guard=guard,
+                            effects=[],
+                        )
+                    )
+                    _inner_force_transitions.append(
+                        dsl_nodes.ForceTransitionDefinition(
+                            from_state=dsl_nodes.ALL,
+                            to_state=dsl_nodes.EXIT_STATE,
+                            event_id=my_event_id,
+                            condition_expr=condition_expr,
+                        )
+                    )
 
             _recursive_finish_states(
                 node=subnode,
@@ -2309,14 +2692,18 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
             else:
                 from_state = transnode.from_state
                 if from_state not in current_state.substates:
-                    raise SyntaxError(f'Unknown from state {from_state!r} of transition:\n{transnode}')
+                    raise SyntaxError(
+                        f"Unknown from state {from_state!r} of transition:\n{transnode}"
+                    )
 
             if transnode.to_state is dsl_nodes.EXIT_STATE:
                 to_state = dsl_nodes.EXIT_STATE
             else:
                 to_state = transnode.to_state
                 if to_state not in current_state.substates:
-                    raise SyntaxError(f'Unknown to state {to_state!r} of transition:\n{transnode}')
+                    raise SyntaxError(
+                        f"Unknown to state {to_state!r} of transition:\n{transnode}"
+                    )
 
             trans_event, guard = None, None
             if transnode.event_id is not None:
@@ -2331,7 +2718,8 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                         start_state = start_state.substates[seg]
                     else:
                         raise SyntaxError(
-                            f'Cannot find state {".".join((*base_path, *transnode.event_id.path[:-1]))} for transition:\n{transnode}')
+                            f'Cannot find state {".".join((*base_path, *transnode.event_id.path[:-1]))} for transition:\n{transnode}'
+                        )
 
                 suffix_name = transnode.event_id.path[-1]
                 if suffix_name not in start_state.events:
@@ -2348,11 +2736,13 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                     if var.name not in d_defines:
                         unknown_vars.append(var.name)
                 if unknown_vars:
-                    raise SyntaxError(f'Unknown guard variable {", ".join(unknown_vars)} in transition:\n{transnode}')
+                    raise SyntaxError(
+                        f'Unknown guard variable {", ".join(unknown_vars)} in transition:\n{transnode}'
+                    )
 
             post_operations = _parse_operation_block(
                 transnode.post_operations,
-                'Unknown transition operation variable',
+                "Unknown transition operation variable",
                 transnode,
             )
 
@@ -2367,7 +2757,8 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
 
         if current_state.substates and not has_entry_trans:
             raise SyntaxError(
-                f'At least 1 entry transition should be assigned in non-leaf state {node.name!r}:\n{node}')
+                f"At least 1 entry transition should be assigned in non-leaf state {node.name!r}:\n{node}"
+            )
 
         for func_item in [
             *current_state.on_enters,
@@ -2379,21 +2770,27 @@ def parse_dsl_node_to_state_machine(dnode: dsl_nodes.StateMachineDSLProgram) -> 
                 state = root_state
                 for i, segment in enumerate(func_item.ref_state_path[1:-1], start=1):
                     if segment not in state.substates:
-                        raise SyntaxError(f'Cannot find state {".".join(func_item.ref_state_path[:i + 1])} '
-                                          f'under state {".".join(func_item.ref_state_path[:i])}, '
-                                          f'so cannot resolve reference {".".join(func_item.ref_state_path)!r}.')
+                        raise SyntaxError(
+                            f'Cannot find state {".".join(func_item.ref_state_path[:i + 1])} '
+                            f'under state {".".join(func_item.ref_state_path[:i])}, '
+                            f'so cannot resolve reference {".".join(func_item.ref_state_path)!r}.'
+                        )
                     state = state.substates[segment]
 
                 segment = func_item.ref_state_path[-1]
                 if segment not in state.named_functions:
-                    raise SyntaxError(f'Cannot find named function {segment!r} under state:\n{state.to_ast_node()}')
+                    raise SyntaxError(
+                        f"Cannot find named function {segment!r} under state:\n{state.to_ast_node()}"
+                    )
                 func_item.ref = state.named_functions[segment]
                 assert func_item.ref.state_path == func_item.ref_state_path
 
         for transition in current_state.transitions:
             transition.parent = current_state
 
-    _recursive_finish_states(dnode.root_state, current_state=root_state, current_path=())
+    _recursive_finish_states(
+        dnode.root_state, current_state=root_state, current_path=()
+    )
     return StateMachine(
         defines=d_defines,
         root_state=root_state,

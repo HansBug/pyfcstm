@@ -17,7 +17,7 @@ import { getParser } from './parser';
 const KEYWORDS = [
     'state', 'pseudo', 'named', 'def', 'event',
     'enter', 'during', 'exit', 'before', 'after',
-    'abstract', 'ref', 'effect', 'if',
+    'abstract', 'ref', 'effect', 'if', 'else',
     'int', 'float',
     'and', 'or', 'not'
 ];

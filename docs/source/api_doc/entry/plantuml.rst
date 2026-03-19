@@ -12,3 +12,9 @@ PLANTUML\_OPTION\_TYPES
 .. autodata:: PLANTUML_OPTION_TYPES
 
 
+build\_plantuml\_output
+-----------------------------------------------------
+
+.. autofunction:: build_plantuml_output
+
+

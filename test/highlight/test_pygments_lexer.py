@@ -11,6 +11,7 @@ from pathlib import Path
 from textwrap import dedent
 
 import pytest
+from pygments.token import Keyword
 
 from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.highlight import FcstmLexer
@@ -521,6 +522,22 @@ _LANGCHECK_HACK_CASES = [
         '@startuml\nallowmixing\nobject Cache {\n  state S;\n  event Tick;\n  enter;\n  pseudo\n  named\n  abstract\n  ref\n  effect\n}\n[*] -> Cache : ref;\n@enduml\n',
     ),
 ]
+
+
+@pytest.mark.unittest
+class TestControlFlowKeywords:
+    def test_else_keyword_is_highlighted(self):
+        lexer = FcstmLexer()
+        tokens = [
+            (token_type, text)
+            for token_type, text in lexer.get_tokens(
+                "during { if [x > 0] { y = 1; } else { y = 0; } }"
+            )
+            if text.strip()
+        ]
+
+        assert (Keyword.Reserved, 'if') in tokens
+        assert (Keyword.Reserved, 'else') in tokens
 
 _LANGCHECK_HACK_CASES += [
     (

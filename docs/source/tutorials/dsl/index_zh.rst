@@ -1169,6 +1169,61 @@ DSL 支持三种指定事件作用域的方式：
        z = a + b;
    }
 
+操作块中的 if block
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+具体操作块同样支持结构化控制流：
+
+- ``if [condition] { ... }``
+- ``else if [condition] { ... }``
+- ``else { ... }``
+
+这里的条件语法与转换守卫使用的是同一套布尔条件语法。
+
+.. code-block:: fcstm
+
+   during {
+       tmp = target - measured;
+       if [tmp > 0] {
+           drive = tmp * 10;
+       } else {
+           drive = 0;
+       }
+       output = drive;
+   }
+
+branch 作用域在原有临时变量规则之外，还要额外注意一条边界：
+
+1. 在 ``if`` 之前就已经引入的临时变量，在每个 branch 中都可见
+2. 某个 branch 内新引入的临时变量，只对该 branch 中后续语句可见
+3. branch 内新引入的临时变量不会在 ``if`` 结束后继续可见，即使多个
+   branch 都给同一个名字赋值也一样
+
+因此下面这种写法是合法的：
+
+.. code-block:: fcstm
+
+   effect {
+       tmp = x + 1;
+       if [x > 0] {
+           tmp = tmp + 10;
+       }
+       y = tmp;
+   }
+
+但下面这种写法仍然非法：
+
+.. code-block:: fcstm
+
+   effect {
+       if [x > 0] {
+           tmp = x + 1;
+       } else {
+           tmp = x + 2;
+       }
+       y = tmp;  // 错误：tmp 只在 branch 内引入
+   }
+
 .. important::
    临时变量只是局部计算的便利语法，不是隐藏的机器状态。如果某个名字
    已经通过 ``def`` 全局声明，那么对它赋值仍然会更新全局变量；只有

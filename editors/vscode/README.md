@@ -203,10 +203,10 @@ make verify-p0.3
 # Verify P0.4 - Document Symbols (35 tests)
 make verify-p0.4
 
-# Verify P0.5 - Code Completion (30 tests)
+# Verify P0.5 - Code Completion (31 tests)
 make verify-p0.5
 
-# Verify P0.6 - Hover Documentation (35 tests)
+# Verify P0.6 - Hover Documentation (36 tests)
 make verify-p0.6
 
 # Verify P1.B - Language Configuration Reinforcement
@@ -221,8 +221,8 @@ make verify
 - **P0.2 Parser Integration**: 32 tests covering valid/invalid FCSTM inputs
 - **P0.3 Syntax Diagnostics**: 35 tests covering error detection and messages
 - **P0.4 Document Symbols**: 35 tests covering symbol extraction and hierarchies
-- **P0.5 Code Completion**: 30 tests covering keywords, constants, functions, and document symbols
-- **P0.6 Hover Documentation**: 35 tests covering operators, keywords, and lifecycle aspects
+- **P0.5 Code Completion**: 31 tests covering keywords, constants, functions, and document symbols
+- **P0.6 Hover Documentation**: 36 tests covering operators, keywords, and lifecycle aspects
 - **E2E Bundle Tests**: Comprehensive tests validating bundled extension functionality
 
 All tests use real FCSTM code and provide detailed error reporting with emoji indicators (✅/❌) for easy debugging.
@@ -236,7 +236,7 @@ The extension provides grammar-aligned syntax highlighting for the FCSTM languag
 - **Declaration**: `state`, `pseudo`, `named`, `def`, `event`
 - **Lifecycle**: `enter`, `during`, `exit`, `before`, `after`
 - **Modifiers**: `abstract`, `ref`, `effect`
-- **Control Flow**: `if`, `and`, `or`, `not`
+- **Control Flow**: `if`, `else`, `and`, `or`, `not`
 
 ### Types
 

@@ -7,7 +7,10 @@ classes, ensuring proper integration with PlantUMLOptions configuration.
 
 import pytest
 
-from pyfcstm.model.model import State, StateMachine, VarDefine, Event, Transition, OnStage, OnAspect, Operation
+from pyfcstm.model.model import (
+    State, StateMachine, VarDefine, Event, Transition, OnStage, OnAspect,
+    Operation, IfBlock, IfBlockBranch,
+)
 from pyfcstm.model.plantuml import PlantUMLOptions
 from pyfcstm.model.expr import Integer, Variable, BinaryOp
 
@@ -482,6 +485,73 @@ class TestTransitionEffectModes:
         assert 'note on link' in result
         assert 'effect {' in result
         assert 'end note' in result
+
+    def test_transition_effect_note_mode_with_if_block(self):
+        """Test note transition effect mode keeps if-block structure intact."""
+        effect = IfBlock(
+            branches=[
+                IfBlockBranch(
+                    condition=BinaryOp(
+                        x=Variable('counter'),
+                        op='>',
+                        y=Integer(0),
+                    ),
+                    statements=[
+                        Operation(
+                            var_name='counter',
+                            expr=BinaryOp(
+                                x=Variable('counter'),
+                                op='+',
+                                y=Integer(1),
+                            ),
+                        )
+                    ],
+                ),
+                IfBlockBranch(
+                    condition=None,
+                    statements=[Operation(var_name='counter', expr=Integer(0))],
+                ),
+            ]
+        )
+        child1 = State(
+            name='Child1',
+            extra_name=None,
+            path=('Root', 'Child1'),
+            substates={},
+        )
+        child2 = State(
+            name='Child2',
+            extra_name=None,
+            path=('Root', 'Child2'),
+            substates={},
+        )
+        root = State(
+            name='Root',
+            extra_name=None,
+            path=('Root',),
+            substates={'Child1': child1, 'Child2': child2},
+            transitions=[
+                Transition(
+                    from_state='Child1',
+                    to_state='Child2',
+                    event=None,
+                    guard=None,
+                    effects=[effect],
+                )
+            ],
+        )
+
+        options = PlantUMLOptions(
+            show_transition_effects=True,
+            transition_effect_mode='note'
+        )
+        result = root.to_plantuml(options)
+
+        assert 'note on link' in result
+        assert 'if [counter > 0] {' in result
+        assert '} else {' in result
+        assert 'counter = counter + 1;' in result
+        assert 'counter = 0;' in result
 
     def test_multiple_transitions_same_states(self):
         """Test multiple transitions between same states."""
@@ -1644,4 +1714,3 @@ class TestEventVisualization:
         # Check for left-aligned columns
         assert '| a | int | 0 |' in result
         assert '| b | int | 2 \\| 5 |' in result  # Pipe should be escaped
-

@@ -104,7 +104,7 @@ except ImportError:
 from ..utils.logging import get_logger
 
 from ..dsl import EXIT_STATE
-from ..model import Event, OnAspect, OnStage, State, StateMachine, Transition
+from ..model import Event, IfBlock, OnAspect, OnStage, Operation, OperationStatement, State, StateMachine, Transition
 from .context import ReadOnlyExecutionContext
 
 
@@ -865,7 +865,7 @@ class SimulationRuntime:
 
     def _execute_operation_block(
             self,
-            operations,
+            operations: List[OperationStatement],
             vars_: Dict[str, Union[int, float]],
             validation_message: str,
             execute_message: str,
@@ -879,8 +879,8 @@ class SimulationRuntime:
         to later operations in the same block. After execution finishes, only
         globally defined state-machine variables are written back into ``vars_``.
 
-        :param operations: Operations to execute sequentially.
-        :type operations: List[Operation]
+        :param operations: Operation statements to execute sequentially.
+        :type operations: List[OperationStatement]
         :param vars_: Global variable mapping to update.
         :type vars_: Dict[str, Union[int, float]]
         :param validation_message: Log message for validation mode.
@@ -900,8 +900,11 @@ class SimulationRuntime:
         else:
             old_vars = {name: vars_[name] for name in global_var_names}
 
-        for operation in operations:
-            local_scope[operation.var_name] = operation.expr(**local_scope)
+        self._execute_operation_statements(
+            operations,
+            local_scope,
+            is_validation_mode=is_validation_mode,
+        )
 
         for name in global_var_names:
             vars_[name] = local_scope[name]
@@ -910,6 +913,81 @@ class SimulationRuntime:
             new_vars = {name: vars_[name] for name in global_var_names}
             changes = self._format_var_changes(old_vars, new_vars)
             self.logger.info(f'{execute_message}{changes}')
+
+    def _execute_operation_statements(
+            self,
+            statements: List[OperationStatement],
+            scope: Dict[str, Union[int, float]],
+            is_validation_mode: bool = False,
+    ) -> None:
+        """
+        Execute a sequence of operation statements inside one local scope.
+
+        Statements run strictly in order. The supplied ``scope`` is mutated in
+        place so later statements can observe values written by earlier ones.
+
+        :param statements: Statements to execute.
+        :type statements: List[OperationStatement]
+        :param scope: Mutable local scope for the current operation block or branch.
+        :type scope: Dict[str, Union[int, float]]
+        :param is_validation_mode: Whether this is validation mode.
+        :type is_validation_mode: bool
+        :return: ``None``.
+        :rtype: None
+        """
+        for statement in statements:
+            self._execute_operation_statement(
+                statement,
+                scope,
+                is_validation_mode=is_validation_mode,
+            )
+
+    def _execute_operation_statement(
+            self,
+            statement: OperationStatement,
+            scope: Dict[str, Union[int, float]],
+            is_validation_mode: bool = False,
+    ) -> None:
+        """
+        Execute one operation statement inside the supplied local scope.
+
+        Plain assignments update the current scope directly. ``if`` blocks
+        evaluate branch conditions against the current scope, execute the first
+        matching branch in an isolated branch scope, and then only write back
+        names that were already visible before entering that branch.
+
+        :param statement: Statement to execute.
+        :type statement: OperationStatement
+        :param scope: Mutable local scope for the current operation block or branch.
+        :type scope: Dict[str, Union[int, float]]
+        :param is_validation_mode: Whether this is validation mode.
+        :type is_validation_mode: bool
+        :return: ``None``.
+        :rtype: None
+        :raises TypeError: If the statement type is unsupported.
+        """
+        if isinstance(statement, Operation):
+            scope[statement.var_name] = statement.expr(**scope)
+            return
+
+        if isinstance(statement, IfBlock):
+            for branch in statement.branches:
+                if branch.condition is not None and not bool(branch.condition(**scope)):
+                    continue
+
+                visible_names = tuple(scope.keys())
+                branch_scope = dict(scope)
+                self._execute_operation_statements(
+                    branch.statements,
+                    branch_scope,
+                    is_validation_mode=is_validation_mode,
+                )
+                for name in visible_names:
+                    scope[name] = branch_scope[name]
+                break
+            return
+
+        raise TypeError(f'Unknown operation statement type {type(statement)!r}.')
 
     def _format_var_changes(
             self,

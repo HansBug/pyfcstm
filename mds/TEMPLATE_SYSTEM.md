@@ -994,8 +994,8 @@ Checklist：
 - [x] CLI 支持 `--template`
 - [x] CLI 中 `--template` 与 `--template-dir` 的互斥关系明确
 - [x] 本地 `make build` 在 CLI 构建前会准备模板打包产物
-- [ ] GitHub 的 whl / sdist 打包 workflow 在执行 `python -m build` 前显式执行 `make templates_package` 或等价步骤
-- [ ] GitHub 的 release / release_test / test 中所有 CLI 构建 workflow 都要明确依赖最新模板打包产物，而不是隐式依赖仓库中已有 zip 文件状态
+- [x] GitHub 的 whl / sdist 打包 workflow 在执行 `python -m build` 前显式执行 `make templates_package` 或等价步骤
+- [x] GitHub 的 release / release_test / test 中所有 CLI 构建 workflow 都要明确依赖最新模板打包产物，而不是隐式依赖仓库中已有 zip 文件状态
 
 完成标准：
 

@@ -35,7 +35,7 @@ jobs:
           pip install --upgrade build
       - name: Build packages
         run: |
-          python -m build --sdist --wheel --outdir dist/
+          make package
       - name: Publish distribution 📦 to real PyPI
         uses: pypa/gh-action-pypi-publish@v1.13.0
         with:

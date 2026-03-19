@@ -11,3 +11,9 @@ pyfcstm.highlight
 
     pygments_lexer
 
+\_\_all\_\_
+-----------------------------------------------------
+
+.. autodata:: __all__
+
+

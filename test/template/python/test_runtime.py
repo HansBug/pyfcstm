@@ -1,3 +1,4 @@
+import ast
 import importlib.util
 import os.path
 import textwrap
@@ -169,3 +170,32 @@ class TestPythonBuiltinTemplate:
             }
             assert 'Original DSL Source' in module.__doc__
             assert 'Root-level hook used for runtime customization.' in module.RootMachine._abstract_Root_RootInit.__doc__
+
+    def test_generated_machine_source_stays_platform_neutral_and_python37_compatible(self):
+        dsl_code = """
+        def int counter = 0;
+        state Root {
+            state Idle {
+                during { counter = counter + 1; }
+            }
+            [*] -> Idle;
+        }
+        """
+
+        with _render_python_module(dsl_code) as module:
+            with open(module.__spec__.origin, 'r', encoding='utf-8') as f:
+                source = f.read()
+
+            tree = ast.parse(source, feature_version=(3, 7))
+            imported_modules = set()
+            for node in tree.body:
+                if isinstance(node, ast.Import):
+                    imported_modules.update(alias.name for alias in node.names)
+                elif isinstance(node, ast.ImportFrom):
+                    imported_modules.add(node.module)
+
+            assert imported_modules <= {'__future__', 'math', 'dataclasses', 'typing'}
+            assert 'msvcrt' not in source
+            assert 'fcntl' not in source
+            assert 'subprocess' not in source
+            assert 'pathlib' not in source

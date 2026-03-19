@@ -1132,22 +1132,22 @@ Checklist：
 
 Checklist：
 
-- [ ] 为 builtin template 增加生成层测试
-- [ ] 为 `--template` CLI 路径增加入口测试
-- [ ] 增加“生成后 import 执行”的行为测试
-- [ ] 覆盖简单叶子状态切换
-- [ ] 覆盖复合状态初始转换
-- [ ] 覆盖 aspect during
-- [ ] 覆盖 `during before/after`
-- [ ] 覆盖 `[*]` 退出
-- [ ] 覆盖 hot start
-- [ ] 覆盖块级临时变量
-- [ ] 覆盖嵌套 `if`
-- [ ] 覆盖抽象动作回调
-- [ ] 覆盖 validation 成功路径
-- [ ] 覆盖 validation 失败路径
-- [ ] 在 Windows / Linux / macOS 维度上确认没有平台差异性实现假设
-- [ ] 在 Python 3.7-3.14 范围内确认语法和运行兼容性
+- [x] 为 builtin template 增加生成层测试
+- [x] 为 `--template` CLI 路径增加入口测试
+- [x] 增加“生成后 import 执行”的行为测试
+- [x] 覆盖简单叶子状态切换
+- [x] 覆盖复合状态初始转换
+- [x] 覆盖 aspect during
+- [x] 覆盖 `during before/after`
+- [x] 覆盖 `[*]` 退出
+- [x] 覆盖 hot start
+- [x] 覆盖块级临时变量
+- [x] 覆盖嵌套 `if`
+- [x] 覆盖抽象动作回调
+- [x] 覆盖 validation 成功路径
+- [x] 覆盖 validation 失败路径
+- [x] 在 Windows / Linux / macOS 维度上确认没有平台差异性实现假设
+- [x] 在 Python 3.7-3.14 范围内确认语法和运行兼容性
 
 完成标准：
 

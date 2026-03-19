@@ -1,9 +1,10 @@
-# pyfcstm 模板系统与 Python 内置模板方案
+# pyfcstm 模板系统、内置模板现状与多语言模板标准
 
 ## 版本历史
 
 | 版本 | 日期 | 修改内容 | 作者 |
 |------|------|----------|------|
+| 0.3.0 | 2026-03-19 | 按当前仓库实现补充 builtin template、statement renderer、CLI `--template`、模板测试现状，并明确后续多语言模板需以 builtin `python` 为参考满足语义对齐、低依赖、广兼容与 abstract 扩展点要求 | Codex |
 | 0.2.4 | 2026-03-19 | 补充 render 内建 style 的语言别名约定，并明确 renderer 模板运行时应自动注入 `state_vars` / `var_types` 默认值 | Codex |
 | 0.2.3 | 2026-03-19 | 明确 `expr` / `stmt` 内建 style 的最小支持范围为 `c`、`cpp`、`python`、`java`、`js`、`ts`、`rust`、`go`，并要求默认调用即可得到可直接使用的目标语言代码 | Codex |
 | 0.2.2 | 2026-03-19 | 补充渲染基础设施的跨语言约束，明确 `expr` 需要持续支持常见主流语言 | Codex |
@@ -16,7 +17,13 @@
 ## 1. 背景与目标
 
 目前 `pyfcstm` 的代码生成能力本质上是一个 Jinja2 模板渲染系统：输入为 `StateMachine` 模型，输出为模板目录渲染后的文件集合。  
-本次希望新增一个**自带的 Python 模板**，并且它满足以下约束：
+当前仓库已经落地了 builtin template 基础设施、statement renderer，以及首个**自带的 Python 模板**。  
+现在这份文档不再只是“新增 Python 模板”的方案草案，而是同时承担两件事：
+
+1. 记录当前模板系统与 builtin template 的实际落地状态  
+2. 明确后续其他语言模板应遵循的统一标准
+
+当前 builtin `python` 模板满足并继续要求以下约束：
 
 - 生成结果是**纯 Python 标准库可运行代码**
 - 生成结果**不依赖 pyfcstm 自身**
@@ -25,7 +32,7 @@
 - 状态机运行逻辑不放在外部运行时包中，而是**内置到生成类中**
 - `cycle` 逻辑、给定状态热启动逻辑、状态变量初始化逻辑都需要内置
 - 该 Python 模板应作为 `pyfcstm` **自带 builtin templates 之一**
-- 后续还会扩展其他语言模板，因此这次方案不能只为 Python 特判到不可复用
+- 后续还会扩展其他语言模板，因此现有设计必须能被其他语言模板复用，而不是只为 Python 特判
 
 这里的核心目标不是“生成一个 Python 版解释器壳子”，而是：
 
@@ -39,6 +46,33 @@
 - 安装包中的**模板发布载体目录**
 
 这两者建议分离。前者便于开发维护，后者便于分发和运行时释放。
+
+### 1.1 当前仓库状态快照
+
+截至 2026-03-19，模板相关主链路已经具备以下状态：
+
+- 仓库根目录 `templates/` 已作为 builtin template 源码目录，当前已有 `templates/python/`
+- `pyfcstm/template/` 已作为打包后的 builtin template 发布模块，包含 `index.json`、`python.zip` 与 `extract_template()` 等接口
+- `pyfcstm generate` 已同时支持 `--template-dir` 与 `--template`
+- `pyfcstm/render/statement.py` 已落地，`stmt_render` / `stmts_render` 已是正式能力，不再是待实现方案
+- render 层当前内建 statement style 已覆盖 `dsl`、`c`、`cpp`、`python`、`java`、`js`、`ts`、`rust`、`go`
+- builtin `python` 模板已作为参考实现落在 `templates/python/`
+- `test/template/python/test_runtime.py` 与 `test/template/python/test_runtime_alignment.py` 已形成生成物测试与运行时语义对齐测试
+- `docs/source/tutorials/render/index.rst` 与 `docs/source/tutorials/render/index_zh.rst` 已改为围绕模板系统主线，而不是只围绕 builtin `python` 模板本身
+
+### 1.2 当前阶段的核心目标
+
+后续工作的重点不再是“让 Python builtin template 第一次可用”，而是：
+
+1. 把 builtin `python` 模板作为后续语言模板的参考实现固定下来  
+2. 把模板系统、打包发布链路、文档与测试体系保持同步  
+3. 让未来 builtin template 在保持语言特性的同时，仍能满足统一的语义、扩展性与兼容性要求
+
+说明：
+
+- 本文后续章节仍保留了大量阶段性设计与实施记录，便于追踪决策来源
+- 当文档中的历史表述与当前代码、测试结果冲突时，应以当前代码与测试为准
+- 进行后续语言模板设计时，应优先参考当前 `templates/python/`、`test/template/python/` 以及 `pyfcstm/template/` 的实际落地状态
 
 ---
 
@@ -83,10 +117,14 @@
 - 读取模板目录中的 `config.yaml`
 - 为模板提供 Jinja2 `globals` / `filters` / `tests`
 - 支持表达式渲染 `expr_render`
+- 支持语句渲染 `stmt_render` / `stmts_render`
 - 递归扫描模板目录
 - 对 `.j2` 文件做渲染
 - 对非 `.j2` 文件做原样拷贝
 - 支持 ignore 规则
+- 在渲染器驱动场景下，为 statement renderer 自动注入 `state_vars` / `var_types` 默认值
+- 通过 `pyfcstm.template` 列举、读取、释放内置模板
+- 通过 CLI `--template` 直接走 builtin template 生成链路
 
 这意味着下面这些目标**已经可以直接支持**：
 
@@ -94,10 +132,12 @@
 - 额外生成 `README.md`、示例文件等静态资源
 - 拷贝静态 Python 文件到输出目录
 - 在模板里基于 `model.walk_states()` 等模型能力做硬编码展开
+- 把 DSL 的动作块直接渲染成目标语言语句，而不是只回显 DSL 文本
+- 将仓库源码模板打包为包内 builtin template 资源并由 CLI 消费
 
 ### 3.2 已知限制
 
-当前系统也有几个关键限制，需要在方案中显式考虑：
+当前系统仍有几个边界条件，需要在后续语言模板中继续显式考虑：
 
 #### 限制 1：输出文件名不能模板化
 
@@ -113,69 +153,44 @@
 
 如果未来确实需要“根据状态机名自动生成模块文件名”，再扩展 render 层。
 
-#### 限制 2：当前只有表达式 renderer，没有目标语言级 statement renderer
+#### 限制 2：renderer 只负责渲染，不会自动保证目标语言运行时语义正确
 
-现在已经有：
+`expr_render` 与 `stmt_render` 只是模板基础设施。  
+它们能够帮助模板输出目标语言代码，但不会自动证明“这个目标语言运行时与 `SimulationRuntime` 绝对一致”。
 
-- `expr_render(style='python')`
+因此每个 builtin template 仍然必须自己承担：
 
-但对于 `enter/during/exit/effect` 中的操作块，现阶段只有：
+- 运行时结构设计
+- 状态栈与状态推进逻辑实现
+- hot start 语义保持
+- 临时变量作用域保持
+- abstract action / ref / 生命周期行为保持
+- 与 `SimulationRuntime` 的对齐测试
 
-- `operation_stmt_render`
-- `operation_stmts_render`
+#### 限制 3：builtin template 扩展点仍需由每个语言模板显式设计
 
-它们输出的是 **DSL 文本**，适合注释和展示，不适合直接生成 Python 可执行语句。
+模板系统不会自动替某个目标语言发明“用户怎么扩展 abstract 行为”的接口。  
+这部分必须由具体模板根据语言特性给出稳定、清晰、可测试的扩展面。
 
-而 Python 模板要真正生成可执行代码，必须把下面这些操作块编译成 Python 语句：
+当前 builtin `python` 模板采用的是：
 
-- `Operation`
-- `IfBlock`
+- 生成运行时类
+- 通过 protected hook 暴露 abstract action 扩展点
+- 用户通过继承生成类并 override hook，而不是修改生成文件
 
-特别是还要保留**块级临时变量语义**。
+后续其他语言模板也应遵循同一思路：  
+**不给用户制造“直接改生成文件”的维护路径，而是给稳定、语言习惯友好的扩展面。**
 
-因此，Python 模板落地前，建议先补一个**statement renderer 层**，至少支持：
+#### 限制 4：模板源码、打包产物、CLI、文档与测试必须同步演进
 
-- 赋值语句渲染
-- `if / elif / else` 语句渲染
-- 缩进输出
-- 基于当前块上下文区分“全局状态变量”和“临时变量”
+现在 builtin template 发布链路已经存在，但这也意味着模板改动不能只改一个地方。  
+一旦新增或调整 builtin template，至少要同时检查：
 
-#### 限制 3：当前 CLI 只有 `--template-dir`
-
-目前 `generate` 命令要求用户显式传目录：
-
-```bash
-pyfcstm generate -i input.fcstm -t template_dir -o output_dir
-```
-
-如果要支持“自带模板”，需要新增一层 builtin template 解析机制，否则用户无法方便使用包内模板。
-
-#### 限制 4：当前打包配置不会自动带上模板源码或模板压缩包
-
-当前 `setup.py` / `MANIFEST.in` 中的 `package_data` 主要包含：
-
-- `*.yaml`
-- `*.yml`
-- `*.json`
-- `*.png`
-- `*.g4`
-- `*.tokens`
-- `*.interp`
-
-如果采用“根目录 `templates/` 维护源码，发布时打包到 `pyfcstm/template/`”这条路线，则至少还要补充：
-
-- `pyfcstm/template/*.zip`
-- `pyfcstm/template/*.json`
-- `pyfcstm/template/__init__.py`
-
-如果源码模板也希望随源码包一起分发，则还要额外考虑：
-
-- `templates/**/*.j2`
-- `templates/**/*.md`
-- `templates/**/config.yaml`
-- 其他静态模板资源
-
-否则安装后的包中 builtin template 的列举与释放能力不会完整存在。
+- `templates/<name>/` 源码目录
+- `pyfcstm/template/` 的打包产物与索引
+- CLI `--template` 路径是否仍然成立
+- 文档中的模板说明、教程与 README
+- `test/template/` 与相关 CLI 测试
 
 ---
 
@@ -250,7 +265,46 @@ Python 内置模板建议遵循以下原则：
 
 不要为了“代码更现代”而引入任何会破坏 3.7-3.14 兼容性的写法。
 
-### 4.3 第一版推荐输出结构
+### 4.3 后续其他语言 builtin template 的统一标准
+
+后续如果继续新增 `c`、`cpp`、`java`、`js`、`ts`、`rust`、`go` 或其他语言的 builtin template，
+应统一以当前 builtin `python` 模板作为参考实现来把握标准，但不是机械复制其文件布局或类接口。
+
+统一要求如下：
+
+1. **运行时行为必须与 `SimulationRuntime` 绝对一致**
+   这是最高优先级要求。状态进入/退出、初始转换、child-to-child 转换、pseudo state、aspect action、hot start、
+   临时变量、guard/effect、validation 结果、异常边界等都应保持一致。
+
+2. **生成产物应尽量自包含、低依赖**
+   优先依赖目标语言自带标准库、核心语法与最基础工具链；不要轻易引入额外 runtime framework、
+   第三方包、宿主工程插件或复杂构建前提。
+
+3. **尽量支持广泛版本区间与主流平台**
+   不要只为最新语言版本或单一平台写模板。应优先选择更保守、更长期稳定的语言特性与运行时接口，
+   尽可能覆盖主流版本区间与 Windows / Linux / macOS 等常见平台。
+
+4. **abstract 行为必须留出稳定扩展面**
+   参考 builtin `python` 模板的思路，不要求用户直接修改生成文件，而是通过语言习惯友好的稳定扩展点来实现
+   abstract action、事件检查或类似扩展行为。不同语言可以采用继承、trait/interface、partial file、
+   callback registration 等更合适的机制，但目标是一致的：**扩展点稳定、命名清晰、维护成本低**。
+
+5. **模板接口要有 DSL 视角可追踪性**
+   状态路径、action 名称、abstract hook 名称、事件路径等命名应尽量让 DSL 用户一眼能映射回原模型，
+   便于调试、排障和 IDE 补全。
+
+6. **测试层次必须完整**
+   至少应覆盖：
+   - 模板释放 / 渲染链路测试
+   - 生成产物级测试
+   - 与 `SimulationRuntime` 的对齐测试
+   - 必要时的 CLI `--template <name>` 端到端测试
+
+7. **把 Python 模板当作参考思路，而不是唯一外观模板**
+   要复用的是它的原则：语义对齐、低依赖、广兼容、稳定扩展点、可读生成物、完整测试。  
+   不要求别的语言一定生成单文件、一定用 class 继承，或一定沿用 Python 的 hook 命名风格。
+
+### 4.4 第一版推荐输出结构
 
 第一版建议输出一个最小 Python 包目录：
 

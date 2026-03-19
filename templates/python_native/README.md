@@ -4,13 +4,13 @@
 
 Current status:
 
-- Phase 1 scaffold only
-- intended to validate built-in template packaging, extraction, and CLI wiring
-- not yet the final embedded-runtime implementation
+- Phase 3 runtime template implemented
+- generates a single importable Python runtime module
+- emits only `machine.py` and does not require a generated package wrapper
+- embeds state metadata, cycle logic, hot start handling, subclass hook points for abstract actions, and abstract handler registration
+- depends only on the Python standard library
 
 Expected later work:
 
-- statement renderer integration
-- generated machine runtime
-- hot start support
-- abstract handler hooks
+- closer semantic alignment with `SimulationRuntime`
+- broader acceptance coverage for composite exit and validation edge cases

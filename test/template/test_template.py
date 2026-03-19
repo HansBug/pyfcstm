@@ -28,7 +28,7 @@ class TestBuiltinTemplateModule:
             assert os.path.isdir(template_dir)
             assert os.path.isfile(os.path.join(template_dir, "config.yaml"))
             assert os.path.isfile(os.path.join(template_dir, "machine.py.j2"))
-            assert os.path.isfile(os.path.join(template_dir, "__init__.py.j2"))
+            assert not os.path.exists(os.path.join(template_dir, "__init__.py.j2"))
 
     def test_extract_template_not_found(self):
         with TemporaryDirectory() as td:

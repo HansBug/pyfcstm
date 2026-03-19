@@ -1227,7 +1227,9 @@ junit.xml
 !/pyfcstm/template/
 !/pyfcstm/template/*.py
 !/pyfcstm/template/*.json
-!/pyfcstm/template/*.zip
+/pyfcstm/template/*.zip
+/test/template/_generated/
+/test/testfile/python_native_dlc6_more_result/
 *.cli_history
 
 # LLM configuration (contains API tokens)

@@ -1,7 +1,7 @@
 {
   "name": "python_native",
   "title": "Python Native",
-  "description": "Native Python built-in template scaffold.",
+  "description": "Native Python built-in template with embedded runtime logic.",
   "language": "python",
   "experimental": true
 }

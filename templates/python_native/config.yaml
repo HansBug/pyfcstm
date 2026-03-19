@@ -1,3 +1,8 @@
+expr_styles:
+  python_native_expr:
+    base_lang: python
+    Name: "self._vars[{{ node.name | repr }}]"
+
 ignores:
   - 'README.md'
   - 'template.json'

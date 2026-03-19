@@ -2,7 +2,7 @@
   "templates": [
     {
       "archive": "python_native.zip",
-      "description": "Native Python built-in template scaffold.",
+      "description": "Native Python built-in template with embedded runtime logic.",
       "experimental": true,
       "language": "python",
       "name": "python_native",

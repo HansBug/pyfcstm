@@ -168,11 +168,13 @@ class TestEntryGenerate:
             )
             assert result.exitcode == 0
             assert os.path.isfile(os.path.join(td, "machine.py"))
-            assert os.path.isfile(os.path.join(td, "__init__.py"))
+            assert not os.path.exists(os.path.join(td, "__init__.py"))
 
             with open(os.path.join(td, "machine.py"), "r") as f:
                 content = f.read()
             assert "class TrafficLightMachine" in content
+            assert "Original DSL Source" in content
+            assert "Abstract Hook Map" in content
 
     def test_generate_with_template_and_template_dir_should_fail(self, input_code_file):
         template_dir = os.path.abspath(get_testfile("template_1"))

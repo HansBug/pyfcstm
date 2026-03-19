@@ -946,7 +946,7 @@ Phase 1 -> Phase 2 -> Phase 3 -> Phase 4 -> Phase 5
 
 本设计文档对应的实施 PR：
 
-- PR 链接：`TBD`
+- PR 链接：[PR #70](https://github.com/HansBug/pyfcstm/pull/70)
 
 这里的约束是：
 

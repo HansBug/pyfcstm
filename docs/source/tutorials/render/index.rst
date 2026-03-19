@@ -90,6 +90,12 @@ metaprogramming to be productive, but you should be comfortable with:
 - globals
 - tests
 
+If you want the official Jinja learning path rather than only the minimal
+examples in this tutorial, continue with:
+
+- `Jinja Template Designer Documentation <https://jinja.palletsprojects.com/en/stable/templates/>`_
+- `Jinja API Documentation <https://jinja.palletsprojects.com/en/stable/api/>`_
+
 Minimal examples:
 
 .. code-block:: jinja
@@ -188,6 +194,30 @@ Typical examples:
    {{ transition.guard.to_ast_node() | expr_render(style='python') }}
    {{ some_expr | expr_render(style='c') }}
 
+Parameter overview:
+
+.. list-table::
+   :header-rows: 1
+
+   * - Field
+     - Required
+     - Meaning
+     - Typical values
+   * - ``node``
+     - Yes
+     - The single expression node to render
+     - ``transition.guard.to_ast_node()``, ``some_expr``, ``1``, ``True``
+   * - ``style``
+     - No
+     - Which expression style to use
+     - ``python``, ``c``, ``default``, or a custom style from ``config.yaml``
+
+The default behavior of ``style`` matters:
+
+- on a top-level call, omitting ``style=...`` uses ``default``
+- inside recursive expression rendering, omitting ``style=...`` inherits the
+  current style
+
 What it is for:
 
 - guard expressions
@@ -245,6 +275,41 @@ One more practical detail matters in real templates:
 - if you define ``default`` as a thin wrapper over ``python``, most template
   sites no longer need to spell out ``style='python'`` repeatedly
 
+A practical refactor looks like this.
+
+Before:
+
+.. code-block:: jinja
+
+   if {{ transition.guard.to_ast_node() | expr_render(style='python') }}:
+       ...
+
+   value = {{ some_expr | expr_render(style='python') }}
+
+After:
+
+.. code-block:: yaml
+
+   expr_styles:
+     default:
+       base_lang: python
+     python_scope_expr:
+       base_lang: python
+       Name: "scope[{{ node.name | tojson }}]"
+
+.. code-block:: jinja
+
+   if {{ transition.guard.to_ast_node() | expr_render }}:
+       ...
+
+   value = {{ some_expr | expr_render }}
+
+Effect:
+
+- shorter template bodies
+- more centralized target-language decisions
+- fewer chances to forget or mismatch the intended style
+
 Understanding ``stmt_render`` And ``stmts_render``
 --------------------------------------------------
 
@@ -270,6 +335,94 @@ Examples:
    {{ one_statement | stmt_render(style='python') }}
 
    {{ action.operations | stmts_render(style='python') }}
+
+Parameter overview for ``stmt_render``:
+
+.. list-table::
+   :header-rows: 1
+
+   * - Field
+     - Required
+     - Meaning
+     - Typical values
+   * - ``node``
+     - Yes
+     - One operation statement
+     - ``action.operations[0]``
+   * - ``style``
+     - No
+     - Which statement style to use
+     - ``python``, ``c``, ``default``
+   * - ``state_vars``
+     - No
+     - Names that should be treated as persistent state variables
+     - ``('counter', 'flag')``
+   * - ``var_types``
+     - No
+     - Variable type mapping, mainly for static-language styles
+     - ``{'counter': 'int', 'ratio': 'float'}``
+   * - ``visible_names``
+     - No
+     - Temporary names already visible before this statement
+     - ``('tmp', 'error')``
+   * - ``visible_var_types``
+     - No
+     - Type mapping for already-visible temporary names
+     - ``{'tmp': 'int'}``
+   * - ``indent``
+     - No
+     - One indentation unit
+     - ``'    '``, ``'  '``
+   * - ``level``
+     - No
+     - Initial indentation depth
+     - ``0``, ``1``, ``2``
+
+Parameter overview for ``stmts_render``:
+
+.. list-table::
+   :header-rows: 1
+
+   * - Field
+     - Required
+     - Meaning
+     - Typical values
+   * - ``nodes``
+     - Yes
+     - A sequence of operation statements
+     - ``action.operations``
+   * - ``style``
+     - No
+     - Which statement style to use
+     - ``python``, ``c``, ``default``
+   * - ``state_vars``
+     - No
+     - Names that should be treated as persistent state variables
+     - ``('counter', 'flag')``
+   * - ``var_types``
+     - No
+     - Variable type mapping, mainly for static-language styles
+     - ``{'counter': 'int', 'ratio': 'float'}``
+   * - ``visible_names``
+     - No
+     - Temporary names already visible before this block
+     - ``('tmp', 'error')``
+   * - ``visible_var_types``
+     - No
+     - Type mapping for already-visible temporary names
+     - ``{'tmp': 'int'}``
+   * - ``indent``
+     - No
+     - One indentation unit
+     - ``'    '``, ``'  '``
+   * - ``level``
+     - No
+     - Initial indentation depth
+     - ``0``, ``1``, ``2``
+   * - ``sep``
+     - No
+     - Separator between top-level rendered statements
+     - ``'\\n'``
 
 They are the correct entry points when the DSL block may contain:
 
@@ -306,6 +459,34 @@ Why this matters:
 - temporary variables should stay local to the block
 - branch-local temporaries should follow the same visibility rules as the
   runtime semantics
+
+A common refactor is to stop hand-writing statement expansion.
+
+Before:
+
+.. code-block:: jinja
+
+   {% for op in action.operations %}
+   {{ op.target.name }} = {{ op.expr.to_ast_node() | expr_render(style='python') }}
+   {% endfor %}
+
+Problems with that approach:
+
+- it only covers the simplest assignment shape
+- temporary-variable semantics are easy to get wrong
+- ``if / else if / else`` quickly forces you to reimplement a statement renderer
+
+After:
+
+.. code-block:: jinja
+
+   {{ action.operations | stmts_render(style='python') }}
+
+Effect:
+
+- assignments, temporaries, and branches all go through one renderer
+- the template gets shorter and less error-prone
+- scope or typing changes become style changes rather than template rewrites
 
 Built-in statement styles already encode these target-language conventions for
 ``dsl``, ``c``, ``cpp``, ``python``, ``java``, ``js``, ``ts``, ``rust``, and
@@ -378,9 +559,13 @@ Example:
    - {{ state.path | join('.') }}
    {% endfor %}
 
-When you are unsure what the model exposes, inspect existing templates and unit
-tests, especially the template tests and model tests that walk real state
-machines.
+When you want the full model surface, continue with :doc:`../../api_doc/model/index`.
+
+That API documentation is the right place to inspect:
+
+- what :class:`pyfcstm.model.StateMachine` exposes
+- what is available on states, transitions, events, and lifecycle-action objects
+- how model objects and expression nodes are organized
 
 Generation Scale And Template Shape
 -----------------------------------
@@ -457,6 +642,17 @@ Testing Templates
 
 Template work should be tested at multiple levels.
 
+Start with a template-author workflow, not with a giant machine:
+
+1. prepare one tiny DSL sample for the exact behavior you are implementing
+2. render into a temporary output directory
+3. inspect the generated file names, structure, indentation, and variable mapping
+4. if this is a runtime template, actually import and execute the generated code
+5. turn that sample into a regression test before expanding the template further
+
+Do not debug a new template against a large state machine first. Template bugs
+and model complexity compound very quickly.
+
 Renderer-Level Tests
 ^^^^^^^^^^^^^^^^^^^^
 
@@ -500,38 +696,19 @@ This level catches semantic drift in:
 CLI End-To-End Tests
 ^^^^^^^^^^^^^^^^^^^^
 
-Add CLI tests when the public user path matters, especially for built-in
-templates:
+Add CLI tests when your template is intended to be used through the command line:
 
-- generate with ``pyfcstm generate --template ...``
+- generate with ``pyfcstm generate -t ./your_template``
 - verify output files exist
 - import or run the generated artifact
 - check one minimal behavior path
 
-Built-In Template Publication Chain
------------------------------------
+When template debugging gets stuck, a good triage order is:
 
-Built-in templates are maintained as source directories under ``templates/``,
-then packaged for runtime distribution.
-
-Current chain:
-
-.. code-block:: text
-
-   templates/<name>/
-     -> make tpl
-     -> pyfcstm/template/<name>.zip + index.json
-     -> extract_template(name, output_dir)
-     -> StateMachineCodeRenderer(extracted_dir)
-
-This is important for template authors because a built-in template is not just
-"a folder in the repo". It also has a packaging and extraction path that must
-stay healthy.
-
-That is why built-in template changes should usually be validated through both:
-
-- direct source-template rendering
-- packaged-template extraction and rendering
+1. check whether the helper or style in ``config.yaml`` already does what you think it does
+2. check whether the object you pass into ``expr_render`` / ``stmt_render`` / ``stmts_render`` is the right one
+3. if you suspect the DSL block shape rather than the target-language rendering, echo it first with ``operation_stmt_render`` or ``operation_stmts_render``
+4. if the generated file text looks correct but behavior is wrong, move to generated-artifact tests
 
 When To Put Logic Where
 -----------------------
@@ -589,8 +766,8 @@ The key ideas for template authors are:
 - think in terms of ``StateMachine`` model in, file tree out
 - keep renderer-facing logic in ``config.yaml``
 - keep repeated structure in macros
+- learn the official Jinja material for syntax depth, then apply pyfcstm-specific rules here
 - test templates at renderer, generated-artifact, and CLI levels when needed
-- remember the packaging path for built-in templates
 
 Once these pieces are clear, writing a new template becomes a disciplined
 engineering task rather than trial-and-error Jinja editing.

@@ -176,6 +176,26 @@ class TestEntryGenerate:
             assert "Original DSL Source" in content
             assert "Abstract Hook Map" in content
 
+    def test_generate_with_invalid_builtin_template_should_fail(self, input_code_file):
+        with TemporaryDirectory() as td:
+            result = simulate_entry(
+                pyfcstmcli,
+                [
+                    "pyfcstm",
+                    "generate",
+                    "-i",
+                    input_code_file,
+                    "--template",
+                    "not_exists",
+                    "-o",
+                    td,
+                ],
+            )
+            assert result.exitcode != 0
+            message = result.stderr or result.stdout
+            assert "Invalid value for '--template'" in message
+            assert "python" in message
+
     def test_generate_with_template_and_template_dir_should_fail(self, input_code_file):
         template_dir = os.path.abspath(get_testfile("template_1"))
         with TemporaryDirectory() as td:

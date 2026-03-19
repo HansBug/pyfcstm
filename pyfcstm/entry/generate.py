@@ -28,7 +28,6 @@ from tempfile import TemporaryDirectory
 import click
 
 from .base import CONTEXT_SETTINGS
-from .. import template as builtin_template
 from ..dsl import parse_with_grammar_entry
 from ..model import parse_dsl_node_to_state_machine
 from ..render import StateMachineCodeRenderer
@@ -55,6 +54,7 @@ def _add_generate_subcommand(cli: click.Group) -> click.Group:
         >>> app = _add_generate_subcommand(app)
         >>> # "generate" is now available as a subcommand on app.
     """
+    from ..template import list_templates, extract_template
 
     @cli.command(
         "generate",
@@ -80,7 +80,7 @@ def _add_generate_subcommand(cli: click.Group) -> click.Group:
     @click.option(
         "--template",
         "template_name",
-        type=str,
+        type=click.Choice(list_templates(), case_sensitive=True),
         required=False,
         help="Built-in template name of the code generation.",
     )
@@ -151,13 +151,10 @@ def _add_generate_subcommand(cli: click.Group) -> click.Group:
 
         if template_name:
             with TemporaryDirectory() as td:
-                try:
-                    extracted_template_dir = builtin_template.extract_template(
-                        template_name,
-                        td,
-                    )
-                except LookupError as err:
-                    raise click.BadParameter(str(err), param_hint="--template") from err
+                extracted_template_dir = extract_template(
+                    template_name,
+                    td,
+                )
                 renderer = StateMachineCodeRenderer(template_dir=extracted_template_dir)
                 renderer.render(
                     model,

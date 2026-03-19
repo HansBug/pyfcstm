@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 修改内容 | 作者 |
 |------|------|----------|------|
+| 0.2.4 | 2026-03-19 | 补充 render 内建 style 的语言别名约定，并明确 renderer 模板运行时应自动注入 `state_vars` / `var_types` 默认值 | Codex |
 | 0.2.3 | 2026-03-19 | 明确 `expr` / `stmt` 内建 style 的最小支持范围为 `c`、`cpp`、`python`、`java`、`js`、`ts`、`rust`、`go`，并要求默认调用即可得到可直接使用的目标语言代码 | Codex |
 | 0.2.2 | 2026-03-19 | 补充渲染基础设施的跨语言约束，明确 `expr` 需要持续支持常见主流语言 | Codex |
 | 0.2.1 | 2026-03-19 | 补充对现有模板系统与既有模板样例的非破坏兼容性约束 | Codex |
@@ -545,6 +546,7 @@ Python 生成模板**保留 validation 语义**，尽量与现有模拟器一致
 - `stmt_render` 的接口设计也不能默认“所有目标语言都像 Python 一样不需要声明临时变量”
 - 内建 style 的默认行为要遵循“约定大于配置”：
   只要调用方只传一个语言选择，不附加额外配置，也应当能在大多数常规工程环境下产出可直接使用的目标语言代码；定制化只是附加能力，而不是默认可用性的前提
+- 内建 style 还应接受常见语言别名，例如 `c++`、`javascript`、`typescript`、`golang`、`python3` 等，并统一归一化到内部 canonical style
 
 当前建议的最小落地要求是：
 
@@ -552,6 +554,7 @@ Python 生成模板**保留 validation 语义**，尽量与现有模拟器一致
 - 内建 `stmt_render` 至少持续维护 `dsl`、`c`、`cpp`、`python`、`java`、`js`、`ts`、`rust`、`go` 这些主流 style
 - 对新增 style 的支持要以**增量扩展**方式完成，而不是修改 Python style 后让其他语言退化
 - 所有语言 style 的扩展都应优先复用同一套节点分发机制，而不是为单一语言复制一套表达式渲染实现
+- 当 `stmt_render` / `stmts_render` 运行在 `StateMachineCodeRenderer` 的模板渲染流程中时，如果模板作者没有显式传入 `state_vars` 与 `var_types`，renderer 应自动从当前 `StateMachine` 的 `defines` 中注入默认状态变量名集合与类型映射，避免模板作者在模板里反复手写 `model.defines.keys()` 或同类列表
 
 ### 8.2 推荐的 statement renderer 设计
 
@@ -1070,6 +1073,8 @@ Checklist：
 - [x] 明确 `stmt_render` 在静态类型语言下的临时变量声明与类型推断扩展接口
 - [x] 在多平台维度确认 render 输出没有额外平台差异假设
 - [x] 为 `expr_render` / `stmt_render` 的内建主流语言 style 提供“约定大于配置”的默认行为
+- [x] 为内建 style 提供常见语言别名归一化能力
+- [x] 在 renderer 模板运行时为 `stmt_render` / `stmts_render` 自动注入默认 `state_vars` / `var_types`
 
 完成标准：
 
@@ -1079,6 +1084,8 @@ Checklist：
 - `stmt_render` 已经提供静态类型语言所需的临时变量声明扩展接口
 - `expr_render` 与 `stmt_render` 的内建 style 已覆盖 `c`、`cpp`、`python`、`java`、`js`、`ts`、`rust`、`go`
 - 在仅传语言名且不附加配置时，内建 style 仍能产出大多数场景下可直接使用的默认代码
+- 常见语言别名可以稳定映射到相同的内建 style 行为
+- 模板作者在 renderer 场景下默认不需要反复手写状态变量名列表与类型映射
 - render 出口在 Windows / Linux / macOS 上不依赖默认换行差异
 - `expr_render` 与 `stmt_render` 的接口演进方向明确保持跨语言可扩展
 - 没有把 render 基础设施收缩成只服务 Python 模板的实现

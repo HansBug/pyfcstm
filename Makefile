@@ -145,7 +145,7 @@ clean:
 
 test: unittest
 
-unittest:
+unittest: templates_package
 	UNITTEST=1 \
 		pytest "${RANGE_TEST_DIR}" \
 		-sv -m unittest \

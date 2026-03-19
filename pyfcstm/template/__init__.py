@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import zipfile
 from typing import Dict, List
 
@@ -83,6 +84,22 @@ def _load_index() -> Dict[str, List[Dict[str, object]]]:
     """
     with open(_index_path(), 'r', encoding='utf-8') as f:
         return json.load(f)
+
+
+def _repo_template_source_dir(name: str) -> str:
+    """
+    Return the editable repository template source directory for ``name``.
+
+    This helper is used as a development-checkout fallback when packaged zip
+    assets are not present next to :mod:`pyfcstm.template`.
+
+    :param name: Built-in template name.
+    :type name: str
+    :return: Absolute path to the repository template source directory.
+    :rtype: str
+    """
+    repo_root = os.path.abspath(os.path.join(_module_dir(), '..', '..'))
+    return os.path.join(repo_root, 'templates', name)
 
 
 def list_templates() -> List[str]:
@@ -161,9 +178,14 @@ def extract_template(name: str, output_dir: str) -> str:
     """
     Extract a packaged built-in template into ``output_dir``.
 
-    This function unpacks the zip archive referenced by the template metadata
-    entry and returns the extracted template directory path. The extracted
-    directory is intended to be passed directly to
+    This function normally unpacks the zip archive referenced by the template
+    metadata entry and returns the extracted template directory path. In a
+    development repository checkout, the packaged zip asset may be absent
+    while the editable source template still exists under the repository-root
+    ``templates/`` directory. In that case, the source template directory is
+    copied into ``output_dir`` instead.
+
+    The extracted or copied directory is intended to be passed directly to
     :class:`pyfcstm.render.StateMachineCodeRenderer`.
 
     :param name: Built-in template name.
@@ -173,8 +195,9 @@ def extract_template(name: str, output_dir: str) -> str:
     :return: Extracted template directory path.
     :rtype: str
     :raises LookupError: If the template does not exist.
-    :raises FileNotFoundError: If the archive is missing, or if the extracted
-        root directory is not present after unpacking.
+    :raises FileNotFoundError: If neither the packaged archive nor a
+        development source template directory can be found, or if the
+        extracted root directory is not present after unpacking.
     :raises zipfile.BadZipFile: If the packaged archive is not a valid zip file.
 
     Example::
@@ -189,10 +212,23 @@ def extract_template(name: str, output_dir: str) -> str:
     info = get_template_info(name)
     archive_path = os.path.join(_module_dir(), info['archive'])
     os.makedirs(output_dir, exist_ok=True)
-    with zipfile.ZipFile(archive_path, 'r') as zf:
-        zf.extractall(output_dir)
-
     template_dir = os.path.join(output_dir, info.get('root_dir', name))
+    if os.path.isfile(archive_path):
+        with zipfile.ZipFile(archive_path, 'r') as zf:
+            zf.extractall(output_dir)
+    else:
+        source_template_dir = _repo_template_source_dir(name)
+        if not os.path.isdir(source_template_dir):
+            raise FileNotFoundError(
+                'Built-in template archive {archive!r} not found and source template directory '
+                '{source!r} is also missing for {name!r}.'.format(
+                    archive=archive_path,
+                    source=source_template_dir,
+                    name=name,
+                )
+            )
+        shutil.copytree(source_template_dir, template_dir)
+
     if not os.path.isdir(template_dir):
         raise FileNotFoundError(
             'Extracted template directory {path!r} not found after unpacking {name!r}.'.format(

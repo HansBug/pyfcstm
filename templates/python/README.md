@@ -1,6 +1,6 @@
-# python_native
+# python
 
-`python_native` is the built-in native Python template target.
+`python` is the built-in native Python template target.
 
 Current status:
 

@@ -10,4 +10,4 @@ Rules:
 
 Current template sources:
 
-- `python_native`: native Python scaffold template for the built-in template pipeline
+- `python`: native Python scaffold template for the built-in template pipeline

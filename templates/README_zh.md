@@ -10,4 +10,4 @@
 
 当前模板源码：
 
-- `python_native`：用于打通内置模板链路的 Python 原生模板脚手架
+- `python`：用于打通内置模板链路的 Python 原生模板脚手架

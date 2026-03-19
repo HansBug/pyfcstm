@@ -138,7 +138,7 @@ def _add_generate_subcommand(cli: click.Group) -> click.Group:
         Example::
 
             $ pyfcstm generate -i ./machine.dsl -t ./templates -o ./out --clear
-            $ pyfcstm generate -i ./machine.dsl --template python_native -o ./out
+            $ pyfcstm generate -i ./machine.dsl --template python -o ./out
         """
         if bool(template_dir) == bool(template_name):
             raise click.UsageError(

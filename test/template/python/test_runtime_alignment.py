@@ -139,12 +139,12 @@ def _build_generated_runtime(dsl_code):
     model = parse_dsl_node_to_state_machine(ast)
 
     with TemporaryDirectory() as template_td:
-        template_dir = extract_template('python_native', template_td)
+        template_dir = extract_template('python', template_td)
         with TemporaryDirectory() as output_td:
             StateMachineCodeRenderer(template_dir).render(model=model, output_dir=output_td)
 
             module_file = os.path.join(output_td, 'machine.py')
-            module_name = 'generated_python_native_runtime_alignment'
+            module_name = 'generated_python_runtime_alignment'
             spec = importlib.util.spec_from_file_location(module_name, module_file)
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)

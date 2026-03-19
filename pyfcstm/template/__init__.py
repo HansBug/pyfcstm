@@ -139,7 +139,7 @@ def has_template(name: str) -> bool:
     Example::
 
         >>> from pyfcstm.template import has_template
-        >>> has_template('python_native') in (True, False)
+        >>> has_template('python') in (True, False)
         True
     """
     return any(item == name for item in list_templates())
@@ -164,9 +164,9 @@ def get_template_info(name: str) -> Dict[str, object]:
     Example::
 
         >>> from pyfcstm.template import get_template_info
-        >>> info = get_template_info('python_native')  # doctest: +SKIP
+        >>> info = get_template_info('python')  # doctest: +SKIP
         >>> info['name']  # doctest: +SKIP
-        'python_native'
+        'python'
     """
     for item in _load_index().get('templates', []):
         if item['name'] == name:
@@ -205,7 +205,7 @@ def extract_template(name: str, output_dir: str) -> str:
         >>> from tempfile import TemporaryDirectory
         >>> from pyfcstm.template import extract_template
         >>> with TemporaryDirectory() as td:
-        ...     path = extract_template('python_native', td)  # doctest: +SKIP
+        ...     path = extract_template('python', td)  # doctest: +SKIP
         ...     isinstance(path, str)  # doctest: +SKIP
         True
     """

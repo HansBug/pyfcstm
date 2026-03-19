@@ -13,7 +13,7 @@ from pyfcstm.template import extract_template
 
 
 @contextmanager
-def _render_python_native_module(dsl_code, module_name='generated_python_native'):
+def _render_python_module(dsl_code, module_name='generated_python'):
     ast_node = parse_with_grammar_entry(
         textwrap.dedent(dsl_code).strip(),
         entry_name='state_machine_dsl',
@@ -21,7 +21,7 @@ def _render_python_native_module(dsl_code, module_name='generated_python_native'
     model = parse_dsl_node_to_state_machine(ast_node)
 
     with TemporaryDirectory() as td:
-        template_dir = extract_template('python_native', td)
+        template_dir = extract_template('python', td)
         output_dir = os.path.join(td, 'out')
         StateMachineCodeRenderer(template_dir).render(model=model, output_dir=output_dir)
 
@@ -35,7 +35,7 @@ def _render_python_native_module(dsl_code, module_name='generated_python_native'
 
 
 @pytest.mark.unittest
-class TestPythonNativeBuiltinTemplate:
+class TestPythonBuiltinTemplate:
     def test_generated_machine_runs_cycle_and_event_transition(self):
         dsl_code = """
         def int counter = 0;
@@ -51,7 +51,7 @@ class TestPythonNativeBuiltinTemplate:
         }
         """
 
-        with _render_python_native_module(dsl_code) as module:
+        with _render_python_module(dsl_code) as module:
             machine = module.SystemMachine()
 
             assert machine.current_state_path == ('System',)
@@ -83,7 +83,7 @@ class TestPythonNativeBuiltinTemplate:
         }
         """
 
-        with _render_python_native_module(dsl_code) as module:
+        with _render_python_module(dsl_code) as module:
             calls = []
 
             hot_machine = module.RootMachine(
@@ -136,7 +136,7 @@ class TestPythonNativeBuiltinTemplate:
         }
         """
 
-        with _render_python_native_module(dsl_code) as module:
+        with _render_python_module(dsl_code) as module:
             class DerivedMachine(module.RootMachine):
                 def __init__(self):
                     self.hook_calls = []

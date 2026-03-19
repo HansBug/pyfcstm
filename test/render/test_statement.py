@@ -127,8 +127,8 @@ class TestRenderOperationStatements:
         ).render(stmts=statements)
 
         assert rendered == (
-            "tmp = scope['counter'] + 1\n"
-            "scope['counter'] = tmp + 2"
+            'tmp = scope["counter"] + 1\n'
+            'scope["counter"] = tmp + 2'
         )
 
     def test_stmts_render_python_style_supports_nested_if_blocks(self):
@@ -152,12 +152,12 @@ class TestRenderOperationStatements:
         )
 
         assert rendered == (
-            "tmp = scope['counter'] + 1\n"
-            "if tmp > 0:\n"
-            "    scope['counter'] = tmp + 1\n"
-            "else:\n"
-            "    fallback = 0\n"
-            "    scope['counter'] = fallback"
+            'tmp = scope["counter"] + 1\n'
+            'if tmp > 0:\n'
+            '    scope["counter"] = tmp + 1\n'
+            'else:\n'
+            '    fallback = 0\n'
+            '    scope["counter"] = fallback'
         )
 
     @pytest.mark.parametrize(
@@ -189,12 +189,12 @@ class TestRenderOperationStatements:
             ),
             (
                 'python',
-                "tmp = scope['counter'] + 1\n"
-                "if tmp > 0:\n"
-                "    scope['counter'] = tmp + 1\n"
-                "else:\n"
-                "    fallback = 0\n"
-                "    scope['counter'] = fallback",
+                'tmp = scope["counter"] + 1\n'
+                'if tmp > 0:\n'
+                '    scope["counter"] = tmp + 1\n'
+                'else:\n'
+                '    fallback = 0\n'
+                '    scope["counter"] = fallback',
             ),
             (
                 'java',
@@ -288,7 +288,7 @@ class TestRenderOperationStatements:
             ('javascript', "let tmp;\n" "tmp = scope.counter + 1;"),
             ('typescript', "let tmp: number;\n" "tmp = scope.counter + 1;"),
             ('golang', "var tmp int\n" "tmp = scope.counter + 1"),
-            ('python3', "tmp = scope['counter'] + 1"),
+            ('python3', 'tmp = scope["counter"] + 1'),
         ],
     )
     def test_stmts_render_supports_common_language_aliases(self, lang_style, expected):
@@ -331,8 +331,8 @@ class TestRenderOperationStatements:
 
         assert rendered == (
             "int tmp;\n"
-            "tmp = scope['counter'] + 1;\n"
-            "scope['counter'] = tmp + 2;"
+            'tmp = scope["counter"] + 1;\n'
+            'scope["counter"] = tmp + 2;'
         )
 
     def test_stmts_render_is_available_in_template_renderer_with_custom_style(self):
@@ -362,10 +362,10 @@ class TestRenderOperationStatements:
 
         assert rendered == (
             "Enter operations:\n"
-            "if scope['counter'] > 0:\n"
-            "    scope['counter'] = scope['counter'] + 1\n"
-            "else:\n"
-            "    scope['counter'] = 0"
+            'if scope["counter"] > 0:\n'
+            '    scope["counter"] = scope["counter"] + 1\n'
+            'else:\n'
+            '    scope["counter"] = 0'
         )
 
     def test_stmts_render_uses_renderer_default_state_vars_when_omitted(self):
@@ -391,10 +391,10 @@ class TestRenderOperationStatements:
 
         assert rendered == (
             "Enter operations:\n"
-            "if scope['counter'] > 0:\n"
-            "    scope['counter'] = scope['counter'] + 1\n"
-            "else:\n"
-            "    scope['counter'] = 0"
+            'if scope["counter"] > 0:\n'
+            '    scope["counter"] = scope["counter"] + 1\n'
+            'else:\n'
+            '    scope["counter"] = 0'
         )
 
     def test_stmts_render_supports_declared_temp_types_in_template_renderer(self):
@@ -427,6 +427,6 @@ class TestRenderOperationStatements:
 
         assert rendered == (
             "int tmp;\n"
-            "tmp = scope['counter'] + 1;\n"
-            "scope['counter'] = tmp + 2;"
+            'tmp = scope["counter"] + 1;\n'
+            'scope["counter"] = tmp + 2;'
         )

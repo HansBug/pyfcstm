@@ -1,6 +1,7 @@
 import ast
 import importlib.util
 import os.path
+import shutil
 import subprocess
 import textwrap
 from contextlib import contextmanager
@@ -445,8 +446,12 @@ class TestPythonBuiltinTemplate:
             assert 'subprocess' not in source
             assert 'pathlib' not in source
 
+            ruff_executable = shutil.which('ruff')
+            if ruff_executable is None:
+                pytest.skip('ruff is not installed in this test environment')
+
             subprocess.run(
-                ['ruff', 'format', '--check', artifacts['machine_file']],
+                [ruff_executable, 'format', '--check', artifacts['machine_file']],
                 check=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,

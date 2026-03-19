@@ -20,7 +20,7 @@ project:
 
 For Python rendering, callers may pass ``state_vars`` so the renderer can
 distinguish persistent state variables from block-local temporary variables.
-State variables are emitted as ``scope['name']`` accesses, while temporaries
+State variables are emitted as ``scope["name"]`` accesses, while temporaries
 are emitted as local Python names. Temporary variable visibility follows the
 same branch-local semantics as :class:`pyfcstm.simulate.runtime.SimulationRuntime`:
 names created inside one ``if`` branch do not leak to the outer scope.

@@ -163,6 +163,33 @@ _KNOWN_STYLES = {
     'python': _PY_STYLE,
 }
 
+_STYLE_ALIASES = {
+    'py': 'python',
+    'python3': 'python',
+    'c++': 'cpp',
+    'cxx': 'cpp',
+    'cc': 'cpp',
+    'javascript': 'js',
+    'node': 'js',
+    'nodejs': 'js',
+    'typescript': 'ts',
+    'rustlang': 'rust',
+    'rs': 'rust',
+    'golang': 'go',
+}
+
+
+def _normalize_lang_style(lang_style: str) -> str:
+    """
+    Normalize a language-style name to its canonical built-in key.
+
+    :param lang_style: Requested style name.
+    :type lang_style: str
+    :return: Canonical style name.
+    :rtype: str
+    """
+    return _STYLE_ALIASES.get(lang_style, lang_style)
+
 
 def _merge_numeric_types(type_a: Optional[str], type_b: Optional[str]) -> Optional[str]:
     """
@@ -354,6 +381,7 @@ def create_expr_render_template(lang_style: str = 'dsl',
         True
 
     """
+    lang_style = _normalize_lang_style(lang_style)
     ext_configs = dict(ext_configs or {})
     templates = dict(_KNOWN_STYLES[lang_style])
 

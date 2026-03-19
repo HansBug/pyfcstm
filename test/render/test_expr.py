@@ -288,6 +288,23 @@ class TestRenderExprNode:
         assert result == expected_text_result
 
     @pytest.mark.parametrize(
+        "expr_text, lang_type, expected_text_result",
+        [
+            ("2 ** 3", "c++", "std::pow(2, 3)"),
+            ("sin(x)", "javascript", "Math.sin(x)"),
+            ("sin(x)", "typescript", "Math.sin(x)"),
+            ("sin(x)", "golang", "math.Sin(float64(x))"),
+            ("True", "python3", "True"),
+        ],
+    )
+    def test_render_expr_node_supports_common_language_aliases(
+        self, expr_text, lang_type, expected_text_result, new_env
+    ):
+        ast_node = parse_with_grammar_entry(expr_text, entry_name="generic_expression")
+        result = render_expr_node(ast_node, lang_style=lang_type, env=new_env)
+        assert result == expected_text_result
+
+    @pytest.mark.parametrize(
         "input_value, lang_type, ext_configs, expected_result",
         [
             (42, "dsl", None, "42"),

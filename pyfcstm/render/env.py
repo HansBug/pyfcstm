@@ -31,7 +31,10 @@ import jinja2
 from ..dsl import INIT_STATE, EXIT_STATE
 from ..dsl import node as dsl_nodes
 from ..model.model import OperationStatement
-from .statement import create_stmt_render_template, fn_stmt_render, fn_stmts_render, _KNOWN_STMT_STYLES
+from .statement import (
+    create_stmt_render_template, fn_stmt_render, fn_stmts_render,
+    _KNOWN_STMT_STYLES, _normalize_stmt_style,
+)
 from ..utils import add_settings_for_env
 
 
@@ -65,6 +68,30 @@ def _render_operation_statements(nodes: Iterable, sep: str = '\n') -> str:
     :rtype: str
     """
     return sep.join(_render_operation_statement(node) for node in nodes)
+
+
+def _default_state_vars_from_env(env: jinja2.Environment):
+    """
+    Read the renderer-provided default state-variable names from the environment.
+
+    :param env: Jinja2 environment.
+    :type env: jinja2.Environment
+    :return: Default state-variable names, or ``None`` when unavailable.
+    :rtype: Any
+    """
+    return env.globals.get('_stmt_default_state_vars')
+
+
+def _default_var_types_from_env(env: jinja2.Environment):
+    """
+    Read the renderer-provided default variable types from the environment.
+
+    :param env: Jinja2 environment.
+    :type env: jinja2.Environment
+    :return: Default variable types, or ``None`` when unavailable.
+    :rtype: Any
+    """
+    return env.globals.get('_stmt_default_var_types')
 
 
 def create_env() -> jinja2.Environment:
@@ -101,12 +128,13 @@ def create_env() -> jinja2.Environment:
     def _stmt_render(node, style: str = 'dsl', state_vars=None, var_types=None,
                      visible_names=None, visible_var_types=None,
                      indent: str = '    ', level: int = 0) -> str:
+        style = _normalize_stmt_style(style)
         return fn_stmt_render(
             node=node,
             templates=stmt_templates[style],
             env=env,
-            state_vars=state_vars,
-            var_types=var_types,
+            state_vars=_default_state_vars_from_env(env) if state_vars is None else state_vars,
+            var_types=_default_var_types_from_env(env) if var_types is None else var_types,
             visible_names=visible_names,
             visible_var_types=visible_var_types,
             indent=indent,
@@ -116,12 +144,13 @@ def create_env() -> jinja2.Environment:
     def _stmts_render(nodes, style: str = 'dsl', state_vars=None, var_types=None,
                       visible_names=None, visible_var_types=None,
                       indent: str = '    ', level: int = 0, sep: str = '\n') -> str:
+        style = _normalize_stmt_style(style)
         return fn_stmts_render(
             nodes=nodes,
             templates=stmt_templates[style],
             env=env,
-            state_vars=state_vars,
-            var_types=var_types,
+            state_vars=_default_state_vars_from_env(env) if state_vars is None else state_vars,
+            var_types=_default_var_types_from_env(env) if var_types is None else var_types,
             visible_names=visible_names,
             visible_var_types=visible_var_types,
             indent=indent,

@@ -54,8 +54,11 @@ import pathspec
 import yaml
 
 from .env import create_env
-from .expr import create_expr_render_template, fn_expr_render, _KNOWN_STYLES
-from .statement import create_stmt_render_template, fn_stmt_render, fn_stmts_render, _KNOWN_STMT_STYLES
+from .expr import create_expr_render_template, fn_expr_render, _KNOWN_STYLES, _normalize_lang_style
+from .statement import (
+    create_stmt_render_template, fn_stmt_render, fn_stmts_render,
+    _KNOWN_STMT_STYLES, _normalize_stmt_style,
+)
 from .func import process_item_to_object
 from ..dsl import node as dsl_nodes
 from ..model import StateMachine
@@ -154,6 +157,7 @@ class StateMachineCodeRenderer:
             :return: The rendered expression as a string
             :rtype: str
             """
+            style = _normalize_lang_style(style)
             return fn_expr_render(
                 node=node,
                 templates=d_templates[style],
@@ -180,12 +184,13 @@ class StateMachineCodeRenderer:
         def _fn_stmt_render(node, style: str = 'default', state_vars=None, var_types=None,
                             visible_names=None, visible_var_types=None,
                             indent: str = '    ', level: int = 0) -> str:
+            style = _normalize_stmt_style(style)
             return fn_stmt_render(
                 node=node,
                 templates=d_stmt_templates[style],
                 env=self.env,
-                state_vars=state_vars,
-                var_types=var_types,
+                state_vars=self.env.globals.get('_stmt_default_state_vars') if state_vars is None else state_vars,
+                var_types=self.env.globals.get('_stmt_default_var_types') if var_types is None else var_types,
                 visible_names=visible_names,
                 visible_var_types=visible_var_types,
                 indent=indent,
@@ -195,12 +200,13 @@ class StateMachineCodeRenderer:
         def _fn_stmts_render(nodes, style: str = 'default', state_vars=None, var_types=None,
                              visible_names=None, visible_var_types=None,
                              indent: str = '    ', level: int = 0, sep: str = '\n') -> str:
+            style = _normalize_stmt_style(style)
             return fn_stmts_render(
                 nodes=nodes,
                 templates=d_stmt_templates[style],
                 env=self.env,
-                state_vars=state_vars,
-                var_types=var_types,
+                state_vars=self.env.globals.get('_stmt_default_state_vars') if state_vars is None else state_vars,
+                var_types=self.env.globals.get('_stmt_default_var_types') if var_types is None else var_types,
                 visible_names=visible_names,
                 visible_var_types=visible_var_types,
                 indent=indent,
@@ -270,11 +276,27 @@ class StateMachineCodeRenderer:
         :raises IOError: If there is an error reading or writing files
         """
         tp = self.env.from_string(auto_decode(pathlib.Path(template_file).read_bytes()))
+        previous_state_vars = self.env.globals.get('_stmt_default_state_vars')
+        previous_var_types = self.env.globals.get('_stmt_default_var_types')
+        self.env.globals['_stmt_default_state_vars'] = tuple(model.defines.keys())
+        self.env.globals['_stmt_default_var_types'] = {
+            name: define.type for name, define in model.defines.items()
+        }
         if os.path.dirname(output_file):
             os.makedirs(os.path.dirname(self.config_file), exist_ok=True)
         os.makedirs(os.path.dirname(output_file), exist_ok=True)
-        with open(output_file, 'w', encoding='utf-8', newline='\n') as f:
-            f.write(tp.render(model=model))
+        try:
+            with open(output_file, 'w', encoding='utf-8', newline='\n') as f:
+                f.write(tp.render(model=model))
+        finally:
+            if previous_state_vars is None:
+                self.env.globals.pop('_stmt_default_state_vars', None)
+            else:
+                self.env.globals['_stmt_default_state_vars'] = previous_state_vars
+            if previous_var_types is None:
+                self.env.globals.pop('_stmt_default_var_types', None)
+            else:
+                self.env.globals['_stmt_default_var_types'] = previous_var_types
 
     def copy_one_file(self, model: StateMachine, output_file: str, src_file: str) -> None:
         """

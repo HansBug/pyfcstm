@@ -126,3 +126,20 @@ class TestRenderRender:
                 clear_previous_directory=True,
             )
             dir_compare(expected_result_dir, td)
+
+    def test_rendered_template_files_use_lf_newlines(self, sample_model):
+        with TemporaryDirectory() as template_dir:
+            with open(os.path.join(template_dir, 'config.yaml'), 'w') as f:
+                f.write('{}\n')
+            with open(os.path.join(template_dir, 'multiline.txt.j2'), 'w', encoding='utf-8', newline='\n') as f:
+                f.write('line1\n{{ model.root_state.name }}\nline3')
+
+            renderer = StateMachineCodeRenderer(template_dir)
+
+            with TemporaryDirectory() as output_dir:
+                renderer.render(model=sample_model, output_dir=output_dir)
+                with open(os.path.join(output_dir, 'multiline.txt'), 'rb') as f:
+                    data = f.read()
+
+        assert b'\r\n' not in data
+        assert data == b'line1\nTrafficLight\nline3'

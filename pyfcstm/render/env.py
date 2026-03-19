@@ -31,7 +31,7 @@ import jinja2
 from ..dsl import INIT_STATE, EXIT_STATE
 from ..dsl import node as dsl_nodes
 from ..model.model import OperationStatement
-from .statement import create_stmt_render_template, fn_stmt_render, fn_stmts_render
+from .statement import create_stmt_render_template, fn_stmt_render, fn_stmts_render, _KNOWN_STMT_STYLES
 from ..utils import add_settings_for_env
 
 
@@ -94,30 +94,36 @@ def create_env() -> jinja2.Environment:
     env.filters['operation_stmts_render'] = _render_operation_statements
 
     stmt_templates = {
-        'dsl': create_stmt_render_template('dsl'),
-        'python': create_stmt_render_template('python'),
+        style_name: create_stmt_render_template(style_name)
+        for style_name in _KNOWN_STMT_STYLES.keys()
     }
 
-    def _stmt_render(node, style: str = 'dsl', state_vars=None, visible_names=None,
+    def _stmt_render(node, style: str = 'dsl', state_vars=None, var_types=None,
+                     visible_names=None, visible_var_types=None,
                      indent: str = '    ', level: int = 0) -> str:
         return fn_stmt_render(
             node=node,
             templates=stmt_templates[style],
             env=env,
             state_vars=state_vars,
+            var_types=var_types,
             visible_names=visible_names,
+            visible_var_types=visible_var_types,
             indent=indent,
             level=level,
         )
 
-    def _stmts_render(nodes, style: str = 'dsl', state_vars=None, visible_names=None,
+    def _stmts_render(nodes, style: str = 'dsl', state_vars=None, var_types=None,
+                      visible_names=None, visible_var_types=None,
                       indent: str = '    ', level: int = 0, sep: str = '\n') -> str:
         return fn_stmts_render(
             nodes=nodes,
             templates=stmt_templates[style],
             env=env,
             state_vars=state_vars,
+            var_types=var_types,
             visible_names=visible_names,
+            visible_var_types=visible_var_types,
             indent=indent,
             level=level,
             sep=sep,

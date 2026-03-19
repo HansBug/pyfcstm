@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 修改内容 | 作者 |
 |------|------|----------|------|
+| 0.2.3 | 2026-03-19 | 明确 `expr` / `stmt` 内建 style 的最小支持范围为 `c`、`cpp`、`python`、`java`、`js`、`ts`、`rust`、`go`，并要求默认调用即可得到可直接使用的目标语言代码 | Codex |
 | 0.2.2 | 2026-03-19 | 补充渲染基础设施的跨语言约束，明确 `expr` 需要持续支持常见主流语言 | Codex |
 | 0.2.1 | 2026-03-19 | 补充对现有模板系统与既有模板样例的非破坏兼容性约束 | Codex |
 | 0.2.0 | 2026-03-19 | 补充根目录 `templates/`、模板总 README、Makefile 打包与 `pyfcstm/template/` 释放模块设计 | Codex |
@@ -540,8 +541,17 @@ Python 生成模板**保留 validation 语义**，尽量与现有模拟器一致
 同时还需要补一个工程约束：
 
 - `expr_render` 不能因为这次 Python 模板建设而弱化对其他主流目标语言的支持
-- 后续如果扩展 `expr` 模板或节点映射，必须优先考虑 Python、C、C++、Java 等常见目标语言的可表达性
+- 后续如果扩展 `expr` 模板或节点映射，必须优先考虑 `c`、`cpp`、`python`、`java`、`js`、`ts`、`rust`、`go` 这些常见目标语言的可表达性
 - `stmt_render` 的接口设计也不能默认“所有目标语言都像 Python 一样不需要声明临时变量”
+- 内建 style 的默认行为要遵循“约定大于配置”：
+  只要调用方只传一个语言选择，不附加额外配置，也应当能在大多数常规工程环境下产出可直接使用的目标语言代码；定制化只是附加能力，而不是默认可用性的前提
+
+当前建议的最小落地要求是：
+
+- 内建 `expr_render` 至少持续维护 `dsl`、`c`、`cpp`、`python`、`java`、`js`、`ts`、`rust`、`go` 这些主流 style
+- 内建 `stmt_render` 至少持续维护 `dsl`、`c`、`cpp`、`python`、`java`、`js`、`ts`、`rust`、`go` 这些主流 style
+- 对新增 style 的支持要以**增量扩展**方式完成，而不是修改 Python style 后让其他语言退化
+- 所有语言 style 的扩展都应优先复用同一套节点分发机制，而不是为单一语言复制一套表达式渲染实现
 
 ### 8.2 推荐的 statement renderer 设计
 
@@ -562,6 +572,15 @@ Python 生成模板**保留 validation 语义**，尽量与现有模拟器一致
 - 静态类型语言下的临时变量声明能力
 - 不同目标语言的块级作用域与语句模板差异
 - 与 `expr_render` 一致的 style 扩展方式
+
+首版接口建议明确包含：
+
+- `declare_temp`
+- `temp_type_aliases`
+- `temp_type_fallback`
+- `var_types`
+
+这样后续即使先不完整实现 C / C++ / Java 模板，也已经给静态类型语言留下了临时变量声明和类型映射的稳定接入口。
 
 ### 8.3 块级临时变量的处理方式
 
@@ -1032,6 +1051,8 @@ Checklist：
 
 - 让模板层能够生成 Python 可执行语句块，而不只是 DSL 文本
 - 同时确保 render 基础设施不会退化为 Python-only 设计
+- 同时把 `expr_render` / `stmt_render` 的主流语言默认能力补齐到 `c`、`cpp`、`python`、`java`、`js`、`ts`、`rust`、`go`
+- 保证调用方只传语言名时，就能得到在大多数环境下可直接使用的默认输出
 
 Checklist：
 
@@ -1045,14 +1066,20 @@ Checklist：
 - [x] 在模板环境中注册相关 filter / global
 - [x] 为 statement renderer 补独立单元测试
 - [x] 验证生成结果不使用 Python 3.7 以上才有的高版本语法
-- [ ] 明确 `expr_render` 对 Python、C、C++、Java 等常见主流语言的持续支持约束
-- [ ] 明确 `stmt_render` 在静态类型语言下的临时变量声明与类型推断扩展接口
-- [ ] 在多平台维度确认 render 输出没有额外平台差异假设
+- [x] 明确 `expr_render` 对 `c`、`cpp`、`python`、`java`、`js`、`ts`、`rust`、`go` 等常见主流语言的持续支持约束
+- [x] 明确 `stmt_render` 在静态类型语言下的临时变量声明与类型推断扩展接口
+- [x] 在多平台维度确认 render 输出没有额外平台差异假设
+- [x] 为 `expr_render` / `stmt_render` 的内建主流语言 style 提供“约定大于配置”的默认行为
 
 完成标准：
 
 - 模板里可以稳定生成 Python 操作块代码
 - 语句级生成与现有模型层的临时变量语义不冲突
+- `expr_render` 的主流语言支持边界已经明确，并保留增量扩展路径
+- `stmt_render` 已经提供静态类型语言所需的临时变量声明扩展接口
+- `expr_render` 与 `stmt_render` 的内建 style 已覆盖 `c`、`cpp`、`python`、`java`、`js`、`ts`、`rust`、`go`
+- 在仅传语言名且不附加配置时，内建 style 仍能产出大多数场景下可直接使用的默认代码
+- render 出口在 Windows / Linux / macOS 上不依赖默认换行差异
 - `expr_render` 与 `stmt_render` 的接口演进方向明确保持跨语言可扩展
 - 没有把 render 基础设施收缩成只服务 Python 模板的实现
 

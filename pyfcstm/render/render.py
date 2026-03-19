@@ -18,6 +18,9 @@ Configuration file (``config.yaml``) structure:
 * ``expr_styles`` - Mapping of expression rendering styles. Each style is a
   mapping with a ``base_lang`` key and optional template overrides.
   The ``default`` style is always created if absent.
+* ``stmt_styles`` - Mapping of statement rendering styles. Each style is a
+  mapping with a ``base_lang`` key and optional overrides such as
+  ``declare_temp`` and ``temp_type_aliases`` for static-language backends.
 * ``globals`` - Mapping of Jinja2 globals (see :func:`pyfcstm.render.func.process_item_to_object`)
 * ``filters`` - Mapping of Jinja2 filters (same structure as ``globals``)
 * ``tests`` - Mapping of Jinja2 tests (same structure as ``globals``)
@@ -52,7 +55,7 @@ import yaml
 
 from .env import create_env
 from .expr import create_expr_render_template, fn_expr_render, _KNOWN_STYLES
-from .statement import create_stmt_render_template, fn_stmt_render, fn_stmts_render
+from .statement import create_stmt_render_template, fn_stmt_render, fn_stmts_render, _KNOWN_STMT_STYLES
 from .func import process_item_to_object
 from ..dsl import node as dsl_nodes
 from ..model import StateMachine
@@ -119,8 +122,9 @@ class StateMachineCodeRenderer:
         """
         Load and process the configuration file.
 
-        This method reads the configuration file, sets up expression rendering
-        styles, and registers globals, filters, and tests in the Jinja2 environment.
+        This method reads the configuration file, sets up expression and
+        statement rendering styles, and registers globals, filters, and tests
+        in the Jinja2 environment.
 
         :raises FileNotFoundError: If the configuration file does not exist
         :raises yaml.YAMLError: If the configuration file contains invalid YAML
@@ -161,7 +165,10 @@ class StateMachineCodeRenderer:
 
         stmt_styles = config_info.pop('stmt_styles', None) or {}
         stmt_styles['default'] = stmt_styles.get('default') or {'base_lang': 'dsl'}
-        d_stmt_templates = {}
+        d_stmt_templates = {
+            style_name: create_stmt_render_template(style_name)
+            for style_name in _KNOWN_STMT_STYLES.keys()
+        }
         for style_name, stmt_style in stmt_styles.items():
             stmt_style = copy.deepcopy(stmt_style)
             lang_style = stmt_style.pop('base_lang')
@@ -170,26 +177,32 @@ class StateMachineCodeRenderer:
                 ext_configs=stmt_style,
             )
 
-        def _fn_stmt_render(node, style: str = 'default', state_vars=None, visible_names=None,
+        def _fn_stmt_render(node, style: str = 'default', state_vars=None, var_types=None,
+                            visible_names=None, visible_var_types=None,
                             indent: str = '    ', level: int = 0) -> str:
             return fn_stmt_render(
                 node=node,
                 templates=d_stmt_templates[style],
                 env=self.env,
                 state_vars=state_vars,
+                var_types=var_types,
                 visible_names=visible_names,
+                visible_var_types=visible_var_types,
                 indent=indent,
                 level=level,
             )
 
-        def _fn_stmts_render(nodes, style: str = 'default', state_vars=None, visible_names=None,
+        def _fn_stmts_render(nodes, style: str = 'default', state_vars=None, var_types=None,
+                             visible_names=None, visible_var_types=None,
                              indent: str = '    ', level: int = 0, sep: str = '\n') -> str:
             return fn_stmts_render(
                 nodes=nodes,
                 templates=d_stmt_templates[style],
                 env=self.env,
                 state_vars=state_vars,
+                var_types=var_types,
                 visible_names=visible_names,
+                visible_var_types=visible_var_types,
                 indent=indent,
                 level=level,
                 sep=sep,
@@ -260,7 +273,7 @@ class StateMachineCodeRenderer:
         if os.path.dirname(output_file):
             os.makedirs(os.path.dirname(self.config_file), exist_ok=True)
         os.makedirs(os.path.dirname(output_file), exist_ok=True)
-        with open(output_file, 'w') as f:
+        with open(output_file, 'w', encoding='utf-8', newline='\n') as f:
             f.write(tp.render(model=model))
 
     def copy_one_file(self, model: StateMachine, output_file: str, src_file: str) -> None:

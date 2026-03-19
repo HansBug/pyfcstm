@@ -3,6 +3,7 @@ import importlib.util
 import os.path
 import shutil
 import subprocess
+import sys
 import textwrap
 from contextlib import contextmanager
 from tempfile import TemporaryDirectory
@@ -432,7 +433,10 @@ class TestPythonBuiltinTemplate:
             with open(artifacts['machine_file'], 'r', encoding='utf-8') as f:
                 source = f.read()
 
-            tree = ast.parse(source, feature_version=(3, 7))
+            if sys.version_info >= (3, 8):
+                tree = ast.parse(source, feature_version=(3, 7))
+            else:
+                tree = ast.parse(source)
             imported_modules = set()
             for node in tree.body:
                 if isinstance(node, ast.Import):

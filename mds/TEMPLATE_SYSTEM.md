@@ -1164,19 +1164,19 @@ Checklist：
 
 Checklist：
 
-- [ ] 在模板目录中同时提供模板自身的 `README.md` 与 `README_zh.md`
-- [ ] 在模板目录中同时提供 `README.md.j2` 与 `README_zh.md.j2`
-- [ ] 生成目标产物时同步生成面向当前状态机实例的 README
-- [ ] 生成 README 中嵌入当前 state machine 的具体名称、变量、状态路径、abstract action 清单等关键信息
-- [ ] 生成 README 中提供清晰的“如何运行 / 如何接入 / 如何扩展”的使用指引
-- [ ] 生成 README 中明确说明如何通过继承子类并 override abstract hook 来扩展行为
-- [ ] 生成 README 中以表格或等价清单形式列出所有可 override 的 abstract hook 与其 DSL 对应关系
-- [ ] 在 `config.yaml` 中更多使用模板辅助函数，减少 `j2` 文件内重复展开的样板逻辑
-- [ ] 将在模板文件中高频重复出现的片段抽到统一 helper / macro / config 生成入口中，保证输出一致性
-- [ ] 审视模板生成结果的排版质量，目标是 `ruff format` 后不发生或几乎不发生改动
-- [ ] 不通过内置 `ruff` 作为运行时或生成时依赖来“事后修复”格式问题，而是直接优化模板输出结构
-- [ ] 调整 abstract hook 与相关 action 方法的命名，使其更符合 DSL 编写者的视角
-- [ ] 保证用户在主流 IDE 中能通过代码补全快速定位 abstract hook、action 扩展点与相关状态语义
+- [x] 在模板目录中同时提供模板自身的 `README.md` 与 `README_zh.md`
+- [x] 在模板目录中同时提供 `README.md.j2` 与 `README_zh.md.j2`
+- [x] 生成目标产物时同步生成面向当前状态机实例的 README
+- [x] 生成 README 中嵌入当前 state machine 的具体名称、变量、状态路径、abstract action 清单等关键信息
+- [x] 生成 README 中提供清晰的“如何运行 / 如何接入 / 如何扩展”的使用指引
+- [x] 生成 README 中明确说明如何通过继承子类并 override abstract hook 来扩展行为
+- [x] 生成 README 中以表格或等价清单形式列出所有可 override 的 abstract hook 与其 DSL 对应关系
+- [x] 在 `config.yaml` 中更多使用模板辅助函数，减少 `j2` 文件内重复展开的样板逻辑
+- [x] 将在模板文件中高频重复出现的片段抽到统一 helper / macro / config 生成入口中，保证输出一致性
+- [x] 审视模板生成结果的排版质量，目标是 `ruff format` 后不发生或几乎不发生改动
+- [x] 不通过内置 `ruff` 作为运行时或生成时依赖来“事后修复”格式问题，而是直接优化模板输出结构
+- [x] 调整 abstract hook 与相关 action 方法的命名，使其更符合 DSL 编写者的视角
+- [x] 保证用户在主流 IDE 中能通过代码补全快速定位 abstract hook、action 扩展点与相关状态语义
 
 完成标准：
 

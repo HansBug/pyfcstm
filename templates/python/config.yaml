@@ -1,7 +1,7 @@
 expr_styles:
   python_expr:
     base_lang: dsl
-    Name: "self._vars[{{ node.name | repr }}]"
+    Name: "self._vars[{{ node.name | tojson }}]"
     Paren: "({{ node.expr | expr_render(style='python_expr') }})"
     UFunc: "math.{{ node.func }}({{ node.expr | expr_render(style='python_expr') }})"
     UFunc(abs): "abs({{ node.expr | expr_render(style='python_expr') }})"
@@ -17,7 +17,7 @@ expr_styles:
     ConditionalOp: "{{ node.value_true | expr_render(style='python_expr') }} if {{ node.cond | expr_render(style='python_expr') }} else {{ node.value_false | expr_render(style='python_expr') }}"
   python_scope_expr:
     base_lang: dsl
-    Name: "scope[{{ node.name | repr }}]"
+    Name: "scope[{{ node.name | tojson }}]"
     Paren: "({{ node.expr | expr_render(style='python_scope_expr') }})"
     UFunc: "math.{{ node.func }}({{ node.expr | expr_render(style='python_scope_expr') }})"
     UFunc(abs): "abs({{ node.expr | expr_render(style='python_scope_expr') }})"
@@ -32,6 +32,61 @@ expr_styles:
     BinaryOp(||): "{{ node.expr1 | expr_render(style='python_scope_expr') }} or {{ node.expr2 | expr_render(style='python_scope_expr') }}"
     ConditionalOp: "{{ node.value_true | expr_render(style='python_scope_expr') }} if {{ node.cond | expr_render(style='python_scope_expr') }} else {{ node.value_false | expr_render(style='python_scope_expr') }}"
 
+globals:
+  machine_class_name:
+    type: template
+    params:
+      - model
+    template: "{{ model.root_state.name | to_identifier }}Machine"
+  state_path:
+    type: template
+    params:
+      - state
+    template: "{{ state.path | join('.') }}"
+  state_slug:
+    type: template
+    params:
+      - state
+    template: "{{ state.path | join('_') | to_identifier }}"
+  action_hook_name:
+    type: template
+    params:
+      - action
+    template: "_abstract_hook_{{ action.func_name | to_identifier }}"
+  action_owner_path:
+    type: template
+    params:
+      - action
+    template: "{{ action.parent.path | join('.') }}"
+
+filters:
+  machine_class_name:
+    type: template
+    params:
+      - model
+    template: "{{ machine_class_name(model) }}"
+  state_path:
+    type: template
+    params:
+      - state
+    template: "{{ state_path(state) }}"
+  state_slug:
+    type: template
+    params:
+      - state
+    template: "{{ state_slug(state) }}"
+  action_hook_name:
+    type: template
+    params:
+      - action
+    template: "{{ action_hook_name(action) }}"
+  action_owner_path:
+    type: template
+    params:
+      - action
+    template: "{{ action_owner_path(action) }}"
+
 ignores:
   - 'README.md'
+  - 'README_zh.md'
   - 'template.json'

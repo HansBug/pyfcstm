@@ -168,6 +168,8 @@ class TestEntryGenerate:
             )
             assert result.exitcode == 0
             assert os.path.isfile(os.path.join(td, "machine.py"))
+            assert os.path.isfile(os.path.join(td, "README.md"))
+            assert os.path.isfile(os.path.join(td, "README_zh.md"))
             assert not os.path.exists(os.path.join(td, "__init__.py"))
 
             with open(os.path.join(td, "machine.py"), "r") as f:
@@ -175,6 +177,14 @@ class TestEntryGenerate:
             assert "class TrafficLightMachine" in content
             assert "Original DSL Source" in content
             assert "Abstract Hook Map" in content
+
+            with open(os.path.join(td, "README.md"), "r", encoding="utf-8") as f:
+                readme = f.read()
+            with open(os.path.join(td, "README_zh.md"), "r", encoding="utf-8") as f:
+                readme_zh = f.read()
+            assert "# TrafficLightMachine" in readme
+            assert "Overridable Abstract Hooks" in readme
+            assert "可覆写的 Abstract Hook 清单" in readme_zh
 
     def test_generate_with_invalid_builtin_template_should_fail(self, input_code_file):
         with TemporaryDirectory() as td:

@@ -79,7 +79,7 @@ _PYTHON_STYLE = {
     'base_lang': 'python',
     'expr_lang': 'python',
     'expr_templates': {},
-    'state_var_target': 'scope[{{ name | repr }}]',
+    'state_var_target': 'scope[{{ name | tojson }}]',
     'temp_var_target': '{{ name }}',
     'assign': '{{ target }} = {{ expr }}',
     'declare_temp': None,

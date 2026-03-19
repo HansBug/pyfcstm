@@ -45,6 +45,7 @@ Example::
 import copy
 import os.path
 import pathlib
+import re
 import shutil
 import warnings
 from functools import partial
@@ -275,19 +276,31 @@ class StateMachineCodeRenderer:
         :raises jinja2.exceptions.TemplateError: If there is an error in the template
         :raises IOError: If there is an error reading or writing files
         """
-        tp = self.env.from_string(auto_decode(pathlib.Path(template_file).read_bytes()))
         previous_state_vars = self.env.globals.get('_stmt_default_state_vars')
         previous_var_types = self.env.globals.get('_stmt_default_var_types')
         self.env.globals['_stmt_default_state_vars'] = tuple(model.defines.keys())
         self.env.globals['_stmt_default_var_types'] = {
             name: define.type for name, define in model.defines.items()
         }
+        tp = self.env.from_string(auto_decode(pathlib.Path(template_file).read_bytes()))
         if os.path.dirname(output_file):
             os.makedirs(os.path.dirname(self.config_file), exist_ok=True)
         os.makedirs(os.path.dirname(output_file), exist_ok=True)
         try:
+            rendered = tp.render(model=model)
+            if os.path.basename(template_file) == 'machine.py.j2':
+                rendered = re.sub(r'([\(\[\{]\n)\n+', r'\1', rendered)
+                rendered = re.sub(r'\n{3,}', '\n\n', rendered)
+                rendered = re.sub(r',\n\n([ \t]*["\]\}])', r',\n\1', rendered)
+                rendered = re.sub(r'\n\n(?=(?:class|def|@))', '\n\n\n', rendered)
+                rendered = re.sub(
+                    r'\n([ \t]*)\n(?=[ \t]*[\]\)\}](?:,)?\n)',
+                    r'\n\1',
+                    rendered,
+                )
+                rendered = re.sub(r'\n+\Z', '\n', rendered)
             with open(output_file, 'w', encoding='utf-8', newline='\n') as f:
-                f.write(tp.render(model=model))
+                f.write(rendered)
         finally:
             if previous_state_vars is None:
                 self.env.globals.pop('_stmt_default_state_vars', None)

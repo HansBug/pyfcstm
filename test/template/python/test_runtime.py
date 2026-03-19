@@ -1,6 +1,7 @@
 import ast
 import importlib.util
 import os.path
+import subprocess
 import textwrap
 from contextlib import contextmanager
 from tempfile import TemporaryDirectory
@@ -14,7 +15,7 @@ from pyfcstm.template import extract_template
 
 
 @contextmanager
-def _render_python_module(dsl_code, module_name='generated_python'):
+def _render_python_artifacts(dsl_code, module_name='generated_python'):
     ast_node = parse_with_grammar_entry(
         textwrap.dedent(dsl_code).strip(),
         entry_name='state_machine_dsl',
@@ -32,7 +33,19 @@ def _render_python_module(dsl_code, module_name='generated_python'):
         )
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        yield module
+        yield {
+            'module': module,
+            'output_dir': output_dir,
+            'machine_file': os.path.join(output_dir, 'machine.py'),
+            'readme_file': os.path.join(output_dir, 'README.md'),
+            'readme_zh_file': os.path.join(output_dir, 'README_zh.md'),
+        }
+
+
+@contextmanager
+def _render_python_module(dsl_code, module_name='generated_python'):
+    with _render_python_artifacts(dsl_code, module_name=module_name) as artifacts:
+        yield artifacts['module']
 
 
 @pytest.mark.unittest
@@ -143,13 +156,13 @@ class TestPythonBuiltinTemplate:
                     self.hook_calls = []
                     super().__init__()
 
-                def _abstract_Root_RootInit(self, ctx):
+                def _abstract_hook_Root_RootInit(self, ctx):
                     self.hook_calls.append(
                         ('root', ctx.get_full_state_path(), ctx.action_stage, ctx.get_var('counter'))
                     )
                     self._vars['counter'] = self._vars['counter'] + 10
 
-                def _abstract_Root_System_A_AEnter(self, ctx):
+                def _abstract_hook_Root_System_A_AEnter(self, ctx):
                     self.hook_calls.append(
                         ('a_enter', ctx.get_full_state_path(), ctx.action_stage, ctx.get_var('counter'))
                     )
@@ -165,11 +178,47 @@ class TestPythonBuiltinTemplate:
                 ('a_enter', 'Root.System.A', 'enter', 10),
             ]
             assert module.RootMachine.get_abstract_hook_map() == {
-                'Root.RootInit': '_abstract_Root_RootInit',
-                'Root.System.A.AEnter': '_abstract_Root_System_A_AEnter',
+                'Root.RootInit': '_abstract_hook_Root_RootInit',
+                'Root.System.A.AEnter': '_abstract_hook_Root_System_A_AEnter',
             }
             assert 'Original DSL Source' in module.__doc__
-            assert 'Root-level hook used for runtime customization.' in module.RootMachine._abstract_Root_RootInit.__doc__
+            assert (
+                'Root-level hook used for runtime customization.'
+                in module.RootMachine._abstract_hook_Root_RootInit.__doc__
+            )
+
+    def test_generated_readme_documents_usage_and_abstract_hooks(self):
+        dsl_code = """
+        def int counter = 0;
+        state Root {
+            enter abstract RootInit;
+            state System {
+                state A {
+                    enter abstract AEnter;
+                    during { counter = counter + 1; }
+                }
+                [*] -> A;
+            }
+            [*] -> System;
+        }
+        """
+
+        with _render_python_artifacts(dsl_code) as artifacts:
+            with open(artifacts['readme_file'], 'r', encoding='utf-8') as f:
+                readme = f.read()
+            with open(artifacts['readme_zh_file'], 'r', encoding='utf-8') as f:
+                readme_zh = f.read()
+
+            assert os.path.isfile(artifacts['readme_file'])
+            assert os.path.isfile(artifacts['readme_zh_file'])
+            assert '# RootMachine' in readme
+            assert 'register_abstract_handler' in readme
+            assert '_abstract_hook_Root_RootInit' in readme
+            assert '_abstract_hook_Root_System_A_AEnter' in readme
+            assert '| DSL action path | Hook method | Owner state | Stage |' in readme
+            assert '可覆写的 Abstract Hook 清单' in readme_zh
+            assert '_abstract_hook_Root_RootInit' in readme_zh
+            assert '_abstract_hook_Root_System_A_AEnter' in readme_zh
 
     def test_generated_machine_source_stays_platform_neutral_and_python37_compatible(self):
         dsl_code = """
@@ -182,8 +231,8 @@ class TestPythonBuiltinTemplate:
         }
         """
 
-        with _render_python_module(dsl_code) as module:
-            with open(module.__spec__.origin, 'r', encoding='utf-8') as f:
+        with _render_python_artifacts(dsl_code) as artifacts:
+            with open(artifacts['machine_file'], 'r', encoding='utf-8') as f:
                 source = f.read()
 
             tree = ast.parse(source, feature_version=(3, 7))
@@ -199,3 +248,11 @@ class TestPythonBuiltinTemplate:
             assert 'fcntl' not in source
             assert 'subprocess' not in source
             assert 'pathlib' not in source
+
+            subprocess.run(
+                ['ruff', 'format', '--check', artifacts['machine_file']],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )

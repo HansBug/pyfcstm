@@ -1,8 +1,8 @@
 {%- macro py_tuple(values) -%}
-({%- for value in values -%}{{ value | repr }}{{ ", " if not loop.last else "" }}{%- endfor -%}{% if values | length == 1 %},{% endif %})
+({%- for value in values -%}{{ value | tojson }}{{ ", " if not loop.last else "" }}{%- endfor -%}{% if values | length == 1 %},{% endif %})
 {%- endmacro %}
-{%- macro state_key(state) -%}{{ state.path | join('.') }}{%- endmacro %}
-{%- macro state_slug(state) -%}{{ (state.path | join('_')) | to_identifier }}{%- endmacro %}
+{%- macro state_key(state) -%}{{ state | state_path }}{%- endmacro %}
+{%- macro state_slug(state) -%}{{ state | state_slug }}{%- endmacro %}
 {%- macro action_method_name(state, kind, idx) -%}_action_{{ state_slug(state) }}_{{ kind }}_{{ idx }}{%- endmacro %}
 {%- macro init_transition_id(state, idx) -%}init:{{ state_key(state) }}:{{ idx }}{%- endmacro %}
 {%- macro normal_transition_id(state, idx) -%}transition:{{ state_key(state) }}:{{ idx }}{%- endmacro %}
@@ -10,7 +10,35 @@
 {%- macro init_effect_method_name(state, idx) -%}_effect_init_{{ state_slug(state) }}_{{ idx }}{%- endmacro %}
 {%- macro transition_guard_method_name(state, idx) -%}_guard_transition_{{ state_slug(state) }}_{{ idx }}{%- endmacro %}
 {%- macro transition_effect_method_name(state, idx) -%}_effect_transition_{{ state_slug(state) }}_{{ idx }}{%- endmacro %}
-{%- macro abstract_hook_method_name(action) -%}_abstract_{{ action.func_name | to_identifier }}{%- endmacro %}
+{%- macro abstract_hook_method_name(action) -%}{{ action | action_hook_name }}{%- endmacro %}
+{%- macro render_action_entry(state, item, method_kind, idx) -%}
+{%- set resolved = namespace(item=item) -%}
+{%- for _ in range(16) -%}
+{%- if resolved.item.ref is not none -%}
+{%- set resolved.item = resolved.item.ref -%}
+{%- endif -%}
+{%- endfor -%}
+{
+    "kind": {{ ("abstract" if resolved.item.is_abstract else "concrete") | tojson }},
+    "method": {{ action_method_name(state, method_kind, idx) | tojson if not resolved.item.is_abstract else "None" }},
+    "hook_method": {{ abstract_hook_method_name(resolved.item) | tojson if resolved.item.is_abstract else "None" }},
+    "action_name": {{ resolved.item.func_name | tojson }},
+    "action_stage": {{ resolved.item.stage | tojson }},
+    "owner_state_path": {{ py_tuple(resolved.item.parent.path) }},
+    "dsl_snippet": {{ (resolved.item.to_ast_node() | string) | tojson }},
+}
+{%- endmacro %}
+{%- macro render_action_entries(state, items, method_kind) -%}
+{%- if items -%}
+[
+{%- for id_, item in items %}
+{{ render_action_entry(state, item, method_kind, id_) | indent(16, true) }},
+{% endfor %}
+            ]
+{%- else -%}
+[]
+{%- endif -%}
+{%- endmacro -%}
 """
 Generated native Python state machine runtime for ``{{ model.root_state.name }}``.
 
@@ -20,11 +48,11 @@ class embeds state metadata, transition logic, lifecycle execution, hot start,
 and abstract extension points inside one importable Python module.
 
 Root state: ``{{ model.root_state.name }}``
-Generated class: ``{{ model.root_state.name | to_identifier }}Machine``
+Generated class: ``{{ machine_class_name(model) }}``
 
 State Paths:
 {% for state in model.walk_states() -%}
-* ``{{ state.path | join('.') }}``
+* ``{{ state | state_path }}``
 {% endfor %}
 
 Variables:
@@ -77,25 +105,51 @@ from typing import Callable, Dict, List, Optional, Tuple, Union
 
 
 Number = Union[int, float]
-_HANDLER_METADATA_ATTR = '__abstract_handler_metadata__'
+_HANDLER_METADATA_ATTR = "__abstract_handler_metadata__"
 _DSL_SOURCE = {{ (model.to_ast_node() | string) | tojson }}
+{% set state_items = model.walk_states() | list -%}
+{% set define_items = model.defines.values() | list -%}
 _STATE_PATHS = (
-{% for state in model.walk_states() -%}
-    {{ state.path | join('.') | tojson }},
-{% endfor %}
+{% for state in state_items %}
+    {{ state | state_path | tojson }},
+{% endfor -%}
 )
-_ABSTRACT_HOOKS = {
-{% set abstract_const_ns = namespace(seen=[]) -%}
-{% for state in model.walk_states() -%}
+{% set abstract_hook_scan = namespace(seen=[]) -%}
+{% for state in state_items -%}
 {% for group in [
     state.list_on_enters(with_ids=True),
     state.list_on_durings(aspect=None, with_ids=True),
     state.list_on_exits(with_ids=True),
-    state.list_on_durings(aspect='before', with_ids=True),
-    state.list_on_durings(aspect='after', with_ids=True),
-    state.list_on_during_aspects(aspect='before', with_ids=True),
-    state.list_on_during_aspects(aspect='after', with_ids=True),
- ] -%}
+    state.list_on_durings(aspect="before", with_ids=True),
+    state.list_on_durings(aspect="after", with_ids=True),
+    state.list_on_during_aspects(aspect="before", with_ids=True),
+    state.list_on_during_aspects(aspect="after", with_ids=True),
+] -%}
+{% for _, item in group -%}
+{% set resolved = namespace(item=item) -%}
+{% for _ in range(16) -%}
+{% if resolved.item.ref is not none -%}
+{% set resolved.item = resolved.item.ref -%}
+{% endif -%}
+{% endfor -%}
+{% if resolved.item.is_abstract and resolved.item.func_name not in abstract_hook_scan.seen -%}
+{% set abstract_hook_scan.seen = abstract_hook_scan.seen + [resolved.item.func_name] -%}
+{% endif -%}
+{% endfor -%}
+{% endfor -%}
+{% endfor -%}
+_ABSTRACT_HOOKS = {% if abstract_hook_scan.seen %}{
+{% set abstract_const_ns = namespace(seen=[]) -%}
+{% for state in state_items -%}
+{% for group in [
+    state.list_on_enters(with_ids=True),
+    state.list_on_durings(aspect=None, with_ids=True),
+    state.list_on_exits(with_ids=True),
+    state.list_on_durings(aspect="before", with_ids=True),
+    state.list_on_durings(aspect="after", with_ids=True),
+    state.list_on_during_aspects(aspect="before", with_ids=True),
+    state.list_on_during_aspects(aspect="after", with_ids=True),
+] -%}
 {% for _, item in group -%}
 {% set resolved = namespace(item=item) -%}
 {% for _ in range(16) -%}
@@ -109,16 +163,21 @@ _ABSTRACT_HOOKS = {
 {% endif -%}
 {% endfor -%}
 {% endfor -%}
-{% endfor %}
-}
-_EVENT_PATHS = (
-{% for state in model.walk_states() -%}
+{% endfor -%}
+}{% else %}{}{% endif %}
+{% set event_ns = namespace(items=[]) -%}
+{% for state in state_items -%}
+{% set event_ns.items = event_ns.items + (state.events.values() | list) -%}
+{% endfor -%}
+_EVENT_PATHS = ({% if event_ns.items %}
+{% for state in state_items -%}
 {% for event in state.events.values() -%}
     {{ event.path_name | tojson }},
 {% endfor -%}
-{% endfor %}
-)
+{% endfor -%}
+{% endif %})
 _EVENT_PATH_SET = set(_EVENT_PATHS)
+
 
 
 class SimulationRuntimeDfsError(RuntimeError):
@@ -137,13 +196,14 @@ def abstract_handler(action_path):
     :rtype: Callable
     """
     if not action_path:
-        raise ValueError('action_path cannot be empty')
+        raise ValueError("action_path cannot be empty")
 
     def decorator(func):
         setattr(func, _HANDLER_METADATA_ATTR, action_path)
         return func
 
     return decorator
+
 
 
 def is_abstract_handler(func):
@@ -156,6 +216,7 @@ def is_abstract_handler(func):
     :rtype: bool
     """
     return hasattr(func, _HANDLER_METADATA_ATTR)
+
 
 
 @dataclass(frozen=True)
@@ -185,20 +246,21 @@ class ReadOnlyExecutionContext:
         return name in self.vars
 
     def get_state_name(self):
-        return self.state_path[-1] if self.state_path else ''
+        return self.state_path[-1] if self.state_path else ""
 
     def get_full_state_path(self):
-        return '.'.join(self.state_path)
+        return ".".join(self.state_path)
 
 
-class {{ model.root_state.name | to_identifier }}Machine:
+
+class {{ machine_class_name(model) }}:
     """
     Generated runtime for DSL root state ``{{ model.root_state.name }}``.
 
     Two extension styles are intentionally supported:
 
     1. Subclass this class and override generated protected hook methods such as
-       ``_abstract_<action_path>``.
+       ``_abstract_hook_<action_path>``.
     2. Register runtime handlers dynamically with
        :meth:`register_abstract_handler` or :meth:`register_handlers_from_object`.
 
@@ -209,194 +271,64 @@ class {{ model.root_state.name | to_identifier }}Machine:
 
     DSL_SOURCE = _DSL_SOURCE
     STATE_PATHS = _STATE_PATHS
-    VARIABLE_NAMES = (
-{% for def_item in model.defines.values() %}
+    VARIABLE_NAMES = ({% if define_items | length == 1 %}{{ define_items[0].name | tojson }},{% else %}
+{%- for def_item in define_items %}
         {{ def_item.name | tojson }},
-{% endfor %}
-    )
+{% endfor -%}
+{% endif %})
     ABSTRACT_HOOKS = _ABSTRACT_HOOKS
     EVENT_PATHS = _EVENT_PATHS
     _EVENT_PATH_SET = _EVENT_PATH_SET
     _ROOT_STATE_PATH = {{ state_key(model.root_state) | tojson }}
     _STATE_INFO = {
-{% for state in model.walk_states() %}
+{% for state in state_items %}
         {{ state_key(state) | tojson }}: {
-            'path': {{ py_tuple(state.path) }},
-            'parent': {{ state_key(state.parent) | tojson if state.parent is not none else 'None' }},
-            'is_leaf': {{ state.is_leaf_state | repr }},
-            'is_pseudo': {{ state.is_pseudo | repr }},
-            'enter_actions': [
-{% for id_, item in state.list_on_enters(with_ids=True) %}
-{% set resolved = namespace(item=item) %}
-{% for _ in range(16) %}
-{% if resolved.item.ref is not none %}
-{% set resolved.item = resolved.item.ref %}
-{% endif %}
-{% endfor %}
-                {
-                    'kind': {{ ('abstract' if resolved.item.is_abstract else 'concrete') | tojson }},
-                    'method': {{ action_method_name(state, 'enter', id_) | tojson if not resolved.item.is_abstract else 'None' }},
-                    'hook_method': {{ abstract_hook_method_name(resolved.item) | tojson if resolved.item.is_abstract else 'None' }},
-                    'action_name': {{ resolved.item.func_name | tojson }},
-                    'action_stage': {{ resolved.item.stage | tojson }},
-                    'owner_state_path': {{ py_tuple(resolved.item.parent.path) }},
-                    'dsl_snippet': {{ (resolved.item.to_ast_node() | string) | tojson }},
-                },
-{% endfor %}
-            ],
-            'during_actions': [
-{% for id_, item in state.list_on_durings(aspect=None, with_ids=True) %}
-{% set resolved = namespace(item=item) %}
-{% for _ in range(16) %}
-{% if resolved.item.ref is not none %}
-{% set resolved.item = resolved.item.ref %}
-{% endif %}
-{% endfor %}
-                {
-                    'kind': {{ ('abstract' if resolved.item.is_abstract else 'concrete') | tojson }},
-                    'method': {{ action_method_name(state, 'during', id_) | tojson if not resolved.item.is_abstract else 'None' }},
-                    'hook_method': {{ abstract_hook_method_name(resolved.item) | tojson if resolved.item.is_abstract else 'None' }},
-                    'action_name': {{ resolved.item.func_name | tojson }},
-                    'action_stage': {{ resolved.item.stage | tojson }},
-                    'owner_state_path': {{ py_tuple(resolved.item.parent.path) }},
-                    'dsl_snippet': {{ (resolved.item.to_ast_node() | string) | tojson }},
-                },
-{% endfor %}
-            ],
-            'exit_actions': [
-{% for id_, item in state.list_on_exits(with_ids=True) %}
-{% set resolved = namespace(item=item) %}
-{% for _ in range(16) %}
-{% if resolved.item.ref is not none %}
-{% set resolved.item = resolved.item.ref %}
-{% endif %}
-{% endfor %}
-                {
-                    'kind': {{ ('abstract' if resolved.item.is_abstract else 'concrete') | tojson }},
-                    'method': {{ action_method_name(state, 'exit', id_) | tojson if not resolved.item.is_abstract else 'None' }},
-                    'hook_method': {{ abstract_hook_method_name(resolved.item) | tojson if resolved.item.is_abstract else 'None' }},
-                    'action_name': {{ resolved.item.func_name | tojson }},
-                    'action_stage': {{ resolved.item.stage | tojson }},
-                    'owner_state_path': {{ py_tuple(resolved.item.parent.path) }},
-                    'dsl_snippet': {{ (resolved.item.to_ast_node() | string) | tojson }},
-                },
-{% endfor %}
-            ],
-            'during_before_actions': [
-{% for id_, item in state.list_on_durings(aspect='before', with_ids=True) %}
-{% set resolved = namespace(item=item) %}
-{% for _ in range(16) %}
-{% if resolved.item.ref is not none %}
-{% set resolved.item = resolved.item.ref %}
-{% endif %}
-{% endfor %}
-                {
-                    'kind': {{ ('abstract' if resolved.item.is_abstract else 'concrete') | tojson }},
-                    'method': {{ action_method_name(state, 'during_before', id_) | tojson if not resolved.item.is_abstract else 'None' }},
-                    'hook_method': {{ abstract_hook_method_name(resolved.item) | tojson if resolved.item.is_abstract else 'None' }},
-                    'action_name': {{ resolved.item.func_name | tojson }},
-                    'action_stage': {{ resolved.item.stage | tojson }},
-                    'owner_state_path': {{ py_tuple(resolved.item.parent.path) }},
-                    'dsl_snippet': {{ (resolved.item.to_ast_node() | string) | tojson }},
-                },
-{% endfor %}
-            ],
-            'during_after_actions': [
-{% for id_, item in state.list_on_durings(aspect='after', with_ids=True) %}
-{% set resolved = namespace(item=item) %}
-{% for _ in range(16) %}
-{% if resolved.item.ref is not none %}
-{% set resolved.item = resolved.item.ref %}
-{% endif %}
-{% endfor %}
-                {
-                    'kind': {{ ('abstract' if resolved.item.is_abstract else 'concrete') | tojson }},
-                    'method': {{ action_method_name(state, 'during_after', id_) | tojson if not resolved.item.is_abstract else 'None' }},
-                    'hook_method': {{ abstract_hook_method_name(resolved.item) | tojson if resolved.item.is_abstract else 'None' }},
-                    'action_name': {{ resolved.item.func_name | tojson }},
-                    'action_stage': {{ resolved.item.stage | tojson }},
-                    'owner_state_path': {{ py_tuple(resolved.item.parent.path) }},
-                    'dsl_snippet': {{ (resolved.item.to_ast_node() | string) | tojson }},
-                },
-{% endfor %}
-            ],
-            'aspect_before_actions': [
-{% for id_, item in state.list_on_during_aspects(aspect='before', with_ids=True) %}
-{% set resolved = namespace(item=item) %}
-{% for _ in range(16) %}
-{% if resolved.item.ref is not none %}
-{% set resolved.item = resolved.item.ref %}
-{% endif %}
-{% endfor %}
-                {
-                    'kind': {{ ('abstract' if resolved.item.is_abstract else 'concrete') | tojson }},
-                    'method': {{ action_method_name(state, 'aspect_before', id_) | tojson if not resolved.item.is_abstract else 'None' }},
-                    'hook_method': {{ abstract_hook_method_name(resolved.item) | tojson if resolved.item.is_abstract else 'None' }},
-                    'action_name': {{ resolved.item.func_name | tojson }},
-                    'action_stage': {{ resolved.item.stage | tojson }},
-                    'owner_state_path': {{ py_tuple(resolved.item.parent.path) }},
-                    'dsl_snippet': {{ (resolved.item.to_ast_node() | string) | tojson }},
-                },
-{% endfor %}
-            ],
-            'aspect_after_actions': [
-{% for id_, item in state.list_on_during_aspects(aspect='after', with_ids=True) %}
-{% set resolved = namespace(item=item) %}
-{% for _ in range(16) %}
-{% if resolved.item.ref is not none %}
-{% set resolved.item = resolved.item.ref %}
-{% endif %}
-{% endfor %}
-                {
-                    'kind': {{ ('abstract' if resolved.item.is_abstract else 'concrete') | tojson }},
-                    'method': {{ action_method_name(state, 'aspect_after', id_) | tojson if not resolved.item.is_abstract else 'None' }},
-                    'hook_method': {{ abstract_hook_method_name(resolved.item) | tojson if resolved.item.is_abstract else 'None' }},
-                    'action_name': {{ resolved.item.func_name | tojson }},
-                    'action_stage': {{ resolved.item.stage | tojson }},
-                    'owner_state_path': {{ py_tuple(resolved.item.parent.path) }},
-                    'dsl_snippet': {{ (resolved.item.to_ast_node() | string) | tojson }},
-                },
-{% endfor %}
-            ],
-            'initial_transition_ids': [
-{% for transition in state.init_transitions %}
+            "path": {{ py_tuple(state.path) }},
+            "parent": {{ state_key(state.parent) | tojson if state.parent is not none else "None" }},
+            "is_leaf": {{ state.is_leaf_state | repr }},
+            "is_pseudo": {{ state.is_pseudo | repr }},
+            "enter_actions": {{ render_action_entries(state, state.list_on_enters(with_ids=True), "enter") }},
+            "during_actions": {{ render_action_entries(state, state.list_on_durings(aspect=None, with_ids=True), "during") }},
+            "exit_actions": {{ render_action_entries(state, state.list_on_exits(with_ids=True), "exit") }},
+            "during_before_actions": {{ render_action_entries(state, state.list_on_durings(aspect="before", with_ids=True), "during_before") }},
+            "during_after_actions": {{ render_action_entries(state, state.list_on_durings(aspect="after", with_ids=True), "during_after") }},
+            "aspect_before_actions": {{ render_action_entries(state, state.list_on_during_aspects(aspect="before", with_ids=True), "aspect_before") }},
+            "aspect_after_actions": {{ render_action_entries(state, state.list_on_during_aspects(aspect="after", with_ids=True), "aspect_after") }},
+            "initial_transition_ids": [{%- for transition in state.init_transitions %}
                 {{ init_transition_id(state, loop.index) | tojson }},
-{% endfor %}
-            ],
-            'transition_ids': [
-{% for transition in state.transitions_from %}
+            {% endfor -%}],
+            "transition_ids": [{%- for transition in state.transitions_from %}
                 {{ normal_transition_id(state, loop.index) | tojson }},
-{% endfor %}
-            ],
+            {% endfor -%}],
         },
 {% endfor %}
     }
     _TRANSITIONS = {
-{% for state in model.walk_states() %}
+{% for state in state_items %}
 {% for transition in state.init_transitions %}
         {{ init_transition_id(state, loop.index) | tojson }}: {
-            'target': {{ state_key(state.substates[transition.to_state]) | tojson }},
-            'to_exit': False,
-            'event_path': {{ transition.event.path_name | tojson if transition.event is not none else 'None' }},
-            'event_name': {{ transition.event.name | tojson if transition.event is not none else 'None' }},
-            'guard': {{ init_guard_method_name(state, loop.index) | tojson if transition.guard is not none else 'None' }},
-            'effect': {{ init_effect_method_name(state, loop.index) | tojson if transition.effects else 'None' }},
+            "target": {{ state_key(state.substates[transition.to_state]) | tojson }},
+            "to_exit": False,
+            "event_path": {{ transition.event.path_name | tojson if transition.event is not none else "None" }},
+            "event_name": {{ transition.event.name | tojson if transition.event is not none else "None" }},
+            "guard": {{ init_guard_method_name(state, loop.index) | tojson if transition.guard is not none else "None" }},
+            "effect": {{ init_effect_method_name(state, loop.index) | tojson if transition.effects else "None" }},
         },
 {% endfor %}
 {% for transition in state.transitions_from %}
         {{ normal_transition_id(state, loop.index) | tojson }}: {
-            'target': {{ state_key(state.parent.substates[transition.to_state]) | tojson if transition.to_state != EXIT_STATE else 'None' }},
-            'to_exit': {{ (transition.to_state == EXIT_STATE) | repr }},
-            'event_path': {{ transition.event.path_name | tojson if transition.event is not none else 'None' }},
-            'event_name': {{ transition.event.name | tojson if transition.event is not none else 'None' }},
-            'guard': {{ transition_guard_method_name(state, loop.index) | tojson if transition.guard is not none else 'None' }},
-            'effect': {{ transition_effect_method_name(state, loop.index) | tojson if transition.effects else 'None' }},
+            "target": {{ state_key(state.parent.substates[transition.to_state]) | tojson if transition.to_state != EXIT_STATE else "None" }},
+            "to_exit": {{ (transition.to_state == EXIT_STATE) | repr }},
+            "event_path": {{ transition.event.path_name | tojson if transition.event is not none else "None" }},
+            "event_name": {{ transition.event.name | tojson if transition.event is not none else "None" }},
+            "guard": {{ transition_guard_method_name(state, loop.index) | tojson if transition.guard is not none else "None" }},
+            "effect": {{ transition_effect_method_name(state, loop.index) | tojson if transition.effects else "None" }},
         },
 {% endfor %}
 {% endfor %}
     }
     _VAR_TYPES = {
-{% for def_item in model.defines.values() %}
+{% for def_item in define_items %}
         {{ def_item.name | tojson }}: {{ def_item.type | tojson }},
 {% endfor %}
     }
@@ -413,26 +345,27 @@ class {{ model.root_state.name | to_identifier }}Machine:
         self._vars = {}
         self.variables = self._vars
         self._abstract_handlers = {}
-{% for def_item in model.defines.values() %}
-        self._vars[{{ def_item.name | tojson }}] = {{ def_item.init.to_ast_node() | expr_render(style='python_expr') }}
+{%- for def_item in define_items %}
+        self._vars[{{ def_item.name | tojson }}] = {{ def_item.init.to_ast_node() | expr_render(style="python_expr") }}
 {% endfor %}
-
         if initial_vars is not None:
             missing_vars = set(self._VAR_TYPES.keys()) - set(initial_vars.keys())
             if missing_vars:
                 raise ValueError(
-                    'initial_vars must provide all variables. Missing: %s' % sorted(missing_vars)
+                    "initial_vars must provide all variables. Missing: %s"
+                    % sorted(missing_vars)
                 )
             extra_vars = set(initial_vars.keys()) - set(self._VAR_TYPES.keys())
             if extra_vars:
                 raise ValueError(
-                    'initial_vars contains unknown variables: %s' % sorted(extra_vars)
+                    "initial_vars contains unknown variables: %s" % sorted(extra_vars)
                 )
             for name, value in initial_vars.items():
-                if self._VAR_TYPES[name] == 'int' and isinstance(value, float):
+                if self._VAR_TYPES[name] == "int" and isinstance(value, float):
                     if value != int(value):
                         raise ValueError(
-                            "Variable %r is int type, cannot assign float %r" % (name, value)
+                            "Variable %r is int type, cannot assign float %r"
+                            % (name, value)
                         )
                     value = int(value)
                 self._vars[name] = value
@@ -440,11 +373,15 @@ class {{ model.root_state.name | to_identifier }}Machine:
         self._ended = False
         self._entered_root = initial_state is not None
         if initial_state is None:
-            self._stack = [{'state': self._ROOT_STATE_PATH, 'mode': 'init_wait'}]
+            self._stack = [{"state": self._ROOT_STATE_PATH, "mode": "init_wait"}]
         else:
             if initial_vars is None:
-                raise ValueError('initial_vars must be provided when initial_state is specified')
-            self._stack = self._build_hot_start_stack(self._normalize_state_path(initial_state))
+                raise ValueError(
+                    "initial_vars must be provided when initial_state is specified"
+                )
+            self._stack = self._build_hot_start_stack(
+                self._normalize_state_path(initial_state)
+            )
 
     @property
     def vars(self):
@@ -458,7 +395,7 @@ class {{ model.root_state.name | to_identifier }}Machine:
     def current_state_path(self):
         if not self._stack:
             return None
-        return self._STATE_INFO[self._stack[-1]['state']]['path']
+        return self._STATE_INFO[self._stack[-1]["state"]]["path"]
 
     @property
     def current_state_name(self):
@@ -469,12 +406,12 @@ class {{ model.root_state.name | to_identifier }}Machine:
 
     def info(self):
         return {
-            'root_state_name': {{ model.root_state.name | tojson }},
-            'current_state_path': self.current_state_path,
-            'variable_names': sorted(self._vars.keys()),
-            'state_paths': list(self.STATE_PATHS),
-            'abstract_hooks': dict(self.ABSTRACT_HOOKS),
-            'is_ended': self._ended,
+            "root_state_name": {{ model.root_state.name | tojson }},
+            "current_state_path": self.current_state_path,
+            "variable_names": sorted(self._vars.keys()),
+            "state_paths": list(self.STATE_PATHS),
+            "abstract_hooks": dict(self.ABSTRACT_HOOKS),
+            "is_ended": self._ended,
         }
 
     @classmethod
@@ -502,7 +439,7 @@ class {{ model.root_state.name | to_identifier }}Machine:
         :rtype: None
         """
         if not action_path:
-            raise ValueError('action_path cannot be empty')
+            raise ValueError("action_path cannot be empty")
         if action_path not in self._abstract_handlers:
             self._abstract_handlers[action_path] = []
         self._abstract_handlers[action_path].append(handler)
@@ -516,7 +453,9 @@ class {{ model.root_state.name | to_identifier }}Machine:
             del self._abstract_handlers[action_path]
             return count
         original_count = len(handlers)
-        self._abstract_handlers[action_path] = [item for item in handlers if item is not handler]
+        self._abstract_handlers[action_path] = [
+            item for item in handlers if item is not handler
+        ]
         removed = original_count - len(self._abstract_handlers[action_path])
         if not self._abstract_handlers[action_path]:
             del self._abstract_handlers[action_path]
@@ -557,48 +496,51 @@ class {{ model.root_state.name | to_identifier }}Machine:
     def _normalize_state_path(self, state_ref):
         if isinstance(state_ref, str):
             if not state_ref:
-                raise ValueError('State path cannot be empty')
-            path = tuple(state_ref.split('.'))
+                raise ValueError("State path cannot be empty")
+            path = tuple(state_ref.split("."))
         elif isinstance(state_ref, (tuple, list)):
             path = tuple(state_ref)
         else:
-            raise TypeError('state_ref must be str, tuple, or list')
+            raise TypeError("state_ref must be str, tuple, or list")
 
         if not path:
-            raise ValueError('State path cannot be empty')
+            raise ValueError("State path cannot be empty")
         if path[0] != self._ROOT_STATE_PATH:
             raise ValueError(
-                "State path root %r does not match state machine root %r" % (path[0], self._ROOT_STATE_PATH)
+                "State path root %r does not match state machine root %r"
+                % (path[0], self._ROOT_STATE_PATH)
             )
 
         current_path = self._ROOT_STATE_PATH
         for name in path[1:]:
-            next_path = current_path + '.' + name
+            next_path = current_path + "." + name
             if next_path not in self._STATE_INFO:
                 raise ValueError("State %r not found under %r" % (name, current_path))
-            if self._STATE_INFO[next_path]['parent'] != current_path:
-                raise ValueError("State %r is not a direct child of %r" % (name, current_path))
+            if self._STATE_INFO[next_path]["parent"] != current_path:
+                raise ValueError(
+                    "State %r is not a direct child of %r" % (name, current_path)
+                )
             current_path = next_path
 
-        return '.'.join(path)
+        return ".".join(path)
 
     def _build_hot_start_stack(self, target_path):
         path_items = []
         current_path = target_path
         while current_path is not None:
             path_items.insert(0, current_path)
-            current_path = self._STATE_INFO[current_path]['parent']
+            current_path = self._STATE_INFO[current_path]["parent"]
 
         stack = []
         for index, state_path in enumerate(path_items):
             state_info = self._STATE_INFO[state_path]
             is_target = index == len(path_items) - 1
-            if state_info['is_leaf']:
-                stack.append({'state': state_path, 'mode': 'active'})
+            if state_info["is_leaf"]:
+                stack.append({"state": state_path, "mode": "active"})
             elif is_target:
-                stack.append({'state': state_path, 'mode': 'init_wait'})
+                stack.append({"state": state_path, "mode": "init_wait"})
             else:
-                stack.append({'state': state_path, 'mode': 'active'})
+                stack.append({"state": state_path, "mode": "active"})
         return stack
 
     @staticmethod
@@ -608,77 +550,81 @@ class {{ model.root_state.name | to_identifier }}Machine:
     @staticmethod
     def _create_execution_signature(stack, vars_):
         return (
-            tuple((frame['state'], frame['mode']) for frame in stack),
+            tuple((frame["state"], frame["mode"]) for frame in stack),
             tuple((key, vars_[key]) for key in sorted(vars_)),
         )
 
     @staticmethod
     def _create_structural_signature(stack):
-        return tuple((frame['state'], frame['mode']) for frame in stack)
+        return tuple((frame["state"], frame["mode"]) for frame in stack)
 
     def _create_root_rollback_stack(self):
-        return [{'state': self._ROOT_STATE_PATH, 'mode': 'init_wait'}]
+        return [{"state": self._ROOT_STATE_PATH, "mode": "init_wait"}]
 
     def _is_stoppable_state(self, state_path):
         state_info = self._STATE_INFO[state_path]
-        return state_info['is_leaf'] and not state_info['is_pseudo']
+        return state_info["is_leaf"] and not state_info["is_pseudo"]
 
     def _parse_event(self, event):
-        if hasattr(event, 'path_name'):
+        if hasattr(event, "path_name"):
             event = event.path_name
         elif not isinstance(event, str):
             event = str(event)
 
         if not event:
-            raise ValueError('Event reference cannot be empty')
+            raise ValueError("Event reference cannot be empty")
 
         if not self._stack:
             if event in self._EVENT_PATH_SET:
                 return event
-            raise LookupError('Cannot resolve event %r after runtime end.' % (event,))
+            raise LookupError("Cannot resolve event %r after runtime end." % (event,))
 
-        current_path = self._stack[-1]['state']
-        current_items = list(self._STATE_INFO[current_path]['path'])
+        current_path = self._stack[-1]["state"]
+        current_items = list(self._STATE_INFO[current_path]["path"])
 
-        if event.startswith('/'):
+        if event.startswith("/"):
             relative_path = event[1:]
             if not relative_path:
                 raise ValueError("Absolute event reference cannot be just '/'.")
-            candidate = self._ROOT_STATE_PATH + '.' + relative_path
+            candidate = self._ROOT_STATE_PATH + "." + relative_path
             if candidate in self._EVENT_PATH_SET:
                 return candidate
-            raise LookupError('Cannot resolve absolute event path %r.' % (event,))
+            raise LookupError("Cannot resolve absolute event path %r." % (event,))
 
-        if event.startswith('.'):
+        if event.startswith("."):
             dot_count = 0
             for char in event:
-                if char == '.':
+                if char == ".":
                     dot_count += 1
                 else:
                     break
             remaining_path = event[dot_count:]
             if not remaining_path:
                 raise ValueError(
-                    'Parent-relative event reference cannot end with dots: %r' % (event,)
+                    "Parent-relative event reference cannot end with dots: %r"
+                    % (event,)
                 )
             if dot_count > len(current_items) - 1:
                 raise ValueError(
-                    'Parent-relative event reference %r goes beyond root state.' % (event,)
+                    "Parent-relative event reference %r goes beyond root state."
+                    % (event,)
                 )
             base_items = current_items[:-dot_count]
-            candidate = '.'.join(tuple(base_items + remaining_path.split('.')))
+            candidate = ".".join(tuple(base_items + remaining_path.split(".")))
             if candidate in self._EVENT_PATH_SET:
                 return candidate
-            raise LookupError('Cannot resolve parent-relative event path %r.' % (event,))
+            raise LookupError(
+                "Cannot resolve parent-relative event path %r." % (event,)
+            )
 
         if event in self._EVENT_PATH_SET:
             return event
 
-        candidate = current_path + '.' + event
+        candidate = current_path + "." + event
         if candidate in self._EVENT_PATH_SET:
             return candidate
 
-        raise LookupError('Cannot resolve event path %r.' % (event,))
+        raise LookupError("Cannot resolve event path %r." % (event,))
 
     def _normalize_events(self, events):
         if events is None:
@@ -695,34 +641,36 @@ class {{ model.root_state.name | to_identifier }}Machine:
         current_path = state_path
         while current_path is not None:
             result.insert(0, current_path)
-            current_path = self._STATE_INFO[current_path]['parent']
+            current_path = self._STATE_INFO[current_path]["parent"]
         return result
 
     def _execute_actions(self, actions, vars_, is_validation_mode=False):
         for action in actions:
-            if action['kind'] == 'concrete':
-                getattr(self, action['method'])(vars_)
+            if action["kind"] == "concrete":
+                getattr(self, action["method"])(vars_)
             else:
-                self._execute_abstract_action(action, vars_, is_validation_mode=is_validation_mode)
+                self._execute_abstract_action(
+                    action, vars_, is_validation_mode=is_validation_mode
+                )
 
     def _execute_abstract_action(self, action, vars_, is_validation_mode=False):
         if is_validation_mode:
             return
         ctx = ReadOnlyExecutionContext(
-            state_path=action['owner_state_path'],
+            state_path=action["owner_state_path"],
             vars=dict(vars_),
-            action_name=action['action_name'],
-            action_stage=action['action_stage'],
+            action_name=action["action_name"],
+            action_stage=action["action_stage"],
         )
         old_vars = self._vars
         old_variables = self.variables
         self._vars = vars_
         self.variables = self._vars
         try:
-            hook_name = action.get('hook_method')
+            hook_name = action.get("hook_method")
             if hook_name:
                 getattr(self, hook_name)(ctx)
-            handlers = self._abstract_handlers.get(action['action_name'], [])
+            handlers = self._abstract_handlers.get(action["action_name"], [])
             for handler in handlers:
                 handler(ctx)
         finally:
@@ -731,88 +679,102 @@ class {{ model.root_state.name | to_identifier }}Machine:
 
     def _run_leaf_during(self, state_path, vars_, is_validation_mode=False):
         state_info = self._STATE_INFO[state_path]
-        if not state_info['is_pseudo']:
+        if not state_info["is_pseudo"]:
             for item_path in self._iter_path_to_state(state_path):
                 self._execute_actions(
-                    self._STATE_INFO[item_path]['aspect_before_actions'],
+                    self._STATE_INFO[item_path]["aspect_before_actions"],
                     vars_,
                     is_validation_mode=is_validation_mode,
                 )
         self._execute_actions(
-            state_info['during_actions'],
+            state_info["during_actions"],
             vars_,
             is_validation_mode=is_validation_mode,
         )
-        if not state_info['is_pseudo']:
+        if not state_info["is_pseudo"]:
             for item_path in reversed(self._iter_path_to_state(state_path)):
                 self._execute_actions(
-                    self._STATE_INFO[item_path]['aspect_after_actions'],
+                    self._STATE_INFO[item_path]["aspect_after_actions"],
                     vars_,
                     is_validation_mode=is_validation_mode,
                 )
 
     def _transition_matches_event(self, transition, event_names):
-        if transition['event_path'] is None:
+        if transition["event_path"] is None:
             return True
-        return transition['event_path'] in event_names
+        return transition["event_path"] in event_names
 
     def _transition_matches_guard(self, transition, vars_):
-        if transition['guard'] is None:
+        if transition["guard"] is None:
             return True
-        return bool(getattr(self, transition['guard'])(vars_))
+        return bool(getattr(self, transition["guard"])(vars_))
 
     def _transition_is_enabled(self, transition, event_names, vars_):
-        return self._transition_matches_event(transition, event_names) and self._transition_matches_guard(
-            transition, vars_
-        )
+        return self._transition_matches_event(
+            transition, event_names
+        ) and self._transition_matches_guard(transition, vars_)
 
     def _execute_transition_effect(self, transition, vars_, is_validation_mode=False):
-        if transition['effect'] is not None:
-            getattr(self, transition['effect'])(vars_)
+        if transition["effect"] is not None:
+            getattr(self, transition["effect"])(vars_)
 
     def _select_transition(self, stack, vars_, event_names, validate_stoppable=True):
         if not stack:
             return None
-        state_path = stack[-1]['state']
+        state_path = stack[-1]["state"]
         state_info = self._STATE_INFO[state_path]
-        for transition_id in state_info['transition_ids']:
+        for transition_id in state_info["transition_ids"]:
             transition = self._TRANSITIONS[transition_id]
             if not self._transition_is_enabled(transition, event_names, vars_):
                 continue
             if validate_stoppable and self._is_stoppable_state(state_path):
-                if not self._validate_transition(stack, vars_, transition_id, event_names):
+                if not self._validate_transition(
+                    stack, vars_, transition_id, event_names
+                ):
                     continue
             return transition_id
         return None
 
-    def _enter_state(self, stack, state_path, vars_, event_names, is_validation_mode=False):
+    def _enter_state(
+        self, stack, state_path, vars_, event_names, is_validation_mode=False
+    ):
         state_info = self._STATE_INFO[state_path]
-        stack.append({'state': state_path, 'mode': 'active'})
-        self._execute_actions(state_info['enter_actions'], vars_, is_validation_mode=is_validation_mode)
+        stack.append({"state": state_path, "mode": "active"})
+        self._execute_actions(
+            state_info["enter_actions"], vars_, is_validation_mode=is_validation_mode
+        )
 
-        if state_info['is_leaf']:
-            self._run_leaf_during(state_path, vars_, is_validation_mode=is_validation_mode)
-            stack[-1]['mode'] = 'after_entry'
+        if state_info["is_leaf"]:
+            self._run_leaf_during(
+                state_path, vars_, is_validation_mode=is_validation_mode
+            )
+            stack[-1]["mode"] = "after_entry"
         else:
             self._execute_actions(
-                state_info['during_before_actions'],
+                state_info["during_before_actions"],
                 vars_,
                 is_validation_mode=is_validation_mode,
             )
-            stack[-1]['mode'] = 'init_wait'
-            self._attempt_init_transition(stack, vars_, event_names, is_validation_mode=is_validation_mode)
+            stack[-1]["mode"] = "init_wait"
+            self._attempt_init_transition(
+                stack, vars_, event_names, is_validation_mode=is_validation_mode
+            )
 
-    def _attempt_init_transition(self, stack, vars_, event_names, is_validation_mode=False):
+    def _attempt_init_transition(
+        self, stack, vars_, event_names, is_validation_mode=False
+    ):
         if not stack:
             return False
-        current_path = stack[-1]['state']
-        for transition_id in self._STATE_INFO[current_path]['initial_transition_ids']:
+        current_path = stack[-1]["state"]
+        for transition_id in self._STATE_INFO[current_path]["initial_transition_ids"]:
             transition = self._TRANSITIONS[transition_id]
             if self._transition_is_enabled(transition, event_names, vars_):
-                self._execute_transition_effect(transition, vars_, is_validation_mode=is_validation_mode)
+                self._execute_transition_effect(
+                    transition, vars_, is_validation_mode=is_validation_mode
+                )
                 self._enter_state(
                     stack,
-                    transition['target'],
+                    transition["target"],
                     vars_,
                     event_names,
                     is_validation_mode=is_validation_mode,
@@ -824,38 +786,42 @@ class {{ model.root_state.name | to_identifier }}Machine:
         if not stack:
             return True
 
-        parent_path = stack[-1]['state']
+        parent_path = stack[-1]["state"]
         if parent_path == self._ROOT_STATE_PATH:
             stack[:] = []
             return True
 
         self._execute_actions(
-            self._STATE_INFO[parent_path]['during_after_actions'],
+            self._STATE_INFO[parent_path]["during_after_actions"],
             vars_,
             is_validation_mode=is_validation_mode,
         )
-        stack[-1]['mode'] = 'post_child_exit'
+        stack[-1]["mode"] = "post_child_exit"
         return False
 
     def _execute_transition_on_context(
         self, stack, vars_, transition_id, event_names, is_validation_mode=False
     ):
         transition = self._TRANSITIONS[transition_id]
-        current_path = stack[-1]['state']
+        current_path = stack[-1]["state"]
         self._execute_actions(
-            self._STATE_INFO[current_path]['exit_actions'],
+            self._STATE_INFO[current_path]["exit_actions"],
             vars_,
             is_validation_mode=is_validation_mode,
         )
-        self._execute_transition_effect(transition, vars_, is_validation_mode=is_validation_mode)
+        self._execute_transition_effect(
+            transition, vars_, is_validation_mode=is_validation_mode
+        )
         stack.pop()
 
-        if transition['to_exit']:
-            return self._finalize_exit_to_parent(stack, vars_, is_validation_mode=is_validation_mode)
+        if transition["to_exit"]:
+            return self._finalize_exit_to_parent(
+                stack, vars_, is_validation_mode=is_validation_mode
+            )
 
         self._enter_state(
             stack,
-            transition['target'],
+            transition["target"],
             vars_,
             event_names,
             is_validation_mode=is_validation_mode,
@@ -924,8 +890,8 @@ class {{ model.root_state.name | to_identifier }}Machine:
 
             if len(self._create_structural_signature(stack)) > max_structural_depth:
                 raise SimulationRuntimeDfsError(
-                    'Speculative DFS exceeded the structural stack-depth safety limit '
-                    '(%s) without reaching a stoppable state or pruning.'
+                    "Speculative DFS exceeded the structural stack-depth safety limit "
+                    "(%s) without reaching a stoppable state or pruning."
                     % (max_structural_depth,)
                 )
 
@@ -933,12 +899,12 @@ class {{ model.root_state.name | to_identifier }}Machine:
                 return False, False
 
             frame = stack[-1]
-            state_path = frame['state']
+            state_path = frame["state"]
             state_info = self._STATE_INFO[state_path]
 
-            if state_info['is_leaf']:
-                if frame['mode'] == 'after_entry':
-                    frame['mode'] = 'active'
+            if state_info["is_leaf"]:
+                if frame["mode"] == "after_entry":
+                    frame["mode"] = "active"
                     if self._is_stoppable_state(state_path):
                         return True, False
                     steps_taken += 1
@@ -958,12 +924,14 @@ class {{ model.root_state.name | to_identifier }}Machine:
                         return True, True
                     continue
 
-                self._run_leaf_during(state_path, vars_, is_validation_mode=is_validation_mode)
-                frame['mode'] = 'after_entry'
+                self._run_leaf_during(
+                    state_path, vars_, is_validation_mode=is_validation_mode
+                )
+                frame["mode"] = "after_entry"
                 steps_taken += 1
                 continue
 
-            if frame['mode'] == 'init_wait':
+            if frame["mode"] == "init_wait":
                 progressed = self._attempt_init_transition(
                     stack,
                     vars_,
@@ -975,7 +943,7 @@ class {{ model.root_state.name | to_identifier }}Machine:
                     return False, False
                 continue
 
-            if frame['mode'] == 'post_child_exit':
+            if frame["mode"] == "post_child_exit":
                 transition_id = self._select_transition(
                     stack,
                     vars_,
@@ -1072,7 +1040,7 @@ class {{ model.root_state.name | to_identifier }}Machine:
         """
         Protected extension hook for DSL abstract action ``{{ resolved.item.func_name }}``.
 
-        Owning state path: ``{{ resolved.item.parent.path | join('.') }}``
+        Owning state path: ``{{ resolved.item | action_owner_path }}``
         Lifecycle stage: ``{{ resolved.item.stage }}``
 
         Override this method in a subclass when you want generated code
@@ -1095,7 +1063,7 @@ class {{ model.root_state.name | to_identifier }}Machine:
 {% if not resolved.item.is_abstract %}
     def {{ action_method_name(state, 'enter', id_) }}(self, vars_=None):
         """
-        Execute the concrete DSL action block for ``{{ resolved.item.parent.path | join('.') }}``.
+        Execute the concrete DSL action block for ``{{ resolved.item | action_owner_path }}``.
 
         Lifecycle stage: ``{{ resolved.item.stage }}``
 
@@ -1125,7 +1093,7 @@ class {{ model.root_state.name | to_identifier }}Machine:
         """
         Protected extension hook for DSL abstract action ``{{ resolved.item.func_name }}``.
 
-        Owning state path: ``{{ resolved.item.parent.path | join('.') }}``
+        Owning state path: ``{{ resolved.item | action_owner_path }}``
         Lifecycle stage: ``{{ resolved.item.stage }}``
 
         Override this method in a subclass when you want generated code
@@ -1148,7 +1116,7 @@ class {{ model.root_state.name | to_identifier }}Machine:
 {% if not resolved.item.is_abstract %}
     def {{ action_method_name(state, 'during', id_) }}(self, vars_=None):
         """
-        Execute the concrete DSL action block for ``{{ resolved.item.parent.path | join('.') }}``.
+        Execute the concrete DSL action block for ``{{ resolved.item | action_owner_path }}``.
 
         Lifecycle stage: ``{{ resolved.item.stage }}``
 
@@ -1178,7 +1146,7 @@ class {{ model.root_state.name | to_identifier }}Machine:
         """
         Protected extension hook for DSL abstract action ``{{ resolved.item.func_name }}``.
 
-        Owning state path: ``{{ resolved.item.parent.path | join('.') }}``
+        Owning state path: ``{{ resolved.item | action_owner_path }}``
         Lifecycle stage: ``{{ resolved.item.stage }}``
 
         Override this method in a subclass when you want generated code
@@ -1201,7 +1169,7 @@ class {{ model.root_state.name | to_identifier }}Machine:
 {% if not resolved.item.is_abstract %}
     def {{ action_method_name(state, 'exit', id_) }}(self, vars_=None):
         """
-        Execute the concrete DSL action block for ``{{ resolved.item.parent.path | join('.') }}``.
+        Execute the concrete DSL action block for ``{{ resolved.item | action_owner_path }}``.
 
         Lifecycle stage: ``{{ resolved.item.stage }}``
 
@@ -1231,7 +1199,7 @@ class {{ model.root_state.name | to_identifier }}Machine:
         """
         Protected extension hook for DSL abstract action ``{{ resolved.item.func_name }}``.
 
-        Owning state path: ``{{ resolved.item.parent.path | join('.') }}``
+        Owning state path: ``{{ resolved.item | action_owner_path }}``
         Lifecycle stage: ``{{ resolved.item.stage }}``
         Aspect: ``{{ resolved.item.aspect }}``
 
@@ -1255,7 +1223,7 @@ class {{ model.root_state.name | to_identifier }}Machine:
 {% if not resolved.item.is_abstract %}
     def {{ action_method_name(state, 'during_before', id_) }}(self, vars_=None):
         """
-        Execute the concrete DSL action block for ``{{ resolved.item.parent.path | join('.') }}``.
+        Execute the concrete DSL action block for ``{{ resolved.item | action_owner_path }}``.
 
         Lifecycle stage: ``{{ resolved.item.stage }}``
         Aspect: ``{{ resolved.item.aspect }}``
@@ -1286,7 +1254,7 @@ class {{ model.root_state.name | to_identifier }}Machine:
         """
         Protected extension hook for DSL abstract action ``{{ resolved.item.func_name }}``.
 
-        Owning state path: ``{{ resolved.item.parent.path | join('.') }}``
+        Owning state path: ``{{ resolved.item | action_owner_path }}``
         Lifecycle stage: ``{{ resolved.item.stage }}``
         Aspect: ``{{ resolved.item.aspect }}``
 
@@ -1310,7 +1278,7 @@ class {{ model.root_state.name | to_identifier }}Machine:
 {% if not resolved.item.is_abstract %}
     def {{ action_method_name(state, 'during_after', id_) }}(self, vars_=None):
         """
-        Execute the concrete DSL action block for ``{{ resolved.item.parent.path | join('.') }}``.
+        Execute the concrete DSL action block for ``{{ resolved.item | action_owner_path }}``.
 
         Lifecycle stage: ``{{ resolved.item.stage }}``
         Aspect: ``{{ resolved.item.aspect }}``
@@ -1341,7 +1309,7 @@ class {{ model.root_state.name | to_identifier }}Machine:
         """
         Protected extension hook for DSL abstract action ``{{ resolved.item.func_name }}``.
 
-        Owning state path: ``{{ resolved.item.parent.path | join('.') }}``
+        Owning state path: ``{{ resolved.item | action_owner_path }}``
         Lifecycle stage: ``{{ resolved.item.stage }}``
         Aspect: ``{{ resolved.item.aspect }}``
 
@@ -1365,7 +1333,7 @@ class {{ model.root_state.name | to_identifier }}Machine:
 {% if not resolved.item.is_abstract %}
     def {{ action_method_name(state, 'aspect_before', id_) }}(self, vars_=None):
         """
-        Execute the concrete DSL action block for ``{{ resolved.item.parent.path | join('.') }}``.
+        Execute the concrete DSL action block for ``{{ resolved.item | action_owner_path }}``.
 
         Lifecycle stage: ``{{ resolved.item.stage }}``
         Aspect: ``{{ resolved.item.aspect }}``
@@ -1396,7 +1364,7 @@ class {{ model.root_state.name | to_identifier }}Machine:
         """
         Protected extension hook for DSL abstract action ``{{ resolved.item.func_name }}``.
 
-        Owning state path: ``{{ resolved.item.parent.path | join('.') }}``
+        Owning state path: ``{{ resolved.item | action_owner_path }}``
         Lifecycle stage: ``{{ resolved.item.stage }}``
         Aspect: ``{{ resolved.item.aspect }}``
 
@@ -1420,7 +1388,7 @@ class {{ model.root_state.name | to_identifier }}Machine:
 {% if not resolved.item.is_abstract %}
     def {{ action_method_name(state, 'aspect_after', id_) }}(self, vars_=None):
         """
-        Execute the concrete DSL action block for ``{{ resolved.item.parent.path | join('.') }}``.
+        Execute the concrete DSL action block for ``{{ resolved.item | action_owner_path }}``.
 
         Lifecycle stage: ``{{ resolved.item.stage }}``
         Aspect: ``{{ resolved.item.aspect }}``
@@ -1442,7 +1410,7 @@ class {{ model.root_state.name | to_identifier }}Machine:
 {% if transition.guard is not none %}
     def {{ init_guard_method_name(state, loop.index) }}(self, vars_=None):
         """
-        Evaluate the initial-transition guard for state ``{{ state.path | join('.') }}``.
+        Evaluate the initial-transition guard for state ``{{ state | state_path }}``.
 
         DSL fragment::
 
@@ -1455,7 +1423,7 @@ class {{ model.root_state.name | to_identifier }}Machine:
 {% if transition.effects %}
     def {{ init_effect_method_name(state, loop.index) }}(self, vars_=None):
         """
-        Execute the initial-transition effect for state ``{{ state.path | join('.') }}``.
+        Execute the initial-transition effect for state ``{{ state | state_path }}``.
 
         DSL fragment::
 
@@ -1470,7 +1438,7 @@ class {{ model.root_state.name | to_identifier }}Machine:
 {% if transition.guard is not none %}
     def {{ transition_guard_method_name(state, loop.index) }}(self, vars_=None):
         """
-        Evaluate the transition guard from state ``{{ state.path | join('.') }}``.
+        Evaluate the transition guard from state ``{{ state | state_path }}``.
 
         DSL fragment::
 
@@ -1483,7 +1451,7 @@ class {{ model.root_state.name | to_identifier }}Machine:
 {% if transition.effects %}
     def {{ transition_effect_method_name(state, loop.index) }}(self, vars_=None):
         """
-        Execute the transition effect from state ``{{ state.path | join('.') }}``.
+        Execute the transition effect from state ``{{ state | state_path }}``.
 
         DSL fragment::
 

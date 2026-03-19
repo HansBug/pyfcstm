@@ -1,0 +1,135 @@
+# {{ machine_class_name(model) }}
+
+这里存放 DSL 根状态 `{{ model.root_state.name }}` 对应的 Python 生成运行时。
+
+## 生成文件
+
+- `machine.py`：可执行运行时模块
+- `README.md`：当前状态机的英文使用说明
+- `README_zh.md`：当前状态机的中文使用说明
+
+## 快速开始
+
+```python
+from machine import {{ machine_class_name(model) }}
+
+machine = {{ machine_class_name(model) }}()
+machine.cycle()
+print(machine.current_state_path)
+print(machine.vars)
+```
+
+发送事件时，可以把事件路径或兼容的相对事件名传给 `cycle(...)`。
+
+## Hot Start
+
+如需从指定状态开始启动，需要同时提供 `initial_state` 和
+`initial_vars`：
+
+```python
+machine = {{ machine_class_name(model) }}(
+    initial_state='{{ model.root_state.name }}',
+    initial_vars={
+{% for def_item in model.defines.values() %}
+        '{{ def_item.name }}': {{ def_item.init.value | default(0, true) if def_item.init.value is defined else 0 }},
+{% endfor %}
+    },
+)
+```
+
+## 扩展方式
+
+生成运行时对 DSL abstract action 提供两种扩展方式。
+
+### 1. 注册运行时回调
+
+```python
+from machine import {{ machine_class_name(model) }}
+
+machine = {{ machine_class_name(model) }}()
+machine.register_abstract_handler(
+    'Root.Some.Abstract.Action',
+    lambda ctx: print(ctx.get_full_state_path(), ctx.action_stage, ctx.vars),
+)
+```
+
+### 2. 通过继承覆写受保护 hook
+
+可以继承生成类，并覆写下表列出的受保护 hook 方法。
+
+```python
+from machine import {{ machine_class_name(model) }}
+
+
+class CustomMachine({{ machine_class_name(model) }}):
+    pass
+```
+
+{% set abstract_ns = namespace(rows=[]) -%}
+{% for state in model.walk_states() -%}
+{% for group in [
+    state.list_on_enters(with_ids=True),
+    state.list_on_durings(aspect=None, with_ids=True),
+    state.list_on_exits(with_ids=True),
+    state.list_on_durings(aspect='before', with_ids=True),
+    state.list_on_durings(aspect='after', with_ids=True),
+    state.list_on_during_aspects(aspect='before', with_ids=True),
+    state.list_on_during_aspects(aspect='after', with_ids=True),
+] -%}
+{% for _, item in group -%}
+{% set resolved = namespace(item=item) -%}
+{% for _ in range(16) -%}
+{% if resolved.item.ref is not none -%}
+{% set resolved.item = resolved.item.ref -%}
+{% endif -%}
+{% endfor -%}
+{% if resolved.item.is_abstract and resolved.item.func_name not in abstract_ns.rows | map(attribute='func_name') | list -%}
+{% set abstract_ns.rows = abstract_ns.rows + [{
+    'func_name': resolved.item.func_name,
+    'hook_name': action_hook_name(resolved.item),
+    'owner_path': action_owner_path(resolved.item),
+    'stage': resolved.item.stage,
+    'aspect': resolved.item.aspect,
+}] -%}
+{% endif -%}
+{% endfor -%}
+{% endfor -%}
+{% endfor %}
+
+{% if abstract_ns.rows %}
+例如：
+
+```python
+class CustomMachine({{ machine_class_name(model) }}):
+    def {{ abstract_ns.rows[0]['hook_name'] }}(self, ctx):
+        return None
+```
+
+### 可覆写的 Abstract Hook 清单
+
+| DSL 动作路径 | Hook 方法名 | 所属状态 | 阶段 |
+| --- | --- | --- | --- |
+{% for row in abstract_ns.rows -%}
+| `{{ row['func_name'] }}` | `{{ row['hook_name'] }}` | `{{ row['owner_path'] }}` | `{{ row['stage'] }}{% if row['aspect'] %} {{ row['aspect'] }}{% endif %}` |
+{% endfor %}
+{% else %}
+当前状态机没有声明 abstract action，因此没有需要覆写的受保护 hook。
+{% endif %}
+
+## 变量
+
+{% if model.defines.values() | list %}
+| 名称 | 类型 | 初始 DSL |
+| --- | --- | --- |
+{% for def_item in model.defines.values() -%}
+| `{{ def_item.name }}` | `{{ def_item.type }}` | `{{ def_item.init.to_ast_node() | string }}` |
+{% endfor %}
+{% else %}
+当前状态机没有定义持久变量。
+{% endif %}
+
+## 状态路径
+
+{% for state in model.walk_states() -%}
+- `{{ state | state_path }}`
+{% endfor %}

@@ -1,0 +1,143 @@
+# {{ machine_class_name(model) }}
+
+This directory contains the generated Python runtime for the DSL root state
+`{{ model.root_state.name }}`.
+
+## Generated Files
+
+- `machine.py`: executable runtime module
+- `README.md`: English usage guide for this generated machine
+- `README_zh.md`: Chinese usage guide for this generated machine
+
+## Quick Start
+
+```python
+from machine import {{ machine_class_name(model) }}
+
+machine = {{ machine_class_name(model) }}()
+machine.cycle()
+print(machine.current_state_path)
+print(machine.vars)
+```
+
+To send events, pass event paths or compatible relative event names to
+`cycle(...)`:
+
+```python
+machine.cycle(['{{ model.root_state.name }}'])
+```
+
+## Hot Start
+
+You can start from a concrete state path by providing both `initial_state` and
+`initial_vars`:
+
+```python
+machine = {{ machine_class_name(model) }}(
+    initial_state='{{ model.root_state.name }}',
+    initial_vars={
+{% for def_item in model.defines.values() %}
+        '{{ def_item.name }}': {{ def_item.init.value | default(0, true) if def_item.init.value is defined else 0 }},
+{% endfor %}
+    },
+)
+```
+
+## Extension Styles
+
+The generated runtime supports two extension styles for DSL abstract actions.
+
+### 1. Register Runtime Handlers
+
+```python
+from machine import {{ machine_class_name(model) }}
+
+machine = {{ machine_class_name(model) }}()
+machine.register_abstract_handler(
+    'Root.Some.Abstract.Action',
+    lambda ctx: print(ctx.get_full_state_path(), ctx.action_stage, ctx.vars),
+)
+```
+
+### 2. Override Protected Hook Methods
+
+Subclass the generated machine and override protected hook methods listed in
+the table below.
+
+```python
+from machine import {{ machine_class_name(model) }}
+
+
+class CustomMachine({{ machine_class_name(model) }}):
+    pass
+```
+
+{% set abstract_ns = namespace(rows=[]) -%}
+{% for state in model.walk_states() -%}
+{% for group in [
+    state.list_on_enters(with_ids=True),
+    state.list_on_durings(aspect=None, with_ids=True),
+    state.list_on_exits(with_ids=True),
+    state.list_on_durings(aspect='before', with_ids=True),
+    state.list_on_durings(aspect='after', with_ids=True),
+    state.list_on_during_aspects(aspect='before', with_ids=True),
+    state.list_on_during_aspects(aspect='after', with_ids=True),
+] -%}
+{% for _, item in group -%}
+{% set resolved = namespace(item=item) -%}
+{% for _ in range(16) -%}
+{% if resolved.item.ref is not none -%}
+{% set resolved.item = resolved.item.ref -%}
+{% endif -%}
+{% endfor -%}
+{% if resolved.item.is_abstract and resolved.item.func_name not in abstract_ns.rows | map(attribute='func_name') | list -%}
+{% set abstract_ns.rows = abstract_ns.rows + [{
+    'func_name': resolved.item.func_name,
+    'hook_name': action_hook_name(resolved.item),
+    'owner_path': action_owner_path(resolved.item),
+    'stage': resolved.item.stage,
+    'aspect': resolved.item.aspect,
+}] -%}
+{% endif -%}
+{% endfor -%}
+{% endfor -%}
+{% endfor %}
+
+{% if abstract_ns.rows %}
+Example:
+
+```python
+class CustomMachine({{ machine_class_name(model) }}):
+    def {{ abstract_ns.rows[0]['hook_name'] }}(self, ctx):
+        return None
+```
+
+### Overridable Abstract Hooks
+
+| DSL action path | Hook method | Owner state | Stage |
+| --- | --- | --- | --- |
+{% for row in abstract_ns.rows -%}
+| `{{ row['func_name'] }}` | `{{ row['hook_name'] }}` | `{{ row['owner_path'] }}` | `{{ row['stage'] }}{% if row['aspect'] %} {{ row['aspect'] }}{% endif %}` |
+{% endfor %}
+{% else %}
+This state machine does not declare any abstract actions, so there are no
+protected hook methods to override.
+{% endif %}
+
+## Variables
+
+{% if model.defines.values() | list %}
+| Name | Type | Initial DSL |
+| --- | --- | --- |
+{% for def_item in model.defines.values() -%}
+| `{{ def_item.name }}` | `{{ def_item.type }}` | `{{ def_item.init.to_ast_node() | string }}` |
+{% endfor %}
+{% else %}
+This state machine does not define persistent variables.
+{% endif %}
+
+## State Paths
+
+{% for state in model.walk_states() -%}
+- `{{ state | state_path }}`
+{% endfor %}

@@ -27,6 +27,10 @@ class TestBuiltinTemplateModule:
             template_dir = extract_template("python", td)
             assert os.path.isdir(template_dir)
             assert os.path.isfile(os.path.join(template_dir, "config.yaml"))
+            assert os.path.isfile(os.path.join(template_dir, "README.md"))
+            assert os.path.isfile(os.path.join(template_dir, "README_zh.md"))
+            assert os.path.isfile(os.path.join(template_dir, "README.md.j2"))
+            assert os.path.isfile(os.path.join(template_dir, "README_zh.md.j2"))
             assert os.path.isfile(os.path.join(template_dir, "machine.py.j2"))
             assert not os.path.exists(os.path.join(template_dir, "__init__.py.j2"))
 

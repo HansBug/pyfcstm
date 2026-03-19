@@ -313,19 +313,12 @@ class TrafficLightMachine:
     def is_ended(self):
         ...
 
-    def register_abstract_handler(self, action_path, handler):
-        ...
-
-    def unregister_abstract_handler(self, action_path, handler=None):
-        ...
 ```
 
 可选增强 API：
 
 - `brief_stack`
 - `cycle_count`
-- `has_abstract_handlers`
-- `clear_all_abstract_handlers`
 
 这些 API 命名最好尽量对齐 `SimulationRuntime`，这样用户迁移成本最低。
 
@@ -347,13 +340,12 @@ print(sm.vars)
 对于抽象动作：
 
 ```python
-def on_init(ctx):
-    print(ctx.state_path, ctx.vars)
-
-sm.register_abstract_handler('TrafficLight.InService.InitHardware', on_init)
+class MyTrafficLightMachine(TrafficLightMachine):
+    def _abstract_hook_TrafficLight_InService_InitHardware(self, ctx):
+        print(ctx.state_path, ctx.vars)
 ```
 
-这里不要求用户改生成文件，只要求在外部业务代码中注册回调。
+这里不要求用户改生成文件，只要求在外部业务代码中继承生成类并覆写 protected hook。
 
 ---
 
@@ -669,16 +661,16 @@ sm.cycle(events=['Root.System.Idle.Start'])
 ### 9.2 抽象动作
 
 用户不应修改生成文件去填空。  
-因此建议改为**回调注册机制**，而不是生成 `extra.py` 让用户编辑。
+因此建议改为**protected method override**，而不是生成 `extra.py` 让用户编辑。
 
 建议行为：
 
-- 命名 abstract action 可通过 `register_abstract_handler(action_path, handler)` 注册
-- 未注册时默认跳过
-- 匿名 abstract action 发出警告或直接跳过
-- handler 接收只读上下文对象
+- 为每个命名 abstract action 生成一个 protected hook
+- 默认实现为空操作
+- 用户通过继承生成类并覆写对应 hook 来补业务逻辑
+- hook 接收只读上下文对象
 
-这套接口可以尽量对齐当前 `SimulationRuntime` 的命名。
+这套接口应优先保证生成代码直观、稳定，便于用户通过 IDE 补全快速定位。
 
 ### 9.3 只读上下文
 

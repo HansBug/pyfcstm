@@ -17,7 +17,7 @@ Current properties:
 - Phase 3 runtime template implemented
 - generates a single importable Python runtime module
 - emits `machine.py`, `README.md`, and `README_zh.md`
-- embeds state metadata, cycle logic, hot start handling, subclass hook points for abstract actions, and abstract handler registration
+- embeds state metadata, cycle logic, hot start handling, and subclass hook points for abstract actions
 - depends only on the Python standard library
 - keeps generated output close to `ruff format` defaults
 - exposes abstract hook names that are easy to discover through IDE completion

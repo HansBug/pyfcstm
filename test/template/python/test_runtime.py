@@ -81,7 +81,7 @@ class TestPythonBuiltinTemplate:
             assert module.SystemMachine.DSL_SOURCE.strip().startswith('def int counter = 0;')
             assert 'System.Idle' in module.SystemMachine.STATE_PATHS
 
-    def test_generated_machine_supports_hot_start_and_abstract_handlers(self):
+    def test_generated_machine_supports_hot_start_and_subclass_hooks(self):
         dsl_code = """
         def int counter = 0;
         state Root {
@@ -98,37 +98,41 @@ class TestPythonBuiltinTemplate:
         """
 
         with _render_python_module(dsl_code) as module:
-            calls = []
+            class HotMachine(module.RootMachine):
+                def __init__(self):
+                    self.calls = []
+                    super().__init__(
+                        initial_state='Root.System',
+                        initial_vars={'counter': 10},
+                    )
 
-            hot_machine = module.RootMachine(
-                initial_state='Root.System',
-                initial_vars={'counter': 10},
-            )
-            hot_machine.register_abstract_handler(
-                'Root.System.A.AEnter',
-                lambda ctx: calls.append(
-                    ('hot', ctx.get_full_state_path(), ctx.action_stage, ctx.get_var('counter'))
-                ),
-            )
+                def _abstract_hook_Root_System_A_AEnter(self, ctx):
+                    self.calls.append(
+                        ('hot', ctx.get_full_state_path(), ctx.action_stage, ctx.get_var('counter'))
+                    )
 
+            hot_machine = HotMachine()
             assert hot_machine.current_state_path == ('Root', 'System')
             hot_machine.cycle()
             assert hot_machine.current_state_path == ('Root', 'System', 'A')
             assert hot_machine.vars == {'counter': 11}
-            assert calls == [('hot', 'Root.System.A', 'enter', 10)]
+            assert hot_machine.calls == [('hot', 'Root.System.A', 'enter', 10)]
 
-            cold_machine = module.RootMachine()
-            cold_machine.register_abstract_handler(
-                'Root.RootInit',
-                lambda ctx: calls.append(
-                    ('cold', ctx.get_full_state_path(), ctx.action_stage, ctx.get_var('counter'))
-                ),
-            )
+            class ColdMachine(module.RootMachine):
+                def __init__(self):
+                    self.calls = []
+                    super().__init__()
 
+                def _abstract_hook_Root_RootInit(self, ctx):
+                    self.calls.append(
+                        ('cold', ctx.get_full_state_path(), ctx.action_stage, ctx.get_var('counter'))
+                    )
+
+            cold_machine = ColdMachine()
             cold_machine.cycle()
             assert cold_machine.current_state_path == ('Root', 'System', 'A')
             assert cold_machine.vars == {'counter': 1}
-            assert calls[-1] == ('cold', 'Root', 'enter', 0)
+            assert cold_machine.calls == [('cold', 'Root', 'enter', 0)]
 
     def test_generated_machine_supports_subclass_hook_override(self):
         dsl_code = """
@@ -187,6 +191,198 @@ class TestPythonBuiltinTemplate:
                 in module.RootMachine._abstract_hook_Root_RootInit.__doc__
             )
 
+    def test_generated_machine_executes_protected_hooks_for_all_abstract_stages(self):
+        dsl_code = """
+        def int trace = 0;
+        state Root {
+            enter abstract RootEnter;
+            >> during before abstract RootAspectBefore;
+            >> during after abstract RootAspectAfter;
+
+            state Parent {
+                enter abstract ParentEnter;
+                during before abstract ParentBefore;
+                during after abstract ParentAfter;
+                exit abstract ParentExit;
+
+                state A {
+                    enter abstract AEnter;
+                    during abstract ADuring;
+                    exit abstract AExit;
+                }
+
+                state B {
+                    enter abstract BEnter;
+                    during abstract BDuring;
+                    exit abstract BExit;
+                }
+
+                [*] -> A;
+                A -> B :: Next;
+                B -> [*] :: Stop;
+            }
+
+            [*] -> Parent;
+            Parent -> [*] :: Stop;
+        }
+        """
+
+        with _render_python_module(dsl_code) as module:
+            calls = []
+            hook_map = module.RootMachine.get_abstract_hook_map()
+            assert hook_map == {
+                'Root.RootEnter': '_abstract_hook_Root_RootEnter',
+                'Root.RootAspectBefore': '_abstract_hook_Root_RootAspectBefore',
+                'Root.RootAspectAfter': '_abstract_hook_Root_RootAspectAfter',
+                'Root.Parent.ParentEnter': '_abstract_hook_Root_Parent_ParentEnter',
+                'Root.Parent.ParentBefore': '_abstract_hook_Root_Parent_ParentBefore',
+                'Root.Parent.ParentAfter': '_abstract_hook_Root_Parent_ParentAfter',
+                'Root.Parent.ParentExit': '_abstract_hook_Root_Parent_ParentExit',
+                'Root.Parent.A.AEnter': '_abstract_hook_Root_Parent_A_AEnter',
+                'Root.Parent.A.ADuring': '_abstract_hook_Root_Parent_A_ADuring',
+                'Root.Parent.A.AExit': '_abstract_hook_Root_Parent_A_AExit',
+                'Root.Parent.B.BEnter': '_abstract_hook_Root_Parent_B_BEnter',
+                'Root.Parent.B.BDuring': '_abstract_hook_Root_Parent_B_BDuring',
+                'Root.Parent.B.BExit': '_abstract_hook_Root_Parent_B_BExit',
+            }
+
+            class DerivedMachine(module.RootMachine):
+                def _abstract_hook_Root_RootEnter(self, ctx):
+                    calls.append(('root_enter', ctx.action_name, ctx.action_stage, ctx.get_full_state_path()))
+                    self._vars['trace'] = self._vars['trace'] + 1
+
+                def _abstract_hook_Root_RootAspectBefore(self, ctx):
+                    calls.append(
+                        ('root_aspect_before', ctx.action_name, ctx.action_stage, ctx.get_full_state_path())
+                    )
+                    self._vars['trace'] = self._vars['trace'] + 10
+
+                def _abstract_hook_Root_RootAspectAfter(self, ctx):
+                    calls.append(
+                        ('root_aspect_after', ctx.action_name, ctx.action_stage, ctx.get_full_state_path())
+                    )
+                    self._vars['trace'] = self._vars['trace'] + 100
+
+                def _abstract_hook_Root_Parent_ParentEnter(self, ctx):
+                    calls.append(('parent_enter', ctx.action_name, ctx.action_stage, ctx.get_full_state_path()))
+                    self._vars['trace'] = self._vars['trace'] + 1000
+
+                def _abstract_hook_Root_Parent_ParentBefore(self, ctx):
+                    calls.append(('parent_before', ctx.action_name, ctx.action_stage, ctx.get_full_state_path()))
+                    self._vars['trace'] = self._vars['trace'] + 10000
+
+                def _abstract_hook_Root_Parent_ParentAfter(self, ctx):
+                    calls.append(('parent_after', ctx.action_name, ctx.action_stage, ctx.get_full_state_path()))
+                    self._vars['trace'] = self._vars['trace'] + 100000
+
+                def _abstract_hook_Root_Parent_ParentExit(self, ctx):
+                    calls.append(('parent_exit', ctx.action_name, ctx.action_stage, ctx.get_full_state_path()))
+                    self._vars['trace'] = self._vars['trace'] + 1000000
+
+                def _abstract_hook_Root_Parent_A_AEnter(self, ctx):
+                    calls.append(('a_enter', ctx.action_name, ctx.action_stage, ctx.get_full_state_path()))
+                    self._vars['trace'] = self._vars['trace'] + 10000000
+
+                def _abstract_hook_Root_Parent_A_ADuring(self, ctx):
+                    calls.append(('a_during', ctx.action_name, ctx.action_stage, ctx.get_full_state_path()))
+                    self._vars['trace'] = self._vars['trace'] + 100000000
+
+                def _abstract_hook_Root_Parent_A_AExit(self, ctx):
+                    calls.append(('a_exit', ctx.action_name, ctx.action_stage, ctx.get_full_state_path()))
+                    self._vars['trace'] = self._vars['trace'] + 1000000000
+
+                def _abstract_hook_Root_Parent_B_BEnter(self, ctx):
+                    calls.append(('b_enter', ctx.action_name, ctx.action_stage, ctx.get_full_state_path()))
+                    self._vars['trace'] = self._vars['trace'] + 2000000000
+
+                def _abstract_hook_Root_Parent_B_BDuring(self, ctx):
+                    calls.append(('b_during', ctx.action_name, ctx.action_stage, ctx.get_full_state_path()))
+                    self._vars['trace'] = self._vars['trace'] + 3000000000
+
+                def _abstract_hook_Root_Parent_B_BExit(self, ctx):
+                    calls.append(('b_exit', ctx.action_name, ctx.action_stage, ctx.get_full_state_path()))
+                    self._vars['trace'] = self._vars['trace'] + 4000000000
+
+            machine = DerivedMachine()
+
+            machine.cycle()
+            assert machine.current_state_path == ('Root', 'Parent', 'A')
+            assert machine.vars == {'trace': 110011111}
+
+            machine.cycle(['Root.Parent.A.Next'])
+            assert machine.current_state_path == ('Root', 'Parent', 'B')
+            assert machine.vars == {'trace': 6110011221}
+
+            machine.cycle(['Root.Parent.B.Stop', 'Root.Parent.Stop'])
+            assert machine.is_ended is True
+            assert machine.current_state_path is None
+            assert machine.vars == {'trace': 10111111221}
+
+            assert calls == [
+                ('root_enter', 'Root.RootEnter', 'enter', 'Root'),
+                ('parent_enter', 'Root.Parent.ParentEnter', 'enter', 'Root.Parent'),
+                ('parent_before', 'Root.Parent.ParentBefore', 'during', 'Root.Parent'),
+                ('a_enter', 'Root.Parent.A.AEnter', 'enter', 'Root.Parent.A'),
+                ('root_aspect_before', 'Root.RootAspectBefore', 'during', 'Root'),
+                ('a_during', 'Root.Parent.A.ADuring', 'during', 'Root.Parent.A'),
+                ('root_aspect_after', 'Root.RootAspectAfter', 'during', 'Root'),
+                ('a_exit', 'Root.Parent.A.AExit', 'exit', 'Root.Parent.A'),
+                ('b_enter', 'Root.Parent.B.BEnter', 'enter', 'Root.Parent.B'),
+                ('root_aspect_before', 'Root.RootAspectBefore', 'during', 'Root'),
+                ('b_during', 'Root.Parent.B.BDuring', 'during', 'Root.Parent.B'),
+                ('root_aspect_after', 'Root.RootAspectAfter', 'during', 'Root'),
+                ('b_exit', 'Root.Parent.B.BExit', 'exit', 'Root.Parent.B'),
+                ('parent_after', 'Root.Parent.ParentAfter', 'during', 'Root.Parent'),
+                ('parent_exit', 'Root.Parent.ParentExit', 'exit', 'Root.Parent'),
+            ]
+
+    def test_generated_machine_reuses_same_protected_hook_for_abstract_refs(self):
+        dsl_code = """
+        def int trace = 0;
+        state Root {
+            enter abstract PlatformInit;
+
+            state A {
+                enter ref /PlatformInit;
+                during { trace = trace + 1; }
+            }
+
+            state B {
+                enter ref /PlatformInit;
+                during { trace = trace + 10; }
+            }
+
+            [*] -> A;
+            A -> B :: Go;
+        }
+        """
+
+        with _render_python_module(dsl_code) as module:
+            calls = []
+            hook_map = module.RootMachine.get_abstract_hook_map()
+
+            class DerivedMachine(module.RootMachine):
+                def _abstract_hook_Root_PlatformInit(self, ctx):
+                    calls.append((ctx.action_name, ctx.action_stage, ctx.get_full_state_path()))
+                    self._vars['trace'] = self._vars['trace'] + 100
+
+            machine = DerivedMachine()
+
+            machine.cycle()
+            assert machine.current_state_path == ('Root', 'A')
+            assert machine.vars == {'trace': 201}
+
+            machine.cycle(['Root.A.Go'])
+            assert machine.current_state_path == ('Root', 'B')
+            assert machine.vars == {'trace': 311}
+
+            assert hook_map == {'Root.PlatformInit': '_abstract_hook_Root_PlatformInit'}
+            assert calls == [
+                ('Root.PlatformInit', 'enter', 'Root'),
+                ('Root.PlatformInit', 'enter', 'Root'),
+                ('Root.PlatformInit', 'enter', 'Root'),
+            ]
+
     def test_generated_readme_documents_usage_and_abstract_hooks(self):
         dsl_code = """
         def int counter = 0;
@@ -212,7 +408,7 @@ class TestPythonBuiltinTemplate:
             assert os.path.isfile(artifacts['readme_file'])
             assert os.path.isfile(artifacts['readme_zh_file'])
             assert '# RootMachine' in readme
-            assert 'register_abstract_handler' in readme
+            assert 'class CustomMachine(RootMachine)' in readme
             assert '_abstract_hook_Root_RootInit' in readme
             assert '_abstract_hook_Root_System_A_AEnter' in readme
             assert '| DSL action path | Hook method | Owner state | Stage |' in readme

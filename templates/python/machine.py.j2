@@ -101,11 +101,10 @@ Original DSL Source::
 
 import math
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 
 Number = Union[int, float]
-_HANDLER_METADATA_ATTR = "__abstract_handler_metadata__"
 _DSL_SOURCE = {{ (model.to_ast_node() | string) | tojson }}
 {% set state_items = model.walk_states() | list -%}
 {% set define_items = model.defines.values() | list -%}
@@ -186,38 +185,6 @@ class SimulationRuntimeDfsError(RuntimeError):
     pass
 
 
-def abstract_handler(action_path):
-    """
-    Mark a function or bound method as an abstract handler.
-
-    :param action_path: Full action path.
-    :type action_path: str
-    :return: Decorator function.
-    :rtype: Callable
-    """
-    if not action_path:
-        raise ValueError("action_path cannot be empty")
-
-    def decorator(func):
-        setattr(func, _HANDLER_METADATA_ATTR, action_path)
-        return func
-
-    return decorator
-
-
-
-def is_abstract_handler(func):
-    """
-    Check whether a function carries abstract-handler metadata.
-
-    :param func: Callable to inspect.
-    :type func: Callable
-    :return: ``True`` if metadata exists.
-    :rtype: bool
-    """
-    return hasattr(func, _HANDLER_METADATA_ATTR)
-
-
 
 @dataclass(frozen=True)
 class ReadOnlyExecutionContext:
@@ -257,12 +224,8 @@ class {{ machine_class_name(model) }}:
     """
     Generated runtime for DSL root state ``{{ model.root_state.name }}``.
 
-    Two extension styles are intentionally supported:
-
-    1. Subclass this class and override generated protected hook methods such as
-       ``_abstract_hook_<action_path>``.
-    2. Register runtime handlers dynamically with
-       :meth:`register_abstract_handler` or :meth:`register_handlers_from_object`.
+    Extend this runtime by subclassing it and overriding generated protected
+    hook methods such as ``_abstract_hook_<action_path>``.
 
     The generated constants :attr:`DSL_SOURCE`, :attr:`STATE_PATHS`, and
     :attr:`ABSTRACT_HOOKS` are intended to help users map the original DSL back
@@ -344,7 +307,6 @@ class {{ machine_class_name(model) }}:
         """
         self._vars = {}
         self.variables = self._vars
-        self._abstract_handlers = {}
 {%- for def_item in define_items %}
         self._vars[{{ def_item.name | tojson }}] = {{ def_item.init.to_ast_node() | expr_render(style="python_expr") }}
 {% endfor %}
@@ -423,75 +385,6 @@ class {{ machine_class_name(model) }}:
         :rtype: Dict[str, str]
         """
         return dict(cls.ABSTRACT_HOOKS)
-
-    def register_abstract_handler(self, action_path, handler):
-        """
-        Register a runtime handler for an abstract DSL action.
-
-        This composition-based extension path can be used together with
-        subclass overrides of the generated protected hook methods.
-
-        :param action_path: Full abstract action path from the DSL.
-        :type action_path: str
-        :param handler: Callable receiving :class:`ReadOnlyExecutionContext`.
-        :type handler: Callable
-        :return: ``None``.
-        :rtype: None
-        """
-        if not action_path:
-            raise ValueError("action_path cannot be empty")
-        if action_path not in self._abstract_handlers:
-            self._abstract_handlers[action_path] = []
-        self._abstract_handlers[action_path].append(handler)
-
-    def unregister_abstract_handler(self, action_path, handler=None):
-        handlers = self._abstract_handlers.get(action_path)
-        if not handlers:
-            return 0
-        if handler is None:
-            count = len(handlers)
-            del self._abstract_handlers[action_path]
-            return count
-        original_count = len(handlers)
-        self._abstract_handlers[action_path] = [
-            item for item in handlers if item is not handler
-        ]
-        removed = original_count - len(self._abstract_handlers[action_path])
-        if not self._abstract_handlers[action_path]:
-            del self._abstract_handlers[action_path]
-        return removed
-
-    def clear_all_abstract_handlers(self):
-        total = sum(len(items) for items in self._abstract_handlers.values())
-        self._abstract_handlers.clear()
-        return total
-
-    def get_abstract_handlers(self, action_path):
-        return list(self._abstract_handlers.get(action_path, []))
-
-    def has_abstract_handlers(self, action_path):
-        return bool(self._abstract_handlers.get(action_path))
-
-    def register_handlers_from_object(self, obj):
-        """
-        Register all decorated handlers defined on an object.
-
-        Methods decorated with :func:`abstract_handler` are discovered and
-        registered automatically.
-
-        :param obj: Object containing decorated bound methods.
-        :type obj: object
-        :return: Number of handlers registered.
-        :rtype: int
-        """
-        count = 0
-        for attr_name in dir(obj):
-            attr = getattr(obj, attr_name)
-            action_path = getattr(attr, _HANDLER_METADATA_ATTR, None)
-            if action_path:
-                self.register_abstract_handler(action_path, attr)
-                count += 1
-        return count
 
     def _normalize_state_path(self, state_ref):
         if isinstance(state_ref, str):
@@ -670,9 +563,6 @@ class {{ machine_class_name(model) }}:
             hook_name = action.get("hook_method")
             if hook_name:
                 getattr(self, hook_name)(ctx)
-            handlers = self._abstract_handlers.get(action["action_name"], [])
-            for handler in handlers:
-                handler(ctx)
         finally:
             self._vars = old_vars
             self.variables = old_variables

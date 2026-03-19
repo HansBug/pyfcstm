@@ -43,23 +43,7 @@ machine = {{ machine_class_name(model) }}(
 )
 ```
 
-## Extension Styles
-
-The generated runtime supports two extension styles for DSL abstract actions.
-
-### 1. Register Runtime Handlers
-
-```python
-from machine import {{ machine_class_name(model) }}
-
-machine = {{ machine_class_name(model) }}()
-machine.register_abstract_handler(
-    'Root.Some.Abstract.Action',
-    lambda ctx: print(ctx.get_full_state_path(), ctx.action_stage, ctx.vars),
-)
-```
-
-### 2. Override Protected Hook Methods
+## Extension
 
 Subclass the generated machine and override protected hook methods listed in
 the table below.

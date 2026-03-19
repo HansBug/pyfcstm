@@ -39,22 +39,6 @@ machine = {{ machine_class_name(model) }}(
 
 ## 扩展方式
 
-生成运行时对 DSL abstract action 提供两种扩展方式。
-
-### 1. 注册运行时回调
-
-```python
-from machine import {{ machine_class_name(model) }}
-
-machine = {{ machine_class_name(model) }}()
-machine.register_abstract_handler(
-    'Root.Some.Abstract.Action',
-    lambda ctx: print(ctx.get_full_state_path(), ctx.action_stage, ctx.vars),
-)
-```
-
-### 2. 通过继承覆写受保护 hook
-
 可以继承生成类，并覆写下表列出的受保护 hook 方法。
 
 ```python

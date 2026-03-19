@@ -146,24 +146,34 @@ class StateMachineCodeRenderer:
                 ext_configs=expr_style,
             )
 
+        expr_style_stack = []
+
         def _fn_expr_render(node: Union[float, int, dict, dsl_nodes.Expr, Any],
-                            style: str = 'default') -> str:
+                            style: str = None) -> str:
             """
             Render an expression node using the specified style.
 
             :param node: The expression node to render
             :type node: Union[float, int, dict, dsl_nodes.Expr, Any]
-            :param style: The expression rendering style to use, defaults to ``'default'``
-            :type style: str, optional
+            :param style: The expression rendering style to use. When omitted
+                in a nested render call, the current expression style is
+                inherited; otherwise ``'default'`` is used.
+            :type style: Optional[str]
             :return: The rendered expression as a string
             :rtype: str
             """
+            if style is None:
+                style = expr_style_stack[-1] if expr_style_stack else 'default'
             style = _normalize_lang_style(style)
-            return fn_expr_render(
-                node=node,
-                templates=d_templates[style],
-                env=self.env,
-            )
+            expr_style_stack.append(style)
+            try:
+                return fn_expr_render(
+                    node=node,
+                    templates=d_templates[style],
+                    env=self.env,
+                )
+            finally:
+                expr_style_stack.pop()
 
         self.env.globals['expr_render'] = _fn_expr_render
         self.env.filters['expr_render'] = _fn_expr_render

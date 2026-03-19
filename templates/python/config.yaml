@@ -1,36 +1,10 @@
 expr_styles:
   python_expr:
-    base_lang: dsl
+    base_lang: python
     Name: "self._vars[{{ node.name | tojson }}]"
-    Paren: "({{ node.expr | expr_render(style='python_expr') }})"
-    UFunc: "math.{{ node.func }}({{ node.expr | expr_render(style='python_expr') }})"
-    UFunc(abs): "abs({{ node.expr | expr_render(style='python_expr') }})"
-    UFunc(round): "round({{ node.expr | expr_render(style='python_expr') }})"
-    UFunc(ceil): "math.ceil({{ node.expr | expr_render(style='python_expr') }})"
-    UFunc(floor): "math.floor({{ node.expr | expr_render(style='python_expr') }})"
-    UFunc(trunc): "math.trunc({{ node.expr | expr_render(style='python_expr') }})"
-    UnaryOp: "{{ node.op }}{{ node.expr | expr_render(style='python_expr') }}"
-    UnaryOp(!): "not {{ node.expr | expr_render(style='python_expr') }}"
-    BinaryOp: "{{ node.expr1 | expr_render(style='python_expr') }} {{ node.op }} {{ node.expr2 | expr_render(style='python_expr') }}"
-    BinaryOp(&&): "{{ node.expr1 | expr_render(style='python_expr') }} and {{ node.expr2 | expr_render(style='python_expr') }}"
-    BinaryOp(||): "{{ node.expr1 | expr_render(style='python_expr') }} or {{ node.expr2 | expr_render(style='python_expr') }}"
-    ConditionalOp: "{{ node.value_true | expr_render(style='python_expr') }} if {{ node.cond | expr_render(style='python_expr') }} else {{ node.value_false | expr_render(style='python_expr') }}"
   python_scope_expr:
-    base_lang: dsl
+    base_lang: python
     Name: "scope[{{ node.name | tojson }}]"
-    Paren: "({{ node.expr | expr_render(style='python_scope_expr') }})"
-    UFunc: "math.{{ node.func }}({{ node.expr | expr_render(style='python_scope_expr') }})"
-    UFunc(abs): "abs({{ node.expr | expr_render(style='python_scope_expr') }})"
-    UFunc(round): "round({{ node.expr | expr_render(style='python_scope_expr') }})"
-    UFunc(ceil): "math.ceil({{ node.expr | expr_render(style='python_scope_expr') }})"
-    UFunc(floor): "math.floor({{ node.expr | expr_render(style='python_scope_expr') }})"
-    UFunc(trunc): "math.trunc({{ node.expr | expr_render(style='python_scope_expr') }})"
-    UnaryOp: "{{ node.op }}{{ node.expr | expr_render(style='python_scope_expr') }}"
-    UnaryOp(!): "not {{ node.expr | expr_render(style='python_scope_expr') }}"
-    BinaryOp: "{{ node.expr1 | expr_render(style='python_scope_expr') }} {{ node.op }} {{ node.expr2 | expr_render(style='python_scope_expr') }}"
-    BinaryOp(&&): "{{ node.expr1 | expr_render(style='python_scope_expr') }} and {{ node.expr2 | expr_render(style='python_scope_expr') }}"
-    BinaryOp(||): "{{ node.expr1 | expr_render(style='python_scope_expr') }} or {{ node.expr2 | expr_render(style='python_scope_expr') }}"
-    ConditionalOp: "{{ node.value_true | expr_render(style='python_scope_expr') }} if {{ node.cond | expr_render(style='python_scope_expr') }} else {{ node.value_false | expr_render(style='python_scope_expr') }}"
 
 globals:
   machine_class_name:

@@ -160,6 +160,46 @@ class TestRenderRender:
 
         assert rendered == "2.0"
 
+    def test_renderer_expr_render_inherits_current_custom_style_recursively(self, sample_model):
+        ast_node = parse_with_grammar_entry(
+            """
+        def int counter = 0;
+        state Root {
+            state A {
+                during {
+                    counter = counter + 1;
+                }
+            }
+            [*] -> A : if [counter >= 1];
+        }
+        """,
+            entry_name="state_machine_dsl",
+        )
+        model = parse_dsl_node_to_state_machine(ast_node)
+
+        with TemporaryDirectory() as template_dir:
+            with open(os.path.join(template_dir, 'config.yaml'), 'w') as f:
+                f.write(
+                    "expr_styles:\n"
+                    "  python_vars:\n"
+                    "    base_lang: python\n"
+                    "    Name: \"vars_[{{ node.name | tojson }}]\"\n"
+                )
+            with open(os.path.join(template_dir, 'expr.txt.j2'), 'w') as f:
+                f.write(
+                    "{{ model.root_state.init_transitions[0].guard.to_ast_node() "
+                    "| expr_render(style='python_vars') }}"
+                )
+
+            renderer = StateMachineCodeRenderer(template_dir)
+
+            with TemporaryDirectory() as output_dir:
+                renderer.render(model=model, output_dir=output_dir)
+                with open(os.path.join(output_dir, 'expr.txt'), 'r') as f:
+                    rendered = f.read()
+
+        assert rendered == 'vars_["counter"] >= 1'
+
     def test_renderer_injects_default_state_vars_and_var_types_for_default_cpp_stmt_rendering(self):
         ast_node = parse_with_grammar_entry(
             """

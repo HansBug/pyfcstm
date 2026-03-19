@@ -33,9 +33,9 @@ from typing import Optional, Dict, Union, Any
 
 import jinja2
 
-from .env import create_env
 from ..dsl import node as dsl_nodes
 from ..model import Integer, Float, Boolean
+from ..utils import add_settings_for_env
 
 _DSL_STYLE = {
     'Float': '{{ node.value | repr }}',
@@ -72,6 +72,20 @@ _KNOWN_STYLES = {
     'cpp': _C_STYLE,
     'python': _PY_STYLE,
 }
+
+
+def _create_base_env(env: Optional[jinja2.Environment] = None) -> jinja2.Environment:
+    """
+    Create a minimally configured Jinja2 environment for expression rendering.
+
+    :param env: Optional pre-existing environment.
+    :type env: Optional[jinja2.Environment]
+    :return: Configured environment.
+    :rtype: jinja2.Environment
+    """
+    if env is not None:
+        return env
+    return add_settings_for_env(jinja2.Environment())
 
 
 def fn_expr_render(node: Union[float, int, dict, dsl_nodes.Expr, Any],
@@ -199,7 +213,7 @@ def render_expr_node(expr: Union[float, int, dict, dsl_nodes.Expr, Any],
         '42'
 
     """
-    env = env or create_env()
+    env = _create_base_env(env)
     templates = create_expr_render_template(lang_style, ext_configs)
     _fn_expr_render = partial(fn_expr_render, templates=templates, env=env)
     env.globals['expr_render'] = _fn_expr_render

@@ -5,7 +5,7 @@ from hbutils.system import TemporaryDirectory
 
 from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model import parse_dsl_node_to_state_machine
-from pyfcstm.render import create_env, StateMachineCodeRenderer
+from pyfcstm.render import create_env, StateMachineCodeRenderer, render_stmt_nodes
 
 
 def _build_if_model():
@@ -110,4 +110,85 @@ class TestRenderOperationStatements:
             "} else {\n"
             "    counter = 0;\n"
             "}"
+        )
+
+    def test_stmts_render_python_style_distinguishes_state_vars_and_temporaries(self):
+        env = create_env()
+        statements = parse_with_grammar_entry(
+            """
+        tmp = counter + 1;
+        counter = tmp + 2;
+        """,
+            entry_name="operational_statement_set",
+        )
+
+        rendered = env.from_string(
+            "{{ stmts | stmts_render(style='python', state_vars=['counter']) }}"
+        ).render(stmts=statements)
+
+        assert rendered == (
+            "tmp = scope['counter'] + 1\n"
+            "scope['counter'] = tmp + 2"
+        )
+
+    def test_stmts_render_python_style_supports_nested_if_blocks(self):
+        statements = parse_with_grammar_entry(
+            """
+        tmp = counter + 1;
+        if [tmp > 0] {
+            counter = tmp + 1;
+        } else {
+            fallback = 0;
+            counter = fallback;
+        }
+        """,
+            entry_name="operational_statement_set",
+        )
+
+        rendered = render_stmt_nodes(
+            statements,
+            lang_style='python',
+            state_vars=['counter'],
+        )
+
+        assert rendered == (
+            "tmp = scope['counter'] + 1\n"
+            "if tmp > 0:\n"
+            "    scope['counter'] = tmp + 1\n"
+            "else:\n"
+            "    fallback = 0\n"
+            "    scope['counter'] = fallback"
+        )
+
+    def test_stmts_render_is_available_in_template_renderer_with_custom_style(self):
+        model = _build_if_model()
+
+        with TemporaryDirectory() as template_dir:
+            with open(os.path.join(template_dir, 'config.yaml'), 'w') as f:
+                f.write(
+                    "stmt_styles:\n"
+                    "  python_scope:\n"
+                    "    base_lang: python\n"
+                )
+            with open(os.path.join(template_dir, 'effect.txt.j2'), 'w') as f:
+                f.write(
+                    "Enter operations:\n"
+                    "{{ model.root_state.substates['A'].on_enters[0].operations "
+                    "| stmts_render(style='python_scope', state_vars=model.defines.keys()) }}\n"
+                )
+
+            renderer = StateMachineCodeRenderer(template_dir)
+
+            with TemporaryDirectory() as output_dir:
+                renderer.render(model=model, output_dir=output_dir)
+
+                with open(os.path.join(output_dir, 'effect.txt'), 'r') as f:
+                    rendered = f.read()
+
+        assert rendered == (
+            "Enter operations:\n"
+            "if scope['counter'] > 0:\n"
+            "    scope['counter'] = scope['counter'] + 1\n"
+            "else:\n"
+            "    scope['counter'] = 0"
         )

@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 修改内容 | 作者 |
 |------|------|----------|------|
+| 0.2.2 | 2026-03-19 | 补充渲染基础设施的跨语言约束，明确 `expr` 需要持续支持常见主流语言 | Codex |
 | 0.2.1 | 2026-03-19 | 补充对现有模板系统与既有模板样例的非破坏兼容性约束 | Codex |
 | 0.2.0 | 2026-03-19 | 补充根目录 `templates/`、模板总 README、Makefile 打包与 `pyfcstm/template/` 释放模块设计 | Codex |
 | 0.1.0 | 2026-03-19 | 初始版本，整理模板系统现状并提出 Python 内置模板方案 | Codex |
@@ -205,6 +206,9 @@ Python 内置模板建议遵循以下原则：
 
 8. **对现有模板系统保持非破坏兼容**
    本轮所有修改都应以增量方式接入，不能破坏现有模板目录渲染链路、现有 CLI 用法以及既有模板样例的可用性。必须确保当前已经在使用的模板样例在修改后依然可以正常工作，但文档中不记录该样例的具体代码、文件布局或生成产物细节。
+
+9. **render 基础设施不能围绕单一语言固化**
+   虽然当前优先交付的是 `python_native`，但 `expr_render` 与后续 `stmt_render` 的设计都必须保留跨语言扩展能力。尤其是 `expr` 层，应持续支持常见主流目标语言，而不是退化成只为 Python 服务的专用能力。
 
 ### 4.2 平台与版本兼容性红线
 
@@ -533,6 +537,12 @@ Python 生成模板**保留 validation 语义**，尽量与现有模拟器一致
 
 因此不能简单把每个 `operation.expr` 渲染完后手写拼接，必须有**语句级生成策略**。
 
+同时还需要补一个工程约束：
+
+- `expr_render` 不能因为这次 Python 模板建设而弱化对其他主流目标语言的支持
+- 后续如果扩展 `expr` 模板或节点映射，必须优先考虑 Python、C、C++、Java 等常见目标语言的可表达性
+- `stmt_render` 的接口设计也不能默认“所有目标语言都像 Python 一样不需要声明临时变量”
+
 ### 8.2 推荐的 statement renderer 设计
 
 建议在 render 层补一个与 `expr_render` 对应的 statement renderer，例如：
@@ -546,6 +556,12 @@ Python 生成模板**保留 validation 语义**，尽量与现有模拟器一致
 - `IfBlock`
 
 对 Python 模板来说，输出的不是 DSL，而是 Python 语句块。
+
+但从 render 基础设施的长期演进看，设计时还应预留：
+
+- 静态类型语言下的临时变量声明能力
+- 不同目标语言的块级作用域与语句模板差异
+- 与 `expr_render` 一致的 style 扩展方式
 
 ### 8.3 块级临时变量的处理方式
 
@@ -1015,24 +1031,30 @@ Checklist：
 目标：
 
 - 让模板层能够生成 Python 可执行语句块，而不只是 DSL 文本
+- 同时确保 render 基础设施不会退化为 Python-only 设计
 
 Checklist：
 
-- [ ] 明确 statement renderer 的接口形式
-- [ ] 确定是新增通用 `stmt_render` / `stmts_render`，还是先做 Python 专用版本
-- [ ] 支持 `Operation` 渲染为 Python 赋值语句
-- [ ] 支持 `IfBlock` 渲染为 Python `if / elif / else`
-- [ ] 支持语句列表缩进控制
-- [ ] 支持块内临时变量可见性语义
-- [ ] 支持嵌套 `if`
-- [ ] 在模板环境中注册相关 filter / global
-- [ ] 为 statement renderer 补独立单元测试
-- [ ] 验证生成结果不使用 Python 3.7 以上才有的高版本语法
+- [x] 明确 statement renderer 的接口形式
+- [x] 确定是新增通用 `stmt_render` / `stmts_render`，还是先做 Python 专用版本
+- [x] 支持 `Operation` 渲染为 Python 赋值语句
+- [x] 支持 `IfBlock` 渲染为 Python `if / elif / else`
+- [x] 支持语句列表缩进控制
+- [x] 支持块内临时变量可见性语义
+- [x] 支持嵌套 `if`
+- [x] 在模板环境中注册相关 filter / global
+- [x] 为 statement renderer 补独立单元测试
+- [x] 验证生成结果不使用 Python 3.7 以上才有的高版本语法
+- [ ] 明确 `expr_render` 对 Python、C、C++、Java 等常见主流语言的持续支持约束
+- [ ] 明确 `stmt_render` 在静态类型语言下的临时变量声明与类型推断扩展接口
+- [ ] 在多平台维度确认 render 输出没有额外平台差异假设
 
 完成标准：
 
 - 模板里可以稳定生成 Python 操作块代码
 - 语句级生成与现有模型层的临时变量语义不冲突
+- `expr_render` 与 `stmt_render` 的接口演进方向明确保持跨语言可扩展
+- 没有把 render 基础设施收缩成只服务 Python 模板的实现
 
 ### Phase 3：实现 `python_native` builtin template
 

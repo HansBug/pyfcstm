@@ -52,6 +52,7 @@ import yaml
 
 from .env import create_env
 from .expr import create_expr_render_template, fn_expr_render, _KNOWN_STYLES
+from .statement import create_stmt_render_template, fn_stmt_render, fn_stmts_render
 from .func import process_item_to_object
 from ..dsl import node as dsl_nodes
 from ..model import StateMachine
@@ -157,6 +158,47 @@ class StateMachineCodeRenderer:
 
         self.env.globals['expr_render'] = _fn_expr_render
         self.env.filters['expr_render'] = _fn_expr_render
+
+        stmt_styles = config_info.pop('stmt_styles', None) or {}
+        stmt_styles['default'] = stmt_styles.get('default') or {'base_lang': 'dsl'}
+        d_stmt_templates = {}
+        for style_name, stmt_style in stmt_styles.items():
+            stmt_style = copy.deepcopy(stmt_style)
+            lang_style = stmt_style.pop('base_lang')
+            d_stmt_templates[style_name] = create_stmt_render_template(
+                lang_style=lang_style,
+                ext_configs=stmt_style,
+            )
+
+        def _fn_stmt_render(node, style: str = 'default', state_vars=None, visible_names=None,
+                            indent: str = '    ', level: int = 0) -> str:
+            return fn_stmt_render(
+                node=node,
+                templates=d_stmt_templates[style],
+                env=self.env,
+                state_vars=state_vars,
+                visible_names=visible_names,
+                indent=indent,
+                level=level,
+            )
+
+        def _fn_stmts_render(nodes, style: str = 'default', state_vars=None, visible_names=None,
+                             indent: str = '    ', level: int = 0, sep: str = '\n') -> str:
+            return fn_stmts_render(
+                nodes=nodes,
+                templates=d_stmt_templates[style],
+                env=self.env,
+                state_vars=state_vars,
+                visible_names=visible_names,
+                indent=indent,
+                level=level,
+                sep=sep,
+            )
+
+        self.env.globals['stmt_render'] = _fn_stmt_render
+        self.env.filters['stmt_render'] = _fn_stmt_render
+        self.env.globals['stmts_render'] = _fn_stmts_render
+        self.env.filters['stmts_render'] = _fn_stmts_render
 
         globals_ = config_info.pop('globals', None) or {}
         for name, value in globals_.items():

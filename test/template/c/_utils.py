@@ -217,6 +217,21 @@ def build_shared_library(output_dir, model):
     }
 
 
+def _load_runtime_library(shared_lib):
+    temporary_directory = None
+    dll_directory_handle = None
+    load_path = shared_lib
+
+    if os.name == 'nt':
+        temporary_directory = TemporaryDirectory()
+        load_path = os.path.join(temporary_directory.name, os.path.basename(shared_lib))
+        shutil.copy2(shared_lib, load_path)
+        if hasattr(os, 'add_dll_directory'):
+            dll_directory_handle = os.add_dll_directory(temporary_directory.name)
+
+    return ctypes.CDLL(load_path), temporary_directory, dll_directory_handle
+
+
 class _ExecutionContextView:
     def __init__(self, runtime, machine_ptr, ctx_struct):
         self._runtime = runtime
@@ -239,9 +254,11 @@ class _ExecutionContextView:
 
 
 class _CRuntime:
-    def __init__(self, lib, model):
+    def __init__(self, lib, model, temporary_directories=None, dll_directory_handle=None):
         self._lib = lib
         self._model = model
+        self._temporary_directories = list(temporary_directories or [])
+        self._dll_directory_handle = dll_directory_handle
         self._prefix = '{name}Machine'.format(name=model.root_state.name)
         self._var_types = {
             def_item.name: def_item.type for def_item in model.defines.values()
@@ -347,10 +364,18 @@ class _CRuntime:
         if self._machine:
             self._destroy(self._machine)
             self._machine = None
-        temporary_directory = getattr(self, '_temporary_directory', None)
-        if temporary_directory is not None:
+        if os.name == 'nt' and self._lib is not None and getattr(self._lib, '_handle', None):
+            free_library = ctypes.windll.kernel32.FreeLibrary
+            free_library.argtypes = [ctypes.c_void_p]
+            free_library.restype = ctypes.c_int
+            free_library(self._lib._handle)
+        self._lib = None
+        if self._dll_directory_handle is not None:
+            self._dll_directory_handle.close()
+            self._dll_directory_handle = None
+        for temporary_directory in reversed(self._temporary_directories):
             temporary_directory.cleanup()
-            self._temporary_directory = None
+        self._temporary_directories = []
 
     def _bind_function(self, template, argtypes=None, restype=None):
         fn = getattr(self._lib, template.format(prefix=self._prefix))
@@ -535,8 +560,14 @@ def render_c_artifacts(dsl_code):
 @contextmanager
 def render_c_runtime(dsl_code):
     with render_c_artifacts(dsl_code) as artifacts:
-        lib = ctypes.CDLL(artifacts['shared_lib'])
-        runtime = _CRuntime(lib, artifacts['model'])
+        lib, runtime_tempdir, dll_directory_handle = _load_runtime_library(artifacts['shared_lib'])
+        temporary_directories = [runtime_tempdir] if runtime_tempdir is not None else []
+        runtime = _CRuntime(
+            lib,
+            artifacts['model'],
+            temporary_directories=temporary_directories,
+            dll_directory_handle=dll_directory_handle,
+        )
         try:
             yield runtime, artifacts
         finally:
@@ -556,8 +587,16 @@ def build_c_runtime(dsl_code, initial_state=None, initial_vars=None):
     StateMachineCodeRenderer(template_dir).render(model=model, output_dir=output_dir)
     build_info = build_shared_library(output_dir, model)
 
-    runtime = _CRuntime(ctypes.CDLL(build_info['shared_lib']), model)
+    lib, runtime_tempdir, dll_directory_handle = _load_runtime_library(build_info['shared_lib'])
+    temporary_directories = [tempdir]
+    if runtime_tempdir is not None:
+        temporary_directories.append(runtime_tempdir)
+    runtime = _CRuntime(
+        lib,
+        model,
+        temporary_directories=temporary_directories,
+        dll_directory_handle=dll_directory_handle,
+    )
     if initial_state is not None:
         runtime.hot_start(initial_state, initial_vars or {})
-    runtime._temporary_directory = tempdir
     return runtime

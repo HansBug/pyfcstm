@@ -188,7 +188,11 @@ def build_shared_library(output_dir, model):
     os.makedirs(build_dir, exist_ok=True)
 
     subprocess.run(
-        [cmake_executable, os.path.abspath(output_dir)],
+        [
+            cmake_executable,
+            '-DCMAKE_POLICY_VERSION_MINIMUM=3.5',
+            os.path.abspath(output_dir),
+        ],
         cwd=build_dir,
         check=True,
         stdout=subprocess.PIPE,

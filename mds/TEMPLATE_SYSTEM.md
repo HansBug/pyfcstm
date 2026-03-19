@@ -812,6 +812,10 @@ def extract_template(name, output_dir):
 
 建议在根 `Makefile` 中新增一个模板打包命令，例如：
 
+- `make tpl`
+
+兼容别名可以保留：
+
 - `make templates_package`
 
 该命令建议完成以下工作：
@@ -997,7 +1001,7 @@ Phase 1 -> Phase 2 -> Phase 3 -> Phase 4 -> Phase 5
 
 推荐操作顺序：
 
-1. 先修改本地 [mds/TEMPLATE_SYSTEM.md](/home/hansbug/oo-projects/pyfcstm-2/mds/TEMPLATE_SYSTEM.md)
+1. 先修改本地 [mds/TEMPLATE_SYSTEM.md](./TEMPLATE_SYSTEM.md)
 2. 提交并 push
 3. 更新 PR 描述中的 Phase / checklist / 目标说明
 
@@ -1017,18 +1021,19 @@ Checklist：
 - [x] 新增 `templates/README_zh.md`
 - [x] 约定 `templates/` 下每个一级子目录就是一个 builtin template
 - [x] 在 `pyfcstm/` 下建立 `template/` 模块目录
-- [x] 在 [__init__.py](/home/hansbug/oo-projects/pyfcstm-2/pyfcstm/__init__.py) 或相关入口中接通 `pyfcstm.template` 的可访问性
+- [x] 在 [__init__.py](../pyfcstm/__init__.py) 或相关入口中接通 `pyfcstm.template` 的可访问性
 - [x] 为 `pyfcstm/template/` 设计 `index.json` 结构
-- [x] 在根 [Makefile](/home/hansbug/oo-projects/pyfcstm-2/Makefile) 中新增 `templates_package`
-- [x] `templates_package` 能扫描 `templates/` 下的模板子目录
-- [x] `templates_package` 能为每个模板生成单独 zip
-- [x] `templates_package` 能同步生成 `pyfcstm/template/index.json`
-- [x] 调整 [setup.py](/home/hansbug/oo-projects/pyfcstm-2/setup.py) 与 [MANIFEST.in](/home/hansbug/oo-projects/pyfcstm-2/MANIFEST.in)，确保 zip 与索引文件随包发布
+- [x] 在根 [Makefile](../Makefile) 中新增 `tpl`
+- [x] 保留 `templates_package` 作为 `tpl` 的兼容别名
+- [x] `tpl` 能扫描 `templates/` 下的模板子目录
+- [x] `tpl` 能为每个模板生成单独 zip
+- [x] `tpl` 能同步生成 `pyfcstm/template/index.json`
+- [x] 调整 [setup.py](../setup.py) 与 [MANIFEST.in](../MANIFEST.in)，确保 zip 与索引文件随包发布
 - [x] 在 `pyfcstm/template/__init__.py` 中提供列举与释放接口
 - [x] CLI 支持 `--template`
 - [x] CLI 中 `--template` 与 `--template-dir` 的互斥关系明确
 - [x] 本地 `make build` 在 CLI 构建前会准备模板打包产物
-- [x] GitHub 的 whl / sdist 打包 workflow 在执行 `python -m build` 前显式执行 `make templates_package` 或等价步骤
+- [x] GitHub 的 whl / sdist 打包 workflow 在执行 `python -m build` 前显式执行 `make tpl` 或等价步骤
 - [x] GitHub 的 release / release_test / test 中所有 CLI 构建 workflow 都要明确依赖最新模板打包产物，而不是隐式依赖仓库中已有 zip 文件状态
 - [ ] 确认现有模板目录渲染链路未被破坏
 - [ ] 使用既有模板样例做兼容性回归，确认修改后仍可正常工作
@@ -1224,7 +1229,7 @@ Checklist：
 
 1. 在仓库根目录新增 `templates/`，每个一级子目录表示一个 builtin template
 2. 增加 `templates/README.md` 与 `templates/README_zh.md` 作为模板总入口说明
-3. 在 `Makefile` 中新增 `templates_package`，把每个模板子目录打成 zip
+3. 在 `Makefile` 中新增 `tpl`，把每个模板子目录打成 zip
 4. 在 `pyfcstm/template/` 中存放这些 zip、`index.json` 和释放模块
 5. `pyfcstm/template/__init__.py` 只负责列举模板、读取元信息、释放模板到指定目录
 6. CLI 新增 `--template python`，内部先释放模板，再复用现有渲染器

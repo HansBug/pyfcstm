@@ -1,0 +1,114 @@
+expr_styles:
+  c_scope_expr:
+    base_lang: c
+    Name: "scope->{{ node.name | to_identifier }}"
+
+stmt_styles:
+  c_runtime:
+    base_lang: c
+    state_var_target: "scope->{{ name | to_identifier }}"
+    temp_var_target: "{{ name | to_identifier }}"
+    declare_temp: "{{ temp_type }} {{ name | to_identifier }};"
+    temp_type_aliases:
+      int: long long
+      float: double
+    temp_type_fallback: double
+
+globals:
+  machine_class_name:
+    type: template
+    params:
+      - model
+    template: "{{ model.root_state.name | to_identifier }}Machine"
+  machine_macro_name:
+    type: template
+    params:
+      - model
+    template: "{{ model.root_state.name | to_identifier | upper }}_MACHINE"
+  machine_header_guard:
+    type: template
+    params:
+      - model
+    template: "PYFCSTM_GENERATED_{{ machine_class_name(model) | upper }}_H"
+  state_path:
+    type: template
+    params:
+      - state
+    template: "{{ state.path | join('.') }}"
+  state_slug:
+    type: template
+    params:
+      - state
+    template: "{{ state.path | join('_') | to_identifier }}"
+  state_enum_name:
+    type: template
+    params:
+      - state
+    template: "{{ machine_macro_name(model) }}_STATE_{{ state_slug(state) | upper }}"
+  hook_field_name:
+    type: template
+    params:
+      - action
+    template: "on_{{ action.func_name | to_identifier }}"
+  hook_enum_name:
+    type: template
+    params:
+      - action
+    template: "{{ machine_macro_name(model) }}_HOOK_{{ action.func_name | to_identifier | upper }}"
+  action_owner_path:
+    type: template
+    params:
+      - action
+    template: "{{ action.parent.path | join('.') }}"
+
+filters:
+  machine_class_name:
+    type: template
+    params:
+      - model
+    template: "{{ machine_class_name(model) }}"
+  machine_macro_name:
+    type: template
+    params:
+      - model
+    template: "{{ machine_macro_name(model) }}"
+  machine_header_guard:
+    type: template
+    params:
+      - model
+    template: "{{ machine_header_guard(model) }}"
+  state_path:
+    type: template
+    params:
+      - state
+    template: "{{ state_path(state) }}"
+  state_slug:
+    type: template
+    params:
+      - state
+    template: "{{ state_slug(state) }}"
+  state_enum_name:
+    type: template
+    params:
+      - state
+    template: "{{ state_enum_name(state) }}"
+  hook_field_name:
+    type: template
+    params:
+      - action
+    template: "{{ hook_field_name(action) }}"
+  hook_enum_name:
+    type: template
+    params:
+      - action
+    template: "{{ hook_enum_name(action) }}"
+  action_owner_path:
+    type: template
+    params:
+      - action
+    template: "{{ action_owner_path(action) }}"
+
+ignores:
+  - 'README.md'
+  - 'README_zh.md'
+  - 'template.json'

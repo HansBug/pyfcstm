@@ -1,6 +1,15 @@
 {
   "templates": [
     {
+      "archive": "c.zip",
+      "description": "Native C99 built-in template with embedded runtime logic and abstract hook callbacks.",
+      "experimental": true,
+      "language": "c",
+      "name": "c",
+      "root_dir": "c",
+      "title": "C99"
+    },
+    {
       "archive": "python.zip",
       "description": "Native Python built-in template with embedded runtime logic.",
       "experimental": true,

@@ -1,0 +1,166 @@
+# {{ machine_class_name(model) }}
+
+This directory contains the generated C99 runtime for the DSL root state
+`{{ model.root_state.name }}`.
+
+## Generated Files
+
+- `machine.h`: public runtime API
+- `machine.c`: runtime implementation
+- `README.md`: English usage guide for this generated machine
+- `README_zh.md`: Chinese usage guide for this generated machine
+
+## Quick Start
+
+```c
+#include "machine.h"
+
+int main(void)
+{
+    {{ machine_class_name(model) }} machine;
+
+    {{ machine_class_name(model) }}_init(&machine);
+    {{ machine_class_name(model) }}_cycle(&machine, NULL, 0);
+    return 0;
+}
+```
+
+Compile the generated runtime directly with a C99 compiler:
+
+```bash
+cc -std=c99 -Wall -Wextra -pedantic -c machine.c -o machine.o
+```
+
+On POSIX-like platforms, a shared library build can look like this:
+
+```bash
+cc -std=c99 -shared -fPIC machine.c -lm -o libmachine.so
+```
+
+On Windows, use the equivalent DLL flags for your compiler toolchain and
+define `{{ machine_macro_name(model) }}_BUILD_SHARED` when exporting symbols.
+
+To send events, pass canonical event paths, absolute paths, or compatible
+relative event names to `{{ machine_class_name(model) }}_cycle(...)`.
+
+```c
+const char *events[] = {"{{ model.root_state.name }}"};
+{{ machine_class_name(model) }}_cycle(&machine, events, 1u);
+```
+
+## Hot Start
+
+To start from a concrete state path, initialize a full variable snapshot and
+call `{{ machine_class_name(model) }}_hot_start(...)`:
+
+```c
+{{ machine_class_name(model) }} machine;
+{{ machine_class_name(model) }}Vars initial_vars;
+
+{{ machine_class_name(model) }}_init(&machine);
+initial_vars = *{{ machine_class_name(model) }}_vars(&machine);
+{% for def_item in model.defines.values() -%}
+initial_vars.{{ def_item.name | to_identifier }} = {{ def_item.init.to_ast_node() | expr_render(style='c') }};
+{% endfor %}
+{{ machine_class_name(model) }}_hot_start(&machine, "{{ model.root_state.name }}", &initial_vars);
+```
+
+## Extension
+
+Register callbacks in `{{ machine_class_name(model) }}Hooks` to extend abstract
+actions. Callback implementations should mutate persistent state through
+`{{ machine_class_name(model) }}_vars_mut(...)` or the generated setter APIs so
+the behavior stays aligned with the generated runtime's active execution
+context.
+
+```c
+static void custom_hook(
+    {{ machine_class_name(model) }} *machine,
+    const {{ machine_class_name(model) }}ExecutionContext *ctx,
+    void *user_data
+)
+{
+    (void)ctx;
+    (void)user_data;
+{% if model.defines.values() | list %}
+    {{ machine_class_name(model) }}_vars_mut(machine)->{{ (model.defines.values() | list)[0].name | to_identifier }} += 1;
+{% else %}
+    (void)machine;
+{% endif %}
+}
+
+int main(void)
+{
+    {{ machine_class_name(model) }} machine;
+    {{ machine_class_name(model) }}Hooks hooks = {{ machine_class_name(model) | upper }}_HOOKS_INIT;
+
+    {{ machine_class_name(model) }}_init(&machine);
+{% set abstract_ns = namespace(rows=[]) -%}
+{% for state in model.walk_states() -%}
+{% for group in [
+    state.list_on_enters(with_ids=True),
+    state.list_on_durings(aspect=None, with_ids=True),
+    state.list_on_exits(with_ids=True),
+    state.list_on_durings(aspect='before', with_ids=True),
+    state.list_on_durings(aspect='after', with_ids=True),
+    state.list_on_during_aspects(aspect='before', with_ids=True),
+    state.list_on_during_aspects(aspect='after', with_ids=True),
+] -%}
+{% for _, item in group -%}
+{% set resolved = namespace(item=item) -%}
+{% for _ in range(16) -%}
+{% if resolved.item.ref is not none -%}
+{% set resolved.item = resolved.item.ref -%}
+{% endif -%}
+{% endfor -%}
+{% if resolved.item.is_abstract and resolved.item.func_name not in abstract_ns.rows | map(attribute='func_name') | list -%}
+{% set abstract_ns.rows = abstract_ns.rows + [{
+    'func_name': resolved.item.func_name,
+    'hook_name': hook_field_name(resolved.item),
+    'owner_path': action_owner_path(resolved.item),
+    'stage': resolved.item.stage,
+    'aspect': resolved.item.aspect,
+}] -%}
+{% endif -%}
+{% endfor -%}
+{% endfor -%}
+{% endfor %}
+{% if abstract_ns.rows %}
+    hooks.{{ abstract_ns.rows[0]['hook_name'] }} = custom_hook;
+{% endif %}
+    {{ machine_class_name(model) }}_set_hooks(&machine, &hooks, NULL);
+    {{ machine_class_name(model) }}_cycle(&machine, NULL, 0);
+    return 0;
+}
+```
+
+{% if abstract_ns.rows %}
+### Overridable Abstract Hooks
+
+| DSL action path | Hook field | Owner state | Stage |
+| --- | --- | --- | --- |
+{% for row in abstract_ns.rows -%}
+| `{{ row['func_name'] }}` | `{{ row['hook_name'] }}` | `{{ row['owner_path'] }}` | `{{ row['stage'] }}{% if row['aspect'] %} {{ row['aspect'] }}{% endif %}` |
+{% endfor %}
+{% else %}
+This state machine does not declare any abstract actions, so there are no
+hook slots to register.
+{% endif %}
+
+## Variables
+
+{% if model.defines.values() | list %}
+| Name | C Type | Initial DSL |
+| --- | --- | --- |
+{% for def_item in model.defines.values() -%}
+| `{{ def_item.name }}` | `{% if def_item.type == 'int' %}long long{% else %}double{% endif %}` | `{{ def_item.init.to_ast_node() | string }}` |
+{% endfor %}
+{% else %}
+This state machine does not define persistent variables.
+{% endif %}
+
+## State Paths
+
+{% for state in model.walk_states() -%}
+- `{{ state | state_path }}`
+{% endfor %}

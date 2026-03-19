@@ -12,6 +12,11 @@ The module contains the following main components:
 * :func:`render_expr_node` - High-level expression rendering helper
 * :func:`fn_expr_render` - Low-level expression rendering implementation
 * :func:`create_expr_render_template` - Template dictionary builder for expression rendering
+* :func:`render_stmt_node` - High-level statement rendering helper
+* :func:`render_stmt_nodes` - High-level statement sequence rendering helper
+* :func:`fn_stmt_render` - Low-level statement rendering implementation
+* :func:`fn_stmts_render` - Low-level statement sequence rendering implementation
+* :func:`create_stmt_render_template` - Template dictionary builder for statement rendering
 * :class:`StateMachineCodeRenderer` - State machine code generation renderer
 
 Example::
@@ -29,4 +34,8 @@ Example::
 
 from .env import create_env
 from .expr import render_expr_node, fn_expr_render, create_expr_render_template
+from .statement import (
+    render_stmt_node, render_stmt_nodes,
+    fn_stmt_render, fn_stmts_render, create_stmt_render_template,
+)
 from .render import StateMachineCodeRenderer

@@ -1,0 +1,13 @@
+{
+  "templates": [
+    {
+      "archive": "python.zip",
+      "description": "Native Python built-in template with embedded runtime logic.",
+      "experimental": true,
+      "language": "python",
+      "name": "python",
+      "root_dir": "python",
+      "title": "Python"
+    }
+  ]
+}

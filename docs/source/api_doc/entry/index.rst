@@ -15,4 +15,11 @@ pyfcstm.entry
     generate
     plantuml
     simulate/index
+    visualize
+
+\_\_all\_\_
+-----------------------------------------------------
+
+.. autodata:: __all__
+
 

@@ -12,6 +12,19 @@ modeling Hierarchical State Machines (Harel Statecharts) with a Jinja2-based tem
 
 This repository must support cross-platform environments (Windows, mainstream Linux distributions, and macOS), older system platforms (for example Windows 7), older Python versions (for example Python 3.7), and a broad Python version range (3.7-3.14), so always account for that compatibility envelope when writing code or introducing dependencies.
 
+## Current Repository Status
+
+As of 2026-03, the repository is no longer only a generic template experiment. The current codebase already includes:
+
+- Repository-source built-in templates under `templates/`, with `templates/python/` as the reference implementation
+- Packaged built-in template assets under `pyfcstm/template/`, including `index.json`, extraction helpers, and packaged zip assets
+- CLI support for both custom template directories and packaged built-in templates via `pyfcstm generate -t ...` and `pyfcstm generate --template python ...`
+- Expression rendering and statement rendering infrastructure under `pyfcstm/render/`, with built-in statement styles for `dsl`, `c`, `cpp`, `python`, `java`, `js`, `ts`, `rust`, and `go`
+- Dedicated template tests under `test/template/`, including generated-runtime tests and runtime-alignment tests for the built-in `python` template
+- A render/template tutorial path in `docs/source/tutorials/render/` that now reflects the current renderer, template packaging, and testing model
+
+When updating repository guidance, do not describe built-in templates, statement rendering, or CLI `--template` support as planned-only features. They are current behavior.
+
 ## Common Commands
 
 ### Testing
@@ -35,6 +48,9 @@ make package    # Build package (sdist and wheel)
 make build      # Build standalone executable with PyInstaller
 make test_cli   # Test CLI executable
 make clean      # Clean build artifacts
+make tpl        # Package repository templates into pyfcstm/template
+make tpl_clean  # Remove packaged template zip assets and index
+make templates_package  # Alias of make tpl
 ```
 
 ### Documentation
@@ -81,6 +97,7 @@ make logos / make logos_clean    # Generate/clean PNG logos from SVG sources
 ```bash
 pyfcstm plantuml -i input.fcstm -o output.puml
 pyfcstm generate -i input.fcstm -t template_dir/ -o output_dir/
+pyfcstm generate -i input.fcstm --template python -o output_dir/
 pyfcstm generate -i input.fcstm -t template_dir/ -o output_dir/ --clear
 pyfcstm simulate -i input.fcstm                                      # Interactive mode
 pyfcstm simulate -i input.fcstm -e "cycle; cycle Start; current"     # Batch mode
@@ -115,7 +132,15 @@ pyfcstm simulate -i input.fcstm -e "init System.Active counter=10; cycle 5"  # H
 - `render.py`: `StateMachineCodeRenderer` - loads templates, processes `.j2` files, copies static files, gitignore-style ignores
 - `env.py`: Jinja2 sandboxed environment with custom globals, filters, and tests
 - `expr.py`: Expression rendering for `dsl`, `c`, `cpp`, `python` styles; `{{ expr | expr_render(style='c') }}`
+- `statement.py`: Statement rendering for executable operation blocks; `{{ stmt | stmt_render(style='python') }}` and `{{ action.operations | stmts_render(style='python') }}`
 - `func.py`: `process_item_to_object()` converts config items to Python objects (imports, templates, values)
+
+**Built-In Template Assets** (`templates/`, `pyfcstm/template/`)
+
+- `templates/`: Editable built-in template source directories tracked in the repository
+- `templates/python/`: Current reference built-in runtime template; use this as the baseline when designing future language templates
+- `pyfcstm/template/`: Packaged built-in template assets, `index.json`, and extraction helpers such as `extract_template()`
+- `tools/package_templates.py` + `make tpl`: Package repository template sources into distributable built-in template assets
 
 **Simulation Runtime** (`pyfcstm/simulate/`)
 
@@ -139,7 +164,7 @@ pyfcstm simulate -i input.fcstm -e "init System.Active counter=10; cycle 5"  # H
 
 - `cli.py`: Click-based CLI; `pyfcstmcli()` registered as console script
 - `plantuml.py`: PlantUML diagram generation from state machine models
-- `generate.py`: Orchestrates parsing DSL, building model, and rendering with templates
+- `generate.py`: Orchestrates parsing DSL, building model, and rendering with either `--template-dir` or built-in `--template`
 - `dispatch.py`: Command dispatching logic for CLI subcommands
 - `simulate/`: Interactive simulation REPL (sub-package) with `repl.py`, `commands.py`, `completer.py`, `display.py`, `batch.py`, `logging.py`
 
@@ -846,8 +871,16 @@ When modifying `pyfcstm/dsl/grammar/Grammar.g4`:
 
 ### Template Development
 
+Current built-in template layout and release flow:
+
+- Repository template sources live under `templates/<name>/`
+- Packaged built-in template assets live under `pyfcstm/template/`
+- `make tpl` refreshes packaged template zip assets and `index.json`
+- The CLI extracts built-in templates first, then hands the extracted directory to `StateMachineCodeRenderer`
+- The current reference implementation is `templates/python/`, with tests in `test/template/python/`
+
 Template directories must contain:
-- `config.yaml`: Defines `expr_styles`, `globals`, `filters`, `ignores`
+- `config.yaml`: Defines `expr_styles`, `stmt_styles`, `globals`, `filters`, `tests`, `ignores`
 - `.j2` files: Jinja2 templates with state machine model as context
 - Static files: Copied directly to output (preserve directory structure)
 
@@ -857,6 +890,18 @@ Key template objects:
 - `transition.from_state`, `transition.to_state`, `transition.guard`, `transition.effects`
 
 Use `{{ expr | expr_render(style='c') }}` to render expressions in target language syntax.
+Use `{{ stmt | stmt_render(style='python') }}` or `{{ action.operations | stmts_render(style='python') }}`
+for executable operation blocks. Do not use `operation_stmt_render` / `operation_stmts_render` when the goal is target-language runtime code; those are for DSL echo text.
+
+For built-in template work, the current design bar is defined by the `python` template:
+
+- Behavioral parity with `pyfcstm.simulate.SimulationRuntime` is a hard requirement, not a best effort. Future built-in language templates should be validated against the simulator with alignment tests.
+- Generated artifacts should be as self-contained as the target language reasonably allows. Prefer standard-library or language-core features and avoid introducing third-party runtime dependencies unless there is a very strong reason.
+- The target language version and platform envelope should be broad and explicit. Match the spirit of the Python template: low dependency footprint, wide version compatibility, and cross-platform behavior.
+- Do not require users to edit generated files to implement abstract behavior. Instead, expose stable, language-idiomatic extension points for abstract actions and related hooks. The Python template uses protected hook override methods as the reference pattern.
+- Preserve naming clarity for generated extension points so DSL authors can map states, actions, and abstract behavior back to code quickly, ideally with IDE completion support.
+- Keep generated code readable and inspectable. Generated runtimes are product artifacts, not opaque intermediate blobs.
+- When adding a new built-in template, update all of the following together: `templates/<name>/`, packaged template assets, CLI/template metadata, maintainer docs, generated docs if applicable, and the corresponding tests.
 
 ### Testing Strategy
 
@@ -866,6 +911,9 @@ Use `{{ expr | expr_render(style='c') }}` to render expressions in target langua
 - Sample DSL files in `test/testfile/sample_codes/` (auto-generate tests via `make sample`)
 - Negative cases in `test/testfile/sample_neg_codes/`
 - Test timeout: 300 seconds (configured in `pytest.ini`)
+- Built-in template coverage lives under `test/template/`
+- For built-in templates, keep at least these layers when applicable:
+  renderer/template extraction tests, generated-artifact tests, runtime-alignment tests against `SimulationRuntime`, and CLI path tests for `pyfcstm generate --template ...`
 
 ### Dependencies
 

@@ -2277,4 +2277,4 @@ DFS 验证机制
 
 - :doc:`../visualization/index` - 可视化状态机
 - :doc:`../dsl/index` - 高级 DSL 特性
-- :doc:`../render/index` - 从状态机生成代码
+- :doc:`../render/index_zh` - 从状态机生成代码

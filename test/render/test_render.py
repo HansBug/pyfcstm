@@ -126,3 +126,118 @@ class TestRenderRender:
                 clear_previous_directory=True,
             )
             dir_compare(expected_result_dir, td)
+
+    def test_rendered_template_files_use_lf_newlines(self, sample_model):
+        with TemporaryDirectory() as template_dir:
+            with open(os.path.join(template_dir, 'config.yaml'), 'w') as f:
+                f.write('{}\n')
+            with open(os.path.join(template_dir, 'multiline.txt.j2'), 'w', encoding='utf-8', newline='\n') as f:
+                f.write('line1\n{{ model.root_state.name }}\nline3')
+
+            renderer = StateMachineCodeRenderer(template_dir)
+
+            with TemporaryDirectory() as output_dir:
+                renderer.render(model=sample_model, output_dir=output_dir)
+                with open(os.path.join(output_dir, 'multiline.txt'), 'rb') as f:
+                    data = f.read()
+
+        assert b'\r\n' not in data
+        assert data == b'line1\nTrafficLight\nline3'
+
+    def test_renderer_expr_render_supports_language_aliases(self, sample_model):
+        with TemporaryDirectory() as template_dir:
+            with open(os.path.join(template_dir, 'config.yaml'), 'w') as f:
+                f.write('{}\n')
+            with open(os.path.join(template_dir, 'expr.txt.j2'), 'w') as f:
+                f.write("{{ 2.0 | expr_render(style='javascript') }}")
+
+            renderer = StateMachineCodeRenderer(template_dir)
+
+            with TemporaryDirectory() as output_dir:
+                renderer.render(model=sample_model, output_dir=output_dir)
+                with open(os.path.join(output_dir, 'expr.txt'), 'r') as f:
+                    rendered = f.read()
+
+        assert rendered == "2.0"
+
+    def test_renderer_expr_render_inherits_current_custom_style_recursively(self, sample_model):
+        ast_node = parse_with_grammar_entry(
+            """
+        def int counter = 0;
+        state Root {
+            state A {
+                during {
+                    counter = counter + 1;
+                }
+            }
+            [*] -> A : if [counter >= 1];
+        }
+        """,
+            entry_name="state_machine_dsl",
+        )
+        model = parse_dsl_node_to_state_machine(ast_node)
+
+        with TemporaryDirectory() as template_dir:
+            with open(os.path.join(template_dir, 'config.yaml'), 'w') as f:
+                f.write(
+                    "expr_styles:\n"
+                    "  python_vars:\n"
+                    "    base_lang: python\n"
+                    "    Name: \"vars_[{{ node.name | tojson }}]\"\n"
+                )
+            with open(os.path.join(template_dir, 'expr.txt.j2'), 'w') as f:
+                f.write(
+                    "{{ model.root_state.init_transitions[0].guard.to_ast_node() "
+                    "| expr_render(style='python_vars') }}"
+                )
+
+            renderer = StateMachineCodeRenderer(template_dir)
+
+            with TemporaryDirectory() as output_dir:
+                renderer.render(model=model, output_dir=output_dir)
+                with open(os.path.join(output_dir, 'expr.txt'), 'r') as f:
+                    rendered = f.read()
+
+        assert rendered == 'vars_["counter"] >= 1'
+
+    def test_renderer_injects_default_state_vars_and_var_types_for_default_cpp_stmt_rendering(self):
+        ast_node = parse_with_grammar_entry(
+            """
+        def int counter = 0;
+        state Root {
+            state A {
+                enter {
+                    tmp = counter + 1;
+                    counter = tmp + 2;
+                }
+            }
+            [*] -> A;
+        }
+        """,
+            entry_name="state_machine_dsl",
+        )
+        model = parse_dsl_node_to_state_machine(ast_node)
+
+        with TemporaryDirectory() as template_dir:
+            with open(os.path.join(template_dir, 'config.yaml'), 'w') as f:
+                f.write('{}\n')
+            with open(os.path.join(template_dir, 'stmt.txt.j2'), 'w') as f:
+                f.write(
+                    "Enter operations:\n"
+                    "{{ model.root_state.substates['A'].on_enters[0].operations "
+                    "| stmts_render(style='c++') }}"
+                )
+
+            renderer = StateMachineCodeRenderer(template_dir)
+
+            with TemporaryDirectory() as output_dir:
+                renderer.render(model=model, output_dir=output_dir)
+                with open(os.path.join(output_dir, 'stmt.txt'), 'r') as f:
+                    rendered = f.read()
+
+        assert rendered == (
+            "Enter operations:\n"
+            "int tmp;\n"
+            "tmp = scope->counter + 1;\n"
+            "scope->counter = tmp + 2;"
+        )

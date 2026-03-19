@@ -396,6 +396,36 @@ def print_extracted_members(f, members: Dict[str, List[Dict[str, Any]]]):
         print(f'', file=f)
 
 
+def print_package_toctree(f, code_file: str):
+    """
+    Print the package-level toctree for an ``__init__.py`` module.
+
+    :param f: File object to write to.
+    :param code_file: Path to the ``__init__.py`` file of the package.
+    :type code_file: str
+    :return: ``None``.
+    :rtype: None
+    """
+    code_rels = []
+    for code_rel_file in os.listdir(os.path.dirname(code_file)):
+        code_rel_base = os.path.splitext(code_rel_file)[0]
+        code_abs_file = os.path.abspath(os.path.join(os.path.dirname(code_file), code_rel_file))
+        if os.path.isfile(code_abs_file) and code_rel_file.endswith('.py') and \
+                not (code_rel_base.startswith('__') and code_rel_base.endswith('__')):
+            code_rels.append(code_rel_base)
+        elif os.path.isdir(code_abs_file) and os.path.exists(os.path.join(code_abs_file, '__init__.py')):
+            code_rels.append(f'{code_rel_base}/index')
+
+    if code_rels:
+        code_rels = natsorted(code_rels)
+        print(f'.. toctree::', file=f)
+        print(f'    :maxdepth: 3', file=f)
+        print(f'', file=f)
+        for code_rel_base in code_rels:
+            print(f'    {code_rel_base}', file=f)
+        print(f'', file=f)
+
+
 def convert_code_to_rst(code_file: str, rst_file: str, lib_dir: str = '.'):
     """
     Convert a Python code file to an RST documentation file.
@@ -432,27 +462,10 @@ def convert_code_to_rst(code_file: str, rst_file: str, lib_dir: str = '.'):
         print(f'', file=f)
         print(f'', file=f)
 
-        if os.path.basename(code_file) != '__init__.py':
-            print_extracted_members(f, members)
-        else:
-            code_rels = []
-            for code_rel_file in os.listdir(os.path.dirname(code_file)):
-                code_rel_base = os.path.splitext(code_rel_file)[0]
-                code_abs_file = os.path.abspath(os.path.join(os.path.dirname(code_file), code_rel_file))
-                if os.path.isfile(code_abs_file) and code_rel_file.endswith('.py') and \
-                        not (code_rel_base.startswith('__') and code_rel_base.endswith('__')):
-                    code_rels.append(code_rel_base)
-                elif os.path.isdir(code_abs_file) and os.path.exists(os.path.join(code_abs_file, '__init__.py')):
-                    code_rels.append(f'{code_rel_base}/index')
+        if os.path.basename(code_file) == '__init__.py':
+            print_package_toctree(f, code_file)
 
-            if code_rels:
-                code_rels = natsorted(code_rels)
-                print(f'.. toctree::', file=f)
-                print(f'    :maxdepth: 3', file=f)
-                print(f'', file=f)
-                for code_rel_base in code_rels:
-                    print(f'    {code_rel_base}', file=f)
-                print(f'', file=f)
+        print_extracted_members(f, members)
 
 
 def main():

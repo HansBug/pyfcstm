@@ -24,16 +24,47 @@ class TestRenderExprNode:
             ("0xFF", "c", None, "0xff"),
             ("!true", "c", None, "!0x1"),
             ("not False", "python", None, "not False"),
+            ("True", "java", None, "true"),
+            ("True", "js", None, "true"),
+            ("True", "ts", None, "true"),
+            ("True", "rust", None, "true"),
+            ("True", "go", None, "true"),
             ("(x > 0) ? 1 : -1", "c", None, "(x > 0) ? 1 : -1"),
+            ("(x > 0) ? 1 : -1", "java", None, "x > 0 ? 1 : -1"),
             ("(x > 0) ? 1 : -1", "python", None, "1 if x > 0 else -1"),
+            ("(x > 0) ? 1 : -1", "js", None, "(x > 0) ? 1 : -1"),
+            ("(x > 0) ? 1 : -1", "ts", None, "(x > 0) ? 1 : -1"),
+            ("(x > 0) ? 1 : -1", "rust", None, "(if x > 0 { 1 } else { -1 })"),
+            (
+                "(x > 0) ? 1 : -1",
+                "go",
+                None,
+                "func() int { if x > 0 { return 1 }; return -1 }()",
+            ),
             ("2.5e-3", "dsl", None, "0.0025"),
             ("x & (y | z)", "c", None, "x & (y | z)"),
-            ("abs(-5)", "python", None, "math.abs(-5)"),
+            ("abs(-5)", "python", None, "abs(-5)"),
+            ("sin(x)", "java", None, "Math.sin(x)"),
+            ("sin(x)", "js", None, "Math.sin(x)"),
+            ("sin(x)", "ts", None, "Math.sin(x)"),
+            ("sin(x)", "go", None, "math.Sin(float64(x))"),
             ("3.14 * r ** 2", "dsl", None, "3.14 * r ** 2"),
+            ("2 ** 3", "java", None, "Math.pow(2, 3)"),
+            ("2 ** 3", "js", None, "Math.pow(2, 3)"),
+            ("2 ** 3", "ts", None, "Math.pow(2, 3)"),
+            ("2 ** 3", "rust", None, "(2 as f64).powf(3 as f64)"),
+            ("2 ** 3", "go", None, "math.Pow(float64(2), float64(3))"),
             ("log2(8)", "c", None, "log2(8)"),
+            ("log2(8)", "rust", None, "(8 as f64).log2()"),
+            ("abs(-5)", "go", None, "int(math.Abs(float64(-5)))"),
+            ("round(3.14159)", "rust", None, "(3.14159 as f64).round() as i64"),
+            ("floor(3.14159)", "go", None, "int(math.Floor(float64(3.14159)))"),
             ("x >= 0 && y < 10", "c", None, "x >= 0 && y < 10"),
             ("x >= 0 and y < 10", "python", None, "x >= 0 and y < 10"),
             ("(x|y)>0", "dsl", None, "(x | y) > 0"),
+            ("pi", "js", None, "3.141592653589793"),
+            ("tau", "java", None, "6.283185307179586"),
+            ("tau", "go", None, "6.283185307179586"),
             ("2 + 3 * 4", "dsl", {"Integer": "{{ node.value | int }}"}, "2 + 3 * 4"),
             ("pi", "c", {"Constant": "M_{{ node | str | upper }}"}, "M_PI"),
             ("E", "python", {"Constant": "math.e"}, "math.e"),
@@ -254,6 +285,23 @@ class TestRenderExprNode:
         result = render_expr_node(
             ast_node, lang_style=lang_type, ext_configs=ext_configs, env=new_env
         )
+        assert result == expected_text_result
+
+    @pytest.mark.parametrize(
+        "expr_text, lang_type, expected_text_result",
+        [
+            ("2 ** 3", "c++", "std::pow(2, 3)"),
+            ("sin(x)", "javascript", "Math.sin(x)"),
+            ("sin(x)", "typescript", "Math.sin(x)"),
+            ("sin(x)", "golang", "math.Sin(float64(x))"),
+            ("True", "python3", "True"),
+        ],
+    )
+    def test_render_expr_node_supports_common_language_aliases(
+        self, expr_text, lang_type, expected_text_result, new_env
+    ):
+        ast_node = parse_with_grammar_entry(expr_text, entry_name="generic_expression")
+        result = render_expr_node(ast_node, lang_style=lang_type, env=new_env)
         assert result == expected_text_result
 
     @pytest.mark.parametrize(

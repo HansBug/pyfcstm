@@ -1,4 +1,4 @@
-.PHONY: docs test unittest resource antlr antlr_build build package clean docs_auto todos_auto tests_auto rst_auto vscode vscode_clean vscode_install vscode_uninstall logos logos_clean app_icons app_icons_clean help
+.PHONY: docs test unittest resource antlr antlr_build build package clean docs_auto todos_auto tests_auto rst_auto vscode vscode_clean vscode_install vscode_uninstall logos logos_clean app_icons app_icons_clean help tpl tpl_clean templates_package
 
 PYTHON := $(shell which python)
 
@@ -98,6 +98,11 @@ help:
 	@echo "  make antlr        - Download ANTLR jar and setup (requires Java)"
 	@echo "  make antlr_build  - Regenerate parser from Grammar.g4"
 	@echo ""
+	@echo "Built-in Templates:"
+	@echo "  make tpl          - Package repository templates into pyfcstm/template zip assets"
+	@echo "  make tpl_clean    - Remove packaged template zip assets and index"
+	@echo "  make templates_package - Alias of 'make tpl'"
+	@echo ""
 	@echo "Sample Tests:"
 	@echo "  make sample       - Generate test files from sample DSL files"
 	@echo "  make sample_clean - Remove generated sample tests"
@@ -122,9 +127,9 @@ help:
 	@echo "  AUTO_OPTIONS=...  - LLM generation options"
 	@echo ""
 
-package:
+package: tpl
 	$(PYTHON) -m build --sdist --wheel --outdir ${DIST_DIR}
-build: ${APP_ICON_STAMP}
+build: tpl ${APP_ICON_STAMP}
 	$(PYTHON) -m tools.generate_spec -o pyfcstm.spec --icon-dir ${APP_ICON_DIR}
 	pyinstaller pyfcstm.spec
 	@echo "Verifying bundled PyInstaller icon asset..."
@@ -142,7 +147,7 @@ clean:
 
 test: unittest
 
-unittest:
+unittest: tpl
 	UNITTEST=1 \
 		pytest "${RANGE_TEST_DIR}" \
 		-sv -m unittest \
@@ -160,6 +165,14 @@ docs_zh:
 	READTHEDOCS_LANGUAGE=zh-cn $(MAKE) -C "${DOC_DIR}" build
 pdocs:
 	$(MAKE) -C "${DOC_DIR}" prod
+
+tpl:
+	$(PYTHON) -m tools.package_templates --source ${TEMPLATES_DIR} --output ${SRC_DIR}/template
+
+templates_package: tpl
+
+tpl_clean:
+	rm -f ${SRC_DIR}/template/*.zip ${SRC_DIR}/template/index.json
 
 # LLM-based documentation generation targets
 docs_auto:

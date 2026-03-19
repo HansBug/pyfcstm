@@ -325,6 +325,50 @@ class Transition(AstExportable):
         else:
             self.parent_ref = weakref.ref(new_parent)
 
+    @property
+    def from_state_obj(self) -> Union['State', dsl_nodes._StateSingletonMark]:
+        """
+        Resolve :attr:`from_state` to its concrete state object when applicable.
+
+        String endpoints are resolved from the transition parent's substates.
+        :data:`INIT_STATE` and :data:`EXIT_STATE` are returned unchanged.
+
+        :return: The resolved source state object, or the original singleton marker
+        :rtype: Union[State, dsl_nodes._StateSingletonMark]
+        :raises LookupError: If the source state string cannot be resolved
+        """
+        if self.from_state is INIT_STATE or self.from_state is EXIT_STATE:
+            return self.from_state
+        if self.parent is None:
+            raise LookupError(f"Cannot resolve from_state {self.from_state!r} without parent state.")
+        if self.from_state not in self.parent.substates:
+            raise LookupError(
+                f"State {self.from_state!r} not found in parent state {'.'.join(self.parent.path)!r}."
+            )
+        return self.parent.substates[self.from_state]
+
+    @property
+    def to_state_obj(self) -> Union['State', dsl_nodes._StateSingletonMark]:
+        """
+        Resolve :attr:`to_state` to its concrete state object when applicable.
+
+        String endpoints are resolved from the transition parent's substates.
+        :data:`INIT_STATE` and :data:`EXIT_STATE` are returned unchanged.
+
+        :return: The resolved target state object, or the original singleton marker
+        :rtype: Union[State, dsl_nodes._StateSingletonMark]
+        :raises LookupError: If the target state string cannot be resolved
+        """
+        if self.to_state is INIT_STATE or self.to_state is EXIT_STATE:
+            return self.to_state
+        if self.parent is None:
+            raise LookupError(f"Cannot resolve to_state {self.to_state!r} without parent state.")
+        if self.to_state not in self.parent.substates:
+            raise LookupError(
+                f"State {self.to_state!r} not found in parent state {'.'.join(self.parent.path)!r}."
+            )
+        return self.parent.substates[self.to_state]
+
     def to_ast_node(self) -> dsl_nodes.TransitionDefinition:
         """
         Convert this transition to an AST node.
@@ -1951,6 +1995,79 @@ class StateMachine(AstExportable, PlantUMLExportable):
         :rtype: Iterator[State]
         """
         yield from self.root_state.walk_states()
+
+    def state_belongs_to_machine(self, state: State) -> bool:
+        """
+        Check whether a state object belongs to this state machine.
+
+        The check follows the state's parent chain to its root and compares the
+        final root object with :attr:`root_state` by identity. States from a
+        different parsed state machine therefore return ``False`` even if they
+        have the same path.
+
+        :param state: State object to verify
+        :type state: State
+        :return: ``True`` if the state is this machine's root or one of its descendants,
+            otherwise ``False``
+        :rtype: bool
+
+        Example::
+
+            >>> sm = StateMachine(defines={}, root_state=root_state)
+            >>> sm.state_belongs_to_machine(root_state)
+            True
+        """
+        current_state = state
+        while current_state.parent is not None:
+            current_state = current_state.parent
+        return current_state is self.root_state
+
+    def resolve_state(self, state_path: str) -> State:
+        """
+        Resolve a full state path to an existing :class:`State` object.
+
+        This method requires a complete state path in the format
+        ``State1.State2.State3``, where the path must include all states from
+        the root to the target state.
+
+        :param state_path: The complete state path (e.g., ``"Root.System.Active"``)
+        :type state_path: str
+        :return: The resolved state from the hierarchy
+        :rtype: State
+        :raises ValueError: If the state path is invalid or empty
+        :raises LookupError: If any state in the path does not exist
+
+        Example::
+
+            >>> sm = StateMachine(defines={}, root_state=root_state)
+            >>> state = sm.resolve_state("Root.System.Active")
+            >>> state.name
+            'Active'
+        """
+        if not state_path:
+            raise ValueError("State path cannot be empty")
+
+        path_parts = state_path.split('.')
+        if not all(path_parts):
+            raise ValueError(f"Invalid state path: {state_path!r} (contains empty parts)")
+
+        current_state = self.root_state
+        if path_parts[0] != current_state.name:
+            raise LookupError(
+                f"State path root '{path_parts[0]}' does not match "
+                f"state machine root '{current_state.name}' "
+                f"while resolving state path {state_path!r}"
+            )
+
+        for i, state_name in enumerate(path_parts[1:], 1):
+            if state_name not in current_state.substates:
+                raise LookupError(
+                    f"State '{state_name}' not found in state '{'.'.join(path_parts[:i])}' "
+                    f"while resolving state path {state_path!r}"
+                )
+            current_state = current_state.substates[state_name]
+
+        return current_state
 
     def resolve_event(self, event_path: str) -> Event:
         """

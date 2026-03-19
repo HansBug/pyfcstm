@@ -50,7 +50,7 @@ Transition
 -----------------------------------------------------
 
 .. autoclass:: Transition
-    :members: parent,parent,to_ast_node,from_state,to_state,event,guard,effects,parent_ref
+    :members: parent,parent,from_state_obj,to_state_obj,to_ast_node,from_state,to_state,event,guard,effects,parent_ref
 
 
 OnStage
@@ -85,7 +85,7 @@ StateMachine
 -----------------------------------------------------
 
 .. autoclass:: StateMachine
-    :members: to_ast_node,to_plantuml,walk_states,resolve_event,defines,root_state
+    :members: to_ast_node,to_plantuml,walk_states,state_belongs_to_machine,resolve_state,resolve_event,defines,root_state
 
 
 parse\_dsl\_node\_to\_state\_machine

@@ -117,6 +117,50 @@ class TestSolveFloatVariables:
 
 
 @pytest.mark.unittest
+class TestSolveBoolVariables:
+    """Test solving with boolean unknown variables."""
+
+    def test_bool_variables(self):
+        """Test solving constraints with pure boolean unknowns."""
+        enabled = z3.Bool('enabled')
+        ready = z3.Bool('ready')
+
+        result = solve([
+            z3.Xor(enabled, ready),
+        ], max_solutions=10)
+
+        assert result.status == 'sat'
+        assert len(result.solutions) == 2
+        assert result.variables == ['enabled', 'ready']
+        assert all(isinstance(sol['enabled'], bool) for sol in result.solutions)
+        assert all(isinstance(sol['ready'], bool) for sol in result.solutions)
+        assert {
+            (sol['enabled'], sol['ready'])
+            for sol in result.solutions
+        } == {(True, False), (False, True)}
+
+    def test_mixed_bool_and_numeric_variables(self):
+        """Test solving constraints with boolean and numeric unknowns together."""
+        enabled = z3.Bool('enabled')
+        retries = z3.Int('retries')
+
+        result = solve([
+            retries >= 1,
+            retries <= 2,
+            enabled == (retries == 2),
+        ], max_solutions=10)
+
+        assert result.status == 'sat'
+        assert len(result.solutions) == 2
+        assert result.variables == ['enabled', 'retries']
+        assert {
+            (sol['enabled'], sol['retries'])
+            for sol in result.solutions
+        } == {(False, 1), (True, 2)}
+        assert all(isinstance(sol['enabled'], bool) for sol in result.solutions)
+
+
+@pytest.mark.unittest
 class TestSolveUnconstrainedVariables:
     """Test handling of unconstrained variables."""
 

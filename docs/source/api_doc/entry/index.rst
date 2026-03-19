@@ -14,5 +14,7 @@ pyfcstm.entry
     dispatch
     generate
     plantuml
+    reachability
     simulate/index
+    visualize
 

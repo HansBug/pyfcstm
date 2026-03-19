@@ -676,7 +676,7 @@ sm.cycle(events=['Root.System.Idle.Start'])
 templates/
 ├── README.md
 ├── README_zh.md
-├── python_hardcoded/
+├── python_native/
 │   ├── config.yaml
 │   ├── machine.py.j2
 │   ├── __init__.py.j2
@@ -708,7 +708,7 @@ templates/
 pyfcstm/template/
 ├── __init__.py
 ├── index.json
-├── python_hardcoded.zip
+├── python_native.zip
 ├── c_hardcoded.zip
 └── ...
 ```
@@ -787,10 +787,10 @@ def extract_template(name, output_dir):
 4. 输出到 `pyfcstm/template/`
 5. 同步生成 `pyfcstm/template/index.json`
 
-建议 zip 内部保持模板目录自身为根，例如 `python_hardcoded.zip` 内部结构为：
+建议 zip 内部保持模板目录自身为根，例如 `python_native.zip` 内部结构为：
 
 ```text
-python_hardcoded/
+python_native/
 ├── config.yaml
 ├── machine.py.j2
 ├── __init__.py.j2
@@ -800,7 +800,7 @@ python_hardcoded/
 这样 `extract_template(name, output_dir)` 解压后可以直接得到：
 
 ```text
-<output_dir>/python_hardcoded/
+<output_dir>/python_native/
 ```
 
 返回值也就可以直接作为模板目录传给 `StateMachineCodeRenderer`。
@@ -818,7 +818,7 @@ python_hardcoded/
 示例：
 
 ```bash
-pyfcstm generate -i traffic.fcstm --template python_hardcoded -o ./traffic_machine
+pyfcstm generate -i traffic.fcstm --template python_native -o ./traffic_machine
 ```
 
 约束建议：
@@ -829,7 +829,7 @@ pyfcstm generate -i traffic.fcstm --template python_hardcoded -o ./traffic_machi
 
 对 builtin template 的内部处理建议是：
 
-1. CLI 识别 `--template python_hardcoded`
+1. CLI 识别 `--template python_native`
 2. 调用 `pyfcstm.template.extract_template(...)`
 3. 将模板释放到一个临时目录或调用方给定目录
 4. 把释放后的模板目录路径传给现有 `StateMachineCodeRenderer`
@@ -938,7 +938,7 @@ Phase 1 -> Phase 2 -> Phase 3 -> Phase 4 -> Phase 5
 
 - `Phase 1` 解决模板源码与发布链路
 - `Phase 2` 解决 Python 模板最关键的语句生成基础设施
-- `Phase 3` 才正式实现 `python_hardcoded`
+- `Phase 3` 才正式实现 `python_native`
 - `Phase 4` 做语义对齐验证
 - `Phase 5` 再考虑增强项
 
@@ -1024,7 +1024,7 @@ Checklist：
 - 模板里可以稳定生成 Python 操作块代码
 - 语句级生成与现有模型层的临时变量语义不冲突
 
-### Phase 3：实现 `python_hardcoded` builtin template
+### Phase 3：实现 `python_native` builtin template
 
 目标：
 
@@ -1033,7 +1033,7 @@ Checklist：
 
 Checklist：
 
-- [ ] 在 `templates/python_hardcoded/` 建立模板目录
+- [ ] 在 `templates/python_native/` 建立模板目录
 - [ ] 编写该模板的 `README.md`
 - [ ] 实现 `config.yaml`
 - [ ] 实现 `machine.py.j2`
@@ -1053,7 +1053,7 @@ Checklist：
 
 完成标准：
 
-- 用户可以直接 `pyfcstm generate --template python_hardcoded`
+- 用户可以直接 `pyfcstm generate --template python_native`
 - 生成产物无需安装任何第三方包即可被 import 和运行
 
 ### Phase 4：行为对齐测试与验收
@@ -1103,7 +1103,7 @@ Checklist：
 
 完成标准：
 
-- 不破坏首版 `python_hardcoded` 的稳定 API
+- 不破坏首版 `python_native` 的稳定 API
 - 新增强项不破坏平台无关与 Python 3.7-3.14 兼容性约束
 
 ---
@@ -1164,7 +1164,7 @@ Checklist：
 3. 在 `Makefile` 中新增 `templates_package`，把每个模板子目录打成 zip
 4. 在 `pyfcstm/template/` 中存放这些 zip、`index.json` 和释放模块
 5. `pyfcstm/template/__init__.py` 只负责列举模板、读取元信息、释放模板到指定目录
-6. CLI 新增 `--template python_hardcoded`，内部先释放模板，再复用现有渲染器
+6. CLI 新增 `--template python_native`，内部先释放模板，再复用现有渲染器
 7. 先补 Python 语句块 renderer，再写模板
 8. 生成固定文件名的小包输出，核心逻辑集中在 `machine.py`
 9. `machine.py` 中生成一个公开状态机类，内置：
@@ -1220,4 +1220,4 @@ Checklist：
 ## 17. 一句话结论
 
 这件事完全可做，而且和 `pyfcstm` 现有模板系统并不冲突。  
-真正的关键不在“能不能生成 Python 文件”，而在于先把**根目录 `templates/` 的源码组织、`pyfcstm/template/` 的 zip 发布链路、statement renderer、以及内置运行时语义边界**这四件事设计清楚。按“源码目录维护，Makefile 打包，包内模块释放，CLI 再复用现有 renderer”这条路走，`python_hardcoded` 作为官方自带模板落地会更稳。
+真正的关键不在“能不能生成 Python 文件”，而在于先把**根目录 `templates/` 的源码组织、`pyfcstm/template/` 的 zip 发布链路、statement renderer、以及内置运行时语义边界**这四件事设计清楚。按“源码目录维护，Makefile 打包，包内模块释放，CLI 再复用现有 renderer”这条路走，`python_native` 作为官方自带模板落地会更稳。

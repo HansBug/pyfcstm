@@ -111,6 +111,20 @@ _ABSTRACT_HOOKS = {
 {% endfor -%}
 {% endfor %}
 }
+_EVENT_PATHS = (
+{% for state in model.walk_states() -%}
+{% for event in state.events.values() -%}
+    {{ event.path_name | tojson }},
+{% endfor -%}
+{% endfor %}
+)
+_EVENT_PATH_SET = set(_EVENT_PATHS)
+
+
+class SimulationRuntimeDfsError(RuntimeError):
+    """Raised when speculative validation exceeds the generated runtime safety limit."""
+
+    pass
 
 
 def abstract_handler(action_path):
@@ -201,6 +215,8 @@ class {{ model.root_state.name | to_identifier }}Machine:
 {% endfor %}
     )
     ABSTRACT_HOOKS = _ABSTRACT_HOOKS
+    EVENT_PATHS = _EVENT_PATHS
+    _EVENT_PATH_SET = _EVENT_PATH_SET
     _ROOT_STATE_PATH = {{ state_key(model.root_state) | tojson }}
     _STATE_INFO = {
 {% for state in model.walk_states() %}
@@ -585,6 +601,85 @@ class {{ model.root_state.name | to_identifier }}Machine:
                 stack.append({'state': state_path, 'mode': 'active'})
         return stack
 
+    @staticmethod
+    def _clone_stack(stack):
+        return [dict(frame) for frame in stack]
+
+    @staticmethod
+    def _create_execution_signature(stack, vars_):
+        return (
+            tuple((frame['state'], frame['mode']) for frame in stack),
+            tuple((key, vars_[key]) for key in sorted(vars_)),
+        )
+
+    @staticmethod
+    def _create_structural_signature(stack):
+        return tuple((frame['state'], frame['mode']) for frame in stack)
+
+    def _create_root_rollback_stack(self):
+        return [{'state': self._ROOT_STATE_PATH, 'mode': 'init_wait'}]
+
+    def _is_stoppable_state(self, state_path):
+        state_info = self._STATE_INFO[state_path]
+        return state_info['is_leaf'] and not state_info['is_pseudo']
+
+    def _parse_event(self, event):
+        if hasattr(event, 'path_name'):
+            event = event.path_name
+        elif not isinstance(event, str):
+            event = str(event)
+
+        if not event:
+            raise ValueError('Event reference cannot be empty')
+
+        if not self._stack:
+            if event in self._EVENT_PATH_SET:
+                return event
+            raise LookupError('Cannot resolve event %r after runtime end.' % (event,))
+
+        current_path = self._stack[-1]['state']
+        current_items = list(self._STATE_INFO[current_path]['path'])
+
+        if event.startswith('/'):
+            relative_path = event[1:]
+            if not relative_path:
+                raise ValueError("Absolute event reference cannot be just '/'.")
+            candidate = self._ROOT_STATE_PATH + '.' + relative_path
+            if candidate in self._EVENT_PATH_SET:
+                return candidate
+            raise LookupError('Cannot resolve absolute event path %r.' % (event,))
+
+        if event.startswith('.'):
+            dot_count = 0
+            for char in event:
+                if char == '.':
+                    dot_count += 1
+                else:
+                    break
+            remaining_path = event[dot_count:]
+            if not remaining_path:
+                raise ValueError(
+                    'Parent-relative event reference cannot end with dots: %r' % (event,)
+                )
+            if dot_count > len(current_items) - 1:
+                raise ValueError(
+                    'Parent-relative event reference %r goes beyond root state.' % (event,)
+                )
+            base_items = current_items[:-dot_count]
+            candidate = '.'.join(tuple(base_items + remaining_path.split('.')))
+            if candidate in self._EVENT_PATH_SET:
+                return candidate
+            raise LookupError('Cannot resolve parent-relative event path %r.' % (event,))
+
+        if event in self._EVENT_PATH_SET:
+            return event
+
+        candidate = current_path + '.' + event
+        if candidate in self._EVENT_PATH_SET:
+            return candidate
+
+        raise LookupError('Cannot resolve event path %r.' % (event,))
+
     def _normalize_events(self, events):
         if events is None:
             return set()
@@ -592,12 +687,7 @@ class {{ model.root_state.name | to_identifier }}Machine:
             events = [events]
         normalized = set()
         for item in events:
-            if isinstance(item, str):
-                normalized.add(item)
-            elif hasattr(item, 'path_name'):
-                normalized.add(item.path_name)
-            else:
-                normalized.add(str(item))
+            normalized.add(self._parse_event(item))
         return normalized
 
     def _iter_path_to_state(self, state_path):
@@ -608,114 +698,307 @@ class {{ model.root_state.name | to_identifier }}Machine:
             current_path = self._STATE_INFO[current_path]['parent']
         return result
 
-    def _execute_actions(self, actions):
+    def _execute_actions(self, actions, vars_, is_validation_mode=False):
         for action in actions:
             if action['kind'] == 'concrete':
-                getattr(self, action['method'])()
+                getattr(self, action['method'])(vars_)
             else:
-                self._execute_abstract_action(action)
+                self._execute_abstract_action(action, vars_, is_validation_mode=is_validation_mode)
 
-    def _execute_abstract_action(self, action):
+    def _execute_abstract_action(self, action, vars_, is_validation_mode=False):
+        if is_validation_mode:
+            return
         ctx = ReadOnlyExecutionContext(
             state_path=action['owner_state_path'],
-            vars=dict(self._vars),
+            vars=dict(vars_),
             action_name=action['action_name'],
             action_stage=action['action_stage'],
         )
-        hook_name = action.get('hook_method')
-        if hook_name:
-            getattr(self, hook_name)(ctx)
-        handlers = self._abstract_handlers.get(action['action_name'], [])
-        for handler in handlers:
-            handler(ctx)
+        old_vars = self._vars
+        old_variables = self.variables
+        self._vars = vars_
+        self.variables = self._vars
+        try:
+            hook_name = action.get('hook_method')
+            if hook_name:
+                getattr(self, hook_name)(ctx)
+            handlers = self._abstract_handlers.get(action['action_name'], [])
+            for handler in handlers:
+                handler(ctx)
+        finally:
+            self._vars = old_vars
+            self.variables = old_variables
 
-    def _run_leaf_during(self, state_path):
+    def _run_leaf_during(self, state_path, vars_, is_validation_mode=False):
         state_info = self._STATE_INFO[state_path]
         if not state_info['is_pseudo']:
             for item_path in self._iter_path_to_state(state_path):
-                self._execute_actions(self._STATE_INFO[item_path]['aspect_before_actions'])
-        self._execute_actions(state_info['during_actions'])
+                self._execute_actions(
+                    self._STATE_INFO[item_path]['aspect_before_actions'],
+                    vars_,
+                    is_validation_mode=is_validation_mode,
+                )
+        self._execute_actions(
+            state_info['during_actions'],
+            vars_,
+            is_validation_mode=is_validation_mode,
+        )
         if not state_info['is_pseudo']:
             for item_path in reversed(self._iter_path_to_state(state_path)):
-                self._execute_actions(self._STATE_INFO[item_path]['aspect_after_actions'])
+                self._execute_actions(
+                    self._STATE_INFO[item_path]['aspect_after_actions'],
+                    vars_,
+                    is_validation_mode=is_validation_mode,
+                )
 
     def _transition_matches_event(self, transition, event_names):
         if transition['event_path'] is None:
             return True
-        return (
-            transition['event_path'] in event_names or
-            transition['event_name'] in event_names
-        )
+        return transition['event_path'] in event_names
 
-    def _transition_matches_guard(self, transition):
+    def _transition_matches_guard(self, transition, vars_):
         if transition['guard'] is None:
             return True
-        return bool(getattr(self, transition['guard'])())
+        return bool(getattr(self, transition['guard'])(vars_))
 
-    def _transition_is_enabled(self, transition, event_names):
-        return self._transition_matches_event(transition, event_names) and self._transition_matches_guard(transition)
+    def _transition_is_enabled(self, transition, event_names, vars_):
+        return self._transition_matches_event(transition, event_names) and self._transition_matches_guard(
+            transition, vars_
+        )
 
-    def _select_transition(self, state_path, event_names):
-        for transition_id in self._STATE_INFO[state_path]['transition_ids']:
+    def _execute_transition_effect(self, transition, vars_, is_validation_mode=False):
+        if transition['effect'] is not None:
+            getattr(self, transition['effect'])(vars_)
+
+    def _select_transition(self, stack, vars_, event_names, validate_stoppable=True):
+        if not stack:
+            return None
+        state_path = stack[-1]['state']
+        state_info = self._STATE_INFO[state_path]
+        for transition_id in state_info['transition_ids']:
             transition = self._TRANSITIONS[transition_id]
-            if self._transition_is_enabled(transition, event_names):
-                return transition_id
+            if not self._transition_is_enabled(transition, event_names, vars_):
+                continue
+            if validate_stoppable and self._is_stoppable_state(state_path):
+                if not self._validate_transition(stack, vars_, transition_id, event_names):
+                    continue
+            return transition_id
         return None
 
-    def _enter_state(self, state_path, event_names):
+    def _enter_state(self, stack, state_path, vars_, event_names, is_validation_mode=False):
         state_info = self._STATE_INFO[state_path]
-        self._stack.append({'state': state_path, 'mode': 'active'})
-        self._execute_actions(state_info['enter_actions'])
+        stack.append({'state': state_path, 'mode': 'active'})
+        self._execute_actions(state_info['enter_actions'], vars_, is_validation_mode=is_validation_mode)
 
         if state_info['is_leaf']:
-            self._run_leaf_during(state_path)
-            self._stack[-1]['mode'] = 'after_entry'
+            self._run_leaf_during(state_path, vars_, is_validation_mode=is_validation_mode)
+            stack[-1]['mode'] = 'after_entry'
         else:
-            self._execute_actions(state_info['during_before_actions'])
-            self._stack[-1]['mode'] = 'init_wait'
-            self._attempt_init_transition(event_names)
+            self._execute_actions(
+                state_info['during_before_actions'],
+                vars_,
+                is_validation_mode=is_validation_mode,
+            )
+            stack[-1]['mode'] = 'init_wait'
+            self._attempt_init_transition(stack, vars_, event_names, is_validation_mode=is_validation_mode)
 
-    def _attempt_init_transition(self, event_names):
-        if not self._stack:
+    def _attempt_init_transition(self, stack, vars_, event_names, is_validation_mode=False):
+        if not stack:
             return False
-        current_path = self._stack[-1]['state']
+        current_path = stack[-1]['state']
         for transition_id in self._STATE_INFO[current_path]['initial_transition_ids']:
             transition = self._TRANSITIONS[transition_id]
-            if self._transition_is_enabled(transition, event_names):
-                if transition['effect'] is not None:
-                    getattr(self, transition['effect'])()
-                self._enter_state(transition['target'], event_names)
+            if self._transition_is_enabled(transition, event_names, vars_):
+                self._execute_transition_effect(transition, vars_, is_validation_mode=is_validation_mode)
+                self._enter_state(
+                    stack,
+                    transition['target'],
+                    vars_,
+                    event_names,
+                    is_validation_mode=is_validation_mode,
+                )
                 return True
         return False
 
-    def _finalize_exit_to_parent(self):
-        if not self._stack:
-            self._ended = True
+    def _finalize_exit_to_parent(self, stack, vars_, is_validation_mode=False):
+        if not stack:
             return True
 
-        parent_path = self._stack[-1]['state']
+        parent_path = stack[-1]['state']
         if parent_path == self._ROOT_STATE_PATH:
-            self._stack = []
-            self._ended = True
+            stack[:] = []
             return True
 
-        self._execute_actions(self._STATE_INFO[parent_path]['during_after_actions'])
-        self._stack[-1]['mode'] = 'post_child_exit'
+        self._execute_actions(
+            self._STATE_INFO[parent_path]['during_after_actions'],
+            vars_,
+            is_validation_mode=is_validation_mode,
+        )
+        stack[-1]['mode'] = 'post_child_exit'
         return False
 
-    def _execute_transition(self, transition_id, event_names):
+    def _execute_transition_on_context(
+        self, stack, vars_, transition_id, event_names, is_validation_mode=False
+    ):
         transition = self._TRANSITIONS[transition_id]
-        current_path = self._stack[-1]['state']
-        self._execute_actions(self._STATE_INFO[current_path]['exit_actions'])
-        if transition['effect'] is not None:
-            getattr(self, transition['effect'])()
-        self._stack.pop()
+        current_path = stack[-1]['state']
+        self._execute_actions(
+            self._STATE_INFO[current_path]['exit_actions'],
+            vars_,
+            is_validation_mode=is_validation_mode,
+        )
+        self._execute_transition_effect(transition, vars_, is_validation_mode=is_validation_mode)
+        stack.pop()
 
         if transition['to_exit']:
-            return self._finalize_exit_to_parent()
+            return self._finalize_exit_to_parent(stack, vars_, is_validation_mode=is_validation_mode)
 
-        self._enter_state(transition['target'], event_names)
+        self._enter_state(
+            stack,
+            transition['target'],
+            vars_,
+            event_names,
+            is_validation_mode=is_validation_mode,
+        )
         return False
+
+    def _validate_transition(self, stack, vars_, transition_id, event_names):
+        sim_stack = self._clone_stack(stack)
+        sim_vars = dict(vars_)
+        ended = self._execute_transition_on_context(
+            sim_stack,
+            sim_vars,
+            transition_id,
+            event_names,
+            is_validation_mode=True,
+        )
+        if ended:
+            return True
+        success, _ = self._run_cycle_on_context(
+            sim_stack,
+            sim_vars,
+            event_names,
+            ended=ended,
+            validate_post_child_exit=False,
+            is_validation_mode=True,
+        )
+        return success
+
+    def _initialize_context(self, stack, vars_, event_names, is_validation_mode=False):
+        stack[:] = []
+        self._enter_state(
+            stack,
+            self._ROOT_STATE_PATH,
+            vars_,
+            event_names,
+            is_validation_mode=is_validation_mode,
+        )
+        return len(stack) == 0
+
+    def _run_cycle_on_context(
+        self,
+        stack,
+        vars_,
+        event_names,
+        ended=False,
+        validate_post_child_exit=True,
+        is_validation_mode=False,
+    ):
+        if ended:
+            return True, True
+
+        steps_taken = 0
+        max_steps = 1000
+        seen_signatures = set()
+        max_structural_depth = 64
+
+        while not ended:
+            if not stack:
+                ended = True
+                break
+
+            signature = self._create_execution_signature(stack, vars_)
+            if signature in seen_signatures:
+                return False, False
+            seen_signatures.add(signature)
+
+            if len(self._create_structural_signature(stack)) > max_structural_depth:
+                raise SimulationRuntimeDfsError(
+                    'Speculative DFS exceeded the structural stack-depth safety limit '
+                    '(%s) without reaching a stoppable state or pruning.'
+                    % (max_structural_depth,)
+                )
+
+            if steps_taken >= max_steps:
+                return False, False
+
+            frame = stack[-1]
+            state_path = frame['state']
+            state_info = self._STATE_INFO[state_path]
+
+            if state_info['is_leaf']:
+                if frame['mode'] == 'after_entry':
+                    frame['mode'] = 'active'
+                    if self._is_stoppable_state(state_path):
+                        return True, False
+                    steps_taken += 1
+                    continue
+
+                transition_id = self._select_transition(stack, vars_, event_names)
+                if transition_id is not None:
+                    ended = self._execute_transition_on_context(
+                        stack,
+                        vars_,
+                        transition_id,
+                        event_names,
+                        is_validation_mode=is_validation_mode,
+                    )
+                    steps_taken += 1
+                    if ended:
+                        return True, True
+                    continue
+
+                self._run_leaf_during(state_path, vars_, is_validation_mode=is_validation_mode)
+                frame['mode'] = 'after_entry'
+                steps_taken += 1
+                continue
+
+            if frame['mode'] == 'init_wait':
+                progressed = self._attempt_init_transition(
+                    stack,
+                    vars_,
+                    event_names,
+                    is_validation_mode=is_validation_mode,
+                )
+                steps_taken += 1
+                if not progressed:
+                    return False, False
+                continue
+
+            if frame['mode'] == 'post_child_exit':
+                transition_id = self._select_transition(
+                    stack,
+                    vars_,
+                    event_names,
+                    validate_stoppable=validate_post_child_exit,
+                )
+                if transition_id is None:
+                    return False, False
+                ended = self._execute_transition_on_context(
+                    stack,
+                    vars_,
+                    transition_id,
+                    event_names,
+                    is_validation_mode=is_validation_mode,
+                )
+                steps_taken += 1
+                if ended:
+                    return True, True
+                continue
+
+            return False, False
+
+        return True, True
 
     def cycle(self, events=None):
         """
@@ -726,62 +1009,51 @@ class {{ model.root_state.name | to_identifier }}Machine:
         :return: Current leaf state path after the cycle, or ``None`` if ended.
         :rtype: Optional[Tuple[str, ...]]
         """
-        event_names = self._normalize_events(events)
         if self._ended:
             return None
+        event_names = self._normalize_events(events)
 
-        if not self._entered_root:
-            root_info = self._STATE_INFO[self._ROOT_STATE_PATH]
-            self._execute_actions(root_info['enter_actions'])
-            if root_info['is_leaf']:
-                self._run_leaf_during(self._ROOT_STATE_PATH)
-                self._stack[-1]['mode'] = 'after_entry'
-            self._entered_root = True
+        snapshot_stack = self._clone_stack(self._stack)
+        snapshot_vars = dict(self._vars)
+        snapshot_entered_root = self._entered_root
+        snapshot_ended = self._ended
 
-        while not self._ended:
-            if not self._stack:
-                self._ended = True
-                return None
+        sim_stack = self._clone_stack(self._stack)
+        sim_vars = dict(self._vars)
+        sim_entered_root = self._entered_root
+        sim_ended = self._ended
 
-            frame = self._stack[-1]
-            state_path = frame['state']
-            state_info = self._STATE_INFO[state_path]
+        if not sim_entered_root:
+            sim_ended = self._initialize_context(sim_stack, sim_vars, event_names)
+            sim_entered_root = True
 
-            if state_info['is_leaf']:
-                if frame['mode'] == 'after_entry':
-                    frame['mode'] = 'active'
-                    if not state_info['is_pseudo']:
-                        return self.current_state_path
-                    continue
+        success, sim_ended = self._run_cycle_on_context(
+            sim_stack,
+            sim_vars,
+            event_names,
+            ended=sim_ended,
+        )
 
-                transition_id = self._select_transition(state_path, event_names)
-                if transition_id is not None:
-                    if self._execute_transition(transition_id, event_names):
-                        return None
-                    continue
+        if success:
+            self._stack = [] if sim_ended else sim_stack
+            self._vars = sim_vars
+            self.variables = self._vars
+            self._entered_root = sim_entered_root
+            self._ended = sim_ended
+        else:
+            self._vars = snapshot_vars
+            self.variables = self._vars
+            self._ended = snapshot_ended
+            if not snapshot_entered_root and not snapshot_ended:
+                self._stack = self._create_root_rollback_stack()
+                self._entered_root = True
+            else:
+                self._stack = snapshot_stack
+                self._entered_root = snapshot_entered_root
 
-                self._run_leaf_during(state_path)
-                frame['mode'] = 'after_entry'
-                continue
-
-            if frame['mode'] == 'init_wait':
-                if not self._attempt_init_transition(event_names):
-                    raise RuntimeError(
-                        'Composite state %r has no enabled initial transition.' % state_path
-                    )
-                continue
-
-            if frame['mode'] == 'post_child_exit':
-                transition_id = self._select_transition(state_path, event_names)
-                if transition_id is None:
-                    raise RuntimeError(
-                        'No enabled transition available after child exit at %r.' % state_path
-                    )
-                if self._execute_transition(transition_id, event_names):
-                    return None
-                continue
-
-            raise RuntimeError('Unknown frame mode %r for state %r.' % (frame['mode'], state_path))
+        if self._ended or not self._stack:
+            self._ended = True
+            self._stack = []
 
         return None
 
@@ -821,7 +1093,7 @@ class {{ model.root_state.name | to_identifier }}Machine:
 
 {% endif %}
 {% if not resolved.item.is_abstract %}
-    def {{ action_method_name(state, 'enter', id_) }}(self):
+    def {{ action_method_name(state, 'enter', id_) }}(self, vars_=None):
         """
         Execute the concrete DSL action block for ``{{ resolved.item.parent.path | join('.') }}``.
 
@@ -831,7 +1103,7 @@ class {{ model.root_state.name | to_identifier }}Machine:
 
 {{ (resolved.item.to_ast_node() | string) | indent(12, true) }}
         """
-        scope = self._vars
+        scope = vars_ if vars_ is not None else self._vars
 {% if resolved.item.operations %}
 {{ resolved.item.operations | stmts_render(style='python', indent='    ', level=2) }}
 {% else %}
@@ -874,7 +1146,7 @@ class {{ model.root_state.name | to_identifier }}Machine:
 
 {% endif %}
 {% if not resolved.item.is_abstract %}
-    def {{ action_method_name(state, 'during', id_) }}(self):
+    def {{ action_method_name(state, 'during', id_) }}(self, vars_=None):
         """
         Execute the concrete DSL action block for ``{{ resolved.item.parent.path | join('.') }}``.
 
@@ -884,7 +1156,7 @@ class {{ model.root_state.name | to_identifier }}Machine:
 
 {{ (resolved.item.to_ast_node() | string) | indent(12, true) }}
         """
-        scope = self._vars
+        scope = vars_ if vars_ is not None else self._vars
 {% if resolved.item.operations %}
 {{ resolved.item.operations | stmts_render(style='python', indent='    ', level=2) }}
 {% else %}
@@ -927,7 +1199,7 @@ class {{ model.root_state.name | to_identifier }}Machine:
 
 {% endif %}
 {% if not resolved.item.is_abstract %}
-    def {{ action_method_name(state, 'exit', id_) }}(self):
+    def {{ action_method_name(state, 'exit', id_) }}(self, vars_=None):
         """
         Execute the concrete DSL action block for ``{{ resolved.item.parent.path | join('.') }}``.
 
@@ -937,7 +1209,7 @@ class {{ model.root_state.name | to_identifier }}Machine:
 
 {{ (resolved.item.to_ast_node() | string) | indent(12, true) }}
         """
-        scope = self._vars
+        scope = vars_ if vars_ is not None else self._vars
 {% if resolved.item.operations %}
 {{ resolved.item.operations | stmts_render(style='python', indent='    ', level=2) }}
 {% else %}
@@ -981,7 +1253,7 @@ class {{ model.root_state.name | to_identifier }}Machine:
 
 {% endif %}
 {% if not resolved.item.is_abstract %}
-    def {{ action_method_name(state, 'during_before', id_) }}(self):
+    def {{ action_method_name(state, 'during_before', id_) }}(self, vars_=None):
         """
         Execute the concrete DSL action block for ``{{ resolved.item.parent.path | join('.') }}``.
 
@@ -992,7 +1264,7 @@ class {{ model.root_state.name | to_identifier }}Machine:
 
 {{ (resolved.item.to_ast_node() | string) | indent(12, true) }}
         """
-        scope = self._vars
+        scope = vars_ if vars_ is not None else self._vars
 {% if resolved.item.operations %}
 {{ resolved.item.operations | stmts_render(style='python', indent='    ', level=2) }}
 {% else %}
@@ -1036,7 +1308,7 @@ class {{ model.root_state.name | to_identifier }}Machine:
 
 {% endif %}
 {% if not resolved.item.is_abstract %}
-    def {{ action_method_name(state, 'during_after', id_) }}(self):
+    def {{ action_method_name(state, 'during_after', id_) }}(self, vars_=None):
         """
         Execute the concrete DSL action block for ``{{ resolved.item.parent.path | join('.') }}``.
 
@@ -1047,7 +1319,7 @@ class {{ model.root_state.name | to_identifier }}Machine:
 
 {{ (resolved.item.to_ast_node() | string) | indent(12, true) }}
         """
-        scope = self._vars
+        scope = vars_ if vars_ is not None else self._vars
 {% if resolved.item.operations %}
 {{ resolved.item.operations | stmts_render(style='python', indent='    ', level=2) }}
 {% else %}
@@ -1091,7 +1363,7 @@ class {{ model.root_state.name | to_identifier }}Machine:
 
 {% endif %}
 {% if not resolved.item.is_abstract %}
-    def {{ action_method_name(state, 'aspect_before', id_) }}(self):
+    def {{ action_method_name(state, 'aspect_before', id_) }}(self, vars_=None):
         """
         Execute the concrete DSL action block for ``{{ resolved.item.parent.path | join('.') }}``.
 
@@ -1102,7 +1374,7 @@ class {{ model.root_state.name | to_identifier }}Machine:
 
 {{ (resolved.item.to_ast_node() | string) | indent(12, true) }}
         """
-        scope = self._vars
+        scope = vars_ if vars_ is not None else self._vars
 {% if resolved.item.operations %}
 {{ resolved.item.operations | stmts_render(style='python', indent='    ', level=2) }}
 {% else %}
@@ -1146,7 +1418,7 @@ class {{ model.root_state.name | to_identifier }}Machine:
 
 {% endif %}
 {% if not resolved.item.is_abstract %}
-    def {{ action_method_name(state, 'aspect_after', id_) }}(self):
+    def {{ action_method_name(state, 'aspect_after', id_) }}(self, vars_=None):
         """
         Execute the concrete DSL action block for ``{{ resolved.item.parent.path | join('.') }}``.
 
@@ -1157,7 +1429,7 @@ class {{ model.root_state.name | to_identifier }}Machine:
 
 {{ (resolved.item.to_ast_node() | string) | indent(12, true) }}
         """
-        scope = self._vars
+        scope = vars_ if vars_ is not None else self._vars
 {% if resolved.item.operations %}
 {{ resolved.item.operations | stmts_render(style='python', indent='    ', level=2) }}
 {% else %}
@@ -1168,7 +1440,7 @@ class {{ model.root_state.name | to_identifier }}Machine:
 {% endfor %}
 {% for transition in state.init_transitions %}
 {% if transition.guard is not none %}
-    def {{ init_guard_method_name(state, loop.index) }}(self):
+    def {{ init_guard_method_name(state, loop.index) }}(self, vars_=None):
         """
         Evaluate the initial-transition guard for state ``{{ state.path | join('.') }}``.
 
@@ -1176,11 +1448,12 @@ class {{ model.root_state.name | to_identifier }}Machine:
 
 {{ (transition.to_ast_node() | string) | indent(12, true) }}
         """
-        return bool({{ transition.guard.to_ast_node() | expr_render(style='python_native_expr') }})
+        scope = vars_ if vars_ is not None else self._vars
+        return bool({{ transition.guard.to_ast_node() | expr_render(style='python_native_scope_expr') }})
 
 {% endif %}
 {% if transition.effects %}
-    def {{ init_effect_method_name(state, loop.index) }}(self):
+    def {{ init_effect_method_name(state, loop.index) }}(self, vars_=None):
         """
         Execute the initial-transition effect for state ``{{ state.path | join('.') }}``.
 
@@ -1188,14 +1461,14 @@ class {{ model.root_state.name | to_identifier }}Machine:
 
 {{ (transition.to_ast_node() | string) | indent(12, true) }}
         """
-        scope = self._vars
+        scope = vars_ if vars_ is not None else self._vars
 {{ transition.effects | stmts_render(style='python', indent='    ', level=2) }}
 
 {% endif %}
 {% endfor %}
 {% for transition in state.transitions_from %}
 {% if transition.guard is not none %}
-    def {{ transition_guard_method_name(state, loop.index) }}(self):
+    def {{ transition_guard_method_name(state, loop.index) }}(self, vars_=None):
         """
         Evaluate the transition guard from state ``{{ state.path | join('.') }}``.
 
@@ -1203,11 +1476,12 @@ class {{ model.root_state.name | to_identifier }}Machine:
 
 {{ (transition.to_ast_node() | string) | indent(12, true) }}
         """
-        return bool({{ transition.guard.to_ast_node() | expr_render(style='python_native_expr') }})
+        scope = vars_ if vars_ is not None else self._vars
+        return bool({{ transition.guard.to_ast_node() | expr_render(style='python_native_scope_expr') }})
 
 {% endif %}
 {% if transition.effects %}
-    def {{ transition_effect_method_name(state, loop.index) }}(self):
+    def {{ transition_effect_method_name(state, loop.index) }}(self, vars_=None):
         """
         Execute the transition effect from state ``{{ state.path | join('.') }}``.
 
@@ -1215,7 +1489,7 @@ class {{ model.root_state.name | to_identifier }}Machine:
 
 {{ (transition.to_ast_node() | string) | indent(12, true) }}
         """
-        scope = self._vars
+        scope = vars_ if vars_ is not None else self._vars
 {{ transition.effects | stmts_render(style='python', indent='    ', level=2) }}
 
 {% endif %}

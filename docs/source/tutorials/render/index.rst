@@ -116,6 +116,31 @@ Minimal examples:
    {{ state.path | join('_') }}
    {%- endmacro %}
 
+Beyond that minimum, template authors usually need a few more Jinja features in
+real template work:
+
+- comments: ``{# ... #}``
+- template reuse: ``{% import ... %}``, ``{% from ... import ... %}``
+- whitespace control: ``{%-`` and ``-%}``
+- filter chains: ``{{ value | filter_a | filter_b }}``
+- tests such as ``{% if value is defined %}``
+
+Those features show up constantly in templates. For example:
+
+.. code-block:: jinja
+
+   {# avoid an extra trailing blank line #}
+   {% for state in model.walk_states() -%}
+   - {{ state.path | join('.') }}
+   {% endfor %}
+
+   {% if state.doc is defined %}
+   # {{ state.doc }}
+   {% endif %}
+
+   {% from 'macros.j2' import render_state_block %}
+   {{ render_state_block(model.root_state) }}
+
 Two practical rules are worth calling out:
 
 1. Keep reusable naming and formatting logic in helpers instead of copying the
@@ -247,6 +272,118 @@ What it is not for:
 If you need executable statement output, use ``stmt_render`` or
 ``stmts_render`` instead.
 
+How ``expr_render`` Resolves Template Keys
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+This is the part template authors usually need spelled out. When you override
+``expr_styles`` in ``config.yaml``, you are not replacing "a whole language".
+You are overriding template entries for specific expression-node shapes.
+
+The matching rule is:
+
+1. try the most specific key first
+2. if it does not exist, fall back to the generic key for that node family
+3. if that still does not exist, fall back to ``default``
+
+The key patterns that matter most are:
+
+.. list-table::
+   :header-rows: 1
+
+   * - Key form
+     - Matches
+     - Example
+     - Typical use
+   * - ``Float``
+     - float literals
+     - ``3.14``
+     - change float formatting
+   * - ``Integer``
+     - decimal integer literals
+     - ``42``
+     - change integer formatting
+   * - ``Boolean``
+     - boolean literals
+     - target-language ``true`` / ``false`` spellings
+     - map boolean literals
+   * - ``Constant``
+     - DSL constant nodes
+     - ``pi``, ``e``, ``tau``
+     - map constants to ``Math.PI``, ``math.Pi``, and so on
+   * - ``HexInt``
+     - hexadecimal integers
+     - ``0xFF``
+     - preserve hex output
+   * - ``Paren``
+     - parenthesized expressions
+     - ``(a + b)``
+     - control parenthesis preservation
+   * - ``Name``
+     - variable names
+     - ``counter``
+     - scope remapping such as ``scope['counter']``
+   * - ``UFunc``
+     - any unary function call
+     - ``sin(x)``
+     - define generic function-call rendering
+   * - ``UFunc(sin)``
+     - one specific unary function
+     - ``sin(x)``
+     - special-case one function
+   * - ``UnaryOp``
+     - any unary operator
+     - ``-x``
+     - define generic unary rendering
+   * - ``UnaryOp(!)``
+     - one specific unary operator
+     - ``!flag``
+     - map ``!`` to ``not``, for example
+   * - ``BinaryOp``
+     - any binary operator
+     - ``a + b``
+     - define generic binary rendering
+   * - ``BinaryOp(**)``
+     - one specific binary operator
+     - ``a ** b``
+     - map exponentiation to ``pow(...)``
+   * - ``ConditionalOp``
+     - ternary conditional expressions
+     - ``cond ? a : b``
+     - map to the target-language ternary form
+   * - ``default``
+     - final fallback
+     - when no more specific key exists
+     - last-resort rendering
+
+The important precedence points are:
+
+- ``UFunc(sin)`` wins over ``UFunc``
+- ``UnaryOp(!)`` wins over ``UnaryOp``
+- ``BinaryOp(**)`` wins over ``BinaryOp``
+- node families such as ``Name``, ``Float``, and ``Integer`` match directly by
+  their node type name
+
+That is why a Python-style override such as:
+
+.. code-block:: yaml
+
+   expr_styles:
+     default:
+       base_lang: python
+       UnaryOp(!): 'not {{ node.expr | expr_render }}'
+       BinaryOp(&&): '{{ node.expr1 | expr_render }} and {{ node.expr2 | expr_render }}'
+       BinaryOp(||): '{{ node.expr1 | expr_render }} or {{ node.expr2 | expr_render }}'
+
+does not replace the whole Python expression system. It only says:
+
+- override ``!``
+- override ``&&``
+- override ``||``
+- keep using the inherited Python templates for everything else
+
+That is the core advantage of the style system: most template authors should
+override a few keys, not copy an entire expression-style dictionary.
+
 How style inheritance works:
 
 - each custom style starts from ``base_lang``
@@ -274,6 +411,61 @@ One more practical detail matters in real templates:
   style from ``config.yaml``
 - if you define ``default`` as a thin wrapper over ``python``, most template
   sites no longer need to spell out ``style='python'`` repeatedly
+
+How To Override Those Keys
+^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The most common override cases are these.
+
+1. Override only name mapping:
+
+.. code-block:: yaml
+
+   expr_styles:
+     default:
+       base_lang: python
+       Name: "scope[{{ node.name | tojson }}]"
+
+Effect:
+
+- ``counter + 1`` becomes ``scope["counter"] + 1``
+- everything else still uses the inherited Python style
+
+2. Override only one operator:
+
+.. code-block:: yaml
+
+   expr_styles:
+     default:
+       base_lang: c
+       BinaryOp(**): 'pow({{ node.expr1 | expr_render }}, {{ node.expr2 | expr_render }})'
+
+Effect:
+
+- ``a ** b`` becomes ``pow(a, b)``
+- all other binary operators keep the inherited C behavior
+
+3. Override only one function:
+
+.. code-block:: yaml
+
+   expr_styles:
+     default:
+       base_lang: python
+       UFunc(sin): 'fast_sin({{ node.expr | expr_render }})'
+
+Effect:
+
+- ``sin(x)`` becomes ``fast_sin(x)``
+- ``cos(x)``, ``sqrt(x)``, and the rest still use the inherited Python style
+
+The anti-pattern to avoid is:
+
+- copying ``Float`` / ``Integer`` / ``BinaryOp`` / ``UFunc`` just to change one
+  ``Name``
+- repeating dozens of unrelated keys to customize one operator
+- pushing expression strategy into ad hoc Jinja snippets instead of keeping it
+  in styles
 
 A practical refactor looks like this.
 
@@ -636,6 +828,36 @@ Render it with:
 
 This is enough to verify the full renderer path before you attempt a large
 runtime template.
+
+To make that example more concrete, assume the input DSL is:
+
+.. code-block:: fcstm
+
+   def int counter = 0;
+
+   state TrafficLight {
+       [*] -> Red;
+
+       state Red;
+       state Green;
+   }
+
+Then the rendered ``out/summary.txt`` will look like:
+
+.. code-block:: text
+
+   Root state: TrafficLight
+
+   Variables:
+   - int counter
+
+   States:
+   - TrafficLight
+   - TrafficLight.Red
+   - TrafficLight.Green
+
+That kind of concrete output check is useful because it lets you see the
+generated shape immediately instead of reasoning only from template source.
 
 Testing Templates
 -----------------

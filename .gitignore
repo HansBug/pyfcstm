@@ -1224,8 +1224,10 @@ fabric.properties
 /venv*
 junit.xml
 /antlr-*.jar
-!/pyfcstm/template/*/*.yaml
-/pyfcstm/template
+!/pyfcstm/template/
+!/pyfcstm/template/*.py
+!/pyfcstm/template/*.json
+!/pyfcstm/template/*.zip
 *.cli_history
 
 # LLM configuration (contains API tokens)

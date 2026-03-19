@@ -1,0 +1,13 @@
+{
+  "templates": [
+    {
+      "archive": "python_native.zip",
+      "description": "Native Python built-in template scaffold.",
+      "experimental": true,
+      "language": "python",
+      "name": "python_native",
+      "root_dir": "python_native",
+      "title": "Python Native"
+    }
+  ]
+}

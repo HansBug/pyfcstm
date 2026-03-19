@@ -1,0 +1,29 @@
+"""
+Generated native Python state machine scaffold.
+
+This file is currently a Phase 1 built-in template scaffold. It exists to
+validate the built-in template packaging and extraction pipeline.
+"""
+
+
+class {{ model.root_state.name }}Machine:
+    """
+    Minimal generated machine scaffold for ``{{ model.root_state.name }}``.
+    """
+
+    def __init__(self):
+        self.root_state_name = {{ model.root_state.name | tojson }}
+        self.variables = {
+{% for def_item in model.defines.values() %}
+            {{ def_item.name | tojson }}: {{ def_item.init() | expr_render(style='python') }},
+{% endfor %}
+        }
+
+    def info(self):
+        """
+        Return minimal scaffold metadata.
+        """
+        return {
+            'root_state_name': self.root_state_name,
+            'variable_names': sorted(self.variables.keys()),
+        }

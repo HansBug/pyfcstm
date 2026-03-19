@@ -1,0 +1,3 @@
+ignores:
+  - 'README.md'
+  - 'template.json'

@@ -150,3 +150,67 @@ class TestEntryGenerate:
             )
             assert result.exitcode == 0
             dir_compare(expected_result_dir, td)
+
+    def test_generate_with_builtin_template(self, input_code_file):
+        with TemporaryDirectory() as td:
+            result = simulate_entry(
+                pyfcstmcli,
+                [
+                    "pyfcstm",
+                    "generate",
+                    "-i",
+                    input_code_file,
+                    "--template",
+                    "python_native",
+                    "-o",
+                    td,
+                ],
+            )
+            assert result.exitcode == 0
+            assert os.path.isfile(os.path.join(td, "machine.py"))
+            assert os.path.isfile(os.path.join(td, "__init__.py"))
+
+            with open(os.path.join(td, "machine.py"), "r") as f:
+                content = f.read()
+            assert "class TrafficLightMachine" in content
+
+    def test_generate_with_template_and_template_dir_should_fail(self, input_code_file):
+        template_dir = os.path.abspath(get_testfile("template_1"))
+        with TemporaryDirectory() as td:
+            result = simulate_entry(
+                pyfcstmcli,
+                [
+                    "pyfcstm",
+                    "generate",
+                    "-i",
+                    input_code_file,
+                    "--template",
+                    "python_native",
+                    "-t",
+                    template_dir,
+                    "-o",
+                    td,
+                ],
+            )
+            assert result.exitcode != 0
+            assert "Exactly one of --template-dir/-t or --template must be provided." in (
+                result.stderr or result.stdout
+            )
+
+    def test_generate_without_template_and_template_dir_should_fail(self, input_code_file):
+        with TemporaryDirectory() as td:
+            result = simulate_entry(
+                pyfcstmcli,
+                [
+                    "pyfcstm",
+                    "generate",
+                    "-i",
+                    input_code_file,
+                    "-o",
+                    td,
+                ],
+            )
+            assert result.exitcode != 0
+            assert "Exactly one of --template-dir/-t or --template must be provided." in (
+                result.stderr or result.stdout
+            )

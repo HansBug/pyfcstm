@@ -23,10 +23,12 @@ Example::
 from __future__ import annotations
 
 import pathlib
+from tempfile import TemporaryDirectory
 
 import click
 
 from .base import CONTEXT_SETTINGS
+from .. import template as builtin_template
 from ..dsl import parse_with_grammar_entry
 from ..model import parse_dsl_node_to_state_machine
 from ..render import StateMachineCodeRenderer
@@ -72,8 +74,15 @@ def _add_generate_subcommand(cli: click.Group) -> click.Group:
         "--template-dir",
         "template_dir",
         type=str,
-        required=True,
+        required=False,
         help="Template directory of the code generation.",
+    )
+    @click.option(
+        "--template",
+        "template_name",
+        type=str,
+        required=False,
+        help="Built-in template name of the code generation.",
     )
     @click.option(
         "-o",
@@ -94,6 +103,7 @@ def _add_generate_subcommand(cli: click.Group) -> click.Group:
     def generate(
         input_code_file: str,
         template_dir: str,
+        template_name: str,
         output_dir: str,
         clear_directory: bool,
     ) -> None:
@@ -109,6 +119,8 @@ def _add_generate_subcommand(cli: click.Group) -> click.Group:
         :type input_code_file: str
         :param template_dir: Path to the directory containing templates.
         :type template_dir: str
+        :param template_name: Built-in template name to extract before rendering.
+        :type template_name: str
         :param output_dir: Path to the directory where generated code will be written.
         :type output_dir: str
         :param clear_directory: Whether to clear the output directory before rendering.
@@ -126,16 +138,38 @@ def _add_generate_subcommand(cli: click.Group) -> click.Group:
         Example::
 
             $ pyfcstm generate -i ./machine.dsl -t ./templates -o ./out --clear
+            $ pyfcstm generate -i ./machine.dsl --template python_native -o ./out
         """
+        if bool(template_dir) == bool(template_name):
+            raise click.UsageError(
+                "Exactly one of --template-dir/-t or --template must be provided."
+            )
+
         code = auto_decode(pathlib.Path(input_code_file).read_bytes())
         ast_node = parse_with_grammar_entry(code, entry_name="state_machine_dsl")
         model = parse_dsl_node_to_state_machine(ast_node)
 
-        renderer = StateMachineCodeRenderer(template_dir=template_dir)
-        renderer.render(
-            model,
-            output_dir=output_dir,
-            clear_previous_directory=clear_directory,
-        )
+        if template_name:
+            with TemporaryDirectory() as td:
+                try:
+                    extracted_template_dir = builtin_template.extract_template(
+                        template_name,
+                        td,
+                    )
+                except LookupError as err:
+                    raise click.BadParameter(str(err), param_hint="--template") from err
+                renderer = StateMachineCodeRenderer(template_dir=extracted_template_dir)
+                renderer.render(
+                    model,
+                    output_dir=output_dir,
+                    clear_previous_directory=clear_directory,
+                )
+        else:
+            renderer = StateMachineCodeRenderer(template_dir=template_dir)
+            renderer.render(
+                model,
+                output_dir=output_dir,
+                clear_previous_directory=clear_directory,
+            )
 
     return cli

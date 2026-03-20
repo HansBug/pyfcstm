@@ -871,6 +871,68 @@ Then the rendered ``out/summary.txt`` will look like:
 That kind of concrete output check is useful because it lets you see the
 generated shape immediately instead of reasoning only from template source.
 
+Built-In Templates
+------------------
+
+The render system is general, but the repository also ships built-in templates
+that serve as real reference implementations.
+
+Current built-in templates:
+
+- ``python``
+  - status: current built-in template
+  - design position: reference implementation for template-system structure and
+    simulator-aligned runtime semantics
+- ``c``
+  - status: current built-in template
+  - design position: self-contained generated C runtime with a documented
+    public API and stronger focus on deployment/runtime integration
+
+For built-in templates, pyfcstm also emits generated usage guides into the
+output directory. In practice, users will find ``README.md`` and
+``README_zh.md`` alongside the generated artifacts, and those generated
+documents are the primary place to explain target-specific usage details.
+
+python - Reference Runtime Template For Simulator-Aligned Codegen
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The ``python`` template is the clearest reference implementation for how the
+template system comes together end to end.
+
+Its current design position is:
+
+- a reference implementation for built-in template layout
+- a single-file runtime template
+- generated README templates for end users
+- runtime behavior aligned with the simulator
+- protected-hook extension points for abstract actions
+
+If you want the most approachable reference for template structure, helper
+design, generated runtime shape, and simulator-aligned behavior, start from the
+``python`` template under ``templates/python/`` and the generated
+``README.md`` / ``README_zh.md`` it emits.
+
+c - Self-Contained Generated Runtime For Native Integration
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The ``c`` template is the native-runtime-oriented built-in option. It generates
+a self-contained runtime around ``machine.h`` and ``machine.c`` rather than a
+single-file Python runtime, but it still follows the same template-system
+model.
+
+Its current design position is:
+
+- a generated C runtime intended for direct embedding and integration
+- explicit public header/runtime API instead of Python import-based usage
+- generated ``README.md`` / ``README_zh.md`` as the primary user-facing
+  integration guide
+- runtime tests and alignment tests that validate generated behavior against
+  the simulator where applicable
+
+If you want the native-runtime example, go to ``templates/c/`` and treat the
+generated ``README.md`` / ``README_zh.md`` in output directories as the
+authoritative integration guide for end users.
+
 Test And Consolidate
 --------------------
 
@@ -969,31 +1031,6 @@ Inline logic in a ``.j2`` file only when:
 - it is local to that file
 - it is short
 - extracting it would make the template harder to read
-
-Case Study: The Built-In ``python`` Template
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-The built-in ``python`` template is a good example of how the template system
-comes together, but it is still just one instance.
-
-It demonstrates:
-
-- a single-file runtime template
-- generated README templates
-- helper-driven naming in ``config.yaml``
-- runtime behavior aligned with the simulator
-- protected-hook extension points for abstract actions
-
-Useful files to inspect:
-
-- ``templates/python/config.yaml``
-- ``templates/python/machine.py.j2``
-- ``templates/python/README.md.j2``
-- ``test/template/python/test_runtime.py``
-- ``test/template/python/test_runtime_alignment.py``
-
-If you want to build your own template, study the ``python`` template as an
-example of one solution, not as the definition of the entire template system.
 
 Summary
 ^^^^^^^

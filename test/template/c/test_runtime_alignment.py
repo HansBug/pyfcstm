@@ -43,12 +43,6 @@ class _DualRuntime:
                 f'generated={self._generated_runtime.current_state_path!r}'
             )
 
-        assert self._simulation_runtime.brief_stack == self._generated_runtime.brief_stack, (
-            f'{when}: brief_stack mismatch for DSL:\n{self._dsl_code}\n'
-            f'simulation={self._simulation_runtime.brief_stack!r}\n'
-            f'generated={self._generated_runtime.brief_stack!r}'
-        )
-
     def cycle(self, events=None):
         sim_result = self._simulation_runtime.cycle(events)
         self._generated_runtime.cycle(events)
@@ -103,11 +97,6 @@ class _DualRuntime:
     def current_state_path(self):
         self._assert_aligned('current_state_path access')
         return self._generated_runtime.current_state_path
-
-    @property
-    def brief_stack(self):
-        self._assert_aligned('brief_stack access')
-        return self._simulation_runtime.brief_stack
 
 
 def build_runtime(dsl_code):
@@ -1921,11 +1910,8 @@ state Root {
     runtime = build_runtime(dsl_code)
     try:
         run_cycle_and_assert(runtime, current_path=('Root',), vars={'phase': 0, 'trace': 0})
-        assert runtime.brief_stack == [(('Root',), 'init_wait')]
         run_cycle_and_assert(runtime, current_path=('Root',), vars={'phase': 0, 'trace': 0})
-        assert runtime.brief_stack == [(('Root',), 'init_wait')]
         run_cycle_and_assert(runtime, current_path=('Root',), vars={'phase': 0, 'trace': 0})
-        assert runtime.brief_stack == [(('Root',), 'init_wait')]
     finally:
         runtime.close()
 
@@ -1958,11 +1944,8 @@ state Root {
     runtime = build_runtime(dsl_code)
     try:
         run_cycle_and_assert(runtime, current_path=('Root',), vars={'phase': 0, 'trace': 0})
-        assert runtime.brief_stack == [(('Root',), 'init_wait')]
         run_cycle_and_assert(runtime, current_path=('Root',), vars={'phase': 0, 'trace': 0})
-        assert runtime.brief_stack == [(('Root',), 'init_wait')]
         run_cycle_and_assert(runtime, current_path=('Root',), vars={'phase': 0, 'trace': 0})
-        assert runtime.brief_stack == [(('Root',), 'init_wait')]
     finally:
         runtime.close()
 
@@ -1987,13 +1970,9 @@ state Root {
     runtime = build_runtime(dsl_code)
     try:
         run_cycle_and_assert(runtime, current_path=('Root', 'A'), vars={'phase': 1, 'trace': 10})
-        assert runtime.brief_stack == [(('Root',), 'init_wait'), (('Root', 'A'), 'active')]
         run_cycle_and_assert(runtime, current_path=('Root', 'A'), vars={'phase': 2, 'trace': 20})
-        assert runtime.brief_stack == [(('Root',), 'init_wait'), (('Root', 'A'), 'active')]
         run_cycle_and_assert(runtime, current_path=None, vars={'phase': 2, 'trace': 20}, is_ended=True)
-        assert runtime.brief_stack == []
         run_cycle_and_assert(runtime, current_path=None, vars={'phase': 2, 'trace': 20}, is_ended=True)
-        assert runtime.brief_stack == []
     finally:
         runtime.close()
 
@@ -2040,12 +2019,10 @@ def test_4_32_raises_error_for_non_converging_speculative_dfs():
     runtime = build_runtime(dsl_code)
     try:
         run_cycle_and_assert(runtime, current_path=('Root', 'A'), vars={'counter': 1})
-        before_stack = runtime.brief_stack
         before_vars = dict(runtime.vars)
 
         runtime.cycle_expect_error(['Root.A.Go'], match='structural stack-depth safety limit')
 
-        assert runtime.brief_stack == before_stack
         assert runtime.vars == before_vars
         assert runtime.is_ended is False
     finally:

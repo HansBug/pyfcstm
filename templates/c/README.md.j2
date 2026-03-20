@@ -71,8 +71,7 @@ Register callbacks in `{{ machine_class_name(model) }}Hooks` to extend abstract
 actions. Abstract hooks are read-only extension points: use them to observe the
 execution context or bridge to external systems, but do not mutate persistent
 machine variables from inside the callback. In particular, do not write through
-`{{ machine_class_name(model) }}_vars_mut(...)` or `machine->vars` in an
-abstract hook.
+the machine object or any internal variable storage in an abstract hook.
 
 ```c
 static void custom_hook(
@@ -146,10 +145,9 @@ hook slots to register.
 
 ## Variables
 
-Access persistent variables directly through the generated `{{ machine_class_name(model) }}Vars`
-struct fields, for example `{{ machine_class_name(model) }}_vars(&machine)->name`
-for reads and `{{ machine_class_name(model) }}_vars_mut(&machine)->name` for
-out-of-hook writes.
+Read persistent variables through the generated `{{ machine_class_name(model) }}Vars`
+struct fields exposed by `{{ machine_class_name(model) }}_vars(&machine)`, for
+example `{{ machine_class_name(model) }}_vars(&machine)->name`.
 
 {% if model.defines.values() | list %}
 | Name | C Type | Initial DSL |

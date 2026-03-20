@@ -146,13 +146,6 @@ typedef struct _{{ machine_class_name(model) }}StateInfo {
     size_t transition_count;
 } _{{ machine_class_name(model) }}StateInfo;
 
-typedef struct _{{ machine_class_name(model) }}HookInfo {
-    const char *dsl_action_path;
-    const char *hook_field;
-    const char *owner_state_path;
-    const char *action_stage;
-} _{{ machine_class_name(model) }}HookInfo;
-
 typedef struct _{{ machine_class_name(model) }}RuntimeContext {
     {{ machine_class_name(model) }}Vars vars;
     {{ machine_class_name(model) }}Frame stack[{{ machine_macro_name(model) }}_MAX_STACK_DEPTH];
@@ -203,16 +196,6 @@ static const char *_{{ machine_class_name(model) }}_event_paths[] = {
 {% else %}
 static const char *_{{ machine_class_name(model) }}_event_paths[] = {NULL};
 {% endif %}
-
-static const _{{ machine_class_name(model) }}HookInfo _{{ machine_class_name(model) }}_hook_info[] = {
-{% if hook_ns.rows %}
-{% for row in hook_ns.rows -%}
-    { {{ cstr(row['func_name']) }}, {{ cstr(row['hook_field']) }}, {{ cstr(row['owner_path']) }}, {{ cstr(row['stage']) }} },
-{% endfor %}
-{% else %}
-    { NULL, NULL, NULL, NULL },
-{% endif %}
-};
 
 static void _{{ machine_class_name(model) }}_set_error({{ machine_class_name(model) }} *machine, const char *fmt, ...)
 {
@@ -1609,13 +1592,6 @@ const {{ machine_class_name(model) }}Vars *{{ machine_class_name(model) }}_vars(
     return _{{ machine_class_name(model) }}_active_vars_const(machine);
 }
 
-{{ machine_class_name(model) }}Vars *{{ machine_class_name(model) }}_vars_mut(
-    {{ machine_class_name(model) }} *machine
-)
-{
-    return _{{ machine_class_name(model) }}_active_vars(machine);
-}
-
 int {{ machine_class_name(model) }}_is_ended(const {{ machine_class_name(model) }} *machine)
 {
     return machine != NULL ? machine->ended : 1;
@@ -1645,81 +1621,7 @@ const char *{{ machine_class_name(model) }}_last_error(const {{ machine_class_na
     return machine->last_error;
 }
 
-size_t {{ machine_class_name(model) }}_stack_size(const {{ machine_class_name(model) }} *machine)
-{
-    return machine != NULL ? machine->stack_size : 0u;
-}
-
-const char *{{ machine_class_name(model) }}_stack_state_path(
-    const {{ machine_class_name(model) }} *machine,
-    size_t index
-)
-{
-    if (machine == NULL || index >= machine->stack_size) {
-        return NULL;
-    }
-    return _{{ machine_class_name(model) }}_state_info[machine->stack[index].state_id].path;
-}
-
-const char *{{ machine_class_name(model) }}_stack_mode(
-    const {{ machine_class_name(model) }} *machine,
-    size_t index
-)
-{
-    if (machine == NULL || index >= machine->stack_size) {
-        return NULL;
-    }
-    return _{{ machine_class_name(model) }}_frame_mode_name(machine->stack[index].mode);
-}
-
 const char *{{ machine_class_name(model) }}_dsl_source(void)
 {
     return _{{ machine_class_name(model) }}_dsl_source;
-}
-
-const char *const *{{ machine_class_name(model) }}_state_paths(size_t *count)
-{
-    if (count != NULL) {
-        *count = {{ (model.walk_states() | list) | length }}u;
-    }
-    return _{{ machine_class_name(model) }}_state_paths;
-}
-
-const char *const *{{ machine_class_name(model) }}_event_paths(size_t *count)
-{
-    if (count != NULL) {
-        *count = {{ event_paths.items | length }}u;
-    }
-    return _{{ machine_class_name(model) }}_event_paths;
-}
-
-size_t {{ machine_class_name(model) }}_abstract_hook_count(void)
-{
-    return {{ hook_ns.rows | length }}u;
-}
-
-int {{ machine_class_name(model) }}_abstract_hook_info(
-    size_t index,
-    const char **dsl_action_path,
-    const char **hook_field,
-    const char **owner_state_path,
-    const char **action_stage
-)
-{
-    if (index >= {{ hook_ns.rows | length }}u) {
-        return {{ machine_macro_name(model) }}_FAILURE;
-    }
-    if (dsl_action_path != NULL) {
-        *dsl_action_path = _{{ machine_class_name(model) }}_hook_info[index].dsl_action_path;
-    }
-    if (hook_field != NULL) {
-        *hook_field = _{{ machine_class_name(model) }}_hook_info[index].hook_field;
-    }
-    if (owner_state_path != NULL) {
-        *owner_state_path = _{{ machine_class_name(model) }}_hook_info[index].owner_state_path;
-    }
-    if (action_stage != NULL) {
-        *action_stage = _{{ machine_class_name(model) }}_hook_info[index].action_stage;
-    }
-    return {{ machine_macro_name(model) }}_SUCCESS;
 }

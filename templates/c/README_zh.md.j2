@@ -64,7 +64,7 @@ initial_vars.{{ def_item.name | to_identifier }} = {{ def_item.init.to_ast_node(
 可通过 `{{ machine_class_name(model) }}Hooks` 注册 abstract action 的回调。
 abstract hook 本质上是只读扩展点：只应用于观察当前执行上下文或桥接外部系统，
 不应在回调内部修改状态机持久变量。尤其不要在 abstract hook 里通过
-`{{ machine_class_name(model) }}_vars_mut(...)` 或 `machine->vars` 写入内部变量。
+机器对象本身或任何内部变量存储写入内部变量。
 
 ```c
 static void custom_hook(
@@ -138,8 +138,7 @@ int main(void)
 ## 变量
 
 持久变量应直接通过生成的 `{{ machine_class_name(model) }}Vars` 结构体字段访问，
-例如读取时使用 `{{ machine_class_name(model) }}_vars(&machine)->name`，在
-abstract hook 之外写入时使用 `{{ machine_class_name(model) }}_vars_mut(&machine)->name`。
+例如读取时使用 `{{ machine_class_name(model) }}_vars(&machine)->name`。
 
 {% if model.defines.values() | list %}
 | 名称 | C 类型 | 初始 DSL |

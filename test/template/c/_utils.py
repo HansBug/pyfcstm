@@ -232,10 +232,41 @@ def _load_runtime_library(shared_lib):
     return ctypes.CDLL(load_path), temporary_directory, dll_directory_handle
 
 
+def _collect_hook_info_rows(model):
+    rows = []
+    seen = set()
+    for state in model.walk_states():
+        groups = [
+            state.list_on_enters(with_ids=True),
+            state.list_on_durings(aspect=None, with_ids=True),
+            state.list_on_exits(with_ids=True),
+            state.list_on_durings(aspect='before', with_ids=True),
+            state.list_on_durings(aspect='after', with_ids=True),
+            state.list_on_during_aspects(aspect='before', with_ids=True),
+            state.list_on_during_aspects(aspect='after', with_ids=True),
+        ]
+        for group in groups:
+            for _, item in group:
+                resolved = item
+                for _ in range(16):
+                    if resolved.ref is None:
+                        break
+                    resolved = resolved.ref
+                if not resolved.is_abstract or resolved.func_name in seen:
+                    continue
+                seen.add(resolved.func_name)
+                rows.append({
+                    'dsl_action_path': resolved.func_name,
+                    'hook_field': 'on_{name}'.format(name=to_identifier(resolved.func_name)),
+                    'owner_state_path': '.'.join(resolved.parent.path),
+                    'action_stage': resolved.stage,
+                })
+    return rows
+
+
 class _ExecutionContextView:
-    def __init__(self, runtime, machine_ptr, ctx_struct):
+    def __init__(self, runtime, ctx_struct):
         self._runtime = runtime
-        self._machine_ptr = machine_ptr
         self._vars_ptr = ctx_struct.vars
         self.action_name = ctx_struct.action_name.decode('utf-8')
         self.action_stage = ctx_struct.action_stage.decode('utf-8')
@@ -287,46 +318,14 @@ class _CRuntime:
             argtypes=[ctypes.c_void_p],
             restype=ctypes.POINTER(self._vars_struct),
         )
-        self._vars_mut = self._bind_function(
-            '{prefix}_vars_mut',
-            argtypes=[ctypes.c_void_p],
-            restype=ctypes.POINTER(self._vars_struct),
-        )
         self._current_state_path = self._bind_function(
             '{prefix}_current_state_path', argtypes=[ctypes.c_void_p], restype=ctypes.c_char_p
         )
         self._is_ended = self._bind_function(
             '{prefix}_is_ended', argtypes=[ctypes.c_void_p], restype=ctypes.c_int
         )
-        self._stack_size = self._bind_function(
-            '{prefix}_stack_size', argtypes=[ctypes.c_void_p], restype=ctypes.c_size_t
-        )
-        self._stack_state_path = self._bind_function(
-            '{prefix}_stack_state_path',
-            argtypes=[ctypes.c_void_p, ctypes.c_size_t],
-            restype=ctypes.c_char_p,
-        )
-        self._stack_mode = self._bind_function(
-            '{prefix}_stack_mode',
-            argtypes=[ctypes.c_void_p, ctypes.c_size_t],
-            restype=ctypes.c_char_p,
-        )
         self._last_error = self._bind_function(
             '{prefix}_last_error', argtypes=[ctypes.c_void_p], restype=ctypes.c_char_p
-        )
-        self._abstract_hook_count = self._bind_function(
-            '{prefix}_abstract_hook_count', restype=ctypes.c_size_t
-        )
-        self._abstract_hook_info = self._bind_function(
-            '{prefix}_abstract_hook_info',
-            argtypes=[
-                ctypes.c_size_t,
-                ctypes.POINTER(ctypes.c_char_p),
-                ctypes.POINTER(ctypes.c_char_p),
-                ctypes.POINTER(ctypes.c_char_p),
-                ctypes.POINTER(ctypes.c_char_p),
-            ],
-            restype=ctypes.c_int,
         )
 
         class _ContextStruct(ctypes.Structure):
@@ -339,7 +338,7 @@ class _CRuntime:
 
         self._context_struct = _ContextStruct
         self._hook_fn = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p)
-        self._hook_info_rows = self._load_hook_info()
+        self._hook_info_rows = _collect_hook_info_rows(model)
         hook_fields = [
             (row['hook_field'], self._hook_fn)
             for row in self._hook_info_rows
@@ -392,28 +391,6 @@ class _CRuntime:
 
         return _VarsStruct
 
-    def _load_hook_info(self):
-        rows = []
-        for index in range(self._abstract_hook_count()):
-            dsl_action_path = ctypes.c_char_p()
-            hook_field = ctypes.c_char_p()
-            owner_state_path = ctypes.c_char_p()
-            action_stage = ctypes.c_char_p()
-            assert self._abstract_hook_info(
-                index,
-                ctypes.byref(dsl_action_path),
-                ctypes.byref(hook_field),
-                ctypes.byref(owner_state_path),
-                ctypes.byref(action_stage),
-            ) == 1
-            rows.append({
-                'dsl_action_path': dsl_action_path.value.decode('utf-8'),
-                'hook_field': hook_field.value.decode('utf-8'),
-                'owner_state_path': owner_state_path.value.decode('utf-8'),
-                'action_stage': action_stage.value.decode('utf-8'),
-            })
-        return rows
-
     def _raise_last_error(self):
         message = self._last_error(self._machine)
         raise RuntimeError(message.decode('utf-8') if message else 'unknown C runtime error')
@@ -457,7 +434,7 @@ class _CRuntime:
                 @self._hook_fn
                 def _callback(machine_ptr, ctx_ptr, user_data):
                     ctx = ctypes.cast(ctx_ptr, ctypes.POINTER(self._context_struct)).contents
-                    fn(_ExecutionContextView(self, machine_ptr, ctx))
+                    fn(_ExecutionContextView(self, ctx))
 
                 return _callback
 
@@ -495,15 +472,6 @@ class _CRuntime:
         if not value:
             return None
         return tuple(value.decode('utf-8').split('.'))
-
-    @property
-    def brief_stack(self):
-        items = []
-        for index in range(self._stack_size(self._machine)):
-            path = self._stack_state_path(self._machine, index)
-            mode = self._stack_mode(self._machine, index)
-            items.append((tuple(path.decode('utf-8').split('.')), mode.decode('utf-8')))
-        return items
 
     def get_abstract_hook_map(self):
         return {

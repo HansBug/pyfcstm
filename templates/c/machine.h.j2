@@ -131,9 +131,6 @@ struct {{ machine_class_name(model) }} {
 {{ machine_macro_name(model) }}_API const {{ machine_class_name(model) }}Vars *{{ machine_class_name(model) }}_vars(
     const {{ machine_class_name(model) }} *machine
 );
-{{ machine_macro_name(model) }}_API {{ machine_class_name(model) }}Vars *{{ machine_class_name(model) }}_vars_mut(
-    {{ machine_class_name(model) }} *machine
-);
 {{ machine_macro_name(model) }}_API int {{ machine_class_name(model) }}_is_ended(
     const {{ machine_class_name(model) }} *machine
 );
@@ -146,28 +143,7 @@ struct {{ machine_class_name(model) }} {
 {{ machine_macro_name(model) }}_API const char *{{ machine_class_name(model) }}_last_error(
     const {{ machine_class_name(model) }} *machine
 );
-{{ machine_macro_name(model) }}_API size_t {{ machine_class_name(model) }}_stack_size(
-    const {{ machine_class_name(model) }} *machine
-);
-{{ machine_macro_name(model) }}_API const char *{{ machine_class_name(model) }}_stack_state_path(
-    const {{ machine_class_name(model) }} *machine,
-    size_t index
-);
-{{ machine_macro_name(model) }}_API const char *{{ machine_class_name(model) }}_stack_mode(
-    const {{ machine_class_name(model) }} *machine,
-    size_t index
-);
 {{ machine_macro_name(model) }}_API const char *{{ machine_class_name(model) }}_dsl_source(void);
-{{ machine_macro_name(model) }}_API const char *const *{{ machine_class_name(model) }}_state_paths(size_t *count);
-{{ machine_macro_name(model) }}_API const char *const *{{ machine_class_name(model) }}_event_paths(size_t *count);
-{{ machine_macro_name(model) }}_API size_t {{ machine_class_name(model) }}_abstract_hook_count(void);
-{{ machine_macro_name(model) }}_API int {{ machine_class_name(model) }}_abstract_hook_info(
-    size_t index,
-    const char **dsl_action_path,
-    const char **hook_field,
-    const char **owner_state_path,
-    const char **action_stage
-);
 
 #ifdef __cplusplus
 }

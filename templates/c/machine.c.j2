@@ -29,6 +29,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* clang-format off */
+
 typedef int (*_{{ machine_class_name(model) }}GuardFn)(const {{ machine_class_name(model) }}Vars *scope);
 typedef void (*_{{ machine_class_name(model) }}ActionFn)({{ machine_class_name(model) }}Vars *scope);
 
@@ -41,21 +43,21 @@ enum {
 
 enum {
 {% for state in model.walk_states() -%}
-    {{ state_enum(state) }} = {{ loop.index0 }},
+{{ '    ' }}{{ state_enum(state) }} = {{ loop.index0 }},
 {% endfor %}
     {{ machine_macro_name(model) }}_STATE_COUNT = {{ (model.walk_states() | list) | length }}
 };
 
 enum {
 {% set transition_ns = namespace(items=[]) -%}
-{% for state in model.walk_states() -%}
+{% for state in model.walk_states() %}
 {% for transition in state.init_transitions -%}
 {% set transition_ns.items = transition_ns.items + [1] -%}
-    {{ init_transition_id(state, loop.index) }} = {{ transition_ns.items | length - 1 }},
+{{ '    ' }}{{ init_transition_id(state, loop.index) }} = {{ transition_ns.items | length - 1 }},
 {% endfor -%}
 {% for transition in state.transitions_from -%}
 {% set transition_ns.items = transition_ns.items + [1] -%}
-    {{ normal_transition_id(state, loop.index) }} = {{ transition_ns.items | length - 1 }},
+{{ '    ' }}{{ normal_transition_id(state, loop.index) }} = {{ transition_ns.items | length - 1 }},
 {% endfor -%}
 {% endfor -%}
     {{ machine_macro_name(model) }}_TRANSITION_COUNT = {{ transition_ns.items | length }}
@@ -80,7 +82,7 @@ enum {
 {% set resolved.item = resolved.item.ref -%}
 {% endif -%}
 {% endfor -%}
-{% if resolved.item.is_abstract and resolved.item.func_name not in hook_ns.rows | map(attribute='func_name') | list -%}
+{% if resolved.item.is_abstract and resolved.item.func_name not in hook_ns.rows | map(attribute='func_name') | list %}
 {% set hook_ns.rows = hook_ns.rows + [{
     'func_name': resolved.item.func_name,
     'hook_enum': hook_enum(resolved.item),
@@ -88,7 +90,7 @@ enum {
     'owner_path': action_owner_path(resolved.item),
     'stage': resolved.item.stage,
 }] -%}
-    {{ hook_enum(resolved.item) }} = {{ hook_ns.rows | length - 1 }},
+{{ '    ' }}{{ hook_enum(resolved.item) }} = {{ hook_ns.rows | length - 1 }},
 {% endif -%}
 {% endfor -%}
 {% endfor -%}
@@ -164,19 +166,19 @@ enum {
 
 {% set dsl_source = model.to_ast_node() | string %}
 static const char *_{{ machine_class_name(model) }}_dsl_source =
-{% if dsl_source %}
+{% if dsl_source -%}
 {% for line in dsl_source.splitlines(True) -%}
-    {{ cstr(line) }}
-{% endfor %}
+{{ '    ' }}{{ cstr(line) }}
+{% endfor -%}
 {% else %}
     "";
-{% endif %}
+{% endif -%}
 ;
 
 static const char *_{{ machine_class_name(model) }}_state_paths[] = {
 {% for state in model.walk_states() -%}
-    {{ cstr(state_key(state)) }},
-{% endfor %}
+{{ '    ' }}{{ cstr(state_key(state)) }},
+{% endfor -%}
 };
 
 {% set event_paths = namespace(items=[]) -%}
@@ -187,11 +189,11 @@ static const char *_{{ machine_class_name(model) }}_state_paths[] = {
 {% endfor %}
 {% if event_paths.items %}
 static const char *_{{ machine_class_name(model) }}_event_paths[] = {
-{% for state in model.walk_states() -%}
+{% for state in model.walk_states() %}
 {% for event in state.events.values() -%}
-    {{ cstr(event.path_name) }},
+{{ '    ' }}{{ cstr(event.path_name) }},
 {% endfor -%}
-{% endfor %}
+{% endfor -%}
 };
 {% else %}
 static const char *_{{ machine_class_name(model) }}_event_paths[] = {NULL};
@@ -256,22 +258,22 @@ static void _{{ machine_class_name(model) }}_reset_vars({{ machine_class_name(mo
 {
 {% if model.defines.values() | list %}
 {% for def_item in model.defines.values() -%}
-    vars->{{ def_item.name | to_identifier }} = {{ def_item.init.to_ast_node() | expr_render(style='c') }};
+{{ '    ' }}vars->{{ def_item.name | to_identifier }} = {{ def_item.init.to_ast_node() | expr_render(style='c') }};
 {% endfor %}
 {% else %}
     vars->_unused_placeholder = 0;
-{% endif %}
+{% endif -%}
 }
 
-{% for state in model.walk_states() %}
-{% for id_, item in state.list_on_enters(with_ids=True) %}
-{% set resolved = namespace(item=item) %}
-{% for _ in range(16) %}
-{% if resolved.item.ref is not none %}
-{% set resolved.item = resolved.item.ref %}
-{% endif %}
-{% endfor %}
-{% if not resolved.item.is_abstract %}
+{% for state in model.walk_states() -%}
+{% for id_, item in state.list_on_enters(with_ids=True) -%}
+{% set resolved = namespace(item=item) -%}
+{% for _ in range(16) -%}
+{% if resolved.item.ref is not none -%}
+{% set resolved.item = resolved.item.ref -%}
+{% endif -%}
+{% endfor -%}
+{% if not resolved.item.is_abstract -%}
 static void {{ action_method_name(state, 'enter', id_) }}({{ machine_class_name(model) }}Vars *scope)
 {
 {% if resolved.item.operations %}
@@ -281,16 +283,16 @@ static void {{ action_method_name(state, 'enter', id_) }}({{ machine_class_name(
 {% endif %}
 }
 
-{% endif %}
-{% endfor %}
-{% for id_, item in state.list_on_durings(aspect=None, with_ids=True) %}
-{% set resolved = namespace(item=item) %}
-{% for _ in range(16) %}
-{% if resolved.item.ref is not none %}
-{% set resolved.item = resolved.item.ref %}
-{% endif %}
-{% endfor %}
-{% if not resolved.item.is_abstract %}
+{% endif -%}
+{% endfor -%}
+{% for id_, item in state.list_on_durings(aspect=None, with_ids=True) -%}
+{% set resolved = namespace(item=item) -%}
+{% for _ in range(16) -%}
+{% if resolved.item.ref is not none -%}
+{% set resolved.item = resolved.item.ref -%}
+{% endif -%}
+{% endfor -%}
+{% if not resolved.item.is_abstract -%}
 static void {{ action_method_name(state, 'during', id_) }}({{ machine_class_name(model) }}Vars *scope)
 {
 {% if resolved.item.operations %}
@@ -300,16 +302,16 @@ static void {{ action_method_name(state, 'during', id_) }}({{ machine_class_name
 {% endif %}
 }
 
-{% endif %}
-{% endfor %}
-{% for id_, item in state.list_on_exits(with_ids=True) %}
-{% set resolved = namespace(item=item) %}
-{% for _ in range(16) %}
-{% if resolved.item.ref is not none %}
-{% set resolved.item = resolved.item.ref %}
-{% endif %}
-{% endfor %}
-{% if not resolved.item.is_abstract %}
+{% endif -%}
+{% endfor -%}
+{% for id_, item in state.list_on_exits(with_ids=True) -%}
+{% set resolved = namespace(item=item) -%}
+{% for _ in range(16) -%}
+{% if resolved.item.ref is not none -%}
+{% set resolved.item = resolved.item.ref -%}
+{% endif -%}
+{% endfor -%}
+{% if not resolved.item.is_abstract -%}
 static void {{ action_method_name(state, 'exit', id_) }}({{ machine_class_name(model) }}Vars *scope)
 {
 {% if resolved.item.operations %}
@@ -319,16 +321,16 @@ static void {{ action_method_name(state, 'exit', id_) }}({{ machine_class_name(m
 {% endif %}
 }
 
-{% endif %}
-{% endfor %}
-{% for id_, item in state.list_on_durings(aspect='before', with_ids=True) %}
-{% set resolved = namespace(item=item) %}
-{% for _ in range(16) %}
-{% if resolved.item.ref is not none %}
-{% set resolved.item = resolved.item.ref %}
-{% endif %}
-{% endfor %}
-{% if not resolved.item.is_abstract %}
+{% endif -%}
+{% endfor -%}
+{% for id_, item in state.list_on_durings(aspect='before', with_ids=True) -%}
+{% set resolved = namespace(item=item) -%}
+{% for _ in range(16) -%}
+{% if resolved.item.ref is not none -%}
+{% set resolved.item = resolved.item.ref -%}
+{% endif -%}
+{% endfor -%}
+{% if not resolved.item.is_abstract -%}
 static void {{ action_method_name(state, 'during_before', id_) }}({{ machine_class_name(model) }}Vars *scope)
 {
 {% if resolved.item.operations %}
@@ -338,16 +340,16 @@ static void {{ action_method_name(state, 'during_before', id_) }}({{ machine_cla
 {% endif %}
 }
 
-{% endif %}
-{% endfor %}
-{% for id_, item in state.list_on_durings(aspect='after', with_ids=True) %}
-{% set resolved = namespace(item=item) %}
-{% for _ in range(16) %}
-{% if resolved.item.ref is not none %}
-{% set resolved.item = resolved.item.ref %}
-{% endif %}
-{% endfor %}
-{% if not resolved.item.is_abstract %}
+{% endif -%}
+{% endfor -%}
+{% for id_, item in state.list_on_durings(aspect='after', with_ids=True) -%}
+{% set resolved = namespace(item=item) -%}
+{% for _ in range(16) -%}
+{% if resolved.item.ref is not none -%}
+{% set resolved.item = resolved.item.ref -%}
+{% endif -%}
+{% endfor -%}
+{% if not resolved.item.is_abstract -%}
 static void {{ action_method_name(state, 'during_after', id_) }}({{ machine_class_name(model) }}Vars *scope)
 {
 {% if resolved.item.operations %}
@@ -357,16 +359,16 @@ static void {{ action_method_name(state, 'during_after', id_) }}({{ machine_clas
 {% endif %}
 }
 
-{% endif %}
-{% endfor %}
-{% for id_, item in state.list_on_during_aspects(aspect='before', with_ids=True) %}
-{% set resolved = namespace(item=item) %}
-{% for _ in range(16) %}
-{% if resolved.item.ref is not none %}
-{% set resolved.item = resolved.item.ref %}
-{% endif %}
-{% endfor %}
-{% if not resolved.item.is_abstract %}
+{% endif -%}
+{% endfor -%}
+{% for id_, item in state.list_on_during_aspects(aspect='before', with_ids=True) -%}
+{% set resolved = namespace(item=item) -%}
+{% for _ in range(16) -%}
+{% if resolved.item.ref is not none -%}
+{% set resolved.item = resolved.item.ref -%}
+{% endif -%}
+{% endfor -%}
+{% if not resolved.item.is_abstract -%}
 static void {{ action_method_name(state, 'aspect_before', id_) }}({{ machine_class_name(model) }}Vars *scope)
 {
 {% if resolved.item.operations %}
@@ -376,16 +378,16 @@ static void {{ action_method_name(state, 'aspect_before', id_) }}({{ machine_cla
 {% endif %}
 }
 
-{% endif %}
-{% endfor %}
-{% for id_, item in state.list_on_during_aspects(aspect='after', with_ids=True) %}
-{% set resolved = namespace(item=item) %}
-{% for _ in range(16) %}
-{% if resolved.item.ref is not none %}
-{% set resolved.item = resolved.item.ref %}
-{% endif %}
-{% endfor %}
-{% if not resolved.item.is_abstract %}
+{% endif -%}
+{% endfor -%}
+{% for id_, item in state.list_on_during_aspects(aspect='after', with_ids=True) -%}
+{% set resolved = namespace(item=item) -%}
+{% for _ in range(16) -%}
+{% if resolved.item.ref is not none -%}
+{% set resolved.item = resolved.item.ref -%}
+{% endif -%}
+{% endfor -%}
+{% if not resolved.item.is_abstract -%}
 static void {{ action_method_name(state, 'aspect_after', id_) }}({{ machine_class_name(model) }}Vars *scope)
 {
 {% if resolved.item.operations %}
@@ -395,8 +397,8 @@ static void {{ action_method_name(state, 'aspect_after', id_) }}({{ machine_clas
 {% endif %}
 }
 
-{% endif %}
-{% endfor %}
+{% endif -%}
+{% endfor -%}
 {% for transition in state.init_transitions %}
 {% if transition.guard is not none %}
 static int {{ init_guard_method_name(state, loop.index) }}(const {{ machine_class_name(model) }}Vars *scope)
@@ -429,7 +431,7 @@ static void {{ transition_effect_method_name(state, loop.index) }}({{ machine_cl
 
 {% endif %}
 {% endfor %}
-{% endfor %}
+{% endfor -%}
 
 {% for state in model.walk_states() %}
 {% if state.list_on_enters(with_ids=True) | list %}
@@ -1625,3 +1627,5 @@ const char *{{ machine_class_name(model) }}_dsl_source(void)
 {
     return _{{ machine_class_name(model) }}_dsl_source;
 }
+
+/* clang-format on */

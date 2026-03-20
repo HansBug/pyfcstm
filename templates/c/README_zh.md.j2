@@ -2,6 +2,9 @@
 
 这里存放 DSL 根状态 `{{ model.root_state.name }}` 对应的 C99 生成运行时。
 
+生成出的 `machine.h` 和 `machine.c` 会尽量贴近 4 空格缩进的
+`clang-format` 风格，这样后续再跑一次格式化时不应出现明显的样式抖动。
+
 ## 生成文件
 
 - `machine.h`：公开运行时 API

@@ -6,6 +6,8 @@
  * pyfcstm at runtime.
  */
 
+/* clang-format off */
+
 #ifndef {{ machine_header_guard(model) }}
 #define {{ machine_header_guard(model) }}
 
@@ -34,11 +36,11 @@ typedef struct {{ machine_class_name(model) }}ExecutionContext {{ machine_class_
 typedef struct {{ machine_class_name(model) }}Vars {
 {% if model.defines.values() | list %}
 {% for def_item in model.defines.values() -%}
-    {% if def_item.type == 'int' %}long long{% else %}double{% endif %} {{ def_item.name | to_identifier }};
+{{ '    ' }}{% if def_item.type == 'int' %}long long{% else %}double{% endif %} {{ def_item.name | to_identifier }};
 {% endfor %}
 {% else %}
     int _unused_placeholder;
-{% endif %}
+{% endif -%}
 } {{ machine_class_name(model) }}Vars;
 
 typedef void (*{{ machine_class_name(model) }}HookFn)(
@@ -77,11 +79,11 @@ typedef struct {{ machine_class_name(model) }}Hooks {
 {% endfor %}
 {% if hook_ns.rows %}
 {% for row in hook_ns.rows -%}
-    {{ machine_class_name(model) }}HookFn {{ row['hook_field'] }};
+{{ '    ' }}{{ machine_class_name(model) }}HookFn {{ row['hook_field'] }};
 {% endfor %}
 {% else %}
     int _unused_placeholder;
-{% endif %}
+{% endif -%}
 } {{ machine_class_name(model) }}Hooks;
 
 #define {{ machine_class_name(model) | upper }}_HOOKS_INIT {0}
@@ -148,5 +150,7 @@ struct {{ machine_class_name(model) }} {
 #ifdef __cplusplus
 }
 #endif
+
+/* clang-format on */
 
 #endif

@@ -31,8 +31,9 @@ C 模板应当被视为“生成出来的黑盒运行时”。可维护性主要
 
 - Phase 1 已完成。
 - Phase 2 已完成。
+- Phase 3 已完成。
 - 当前 C 模板已经切换到 id-only API，并且混合 event-set 后端已接入。
-- 现有 C 模板回归测试已通过。
+- 当前热路径已经切换到状态专用分发实现，现有 C 模板回归测试已通过。
 
 ### Phase 1：移除热路径里的可避免开销
 
@@ -68,14 +69,14 @@ Phase 2 说明：
 
 ### Phase 3：把表驱动执行改造成专用生成代码
 
-- [ ] 不再让 `StateInfo` / `TransitionInfo` 这类表扫描承担 cycle 热路径的主执
+- [x] 不再让 `StateInfo` / `TransitionInfo` 这类表扫描承担 cycle 热路径的主执
       行逻辑。
-- [ ] 为每个状态生成专用的 transition 分发函数，而不是扫描 transition id 数组。
-- [ ] 为每个状态生成专用的 `enter`、`during`、`exit` 和 init 分发逻辑。
-- [ ] concrete action 在生成期直接展开，不再通过 `ActionInfo` 间接调度。
-- [ ] abstract hook 保留为少数仍需间接调用的扩展点，而且只有用户真的装了 hook
+- [x] 为每个状态生成专用的 transition 分发函数，而不是扫描 transition id 数组。
+- [x] 为每个状态生成专用的 `enter`、`during`、`exit` 和 init 分发逻辑。
+- [x] concrete action 在生成期直接展开，不再通过 `ActionInfo` 间接调度。
+- [x] abstract hook 保留为少数仍需间接调用的扩展点，而且只有用户真的装了 hook
       时才付这部分成本。
-- [ ] `.h` 继续保持小而稳定，`.c` 则可以更激进地朝专用化方向优化。
+- [x] `.h` 继续保持小而稳定，`.c` 则可以更激进地朝专用化方向优化。
 
 ### Phase 4：专门优化 validation 和回滚路径
 
@@ -90,7 +91,7 @@ Phase 2 说明：
 ### 验收标准
 
 - [x] 生成出来的 `machine.h` 保持小而面向使用者。
-- [ ] 生成出来的 `machine.c` 可以明确偏向运行性能，而不必优先照顾人工可读性。
+- [x] 生成出来的 `machine.c` 可以明确偏向运行性能，而不必优先照顾人工可读性。
 - [x] 生成出来的公开 API 直接使用整数 id 提交事件。
 - [x] `machine.h` 暴露事件 id 和状态 id 宏，使用方不需要依赖运行时字符串查找。
 - [x] 事件处理不能因为只使用位运算而引入一个很小的固定上限。

@@ -32,8 +32,9 @@ Current progress:
 
 - Phase 1 is implemented.
 - Phase 2 is implemented.
+- Phase 3 is implemented.
 - The current C template regression suite passes with the id-only API and the
-  hybrid event-set backend.
+  hybrid event-set backend and the specialized state-dispatch hot path.
 
 ### Phase 1: Remove avoidable hot-path overhead
 
@@ -80,16 +81,16 @@ Notes for Phase 2:
 
 ### Phase 3: Replace table-driven execution with specialized generated code
 
-- [ ] Move transition selection away from `StateInfo` / `TransitionInfo` table
+- [x] Move transition selection away from `StateInfo` / `TransitionInfo` table
       scans in the cycle hot path.
-- [ ] Generate per-state transition dispatch functions instead of scanning
+- [x] Generate per-state transition dispatch functions instead of scanning
       transition-id arrays.
-- [ ] Generate per-state `enter`, `during`, `exit`, and init-dispatch helpers.
-- [ ] Expand concrete action sequences directly in generated code instead of
+- [x] Generate per-state `enter`, `during`, `exit`, and init-dispatch helpers.
+- [x] Expand concrete action sequences directly in generated code instead of
       routing through `ActionInfo`.
-- [ ] Keep abstract hooks as the only remaining indirect dispatch point, and
+- [x] Keep abstract hooks as the only remaining indirect dispatch point, and
       only pay that cost when a hook is actually installed.
-- [ ] Keep the public `.h` stable while making the `.c` implementation more
+- [x] Keep the public `.h` stable while making the `.c` implementation more
       aggressively specialized.
 
 ### Phase 4: Specialize validation and rollback paths
@@ -107,7 +108,7 @@ Notes for Phase 2:
 ### Acceptance Criteria
 
 - [x] Generated `machine.h` stays small and user-oriented.
-- [ ] Generated `machine.c` is free to optimize for runtime speed over manual
+- [x] Generated `machine.c` is free to optimize for runtime speed over manual
       readability.
 - [x] The generated public API uses integer ids directly for event submission.
 - [x] `machine.h` exposes event-id and state-id macros so users do not need

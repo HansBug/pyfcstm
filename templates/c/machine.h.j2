@@ -6,8 +6,6 @@
  * pyfcstm at runtime.
  */
 
-/* clang-format off */
-
 #ifndef {{ machine_header_guard(model) }}
 #define {{ machine_header_guard(model) }}
 
@@ -25,6 +23,7 @@
 extern "C" {
 #endif
 
+/* Common runtime return codes and generated safety limits. */
 #define {{ machine_macro_name(model) }}_SUCCESS 1
 #define {{ machine_macro_name(model) }}_FAILURE 0
 #define {{ machine_macro_name(model) }}_MAX_STACK_DEPTH 64
@@ -35,39 +34,61 @@ typedef struct {{ machine_class_name(model) }}ExecutionContext {{ machine_class_
 typedef int {{ machine_class_name(model) }}StateId;
 typedef int {{ machine_class_name(model) }}EventId;
 
+/*
+ * Persistent DSL variables.
+ *
+ * These fields correspond directly to the top-level `def ...` declarations in
+ * the source DSL. Generated C users read them through `..._vars(...)`.
+ */
 typedef struct {{ machine_class_name(model) }}Vars {
 {% if model.defines.values() | list %}
 {% for def_item in model.defines.values() -%}
 {{ '    ' }}{% if def_item.type == 'int' %}long long{% else %}double{% endif %} {{ def_item.name | to_identifier }};
-{% endfor %}
+{% endfor -%}
 {% else %}
     int _unused_placeholder;
 {% endif -%}
 } {{ machine_class_name(model) }}Vars;
 
-#define {{ machine_macro_name(model) }}_INVALID_STATE_ID (({{ machine_class_name(model) }}StateId)-1)
-#define {{ machine_macro_name(model) }}_INVALID_EVENT_ID (({{ machine_class_name(model) }}EventId)-1)
+/* Public state/event id space used by `..._hot_start(...)` and `..._cycle(...)`. */
+#define {{ machine_macro_name(model) }}_INVALID_STATE_ID (({{ machine_class_name(model) }}StateId) - 1)
+#define {{ machine_macro_name(model) }}_INVALID_EVENT_ID (({{ machine_class_name(model) }}EventId) - 1)
 #define {{ machine_macro_name(model) }}_STATE_COUNT {{ (model.walk_states() | list) | length }}
 {% for state in model.walk_states() -%}
+/* DSL state path: `{{ state | state_path }}` */
 #define {{ machine_macro_name(model) }}_STATE_{{ (state | state_path) | to_identifier | upper }} (({{ machine_class_name(model) }}StateId){{ loop.index0 }})
-{% endfor %}
+{% endfor -%}
 {% set event_ns = namespace(items=[]) -%}
 {% for state in model.walk_states() -%}
 {% for event in state.events.values() -%}
 {% set event_ns.items = event_ns.items + [event.path_name] -%}
 {% endfor -%}
-{% endfor %}
+{% endfor -%}
 #define {{ machine_macro_name(model) }}_EVENT_COUNT {{ event_ns.items | length }}
 {% for event_path in event_ns.items -%}
+/* DSL event path: `{{ event_path }}` */
 #define {{ machine_macro_name(model) }}_EVENT_{{ event_path | to_identifier | upper }} (({{ machine_class_name(model) }}EventId){{ loop.index0 }})
 {% endfor %}
 
+/*
+ * Callback signature for generated abstract hooks.
+ *
+ * `ctx` identifies the owning DSL action and exposes a read-only variable
+ * snapshot. Per fcstm design, hook implementations should not mutate persistent
+ * machine variables.
+ */
 typedef void (*{{ machine_class_name(model) }}HookFn)(
     {{ machine_class_name(model) }} *machine,
     const {{ machine_class_name(model) }}ExecutionContext *ctx,
-    void *user_data
-);
+    void *user_data);
 
+/*
+ * Generated abstract hook table.
+ *
+ * Each field maps to one DSL `abstract` action after resolving any `ref`
+ * indirections. Register only the callbacks you need and leave the rest as
+ * `NULL`.
+ */
 typedef struct {{ machine_class_name(model) }}Hooks {
 {% set hook_ns = namespace(rows=[]) -%}
 {% for state in model.walk_states() -%}
@@ -91,6 +112,10 @@ typedef struct {{ machine_class_name(model) }}Hooks {
 {% set hook_ns.rows = hook_ns.rows + [{
     'func_name': resolved.item.func_name,
     'hook_field': hook_field_name(resolved.item),
+    'owner_path': action_owner_path(resolved.item),
+    'stage': resolved.item.stage,
+    'aspect': resolved.item.aspect,
+    'dsl_fragment': resolved.item.to_ast_node() | string,
 }] -%}
 {% endif -%}
 {% endfor -%}
@@ -98,8 +123,14 @@ typedef struct {{ machine_class_name(model) }}Hooks {
 {% endfor %}
 {% if hook_ns.rows %}
 {% for row in hook_ns.rows -%}
-{{ '    ' }}{{ machine_class_name(model) }}HookFn {{ row['hook_field'] }};
-{% endfor %}
+{% set fragment_text = row['dsl_fragment'] | replace('\n\n', '\n') | replace('\n\n', '\n') %}
+    // DSL action: `{{ row['func_name'] }}`
+    // Owner state: `{{ row['owner_path'] }}`
+    // Lifecycle stage: `{{ row['stage'] }}{% if row['aspect'] %} {{ row['aspect'] }}{% endif %}`
+    // DSL fragment:
+{{- '\n' ~ (('    //   ' ~ fragment_text) | replace('\n', '\n    //   ')) }}
+    {{ machine_class_name(model) }}HookFn {{ row['hook_field'] }};
+{% endfor -%}
 {% else %}
     int _unused_placeholder;
 {% endif -%}
@@ -107,11 +138,19 @@ typedef struct {{ machine_class_name(model) }}Hooks {
 
 #define {{ machine_class_name(model) | upper }}_HOOKS_INIT {0}
 
+/* Internal runtime frame for one active state on the execution stack. */
 typedef struct {{ machine_class_name(model) }}Frame {
     int state_id;
     int mode;
 } {{ machine_class_name(model) }}Frame;
 
+/*
+ * Read-only execution context passed into registered abstract hooks.
+ *
+ * `state_path` names the DSL owner state, `vars` points to a snapshot of
+ * persistent variables, and `action_name` / `action_stage` identify the exact
+ * DSL action being executed.
+ */
 struct {{ machine_class_name(model) }}ExecutionContext {
     const char *state_path;
     const {{ machine_class_name(model) }}Vars *vars;
@@ -119,6 +158,12 @@ struct {{ machine_class_name(model) }}ExecutionContext {
     const char *action_stage;
 };
 
+/*
+ * Generated machine instance.
+ *
+ * Users should treat this struct as runtime-owned state and interact through
+ * the exported APIs below instead of editing internal fields directly.
+ */
 struct {{ machine_class_name(model) }} {
     {{ machine_class_name(model) }}Vars vars;
     {{ machine_class_name(model) }}Vars *_active_vars;
@@ -131,45 +176,47 @@ struct {{ machine_class_name(model) }} {
     char last_error[512];
 };
 
+/* Allocate a machine instance and initialize it to cold-start state. */
 {{ machine_macro_name(model) }}_API {{ machine_class_name(model) }} *{{ machine_class_name(model) }}_create(void);
+/* Free an instance previously returned by `..._create()`. */
 {{ machine_macro_name(model) }}_API void {{ machine_class_name(model) }}_destroy({{ machine_class_name(model) }} *machine);
+/* Reinitialize an existing instance to the generated DSL defaults. */
 {{ machine_macro_name(model) }}_API int {{ machine_class_name(model) }}_init({{ machine_class_name(model) }} *machine);
+/* Hot start from a generated state id plus a complete DSL variable snapshot. */
 {{ machine_macro_name(model) }}_API int {{ machine_class_name(model) }}_hot_start(
     {{ machine_class_name(model) }} *machine,
     {{ machine_class_name(model) }}StateId initial_state_id,
-    const {{ machine_class_name(model) }}Vars *initial_vars
-);
+    const {{ machine_class_name(model) }}Vars *initial_vars);
+/* Install the abstract hook table and an opaque user-data pointer. */
 {{ machine_macro_name(model) }}_API void {{ machine_class_name(model) }}_set_hooks(
     {{ machine_class_name(model) }} *machine,
     const {{ machine_class_name(model) }}Hooks *hooks,
-    void *user_data
-);
+    void *user_data);
+/* Execute one runtime cycle using generated event ids declared above. */
 {{ machine_macro_name(model) }}_API int {{ machine_class_name(model) }}_cycle(
     {{ machine_class_name(model) }} *machine,
     const {{ machine_class_name(model) }}EventId *event_ids,
-    size_t event_count
-);
+    size_t event_count);
+/* Read the current persistent DSL variable snapshot. */
 {{ machine_macro_name(model) }}_API const {{ machine_class_name(model) }}Vars *{{ machine_class_name(model) }}_vars(
-    const {{ machine_class_name(model) }} *machine
-);
+    const {{ machine_class_name(model) }} *machine);
+/* Return non-zero after the machine has reached runtime end. */
 {{ machine_macro_name(model) }}_API int {{ machine_class_name(model) }}_is_ended(
-    const {{ machine_class_name(model) }} *machine
-);
+    const {{ machine_class_name(model) }} *machine);
+/* Return the current leaf-state DSL path, or `NULL` after runtime end. */
 {{ machine_macro_name(model) }}_API const char *{{ machine_class_name(model) }}_current_state_path(
-    const {{ machine_class_name(model) }} *machine
-);
+    const {{ machine_class_name(model) }} *machine);
+/* Return the current leaf-state DSL short name, or `NULL` after runtime end. */
 {{ machine_macro_name(model) }}_API const char *{{ machine_class_name(model) }}_current_state_name(
-    const {{ machine_class_name(model) }} *machine
-);
+    const {{ machine_class_name(model) }} *machine);
+/* Return the last runtime error message generated by the C runtime. */
 {{ machine_macro_name(model) }}_API const char *{{ machine_class_name(model) }}_last_error(
-    const {{ machine_class_name(model) }} *machine
-);
+    const {{ machine_class_name(model) }} *machine);
+/* Return the original DSL source text embedded into the generated runtime. */
 {{ machine_macro_name(model) }}_API const char *{{ machine_class_name(model) }}_dsl_source(void);
 
 #ifdef __cplusplus
 }
 #endif
-
-/* clang-format on */
 
 #endif

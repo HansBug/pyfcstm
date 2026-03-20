@@ -1178,12 +1178,7 @@ static void _{{ machine_class_name(model) }}_copy_context(
     const _{{ machine_class_name(model) }}RuntimeContext *src
 )
 {
-    size_t i;
-    dst->vars = src->vars;
-    dst->stack_size = src->stack_size;
-    for (i = 0u; i < src->stack_size; ++i) {
-        dst->stack[i] = src->stack[i];
-    }
+    *dst = *src;
 }
 
 static void _{{ machine_class_name(model) }}_copy_from_machine(
@@ -1191,11 +1186,10 @@ static void _{{ machine_class_name(model) }}_copy_from_machine(
     const {{ machine_class_name(model) }} *machine
 )
 {
-    size_t i;
     dst->vars = machine->vars;
     dst->stack_size = machine->stack_size;
-    for (i = 0u; i < machine->stack_size; ++i) {
-        dst->stack[i] = machine->stack[i];
+    if (machine->stack_size > 0u) {
+        memcpy(dst->stack, machine->stack, machine->stack_size * sizeof(machine->stack[0]));
     }
 }
 
@@ -1204,11 +1198,10 @@ static void _{{ machine_class_name(model) }}_copy_to_machine(
     const _{{ machine_class_name(model) }}RuntimeContext *src
 )
 {
-    size_t i;
     machine->vars = src->vars;
     machine->stack_size = src->stack_size;
-    for (i = 0u; i < src->stack_size; ++i) {
-        machine->stack[i] = src->stack[i];
+    if (src->stack_size > 0u) {
+        memcpy(machine->stack, src->stack, src->stack_size * sizeof(src->stack[0]));
     }
 }
 
@@ -1875,11 +1868,8 @@ int {{ machine_class_name(model) }}_cycle(
     size_t event_count
 )
 {
-    _{{ machine_class_name(model) }}RuntimeContext snapshot_context;
     _{{ machine_class_name(model) }}RuntimeContext sim_context;
     _{{ machine_class_name(model) }}EventSet event_set;
-    int snapshot_entered_root;
-    int snapshot_ended;
     int sim_entered_root;
     int sim_ended;
     int success;
@@ -1891,10 +1881,7 @@ int {{ machine_class_name(model) }}_cycle(
         return {{ machine_macro_name(model) }}_SUCCESS;
     }
 
-    _{{ machine_class_name(model) }}_copy_from_machine(&snapshot_context, machine);
-    _{{ machine_class_name(model) }}_copy_context(&sim_context, &snapshot_context);
-    snapshot_entered_root = machine->entered_root;
-    snapshot_ended = machine->ended;
+    _{{ machine_class_name(model) }}_copy_from_machine(&sim_context, machine);
     sim_entered_root = machine->entered_root;
     sim_ended = machine->ended;
 
@@ -1920,32 +1907,14 @@ int {{ machine_class_name(model) }}_cycle(
         _{{ machine_class_name(model) }}_copy_to_machine(machine, &sim_context);
         machine->entered_root = sim_entered_root;
         machine->ended = sim_ended;
+        if (machine->ended || machine->stack_size == 0u) {
+            machine->ended = 1;
+            machine->stack_size = 0u;
+        }
         _{{ machine_class_name(model) }}_clear_error(machine);
-    } else {
-        int has_error;
-
-        has_error = machine->last_error[0] != '\0';
-        _{{ machine_class_name(model) }}_copy_to_machine(machine, &snapshot_context);
-        machine->ended = snapshot_ended;
-        if (!snapshot_entered_root && !snapshot_ended) {
-            machine->stack_size = 1u;
-            machine->stack[0].state_id = {{ state_enum(model.root_state) }};
-            machine->stack[0].mode = {{ machine_macro_name(model) }}_FRAME_MODE_INIT_WAIT;
-            machine->entered_root = 1;
-        } else {
-            machine->entered_root = snapshot_entered_root;
-        }
-        if (!has_error) {
-            _{{ machine_class_name(model) }}_clear_error(machine);
-        }
     }
 
-    if (machine->ended || machine->stack_size == 0u) {
-        machine->ended = 1;
-        machine->stack_size = 0u;
-    }
-
-    if (machine->last_error[0] != '\0') {
+    if (!success && machine->last_error[0] != '\0') {
         return {{ machine_macro_name(model) }}_FAILURE;
     }
     return {{ machine_macro_name(model) }}_SUCCESS;

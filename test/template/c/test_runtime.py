@@ -270,6 +270,75 @@ class TestCBuiltinTemplate:
                 built_entries = set(os.listdir(artifacts['build_dir']))
                 assert 'CMakeCache.txt' in built_entries
 
+    def test_generated_machine_rolls_back_transition_effects_on_validation_failure(self):
+        dsl_code = """
+        def int counter = 0;
+        def int ready = 0;
+        state Root {
+            state A {
+                during { counter = counter + 1; }
+            }
+
+            state B {
+                state B1 {
+                    during { counter = counter + 100; }
+                }
+                [*] -> B1 : if [ready == 1];
+            }
+
+            [*] -> A;
+            A -> B :: Go effect { counter = counter + 1000; };
+        }
+        """
+
+        with render_c_runtime(dsl_code) as (runtime, _):
+            runtime.cycle()
+            assert runtime.current_state_path == ('Root', 'A')
+            assert runtime.vars == {'counter': 1, 'ready': 0}
+
+            runtime.cycle(['Root.A.Go'])
+            assert runtime.current_state_path == ('Root', 'A')
+            assert runtime.vars == {'counter': 2, 'ready': 0}
+
+    def test_generated_machine_does_not_fire_hooks_for_rejected_transition(self):
+        dsl_code = """
+        def int counter = 0;
+        def int ready = 0;
+        state Root {
+            state A {
+                during { counter = counter + 1; }
+            }
+
+            state B {
+                state B1 {
+                    enter abstract B1Enter;
+                    during { counter = counter + 100; }
+                }
+                [*] -> B1 : if [ready == 1];
+            }
+
+            [*] -> A;
+            A -> B :: Go effect { counter = counter + 1000; };
+        }
+        """
+
+        with render_c_runtime(dsl_code) as (runtime, _):
+            calls = []
+            runtime.install_hooks({
+                'on_Root_B_B1_B1Enter': lambda ctx: calls.append(
+                    (ctx.get_full_state_path(), ctx.action_stage, ctx.get_var('counter'))
+                ),
+            })
+
+            runtime.cycle()
+            assert runtime.current_state_path == ('Root', 'A')
+            assert runtime.vars == {'counter': 1, 'ready': 0}
+
+            runtime.cycle(['Root.A.Go'])
+            assert runtime.current_state_path == ('Root', 'A')
+            assert runtime.vars == {'counter': 2, 'ready': 0}
+            assert calls == []
+
 
 def _assert_runtime_state(runtime, current_path=None, vars=None, is_ended=False):
     assert runtime.is_ended is is_ended

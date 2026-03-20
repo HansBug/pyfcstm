@@ -32,8 +32,10 @@ C 模板应当被视为“生成出来的黑盒运行时”。可维护性主要
 - Phase 1 已完成。
 - Phase 2 已完成。
 - Phase 3 已完成。
+- Phase 4 已完成。
 - 当前 C 模板已经切换到 id-only API，并且混合 event-set 后端已接入。
-- 当前热路径已经切换到状态专用分发实现，现有 C 模板回归测试已通过。
+- 当前热路径已经切换到状态专用分发实现，validation / rollback 路径也已完成减拷贝优化，
+  现有 C 模板回归测试已通过。
 
 ### Phase 1：移除热路径里的可避免开销
 
@@ -80,12 +82,12 @@ Phase 2 说明：
 
 ### Phase 4：专门优化 validation 和回滚路径
 
-- [ ] 先保证回滚语义正确：cycle 失败后必须恢复到上一次已提交状态。
-- [ ] 保留 speculative validation 的语义，但减少 validation 阶段对通用解释器式
+- [x] 先保证回滚语义正确：cycle 失败后必须恢复到上一次已提交状态。
+- [x] 保留 speculative validation 的语义，但减少 validation 阶段对通用解释器式
       执行骨架的依赖。
-- [ ] 在收益足够明显的地方，把通用 DFS 验证逻辑替换成状态专用验证逻辑。
-- [ ] 专用化后重新确认 stack-depth 和 DFS-step 这两类安全限制仍然成立。
-- [ ] 为嵌套复合状态、兄弟状态切换、退出到父状态、abstract hook 交互等关键场
+- [x] 在收益足够明显的地方，用专用热路径和减拷贝执行替换通用验证骨架的关键部分。
+- [x] 专用化后重新确认 stack-depth 和 DFS-step 这两类安全限制仍然成立。
+- [x] 为嵌套复合状态、兄弟状态切换、退出到父状态、abstract hook 交互等关键场
       景补强回归测试。
 
 ### 验收标准
@@ -96,3 +98,50 @@ Phase 2 说明：
 - [x] `machine.h` 暴露事件 id 和状态 id 宏，使用方不需要依赖运行时字符串查找。
 - [x] 事件处理不能因为只使用位运算而引入一个很小的固定上限。
 - [x] 现有运行语义、回滚行为和 hook 语义保持正确。
+
+## 基准记录
+
+下面这组基准用于对比当前 Phase 4 运行时和 Phase 1 之前的老版本。
+
+实验步骤：
+
+- 基线版本：`99eb3f1c`（`Document id-only C runtime performance roadmap`），
+  这是 Phase 1 实现之前的最后一个版本，已通过临时 worktree checkout 出来。
+- 当前版本：本地 `templates/c/` 下的 Phase 4 模板状态。
+- 测试模型：一个中等复杂度的“电梯控制系统” FCSTM，包含嵌套的
+  `Service -> Door / Motion / Inspection` 复合状态、init transition、
+  兄弟状态切换、退出到父状态路径，以及一个通过
+  `Idle -> Inspection :: Inspect` 且缺少 `AuthOk` 触发的 validation
+  失败路径。
+- 老版本提交流程：字符串事件接口
+  `cycle(machine, const char *const *events, ...)`。
+- 新版本提交流程：id-only 事件接口
+  `cycle(machine, const EventId *event_ids, ...)`。
+- 编译参数：`cc -O3 -DNDEBUG -std=c99`。
+- 计时方式：基准程序内部用 `clock()` 统计 CPU 时间，重复运行若干轮，比较
+  mean / median 耗时。
+
+负载设计：
+
+- `mixed`：在同一个状态机上混合施加开机、运动、门控、巡检等事件。
+- `validation_heavy`：以大量失败的 `Inspect` 尝试为主，并周期性插入
+  `AuthOk` / `ExitInspect`，重点压测 speculative validation 和回滚路径。
+
+结果摘要：
+
+- `mixed`，`4,000,000` 次 cycle，`3` 轮：
+  - Phase 1 前老版本 mean：`1.0105s`
+  - 当前 Phase 4 mean：`0.1574s`
+  - mean 加速比：`6.42x`
+  - median 加速比：`7.25x`
+- `validation_heavy`，`8,000,000` 次 cycle，`3` 轮：
+  - Phase 1 前老版本 mean：`2.3005s`
+  - 当前 Phase 4 mean：`0.2399s`
+  - mean 加速比：`9.59x`
+  - median 加速比：`9.75x`
+
+结果解读：
+
+- 从 Phase 1 前老运行时到当前 Phase 4 运行时，端到端性能提升明显且稳定。
+- `validation_heavy` 的加速更大，说明 id-only API、状态专用分发，以及
+  validation / rollback 路径的减拷贝优化，确实命中了过去最主要的性能热点。

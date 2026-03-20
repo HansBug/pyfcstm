@@ -33,8 +33,10 @@ Current progress:
 - Phase 1 is implemented.
 - Phase 2 is implemented.
 - Phase 3 is implemented.
+- Phase 4 is implemented.
 - The current C template regression suite passes with the id-only API and the
-  hybrid event-set backend and the specialized state-dispatch hot path.
+  hybrid event-set backend, the specialized state-dispatch hot path, and the
+  reduced-copy rollback/validation path.
 
 ### Phase 1: Remove avoidable hot-path overhead
 
@@ -95,14 +97,14 @@ Notes for Phase 2:
 
 ### Phase 4: Specialize validation and rollback paths
 
-- [ ] Keep rollback correctness first: failed cycles must still restore the
+- [x] Keep rollback correctness first: failed cycles must still restore the
       previous committed machine state.
-- [ ] Retain speculative validation semantics while reducing the amount of
+- [x] Retain speculative validation semantics while reducing the amount of
       generic interpreter-style execution done during validation.
-- [ ] Replace reusable generic DFS helpers with state-specialized validation
-      logic where it materially reduces cost.
-- [ ] Recheck stack-depth and DFS-step safety guarantees after specialization.
-- [ ] Add focused regression tests for nested composites, sibling transitions,
+- [x] Replace reusable generic DFS helpers with reduced-copy specialized hot-path
+      dispatch where it materially reduces cost.
+- [x] Recheck stack-depth and DFS-step safety guarantees after specialization.
+- [x] Add focused regression tests for nested composites, sibling transitions,
       exit-to-parent transitions, and abstract-hook interactions.
 
 ### Acceptance Criteria
@@ -117,3 +119,52 @@ Notes for Phase 2:
       bit operations alone.
 - [x] Existing runtime semantics, rollback behavior, and hook semantics remain
       correct.
+
+## Benchmark Record
+
+The following benchmark was used to compare the current Phase 4 runtime against
+the pre-Phase-1 baseline.
+
+Experiment steps:
+
+- Baseline version: `99eb3f1c` (`Document id-only C runtime performance roadmap`),
+  checked out into a temporary worktree as the last version before Phase 1
+  implementation.
+- Current version: the local Phase 4 template state under `templates/c/`.
+- Model under test: a moderately complex elevator-control FCSTM model with
+  nested `Service -> Door / Motion / Inspection` composites, init transitions,
+  sibling transitions, exit-to-parent paths, and a validation-failure path via
+  `Idle -> Inspection :: Inspect` when `AuthOk` is absent.
+- Old runtime submission path: string-based `cycle(machine, const char *const *events, ...)`.
+- New runtime submission path: id-only `cycle(machine, const EventId *event_ids, ...)`.
+- Build flags: `cc -O3 -DNDEBUG -std=c99`.
+- Timing method: benchmark harness measures CPU time with `clock()`, then runs
+  the generated binary for several rounds and compares mean / median elapsed
+  time.
+
+Workloads:
+
+- `mixed`: mixed boot / motion / door / inspection traffic on the same machine.
+- `validation_heavy`: mostly failed `Inspect` attempts, with periodic
+  `AuthOk`/`ExitInspect`, to stress speculative validation and rollback.
+
+Results summary:
+
+- `mixed`, `4,000,000` cycles, `3` rounds:
+  - pre-Phase-1 mean: `1.0105s`
+  - current Phase 4 mean: `0.1574s`
+  - mean speedup: `6.42x`
+  - median speedup: `7.25x`
+- `validation_heavy`, `8,000,000` cycles, `3` rounds:
+  - pre-Phase-1 mean: `2.3005s`
+  - current Phase 4 mean: `0.2399s`
+  - mean speedup: `9.59x`
+  - median speedup: `9.75x`
+
+Interpretation:
+
+- The end-to-end gain from the pre-Phase-1 runtime to the current Phase 4
+  runtime is large and stable.
+- The bigger speedup in `validation_heavy` confirms that the id-only API,
+  specialized dispatch, and reduced-copy validation / rollback path are all
+  materially improving the hot paths that previously dominated cost.

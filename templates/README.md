@@ -10,4 +10,5 @@ Rules:
 
 Current template sources:
 
+- `c`: native C99 scaffold template for the built-in template pipeline
 - `python`: native Python scaffold template for the built-in template pipeline

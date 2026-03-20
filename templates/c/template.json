@@ -1,0 +1,7 @@
+{
+  "name": "c",
+  "title": "C99",
+  "description": "Native C99 built-in template with embedded runtime logic and abstract hook callbacks.",
+  "language": "c",
+  "experimental": true
+}

@@ -18,3 +18,9 @@ to\_identifier
 .. autofunction:: to_identifier
 
 
+to\_c\_identifier
+-----------------------------------------------------
+
+.. autofunction:: to_c_identifier
+
+

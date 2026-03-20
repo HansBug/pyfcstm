@@ -414,9 +414,13 @@ class TestPythonBuiltinTemplate:
             assert '_abstract_hook_Root_RootInit' in readme
             assert '_abstract_hook_Root_System_A_AEnter' in readme
             assert '| DSL action path | Hook method | Owner state | Stage |' in readme
+            assert 'Abstract hooks are read-only extension points' in readme
+            assert 'do not mutate persistent' in readme
             assert '可覆写的 Abstract Hook 清单' in readme_zh
             assert '_abstract_hook_Root_RootInit' in readme_zh
             assert '_abstract_hook_Root_System_A_AEnter' in readme_zh
+            assert 'abstract hook' in readme_zh
+            assert '修改状态机持久变量' in readme_zh
 
     def test_generated_machine_source_stays_platform_neutral_and_python37_compatible(self):
         dsl_code = """

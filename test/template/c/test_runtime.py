@@ -1,6 +1,7 @@
 import os.path
 import shutil
 import subprocess
+import textwrap
 
 import pytest
 
@@ -123,6 +124,227 @@ class TestCBuiltinTemplate:
                 'Root.RootInit': 'on_Root_RootInit',
                 'Root.System.A.AEnter': 'on_Root_System_A_AEnter',
             }
+
+    def test_generated_machine_c_hooks_install_and_fire_with_user_data(self):
+        dsl_code = """
+        def int counter = 0;
+        state Root {
+            enter abstract RootInit;
+            state System {
+                state A {
+                    enter abstract AEnter;
+                    during { counter = counter + 2; }
+                }
+                [*] -> A;
+            }
+            [*] -> System;
+        }
+        """
+
+        with render_c_artifacts(dsl_code) as artifacts:
+            run = _compile_and_run_c_harness(
+                artifacts,
+                'hook_mount_test',
+                textwrap.dedent(
+                    r'''
+                    #include "machine.h"
+                    #include <stdio.h>
+                    #include <string.h>
+
+                    typedef struct HookLog {
+                        int count;
+                        int root_seen;
+                        int a_seen;
+                        long long root_counter;
+                        long long a_counter;
+                    } HookLog;
+
+                    static void root_hook(
+                        RootMachine *machine,
+                        const RootMachineExecutionContext *ctx,
+                        void *user_data
+                    )
+                    {
+                        HookLog *log = (HookLog *)user_data;
+                        (void)machine;
+                        log->count += 1;
+                        if (
+                            strcmp(ctx->action_name, "Root.RootInit") == 0 &&
+                            strcmp(ctx->state_path, "Root") == 0 &&
+                            strcmp(ctx->action_stage, "enter") == 0
+                        ) {
+                            log->root_seen = 1;
+                            log->root_counter = ctx->vars->counter;
+                        }
+                    }
+
+                    static void a_enter_hook(
+                        RootMachine *machine,
+                        const RootMachineExecutionContext *ctx,
+                        void *user_data
+                    )
+                    {
+                        HookLog *log = (HookLog *)user_data;
+                        (void)machine;
+                        log->count += 1;
+                        if (
+                            strcmp(ctx->action_name, "Root.System.A.AEnter") == 0 &&
+                            strcmp(ctx->state_path, "Root.System.A") == 0 &&
+                            strcmp(ctx->action_stage, "enter") == 0
+                        ) {
+                            log->a_seen = 1;
+                            log->a_counter = ctx->vars->counter;
+                        }
+                    }
+
+                    int main(void)
+                    {
+                        RootMachine machine;
+                        RootMachineHooks hooks = ROOTMACHINE_HOOKS_INIT;
+                        HookLog log = {0};
+
+                        if (!RootMachine_init(&machine)) {
+                            return 10;
+                        }
+
+                        hooks.on_Root_RootInit = root_hook;
+                        hooks.on_Root_System_A_AEnter = a_enter_hook;
+                        RootMachine_set_hooks(&machine, &hooks, &log);
+
+                        if (!RootMachine_cycle(&machine, NULL, 0u)) {
+                            return 11;
+                        }
+                        if (log.count != 2 || !log.root_seen || !log.a_seen) {
+                            return 12;
+                        }
+                        if (log.root_counter != 0 || log.a_counter != 0) {
+                            return 13;
+                        }
+                        if (strcmp(RootMachine_current_state_path(&machine), "Root.System.A") != 0) {
+                            return 14;
+                        }
+                        if (RootMachine_vars(&machine)->counter != 2) {
+                            return 15;
+                        }
+
+                        if (!RootMachine_cycle(&machine, NULL, 0u)) {
+                            return 16;
+                        }
+                        if (log.count != 2) {
+                            return 17;
+                        }
+                        if (RootMachine_vars(&machine)->counter != 4) {
+                            return 18;
+                        }
+
+                        return 0;
+                    }
+                    '''
+                ),
+            )
+            assert run.returncode == 0, run.stderr
+
+    def test_generated_machine_c_hooks_follow_ref_reuse_behavior(self):
+        dsl_code = """
+        def int trace = 0;
+        state Root {
+            enter abstract PlatformInit;
+
+            state A {
+                enter ref /PlatformInit;
+                during { trace = trace + 1; }
+            }
+
+            state B {
+                enter ref /PlatformInit;
+                during { trace = trace + 10; }
+            }
+
+            [*] -> A;
+            A -> B :: Go;
+        }
+        """
+
+        with render_c_artifacts(dsl_code) as artifacts:
+            run = _compile_and_run_c_harness(
+                artifacts,
+                'hook_ref_reuse_test',
+                textwrap.dedent(
+                    r'''
+                    #include "machine.h"
+                    #include <stdio.h>
+                    #include <string.h>
+
+                    typedef struct HookLog {
+                        int total_calls;
+                        int root_calls;
+                    } HookLog;
+
+                    static void platform_hook(
+                        RootMachine *machine,
+                        const RootMachineExecutionContext *ctx,
+                        void *user_data
+                    )
+                    {
+                        HookLog *log = (HookLog *)user_data;
+                        (void)machine;
+
+                        if (strcmp(ctx->action_name, "Root.PlatformInit") != 0) {
+                            log->total_calls = -100;
+                            return;
+                        }
+
+                        log->total_calls += 1;
+                        if (strcmp(ctx->state_path, "Root") == 0) {
+                            log->root_calls += 1;
+                        }
+                    }
+
+                    int main(void)
+                    {
+                        RootMachine machine;
+                        RootMachineHooks hooks = ROOTMACHINE_HOOKS_INIT;
+                        HookLog log = {0};
+                        static const RootMachineEventId go_events[] = {
+                            ROOT_MACHINE_EVENT_ROOT_A_GO
+                        };
+
+                        if (!RootMachine_init(&machine)) {
+                            return 20;
+                        }
+
+                        hooks.on_Root_PlatformInit = platform_hook;
+                        RootMachine_set_hooks(&machine, &hooks, &log);
+
+                        if (!RootMachine_cycle(&machine, NULL, 0u)) {
+                            return 21;
+                        }
+                        if (log.total_calls != 2 || log.root_calls != 2) {
+                            return 22;
+                        }
+                        if (RootMachine_vars(&machine)->trace != 1) {
+                            return 23;
+                        }
+
+                        if (!RootMachine_cycle(&machine, go_events, 1u)) {
+                            return 24;
+                        }
+                        if (log.total_calls != 3 || log.root_calls != 3) {
+                            return 25;
+                        }
+                        if (RootMachine_vars(&machine)->trace != 11) {
+                            return 26;
+                        }
+                        if (strcmp(RootMachine_current_state_path(&machine), "Root.B") != 0) {
+                            return 27;
+                        }
+
+                        return 0;
+                    }
+                    '''
+                ),
+            )
+            assert run.returncode == 0, run.stderr
 
     def test_generated_machine_reuses_same_hook_for_abstract_refs(self):
         dsl_code = """
@@ -359,3 +581,43 @@ def _assert_runtime_state(runtime, current_path=None, vars=None, is_ended=False)
 def _run_cycle_and_assert(runtime, events=None, *, current_path=None, vars=None, is_ended=False):
     runtime.cycle(events)
     _assert_runtime_state(runtime, current_path=current_path, vars=vars, is_ended=is_ended)
+
+
+def _compile_and_run_c_harness(artifacts, stem, source_code):
+    compiler = artifacts['compiler']
+    if compiler is None or os.name == 'nt':
+        pytest.skip('A direct C compiler on non-Windows is required for C hook harness tests.')
+
+    source_file = os.path.join(artifacts['output_dir'], stem + '.c')
+    executable = os.path.join(artifacts['output_dir'], stem)
+
+    with open(source_file, 'w', encoding='utf-8') as f:
+        f.write(source_code)
+
+    subprocess.run(
+        [
+            compiler,
+            '-std=c99',
+            '-Wall',
+            '-Wextra',
+            '-pedantic',
+            'machine.c',
+            os.path.basename(source_file),
+            '-lm',
+            '-o',
+            os.path.basename(executable),
+        ],
+        cwd=artifacts['output_dir'],
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+    return subprocess.run(
+        [executable],
+        cwd=artifacts['output_dir'],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )

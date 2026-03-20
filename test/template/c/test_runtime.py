@@ -1139,31 +1139,36 @@ def _compile_and_run_c_harness(artifacts, stem, source_code):
 
 def _compile_and_run_cpp_harness(artifacts, stem, source_code, std='c++98'):
     compiler = artifacts['cpp_compiler']
-    if compiler is None or os.name == 'nt':
-        pytest.skip('A direct C++ compiler on non-Windows is required for C++ harness tests.')
+    if compiler is None:
+        pytest.skip('A direct C++ compiler is required for C++ harness tests.')
 
     source_file = os.path.join(artifacts['output_dir'], stem + '.cpp')
-    executable = os.path.join(artifacts['output_dir'], stem)
+    executable = os.path.join(
+        artifacts['output_dir'],
+        stem + ('.exe' if os.name == 'nt' else ''),
+    )
+    compile_cmd = [
+        compiler,
+        '-std=' + std,
+        '-Wall',
+        '-Wextra',
+        '-Werror',
+        '-pedantic-errors',
+        '-x',
+        'c++',
+        'machine.c',
+        os.path.basename(source_file),
+        '-o',
+        os.path.basename(executable),
+    ]
+    if os.name != 'nt':
+        compile_cmd.insert(-2, '-lm')
 
     with open(source_file, 'w', encoding='utf-8') as f:
         f.write(source_code)
 
     subprocess.run(
-        [
-            compiler,
-            '-std=' + std,
-            '-Wall',
-            '-Wextra',
-            '-Werror',
-            '-pedantic-errors',
-            '-x',
-            'c++',
-            'machine.c',
-            os.path.basename(source_file),
-            '-lm',
-            '-o',
-            os.path.basename(executable),
-        ],
+        compile_cmd,
         cwd=artifacts['output_dir'],
         check=True,
         stdout=subprocess.PIPE,

@@ -68,10 +68,11 @@ initial_vars.{{ def_item.name | to_identifier }} = {{ def_item.init.to_ast_node(
 ## Extension
 
 Register callbacks in `{{ machine_class_name(model) }}Hooks` to extend abstract
-actions. Callback implementations should mutate persistent state through
-`{{ machine_class_name(model) }}_vars_mut(...)` or the generated setter APIs so
-the behavior stays aligned with the generated runtime's active execution
-context.
+actions. Abstract hooks are read-only extension points: use them to observe the
+execution context or bridge to external systems, but do not mutate persistent
+machine variables from inside the callback. In particular, do not write through
+`{{ machine_class_name(model) }}_vars_mut(...)` or `machine->vars` in an
+abstract hook.
 
 ```c
 static void custom_hook(
@@ -80,13 +81,9 @@ static void custom_hook(
     void *user_data
 )
 {
+    (void)machine;
     (void)ctx;
     (void)user_data;
-{% if model.defines.values() | list %}
-    {{ machine_class_name(model) }}_vars_mut(machine)->{{ (model.defines.values() | list)[0].name | to_identifier }} += 1;
-{% else %}
-    (void)machine;
-{% endif %}
 }
 
 int main(void)
@@ -148,6 +145,11 @@ hook slots to register.
 {% endif %}
 
 ## Variables
+
+Access persistent variables directly through the generated `{{ machine_class_name(model) }}Vars`
+struct fields, for example `{{ machine_class_name(model) }}_vars(&machine)->name`
+for reads and `{{ machine_class_name(model) }}_vars_mut(&machine)->name` for
+out-of-hook writes.
 
 {% if model.defines.values() | list %}
 | Name | C Type | Initial DSL |

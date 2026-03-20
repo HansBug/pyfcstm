@@ -82,7 +82,7 @@ class TestCBuiltinTemplate:
             assert runtime.vars == {'counter': 1}
             assert cold_calls == [('cold', 'Root', 'enter', 0)]
 
-    def test_generated_machine_supports_hook_side_effects(self):
+    def test_generated_machine_exposes_read_only_hook_context(self):
         dsl_code = """
         def int counter = 0;
         state Root {
@@ -103,11 +103,9 @@ class TestCBuiltinTemplate:
 
             def root_hook(ctx):
                 calls.append(('root', ctx.get_full_state_path(), ctx.action_stage, ctx.get_var('counter')))
-                runtime._set_var_from_ptr(runtime._machine, 'counter', ctx.get_var('counter') + 10)
 
             def a_enter_hook(ctx):
                 calls.append(('a_enter', ctx.get_full_state_path(), ctx.action_stage, ctx.get_var('counter')))
-                runtime._set_var_from_ptr(runtime._machine, 'counter', ctx.get_var('counter') + 3)
 
             runtime.install_hooks({
                 'on_Root_RootInit': root_hook,
@@ -116,10 +114,10 @@ class TestCBuiltinTemplate:
             runtime.cycle()
 
             assert runtime.current_state_path == ('Root', 'System', 'A')
-            assert runtime.vars == {'counter': 15}
+            assert runtime.vars == {'counter': 2}
             assert calls == [
                 ('root', 'Root', 'enter', 0),
-                ('a_enter', 'Root.System.A', 'enter', 10),
+                ('a_enter', 'Root.System.A', 'enter', 0),
             ]
             assert runtime.get_abstract_hook_map() == {
                 'Root.RootInit': 'on_Root_RootInit',
@@ -152,16 +150,15 @@ class TestCBuiltinTemplate:
 
             def platform_init(ctx):
                 calls.append((ctx.action_name, ctx.action_stage, ctx.get_full_state_path()))
-                runtime._set_var_from_ptr(runtime._machine, 'trace', ctx.get_var('trace') + 100)
 
             runtime.install_hooks({'on_Root_PlatformInit': platform_init})
             runtime.cycle()
             assert runtime.current_state_path == ('Root', 'A')
-            assert runtime.vars == {'trace': 201}
+            assert runtime.vars == {'trace': 1}
 
             runtime.cycle(['Root.A.Go'])
             assert runtime.current_state_path == ('Root', 'B')
-            assert runtime.vars == {'trace': 311}
+            assert runtime.vars == {'trace': 11}
 
             assert runtime.get_abstract_hook_map() == {
                 'Root.PlatformInit': 'on_Root_PlatformInit',
@@ -201,9 +198,15 @@ class TestCBuiltinTemplate:
             assert 'on_Root_RootInit' in readme
             assert 'on_Root_System_A_AEnter' in readme
             assert '| DSL action path | Hook field | Owner state | Stage |' in readme
+            assert 'read-only extension points' in readme
+            assert 'do not mutate persistent' in readme
+            assert 'RootMachine_vars_mut(&machine)->name' in readme
             assert '可注册的 Abstract Hook 清单' in readme_zh
             assert 'on_Root_RootInit' in readme_zh
             assert 'on_Root_System_A_AEnter' in readme_zh
+            assert '只读扩展点' in readme_zh
+            assert '不应在回调内部修改状态机持久变量' in readme_zh
+            assert 'RootMachine_vars_mut(&machine)->name' in readme_zh
 
     def test_generated_machine_source_is_c99_and_build_files_work(self):
         dsl_code = """

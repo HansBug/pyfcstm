@@ -46,7 +46,9 @@ machine = {{ machine_class_name(model) }}(
 ## Extension
 
 Subclass the generated machine and override protected hook methods listed in
-the table below.
+the table below. Abstract hooks are read-only extension points: inspect `ctx`
+and coordinate with external systems, but do not mutate persistent machine
+variables from inside the hook.
 
 ```python
 from machine import {{ machine_class_name(model) }}
@@ -93,6 +95,7 @@ Example:
 ```python
 class CustomMachine({{ machine_class_name(model) }}):
     def {{ abstract_ns.rows[0]['hook_name'] }}(self, ctx):
+        # Observe ctx only. Do not mutate self._vars here.
         return None
 ```
 

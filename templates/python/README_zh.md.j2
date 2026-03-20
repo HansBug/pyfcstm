@@ -39,7 +39,9 @@ machine = {{ machine_class_name(model) }}(
 
 ## 扩展方式
 
-可以继承生成类，并覆写下表列出的受保护 hook 方法。
+可以继承生成类，并覆写下表列出的受保护 hook 方法。abstract hook
+本质上是只读扩展点：应当只读取 `ctx` 并与外部系统交互，不应在 hook
+内部修改状态机持久变量。
 
 ```python
 from machine import {{ machine_class_name(model) }}
@@ -86,6 +88,7 @@ class CustomMachine({{ machine_class_name(model) }}):
 ```python
 class CustomMachine({{ machine_class_name(model) }}):
     def {{ abstract_ns.rows[0]['hook_name'] }}(self, ctx):
+        # 只观察 ctx，不要在这里修改 self._vars。
         return None
 ```
 

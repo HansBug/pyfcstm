@@ -27,9 +27,6 @@ extern "C" {
 #define {{ machine_macro_name(model) }}_FAILURE 0
 #define {{ machine_macro_name(model) }}_MAX_STACK_DEPTH 64
 #define {{ machine_macro_name(model) }}_MAX_DFS_STEPS 1000
-#define {{ machine_macro_name(model) }}_VAR_TYPE_UNKNOWN 0
-#define {{ machine_macro_name(model) }}_VAR_TYPE_INT 1
-#define {{ machine_macro_name(model) }}_VAR_TYPE_FLOAT 2
 
 typedef struct {{ machine_class_name(model) }} {{ machine_class_name(model) }};
 typedef struct {{ machine_class_name(model) }}ExecutionContext {{ machine_class_name(model) }}ExecutionContext;
@@ -170,27 +167,6 @@ struct {{ machine_class_name(model) }} {
     const char **hook_field,
     const char **owner_state_path,
     const char **action_stage
-);
-{{ machine_macro_name(model) }}_API int {{ machine_class_name(model) }}_get_var_type(const char *name);
-{{ machine_macro_name(model) }}_API int {{ machine_class_name(model) }}_get_var_int(
-    const {{ machine_class_name(model) }} *machine,
-    const char *name,
-    long long *out_value
-);
-{{ machine_macro_name(model) }}_API int {{ machine_class_name(model) }}_set_var_int(
-    {{ machine_class_name(model) }} *machine,
-    const char *name,
-    long long value
-);
-{{ machine_macro_name(model) }}_API int {{ machine_class_name(model) }}_get_var_float(
-    const {{ machine_class_name(model) }} *machine,
-    const char *name,
-    double *out_value
-);
-{{ machine_macro_name(model) }}_API int {{ machine_class_name(model) }}_set_var_float(
-    {{ machine_class_name(model) }} *machine,
-    const char *name,
-    double value
 );
 
 #ifdef __cplusplus

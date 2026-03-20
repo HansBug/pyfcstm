@@ -236,12 +236,13 @@ class _ExecutionContextView:
     def __init__(self, runtime, machine_ptr, ctx_struct):
         self._runtime = runtime
         self._machine_ptr = machine_ptr
+        self._vars_ptr = ctx_struct.vars
         self.action_name = ctx_struct.action_name.decode('utf-8')
         self.action_stage = ctx_struct.action_stage.decode('utf-8')
         self.state_path = ctx_struct.state_path.decode('utf-8')
 
     def get_var(self, name):
-        return self._runtime._get_var_from_ptr(self._machine_ptr, name)
+        return self._runtime._get_var_from_vars_ptr(self._vars_ptr, name)
 
     def has_var(self, name):
         return name in self._runtime._var_types
@@ -264,6 +265,7 @@ class _CRuntime:
             def_item.name: def_item.type for def_item in model.defines.values()
         }
         self._var_names = list(model.defines.keys())
+        self._vars_struct = self._build_vars_struct_type()
         self._machine = self._bind_function('{prefix}_create', restype=ctypes.c_void_p)()
         self._destroy = self._bind_function('{prefix}_destroy', argtypes=[ctypes.c_void_p])
         self._hot_start = self._bind_function(
@@ -279,6 +281,16 @@ class _CRuntime:
         self._set_hooks = self._bind_function(
             '{prefix}_set_hooks',
             argtypes=[ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p],
+        )
+        self._vars = self._bind_function(
+            '{prefix}_vars',
+            argtypes=[ctypes.c_void_p],
+            restype=ctypes.POINTER(self._vars_struct),
+        )
+        self._vars_mut = self._bind_function(
+            '{prefix}_vars_mut',
+            argtypes=[ctypes.c_void_p],
+            restype=ctypes.POINTER(self._vars_struct),
         )
         self._current_state_path = self._bind_function(
             '{prefix}_current_state_path', argtypes=[ctypes.c_void_p], restype=ctypes.c_char_p
@@ -314,26 +326,6 @@ class _CRuntime:
                 ctypes.POINTER(ctypes.c_char_p),
                 ctypes.POINTER(ctypes.c_char_p),
             ],
-            restype=ctypes.c_int,
-        )
-        self._get_var_int = self._bind_function(
-            '{prefix}_get_var_int',
-            argtypes=[ctypes.c_void_p, ctypes.c_char_p, ctypes.POINTER(ctypes.c_longlong)],
-            restype=ctypes.c_int,
-        )
-        self._set_var_int = self._bind_function(
-            '{prefix}_set_var_int',
-            argtypes=[ctypes.c_void_p, ctypes.c_char_p, ctypes.c_longlong],
-            restype=ctypes.c_int,
-        )
-        self._get_var_float = self._bind_function(
-            '{prefix}_get_var_float',
-            argtypes=[ctypes.c_void_p, ctypes.c_char_p, ctypes.POINTER(ctypes.c_double)],
-            restype=ctypes.c_int,
-        )
-        self._set_var_float = self._bind_function(
-            '{prefix}_set_var_float',
-            argtypes=[ctypes.c_void_p, ctypes.c_char_p, ctypes.c_double],
             restype=ctypes.c_int,
         )
 
@@ -385,6 +377,21 @@ class _CRuntime:
             fn.restype = restype
         return fn
 
+    def _build_vars_struct_type(self):
+        field_defs = []
+        for def_item in self._model.defines.values():
+            if def_item.type == 'int':
+                field_defs.append((def_item.name, ctypes.c_longlong))
+            else:
+                field_defs.append((def_item.name, ctypes.c_double))
+        if not field_defs:
+            field_defs = [('_unused_placeholder', ctypes.c_int)]
+
+        class _VarsStruct(ctypes.Structure):
+            _fields_ = field_defs
+
+        return _VarsStruct
+
     def _load_hook_info(self):
         rows = []
         for index in range(self._abstract_hook_count()):
@@ -411,24 +418,12 @@ class _CRuntime:
         message = self._last_error(self._machine)
         raise RuntimeError(message.decode('utf-8') if message else 'unknown C runtime error')
 
-    def _get_var_from_ptr(self, machine_ptr, name):
-        if self._var_types[name] == 'int':
-            value = ctypes.c_longlong()
-            if self._get_var_int(machine_ptr, name.encode('utf-8'), ctypes.byref(value)) != 1:
-                self._raise_last_error()
-            return value.value
-        value = ctypes.c_double()
-        if self._get_var_float(machine_ptr, name.encode('utf-8'), ctypes.byref(value)) != 1:
-            self._raise_last_error()
-        return value.value
+    def _get_var_from_vars_ptr(self, vars_ptr, name):
+        values = ctypes.cast(vars_ptr, ctypes.POINTER(self._vars_struct)).contents
+        return getattr(values, name)
 
-    def _set_var_from_ptr(self, machine_ptr, name, value):
-        if self._var_types[name] == 'int':
-            if self._set_var_int(machine_ptr, name.encode('utf-8'), int(value)) != 1:
-                self._raise_last_error()
-        else:
-            if self._set_var_float(machine_ptr, name.encode('utf-8'), float(value)) != 1:
-                self._raise_last_error()
+    def _get_var_from_ptr(self, machine_ptr, name):
+        return self._get_var_from_vars_ptr(self._vars(machine_ptr), name)
 
     def hot_start(self, initial_state, initial_vars):
         if set(initial_vars.keys()) != set(self._var_names):
@@ -438,20 +433,8 @@ class _CRuntime:
             self._raise_last_error()
 
     def _create_initial_vars(self, initial_vars):
-        field_defs = []
-        for def_item in self._model.defines.values():
-            if def_item.type == 'int':
-                field_defs.append((def_item.name, ctypes.c_longlong))
-            else:
-                field_defs.append((def_item.name, ctypes.c_double))
-        if not field_defs:
-            field_defs = [('_unused_placeholder', ctypes.c_int)]
-
-        class _VarsStruct(ctypes.Structure):
-            _fields_ = field_defs
-
-        values = _VarsStruct()
-        if field_defs[0][0] == '_unused_placeholder':
+        values = self._vars_struct()
+        if not self._var_names:
             values._unused_placeholder = 0
         for name, value in initial_vars.items():
             setattr(values, name, value)

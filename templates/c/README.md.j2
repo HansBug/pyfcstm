@@ -37,8 +37,8 @@
 {% endfor -%}
 # {{ machine_class_name(model) }}
 
-This directory contains the generated C99 runtime for the DSL root state
-`{{ model.root_state.name }}`.
+This directory contains the generated C99 / C++98-compatible runtime for the
+DSL root state `{{ model.root_state.name }}`.
 
 The generated `machine.h` and `machine.c` stay close to a 4-space
 `clang-format` style so reformatting should not introduce obvious churn.
@@ -52,8 +52,9 @@ The generated `machine.h` and `machine.c` stay close to a 4-space
 
 ## Runtime Overview
 
-This generated runtime is a self-contained C99 state-machine engine specialized
-for the concrete DSL model. It is intended to be used as a black-box runtime:
+This generated runtime is a self-contained C99 / C++98+ state-machine engine
+specialized for the concrete DSL model. It is intended to be used as a
+black-box runtime:
 
 - `machine.h` is the integration surface for application code
 - `machine.c` contains the generated execution logic and should usually be
@@ -64,6 +65,8 @@ for the concrete DSL model. It is intended to be used as a black-box runtime:
   state
 - abstract hooks are the supported extension point for integrating external
   systems
+- generated identifiers are normalized for both C and C++, including escaping
+  keyword collisions such as `class` or `template`
 
 The public header exposes some runtime layout structs for ABI simplicity, but
 runtime-owned internals should not be modified directly unless the field is
@@ -92,6 +95,14 @@ cc -std=c99 -shared -fPIC machine.c -lm -o libmachine.so
 On Windows, use the equivalent DLL flags for your compiler toolchain and
 define `{{ machine_macro_name(model) }}_BUILD_SHARED` when exporting symbols.
 
+Compile checking with a C++ compiler is also supported and recommended when
+your integration layer is C++:
+
+```bash
+g++ -x c++ -std=c++98 -Wall -Wextra -Werror -pedantic-errors -c machine.c -o machine.o
+g++ -x c++ -std=c++17 -Wall -Wextra -Werror -pedantic-errors -c machine.c -o machine.o
+```
+
 ### Linkage and Visibility
 
 - `{{ machine_macro_name(model) }}_API` is the generated symbol-visibility macro
@@ -100,8 +111,11 @@ define `{{ machine_macro_name(model) }}_BUILD_SHARED` when exporting symbols.
   generated runtime itself as a Windows DLL.
 - Define `{{ machine_macro_name(model) }}_USE_SHARED` when consuming that DLL
   from external code on Windows.
-- `machine.h` also wraps the public declarations in `extern "C"` when included
-  from C++.
+- `machine.h` wraps only the public API declarations in `extern "C"` when
+  included from C++.
+- Public layout structs and hook typedefs stay usable from both C and C++.
+- In generated integer fields, `{{ machine_class_name(model) }}Int` is the
+  public signed 64-bit type alias chosen to stay valid in both C99 and C++98+.
 
 ## Quick Start
 
@@ -118,7 +132,7 @@ int main(void)
 {% if event_ns.items %}
     {
         static const {{ machine_class_name(model) }}EventId event_ids[] = {
-            {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[0] | to_identifier | upper }}
+            {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[0] | to_c_identifier | upper }}
         };
         {{ machine_class_name(model) }}_cycle(&machine, event_ids, 1u);
     }
@@ -143,7 +157,7 @@ int main(void)
 | `{{ machine_macro_name(model) }}_INVALID_EVENT_ID` | `-1` | Invalid event id sentinel |
 | `{{ machine_macro_name(model) }}_STATE_COUNT` | `{{ state_items | length }}` | Number of generated state ids |
 | `{{ machine_macro_name(model) }}_EVENT_COUNT` | `{{ event_ns.items | length }}` | Number of generated event ids |
-| `{{ machine_class_name(model) | upper }}_HOOKS_INIT` | `{0}` | Zero-init helper for the hook table |
+| `{{ machine_class_name(model) | upper }}_HOOKS_INIT` | generated brace initializer | Zero-init helper for the hook table |
 
 ### Public Types
 
@@ -153,6 +167,7 @@ int main(void)
 | `{{ machine_class_name(model) }}ExecutionContext` | Read-only context passed to abstract hooks |
 | `{{ machine_class_name(model) }}StateId` | Integer state id type |
 | `{{ machine_class_name(model) }}EventId` | Integer event id type |
+| `{{ machine_class_name(model) }}Int` | Public signed 64-bit integer alias used by generated integer vars |
 | `{{ machine_class_name(model) }}Vars` | Persistent variable snapshot type |
 | `{{ machine_class_name(model) }}HookFn` | Abstract hook callback function type |
 | `{{ machine_class_name(model) }}Hooks` | Hook registration table |
@@ -164,7 +179,7 @@ int main(void)
 | Field | C Type | Initial DSL |
 | --- | --- | --- |
 {% for def_item in model.defines.values() -%}
-| `{{ def_item.name | to_identifier }}` | `{% if def_item.type == 'int' %}long long{% else %}double{% endif %}` | `{{ def_item.init.to_ast_node() | string }}` |
+| `{{ def_item.name | to_c_identifier }}` | `{% if def_item.type == 'int' %}{{ machine_class_name(model) }}Int{% else %}double{% endif %}` | `{{ def_item.init.to_ast_node() | string }}` |
 {% endfor %}
 {% else %}
 This state machine does not define persistent variables.
@@ -303,7 +318,7 @@ Use generated event ids directly. Do not construct event names at runtime.
 ```c
 {% if event_ns.items %}
 static const {{ machine_class_name(model) }}EventId event_ids[] = {
-    {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[0] | to_identifier | upper }}
+    {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[0] | to_c_identifier | upper }}
 };
 
 {{ machine_class_name(model) }}_cycle(&machine, event_ids, 1u);
@@ -317,13 +332,13 @@ You may also submit more than one event in one cycle:
 ```c
 {% if event_ns.items | length >= 2 %}
 static const {{ machine_class_name(model) }}EventId event_ids[] = {
-    {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[0] | to_identifier | upper }},
-    {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[1] | to_identifier | upper }}
+    {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[0] | to_c_identifier | upper }},
+    {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[1] | to_c_identifier | upper }}
 };
 {{ machine_class_name(model) }}_cycle(&machine, event_ids, 2u);
 {% elif event_ns.items %}
 static const {{ machine_class_name(model) }}EventId event_ids[] = {
-    {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[0] | to_identifier | upper }}
+    {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[0] | to_c_identifier | upper }}
 };
 {{ machine_class_name(model) }}_cycle(&machine, event_ids, 1u);
 {% else %}
@@ -336,7 +351,13 @@ static const {{ machine_class_name(model) }}EventId event_ids[] = {
 ```c
 const {{ machine_class_name(model) }}Vars *vars = {{ machine_class_name(model) }}_vars(&machine);
 {% if model.defines.values() | list %}
-printf("{{ (model.defines.values() | list)[0].name | to_identifier }} = %{% if (model.defines.values() | list)[0].type == 'int' %}lld{% else %}f{% endif %}\n", vars->{{ (model.defines.values() | list)[0].name | to_identifier }});
+{% if (model.defines.values() | list)[0].type == 'int' %}
+{{ machine_class_name(model) }}Int value = vars->{{ (model.defines.values() | list)[0].name | to_c_identifier }};
+(void)value;
+{% else %}
+double value = vars->{{ (model.defines.values() | list)[0].name | to_c_identifier }};
+(void)value;
+{% endif %}
 {% else %}
 (void)vars;
 {% endif %}
@@ -352,11 +373,11 @@ Hot start restores a full variable snapshot into a generated state id:
 {{ machine_class_name(model) }}_init(&machine);
 initial_vars = *{{ machine_class_name(model) }}_vars(&machine);
 {% for def_item in model.defines.values() -%}
-initial_vars.{{ def_item.name | to_identifier }} = {{ def_item.init.to_ast_node() | expr_render(style='c') }};
+initial_vars.{{ def_item.name | to_c_identifier }} = {{ def_item.init.to_ast_node() | expr_render(style='c') }};
 {% endfor %}
 {{ machine_class_name(model) }}_hot_start(
     &machine,
-    {{ machine_macro_name(model) }}_STATE_{{ (model.root_state | state_path) | to_identifier | upper }},
+    {{ machine_macro_name(model) }}_STATE_{{ (model.root_state | state_path) | to_c_identifier | upper }},
     &initial_vars
 );
 ```
@@ -408,7 +429,7 @@ printf("last error: %s\n", {{ machine_class_name(model) }}_last_error(&machine))
 | State path | Macro | Value |
 | --- | --- | ---: |
 {% for state in state_items -%}
-| `{{ state | state_path }}` | `{{ machine_macro_name(model) }}_STATE_{{ (state | state_path) | to_identifier | upper }}` | `{{ loop.index0 }}` |
+| `{{ state | state_path }}` | `{{ machine_macro_name(model) }}_STATE_{{ (state | state_path) | to_c_identifier | upper }}` | `{{ loop.index0 }}` |
 {% endfor %}
 
 ## Event IDs
@@ -417,7 +438,7 @@ printf("last error: %s\n", {{ machine_class_name(model) }}_last_error(&machine))
 | Event path | Macro | Value |
 | --- | --- | ---: |
 {% for event_path in event_ns.items -%}
-| `{{ event_path }}` | `{{ machine_macro_name(model) }}_EVENT_{{ event_path | to_identifier | upper }}` | `{{ loop.index0 }}` |
+| `{{ event_path }}` | `{{ machine_macro_name(model) }}_EVENT_{{ event_path | to_c_identifier | upper }}` | `{{ loop.index0 }}` |
 {% endfor %}
 {% else %}
 This state machine does not define any events.
@@ -443,3 +464,12 @@ This state machine does not define any events.
 - Do not mutate runtime-owned internal fields such as `stack`, `stack_size`,
   `hooks`, or `last_error` directly; use the public APIs instead so the runtime
   can preserve its optimized invariants.
+
+## Compatibility Notes
+
+- The generated runtime targets C99 and C++98 or later.
+- Template regression checks compile representative generated machines with both
+  a C compiler and a C++ compiler.
+- Template regression checks also run representative C++ harnesses covering
+  basic behavior, hot start, rollback behavior, keyword-safe identifiers, and
+  abstract hook mounting.

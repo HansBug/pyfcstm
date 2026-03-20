@@ -423,6 +423,9 @@ class TestCBuiltinTemplate:
             assert '## Public Header Reference' in readme
             assert '## Function Reference' in readme
             assert '## Performance Advice' in readme
+            assert 'C++98' in readme
+            assert 'RootMachineInt' in readme
+            assert 'g++ -x c++ -std=c++98' in readme
             assert 'read-only extension points' in readme
             assert 'should not mutate persistent machine variables' in readme
             assert 'RootMachine_vars(&machine)' in readme
@@ -432,6 +435,9 @@ class TestCBuiltinTemplate:
             assert '## 公开头文件参考' in readme_zh
             assert '## 函数参考' in readme_zh
             assert '## 性能建议' in readme_zh
+            assert 'C++98' in readme_zh
+            assert 'RootMachineInt' in readme_zh
+            assert 'g++ -x c++ -std=c++98' in readme_zh
             assert '只读扩展点' in readme_zh
             assert '不适合修改状态机持久变量' in readme_zh
             assert 'RootMachine_vars(&machine)' in readme_zh
@@ -480,6 +486,31 @@ class TestCBuiltinTemplate:
                     stderr=subprocess.PIPE,
                     text=True,
                 )
+            if artifacts['cpp_compiler'] is not None and os.name != 'nt':
+                for std in ['c++98', 'c++11', 'c++17']:
+                    subprocess.run(
+                        [
+                            artifacts['cpp_compiler'],
+                            '-std=' + std,
+                            '-Wall',
+                            '-Wextra',
+                            '-Werror',
+                            '-pedantic-errors',
+                            '-x',
+                            'c++',
+                            artifacts['machine_c_file'],
+                            '-c',
+                            '-o',
+                            os.path.join(
+                                artifacts['output_dir'],
+                                'machine_{std}.o'.format(std=std.replace('+', 'p')),
+                            ),
+                        ],
+                        check=True,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True,
+                    )
 
             make_executable = shutil.which('make')
             if make_executable is not None and os.name != 'nt':
@@ -567,6 +598,489 @@ class TestCBuiltinTemplate:
             assert runtime.vars == {'counter': 2, 'ready': 0}
             assert calls == []
 
+    def test_generated_machine_cpp98_runs_basic_cycle_and_transition(self):
+        dsl_code = """
+        def int counter = 0;
+        state Root {
+            state Idle {
+                during { counter = counter + 1; }
+            }
+            state Running {
+                during { counter = counter + 100; }
+            }
+            [*] -> Idle;
+            Idle -> Running :: Start effect { counter = counter + 10; };
+        }
+        """
+
+        with render_c_artifacts(dsl_code) as artifacts:
+            run = _compile_and_run_cpp_harness(
+                artifacts,
+                'cpp98_basic_cycle',
+                textwrap.dedent(
+                    r'''
+                    #include "machine.h"
+                    #include <string.h>
+
+                    int main(void)
+                    {
+                        RootMachine machine;
+                        static const RootMachineEventId start_events[] = {
+                            ROOT_MACHINE_EVENT_ROOT_IDLE_START
+                        };
+
+                        if (!RootMachine_init(&machine)) {
+                            return 10;
+                        }
+                        if (!RootMachine_cycle(&machine, NULL, 0u)) {
+                            return 11;
+                        }
+                        if (strcmp(RootMachine_current_state_path(&machine), "Root.Idle") != 0) {
+                            return 12;
+                        }
+                        if (RootMachine_vars(&machine)->counter != (RootMachineInt)1) {
+                            return 13;
+                        }
+
+                        if (!RootMachine_cycle(&machine, start_events, 1u)) {
+                            return 14;
+                        }
+                        if (strcmp(RootMachine_current_state_path(&machine), "Root.Running") != 0) {
+                            return 15;
+                        }
+                        if (RootMachine_vars(&machine)->counter != (RootMachineInt)111) {
+                            return 16;
+                        }
+
+                        return 0;
+                    }
+                    '''
+                ),
+            )
+            assert run.returncode == 0, run.stderr
+
+    def test_generated_machine_cpp98_supports_hot_start(self):
+        dsl_code = """
+        def int counter = 0;
+        state Root {
+            state Service {
+                state Ready {
+                    during { counter = counter + 3; }
+                }
+                [*] -> Ready;
+            }
+            [*] -> Service;
+        }
+        """
+
+        with render_c_artifacts(dsl_code) as artifacts:
+            run = _compile_and_run_cpp_harness(
+                artifacts,
+                'cpp98_hot_start',
+                textwrap.dedent(
+                    r'''
+                    #include "machine.h"
+                    #include <string.h>
+
+                    int main(void)
+                    {
+                        RootMachine machine;
+                        RootMachineVars initial_vars;
+
+                        if (!RootMachine_init(&machine)) {
+                            return 20;
+                        }
+
+                        initial_vars.counter = (RootMachineInt)40;
+                        if (!RootMachine_hot_start(
+                            &machine,
+                            ROOT_MACHINE_STATE_ROOT_SERVICE,
+                            &initial_vars
+                        )) {
+                            return 21;
+                        }
+                        if (strcmp(RootMachine_current_state_path(&machine), "Root.Service") != 0) {
+                            return 22;
+                        }
+
+                        if (!RootMachine_cycle(&machine, NULL, 0u)) {
+                            return 23;
+                        }
+                        if (strcmp(RootMachine_current_state_path(&machine), "Root.Service.Ready") != 0) {
+                            return 24;
+                        }
+                        if (RootMachine_vars(&machine)->counter != (RootMachineInt)43) {
+                            return 25;
+                        }
+
+                        return 0;
+                    }
+                    '''
+                ),
+            )
+            assert run.returncode == 0, run.stderr
+
+    def test_generated_machine_cpp98_hooks_install_and_fire_with_user_data(self):
+        dsl_code = """
+        def int counter = 0;
+        state Root {
+            enter abstract RootInit;
+            state System {
+                state A {
+                    enter abstract AEnter;
+                    during { counter = counter + 2; }
+                }
+                [*] -> A;
+            }
+            [*] -> System;
+        }
+        """
+
+        with render_c_artifacts(dsl_code) as artifacts:
+            run = _compile_and_run_cpp_harness(
+                artifacts,
+                'cpp98_hook_mount',
+                textwrap.dedent(
+                    r'''
+                    #include "machine.h"
+                    #include <string.h>
+
+                    typedef struct HookLog {
+                        int count;
+                        int root_seen;
+                        int a_seen;
+                        RootMachineInt root_counter;
+                        RootMachineInt a_counter;
+                    } HookLog;
+
+                    static void root_hook(
+                        RootMachine *machine,
+                        const RootMachineExecutionContext *ctx,
+                        void *user_data
+                    )
+                    {
+                        HookLog *log = (HookLog *)user_data;
+                        (void)machine;
+                        log->count += 1;
+                        if (
+                            strcmp(ctx->action_name, "Root.RootInit") == 0 &&
+                            strcmp(ctx->state_path, "Root") == 0 &&
+                            strcmp(ctx->action_stage, "enter") == 0
+                        ) {
+                            log->root_seen = 1;
+                            log->root_counter = ctx->vars->counter;
+                        }
+                    }
+
+                    static void a_enter_hook(
+                        RootMachine *machine,
+                        const RootMachineExecutionContext *ctx,
+                        void *user_data
+                    )
+                    {
+                        HookLog *log = (HookLog *)user_data;
+                        (void)machine;
+                        log->count += 1;
+                        if (
+                            strcmp(ctx->action_name, "Root.System.A.AEnter") == 0 &&
+                            strcmp(ctx->state_path, "Root.System.A") == 0 &&
+                            strcmp(ctx->action_stage, "enter") == 0
+                        ) {
+                            log->a_seen = 1;
+                            log->a_counter = ctx->vars->counter;
+                        }
+                    }
+
+                    int main(void)
+                    {
+                        RootMachine machine;
+                        RootMachineHooks hooks = ROOTMACHINE_HOOKS_INIT;
+                        HookLog log = {0, 0, 0, 0, 0};
+
+                        if (!RootMachine_init(&machine)) {
+                            return 30;
+                        }
+
+                        hooks.on_Root_RootInit = root_hook;
+                        hooks.on_Root_System_A_AEnter = a_enter_hook;
+                        RootMachine_set_hooks(&machine, &hooks, &log);
+
+                        if (!RootMachine_cycle(&machine, NULL, 0u)) {
+                            return 31;
+                        }
+                        if (log.count != 2 || !log.root_seen || !log.a_seen) {
+                            return 32;
+                        }
+                        if (log.root_counter != 0 || log.a_counter != 0) {
+                            return 33;
+                        }
+                        if (RootMachine_vars(&machine)->counter != (RootMachineInt)2) {
+                            return 34;
+                        }
+
+                        if (!RootMachine_cycle(&machine, NULL, 0u)) {
+                            return 35;
+                        }
+                        if (log.count != 2) {
+                            return 36;
+                        }
+
+                        return 0;
+                    }
+                    '''
+                ),
+            )
+            assert run.returncode == 0, run.stderr
+
+    def test_generated_machine_cpp98_hooks_follow_ref_reuse_behavior(self):
+        dsl_code = """
+        def int trace = 0;
+        state Root {
+            enter abstract PlatformInit;
+
+            state A {
+                enter ref /PlatformInit;
+                during { trace = trace + 1; }
+            }
+
+            state B {
+                enter ref /PlatformInit;
+                during { trace = trace + 10; }
+            }
+
+            [*] -> A;
+            A -> B :: Go;
+        }
+        """
+
+        with render_c_artifacts(dsl_code) as artifacts:
+            run = _compile_and_run_cpp_harness(
+                artifacts,
+                'cpp98_hook_ref_reuse',
+                textwrap.dedent(
+                    r'''
+                    #include "machine.h"
+                    #include <string.h>
+
+                    typedef struct HookLog {
+                        int total_calls;
+                        int root_calls;
+                    } HookLog;
+
+                    static void platform_hook(
+                        RootMachine *machine,
+                        const RootMachineExecutionContext *ctx,
+                        void *user_data
+                    )
+                    {
+                        HookLog *log = (HookLog *)user_data;
+                        (void)machine;
+
+                        if (strcmp(ctx->action_name, "Root.PlatformInit") != 0) {
+                            log->total_calls = -100;
+                            return;
+                        }
+
+                        log->total_calls += 1;
+                        if (strcmp(ctx->state_path, "Root") == 0) {
+                            log->root_calls += 1;
+                        }
+                    }
+
+                    int main(void)
+                    {
+                        RootMachine machine;
+                        RootMachineHooks hooks = ROOTMACHINE_HOOKS_INIT;
+                        HookLog log = {0, 0};
+                        static const RootMachineEventId go_events[] = {
+                            ROOT_MACHINE_EVENT_ROOT_A_GO
+                        };
+
+                        if (!RootMachine_init(&machine)) {
+                            return 40;
+                        }
+
+                        hooks.on_Root_PlatformInit = platform_hook;
+                        RootMachine_set_hooks(&machine, &hooks, &log);
+
+                        if (!RootMachine_cycle(&machine, NULL, 0u)) {
+                            return 41;
+                        }
+                        if (log.total_calls != 2 || log.root_calls != 2) {
+                            return 42;
+                        }
+                        if (RootMachine_vars(&machine)->trace != (RootMachineInt)1) {
+                            return 43;
+                        }
+
+                        if (!RootMachine_cycle(&machine, go_events, 1u)) {
+                            return 44;
+                        }
+                        if (log.total_calls != 3 || log.root_calls != 3) {
+                            return 45;
+                        }
+                        if (RootMachine_vars(&machine)->trace != (RootMachineInt)11) {
+                            return 46;
+                        }
+                        if (strcmp(RootMachine_current_state_path(&machine), "Root.B") != 0) {
+                            return 47;
+                        }
+
+                        return 0;
+                    }
+                    '''
+                ),
+            )
+            assert run.returncode == 0, run.stderr
+
+    def test_generated_machine_cpp98_rolls_back_transition_effects(self):
+        dsl_code = """
+        def int counter = 0;
+        def int ready = 0;
+        state Root {
+            state A {
+                during { counter = counter + 1; }
+            }
+
+            state B {
+                state B1 {
+                    enter abstract B1Enter;
+                    during { counter = counter + 100; }
+                }
+                [*] -> B1 : if [ready == 1];
+            }
+
+            [*] -> A;
+            A -> B :: Go effect { counter = counter + 1000; };
+        }
+        """
+
+        with render_c_artifacts(dsl_code) as artifacts:
+            run = _compile_and_run_cpp_harness(
+                artifacts,
+                'cpp98_validation_rollback',
+                textwrap.dedent(
+                    r'''
+                    #include "machine.h"
+                    #include <string.h>
+
+                    typedef struct HookLog {
+                        int b1_enter_count;
+                    } HookLog;
+
+                    static void b1_enter_hook(
+                        RootMachine *machine,
+                        const RootMachineExecutionContext *ctx,
+                        void *user_data
+                    )
+                    {
+                        HookLog *log = (HookLog *)user_data;
+                        (void)machine;
+                        if (
+                            strcmp(ctx->action_name, "Root.B.B1.B1Enter") == 0 &&
+                            strcmp(ctx->state_path, "Root.B.B1") == 0
+                        ) {
+                            log->b1_enter_count += 1;
+                        }
+                    }
+
+                    int main(void)
+                    {
+                        RootMachine machine;
+                        RootMachineHooks hooks = ROOTMACHINE_HOOKS_INIT;
+                        HookLog log = {0};
+                        static const RootMachineEventId go_events[] = {
+                            ROOT_MACHINE_EVENT_ROOT_A_GO
+                        };
+
+                        if (!RootMachine_init(&machine)) {
+                            return 50;
+                        }
+
+                        hooks.on_Root_B_B1_B1Enter = b1_enter_hook;
+                        RootMachine_set_hooks(&machine, &hooks, &log);
+
+                        if (!RootMachine_cycle(&machine, NULL, 0u)) {
+                            return 51;
+                        }
+                        if (strcmp(RootMachine_current_state_path(&machine), "Root.A") != 0) {
+                            return 52;
+                        }
+                        if (RootMachine_vars(&machine)->counter != (RootMachineInt)1) {
+                            return 53;
+                        }
+
+                        if (!RootMachine_cycle(&machine, go_events, 1u)) {
+                            return 54;
+                        }
+                        if (strcmp(RootMachine_current_state_path(&machine), "Root.A") != 0) {
+                            return 55;
+                        }
+                        if (RootMachine_vars(&machine)->counter != (RootMachineInt)2) {
+                            return 56;
+                        }
+                        if (log.b1_enter_count != 0) {
+                            return 57;
+                        }
+
+                        return 0;
+                    }
+                    '''
+                ),
+            )
+            assert run.returncode == 0, run.stderr
+
+    def test_generated_machine_cpp98_supports_cxx_keyword_safe_identifiers(self):
+        dsl_code = """
+        def int class = 0;
+        def int template = 0;
+        state Root {
+            state namespace_ {
+                during {
+                    class = class + 1;
+                    template = template + 2;
+                }
+            }
+            [*] -> namespace_;
+        }
+        """
+
+        with render_c_artifacts(dsl_code) as artifacts:
+            run = _compile_and_run_cpp_harness(
+                artifacts,
+                'cpp98_keyword_safe_identifiers',
+                textwrap.dedent(
+                    r'''
+                    #include "machine.h"
+                    #include <string.h>
+
+                    int main(void)
+                    {
+                        RootMachine machine;
+
+                        if (!RootMachine_init(&machine)) {
+                            return 60;
+                        }
+                        if (!RootMachine_cycle(&machine, NULL, 0u)) {
+                            return 61;
+                        }
+                        if (strcmp(RootMachine_current_state_path(&machine), "Root.namespace_") != 0) {
+                            return 62;
+                        }
+                        if (RootMachine_vars(&machine)->class_ != (RootMachineInt)1) {
+                            return 63;
+                        }
+                        if (RootMachine_vars(&machine)->template_ != (RootMachineInt)2) {
+                            return 64;
+                        }
+
+                        return 0;
+                    }
+                    '''
+                ),
+            )
+            assert run.returncode == 0, run.stderr
+
 
 def _assert_runtime_state(runtime, current_path=None, vars=None, is_ended=False):
     assert runtime.is_ended is is_ended
@@ -601,6 +1115,49 @@ def _compile_and_run_c_harness(artifacts, stem, source_code):
             '-Wall',
             '-Wextra',
             '-pedantic',
+            'machine.c',
+            os.path.basename(source_file),
+            '-lm',
+            '-o',
+            os.path.basename(executable),
+        ],
+        cwd=artifacts['output_dir'],
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+    return subprocess.run(
+        [executable],
+        cwd=artifacts['output_dir'],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+
+def _compile_and_run_cpp_harness(artifacts, stem, source_code, std='c++98'):
+    compiler = artifacts['cpp_compiler']
+    if compiler is None or os.name == 'nt':
+        pytest.skip('A direct C++ compiler on non-Windows is required for C++ harness tests.')
+
+    source_file = os.path.join(artifacts['output_dir'], stem + '.cpp')
+    executable = os.path.join(artifacts['output_dir'], stem)
+
+    with open(source_file, 'w', encoding='utf-8') as f:
+        f.write(source_code)
+
+    subprocess.run(
+        [
+            compiler,
+            '-std=' + std,
+            '-Wall',
+            '-Wextra',
+            '-Werror',
+            '-pedantic-errors',
+            '-x',
+            'c++',
             'machine.c',
             os.path.basename(source_file),
             '-lm',

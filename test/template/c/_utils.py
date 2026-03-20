@@ -13,11 +13,15 @@ from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model import parse_dsl_node_to_state_machine
 from pyfcstm.render import StateMachineCodeRenderer
 from pyfcstm.template import extract_template
-from pyfcstm.utils import to_identifier
+from pyfcstm.utils import to_c_identifier
 
 
 def _find_c_compiler():
     return shutil.which('cc') or shutil.which('gcc') or shutil.which('clang')
+
+
+def _find_cpp_compiler():
+    return shutil.which('c++') or shutil.which('g++') or shutil.which('clang++')
 
 
 def _find_cmake():
@@ -25,7 +29,7 @@ def _find_cmake():
 
 
 def _machine_macro_name(model):
-    return '{name}_MACHINE'.format(name=to_identifier(model.root_state.name).upper())
+    return '{name}_MACHINE'.format(name=to_c_identifier(model.root_state.name).upper())
 
 
 def write_test_build_files(output_dir, model):
@@ -100,7 +104,7 @@ def write_test_build_files(output_dir, model):
             '    target_link_libraries(machine_static m)\n'
             '    target_link_libraries(machine_shared m)\n'
             'endif()\n'.format(
-                name=to_identifier(model.root_state.name) + 'Machine',
+                name=to_c_identifier(model.root_state.name) + 'Machine',
                 macro=macro_name,
             )
         )
@@ -257,7 +261,7 @@ def _collect_hook_info_rows(model):
                 seen.add(resolved.func_name)
                 rows.append({
                     'dsl_action_path': resolved.func_name,
-                    'hook_field': 'on_{name}'.format(name=to_identifier(resolved.func_name)),
+                    'hook_field': 'on_{name}'.format(name=to_c_identifier(resolved.func_name)),
                     'owner_state_path': '.'.join(resolved.parent.path),
                     'action_stage': resolved.stage,
                 })
@@ -291,11 +295,14 @@ class _CRuntime:
         self._model = model
         self._temporary_directories = list(temporary_directories or [])
         self._dll_directory_handle = dll_directory_handle
-        self._prefix = '{name}Machine'.format(name=model.root_state.name)
+        self._prefix = '{name}Machine'.format(name=to_c_identifier(model.root_state.name))
         self._var_types = {
             def_item.name: def_item.type for def_item in model.defines.values()
         }
         self._var_names = list(model.defines.keys())
+        self._generated_var_names = {
+            name: to_c_identifier(name) for name in self._var_names
+        }
         self._state_paths = ['.'.join(state.path) for state in model.walk_states()]
         self._state_ids = {
             path: index for index, path in enumerate(self._state_paths)
@@ -391,9 +398,9 @@ class _CRuntime:
         field_defs = []
         for def_item in self._model.defines.values():
             if def_item.type == 'int':
-                field_defs.append((def_item.name, ctypes.c_longlong))
+                field_defs.append((to_c_identifier(def_item.name), ctypes.c_longlong))
             else:
-                field_defs.append((def_item.name, ctypes.c_double))
+                field_defs.append((to_c_identifier(def_item.name), ctypes.c_double))
         if not field_defs:
             field_defs = [('_unused_placeholder', ctypes.c_int)]
 
@@ -408,7 +415,7 @@ class _CRuntime:
 
     def _get_var_from_vars_ptr(self, vars_ptr, name):
         values = ctypes.cast(vars_ptr, ctypes.POINTER(self._vars_struct)).contents
-        return getattr(values, name)
+        return getattr(values, self._generated_var_names[name])
 
     def _get_var_from_ptr(self, machine_ptr, name):
         return self._get_var_from_vars_ptr(self._vars(machine_ptr), name)
@@ -479,7 +486,7 @@ class _CRuntime:
         if not self._var_names:
             values._unused_placeholder = 0
         for name, value in initial_vars.items():
-            setattr(values, name, value)
+            setattr(values, self._generated_var_names[name], value)
         return values
 
     def install_hooks(self, callback_map):
@@ -573,6 +580,7 @@ def render_c_artifacts(dsl_code):
             'build_files': build_info['build_files'],
             'cmake': build_info['cmake'],
             'compiler': build_info['compiler'],
+            'cpp_compiler': _find_cpp_compiler(),
         }
 
 

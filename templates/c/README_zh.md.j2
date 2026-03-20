@@ -37,7 +37,8 @@
 {% endfor -%}
 # {{ machine_class_name(model) }}
 
-这里存放 DSL 根状态 `{{ model.root_state.name }}` 对应的 C99 生成运行时。
+这里存放 DSL 根状态 `{{ model.root_state.name }}` 对应的
+C99 / C++98 兼容生成运行时。
 
 生成出的 `machine.h` 和 `machine.c` 会尽量贴近 4 空格缩进的
 `clang-format` 风格，这样后续再跑一次格式化时不应出现明显的样式抖动。
@@ -51,8 +52,8 @@
 
 ## 运行时概览
 
-这份生成运行时是一个针对当前 DSL 模型专门生成的、自包含的 C99 状态机引擎。
-建议把它当作“黑盒运行时”来使用：
+这份生成运行时是一个针对当前 DSL 模型专门生成的、自包含的
+C99 / C++98+ 状态机引擎。建议把它当作“黑盒运行时”来使用：
 
 - `machine.h` 是应用程序集成时真正应关注的接口面
 - `machine.c` 包含生成出来的执行逻辑，通常应视为实现细节
@@ -60,6 +61,7 @@
 - hot start 通过“完整变量快照 + 生成状态 id”恢复状态
 - speculative transition 失败时会回滚到上一次已提交状态
 - abstract hook 是对接外部系统的标准扩展点
+- 生成标识符会同时兼顾 C 和 C++，遇到 `class`、`template` 这类关键字冲突时会自动规避
 
 头文件为了 ABI 简洁起见暴露了一些运行时布局结构体，但除非文档明确说明可直接使用，
 否则这些字段都应视为运行时内部实现细节，不应自行写入。
@@ -87,6 +89,13 @@ cc -std=c99 -shared -fPIC machine.c -lm -o libmachine.so
 在 Windows 上，请改用对应编译器的 DLL 选项，并在导出符号时定义
 `{{ machine_macro_name(model) }}_BUILD_SHARED`。
 
+如果上层是 C++ 工程，也建议显式用 C++ 编译器做一次检查：
+
+```bash
+g++ -x c++ -std=c++98 -Wall -Wextra -Werror -pedantic-errors -c machine.c -o machine.o
+g++ -x c++ -std=c++17 -Wall -Wextra -Werror -pedantic-errors -c machine.c -o machine.o
+```
+
 ### 链接与符号可见性
 
 - `{{ machine_macro_name(model) }}_API` 是所有公开函数统一使用的符号可见性宏。
@@ -94,7 +103,10 @@ cc -std=c99 -shared -fPIC machine.c -lm -o libmachine.so
   `{{ machine_macro_name(model) }}_BUILD_SHARED`。
 - 如果在 Windows 上从外部代码使用这份 DLL，应定义
   `{{ machine_macro_name(model) }}_USE_SHARED`。
-- 当 `machine.h` 被 C++ 包含时，头文件会自动使用 `extern "C"` 包裹公开声明。
+- 当 `machine.h` 被 C++ 包含时，只有公开 API 声明会自动使用 `extern "C"` 包裹。
+- 公开布局结构体和 hook typedef 会同时保持对 C 和 C++ 友好。
+- `{{ machine_class_name(model) }}Int` 是公开的有符号 64 位整数别名，
+  用于生成整数持久变量字段，并兼顾 C99 与 C++98+。
 
 ## 快速开始
 
@@ -111,7 +123,7 @@ int main(void)
 {% if event_ns.items %}
     {
         static const {{ machine_class_name(model) }}EventId event_ids[] = {
-            {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[0] | to_identifier | upper }}
+            {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[0] | to_c_identifier | upper }}
         };
         {{ machine_class_name(model) }}_cycle(&machine, event_ids, 1u);
     }
@@ -136,7 +148,7 @@ int main(void)
 | `{{ machine_macro_name(model) }}_INVALID_EVENT_ID` | `-1` | 无效事件 id 哨兵值 |
 | `{{ machine_macro_name(model) }}_STATE_COUNT` | `{{ state_items | length }}` | 生成的状态 id 数量 |
 | `{{ machine_macro_name(model) }}_EVENT_COUNT` | `{{ event_ns.items | length }}` | 生成的事件 id 数量 |
-| `{{ machine_class_name(model) | upper }}_HOOKS_INIT` | `{0}` | hook 表零初始化辅助宏 |
+| `{{ machine_class_name(model) | upper }}_HOOKS_INIT` | 生成的花括号零初始化器 | hook 表零初始化辅助宏 |
 
 ### 公开类型
 
@@ -146,6 +158,7 @@ int main(void)
 | `{{ machine_class_name(model) }}ExecutionContext` | 传给 abstract hook 的只读上下文 |
 | `{{ machine_class_name(model) }}StateId` | 整数状态 id 类型 |
 | `{{ machine_class_name(model) }}EventId` | 整数事件 id 类型 |
+| `{{ machine_class_name(model) }}Int` | 生成整数持久变量时使用的公开有符号 64 位别名 |
 | `{{ machine_class_name(model) }}Vars` | 持久变量快照类型 |
 | `{{ machine_class_name(model) }}HookFn` | abstract hook 回调函数类型 |
 | `{{ machine_class_name(model) }}Hooks` | hook 注册表 |
@@ -157,7 +170,7 @@ int main(void)
 | 字段 | C 类型 | 初始 DSL |
 | --- | --- | --- |
 {% for def_item in model.defines.values() -%}
-| `{{ def_item.name | to_identifier }}` | `{% if def_item.type == 'int' %}long long{% else %}double{% endif %}` | `{{ def_item.init.to_ast_node() | string }}` |
+| `{{ def_item.name | to_c_identifier }}` | `{% if def_item.type == 'int' %}{{ machine_class_name(model) }}Int{% else %}double{% endif %}` | `{{ def_item.init.to_ast_node() | string }}` |
 {% endfor %}
 {% else %}
 当前状态机没有定义持久变量。
@@ -288,7 +301,7 @@ if (!{{ machine_class_name(model) }}_init(&machine)) {
 ```c
 {% if event_ns.items %}
 static const {{ machine_class_name(model) }}EventId event_ids[] = {
-    {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[0] | to_identifier | upper }}
+    {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[0] | to_c_identifier | upper }}
 };
 
 {{ machine_class_name(model) }}_cycle(&machine, event_ids, 1u);
@@ -302,13 +315,13 @@ static const {{ machine_class_name(model) }}EventId event_ids[] = {
 ```c
 {% if event_ns.items | length >= 2 %}
 static const {{ machine_class_name(model) }}EventId event_ids[] = {
-    {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[0] | to_identifier | upper }},
-    {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[1] | to_identifier | upper }}
+    {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[0] | to_c_identifier | upper }},
+    {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[1] | to_c_identifier | upper }}
 };
 {{ machine_class_name(model) }}_cycle(&machine, event_ids, 2u);
 {% elif event_ns.items %}
 static const {{ machine_class_name(model) }}EventId event_ids[] = {
-    {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[0] | to_identifier | upper }}
+    {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[0] | to_c_identifier | upper }}
 };
 {{ machine_class_name(model) }}_cycle(&machine, event_ids, 1u);
 {% else %}
@@ -321,7 +334,13 @@ static const {{ machine_class_name(model) }}EventId event_ids[] = {
 ```c
 const {{ machine_class_name(model) }}Vars *vars = {{ machine_class_name(model) }}_vars(&machine);
 {% if model.defines.values() | list %}
-printf("{{ (model.defines.values() | list)[0].name | to_identifier }} = %{% if (model.defines.values() | list)[0].type == 'int' %}lld{% else %}f{% endif %}\n", vars->{{ (model.defines.values() | list)[0].name | to_identifier }});
+{% if (model.defines.values() | list)[0].type == 'int' %}
+{{ machine_class_name(model) }}Int value = vars->{{ (model.defines.values() | list)[0].name | to_c_identifier }};
+(void)value;
+{% else %}
+double value = vars->{{ (model.defines.values() | list)[0].name | to_c_identifier }};
+(void)value;
+{% endif %}
 {% else %}
 (void)vars;
 {% endif %}
@@ -337,11 +356,11 @@ hot start 的用法是“完整变量快照 + 生成状态 id”：
 {{ machine_class_name(model) }}_init(&machine);
 initial_vars = *{{ machine_class_name(model) }}_vars(&machine);
 {% for def_item in model.defines.values() -%}
-initial_vars.{{ def_item.name | to_identifier }} = {{ def_item.init.to_ast_node() | expr_render(style='c') }};
+initial_vars.{{ def_item.name | to_c_identifier }} = {{ def_item.init.to_ast_node() | expr_render(style='c') }};
 {% endfor %}
 {{ machine_class_name(model) }}_hot_start(
     &machine,
-    {{ machine_macro_name(model) }}_STATE_{{ (model.root_state | state_path) | to_identifier | upper }},
+    {{ machine_macro_name(model) }}_STATE_{{ (model.root_state | state_path) | to_c_identifier | upper }},
     &initial_vars
 );
 ```
@@ -392,7 +411,7 @@ printf("last error: %s\n", {{ machine_class_name(model) }}_last_error(&machine))
 | 状态路径 | 宏 | 数值 |
 | --- | --- | ---: |
 {% for state in state_items -%}
-| `{{ state | state_path }}` | `{{ machine_macro_name(model) }}_STATE_{{ (state | state_path) | to_identifier | upper }}` | `{{ loop.index0 }}` |
+| `{{ state | state_path }}` | `{{ machine_macro_name(model) }}_STATE_{{ (state | state_path) | to_c_identifier | upper }}` | `{{ loop.index0 }}` |
 {% endfor %}
 
 ## 事件 ID
@@ -401,7 +420,7 @@ printf("last error: %s\n", {{ machine_class_name(model) }}_last_error(&machine))
 | 事件路径 | 宏 | 数值 |
 | --- | --- | ---: |
 {% for event_path in event_ns.items -%}
-| `{{ event_path }}` | `{{ machine_macro_name(model) }}_EVENT_{{ event_path | to_identifier | upper }}` | `{{ loop.index0 }}` |
+| `{{ event_path }}` | `{{ machine_macro_name(model) }}_EVENT_{{ event_path | to_c_identifier | upper }}` | `{{ loop.index0 }}` |
 {% endfor %}
 {% else %}
 当前状态机没有定义事件。
@@ -421,3 +440,10 @@ printf("last error: %s\n", {{ machine_class_name(model) }}_last_error(&machine))
 - 如果你是在恢复已知检查点，优先考虑 hot start，而不是在外部重放大量普通 cycle。
 - 不要直接修改 `stack`、`stack_size`、`hooks`、`last_error` 等运行时内部字段；
   通过公开 API 使用它们，才能保持生成运行时的优化假设成立。
+
+## 兼容性说明
+
+- 生成运行时的目标是同时兼容 C99 以及 C++98 或更高版本。
+- 模板回归检查会同时用 C 编译器和 C++ 编译器编译代表性的生成产物。
+- 模板回归检查还会运行若干代表性的 C++ harness，覆盖基础行为、hot start、
+  回滚行为、关键字安全标识符以及 abstract hook 挂载。

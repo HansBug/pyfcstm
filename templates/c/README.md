@@ -1,6 +1,6 @@
 # c
 
-`c` is the built-in C99 runtime template target.
+`c` is the built-in C99 / C++98-compatible runtime template target.
 
 This template emits a self-contained C runtime together with generated usage
 documentation for the concrete state machine.
@@ -15,11 +15,16 @@ Template source contents:
 
 Current properties:
 
-- targets C99 and only uses broadly available standard-library facilities
+- targets C99 and C++98 or later with broadly available standard-library
+  facilities
 - generates `machine.h`, `machine.c`, `README.md`, and `README_zh.md`
 - embeds state metadata, cycle logic, hot start handling, and abstract hook callback slots
 - exposes hook registration in a form that is natural for C developers
 - avoids generated handler-registration infrastructure
+- normalizes generated identifiers so the emitted code also stays valid under
+  C++ keyword rules
+- uses a generated 64-bit integer alias strategy instead of exposing raw
+  `long long` in the public ABI
 
 ## Performance Roadmap
 
@@ -37,6 +42,11 @@ Current progress:
 - The current C template regression suite passes with the id-only API and the
   hybrid event-set backend, the specialized state-dispatch hot path, and the
   reduced-copy rollback/validation path.
+- The current template target is also checked with C++ compilers, including a
+  strict `c++98` path for representative generated machines.
+- The regression suite includes representative C++ harness tests for basic
+  behavior, hot start, rollback behavior, keyword-safe identifiers, and
+  abstract hook mounting.
 
 ### Phase 1: Remove avoidable hot-path overhead
 

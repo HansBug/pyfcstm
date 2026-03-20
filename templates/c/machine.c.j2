@@ -14,7 +14,7 @@
 {%- macro transition_guard_method_name(state, idx) -%}_guard_transition_{{ state_slug(state) }}_{{ idx }}{%- endmacro %}
 {%- macro transition_effect_method_name(state, idx) -%}_effect_transition_{{ state_slug(state) }}_{{ idx }}{%- endmacro %}
 {%- macro hook_field(action) -%}{{ action | hook_field_name }}{%- endmacro %}
-{%- macro hook_enum(action) -%}{{ machine_macro_name(model) }}_HOOK_{{ action.func_name | to_identifier | upper }}{%- endmacro %}
+{%- macro hook_enum(action) -%}{{ machine_macro_name(model) }}_HOOK_{{ action.func_name | to_c_identifier | upper }}{%- endmacro %}
 {%- macro render_action_item(state, item, method_kind, idx) -%}
 {%- set resolved = namespace(item=item) -%}
 {%- for _ in range(16) -%}
@@ -41,6 +41,18 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#if defined(_MSC_VER) && !defined(__clang__) && (_MSC_VER < 1900)
+#define PYFCSTM_GENERATED_VSNPRINTF _vsnprintf
+#else
+#define PYFCSTM_GENERATED_VSNPRINTF vsnprintf
+#endif
+
+#if defined(__GNUC__) || defined(__clang__)
+#define PYFCSTM_GENERATED_UNUSED __attribute__((unused))
+#else
+#define PYFCSTM_GENERATED_UNUSED
+#endif
 
 /*
  * Internal runtime helper types.
@@ -215,7 +227,7 @@ static void _{{ machine_class_name(model) }}_set_error({{ machine_class_name(mod
         return;
     }
     va_start(ap, fmt);
-    vsnprintf(machine->last_error, sizeof(machine->last_error), fmt, ap);
+    PYFCSTM_GENERATED_VSNPRINTF(machine->last_error, sizeof(machine->last_error), fmt, ap);
     machine->last_error[sizeof(machine->last_error) - 1u] = '\0';
     va_end(ap);
 }
@@ -224,22 +236,6 @@ static void _{{ machine_class_name(model) }}_clear_error({{ machine_class_name(m
 {
     if (machine != NULL) {
         machine->last_error[0] = '\0';
-    }
-}
-
-static const char *_{{ machine_class_name(model) }}_frame_mode_name(int mode)
-{
-    switch (mode) {
-        case {{ machine_macro_name(model) }}_FRAME_MODE_INIT_WAIT:
-            return "init_wait";
-        case {{ machine_macro_name(model) }}_FRAME_MODE_ACTIVE:
-            return "active";
-        case {{ machine_macro_name(model) }}_FRAME_MODE_AFTER_ENTRY:
-            return "after_entry";
-        case {{ machine_macro_name(model) }}_FRAME_MODE_POST_CHILD_EXIT:
-            return "post_child_exit";
-        default:
-            return "unknown";
     }
 }
 
@@ -253,28 +249,19 @@ static const {{ machine_class_name(model) }}Vars *_{{ machine_class_name(model) 
     return machine->_active_vars != NULL ? machine->_active_vars : &machine->vars;
 }
 
-static {{ machine_class_name(model) }}Vars *_{{ machine_class_name(model) }}_active_vars(
-    {{ machine_class_name(model) }} *machine)
-{
-    if (machine == NULL) {
-        return NULL;
-    }
-    return machine->_active_vars != NULL ? machine->_active_vars : &machine->vars;
-}
-
 /* Reset persistent variables to the DSL `def ... = ...;` defaults. */
 static void _{{ machine_class_name(model) }}_reset_vars({{ machine_class_name(model) }}Vars *vars)
 {
 {% if model.defines.values() | list -%}
 {% for def_item in model.defines.values() -%}
-{{ '    ' }}vars->{{ def_item.name | to_identifier }} = {{ def_item.init.to_ast_node() | expr_render(style='c') }};
+{{ '    ' }}vars->{{ def_item.name | to_c_identifier }} = {{ def_item.init.to_ast_node() | expr_render(style='c') }};
 {% endfor -%}
 {% else -%}
     vars->_unused_placeholder = 0;
 {% endif -%}
 }
 
-static int _{{ machine_class_name(model) }}_validate_transition(
+static PYFCSTM_GENERATED_UNUSED int _{{ machine_class_name(model) }}_validate_transition(
     {{ machine_class_name(model) }} *machine,
     const _{{ machine_class_name(model) }}RuntimeContext *context,
     int transition_id,
@@ -287,11 +274,11 @@ static int _{{ machine_class_name(model) }}_enter_state(
     const _{{ machine_class_name(model) }}EventSet *event_set,
     int is_validation_mode);
 
-static int _{{ machine_class_name(model) }}_event_set_has(
+static PYFCSTM_GENERATED_UNUSED int _{{ machine_class_name(model) }}_event_set_has(
     const _{{ machine_class_name(model) }}EventSet *event_set,
     int event_id);
 
-static void _{{ machine_class_name(model) }}_invoke_abstract_action(
+static PYFCSTM_GENERATED_UNUSED void _{{ machine_class_name(model) }}_invoke_abstract_action(
     {{ machine_class_name(model) }} *machine,
     _{{ machine_class_name(model) }}RuntimeContext *context,
     int is_validation_mode,
@@ -474,6 +461,9 @@ static void {{ action_stage_runner_name(state, 'enter') }}(
     _{{ machine_class_name(model) }}RuntimeContext *context,
     int is_validation_mode)
 {
+    (void)machine;
+    (void)context;
+    (void)is_validation_mode;
 {% set items = state.list_on_enters(with_ids=True) | list -%}
 {% set runner_body -%}
 {% if items -%}
@@ -511,6 +501,9 @@ static void {{ action_stage_runner_name(state, 'during') }}(
     _{{ machine_class_name(model) }}RuntimeContext *context,
     int is_validation_mode)
 {
+    (void)machine;
+    (void)context;
+    (void)is_validation_mode;
 {% set items = state.list_on_durings(aspect=None, with_ids=True) | list -%}
 {% set runner_body -%}
 {% if items -%}
@@ -548,6 +541,9 @@ static void {{ action_stage_runner_name(state, 'exit') }}(
     _{{ machine_class_name(model) }}RuntimeContext *context,
     int is_validation_mode)
 {
+    (void)machine;
+    (void)context;
+    (void)is_validation_mode;
 {% set items = state.list_on_exits(with_ids=True) | list -%}
 {% set runner_body -%}
 {% if items -%}
@@ -585,6 +581,9 @@ static void {{ action_stage_runner_name(state, 'during_before') }}(
     _{{ machine_class_name(model) }}RuntimeContext *context,
     int is_validation_mode)
 {
+    (void)machine;
+    (void)context;
+    (void)is_validation_mode;
 {% set items = state.list_on_durings(aspect='before', with_ids=True) | list -%}
 {% set runner_body -%}
 {% if items -%}
@@ -622,6 +621,9 @@ static void {{ action_stage_runner_name(state, 'during_after') }}(
     _{{ machine_class_name(model) }}RuntimeContext *context,
     int is_validation_mode)
 {
+    (void)machine;
+    (void)context;
+    (void)is_validation_mode;
 {% set items = state.list_on_durings(aspect='after', with_ids=True) | list -%}
 {% set runner_body -%}
 {% if items -%}
@@ -659,6 +661,9 @@ static void {{ action_stage_runner_name(state, 'aspect_before') }}(
     _{{ machine_class_name(model) }}RuntimeContext *context,
     int is_validation_mode)
 {
+    (void)machine;
+    (void)context;
+    (void)is_validation_mode;
 {% set items = state.list_on_during_aspects(aspect='before', with_ids=True) | list -%}
 {% set runner_body -%}
 {% if items -%}
@@ -696,6 +701,9 @@ static void {{ action_stage_runner_name(state, 'aspect_after') }}(
     _{{ machine_class_name(model) }}RuntimeContext *context,
     int is_validation_mode)
 {
+    (void)machine;
+    (void)context;
+    (void)is_validation_mode;
 {% set items = state.list_on_during_aspects(aspect='after', with_ids=True) | list -%}
 {% set runner_body -%}
 {% if items -%}
@@ -856,6 +864,9 @@ static int {{ select_transition_state_name(state) }}(
     const _{{ machine_class_name(model) }}EventSet *event_set,
     int validate_stoppable)
 {
+    (void)machine;
+    (void)context;
+    (void)event_set;
     (void)validate_stoppable;
 {% if state.transitions_from | list -%}
 {% for transition in state.transitions_from -%}
@@ -909,6 +920,10 @@ static int {{ attempt_init_state_name(state) }}(
     const _{{ machine_class_name(model) }}EventSet *event_set,
     int is_validation_mode)
 {
+    (void)machine;
+    (void)context;
+    (void)event_set;
+    (void)is_validation_mode;
 {% if state.init_transitions | list -%}
 {% for transition in state.init_transitions -%}
 {% set condition -%}
@@ -1093,7 +1108,7 @@ static int _{{ machine_class_name(model) }}_event_set_add(
     return {{ machine_macro_name(model) }}_SUCCESS;
 }
 
-static int _{{ machine_class_name(model) }}_event_set_has(
+static PYFCSTM_GENERATED_UNUSED int _{{ machine_class_name(model) }}_event_set_has(
     const _{{ machine_class_name(model) }}EventSet *event_set,
     int event_id)
 {
@@ -1185,11 +1200,12 @@ static int _{{ machine_class_name(model) }}_push_frame(
     return {{ machine_macro_name(model) }}_SUCCESS;
 }
 
-static void _{{ machine_class_name(model) }}_execute_abstract_hook(
+static PYFCSTM_GENERATED_UNUSED void _{{ machine_class_name(model) }}_execute_abstract_hook(
     {{ machine_class_name(model) }} *machine,
     int hook_id,
     const {{ machine_class_name(model) }}ExecutionContext *ctx)
 {
+    (void)ctx;
     if (machine == NULL || machine->hooks == NULL || hook_id < 0) {
         return;
     }
@@ -1232,37 +1248,6 @@ static void _{{ machine_class_name(model) }}_invoke_abstract_action(
     ctx.action_stage = action_stage;
     _{{ machine_class_name(model) }}_execute_abstract_hook(machine, hook_id, &ctx);
     machine->_active_vars = saved_active_vars;
-}
-
-static void _{{ machine_class_name(model) }}_execute_actions(
-    {{ machine_class_name(model) }} *machine,
-    const _{{ machine_class_name(model) }}ActionInfo *actions,
-    size_t action_count,
-    _{{ machine_class_name(model) }}RuntimeContext *context,
-    int is_validation_mode)
-{
-    size_t i;
-    {{ machine_class_name(model) }}ExecutionContext ctx;
-    {{ machine_class_name(model) }}Vars *saved_active_vars;
-
-    if (actions == NULL) {
-        return;
-    }
-
-    for (i = 0u; i < action_count; ++i) {
-        if (actions[i].kind == {{ machine_macro_name(model) }}_ACTION_KIND_CONCRETE) {
-            actions[i].action_fn(&context->vars);
-        } else if (!is_validation_mode) {
-            saved_active_vars = machine->_active_vars;
-            machine->_active_vars = &context->vars;
-            ctx.state_path = _{{ machine_class_name(model) }}_state_info[actions[i].owner_state_id].path;
-            ctx.vars = &context->vars;
-            ctx.action_name = actions[i].action_name;
-            ctx.action_stage = actions[i].action_stage;
-            _{{ machine_class_name(model) }}_execute_abstract_hook(machine, actions[i].hook_id, &ctx);
-            machine->_active_vars = saved_active_vars;
-        }
-    }
 }
 
 static void _{{ machine_class_name(model) }}_run_leaf_during(
@@ -1313,20 +1298,6 @@ static void _{{ machine_class_name(model) }}_run_leaf_during(
     }
 }
 
-static int _{{ machine_class_name(model) }}_transition_is_enabled(
-    const _{{ machine_class_name(model) }}TransitionInfo *transition,
-    const _{{ machine_class_name(model) }}EventSet *event_set,
-    const {{ machine_class_name(model) }}Vars *vars)
-{
-    if (!_{{ machine_class_name(model) }}_event_set_has(event_set, transition->event_id)) {
-        return 0;
-    }
-    if (transition->guard_fn != NULL && !transition->guard_fn(vars)) {
-        return 0;
-    }
-    return 1;
-}
-
 static void _{{ machine_class_name(model) }}_execute_transition_effect(
     const _{{ machine_class_name(model) }}TransitionInfo *transition,
     _{{ machine_class_name(model) }}RuntimeContext *context)
@@ -1342,7 +1313,7 @@ static int _{{ machine_class_name(model) }}_is_stoppable_state(int state_id)
     return state_info->is_leaf && !state_info->is_pseudo;
 }
 
-static int _{{ machine_class_name(model) }}_validate_transition(
+static PYFCSTM_GENERATED_UNUSED int _{{ machine_class_name(model) }}_validate_transition(
     {{ machine_class_name(model) }} *machine,
     const _{{ machine_class_name(model) }}RuntimeContext *context,
     int transition_id,
@@ -1454,7 +1425,6 @@ static int _{{ machine_class_name(model) }}_finalize_exit_to_parent(
     int is_validation_mode)
 {
     int parent_state_id;
-    const _{{ machine_class_name(model) }}StateInfo *parent_info;
 
     if (context->stack_size == 0u) {
         return 1;
@@ -1466,7 +1436,6 @@ static int _{{ machine_class_name(model) }}_finalize_exit_to_parent(
         return 1;
     }
 
-    parent_info = &_{{ machine_class_name(model) }}_state_info[parent_state_id];
     _{{ machine_class_name(model) }}_run_during_after_actions_for_state(
         machine,
         parent_state_id,
@@ -1484,12 +1453,10 @@ static int _{{ machine_class_name(model) }}_execute_transition_on_context(
     int is_validation_mode)
 {
     int current_state_id;
-    const _{{ machine_class_name(model) }}StateInfo *state_info;
     const _{{ machine_class_name(model) }}TransitionInfo *transition;
 
     transition = &_{{ machine_class_name(model) }}_transitions[transition_id];
     current_state_id = context->stack[context->stack_size - 1u].state_id;
-    state_info = &_{{ machine_class_name(model) }}_state_info[current_state_id];
 
     _{{ machine_class_name(model) }}_run_exit_actions_for_state(
         machine,
@@ -1642,7 +1609,7 @@ static int _{{ machine_class_name(model) }}_run_cycle_on_context(
     return 1;
 }
 
-static int _{{ machine_class_name(model) }}_validate_transition(
+static PYFCSTM_GENERATED_UNUSED int _{{ machine_class_name(model) }}_validate_transition(
     {{ machine_class_name(model) }} *machine,
     const _{{ machine_class_name(model) }}RuntimeContext *context,
     int transition_id,

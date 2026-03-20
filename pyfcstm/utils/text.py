@@ -109,3 +109,46 @@ def to_identifier(input_string: str, strict_mode: bool = True) -> str:
             result = "_" + result
 
     return result
+
+
+_C_CPP_RESERVED_WORDS = {
+    # C keywords / common reserved identifiers in generated-code contexts
+    'auto', 'break', 'case', 'char', 'const', 'continue', 'default', 'do',
+    'double', 'else', 'enum', 'extern', 'float', 'for', 'goto', 'if', 'inline',
+    'int', 'long', 'register', 'restrict', 'return', 'short', 'signed',
+    'sizeof', 'static', 'struct', 'switch', 'typedef', 'union', 'unsigned',
+    'void', 'volatile', 'while',
+    '_alignas', '_alignof', '_atomic', '_bool', '_complex', '_generic',
+    '_imaginary', '_noreturn', '_static_assert', '_thread_local',
+    # C++ keywords
+    'alignas', 'alignof', 'and', 'and_eq', 'asm', 'bitand', 'bitor', 'bool',
+    'catch', 'char16_t', 'char32_t', 'class', 'compl', 'concept', 'consteval',
+    'constexpr', 'constinit', 'const_cast', 'decltype', 'delete',
+    'dynamic_cast', 'explicit', 'export', 'false', 'friend', 'mutable',
+    'namespace', 'new', 'noexcept', 'not', 'not_eq', 'nullptr', 'operator',
+    'or', 'or_eq', 'private', 'protected', 'public', 'reinterpret_cast',
+    'requires', 'static_assert', 'static_cast', 'template', 'this',
+    'thread_local', 'throw', 'true', 'try', 'typeid', 'typename', 'using',
+    'virtual', 'wchar_t', 'xor', 'xor_eq',
+}
+
+
+def to_c_identifier(input_string: str, strict_mode: bool = True) -> str:
+    """
+    Convert a string to an identifier that is safe for both C and C++ codegen.
+
+    This function first normalizes the value with :func:`to_identifier`, then
+    avoids identifiers that collide with common C/C++ reserved words by
+    appending a trailing underscore when necessary.
+
+    :param input_string: Source text to normalize.
+    :type input_string: str
+    :param strict_mode: Whether to apply strict identifier normalization.
+    :type strict_mode: bool, optional
+    :return: A C/C++-safe identifier.
+    :rtype: str
+    """
+    identifier = to_identifier(input_string, strict_mode=strict_mode)
+    if identifier.lower() in _C_CPP_RESERVED_WORDS:
+        return identifier + '_'
+    return identifier

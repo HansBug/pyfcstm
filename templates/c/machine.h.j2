@@ -19,8 +19,15 @@
 #define {{ machine_macro_name(model) }}_API
 #endif
 
-#ifdef __cplusplus
-extern "C" {
+#ifndef PYFCSTM_GENERATED_INT64_DEFINED
+#define PYFCSTM_GENERATED_INT64_DEFINED 1
+#if defined(_MSC_VER) && !defined(__clang__)
+typedef __int64 PYFCSTM_GENERATED_INT64;
+#elif defined(__GNUC__) || defined(__clang__)
+typedef __INT64_TYPE__ PYFCSTM_GENERATED_INT64;
+#else
+typedef long long PYFCSTM_GENERATED_INT64;
+#endif
 #endif
 
 /* Common runtime return codes and generated safety limits. */
@@ -33,6 +40,7 @@ typedef struct {{ machine_class_name(model) }} {{ machine_class_name(model) }};
 typedef struct {{ machine_class_name(model) }}ExecutionContext {{ machine_class_name(model) }}ExecutionContext;
 typedef int {{ machine_class_name(model) }}StateId;
 typedef int {{ machine_class_name(model) }}EventId;
+typedef PYFCSTM_GENERATED_INT64 {{ machine_class_name(model) }}Int;
 
 /*
  * Persistent DSL variables.
@@ -43,7 +51,7 @@ typedef int {{ machine_class_name(model) }}EventId;
 typedef struct {{ machine_class_name(model) }}Vars {
 {% if model.defines.values() | list %}
 {% for def_item in model.defines.values() -%}
-{{ '    ' }}{% if def_item.type == 'int' %}long long{% else %}double{% endif %} {{ def_item.name | to_identifier }};
+{{ '    ' }}{% if def_item.type == 'int' %}{{ machine_class_name(model) }}Int{% else %}double{% endif %} {{ def_item.name | to_c_identifier }};
 {% endfor -%}
 {% else %}
     int _unused_placeholder;
@@ -56,7 +64,7 @@ typedef struct {{ machine_class_name(model) }}Vars {
 #define {{ machine_macro_name(model) }}_STATE_COUNT {{ (model.walk_states() | list) | length }}
 {% for state in model.walk_states() -%}
 /* DSL state path: `{{ state | state_path }}` */
-#define {{ machine_macro_name(model) }}_STATE_{{ (state | state_path) | to_identifier | upper }} (({{ machine_class_name(model) }}StateId){{ loop.index0 }})
+#define {{ machine_macro_name(model) }}_STATE_{{ (state | state_path) | to_c_identifier | upper }} (({{ machine_class_name(model) }}StateId){{ loop.index0 }})
 {% endfor -%}
 {% set event_ns = namespace(items=[]) -%}
 {% for state in model.walk_states() -%}
@@ -67,7 +75,7 @@ typedef struct {{ machine_class_name(model) }}Vars {
 #define {{ machine_macro_name(model) }}_EVENT_COUNT {{ event_ns.items | length }}
 {% for event_path in event_ns.items -%}
 /* DSL event path: `{{ event_path }}` */
-#define {{ machine_macro_name(model) }}_EVENT_{{ event_path | to_identifier | upper }} (({{ machine_class_name(model) }}EventId){{ loop.index0 }})
+#define {{ machine_macro_name(model) }}_EVENT_{{ event_path | to_c_identifier | upper }} (({{ machine_class_name(model) }}EventId){{ loop.index0 }})
 {% endfor %}
 
 /*
@@ -136,7 +144,7 @@ typedef struct {{ machine_class_name(model) }}Hooks {
 {% endif -%}
 } {{ machine_class_name(model) }}Hooks;
 
-#define {{ machine_class_name(model) | upper }}_HOOKS_INIT {0}
+#define {{ machine_class_name(model) | upper }}_HOOKS_INIT { {% if hook_ns.rows %}{% for _ in hook_ns.rows %}0{% if not loop.last %}, {% endif %}{% endfor %}{% else %}0{% endif %} }
 
 /* Internal runtime frame for one active state on the execution stack. */
 typedef struct {{ machine_class_name(model) }}Frame {
@@ -175,6 +183,10 @@ struct {{ machine_class_name(model) }} {
     void *hook_user_data;
     char last_error[512];
 };
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /* Allocate a machine instance and initialize it to cold-start state. */
 {{ machine_macro_name(model) }}_API {{ machine_class_name(model) }} *{{ machine_class_name(model) }}_create(void);

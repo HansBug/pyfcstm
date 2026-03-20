@@ -17,7 +17,7 @@
 #define {{ machine_macro_name(model) }}_API __declspec(dllimport)
 #else
 #define {{ machine_macro_name(model) }}_API
-#endif
+#endif{{ '\n' }}
 
 #ifndef PYFCSTM_GENERATED_INT64_DEFINED
 #define PYFCSTM_GENERATED_INT64_DEFINED 1
@@ -239,4 +239,4 @@ extern "C" {
 }
 #endif
 
-#endif
+#endif{{ '\n' }}

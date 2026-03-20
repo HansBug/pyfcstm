@@ -296,17 +296,28 @@ class _CRuntime:
             def_item.name: def_item.type for def_item in model.defines.values()
         }
         self._var_names = list(model.defines.keys())
+        self._state_paths = ['.'.join(state.path) for state in model.walk_states()]
+        self._state_ids = {
+            path: index for index, path in enumerate(self._state_paths)
+        }
+        self._event_paths = []
+        for state in model.walk_states():
+            for event in state.events.values():
+                self._event_paths.append(event.path_name)
+        self._event_ids = {
+            path: index for index, path in enumerate(self._event_paths)
+        }
         self._vars_struct = self._build_vars_struct_type()
         self._machine = self._bind_function('{prefix}_create', restype=ctypes.c_void_p)()
         self._destroy = self._bind_function('{prefix}_destroy', argtypes=[ctypes.c_void_p])
         self._hot_start = self._bind_function(
             '{prefix}_hot_start',
-            argtypes=[ctypes.c_void_p, ctypes.c_char_p, ctypes.c_void_p],
+            argtypes=[ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p],
             restype=ctypes.c_int,
         )
         self._cycle = self._bind_function(
             '{prefix}_cycle',
-            argtypes=[ctypes.c_void_p, ctypes.POINTER(ctypes.c_char_p), ctypes.c_size_t],
+            argtypes=[ctypes.c_void_p, ctypes.POINTER(ctypes.c_int), ctypes.c_size_t],
             restype=ctypes.c_int,
         )
         self._set_hooks = self._bind_function(
@@ -402,11 +413,65 @@ class _CRuntime:
     def _get_var_from_ptr(self, machine_ptr, name):
         return self._get_var_from_vars_ptr(self._vars(machine_ptr), name)
 
+    def _resolve_state_id(self, initial_state):
+        if isinstance(initial_state, int):
+            return initial_state
+        if not isinstance(initial_state, str):
+            raise TypeError('initial_state must be an int state id or a state-path string.')
+        if initial_state not in self._state_ids:
+            raise ValueError('Unknown state path: {!r}'.format(initial_state))
+        return self._state_ids[initial_state]
+
+    def _resolve_event_id(self, event_ref):
+        if isinstance(event_ref, int):
+            return event_ref
+        if not isinstance(event_ref, str):
+            raise TypeError('event items must be integers or event-path strings.')
+        if not event_ref:
+            raise ValueError('event items cannot be empty strings.')
+
+        current_path_tuple = self.current_state_path
+        current_path = '.'.join(current_path_tuple) if current_path_tuple is not None else None
+        root_path = '.'.join(self._model.root_state.path)
+
+        if current_path is None:
+            if event_ref not in self._event_ids:
+                raise ValueError('Cannot resolve event path after runtime end: {!r}'.format(event_ref))
+            return self._event_ids[event_ref]
+
+        if event_ref.startswith('/'):
+            remaining = event_ref[1:]
+            if not remaining:
+                raise ValueError("Absolute event reference cannot be just '/'.")
+            resolved = root_path + '.' + remaining
+        elif event_ref.startswith('.'):
+            dot_count = len(event_ref) - len(event_ref.lstrip('.'))
+            remaining = event_ref[dot_count:]
+            if not remaining:
+                raise ValueError(
+                    'Parent-relative event reference cannot end with dots: {!r}'.format(event_ref)
+                )
+            parts = current_path.split('.')
+            if dot_count >= len(parts):
+                raise ValueError(
+                    'Parent-relative event reference goes beyond root state: {!r}'.format(event_ref)
+                )
+            resolved = '.'.join(parts[:-dot_count] + [remaining])
+        elif event_ref in self._event_ids:
+            resolved = event_ref
+        else:
+            resolved = current_path + '.' + event_ref
+
+        if resolved not in self._event_ids:
+            raise ValueError('Unknown event path: {!r}'.format(event_ref))
+        return self._event_ids[resolved]
+
     def hot_start(self, initial_state, initial_vars):
         if set(initial_vars.keys()) != set(self._var_names):
             raise ValueError('initial_vars must provide all variables exactly once.')
         values = self._create_initial_vars(initial_vars)
-        if self._hot_start(self._machine, initial_state.encode('utf-8'), ctypes.byref(values)) != 1:
+        state_id = self._resolve_state_id(initial_state)
+        if self._hot_start(self._machine, state_id, ctypes.byref(values)) != 1:
             self._raise_last_error()
 
     def _create_initial_vars(self, initial_vars):
@@ -451,10 +516,13 @@ class _CRuntime:
             event_array = None
             event_count = 0
         else:
-            event_array = (ctypes.c_char_p * len(events))(
-                *[item.encode('utf-8') for item in events]
-            )
-            event_count = len(events)
+            event_ids = [self._resolve_event_id(item) for item in events]
+            if event_ids:
+                event_array = (ctypes.c_int * len(event_ids))(*event_ids)
+                event_count = len(event_ids)
+            else:
+                event_array = None
+                event_count = 0
         if self._cycle(self._machine, event_array, event_count) != 1:
             self._raise_last_error()
 

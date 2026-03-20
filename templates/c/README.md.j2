@@ -42,19 +42,28 @@ cc -std=c99 -shared -fPIC machine.c -lm -o libmachine.so
 
 On Windows, use the equivalent DLL flags for your compiler toolchain and
 define `{{ machine_macro_name(model) }}_BUILD_SHARED` when exporting symbols.
+{% set event_ns = namespace(items=[]) -%}
+{% for state in model.walk_states() -%}
+{% for event in state.events.values() -%}
+{% set event_ns.items = event_ns.items + [event.path_name] -%}
+{% endfor -%}
+{% endfor %}
+{% if event_ns.items %}
 
-To send events, pass canonical event paths, absolute paths, or compatible
-relative event names to `{{ machine_class_name(model) }}_cycle(...)`.
+To send events, pass generated event ids to `{{ machine_class_name(model) }}_cycle(...)`.
 
 ```c
-const char *events[] = {"{{ model.root_state.name }}"};
-{{ machine_class_name(model) }}_cycle(&machine, events, 1u);
+{{ machine_class_name(model) }}EventId event_ids[] = {
+    {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[0] | to_identifier | upper }}
+};
+{{ machine_class_name(model) }}_cycle(&machine, event_ids, 1u);
 ```
+{% endif %}
 
 ## Hot Start
 
-To start from a concrete state path, initialize a full variable snapshot and
-call `{{ machine_class_name(model) }}_hot_start(...)`:
+To start from a concrete generated state id, initialize a full variable
+snapshot and call `{{ machine_class_name(model) }}_hot_start(...)`:
 
 ```c
 {{ machine_class_name(model) }} machine;
@@ -65,7 +74,11 @@ initial_vars = *{{ machine_class_name(model) }}_vars(&machine);
 {% for def_item in model.defines.values() -%}
 initial_vars.{{ def_item.name | to_identifier }} = {{ def_item.init.to_ast_node() | expr_render(style='c') }};
 {% endfor %}
-{{ machine_class_name(model) }}_hot_start(&machine, "{{ model.root_state.name }}", &initial_vars);
+{{ machine_class_name(model) }}_hot_start(
+    &machine,
+    {{ machine_macro_name(model) }}_STATE_{{ (model.root_state | state_path) | to_identifier | upper }},
+    &initial_vars
+);
 ```
 
 ## Extension
@@ -160,6 +173,26 @@ example `{{ machine_class_name(model) }}_vars(&machine)->name`.
 {% endfor %}
 {% else %}
 This state machine does not define persistent variables.
+{% endif %}
+
+## State IDs
+
+| State path | Macro |
+| --- | --- |
+{% for state in model.walk_states() -%}
+| `{{ state | state_path }}` | `{{ machine_macro_name(model) }}_STATE_{{ (state | state_path) | to_identifier | upper }}` |
+{% endfor %}
+
+## Event IDs
+
+{% if event_ns.items %}
+| Event path | Macro |
+| --- | --- |
+{% for event_path in event_ns.items -%}
+| `{{ event_path }}` | `{{ machine_macro_name(model) }}_EVENT_{{ event_path | to_identifier | upper }}` |
+{% endfor %}
+{% else %}
+This state machine does not define any events.
 {% endif %}
 
 ## State Paths

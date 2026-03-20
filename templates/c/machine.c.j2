@@ -1,6 +1,6 @@
 {%- macro state_key(state) -%}{{ state | state_path }}{%- endmacro %}
 {%- macro state_slug(state) -%}{{ state | state_slug }}{%- endmacro %}
-{%- macro state_enum(state) -%}{{ machine_macro_name(model) }}_STATE_{{ state_slug(state) | upper }}{%- endmacro %}
+{%- macro state_enum(state) -%}{{ machine_macro_name(model) }}_STATE_ID_{{ state_slug(state) | upper }}{%- endmacro %}
 {%- macro cstr(value) -%}{{ value | tojson | replace('\\u003c', '<') | replace('\\u003e', '>') | replace('\\u0026', '&') }}{%- endmacro %}
 {%- macro action_method_name(state, kind, idx) -%}_action_{{ state_slug(state) }}_{{ kind }}_{{ idx }}{%- endmacro %}
 {%- macro init_transition_id(state, idx) -%}{{ machine_macro_name(model) }}_TRANSITION_INIT_{{ state_slug(state) | upper }}_{{ idx }}{%- endmacro %}
@@ -45,7 +45,7 @@ enum {
 {% for state in model.walk_states() -%}
 {{ '    ' }}{{ state_enum(state) }} = {{ loop.index0 }},
 {% endfor %}
-    {{ machine_macro_name(model) }}_STATE_COUNT = {{ (model.walk_states() | list) | length }}
+    {{ machine_macro_name(model) }}_STATE_COUNT_INTERNAL = {{ (model.walk_states() | list) | length }}
 };
 
 enum {
@@ -105,6 +105,15 @@ enum {
 {% endfor -%}
 {% endfor %}
 
+enum {
+    {{ machine_macro_name(model) }}_EVENT_COUNT_INTERNAL = {{ all_events.items | length }},
+    {{ machine_macro_name(model) }}_EVENTSET_SMALL_ARRAY_THRESHOLD_INTERNAL = 8,
+    {{ machine_macro_name(model) }}_EVENTSET_BITSET_LIMIT_INTERNAL = 256,
+    {{ machine_macro_name(model) }}_EVENTSET_WORD_BITS_INTERNAL = (int)(sizeof(unsigned long) * 8u),
+    {{ machine_macro_name(model) }}_EVENTSET_BITSET_WORDS_INTERNAL =
+        {{ [1, ((all_events.items | length) + 31) // 32] | max }}
+};
+
 typedef struct _{{ machine_class_name(model) }}ActionInfo {
     int kind;
     _{{ machine_class_name(model) }}ActionFn action_fn;
@@ -117,7 +126,7 @@ typedef struct _{{ machine_class_name(model) }}ActionInfo {
 typedef struct _{{ machine_class_name(model) }}TransitionInfo {
     int target_state_id;
     int to_exit;
-    const char *event_path;
+    int event_id;
     _{{ machine_class_name(model) }}GuardFn guard_fn;
     _{{ machine_class_name(model) }}ActionFn effect_fn;
 } _{{ machine_class_name(model) }}TransitionInfo;
@@ -155,8 +164,10 @@ typedef struct _{{ machine_class_name(model) }}RuntimeContext {
 } _{{ machine_class_name(model) }}RuntimeContext;
 
 typedef struct _{{ machine_class_name(model) }}EventSet {
+    unsigned long bitset[{{ machine_macro_name(model) }}_EVENTSET_BITSET_WORDS_INTERNAL];
     int ids[{{ [1, all_events.items | length] | max }}];
     size_t count;
+    int use_bitset;
 } _{{ machine_class_name(model) }}EventSet;
 
 enum {
@@ -174,30 +185,6 @@ static const char *_{{ machine_class_name(model) }}_dsl_source =
     "";
 {% endif -%}
 ;
-
-static const char *_{{ machine_class_name(model) }}_state_paths[] = {
-{% for state in model.walk_states() -%}
-{{ '    ' }}{{ cstr(state_key(state)) }},
-{% endfor -%}
-};
-
-{% set event_paths = namespace(items=[]) -%}
-{% for state in model.walk_states() -%}
-{% for event in state.events.values() -%}
-{% set event_paths.items = event_paths.items + [event.path_name] -%}
-{% endfor -%}
-{% endfor %}
-{% if event_paths.items %}
-static const char *_{{ machine_class_name(model) }}_event_paths[] = {
-{% for state in model.walk_states() %}
-{% for event in state.events.values() -%}
-{{ '    ' }}{{ cstr(event.path_name) }},
-{% endfor -%}
-{% endfor -%}
-};
-{% else %}
-static const char *_{{ machine_class_name(model) }}_event_paths[] = {NULL};
-{% endif %}
 
 static void _{{ machine_class_name(model) }}_set_error({{ machine_class_name(model) }} *machine, const char *fmt, ...)
 {
@@ -536,9 +523,9 @@ static const _{{ machine_class_name(model) }}TransitionInfo _{{ machine_class_na
         {{ state_enum(state.substates[transition.to_state]) }},
         0,
         {% if transition.event is not none %}
-        {{ cstr(transition.event.path_name) }}
+        {{ all_events.items.index(transition.event.path_name) }}
         {% else %}
-        NULL
+        -1
         {% endif %},
         {{ init_guard_method_name(state, loop.index) if transition.guard is not none else "NULL" }},
         {{ init_effect_method_name(state, loop.index) if transition.effects else "NULL" }}
@@ -549,9 +536,9 @@ static const _{{ machine_class_name(model) }}TransitionInfo _{{ machine_class_na
         {{ state_enum(state.parent.substates[transition.to_state]) if transition.to_state != EXIT_STATE else "-1" }},
         {{ 1 if transition.to_state == EXIT_STATE else 0 }},
         {% if transition.event is not none %}
-        {{ cstr(transition.event.path_name) }},
+        {{ all_events.items.index(transition.event.path_name) }},
         {% else %}
-        NULL,
+        -1,
         {% endif %}
         {{ transition_guard_method_name(state, loop.index) if transition.guard is not none else "NULL" }},
         {{ transition_effect_method_name(state, loop.index) if transition.effects else "NULL" }}
@@ -560,50 +547,65 @@ static const _{{ machine_class_name(model) }}TransitionInfo _{{ machine_class_na
 {% endfor %}
 };
 
-static int _{{ machine_class_name(model) }}_lookup_event_id(const char *path)
+static int _{{ machine_class_name(model) }}_state_id_is_valid(int state_id)
 {
-{% if event_paths.items %}
-    size_t i;
-{% endif %}
-    if (path == NULL) {
-        return -1;
-    }
-{% if event_paths.items %}
-    for (i = 0u; i < {{ event_paths.items | length }}u; ++i) {
-        if (strcmp(_{{ machine_class_name(model) }}_event_paths[i], path) == 0) {
-            return (int)i;
-        }
-    }
-{% endif %}
-    return -1;
+    return state_id >= 0 && state_id < {{ machine_macro_name(model) }}_STATE_COUNT;
 }
 
-static int _{{ machine_class_name(model) }}_lookup_state_id(const char *path)
+static int _{{ machine_class_name(model) }}_event_id_is_valid(int event_id)
+{
+    return event_id >= 0 && event_id < {{ machine_macro_name(model) }}_EVENT_COUNT;
+}
+
+static void _{{ machine_class_name(model) }}_event_set_reset(
+    _{{ machine_class_name(model) }}EventSet *event_set,
+    size_t input_count
+)
 {
     size_t i;
-    if (path == NULL) {
-        return -1;
-    }
-    for (i = 0u; i < {{ (model.walk_states() | list) | length }}u; ++i) {
-        if (strcmp(_{{ machine_class_name(model) }}_state_paths[i], path) == 0) {
-            return (int)i;
+
+    event_set->count = 0u;
+    event_set->use_bitset =
+        {{ machine_macro_name(model) }}_EVENT_COUNT > 0 &&
+        {{ machine_macro_name(model) }}_EVENT_COUNT <= {{ machine_macro_name(model) }}_EVENTSET_BITSET_LIMIT_INTERNAL &&
+        input_count > {{ machine_macro_name(model) }}_EVENTSET_SMALL_ARRAY_THRESHOLD_INTERNAL;
+    if (event_set->use_bitset) {
+        for (i = 0u; i < sizeof(event_set->bitset) / sizeof(event_set->bitset[0]); ++i) {
+            event_set->bitset[i] = 0ul;
         }
     }
-    return -1;
 }
 
 static int _{{ machine_class_name(model) }}_event_set_add(
+    {{ machine_class_name(model) }} *machine,
     _{{ machine_class_name(model) }}EventSet *event_set,
     int event_id
 )
 {
     size_t i;
+
+    if (!_{{ machine_class_name(model) }}_event_id_is_valid(event_id)) {
+        _{{ machine_class_name(model) }}_set_error(machine, "Invalid event id: %d", event_id);
+        return {{ machine_macro_name(model) }}_FAILURE;
+    }
+
+    if (event_set->use_bitset) {
+        size_t word_index = (size_t)event_id / {{ machine_macro_name(model) }}_EVENTSET_WORD_BITS_INTERNAL;
+        unsigned long mask = 1ul << ((size_t)event_id % {{ machine_macro_name(model) }}_EVENTSET_WORD_BITS_INTERNAL);
+        if ((event_set->bitset[word_index] & mask) == 0ul) {
+            event_set->bitset[word_index] |= mask;
+            ++event_set->count;
+        }
+        return {{ machine_macro_name(model) }}_SUCCESS;
+    }
+
     for (i = 0u; i < event_set->count; ++i) {
         if (event_set->ids[i] == event_id) {
             return {{ machine_macro_name(model) }}_SUCCESS;
         }
     }
     if (event_set->count >= sizeof(event_set->ids) / sizeof(event_set->ids[0])) {
+        _{{ machine_class_name(model) }}_set_error(machine, "Too many events in one cycle.");
         return {{ machine_macro_name(model) }}_FAILURE;
     }
     event_set->ids[event_set->count++] = event_id;
@@ -616,8 +618,14 @@ static int _{{ machine_class_name(model) }}_event_set_has(
 )
 {
     size_t i;
+
     if (event_id < 0) {
         return 1;
+    }
+    if (event_set->use_bitset) {
+        size_t word_index = (size_t)event_id / {{ machine_macro_name(model) }}_EVENTSET_WORD_BITS_INTERNAL;
+        unsigned long mask = 1ul << ((size_t)event_id % {{ machine_macro_name(model) }}_EVENTSET_WORD_BITS_INTERNAL);
+        return (event_set->bitset[word_index] & mask) != 0ul;
     }
     for (i = 0u; i < event_set->count; ++i) {
         if (event_set->ids[i] == event_id) {
@@ -627,167 +635,26 @@ static int _{{ machine_class_name(model) }}_event_set_has(
     return 0;
 }
 
-static int _{{ machine_class_name(model) }}_current_state_id_from_context(
-    const _{{ machine_class_name(model) }}RuntimeContext *context
-)
-{
-    if (context->stack_size == 0u) {
-        return -1;
-    }
-    return context->stack[context->stack_size - 1u].state_id;
-}
-
-static int _{{ machine_class_name(model) }}_parse_event(
-    {{ machine_class_name(model) }} *machine,
-    const _{{ machine_class_name(model) }}RuntimeContext *context,
-    const char *event_ref,
-    int *out_event_id
-)
-{
-    char buffer[1024];
-    const char *current_path;
-    const char *root_path;
-    const char *remaining;
-    size_t dot_count;
-    size_t current_len;
-    size_t keep_len;
-    int event_id;
-    int current_state_id;
-
-    if (event_ref == NULL || event_ref[0] == '\0') {
-        _{{ machine_class_name(model) }}_set_error(machine, "Event reference cannot be empty");
-        return {{ machine_macro_name(model) }}_FAILURE;
-    }
-
-    root_path = _{{ machine_class_name(model) }}_state_info[{{ state_enum(model.root_state) }}].path;
-    current_state_id = _{{ machine_class_name(model) }}_current_state_id_from_context(context);
-
-    if (current_state_id < 0) {
-        event_id = _{{ machine_class_name(model) }}_lookup_event_id(event_ref);
-        if (event_id >= 0) {
-            *out_event_id = event_id;
-            return {{ machine_macro_name(model) }}_SUCCESS;
-        }
-        _{{ machine_class_name(model) }}_set_error(machine, "Cannot resolve event '%s' after runtime end.", event_ref);
-        return {{ machine_macro_name(model) }}_FAILURE;
-    }
-
-    current_path = _{{ machine_class_name(model) }}_state_info[current_state_id].path;
-
-    if (event_ref[0] == '/') {
-        remaining = event_ref + 1;
-        if (remaining[0] == '\0') {
-            _{{ machine_class_name(model) }}_set_error(machine, "Absolute event reference cannot be just '/'.");
-            return {{ machine_macro_name(model) }}_FAILURE;
-        }
-        snprintf(buffer, sizeof(buffer), "%s.%s", root_path, remaining);
-        event_id = _{{ machine_class_name(model) }}_lookup_event_id(buffer);
-        if (event_id >= 0) {
-            *out_event_id = event_id;
-            return {{ machine_macro_name(model) }}_SUCCESS;
-        }
-        _{{ machine_class_name(model) }}_set_error(machine, "Cannot resolve absolute event path '%s'.", event_ref);
-        return {{ machine_macro_name(model) }}_FAILURE;
-    }
-
-    if (event_ref[0] == '.') {
-        dot_count = 0u;
-        while (event_ref[dot_count] == '.') {
-            ++dot_count;
-        }
-        remaining = event_ref + dot_count;
-        if (remaining[0] == '\0') {
-            _{{ machine_class_name(model) }}_set_error(
-                machine,
-                "Parent-relative event reference cannot end with dots: '%s'",
-                event_ref
-            );
-            return {{ machine_macro_name(model) }}_FAILURE;
-        }
-        current_len = strlen(current_path);
-        keep_len = current_len;
-        while (dot_count > 0u) {
-            if (keep_len == 0u) {
-                _{{ machine_class_name(model) }}_set_error(
-                    machine,
-                    "Parent-relative event reference '%s' goes beyond root state.",
-                    event_ref
-                );
-                return {{ machine_macro_name(model) }}_FAILURE;
-            }
-            while (keep_len > 0u && current_path[keep_len - 1u] != '.') {
-                --keep_len;
-            }
-            if (keep_len == 0u) {
-                _{{ machine_class_name(model) }}_set_error(
-                    machine,
-                    "Parent-relative event reference '%s' goes beyond root state.",
-                    event_ref
-                );
-                return {{ machine_macro_name(model) }}_FAILURE;
-            }
-            --keep_len;
-            --dot_count;
-        }
-        if (keep_len >= sizeof(buffer) - 1u) {
-            _{{ machine_class_name(model) }}_set_error(machine, "Resolved event path is too long.");
-            return {{ machine_macro_name(model) }}_FAILURE;
-        }
-        memcpy(buffer, current_path, keep_len);
-        buffer[keep_len] = '\0';
-        snprintf(buffer + keep_len, sizeof(buffer) - keep_len, ".%s", remaining);
-        event_id = _{{ machine_class_name(model) }}_lookup_event_id(buffer);
-        if (event_id >= 0) {
-            *out_event_id = event_id;
-            return {{ machine_macro_name(model) }}_SUCCESS;
-        }
-        _{{ machine_class_name(model) }}_set_error(
-            machine,
-            "Cannot resolve parent-relative event path '%s'.",
-            event_ref
-        );
-        return {{ machine_macro_name(model) }}_FAILURE;
-    }
-
-    event_id = _{{ machine_class_name(model) }}_lookup_event_id(event_ref);
-    if (event_id >= 0) {
-        *out_event_id = event_id;
-        return {{ machine_macro_name(model) }}_SUCCESS;
-    }
-
-    snprintf(buffer, sizeof(buffer), "%s.%s", current_path, event_ref);
-    event_id = _{{ machine_class_name(model) }}_lookup_event_id(buffer);
-    if (event_id >= 0) {
-        *out_event_id = event_id;
-        return {{ machine_macro_name(model) }}_SUCCESS;
-    }
-
-    _{{ machine_class_name(model) }}_set_error(machine, "Cannot resolve event path '%s'.", event_ref);
-    return {{ machine_macro_name(model) }}_FAILURE;
-}
-
 static int _{{ machine_class_name(model) }}_normalize_events(
     {{ machine_class_name(model) }} *machine,
-    const _{{ machine_class_name(model) }}RuntimeContext *context,
-    const char *const *events,
+    const {{ machine_class_name(model) }}EventId *event_ids,
     size_t event_count,
     _{{ machine_class_name(model) }}EventSet *out_event_set
 )
 {
     size_t i;
-    int event_id;
 
-    out_event_set->count = 0u;
-    if (events == NULL) {
-        return {{ machine_macro_name(model) }}_SUCCESS;
+    _{{ machine_class_name(model) }}_event_set_reset(out_event_set, event_count);
+    if (event_ids == NULL) {
+        if (event_count == 0u) {
+            return {{ machine_macro_name(model) }}_SUCCESS;
+        }
+        _{{ machine_class_name(model) }}_set_error(machine, "event_ids must be NULL when event_count is zero only.");
+        return {{ machine_macro_name(model) }}_FAILURE;
     }
 
     for (i = 0u; i < event_count; ++i) {
-        if (_{{ machine_class_name(model) }}_parse_event(machine, context, events[i], &event_id) != {{ machine_macro_name(model) }}_SUCCESS) {
-            return {{ machine_macro_name(model) }}_FAILURE;
-        }
-        if (_{{ machine_class_name(model) }}_event_set_add(out_event_set, event_id) != {{ machine_macro_name(model) }}_SUCCESS) {
-            _{{ machine_class_name(model) }}_set_error(machine, "Too many events in one cycle.");
+        if (_{{ machine_class_name(model) }}_event_set_add(machine, out_event_set, event_ids[i]) != {{ machine_macro_name(model) }}_SUCCESS) {
             return {{ machine_macro_name(model) }}_FAILURE;
         }
     }
@@ -969,13 +836,7 @@ static int _{{ machine_class_name(model) }}_transition_is_enabled(
     const {{ machine_class_name(model) }}Vars *vars
 )
 {
-    int event_id;
-    if (transition->event_path == NULL) {
-        event_id = -1;
-    } else {
-        event_id = _{{ machine_class_name(model) }}_lookup_event_id(transition->event_path);
-    }
-    if (!_{{ machine_class_name(model) }}_event_set_has(event_set, event_id)) {
+    if (!_{{ machine_class_name(model) }}_event_set_has(event_set, transition->event_id)) {
         return 0;
     }
     if (transition->guard_fn != NULL && !transition->guard_fn(vars)) {
@@ -1432,7 +1293,7 @@ int {{ machine_class_name(model) }}_init({{ machine_class_name(model) }} *machin
 
 int {{ machine_class_name(model) }}_hot_start(
     {{ machine_class_name(model) }} *machine,
-    const char *initial_state,
+    {{ machine_class_name(model) }}StateId initial_state_id,
     const {{ machine_class_name(model) }}Vars *initial_vars
 )
 {
@@ -1443,7 +1304,7 @@ int {{ machine_class_name(model) }}_hot_start(
     int current_state_id;
     size_t i;
 
-    if (machine == NULL || initial_state == NULL || initial_vars == NULL) {
+    if (machine == NULL || initial_vars == NULL) {
         return {{ machine_macro_name(model) }}_FAILURE;
     }
 
@@ -1452,9 +1313,9 @@ int {{ machine_class_name(model) }}_hot_start(
     memset(machine, 0, sizeof(*machine));
     _{{ machine_class_name(model) }}_reset_vars(&machine->vars);
     machine->vars = *initial_vars;
-    current_state_id = _{{ machine_class_name(model) }}_lookup_state_id(initial_state);
-    if (current_state_id < 0) {
-        _{{ machine_class_name(model) }}_set_error(machine, "State '%s' not found.", initial_state);
+    current_state_id = initial_state_id;
+    if (!_{{ machine_class_name(model) }}_state_id_is_valid(current_state_id)) {
+        _{{ machine_class_name(model) }}_set_error(machine, "Invalid state id: %d", initial_state_id);
         return {{ machine_macro_name(model) }}_FAILURE;
     }
 
@@ -1507,7 +1368,7 @@ void {{ machine_class_name(model) }}_set_hooks(
 
 int {{ machine_class_name(model) }}_cycle(
     {{ machine_class_name(model) }} *machine,
-    const char *const *events,
+    const {{ machine_class_name(model) }}EventId *event_ids,
     size_t event_count
 )
 {
@@ -1534,7 +1395,7 @@ int {{ machine_class_name(model) }}_cycle(
     sim_entered_root = machine->entered_root;
     sim_ended = machine->ended;
 
-    if (_{{ machine_class_name(model) }}_normalize_events(machine, &sim_context, events, event_count, &event_set) != {{ machine_macro_name(model) }}_SUCCESS) {
+    if (_{{ machine_class_name(model) }}_normalize_events(machine, event_ids, event_count, &event_set) != {{ machine_macro_name(model) }}_SUCCESS) {
         return {{ machine_macro_name(model) }}_FAILURE;
     }
 

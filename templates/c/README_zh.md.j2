@@ -41,13 +41,27 @@ cc -std=c99 -shared -fPIC machine.c -lm -o libmachine.so
 
 在 Windows 上，请改用对应编译器的 DLL 选项，并在导出符号时定义
 `{{ machine_macro_name(model) }}_BUILD_SHARED`。
+{% set event_ns = namespace(items=[]) -%}
+{% for state in model.walk_states() -%}
+{% for event in state.events.values() -%}
+{% set event_ns.items = event_ns.items + [event.path_name] -%}
+{% endfor -%}
+{% endfor %}
+{% if event_ns.items %}
 
-发送事件时，可以把规范事件路径、绝对路径或兼容的相对事件名传给
-`{{ machine_class_name(model) }}_cycle(...)`。
+发送事件时，应把生成出来的事件 id 传给 `{{ machine_class_name(model) }}_cycle(...)`。
+
+```c
+{{ machine_class_name(model) }}EventId event_ids[] = {
+    {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[0] | to_identifier | upper }}
+};
+{{ machine_class_name(model) }}_cycle(&machine, event_ids, 1u);
+```
+{% endif %}
 
 ## Hot Start
 
-如需从指定状态开始启动，需要准备完整变量快照，然后调用
+如需从指定的生成状态 id 开始启动，需要准备完整变量快照，然后调用
 `{{ machine_class_name(model) }}_hot_start(...)`：
 
 ```c
@@ -59,7 +73,11 @@ initial_vars = *{{ machine_class_name(model) }}_vars(&machine);
 {% for def_item in model.defines.values() -%}
 initial_vars.{{ def_item.name | to_identifier }} = {{ def_item.init.to_ast_node() | expr_render(style='c') }};
 {% endfor %}
-{{ machine_class_name(model) }}_hot_start(&machine, "{{ model.root_state.name }}", &initial_vars);
+{{ machine_class_name(model) }}_hot_start(
+    &machine,
+    {{ machine_macro_name(model) }}_STATE_{{ (model.root_state | state_path) | to_identifier | upper }},
+    &initial_vars
+);
 ```
 
 ## 扩展方式
@@ -151,6 +169,26 @@ int main(void)
 {% endfor %}
 {% else %}
 当前状态机没有定义持久变量。
+{% endif %}
+
+## 状态 ID
+
+| 状态路径 | 宏 |
+| --- | --- |
+{% for state in model.walk_states() -%}
+| `{{ state | state_path }}` | `{{ machine_macro_name(model) }}_STATE_{{ (state | state_path) | to_identifier | upper }}` |
+{% endfor %}
+
+## 事件 ID
+
+{% if event_ns.items %}
+| 事件路径 | 宏 |
+| --- | --- |
+{% for event_path in event_ns.items -%}
+| `{{ event_path }}` | `{{ machine_macro_name(model) }}_EVENT_{{ event_path | to_identifier | upper }}` |
+{% endfor %}
+{% else %}
+当前状态机没有定义事件。
 {% endif %}
 
 ## 状态路径

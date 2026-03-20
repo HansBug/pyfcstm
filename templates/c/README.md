@@ -28,33 +28,39 @@ maintainability should be concentrated in the public header and generated usage
 docs. The generated `machine.c` should prioritize runtime performance first, as
 long as behavior remains correct and the public API contract stays stable.
 
+Current progress:
+
+- Phase 1 is implemented.
+- Phase 2 is implemented.
+- The current C template regression suite passes with the id-only API and the
+  hybrid event-set backend.
+
 ### Phase 1: Remove avoidable hot-path overhead
 
-- [ ] Remove string-based event submission from the generated public C API.
-- [ ] Generate transition-local `event_id` constants instead of storing
+- [x] Remove string-based event submission from the generated public C API.
+- [x] Generate transition-local `event_id` constants instead of storing
       `event_path` for runtime lookup.
-- [ ] Change `cycle()` to accept integer event ids directly.
-- [ ] Generate public event-id macros in `machine.h` so callers can submit
+- [x] Change `cycle()` to accept integer event ids directly.
+- [x] Generate public event-id macros in `machine.h` so callers can submit
       events without string parsing.
-- [ ] Remove string state lookup from the hot-start API and switch hot start to
+- [x] Remove string state lookup from the hot-start API and switch hot start to
       state-id input.
-- [ ] Generate public state-id macros in `machine.h` for hot-start and other
+- [x] Generate public state-id macros in `machine.h` for hot-start and other
       performance-sensitive control paths.
-- [ ] Inline or directly emit tiny helpers that are currently paid on every
+- [x] Inline or directly emit tiny helpers that are currently paid on every
       state advance.
 
 ### Phase 2: Introduce a hybrid event-set backend for id-based cycle input
 
-- [ ] Make the id-based `cycle()` API the only event-input path exposed by the
+- [x] Make the id-based `cycle()` API the only event-input path exposed by the
       generated header.
-- [ ] Replace the current linear event-set membership checks with a hybrid
+- [x] Replace the current linear event-set membership checks with a hybrid
       backend that does not impose a small fixed event-count limit.
-- [ ] Use a compact bitset fast path when the generated machine has a small or
+- [x] Use a compact bitset fast path when the generated machine has a small or
       moderate total event count.
-- [ ] Fall back to a deduplicated integer-id array or an open-addressed hash
-      set when the event space is too large for a compact bitset to be the best
-      choice.
-- [ ] Prefer per-machine reusable scratch storage over per-cycle heap
+- [x] Fall back to a deduplicated integer-id array when the event space is too
+      large for a compact bitset to be the best choice.
+- [x] Prefer per-machine reusable scratch storage over per-cycle heap
       allocation.
 
 Notes for Phase 2:
@@ -100,13 +106,13 @@ Notes for Phase 2:
 
 ### Acceptance Criteria
 
-- [ ] Generated `machine.h` stays small and user-oriented.
+- [x] Generated `machine.h` stays small and user-oriented.
 - [ ] Generated `machine.c` is free to optimize for runtime speed over manual
       readability.
-- [ ] The generated public API uses integer ids directly for event submission.
-- [ ] `machine.h` exposes event-id and state-id macros so users do not need
+- [x] The generated public API uses integer ids directly for event submission.
+- [x] `machine.h` exposes event-id and state-id macros so users do not need
       runtime string lookups.
-- [ ] Event handling has no artificial small fixed upper bound caused by using
+- [x] Event handling has no artificial small fixed upper bound caused by using
       bit operations alone.
-- [ ] Existing runtime semantics, rollback behavior, and hook semantics remain
+- [x] Existing runtime semantics, rollback behavior, and hook semantics remain
       correct.

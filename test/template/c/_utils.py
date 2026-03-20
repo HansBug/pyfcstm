@@ -22,7 +22,7 @@ def _find_c_compiler():
 
 def _find_cpp_compiler():
     if os.name == 'nt':
-        return shutil.which('clang++') or shutil.which('g++') or shutil.which('c++')
+        return shutil.which('g++') or shutil.which('c++') or shutil.which('clang++')
     return shutil.which('c++') or shutil.which('g++') or shutil.which('clang++')
 
 

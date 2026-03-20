@@ -169,8 +169,16 @@ enum {
     {{ machine_macro_name(model) }}_ACTION_KIND_ABSTRACT = 2
 };
 
+{% set dsl_source = model.to_ast_node() | string %}
 static const char *_{{ machine_class_name(model) }}_dsl_source =
-{{ cstr(model.to_ast_node() | string) }};
+{% if dsl_source %}
+{% for line in dsl_source.splitlines(True) -%}
+    {{ cstr(line) }}
+{% endfor %}
+{% else %}
+    "";
+{% endif %}
+;
 
 static const char *_{{ machine_class_name(model) }}_state_paths[] = {
 {% for state in model.walk_states() -%}

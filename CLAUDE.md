@@ -108,6 +108,96 @@ pyfcstm simulate -i input.fcstm -e "init System.Active counter=10; cycle 5"  # H
 # > cycle
 ```
 
+### Code Formatters For Generated Templates
+
+When working on multi-language generated templates, prefer the smallest practical formatter set instead of a
+language-by-language best-of-breed matrix. The repository guidance uses the following minimal toolset to cover the
+mainstream target languages that pyfcstm cares about:
+
+- `ruff`: `py`
+- `dprint`: `js`, `ts`, and also common text/config formats such as `json`, `yaml`, `toml`, `md`, `html`, and `css`
+- `clang-format`: `c`, `cpp`, and `java`
+- `rustfmt`: `rust`
+- `gofmt`: `go`
+
+When prompting an LLM to generate template code, prefer instructions such as "make the output acceptable to the
+formatter defaults" instead of writing large hand-authored style guides. Avoid manual column alignment or other
+styling that formatters will immediately rewrite.
+
+Recommended installation commands:
+
+```bash
+# ruff
+python3 -m pip install --user ruff
+# or: brew install ruff
+# or: choco install ruff
+
+# dprint
+npm install -g dprint
+# or: brew install dprint
+# or: choco install dprint
+# Then create a dprint.json with the needed plugins:
+printf '{"plugins": []}\n' > dprint.json
+dprint config add oxc
+
+# clang-format
+sudo apt install clang-format
+# or: brew install clang-format
+# or: choco install llvm
+# rootless Linux fallback:
+python3 -m pip install --user clang-format
+
+# rustfmt
+rustup component add rustfmt
+
+# gofmt (installed with the Go toolchain)
+# Linux package manager example:
+sudo apt install golang-go
+# or: brew install go
+# or: choco install golang
+```
+
+Single-file reformat commands:
+
+```bash
+# Python via ruff
+ruff format path/to/file.py
+
+# JavaScript / TypeScript via dprint
+# Requires a configured dprint.json that includes the oxc plugin.
+dprint fmt path/to/file.js
+dprint fmt path/to/file.ts
+
+# C / C++ / Java via clang-format
+clang-format -i path/to/file.c
+clang-format -i path/to/file.cpp
+clang-format -i path/to/File.java
+
+# Rust via rustfmt
+rustfmt path/to/file.rs
+
+# Go via gofmt
+gofmt -w path/to/file.go
+```
+
+Per-tool coverage summary:
+
+- `ruff`
+  - Primary coverage here: `py`
+- `dprint`
+  - Primary coverage here: `js`, `ts`
+  - Also useful for generated support files such as `json`, `yaml`, `toml`, `md`, `html`, and `css`
+- `clang-format`
+  - Primary coverage here: `c`, `cpp`, `java`
+  - This is a pragmatic low-tool-count choice for Java in template work, even though some Java projects prefer `google-java-format`
+- `rustfmt`
+  - Coverage: `rust`
+- `gofmt`
+  - Coverage: `go`
+
+If a generated template language falls outside this set, add a dedicated formatter only when there is a concrete need.
+Do not expand the formatter matrix casually.
+
 ## Architecture Overview
 
 ### Core Components

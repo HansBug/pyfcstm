@@ -197,16 +197,22 @@ class TestCBuiltinTemplate:
             assert 'RootMachineHooks' in readme
             assert 'on_Root_RootInit' in readme
             assert 'on_Root_System_A_AEnter' in readme
-            assert '| DSL action path | Hook field | Owner state | Stage |' in readme
+            assert '| Hook field | DSL action path | Owner state | Stage |' in readme
+            assert '## Public Header Reference' in readme
+            assert '## Function Reference' in readme
+            assert '## Performance Advice' in readme
             assert 'read-only extension points' in readme
-            assert 'do not mutate persistent' in readme
-            assert 'RootMachine_vars(&machine)->name' in readme
-            assert '可注册的 Abstract Hook 清单' in readme_zh
+            assert 'should not mutate persistent machine variables' in readme
+            assert 'RootMachine_vars(&machine)' in readme
+            assert '| Hook 字段 | DSL 动作路径 | 所属状态 | 阶段 |' in readme_zh
             assert 'on_Root_RootInit' in readme_zh
             assert 'on_Root_System_A_AEnter' in readme_zh
+            assert '## 公开头文件参考' in readme_zh
+            assert '## 函数参考' in readme_zh
+            assert '## 性能建议' in readme_zh
             assert '只读扩展点' in readme_zh
-            assert '不应在回调内部修改状态机持久变量' in readme_zh
-            assert 'RootMachine_vars(&machine)->name' in readme_zh
+            assert '不适合修改状态机持久变量' in readme_zh
+            assert 'RootMachine_vars(&machine)' in readme_zh
 
     def test_generated_machine_source_is_c99_and_build_files_work(self):
         dsl_code = """

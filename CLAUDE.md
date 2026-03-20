@@ -966,6 +966,7 @@ Current built-in template layout and release flow:
 - Repository template sources live under `templates/<name>/`
 - Packaged built-in template assets live under `pyfcstm/template/`
 - `make tpl` refreshes packaged template zip assets and `index.json`
+- After modifying repository template sources, run `make tpl` before template-related unit tests so the packaged built-in templates used by tests are up to date
 - The CLI extracts built-in templates first, then hands the extracted directory to `StateMachineCodeRenderer`
 - The current reference implementation is `templates/python/`, with tests in `test/template/python/`
 

@@ -2,7 +2,6 @@ import ctypes
 import os
 import shutil
 import subprocess
-import sys
 import textwrap
 from contextlib import contextmanager
 from tempfile import TemporaryDirectory
@@ -16,18 +15,14 @@ from pyfcstm.template import extract_template
 from pyfcstm.utils import to_c_identifier
 
 
-def _find_c_compiler():
-    return shutil.which('cc') or shutil.which('gcc') or shutil.which('clang')
-
-
-def _find_cpp_compiler():
-    if os.name == 'nt':
-        return shutil.which('g++') or shutil.which('c++') or shutil.which('clang++')
-    return shutil.which('c++') or shutil.which('g++') or shutil.which('clang++')
-
-
 def _find_cmake():
     return shutil.which('cmake')
+
+
+def _cmake_generator_args():
+    if os.name == 'nt':
+        return ['-G', 'MinGW Makefiles']
+    return []
 
 
 def _machine_macro_name(model):
@@ -161,41 +156,15 @@ def build_shared_library(output_dir, model):
     build_files = write_test_build_files(output_dir, model)
     cmake_executable = _find_cmake()
     if cmake_executable is None:
-        if os.name == 'nt':
-            pytest.skip('cmake is required to build the C runtime on Windows test environments')
-
-        compiler = _find_c_compiler()
-        if compiler is None:
-            pytest.skip('Neither cmake nor a direct C compiler is available in this test environment')
-
-        shared_name = 'libmachine.dylib' if sys.platform == 'darwin' else 'libmachine.so'
-        if sys.platform == 'darwin':
-            build_cmd = [compiler, '-std=c99', '-dynamiclib', 'machine.c', '-lm', '-o', shared_name]
-        else:
-            build_cmd = [compiler, '-std=c99', '-shared', '-fPIC', 'machine.c', '-lm', '-o', shared_name]
-
-        subprocess.run(
-            build_cmd,
-            cwd=output_dir,
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-        return {
-            'build_files': build_files,
-            'build_dir': output_dir,
-            'shared_lib': os.path.join(output_dir, shared_name),
-            'cmake': None,
-            'compiler': compiler,
-        }
+        pytest.skip('cmake is required for C template build tests.')
 
     build_dir = os.path.join(output_dir, 'cmake-runtime-build')
     os.makedirs(build_dir, exist_ok=True)
 
     subprocess.run(
-        [
-            cmake_executable,
+        [cmake_executable]
+        + _cmake_generator_args()
+        + [
             '-DCMAKE_POLICY_VERSION_MINIMUM=3.5',
             os.path.abspath(output_dir),
         ],
@@ -219,7 +188,6 @@ def build_shared_library(output_dir, model):
         'build_dir': build_dir,
         'shared_lib': _find_built_shared_library(build_dir),
         'cmake': cmake_executable,
-        'compiler': _find_c_compiler(),
     }
 
 
@@ -581,8 +549,6 @@ def render_c_artifacts(dsl_code):
             'build_dir': build_info['build_dir'],
             'build_files': build_info['build_files'],
             'cmake': build_info['cmake'],
-            'compiler': build_info['compiler'],
-            'cpp_compiler': _find_cpp_compiler(),
         }
 
 

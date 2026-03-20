@@ -468,50 +468,6 @@ class TestCBuiltinTemplate:
             assert os.path.isfile(artifacts['shared_lib'])
             assert os.path.isfile(artifacts['build_files']['cmakelists'])
 
-            if artifacts['compiler'] is not None and os.name != 'nt':
-                subprocess.run(
-                    [
-                        artifacts['compiler'],
-                        '-std=c99',
-                        '-Wall',
-                        '-Wextra',
-                        '-pedantic',
-                        '-c',
-                        artifacts['machine_c_file'],
-                        '-o',
-                        os.path.join(artifacts['output_dir'], 'machine.o'),
-                    ],
-                    check=True,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                )
-            if artifacts['cpp_compiler'] is not None and os.name != 'nt':
-                for std in ['c++98', 'c++11', 'c++17']:
-                    subprocess.run(
-                        [
-                            artifacts['cpp_compiler'],
-                            '-std=' + std,
-                            '-Wall',
-                            '-Wextra',
-                            '-Werror',
-                            '-pedantic-errors',
-                            '-x',
-                            'c++',
-                            artifacts['machine_c_file'],
-                            '-c',
-                            '-o',
-                            os.path.join(
-                                artifacts['output_dir'],
-                                'machine_{std}.o'.format(std=std.replace('+', 'p')),
-                            ),
-                        ],
-                        check=True,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE,
-                        text=True,
-                    )
-
             make_executable = shutil.which('make')
             if make_executable is not None and os.name != 'nt':
                 subprocess.run(
@@ -1097,31 +1053,115 @@ def _run_cycle_and_assert(runtime, events=None, *, current_path=None, vars=None,
     _assert_runtime_state(runtime, current_path=current_path, vars=vars, is_ended=is_ended)
 
 
-def _compile_and_run_c_harness(artifacts, stem, source_code):
-    compiler = artifacts['compiler']
-    if compiler is None or os.name == 'nt':
-        pytest.skip('A direct C compiler on non-Windows is required for C hook harness tests.')
+def _cmake_generator_args():
+    if os.name == 'nt':
+        return ['-G', 'MinGW Makefiles']
+    return []
 
-    source_file = os.path.join(artifacts['output_dir'], stem + '.c')
-    executable = os.path.join(artifacts['output_dir'], stem)
 
+def _find_built_executable(build_dir, stem):
+    candidate_names = [stem + '.exe', stem]
+    search_dirs = [
+        build_dir,
+        os.path.join(build_dir, 'Release'),
+        os.path.join(build_dir, 'RelWithDebInfo'),
+        os.path.join(build_dir, 'Debug'),
+        os.path.join(build_dir, 'MinSizeRel'),
+    ]
+
+    for directory in search_dirs:
+        if not os.path.isdir(directory):
+            continue
+        for filename in candidate_names:
+            path = os.path.join(directory, filename)
+            if os.path.isfile(path):
+                return path
+
+    for root, _, files in os.walk(build_dir):
+        for filename in files:
+            if filename in candidate_names:
+                return os.path.join(root, filename)
+
+    raise FileNotFoundError(
+        'Cannot find built executable {!r} under {!r}.'.format(stem, build_dir)
+    )
+
+
+def _compile_and_run_harness_with_cmake(artifacts, stem, source_code, *, language, standard):
+    cmake_executable = artifacts['cmake']
+    if cmake_executable is None:
+        pytest.skip('cmake is required for generated C template harness tests.')
+
+    source_ext = '.cpp' if language == 'CXX' else '.c'
+    project_dir = os.path.join(artifacts['output_dir'], stem + '_cmake_project')
+    build_dir = os.path.join(project_dir, 'build')
+    os.makedirs(project_dir, exist_ok=True)
+    os.makedirs(build_dir, exist_ok=True)
+
+    source_file = os.path.join(project_dir, stem + source_ext)
+    cmakelists = os.path.join(project_dir, 'CMakeLists.txt')
     with open(source_file, 'w', encoding='utf-8') as f:
         f.write(source_code)
+    with open(cmakelists, 'w', encoding='utf-8') as f:
+        cmake_lines = [
+            'cmake_minimum_required(VERSION 3.5)',
+            'project({project_name} {project_languages})'.format(
+                project_name=stem + '_project',
+                project_languages='C CXX' if language == 'CXX' else 'C',
+            ),
+            '',
+            'include_directories("{machine_dir}")'.format(
+                machine_dir=artifacts['output_dir'].replace('\\', '/')
+            ),
+            '',
+            'add_executable({target_name}'.format(target_name=stem),
+            '    "{machine_c_file}"'.format(
+                machine_c_file=artifacts['machine_c_file'].replace('\\', '/')
+            ),
+            '    "{source_file}"'.format(source_file=source_file.replace('\\', '/')),
+            ')',
+            '',
+            'set_target_properties(',
+            '    {target_name}'.format(target_name=stem),
+            '    PROPERTIES',
+            '    C_STANDARD 99',
+            '    C_STANDARD_REQUIRED YES',
+            '    C_EXTENSIONS NO',
+        ]
+        if language == 'CXX':
+            cmake_lines.extend([
+                '    CXX_STANDARD {cxx_standard}'.format(
+                    cxx_standard=standard.replace('c++', '')
+                ),
+                '    CXX_STANDARD_REQUIRED YES',
+                '    CXX_EXTENSIONS NO',
+            ])
+        cmake_lines.extend([
+            ')',
+            '',
+            'if (NOT WIN32)',
+            '    target_link_libraries({target_name} m)'.format(target_name=stem),
+            'endif()',
+            '',
+        ])
+        f.write('\n'.join(cmake_lines))
 
     subprocess.run(
-        [
-            compiler,
-            '-std=c99',
-            '-Wall',
-            '-Wextra',
-            '-pedantic',
-            'machine.c',
-            os.path.basename(source_file),
-            '-lm',
-            '-o',
-            os.path.basename(executable),
+        [cmake_executable]
+        + _cmake_generator_args()
+        + [
+            '-DCMAKE_POLICY_VERSION_MINIMUM=3.5',
+            os.path.abspath(project_dir),
         ],
-        cwd=artifacts['output_dir'],
+        cwd=build_dir,
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    subprocess.run(
+        [cmake_executable, '--build', '.', '--config', 'Release'],
+        cwd=build_dir,
         check=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -1129,57 +1169,29 @@ def _compile_and_run_c_harness(artifacts, stem, source_code):
     )
 
     return subprocess.run(
-        [executable],
-        cwd=artifacts['output_dir'],
+        [_find_built_executable(build_dir, stem)],
+        cwd=build_dir,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+    )
+
+
+def _compile_and_run_c_harness(artifacts, stem, source_code):
+    return _compile_and_run_harness_with_cmake(
+        artifacts,
+        stem,
+        source_code,
+        language='C',
+        standard='c++98',
     )
 
 
 def _compile_and_run_cpp_harness(artifacts, stem, source_code, std='c++98'):
-    compiler = artifacts['cpp_compiler']
-    if compiler is None:
-        pytest.skip('A direct C++ compiler is required for C++ harness tests.')
-
-    source_file = os.path.join(artifacts['output_dir'], stem + '.cpp')
-    executable = os.path.join(
-        artifacts['output_dir'],
-        stem + ('.exe' if os.name == 'nt' else ''),
-    )
-    compile_cmd = [
-        compiler,
-        '-std=' + std,
-        '-Wall',
-        '-Wextra',
-        '-Werror',
-        '-pedantic-errors',
-        '-x',
-        'c++',
-        'machine.c',
-        os.path.basename(source_file),
-        '-o',
-        os.path.basename(executable),
-    ]
-    if os.name != 'nt':
-        compile_cmd.insert(-2, '-lm')
-
-    with open(source_file, 'w', encoding='utf-8') as f:
-        f.write(source_code)
-
-    subprocess.run(
-        compile_cmd,
-        cwd=artifacts['output_dir'],
-        check=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-    )
-
-    return subprocess.run(
-        [executable],
-        cwd=artifacts['output_dir'],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
+    return _compile_and_run_harness_with_cmake(
+        artifacts,
+        stem,
+        source_code,
+        language='CXX',
+        standard=std,
     )

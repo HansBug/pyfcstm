@@ -157,7 +157,7 @@ _ABSTRACT_HOOKS = {% if abstract_hook_scan.seen %}{
 {% endif -%}
 {% endfor -%}
 {% if resolved.item.is_abstract and resolved.item.func_name not in abstract_const_ns.seen -%}
-{% set abstract_const_ns.seen = abstract_const_ns.seen + [resolved.item.func_name] -%}
+{% set abstract_const_ns.seen = abstract_const_ns.seen + [resolved.item.func_name] %}
     {{ resolved.item.func_name | tojson }}: {{ abstract_hook_method_name(resolved.item) | tojson }},
 {% endif -%}
 {% endfor -%}
@@ -168,13 +168,19 @@ _ABSTRACT_HOOKS = {% if abstract_hook_scan.seen %}{
 {% for state in state_items -%}
 {% set event_ns.items = event_ns.items + (state.events.values() | list) -%}
 {% endfor -%}
-_EVENT_PATHS = ({% if event_ns.items %}
-{% for state in state_items -%}
-{% for event in state.events.values() -%}
+{% if event_ns.items | length == 0 -%}
+_EVENT_PATHS = ()
+{% elif event_ns.items | length == 1 -%}
+_EVENT_PATHS = ({{ event_ns.items[0].path_name | tojson }},)
+{% else -%}
+_EVENT_PATHS = (
+{% for state in state_items %}
+{% for event in state.events.values() %}
     {{ event.path_name | tojson }},
 {% endfor -%}
 {% endfor -%}
-{% endif %})
+)
+{% endif -%}
 _EVENT_PATH_SET = set(_EVENT_PATHS)
 
 
@@ -234,14 +240,21 @@ class {{ machine_class_name(model) }}:
 
     DSL_SOURCE = _DSL_SOURCE
     STATE_PATHS = _STATE_PATHS
-    VARIABLE_NAMES = ({% if define_items | length == 1 %}{{ define_items[0].name | tojson }},{% else %}
-{%- for def_item in define_items %}
-        {{ def_item.name | tojson }},
+{% if define_items | length == 1 -%}
+{{ ('VARIABLE_NAMES = (' ~ (define_items[0].name | tojson) ~ ',)') | indent(4, true) }}
+{% else -%}
+{% set variable_name_lines = namespace(items=['VARIABLE_NAMES = (']) -%}
+{% for def_item in define_items -%}
+{% set variable_name_lines.items = variable_name_lines.items + [
+    '    ' ~ (def_item.name | tojson) ~ ','
+] -%}
 {% endfor -%}
-{% endif %})
-    ABSTRACT_HOOKS = _ABSTRACT_HOOKS
-    EVENT_PATHS = _EVENT_PATHS
-    _EVENT_PATH_SET = _EVENT_PATH_SET
+{% set variable_name_lines.items = variable_name_lines.items + [')'] -%}
+{{ variable_name_lines.items | join('\n') | indent(4, true) }}
+{% endif %}
+{{ 'ABSTRACT_HOOKS = _ABSTRACT_HOOKS' | indent(4, true) }}
+{{ 'EVENT_PATHS = _EVENT_PATHS' | indent(4, true) }}
+{{ '_EVENT_PATH_SET = _EVENT_PATH_SET' | indent(4, true) }}
     _ROOT_STATE_PATH = {{ state_key(model.root_state) | tojson }}
     _STATE_INFO = {
 {% for state in state_items %}

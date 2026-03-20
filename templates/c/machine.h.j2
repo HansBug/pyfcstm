@@ -23,6 +23,14 @@
 #define PYFCSTM_GENERATED_INT64_DEFINED 1
 #if defined(_MSC_VER) && !defined(__clang__)
 typedef __int64 PYFCSTM_GENERATED_INT64;
+#elif defined(__cplusplus) && (__cplusplus < 201103L)
+#if defined(__SIZEOF_LONG__) && (__SIZEOF_LONG__ >= 8)
+typedef long PYFCSTM_GENERATED_INT64;
+#elif defined(__GNUC__)
+typedef __extension__ long long PYFCSTM_GENERATED_INT64;
+#else
+typedef long PYFCSTM_GENERATED_INT64;
+#endif
 #elif defined(__GNUC__) || defined(__clang__)
 typedef __INT64_TYPE__ PYFCSTM_GENERATED_INT64;
 #else

@@ -613,14 +613,14 @@ Checklist：
 
 Checklist：
 
-- [ ] 新增 `templates/c_poll/config.yaml`
-- [ ] 新增 `templates/c_poll/machine.h.j2`
-- [ ] 新增 `templates/c_poll/machine.c.j2`
-- [ ] 新增 `templates/c_poll/README.md`
-- [ ] 新增 `templates/c_poll/README_zh.md`
-- [ ] 新增 `templates/c_poll/README.md.j2`
-- [ ] 新增 `templates/c_poll/README_zh.md.j2`
-- [ ] 更新模板总 README 与 builtin template 列表说明
+- [x] 新增 `templates/c_poll/config.yaml`
+- [x] 新增 `templates/c_poll/machine.h.j2`
+- [x] 新增 `templates/c_poll/machine.c.j2`
+- [x] 新增 `templates/c_poll/README.md`
+- [x] 新增 `templates/c_poll/README_zh.md`
+- [x] 新增 `templates/c_poll/README.md.j2`
+- [x] 新增 `templates/c_poll/README_zh.md.j2`
+- [x] 更新模板总 README 与 builtin template 列表说明
 
 ## Phase 2：事件公开 API 切换
 
@@ -632,15 +632,15 @@ Checklist：
 
 Checklist：
 
-- [ ] `machine.h.j2` 中新增 `EventCheckFn`
-- [ ] `machine.h.j2` 中新增 `EventContext`
-- [ ] `machine.h.j2` 中新增 `EventChecks`
-- [ ] `machine.h.j2` 中新增 `..._set_event_checks(...)`
-- [ ] `machine.h.j2` 中将 `..._cycle(...)` 改为无事件参数
-- [ ] machine instance 中新增 `event_checks_mounted` 挂载状态字段与独立 `user_data`
-- [ ] `set_event_checks(...)` 仅在整张表完整可用时才将 machine 标记为可运行
-- [ ] `cycle()` 在未挂载完整 event checks 时 fail-fast 并返回清晰错误
-- [ ] 继续保留现有 lifecycle hooks API
+- [x] `machine.h.j2` 中新增 `EventCheckFn`
+- [x] `machine.h.j2` 中新增 `EventContext`
+- [x] `machine.h.j2` 中新增 `EventChecks`
+- [x] `machine.h.j2` 中新增 `..._set_event_checks(...)`
+- [x] `machine.h.j2` 中将 `..._cycle(...)` 改为无事件参数
+- [x] machine instance 中新增 `event_checks_mounted` 挂载状态字段与独立 `user_data`
+- [x] `set_event_checks(...)` 仅在整张表完整可用时才将 machine 标记为可运行
+- [x] `cycle()` 在未挂载完整 event checks 时 fail-fast 并返回清晰错误
+- [x] 继续保留现有 lifecycle hooks API
 
 ## Phase 3：内部事件缓存与判定路径改造
 

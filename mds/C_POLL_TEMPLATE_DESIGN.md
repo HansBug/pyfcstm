@@ -558,6 +558,7 @@ Checklist：
 - [ ] 新增 Python ctypes/runtime harness 测试
 - [ ] 新增 C harness 测试
 - [ ] 新增 C++98 harness 测试
+- [ ] 对 `C` / `C++` 生成运行时构建测试统一使用 `cmake` 驱动，不手工探测或拼装宿主 C 编译器命令
 - [ ] 新增 runtime alignment 测试
 - [ ] 对齐 `c` 模板运行时家族应覆盖的完整 alignment 语料，不允许只迁移子集
 - [ ] 覆盖 abstract hooks 与 event checks 共存场景

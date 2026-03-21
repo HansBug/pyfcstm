@@ -1028,6 +1028,7 @@ For built-in template work, the current design bar is defined by the `python` te
 - For built-in templates, keep at least these layers when applicable:
   renderer/template extraction tests, generated-artifact tests, runtime-alignment tests against `SimulationRuntime`, and CLI path tests for `pyfcstm generate --template ...`
 - For runtime templates that mirror an existing built-in runtime family, treat the reference alignment corpus as the minimum bar. Do not silently drop examples or keep only the easy cases; the final template is not ready until the full intended semantic-alignment set passes.
+- For `C` / `C++` template unit tests and generated-runtime build checks, use `cmake` as the build driver instead of trying to hand-discover or manually orchestrate the host C compiler toolchain. The test contract should be expressed in terms of `cmake` configure/build success.
 
 ### Dependencies
 

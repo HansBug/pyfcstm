@@ -173,6 +173,12 @@ clang-format -i path/to/file.c
 clang-format -i path/to/file.cpp
 clang-format -i path/to/File.java
 
+# Explicit convergence check for generated C / C++ / Java artifacts
+# when you need a concrete 4-space indentation rule during template work:
+clang-format -i -style='{BasedOnStyle: LLVM, IndentWidth: 4}' path/to/file.c
+clang-format -i -style='{BasedOnStyle: LLVM, IndentWidth: 4}' path/to/file.cpp
+clang-format -i -style='{BasedOnStyle: LLVM, IndentWidth: 4}' path/to/File.java
+
 # Rust via rustfmt
 rustfmt path/to/file.rs
 
@@ -197,6 +203,20 @@ Per-tool coverage summary:
 
 If a generated template language falls outside this set, add a dedicated formatter only when there is a concrete need.
 Do not expand the formatter matrix casually.
+
+Mandatory completion rule for built-in template work:
+
+- Treat formatter convergence as part of correctness, not optional polish.
+- The generated target-language artifacts must be acceptable to the corresponding formatter defaults for that language.
+- Template-facing documentation artifacts that ship with the generated output, especially generated `README.md` / `README_zh.md` files and their embedded code snippets, must also be kept formatter-friendly for the relevant language and text formatter set.
+- For template changes, "done" means the generated outputs have converged under the intended formatter flow. If the formatter still wants to rewrite the emitted code or the generated usage examples materially, the template work is not complete yet.
+- When adding or changing a multi-language built-in template, explicitly design the generated code shape and README examples so they stabilize under the formatter set listed above instead of relying on hand-aligned formatting.
+- Use the formatter that matches the emitted language and verify convergence with that formatter, not with ad-hoc manual styling:
+  - `py`: `ruff format`
+  - `js` / `ts` and common generated text/config assets: `dprint fmt`
+  - `c` / `cpp` / `java`: `clang-format`; for template verification, use a 4-space indentation configuration and require the output to stabilize under repeated formatting
+  - `rust`: `rustfmt`
+  - `go`: `gofmt`
 
 ## Architecture Overview
 
@@ -987,11 +1007,13 @@ for executable operation blocks. Do not use `operation_stmt_render` / `operation
 For built-in template work, the current design bar is defined by the `python` template:
 
 - Behavioral parity with `pyfcstm.simulate.SimulationRuntime` is a hard requirement, not a best effort. Future built-in language templates should be validated against the simulator with alignment tests.
+- Full semantic-alignment coverage is required when a built-in runtime template claims parity with the simulator. Do not ship a new language template on a cherry-picked subset of alignment cases; every applicable alignment scenario and representative example expected for that runtime family must be covered unless an exclusion is explicitly justified and documented.
 - Generated artifacts should be as self-contained as the target language reasonably allows. Prefer standard-library or language-core features and avoid introducing third-party runtime dependencies unless there is a very strong reason.
 - The target language version and platform envelope should be broad and explicit. Match the spirit of the Python template: low dependency footprint, wide version compatibility, and cross-platform behavior.
 - Do not require users to edit generated files to implement abstract behavior. Instead, expose stable, language-idiomatic extension points for abstract actions and related hooks. The Python template uses protected hook override methods as the reference pattern.
 - Preserve naming clarity for generated extension points so DSL authors can map states, actions, and abstract behavior back to code quickly, ideally with IDE completion support.
 - Keep generated code readable and inspectable. Generated runtimes are product artifacts, not opaque intermediate blobs.
+- Ensure the final generated code, generated support files, and generated README examples are written so the corresponding formatter flow reaches a stable end state. Template work that has not reached formatter convergence is not complete.
 - When adding a new built-in template, update all of the following together: `templates/<name>/`, packaged template assets, CLI/template metadata, maintainer docs, generated docs if applicable, and the corresponding tests.
 
 ### Testing Strategy
@@ -1005,6 +1027,8 @@ For built-in template work, the current design bar is defined by the `python` te
 - Built-in template coverage lives under `test/template/`
 - For built-in templates, keep at least these layers when applicable:
   renderer/template extraction tests, generated-artifact tests, runtime-alignment tests against `SimulationRuntime`, and CLI path tests for `pyfcstm generate --template ...`
+- For runtime templates that mirror an existing built-in runtime family, treat the reference alignment corpus as the minimum bar. Do not silently drop examples or keep only the easy cases; the final template is not ready until the full intended semantic-alignment set passes.
+- For `C` / `C++` template unit tests and generated-runtime build checks, use `cmake` as the build driver instead of trying to hand-discover or manually orchestrate the host C compiler toolchain. The test contract should be expressed in terms of `cmake` configure/build success.
 
 ### Dependencies
 

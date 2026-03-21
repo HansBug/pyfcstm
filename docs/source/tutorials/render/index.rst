@@ -887,6 +887,10 @@ Current built-in templates:
   - status: current built-in template
   - design position: self-contained generated C runtime with a documented
     public API and stronger focus on deployment/runtime integration
+- ``c_poll``
+  - status: current built-in template
+  - design position: self-contained generated C runtime with hook-polled event
+    acquisition, intended for scan-cycle and control-loop style integrations
 
 For built-in templates, pyfcstm also emits generated usage guides into the
 output directory. In practice, users will find ``README.md`` and
@@ -932,6 +936,44 @@ Its current design position is:
 If you want the native-runtime example, go to ``templates/c/`` and treat the
 generated ``README.md`` / ``README_zh.md`` in output directories as the
 authoritative integration guide for end users.
+
+c_poll - Hook-Polled Runtime For Scan-Cycle Control Integration
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The ``c_poll`` template is closely related to ``c`` and reuses the same broad
+runtime direction: generated ``machine.h`` and ``machine.c``, a documented
+public API, and generated user-facing ``README.md`` / ``README_zh.md`` files.
+
+The key design difference is the event-input model:
+
+- ``c`` expects the integration layer to collect events first and then submit a
+  per-cycle event-id set into ``cycle(...)``
+- ``c_poll`` expects the integration layer to install generated
+  ``check_xxx`` hooks once, and the runtime then queries those hooks lazily
+  while deciding transitions inside ``cycle()``
+
+That difference matters because it changes who owns event observation:
+
+- in ``c``, the application owns event collection and passes a normalized event
+  set into the runtime
+- in ``c_poll``, the runtime owns event observation timing and asks
+  "is this event active right now?" through the installed event-check table
+
+This makes ``c_poll`` a better fit for many real control-system and embedded
+integration patterns, for example:
+
+- cyclic scan loops that read current inputs every control tick
+- PLC-like logic where transition conditions are evaluated against the current
+  sampled world state
+- embedded control systems where "event active this cycle" is derived from
+  input pins, sensors, fieldbus snapshots, or shared process images
+- integrations that do not already have a clean external event-dispatch layer
+
+In practical terms, choose ``c`` when your surrounding system already has a
+clear event aggregation or dispatch step and you want to feed explicit event
+sets into the runtime. Choose ``c_poll`` when your system is naturally
+cycle-driven and event truth is better expressed as polled checks over the
+current input snapshot.
 
 Test And Consolidate
 --------------------

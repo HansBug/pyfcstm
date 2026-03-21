@@ -1,10 +1,33 @@
 import os.path
+import re
+import shutil
 import subprocess
 import textwrap
 
 import pytest
 
 from ._utils import render_c_artifacts, render_c_runtime
+
+_CLANG_FORMAT_STYLE = '{BasedOnStyle: LLVM, IndentWidth: 4, ContinuationIndentWidth: 4}'
+
+
+def _format_c_text(text, filename):
+    clang_format = shutil.which('clang-format')
+    if clang_format is None:
+        pytest.skip('clang-format is required for c_poll formatter convergence tests.')
+
+    return subprocess.run(
+        [
+            clang_format,
+            '-style=' + _CLANG_FORMAT_STYLE,
+            '--assume-filename=' + filename,
+        ],
+        input=text,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=True,
+    ).stdout
 
 
 @pytest.mark.unittest
@@ -240,6 +263,67 @@ class TestCPollBuiltinTemplate:
             assert 'check_Root_A_Go' in readme_zh
             assert '返回非零' in readme_zh
             assert '返回 `0`' in readme_zh
+
+    def test_generated_machine_clang_format_converges_under_four_space_style(self):
+        dsl_code = """
+        def int counter = 0;
+        def int ready = 0;
+        state Root {
+            enter abstract RootInit;
+            state A {
+                during { counter = counter + 1; }
+            }
+            state B {
+                enter abstract BEnter;
+                state B1 {
+                    during { counter = counter + 10; }
+                }
+                [*] -> B1 : if [ready == 1];
+            }
+            [*] -> A;
+            A -> B :: Go effect { counter = counter + 100; };
+        }
+        """
+
+        with render_c_artifacts(dsl_code) as artifacts:
+            for key in ['machine_h_file', 'machine_c_file']:
+                path = artifacts[key]
+                with open(path, 'r', encoding='utf-8') as f:
+                    original = f.read()
+
+                formatted_once = _format_c_text(original, os.path.basename(path))
+                formatted_twice = _format_c_text(formatted_once, os.path.basename(path))
+
+                assert formatted_once == formatted_twice
+                assert '\t' not in formatted_once
+
+    def test_generated_readme_code_blocks_are_formatter_friendly(self):
+        dsl_code = """
+        def int counter = 0;
+        state Root {
+            state A {
+                during { counter = counter + 1; }
+            }
+            state B;
+            [*] -> A;
+            A -> B :: Go;
+        }
+        """
+
+        with render_c_artifacts(dsl_code) as artifacts:
+            with open(artifacts['readme_file'], 'r', encoding='utf-8') as f:
+                readme = f.read()
+            with open(artifacts['readme_zh_file'], 'r', encoding='utf-8') as f:
+                readme_zh = f.read()
+
+            for content in [readme, readme_zh]:
+                blocks = re.findall(r'```(?:c|cpp|bash)\n(.*?)```', content, flags=re.S)
+                assert blocks
+                for block in blocks:
+                    assert '\t' not in block
+
+            assert 'clang-format' in readme
+            assert 'clang-format' in readme_zh
 
     def test_generated_machine_c_event_checks_install_and_drive_cycle(self):
         dsl_code = """

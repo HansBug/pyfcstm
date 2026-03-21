@@ -30,6 +30,8 @@ Phase status in this template directory:
 - Phase 2: public API switched to event-check mounting plus `cycle(machine)`
 - Phase 3: internal event-check cache and dispatch-path migration completed
 - Phase 4: runtime tests and alignment coverage completed
+- Phase 5: builtin-template packaging, docs, and CLI integration completed
+- Phase 6: formatter convergence validated with explicit 4-space clang-format checks
 
 Implementation notes:
 
@@ -40,4 +42,5 @@ Implementation notes:
   integrators actually need.
 - Formatter convergence is part of completion. Generated C/C++ artifacts should
   stabilize under `clang-format` with the repository's template-development
-  guidance.
+  guidance. For `c_poll`, verification is done against an explicit 4-space
+  `clang-format` style rather than the 2-space LLVM default.

@@ -28,6 +28,8 @@ hook 轮询检查，而不是在每次 `cycle()` 时由外部提交 event id 集
 - Phase 2：公开 API 已切换为 event-check 挂载 + `cycle(machine)`
 - Phase 3：内部 event-check 缓存与判定路径改造已完成
 - Phase 4：运行时测试与 alignment 覆盖已完成
+- Phase 5：builtin template 打包、文档与 CLI 集成已完成
+- Phase 6：已按显式四空格 `clang-format` 风格完成 formatter 收敛验证
 
 实现说明：
 
@@ -35,4 +37,5 @@ hook 轮询检查，而不是在每次 `cycle()` 时由外部提交 event id 集
   在语义正确前提下应优先考虑运行性能。
 - `machine.h` 只应暴露集成方真正需要的公开操作与数据结构。
 - formatter 收敛属于完成定义的一部分。生成的 C / C++ 产物应能在
-  `clang-format` 下稳定收敛，并符合仓库里的模板开发约束。
+  `clang-format` 下稳定收敛，并符合仓库里的模板开发约束。对 `c_poll`
+  的验证基线是显式四空格风格，而不是 LLVM 默认的 2 空格缩进。

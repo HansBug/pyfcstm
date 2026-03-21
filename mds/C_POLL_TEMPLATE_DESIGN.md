@@ -707,14 +707,14 @@ Checklist：
 
 Checklist：
 
-- [ ] 生成代表性 `c_poll` 产物
-- [ ] 用 `clang-format` 检查 `.c` / `.h` 示例与产物风格
-- [ ] 对 C / C++ 生成产物按四空格缩进风格验证 `clang-format` 收敛
-- [ ] 检查 README 中 C / C++ 代码片段的风格一致性
-- [ ] 如有 JSON / Markdown 辅助文件，检查其 formatter 友好性
-- [ ] 确认重新格式化不会持续产生大面积重写
-- [ ] 将 formatter 收敛视为完成定义的一部分
-- [ ] 对未来扩展到其他语言的模板实现，分别使用该语言对应的 formatter 验证收敛，不允许手工样式游离于 formatter 之外
+- [x] 生成代表性 `c_poll` 产物
+- [x] 用 `clang-format` 检查 `.c` / `.h` 示例与产物风格
+- [x] 对 C / C++ 生成产物按四空格缩进风格验证 `clang-format` 收敛
+- [x] 检查 README 中 C / C++ 代码片段的风格一致性
+- [x] 如有 JSON / Markdown 辅助文件，检查其 formatter 友好性
+- [x] 确认重新格式化不会持续产生大面积重写
+- [x] 将 formatter 收敛视为完成定义的一部分
+- [x] 对未来扩展到其他语言的模板实现，分别使用该语言对应的 formatter 验证收敛，不允许手工样式游离于 formatter 之外
 
 ---
 

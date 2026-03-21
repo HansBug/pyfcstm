@@ -1,0 +1,7 @@
+{
+  "name": "c_poll",
+  "title": "C Poll",
+  "description": "Native C99 / C++98 built-in template with hook-polled events and embedded runtime logic.",
+  "language": "c",
+  "experimental": true
+}

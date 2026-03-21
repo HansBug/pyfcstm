@@ -11,4 +11,5 @@ Rules:
 Current template sources:
 
 - `c`: native C99 scaffold template for the built-in template pipeline
+- `c_poll`: native C99/C++98 scaffold template with hook-polled events
 - `python`: native Python scaffold template for the built-in template pipeline

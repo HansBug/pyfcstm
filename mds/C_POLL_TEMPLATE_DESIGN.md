@@ -4,6 +4,10 @@
 
 - `dev/ctemp_poll`
 
+关联 PR：
+
+- https://github.com/HansBug/pyfcstm/pull/73
+
 ## 版本历史
 
 | 版本 | 日期 | 修改内容 | 作者 |
@@ -546,6 +550,7 @@ Checklist：
 
 - 在 `test/template/c_poll/` 下建立与 `c` 模板同级的测试体系
 - 既验证公开 API，也验证运行时语义对齐
+- 最终目标不是“挑一部分代表例子过掉”，而是对 `c_poll` 适用范围内的全套语义对齐用例完成覆盖与通过
 
 Checklist：
 
@@ -554,11 +559,13 @@ Checklist：
 - [ ] 新增 C harness 测试
 - [ ] 新增 C++98 harness 测试
 - [ ] 新增 runtime alignment 测试
+- [ ] 对齐 `c` 模板运行时家族应覆盖的完整 alignment 语料，不允许只迁移子集
 - [ ] 覆盖 abstract hooks 与 event checks 共存场景
 - [ ] 覆盖 validation failure + rollback 场景
 - [ ] 覆盖 local / chain / absolute event 作用域场景
 - [ ] 覆盖 hot start 场景
 - [ ] 覆盖关键字安全标识符场景
+- [ ] 最终语义对齐结果要求“适用的例子一个都不能少”，新增模板不能通过删减 case 降低门槛
 
 ## Phase 5：文档、打包与 CLI 集成
 
@@ -580,15 +587,18 @@ Checklist：
 目标：
 
 - 确保生成产物和 README 示例在目标语言 formatter 下达到稳定终态
+- 把 formatter 收敛视为完成定义的一部分，而不是发布前可选美化步骤
 
 Checklist：
 
 - [ ] 生成代表性 `c_poll` 产物
 - [ ] 用 `clang-format` 检查 `.c` / `.h` 示例与产物风格
+- [ ] 对 C / C++ 生成产物按四空格缩进风格验证 `clang-format` 收敛
 - [ ] 检查 README 中 C / C++ 代码片段的风格一致性
 - [ ] 如有 JSON / Markdown 辅助文件，检查其 formatter 友好性
 - [ ] 确认重新格式化不会持续产生大面积重写
 - [ ] 将 formatter 收敛视为完成定义的一部分
+- [ ] 对未来扩展到其他语言的模板实现，分别使用该语言对应的 formatter 验证收敛，不允许手工样式游离于 formatter 之外
 
 ---
 
@@ -600,9 +610,10 @@ Checklist：
 2. 每个 DSL 事件都可通过生成的 `check_xxx` hook 接入外部事件源
 3. 同一周期内，对同一事件的观察结果稳定
 4. rollback / validation 与正式执行之间不会出现事件观察漂移
-5. 运行时语义继续与 `SimulationRuntime` 对齐
+5. 运行时语义继续与 `SimulationRuntime` 对齐，且适用的全套对齐用例全部通过，不允许删减例子来声明完成
 6. 生成代码继续兼容 `C99` 与 `C++98`
 7. README 与生成代码都能在 formatter 流程下达到收敛
+8. 对 `C` / `C++` 产物的 formatter 收敛检查应以 `clang-format` 为准，并满足四空格缩进风格
 
 ---
 
@@ -673,6 +684,8 @@ Checklist：
 - `cycle()` 不再传入事件集合
 - event check hooks 与 lifecycle hooks 分离
 - 第一版不做 consume / ack / 边沿触发
+- 适用的全套语义对齐用例必须全部通过，一个例子都不能少
 - formatter 收敛属于完成定义的一部分
+- `C` / `C++` 生成产物以 `clang-format` 验证收敛，并满足四空格缩进风格
 
 其余实现细节如缓存内部布局、辅助函数命名、README 篇章组织方式，可以在实现时做等价调整，但不得破坏上述硬约束。

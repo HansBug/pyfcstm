@@ -197,11 +197,12 @@ typedef struct _{{ machine_class_name(model) }}RuntimeContext {
 } _{{ machine_class_name(model) }}RuntimeContext;
 
 typedef struct _{{ machine_class_name(model) }}EventSet {
-    unsigned long bitset[{{ machine_macro_name(model) }}_EVENTSET_BITSET_WORDS_INTERNAL];
-    int ids[{{ [1, all_events.items | length] | max }}];
-    size_t count;
-    int use_bitset;
+    unsigned long active_bitset[{{ machine_macro_name(model) }}_EVENTSET_BITSET_WORDS_INTERNAL];
+    unsigned long evaluated_bitset[{{ machine_macro_name(model) }}_EVENTSET_BITSET_WORDS_INTERNAL];
 } _{{ machine_class_name(model) }}EventSet;
+
+static const _{{ machine_class_name(model) }}StateInfo _{{ machine_class_name(model) }}_state_info[];
+static int _{{ machine_class_name(model) }}_event_id_is_valid(int event_id);
 
 enum {
     {{ machine_macro_name(model) }}_ACTION_KIND_CONCRETE = 1,
@@ -286,6 +287,53 @@ static int _{{ machine_class_name(model) }}_require_event_checks_mounted({{ mach
     return {{ machine_macro_name(model) }}_FAILURE;
 }
 
+static const char *_{{ machine_class_name(model) }}_current_state_path_on_context(
+    const _{{ machine_class_name(model) }}RuntimeContext *context)
+{
+    if (context == NULL || context->stack_size == 0u) {
+        return NULL;
+    }
+    return _{{ machine_class_name(model) }}_state_info[context->stack[context->stack_size - 1u].state_id].path;
+}
+
+static int _{{ machine_class_name(model) }}_execute_event_check(
+    {{ machine_class_name(model) }} *machine,
+    const _{{ machine_class_name(model) }}RuntimeContext *context,
+    int event_id)
+{
+    {{ machine_class_name(model) }}EventContext event_ctx;
+
+    if (!_{{ machine_class_name(model) }}_event_id_is_valid(event_id)) {
+        _{{ machine_class_name(model) }}_set_error(machine, "Invalid event id: %d", event_id);
+        return 0;
+    }
+    if (machine == NULL || machine->event_checks == NULL) {
+        _{{ machine_class_name(model) }}_set_error(
+            machine,
+            "Event checks are not mounted for this c_poll runtime. Call {{ machine_class_name(model) }}_set_event_checks(...) before cycle().");
+        return 0;
+    }
+
+    event_ctx.event_path = "";
+    event_ctx.current_state_path = _{{ machine_class_name(model) }}_current_state_path_on_context(context);
+    event_ctx.vars = context != NULL ? &context->vars : NULL;
+
+    switch (event_id) {
+{% for event_path in all_events.items %}
+        case {{ loop.index0 }}:
+            event_ctx.event_path = {{ cstr(event_path) }};
+            return machine->event_checks->{{ event_check_field_name(event_path) }}(
+                machine,
+                &event_ctx,
+                machine->event_check_user_data
+            ) != 0;
+{% endfor %}
+        default:
+            _{{ machine_class_name(model) }}_set_error(machine, "Invalid event id: %d", event_id);
+            return 0;
+    }
+}
+
 /* Active-vars selection lets validation run on temporary runtime snapshots. */
 static const {{ machine_class_name(model) }}Vars *_{{ machine_class_name(model) }}_active_vars_const(
     const {{ machine_class_name(model) }} *machine)
@@ -322,6 +370,8 @@ static int _{{ machine_class_name(model) }}_enter_state(
     int is_validation_mode);
 
 static PYFCSTM_GENERATED_UNUSED int _{{ machine_class_name(model) }}_event_set_has(
+    {{ machine_class_name(model) }} *machine,
+    const _{{ machine_class_name(model) }}RuntimeContext *context,
     const _{{ machine_class_name(model) }}EventSet *event_set,
     int event_id);
 
@@ -919,7 +969,7 @@ static int {{ select_transition_state_name(state) }}(
 {% for transition in state.transitions_from -%}
 {% set condition -%}
 {% if transition.event is not none -%}
-_{{ machine_class_name(model) }}_event_set_has(event_set, {{ all_events.items.index(transition.event.path_name) }})
+                _{{ machine_class_name(model) }}_event_set_has(machine, context, event_set, {{ all_events.items.index(transition.event.path_name) }})
 {% else -%}
 1
 {% endif -%}
@@ -975,7 +1025,7 @@ static int {{ attempt_init_state_name(state) }}(
 {% for transition in state.init_transitions -%}
 {% set condition -%}
 {% if transition.event is not none -%}
-_{{ machine_class_name(model) }}_event_set_has(event_set, {{ all_events.items.index(transition.event.path_name) }})
+                _{{ machine_class_name(model) }}_event_set_has(machine, context, event_set, {{ all_events.items.index(transition.event.path_name) }})
 {% else -%}
 1
 {% endif -%}
@@ -1103,78 +1153,44 @@ static int _{{ machine_class_name(model) }}_event_id_is_valid(int event_id)
 }
 
 static void _{{ machine_class_name(model) }}_event_set_reset(
-    _{{ machine_class_name(model) }}EventSet *event_set,
-    size_t input_count)
+    _{{ machine_class_name(model) }}EventSet *event_set)
 {
     size_t i;
 
-    event_set->count = 0u;
-    event_set->use_bitset =
-        {{ machine_macro_name(model) }}_EVENT_COUNT > 0 &&
-        {{ machine_macro_name(model) }}_EVENT_COUNT <= {{ machine_macro_name(model) }}_EVENTSET_BITSET_LIMIT_INTERNAL &&
-        input_count > {{ machine_macro_name(model) }}_EVENTSET_SMALL_ARRAY_THRESHOLD_INTERNAL;
-    if (event_set->use_bitset) {
-        for (i = 0u; i < sizeof(event_set->bitset) / sizeof(event_set->bitset[0]); ++i) {
-            event_set->bitset[i] = 0ul;
-        }
+    for (i = 0u; i < sizeof(event_set->active_bitset) / sizeof(event_set->active_bitset[0]); ++i) {
+        event_set->active_bitset[i] = 0ul;
+        event_set->evaluated_bitset[i] = 0ul;
     }
-}
-
-static int _{{ machine_class_name(model) }}_event_set_add(
-    {{ machine_class_name(model) }} *machine,
-    _{{ machine_class_name(model) }}EventSet *event_set,
-    int event_id)
-{
-    size_t i;
-
-    if (!_{{ machine_class_name(model) }}_event_id_is_valid(event_id)) {
-        _{{ machine_class_name(model) }}_set_error(machine, "Invalid event id: %d", event_id);
-        return {{ machine_macro_name(model) }}_FAILURE;
-    }
-
-    if (event_set->use_bitset) {
-        size_t word_index = (size_t)event_id / {{ machine_macro_name(model) }}_EVENTSET_WORD_BITS_INTERNAL;
-        unsigned long mask = 1ul << ((size_t)event_id % {{ machine_macro_name(model) }}_EVENTSET_WORD_BITS_INTERNAL);
-        if ((event_set->bitset[word_index] & mask) == 0ul) {
-            event_set->bitset[word_index] |= mask;
-            ++event_set->count;
-        }
-        return {{ machine_macro_name(model) }}_SUCCESS;
-    }
-
-    for (i = 0u; i < event_set->count; ++i) {
-        if (event_set->ids[i] == event_id) {
-            return {{ machine_macro_name(model) }}_SUCCESS;
-        }
-    }
-    if (event_set->count >= sizeof(event_set->ids) / sizeof(event_set->ids[0])) {
-        _{{ machine_class_name(model) }}_set_error(machine, "Too many events in one cycle.");
-        return {{ machine_macro_name(model) }}_FAILURE;
-    }
-    event_set->ids[event_set->count++] = event_id;
-    return {{ machine_macro_name(model) }}_SUCCESS;
 }
 
 static PYFCSTM_GENERATED_UNUSED int _{{ machine_class_name(model) }}_event_set_has(
+    {{ machine_class_name(model) }} *machine,
+    const _{{ machine_class_name(model) }}RuntimeContext *context,
     const _{{ machine_class_name(model) }}EventSet *event_set,
     int event_id)
 {
-    size_t i;
+    size_t word_index;
+    unsigned long mask;
+    int is_active;
 
     if (event_id < 0) {
         return 1;
     }
-    if (event_set->use_bitset) {
-        size_t word_index = (size_t)event_id / {{ machine_macro_name(model) }}_EVENTSET_WORD_BITS_INTERNAL;
-        unsigned long mask = 1ul << ((size_t)event_id % {{ machine_macro_name(model) }}_EVENTSET_WORD_BITS_INTERNAL);
-        return (event_set->bitset[word_index] & mask) != 0ul;
+    if (!_{{ machine_class_name(model) }}_event_id_is_valid(event_id)) {
+        _{{ machine_class_name(model) }}_set_error(machine, "Invalid event id: %d", event_id);
+        return 0;
     }
-    for (i = 0u; i < event_set->count; ++i) {
-        if (event_set->ids[i] == event_id) {
-            return 1;
-        }
+    word_index = (size_t)event_id / {{ machine_macro_name(model) }}_EVENTSET_WORD_BITS_INTERNAL;
+    mask = 1ul << ((size_t)event_id % {{ machine_macro_name(model) }}_EVENTSET_WORD_BITS_INTERNAL);
+    if ((event_set->evaluated_bitset[word_index] & mask) != 0ul) {
+        return (event_set->active_bitset[word_index] & mask) != 0ul;
     }
-    return 0;
+    is_active = _{{ machine_class_name(model) }}_execute_event_check(machine, context, event_id);
+    ((_{{ machine_class_name(model) }}EventSet *)event_set)->evaluated_bitset[word_index] |= mask;
+    if (is_active) {
+        ((_{{ machine_class_name(model) }}EventSet *)event_set)->active_bitset[word_index] |= mask;
+    }
+    return is_active;
 }
 
 static int _{{ machine_class_name(model) }}_normalize_events(
@@ -1183,21 +1199,12 @@ static int _{{ machine_class_name(model) }}_normalize_events(
     size_t event_count,
     _{{ machine_class_name(model) }}EventSet *out_event_set)
 {
-    size_t i;
-
-    _{{ machine_class_name(model) }}_event_set_reset(out_event_set, event_count);
-    if (event_ids == NULL) {
-        if (event_count == 0u) {
-            return {{ machine_macro_name(model) }}_SUCCESS;
-        }
-        _{{ machine_class_name(model) }}_set_error(machine, "event_ids must be NULL when event_count is zero only.");
+    _{{ machine_class_name(model) }}_event_set_reset(out_event_set);
+    if (event_ids != NULL || event_count != 0u) {
+        _{{ machine_class_name(model) }}_set_error(
+            machine,
+            "The c_poll runtime does not accept external event-id arrays; install event checks with {{ machine_class_name(model) }}_set_event_checks(...) and call cycle(machine).");
         return {{ machine_macro_name(model) }}_FAILURE;
-    }
-
-    for (i = 0u; i < event_count; ++i) {
-        if (_{{ machine_class_name(model) }}_event_set_add(machine, out_event_set, event_ids[i]) != {{ machine_macro_name(model) }}_SUCCESS) {
-            return {{ machine_macro_name(model) }}_FAILURE;
-        }
     }
     return {{ machine_macro_name(model) }}_SUCCESS;
 }

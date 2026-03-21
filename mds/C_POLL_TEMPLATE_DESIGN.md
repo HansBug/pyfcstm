@@ -651,13 +651,13 @@ Checklist：
 
 Checklist：
 
-- [ ] 新增本周期事件缓存结构
-- [ ] 每个周期开始时重置缓存
-- [ ] 新增统一 `_check_event(...)` 辅助函数
-- [ ] transition dispatch 中用 `_check_event(...)` 替代 `_event_set_has(...)`
-- [ ] init transition 路径也切到 `_check_event(...)`
-- [ ] validation / rollback 共享同一周期缓存语义
-- [ ] 不把事件缓存纳入持久变量回滚
+- [x] 新增本周期事件缓存结构
+- [x] 每个周期开始时重置缓存
+- [x] 新增统一 event-check 执行辅助函数
+- [x] transition dispatch 中切到单周期 lazy + cache 的事件检查路径
+- [x] init transition 路径也切到同一事件检查路径
+- [x] validation / rollback 共享同一周期缓存语义
+- [x] 不把事件缓存纳入持久变量回滚
 
 ## Phase 4：测试体系补齐
 
@@ -669,19 +669,19 @@ Checklist：
 
 Checklist：
 
-- [ ] 新增 builtin template 提取与存在性测试
-- [ ] 新增 Python ctypes/runtime harness 测试
-- [ ] 新增 C harness 测试
-- [ ] 新增 C++98 harness 测试
-- [ ] 对 `C` / `C++` 生成运行时构建测试统一使用 `cmake` 驱动，不手工探测或拼装宿主 C 编译器命令
-- [ ] 新增 runtime alignment 测试
-- [ ] 对齐 `c` 模板运行时家族应覆盖的完整 alignment 语料，不允许只迁移子集
-- [ ] 覆盖 abstract hooks 与 event checks 共存场景
-- [ ] 覆盖 validation failure + rollback 场景
-- [ ] 覆盖 local / chain / absolute event 作用域场景
-- [ ] 覆盖 hot start 场景
-- [ ] 覆盖关键字安全标识符场景
-- [ ] 最终语义对齐结果要求“适用的例子一个都不能少”，新增模板不能通过删减 case 降低门槛
+- [x] 新增 builtin template 提取与存在性测试
+- [x] 新增 Python ctypes/runtime harness 测试
+- [x] 新增 C harness 测试
+- [x] 新增 C++98 harness 测试
+- [x] 对 `C` / `C++` 生成运行时构建测试统一使用 `cmake` 驱动，不手工探测或拼装宿主 C 编译器命令
+- [x] 新增 runtime alignment 测试
+- [x] 对齐 `c` 模板运行时家族应覆盖的完整 alignment 语料，不允许只迁移子集
+- [x] 覆盖 abstract hooks 与 event checks 共存场景
+- [x] 覆盖 validation failure + rollback 场景
+- [x] 覆盖 local / chain / absolute event 作用域场景
+- [x] 覆盖 hot start 场景
+- [x] 覆盖关键字安全标识符场景
+- [x] 最终语义对齐结果要求“适用的例子一个都不能少”，新增模板不能通过删减 case 降低门槛
 
 ## Phase 5：文档、打包与 CLI 集成
 
@@ -692,11 +692,11 @@ Checklist：
 
 Checklist：
 
-- [ ] 更新 `templates/README.md`
-- [ ] 更新 `pyfcstm/template/` 打包产物与 `index.json`
-- [ ] 确认 `pyfcstm generate --template c_poll` 可工作
-- [ ] 更新相关 maintainer docs
-- [ ] 确认模板 README 中的示例与公开 API 一致
+- [x] 更新 `templates/README.md`
+- [x] 更新 `pyfcstm/template/` 打包产物与 `index.json`
+- [x] 确认 `pyfcstm generate --template c_poll` 可工作
+- [x] 更新相关 maintainer docs
+- [x] 确认模板 README 中的示例与公开 API 一致
 
 ## Phase 6：formatter 收敛与发布前检查
 

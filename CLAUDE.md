@@ -198,6 +198,14 @@ Per-tool coverage summary:
 If a generated template language falls outside this set, add a dedicated formatter only when there is a concrete need.
 Do not expand the formatter matrix casually.
 
+Mandatory completion rule for built-in template work:
+
+- Treat formatter convergence as part of correctness, not optional polish.
+- The generated target-language artifacts must be acceptable to the corresponding formatter defaults for that language.
+- Template-facing documentation artifacts that ship with the generated output, especially generated `README.md` / `README_zh.md` files and their embedded code snippets, must also be kept formatter-friendly for the relevant language and text formatter set.
+- For template changes, "done" means the generated outputs have converged under the intended formatter flow. If the formatter still wants to rewrite the emitted code or the generated usage examples materially, the template work is not complete yet.
+- When adding or changing a multi-language built-in template, explicitly design the generated code shape and README examples so they stabilize under the formatter set listed above instead of relying on hand-aligned formatting.
+
 ## Architecture Overview
 
 ### Core Components
@@ -992,6 +1000,7 @@ For built-in template work, the current design bar is defined by the `python` te
 - Do not require users to edit generated files to implement abstract behavior. Instead, expose stable, language-idiomatic extension points for abstract actions and related hooks. The Python template uses protected hook override methods as the reference pattern.
 - Preserve naming clarity for generated extension points so DSL authors can map states, actions, and abstract behavior back to code quickly, ideally with IDE completion support.
 - Keep generated code readable and inspectable. Generated runtimes are product artifacts, not opaque intermediate blobs.
+- Ensure the final generated code, generated support files, and generated README examples are written so the corresponding formatter flow reaches a stable end state. Template work that has not reached formatter convergence is not complete.
 - When adding a new built-in template, update all of the following together: `templates/<name>/`, packaged template assets, CLI/template metadata, maintainer docs, generated docs if applicable, and the corresponding tests.
 
 ### Testing Strategy

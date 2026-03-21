@@ -228,6 +228,8 @@ class TestCPollBuiltinTemplate:
             assert 'cycle(machine, event_ids, event_count)' not in readme
             assert 'fails fast' in readme
             assert 'check_Root_A_Go' in readme
+            assert 'return non-zero' in readme
+            assert 'return `0`' in readme
 
             assert 'EventChecks' in readme_zh
             assert 'EventCheckFn' in readme_zh
@@ -236,6 +238,8 @@ class TestCPollBuiltinTemplate:
             assert 'cycle(machine, event_ids, event_count)' not in readme_zh
             assert '直接失败' in readme_zh
             assert 'check_Root_A_Go' in readme_zh
+            assert '返回非零' in readme_zh
+            assert '返回 `0`' in readme_zh
 
     def test_generated_machine_c_event_checks_install_and_drive_cycle(self):
         dsl_code = """

@@ -69,6 +69,22 @@ C99 / C++98+ 状态机引擎。它遵循 `c_poll` 的事件输入契约：
 头文件为了 ABI 简洁起见暴露了一些运行时布局结构体，但除非文档明确说明可直接使用，
 否则这些字段都应视为运行时内部实现细节，不应自行写入。
 
+## Event-Check 契约
+
+`c_poll` 不再接受“每个 cycle 传一组 event id”的输入方式。相反，每个 DSL
+事件都会在 `{{ machine_class_name(model) }}EventChecks` 里生成一个对应的
+`check_xxx` 字段。
+
+当运行时需要判断一个带事件条件的迁移在当前 cycle 是否可走时，会调用对应的
+event-check 函数：
+
+- 返回非零：表示该事件在当前 cycle 视为已触发/成立，迁移可以继续做后续 guard 判定
+- 返回 `0`：表示该事件在当前 cycle 视为未触发/不成立，这条事件路径不能驱动迁移
+
+生成运行时会把一个 cycle 内第一次观察到的事件结果缓存下来。因此，event-check
+函数应当被视为“当前这一拍这个事件是否成立”的只读 probe，而不是带 consume /
+ack 副作用的消费接口。
+
 ## 编译
 
 可直接使用 C99 编译器编译生成运行时：
@@ -125,7 +141,8 @@ static int event_check(
     (void)machine;
     (void)ctx;
     (void)user_data;
-    return 0;
+    return 0;  /* 当前 cycle 事件成立/触发时返回 1 或任意非零值。 */
+               /* 当前 cycle 事件不成立/未触发时返回 0。 */
 }
 
 int main(void)
@@ -253,7 +270,8 @@ typedef int (*{{ machine_class_name(model) }}EventCheckFn)(
 - `machine`：当前运行时实例
 - `ctx`：只读 event-check 上下文
 - `user_data`：此前传给 `{{ machine_class_name(model) }}_set_event_checks(...)` 的用户指针
-- 返回值：非零表示该事件在当前 cycle 视为成立，零表示不成立
+- 返回值：非零表示该事件在当前 cycle 视为已触发/成立；`0` 表示未触发/不成立，
+  不能驱动该事件迁移
 
 ### `{{ machine_class_name(model) }}Hooks`
 
@@ -282,6 +300,11 @@ typedef int (*{{ machine_class_name(model) }}EventCheckFn)(
 可先使用 `{{ machine_class_name(model) | upper }}_EVENT_CHECKS_INIT` 初始化，再把
 所有生成字段全部填好，最后通过
 `{{ machine_class_name(model) }}_set_event_checks(...)` 注册。
+
+每个生成字段本质上都是一个事件探针：
+
+- `check_xxx` 返回非零：把该 DSL 事件视为当前 cycle 成立
+- `check_xxx` 返回 `0`：把该 DSL 事件视为当前 cycle 不成立
 
 对于声明了事件的状态机，`cycle()` 要求 event-check 表完整可用。
 如果 event-check 表缺失、为空或缺字段，

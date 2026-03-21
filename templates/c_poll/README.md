@@ -20,14 +20,16 @@ Current design direction:
 - keep generated `machine.h` small, stable, and user-oriented
 - require a complete generated event-check table before `cycle()` can run on
   machines that declare events
-- reserve event-check lazy evaluation and per-cycle cache semantics for the
-  next implementation phase
+- define event checks as read-only probes where non-zero means "active this
+  cycle" and `0` means "inactive this cycle"
+- use lazy evaluation and per-cycle cache semantics for installed event checks
 
 Phase status in this template directory:
 
 - Phase 1: template skeleton established under `templates/c_poll/`
 - Phase 2: public API switched to event-check mounting plus `cycle(machine)`
-- Phase 3 and later: pending in follow-up work
+- Phase 3: internal event-check cache and dispatch-path migration completed
+- Phase 4: runtime tests and alignment coverage completed
 
 Implementation notes:
 

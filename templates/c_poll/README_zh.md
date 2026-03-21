@@ -18,13 +18,16 @@ hook 轮询检查，而不是在每次 `cycle()` 时由外部提交 event id 集
 - 把生成的 `machine.c` 视为黑盒高性能运行时
 - 把生成的 `machine.h` 保持为面向用户的小而稳接口层
 - 对声明了事件的状态机，`cycle()` 前必须挂载完整的 event-check 表
-- event-check 的 lazy 求值与单周期缓存语义留待下一阶段实现
+- event-check 明确定义为只读探针：返回非零表示当前 cycle 成立，返回 `0`
+  表示当前 cycle 不成立
+- 已实现 event-check 的 lazy 求值与单周期缓存语义
 
 当前模板目录阶段状态：
 
 - Phase 1：`templates/c_poll/` 模板骨架已建立
 - Phase 2：公开 API 已切换为 event-check 挂载 + `cycle(machine)`
-- Phase 3 及以后：后续继续实现
+- Phase 3：内部 event-check 缓存与判定路径改造已完成
+- Phase 4：运行时测试与 alignment 覆盖已完成
 
 实现说明：
 

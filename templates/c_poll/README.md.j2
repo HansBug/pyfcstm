@@ -80,6 +80,25 @@ The public header exposes some runtime-layout structs for ABI simplicity, but
 runtime-owned internals should not be modified directly unless the field is
 explicitly documented for external use.
 
+## Event-Check Contract
+
+`c_poll` does not accept per-cycle external event-id arrays. Instead, each DSL
+event is mapped to one generated `check_xxx` field inside
+`{{ machine_class_name(model) }}EventChecks`.
+
+When the runtime needs to decide whether a transition guarded by an event may
+fire in the current cycle, it calls the corresponding event-check function:
+
+- return non-zero: the event is considered active or triggered for the current
+  cycle, so the transition may continue to guard evaluation
+- return `0`: the event is considered inactive or not triggered for the current
+  cycle, so the transition must not fire through that event path
+
+The generated runtime caches the first observation of each event inside one
+cycle. That means a single event-check function should behave like a read-only
+probe for "is this event active now?" rather than a destructive consume/ack
+operation.
+
 ## Build
 
 Compile the generated runtime directly with a C99 compiler:
@@ -140,7 +159,8 @@ static int event_check(
     (void)machine;
     (void)ctx;
     (void)user_data;
-    return 0;
+    return 0;  /* Return 1/non-zero when the event is active this cycle. */
+               /* Return 0 when the event is not active this cycle. */
 }
 
 int main(void)
@@ -271,8 +291,9 @@ typedef int (*{{ machine_class_name(model) }}EventCheckFn)(
 - `machine`: current runtime instance
 - `ctx`: read-only event-check context
 - `user_data`: pointer previously passed to `{{ machine_class_name(model) }}_set_event_checks(...)`
-- return value: non-zero means the event is considered active for the cycle;
-  zero means it is not active
+- return value: non-zero means the event is considered active or triggered for
+  the current cycle; `0` means it is inactive and must not drive the
+  transition
 
 ### `{{ machine_class_name(model) }}Hooks`
 
@@ -304,6 +325,13 @@ Initialize the table with
 `{{ machine_class_name(model) | upper }}_EVENT_CHECKS_INIT`, assign every
 generated field, and register it with
 `{{ machine_class_name(model) }}_set_event_checks(...)`.
+
+Each generated field is one event-check probe:
+
+- return non-zero from `check_xxx`: treat that DSL event as active in the
+  current cycle
+- return `0` from `check_xxx`: treat that DSL event as inactive in the current
+  cycle
 
 For machines that declare events, `cycle()` requires a complete event-check
 table. Missing fields or a missing table will cause

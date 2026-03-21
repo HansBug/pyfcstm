@@ -282,6 +282,7 @@ int RootMachine_cycle(RootMachine *machine);
 - `cycle()` 不再接收 `event_ids`
 - 新增 `set_event_checks()`
 - 保留 `set_hooks()` 继续处理 lifecycle abstract hooks
+- `set_event_checks()` 不只是“登记一个指针”，还承担 event check 表完整性校验职责
 
 ## 6.3 `user_data` 设计建议
 
@@ -382,6 +383,89 @@ typedef struct RootMachineEventContext {
 - `unsigned char values[EVENT_COUNT]`
 
 后续如有必要，再压缩为 bitset。
+
+## 7.2.1 event check 挂载状态
+
+在 `c_poll` 中，event checks 属于运行前置条件，而不是可有可无的扩展项。  
+因此建议在 machine instance 中显式维护一个挂载状态字段，例如：
+
+```c
+int event_checks_mounted;
+```
+
+其语义应定义为：
+
+- `0`：当前 machine **没有可运行的完整 event check 表**
+- `1`：当前 machine **已经挂载并通过完整性校验，可进入 `cycle()`**
+
+这里的关键点是：
+
+- `event_checks_mounted` 不表示“用户曾经调用过 `set_event_checks(...)`”
+- 它表示“当前 event check 表已经被验证为完整可用”
+
+建议初始化语义如下：
+
+```c
+machine->event_checks = NULL;
+machine->event_check_user_data = NULL;
+machine->event_checks_mounted = 0;
+```
+
+## 7.2.2 `set_event_checks(...)` 的职责
+
+`set_event_checks(...)` 在 `c_poll` 中不应只是简单保存外部指针，而应承担完整性校验职责。
+
+建议行为：
+
+1. 若模型没有任何事件：
+   - 允许 `event_checks == NULL`
+   - `event_checks_mounted` 可视为不要求使用，`cycle()` 不应因此报错
+
+2. 若模型存在事件，但传入 `checks == NULL`：
+   - machine 保持不可运行
+   - `event_checks_mounted = 0`
+   - 写入清晰错误信息，提示需要调用 `..._set_event_checks(...)`
+
+3. 若模型存在事件，且 `checks != NULL`，但任一必需 `check_xxx` 字段为空：
+   - machine 保持不可运行
+   - `event_checks_mounted = 0`
+   - 写入清晰错误信息，指出缺失的具体字段名
+
+4. 只有在整张 `EventChecks` 表完整可用时，才：
+   - 保存 `checks`
+   - 保存 `event_check_user_data`
+   - 设置 `event_checks_mounted = 1`
+   - 清除相关错误状态
+
+如果后续允许重新挂载，也应遵循同一规则：
+
+- 每次 `set_event_checks(...)` 都重新校验整张表
+- 新传入的表不完整时，应把 machine 重新置回不可运行状态
+
+## 7.2.3 `cycle()` 的 fail-fast 规则
+
+`cycle()` 在进入任何状态推进逻辑前，应先检查 event check 挂载状态。
+
+建议规则：
+
+- 若模型没有事件：跳过该检查
+- 若模型存在事件，且 `event_checks_mounted == 0`：
+  - 立即返回 `FAILURE`
+  - 不进入任何状态推进
+  - 不触发 lifecycle hooks
+  - 不进入 validation / rollback 路径
+  - 写入明确错误信息，告诉用户发生了什么、为什么失败、应该调用什么接口
+
+建议错误信息至少覆盖两层：
+
+1. 在 `set_event_checks(...)` 校验失败时：
+   - 尽量指出缺的是哪个具体 `check_xxx` 字段
+
+2. 在 `cycle()` fail-fast 时：
+   - 告诉用户当前 machine 还没有可运行的完整 event check 表
+   - 提示调用 `..._set_event_checks(...)`
+
+这套设计比“运行到某个具体 transition 时才临时发现缺字段”更稳定，也更利于排查问题。
 
 ## 7.3 周期边界处理
 
@@ -553,7 +637,9 @@ Checklist：
 - [ ] `machine.h.j2` 中新增 `EventChecks`
 - [ ] `machine.h.j2` 中新增 `..._set_event_checks(...)`
 - [ ] `machine.h.j2` 中将 `..._cycle(...)` 改为无事件参数
-- [ ] machine instance 中新增 event check 挂载字段与独立 `user_data`
+- [ ] machine instance 中新增 `event_checks_mounted` 挂载状态字段与独立 `user_data`
+- [ ] `set_event_checks(...)` 仅在整张表完整可用时才将 machine 标记为可运行
+- [ ] `cycle()` 在未挂载完整 event checks 时 fail-fast 并返回清晰错误
 - [ ] 继续保留现有 lifecycle hooks API
 
 ## Phase 3：内部事件缓存与判定路径改造

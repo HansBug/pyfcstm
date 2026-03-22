@@ -18,3 +18,8 @@ pyfcstm.entry
     simulate/index
     visualize
 
+\_\_all\_\_
+-----------------------------------------------------
+
+.. autodata:: __all__
+

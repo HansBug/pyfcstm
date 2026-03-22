@@ -14,6 +14,7 @@ API Documentation
     api_doc/render/index
     api_doc/simulate/index
     api_doc/solver/index
+    api_doc/template/index
     api_doc/utils/index
     api_doc/verify/index
 
@@ -25,6 +26,7 @@ API Documentation
 * :doc:`api_doc/render/index`
 * :doc:`api_doc/simulate/index`
 * :doc:`api_doc/solver/index`
+* :doc:`api_doc/template/index`
 * :doc:`api_doc/utils/index`
 * :doc:`api_doc/verify/index`
 

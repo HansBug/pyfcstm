@@ -150,3 +150,99 @@ class TestEntryGenerate:
             )
             assert result.exitcode == 0
             dir_compare(expected_result_dir, td)
+
+    def test_generate_with_builtin_template(self, input_code_file):
+        with TemporaryDirectory() as td:
+            result = simulate_entry(
+                pyfcstmcli,
+                [
+                    "pyfcstm",
+                    "generate",
+                    "-i",
+                    input_code_file,
+                    "--template",
+                    "python",
+                    "-o",
+                    td,
+                ],
+            )
+            assert result.exitcode == 0
+            assert os.path.isfile(os.path.join(td, "machine.py"))
+            assert os.path.isfile(os.path.join(td, "README.md"))
+            assert os.path.isfile(os.path.join(td, "README_zh.md"))
+            assert not os.path.exists(os.path.join(td, "__init__.py"))
+
+            with open(os.path.join(td, "machine.py"), "r") as f:
+                content = f.read()
+            assert "class TrafficLightMachine" in content
+            assert "Original DSL Source" in content
+            assert "Abstract Hook Map" in content
+
+            with open(os.path.join(td, "README.md"), "r", encoding="utf-8") as f:
+                readme = f.read()
+            with open(os.path.join(td, "README_zh.md"), "r", encoding="utf-8") as f:
+                readme_zh = f.read()
+            assert "# TrafficLightMachine" in readme
+            assert "Overridable Abstract Hooks" in readme
+            assert "可覆写的 Abstract Hook 清单" in readme_zh
+
+    def test_generate_with_invalid_builtin_template_should_fail(self, input_code_file):
+        with TemporaryDirectory() as td:
+            result = simulate_entry(
+                pyfcstmcli,
+                [
+                    "pyfcstm",
+                    "generate",
+                    "-i",
+                    input_code_file,
+                    "--template",
+                    "not_exists",
+                    "-o",
+                    td,
+                ],
+            )
+            assert result.exitcode != 0
+            message = result.stderr or result.stdout
+            assert "Invalid value for '--template'" in message
+            assert "python" in message
+
+    def test_generate_with_template_and_template_dir_should_fail(self, input_code_file):
+        template_dir = os.path.abspath(get_testfile("template_1"))
+        with TemporaryDirectory() as td:
+            result = simulate_entry(
+                pyfcstmcli,
+                [
+                    "pyfcstm",
+                    "generate",
+                    "-i",
+                    input_code_file,
+                    "--template",
+                    "python",
+                    "-t",
+                    template_dir,
+                    "-o",
+                    td,
+                ],
+            )
+            assert result.exitcode != 0
+            assert "Exactly one of --template-dir/-t or --template must be provided." in (
+                result.stderr or result.stdout
+            )
+
+    def test_generate_without_template_and_template_dir_should_fail(self, input_code_file):
+        with TemporaryDirectory() as td:
+            result = simulate_entry(
+                pyfcstmcli,
+                [
+                    "pyfcstm",
+                    "generate",
+                    "-i",
+                    input_code_file,
+                    "-o",
+                    td,
+                ],
+            )
+            assert result.exitcode != 0
+            assert "Exactly one of --template-dir/-t or --template must be provided." in (
+                result.stderr or result.stdout
+            )

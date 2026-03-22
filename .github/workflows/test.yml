@@ -81,6 +81,11 @@ jobs:
         run: |
           choco install tree cloc wget curl make zip
           choco install 7zip winrar  # unrar should be added
+          choco install mingw
+          choco install llvm
+          echo "C:\\ProgramData\\chocolatey\\lib\\mingw\\tools\\install\\bin" >> $GITHUB_PATH
+          echo "C:\\ProgramData\\chocolatey\\lib\\mingw\\tools\\install\\mingw64\\bin" >> $GITHUB_PATH
+          echo "C:\\Program Files\\LLVM\\bin" >> $GITHUB_PATH
       - name: Set up system dependences on MacOS
         if: ${{ env.OS_NAME == 'MacOS' }}
         run: |

@@ -118,6 +118,100 @@ class CLITester:
             print(f"  [OK] Generated {len(generated_files)} file(s)")
             self.test_results.append(('generate', True))
 
+    def test_builtin_python_template_generation(self):
+        """Test built-in python template generation and basic generated runtime behavior"""
+        print("Testing built-in python template generation...")
+
+        dsl_code = """
+def int counter = 0;
+state CliBuiltin {
+    state Idle {
+        during { counter = counter + 1; }
+    }
+    state Running {
+        during { counter = counter + 100; }
+    }
+    [*] -> Idle;
+    Idle -> Running :: Start effect { counter = counter + 10; };
+}
+"""
+
+        dsl_file = None
+        with tempfile.TemporaryDirectory() as output_dir:
+            try:
+                with tempfile.NamedTemporaryFile(
+                    mode='w',
+                    suffix='.fcstm',
+                    delete=False,
+                    encoding='utf-8',
+                ) as f:
+                    f.write(dsl_code)
+                    dsl_file = f.name
+
+                self.run_command([
+                    'generate',
+                    '-i', dsl_file,
+                    '--template', 'python',
+                    '-o', output_dir,
+                    '--clear'
+                ])
+
+                machine_file = Path(output_dir) / 'machine.py'
+                readme_file = Path(output_dir) / 'README.md'
+                assert machine_file.exists(), "Built-in python template did not generate machine.py"
+                assert readme_file.exists(), "Built-in python template did not generate README.md"
+
+                validation_script = """
+import importlib.util
+from pathlib import Path
+
+module_path = Path('machine.py')
+spec = importlib.util.spec_from_file_location('generated_machine', str(module_path))
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+
+machine_cls = module.CliBuiltinMachine
+machine = machine_cls()
+
+assert tuple(machine.current_state_path) == ('CliBuiltin',)
+assert dict(machine.vars) == {'counter': 0}
+assert machine_cls.DSL_SOURCE.strip().startswith('def int counter = 0;')
+assert 'CliBuiltin.Idle' in machine_cls.STATE_PATHS
+
+machine.cycle()
+assert tuple(machine.current_state_path) == ('CliBuiltin', 'Idle')
+assert dict(machine.vars) == {'counter': 1}
+
+machine.cycle(['Start'])
+assert tuple(machine.current_state_path) == ('CliBuiltin', 'Running')
+assert dict(machine.vars) == {'counter': 111}
+
+print('builtin_python_template_ok')
+"""
+                validation = subprocess.run(
+                    [sys.executable, '-c', validation_script],
+                    cwd=output_dir,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                    check=False,
+                )
+                if validation.returncode != 0:
+                    print(f"  [FAIL] Generated runtime validation failed with exit code {validation.returncode}")
+                    print(f"  stdout: {validation.stdout}")
+                    print(f"  stderr: {validation.stderr}")
+                    raise AssertionError("Generated runtime validation failed")
+
+                assert 'builtin_python_template_ok' in validation.stdout, (
+                    "Generated runtime validation script did not finish successfully"
+                )
+
+                print("  [OK] Built-in python template generated and runtime validation succeeded")
+                self.test_results.append(('builtin_python_template', True))
+            finally:
+                if dsl_file and os.path.exists(dsl_file):
+                    os.unlink(dsl_file)
+
     def test_error_handling(self):
         """Test error handling with invalid input"""
         print("Testing error handling...")
@@ -362,6 +456,7 @@ class CLITester:
         tests = [
             ('Version flag', self.test_version),
             ('Help flag', self.test_help),
+            ('Built-in python template generation', self.test_builtin_python_template_generation),
             ('Error handling', self.test_error_handling),
         ]
 

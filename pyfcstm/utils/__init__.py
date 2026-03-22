@@ -18,6 +18,15 @@ The package exposes the following main components:
 * :func:`sequence_safe` - Build a safe underscore-separated identifier
 * :func:`normalize` - Normalize text to identifier-friendly form
 * :func:`to_identifier` - Convert text to a valid identifier format
+* :func:`to_c_identifier` - Convert text to a C/C++-safe identifier
+* :func:`to_cpp_identifier` - Convert text to a C/C++-safe identifier via ``cpp`` alias
+* :func:`to_python_identifier` - Convert text to a Python-safe identifier
+* :func:`to_java_identifier` - Convert text to a Java-safe identifier
+* :func:`to_ruby_identifier` - Convert text to a Ruby-safe identifier
+* :func:`to_ts_identifier` - Convert text to a TypeScript-safe identifier
+* :func:`to_js_identifier` - Convert text to a JavaScript-safe identifier
+* :func:`to_rust_identifier` - Convert text to a Rust-safe identifier
+* :func:`to_go_identifier` - Convert text to a Go-safe identifier
 * :func:`parse_value` - Parse string values to appropriate Python types
 * :func:`parse_key_value_pairs` - Parse multiple key=value pairs into a dictionary
 * :class:`ValidationError` - Base validation error exception
@@ -47,5 +56,17 @@ from .json import IJsonOp
 from .logging import get_logger
 from .parse import parse_value, parse_key_value_pairs
 from .safe import sequence_safe
-from .text import normalize, to_identifier
+from .text import (
+    normalize,
+    to_identifier,
+    to_c_identifier,
+    to_cpp_identifier,
+    to_python_identifier,
+    to_java_identifier,
+    to_ruby_identifier,
+    to_ts_identifier,
+    to_js_identifier,
+    to_rust_identifier,
+    to_go_identifier,
+)
 from .validate import ValidationError, ModelValidationError, IValidatable

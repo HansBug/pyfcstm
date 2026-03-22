@@ -1,0 +1,31 @@
+{
+  "templates": [
+    {
+      "archive": "c.zip",
+      "description": "Native C99 built-in template with embedded runtime logic and abstract hook callbacks.",
+      "experimental": true,
+      "language": "c",
+      "name": "c",
+      "root_dir": "c",
+      "title": "C99"
+    },
+    {
+      "archive": "c_poll.zip",
+      "description": "Native C99 / C++98 built-in template with hook-polled events and embedded runtime logic.",
+      "experimental": true,
+      "language": "c",
+      "name": "c_poll",
+      "root_dir": "c_poll",
+      "title": "C Poll"
+    },
+    {
+      "archive": "python.zip",
+      "description": "Native Python built-in template with embedded runtime logic.",
+      "experimental": true,
+      "language": "python",
+      "name": "python",
+      "root_dir": "python",
+      "title": "Python"
+    }
+  ]
+}

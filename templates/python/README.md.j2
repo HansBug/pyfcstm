@@ -1,0 +1,432 @@
+# {{ machine_class_name(model) }}
+
+This directory contains the generated Python runtime for the DSL root state
+`{{ model.root_state.name }}`.
+
+## Generated Files
+
+- `machine.py`: executable runtime module
+- `README.md`: English usage guide for this generated machine
+- `README_zh.md`: Chinese usage guide for this generated machine
+
+## Runtime Overview
+
+The generated `machine.py` is a self-contained runtime module. It embeds:
+
+- state metadata and state-path tables
+- event normalization and transition selection logic
+- lifecycle execution for `enter`, `during`, `exit`, `during before/after`, and
+  `>> during before/after`
+- hot-start support from a concrete state path plus a full variable snapshot
+- protected subclass hooks for DSL abstract actions
+
+This runtime is intended to be used as a normal Python module. The public
+surface is the generated exception class, the read-only execution-context class,
+the generated machine class, and the generated protected hook methods.
+
+## Execution Model
+
+At a high level, one `cycle(...)` call does one runtime step:
+
+1. Normalize the input events.
+2. If the root has not been entered yet, enter the root and follow initial
+   transitions.
+3. Try enabled transitions from the current active state.
+4. If no transition fires, execute the current leaf `during` flow.
+5. Commit the result only if the cycle reaches a valid stoppable state.
+
+If speculative validation fails, the runtime rolls the cycle back instead of
+committing a partial result.
+
+## Quick Start
+
+```python
+from machine import {{ machine_class_name(model) }}
+
+machine = {{ machine_class_name(model) }}()
+machine.cycle()
+
+print(machine.current_state_path)
+print(machine.current_state_name)
+print(machine.vars)
+```
+
+Pass one or more generated event paths:
+
+```python
+machine.cycle(["<event-path-1>", "<event-path-2>"])
+```
+
+If you already know the exact event path, you can also pass a single string:
+
+```python
+machine.cycle("<event-path>")
+```
+
+## Event Resolution
+
+`cycle(events=None)` accepts:
+
+- `None`
+- one event string
+- a list, tuple, or set of event strings
+- event-like objects exposing `path_name`
+
+The generated runtime accepts:
+
+- absolute event paths such as `Root.Parent.Event`
+- root-relative paths starting with `/`, such as `/Parent.Event`
+- parent-relative paths starting with `.`, such as `..Sibling.Event`
+- local compatible names when they resolve uniquely from the current state
+
+If an event cannot be resolved, the runtime raises `LookupError` or
+`ValueError`.
+
+## Hot Start
+
+You can start from a concrete state path by providing both `initial_state` and
+`initial_vars`.
+
+Important rules:
+
+- `initial_state` must be under the generated root state
+- `initial_vars` must provide all persistent variables
+- `initial_vars` cannot contain unknown variable names
+
+Example:
+
+{% set hot_start_var_lines = namespace(items=[]) -%}
+{% for def_item in model.defines.values() -%}
+{% set hot_start_var_lines.items = hot_start_var_lines.items + [
+    '        "' ~ def_item.name ~ '": ' ~ (def_item.init.value | default(0, true) if def_item.init.value is defined else 0) ~ ','
+] -%}
+{% endfor -%}
+
+```python
+from machine import {{ machine_class_name(model) }}
+
+machine = {{ machine_class_name(model) }}(
+    initial_state="{{ model.root_state.name }}",
+    initial_vars={
+{{ hot_start_var_lines.items | join('\n') }}
+    },
+)
+```
+
+## Hook Rules
+
+Abstract hooks are read-only extension points.
+
+Inside a generated hook:
+
+- read `ctx`
+- observe state transitions
+- emit logs, metrics, traces, or external notifications
+- coordinate with external systems
+
+Do not do these things inside a hook:
+
+- do not mutate `self._vars`
+- do not mutate `self.vars`
+- do not depend on writing through `ctx.vars`
+- do not call private runtime helpers to force state changes
+
+The runtime passes a snapshot into `ctx`. Hook code should treat it as
+observation-only. If you need to modify persistent variables, do it outside the
+hook, for example before or after `cycle(...)`, or by choosing a different DSL
+design. In short: do not mutate persistent machine variables from inside the
+hook.
+
+## Public API
+
+### `SimulationRuntimeDfsError`
+
+Raised when speculative validation exceeds the generated runtime safety limit.
+Most users do not need to instantiate it directly; catch it only if you want to
+handle pathological runtime structures explicitly.
+
+Example:
+
+```python
+from machine import SimulationRuntimeDfsError, {{ machine_class_name(model) }}
+
+machine = {{ machine_class_name(model) }}()
+
+try:
+    machine.cycle()
+except SimulationRuntimeDfsError as err:
+    print(err)
+```
+
+### `ReadOnlyExecutionContext`
+
+This object is passed into every abstract hook.
+
+Fields:
+
+- `state_path`: owning action state path as `Tuple[str, ...]`
+- `vars`: snapshot dictionary of persistent variables
+- `action_name`: full DSL action path
+- `action_stage`: lifecycle stage string
+
+Methods:
+
+- `get_var(name)`: return a variable from the snapshot
+- `has_var(name)`: check whether a variable exists in the snapshot
+- `get_state_name()`: return the owning state's short name
+- `get_full_state_path()`: return the owning state path joined by `.`
+
+Example:
+
+```python
+def some_hook(self, ctx):
+    if ctx.has_var("counter"):
+        print(ctx.get_var("counter"))
+    print(ctx.get_state_name())
+    print(ctx.get_full_state_path())
+    print(ctx.action_name, ctx.action_stage)
+```
+
+### `{{ machine_class_name(model) }}`
+
+This is the generated state machine runtime class.
+
+#### Class Attributes
+
+- `DSL_SOURCE`: original DSL source code string
+- `STATE_PATHS`: tuple of all generated state paths
+- `VARIABLE_NAMES`: tuple of all persistent variable names
+- `ABSTRACT_HOOKS`: mapping from DSL abstract action path to generated protected
+  hook method name
+- `EVENT_PATHS`: tuple of all generated event paths
+
+Example:
+
+```python
+from machine import {{ machine_class_name(model) }}
+
+print({{ machine_class_name(model) }}.DSL_SOURCE)
+print({{ machine_class_name(model) }}.STATE_PATHS)
+print({{ machine_class_name(model) }}.VARIABLE_NAMES)
+print({{ machine_class_name(model) }}.ABSTRACT_HOOKS)
+print({{ machine_class_name(model) }}.EVENT_PATHS)
+```
+
+#### Constructor
+
+`{{ machine_class_name(model) }}(initial_state=None, initial_vars=None)`
+
+Create a machine in cold-start mode or hot-start mode.
+
+- cold start: leave both arguments as `None`
+- hot start: provide both `initial_state` and `initial_vars`
+
+Example:
+
+```python
+machine = {{ machine_class_name(model) }}()
+```
+
+#### Properties
+
+- `vars`
+  - returns the live persistent-variable dictionary
+- `is_ended`
+  - returns whether the runtime has ended
+- `current_state_path`
+  - returns the current leaf state path as a tuple, or `None`
+- `current_state_name`
+  - returns the current leaf state name, or `None`
+
+Example:
+
+```python
+machine = {{ machine_class_name(model) }}()
+machine.cycle()
+
+print(machine.vars)
+print(machine.is_ended)
+print(machine.current_state_path)
+print(machine.current_state_name)
+```
+
+#### Methods
+
+- `cycle(events=None)`
+  - advance the state machine by one cycle
+- `info()`
+  - return a summary dictionary with root-state name, current-state path,
+    variable names, state paths, abstract hooks, and end status
+- `get_abstract_hook_map()`
+  - class method returning the abstract-hook mapping
+
+Examples:
+
+```python
+machine = {{ machine_class_name(model) }}()
+
+machine.cycle()
+machine.cycle("<event-path>")
+machine.cycle(["<event-path-1>", "<event-path-2>"])
+
+print(machine.info())
+print({{ machine_class_name(model) }}.get_abstract_hook_map())
+```
+
+## Hook Usage
+
+Extend the generated class and override the protected hook methods listed below.
+
+```python
+from machine import {{ machine_class_name(model) }}
+
+
+class CustomMachine({{ machine_class_name(model) }}):
+    pass
+```
+
+{% set abstract_ns = namespace(rows=[]) -%}
+{% for state in model.walk_states() -%}
+{% for group in [
+    state.list_on_enters(with_ids=True),
+    state.list_on_durings(aspect=None, with_ids=True),
+    state.list_on_exits(with_ids=True),
+    state.list_on_durings(aspect='before', with_ids=True),
+    state.list_on_durings(aspect='after', with_ids=True),
+    state.list_on_during_aspects(aspect='before', with_ids=True),
+    state.list_on_during_aspects(aspect='after', with_ids=True),
+] -%}
+{% for _, item in group -%}
+{% set resolved = namespace(item=item) -%}
+{% for _ in range(16) -%}
+{% if resolved.item.ref is not none -%}
+{% set resolved.item = resolved.item.ref -%}
+{% endif -%}
+{% endfor -%}
+{% if resolved.item.is_abstract and resolved.item.func_name not in abstract_ns.rows | map(attribute='func_name') | list -%}
+{% set abstract_ns.rows = abstract_ns.rows + [{
+    'func_name': resolved.item.func_name,
+    'hook_name': action_hook_name(resolved.item),
+    'owner_path': action_owner_path(resolved.item),
+    'stage': resolved.item.stage,
+    'aspect': resolved.item.aspect,
+}] -%}
+{% endif -%}
+{% endfor -%}
+{% endfor -%}
+{% endfor %}
+
+{% if abstract_ns.rows %}
+Example:
+
+```python
+class CustomMachine({{ machine_class_name(model) }}):
+    def {{ abstract_ns.rows[0]['hook_name'] }}(self, ctx):
+        print(ctx.get_full_state_path(), ctx.action_name, ctx.action_stage)
+        print(ctx.vars)
+        return None
+```
+
+### Overridable Abstract Hooks
+
+| DSL action path | Hook method | Owner state | Stage |
+| --- | --- | --- | --- |
+{% for row in abstract_ns.rows -%}
+| `{{ row['func_name'] }}` | `{{ row['hook_name'] }}` | `{{ row['owner_path'] }}` | `{{ row['stage'] }}{% if row['aspect'] %} {{ row['aspect'] }}{% endif %}` |
+{% endfor %}
+{% else %}
+This state machine does not declare any abstract actions, so there are no
+protected hook methods to override.
+{% endif %}
+
+## Usage Guide
+
+### Cold Start
+
+```python
+machine = {{ machine_class_name(model) }}()
+machine.cycle()
+```
+
+### Read Variables
+
+```python
+print(machine.vars)
+{% if model.defines.values() | list -%}
+print(machine.vars["{{ (model.defines.values() | list)[0].name }}"])
+{% endif -%}
+```
+
+### Modify Variables Outside Hooks
+
+If your application needs to adjust persistent variables directly, do it outside
+hooks:
+
+```python
+{% if model.defines.values() | list -%}
+machine.vars["{{ (model.defines.values() | list)[0].name }}"] = machine.vars["{{ (model.defines.values() | list)[0].name }}"]
+{% else %}
+# This machine has no persistent variables.
+pass
+{% endif -%}
+```
+
+### Send Events
+
+```python
+machine.cycle()
+machine.cycle("<event-path>")
+machine.cycle(["<event-path-1>", "<event-path-2>"])
+```
+
+### Query State
+
+```python
+print(machine.current_state_path)
+print(machine.current_state_name)
+print(machine.is_ended)
+```
+
+### Inspect Metadata
+
+```python
+print(machine.info())
+print({{ machine_class_name(model) }}.DSL_SOURCE)
+print({{ machine_class_name(model) }}.STATE_PATHS)
+print({{ machine_class_name(model) }}.EVENT_PATHS)
+print({{ machine_class_name(model) }}.get_abstract_hook_map())
+```
+
+## Variables
+
+{% if model.defines.values() | list -%}
+| Name | Type | Initial DSL |
+| --- | --- | --- |
+{% for def_item in model.defines.values() -%}
+| `{{ def_item.name }}` | `{{ def_item.type }}` | `{{ def_item.init.to_ast_node() | string }}` |
+{% endfor %}
+{% else %}
+This state machine does not define persistent variables.
+{% endif -%}
+
+## State Paths
+
+{% for state in model.walk_states() -%}
+- `{{ state | state_path }}`
+{% endfor %}
+
+## Event Paths
+
+{% set event_rows = namespace(items=[]) -%}
+{% for state in model.walk_states() -%}
+{% for event in state.events.values() -%}
+{% set event_rows.items = event_rows.items + [event.path_name] -%}
+{% endfor -%}
+{% endfor %}
+{% if event_rows.items -%}
+{% for event_path in event_rows.items | unique | list -%}
+- `{{ event_path }}`
+{% endfor %}
+{% else %}
+This state machine does not declare any events.
+{% endif -%}

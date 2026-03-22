@@ -1,905 +1,1089 @@
-State Machine Code Generator Template Tutorial
-============================================================
+Template System Tutorial
+========================
 
-Introduction
----------------------------------------
+This tutorial is about the template system itself. The goal is not only to use
+an existing built-in template, but to understand how pyfcstm turns a state
+machine model into generated files so you can design, test, and maintain your
+own templates.
 
-What is a State Machine Code Generator?
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Understand The Template System
+------------------------------
 
-A state machine code generator is a template-based automation tool that automatically generates target code (such as C code) based on state machine definitions (typically using a Domain Specific Language - DSL). By separating the state machine's logical structure from code templates, it achieves decoupling of logic and implementation, improving code maintainability and reusability.
+What The Template System Does
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-**Core Principle**: Separate the abstract description of the state machine (states, transitions, events, etc.) from the concrete code implementation. The state machine model serves as data, templates serve as blueprints for code, and the rendering engine combines both to generate the final code.
+pyfcstm follows a clear separation of responsibilities:
 
-Why Use a Template System?
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+- The DSL parser reads ``.fcstm`` text and builds an AST.
+- The model layer converts the AST into a :class:`pyfcstm.model.StateMachine`.
+- The renderer loads a template directory and renders files from that model.
+- The template decides what output files look like.
 
-- **Consistency**: Ensures generated code follows uniform coding standards
-- **Maintainability**: Modifying templates affects all generated code
-- **Flexibility**: Supports multiple output formats and programming languages
-- **Automation**: Reduces errors from manual repetitive coding
+The renderer is not a compiler backend by itself. It does not know what your
+target project structure should be, what naming conventions you want, or how
+large the generated runtime should be. Those decisions belong to the template.
 
-System Architecture Overview
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-The following diagram illustrates the complete architecture of the state machine code generation system, showing how different components interact to transform DSL definitions into executable code:
-
-.. figure:: architecture.puml.svg
-   :width: 100%
-   :align: center
-   :alt: Architecture of Rendering System
-
-This architecture demonstrates the clear separation between input processing, template rendering, and output generation, providing a modular and extensible foundation for code generation.
-
-Template System Architecture Details
---------------------------------------------------------
-
-Template Directory Structure Principle
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-The template directory follows a flexible "convention over configuration" principle that balances structure with flexibility:
+The simplest mental model is:
 
 .. code-block:: text
 
-   template_directory/
-   ├── config.yaml          # Required: System configuration file
-   ├── *.j2                 # Optional: Jinja2 template files
-   ├── *.c                  # Optional: Direct copy C files
-   ├── *.h                  # Optional: Direct copy header files
-   └── subdir/              # Optional: Subdirectories (structure preserved)
-       ├── *.j2
-       └── *.c
+   DSL text
+     -> StateMachine model
+     -> StateMachineCodeRenderer(template_dir)
+     -> rendered files in output_dir
 
-**Working Principle Analysis**:
+Template authors should think in terms of "model in, file tree out".
 
-- ``config.yaml`` is the system's "brain", defining rendering rules and behavior
-- ``.j2`` files are "smart templates" that dynamically generate content based on the state machine model
-- Other files are "static resources" copied directly to target locations
-- Directory structure is completely preserved in output, ensuring project structure consistency
+Current Rendering Boundaries
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-This structure allows for both dynamic template processing and static resource management within the same framework.
+The current renderer has a few important boundaries that shape template design:
 
-Detailed Rendering Flow Analysis
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+- Files ending in ``.j2`` are rendered through Jinja2.
+- Non-``.j2`` files are copied as-is.
+- Directory structure is preserved.
+- Output file names are fixed by template file names.
+  ``machine.py.j2`` becomes ``machine.py``.
+- Ignore patterns come from ``config.yaml`` and use gitignore-style matching.
 
-The rendering process follows a systematic workflow that ensures consistent and reliable code generation:
+This means a template controls file contents very well, but does not currently
+control output file names dynamically. If you need a file called
+``TrafficLightMachine.py``, that is not a template-only change today. You would
+need renderer support for templated output paths.
 
-.. figure:: render_flow.puml.svg
-   :width: 80%
-   :align: center
-   :alt: Flow Chart of Rendering
+Template Directory Anatomy
+^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-This flowchart details the step-by-step process from template loading to final output generation, highlighting the key decision points and processing stages.
+A template directory is usually small and explicit:
 
-Core Component Interaction
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.. code-block:: text
 
-Understanding how the core components interact is crucial for extending or customizing the system:
+   my_template/
+   ├── config.yaml
+   ├── machine.py.j2
+   ├── README.md
+   ├── README.md.j2
+   └── static/
+       └── helper.txt
 
-.. figure:: core_component.puml.svg
-   :width: 100%
-   :align: center
-   :alt: Core Component Interation
+Typical file roles:
 
-This diagram shows the relationships between major system components and how data flows between them during the rendering process.
+- ``config.yaml``: renderer configuration, helper definitions, style overrides,
+  and ignore rules.
+- ``*.j2``: rendered files.
+- static files: copied to the output directory unchanged.
+- template ``README`` files: documentation for template maintainers.
+- generated ``README`` templates such as ``README.md.j2``: documentation for
+  users of the generated output.
 
-Configuration File Deep Analysis
---------------------------------------------------------
+This distinction matters. Template-maintainer docs explain how the template is
+organized. Generated docs explain how to use the generated artifact.
 
-Expression Styles (expr_styles) Principle
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Build The Template Foundation
+-----------------------------
 
-The expression style system provides a powerful mechanism for customizing how expressions are rendered across different programming languages:
+Jinja2 Essentials For Template Authors
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+pyfcstm uses Jinja2 as the template language. You do not need advanced Jinja2
+metaprogramming to be productive, but you should be comfortable with:
+
+- variable output
+- ``if`` / ``elif`` / ``else``
+- ``for`` loops
+- ``macro``
+- filters
+- globals
+- tests
+
+If you want the official Jinja learning path rather than only the minimal
+examples in this tutorial, continue with:
+
+- `Jinja Template Designer Documentation <https://jinja.palletsprojects.com/en/stable/templates/>`_
+- `Jinja API Documentation <https://jinja.palletsprojects.com/en/stable/api/>`_
+
+Minimal examples:
+
+.. code-block:: jinja
+
+   {{ model.root_state.name }}
+
+   {% for state in model.walk_states() %}
+   - {{ state.name }}
+   {% endfor %}
+
+   {% if state.is_leaf_state %}
+   leaf
+   {% else %}
+   composite
+   {% endif %}
+
+   {% macro state_id(state) -%}
+   {{ state.path | join('_') }}
+   {%- endmacro %}
+
+Beyond that minimum, template authors usually need a few more Jinja features in
+real template work:
+
+- comments: ``{# ... #}``
+- template reuse: ``{% import ... %}``, ``{% from ... import ... %}``
+- whitespace control: ``{%-`` and ``-%}``
+- filter chains: ``{{ value | filter_a | filter_b }}``
+- tests such as ``{% if value is defined %}``
+
+Those features show up constantly in templates. For example:
+
+.. code-block:: jinja
+
+   {# avoid an extra trailing blank line #}
+   {% for state in model.walk_states() -%}
+   - {{ state.path | join('.') }}
+   {% endfor %}
+
+   {% if state.doc is defined %}
+   # {{ state.doc }}
+   {% endif %}
+
+   {% from 'macros.j2' import render_state_block %}
+   {{ render_state_block(model.root_state) }}
+
+Two practical rules are worth calling out:
+
+1. Keep reusable naming and formatting logic in helpers instead of copying the
+   same Jinja expression across many files.
+2. Use macros for repeated template structure, and use ``config.yaml`` helpers
+   for repeated naming and renderer-facing logic.
+
+The Role Of ``config.yaml``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+``config.yaml`` is the main integration point between the renderer and your
+template. It usually contains:
+
+- ``expr_styles``
+- ``stmt_styles``
+- ``globals``
+- ``filters``
+- ``tests``
+- ``ignores``
+
+Example:
 
 .. code-block:: yaml
 
    expr_styles:
-     default:                    # Base style
-       base_lang: c             # Inherit C language base templates
-       Name: LX_Vars.{{ node.name }}  # Override variable name rendering rules
-
-     python_style:              # Custom style
-       base_lang: python        # Inherit Python base templates
-       BinaryOp(&&): '{{ node.expr1 | expr_render }} and {{ node.expr2 | expr_render }}'
-
-**Inheritance Mechanism Principle**:
-
-- Each style inherits from a base language style
-- Can override rendering rules for specific node types
-- Supports operator-level fine-grained control
-
-This inheritance system allows for creating specialized rendering styles while maintaining consistency across similar language families.
-
-Global Variable System
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Global variables provide a way to define reusable values and functions that are accessible throughout all templates:
-
-.. code-block:: yaml
+     python_scope_expr:
+       base_lang: python
+       Name: "scope[{{ node.name | tojson }}]"
 
    globals:
-     # Method 1: Direct value
-     global_prefix: 'FSM_'
-
-     # Method 2: Template function
-     get_state_name_safe:
+     state_path:
        type: template
-       params: ['state']
-       template: '{{ state.path | join("_") }}'
+       params: [state]
+       template: "{{ state.path | join('.') }}"
 
-     # Method 3: Import external function
-     math_sqrt:
-       type: import
-       from: math.sqrt
-
-     # Method 4: Fixed value
-     version:
-       type: value
-       value: '1.0.0'
-
-**Lifecycle**: Global variables are created when Jinja2 environment initializes and remain unchanged throughout the rendering process.
-
-The four definition methods provide flexibility for different use cases, from simple constants to complex template functions.
-
-Filter System Principle
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Filters transform data within templates and are essential for data formatting and manipulation:
-
-.. code-block:: jinja
-
-   {# Using filters #}
-   {{ state | get_state_name_safe }}
-   {{ expression | expr_render(style='c') }}
-
-**Implementation Mechanism**:
-
-- Filters receive the left-side value as the first parameter
-- Can accept additional parameters
-- Return processed value for continued use in templates
-
-Filters enable clean separation of data transformation logic from presentation logic in templates.
-
-Ignore Rules System
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-The ignore system prevents unnecessary files from being processed or copied to the output directory:
-
-.. code-block:: yaml
+   filters:
+     state_path:
+       type: template
+       params: [state]
+       template: "{{ state.path | join('.') }}"
 
    ignores:
-     - '.git'           # Ignore .git directory
-     - '*.tmp'          # Ignore all .tmp files
-     - 'build/'         # Ignore build directory
-     - '**/test_*'      # Ignore all test_ prefixed files
+     - 'README.md'
 
-**Matching Principle**: Uses pathspec library to implement the same pattern matching algorithm as git.
+How to think about each section:
 
-This system ensures that version control files, temporary files, and other non-essential files don't clutter the generated output.
+- ``expr_styles``: customize expression rendering for a target language or a
+  target scope.
+- ``stmt_styles``: customize operational-statement rendering, including
+  temporary-variable handling for static or dynamic languages.
+- ``globals``: helper functions or values available as template globals.
+- ``filters``: transformation helpers used in ``{{ value | filter_name }}``.
+- ``tests``: Jinja2 tests for conditions such as ``value is my_test``.
+- ``ignores``: files or directories the renderer should skip.
 
-Template Syntax Deep Analysis
---------------------------------------------------------
+Use ``config.yaml`` when the logic is renderer-oriented or naming-oriented.
+Use a Jinja2 macro when the logic is mainly about repeated file structure.
 
-Variable Output Mechanism
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Use The Rendering Interfaces
+----------------------------
 
-Variable output is the fundamental building block of template rendering:
+Understanding ``expr_render``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-.. code-block:: jinja
+``expr_render`` is the expression-level renderer. Use it when you need one DSL
+expression rendered into a target-language expression string.
 
-   {# Basic variable output #}
-   {{ variable }}
+Quick selection rule:
 
-   {# Object attribute access #}
-   {{ state.name }}
-   {{ state.parent.name }}
+- If the input is one expression node, use ``expr_render``
+- If the input is one operation statement, use ``stmt_render``
+- If the input is a whole block such as ``action.operations``, use
+  ``stmts_render``
 
-   {# Dictionary key access #}
-   {{ dict['key'] }}
-   {{ dict.key }}      {# Equivalent syntax #}
-
-   {# Method calls #}
-   {{ obj.method() }}
-
-**Rendering Principle**: Jinja2 automatically resolves variable paths during rendering, accessing object attributes according to Python's attribute lookup rules.
-
-These syntax patterns provide flexible access to the state machine model's data structure.
-
-Control Structure Details
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Conditional Statements
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Conditional statements enable dynamic content generation based on the state machine's structure:
+Typical examples:
 
 .. code-block:: jinja
 
-   {# Basic conditions #}
-   {% if state.is_leaf_state %}
-     // Leaf state processing
-   {% elif state.is_root_state %}
-     // Root state processing
-   {% else %}
-     // Normal state processing
-   {% endif %}
-
-   {# Complex conditions #}
-   {% if state.transitions and state.transitions|length > 0 %}
-     // State with transitions
-   {% endif %}
-
-   {# Test functions #}
-   {% if variable is defined %}
-     {{ variable }}
-   {% endif %}
-
-These conditional patterns allow templates to adapt their output based on the specific characteristics of each state.
-
-Loop Iteration
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Loop constructs enable processing collections of states, transitions, and other model elements:
-
-.. code-block:: jinja
-
-   {# Basic loop #}
-   {% for state in model.walk_states() %}
-     // Process {{ state.name }}
-   {% endfor %}
-
-   {# Loop with index #}
-   {% for transition in state.transitions_from %}
-     // Transition {{ loop.index }}: {{ transition.from_state }} -> {{ transition.to_state }}
-     {% if loop.first %}...{% endif %}
-     {% if loop.last %}...{% endif %}
-   {% endfor %}
-
-   {# Loop control #}
-   {% for item in list %}
-     {% if loop.index > 10 %}{% break %}{% endif %}
-     {{ item }}
-   {% endfor %}
-
-The loop variable provides access to iteration metadata, enabling sophisticated loop control and formatting.
-
-Template Inheritance and Inclusion
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Macro Definitions (Functional Templates)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Macros provide reusable template components that can be parameterized:
-
-.. code-block:: jinja
-
-   {# Define macro #}
-   {% macro render_state(state) %}
-   state {{ state.name }} {
-       {% for substate in state.substates.values() %}
-       {{ render_state(substate) }}
-       {% endfor %}
-   }
-   {% endmacro %}
-
-   {# Use macro #}
-   {{ render_state(model.root_state) }}
-
-This recursive macro demonstrates how complex rendering logic can be encapsulated and reused.
-
-File Inclusion
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-File inclusion enables modular template design and code reuse:
-
-.. code-block:: jinja
-
-   {# Include other template files #}
-   {% include 'header.j2' %}
-
-   {# Dynamic inclusion #}
-   {% include template_name %}
-
-Inclusion mechanisms support both static and dynamic template composition patterns.
-
-State Machine Model Objects Detailed
---------------------------------------------------------
-
-Object Relationship Model
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-The state machine model follows a hierarchical object structure that mirrors the state machine's logical organization:
-
-.. figure:: model.puml.svg
-   :width: 100%
-   :align: center
-   :alt: Object Relationship Model
-
-This class diagram illustrates the key objects and their relationships within the state machine model.
-
-State Object Detailed API
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Attribute Access
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-State objects provide comprehensive attribute access for template rendering:
-
-.. code-block:: jinja
-
-   {# Basic information #}
-   {{ state.name }}              {# State name #}
-   {{ state.path }}              {# Complete path #}
-   {{ state.path|join('.') }}    {# Dot-separated path #}
-
-   {# Type checking #}
-   {{ state.is_leaf_state }}     {# Is leaf state #}
-   {{ state.is_root_state }}     {# Is root state #}
-   {{ state.parent.name }}       {# Parent state name #}
-
-These attributes provide access to both the state's identity and its position within the state hierarchy.
-
-Collection Access Methods
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Collection methods enable iteration over state relationships and components:
-
-.. code-block:: jinja
-
-   {# Traverse substates #}
-   {% for name, substate in state.substates.items() %}
-     // Substate: {{ name }}
-   {% endfor %}
-
-   {# Get transitions #}
-   {% for transition in state.transitions %}
-     {{ transition.from_state }} -> {{ transition.to_state }}
-   {% endfor %}
-
-   {# Get outgoing transitions #}
-   {% for transition in state.transitions_from %}
-     // Transitions from this state
-   {% endfor %}
-
-   {# Get incoming transitions #}
-   {% for transition in state.transitions_to %}
-     // Transitions to this state
-   {% endfor %}
-
-These collection access patterns support both internal and external state relationships.
-
-Action Query Methods
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Action queries provide access to state lifecycle behaviors and transitions:
-
-.. code-block:: jinja
-
-   {# Entry actions #}
-   {% for id, enter in state.list_on_enters(with_ids=True) %}
-     // Entry action {{ id }}: {{ enter.name }}
-   {% endfor %}
-
-   {# During actions (with filtering) #}
-   {% for during in state.list_on_durings(is_abstract=false, aspect='before') %}
-     // Pre-during actions
-   {% endfor %}
-
-   {# Exit actions #}
-   {% for id, exit in state.list_on_exits(with_ids=True) %}
-     // Exit action {{ id }}
-   {% endfor %}
-
-The filtering capabilities allow templates to target specific types of actions based on their characteristics.
-
-Transition Object Detailed API
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Transition objects encapsulate the logic for moving between states:
-
-.. code-block:: jinja
-
-   {% for transition in state.transitions %}
-     {# Transition basic information #}
-     From: {{ transition.from_state }}
-     To: {{ transition.to_state }}
-
-     {# Trigger conditions #}
-     {% if transition.event %}
-       Event: {{ transition.event.name }}
-       Event Path: {{ transition.event.path|join('.') }}
-     {% endif %}
-
-     {# Guard conditions #}
-     {% if transition.guard %}
-       Condition: {{ transition.guard.to_ast_node() }}
-     {% endif %}
-
-     {# Effect statements #}
-     {% for statement in transition.effects %}
-       Effect Statement: {{ statement | operation_stmt_render }}
-     {% endfor %}
-   {% endfor %}
-
-When a transition effect may contain ``if / else if / else`` blocks, render it as
-an operation statement tree rather than assuming every item is a plain assignment.
-The ``operation_stmt_render`` and ``operation_stmts_render`` helpers are designed
-for this phase-aligned statement model.
-
-This comprehensive API supports rendering both simple and complex transition logic.
-
-Expression Rendering System
------------------------------------------------------------------
-
-Expression Type Support
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-The expression rendering system supports a wide range of expression types commonly found in state machine definitions:
-
-.. code-block:: jinja
-
-   {# Literals #}
-   {{ 42 | expr_render }}           {# Integer #}
-   {{ 3.14 | expr_render }}         {# Float #}
-   {{ true | expr_render }}         {# Boolean #}
-
-   {# Variable references #}
-   {{ variable_name | expr_render }}
-
-   {# Operators #}
-   {{ (a + b * 2) | expr_render }}
-   {{ (x > 0 && y < 10) | expr_render }}
-
-   {# Function calls #}
-   {{ func_name(arg1, arg2) | expr_render }}
-
-   {# Conditional expressions #}
-   {{ (condition ? value1 : value2) | expr_render }}
-
-This comprehensive expression support enables accurate rendering of complex state machine logic.
-
-Multi-language Style Support
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-C Language Style
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-The C language style adapts expressions to C syntax and conventions:
-
-.. code-block:: jinja
-
-   {{ expression | expr_render(style='c') }}
-
-**Characteristics**:
-
-- Uses C language operators and syntax
-- Boolean values converted to 1/0
-- Power operations converted to pow() function calls
-
-This style ensures generated C code follows language-specific conventions and limitations.
-
-Python Style
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-The Python style renders expressions using Python syntax and idioms:
-
-.. code-block:: jinja
-
-   {{ expression | expr_render(style='python') }}
-
-**Characteristics**:
-
-- Uses Python operators (and, or, not)
-- Function calls use math module
-- Supports Python ternary expression syntax
-
-This style is particularly useful for generating Python code or for debugging purposes.
-
-DSL Style
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-The DSL style preserves the original domain-specific language syntax:
-
-.. code-block:: jinja
-
-   {{ expression | expr_render(style='dsl') }}
-
-**Characteristics**:
-- Maintains original DSL syntax
-- Used for debugging and documentation generation
-
-This style is valuable for verifying that expressions are correctly parsed from the original DSL.
-
-Custom Expression Rendering
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Custom expression rendering enables adaptation to specialized requirements or domain-specific conventions:
+   {{ transition.guard.to_ast_node() | expr_render(style='python') }}
+   {{ some_expr | expr_render(style='c') }}
+
+Parameter overview:
+
+.. list-table::
+   :header-rows: 1
+
+   * - Field
+     - Required
+     - Meaning
+     - Typical values
+   * - ``node``
+     - Yes
+     - The single expression node to render
+     - ``transition.guard.to_ast_node()``, ``some_expr``, ``1``, ``True``
+   * - ``style``
+     - No
+     - Which expression style to use
+     - ``python``, ``c``, ``default``, or a custom style from ``config.yaml``
+
+The default behavior of ``style`` matters:
+
+- on a top-level call, omitting ``style=...`` uses ``default``
+- inside recursive expression rendering, omitting ``style=...`` inherits the
+  current style
+
+What it is for:
+
+- guard expressions
+- assigned values
+- effect conditions
+- custom naming or scope remapping for expression nodes
+
+Typical input shapes:
+
+- one ``pyfcstm.model.expr`` node
+- one DSL AST expression node such as ``guard.to_ast_node()``
+- a primitive literal such as ``1`` or ``True`` when you intentionally want
+  it normalized through the expression renderer
+
+What it returns:
+
+- one target-language expression string
+- not a complete statement
+- usually not something with indentation or branch structure
+
+What it is not for:
+
+- full operation blocks
+- assignment statements
+- ``if / else if / else`` statement trees
+
+If you need executable statement output, use ``stmt_render`` or
+``stmts_render`` instead.
+
+How ``expr_render`` Resolves Template Keys
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+This is the part template authors usually need spelled out. When you override
+``expr_styles`` in ``config.yaml``, you are not replacing "a whole language".
+You are overriding template entries for specific expression-node shapes.
+
+The matching rule is:
+
+1. try the most specific key first
+2. if it does not exist, fall back to the generic key for that node family
+3. if that still does not exist, fall back to ``default``
+
+The key patterns that matter most are:
+
+.. list-table::
+   :header-rows: 1
+
+   * - Key form
+     - Matches
+     - Example
+     - Typical use
+   * - ``Float``
+     - float literals
+     - ``3.14``
+     - change float formatting
+   * - ``Integer``
+     - decimal integer literals
+     - ``42``
+     - change integer formatting
+   * - ``Boolean``
+     - boolean literals
+     - target-language ``true`` / ``false`` spellings
+     - map boolean literals
+   * - ``Constant``
+     - DSL constant nodes
+     - ``pi``, ``e``, ``tau``
+     - map constants to ``Math.PI``, ``math.Pi``, and so on
+   * - ``HexInt``
+     - hexadecimal integers
+     - ``0xFF``
+     - preserve hex output
+   * - ``Paren``
+     - parenthesized expressions
+     - ``(a + b)``
+     - control parenthesis preservation
+   * - ``Name``
+     - variable names
+     - ``counter``
+     - scope remapping such as ``scope['counter']``
+   * - ``UFunc``
+     - any unary function call
+     - ``sin(x)``
+     - define generic function-call rendering
+   * - ``UFunc(sin)``
+     - one specific unary function
+     - ``sin(x)``
+     - special-case one function
+   * - ``UnaryOp``
+     - any unary operator
+     - ``-x``
+     - define generic unary rendering
+   * - ``UnaryOp(!)``
+     - one specific unary operator
+     - ``!flag``
+     - map ``!`` to ``not``, for example
+   * - ``BinaryOp``
+     - any binary operator
+     - ``a + b``
+     - define generic binary rendering
+   * - ``BinaryOp(**)``
+     - one specific binary operator
+     - ``a ** b``
+     - map exponentiation to ``pow(...)``
+   * - ``ConditionalOp``
+     - ternary conditional expressions
+     - ``cond ? a : b``
+     - map to the target-language ternary form
+   * - ``default``
+     - final fallback
+     - when no more specific key exists
+     - last-resort rendering
+
+The important precedence points are:
+
+- ``UFunc(sin)`` wins over ``UFunc``
+- ``UnaryOp(!)`` wins over ``UnaryOp``
+- ``BinaryOp(**)`` wins over ``BinaryOp``
+- node families such as ``Name``, ``Float``, and ``Integer`` match directly by
+  their node type name
+
+That is why a Python-style override such as:
 
 .. code-block:: yaml
 
    expr_styles:
-     my_style:
-       base_lang: c
-       BinaryOp(&&): '{{ node.expr1 | expr_render }} AND {{ node.expr2 | expr_render }}'
-       UFunc(sqrt): 'SQRT({{ node.expr | expr_render }})'
-       Name: 'vars.{{ node.name }}'
+     default:
+       base_lang: python
+       UnaryOp(!): 'not {{ node.expr | expr_render }}'
+       BinaryOp(&&): '{{ node.expr1 | expr_render }} and {{ node.expr2 | expr_render }}'
+       BinaryOp(||): '{{ node.expr1 | expr_render }} or {{ node.expr2 | expr_render }}'
 
-This customization capability allows the system to adapt to various coding standards and platform requirements.
+does not replace the whole Python expression system. It only says:
 
-Practical Examples: Complete Template Analysis
------------------------------------------------------------------
+- override ``!``
+- override ``&&``
+- override ``||``
+- keep using the inherited Python templates for everything else
 
-State Variable Declaration Template
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+That is the core advantage of the style system: most template authors should
+override a few keys, not copy an entire expression-style dictionary.
 
-This template demonstrates how state variables are declared in the generated code:
+How style inheritance works:
 
-.. code-block:: jinja
+- each custom style starts from ``base_lang``
+- you only override the node mappings you actually need
+- recursive rendering inside that style inherits the current style unless you
+  explicitly pass another one
 
-   {% for state in model.walk_states() %}
-   {# Generate variable declaration for each state #}
-   CST_FSM_Para_Base {{ state | get_state_id }};  // {{ state | get_state_name }}
-   {% endfor %}
-
-**Generated Result Example**:
-
-.. code-block:: c
-
-   CST_FSM_Para_Base FSM_Root_L1;  // Root
-   CST_FSM_Para_Base FSM_Root_SubState1_L2;  // Root.SubState1
-   CST_FSM_Para_Base FSM_Root_SubState2_L2;  // Root.SubState2
-
-This pattern ensures each state has a corresponding variable with a unique, meaningful identifier.
-
-State Entry Function Template
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Entry functions handle state initialization and setup logic:
-
-.. code-block:: jinja
-
-   {% for state in model.walk_states() %}
-   void {{ state | get_state_entry_hook_name }}(XXX_FSM_PARAS_DECLARE)
-   {
-       // Entry Processes Current State {{ state | get_state_name }}
-       {% for id, enter in state.list_on_enters(with_ids=True) %}
-       {{ get_enter_fn_name(state, enter, id) }}(pPara_io, XXX_FSM_PARAS);
-       {% endfor %}
-   }
-   {% endfor %}
-
-**Generation Logic Analysis**:
-
-1. Traverse all states
-2. Generate entry hook function for each state
-3. Call all entry actions of that state within the function
-4. Use naming conventions to ensure unique function names
-
-This approach ensures consistent entry behavior across all states while maintaining clear separation of concerns.
-
-Transition Processing Template
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Transition processing handles the logic for moving between states based on events and conditions:
-
-.. code-block:: jinja
-
-   {% for id, transition in enumerate(state.transitions_from) %}
-   INT32S {{ get_state_event_hook_name(state, id) }}(XXX_FSM_PARAS_DECLARE)
-   {
-       {% if transition.event %}
-       if ({{ get_event_trigger_fn_name(state, transition.event) }}(pPara_io, XXX_FSM_PARAS) == BTRUE)
-       {
-           return {{ get_exit_to_x(state, transition) }};
-       }
-       return EVENT_NOT_TRIGGERED;
-       {% elif transition.guard %}
-       if ({{ transition.guard.to_ast_node() | expr_render }})
-       {
-           return {{ get_exit_to_x(state, transition) }};
-       }
-       return EVENT_NOT_TRIGGERED;
-       {% else %}
-       return {{ get_exit_to_x(state, transition) }};
-       {% endif %}
-   }
-   {% endfor %}
-
-**Condition Processing Logic**:
-
-- With event: Check event trigger condition
-- With guard: Evaluate guard expression
-- Unconditional: Execute transition directly
-
-This pattern handles the full range of transition types, from simple unconditional transitions to complex conditional ones.
-
-Advanced Techniques and Best Practices
------------------------------------------------------------------
-
-Template Debugging Techniques
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Output Debug Information
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Debug output helps identify issues during template development and troubleshooting:
-
-.. code-block:: jinja
-
-   {# Debug output #}
-   // DEBUG: State = {{ state.name }}
-   // DEBUG: Path = {{ state.path }}
-   // DEBUG: Is Leaf = {{ state.is_leaf_state }}
-
-   {# Conditional debugging #}
-   {% if debug_mode %}
-   // Debug Information: {{ state | tojson }}
-   {% endif %}
-
-These techniques provide visibility into template execution and data state during development.
-
-Using Temporary Comments
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Temporary comments enable controlled testing and incremental development:
-
-.. code-block:: jinja
-
-   {# Temporarily disable code blocks #}
-   {% if false %}
-       {% for item in large_list %}
-           // This code won't execute temporarily
-       {% endfor %}
-   {% endif %}
-
-This approach is particularly useful for isolating issues or testing alternative implementations.
-
-Performance Optimization
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Avoid Repeated Calculations
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Optimizing calculation patterns can significantly improve template rendering performance:
-
-.. code-block:: jinja
-
-   {# Poor: Calculate every loop iteration #}
-   {% for transition in state.transitions %}
-       {% if state.is_leaf_state %}...{% endif %}
-   {% endfor %}
-
-   {# Recommended: Pre-calculate #}
-   {% set is_leaf = state.is_leaf_state %}
-   {% for transition in state.transitions %}
-       {% if is_leaf %}...{% endif %}
-   {% endfor %}
-
-This optimization reduces redundant computations, especially important for complex state machines.
-
-Use Caching
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Caching expensive operations improves performance for complex template logic:
-
-.. code-block:: jinja
-
-   {# Cache complex calculations in variables #}
-   {% set state_actions = state.list_on_during_aspect_recursively() %}
-   {% for action in state_actions %}
-       // Use cached result
-   {% endfor %}
-
-Caching is particularly beneficial for recursive operations or complex data transformations.
-
-Template Maintenance
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Modular Design
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Modular design promotes reuse and maintainability across template code:
-
-.. code-block:: jinja
-
-   {# macro_library.j2 #}
-   {% macro render_transition(transition) %}
-       // Transition rendering logic
-   {% endmacro %}
-
-   {% macro render_state(state) %}
-       // State rendering logic
-   {% endmacro %}
-
-This approach encapsulates common patterns and reduces code duplication.
-
-Configuration File Organization
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Well-organized configuration improves maintainability and discoverability:
+That last point matters. If you define:
 
 .. code-block:: yaml
 
-   # Group configuration by functionality
+   expr_styles:
+     python_scope_expr:
+       base_lang: python
+       Name: "scope[{{ node.name | tojson }}]"
+
+then a nested expression such as ``counter + 1`` will continue using
+``python_scope_expr`` for the inner ``Name`` node. You do not need to re-copy
+every built-in operator template just to keep recursion aligned.
+
+One more practical detail matters in real templates:
+
+- when a template is rendered by :class:`pyfcstm.render.StateMachineCodeRenderer`,
+  calling ``expr_render`` without ``style=...`` uses the ``default`` expression
+  style from ``config.yaml``
+- if you define ``default`` as a thin wrapper over ``python``, most template
+  sites no longer need to spell out ``style='python'`` repeatedly
+
+How To Override Those Keys
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The most common override cases are these.
+
+1. Override only name mapping:
+
+.. code-block:: yaml
+
+   expr_styles:
+     default:
+       base_lang: python
+       Name: "scope[{{ node.name | tojson }}]"
+
+Effect:
+
+- ``counter + 1`` becomes ``scope["counter"] + 1``
+- everything else still uses the inherited Python style
+
+2. Override only one operator:
+
+.. code-block:: yaml
+
+   expr_styles:
+     default:
+       base_lang: c
+       BinaryOp(**): 'pow({{ node.expr1 | expr_render }}, {{ node.expr2 | expr_render }})'
+
+Effect:
+
+- ``a ** b`` becomes ``pow(a, b)``
+- all other binary operators keep the inherited C behavior
+
+3. Override only one function:
+
+.. code-block:: yaml
+
+   expr_styles:
+     default:
+       base_lang: python
+       UFunc(sin): 'fast_sin({{ node.expr | expr_render }})'
+
+Effect:
+
+- ``sin(x)`` becomes ``fast_sin(x)``
+- ``cos(x)``, ``sqrt(x)``, and the rest still use the inherited Python style
+
+The anti-pattern to avoid is:
+
+- copying ``Float`` / ``Integer`` / ``BinaryOp`` / ``UFunc`` just to change one
+  ``Name``
+- repeating dozens of unrelated keys to customize one operator
+- pushing expression strategy into ad hoc Jinja snippets instead of keeping it
+  in styles
+
+A practical refactor looks like this.
+
+Before:
+
+.. code-block:: jinja
+
+   if {{ transition.guard.to_ast_node() | expr_render(style='python') }}:
+       ...
+
+   value = {{ some_expr | expr_render(style='python') }}
+
+After:
+
+.. code-block:: yaml
+
+   expr_styles:
+     default:
+       base_lang: python
+     python_scope_expr:
+       base_lang: python
+       Name: "scope[{{ node.name | tojson }}]"
+
+.. code-block:: jinja
+
+   if {{ transition.guard.to_ast_node() | expr_render }}:
+       ...
+
+   value = {{ some_expr | expr_render }}
+
+Effect:
+
+- shorter template bodies
+- more centralized target-language decisions
+- fewer chances to forget or mismatch the intended style
+
+Understanding ``stmt_render`` And ``stmts_render``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+``stmt_render`` and ``stmts_render`` are the statement-level counterparts to
+``expr_render``.
+
+Use:
+
+- ``stmt_render`` for one operation statement
+- ``stmts_render`` for a sequence of statements, usually a full action block
+
+Typical input shapes:
+
+- ``stmt_render`` takes one ``OperationStatement`` or one DSL operational AST
+  statement
+- ``stmts_render`` takes an iterable of those statements, for example
+  ``action.operations``
+
+Examples:
+
+.. code-block:: jinja
+
+   {{ one_statement | stmt_render(style='python') }}
+
+   {{ action.operations | stmts_render(style='python') }}
+
+Parameter overview for ``stmt_render``:
+
+.. list-table::
+   :header-rows: 1
+
+   * - Field
+     - Required
+     - Meaning
+     - Typical values
+   * - ``node``
+     - Yes
+     - One operation statement
+     - ``action.operations[0]``
+   * - ``style``
+     - No
+     - Which statement style to use
+     - ``python``, ``c``, ``default``
+   * - ``state_vars``
+     - No
+     - Names that should be treated as persistent state variables
+     - ``('counter', 'flag')``
+   * - ``var_types``
+     - No
+     - Variable type mapping, mainly for static-language styles
+     - ``{'counter': 'int', 'ratio': 'float'}``
+   * - ``visible_names``
+     - No
+     - Temporary names already visible before this statement
+     - ``('tmp', 'error')``
+   * - ``visible_var_types``
+     - No
+     - Type mapping for already-visible temporary names
+     - ``{'tmp': 'int'}``
+   * - ``indent``
+     - No
+     - One indentation unit
+     - ``'    '``, ``'  '``
+   * - ``level``
+     - No
+     - Initial indentation depth
+     - ``0``, ``1``, ``2``
+
+Parameter overview for ``stmts_render``:
+
+.. list-table::
+   :header-rows: 1
+
+   * - Field
+     - Required
+     - Meaning
+     - Typical values
+   * - ``nodes``
+     - Yes
+     - A sequence of operation statements
+     - ``action.operations``
+   * - ``style``
+     - No
+     - Which statement style to use
+     - ``python``, ``c``, ``default``
+   * - ``state_vars``
+     - No
+     - Names that should be treated as persistent state variables
+     - ``('counter', 'flag')``
+   * - ``var_types``
+     - No
+     - Variable type mapping, mainly for static-language styles
+     - ``{'counter': 'int', 'ratio': 'float'}``
+   * - ``visible_names``
+     - No
+     - Temporary names already visible before this block
+     - ``('tmp', 'error')``
+   * - ``visible_var_types``
+     - No
+     - Type mapping for already-visible temporary names
+     - ``{'tmp': 'int'}``
+   * - ``indent``
+     - No
+     - One indentation unit
+     - ``'    '``, ``'  '``
+   * - ``level``
+     - No
+     - Initial indentation depth
+     - ``0``, ``1``, ``2``
+   * - ``sep``
+     - No
+     - Separator between top-level rendered statements
+     - ``'\\n'``
+
+They are the correct entry points when the DSL block may contain:
+
+- assignments
+- temporary variables
+- ``if / else if / else``
+- nested branches
+
+What they return:
+
+- executable target-language statement text
+- indentation-aware multi-line output
+- branch structure that still matches DSL block semantics
+
+For template authors, the most important semantic detail is that statement
+rendering distinguishes persistent state variables from block-local temporary
+variables.
+
+In renderer-driven template rendering, if you do not explicitly pass
+``state_vars`` or ``var_types``, :class:`pyfcstm.render.StateMachineCodeRenderer`
+automatically injects defaults from ``model.defines``. That means most
+templates can simply write:
+
+.. code-block:: jinja
+
+   {{ action.operations | stmts_render(style='python') }}
+
+instead of repeatedly spelling out the full state-variable set.
+
+Why this matters:
+
+- persistent variables should render to the target state container such as
+  ``scope['counter']`` or ``scope->counter``
+- temporary variables should stay local to the block
+- branch-local temporaries should follow the same visibility rules as the
+  runtime semantics
+
+A common refactor is to stop hand-writing statement expansion.
+
+Before:
+
+.. code-block:: jinja
+
+   {% for op in action.operations %}
+   {{ op.target.name }} = {{ op.expr.to_ast_node() | expr_render(style='python') }}
+   {% endfor %}
+
+Problems with that approach:
+
+- it only covers the simplest assignment shape
+- temporary-variable semantics are easy to get wrong
+- ``if / else if / else`` quickly forces you to reimplement a statement renderer
+
+After:
+
+.. code-block:: jinja
+
+   {{ action.operations | stmts_render(style='python') }}
+
+Effect:
+
+- assignments, temporaries, and branches all go through one renderer
+- the template gets shorter and less error-prone
+- scope or typing changes become style changes rather than template rewrites
+
+Built-in statement styles already encode these target-language conventions for
+``dsl``, ``c``, ``cpp``, ``python``, ``java``, ``js``, ``ts``, ``rust``, and
+``go``.
+
+One more distinction is important:
+
+- ``operation_stmt_render`` and ``operation_stmts_render`` are useful when you
+  want DSL-text display
+- ``stmt_render`` and ``stmts_render`` are the correct tools for target-language
+  code generation
+
+If you are generating executable code, prefer ``stmt_render`` /
+``stmts_render``.
+
+The fastest way to avoid misuse is to think in examples:
+
+.. list-table::
+   :header-rows: 1
+
+   * - Goal
+     - Input
+     - Correct filter
+     - Typical output shape
+   * - Render one guard expression
+     - ``transition.guard.to_ast_node()``
+     - ``expr_render``
+     - ``counter > 10``
+   * - Render one assignment statement
+     - one item from ``action.operations``
+     - ``stmt_render``
+     - ``scope['counter'] = scope['counter'] + 1``
+   * - Render one whole action block
+     - ``action.operations``
+     - ``stmts_render``
+     - multiple statements with indentation and nested ``if`` blocks
+
+Common mistakes:
+
+- feeding ``action.operations`` into ``expr_render`` and expecting a block
+- feeding a guard expression into ``stmts_render`` and expecting it to become a
+  valid ``if`` statement automatically
+- using ``operation_stmts_render`` when the real goal is target-language code
+  rather than DSL echo text
+
+Template Context: What You Can Access
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Rendered templates receive the state machine model as ``model``. In practice,
+template authors often use:
+
+- ``model.root_state``
+- ``model.defines``
+- ``model.walk_states()``
+- state paths, parent/child relationships, events, actions, transitions
+
+Example:
+
+.. code-block:: jinja
+
+   Root: {{ model.root_state.name }}
+
+   Variables:
+   {% for def_item in model.defines.values() %}
+   - {{ def_item.type }} {{ def_item.name }}
+   {% endfor %}
+
+   States:
+   {% for state in model.walk_states() %}
+   - {{ state.path | join('.') }}
+   {% endfor %}
+
+When you want the full model surface, continue with :doc:`../../api_doc/model/index`.
+
+That API documentation is the right place to inspect:
+
+- what :class:`pyfcstm.model.StateMachine` exposes
+- what is available on states, transitions, events, and lifecycle-action objects
+- how model objects and expression nodes are organized
+
+Design Real Templates
+---------------------
+
+Generation Scale And Template Shape
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Template authors need a clear idea of how output size scales:
+
+- one template file usually produces one output file
+- output size often scales with the number of states, transitions, events, and
+  lifecycle actions
+- nested loops and repeated inline expressions can quickly make templates hard
+  to read and hard to maintain
+
+Practical guidance:
+
+- move repeated naming logic into helpers
+- move repeated structural fragments into macros
+- prefer one clear expansion pass over many nearly-identical blocks
+- keep generated code readable enough that downstream users can debug it
+
+For large generated runtimes, readability is a feature, not decoration. The
+template should not rely on a formatter as a crutch for fundamentally messy
+structure.
+
+Minimal Template From Scratch
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The fastest way to learn the system is to write a tiny template first.
+
+Directory:
+
+.. code-block:: text
+
+   demo_template/
+   ├── config.yaml
+   └── summary.txt.j2
+
+``config.yaml``:
+
+.. code-block:: yaml
+
    globals:
-     naming:
-       global_prefix: 'FSM_'
-       state_prefix: 'State_'
-
-     rendering:
-       default_style: 'c'
-       indent_size: 4
-
-   filters:
-     naming:
-       get_state_id: ...
-       get_state_name: ...
-
-     rendering:
-       expr_render: ...
-
-Functional grouping makes it easier to locate and modify related configuration items.
-
-Common Issues and Solutions
------------------------------------------------------------------
-
-Template Syntax Errors
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Proper syntax is essential for successful template rendering:
-
-**Problem**: ``TemplateSyntaxError: unexpected '%'``
-
-**Cause**: Jinja2 tags not properly closed or nested incorrectly
-
-**Solution**:
-
-.. code-block:: jinja
-
-   {# Error example #}
-   {% if condition %}
-       {{ variable }
-   {% endif %}
-
-   {# Correct example #}
-   {% if condition %}
-       {{ variable }}
-   {% endif %}
-
-Careful attention to tag matching and nesting prevents these common syntax issues.
-
-Undefined Variable Errors
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Safe variable access patterns prevent runtime errors:
-
-**Problem**: ``UndefinedError: 'variable' is undefined``
-
-**Solution**:
-
-.. code-block:: jinja
-
-   {# Safe access #}
-   {% if variable is defined %}
-       {{ variable }}
-   {% else %}
-       // Use default value
-       {{ default_value }}
-   {% endif %}
-
-Defensive programming practices ensure templates handle missing data gracefully.
-
-Performance Issues
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Optimization strategies address rendering performance concerns:
-
-**Problem**: Template rendering too slow
-
-**Solution**:
-
-- Reduce complex calculations in templates
-- Use cache variables for repeatedly used results
-- Optimize state machine model, avoid deep nesting
-
-Performance optimization focuses on reducing computational complexity and redundant operations.
-
-Custom Functions Not Working
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Proper configuration ensures custom functions work as expected:
-
-**Problem**: Custom global functions or filters not taking effect
-
-**Solution**:
-
-1. Check if config.yaml syntax is correct
-2. Verify function parameters match
-3. Confirm functions are defined in correct scope
-
-Systematic troubleshooting addresses the most common configuration issues.
-
-Extension Development Guide
------------------------------------------------------------------
-
-Adding New Expression Styles
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Creating custom expression styles enables language-specific adaptations:
-
-1. Define new style in configuration file:
-
-.. code-block:: yaml
-
-   expr_styles:
-     my_custom_style:
-       base_lang: c
-       BinaryOp(&&): '{{ node.expr1 | expr_render }} ANDALSO {{ node.expr2 | expr_render }}'
-
-2. Use in templates:
-
-.. code-block:: jinja
-
-   {{ expression | expr_render(style='my_custom_style') }}
-
-This extension mechanism supports adaptation to specialized requirements or new programming languages.
-
-Creating Custom Filters
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Custom filters extend template transformation capabilities:
-
-1. Define in configuration file:
-
-.. code-block:: yaml
-
-   filters:
-     my_custom_filter:
+     state_path:
        type: template
-       params: ['value', 'prefix']
-       template: '{{ prefix }}_{{ value | upper }}'
+       params: [state]
+       template: "{{ state.path | join('.') }}"
 
-2. Use in templates:
+``summary.txt.j2``:
 
 .. code-block:: jinja
 
-   {{ state.name | my_custom_filter('PREFIX') }}
+   Root state: {{ model.root_state.name }}
 
-Filters provide reusable data transformation logic that can be applied throughout templates.
+   Variables:
+   {% for def_item in model.defines.values() %}
+   - {{ def_item.type }} {{ def_item.name }}
+   {% endfor %}
 
-Integrating External Tools
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   States:
+   {% for state in model.walk_states() %}
+   - {{ state | state_path }}
+   {% endfor %}
 
-External integration extends system capabilities with existing libraries and tools:
+Render it with:
 
-.. code-block:: yaml
+.. code-block:: bash
 
-   globals:
-     datetime_now:
-       type: import
-       from: datetime.datetime.now
-     json_dumps:
-       type: import
-       from: json.dumps
+   pyfcstm generate -i ./machine.fcstm -t ./demo_template -o ./out
 
-This integration approach leverages the rich Python ecosystem within template rendering.
+This is enough to verify the full renderer path before you attempt a large
+runtime template.
+
+To make that example more concrete, assume the input DSL is:
+
+.. code-block:: fcstm
+
+   def int counter = 0;
+
+   state TrafficLight {
+       [*] -> Red;
+
+       state Red;
+       state Green;
+   }
+
+Then the rendered ``out/summary.txt`` will look like:
+
+.. code-block:: text
+
+   Root state: TrafficLight
+
+   Variables:
+   - int counter
+
+   States:
+   - TrafficLight
+   - TrafficLight.Red
+   - TrafficLight.Green
+
+That kind of concrete output check is useful because it lets you see the
+generated shape immediately instead of reasoning only from template source.
+
+Built-In Templates
+------------------
+
+The render system is general, but the repository also ships built-in templates
+that serve as real reference implementations.
+
+Current built-in templates:
+
+- ``python``
+  - status: current built-in template
+  - design position: reference implementation for template-system structure and
+    simulator-aligned runtime semantics
+- ``c``
+  - status: current built-in template
+  - design position: self-contained generated C runtime with a documented
+    public API and stronger focus on deployment/runtime integration
+- ``c_poll``
+  - status: current built-in template
+  - design position: self-contained generated C runtime with hook-polled event
+    acquisition, intended for scan-cycle and control-loop style integrations
+
+For built-in templates, pyfcstm also emits generated usage guides into the
+output directory. In practice, users will find ``README.md`` and
+``README_zh.md`` alongside the generated artifacts, and those generated
+documents are the primary place to explain target-specific usage details.
+
+python - Reference Runtime Template For Simulator-Aligned Codegen
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The ``python`` template is the clearest reference implementation for how the
+template system comes together end to end.
+
+Its current design position is:
+
+- a reference implementation for built-in template layout
+- a single-file runtime template
+- generated README templates for end users
+- runtime behavior aligned with the simulator
+- protected-hook extension points for abstract actions
+
+If you want the most approachable reference for template structure, helper
+design, generated runtime shape, and simulator-aligned behavior, start from the
+``python`` template under ``templates/python/`` and the generated
+``README.md`` / ``README_zh.md`` it emits.
+
+c - Self-Contained Generated Runtime For Native Integration
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The ``c`` template is the native-runtime-oriented built-in option. It generates
+a self-contained runtime around ``machine.h`` and ``machine.c`` rather than a
+single-file Python runtime, but it still follows the same template-system
+model.
+
+Its current design position is:
+
+- a generated C runtime intended for direct embedding and integration
+- explicit public header/runtime API instead of Python import-based usage
+- generated ``README.md`` / ``README_zh.md`` as the primary user-facing
+  integration guide
+- runtime tests and alignment tests that validate generated behavior against
+  the simulator where applicable
+
+If you want the native-runtime example, go to ``templates/c/`` and treat the
+generated ``README.md`` / ``README_zh.md`` in output directories as the
+authoritative integration guide for end users.
+
+c_poll - Hook-Polled Runtime For Scan-Cycle Control Integration
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The ``c_poll`` template is closely related to ``c`` and reuses the same broad
+runtime direction: generated ``machine.h`` and ``machine.c``, a documented
+public API, and generated user-facing ``README.md`` / ``README_zh.md`` files.
+
+The key design difference is the event-input model:
+
+- ``c`` expects the integration layer to collect events first and then submit a
+  per-cycle event-id set into ``cycle(...)``
+- ``c_poll`` expects the integration layer to install generated
+  ``check_xxx`` hooks once, and the runtime then queries those hooks lazily
+  while deciding transitions inside ``cycle()``
+
+That difference matters because it changes who owns event observation:
+
+- in ``c``, the application owns event collection and passes a normalized event
+  set into the runtime
+- in ``c_poll``, the runtime owns event observation timing and asks
+  "is this event active right now?" through the installed event-check table
+
+This makes ``c_poll`` a better fit for many real control-system and embedded
+integration patterns, for example:
+
+- cyclic scan loops that read current inputs every control tick
+- PLC-like logic where transition conditions are evaluated against the current
+  sampled world state
+- embedded control systems where "event active this cycle" is derived from
+  input pins, sensors, fieldbus snapshots, or shared process images
+- integrations that do not already have a clean external event-dispatch layer
+
+In practical terms, choose ``c`` when your surrounding system already has a
+clear event aggregation or dispatch step and you want to feed explicit event
+sets into the runtime. Choose ``c_poll`` when your system is naturally
+cycle-driven and event truth is better expressed as polled checks over the
+current input snapshot.
+
+Test And Consolidate
+--------------------
+
+Testing Templates
+^^^^^^^^^^^^^^^^^
+
+Template work should be tested at multiple levels.
+
+Start with a template-author workflow, not with a giant machine:
+
+1. prepare one tiny DSL sample for the exact behavior you are implementing
+2. render into a temporary output directory
+3. inspect the generated file names, structure, indentation, and variable mapping
+4. if this is a runtime template, actually import and execute the generated code
+5. turn that sample into a regression test before expanding the template further
+
+Do not debug a new template against a large state machine first. Template bugs
+and model complexity compound very quickly.
+
+Renderer-Level Tests
+~~~~~~~~~~~~~~~~~~~~
+
+Use :class:`pyfcstm.render.StateMachineCodeRenderer` directly when you want to
+check file output for a controlled model.
+
+Typical checks:
+
+- expected files exist
+- copied static files stay unchanged
+- rendered files contain the expected text
+- custom ``expr_styles`` and ``stmt_styles`` behave correctly
+
+Generated-Artifact Tests
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+For runtime templates, do not stop at string comparison. Import the generated
+artifact and execute it.
+
+Typical checks:
+
+- generated Python files import successfully
+- generated public API matches the template contract
+- generated code behaves correctly on simple state-machine scenarios
+
+Behavior-Alignment Tests
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+If a template is intended to match :class:`pyfcstm.simulate.SimulationRuntime`,
+keep alignment tests that compare both runtimes on the same DSL samples.
+
+This level catches semantic drift in:
+
+- transition selection
+- initial transitions
+- pseudo-state handling
+- aspect actions
+- hot start
+- temporary-variable scope
+
+CLI End-To-End Tests
+~~~~~~~~~~~~~~~~~~~~
+
+Add CLI tests when your template is intended to be used through the command line:
+
+- generate with ``pyfcstm generate -t ./your_template``
+- verify output files exist
+- import or run the generated artifact
+- check one minimal behavior path
+
+When template debugging gets stuck, a good triage order is:
+
+1. check whether the helper or style in ``config.yaml`` already does what you think it does
+2. check whether the object you pass into ``expr_render`` / ``stmt_render`` / ``stmts_render`` is the right one
+3. if you suspect the DSL block shape rather than the target-language rendering, echo it first with ``operation_stmt_render`` or ``operation_stmts_render``
+4. if the generated file text looks correct but behavior is wrong, move to generated-artifact tests
+
+When To Put Logic Where
+^^^^^^^^^^^^^^^^^^^^^^^
+
+A common source of template sprawl is putting logic in the wrong place.
+
+Use ``config.yaml`` helpers when:
+
+- the logic is naming-related
+- the same helper is reused across multiple files
+- the template would otherwise duplicate long Jinja expressions
+
+Use Jinja2 macros when:
+
+- the logic is mostly structural
+- a repeated block has many lines
+- the output layout, not the helper interface, is the main concern
+
+Inline logic in a ``.j2`` file only when:
+
+- it is local to that file
+- it is short
+- extracting it would make the template harder to read
 
 Summary
------------------------------------------------------------------
+^^^^^^^
 
-Through this tutorial, you should have gained a deep understanding of all aspects of the state machine code generator template system:
+The key ideas for template authors are:
 
-1. **Architecture Principles**: Understand the three-layer architecture of data-template-rendering
-2. **Configuration System**: Master configuration methods for expression styles, global variables, and filters
-3. **Template Syntax**: Proficiently use various Jinja2 control structures and expressions
-4. **State Machine Model**: Understand usage of core objects like states, transitions, events
-5. **Practical Techniques**: Learn methods for debugging, optimizing, and maintaining templates
+- think in terms of ``StateMachine`` model in, file tree out
+- keep renderer-facing logic in ``config.yaml``
+- keep repeated structure in macros
+- learn the official Jinja material for syntax depth, then apply pyfcstm-specific rules here
+- test templates at renderer, generated-artifact, and CLI levels when needed
 
-The main advantages of this system are:
-
-- **Separation of Concerns**: State machine logic separated from code implementation
-- **High Configurability**: Supports multiple output styles and coding standards
-- **Easy Extensibility**: Can easily add new templates and rendering rules
-- **Consistency Guarantee**: Automatically ensures generated code complies with standards
-
-Start creating your own templates and enjoy the efficiency improvements from automated code generation!
+Once these pieces are clear, writing a new template becomes a disciplined
+engineering task rather than trial-and-error Jinja editing.

@@ -33,7 +33,7 @@ import textwrap
 
 import jinja2
 
-from .text import normalize, to_identifier
+from .text import normalize, to_identifier, to_c_identifier
 
 
 def add_builtins_to_env(env: jinja2.Environment) -> jinja2.Environment:
@@ -135,6 +135,7 @@ def add_settings_for_env(env: jinja2.Environment) -> jinja2.Environment:
     2. Add text-processing filters:
        - ``normalize``: :func:`pyfcstm.utils.text.normalize`
        - ``to_identifier``: :func:`pyfcstm.utils.text.to_identifier`
+       - ``to_c_identifier``: :func:`pyfcstm.utils.text.to_c_identifier`
     3. Add a global helper:
        - ``indent``: :func:`textwrap.indent`
     4. Add operating system environment variables as globals (only if the name
@@ -160,6 +161,7 @@ def add_settings_for_env(env: jinja2.Environment) -> jinja2.Environment:
     env = add_builtins_to_env(env)
     env.filters['normalize'] = normalize
     env.filters['to_identifier'] = to_identifier
+    env.filters['to_c_identifier'] = to_c_identifier
     env.globals['indent'] = textwrap.indent
     for key, value in os.environ.items():
         if key not in env.globals:

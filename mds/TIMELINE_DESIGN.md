@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 修改内容 | 作者 |
 |------|------|----------|------|
+| 0.1.6 | 2026-03-22 | 收敛状态推导实现方案：有限复用 `SimulationRuntime` 作为单步状态迁移推导器，通过默认空 cycle 求初始稳定状态，通过热启动 + 单次 cycle 求后继稳定状态 | Codex |
 | 0.1.5 | 2026-03-22 | 补充完整示例：多机 fcstm DSL、timeline YAML，以及不同关系类型下的预期 SAT/UNSAT 结果 | Codex |
 | 0.1.4 | 2026-03-22 | 扩充形式化验证算法细节，补充 timeline 约束生成流程与 Python/Z3 编码骨架 | Codex |
 | 0.1.3 | 2026-03-22 | 允许空 step 作为逻辑时间节点，删除长期演化相关铺垫，明确 timeline 只借用 fcstm 的语法与 model，不复用 simulate/verify | Codex |
@@ -285,6 +286,7 @@ pyfcstm/timeline/
 这些 `T_i` 满足：
 
 - `T_i in Real`
+- `T_0 >= 0`
 - `T_0 <= T_1 <= ... <= T_n`
 
 这里需要注意：
@@ -579,9 +581,17 @@ class TimelineConstraintQuery:
 
 建议语义为：
 
-- `SetInput(x=v)` 在该 step 执行完成后生效
-- 后续 step 可以看到新值
+- 每个 step 先继承上一时刻的输入快照
+- 再把该 step 内的所有 `SetInput` 应用到当前时间点的输入快照上
+- 该 step 的 guard 求值和事件处理看到的是这个更新后的输入快照
+- step 执行完成后的输入快照等于这个更新后的输入快照
 - 直到下一次 `SetInput(x=...)` 之前，该值保持不变
+
+也就是说：
+
+- `SetInput` 是这个时间点发生的环境变化
+- 它对这个 step 的状态迁移判定立即可见
+- 而不是必须等到下一个 step 才可见
 
 ---
 
@@ -589,7 +599,7 @@ class TimelineConstraintQuery:
 
 ## 10.1 需要一个“单刺激闭包求值器”
 
-timeline 不需要 cycle runtime，但需要一个新的基础能力：
+timeline 不需要把 `simulate` 当成主执行框架，但确实需要一个基础能力：
 
 - 给定一个稳定配置 `q`
 - 给定一个输入快照 `u`
@@ -600,17 +610,47 @@ timeline 不需要 cycle runtime，但需要一个新的基础能力：
 
 - `step(machine, q, u, s) -> q'`
 
+本设计现在不打算手写这一整套闭包求值逻辑，而是采用一个更务实的实现方案：
+
+- 使用 `pyfcstm.simulate.runtime.SimulationRuntime`
+- 但只把它当成“单步状态迁移推导器”
+- 不复用它的长期运行实例，不复用 REPL/batch，不复用 cycle 计数语义
+
+具体做法是：
+
+1. 初始稳定配置求解
+   - 创建默认初始化的 `SimulationRuntime(machine)`
+   - 执行一次空 `cycle()`
+   - 读取 `runtime.current_state` 与 `runtime.vars`
+2. 后继稳定配置求解
+   - 已知上一个时间点后的稳定状态路径 `q_prev`
+   - 已知上一个时间点后的变量快照 `vars_prev`
+   - 先把本 step 的 `SetInput` 应用到 `vars_prev`，得到 `vars_step`
+   - 再创建新的 `SimulationRuntime(machine, initial_state=q_prev, initial_vars=vars_step)`
+   - 将本 step 绑定后的事件列表传给 `cycle(events)`
+   - 读取新的 `runtime.current_state` 与 `runtime.vars`
+
+因此 runtime 在 timeline 里的角色不是“运行整个时间线”，而是：
+
+- 每次都从一个已知稳定边界热启动
+- 只跑一个 step 对应的一次 `cycle()`
+- 读出结果后立刻丢弃 runtime 对象
+
 这里的 `s.actions` 可以包含：
 
 - 空动作
 - 输入更新
 - 事件触发
 
-但真正导致状态迁移的通常只有：
+在当前语义下：
 
-- `emit`
+- 输入更新先形成该时间点的环境快照
+- 事件在这个快照上参与本次 `cycle()` 的转移选择
 
-输入更新更多是为了改变 guard 所见环境。
+因此即使 step 没有事件，只有输入变化：
+
+- 也仍然需要执行一次 `cycle()`
+- 因为 guard-only transition 可能会在新的输入快照下发生
 
 ## 10.2 外部值在 fcstm 状态机里的处理方式
 
@@ -633,7 +673,8 @@ timeline 不需要 cycle runtime，但需要一个新的基础能力：
 1. 参与验证的模型继续使用现成的 `pyfcstm.model.StateMachine` 对象表达。
 2. timeline 侧通过 `input_map` 指出哪些名字属于外部输入。
 3. timeline 自己对 model 做静态检查，确保这些名字不会出现在任何写位置。
-4. guard 求值时，将这些名字绑定到 timeline 当前切面的输入值。
+4. 在 timeline 实现里，把这些外部输入值并入 runtime 的 `initial_vars` 快照。
+5. guard 求值时，由 runtime 按正常变量读取路径看到这些值。
 
 这里的“写位置”至少包括：
 
@@ -643,21 +684,26 @@ timeline 不需要 cycle runtime，但需要一个新的基础能力：
 
 第一阶段由于本来就限制了无 concrete operation / 无 effect，因此这个检查会更简单。
 
-## 10.3 为什么不复用 simulate/verify
+## 10.3 为什么只有限复用 simulate.runtime，而不复用 simulate/verify 框架
 
 现有 runtime 的问题不是“层次语义错了”，而是：
 
-- 它把运行组织成 cycle
-- `during` / stoppable / validation 都围绕 cycle 展开
+- 它的主要组织方式是长生命周期 `cycle` 执行
+- REPL/batch/simulate 的用户模型也是“不断前进的运行时实例”
+- `verify` 则是另一套以搜索为中心的框架
 
-timeline 第一阶段不需要这些。
+timeline 不需要这些大框架，但可以务实地借 runtime 做一件事：
+
+- 从一个已知稳定配置和变量快照出发
+- 推导“本 step 之后的下一个稳定配置”
 
 因此本设计明确采用：
 
-- 只借用 fcstm 的 parser 和 model object 表达状态机语义
-- 不复用 `pyfcstm.simulate`
+- 借用 fcstm 的 parser 和 model object 表达状态机语义
 - 不复用 `pyfcstm.verify`
-- timeline 自己实现“场景解释 + 模型检查 + SMT 编码”
+- 不复用 `pyfcstm.simulate` 的 REPL / batch / 长生命周期运行模式
+- 仅有限复用 `pyfcstm.simulate.runtime.SimulationRuntime` 作为一次性单步状态推导器
+- timeline 自己负责“场景解释 + 多机绑定 + 区域化 + SMT 编码 + 反例重建”
 
 ## 10.4 第一阶段建议支持的迁移类型
 
@@ -682,43 +728,65 @@ timeline 第一阶段不需要这些。
 
 ## 11.1 总体思路
 
-对一个给定的 timeline 场景，不做 BFS，而是直接建立一组符号变量和约束：
+对一个给定的 timeline 场景，不做 BFS，而是先做两层分工：
 
-- 时间变量
-- 输入快照变量
-- 多个状态机在各观测切面的配置变量
-- 状态转移一致性约束
-- 坏性质约束
+1. 离散状态推导层
+   - 按 step 顺序，利用 `SimulationRuntime` 逐步推导每台机器在各个 `post_step` 切面上的稳定状态与变量快照
+   - 这一步是具体执行，不是 SMT 求解
+2. 连续时间约束层
+   - 对时间变量、区间是否存在、关系是否在同一区域命中等内容建立 Z3 约束
+   - 这一步才交给求解器
 
 然后调用 Z3：
 
 - `sat` 则构造反例
 - `unsat` 则得到不可满足结论
 
+在当前第一阶段约束下，由于：
+
+- step 顺序固定
+- `SetInput` 值是显式的
+- 外部输入初始值是显式的
+- 时间流逝本身不会触发离散迁移
+
+所以每台机器的离散状态轨迹实际上可以先被具体推导出来，SMT 主要负责：
+
+- 时间约束是否可满足
+- 哪些 `open_interval` 真实存在
+- 某些关系是否在同一个时间区域上被同时命中
+
 ## 11.1.1 形式化验证目标
 
-在第一阶段问题边界内，可以把整个问题写成一个有限约束系统：
+在第一阶段问题边界内，可以把整个问题写成一个“两段式”有限问题：
 
 - 已知：
   - 有限个 step
   - 有限个外部输入
   - 有限个状态机
-  - 每个状态机有限个稳定配置
+  - 每个状态机在该场景下可被 runtime 具体推导出的稳定状态序列
 - 求：
-  - 是否存在一组时间取值、输入轨迹和机器配置轨迹
+  - 是否存在一组时间取值
   - 使得所有场景约束都成立
   - 且某个关系约束在某个观测点被违反
 
 因此，验证问题可以归约为：
 
 ```text
-Exists time_values, input_values, machine_configs :
+Exists time_values :
     ScenarioConstraints
-    and MachineTransitionConstraints
+    and PrecomputedMachineOccupancy
     and RelationViolation
 ```
 
-也就是一个标准的 SMT satisfiability 问题。
+其中：
+
+- `PrecomputedMachineOccupancy`
+  - 不是由 solver 搜索出来的
+  - 而是 timeline 在进入 SMT 前，通过 runtime 前向解释得到的离线事实
+
+也就是说，第一阶段更准确地说是：
+
+- “离散状态前向解释 + 连续时间 SMT 判定”
 
 如果结果为：
 
@@ -739,12 +807,12 @@ Exists time_values, input_values, machine_configs :
 而是：
 
 - 先把场景长度固定为 `N = len(steps)`
-- 再对每个机器、每个观测点直接建立配置变量
-- 把“这个 step 之后配置应该是什么”一次性展开成约束
+- 先前向解释出每个机器在各 `post_step` 切面上的稳定配置
+- 再把时间与区域相关部分一次性展开成约束
 
 所以它更接近：
 
-- bounded model checking
+- bounded timed consistency checking
 
 而不是：
 
@@ -757,22 +825,26 @@ Exists time_values, input_values, machine_configs :
 1. 解析 `.fcstm`，得到 `StateMachine` model object。
 2. 对所有机器做支持子集检查。
 3. 归一化 scenario YAML，得到有序 `steps`、输入定义、时间约束、bindings、relations。
-4. 为每个机器预编译“稳定配置集合”和“按声明顺序的候选迁移表”。
-5. 创建 Z3 变量：
+4. 使用 runtime 逐步推导每个机器在各 `post_step` 切面上的稳定状态与变量快照。
+5. 基于这些离散状态结果，离线计算各状态谓词的命中区域。
+6. 创建 Z3 变量：
    - 时间变量
-   - 输入快照变量
-   - 配置变量
+   - 区间存在性相关布尔条件
    - 关系命中布尔量
-6. 生成场景约束：
+7. 生成场景约束：
    - 时间约束
-   - 初始输入
-   - `set` 传播
-7. 生成机器约束：
-   - 初始配置
-   - 每个 step 的离散迁移关系
+   - 必要时的输入一致性约束
 8. 生成关系违规约束并调用求解器。
 
-这 8 步里，第 4 步和第 7 步是实现核心。
+这 8 步里，第 4 步和第 8 步是实现核心。
+
+需要说明的是：
+
+- 下文 `11.2` 到 `11.8` 里仍然保留了一套更一般的 SMT 编码草图
+- 这套草图适合将来需要把更多内容也做成符号变量时参考
+- 但对当前第一阶段实现，优先推荐的路径是：
+- 先用 runtime 预解释出离散状态轨迹
+- 再把时间与区域关系交给 Z3
 
 ## 11.1.4 Python/Z3 顶层骨架
 
@@ -1165,6 +1237,7 @@ def build_relation_violation_over_regions(compiled, relation):
 
 基础约束：
 
+- 首个时间点非负
 - step 顺序约束
 - 用户声明的 `min/max delay`
 
@@ -1177,9 +1250,15 @@ def build_relation_violation_over_regions(compiled, relation):
 
 此外，对相邻 step 还需自动加入：
 
+- `T_0 >= 0`
 - `T_i <= T_{i+1}`
 
-这样就把“step 有序，但时间可相等”的语义固定下来。
+这样就把：
+
+- 时间不允许为负
+- step 有序，但时间可相等
+
+这两层语义都固定下来。
 
 ## 11.2.1 时间变量的 Python/Z3 表达
 
@@ -1199,6 +1278,8 @@ def build_time_vars(scenario: TimelineScenario) -> dict[str, z3.ArithRef]:
 ```python
 def build_monotonic_time_constraints(scenario, time_vars):
     constraints = []
+    if scenario.steps:
+        constraints.append(time_vars[scenario.steps[0].time_symbol] >= z3.RealVal('0'))
     for left, right in zip(scenario.steps, scenario.steps[1:]):
         constraints.append(time_vars[left.time_symbol] <= time_vars[right.time_symbol])
     return constraints
@@ -1613,18 +1694,21 @@ def build_machine_step_constraints(
 
 在当前第一阶段语义里，`SetInput` 对输入快照的更新是：
 
-- `step_i` 执行前看 `Input[:, i]`
-- `step_i` 执行后产生 `Input[:, i+1]`
+- `step_i` 先继承上一切面的输入快照
+- 再应用本 step 的 `set`，形成当前时间点可见的输入快照
+- `cycle()` 在这个更新后的输入快照上执行
+- step 结束后，该输入快照继续传给下一切面
 
 因此对“只包含输入更新、不含事件”的 step 来说：
 
 - 若某台机器在当前切面 `i` 上存在 guard-only 转换且 guard 已经满足，则它可以在该 step 上迁移
-- 若 guard 需要依赖本 step 刚刚设置的新值，则这类迁移会在后续 step 上发生
+- 若 guard 需要依赖本 step 刚刚设置的新值，则这类迁移也可以在该 step 上立即发生
 
-这点非常关键，因为它让下面这种表达成为可能：
+空 step 仍然有意义，但它的作用现在主要是：
 
-- `s2` 先更新外部输入
-- `s3` 再在更新后的输入快照上触发 guard-only 转换
+- 作为逻辑时间锚点
+- 参与时间约束
+- 或者在没有新的输入变化和事件时，再评估一次当前快照下的 guard-only 行为
 
 ## 11.6.1 空 step 的机器约束
 
@@ -1976,6 +2060,10 @@ pyfcstm timeline \
   - 状态机解析
 - `pyfcstm.model`
   - 状态、转换、事件、层次结构
+- `pyfcstm.simulate.runtime`
+  - 仅用于：
+  - 默认初始化后空 `cycle()` 求初始稳定配置
+  - 热启动后单次 `cycle()` 求某个 step 的后继稳定配置
 - `pyfcstm.solver.expr`
   - 将 guard 转为 Z3
 - `pyfcstm.solver.solve`
@@ -1985,19 +2073,20 @@ pyfcstm timeline \
 
 - 连续时间场景元模型
 - 场景归一化
-- timeline 专用配置求值器
+- 基于 runtime 的单步状态推导封装
 - 多机绑定与反例重建
 
 ## 15.3 明确不复用的部分
 
 - `pyfcstm.verify.search`
-- `pyfcstm.simulate.runtime`
+- `pyfcstm.entry.simulate`
+- `pyfcstm.simulate` 的 REPL / batch / 长生命周期运行框架
 
 原因是：
 
 - 它们的主语义中心是 `cycle`
 - timeline 问题的主轴是“step + 连续时间约束 + 场景约束”
-- 本需求只想借用 fcstm 的语法与 model 表达语义，不想被现有 simulate/verify 的实现框架牵着走
+- 本需求只想借用 runtime 的状态迁移推导能力，不想被现有 simulate/verify 的整体执行框架牵着走
 
 ---
 
@@ -2030,7 +2119,7 @@ pyfcstm timeline \
 
 这一阶段先不碰 SMT。
 
-## 16.3 第三阶段：实现单机“单刺激闭包求值器”
+## 16.3 第三阶段：实现基于 runtime 的单机单步推导器
 
 目标：
 
@@ -2044,7 +2133,23 @@ pyfcstm timeline \
 - 保持 transition declaration order 语义
 - 支持 hierarchy / init / pseudo 闭包
 
-这是整个 timeline 的关键基础。
+实现方式：
+
+1. 初始状态推导
+   - `runtime = SimulationRuntime(machine)`
+   - `runtime.cycle([])`
+   - 读取 `runtime.current_state` 与 `runtime.vars`
+2. 单 step 推导
+   - 根据上一时刻快照生成新的 `initial_vars`
+   - `runtime = SimulationRuntime(machine, initial_state=prev_state_path, initial_vars=initial_vars)`
+   - `runtime.cycle(bound_events)`
+   - 读取新的 `runtime.current_state` 与 `runtime.vars`
+3. runtime 对象不复用
+   - 每次推导都新建一个 runtime
+   - 只做一次 `cycle()`
+   - 读取结果后立即丢弃
+
+这是整个 timeline 的关键基础，但不需要自己重写一套复杂的层次状态迁移执行器。
 
 ## 16.4 第四阶段：实现多机 SMT 编码
 
@@ -2077,7 +2182,7 @@ pyfcstm timeline \
 - 多机同场景禁配关系不可达
 - binding 名称不同但语义相同
 - composite state 目标判断
-- 输入更新但无事件时状态保持不变
+- 输入更新但无事件时，guard-only 转换仍可立即发生
 
 ---
 
@@ -2126,12 +2231,12 @@ pyfcstm timeline \
 
 1. 将此类问题独立为 `pyfcstm.timeline`，不要放在 `verify` 下。
 2. 第一阶段只支持“纯事件驱动 + 无内部写变量 + guard 只读外部输入 + 分段常值输入”的子集。
-3. 时间采用“有序 step + 连续时间变量 + 相邻 step 自动满足 `T_i <= T_{i+1}`”的语义。
+3. 时间采用“有序 step + 连续时间变量 + 首个时间点自动满足 `T_0 >= 0` + 相邻 step 自动满足 `T_i <= T_{i+1}`”的语义。
 4. 不按秒展开，也不按 cycle 展开，而是按场景变化点建立 SMT 约束。
 5. 所有外部量都必须显式给出初始值，第一阶段不引入 `assume`。
 6. 外部量在语义上按只读 environment input 处理，工程上先由 timeline 侧通过 binding 和静态检查实现。
 7. 允许空 step 作为纯逻辑时间节点存在，并参与时间约束。
-8. 只借用 fcstm 的语法与 model object，不复用 simulate/verify 的运行与验证框架。
+8. 以 fcstm 的语法与 model object 为主语义载体，不复用 verify；对 simulate 仅有限复用 `SimulationRuntime` 作为一次性单步状态推导器。
 9. 先用 YAML sidecar 描述场景，不急着修改主 DSL。
 10. 先把“多机状态组合约束验证”做实，不为长期演化额外铺垫。
 
@@ -2290,7 +2395,6 @@ constraints:
   - "0 <= t1 - t0"
   - "5 <= t2 - t1 <= 20"
   - "t3 - t2 == 0"
-  - "1 <= t3 - t2"
 
 bindings:
   aircraft:
@@ -2317,10 +2421,11 @@ bindings:
 - `s2` 时，高度先被设置到 `1800`
 - 通过 `t3 - t2 == 0` 表示：
   - `s2` 和 `s3` 发生在同一个连续时间点
-  - 但顺序仍然是先 `set`、后进入下一个空 step
-- `s3` 是一个空 step，用于让 guard-only 转换在更新后的输入快照上发生
+  - 但顺序仍然是先 `s2`、后 `s3`
+- 在当前语义下，`s2` 的输入更新对该 step 立即可见，因此 guard-only 转换已经可以在 `s2` 上发生
+- `s3` 在这里只是一个额外的逻辑时间锚点
 
-在 `s3` 之后：
+在 `s2` 之后，且到 `s3` 之前保持不变：
 
 - `Aircraft` 进入 `GearLowering`
 - `Controller` 进入 `GearCommanded`
@@ -2387,12 +2492,13 @@ bindings:
   - `Controller = Approach`
   - `Monitor = Normal`
 - `s2` 时高度被设置到 `2300`
-- `s3` 是空 step，guard-only 转换在这里基于更新后的输入快照被评估
+- 在当前语义下，这个新高度对 `s2` 的 guard 判定立即可见
   - `Aircraft` 的 `height <= 2000` 不成立，所以不会进入 `GearLowering`
   - `Controller` 的 `height <= 2500` 成立，所以会进入 `GearCommanded`
   - `Monitor` 的 `height <= 1800` 不成立，所以不会进入 `WarningIssued`
+- `s3` 只是一个空 step，用于额外提供时间锚点，不改变上述结论
 
-因此在 `s3` 之后只有：
+因此在 `s2` 之后，且到 `s3` 之前只有：
 
 - `Controller = GearCommanded`
 
@@ -2528,7 +2634,7 @@ bindings:
 - 在这个开区间内，两台机器会持续停留在：
   - `Aircraft.Descending`
   - `Controller.Approach`
-- 直到 `s3` 的 guard-only 转换在新输入快照上把它们推进到后续状态
+- 到 `s2` 时，新的输入快照立即生效，guard-only 转换会把它们推进到后续状态
 
 ## 20.3 示例性质与期望结果
 
@@ -2741,8 +2847,9 @@ relations:
    - 三个目标谓词仍都为假
 3. `post_step(s2)`：
    - 高度变为 `2300`
-   - 还未发生 guard-only 迁移
-   - 三个目标谓词仍都为假
+   - `Aircraft.GearLowering` 为假，因为 `2300 <= 2000` 不成立
+   - `Controller.GearCommanded` 为真，因为 `2300 <= 2500` 成立
+   - `Monitor.WarningIssued` 为假，因为 `2300 <= 1800` 不成立
 4. `post_step(s3)`：
    - `Aircraft.GearLowering` 为假，因为 `2300 <= 2000` 不成立
    - `Controller.GearCommanded` 为真，因为 `2300 <= 2500` 成立

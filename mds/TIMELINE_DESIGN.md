@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 修改内容 | 作者 |
 |------|------|----------|------|
+| 0.1.4 | 2026-03-22 | 扩充形式化验证算法细节，补充 timeline 约束生成流程与 Python/Z3 编码骨架 | Codex |
 | 0.1.3 | 2026-03-22 | 允许空 step 作为逻辑时间节点，删除长期演化相关铺垫，明确 timeline 只借用 fcstm 的语法与 model，不复用 simulate/verify | Codex |
 | 0.1.2 | 2026-03-22 | 收紧外部输入设计：要求所有外部量显式给初始值，移除 `assume`，明确外部量在 fcstm 中按只读 environment input 处理 | Codex |
 | 0.1.1 | 2026-03-22 | 扩展为任意多个状态机与广义互斥/禁配关系，移除“微步”设计，统一改为带顺序语义的 step | Codex |
@@ -688,6 +689,120 @@ timeline 第一阶段不需要这些。
 - `sat` 则构造反例
 - `unsat` 则得到不可满足结论
 
+## 11.1.1 形式化验证目标
+
+在第一阶段问题边界内，可以把整个问题写成一个有限约束系统：
+
+- 已知：
+  - 有限个 step
+  - 有限个外部输入
+  - 有限个状态机
+  - 每个状态机有限个稳定配置
+- 求：
+  - 是否存在一组时间取值、输入轨迹和机器配置轨迹
+  - 使得所有场景约束都成立
+  - 且某个关系约束在某个观测点被违反
+
+因此，验证问题可以归约为：
+
+```text
+Exists time_values, input_values, machine_configs :
+    ScenarioConstraints
+    and MachineTransitionConstraints
+    and RelationViolation
+```
+
+也就是一个标准的 SMT satisfiability 问题。
+
+如果结果为：
+
+- `sat`
+  - 存在反例时间线
+- `unsat`
+  - 在当前场景模板允许的全部具体实例下，关系约束都不会被违反
+
+## 11.1.2 不做搜索树，而做一次性约束展开
+
+这里的关键设计选择是：
+
+- **不做 BFS**
+- **不做 DFS**
+- **不按秒枚举**
+- **不按 cycle 推进**
+
+而是：
+
+- 先把场景长度固定为 `N = len(steps)`
+- 再对每个机器、每个观测点直接建立配置变量
+- 把“这个 step 之后配置应该是什么”一次性展开成约束
+
+所以它更接近：
+
+- bounded model checking
+
+而不是：
+
+- symbolic graph exploration
+
+## 11.1.3 整体算法流程
+
+建议把实现拆成下面 8 个阶段：
+
+1. 解析 `.fcstm`，得到 `StateMachine` model object。
+2. 对所有机器做支持子集检查。
+3. 归一化 scenario YAML，得到有序 `steps`、输入定义、时间约束、bindings、relations。
+4. 为每个机器预编译“稳定配置集合”和“按声明顺序的候选迁移表”。
+5. 创建 Z3 变量：
+   - 时间变量
+   - 输入快照变量
+   - 配置变量
+   - 关系命中布尔量
+6. 生成场景约束：
+   - 时间约束
+   - 初始输入
+   - `set` 传播
+7. 生成机器约束：
+   - 初始配置
+   - 每个 step 的离散迁移关系
+8. 生成关系违规约束并调用求解器。
+
+这 8 步里，第 4 步和第 7 步是实现核心。
+
+## 11.1.4 Python/Z3 顶层骨架
+
+下面是一版建议的顶层结构，目的是把“约束在什么阶段加入 solver”讲清楚：
+
+```python
+import z3
+
+
+def verify_timeline_constraints(query: TimelineConstraintQuery):
+    solver = z3.Solver()
+
+    compiled = compile_timeline_problem(query)
+
+    solver.add(*compiled.time_constraints)
+    solver.add(*compiled.input_constraints)
+    solver.add(*compiled.machine_constraints)
+    solver.add(compiled.violation_constraint)
+
+    result = solver.check()
+    if result == z3.sat:
+        model = solver.model()
+        return build_counterexample(compiled, model)
+    elif result == z3.unsat:
+        return build_unsat_result(compiled)
+    else:
+        return build_unknown_result(compiled)
+```
+
+其中 `compile_timeline_problem()` 不应该只是“做一点点拼装”，而应该负责：
+
+- 完整预处理
+- 全量变量创建
+- 全量约束构建
+- 形成一个可以直接 `solver.add(...)` 的编译结果对象
+
 ## 11.2 时间变量
 
 对每个 step `i` 对应的 `time_symbol` 创建：
@@ -712,6 +827,43 @@ timeline 第一阶段不需要这些。
 
 这样就把“step 有序，但时间可相等”的语义固定下来。
 
+## 11.2.1 时间变量的 Python/Z3 表达
+
+建议把每个 `time_symbol` 映射到一个 `z3.Real`：
+
+```python
+def build_time_vars(scenario: TimelineScenario) -> dict[str, z3.ArithRef]:
+    time_vars = {}
+    for step in scenario.steps:
+        if step.time_symbol not in time_vars:
+            time_vars[step.time_symbol] = z3.Real(step.time_symbol)
+    return time_vars
+```
+
+相邻 step 的顺序约束：
+
+```python
+def build_monotonic_time_constraints(scenario, time_vars):
+    constraints = []
+    for left, right in zip(scenario.steps, scenario.steps[1:]):
+        constraints.append(time_vars[left.time_symbol] <= time_vars[right.time_symbol])
+    return constraints
+```
+
+用户声明的时间差约束：
+
+```python
+def build_temporal_constraints(scenario, time_vars):
+    constraints = []
+    for item in scenario.temporal_constraints:
+        dt = time_vars[item.right_time_symbol] - time_vars[item.left_time_symbol]
+        if item.min_delay is not None:
+            constraints.append(dt >= z3.RealVal(str(item.min_delay)))
+        if item.max_delay is not None:
+            constraints.append(dt <= z3.RealVal(str(item.max_delay)))
+    return constraints
+```
+
 ## 11.3 输入变量
 
 对每个场景输入 `x`，在每个观测切面 `k` 上创建：
@@ -732,6 +884,110 @@ timeline 第一阶段不需要这些。
 
 - `SetInput` 的 `value` 只能是常量或简单符号字面量
 
+## 11.3.1 输入快照索引
+
+建议把“第 `k` 个观测切面的输入值”做成显式变量。
+
+如果场景一共有 `N` 个 step，则第一阶段最简单的索引方案是：
+
+- `k = 0..N`
+- `k=0` 表示任何 step 执行前的初始快照
+- `k=i+1` 表示 `step_i` 执行后的快照
+
+这样输入轨迹和配置轨迹都可以共用同一个切面索引。
+
+## 11.3.2 输入变量的 Python/Z3 表达
+
+```python
+def make_input_var(name: str, index: int, typ: str):
+    if typ == 'int':
+        return z3.Int(f'{name}__k{index}')
+    elif typ == 'float':
+        return z3.Real(f'{name}__k{index}')
+    elif typ == 'bool':
+        return z3.Bool(f'{name}__k{index}')
+    else:
+        raise ValueError(f'Unsupported input type: {typ}')
+
+
+def build_input_snapshot_vars(scenario: TimelineScenario):
+    num_cuts = len(scenario.steps) + 1
+    vars_by_name = {}
+    for item in scenario.input_domains:
+        vars_by_name[item.input_name] = [
+            make_input_var(item.input_name, k, item.type)
+            for k in range(num_cuts)
+        ]
+    return vars_by_name
+```
+
+初始值与域约束：
+
+```python
+def build_initial_input_constraints(scenario, input_vars):
+    constraints = []
+    for item in scenario.input_domains:
+        x0 = input_vars[item.input_name][0]
+        init = item.initial_value
+        if item.type == 'bool':
+            constraints.append(x0 == z3.BoolVal(bool(init)))
+        elif item.type == 'int':
+            constraints.append(x0 == z3.IntVal(int(init)))
+        elif item.type == 'float':
+            constraints.append(x0 == z3.RealVal(str(init)))
+        if item.default_constraint is not None:
+            # 这里的 parse_input_constraint_to_z3 需要把名字绑定到 k=0 快照
+            constraints.append(parse_input_constraint_to_z3(item.default_constraint, {
+                name: input_vars[name][0] for name in input_vars
+            }))
+    return constraints
+```
+
+## 11.3.3 `set` 的传播算法
+
+设 `step_i` 执行前快照为 `Input[:, i]`，执行后快照为 `Input[:, i+1]`。
+
+那么每个输入名 `x` 都满足：
+
+- 如果 `step_i` 对 `x` 有 `set`，则 `x_{i+1} = assigned_value`
+- 否则 `x_{i+1} = x_i`
+
+Python/Z3 可直接写成：
+
+```python
+def build_step_input_constraints(scenario, input_vars):
+    constraints = []
+
+    for i, step in enumerate(scenario.steps):
+        assigned = {}
+        for action in step.actions:
+            if isinstance(action, SetInput):
+                assigned[action.input_name] = action.value
+
+        for input_name, snapshots in input_vars.items():
+            before = snapshots[i]
+            after = snapshots[i + 1]
+            if input_name in assigned:
+                value = assigned[input_name]
+                if isinstance(value, bool):
+                    constraints.append(after == z3.BoolVal(value))
+                elif isinstance(value, int):
+                    constraints.append(after == z3.IntVal(value))
+                elif isinstance(value, float):
+                    constraints.append(after == z3.RealVal(str(value)))
+                else:
+                    raise ValueError(f'Unsupported set value: {value!r}')
+            else:
+                constraints.append(after == before)
+
+    return constraints
+```
+
+空 step 在这里天然成立：
+
+- 没有任何 `set`
+- 所以所有输入都自动满足 `after == before`
+
 ## 11.4 状态变量
 
 不要直接把完整 active stack 都做成显式 SMT 结构。
@@ -749,6 +1005,72 @@ timeline 第一阶段不需要这些。
 表示：
 
 - 机器 `m` 在第 `k` 个观测切面时所在的稳定配置编号
+
+## 11.4.1 为什么用“稳定配置编号”
+
+直接把 active stack 做成 SMT 结构并不是不可能，但第一阶段没有必要。
+
+对当前需求，更经济的方案是：
+
+1. 对每个机器离线枚举所有可作为稳定落点的配置。
+2. 给每个配置一个整数编号。
+3. 只在 SMT 中跟踪“当前处于哪个编号”。
+
+这样 guard 判断依然由外部输入决定，但层次状态判断就只需查一张离线表。
+
+## 11.4.2 稳定配置集合的预编译
+
+第一阶段建议把一个稳定配置定义成：
+
+- 一个稳定叶状态
+- 加上该叶状态唯一对应的 active ancestor 集合
+
+由于当前模型子集里没有内部变量写，也没有时间流逝触发跳转，因此：
+
+- 同一个稳定叶状态就足以代表一个稳定配置
+
+于是第一阶段可进一步简化为：
+
+- 稳定配置编号 == 稳定叶状态编号
+
+如果未来要支持更复杂语义，再把“配置编号”和“叶状态编号”拆开。
+
+## 11.4.3 配置变量的 Python/Z3 表达
+
+```python
+def build_config_vars(machines: dict[str, StateMachine], num_cuts: int):
+    config_vars = {}
+    for alias in machines:
+        config_vars[alias] = [
+            z3.Int(f'Q__{alias}__k{k}')
+            for k in range(num_cuts)
+        ]
+    return config_vars
+```
+
+每台机器还应附带一组“合法编号范围”约束：
+
+```python
+def build_config_domain_constraints(compiled_machine, config_seq):
+    max_id = len(compiled_machine.stable_configs) - 1
+    return [z3.And(q >= 0, q <= max_id) for q in config_seq]
+```
+
+## 11.4.4 初始配置约束
+
+每个机器还需要一个初始切面约束：
+
+- `Q[m, 0] = initial_config_id`
+
+对应 Python/Z3 写法：
+
+```python
+def build_initial_config_constraints(compiled_machines, config_vars):
+    constraints = []
+    for alias, compiled in compiled_machines.items():
+        constraints.append(config_vars[alias][0] == compiled.initial_config_id)
+    return constraints
+```
 
 ## 11.5 迁移关系编码
 
@@ -783,6 +1105,150 @@ delta: (q, event, input_snapshot) -> q'
 
 这和现有 `verify/search.py` 中 `prev_conditions` 的思路一致，但这里不是 BFS，而是静态展开成约束。
 
+## 11.5.1 迁移表的预编译结果
+
+建议对每台机器先预编译出下面这种结构：
+
+```python
+@dataclass
+class CompiledEdge:
+    from_config_id: int
+    event_path: Optional[str]
+    guard_expr: Optional[Expr]
+    to_config_id: int
+
+
+@dataclass
+class CompiledMachine:
+    stable_configs: list[State]
+    outgoing_edges: dict[int, list[CompiledEdge]]
+    initial_config_id: int
+```
+
+这里最关键的是：
+
+- `outgoing_edges[from_config_id]` 必须按原 DSL 声明顺序排列
+
+因为后面的选择编码要依赖这个顺序。
+
+## 11.5.2 每个 step 的事件视图
+
+对每个 step、每个机器，需要先计算“这个 step 对这台机器来说对应哪个事件”：
+
+- 若 step 不含 `emit`，则该机器本 step 没有外部事件
+- 若 step 含 `emit(name)`，则通过 `binding.event_map[name]` 找到机器内 event path
+
+可以写成：
+
+```python
+def resolve_bound_event(step: TimelineStep, binding: TimelineMachineBinding) -> str | None:
+    emit_actions = [a for a in step.actions if isinstance(a, EmitEvent)]
+    if not emit_actions:
+        return None
+    assert len(emit_actions) == 1
+    return binding.event_map[emit_actions[0].event_name]
+```
+
+## 11.5.3 保留“前面优先”的精确编码
+
+设机器 `m` 在切面 `k` 的当前配置为 `Q[m, k]`，该 step 绑定到本机的事件路径为 `E_m_k`。
+
+对某个 `from_config_id = q` 的候选出边列表 `edge_0, edge_1, ..., edge_n`，按顺序定义：
+
+- `raw_enabled_i`
+  - 事件匹配且 guard 成立
+- `selected_i`
+  - `raw_enabled_i` 成立
+  - 且 `edge_0..edge_{i-1}` 都不成立
+
+则：
+
+- 如果存在某个 `selected_i`，下一配置等于其 `to_config_id`
+- 如果所有 `raw_enabled_i` 都不成立，下一配置保持不变
+
+这正是 pyfcstm 现有 transition declaration order 的离散版本。
+
+## 11.5.4 guard 的 Z3 绑定环境
+
+对 guard 求值时，变量名不应绑定到机器内部可写状态，而应绑定到当前切面的输入快照：
+
+```python
+def build_guard_env(binding, input_vars, cut_index):
+    return {
+        local_name: input_vars[scenario_name][cut_index]
+        for scenario_name, local_name in binding.input_map.items()
+    }
+```
+
+然后再调用现有 `expr_to_z3(...)`：
+
+```python
+guard_z3 = expr_to_z3(edge.guard_expr, z3_vars=guard_env)
+```
+
+## 11.5.5 单机单步迁移约束的 Python/Z3 骨架
+
+下面是一版建议实现：
+
+```python
+def build_machine_step_constraints(
+    compiled_machine: CompiledMachine,
+    machine_alias: str,
+    binding: TimelineMachineBinding,
+    scenario: TimelineScenario,
+    step_index: int,
+    config_vars,
+    input_vars,
+):
+    constraints = []
+    q_before = config_vars[machine_alias][step_index]
+    q_after = config_vars[machine_alias][step_index + 1]
+    step = scenario.steps[step_index]
+    bound_event = resolve_bound_event(step, binding)
+
+    cases = []
+    for from_id, edges in compiled_machine.outgoing_edges.items():
+        raw_enabled = []
+        selected = []
+
+        for edge in edges:
+            event_match = z3.BoolVal(edge.event_path == bound_event)
+            if edge.guard_expr is None:
+                guard_ok = z3.BoolVal(True)
+            else:
+                guard_env = build_guard_env(binding, input_vars, step_index)
+                guard_ok = expr_to_z3(edge.guard_expr, z3_vars=guard_env)
+
+            enabled = z3.And(event_match, guard_ok)
+            raw_enabled.append(enabled)
+
+        for i, enabled in enumerate(raw_enabled):
+            selected.append(z3.And(enabled, *[z3.Not(x) for x in raw_enabled[:i]]))
+
+        transition_cases = [
+            z3.Implies(selected_i, q_after == edge.to_config_id)
+            for selected_i, edge in zip(selected, edges)
+        ]
+
+        stay_case = z3.Implies(
+            z3.And(q_before == from_id, z3.Not(z3.Or(*raw_enabled)) if raw_enabled else z3.BoolVal(True)),
+            q_after == from_id,
+        )
+
+        cases.append(z3.Implies(q_before == from_id, z3.And(*(transition_cases + [stay_case]))))
+
+    constraints.extend(cases)
+    return constraints
+```
+
+上面这个骨架没有处理：
+
+- init/pseudo/hierarchy 闭包
+
+因为这些应在“稳定配置预编译”阶段就被折叠进 `to_config_id` 的求值里，而不是在 SMT 里动态展开。
+
+这正是第一阶段值得采用的一个关键降维手段。
+
 ## 11.6 输入更新步编码
 
 若某个 step 只包含输入更新，不含事件，则：
@@ -791,6 +1257,26 @@ delta: (q, event, input_snapshot) -> q'
 - 只更新输入快照
 
 这点非常关键，因为它让“输入先变化，再触发事件”可被精确表达。
+
+## 11.6.1 空 step 的机器约束
+
+若某个 step：
+
+- 没有 `emit`
+- 也没有 `set`
+
+则它只是一个逻辑时间节点。
+
+此时机器约束也自然退化为：
+
+- 对所有机器都有 `Q[m, k+1] = Q[m, k]`
+
+这和“只包含输入更新、不含事件”的 step 只有一步之差：
+
+- 输入更新 step 会改输入快照，不改机器配置
+- 空 step 既不改输入快照，也不改机器配置
+
+因此空 step 不需要额外特殊语义，只需在输入和机器传播规则里自然落下即可。
 
 ## 11.7 坏性质编码
 
@@ -812,6 +1298,124 @@ Or_k Or_r Rel(r, k)
 - `pairwise_mutex_group(...)` 可展开为若干二元禁止组合
 
 如果还要检查开区间，则对区间切面也建立对应谓词。
+
+## 11.7.1 状态谓词的离线判定
+
+对某个机器的某个稳定配置编号 `q_id`，状态谓词是否成立不需要在 SMT 里递归算祖先路径，可以离线算好：
+
+```python
+predicate_holds[config_id][predicate_id] -> bool
+```
+
+然后 SMT 里只需要做一个有限分支：
+
+```python
+def build_predicate_bool(q_var, valid_config_ids):
+    clauses = []
+    for config_id, holds in valid_config_ids.items():
+        if holds:
+            clauses.append(q_var == config_id)
+    return z3.Or(*clauses) if clauses else z3.BoolVal(False)
+```
+
+## 11.7.2 `at_most_one` 的 Z3 表达
+
+```python
+def encode_at_most_one(pred_bools):
+    return z3.PbLe([(b, 1) for b in pred_bools], 1)
+```
+
+如果我们要编码“关系被违反”，则应取其否定：
+
+```python
+def encode_at_most_one_violation(pred_bools):
+    return z3.Not(z3.PbLe([(b, 1) for b in pred_bools], 1))
+```
+
+## 11.7.3 `forbidden_combination` 的 Z3 表达
+
+```python
+def encode_forbidden_combination_violation(pred_bools):
+    return z3.And(*pred_bools) if pred_bools else z3.BoolVal(False)
+```
+
+## 11.7.4 `pairwise_mutex_group` 的 Z3 表达
+
+```python
+def encode_pairwise_mutex_violation(pred_bools):
+    violations = []
+    for i in range(len(pred_bools)):
+        for j in range(i + 1, len(pred_bools)):
+            violations.append(z3.And(pred_bools[i], pred_bools[j]))
+    return z3.Or(*violations) if violations else z3.BoolVal(False)
+```
+
+## 11.7.5 整体坏性质构建
+
+```python
+def build_violation_constraint(relation_bools_by_cut):
+    per_cut = []
+    for relation_bools in relation_bools_by_cut:
+        per_cut.append(z3.Or(*relation_bools) if relation_bools else z3.BoolVal(False))
+    return z3.Or(*per_cut) if per_cut else z3.BoolVal(False)
+```
+
+这个 `violation_constraint` 就是传给 solver 的最终坏性质。
+
+## 11.7.6 `open_interval` 的处理
+
+在当前第一阶段语义下：
+
+- 时间流逝本身不会触发状态变化
+
+因此若 `T_i < T_{i+1}`，那么开区间 `(T_i, T_{i+1})` 内的机器状态与 `step_i` 执行后的状态相同。
+
+所以 `open_interval` 不需要单独引入另一套配置变量，直接复用：
+
+- `Q[:, i+1]`
+
+并额外附加一个“区间真实存在”的布尔前提：
+
+```python
+def build_open_interval_exists(time_vars, left_step, right_step):
+    return time_vars[left_step.time_symbol] < time_vars[right_step.time_symbol]
+```
+
+如果某个关系需要在区间上检查，则可编码为：
+
+```python
+interval_violation = z3.And(
+    build_open_interval_exists(time_vars, step_i, step_i_plus_1),
+    relation_violation_at_cut_i_plus_1,
+)
+```
+
+这样就不需要再为区间引入一套新的状态传播机制。
+
+## 11.8 一个更完整的编译结果对象
+
+为了让实现结构清晰，建议把“编译结果”做成明确的数据对象：
+
+```python
+@dataclass
+class CompiledTimelineProblem:
+    time_vars: dict[str, z3.ArithRef]
+    input_vars: dict[str, list[z3.ExprRef]]
+    config_vars: dict[str, list[z3.ArithRef]]
+    time_constraints: list[z3.BoolRef]
+    input_constraints: list[z3.BoolRef]
+    machine_constraints: list[z3.BoolRef]
+    violation_constraint: z3.BoolRef
+    compiled_machines: dict[str, CompiledMachine]
+```
+
+这样后续：
+
+- `solve`
+- `counterexample reconstruction`
+- `dump-smt2`
+
+都会更好实现。
 
 ---
 

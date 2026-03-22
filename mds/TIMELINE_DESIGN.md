@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 修改内容 | 作者 |
 |------|------|----------|------|
+| 0.1.5 | 2026-03-22 | 补充完整示例：多机 fcstm DSL、timeline YAML，以及不同关系类型下的预期 SAT/UNSAT 结果 | Codex |
 | 0.1.4 | 2026-03-22 | 扩充形式化验证算法细节，补充 timeline 约束生成流程与 Python/Z3 编码骨架 | Codex |
 | 0.1.3 | 2026-03-22 | 允许空 step 作为逻辑时间节点，删除长期演化相关铺垫，明确 timeline 只借用 fcstm 的语法与 model，不复用 simulate/verify | Codex |
 | 0.1.2 | 2026-03-22 | 收紧外部输入设计：要求所有外部量显式给初始值，移除 `assume`，明确外部量在 fcstm 中按只读 environment input 处理 | Codex |
@@ -529,6 +530,7 @@ class TimelineStatePredicate:
 class TimelineRelationConstraint:
     kind: Literal['at_most_one', 'forbidden_combination', 'pairwise_mutex_group']
     predicates: List[TimelineStatePredicate]
+    observation_scope: Literal['post_step', 'open_interval', 'both'] = 'both'
 ```
 
 这样之后，一个 query 就不再局限于“两台机器上一对状态”，而是可以表达：
@@ -536,6 +538,10 @@ class TimelineRelationConstraint:
 - 某一组状态谓词里最多一个成立
 - 某几个状态谓词不能同时成立
 - 某一组状态谓词两两互斥
+- 并且可以显式指定是在：
+  - `post_step`
+  - `open_interval`
+  - 或两者都检查
 
 ## 8.4 多机验证任务对象
 
@@ -802,6 +808,354 @@ def verify_timeline_constraints(query: TimelineConstraintQuery):
 - 全量变量创建
 - 全量约束构建
 - 形成一个可以直接 `solver.add(...)` 的编译结果对象
+
+## 11.1.5 用“时间占据集合”定义验证问题
+
+前面那套说法还是偏编译实现。站在验证逻辑本身，这个问题其实可以更直接地定义成：
+
+- 时间序列的先后顺序已经由 scenario 固定
+- 我们要做的不是“搜索下一步”
+- 而是对每个状态机、每个待观察状态，求它在整条时间线上可能占据哪些时间点/时间段
+
+也就是先求一个“时间占据集合”。
+
+设 scenario 一共有 `n` 个 step，它们的时间变量满足：
+
+```text
+T_0 <= T_1 <= ... <= T_n
+```
+
+则全局时间线天然被切成有限个原子区域：
+
+1. 离散观测点
+   - `post_step(s_i)`
+   - 表示第 `i` 个 step 执行完成后的离散切面
+2. 连续开区间
+   - `(T_i, T_{i+1})`
+   - 只有 `T_i < T_{i+1}` 时该区间才真实存在
+
+在当前问题子集中：
+
+- 状态机不会因为纯时间流逝自动跳转
+- 状态只会在 step 边界发生离散变化
+
+因此：
+
+- 每个开区间内部，状态恒定
+- 某个状态机处于某个状态的时间集合，一定可以表示成有限个离散点和有限个区间的并集
+
+记：
+
+- `Occ(m, P)` 表示状态机 `m` 满足状态谓词 `P` 的时间占据集合
+
+那么 `Occ(m, P)` 的形式一定类似：
+
+```text
+Occ(m, P) =
+    {post_step(s1), post_step(s4)}
+    U (T1, T2)
+    U (T4, T5)
+```
+
+如果只关心连续时间见证，也可以把它理解成：
+
+```text
+t_m in [T1, T2] or [T4, T5]
+```
+
+这里把离散点也折叠进闭区间端点中只是为了直观，严格实现时仍然建议区分：
+
+- `post_step`
+- `open_interval`
+
+因为这两类观测范围在语义上不同。
+
+## 11.1.6 从单个状态机的时间占据集合，到多状态机关系验证
+
+有了 `Occ(m, P)` 之后，性质验证本身就很直接了。
+
+### 11.1.6.1 两个状态是否可能同时出现
+
+对两个状态机 `sm1`、`sm2` 和两个状态谓词 `P1`、`P2`：
+
+```text
+Exists t :
+    t in Occ(sm1, P1)
+    and t in Occ(sm2, P2)
+```
+
+这和你说的写法是同一个意思：
+
+```text
+Exists t_sm1, t_sm2 :
+    t_sm1 in Occ(sm1, P1)
+    and t_sm2 in Occ(sm2, P2)
+    and t_sm1 == t_sm2
+```
+
+也就是：
+
+- 先求 `sm1` 落在什么时间段
+- 再求 `sm2` 落在什么时间段
+- 最后检查这两边是否存在同一个时间点可以同时满足
+
+如果存在：
+
+- `sat`
+- 这个共同时间点就是反例见证
+
+如果不存在：
+
+- `unsat`
+
+### 11.1.6.2 更一般的多状态机、多谓词性质
+
+推广到任意多个状态机、任意多个状态谓词，核心也没变，还是“同一时刻上的联合可满足性”。
+
+例如：
+
+- `forbidden_combination`
+
+  ```text
+  Exists t :
+      t in Occ(m1, P1)
+      and t in Occ(m2, P2)
+      and ...
+      and t in Occ(mk, Pk)
+  ```
+
+- `at_most_one`
+
+  ```text
+  Exists t :
+      count_true(
+          t in Occ(m1, P1),
+          t in Occ(m2, P2),
+          ...
+      ) >= 2
+  ```
+
+- `pairwise_mutex_group`
+
+  ```text
+  Exists t, i, j :
+      i != j
+      and t in Occ(mi, Pi)
+      and t in Occ(mj, Pj)
+  ```
+
+所以从验证本质上看，整个问题就是：
+
+- 先为每个状态谓词求时间占据集合
+- 再检查这些集合在同一个时间点上的交、计数或组合条件
+
+## 11.1.7 为什么实现时不必真的引入 `t_sm1`、`t_sm2`
+
+虽然上面的数学定义可以直接写成多个见证时间变量：
+
+- `t_sm1`
+- `t_sm2`
+- `t_sm3`
+
+但实现时没必要真的这么做。
+
+原因很简单：
+
+- 所有状态机共享同一条全局 timeline
+- 这条 timeline 已经被 `T_0, T_1, ..., T_n` 切成了有限个原子区域
+
+因此：
+
+- “存在某个共同时间点 `t` 同时落在多个时间占据集合里”
+- 等价于
+- “存在某个全局原子区域 `R`，使得这些状态谓词都在 `R` 上成立”
+
+也就是说，求：
+
+```text
+Occ(sm1, P1) ∩ Occ(sm2, P2) != empty
+```
+
+在实现上可以转化为：
+
+```text
+Exists region R :
+    Holds(sm1, P1, R)
+    and Holds(sm2, P2, R)
+```
+
+这里的 `R` 可以是：
+
+- `post_step(s_i)`
+- `(T_i, T_{i+1})`
+
+这就是“时间集合求交”和“逐区域检查”之间的精确对应关系。
+
+## 11.1.8 从“时间集合求交”到“逐区域检查”的具体算法
+
+基于上面的等价关系，算法可以明确写成下面几步。
+
+### 第 1 步：由时间序列切出全局原子区域
+
+假设 scenario 有 `n` 个 step，则可得到：
+
+- `n` 个 `post_step(s_i)`
+- `n - 1` 个候选开区间 `(T_i, T_{i+1})`
+
+其中候选开区间只有在 `T_i < T_{i+1}` 时才存在。
+
+### 第 2 步：对每个状态机求每个区域上的稳定状态
+
+对每个状态机 `m`：
+
+1. 从初始配置开始
+2. 依次按照 step 顺序处理 `s_0, s_1, ..., s_n`
+3. 得到每个 `post_step(s_i)` 上机器的稳定配置 `Q[m, i]`
+
+因为在当前问题子集中：
+
+- 区间内没有自动跳转
+
+所以 `(T_i, T_{i+1})` 上的稳定配置直接等于：
+
+```text
+Q_interval[m, i] = Q_post[m, i]
+```
+
+前提是该区间真实存在，即 `T_i < T_{i+1}`。
+
+### 第 3 步：把状态配置翻译成状态谓词的时间占据集合
+
+对某个状态谓词 `P`，例如：
+
+- `machine_alias = aircraft`
+- `state_path = /Aircraft/GearLowering`
+
+我们离线算出：
+
+- 哪些稳定配置编号满足这个谓词
+
+于是就能在每个区域上构造布尔值：
+
+```text
+Holds(m, P, post_step(s_i))
+Holds(m, P, interval_i)
+```
+
+把所有使 `Holds(...)` 为真的区域收集起来，就得到了：
+
+```text
+Occ(m, P)
+```
+
+如果用户更习惯“时间变量落在哪些区间里”的表述，也可以把它解释成：
+
+```text
+t_m in UnionOfIntervals(m, P)
+```
+
+只是实现里不会真的单独生成这个 `t_m`。
+
+### 第 4 步：在同一区域上检查关系是否被违反
+
+对每条关系 `Rel` 和每个全局区域 `R`：
+
+- 先算出关系里每个状态谓词在 `R` 上是否成立
+- 再按关系类型拼出违规条件
+
+例如：
+
+- `forbidden_combination`
+  - `Violation(Rel, R) = And(Holds(P1, R), Holds(P2, R), ..., Holds(Pk, R))`
+- `at_most_one`
+  - `Violation(Rel, R) = Sum(If(Holds(Pi, R), 1, 0)) >= 2`
+- `pairwise_mutex_group`
+  - `Violation(Rel, R) = Or(And(Holds(Pi, R), Holds(Pj, R)) for i < j)`
+
+### 第 5 步：把“存在某个共同时间点”落实成 SMT 公式
+
+由于“共同时间点存在”已经被有限区域化，所以最终只需要：
+
+```text
+Exists region R :
+    Violation(Rel, R)
+```
+
+在 Z3 里直接展开成：
+
+```text
+Or(
+    Violation(Rel, post_step(s0)),
+    Violation(Rel, interval_0),
+    Violation(Rel, post_step(s1)),
+    ...
+)
+```
+
+这和显式引入：
+
+- `t_sm1`
+- `t_sm2`
+- `t_sm1 == t_sm2`
+
+在逻辑上是等价的，但编码规模更小，也更直接。
+
+### 第 6 步：对应的 Python/Z3 直接写法
+
+如果把上面的逻辑翻译成 Python/Z3，骨架其实很直接：
+
+```python
+import z3
+
+
+def build_relation_violation_over_regions(compiled, relation):
+    region_violations = []
+
+    for region in compiled.regions:
+        predicate_holds = []
+        for pred in relation.predicates:
+            machine_alias = pred.machine_alias
+            state_path = pred.state_path
+            holds = build_predicate_holds_in_region(
+                compiled=compiled,
+                machine_alias=machine_alias,
+                state_path=state_path,
+                region=region,
+            )
+            predicate_holds.append(holds)
+
+        if relation.kind == 'forbidden_combination':
+            region_violations.append(z3.And(*predicate_holds))
+        elif relation.kind == 'at_most_one':
+            region_violations.append(
+                z3.Sum([z3.If(item, z3.IntVal(1), z3.IntVal(0)) for item in predicate_holds]) >= 2
+            )
+        elif relation.kind == 'pairwise_mutex_group':
+            pair_terms = []
+            for i in range(len(predicate_holds)):
+                for j in range(i + 1, len(predicate_holds)):
+                    pair_terms.append(z3.And(predicate_holds[i], predicate_holds[j]))
+            region_violations.append(z3.Or(*pair_terms) if pair_terms else z3.BoolVal(False))
+        else:
+            raise ValueError(f'Unsupported relation kind: {relation.kind!r}')
+
+    return z3.Or(*region_violations) if region_violations else z3.BoolVal(False)
+```
+
+这里最关键的不是 `z3.And` / `z3.Or` 这些表面写法，而是：
+
+- `compiled.regions`
+  - 已经是由全局时间序列切好的有限区域
+- `build_predicate_holds_in_region(...)`
+  - 本质上就是在回答：
+  - “这个状态谓词是否属于该机器的时间占据集合，并且命中了当前区域”
+
+换句话说，这段代码对应的正是你说的那条主线：
+
+1. 先算每台机器、每个状态谓词在哪些时间段上可能成立
+2. 再看不同机器这些时间段能不能在同一个时刻对齐
+3. 如果能对齐，就得到 `sat`
+4. 如果所有区域都对不齐，就得到 `unsat`
 
 ## 11.2 时间变量
 
@@ -1253,10 +1607,24 @@ def build_machine_step_constraints(
 
 若某个 step 只包含输入更新，不含事件，则：
 
-- 对所有机器都有 `Q[m, k+1] = Q[m, k]`
-- 只更新输入快照
+- 该 step 对所有机器都没有外部事件输入
+- 但 guard-only / unconditional 转换仍然可能被评估
+- 输入快照按 `set` 规则更新到下一切面
 
-这点非常关键，因为它让“输入先变化，再触发事件”可被精确表达。
+在当前第一阶段语义里，`SetInput` 对输入快照的更新是：
+
+- `step_i` 执行前看 `Input[:, i]`
+- `step_i` 执行后产生 `Input[:, i+1]`
+
+因此对“只包含输入更新、不含事件”的 step 来说：
+
+- 若某台机器在当前切面 `i` 上存在 guard-only 转换且 guard 已经满足，则它可以在该 step 上迁移
+- 若 guard 需要依赖本 step 刚刚设置的新值，则这类迁移会在后续 step 上发生
+
+这点非常关键，因为它让下面这种表达成为可能：
+
+- `s2` 先更新外部输入
+- `s3` 再在更新后的输入快照上触发 guard-only 转换
 
 ## 11.6.1 空 step 的机器约束
 
@@ -1267,16 +1635,19 @@ def build_machine_step_constraints(
 
 则它只是一个逻辑时间节点。
 
-此时机器约束也自然退化为：
+此时：
 
-- 对所有机器都有 `Q[m, k+1] = Q[m, k]`
+- 输入快照满足 `Input[:, k+1] = Input[:, k]`
+- 机器没有事件输入
+- 但 guard-only / unconditional 转换仍然可能发生
 
-这和“只包含输入更新、不含事件”的 step 只有一步之差：
+因此空 step 的语义不是“什么都不评估”，而是：
 
-- 输入更新 step 会改输入快照，不改机器配置
-- 空 step 既不改输入快照，也不改机器配置
+- 不改变输入
+- 不提供事件
+- 允许模型在当前输入快照上继续演化一次
 
-因此空 step 不需要额外特殊语义，只需在输入和机器传播规则里自然落下即可。
+这正是为什么空 step 可以作为逻辑时间锚点，同时又能在需要时承接 guard-only 转换。
 
 ## 11.7 坏性质编码
 
@@ -1391,6 +1762,26 @@ interval_violation = z3.And(
 ```
 
 这样就不需要再为区间引入一套新的状态传播机制。
+
+进一步地，若关系本身带有：
+
+- `observation_scope = 'post_step'`
+
+则只在离散切面上生成违规谓词。
+
+若关系带有：
+
+- `observation_scope = 'open_interval'`
+
+则只在存在正时长区间的地方生成：
+
+- `interval_exists && relation_violation_at_cut`
+
+若关系带有：
+
+- `observation_scope = 'both'`
+
+则把这两类违规一起并入最终坏性质。
 
 ## 11.8 一个更完整的编译结果对象
 
@@ -1756,3 +2147,815 @@ pyfcstm timeline \
 4. 空 step 在 YAML 里是统一写成 `actions: []`，还是允许完全省略动作字段。
 5. 目标状态若是 composite state，是否统一采用“当前稳定叶状态属于其子树”语义。
 6. 场景文件是否要从第一版开始支持多个 relation 与多个 query。
+
+---
+
+## 20. 完整示例
+
+本节给出一组可以直接用于讨论实现与测试的完整示例。
+
+设计目标是：
+
+- 至少包含多个状态机
+- 使用 fcstm DSL 表达模型
+- 使用 timeline YAML 表达场景
+- 同时覆盖：
+  - `forbidden_combination`
+  - `at_most_one`
+  - `pairwise_mutex_group`
+- 同时给出：
+  - 预期 `sat`
+  - 预期 `unsat`
+
+## 20.1 示例状态机
+
+下面给出 3 个示例状态机：
+
+- `Aircraft`
+- `Controller`
+- `Monitor`
+
+需要注意：
+
+- 这里都写了 `def float height = 0.0;`
+- 这是为了复用当前 fcstm DSL 的变量语法与 model object
+- 在 timeline 语义下，`height` 应解释为只读外部输入
+- 这些模型中不允许对 `height` 进行任何写操作
+- 本节示例已按当前仓库中的 `state_machine_dsl` parser 与 model 转换实际验证过可解析
+
+### 20.1.1 Aircraft.fcstm
+
+```fcstm
+def float height = 0.0;
+
+state Aircraft {
+    state Cruise;
+    state Descending;
+    state GearLowering;
+    state GearDown;
+
+    [*] -> Cruise;
+
+    Cruise -> Descending : /DescendCmd;
+    Descending -> GearLowering : if [height <= 2000];
+    GearLowering -> GearDown : /LowerDone;
+}
+```
+
+语义说明：
+
+- `DescendCmd` 使飞机从 `Cruise` 进入 `Descending`
+- 当 `height <= 2000` 时，guard-only 转换会使其进入 `GearLowering`
+
+### 20.1.2 Controller.fcstm
+
+```fcstm
+def float height = 0.0;
+
+state Controller {
+    state HighSpeedCruise;
+    state Approach;
+    state GearCommanded;
+    state Stabilized;
+
+    [*] -> HighSpeedCruise;
+
+    HighSpeedCruise -> Approach : /DescendCmd;
+    Approach -> GearCommanded : if [height <= 2500];
+    GearCommanded -> Stabilized : /LowerDone;
+}
+```
+
+语义说明：
+
+- `DescendCmd` 让控制器离开高速巡航态
+- 只要 `height <= 2500`，guard-only 转换就会使其进入 `GearCommanded`
+
+### 20.1.3 Monitor.fcstm
+
+```fcstm
+def float height = 0.0;
+
+state Monitor {
+    state Normal;
+    state WarningIssued;
+
+    [*] -> Normal;
+
+    Normal -> WarningIssued : if [height <= 1800];
+}
+```
+
+语义说明：
+
+- 当 `height <= 1800` 时，监控器会进入 `WarningIssued`
+
+## 20.2 示例场景
+
+下面给出两个核心场景：
+
+- 一个会导致“多机状态组合冲突”
+- 一个不会导致该冲突
+
+### 20.2.1 场景 A：冲突场景
+
+```yaml
+name: landing_conflict_sat
+
+inputs:
+  - name: height
+    type: float
+    initial: 3000
+    constraint: "height >= 0"
+
+steps:
+  - id: s0
+    time: t0
+    actions: []
+
+  - id: s1
+    time: t1
+    emit: descend_cmd
+
+  - id: s2
+    time: t2
+    set:
+      height: 1800
+
+  - id: s3
+    time: t3
+    actions: []
+
+constraints:
+  - "0 <= t1 - t0"
+  - "5 <= t2 - t1 <= 20"
+  - "t3 - t2 == 0"
+  - "1 <= t3 - t2"
+
+bindings:
+  aircraft:
+    event_map:
+      descend_cmd: Aircraft.DescendCmd
+    input_map:
+      height: height
+
+  controller:
+    event_map:
+      descend_cmd: Controller.DescendCmd
+    input_map:
+      height: height
+
+  monitor:
+    event_map: {}
+    input_map:
+      height: height
+```
+
+场景解释：
+
+- `s1` 时，三个机器共同接收 `descend_cmd`
+- `s2` 时，高度先被设置到 `1800`
+- 通过 `t3 - t2 == 0` 表示：
+  - `s2` 和 `s3` 发生在同一个连续时间点
+  - 但顺序仍然是先 `set`、后进入下一个空 step
+- `s3` 是一个空 step，用于让 guard-only 转换在更新后的输入快照上发生
+
+在 `s3` 之后：
+
+- `Aircraft` 进入 `GearLowering`
+- `Controller` 进入 `GearCommanded`
+- `Monitor` 进入 `WarningIssued`
+
+### 20.2.2 场景 B：非冲突场景
+
+```yaml
+name: landing_conflict_unsat
+
+inputs:
+  - name: height
+    type: float
+    initial: 3000
+    constraint: "height >= 0"
+
+steps:
+  - id: s0
+    time: t0
+    actions: []
+
+  - id: s1
+    time: t1
+    emit: descend_cmd
+
+  - id: s2
+    time: t2
+    set:
+      height: 2300
+
+  - id: s3
+    time: t3
+    actions: []
+
+constraints:
+  - "0 <= t1 - t0"
+  - "5 <= t2 - t1 <= 20"
+  - "t3 - t2 == 0"
+  - "1 <= t3 - t2"
+
+bindings:
+  aircraft:
+    event_map:
+      descend_cmd: Aircraft.DescendCmd
+    input_map:
+      height: height
+
+  controller:
+    event_map:
+      descend_cmd: Controller.DescendCmd
+    input_map:
+      height: height
+
+  monitor:
+    event_map: {}
+    input_map:
+      height: height
+```
+
+场景解释：
+
+- `s1` 后：
+  - `Aircraft = Descending`
+  - `Controller = Approach`
+  - `Monitor = Normal`
+- `s2` 时高度被设置到 `2300`
+- `s3` 是空 step，guard-only 转换在这里基于更新后的输入快照被评估
+  - `Aircraft` 的 `height <= 2000` 不成立，所以不会进入 `GearLowering`
+  - `Controller` 的 `height <= 2500` 成立，所以会进入 `GearCommanded`
+  - `Monitor` 的 `height <= 1800` 不成立，所以不会进入 `WarningIssued`
+
+因此在 `s3` 之后只有：
+
+- `Controller = GearCommanded`
+
+### 20.2.3 场景 C：瞬时穿越场景
+
+这个场景专门用来体现“时间间隔是否为正”对验证结果的影响。
+
+```yaml
+name: interval_sensitive_unsat
+
+inputs:
+  - name: height
+    type: float
+    initial: 3000
+    constraint: "height >= 0"
+
+steps:
+  - id: s0
+    time: t0
+    actions: []
+
+  - id: s1
+    time: t1
+    emit: descend_cmd
+
+  - id: s2
+    time: t2
+    set:
+      height: 1800
+
+  - id: s3
+    time: t3
+    actions: []
+
+constraints:
+  - "0 <= t1 - t0"
+  - "t2 - t1 == 0"
+  - "t3 - t2 == 0"
+
+bindings:
+  aircraft:
+    event_map:
+      descend_cmd: Aircraft.DescendCmd
+    input_map:
+      height: height
+
+  controller:
+    event_map:
+      descend_cmd: Controller.DescendCmd
+    input_map:
+      height: height
+
+  monitor:
+    event_map: {}
+    input_map:
+      height: height
+```
+
+场景解释：
+
+- `s1` 后：
+  - `Aircraft = Descending`
+  - `Controller = Approach`
+- 但 `s2` 与 `s3` 都和前一步处于同一连续时间点
+- 因此虽然状态序列上出现了：
+  - `Descending`
+  - `Approach`
+  - 以及之后的 `GearLowering`
+- 但这些状态之间没有任何正时长开区间
+
+### 20.2.4 场景 D：区间拉开场景
+
+这个场景与场景 C 的离散顺序几乎相同，但显式拉开了时间间隔。
+
+```yaml
+name: interval_sensitive_sat
+
+inputs:
+  - name: height
+    type: float
+    initial: 3000
+    constraint: "height >= 0"
+
+steps:
+  - id: s0
+    time: t0
+    actions: []
+
+  - id: s1
+    time: t1
+    emit: descend_cmd
+
+  - id: s2
+    time: t2
+    set:
+      height: 1800
+
+  - id: s3
+    time: t3
+    actions: []
+
+constraints:
+  - "0 <= t1 - t0"
+  - "5 <= t2 - t1 <= 20"
+  - "t3 - t2 == 0"
+
+bindings:
+  aircraft:
+    event_map:
+      descend_cmd: Aircraft.DescendCmd
+    input_map:
+      height: height
+
+  controller:
+    event_map:
+      descend_cmd: Controller.DescendCmd
+    input_map:
+      height: height
+
+  monitor:
+    event_map: {}
+    input_map:
+      height: height
+```
+
+场景解释：
+
+- `s1` 后：
+  - `Aircraft = Descending`
+  - `Controller = Approach`
+- 且由 `5 <= t2 - t1 <= 20` 保证：
+  - 从 `s1` 到 `s2` 存在一个正时长开区间
+- 在这个开区间内，两台机器会持续停留在：
+  - `Aircraft.Descending`
+  - `Controller.Approach`
+- 直到 `s3` 的 guard-only 转换在新输入快照上把它们推进到后续状态
+
+## 20.3 示例性质与期望结果
+
+下面分别展示不同类型关系约束下的预期结果。
+
+这里需要强调：
+
+- “满足”与“不满足”说的不是场景本身
+- 而是“给定场景下，某条待验证性质是否成立”
+
+因此每个例子都必须明确给出：
+
+- 待验证性质是什么
+- 场景是什么
+- 预期验证结论是什么
+- 为什么会得到这个结论
+
+本文在下面采用如下记法：
+
+- 若某条关系约束在给定场景下可能被违反，则验证结果为 `sat`
+- 若某条关系约束在给定场景下不可能被违反，则验证结果为 `unsat`
+
+### 20.3.1 `forbidden_combination` 的 `sat` 示例
+
+待验证性质 `P1`：
+
+- 在任意观测点上，不允许
+  - `Aircraft.GearLowering`
+  - 与 `Monitor.WarningIssued`
+  - 同时成立
+
+也就是下面这条关系约束：
+
+```yaml
+relations:
+  - kind: forbidden_combination
+    predicates:
+      - machine: aircraft
+        state: Aircraft.GearLowering
+      - machine: monitor
+        state: Monitor.WarningIssued
+```
+
+使用场景：
+
+- 场景 A：`landing_conflict_sat`
+
+预期结果：
+
+- `sat`
+
+原因：
+
+- 在 `post_step(s3)` 时：
+  - `Aircraft.GearLowering` 为真
+  - `Monitor.WarningIssued` 为真
+- 被禁止组合成立，因此验证器应返回一条反例
+
+一条确定的反例可以写成：
+
+| 观测点 | `height` | `Aircraft` | `Controller` | `Monitor` |
+|--------|----------|------------|--------------|-----------|
+| 初始 | 3000 | `Cruise` | `HighSpeedCruise` | `Normal` |
+| `post_step(s1)` | 3000 | `Descending` | `Approach` | `Normal` |
+| `post_step(s2)` | 1800 | `Descending` | `Approach` | `Normal` |
+| `post_step(s3)` | 1800 | `GearLowering` | `GearCommanded` | `WarningIssued` |
+
+在这个反例里：
+
+- `post_step(s3)` 就是违反点
+- 因为性质 `P1` 明确禁止 `Aircraft.GearLowering && Monitor.WarningIssued`
+
+### 20.3.2 `forbidden_combination` 的 `unsat` 示例
+
+待验证性质 `P2`：
+
+- 在任意观测点上，不允许
+  - `Aircraft.GearLowering`
+  - 与 `Controller.HighSpeedCruise`
+  - 同时成立
+
+也就是：
+
+```yaml
+relations:
+  - kind: forbidden_combination
+    predicates:
+      - machine: aircraft
+        state: Aircraft.GearLowering
+      - machine: controller
+        state: Controller.HighSpeedCruise
+```
+
+使用场景：
+
+- 场景 A：`landing_conflict_sat`
+
+预期结果：
+
+- `unsat`
+
+原因需要按状态演化逐步展开：
+
+1. 初始时：
+   - `Aircraft = Cruise`
+   - `Controller = HighSpeedCruise`
+   - 此时 `Aircraft.GearLowering` 为假
+2. 若想让 `Aircraft.GearLowering` 成立：
+   - `Aircraft` 必须先经过 `Cruise -> Descending : /DescendCmd`
+   - 然后在后续空 step 上满足 guard `height <= 2000`
+3. 但是一旦 `DescendCmd` 在 `s1` 发生：
+   - `Controller` 同时会执行 `HighSpeedCruise -> Approach : /DescendCmd`
+   - 从此离开 `HighSpeedCruise`
+4. 因此在该场景下不存在任何观测点，使得：
+   - `Aircraft.GearLowering`
+   - 与 `Controller.HighSpeedCruise`
+   - 同时为真
+
+这就是为什么性质 `P2` 在场景 A 下的验证结果是 `unsat`。
+
+### 20.3.3 `at_most_one` 的 `sat` 示例
+
+待验证性质 `P3`：
+
+- 在任意观测点上，下面 3 个状态谓词最多只能有 1 个成立：
+  - `Aircraft.GearLowering`
+  - `Controller.GearCommanded`
+  - `Monitor.WarningIssued`
+
+也就是：
+
+```yaml
+relations:
+  - kind: at_most_one
+    predicates:
+      - machine: aircraft
+        state: Aircraft.GearLowering
+      - machine: controller
+        state: Controller.GearCommanded
+      - machine: monitor
+        state: Monitor.WarningIssued
+```
+
+使用场景：
+
+- 场景 A：`landing_conflict_sat`
+
+预期结果：
+
+- `sat`
+
+原因：
+
+- `post_step(s3)` 时，这三个谓词同时为真
+- 显然违反“最多一个成立”
+
+一条确定的反例仍然可以直接使用 `P1` 中的那条轨迹：
+
+| 观测点 | `Aircraft.GearLowering` | `Controller.GearCommanded` | `Monitor.WarningIssued` |
+|--------|--------------------------|----------------------------|--------------------------|
+| 初始 | 假 | 假 | 假 |
+| `post_step(s1)` | 假 | 假 | 假 |
+| `post_step(s2)` | 假 | 假 | 假 |
+| `post_step(s3)` | 真 | 真 | 真 |
+
+由于 `post_step(s3)` 时同时有 3 个谓词为真，所以性质 `P3` 被明确违反。
+
+### 20.3.4 `at_most_one` 的 `unsat` 示例
+
+待验证性质 `P4`：
+
+- 仍然使用与 `P3` 相同的关系约束：
+  - `Aircraft.GearLowering`
+  - `Controller.GearCommanded`
+  - `Monitor.WarningIssued`
+  - 最多只能有一个成立
+
+但这次换到场景 B。
+
+关系定义：
+
+```yaml
+relations:
+  - kind: at_most_one
+    predicates:
+      - machine: aircraft
+        state: Aircraft.GearLowering
+      - machine: controller
+        state: Controller.GearCommanded
+      - machine: monitor
+        state: Monitor.WarningIssued
+```
+
+使用场景：
+
+- 场景 B：`landing_conflict_unsat`
+
+预期结果：
+
+- `unsat`
+
+原因要逐步看场景 B 的状态：
+
+1. 初始：
+   - 三个谓词都为假
+2. `post_step(s1)`：
+   - `Aircraft = Descending`
+   - `Controller = Approach`
+   - `Monitor = Normal`
+   - 三个目标谓词仍都为假
+3. `post_step(s2)`：
+   - 高度变为 `2300`
+   - 还未发生 guard-only 迁移
+   - 三个目标谓词仍都为假
+4. `post_step(s3)`：
+   - `Aircraft.GearLowering` 为假，因为 `2300 <= 2000` 不成立
+   - `Controller.GearCommanded` 为真，因为 `2300 <= 2500` 成立
+   - `Monitor.WarningIssued` 为假，因为 `2300 <= 1800` 不成立
+
+因此每个观测点上，命中数都不超过 1。
+
+所以性质 `P4` 在场景 B 下成立，验证结果应为 `unsat`。
+
+### 20.3.5 `pairwise_mutex_group` 的 `sat` 示例
+
+待验证性质 `P5`：
+
+- 下面 3 个谓词构成一个 pairwise mutex group：
+  - `Aircraft.GearLowering`
+  - `Controller.GearCommanded`
+  - `Monitor.WarningIssued`
+
+也就是任意两两之间都不允许同时成立。
+
+关系定义：
+
+```yaml
+relations:
+  - kind: pairwise_mutex_group
+    predicates:
+      - machine: aircraft
+        state: Aircraft.GearLowering
+      - machine: controller
+        state: Controller.GearCommanded
+      - machine: monitor
+        state: Monitor.WarningIssued
+```
+
+使用场景：
+
+- 场景 A：`landing_conflict_sat`
+
+预期结果：
+
+- `sat`
+
+原因：
+
+- 该关系会展开成三条两两互斥：
+  - `Aircraft.GearLowering` 与 `Controller.GearCommanded`
+  - `Aircraft.GearLowering` 与 `Monitor.WarningIssued`
+  - `Controller.GearCommanded` 与 `Monitor.WarningIssued`
+- 在 `post_step(s3)` 时，上述三对全都被同时违反
+
+一条确定的反例可直接展开成：
+
+| 违反点 | 违反的二元互斥对 |
+|--------|------------------|
+| `post_step(s3)` | `Aircraft.GearLowering && Controller.GearCommanded` |
+| `post_step(s3)` | `Aircraft.GearLowering && Monitor.WarningIssued` |
+| `post_step(s3)` | `Controller.GearCommanded && Monitor.WarningIssued` |
+
+### 20.3.6 `pairwise_mutex_group` 的 `unsat` 示例
+
+待验证性质 `P6`：
+
+- `Aircraft` 的以下 4 个叶状态构成一个 pairwise mutex group：
+  - `Aircraft.Cruise`
+  - `Aircraft.Descending`
+  - `Aircraft.GearLowering`
+  - `Aircraft.GearDown`
+
+也就是要求这些叶状态两两互斥。
+
+关系定义：
+
+```yaml
+relations:
+  - kind: pairwise_mutex_group
+    predicates:
+      - machine: aircraft
+        state: Aircraft.Cruise
+      - machine: aircraft
+        state: Aircraft.Descending
+      - machine: aircraft
+        state: Aircraft.GearLowering
+      - machine: aircraft
+        state: Aircraft.GearDown
+```
+
+使用场景：
+
+- 场景 A：`landing_conflict_sat`
+- 或场景 B：`landing_conflict_unsat`
+
+预期结果：
+
+- `unsat`
+
+原因：
+
+1. 这 4 个谓词都属于同一个状态机 `Aircraft`
+2. 它们都是互不相同的稳定叶状态
+3. 在第一阶段语义里，一个机器在任意观测点只能处于一个稳定配置
+4. 因此 `Aircraft` 在任意观测点都不可能同时命中其中两个叶状态
+
+所以性质 `P6` 在场景 A 和场景 B 下都成立，验证结果都应为 `unsat`。
+
+### 20.3.7 `open_interval` 敏感的 `forbidden_combination`：`unsat` 示例
+
+待验证性质 `P7`：
+
+- 在任何**正时长开区间**上，不允许：
+  - `Aircraft.Descending`
+  - 与 `Controller.Approach`
+  - 同时成立
+
+也就是：
+
+```yaml
+relations:
+  - kind: forbidden_combination
+    observation_scope: open_interval
+    predicates:
+      - machine: aircraft
+        state: Aircraft.Descending
+      - machine: controller
+        state: Controller.Approach
+```
+
+使用场景：
+
+- 场景 C：`interval_sensitive_unsat`
+
+预期结果：
+
+- `unsat`
+
+原因：
+
+1. `post_step(s1)` 的确会出现：
+   - `Aircraft.Descending`
+   - `Controller.Approach`
+2. 但性质 `P7` 检查的不是 `post_step`，而是 `open_interval`
+3. 场景 C 中：
+   - `t2 - t1 == 0`
+   - `t3 - t2 == 0`
+4. 因此从 `s1` 之后到后续状态变化之间，不存在正时长开区间
+5. 也就不存在任何区间，使得这两个状态在一个非零时长内同时保持为真
+
+所以性质 `P7` 在场景 C 下成立，验证结果应为 `unsat`。
+
+### 20.3.8 `open_interval` 敏感的 `forbidden_combination`：`sat` 示例
+
+待验证性质 `P8`：
+
+- 仍然使用与 `P7` 相同的性质：
+  - 在任何正时长开区间上，不允许
+    - `Aircraft.Descending`
+    - 与 `Controller.Approach`
+    - 同时成立
+
+使用场景：
+
+- 场景 D：`interval_sensitive_sat`
+
+预期结果：
+
+- `sat`
+
+原因：
+
+1. `post_step(s1)` 之后，两台机器分别处于：
+   - `Aircraft.Descending`
+   - `Controller.Approach`
+2. 场景 D 明确要求：
+   - `5 <= t2 - t1 <= 20`
+3. 因此 `(t1, t2)` 是一个真实存在的正时长开区间
+4. 在这个开区间内：
+   - 没有新的事件
+   - 输入也还没有在后续切面生效为新的稳定条件
+   - 所以两台机器持续停留在上述两个状态
+
+一条确定的反例可以写成：
+
+| 时间段 / 观测点 | `height` | `Aircraft` | `Controller` |
+|-----------------|----------|------------|--------------|
+| `post_step(s1)` | 3000 | `Descending` | `Approach` |
+| 开区间 `(t1, t2)` | 3000 | `Descending` | `Approach` |
+| `post_step(s2)` | 1800 | `Descending` | `Approach` |
+
+因此性质 `P8` 被 `(t1, t2)` 这个正时长区间明确违反，验证结果应为 `sat`。
+
+## 20.4 建议加入自动化测试的样例矩阵
+
+如果后续开始实现，建议把上面的示例直接变成测试夹具，最少覆盖下面这组矩阵：
+
+| 场景 | 关系类型 | 关系内容 | 预期结果 |
+|------|----------|----------|----------|
+| 场景 A | `forbidden_combination` | `Aircraft.GearLowering && Monitor.WarningIssued` | `sat` |
+| 场景 A | `forbidden_combination` | `Aircraft.GearLowering && Controller.HighSpeedCruise` | `unsat` |
+| 场景 A | `at_most_one` | `Aircraft.GearLowering, Controller.GearCommanded, Monitor.WarningIssued` | `sat` |
+| 场景 B | `at_most_one` | `Aircraft.GearLowering, Controller.GearCommanded, Monitor.WarningIssued` | `unsat` |
+| 场景 A | `pairwise_mutex_group` | `Aircraft.GearLowering, Controller.GearCommanded, Monitor.WarningIssued` | `sat` |
+| 场景 A/B | `pairwise_mutex_group` | `Aircraft.Cruise, Aircraft.Descending, Aircraft.GearLowering, Aircraft.GearDown` | `unsat` |
+| 场景 C | `forbidden_combination@open_interval` | `Aircraft.Descending && Controller.Approach` | `unsat` |
+| 场景 D | `forbidden_combination@open_interval` | `Aircraft.Descending && Controller.Approach` | `sat` |
+
+这组样例的好处是：
+
+- 机器数量不少于 2
+- 同时包含 3 个机器联动
+- 同时覆盖 `sat` 与 `unsat`
+- 同时覆盖 3 种关系类型
+- 还能顺带覆盖：
+  - 空 step
+  - 共享外部输入
+  - 不同 guard 阈值
+  - 时间相等与正时长区间的区别
+  - `post_step` 与 `open_interval` 两类观测范围

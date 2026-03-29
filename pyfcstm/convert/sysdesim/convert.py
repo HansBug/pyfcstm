@@ -165,21 +165,31 @@ class _AstBuildContext:
     :type route_flag_clear_operations_by_target_id: dict[str, list[pyfcstm.dsl.node.OperationAssignment]]
     """
 
-    time_transitions_by_id: Dict[str, _LoweredTimeTransition] = field(default_factory=dict)
-    time_transitions_in_order: List[_LoweredTimeTransition] = field(default_factory=list)
-    time_transitions_by_source_id: Dict[str, List[_LoweredTimeTransition]] = field(default_factory=dict)
-    propagated_exit_chains: Dict[str, List[_LoweredExitChainTransition]] = field(default_factory=dict)
+    time_transitions_by_id: Dict[str, _LoweredTimeTransition] = field(
+        default_factory=dict
+    )
+    time_transitions_in_order: List[_LoweredTimeTransition] = field(
+        default_factory=list
+    )
+    time_transitions_by_source_id: Dict[str, List[_LoweredTimeTransition]] = field(
+        default_factory=dict
+    )
+    propagated_exit_chains: Dict[str, List[_LoweredExitChainTransition]] = field(
+        default_factory=dict
+    )
     route_flag_names_in_order: List[str] = field(default_factory=list)
-    appended_regular_transitions_by_scope_id: Dict[str, List[dsl_nodes.TransitionDefinition]] = field(
-        default_factory=dict
-    )
-    appended_timeout_transitions_by_scope_id: Dict[str, List[dsl_nodes.TransitionDefinition]] = field(
-        default_factory=dict
-    )
-    prepended_transitions_by_scope_id: Dict[str, List[dsl_nodes.TransitionDefinition]] = field(default_factory=dict)
-    route_flag_clear_operations_by_target_id: Dict[str, List[dsl_nodes.OperationAssignment]] = field(
-        default_factory=dict
-    )
+    appended_regular_transitions_by_scope_id: Dict[
+        str, List[dsl_nodes.TransitionDefinition]
+    ] = field(default_factory=dict)
+    appended_timeout_transitions_by_scope_id: Dict[
+        str, List[dsl_nodes.TransitionDefinition]
+    ] = field(default_factory=dict)
+    prepended_transitions_by_scope_id: Dict[
+        str, List[dsl_nodes.TransitionDefinition]
+    ] = field(default_factory=dict)
+    route_flag_clear_operations_by_target_id: Dict[
+        str, List[dsl_nodes.OperationAssignment]
+    ] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -262,7 +272,9 @@ class SysDeSimOutputValidationReport:
                     "code": item.code,
                     "message": item.message,
                     "source_id": item.source_id,
-                    "state_path": list(item.state_path) if item.state_path is not None else None,
+                    "state_path": list(item.state_path)
+                    if item.state_path is not None
+                    else None,
                 }
                 for item in self.diagnostics
             ],
@@ -454,7 +466,9 @@ def _condition_text_signature(text: Optional[str]) -> Optional[str]:
     return re.sub(r"\s+", "", normalized)
 
 
-def _merge_condition_text(primary: Optional[str], secondary: Optional[str]) -> Optional[str]:
+def _merge_condition_text(
+    primary: Optional[str], secondary: Optional[str]
+) -> Optional[str]:
     """
     Merge two condition texts into one effective guard expression.
 
@@ -642,7 +656,9 @@ def _parse_region(
         raw_type = _xmi_type(subvertex)
         if raw_type == "uml:State":
             child_regions = [
-                _parse_region(child_region, _xmi_id(subvertex), event_types, change_event_bodies)
+                _parse_region(
+                    child_region, _xmi_id(subvertex), event_types, change_event_bodies
+                )
                 for child_region in subvertex.findall("region")
             ]
             vertex = IrVertex(
@@ -682,11 +698,19 @@ def _parse_region(
 
     for transition_element in region_element.findall("transition"):
         trigger_element = transition_element.find("trigger")
-        trigger_ref_id = trigger_element.attrib.get("event") if trigger_element is not None else None
-        trigger_kind = "none" if trigger_ref_id is None else event_types.get(trigger_ref_id, "unknown")
+        trigger_ref_id = (
+            trigger_element.attrib.get("event") if trigger_element is not None else None
+        )
+        trigger_kind = (
+            "none"
+            if trigger_ref_id is None
+            else event_types.get(trigger_ref_id, "unknown")
+        )
         guard_expr_raw = _parse_constraint_body(transition_element)
         if trigger_kind == "change":
-            guard_expr_raw = _merge_condition_text(change_event_bodies.get(trigger_ref_id), guard_expr_raw)
+            guard_expr_raw = _merge_condition_text(
+                change_event_bodies.get(trigger_ref_id), guard_expr_raw
+            )
             trigger_kind = "none"
             trigger_ref_id = None
         region.transitions.append(
@@ -730,7 +754,11 @@ def load_sysdesim_xml(xml_path: str) -> List[IrMachine]:
     tree = ET.parse(xml_path)
     root = tree.getroot()
     parent_map = {child: parent for parent in root.iter() for child in parent}
-    xmi_index = {element.attrib[_XMI_ID]: element for element in root.iter() if _XMI_ID in element.attrib}
+    xmi_index = {
+        element.attrib[_XMI_ID]: element
+        for element in root.iter()
+        if _XMI_ID in element.attrib
+    }
 
     signals: List[IrSignal] = []
     signal_events: List[IrSignalEvent] = []
@@ -741,7 +769,11 @@ def load_sysdesim_xml(xml_path: str) -> List[IrMachine]:
     for element in root.iter():
         raw_type = _xmi_type(element)
         if raw_type == "uml:Signal":
-            signals.append(IrSignal(signal_id=_xmi_id(element), raw_name=element.attrib.get("name", "")))
+            signals.append(
+                IrSignal(
+                    signal_id=_xmi_id(element), raw_name=element.attrib.get("name", "")
+                )
+            )
         elif raw_type == "uml:SignalEvent":
             signal_events.append(
                 IrSignalEvent(
@@ -771,10 +803,16 @@ def load_sysdesim_xml(xml_path: str) -> List[IrMachine]:
         machine = IrMachine(
             machine_id=_xmi_id(element),
             name=element.attrib.get("name", ""),
-            root_region=_parse_region(regions[0], None, event_types, change_event_bodies),
+            root_region=_parse_region(
+                regions[0], None, event_types, change_event_bodies
+            ),
             signals=[IrSignal(**signal.__dict__) for signal in signals],
-            signal_events=[IrSignalEvent(**signal_event.__dict__) for signal_event in signal_events],
-            time_events=[IrTimeEvent(**time_event.__dict__) for time_event in time_events],
+            signal_events=[
+                IrSignalEvent(**signal_event.__dict__) for signal_event in signal_events
+            ],
+            time_events=[
+                IrTimeEvent(**time_event.__dict__) for time_event in time_events
+            ],
             variables=_parse_variables(element, parent_map, xmi_index),
             diagnostics=[],
         )
@@ -835,7 +873,9 @@ def load_sysdesim_machine(
         for machine in machines:
             if machine.name == machine_name:
                 return machine
-        raise KeyError(f"SysDeSim machine name {machine_name!r} not found in {xml_path!r}.")
+        raise KeyError(
+            f"SysDeSim machine name {machine_name!r} not found in {xml_path!r}."
+        )
     if not machines:
         raise ValueError(f"No uml:StateMachine found in {xml_path!r}.")
     return machines[0]
@@ -991,7 +1031,9 @@ def _assign_unique_action_names(actions: List[Optional[IrActionRef]]) -> None:
         if action is None:
             continue
         base = _make_action_name(action)
-        candidate = base if base not in seen else _with_unique_suffix(base, action.action_id)
+        candidate = (
+            base if base not in seen else _with_unique_suffix(base, action.action_id)
+        )
         seen[candidate] = action.action_id
         action.safe_name = candidate
         action.display_name = action.raw_name
@@ -1053,7 +1095,11 @@ def _normalize_region_vertices(vertices: List[IrVertex]) -> None:
     for vertex in vertices:
         if vertex.vertex_type == "state":
             base = _make_state_name(vertex)
-            candidate = base if base not in seen else _with_unique_suffix(base, vertex.vertex_id)
+            candidate = (
+                base
+                if base not in seen
+                else _with_unique_suffix(base, vertex.vertex_id)
+            )
             seen[candidate] = vertex.vertex_id
             vertex.safe_name = candidate
         else:
@@ -1142,7 +1188,9 @@ def _should_relax_condition_alias(name: str) -> bool:
     return len(name) > 1 or "_" in name
 
 
-def _build_condition_name_aliases(machine: IrMachine) -> Tuple[Dict[str, str], Dict[str, str]]:
+def _build_condition_name_aliases(
+    machine: IrMachine,
+) -> Tuple[Dict[str, str], Dict[str, str]]:
     """
     Build alias mappings from raw condition identifiers to exported names.
 
@@ -1160,9 +1208,13 @@ def _build_condition_name_aliases(machine: IrMachine) -> Tuple[Dict[str, str], D
             exact_aliases.setdefault(variable.raw_name, variable.safe_name)
             exact_aliases.setdefault(variable.safe_name, variable.safe_name)
             if _should_relax_condition_alias(variable.raw_name):
-                relaxed_aliases.setdefault(_condition_name_key(variable.raw_name), variable.safe_name)
+                relaxed_aliases.setdefault(
+                    _condition_name_key(variable.raw_name), variable.safe_name
+                )
             if _should_relax_condition_alias(variable.safe_name):
-                relaxed_aliases.setdefault(_condition_name_key(variable.safe_name), variable.safe_name)
+                relaxed_aliases.setdefault(
+                    _condition_name_key(variable.safe_name), variable.safe_name
+                )
     return exact_aliases, relaxed_aliases
 
 
@@ -1235,6 +1287,83 @@ def _iter_expr_variable_names(expr: Optional[dsl_nodes.Expr]) -> Iterable[str]:
         yield from _iter_expr_variable_names(expr.expr)
 
 
+def _iter_operational_used_variable_names(
+    statements: Iterable[dsl_nodes.OperationalStatement],
+) -> Iterable[str]:
+    """
+    Yield variable names referenced or assigned by operational statements.
+
+    :param statements: Operational statements to inspect.
+    :type statements: collections.abc.Iterable[pyfcstm.dsl.node.OperationalStatement]
+    :return: Iterator over used variable names.
+    :rtype: collections.abc.Iterable[str]
+    """
+    for statement in statements:
+        if isinstance(statement, dsl_nodes.OperationAssignment):
+            yield statement.name
+            yield from _iter_expr_variable_names(statement.expr)
+        elif isinstance(statement, dsl_nodes.OperationIf):
+            for branch in statement.branches:
+                yield from _iter_expr_variable_names(branch.condition)
+                yield from _iter_operational_used_variable_names(branch.statements)
+
+
+def _iter_state_used_variable_names(state: dsl_nodes.StateDefinition) -> Iterable[str]:
+    """
+    Yield variable names used anywhere inside one state subtree.
+
+    :param state: State subtree to inspect.
+    :type state: pyfcstm.dsl.node.StateDefinition
+    :return: Iterator over used variable names.
+    :rtype: collections.abc.Iterable[str]
+    """
+    for enter_item in state.enters:
+        if isinstance(enter_item, dsl_nodes.EnterOperations):
+            yield from _iter_operational_used_variable_names(enter_item.operations)
+    for during_item in state.durings:
+        if isinstance(during_item, dsl_nodes.DuringOperations):
+            yield from _iter_operational_used_variable_names(during_item.operations)
+    for exit_item in state.exits:
+        if isinstance(exit_item, dsl_nodes.ExitOperations):
+            yield from _iter_operational_used_variable_names(exit_item.operations)
+    for during_aspect_item in state.during_aspects:
+        if isinstance(during_aspect_item, dsl_nodes.DuringAspectOperations):
+            yield from _iter_operational_used_variable_names(
+                during_aspect_item.operations
+            )
+    for transition in state.transitions:
+        yield from _iter_expr_variable_names(transition.condition_expr)
+        yield from _iter_operational_used_variable_names(transition.post_operations)
+    for force_transition in state.force_transitions:
+        yield from _iter_expr_variable_names(force_transition.condition_expr)
+    for substate in state.substates:
+        yield from _iter_state_used_variable_names(substate)
+
+
+def _prune_unused_program_definitions(
+    program: dsl_nodes.StateMachineDSLProgram,
+) -> dsl_nodes.StateMachineDSLProgram:
+    """
+    Drop unused variable definitions from one emitted program.
+
+    Pruning is performed per emitted FCSTM output, not globally per source
+    machine. A definition is kept only when the variable is referenced or
+    assigned somewhere in the emitted state-machine body.
+
+    :param program: Program whose definitions should be pruned.
+    :type program: pyfcstm.dsl.node.StateMachineDSLProgram
+    :return: The same program instance after in-place pruning.
+    :rtype: pyfcstm.dsl.node.StateMachineDSLProgram
+    """
+    used_names = set(_iter_state_used_variable_names(program.root_state))
+    program.definitions = [
+        definition
+        for definition in program.definitions
+        if definition.name in used_names
+    ]
+    return program
+
+
 def _ensure_condition_variables(machine: IrMachine) -> None:
     """
     Synthesize minimal numeric definitions for guard-only identifiers.
@@ -1249,16 +1378,24 @@ def _ensure_condition_variables(machine: IrMachine) -> None:
     :return: ``None``.
     :rtype: None
     """
-    known_names = {variable.safe_name for variable in machine.variables if variable.safe_name is not None}
+    known_names = {
+        variable.safe_name
+        for variable in machine.variables
+        if variable.safe_name is not None
+    }
     for transition in machine.walk_transitions():
         if transition.guard_expr_ir is None:
             continue
-        for variable_name in sorted(set(_iter_expr_variable_names(transition.guard_expr_ir))):
+        for variable_name in sorted(
+            set(_iter_expr_variable_names(transition.guard_expr_ir))
+        ):
             if variable_name in known_names:
                 continue
             machine.variables.append(
                 IrVariable(
-                    variable_id=make_internal_name("guard_var", [_base_lower_snake(variable_name)], variable_name),
+                    variable_id=make_internal_name(
+                        "guard_var", [_base_lower_snake(variable_name)], variable_name
+                    ),
                     raw_name=variable_name,
                     safe_name=variable_name,
                     display_name=variable_name,
@@ -1297,7 +1434,9 @@ def _transition_equivalence_key(transition: IrTransition) -> Tuple[object, ...]:
         transition.trigger_kind,
         transition.trigger_ref_id,
         str(transition.guard_expr_ir) if transition.guard_expr_ir is not None else None,
-        transition.effect_action.raw_name if transition.effect_action is not None else None,
+        transition.effect_action.raw_name
+        if transition.effect_action is not None
+        else None,
     )
 
 
@@ -1346,7 +1485,11 @@ def _normalize_events(machine: IrMachine) -> None:
     seen = {}
     for signal in machine.signals:
         base = _make_event_name(signal.raw_name, signal.signal_id)
-        candidate = base if seen.get(base) in {None, signal.signal_id} else _with_unique_suffix(base, signal.signal_id)
+        candidate = (
+            base
+            if seen.get(base) in {None, signal.signal_id}
+            else _with_unique_suffix(base, signal.signal_id)
+        )
         seen[candidate] = signal.signal_id
         signal.safe_name = candidate
         signal.display_name = signal.raw_name
@@ -1399,21 +1542,28 @@ def normalize_machine(machine: IrMachine) -> IrMachine:
         True
     """
     machine.safe_name = _make_state_name(
-        IrVertex(vertex_id=machine.machine_id, vertex_type="state", raw_name=machine.name)
+        IrVertex(
+            vertex_id=machine.machine_id, vertex_type="state", raw_name=machine.name
+        )
     )
     machine.display_name = machine.name
     _normalize_region_vertices(machine.root_region.vertices)
     _normalize_events(machine)
     _normalize_variables(machine)
     _normalize_time_events(machine)
-    exact_condition_aliases, relaxed_condition_aliases = _build_condition_name_aliases(machine)
+    exact_condition_aliases, relaxed_condition_aliases = _build_condition_name_aliases(
+        machine
+    )
 
     for transition in machine.walk_transitions():
         if transition.effect_action is not None:
-            transition.effect_action.safe_name = _make_action_name(transition.effect_action)
+            transition.effect_action.safe_name = _make_action_name(
+                transition.effect_action
+            )
             transition.effect_action.display_name = transition.effect_action.raw_name
             if not any(
-                item.code == "transition_effect_semantic_downgrade" and item.source_id == transition.transition_id
+                item.code == "transition_effect_semantic_downgrade"
+                and item.source_id == transition.transition_id
                 for item in machine.diagnostics
             ):
                 machine.diagnostics.append(
@@ -1447,7 +1597,9 @@ def normalize_machine(machine: IrMachine) -> IrMachine:
     return machine
 
 
-def _direct_child_region_under_owner(machine: IrMachine, owner_state_id: str, vertex_id: str) -> Optional[str]:
+def _direct_child_region_under_owner(
+    machine: IrMachine, owner_state_id: str, vertex_id: str
+) -> Optional[str]:
     """
     Return the direct child region of a parallel owner that contains a vertex.
 
@@ -1485,12 +1637,24 @@ def _validate_parallel_split_compatibility(machine: IrMachine) -> None:
     :raises NotImplementedError: If a transition crosses between child regions
         of the same multi-region owner.
     """
-    parallel_owners = [vertex for vertex in machine.walk_vertices() if vertex.vertex_type == "state" and vertex.is_parallel_owner]
+    parallel_owners = [
+        vertex
+        for vertex in machine.walk_vertices()
+        if vertex.vertex_type == "state" and vertex.is_parallel_owner
+    ]
     for transition in machine.walk_transitions():
         for owner in parallel_owners:
-            source_region_id = _direct_child_region_under_owner(machine, owner.vertex_id, transition.source_id)
-            target_region_id = _direct_child_region_under_owner(machine, owner.vertex_id, transition.target_id)
-            if source_region_id is None or target_region_id is None or source_region_id == target_region_id:
+            source_region_id = _direct_child_region_under_owner(
+                machine, owner.vertex_id, transition.source_id
+            )
+            target_region_id = _direct_child_region_under_owner(
+                machine, owner.vertex_id, transition.target_id
+            )
+            if (
+                source_region_id is None
+                or target_region_id is None
+                or source_region_id == target_region_id
+            ):
                 continue
             raise NotImplementedError(
                 f"Phase5 does not support cross-region transitions under parallel owner {owner.vertex_id}: "
@@ -1539,7 +1703,8 @@ def _prune_transitions_for_retained_vertices(machine: IrMachine) -> None:
         region.transitions = [
             transition
             for transition in region.transitions
-            if transition.source_id in valid_vertex_ids and transition.target_id in valid_vertex_ids
+            if transition.source_id in valid_vertex_ids
+            and transition.target_id in valid_vertex_ids
         ]
 
 
@@ -1571,7 +1736,10 @@ def _clone_machine_for_main_output(
 
     semantic_note = None
     if collapsed_owner_state_ids:
-        collapsed_state_paths = [".".join(cloned.state_path(state_id)) for state_id in collapsed_owner_state_ids]
+        collapsed_state_paths = [
+            ".".join(cloned.state_path(state_id))
+            for state_id in collapsed_owner_state_ids
+        ]
         semantic_note = (
             "Parallel-region main output is a semantic downgrade; nested multi-region owners are preserved as "
             "atomic states in the main machine while region-level behavior is emitted into separate outputs."
@@ -1587,7 +1755,10 @@ def _clone_machine_for_main_output(
         )
     else:
         for diagnostic in reversed(cloned.diagnostics):
-            if diagnostic.code in {"parallel_split_semantic_downgrade", "parallel_main_machine_semantic_downgrade"}:
+            if diagnostic.code in {
+                "parallel_split_semantic_downgrade",
+                "parallel_main_machine_semantic_downgrade",
+            }:
                 semantic_note = diagnostic.message
                 break
 
@@ -1671,7 +1842,9 @@ def _clone_machine_for_parallel_region(
     )
     cloned.rebuild_indexes()
     return SysDeSimPreparedMachine(
-        output_name=_make_split_output_name(cloned, owner_state_id, region_index + 1, prefix=output_prefix),
+        output_name=_make_split_output_name(
+            cloned, owner_state_id, region_index + 1, prefix=output_prefix
+        ),
         machine=cloned,
         semantic_note=cloned.diagnostics[-1].message,
     )
@@ -1695,7 +1868,11 @@ def _prepare_split_output_machines(
         cross-region transitions.
     """
     _validate_parallel_split_compatibility(machine)
-    prepared_outputs = [_clone_machine_for_main_output(machine, output_name=output_prefix or machine.safe_name)]
+    prepared_outputs = [
+        _clone_machine_for_main_output(
+            machine, output_name=output_prefix or machine.safe_name
+        )
+    ]
     parallel_owner = _find_first_parallel_owner(machine)
     if parallel_owner is None:
         return prepared_outputs
@@ -1707,7 +1884,11 @@ def _prepare_split_output_machines(
             region_index,
             output_prefix=output_prefix,
         )
-        prepared_outputs.extend(_prepare_split_output_machines(prepared.machine, output_prefix=prepared.output_name))
+        prepared_outputs.extend(
+            _prepare_split_output_machines(
+                prepared.machine, output_prefix=prepared.output_name
+            )
+        )
     return prepared_outputs
 
 
@@ -1771,7 +1952,9 @@ def _make_route_flag_name(machine: IrMachine, transition: IrTransition) -> str:
     return f"__sysdesim_flag_route_{scope_part}__tx_{transition_suffix}"
 
 
-def _convert_time_event_to_ticks(time_event: IrTimeEvent, tick_duration_ms: float) -> int:
+def _convert_time_event_to_ticks(
+    time_event: IrTimeEvent, tick_duration_ms: float
+) -> int:
     """
     Convert one normalized UML time literal into runtime ticks.
 
@@ -1790,7 +1973,9 @@ def _convert_time_event_to_ticks(time_event: IrTimeEvent, tick_duration_ms: floa
             f"Phase3 only supports relative uml:TimeEvent values: {time_event.time_event_id}"
         )
     if time_event.normalized_delay is None or time_event.normalized_unit is None:
-        raise ValueError(f"Unsupported uml:TimeEvent literal {time_event.raw_literal!r}.")
+        raise ValueError(
+            f"Unsupported uml:TimeEvent literal {time_event.raw_literal!r}."
+        )
 
     unit_factor_us = {
         "s": 1_000_000.0,
@@ -1798,7 +1983,9 @@ def _convert_time_event_to_ticks(time_event: IrTimeEvent, tick_duration_ms: floa
         "us": 1.0,
     }.get(time_event.normalized_unit)
     if unit_factor_us is None:  # pragma: no cover - guarded by _TIME_LITERAL
-        raise ValueError(f"Unsupported uml:TimeEvent unit {time_event.normalized_unit!r}.")
+        raise ValueError(
+            f"Unsupported uml:TimeEvent unit {time_event.normalized_unit!r}."
+        )
 
     delay_us = time_event.normalized_delay * unit_factor_us
     tick_us = tick_duration_ms * 1_000.0
@@ -1848,7 +2035,9 @@ def _build_timeout_guard_expr(
     return dsl_nodes.BinaryOp(dsl_nodes.Paren(timeout_guard), "&&", original_guard)
 
 
-def _build_signal_event_id(machine: IrMachine, transition: IrTransition) -> dsl_nodes.ChainID:
+def _build_signal_event_id(
+    machine: IrMachine, transition: IrTransition
+) -> dsl_nodes.ChainID:
     """
     Build the FCSTM event reference for a signal-triggered transition.
 
@@ -1864,7 +2053,9 @@ def _build_signal_event_id(machine: IrMachine, transition: IrTransition) -> dsl_
     return dsl_nodes.ChainID([signal.safe_name], is_absolute=True)
 
 
-def _is_force_transition_candidate(machine: IrMachine, transition: IrTransition) -> bool:
+def _is_force_transition_candidate(
+    machine: IrMachine, transition: IrTransition
+) -> bool:
     """
     Return whether a transition should be emitted as an FCSTM force transition.
 
@@ -1926,7 +2117,9 @@ def _register_propagated_timeout_exit_chain(
         if child.vertex_type != "state":
             continue
         sink.setdefault(composite_source.vertex_id, []).append(
-            _LoweredExitChainTransition(source_id=child.vertex_id, guard_expr=guard_expr)
+            _LoweredExitChainTransition(
+                source_id=child.vertex_id, guard_expr=guard_expr
+            )
         )
         if child.is_composite:
             _register_propagated_timeout_exit_chain(machine, child, guard_expr, sink)
@@ -1949,7 +2142,9 @@ def _append_prepended_transition(
     :return: ``None``.
     :rtype: None
     """
-    context.prepended_transitions_by_scope_id.setdefault(scope_state_id, []).append(transition)
+    context.prepended_transitions_by_scope_id.setdefault(scope_state_id, []).append(
+        transition
+    )
 
 
 def _append_regular_transition(
@@ -1969,7 +2164,9 @@ def _append_regular_transition(
     :return: ``None``.
     :rtype: None
     """
-    context.appended_regular_transitions_by_scope_id.setdefault(scope_state_id, []).append(transition)
+    context.appended_regular_transitions_by_scope_id.setdefault(
+        scope_state_id, []
+    ).append(transition)
 
 
 def _append_timeout_transition(
@@ -1989,7 +2186,9 @@ def _append_timeout_transition(
     :return: ``None``.
     :rtype: None
     """
-    context.appended_timeout_transitions_by_scope_id.setdefault(scope_state_id, []).append(transition)
+    context.appended_timeout_transitions_by_scope_id.setdefault(
+        scope_state_id, []
+    ).append(transition)
 
 
 def _scope_state_id_for_region(machine: IrMachine, region_id: str) -> str:
@@ -2044,15 +2243,20 @@ def _lower_cross_level_transition(
         raise NotImplementedError(
             f"Phase4 only supports signal/none/time cross-level transitions: {transition.transition_id}"
         )
-    if transition.trigger_kind == "time" and transition.transition_id not in context.time_transitions_by_id:  # pragma: no cover
-        raise RuntimeError(f"Missing lowered time-transition metadata: {transition.transition_id}")
+    if (
+        transition.trigger_kind == "time"
+        and transition.transition_id not in context.time_transitions_by_id
+    ):  # pragma: no cover
+        raise RuntimeError(
+            f"Missing lowered time-transition metadata: {transition.transition_id}"
+        )
 
     source_path = machine.state_id_path(transition.source_id)
     target_path = machine.state_id_path(transition.target_id)
     lca_state_id = machine.lca_state_id(transition.source_id, transition.target_id)
     lca_index = source_path.index(lca_state_id) if lca_state_id is not None else -1
-    source_suffix_path = source_path[lca_index + 1:]
-    target_suffix_path = target_path[lca_index + 1:]
+    source_suffix_path = source_path[lca_index + 1 :]
+    target_suffix_path = target_path[lca_index + 1 :]
     if not source_suffix_path or not target_suffix_path:
         raise NotImplementedError(
             f"Phase4 does not support ancestor-target cross-level transitions yet: {transition.transition_id}"
@@ -2062,9 +2266,13 @@ def _lower_cross_level_transition(
     target_branch_id = target_suffix_path[0]
     route_flag_name = _make_route_flag_name(machine, transition)
     route_flag_guard = _build_route_flag_guard_expr(route_flag_name)
-    first_hop_target_state_id = target_branch_id if source_branch_id == transition.source_id else None
+    first_hop_target_state_id = (
+        target_branch_id if source_branch_id == transition.source_id else None
+    )
     if transition.trigger_kind == "time":
-        first_hop_guard_expr = context.time_transitions_by_id[transition.transition_id].guard_expr
+        first_hop_guard_expr = context.time_transitions_by_id[
+            transition.transition_id
+        ].guard_expr
     else:
         first_hop_guard_expr = transition.guard_expr_ir
 
@@ -2076,9 +2284,13 @@ def _lower_cross_level_transition(
             if first_hop_target_state_id is not None
             else dsl_nodes.EXIT_STATE
         ),
-        event_id=_build_signal_event_id(machine, transition) if transition.trigger_kind == "signal" else None,
+        event_id=_build_signal_event_id(machine, transition)
+        if transition.trigger_kind == "signal"
+        else None,
         condition_expr=first_hop_guard_expr,
-        post_operations=[dsl_nodes.OperationAssignment(route_flag_name, dsl_nodes.Integer("1"))],
+        post_operations=[
+            dsl_nodes.OperationAssignment(route_flag_name, dsl_nodes.Integer("1"))
+        ],
     )
     source_scope_id = _scope_state_id_for_region(machine, source.parent_region_id)
     if transition.trigger_kind == "time":
@@ -2087,10 +2299,12 @@ def _lower_cross_level_transition(
         _append_regular_transition(context, source_scope_id, first_hop_transition)
 
     if source_branch_id != transition.source_id:
-        for state_id in reversed(source_path[lca_index + 2:-1]):
+        for state_id in reversed(source_path[lca_index + 2 : -1]):
             _append_prepended_transition(
                 context,
-                _scope_state_id_for_region(machine, machine.get_vertex(state_id).parent_region_id),
+                _scope_state_id_for_region(
+                    machine, machine.get_vertex(state_id).parent_region_id
+                ),
                 dsl_nodes.TransitionDefinition(
                     from_state=machine.get_vertex(state_id).safe_name,
                     to_state=dsl_nodes.EXIT_STATE,
@@ -2100,7 +2314,9 @@ def _lower_cross_level_transition(
                 ),
             )
 
-        bridge_scope_id = lca_state_id if lca_state_id is not None else machine.machine_id
+        bridge_scope_id = (
+            lca_state_id if lca_state_id is not None else machine.machine_id
+        )
         _append_prepended_transition(
             context,
             bridge_scope_id,
@@ -2115,7 +2331,9 @@ def _lower_cross_level_transition(
 
     if len(target_suffix_path) > 1:
         target_path_after_branch = target_suffix_path
-        for owner_state_id, child_state_id in zip(target_path_after_branch[:-1], target_path_after_branch[1:]):
+        for owner_state_id, child_state_id in zip(
+            target_path_after_branch[:-1], target_path_after_branch[1:]
+        ):
             _append_prepended_transition(
                 context,
                 owner_state_id,
@@ -2128,12 +2346,14 @@ def _lower_cross_level_transition(
                 ),
             )
 
-    context.route_flag_clear_operations_by_target_id.setdefault(transition.target_id, []).append(
-        dsl_nodes.OperationAssignment(route_flag_name, dsl_nodes.Integer("0"))
-    )
+    context.route_flag_clear_operations_by_target_id.setdefault(
+        transition.target_id, []
+    ).append(dsl_nodes.OperationAssignment(route_flag_name, dsl_nodes.Integer("0")))
 
 
-def _build_ast_context(machine: IrMachine, tick_duration_ms: Optional[float]) -> _AstBuildContext:
+def _build_ast_context(
+    machine: IrMachine, tick_duration_ms: Optional[float]
+) -> _AstBuildContext:
     """
     Build the internal lowering context required for phase3-4 AST emission.
 
@@ -2149,11 +2369,17 @@ def _build_ast_context(machine: IrMachine, tick_duration_ms: Optional[float]) ->
     :raises NotImplementedError: If a time event or cross-level transition uses
         an unsupported shape.
     """
-    time_transitions = [transition for transition in machine.walk_transitions() if transition.trigger_kind == "time"]
+    time_transitions = [
+        transition
+        for transition in machine.walk_transitions()
+        if transition.trigger_kind == "time"
+    ]
     context = _AstBuildContext()
     if time_transitions:
         if tick_duration_ms is None:
-            raise ValueError("tick_duration_ms is required when lowering uml:TimeEvent transitions.")
+            raise ValueError(
+                "tick_duration_ms is required when lowering uml:TimeEvent transitions."
+            )
         if tick_duration_ms <= 0:
             raise ValueError("tick_duration_ms must be greater than 0.")
 
@@ -2166,7 +2392,9 @@ def _build_ast_context(machine: IrMachine, tick_duration_ms: Optional[float]) ->
             time_event = machine.get_time_event(transition.trigger_ref_id)
             timer_name = _make_time_event_timer_name(machine, transition)
             ticks = _convert_time_event_to_ticks(time_event, tick_duration_ms)
-            guard_expr = _build_timeout_guard_expr(timer_name, ticks, transition.guard_expr_ir)
+            guard_expr = _build_timeout_guard_expr(
+                timer_name, ticks, transition.guard_expr_ir
+            )
 
             lowered = _LoweredTimeTransition(
                 transition_id=transition.transition_id,
@@ -2177,7 +2405,9 @@ def _build_ast_context(machine: IrMachine, tick_duration_ms: Optional[float]) ->
             )
             context.time_transitions_by_id[transition.transition_id] = lowered
             context.time_transitions_in_order.append(lowered)
-            context.time_transitions_by_source_id.setdefault(transition.source_id, []).append(lowered)
+            context.time_transitions_by_source_id.setdefault(
+                transition.source_id, []
+            ).append(lowered)
 
             if source.is_composite:
                 _register_propagated_timeout_exit_chain(
@@ -2194,7 +2424,9 @@ def _build_ast_context(machine: IrMachine, tick_duration_ms: Optional[float]) ->
     return context
 
 
-def _display_name_or_none(raw_name: Optional[str], safe_name: Optional[str]) -> Optional[str]:
+def _display_name_or_none(
+    raw_name: Optional[str], safe_name: Optional[str]
+) -> Optional[str]:
     """
     Return the display name only when it differs from the FCSTM identifier.
 
@@ -2211,7 +2443,9 @@ def _display_name_or_none(raw_name: Optional[str], safe_name: Optional[str]) -> 
     return raw_name
 
 
-def _is_init_pseudostate(machine: IrMachine, region: IrRegion, vertex: IrVertex) -> bool:
+def _is_init_pseudostate(
+    machine: IrMachine, region: IrRegion, vertex: IrVertex
+) -> bool:
     """
     Return whether a pseudostate matches the phase2 init-state heuristic.
 
@@ -2264,15 +2498,23 @@ def _validate_phase2_region(machine: IrMachine, region: IrRegion) -> None:
                 )
             for child_region in vertex.regions:
                 _validate_phase2_region(machine, child_region)
-        elif vertex.vertex_type == "pseudostate" and _is_init_pseudostate(machine, region, vertex):
+        elif vertex.vertex_type == "pseudostate" and _is_init_pseudostate(
+            machine, region, vertex
+        ):
             init_pseudostates.append(vertex)
         elif vertex.vertex_type == "pseudostate":
             raise NotImplementedError(
                 f"Phase2 only supports init-pseudostate lowering: {vertex.vertex_id}"
             )
 
-    if region.owner_state_id is not None and region.vertices and len(init_pseudostates) != 1:
-        raise ValueError(f"Composite state region {region.region_id} must have exactly one init pseudostate.")
+    if (
+        region.owner_state_id is not None
+        and region.vertices
+        and len(init_pseudostates) != 1
+    ):
+        raise ValueError(
+            f"Composite state region {region.region_id} must have exactly one init pseudostate."
+        )
 
 
 def _build_transition(
@@ -2295,11 +2537,19 @@ def _build_transition(
     source = machine.get_vertex(transition.source_id)
     target = machine.get_vertex(transition.target_id)
 
-    lowered_time_transition = context.time_transitions_by_id.get(transition.transition_id)
+    lowered_time_transition = context.time_transitions_by_id.get(
+        transition.transition_id
+    )
     if transition.trigger_kind == "time":
-        if lowered_time_transition is None:  # pragma: no cover - build_machine_ast prepares this eagerly
-            raise RuntimeError(f"Missing lowered time-transition metadata: {transition.transition_id}")
-        if source.vertex_type != "state" or target.vertex_type != "state":  # pragma: no cover
+        if (
+            lowered_time_transition is None
+        ):  # pragma: no cover - build_machine_ast prepares this eagerly
+            raise RuntimeError(
+                f"Missing lowered time-transition metadata: {transition.transition_id}"
+            )
+        if (
+            source.vertex_type != "state" or target.vertex_type != "state"
+        ):  # pragma: no cover
             raise NotImplementedError(
                 f"Phase3 only supports state-to-state uml:TimeEvent transitions: {transition.transition_id}"
             )
@@ -2332,7 +2582,11 @@ def _build_transition(
             f"Phase2 only supports init pseudostate and state-to-state transitions: {transition.transition_id}"
         )
 
-    event_id = _build_signal_event_id(machine, transition) if transition.trigger_kind == "signal" else None
+    event_id = (
+        _build_signal_event_id(machine, transition)
+        if transition.trigger_kind == "signal"
+        else None
+    )
 
     return dsl_nodes.TransitionDefinition(
         from_state=source.safe_name,
@@ -2376,12 +2630,16 @@ def _build_force_transition(
     return dsl_nodes.ForceTransitionDefinition(
         from_state=source.safe_name,
         to_state=target.safe_name,
-        event_id=_build_signal_event_id(machine, transition) if transition.trigger_kind == "signal" else None,
+        event_id=_build_signal_event_id(machine, transition)
+        if transition.trigger_kind == "signal"
+        else None,
         condition_expr=transition.guard_expr_ir,
     )
 
 
-def _logical_regular_transition_region_id(machine: IrMachine, transition: IrTransition) -> Optional[str]:
+def _logical_regular_transition_region_id(
+    machine: IrMachine, transition: IrTransition
+) -> Optional[str]:
     """
     Return the region that should own a regular emitted transition.
 
@@ -2407,7 +2665,9 @@ def _logical_regular_transition_region_id(machine: IrMachine, transition: IrTran
     return source.parent_region_id
 
 
-def _iter_emittable_region_transitions(machine: IrMachine, region: IrRegion) -> Iterable[IrTransition]:
+def _iter_emittable_region_transitions(
+    machine: IrMachine, region: IrRegion
+) -> Iterable[IrTransition]:
     """
     Yield transitions that should be emitted inside one region scope.
 
@@ -2428,7 +2688,10 @@ def _iter_emittable_region_transitions(machine: IrMachine, region: IrRegion) -> 
         for transition in current_region.transitions:
             if transition.transition_id in seen_transition_ids:
                 continue
-            if _logical_regular_transition_region_id(machine, transition) != region.region_id:
+            if (
+                _logical_regular_transition_region_id(machine, transition)
+                != region.region_id
+            ):
                 continue
             seen_transition_ids.add(transition.transition_id)
             yield transition
@@ -2439,7 +2702,11 @@ def _iter_emittable_region_transitions(machine: IrMachine, region: IrRegion) -> 
 
         owner = machine.get_vertex(current_region.owner_state_id)
         parent_region_id = owner.parent_region_id
-        current_region = machine.get_region(parent_region_id) if parent_region_id is not None else None
+        current_region = (
+            machine.get_region(parent_region_id)
+            if parent_region_id is not None
+            else None
+        )
 
 
 def _build_state(
@@ -2467,11 +2734,15 @@ def _build_state(
     durings: List[dsl_nodes.DuringStatement] = []
     exits = []
     during_aspects: List[dsl_nodes.DuringAspectStatement] = []
-    route_flag_clear_operations = context.route_flag_clear_operations_by_target_id.get(vertex.vertex_id, [])
+    route_flag_clear_operations = context.route_flag_clear_operations_by_target_id.get(
+        vertex.vertex_id, []
+    )
     if route_flag_clear_operations:
         enters.append(dsl_nodes.EnterOperations(route_flag_clear_operations))
     if vertex.entry_action is not None:
-        enters.append(dsl_nodes.EnterAbstractFunction(vertex.entry_action.safe_name, None))
+        enters.append(
+            dsl_nodes.EnterAbstractFunction(vertex.entry_action.safe_name, None)
+        )
     if vertex.exit_action is not None:
         exits.append(dsl_nodes.ExitAbstractFunction(vertex.exit_action.safe_name, None))
 
@@ -2479,25 +2750,36 @@ def _build_state(
     if time_transitions:
         enters.append(
             dsl_nodes.EnterOperations(
-                [dsl_nodes.OperationAssignment(item.timer_name, dsl_nodes.Integer("0")) for item in time_transitions]
+                [
+                    dsl_nodes.OperationAssignment(
+                        item.timer_name, dsl_nodes.Integer("0")
+                    )
+                    for item in time_transitions
+                ]
             )
         )
         increment_operations = [
             dsl_nodes.OperationAssignment(
                 item.timer_name,
-                dsl_nodes.BinaryOp(dsl_nodes.Name(item.timer_name), "+", dsl_nodes.Integer("1")),
+                dsl_nodes.BinaryOp(
+                    dsl_nodes.Name(item.timer_name), "+", dsl_nodes.Integer("1")
+                ),
             )
             for item in time_transitions
         ]
         if vertex.is_composite:
-            during_aspects.append(dsl_nodes.DuringAspectOperations("after", increment_operations))
+            during_aspects.append(
+                dsl_nodes.DuringAspectOperations("after", increment_operations)
+            )
         else:
             durings.append(dsl_nodes.DuringOperations(None, increment_operations))
 
     substates: List[dsl_nodes.StateDefinition] = []
     transitions: List[dsl_nodes.TransitionDefinition] = []
     force_transitions: List[dsl_nodes.ForceTransitionDefinition] = []
-    if len(vertex.regions) > 1:  # pragma: no cover - rejected earlier by _validate_phase2_region
+    if (
+        len(vertex.regions) > 1
+    ):  # pragma: no cover - rejected earlier by _validate_phase2_region
         raise NotImplementedError(
             f"Phase2 does not support multi-region composite state yet: {vertex.vertex_id}"
         )
@@ -2505,12 +2787,16 @@ def _build_state(
     if vertex.regions:
         region = vertex.regions[0]
         init_pseudostates = {
-            child.vertex_id for child in region.vertices if _is_init_pseudostate(machine, region, child)
+            child.vertex_id
+            for child in region.vertices
+            if _is_init_pseudostate(machine, region, child)
         }
         for child in region.vertices:
             if child.vertex_type == "state":
                 substates.append(_build_state(machine, child, context))
-        transitions.extend(context.prepended_transitions_by_scope_id.get(vertex.vertex_id, []))
+        transitions.extend(
+            context.prepended_transitions_by_scope_id.get(vertex.vertex_id, [])
+        )
         init_transitions: List[dsl_nodes.TransitionDefinition] = []
         regular_transitions: List[dsl_nodes.TransitionDefinition] = []
         lowered_timeout_transitions: List[dsl_nodes.TransitionDefinition] = []
@@ -2529,8 +2815,12 @@ def _build_state(
             else:
                 regular_transitions.append(built_transition)
         transitions.extend(init_transitions)
-        regular_transitions.extend(context.appended_regular_transitions_by_scope_id.get(vertex.vertex_id, []))
-        lowered_timeout_transitions.extend(context.appended_timeout_transitions_by_scope_id.get(vertex.vertex_id, []))
+        regular_transitions.extend(
+            context.appended_regular_transitions_by_scope_id.get(vertex.vertex_id, [])
+        )
+        lowered_timeout_transitions.extend(
+            context.appended_timeout_transitions_by_scope_id.get(vertex.vertex_id, [])
+        )
         transitions.extend(regular_transitions)
         transitions.extend(lowered_timeout_transitions)
         if vertex.vertex_id in context.propagated_exit_chains:
@@ -2618,7 +2908,11 @@ def build_machine_ast(
     ]
     definitions = []
     for variable in machine.variables:
-        if variable.safe_name is None or variable.type_name is None or variable.default_value is None:
+        if (
+            variable.safe_name is None
+            or variable.type_name is None
+            or variable.default_value is None
+        ):
             continue
         if variable.type_name == "int":
             expr = dsl_nodes.Integer(str(variable.default_value))
@@ -2626,7 +2920,11 @@ def build_machine_ast(
             expr = dsl_nodes.Float(str(variable.default_value))
         else:
             raise ValueError(f"Unsupported variable type {variable.type_name!r}.")
-        definitions.append(dsl_nodes.DefAssignment(name=variable.safe_name, type=variable.type_name, expr=expr))
+        definitions.append(
+            dsl_nodes.DefAssignment(
+                name=variable.safe_name, type=variable.type_name, expr=expr
+            )
+        )
     for route_flag_name in context.route_flag_names_in_order:
         definitions.append(
             dsl_nodes.DefAssignment(
@@ -2644,10 +2942,13 @@ def build_machine_ast(
             )
         )
 
-    return dsl_nodes.StateMachineDSLProgram(
+    program = dsl_nodes.StateMachineDSLProgram(
         definitions=definitions,
-        root_state=_build_state(machine, root_vertex, context, event_definitions=root_events),
+        root_state=_build_state(
+            machine, root_vertex, context, event_definitions=root_events
+        ),
     )
+    return _prune_unused_program_definitions(program)
 
 
 def emit_program(program: dsl_nodes.StateMachineDSLProgram) -> str:
@@ -2662,7 +2963,9 @@ def emit_program(program: dsl_nodes.StateMachineDSLProgram) -> str:
     return str(program)
 
 
-def validate_program_roundtrip(program: dsl_nodes.StateMachineDSLProgram) -> Tuple[dsl_nodes.StateMachineDSLProgram, object]:
+def validate_program_roundtrip(
+    program: dsl_nodes.StateMachineDSLProgram,
+) -> Tuple[dsl_nodes.StateMachineDSLProgram, object]:
     """
     Round-trip the emitted DSL through the parser and model builder.
 
@@ -2709,7 +3012,9 @@ def prepare_sysdesim_output_machines(
     :raises NotImplementedError: If the source machine requires unsupported
         parallel-splitting behavior.
     """
-    machine = load_sysdesim_machine(xml_path, machine_name=machine_name, machine_id=machine_id)
+    machine = load_sysdesim_machine(
+        xml_path, machine_name=machine_name, machine_id=machine_id
+    )
     normalize_machine(machine)
     return _prepare_split_output_machines(machine)
 
@@ -2734,7 +3039,9 @@ def _load_and_prepare_sysdesim_machine(
     :return: Tuple of the normalized selected machine and prepared outputs.
     :rtype: tuple[IrMachine, list[SysDeSimPreparedMachine]]
     """
-    machine = load_sysdesim_machine(xml_path, machine_name=machine_name, machine_id=machine_id)
+    machine = load_sysdesim_machine(
+        xml_path, machine_name=machine_name, machine_id=machine_id
+    )
     normalize_machine(machine)
     return machine, _prepare_split_output_machines(machine)
 
@@ -2800,7 +3107,9 @@ def convert_sysdesim_xml_to_asts(
     )
     return {
         item.prepared.output_name: item.program
-        for item in _convert_prepared_outputs(prepared_outputs, tick_duration_ms=tick_duration_ms)
+        for item in _convert_prepared_outputs(
+            prepared_outputs, tick_duration_ms=tick_duration_ms
+        )
     }
 
 
@@ -2835,7 +3144,9 @@ def convert_sysdesim_xml_to_dsls(
     )
     return {
         item.prepared.output_name: item.dsl_code
-        for item in _convert_prepared_outputs(prepared_outputs, tick_duration_ms=tick_duration_ms)
+        for item in _convert_prepared_outputs(
+            prepared_outputs, tick_duration_ms=tick_duration_ms
+        )
     }
 
 
@@ -2871,7 +3182,9 @@ def build_sysdesim_conversion_report(
         machine_name=machine_name,
         machine_id=machine_id,
     )
-    converted_outputs = _convert_prepared_outputs(prepared_outputs, tick_duration_ms=tick_duration_ms)
+    converted_outputs = _convert_prepared_outputs(
+        prepared_outputs, tick_duration_ms=tick_duration_ms
+    )
     output_reports = []
     for item in converted_outputs:
         output_reports.append(

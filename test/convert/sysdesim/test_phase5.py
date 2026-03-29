@@ -79,7 +79,10 @@ def test_phase5_parallel_owner_splits_into_stable_multi_output_programs(tmp_path
 
     prepared_outputs = prepare_sysdesim_output_machines(str(xml_file))
     ast_outputs = convert_sysdesim_xml_to_asts(str(xml_file))
-    dsl_outputs = {name: _normalize_newlines(code) for name, code in convert_sysdesim_xml_to_dsls(str(xml_file)).items()}
+    dsl_outputs = {
+        name: _normalize_newlines(code)
+        for name, code in convert_sysdesim_xml_to_dsls(str(xml_file)).items()
+    }
 
     expected_outputs = {
         "ParallelSplit": dedent(
@@ -115,10 +118,14 @@ def test_phase5_parallel_owner_splits_into_stable_multi_output_programs(tmp_path
         ),
     }
 
-    assert [item.output_name for item in prepared_outputs] == list(expected_outputs.keys())
+    assert [item.output_name for item in prepared_outputs] == list(
+        expected_outputs.keys()
+    )
     assert list(ast_outputs.keys()) == list(expected_outputs.keys())
     assert dsl_outputs == expected_outputs
-    assert {name: _normalize_newlines(str(program)) for name, program in ast_outputs.items()} == expected_outputs
+    assert {
+        name: _normalize_newlines(str(program)) for name, program in ast_outputs.items()
+    } == expected_outputs
 
     for prepared in prepared_outputs:
         assert prepared.semantic_note is not None
@@ -135,9 +142,15 @@ def test_phase5_parallel_owner_splits_into_stable_multi_output_programs(tmp_path
             assert tuple(model.root_state.substates) == ("Controller",)
             assert not model.root_state.substates["Controller"].substates
         elif output_name.endswith("region1"):
-            assert tuple(model.root_state.substates["Controller"].substates) == ("LeftIdle", "LeftRun")
+            assert tuple(model.root_state.substates["Controller"].substates) == (
+                "LeftIdle",
+                "LeftRun",
+            )
         else:
-            assert tuple(model.root_state.substates["Controller"].substates) == ("RightIdle", "RightRun")
+            assert tuple(model.root_state.substates["Controller"].substates) == (
+                "RightIdle",
+                "RightRun",
+            )
 
 
 def test_phase5_nested_parallel_owner_preserves_outer_machine_structure(tmp_path: Path):
@@ -201,12 +214,14 @@ def test_phase5_nested_parallel_owner_preserves_outer_machine_structure(tmp_path
     )
 
     ast_outputs = convert_sysdesim_xml_to_asts(str(xml_file))
-    dsl_outputs = {name: _normalize_newlines(code) for name, code in convert_sysdesim_xml_to_dsls(str(xml_file)).items()}
+    dsl_outputs = {
+        name: _normalize_newlines(code)
+        for name, code in convert_sysdesim_xml_to_dsls(str(xml_file)).items()
+    }
 
     expected_outputs = {
         "NestedMainSplit": dedent(
             """\
-            def int count = 0;
             state NestedMainSplit named 'Nested Main Split' {
                 state Top {
                     state Before;
@@ -225,7 +240,6 @@ def test_phase5_nested_parallel_owner_preserves_outer_machine_structure(tmp_path
         ),
         "NestedMainSplit__Top__Parallel_region1": dedent(
             """\
-            def int count = 0;
             state NestedMainSplit named 'Nested Main Split' {
                 state Top {
                     state Before;
@@ -249,7 +263,6 @@ def test_phase5_nested_parallel_owner_preserves_outer_machine_structure(tmp_path
         ),
         "NestedMainSplit__Top__Parallel_region2": dedent(
             """\
-            def int count = 0;
             state NestedMainSplit named 'Nested Main Split' {
                 state Top {
                     state Before;
@@ -275,20 +288,31 @@ def test_phase5_nested_parallel_owner_preserves_outer_machine_structure(tmp_path
 
     assert list(ast_outputs.keys()) == list(expected_outputs.keys())
     assert dsl_outputs == expected_outputs
-    assert {name: _normalize_newlines(str(program)) for name, program in ast_outputs.items()} == expected_outputs
+    assert {
+        name: _normalize_newlines(str(program)) for name, program in ast_outputs.items()
+    } == expected_outputs
     for output_name, dsl_code in dsl_outputs.items():
         model = _assert_dsl_code_loads_to_state_machine(dsl_code)
         assert tuple(model.root_state.substates) == ("Top", "Done")
         assert tuple(model.root_state.events) == ("FINISH",)
-        assert tuple(model.root_state.substates["Top"].substates) == ("Before", "Parallel", "After")
+        assert tuple(model.root_state.substates["Top"].substates) == (
+            "Before",
+            "Parallel",
+            "After",
+        )
         if output_name == "NestedMainSplit":
             assert not model.root_state.substates["Top"].substates["Parallel"].substates
         else:
-            assert tuple(model.root_state.substates["Top"].substates["Parallel"].substates) in {
+            assert tuple(
+                model.root_state.substates["Top"].substates["Parallel"].substates
+            ) in {
                 ("LeftIdle", "LeftRun"),
                 ("RightIdle", "RightRun"),
             }
-        assert [transition.to_state for transition in model.root_state.substates["Top"].transitions] == [
+        assert [
+            transition.to_state
+            for transition in model.root_state.substates["Top"].transitions
+        ] == [
             "Before",
             "Parallel",
             "After",
@@ -296,7 +320,9 @@ def test_phase5_nested_parallel_owner_preserves_outer_machine_structure(tmp_path
         ]
 
 
-def test_phase5_single_output_apis_require_plural_conversion_for_split_machines(tmp_path: Path):
+def test_phase5_single_output_apis_require_plural_conversion_for_split_machines(
+    tmp_path: Path,
+):
     """Singular conversion APIs should reject machines that expand into multiple split outputs."""
     xml_file = _write_xml(
         tmp_path,
@@ -373,7 +399,9 @@ def test_phase5_rejects_cross_region_transition_under_parallel_owner(tmp_path: P
         """,
     )
 
-    with pytest.raises(NotImplementedError, match="cross-region transitions under parallel owner"):
+    with pytest.raises(
+        NotImplementedError, match="cross-region transitions under parallel owner"
+    ):
         prepare_sysdesim_output_machines(str(xml_file))
 
 
@@ -424,7 +452,10 @@ def test_phase5_nested_parallel_owners_append_stable_split_prefixes(tmp_path: Pa
     )
 
     ast_outputs = convert_sysdesim_xml_to_asts(str(xml_file))
-    dsl_outputs = {name: _normalize_newlines(code) for name, code in convert_sysdesim_xml_to_dsls(str(xml_file)).items()}
+    dsl_outputs = {
+        name: _normalize_newlines(code)
+        for name, code in convert_sysdesim_xml_to_dsls(str(xml_file)).items()
+    }
 
     expected_outputs = {
         "NestedSplit": dedent(
@@ -484,19 +515,31 @@ def test_phase5_nested_parallel_owners_append_stable_split_prefixes(tmp_path: Pa
 
     assert list(ast_outputs.keys()) == list(expected_outputs.keys())
     assert dsl_outputs == expected_outputs
-    assert {name: _normalize_newlines(str(program)) for name, program in ast_outputs.items()} == expected_outputs
+    assert {
+        name: _normalize_newlines(str(program)) for name, program in ast_outputs.items()
+    } == expected_outputs
     for output_name, dsl_code in dsl_outputs.items():
         model = _assert_dsl_code_loads_to_state_machine(dsl_code)
         assert tuple(model.root_state.substates) == ("Controller",)
         if output_name == "NestedSplit":
             assert not model.root_state.substates["Controller"].substates
         elif output_name == "NestedSplit__Controller_region1":
-            assert tuple(model.root_state.substates["Controller"].substates) == ("Worker",)
-            assert not model.root_state.substates["Controller"].substates["Worker"].substates
+            assert tuple(model.root_state.substates["Controller"].substates) == (
+                "Worker",
+            )
+            assert (
+                not model.root_state.substates["Controller"]
+                .substates["Worker"]
+                .substates
+            )
         elif output_name == "NestedSplit__Controller_region2":
-            assert tuple(model.root_state.substates["Controller"].substates) == ("Side",)
+            assert tuple(model.root_state.substates["Controller"].substates) == (
+                "Side",
+            )
         else:
-            assert tuple(model.root_state.substates["Controller"].substates) == ("Worker",)
+            assert tuple(model.root_state.substates["Controller"].substates) == (
+                "Worker",
+            )
             worker = model.root_state.substates["Controller"].substates["Worker"]
             if output_name.endswith("region1"):
                 assert tuple(worker.substates) == ("AIdle",)
@@ -504,7 +547,9 @@ def test_phase5_nested_parallel_owners_append_stable_split_prefixes(tmp_path: Pa
                 assert tuple(worker.substates) == ("BIdle",)
 
 
-def test_phase5_prepare_outputs_preserves_non_split_diagnostics_without_semantic_note(tmp_path: Path):
+def test_phase5_prepare_outputs_preserves_non_split_diagnostics_without_semantic_note(
+    tmp_path: Path,
+):
     """Prepared outputs should keep unrelated diagnostics without fabricating a split semantic note."""
     xml_file = _write_xml(
         tmp_path,

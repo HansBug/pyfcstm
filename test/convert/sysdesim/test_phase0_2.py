@@ -13,6 +13,7 @@ from pyfcstm.convert.sysdesim import (
     build_machine_ast,
     convert_sysdesim_xml_to_ast,
     convert_sysdesim_xml_to_dsl,
+    convert_sysdesim_xml_to_dsls,
     emit_program,
     load_sysdesim_machine,
     load_sysdesim_xml,
@@ -51,13 +52,17 @@ def _normalize_newlines(text: str) -> str:
 
 def _assert_dataclass_field_names(obj, expected_names) -> None:
     """Assert that a dataclass instance exposes exactly the expected fields."""
-    assert [item.name for item in fields(obj) if not item.name.startswith("_")] == list(expected_names)
+    assert [item.name for item in fields(obj) if not item.name.startswith("_")] == list(
+        expected_names
+    )
 
 
 def _assert_property_names(obj, expected_names) -> None:
     """Assert that an object type exposes exactly the expected properties."""
     assert tuple(
-        name for name, value in inspect.getmembers(type(obj)) if isinstance(value, property)
+        name
+        for name, value in inspect.getmembers(type(obj))
+        if isinstance(value, property)
     ) == tuple(expected_names)
 
 
@@ -154,7 +159,9 @@ def test_phase0_can_parse_graph_structure_and_events(tmp_path: Path):
     assert machine.display_name is None
 
     root_region = machine.root_region
-    _assert_dataclass_field_names(root_region, ("region_id", "owner_state_id", "vertices", "transitions"))
+    _assert_dataclass_field_names(
+        root_region, ("region_id", "owner_state_id", "vertices", "transitions")
+    )
     assert root_region.region_id == "region_root"
     assert root_region.owner_state_id is None
     assert [vertex.vertex_id for vertex in root_region.vertices] == [
@@ -163,7 +170,11 @@ def test_phase0_can_parse_graph_structure_and_events(tmp_path: Path):
         "state_heat",
         "state_alarm",
     ]
-    assert [transition.transition_id for transition in root_region.transitions] == ["tx_init", "tx_heat", "tx_alarm"]
+    assert [transition.transition_id for transition in root_region.transitions] == [
+        "tx_init",
+        "tx_heat",
+        "tx_alarm",
+    ]
 
     init_root = machine.get_vertex("init_root")
     _assert_dataclass_field_names(
@@ -223,7 +234,10 @@ def test_phase0_can_parse_graph_structure_and_events(tmp_path: Path):
     assert state_heat.entry_action is None
     assert state_heat.exit_action is None
     assert state_heat.state_invariant is None
-    assert [region.region_id for region in state_heat.regions] == ["region_heat_a", "region_heat_b"]
+    assert [region.region_id for region in state_heat.regions] == [
+        "region_heat_a",
+        "region_heat_b",
+    ]
     assert state_heat.is_composite is True
     assert state_heat.is_parallel_owner is True
 
@@ -240,14 +254,18 @@ def test_phase0_can_parse_graph_structure_and_events(tmp_path: Path):
     assert state_alarm.is_parallel_owner is False
 
     entry_action = state_alarm.entry_action
-    _assert_dataclass_field_names(entry_action, ("action_id", "raw_name", "safe_name", "display_name"))
+    _assert_dataclass_field_names(
+        entry_action, ("action_id", "raw_name", "safe_name", "display_name")
+    )
     assert entry_action.action_id == "entry_alarm"
     assert entry_action.raw_name == "NotifyOperator"
     assert entry_action.safe_name is None
     assert entry_action.display_name is None
 
     exit_action = state_alarm.exit_action
-    _assert_dataclass_field_names(exit_action, ("action_id", "raw_name", "safe_name", "display_name"))
+    _assert_dataclass_field_names(
+        exit_action, ("action_id", "raw_name", "safe_name", "display_name")
+    )
     assert exit_action.action_id == "exit_alarm"
     assert exit_action.raw_name == "ResetIndicator"
     assert exit_action.safe_name is None
@@ -302,14 +320,18 @@ def test_phase0_can_parse_graph_structure_and_events(tmp_path: Path):
     assert tx_alarm.origin_kind == "original"
 
     signal = machine.get_signal("signal_heat")
-    _assert_dataclass_field_names(signal, ("signal_id", "raw_name", "safe_name", "display_name"))
+    _assert_dataclass_field_names(
+        signal, ("signal_id", "raw_name", "safe_name", "display_name")
+    )
     assert signal.signal_id == "signal_heat"
     assert signal.raw_name == "Heat Request"
     assert signal.safe_name is None
     assert signal.display_name is None
 
     signal_event = machine.get_signal_event("signal_evt_heat")
-    _assert_dataclass_field_names(signal_event, ("event_id", "signal_id", "raw_name", "safe_name", "display_name"))
+    _assert_dataclass_field_names(
+        signal_event, ("event_id", "signal_id", "raw_name", "safe_name", "display_name")
+    )
     assert signal_event.event_id == "signal_evt_heat"
     assert signal_event.signal_id == "signal_heat"
     assert signal_event.raw_name == ""
@@ -319,7 +341,13 @@ def test_phase0_can_parse_graph_structure_and_events(tmp_path: Path):
     time_event = machine.get_time_event("time_evt_alarm")
     _assert_dataclass_field_names(
         time_event,
-        ("time_event_id", "raw_literal", "is_relative", "normalized_delay", "normalized_unit"),
+        (
+            "time_event_id",
+            "raw_literal",
+            "is_relative",
+            "normalized_delay",
+            "normalized_unit",
+        ),
     )
     assert time_event.time_event_id == "time_evt_alarm"
     assert time_event.raw_literal == "0.5s"
@@ -327,7 +355,11 @@ def test_phase0_can_parse_graph_structure_and_events(tmp_path: Path):
     assert time_event.normalized_delay is None
     assert time_event.normalized_unit is None
 
-    assert [region.region_id for region in machine.walk_regions()] == ["region_root", "region_heat_a", "region_heat_b"]
+    assert [region.region_id for region in machine.walk_regions()] == [
+        "region_root",
+        "region_heat_a",
+        "region_heat_b",
+    ]
     assert [vertex.vertex_id for vertex in machine.walk_vertices()] == [
         "init_root",
         "state_idle",
@@ -347,7 +379,10 @@ def test_phase0_can_parse_graph_structure_and_events(tmp_path: Path):
     ]
     assert machine.state_id_path("state_cycle") == ("state_heat", "state_cycle")
     assert machine.state_path("state_cycle") == ("Loop Heat", "Cycle")
-    assert machine.state_path("state_cycle", use_safe_name=True) == ("Loop Heat", "Cycle")
+    assert machine.state_path("state_cycle", use_safe_name=True) == (
+        "Loop Heat",
+        "Cycle",
+    )
     assert machine.descendant_state_ids("state_heat") == ("state_cycle", "state_guard")
     assert machine.region_count("state_heat") == 2
     assert machine.lca_state_id("state_cycle", "state_guard") == "state_heat"
@@ -368,7 +403,9 @@ def test_phase0_can_parse_graph_structure_and_events(tmp_path: Path):
     assert machine_dict["time_events"][0]["raw_literal"] == "0.5s"
 
 
-def test_phase0_time_event_loader_tolerates_missing_when_and_missing_expr(tmp_path: Path):
+def test_phase0_time_event_loader_tolerates_missing_when_and_missing_expr(
+    tmp_path: Path,
+):
     """Phase0 should preserve empty time literals when UML omits ``when`` or ``expr`` nodes."""
     xml_file = _write_xml(
         tmp_path,
@@ -439,7 +476,15 @@ def test_phase1_normalize_names_and_variables(tmp_path: Path):
 
     _assert_dataclass_field_names(
         machine.variables[0],
-        ("variable_id", "raw_name", "safe_name", "display_name", "type_name", "default_value", "is_synthetic"),
+        (
+            "variable_id",
+            "raw_name",
+            "safe_name",
+            "display_name",
+            "type_name",
+            "default_value",
+            "is_synthetic",
+        ),
     )
     _assert_dataclass_field_names(
         machine.get_signal("signal_ready"),
@@ -455,7 +500,10 @@ def test_phase1_normalize_names_and_variables(tmp_path: Path):
     assert machine.get_vertex("state_idle").display_name == "水泵待命"
     assert machine.get_signal("signal_ready").safe_name == "LIU_LIANG_YI_WEN_DING"
     assert machine.get_signal("signal_ready").display_name == "流量已稳定"
-    assert machine.get_signal_event("signal_evt_ready").safe_name == "LIU_LIANG_YI_WEN_DING"
+    assert (
+        machine.get_signal_event("signal_evt_ready").safe_name
+        == "LIU_LIANG_YI_WEN_DING"
+    )
     assert machine.get_signal_event("signal_evt_ready").display_name == "流量已稳定"
     assert machine.variables[0].safe_name == "counter"
     assert machine.variables[0].display_name == "counter"
@@ -571,7 +619,6 @@ def test_phase2_build_ast_and_roundtrip(tmp_path: Path):
     dsl_code = _normalize_newlines(str(program))
     expected_dsl = dedent(
         """\
-        def int counter = 0;
         state MixerPanel named 'Mixer Panel' {
             state BufferReady named 'Buffer Ready';
             state MixCycle named 'Mix Cycle' {
@@ -588,20 +635,19 @@ def test_phase2_build_ast_and_roundtrip(tmp_path: Path):
     assert dsl_code == expected_dsl
     assert _normalize_newlines(emit_program(program)) == expected_dsl
     assert _normalize_newlines(str(parsed)) == expected_dsl
-    assert _assert_program_loads_to_state_machine(program).root_state.name == "MixerPanel"
-    assert _assert_program_loads_to_state_machine(parsed).root_state.name == "MixerPanel"
-    assert _assert_dsl_code_loads_to_state_machine(dsl_code).root_state.name == "MixerPanel"
+    assert (
+        _assert_program_loads_to_state_machine(program).root_state.name == "MixerPanel"
+    )
+    assert (
+        _assert_program_loads_to_state_machine(parsed).root_state.name == "MixerPanel"
+    )
+    assert (
+        _assert_dsl_code_loads_to_state_machine(dsl_code).root_state.name
+        == "MixerPanel"
+    )
 
     _assert_dataclass_field_names(program, ("definitions", "root_state"))
-    assert len(program.definitions) == 1
-    definition = program.definitions[0]
-    _assert_dataclass_field_names(definition, ("name", "type", "expr"))
-    assert definition.name == "counter"
-    assert definition.type == "int"
-    assert isinstance(definition.expr, dsl_nodes.Integer)
-    _assert_dataclass_field_names(definition.expr, ("raw",))
-    assert definition.expr.raw == "0"
-    assert str(definition) == "def int counter = 0;"
+    assert program.definitions == []
 
     root_state = program.root_state
     _assert_dataclass_field_names(
@@ -635,7 +681,11 @@ def test_phase2_build_ast_and_roundtrip(tmp_path: Path):
         "BufferReady",
         "MixCycle",
     ]
-    assert [transition.to_state for transition in root_state.transitions] == ["BufferReady", "MixCycle", "BufferReady"]
+    assert [transition.to_state for transition in root_state.transitions] == [
+        "BufferReady",
+        "MixCycle",
+        "BufferReady",
+    ]
 
     root_event = root_state.events[0]
     _assert_dataclass_field_names(root_event, ("name", "extra_name"))
@@ -744,36 +794,37 @@ def test_phase2_build_ast_and_roundtrip(tmp_path: Path):
     assert str(back_transition) == "MixCycle -> BufferReady;"
 
     _assert_dataclass_field_names(parsed, ("definitions", "root_state"))
-    parsed_definition = parsed.definitions[0]
-    assert parsed_definition.name == "counter"
-    assert parsed_definition.type == "int"
-    assert isinstance(parsed_definition.expr, dsl_nodes.Integer)
-    assert parsed_definition.expr.raw == "0"
+    assert parsed.definitions == []
     parsed_root = parsed.root_state
     assert parsed_root.name == "MixerPanel"
     assert parsed_root.extra_name == "Mixer Panel"
     assert [item.name for item in parsed_root.events] == ["START_BLEND"]
     assert [item.extra_name for item in parsed_root.events] == ["Start Blend"]
     assert [item.name for item in parsed_root.substates] == ["BufferReady", "MixCycle"]
-    assert [item.extra_name for item in parsed_root.substates] == ["Buffer Ready", "Mix Cycle"]
-    assert [item.from_state for item in parsed_root.transitions] == [dsl_nodes.INIT_STATE, "BufferReady", "MixCycle"]
-    assert [item.to_state for item in parsed_root.transitions] == ["BufferReady", "MixCycle", "BufferReady"]
+    assert [item.extra_name for item in parsed_root.substates] == [
+        "Buffer Ready",
+        "Mix Cycle",
+    ]
+    assert [item.from_state for item in parsed_root.transitions] == [
+        dsl_nodes.INIT_STATE,
+        "BufferReady",
+        "MixCycle",
+    ]
+    assert [item.to_state for item in parsed_root.transitions] == [
+        "BufferReady",
+        "MixCycle",
+        "BufferReady",
+    ]
     assert parsed_root.substates[1].enters[0].name == "PrimeValve"
     assert parsed_root.substates[1].exits[0].name == "DrainValve"
 
     _assert_dataclass_field_names(model, ("defines", "root_state"))
-    assert tuple(model.defines) == ("counter",)
-    assert list(state.name for state in model.walk_states()) == ["MixerPanel", "BufferReady", "MixCycle"]
-
-    var_define = model.defines["counter"]
-    _assert_dataclass_field_names(var_define, ("name", "type", "init"))
-    assert var_define.name == "counter"
-    assert var_define.type == "int"
-    assert isinstance(var_define.init, model_expr.Integer)
-    _assert_dataclass_field_names(var_define.init, ("value",))
-    assert var_define.init.value == 0
-    assert var_define.to_ast_node() == definition
-    assert var_define.name_ast_node().name == "counter"
+    assert tuple(model.defines) == ()
+    assert list(state.name for state in model.walk_states()) == [
+        "MixerPanel",
+        "BufferReady",
+        "MixCycle",
+    ]
 
     model_root = model.root_state
     _assert_dataclass_field_names(
@@ -852,7 +903,9 @@ def test_phase2_build_ast_and_roundtrip(tmp_path: Path):
     assert model_root.list_on_during_aspects() == []
     assert model_root.list_on_during_aspects(with_ids=True) == []
     assert list(model_root.iter_on_during_before_aspect_recursively()) == []
-    assert list(model_root.iter_on_during_before_aspect_recursively(with_ids=True)) == []
+    assert (
+        list(model_root.iter_on_during_before_aspect_recursively(with_ids=True)) == []
+    )
     assert list(model_root.iter_on_during_after_aspect_recursively()) == []
     assert list(model_root.iter_on_during_after_aspect_recursively(with_ids=True)) == []
     assert list(model_root.iter_on_during_aspect_recursively()) == []
@@ -861,10 +914,17 @@ def test_phase2_build_ast_and_roundtrip(tmp_path: Path):
     assert model_root.list_on_during_aspect_recursively(with_ids=True) == []
     assert len(model_root.init_transitions) == 1
     assert model_root.init_transitions[0].from_state is dsl_nodes.INIT_STATE
-    assert [item.from_state for item in model_root.transitions_entering_children] == [dsl_nodes.INIT_STATE]
-    assert [item.to_state for item in model_root.transitions_entering_children] == ["BufferReady"]
+    assert [item.from_state for item in model_root.transitions_entering_children] == [
+        dsl_nodes.INIT_STATE
+    ]
+    assert [item.to_state for item in model_root.transitions_entering_children] == [
+        "BufferReady"
+    ]
     assert len(model_root.transitions_entering_children_simplified) == 1
-    assert model_root.transitions_entering_children_simplified[0].from_state is dsl_nodes.INIT_STATE
+    assert (
+        model_root.transitions_entering_children_simplified[0].from_state
+        is dsl_nodes.INIT_STATE
+    )
     assert len(model_root.transitions_from) == 1
     assert model_root.transitions_from[0].from_state == "MixerPanel"
     assert model_root.transitions_from[0].to_state is dsl_nodes.EXIT_STATE
@@ -988,10 +1048,20 @@ def test_phase2_build_ast_and_roundtrip(tmp_path: Path):
     assert model_buffer_ready.init_transitions == []
     assert model_buffer_ready.transitions_entering_children == []
     assert model_buffer_ready.transitions_entering_children_simplified == [None]
-    assert [item.from_state for item in model_buffer_ready.transitions_from] == ["BufferReady"]
-    assert [item.to_state for item in model_buffer_ready.transitions_from] == ["MixCycle"]
-    assert [item.from_state for item in model_buffer_ready.transitions_to] == [dsl_nodes.INIT_STATE, "MixCycle"]
-    assert [item.to_state for item in model_buffer_ready.transitions_to] == ["BufferReady", "BufferReady"]
+    assert [item.from_state for item in model_buffer_ready.transitions_from] == [
+        "BufferReady"
+    ]
+    assert [item.to_state for item in model_buffer_ready.transitions_from] == [
+        "MixCycle"
+    ]
+    assert [item.from_state for item in model_buffer_ready.transitions_to] == [
+        dsl_nodes.INIT_STATE,
+        "MixCycle",
+    ]
+    assert [item.to_state for item in model_buffer_ready.transitions_to] == [
+        "BufferReady",
+        "BufferReady",
+    ]
     assert model_buffer_ready.abstract_on_enters == []
     assert model_buffer_ready.non_abstract_on_enters == []
     assert model_buffer_ready.abstract_on_durings == []
@@ -1072,9 +1142,15 @@ def test_phase2_build_ast_and_roundtrip(tmp_path: Path):
     assert model_mix_cycle.init_transitions == []
     assert model_mix_cycle.transitions_entering_children == []
     assert model_mix_cycle.transitions_entering_children_simplified == [None]
-    assert [item.from_state for item in model_mix_cycle.transitions_from] == ["MixCycle"]
-    assert [item.to_state for item in model_mix_cycle.transitions_from] == ["BufferReady"]
-    assert [item.from_state for item in model_mix_cycle.transitions_to] == ["BufferReady"]
+    assert [item.from_state for item in model_mix_cycle.transitions_from] == [
+        "MixCycle"
+    ]
+    assert [item.to_state for item in model_mix_cycle.transitions_from] == [
+        "BufferReady"
+    ]
+    assert [item.from_state for item in model_mix_cycle.transitions_to] == [
+        "BufferReady"
+    ]
     assert [item.to_state for item in model_mix_cycle.transitions_to] == ["MixCycle"]
     assert [item.name for item in model_mix_cycle.abstract_on_enters] == ["PrimeValve"]
     assert model_mix_cycle.non_abstract_on_enters == []
@@ -1086,16 +1162,28 @@ def test_phase2_build_ast_and_roundtrip(tmp_path: Path):
     assert model_mix_cycle.non_abstract_on_during_aspects == []
     assert [item.name for item in model_mix_cycle.list_on_enters()] == ["PrimeValve"]
     assert model_mix_cycle.list_on_enters(with_ids=True)[0][0] == 1
-    assert model_mix_cycle.list_on_enters(with_ids=True)[0][1] is model_mix_cycle.on_enters[0]
+    assert (
+        model_mix_cycle.list_on_enters(with_ids=True)[0][1]
+        is model_mix_cycle.on_enters[0]
+    )
     assert model_mix_cycle.list_on_durings() == []
     assert [item.name for item in model_mix_cycle.list_on_exits()] == ["DrainValve"]
     assert model_mix_cycle.list_on_exits(with_ids=True)[0][0] == 1
-    assert model_mix_cycle.list_on_exits(with_ids=True)[0][1] is model_mix_cycle.on_exits[0]
+    assert (
+        model_mix_cycle.list_on_exits(with_ids=True)[0][1]
+        is model_mix_cycle.on_exits[0]
+    )
     assert model_mix_cycle.list_on_during_aspects() == []
     assert list(model_mix_cycle.iter_on_during_before_aspect_recursively()) == []
-    assert list(model_mix_cycle.iter_on_during_before_aspect_recursively(with_ids=True)) == []
+    assert (
+        list(model_mix_cycle.iter_on_during_before_aspect_recursively(with_ids=True))
+        == []
+    )
     assert list(model_mix_cycle.iter_on_during_after_aspect_recursively()) == []
-    assert list(model_mix_cycle.iter_on_during_after_aspect_recursively(with_ids=True)) == []
+    assert (
+        list(model_mix_cycle.iter_on_during_after_aspect_recursively(with_ids=True))
+        == []
+    )
     assert list(model_mix_cycle.iter_on_during_aspect_recursively()) == []
     assert list(model_mix_cycle.iter_on_during_aspect_recursively(with_ids=True)) == []
     assert model_mix_cycle.list_on_during_aspect_recursively() == []
@@ -1104,7 +1192,18 @@ def test_phase2_build_ast_and_roundtrip(tmp_path: Path):
     enter_action = model_mix_cycle.on_enters[0]
     _assert_dataclass_field_names(
         enter_action,
-        ("stage", "aspect", "name", "doc", "operations", "is_abstract", "state_path", "ref", "ref_state_path", "parent_ref"),
+        (
+            "stage",
+            "aspect",
+            "name",
+            "doc",
+            "operations",
+            "is_abstract",
+            "state_path",
+            "ref",
+            "ref_state_path",
+            "parent_ref",
+        ),
     )
     _assert_property_names(enter_action, ("func_name", "is_aspect", "is_ref", "parent"))
     assert enter_action.stage == "enter"
@@ -1127,7 +1226,18 @@ def test_phase2_build_ast_and_roundtrip(tmp_path: Path):
     exit_action = model_mix_cycle.on_exits[0]
     _assert_dataclass_field_names(
         exit_action,
-        ("stage", "aspect", "name", "doc", "operations", "is_abstract", "state_path", "ref", "ref_state_path", "parent_ref"),
+        (
+            "stage",
+            "aspect",
+            "name",
+            "doc",
+            "operations",
+            "is_abstract",
+            "state_path",
+            "ref",
+            "ref_state_path",
+            "parent_ref",
+        ),
     )
     _assert_property_names(exit_action, ("func_name", "is_aspect", "is_ref", "parent"))
     assert exit_action.stage == "exit"
@@ -1150,7 +1260,6 @@ def test_phase2_build_ast_and_roundtrip(tmp_path: Path):
     model_roundtrip_ast = model.to_ast_node()
     assert _normalize_newlines(str(model_roundtrip_ast)) == dedent(
         """\
-        def int counter = 0;
         state MixerPanel named 'Mixer Panel' {
             state BufferReady named 'Buffer Ready';
             state MixCycle named 'Mix Cycle' {
@@ -1243,11 +1352,15 @@ def test_convert_sysdesim_xml_to_dsl_runs_end_to_end(tmp_path: Path):
         }"""
     )
     assert _normalize_newlines(dsl_code) == expected_dsl
-    assert _assert_dsl_code_loads_to_state_machine(dsl_code).root_state.name == "DoorCycle"
+    assert (
+        _assert_dsl_code_loads_to_state_machine(dsl_code).root_state.name == "DoorCycle"
+    )
 
 
 class TestSysDeSimCoverageScenarios:
-    def test_phase0_load_parses_type_default_and_machine_selection_variants(self, tmp_path: Path):
+    def test_phase0_load_parses_type_default_and_machine_selection_variants(
+        self, tmp_path: Path
+    ):
         """Phase0 should cover XML parsing variants through the public loading APIs."""
         xml_file = _write_xml(
             tmp_path,
@@ -1357,7 +1470,10 @@ class TestSysDeSimCoverageScenarios:
         )
 
         machines = load_sysdesim_xml(str(xml_file))
-        assert [machine.machine_id for machine in machines] == ["machine_parse", "machine_select"]
+        assert [machine.machine_id for machine in machines] == [
+            "machine_parse",
+            "machine_select",
+        ]
 
         parse_machine = load_sysdesim_machine(str(xml_file), machine_id="machine_parse")
         assert parse_machine.name == "Parse Variants"
@@ -1366,7 +1482,9 @@ class TestSysDeSimCoverageScenarios:
         assert parse_machine.diagnostics[0].code == "multiple_root_regions"
         assert parse_machine.diagnostics[0].source_id == "machine_parse"
         assert parse_machine.root_region.region_id == "region_parse_root"
-        assert [vertex.vertex_type for vertex in parse_machine.root_region.vertices] == [
+        assert [
+            vertex.vertex_type for vertex in parse_machine.root_region.vertices
+        ] == [
             "pseudostate",
             "state",
             "state",
@@ -1374,8 +1492,12 @@ class TestSysDeSimCoverageScenarios:
             "terminatepseudostate",
         ]
         assert parse_machine.get_vertex("state_alpha").state_invariant is None
-        assert parse_machine.get_vertex("state_beta").state_invariant == "temperature > 10"
-        assert parse_machine.get_transition("tx_alpha_beta").guard_expr_raw == "count > 0"
+        assert (
+            parse_machine.get_vertex("state_beta").state_invariant == "temperature > 10"
+        )
+        assert (
+            parse_machine.get_transition("tx_alpha_beta").guard_expr_raw == "count > 0"
+        )
         assert parse_machine.get_variable("var_ref_int").type_name == "int"
         assert parse_machine.get_variable("var_ref_int").default_value == "1"
         assert parse_machine.get_variable("var_ref_float").type_name == "float"
@@ -1385,7 +1507,9 @@ class TestSysDeSimCoverageScenarios:
         assert parse_machine.get_variable("var_href_float").type_name == "float"
         assert parse_machine.get_variable("var_href_float").default_value == "3.0"
         assert parse_machine.get_variable("var_href_other").type_name == "customtype"
-        assert parse_machine.get_variable("var_href_other").default_value == "text_default"
+        assert (
+            parse_machine.get_variable("var_href_other").default_value == "text_default"
+        )
         assert parse_machine.get_variable("var_name_float").type_name == "float"
         assert parse_machine.get_variable("var_name_float").default_value == "4"
         assert parse_machine.get_variable("var_name_int").type_name == "int"
@@ -1399,7 +1523,12 @@ class TestSysDeSimCoverageScenarios:
         assert parse_machine.get_variable("var_empty_type").type_name is None
         assert parse_machine.get_variable("var_empty_type").default_value == "10"
 
-        assert load_sysdesim_machine(str(xml_file), machine_name="Selected Machine").machine_id == "machine_select"
+        assert (
+            load_sysdesim_machine(
+                str(xml_file), machine_name="Selected Machine"
+            ).machine_id
+            == "machine_select"
+        )
         with pytest.raises(KeyError, match="machine id"):
             load_sysdesim_machine(str(xml_file), machine_id="missing_machine")
         with pytest.raises(KeyError, match="machine name"):
@@ -1421,7 +1550,9 @@ class TestSysDeSimCoverageScenarios:
         with pytest.raises(ValueError, match="No uml:StateMachine found"):
             load_sysdesim_machine(str(empty_file))
 
-    def test_phase0_load_supports_root_state_machine_without_owner(self, tmp_path: Path):
+    def test_phase0_load_supports_root_state_machine_without_owner(
+        self, tmp_path: Path
+    ):
         """A state machine can be loaded directly from the XML root without owned attributes."""
         xml_path = tmp_path / "root_machine.sysdesim.xml"
         xml_path.write_text(
@@ -1459,9 +1590,24 @@ class TestSysDeSimCoverageScenarios:
                 region_id="region_root",
                 owner_state_id=None,
                 vertices=[
-                    IrVertex(vertex_id="init_1", vertex_type="pseudostate", raw_name="", parent_region_id="region_root"),
-                    IrVertex(vertex_id="state_same_1", vertex_type="state", raw_name="Same Name", parent_region_id="region_root"),
-                    IrVertex(vertex_id="state_same_2", vertex_type="state", raw_name="Same Name", parent_region_id="region_root"),
+                    IrVertex(
+                        vertex_id="init_1",
+                        vertex_type="pseudostate",
+                        raw_name="",
+                        parent_region_id="region_root",
+                    ),
+                    IrVertex(
+                        vertex_id="state_same_1",
+                        vertex_type="state",
+                        raw_name="Same Name",
+                        parent_region_id="region_root",
+                    ),
+                    IrVertex(
+                        vertex_id="state_same_2",
+                        vertex_type="state",
+                        raw_name="Same Name",
+                        parent_region_id="region_root",
+                    ),
                     IrVertex(
                         vertex_id="state_empty",
                         vertex_type="state",
@@ -1500,8 +1646,12 @@ class TestSysDeSimCoverageScenarios:
                 IrSignalEvent(event_id="event_empty", signal_id="!!!"),
             ],
             time_events=[
-                IrTimeEvent(time_event_id="time_valid", raw_literal="250 ms", is_relative=True),
-                IrTimeEvent(time_event_id="time_empty", raw_literal="", is_relative=False),
+                IrTimeEvent(
+                    time_event_id="time_valid", raw_literal="250 ms", is_relative=True
+                ),
+                IrTimeEvent(
+                    time_event_id="time_empty", raw_literal="", is_relative=False
+                ),
             ],
             variables=[
                 IrVariable(
@@ -1522,20 +1672,28 @@ class TestSysDeSimCoverageScenarios:
         assert machine.get_vertex("state_same_1").safe_name == "SameName"
         assert machine.get_vertex("state_same_2").safe_name == "SameName_esame2"
         assert machine.get_vertex("state_empty").safe_name == "__sysdesim_state_eempty"
-        assert machine.get_vertex("state_empty").entry_action.safe_name == "__sysdesim_action_sdesim"
+        assert (
+            machine.get_vertex("state_empty").entry_action.safe_name
+            == "__sysdesim_action_sdesim"
+        )
         assert machine.get_signal("signal_same_1").safe_name == "SAME_EVENT"
         assert machine.get_signal("signal_same_2").safe_name == "SAME_EVENT_lsame2"
         assert machine.get_signal("!!!").safe_name == "__sysdesim_evt_SDESIM"
         assert machine.get_signal_event("event_same_1").safe_name == "SAME_EVENT"
         assert machine.get_signal_event("event_same_2").safe_name == "SAME_EVENT_lsame2"
-        assert machine.get_signal_event("event_empty").safe_name == "__sysdesim_evt_SDESIM"
+        assert (
+            machine.get_signal_event("event_empty").safe_name == "__sysdesim_evt_SDESIM"
+        )
         assert machine.get_time_event("time_valid").normalized_delay == 250.0
         assert machine.get_time_event("time_valid").normalized_unit == "ms"
         assert machine.get_time_event("time_empty").normalized_delay is None
         assert machine.get_time_event("time_empty").normalized_unit is None
         assert machine.get_transition("tx_guard").guard_expr_raw == "counter >= 10"
         assert machine.get_transition("tx_guard").guard_expr_ir is not None
-        assert machine.get_variable("synthetic_var").safe_name == "__sysdesim_var_temp_value_ticvar"
+        assert (
+            machine.get_variable("synthetic_var").safe_name
+            == "__sysdesim_var_temp_value_ticvar"
+        )
         assert machine.get_variable("synthetic_var").display_name == "Temp Value"
         assert make_internal_name("flag", [], "!!!") == "__sysdesim_flag_sdesim"
 
@@ -1555,9 +1713,13 @@ class TestSysDeSimCoverageScenarios:
         )
         normalize_machine(invalid_machine)
         assert invalid_machine.get_variable("invalid_var").safe_name is None
-        assert invalid_machine.diagnostics[-1].code == "ignored_unsupported_variable_type"
+        assert (
+            invalid_machine.diagnostics[-1].code == "ignored_unsupported_variable_type"
+        )
 
-    def test_phase2_build_ast_supports_float_variables_and_skips_incomplete_ones(self, tmp_path: Path):
+    def test_phase2_build_ast_supports_float_variables_and_skips_incomplete_ones(
+        self, tmp_path: Path
+    ):
         """Phase2 should emit float definitions and skip variables that are incomplete."""
         xml_file = _write_xml(
             tmp_path,
@@ -1604,15 +1766,14 @@ class TestSysDeSimCoverageScenarios:
         )
 
         program = convert_sysdesim_xml_to_ast(str(xml_file))
-        assert [definition.name for definition in program.definitions] == ["count", "temperature"]
-        assert [definition.type for definition in program.definitions] == ["int", "float"]
-        assert isinstance(program.definitions[0].expr, dsl_nodes.Integer)
-        assert program.definitions[0].expr.raw == "1"
-        assert isinstance(program.definitions[1].expr, dsl_nodes.Float)
-        assert program.definitions[1].expr.raw == "42.5"
+        assert [definition.name for definition in program.definitions] == [
+            "temperature"
+        ]
+        assert [definition.type for definition in program.definitions] == ["float"]
+        assert isinstance(program.definitions[0].expr, dsl_nodes.Float)
+        assert program.definitions[0].expr.raw == "42.5"
         assert _normalize_newlines(str(program)) == dedent(
             """\
-            def int count = 1;
             def float temperature = 42.5;
             state FloatMachine named 'Float Machine' {
                 state Ready;
@@ -1621,8 +1782,14 @@ class TestSysDeSimCoverageScenarios:
                 Ready -> Hot : if [temperature > 30.0];
             }"""
         )
-        assert _assert_program_loads_to_state_machine(program).root_state.name == "FloatMachine"
-        assert _assert_dsl_code_loads_to_state_machine(str(program)).root_state.name == "FloatMachine"
+        assert (
+            _assert_program_loads_to_state_machine(program).root_state.name
+            == "FloatMachine"
+        )
+        assert (
+            _assert_dsl_code_loads_to_state_machine(str(program)).root_state.name
+            == "FloatMachine"
+        )
 
         unsupported_type_machine = IrMachine(
             machine_id="unsupported_type_machine",
@@ -1706,9 +1873,22 @@ class TestSysDeSimCoverageScenarios:
         dsl_code = _normalize_newlines(convert_sysdesim_xml_to_dsl(str(xml_file)))
         program = convert_sysdesim_xml_to_ast(str(xml_file))
 
-        assert [variable.safe_name for variable in machine.variables] == [None, "rmt", "a", "b"]
-        assert [definition.name for definition in program.definitions] == ["rmt", "a", "b"]
-        assert [definition.type for definition in program.definitions] == ["float", "float", "float"]
+        assert [variable.safe_name for variable in machine.variables] == [
+            None,
+            "rmt",
+            "a",
+            "b",
+        ]
+        assert [definition.name for definition in program.definitions] == [
+            "rmt",
+            "a",
+            "b",
+        ]
+        assert [definition.type for definition in program.definitions] == [
+            "float",
+            "float",
+            "float",
+        ]
         assert dsl_code == dedent(
             """\
             def float rmt = 0.0;
@@ -1723,15 +1903,125 @@ class TestSysDeSimCoverageScenarios:
                 B -> C : if [rmt < 5000];
             }"""
         )
-        assert _assert_program_loads_to_state_machine(program).root_state.name == "ChangeMerge"
-        assert _assert_dsl_code_loads_to_state_machine(dsl_code).root_state.name == "ChangeMerge"
+        assert (
+            _assert_program_loads_to_state_machine(program).root_state.name
+            == "ChangeMerge"
+        )
+        assert (
+            _assert_dsl_code_loads_to_state_machine(dsl_code).root_state.name
+            == "ChangeMerge"
+        )
         assert {item.code for item in machine.diagnostics} >= {
             "ignored_unsupported_variable_type",
             "duplicate_transition_merged",
             "implicit_condition_variable",
         }
 
-    def test_phase2_lowers_composite_source_outgoing_transition_to_force_transition(self, tmp_path: Path):
+    def test_phase2_prunes_unused_variables_per_split_output(self, tmp_path: Path):
+        """Each emitted split output should keep only the variables it actually uses."""
+        xml_file = _write_xml(
+            tmp_path,
+            """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <xmi:XMI xmi:version="20131001"
+                     xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
+                     xmlns:uml="http://www.eclipse.org/uml2/5.0.0/UML">
+              <uml:Model xmi:id="model_1" name="model">
+                <packagedElement xmi:type="uml:Class" xmi:id="class_1" name="Pruned Split" classifierBehavior="machine_1">
+                  <ownedBehavior xmi:type="uml:StateMachine" xmi:id="machine_1" name="Pruned Split">
+                    <region xmi:type="uml:Region" xmi:id="region_root" name="">
+                      <transition xmi:type="uml:Transition" xmi:id="tx_init" source="init_root" target="state_control"/>
+                      <subvertex xmi:type="uml:Pseudostate" xmi:id="init_root"/>
+                      <subvertex xmi:type="uml:State" xmi:id="state_control" name="Control">
+                        <region xmi:type="uml:Region" xmi:id="region_left" name="">
+                          <transition xmi:type="uml:Transition" xmi:id="tx_left_init" source="init_left" target="state_a"/>
+                          <transition xmi:type="uml:Transition" xmi:id="tx_left_go" source="state_a" target="state_b">
+                            <ownedRule xmi:type="uml:Constraint" xmi:id="guard_left_rule">
+                              <specification xmi:type="uml:OpaqueExpression" xmi:id="guard_left_expr">
+                                <body> left_value &gt; 0 </body>
+                              </specification>
+                            </ownedRule>
+                          </transition>
+                          <subvertex xmi:type="uml:Pseudostate" xmi:id="init_left"/>
+                          <subvertex xmi:type="uml:State" xmi:id="state_a" name="A"/>
+                          <subvertex xmi:type="uml:State" xmi:id="state_b" name="B"/>
+                        </region>
+                        <region xmi:type="uml:Region" xmi:id="region_right" name="">
+                          <transition xmi:type="uml:Transition" xmi:id="tx_right_init" source="init_right" target="state_c"/>
+                          <transition xmi:type="uml:Transition" xmi:id="tx_right_go" source="state_c" target="state_d">
+                            <ownedRule xmi:type="uml:Constraint" xmi:id="guard_right_rule">
+                              <specification xmi:type="uml:OpaqueExpression" xmi:id="guard_right_expr">
+                                <body> right_value &gt; 0 </body>
+                              </specification>
+                            </ownedRule>
+                          </transition>
+                          <subvertex xmi:type="uml:Pseudostate" xmi:id="init_right"/>
+                          <subvertex xmi:type="uml:State" xmi:id="state_c" name="C"/>
+                          <subvertex xmi:type="uml:State" xmi:id="state_d" name="D"/>
+                        </region>
+                      </subvertex>
+                    </region>
+                  </ownedBehavior>
+                  <ownedAttribute xmi:type="uml:Property" xmi:id="var_left" name="left_value">
+                    <type xmi:type="uml:PrimitiveType" href="pathmap://UML_LIBRARIES/UMLPrimitiveTypes.library.uml#Integer"/>
+                    <defaultValue xmi:type="uml:LiteralInteger" xmi:id="var_left_default" value="1"/>
+                  </ownedAttribute>
+                  <ownedAttribute xmi:type="uml:Property" xmi:id="var_right" name="right_value">
+                    <type xmi:type="uml:PrimitiveType" href="pathmap://UML_LIBRARIES/UMLPrimitiveTypes.library.uml#Integer"/>
+                    <defaultValue xmi:type="uml:LiteralInteger" xmi:id="var_right_default" value="2"/>
+                  </ownedAttribute>
+                  <ownedAttribute xmi:type="uml:Property" xmi:id="var_unused" name="unused_value">
+                    <type xmi:type="uml:PrimitiveType" href="pathmap://UML_LIBRARIES/UMLPrimitiveTypes.library.uml#Integer"/>
+                    <defaultValue xmi:type="uml:LiteralInteger" xmi:id="var_unused_default" value="3"/>
+                  </ownedAttribute>
+                </packagedElement>
+              </uml:Model>
+            </xmi:XMI>
+            """,
+        )
+
+        outputs = {
+            name: _normalize_newlines(code)
+            for name, code in convert_sysdesim_xml_to_dsls(str(xml_file)).items()
+        }
+
+        assert outputs["PrunedSplit"] == dedent(
+            """\
+            state PrunedSplit named 'Pruned Split' {
+                state Control;
+                [*] -> Control;
+            }"""
+        )
+        assert outputs["PrunedSplit__Control_region1"] == dedent(
+            """\
+            def int left_value = 1;
+            state PrunedSplit named 'Pruned Split' {
+                state Control {
+                    state A;
+                    state B;
+                    [*] -> A;
+                    A -> B : if [left_value > 0];
+                }
+                [*] -> Control;
+            }"""
+        )
+        assert outputs["PrunedSplit__Control_region2"] == dedent(
+            """\
+            def int right_value = 2;
+            state PrunedSplit named 'Pruned Split' {
+                state Control {
+                    state C;
+                    state D;
+                    [*] -> C;
+                    C -> D : if [right_value > 0];
+                }
+                [*] -> Control;
+            }"""
+        )
+
+    def test_phase2_lowers_composite_source_outgoing_transition_to_force_transition(
+        self, tmp_path: Path
+    ):
         """Phase2 should emit composite-source outward transitions as force transitions."""
         xml_file = _write_xml(
             tmp_path,
@@ -1799,7 +2089,9 @@ class TestSysDeSimCoverageScenarios:
         assert model.root_state.name == "ForceSource"
         outer_state = program.root_state.substates[0]
         assert outer_state.name == "Outer"
-        assert [str(item) for item in outer_state.force_transitions] == ["! H -> G : /GO;"]
+        assert [str(item) for item in outer_state.force_transitions] == [
+            "! H -> G : /GO;"
+        ]
         assert [str(item) for item in outer_state.transitions] == ["[*] -> H;"]
 
     def test_phase2_avoids_reserved_state_identifier_collisions(self, tmp_path: Path):
@@ -1844,9 +2136,14 @@ class TestSysDeSimCoverageScenarios:
                 D -> EState : /GO;
             }"""
         )
-        assert _assert_dsl_code_loads_to_state_machine(dsl_code).root_state.name == "ReservedState"
+        assert (
+            _assert_dsl_code_loads_to_state_machine(dsl_code).root_state.name
+            == "ReservedState"
+        )
 
-    def test_phase2_recovers_same_region_transition_misplaced_on_outer_region(self, tmp_path: Path):
+    def test_phase2_recovers_same_region_transition_misplaced_on_outer_region(
+        self, tmp_path: Path
+    ):
         """Phase2 should recover same-region transitions even when XML mounts them on an ancestor region."""
         xml_file = _write_xml(
             tmp_path,
@@ -1900,8 +2197,13 @@ class TestSysDeSimCoverageScenarios:
         assert _normalize_newlines(str(parsed)) == expected_dsl
         assert model.root_state.name == "MisplacedTransition"
         assert [item.name for item in program.root_state.substates] == ["Parent"]
-        assert [str(item) for item in program.root_state.transitions] == ["[*] -> Parent;"]
-        assert [str(item) for item in program.root_state.substates[0].transitions] == ["[*] -> Left;", "Left -> Right;"]
+        assert [str(item) for item in program.root_state.transitions] == [
+            "[*] -> Parent;"
+        ]
+        assert [str(item) for item in program.root_state.substates[0].transitions] == [
+            "[*] -> Left;",
+            "Left -> Right;",
+        ]
 
     def test_phase2_output_loads_into_public_state_machine_model(self, tmp_path: Path):
         """Phase2 output should be loadable into the public StateMachine model API."""
@@ -1934,13 +2236,16 @@ class TestSysDeSimCoverageScenarios:
         assert program.root_state.name == "LoaderCheck"
         assert isinstance(model, StateMachine)
         assert model.root_state.name == "LoaderCheck"
-        assert _assert_dsl_code_loads_to_state_machine(str(program)).root_state.name == "LoaderCheck"
+        assert (
+            _assert_dsl_code_loads_to_state_machine(str(program)).root_state.name
+            == "LoaderCheck"
+        )
 
     @pytest.mark.parametrize(
         ("xml_content", "expected_message"),
         [
-        (
-            """
+            (
+                """
             <?xml version="1.0" encoding="UTF-8"?>
             <xmi:XMI xmi:version="20131001"
                      xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
@@ -1969,10 +2274,10 @@ class TestSysDeSimCoverageScenarios:
               </uml:Model>
             </xmi:XMI>
             """,
-            "multi-region composite state",
-        ),
-        (
-            """
+                "multi-region composite state",
+            ),
+            (
+                """
             <?xml version="1.0" encoding="UTF-8"?>
             <xmi:XMI xmi:version="20131001"
                      xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
@@ -1998,10 +2303,10 @@ class TestSysDeSimCoverageScenarios:
               </uml:Model>
             </xmi:XMI>
             """,
-            "init-pseudostate lowering",
-        ),
-        (
-            """
+                "init-pseudostate lowering",
+            ),
+            (
+                """
             <?xml version="1.0" encoding="UTF-8"?>
             <xmi:XMI xmi:version="20131001"
                      xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
@@ -2027,10 +2332,10 @@ class TestSysDeSimCoverageScenarios:
               </uml:Model>
             </xmi:XMI>
             """,
-            "leaf-source cross-level transitions",
-        ),
-        (
-            """
+                "leaf-source cross-level transitions",
+            ),
+            (
+                """
             <?xml version="1.0" encoding="UTF-8"?>
             <xmi:XMI xmi:version="20131001"
                      xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
@@ -2052,10 +2357,10 @@ class TestSysDeSimCoverageScenarios:
               </uml:Model>
             </xmi:XMI>
             """,
-            "signal/none triggers",
-        ),
-        (
-            """
+                "signal/none triggers",
+            ),
+            (
+                """
             <?xml version="1.0" encoding="UTF-8"?>
             <xmi:XMI xmi:version="20131001"
                      xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
@@ -2084,10 +2389,10 @@ class TestSysDeSimCoverageScenarios:
               </uml:Model>
             </xmi:XMI>
             """,
-            "both signal and guard",
-        ),
-        (
-            """
+                "both signal and guard",
+            ),
+            (
+                """
             <?xml version="1.0" encoding="UTF-8"?>
             <xmi:XMI xmi:version="20131001"
                      xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
@@ -2107,8 +2412,8 @@ class TestSysDeSimCoverageScenarios:
               </uml:Model>
             </xmi:XMI>
             """,
-            "state-to-state transitions",
-        ),
+                "state-to-state transitions",
+            ),
         ],
     )
     def test_phase2_rejects_unsupported_public_scenarios(
@@ -2130,7 +2435,14 @@ class TestSysDeSimCoverageScenarios:
             root_region=IrRegion(
                 region_id="region_public",
                 owner_state_id=None,
-                vertices=[IrVertex(vertex_id="root_state", vertex_type="state", raw_name="Root", parent_region_id=None)],
+                vertices=[
+                    IrVertex(
+                        vertex_id="root_state",
+                        vertex_type="state",
+                        raw_name="Root",
+                        parent_region_id=None,
+                    )
+                ],
                 transitions=[],
             ),
             variables=[

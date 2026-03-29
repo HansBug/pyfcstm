@@ -27,11 +27,15 @@ surface is intentionally small:
   back through the existing parser/model stack.
 * :func:`build_sysdesim_conversion_report` produces a structured phase6
   diagnostics report for CLI and regression use.
+* :func:`extract_sysdesim_interactions` and
+  :func:`build_sysdesim_phase56_report` expose the current timeline-oriented
+  Phase5/6 intermediate extraction layer.
 
-Internals are kept in four files to avoid unnecessary fragmentation:
+Internals are kept in five files to avoid unnecessary fragmentation:
 
 - ``ir.py`` for the dataclass IR
 - ``xmi.py`` for the raw XML/XMI index layer
+- ``timeline.py`` for interaction extraction and unified trigger reporting
 - ``convert.py`` for loading, normalization, AST building, and validation
 - ``__init__.py`` for the stable public surface
 
@@ -69,21 +73,53 @@ from .xmi import (
     load_sysdesim_raw_xmi,
     summarize_sysdesim_raw_xmi,
 )
+from .timeline import (
+    SysDeSimActivityAssignmentObservation,
+    SysDeSimDurationConstraintObservation,
+    SysDeSimInteractionExtract,
+    SysDeSimMessageObservation,
+    SysDeSimNameBindingHint,
+    SysDeSimPhase56Report,
+    SysDeSimStateInvariantObservation,
+    SysDeSimTimeConstraintObservation,
+    SysDeSimTimelineLifeline,
+    SysDeSimTimelineTransitionView,
+    SysDeSimTriggerCondition,
+    SysDeSimTriggerNone,
+    SysDeSimTriggerSignal,
+    build_sysdesim_phase56_report,
+    extract_sysdesim_interactions,
+)
 
 
 __all__ = [
     "SysDeSimConversionReport",
     "SysDeSimOutputValidationReport",
     "SysDeSimPreparedMachine",
+    "SysDeSimActivityAssignmentObservation",
+    "SysDeSimDurationConstraintObservation",
+    "SysDeSimInteractionExtract",
+    "SysDeSimMessageObservation",
+    "SysDeSimNameBindingHint",
+    "SysDeSimPhase56Report",
     "SysDeSimRawXmiDocument",
     "SysDeSimRawXmiSummary",
+    "SysDeSimStateInvariantObservation",
+    "SysDeSimTimeConstraintObservation",
+    "SysDeSimTimelineLifeline",
+    "SysDeSimTimelineTransitionView",
+    "SysDeSimTriggerCondition",
+    "SysDeSimTriggerNone",
+    "SysDeSimTriggerSignal",
     "build_machine_ast",
     "build_sysdesim_conversion_report",
+    "build_sysdesim_phase56_report",
     "convert_sysdesim_xml_to_ast",
     "convert_sysdesim_xml_to_asts",
     "convert_sysdesim_xml_to_dsl",
     "convert_sysdesim_xml_to_dsls",
     "emit_program",
+    "extract_sysdesim_interactions",
     "load_sysdesim_machine",
     "load_sysdesim_raw_xmi",
     "load_sysdesim_xml",

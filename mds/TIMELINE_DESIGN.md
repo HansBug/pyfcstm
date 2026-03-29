@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 修改内容 | 作者 |
 |------|------|----------|------|
+| 0.1.11 | 2026-03-29 | 同步 Phase 5-6 实施进度：补齐真实样例上的 interaction observation stream、统一 trigger 视图与名字归一化提示，并更新 checklist 状态 | Codex |
 | 0.1.10 | 2026-03-29 | 同步 Phase 1-4 实施进度：补齐 `doActivity -> during abstract` 与原始 XMI 索引层，并更新 checklist 状态 | Codex |
 | 0.1.9 | 2026-03-29 | 补充无条件普通转移的连续时间处理：按最近后继 `emit` 约束隐藏内部迁移时刻，并引入 `delta` 序列建模方向 | Codex |
 | 0.1.8 | 2026-03-29 | 按真实样例补充顺序图消息方向过滤规则，明确只把外向内消息当作 `emit`，并新增状态机主干的 pyfcstm DSL 草案与方向冲突说明 | Codex |
@@ -3603,15 +3604,15 @@ Idle -> Control : /Sig1;
 
 ## 21.8 Phase 5: 顺序图与活动观测抽取层
 
-* [ ] 从 `uml:Interaction` 中抽取 lifeline、message、occurrence 顺序、`StateInvariant` 与可关联的文本。
-* [ ] 建立一条稳定的 observation stream，而不是只保留离散对象集合。
-* [ ] 基于 `StateInvariant` 所挂 lifeline，推断当前样例的 machine-internal lifeline 候选。
-* [ ] 对每条 message 同时记录 source lifeline、target lifeline 与相对方向：inbound / outbound / self。
-* [ ] 从顺序图文本中抽取简单的 `name=value` 赋值观测。
-* [ ] 从活动对象或动作体文本中补充简单赋值观测，但只支持保守可识别子集，不做通用脚本求值。
-* [ ] 为每条观测保留来源上下文：所属 interaction、出现次序、原始文本、归一化后名字。
-* [ ] 把消息抽取结果与信号定义建立候选映射，为后续 `emit(...)` 候选提供依据。
-* [ ] 对当前样例显式支持：
+* [x] 从 `uml:Interaction` 中抽取 lifeline、message、occurrence 顺序、`StateInvariant` 与可关联的文本。
+* [x] 建立一条稳定的 observation stream，而不是只保留离散对象集合。
+* [x] 基于 `StateInvariant` 所挂 lifeline，推断当前样例的 machine-internal lifeline 候选。
+* [x] 对每条 message 同时记录 source lifeline、target lifeline 与相对方向：inbound / outbound / self。
+* [x] 从顺序图文本中抽取简单的 `name=value` 赋值观测。
+* [x] 从活动对象或动作体文本中补充简单赋值观测，但只支持保守可识别子集，不做通用脚本求值。
+* [x] 为每条观测保留来源上下文：所属 interaction、出现次序、原始文本、归一化后名字。
+* [x] 把消息抽取结果与信号定义建立候选映射，为后续 `emit(...)` 候选提供依据。
+* [x] 对当前样例显式支持：
   - receive-side message -> step anchor
   - no-signature message -> empty step anchor
   - outbound signal message -> empty step anchor with note
@@ -3619,17 +3620,30 @@ Idle -> Control : /Sig1;
   - `StateInvariant.body` -> `SetInput`
   - `DurationObservation + DurationConstraint` -> between-step duration
   - `TimeObservation + TimeConstraint` -> step-local time window
-* [ ] 明确这一层的目标是“生成 TIMELINE 场景线索”，不是恢复顺序图的完整执行语义。
+* [x] 明确这一层的目标是“生成 TIMELINE 场景线索”，不是恢复顺序图的完整执行语义。
+
+当前真实样例的 Phase 5 验证结论：
+
+* 已稳定抽出 `1` 个 interaction、`2` 条 lifeline、`19` 条 message、`5` 条 `StateInvariant`、`9` 条 `DurationConstraint` 与 `2` 条 `TimeConstraint`。
+* 当前样例的 machine-internal lifeline 可稳定识别为“控制”，消息方向分布为 `6` 条 inbound、`11` 条 outbound、`2` 条 self。
+* 当前层只负责保留 observation stream 与后续建模线索，不在此阶段恢复 step 语义或顺序图完整执行语义。
 
 ## 21.9 Phase 6: 条件触发统一抽象与名字归一化
 
-* [ ] 在 SysDeSim IR 中引入统一触发抽象：`TriggerSignal`、`TriggerCondition`、`TriggerNone`。
-* [ ] 让 `ChangeEvent` 与文本型 `guard` 都落入 `TriggerCondition`，不要再把二者分裂处理。
-* [ ] 对 `(source_state_id, target_state_id, normalized_expr)` 做去重，合并同语义的 `ChangeEvent/guard`。
-* [ ] 若同一条边同时有 `ChangeEvent(expr_a)` 和 `guard(expr_b)` 且两者不同，则生成复合条件触发 `expr_a AND expr_b`。
-* [ ] 引入统一的名字归一化规则，例如忽略大小写、去下划线、token 正规化。
-* [ ] 把顺序图观测中的变量名与 guard/change 中出现的变量名接到同一个归一化空间。
-* [ ] 对当前无法安全解析的条件表达式保留 warning 与原文，不在这一阶段直接中止整个导入。
+* [x] 在 SysDeSim IR 中引入统一触发抽象：`TriggerSignal`、`TriggerCondition`、`TriggerNone`。
+* [x] 让 `ChangeEvent` 与文本型 `guard` 都落入 `TriggerCondition`，不要再把二者分裂处理。
+* [x] 对 `(source_state_id, target_state_id, normalized_expr)` 做去重，合并同语义的 `ChangeEvent/guard`。
+* [x] 若同一条边同时有 `ChangeEvent(expr_a)` 和 `guard(expr_b)` 且两者不同，则生成复合条件触发 `expr_a AND expr_b`。
+* [x] 引入统一的名字归一化规则，例如忽略大小写、去下划线、token 正规化。
+* [x] 把顺序图观测中的变量名与 guard/change 中出现的变量名接到同一个归一化空间。
+* [x] 对当前无法安全解析的条件表达式保留 warning 与原文，不在这一阶段直接中止整个导入。
+
+当前真实样例的 Phase 6 验证结论：
+
+* 已可稳定输出 `TriggerSignal`、`TriggerCondition`、`TriggerNone` 三类统一 trigger 视图。
+* 当前样例中 `Idle -> Control` 被识别为 signal trigger，`Control.A -> Control.B` / `Control.C -> Control.D` / `Control.F -> Control.W` 被识别为 condition trigger，`Control.S -> Control.X` 被识别为 none trigger。
+* 名字归一化已覆盖真实样例中的 `Rmt` / `rmt` / `R_mt` 漂移，并能把顺序图观测名与条件触发里的变量名收敛到同一归一化空间。
+* 当前真实样例虽然全局存在 `22` 个 `uml:TimeEvent`，但状态机 transition 实际引用数为 `0`；同时样例中 cross-level transition 数为 `0`、cross-region transition 数为 `0`。
 
 ## 21.10 Phase 7: 外部输入候选分类与 timeline-first IR
 

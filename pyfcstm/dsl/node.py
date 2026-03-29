@@ -1202,6 +1202,7 @@ class StateDefinition(ASTNode):
             if (
                 not self.substates
                 and not self.transitions
+                and not self.force_transitions
                 and not self.events
                 and not self.enters
                 and not self.durings
@@ -1223,6 +1224,8 @@ class StateDefinition(ASTNode):
                     print(indent(str(substate), prefix="    "), file=sf)
                 for event in self.events:
                     print(indent(str(event), prefix="    "), file=sf)
+                for force_transition in self.force_transitions:
+                    print(indent(str(force_transition), prefix="    "), file=sf)
                 for transition in self.transitions:
                     print(indent(str(transition), prefix="    "), file=sf)
                 print(f"}}", file=sf, end="")

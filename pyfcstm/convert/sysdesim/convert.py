@@ -70,6 +70,27 @@ _VALID_FCSTM_ID = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _TIME_LITERAL = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*(s|ms|us)\s*$")
 _DEFAULT_FLOAT = {"uml:LiteralReal", "uml:LiteralUnlimitedNatural"}
 _DEFAULT_INT = {"uml:LiteralInteger", "uml:LiteralNatural"}
+_CONDITION_IDENTIFIER = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]*\b")
+_CONDITION_KEYWORDS = {"and", "or", "not", "true", "false", "True", "False"}
+_DSL_RESERVED_IDENTIFIERS = {
+    "abstract",
+    "def",
+    "during",
+    "E",
+    "effect",
+    "enter",
+    "event",
+    "exit",
+    "false",
+    "if",
+    "named",
+    "pi",
+    "pseudo",
+    "ref",
+    "state",
+    "tau",
+    "true",
+}
 
 
 @dataclass(frozen=True)
@@ -403,6 +424,63 @@ def _parse_constraint_body(container: ET.Element) -> Optional[str]:
     return None
 
 
+def _parse_change_event_body(element: ET.Element) -> Optional[str]:
+    """
+    Extract the first non-empty change-expression body from a UML change event.
+
+    :param element: UML ``ChangeEvent`` element.
+    :type element: xml.etree.ElementTree.Element
+    :return: Parsed change-condition text, or ``None`` when absent.
+    :rtype: str, optional
+    """
+    change_expression = element.find("changeExpression")
+    if change_expression is None:
+        return None
+    return _text_or_none(change_expression.findtext("body"))
+
+
+def _condition_text_signature(text: Optional[str]) -> Optional[str]:
+    """
+    Return a whitespace-insensitive signature for one condition text.
+
+    :param text: Raw condition text.
+    :type text: str, optional
+    :return: Canonical signature, or ``None`` when the text is empty.
+    :rtype: str, optional
+    """
+    normalized = _text_or_none(text)
+    if normalized is None:
+        return None
+    return re.sub(r"\s+", "", normalized)
+
+
+def _merge_condition_text(primary: Optional[str], secondary: Optional[str]) -> Optional[str]:
+    """
+    Merge two condition texts into one effective guard expression.
+
+    The phase1-2 compatibility path treats change events as condition-only
+    triggers. When a transition also defines a textual guard, the two are
+    merged conservatively. Equivalent texts collapse to one expression; distinct
+    texts are combined with ``&&``.
+
+    :param primary: First condition text.
+    :type primary: str, optional
+    :param secondary: Second condition text.
+    :type secondary: str, optional
+    :return: Effective merged condition text.
+    :rtype: str, optional
+    """
+    primary = _text_or_none(primary)
+    secondary = _text_or_none(secondary)
+    if primary is None:
+        return secondary
+    if secondary is None:
+        return primary
+    if _condition_text_signature(primary) == _condition_text_signature(secondary):
+        return primary
+    return f"({primary}) && ({secondary})"
+
+
 def _parse_default_value(element: ET.Element) -> Optional[str]:
     """
     Parse a primitive default value from a UML property element.
@@ -450,6 +528,13 @@ def _parse_primitive_type_name(
 
     type_element = element.find("type")
     if type_element is None:
+        default = element.find("defaultValue")
+        if default is not None:
+            default_type = _xmi_type(default)
+            if default_type in _DEFAULT_INT:
+                return "int"
+            if default_type in _DEFAULT_FLOAT:
+                return "float"
         return None
 
     href = type_element.attrib.get("href", "")
@@ -536,6 +621,7 @@ def _parse_region(
     region_element: ET.Element,
     owner_state_id: Optional[str],
     event_types: Dict[str, str],
+    change_event_bodies: Dict[str, str],
 ) -> IrRegion:
     """
     Recursively parse one UML region into IR.
@@ -556,7 +642,7 @@ def _parse_region(
         raw_type = _xmi_type(subvertex)
         if raw_type == "uml:State":
             child_regions = [
-                _parse_region(child_region, _xmi_id(subvertex), event_types)
+                _parse_region(child_region, _xmi_id(subvertex), event_types, change_event_bodies)
                 for child_region in subvertex.findall("region")
             ]
             vertex = IrVertex(
@@ -598,6 +684,11 @@ def _parse_region(
         trigger_element = transition_element.find("trigger")
         trigger_ref_id = trigger_element.attrib.get("event") if trigger_element is not None else None
         trigger_kind = "none" if trigger_ref_id is None else event_types.get(trigger_ref_id, "unknown")
+        guard_expr_raw = _parse_constraint_body(transition_element)
+        if trigger_kind == "change":
+            guard_expr_raw = _merge_condition_text(change_event_bodies.get(trigger_ref_id), guard_expr_raw)
+            trigger_kind = "none"
+            trigger_ref_id = None
         region.transitions.append(
             IrTransition(
                 transition_id=_xmi_id(transition_element),
@@ -605,7 +696,7 @@ def _parse_region(
                 target_id=transition_element.attrib["target"],
                 trigger_kind=trigger_kind,
                 trigger_ref_id=trigger_ref_id,
-                guard_expr_raw=_parse_constraint_body(transition_element),
+                guard_expr_raw=guard_expr_raw,
                 effect_action=_parse_action_ref(transition_element.find("effect")),
                 source_region_id=region.region_id,
                 target_region_id=region.region_id,
@@ -644,6 +735,7 @@ def load_sysdesim_xml(xml_path: str) -> List[IrMachine]:
     signals: List[IrSignal] = []
     signal_events: List[IrSignalEvent] = []
     time_events: List[IrTimeEvent] = []
+    change_event_bodies: Dict[str, str] = {}
     event_types: Dict[str, str] = {}
 
     for element in root.iter():
@@ -662,6 +754,11 @@ def load_sysdesim_xml(xml_path: str) -> List[IrMachine]:
         elif raw_type == "uml:TimeEvent":
             time_events.append(_parse_time_event(element))
             event_types[_xmi_id(element)] = "time"
+        elif raw_type == "uml:ChangeEvent":
+            event_types[_xmi_id(element)] = "change"
+            body = _parse_change_event_body(element)
+            if body is not None:
+                change_event_bodies[_xmi_id(element)] = body
 
     machines = []
     for element in root.iter():
@@ -674,7 +771,7 @@ def load_sysdesim_xml(xml_path: str) -> List[IrMachine]:
         machine = IrMachine(
             machine_id=_xmi_id(element),
             name=element.attrib.get("name", ""),
-            root_region=_parse_region(regions[0], None, event_types),
+            root_region=_parse_region(regions[0], None, event_types, change_event_bodies),
             signals=[IrSignal(**signal.__dict__) for signal in signals],
             signal_events=[IrSignalEvent(**signal_event.__dict__) for signal_event in signal_events],
             time_events=[IrTimeEvent(**time_event.__dict__) for time_event in time_events],
@@ -829,6 +926,27 @@ def _with_unique_suffix(base: str, stable_id: str) -> str:
     return f"{base}_{suffix}" if base else suffix
 
 
+def _avoid_reserved_identifier(base: str, stable_id: str, fallback_suffix: str) -> str:
+    """
+    Avoid DSL-reserved identifiers in emitted names.
+
+    :param base: Candidate normalized identifier.
+    :type base: str
+    :param stable_id: Source identifier used for deterministic disambiguation.
+    :type stable_id: str
+    :param fallback_suffix: Readable suffix appended for reserved names.
+    :type fallback_suffix: str
+    :return: Identifier safe for DSL emission.
+    :rtype: str
+    """
+    if base not in _DSL_RESERVED_IDENTIFIERS:
+        return base
+    candidate = f"{base}{fallback_suffix}"
+    if candidate in _DSL_RESERVED_IDENTIFIERS:
+        candidate = _with_unique_suffix(candidate, stable_id)
+    return candidate
+
+
 def _make_state_name(vertex: IrVertex) -> str:
     """
     Build the FCSTM identifier for a state-like vertex.
@@ -840,7 +958,7 @@ def _make_state_name(vertex: IrVertex) -> str:
     """
     base = _base_upper_camel(vertex.raw_name)
     if base:
-        return base
+        return _avoid_reserved_identifier(base, vertex.vertex_id, "State")
     return f"__sysdesim_{vertex.vertex_type}_{_stable_suffix(vertex.vertex_id)}"
 
 
@@ -855,7 +973,7 @@ def _make_action_name(action: IrActionRef) -> str:
     """
     base = _base_upper_camel(action.raw_name)
     if base:
-        return base
+        return _avoid_reserved_identifier(base, action.action_id, "Action")
     return f"__sysdesim_action_{_stable_suffix(action.action_id)}"
 
 
@@ -892,7 +1010,7 @@ def _make_event_name(raw_name: str, stable_id: str) -> str:
     """
     base = _base_upper_snake(raw_name)
     if base:
-        return base
+        return _avoid_reserved_identifier(base, stable_id, "_EVENT")
     return f"__sysdesim_evt_{_stable_suffix(stable_id).upper()}"
 
 
@@ -948,21 +1066,24 @@ def _normalize_region_vertices(vertices: List[IrVertex]) -> None:
             _normalize_region_vertices(region.vertices)
 
 
-def _normalize_variables(variables: List[IrVariable]) -> None:
+def _normalize_variables(machine: IrMachine) -> None:
     """
     Validate and normalize explicit and synthetic variables.
 
     Explicit variables must already use legal ASCII FCSTM identifiers and must
-    declare ``int`` or ``float`` types. Synthetic variables are renamed into the
-    reserved ``__sysdesim_*`` namespace.
+    declare ``int`` or ``float`` types when the variable should participate in
+    FCSTM export. Unsupported explicit types are ignored with diagnostics so
+    state-machine trunk extraction is not blocked by unrelated non-numeric UML
+    properties. Synthetic variables are renamed into the reserved
+    ``__sysdesim_*`` namespace.
 
-    :param variables: Variables to validate and normalize in place.
-    :type variables: list[IrVariable]
+    :param machine: Machine whose variables should be normalized in place.
+    :type machine: IrMachine
     :return: ``None``.
     :rtype: None
     :raises ValueError: If an explicit variable name or type is unsupported.
     """
-    for variable in variables:
+    for variable in machine.variables:
         variable.display_name = variable.raw_name
         if variable.is_synthetic:
             variable.safe_name = make_internal_name(
@@ -978,11 +1099,239 @@ def _normalize_variables(variables: List[IrVariable]) -> None:
                 f"phase0-2 only accepts legal ASCII FCSTM identifiers."
             )
         if variable.type_name not in {"int", "float", None}:
-            raise ValueError(
-                f"Unsupported explicit variable type {variable.type_name!r}; "
-                f"phase0-2 only supports int and float."
+            variable.safe_name = None
+            machine.diagnostics.append(
+                IrDiagnostic(
+                    level="warning",
+                    code="ignored_unsupported_variable_type",
+                    message=(
+                        f"Explicit variable {variable.raw_name!r} uses unsupported type {variable.type_name!r} "
+                        "and is ignored during FCSTM compatibility export."
+                    ),
+                    source_id=variable.variable_id,
+                )
             )
+            continue
         variable.safe_name = variable.raw_name
+
+
+def _condition_name_key(name: str) -> str:
+    """
+    Return the normalized lookup key for one condition identifier.
+
+    :param name: Raw identifier.
+    :type name: str
+    :return: Lowercased underscore-insensitive key.
+    :rtype: str
+    """
+    return re.sub(r"_+", "", name).lower()
+
+
+def _should_relax_condition_alias(name: str) -> bool:
+    """
+    Return whether an identifier should participate in relaxed alias matching.
+
+    Single-letter names such as ``a`` and ``A`` are intentionally excluded to
+    avoid collapsing real sample inputs onto unrelated one-letter properties.
+
+    :param name: Identifier candidate.
+    :type name: str
+    :return: Whether relaxed alias matching is safe for this name.
+    :rtype: bool
+    """
+    return len(name) > 1 or "_" in name
+
+
+def _build_condition_name_aliases(machine: IrMachine) -> Tuple[Dict[str, str], Dict[str, str]]:
+    """
+    Build alias mappings from raw condition identifiers to exported names.
+
+    :param machine: Normalized machine containing explicit variables.
+    :type machine: IrMachine
+    :return: Tuple of exact and relaxed alias mappings.
+    :rtype: tuple[dict[str, str], dict[str, str]]
+    """
+    exact_aliases = {}
+    relaxed_aliases = {}
+    for variable in machine.variables:
+        if not variable.raw_name:
+            continue
+        if variable.safe_name is not None:
+            exact_aliases.setdefault(variable.raw_name, variable.safe_name)
+            exact_aliases.setdefault(variable.safe_name, variable.safe_name)
+            if _should_relax_condition_alias(variable.raw_name):
+                relaxed_aliases.setdefault(_condition_name_key(variable.raw_name), variable.safe_name)
+            if _should_relax_condition_alias(variable.safe_name):
+                relaxed_aliases.setdefault(_condition_name_key(variable.safe_name), variable.safe_name)
+    return exact_aliases, relaxed_aliases
+
+
+def _rewrite_condition_identifiers(
+    expr_text: Optional[str],
+    exact_aliases: Dict[str, str],
+    relaxed_aliases: Dict[str, str],
+) -> Optional[str]:
+    """
+    Rewrite condition identifiers into canonical FCSTM variable names.
+
+    This phase keeps the guard surface small and sample-driven. The current
+    normalization intentionally collapses simple case and underscore drift such
+    as ``R_mt`` versus ``rmt``.
+
+    :param expr_text: Raw condition text.
+    :type expr_text: str, optional
+    :param exact_aliases: Exact identifier alias mapping.
+    :type exact_aliases: dict[str, str]
+    :param relaxed_aliases: Relaxed case/underscore-insensitive alias mapping.
+    :type relaxed_aliases: dict[str, str]
+    :return: Rewritten condition text.
+    :rtype: str, optional
+    """
+    expr_text = _text_or_none(expr_text)
+    if expr_text is None:
+        return None
+
+    def _replace(match: re.Match[str]) -> str:
+        token = match.group(0)
+        if token in _CONDITION_KEYWORDS:
+            return token
+        if token in exact_aliases:
+            return exact_aliases[token]
+        return relaxed_aliases.get(_condition_name_key(token), token)
+
+    return _CONDITION_IDENTIFIER.sub(_replace, expr_text)
+
+
+def _iter_expr_variable_names(expr: Optional[dsl_nodes.Expr]) -> Iterable[str]:
+    """
+    Yield variable names referenced by one DSL expression tree.
+
+    :param expr: DSL expression node, or ``None``.
+    :type expr: pyfcstm.dsl.node.Expr, optional
+    :return: Iterator over variable names.
+    :rtype: collections.abc.Iterable[str]
+    """
+    if expr is None:
+        return
+    if isinstance(expr, dsl_nodes.Name):
+        yield expr.name
+        return
+    if isinstance(expr, dsl_nodes.Paren):
+        yield from _iter_expr_variable_names(expr.expr)
+        return
+    if isinstance(expr, dsl_nodes.UnaryOp):
+        yield from _iter_expr_variable_names(expr.expr)
+        return
+    if isinstance(expr, dsl_nodes.BinaryOp):
+        yield from _iter_expr_variable_names(expr.expr1)
+        yield from _iter_expr_variable_names(expr.expr2)
+        return
+    if isinstance(expr, dsl_nodes.ConditionalOp):
+        yield from _iter_expr_variable_names(expr.cond)
+        yield from _iter_expr_variable_names(expr.value_true)
+        yield from _iter_expr_variable_names(expr.value_false)
+        return
+    if isinstance(expr, dsl_nodes.UFunc):
+        yield from _iter_expr_variable_names(expr.expr)
+
+
+def _ensure_condition_variables(machine: IrMachine) -> None:
+    """
+    Synthesize minimal numeric definitions for guard-only identifiers.
+
+    The real sample uses a small set of condition names that are not declared
+    as FCSTM-compatible UML properties. To keep the compatibility export
+    round-trippable, these names are materialized as float inputs with default
+    ``0.0``.
+
+    :param machine: Normalized machine whose guards should be scanned.
+    :type machine: IrMachine
+    :return: ``None``.
+    :rtype: None
+    """
+    known_names = {variable.safe_name for variable in machine.variables if variable.safe_name is not None}
+    for transition in machine.walk_transitions():
+        if transition.guard_expr_ir is None:
+            continue
+        for variable_name in sorted(set(_iter_expr_variable_names(transition.guard_expr_ir))):
+            if variable_name in known_names:
+                continue
+            machine.variables.append(
+                IrVariable(
+                    variable_id=make_internal_name("guard_var", [_base_lower_snake(variable_name)], variable_name),
+                    raw_name=variable_name,
+                    safe_name=variable_name,
+                    display_name=variable_name,
+                    type_name="float",
+                    default_value="0.0",
+                    is_synthetic=False,
+                )
+            )
+            machine.diagnostics.append(
+                IrDiagnostic(
+                    level="warning",
+                    code="implicit_condition_variable",
+                    message=(
+                        f"Condition variable {variable_name!r} is not declared as a supported UML property; "
+                        "the compatibility export synthesizes it as a float input with default 0.0."
+                    ),
+                    source_id=transition.transition_id,
+                    state_path=machine.state_path(transition.source_id),
+                )
+            )
+            known_names.add(variable_name)
+
+
+def _transition_equivalence_key(transition: IrTransition) -> Tuple[object, ...]:
+    """
+    Build the semantic deduplication key for one transition.
+
+    :param transition: Transition to fingerprint.
+    :type transition: IrTransition
+    :return: Stable semantic key used for duplicate elimination.
+    :rtype: tuple[object, ...]
+    """
+    return (
+        transition.source_id,
+        transition.target_id,
+        transition.trigger_kind,
+        transition.trigger_ref_id,
+        str(transition.guard_expr_ir) if transition.guard_expr_ir is not None else None,
+        transition.effect_action.raw_name if transition.effect_action is not None else None,
+    )
+
+
+def _deduplicate_equivalent_transitions(machine: IrMachine) -> None:
+    """
+    Drop duplicate transitions that collapse to the same FCSTM semantics.
+
+    :param machine: Normalized machine whose regions should be deduplicated.
+    :type machine: IrMachine
+    :return: ``None``.
+    :rtype: None
+    """
+    for region in machine.walk_regions():
+        deduplicated = []
+        seen = {}
+        for transition in region.transitions:
+            signature = _transition_equivalence_key(transition)
+            if signature in seen:
+                machine.diagnostics.append(
+                    IrDiagnostic(
+                        level="warning",
+                        code="duplicate_transition_merged",
+                        message=(
+                            "Multiple SysDeSim transitions collapse to the same FCSTM-compatible semantics and "
+                            "have been merged into one emitted edge."
+                        ),
+                        source_id=transition.transition_id,
+                        state_path=machine.state_path(transition.source_id),
+                    )
+                )
+                continue
+            seen[signature] = transition.transition_id
+            deduplicated.append(transition)
+        region.transitions = deduplicated
 
 
 def _normalize_events(machine: IrMachine) -> None:
@@ -1055,8 +1404,9 @@ def normalize_machine(machine: IrMachine) -> IrMachine:
     machine.display_name = machine.name
     _normalize_region_vertices(machine.root_region.vertices)
     _normalize_events(machine)
-    _normalize_variables(machine.variables)
+    _normalize_variables(machine)
     _normalize_time_events(machine)
+    exact_condition_aliases, relaxed_condition_aliases = _build_condition_name_aliases(machine)
 
     for transition in machine.walk_transitions():
         if transition.effect_action is not None:
@@ -1078,11 +1428,20 @@ def normalize_machine(machine: IrMachine) -> IrMachine:
                         state_path=machine.state_path(transition.source_id),
                     )
                 )
+        transition.guard_expr_raw = _rewrite_condition_identifiers(
+            transition.guard_expr_raw,
+            exact_condition_aliases,
+            relaxed_condition_aliases,
+        )
         if transition.guard_expr_raw and transition.guard_expr_raw.strip():
             transition.guard_expr_ir = parse_condition(transition.guard_expr_raw).expr
+            transition.guard_expr_raw = str(transition.guard_expr_ir)
         else:
             transition.guard_expr_raw = None
             transition.guard_expr_ir = None
+
+    _ensure_condition_variables(machine)
+    _deduplicate_equivalent_transitions(machine)
 
     machine.rebuild_indexes()
     return machine
@@ -1503,6 +1862,40 @@ def _build_signal_event_id(machine: IrMachine, transition: IrTransition) -> dsl_
     signal_event = machine.get_signal_event(transition.trigger_ref_id)
     signal = machine.get_signal(signal_event.signal_id)
     return dsl_nodes.ChainID([signal.safe_name], is_absolute=True)
+
+
+def _is_force_transition_candidate(machine: IrMachine, transition: IrTransition) -> bool:
+    """
+    Return whether a transition should be emitted as an FCSTM force transition.
+
+    The current phase2 compatibility rule is intentionally conservative:
+    composite-source transitions that target any state outside the source
+    subtree are treated as force transitions.
+
+    :param machine: Normalized machine containing the transition.
+    :type machine: IrMachine
+    :param transition: Transition to classify.
+    :type transition: IrTransition
+    :return: Whether the transition should be emitted as a force transition.
+    :rtype: bool
+    """
+    source = machine.get_vertex(transition.source_id)
+    target = machine.get_vertex(transition.target_id)
+    if source.vertex_type != "state" or target.vertex_type != "state":
+        return False
+    if transition.trigger_kind != "signal":
+        return False
+    if not source.is_composite:
+        return False
+    if source.parent_region_id is None or target.parent_region_id is None:
+        return False
+    if source.parent_region_id != target.parent_region_id:
+        return False
+    if machine.get_region(source.parent_region_id).owner_state_id is None:
+        return False
+    source_path = machine.state_id_path(source.vertex_id)
+    target_path = machine.state_id_path(target.vertex_id)
+    return tuple(target_path[: len(source_path)]) != source_path
 
 
 def _register_propagated_timeout_exit_chain(
@@ -1950,6 +2343,44 @@ def _build_transition(
     )
 
 
+def _build_force_transition(
+    machine: IrMachine,
+    transition: IrTransition,
+) -> dsl_nodes.ForceTransitionDefinition:
+    """
+    Convert one composite-source outward transition to a DSL force transition.
+
+    :param machine: Normalized machine containing the transition.
+    :type machine: IrMachine
+    :param transition: Transition to convert.
+    :type transition: IrTransition
+    :return: FCSTM DSL force-transition definition.
+    :rtype: pyfcstm.dsl.node.ForceTransitionDefinition
+    :raises NotImplementedError: If the transition uses unsupported trigger
+        shapes for force-transition lowering.
+    """
+    source = machine.get_vertex(transition.source_id)
+    target = machine.get_vertex(transition.target_id)
+    if transition.trigger_kind not in {"signal", "none"}:
+        raise NotImplementedError(
+            f"Phase2 only supports signal/none triggers for force-transition lowering: {transition.transition_id}"
+        )
+    if transition.trigger_kind == "signal" and transition.guard_expr_ir is not None:
+        raise NotImplementedError(
+            f"Phase2 does not support force transitions with both signal and guard: {transition.transition_id}"
+        )
+    if source.vertex_type != "state" or target.vertex_type != "state":
+        raise NotImplementedError(
+            f"Phase2 only supports state-to-state force-transition lowering: {transition.transition_id}"
+        )
+    return dsl_nodes.ForceTransitionDefinition(
+        from_state=source.safe_name,
+        to_state=target.safe_name,
+        event_id=_build_signal_event_id(machine, transition) if transition.trigger_kind == "signal" else None,
+        condition_expr=transition.guard_expr_ir,
+    )
+
+
 def _logical_regular_transition_region_id(machine: IrMachine, transition: IrTransition) -> Optional[str]:
     """
     Return the region that should own a regular emitted transition.
@@ -2065,6 +2496,7 @@ def _build_state(
 
     substates: List[dsl_nodes.StateDefinition] = []
     transitions: List[dsl_nodes.TransitionDefinition] = []
+    force_transitions: List[dsl_nodes.ForceTransitionDefinition] = []
     if len(vertex.regions) > 1:  # pragma: no cover - rejected earlier by _validate_phase2_region
         raise NotImplementedError(
             f"Phase2 does not support multi-region composite state yet: {vertex.vertex_id}"
@@ -2085,6 +2517,9 @@ def _build_state(
         for transition in _iter_emittable_region_transitions(machine, region):
             if transition.source_id in init_pseudostates:
                 init_transitions.append(_build_transition(machine, transition, context))
+                continue
+            if _is_force_transition_candidate(machine, transition):
+                force_transitions.append(_build_force_transition(machine, transition))
                 continue
             if transition.is_cross_level:
                 continue
@@ -2122,6 +2557,7 @@ def _build_state(
         durings=durings,
         exits=exits,
         during_aspects=during_aspects,
+        force_transitions=force_transitions,
     )
 
 

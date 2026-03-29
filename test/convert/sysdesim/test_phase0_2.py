@@ -1553,8 +1553,9 @@ class TestSysDeSimCoverageScenarios:
                 )
             ],
         )
-        with pytest.raises(ValueError, match="Unsupported explicit variable type"):
-            normalize_machine(invalid_machine)
+        normalize_machine(invalid_machine)
+        assert invalid_machine.get_variable("invalid_var").safe_name is None
+        assert invalid_machine.diagnostics[-1].code == "ignored_unsupported_variable_type"
 
     def test_phase2_build_ast_supports_float_variables_and_skips_incomplete_ones(self, tmp_path: Path):
         """Phase2 should emit float definitions and skip variables that are incomplete."""
@@ -1643,6 +1644,207 @@ class TestSysDeSimCoverageScenarios:
         )
         with pytest.raises(ValueError, match="Unsupported variable type"):
             build_machine_ast(unsupported_type_machine)
+
+    def test_phase2_handles_real_sample_style_condition_triggers_and_ignored_non_numeric_properties(
+        self, tmp_path: Path
+    ):
+        """Phase2 should merge change-event guards, normalize aliases, and ignore irrelevant typed properties."""
+        xml_file = _write_xml(
+            tmp_path,
+            """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <xmi:XMI xmi:version="20131001"
+                     xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
+                     xmlns:uml="http://www.eclipse.org/uml2/5.0.0/UML">
+              <uml:Model xmi:id="model_1" name="model">
+                <packagedElement xmi:type="uml:Class" xmi:id="class_1" name="Change Merge" classifierBehavior="machine_1">
+                  <ownedBehavior xmi:type="uml:StateMachine" xmi:id="machine_1" name="Change Merge">
+                    <region xmi:type="uml:Region" xmi:id="region_root" name="">
+                      <transition xmi:type="uml:Transition" xmi:id="tx_init" source="init_root" target="state_a"/>
+                      <transition xmi:type="uml:Transition" xmi:id="tx_ab_change" source="state_a" target="state_b">
+                        <trigger xmi:type="uml:Trigger" xmi:id="trigger_ab_change" event="change_evt_ab"/>
+                      </transition>
+                      <transition xmi:type="uml:Transition" xmi:id="tx_ab_guard" source="state_a" target="state_b">
+                        <ownedRule xmi:type="uml:Constraint" xmi:id="guard_rule_ab">
+                          <specification xmi:type="uml:OpaqueExpression" xmi:id="guard_expr_ab">
+                            <body> a &lt; b </body>
+                          </specification>
+                        </ownedRule>
+                      </transition>
+                      <transition xmi:type="uml:Transition" xmi:id="tx_bc_change" source="state_b" target="state_c">
+                        <trigger xmi:type="uml:Trigger" xmi:id="trigger_bc_change" event="change_evt_bc"/>
+                      </transition>
+                      <subvertex xmi:type="uml:Pseudostate" xmi:id="init_root"/>
+                      <subvertex xmi:type="uml:State" xmi:id="state_a" name="A"/>
+                      <subvertex xmi:type="uml:State" xmi:id="state_b" name="B"/>
+                      <subvertex xmi:type="uml:State" xmi:id="state_c" name="C"/>
+                    </region>
+                  </ownedBehavior>
+                  <ownedAttribute xmi:type="uml:Property" xmi:id="var_stage" name="current_stage">
+                    <type xmi:type="uml:PrimitiveType" xmi:id="type_stage" name="Stage"/>
+                  </ownedAttribute>
+                  <ownedAttribute xmi:type="uml:Property" xmi:id="var_rmt" name="rmt">
+                    <defaultValue xmi:type="uml:LiteralReal" xmi:id="var_rmt_default" value="0.0"/>
+                  </ownedAttribute>
+                </packagedElement>
+                <packagedElement xmi:type="uml:ChangeEvent" xmi:id="change_evt_ab" name="">
+                  <changeExpression xmi:type="uml:OpaqueExpression" xmi:id="change_expr_ab" name="">
+                    <body>a &lt; b</body>
+                  </changeExpression>
+                </packagedElement>
+                <packagedElement xmi:type="uml:ChangeEvent" xmi:id="change_evt_bc" name="">
+                  <changeExpression xmi:type="uml:OpaqueExpression" xmi:id="change_expr_bc" name="">
+                    <body>R_mt &lt; 5000</body>
+                  </changeExpression>
+                </packagedElement>
+              </uml:Model>
+            </xmi:XMI>
+            """,
+        )
+
+        machine = normalize_machine(load_sysdesim_machine(str(xml_file)))
+        dsl_code = _normalize_newlines(convert_sysdesim_xml_to_dsl(str(xml_file)))
+        program = convert_sysdesim_xml_to_ast(str(xml_file))
+
+        assert [variable.safe_name for variable in machine.variables] == [None, "rmt", "a", "b"]
+        assert [definition.name for definition in program.definitions] == ["rmt", "a", "b"]
+        assert [definition.type for definition in program.definitions] == ["float", "float", "float"]
+        assert dsl_code == dedent(
+            """\
+            def float rmt = 0.0;
+            def float a = 0.0;
+            def float b = 0.0;
+            state ChangeMerge named 'Change Merge' {
+                state A;
+                state B;
+                state C;
+                [*] -> A;
+                A -> B : if [a < b];
+                B -> C : if [rmt < 5000];
+            }"""
+        )
+        assert _assert_program_loads_to_state_machine(program).root_state.name == "ChangeMerge"
+        assert _assert_dsl_code_loads_to_state_machine(dsl_code).root_state.name == "ChangeMerge"
+        assert {item.code for item in machine.diagnostics} >= {
+            "ignored_unsupported_variable_type",
+            "duplicate_transition_merged",
+            "implicit_condition_variable",
+        }
+
+    def test_phase2_lowers_composite_source_outgoing_transition_to_force_transition(self, tmp_path: Path):
+        """Phase2 should emit composite-source outward transitions as force transitions."""
+        xml_file = _write_xml(
+            tmp_path,
+            """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <xmi:XMI xmi:version="20131001"
+                     xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
+                     xmlns:uml="http://www.eclipse.org/uml2/5.0.0/UML">
+              <uml:Model xmi:id="model_1" name="model">
+                <packagedElement xmi:type="uml:Class" xmi:id="class_1" name="Force Source" classifierBehavior="machine_1">
+                  <ownedBehavior xmi:type="uml:StateMachine" xmi:id="machine_1" name="Force Source">
+                    <region xmi:type="uml:Region" xmi:id="region_root" name="">
+                      <transition xmi:type="uml:Transition" xmi:id="tx_init_root" source="init_root" target="state_outer"/>
+                      <subvertex xmi:type="uml:Pseudostate" xmi:id="init_root"/>
+                      <subvertex xmi:type="uml:State" xmi:id="state_outer" name="Outer">
+                        <region xmi:type="uml:Region" xmi:id="region_outer" name="">
+                          <transition xmi:type="uml:Transition" xmi:id="tx_init_outer" source="init_outer" target="state_h"/>
+                          <transition xmi:type="uml:Transition" xmi:id="tx_force" source="state_h" target="state_g">
+                            <trigger xmi:type="uml:Trigger" xmi:id="trigger_go" event="signal_evt_go"/>
+                          </transition>
+                          <subvertex xmi:type="uml:Pseudostate" xmi:id="init_outer"/>
+                          <subvertex xmi:type="uml:State" xmi:id="state_h" name="H">
+                            <region xmi:type="uml:Region" xmi:id="region_h" name="">
+                              <transition xmi:type="uml:Transition" xmi:id="tx_init_h" source="init_h" target="state_inner"/>
+                              <subvertex xmi:type="uml:Pseudostate" xmi:id="init_h"/>
+                              <subvertex xmi:type="uml:State" xmi:id="state_inner" name="Inner"/>
+                            </region>
+                          </subvertex>
+                          <subvertex xmi:type="uml:State" xmi:id="state_g" name="G"/>
+                        </region>
+                      </subvertex>
+                    </region>
+                  </ownedBehavior>
+                </packagedElement>
+                <packagedElement xmi:type="uml:Signal" xmi:id="signal_go" name="Go"/>
+                <packagedElement xmi:type="uml:SignalEvent" xmi:id="signal_evt_go" name="" signal="signal_go"/>
+              </uml:Model>
+            </xmi:XMI>
+            """,
+        )
+
+        program = convert_sysdesim_xml_to_ast(str(xml_file))
+        dsl_code = _normalize_newlines(convert_sysdesim_xml_to_dsl(str(xml_file)))
+        parsed_program, model = validate_program_roundtrip(program)
+        expected_dsl = dedent(
+            """\
+            state ForceSource named 'Force Source' {
+                state Outer {
+                    state H {
+                        state Inner;
+                        [*] -> Inner;
+                    }
+                    state G;
+                    ! H -> G : /GO;
+                    [*] -> H;
+                }
+                event GO named 'Go';
+                [*] -> Outer;
+            }"""
+        )
+
+        assert dsl_code == expected_dsl
+        assert _normalize_newlines(str(program)) == expected_dsl
+        assert _normalize_newlines(str(parsed_program)) == expected_dsl
+        assert model.root_state.name == "ForceSource"
+        outer_state = program.root_state.substates[0]
+        assert outer_state.name == "Outer"
+        assert [str(item) for item in outer_state.force_transitions] == ["! H -> G : /GO;"]
+        assert [str(item) for item in outer_state.transitions] == ["[*] -> H;"]
+
+    def test_phase2_avoids_reserved_state_identifier_collisions(self, tmp_path: Path):
+        """Phase2 should rewrite DSL-reserved state identifiers such as single-letter ``E``."""
+        xml_file = _write_xml(
+            tmp_path,
+            """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <xmi:XMI xmi:version="20131001"
+                     xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
+                     xmlns:uml="http://www.eclipse.org/uml2/5.0.0/UML">
+              <uml:Model xmi:id="model_1" name="model">
+                <packagedElement xmi:type="uml:Class" xmi:id="class_1" name="Reserved State" classifierBehavior="machine_1">
+                  <ownedBehavior xmi:type="uml:StateMachine" xmi:id="machine_1" name="Reserved State">
+                    <region xmi:type="uml:Region" xmi:id="region_root" name="">
+                      <transition xmi:type="uml:Transition" xmi:id="tx_init" source="init_root" target="state_d"/>
+                      <transition xmi:type="uml:Transition" xmi:id="tx_go" source="state_d" target="state_e">
+                        <trigger xmi:type="uml:Trigger" xmi:id="trigger_go" event="signal_evt_go"/>
+                      </transition>
+                      <subvertex xmi:type="uml:Pseudostate" xmi:id="init_root"/>
+                      <subvertex xmi:type="uml:State" xmi:id="state_d" name="D"/>
+                      <subvertex xmi:type="uml:State" xmi:id="state_e" name="E"/>
+                    </region>
+                  </ownedBehavior>
+                </packagedElement>
+                <packagedElement xmi:type="uml:Signal" xmi:id="signal_go" name="Go"/>
+                <packagedElement xmi:type="uml:SignalEvent" xmi:id="signal_evt_go" name="" signal="signal_go"/>
+              </uml:Model>
+            </xmi:XMI>
+            """,
+        )
+
+        dsl_code = _normalize_newlines(convert_sysdesim_xml_to_dsl(str(xml_file)))
+
+        assert dsl_code == dedent(
+            """\
+            state ReservedState named 'Reserved State' {
+                state D;
+                state EState named 'E';
+                event GO named 'Go';
+                [*] -> D;
+                D -> EState : /GO;
+            }"""
+        )
+        assert _assert_dsl_code_loads_to_state_machine(dsl_code).root_state.name == "ReservedState"
 
     def test_phase2_recovers_same_region_transition_misplaced_on_outer_region(self, tmp_path: Path):
         """Phase2 should recover same-region transitions even when XML mounts them on an ancestor region."""

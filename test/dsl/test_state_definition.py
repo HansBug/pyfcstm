@@ -1763,25 +1763,25 @@ class TestDSLTransition:
                     """
                     pseudo state S1 { ! S2 -> S3; }
                     """,
-                    "pseudo state S1;",
+                    "pseudo state S1 {\n    ! S2 -> S3;\n}",
             ),  # Pseudo state with normal force transition
             (
                     """
                     pseudo state S1 { ! S2 -> [*]; }
                     """,
-                    "pseudo state S1;",
+                    "pseudo state S1 {\n    ! S2 -> [*];\n}",
             ),  # Pseudo state with exit force transition
             (
                     """
                     pseudo state S1 { ! * -> S3; }
                     """,
-                    "pseudo state S1;",
+                    "pseudo state S1 {\n    ! * -> S3;\n}",
             ),  # Pseudo state with normal all force transition
             (
                     """
                     pseudo state S1 { ! * -> [*]; }
                     """,
-                    "pseudo state S1;",
+                    "pseudo state S1 {\n    ! * -> [*];\n}",
             ),  # Pseudo state with exit all force transition
             (
                     """

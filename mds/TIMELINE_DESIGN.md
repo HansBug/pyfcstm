@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 修改内容 | 作者 |
 |------|------|----------|------|
+| 0.1.9 | 2026-03-29 | 补充无条件普通转移的连续时间处理：按最近后继 `emit` 约束隐藏内部迁移时刻，并引入 `delta` 序列建模方向 | Codex |
 | 0.1.8 | 2026-03-29 | 按真实样例补充顺序图消息方向过滤规则，明确只把外向内消息当作 `emit`，并新增状态机主干的 pyfcstm DSL 草案与方向冲突说明 | Codex |
 | 0.1.7 | 2026-03-29 | 结合真实 SysDeSim 样例补充 timeline-first 落地计划，新增 XMI 解析、条件触发抽象、顺序图观测提取、binding/scenario 生成与 phased checklist | Codex |
 | 0.1.6 | 2026-03-22 | 收敛状态推导实现方案：有限复用 `SimulationRuntime` 作为单步状态迁移推导器，通过默认空 cycle 求初始稳定状态，通过热启动 + 单次 cycle 求后继稳定状态 | Codex |
@@ -3512,6 +3513,19 @@ Idle -> Control : /Sig1;
 这里同样存在方向问题：
 
 - `S -> X` 在原始 XMI 里确认为无 trigger、无 guard、无 effect 的无条件边
+- 在当前 timeline 语义下，不再把这类边解释成“下一次 step 自动迁移”，而是把它视为**连续时间上的隐藏内部迁移**
+- 具体做法是：若某个显式 transition 在时刻 `t0` 后进入了这条无条件链，则取其后的最近一个 machine-facing `emit` 时刻 `t1`
+- 对链中的第 1 条无条件边，赋予内部发生时刻 `t0 + delta1`
+- 对链中的第 2 条无条件边，赋予内部发生时刻 `t0 + delta1 + delta2`
+- 依此类推，形成严格递增的内部时刻序列
+- 并要求整条无条件链的最后一个内部迁移时刻严格早于该最近 `emit`，即 `t0 + delta1 + ... + deltaN < t1`
+- 对当前样例，第 3 个 region 可先按下面的收敛理解：
+  - `K -> S : /Sig4` 发生在收到该次 `Sig4` 的时刻 `t0`
+  - `S -> X` 作为隐藏内部迁移，发生在 `t0 + delta1`
+  - 后续最近一个相关 inbound `emit` 是下一次 `Sig4`，其时刻记为 `t1`
+  - 因而当前样例里应约束 `t0 + delta1 < t1`
+- 若后续存在多次连续无条件跳转，则统一按 `t0 + delta1 + ... + deltaN` 这样的链式形式处理
+- 这类边应在 importer / report 中被单独标记为 `auto_transition`，并附带它所绑定的 `(t0, t1, delta-sequence)` 说明
 - `Sig7` 在主干里是 `S -> O` 的消费信号
 - 但 interaction 里 `Sig7` 是 outbound message
 - 因此它在主干 DSL 里保留 `event Sig7` 与 `S -> O : /Sig7;`
@@ -3620,6 +3634,7 @@ Idle -> Control : /Sig1;
 
 * [ ] 新增 timeline-first 导入 IR，而不是直接把 SysDeSim IR 硬压成 FCSTM AST。
 * [ ] 在 IR 中显式表示 machine graph、condition trigger、signal trigger、observation stream、input candidate、step candidate、event candidate。
+* [ ] 在 IR 中为无 trigger 且无 guard 的普通边增加 `auto_transition` 类别，不再把它们混进普通 event/guard 转移。
 * [ ] 把 guard / change 中涉及的名字优先分类为 external input candidate，而不是内部状态变量。
 * [ ] 只有当某个名字明确出现在动作赋值左值且该写语义不可忽略时，才把它回收为 internal state candidate。
 * [ ] 让 `input_map` 候选显式记录场景层名字、机器内局部名字、来源表达式、歧义说明。
@@ -3660,6 +3675,8 @@ Idle -> Control : /Sig1;
 * [ ] 把 `SetInput` 候选应用到 step 输入快照上，并保证对当前 step 立即可见。
 * [ ] 验证“无显式消息但有输入变化”的 step 仍会触发 guard-only / condition-only 迁移。
 * [ ] 验证 `TriggerCondition` 在 timeline 里不需要单独再模拟一个外部事件对象，而是直接进入更新后快照上的条件求值。
+* [ ] 为 `auto_transition` 引入隐藏内部时间变量 `t0 + delta1 + ... + deltaN` 的连续时间建模，并把它们绑定到“当前链起点之后最近一个 machine-facing emit”之前。
+* [ ] 对当前真实样例显式覆盖 `K -> S -> X` 这条链，要求 `K -> S` 之后的 `S -> X` 内部发生时刻严格早于下一次相关 inbound `Sig4`。
 * [ ] 明确当前样例对 `SimulationRuntime` 的复用边界，只把它当成一次性单步稳定配置推导器。
 
 ## 21.14 Phase 11: SMT 编译、反例重建与可解释性输出

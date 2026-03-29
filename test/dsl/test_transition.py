@@ -304,6 +304,132 @@ class TestDSLTransition:
                     ],
                 ),
             ),  # absolute event path with chain and effect
+            (
+                "[*] -> Boot : Boot;",
+                TransitionDefinition(
+                    from_state=INIT_STATE,
+                    to_state="Boot",
+                    event_id=ChainID(path=["Boot"], is_absolute=False),
+                    condition_expr=None,
+                    post_operations=[],
+                ),
+            ),  # entry transition with local shorthand event encoded via single-segment chain
+            (
+                "[*] -> Boot : boot.chain;",
+                TransitionDefinition(
+                    from_state=INIT_STATE,
+                    to_state="Boot",
+                    event_id=ChainID(path=["boot", "chain"], is_absolute=False),
+                    condition_expr=None,
+                    post_operations=[],
+                ),
+            ),  # entry transition with multi-segment relative event path
+            (
+                "Source -> Target :: Fire;",
+                TransitionDefinition(
+                    from_state="Source",
+                    to_state="Target",
+                    event_id=ChainID(path=["Source", "Fire"], is_absolute=False),
+                    condition_expr=None,
+                    post_operations=[],
+                ),
+            ),  # normal transition with explicit local-event shorthand
+            (
+                "Source -> Target : Source.Fire;",
+                TransitionDefinition(
+                    from_state="Source",
+                    to_state="Target",
+                    event_id=ChainID(path=["Source", "Fire"], is_absolute=False),
+                    condition_expr=None,
+                    post_operations=[],
+                ),
+            ),  # normal transition with equivalent relative event path
+            (
+                "Source -> Target : /Root.Fire;",
+                TransitionDefinition(
+                    from_state="Source",
+                    to_state="Target",
+                    event_id=ChainID(path=["Root", "Fire"], is_absolute=True),
+                    condition_expr=None,
+                    post_operations=[],
+                ),
+            ),  # normal transition with absolute event path
+            (
+                "Source -> Target : if [not true or false];",
+                TransitionDefinition(
+                    from_state="Source",
+                    to_state="Target",
+                    event_id=None,
+                    condition_expr=BinaryOp(
+                        expr1=UnaryOp(op="!", expr=Boolean(raw="true")),
+                        op="||",
+                        expr2=Boolean(raw="false"),
+                    ),
+                    post_operations=[],
+                ),
+            ),  # normal transition with keyword logical aliases in guard
+            (
+                "Source -> Target effect { if [x > 0] { y = 1; } else { y = 2; } }",
+                TransitionDefinition(
+                    from_state="Source",
+                    to_state="Target",
+                    event_id=None,
+                    condition_expr=None,
+                    post_operations=[
+                        OperationIf(
+                            branches=[
+                                OperationIfBranch(
+                                    condition=BinaryOp(
+                                        expr1=Name(name="x"),
+                                        op=">",
+                                        expr2=Integer(raw="0"),
+                                    ),
+                                    statements=[
+                                        OperationAssignment(
+                                            name="y", expr=Integer(raw="1")
+                                        )
+                                    ],
+                                ),
+                                OperationIfBranch(
+                                    condition=None,
+                                    statements=[
+                                        OperationAssignment(
+                                            name="y", expr=Integer(raw="2")
+                                        )
+                                    ],
+                                ),
+                            ]
+                        )
+                    ],
+                ),
+            ),  # transition effect block with if/else statement
+            (
+                "Source -> [*] : Source.Stop effect { if [flag == 0] { flag = 1; } }",
+                TransitionDefinition(
+                    from_state="Source",
+                    to_state=EXIT_STATE,
+                    event_id=ChainID(path=["Source", "Stop"], is_absolute=False),
+                    condition_expr=None,
+                    post_operations=[
+                        OperationIf(
+                            branches=[
+                                OperationIfBranch(
+                                    condition=BinaryOp(
+                                        expr1=Name(name="flag"),
+                                        op="==",
+                                        expr2=Integer(raw="0"),
+                                    ),
+                                    statements=[
+                                        OperationAssignment(
+                                            name="flag", expr=Integer(raw="1")
+                                        )
+                                    ],
+                                )
+                            ]
+                        )
+                    ],
+                ),
+            ),  # exit transition with local event shorthand and single-branch if effect
         ],
     )
     def test_positive_cases(self, input_text, expected):
@@ -417,6 +543,38 @@ class TestDSLTransition:
                 """,
                 "A -> B : /XXX.YYY.ZZZ effect {\n    x = 1;\n}",
             ),  # absolute event path with chain and effect
+            (
+                "[*] -> Boot : Boot;",
+                "[*] -> Boot :: Boot;",
+            ),  # entry transition canonicalizes single-segment relative event to local shorthand
+            (
+                "[*] -> Boot : boot.chain;",
+                "[*] -> Boot : boot.chain;",
+            ),  # entry transition preserves multi-segment relative event path
+            (
+                "Source -> Target :: Fire;",
+                "Source -> Target :: Fire;",
+            ),  # normal transition preserves explicit local-event shorthand
+            (
+                "Source -> Target : Source.Fire;",
+                "Source -> Target :: Fire;",
+            ),  # normal transition canonicalizes equivalent relative event path
+            (
+                "Source -> Target : /Root.Fire;",
+                "Source -> Target : /Root.Fire;",
+            ),  # normal transition preserves absolute event path
+            (
+                "Source -> Target : if [not true or false];",
+                "Source -> Target : if [!True || False];",
+            ),  # guard canonicalizes keyword logical aliases and boolean literals
+            (
+                "Source -> Target effect { if [x > 0] { y = 1; } else { y = 2; } }",
+                "Source -> Target effect {\n    if [x > 0] {\n        y = 1;\n    } else {\n        y = 2;\n    }\n}",
+            ),  # transition effect block preserves if/else structure in DSL output
+            (
+                "Source -> [*] : Source.Stop effect { if [flag == 0] { flag = 1; } }",
+                "Source -> [*] :: Stop effect {\n    if [flag == 0] {\n        flag = 1;\n    }\n}",
+            ),  # exit transition canonicalizes local event path and preserves nested if effect
         ],
     )
     def test_positive_cases_str(self, input_text, expected_str, text_aligner):

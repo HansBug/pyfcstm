@@ -62,6 +62,7 @@ from .ir import (
     IrVariable,
     IrVertex,
 )
+from .xmi import load_sysdesim_raw_xmi
 
 _XMI_NS = "http://www.omg.org/spec/XMI/20131001"
 _XMI_ID = f"{{{_XMI_NS}}}id"
@@ -668,6 +669,7 @@ def _parse_region(
                 parent_region_id=region.region_id,
                 entry_action=_parse_action_ref(subvertex.find("entry")),
                 exit_action=_parse_action_ref(subvertex.find("exit")),
+                do_action=_parse_action_ref(subvertex.find("doActivity")),
                 state_invariant=_parse_constraint_body(subvertex),
                 regions=child_regions,
                 is_composite=bool(child_regions),
@@ -751,14 +753,10 @@ def load_sysdesim_xml(xml_path: str) -> List[IrMachine]:
         >>> isinstance(machines, list)
         True
     """
-    tree = ET.parse(xml_path)
-    root = tree.getroot()
-    parent_map = {child: parent for parent in root.iter() for child in parent}
-    xmi_index = {
-        element.attrib[_XMI_ID]: element
-        for element in root.iter()
-        if _XMI_ID in element.attrib
-    }
+    raw_document = load_sysdesim_raw_xmi(xml_path)
+    root = raw_document.root
+    parent_map = raw_document.parent_map
+    xmi_index = raw_document.xmi_index
 
     signals: List[IrSignal] = []
     signal_events: List[IrSignalEvent] = []
@@ -1106,7 +1104,9 @@ def _normalize_region_vertices(vertices: List[IrVertex]) -> None:
             vertex.safe_name = _make_state_name(vertex)
         vertex.display_name = vertex.raw_name
 
-        _assign_unique_action_names([vertex.entry_action, vertex.exit_action])
+        _assign_unique_action_names(
+            [vertex.entry_action, vertex.do_action, vertex.exit_action]
+        )
 
         for region in vertex.regions:
             _normalize_region_vertices(region.vertices)
@@ -2742,6 +2742,10 @@ def _build_state(
     if vertex.entry_action is not None:
         enters.append(
             dsl_nodes.EnterAbstractFunction(vertex.entry_action.safe_name, None)
+        )
+    if vertex.do_action is not None:
+        durings.append(
+            dsl_nodes.DuringAbstractFunction(vertex.do_action.safe_name, None, None)
         )
     if vertex.exit_action is not None:
         exits.append(dsl_nodes.ExitAbstractFunction(vertex.exit_action.safe_name, None))

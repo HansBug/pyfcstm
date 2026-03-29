@@ -7,6 +7,9 @@ surface is intentionally small:
 
 * :func:`load_sysdesim_xml` and :func:`load_sysdesim_machine` load the XML/XMI
   source into the dataclass IR.
+* :func:`load_sysdesim_raw_xmi` and :func:`summarize_sysdesim_raw_xmi` expose a
+  reusable raw XMI index and structure summary for timeline-oriented import
+  work.
 * :func:`normalize_machine` prepares names, variables, and guard expressions
   for FCSTM export.
 * :func:`prepare_sysdesim_output_machines` normalizes one SysDeSim machine into
@@ -25,9 +28,10 @@ surface is intentionally small:
 * :func:`build_sysdesim_conversion_report` produces a structured phase6
   diagnostics report for CLI and regression use.
 
-Internals are kept in three files to avoid unnecessary fragmentation:
+Internals are kept in four files to avoid unnecessary fragmentation:
 
 - ``ir.py`` for the dataclass IR
+- ``xmi.py`` for the raw XML/XMI index layer
 - ``convert.py`` for loading, normalization, AST building, and validation
 - ``__init__.py`` for the stable public surface
 
@@ -59,12 +63,20 @@ from .convert import (
     prepare_sysdesim_output_machines,
     validate_program_roundtrip,
 )
+from .xmi import (
+    SysDeSimRawXmiDocument,
+    SysDeSimRawXmiSummary,
+    load_sysdesim_raw_xmi,
+    summarize_sysdesim_raw_xmi,
+)
 
 
 __all__ = [
     "SysDeSimConversionReport",
     "SysDeSimOutputValidationReport",
     "SysDeSimPreparedMachine",
+    "SysDeSimRawXmiDocument",
+    "SysDeSimRawXmiSummary",
     "build_machine_ast",
     "build_sysdesim_conversion_report",
     "convert_sysdesim_xml_to_ast",
@@ -73,9 +85,11 @@ __all__ = [
     "convert_sysdesim_xml_to_dsls",
     "emit_program",
     "load_sysdesim_machine",
+    "load_sysdesim_raw_xmi",
     "load_sysdesim_xml",
     "make_internal_name",
     "normalize_machine",
     "prepare_sysdesim_output_machines",
+    "summarize_sysdesim_raw_xmi",
     "validate_program_roundtrip",
 ]

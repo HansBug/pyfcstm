@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 修改内容 | 作者 |
 |------|------|----------|------|
+| 0.1.10 | 2026-03-29 | 同步 Phase 1-4 实施进度：补齐 `doActivity -> during abstract` 与原始 XMI 索引层，并更新 checklist 状态 | Codex |
 | 0.1.9 | 2026-03-29 | 补充无条件普通转移的连续时间处理：按最近后继 `emit` 约束隐藏内部迁移时刻，并引入 `delta` 序列建模方向 | Codex |
 | 0.1.8 | 2026-03-29 | 按真实样例补充顺序图消息方向过滤规则，明确只把外向内消息当作 `emit`，并新增状态机主干的 pyfcstm DSL 草案与方向冲突说明 | Codex |
 | 0.1.7 | 2026-03-29 | 结合真实 SysDeSim 样例补充 timeline-first 落地计划，新增 XMI 解析、条件触发抽象、顺序图观测提取、binding/scenario 生成与 phased checklist | Codex |
@@ -3562,43 +3563,43 @@ Idle -> Control : /Sig1;
 
 ## 21.4 Phase 1: 基于现有 sysdesim 支持收敛状态机主干
 
-* [ ] 以现有 `load_sysdesim_xml()`、`load_sysdesim_machine()`、`normalize_machine()` 为起点，不先重写整条解析链。
-* [ ] 先让真实样例的 state machine main trunk 能稳定完成 load / inspect / normalize。
-* [ ] 输出当前样例的状态机主干摘要：state tree、region tree、transition order、signal trigger 集合。
-* [ ] 额外把 state-level action 主干一起盘清：`entry`、`exit`、`doActivity`、init transition effect。
-* [ ] 把“当前阶段完成标准”定义为“状态机主干可稳定抽取”，而不是“interaction 与 timeline 已全部完成”。
-* [ ] 明确第一阶段默认忽略与状态机主干无关的 property、端口、枚举说明类结构和图形元数据。
-* [ ] 明确 timeline-first import 是主路线，但首个工程入口必须先把状态机主干打稳。
+* [x] 以现有 `load_sysdesim_xml()`、`load_sysdesim_machine()`、`normalize_machine()` 为起点，不先重写整条解析链。
+* [x] 先让真实样例的 state machine main trunk 能稳定完成 load / inspect / normalize。
+* [x] 输出当前样例的状态机主干摘要：state tree、region tree、transition order、signal trigger 集合。
+* [x] 额外把 state-level action 主干一起盘清：`entry`、`exit`、`doActivity`、init transition effect。
+* [x] 把“当前阶段完成标准”定义为“状态机主干可稳定抽取”，而不是“interaction 与 timeline 已全部完成”。
+* [x] 明确第一阶段默认忽略与状态机主干无关的 property、端口、枚举说明类结构和图形元数据。
+* [x] 明确 timeline-first import 是主路线，但首个工程入口必须先把状态机主干打稳。
 
 ## 21.5 Phase 2: composite-source outgoing transition 收敛为 force transition
 
-* [ ] 在现有状态机主干抽取结果上，检测“source 是 composite state 且 transition 指向外部 state”的边。
-* [ ] 针对当前真实样例，显式把 `H -> G` on `Sig8` 收敛为 force transition 语义。
-* [ ] 不再把这类边当成普通 same-region edge，也不再要求 source 必须是 leaf。
-* [ ] 在 timeline-first IR 中为这类边增加 `force_transition` 标记。
-* [ ] 在 FCSTM compatibility mode 中，为这类边设计 propagated exit / force transition lowering。
-* [ ] 为当前样例补回归测试，确保 `H -> G` 不会再次被当作普通边忽略。
+* [x] 在现有状态机主干抽取结果上，检测“source 是 composite state 且 transition 指向外部 state”的边。
+* [x] 针对当前真实样例，显式把 `H -> G` on `Sig8` 收敛为 force transition 语义。
+* [x] 不再把这类边当成普通 same-region edge，也不再要求 source 必须是 leaf。
+* [x] 在 timeline-first IR 中为这类边增加 `force_transition` 标记。
+* [x] 在 FCSTM compatibility mode 中，为这类边设计 propagated exit / force transition lowering。
+* [x] 为当前样例补回归测试，确保 `H -> G` 不会再次被当作普通边忽略。
 
 ## 21.6 Phase 3: 基于现有 converter 收敛当前样例的主干可转换子集
 
-* [ ] 让非 `int/float` property 不再阻塞状态机主干抽取。
-* [ ] 让未参与主干语义的枚举 property 自动旁路为 ignored 或 warning。
-* [ ] 把 `ChangeEvent` 从 unsupported 调整为可进入条件触发抽象的输入。
-* [ ] 让同源同宿同条件的 `ChangeEvent/guard` 在主干层先完成合流。
-* [ ] 增加名称归一化，覆盖 `rmt` / `Rmt` / `R_mt` 这类当前样例已经出现的漂移。
-* [ ] 把 `doActivity` 纳入主干抽取结果，至少能形成 `during abstract ...` 候选。
-* [ ] 为 init transition effect `ABC/DEF` 增加显式保留策略：短期可 warning + 注释化，不能再静默丢失。
-* [ ] 让当前真实样例至少能产出“主干 machine + condition trigger + signal trigger”的中间结果。
+* [x] 让非 `int/float` property 不再阻塞状态机主干抽取。
+* [x] 让未参与主干语义的枚举 property 自动旁路为 ignored 或 warning。
+* [x] 把 `ChangeEvent` 从 unsupported 调整为可进入条件触发抽象的输入。
+* [x] 让同源同宿同条件的 `ChangeEvent/guard` 在主干层先完成合流。
+* [x] 增加名称归一化，覆盖 `rmt` / `Rmt` / `R_mt` 这类当前样例已经出现的漂移。
+* [x] 把 `doActivity` 纳入主干抽取结果，至少能形成 `during abstract ...` 候选。
+* [x] 为 init transition effect `ABC/DEF` 增加显式保留策略：短期可 warning + 注释化，不能再静默丢失。
+* [x] 让当前真实样例至少能产出“主干 machine + condition trigger + signal trigger”的中间结果。
 
 ## 21.7 Phase 4: 原始 XMI 索引层
 
-* [ ] 在主干语义已经稳定后，再把原始 XMI 索引层独立出来，不和前面的语义收敛同时推进。
-* [ ] 建立 `xmi:id -> element` 的全局索引。
-* [ ] 建立按 `xmi:type`、标签名、父子关系分组的辅助索引，便于后续抽取 `StateMachine`、`Interaction`、`Activity`、`Signal`、`Property`。
-* [ ] 显式保存 namespace 信息，避免在后续解析阶段重复硬编码。
-* [ ] 对 diagram / notation / stereotype / binary object 层做“可见但默认旁路”的索引，不把它们混入状态机语义主链。
-* [ ] 提供一份原始结构摘要报告，用于诊断“当前文件里到底有哪些机器、交互图、信号、属性、动作对象”。
-* [ ] 为原始 XMI 索引层补最小测试，确保真实样例在结构遍历上稳定可重现。
+* [x] 在主干语义已经稳定后，再把原始 XMI 索引层独立出来，不和前面的语义收敛同时推进。
+* [x] 建立 `xmi:id -> element` 的全局索引。
+* [x] 建立按 `xmi:type`、标签名、父子关系分组的辅助索引，便于后续抽取 `StateMachine`、`Interaction`、`Activity`、`Signal`、`Property`。
+* [x] 显式保存 namespace 信息，避免在后续解析阶段重复硬编码。
+* [x] 对 diagram / notation / stereotype / binary object 层做“可见但默认旁路”的索引，不把它们混入状态机语义主链。
+* [x] 提供一份原始结构摘要报告，用于诊断“当前文件里到底有哪些机器、交互图、信号、属性、动作对象”。
+* [x] 为原始 XMI 索引层补最小测试，确保真实样例在结构遍历上稳定可重现。
 
 ## 21.8 Phase 5: 顺序图与活动观测抽取层
 

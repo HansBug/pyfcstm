@@ -283,6 +283,8 @@ class IrVertex:
     :type entry_action: IrActionRef, optional
     :param exit_action: Optional exit action reference, defaults to ``None``
     :type exit_action: IrActionRef, optional
+    :param do_action: Optional do-activity action reference, defaults to ``None``
+    :type do_action: IrActionRef, optional
     :param state_invariant: Raw state invariant text, defaults to ``None``
     :type state_invariant: str, optional
     :param regions: Child regions owned by the vertex, defaults to an empty list
@@ -303,6 +305,7 @@ class IrVertex:
     parent_region_id: Optional[str] = None
     entry_action: Optional[IrActionRef] = None
     exit_action: Optional[IrActionRef] = None
+    do_action: Optional[IrActionRef] = None
     state_invariant: Optional[str] = None
     regions: List[IrRegion] = field(default_factory=list)
     is_composite: bool = False
@@ -365,13 +368,27 @@ class IrMachine:
     diagnostics: List[IrDiagnostic] = field(default_factory=list)
     safe_name: Optional[str] = None
     display_name: Optional[str] = None
-    _vertex_index: Dict[str, IrVertex] = field(default_factory=dict, init=False, repr=False)
-    _transition_index: Dict[str, IrTransition] = field(default_factory=dict, init=False, repr=False)
-    _region_index: Dict[str, IrRegion] = field(default_factory=dict, init=False, repr=False)
-    _signal_index: Dict[str, IrSignal] = field(default_factory=dict, init=False, repr=False)
-    _signal_event_index: Dict[str, IrSignalEvent] = field(default_factory=dict, init=False, repr=False)
-    _time_event_index: Dict[str, IrTimeEvent] = field(default_factory=dict, init=False, repr=False)
-    _variable_index: Dict[str, IrVariable] = field(default_factory=dict, init=False, repr=False)
+    _vertex_index: Dict[str, IrVertex] = field(
+        default_factory=dict, init=False, repr=False
+    )
+    _transition_index: Dict[str, IrTransition] = field(
+        default_factory=dict, init=False, repr=False
+    )
+    _region_index: Dict[str, IrRegion] = field(
+        default_factory=dict, init=False, repr=False
+    )
+    _signal_index: Dict[str, IrSignal] = field(
+        default_factory=dict, init=False, repr=False
+    )
+    _signal_event_index: Dict[str, IrSignalEvent] = field(
+        default_factory=dict, init=False, repr=False
+    )
+    _time_event_index: Dict[str, IrTimeEvent] = field(
+        default_factory=dict, init=False, repr=False
+    )
+    _variable_index: Dict[str, IrVariable] = field(
+        default_factory=dict, init=False, repr=False
+    )
 
     def __post_init__(self) -> None:
         """
@@ -447,7 +464,9 @@ class IrMachine:
             target = self._vertex_index[transition.target_id]
             transition.source_region_id = source.parent_region_id
             transition.target_region_id = target.parent_region_id
-            transition.is_cross_region = transition.source_region_id != transition.target_region_id
+            transition.is_cross_region = (
+                transition.source_region_id != transition.target_region_id
+            )
             transition.is_cross_level = transition.is_cross_region
 
     def get_vertex(self, vertex_id: str) -> IrVertex:
@@ -561,7 +580,9 @@ class IrMachine:
             current = self.get_vertex(region.owner_state_id)
         return tuple(reversed(path))
 
-    def state_path(self, vertex_id: str, use_safe_name: bool = False) -> Tuple[str, ...]:
+    def state_path(
+        self, vertex_id: str, use_safe_name: bool = False
+    ) -> Tuple[str, ...]:
         """
         Return the owning state-name path for a vertex.
 
@@ -578,7 +599,11 @@ class IrMachine:
         names = []
         for state_id in self.state_id_path(vertex_id):
             vertex = self.get_vertex(state_id)
-            names.append(vertex.safe_name if use_safe_name and vertex.safe_name else vertex.raw_name)
+            names.append(
+                vertex.safe_name
+                if use_safe_name and vertex.safe_name
+                else vertex.raw_name
+            )
         return tuple(names)
 
     def descendant_state_ids(self, state_id: str) -> Tuple[str, ...]:

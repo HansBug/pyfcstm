@@ -188,6 +188,7 @@ def test_phase0_can_parse_graph_structure_and_events(tmp_path: Path):
             "parent_region_id",
             "entry_action",
             "exit_action",
+            "do_action",
             "state_invariant",
             "regions",
             "is_composite",
@@ -202,6 +203,7 @@ def test_phase0_can_parse_graph_structure_and_events(tmp_path: Path):
     assert init_root.parent_region_id == "region_root"
     assert init_root.entry_action is None
     assert init_root.exit_action is None
+    assert init_root.do_action is None
     assert init_root.state_invariant is None
     assert init_root.regions == []
     assert init_root.is_composite is False
@@ -219,6 +221,7 @@ def test_phase0_can_parse_graph_structure_and_events(tmp_path: Path):
             "parent_region_id",
             "entry_action",
             "exit_action",
+            "do_action",
             "state_invariant",
             "regions",
             "is_composite",
@@ -233,6 +236,7 @@ def test_phase0_can_parse_graph_structure_and_events(tmp_path: Path):
     assert state_heat.parent_region_id == "region_root"
     assert state_heat.entry_action is None
     assert state_heat.exit_action is None
+    assert state_heat.do_action is None
     assert state_heat.state_invariant is None
     assert [region.region_id for region in state_heat.regions] == [
         "region_heat_a",
@@ -248,6 +252,7 @@ def test_phase0_can_parse_graph_structure_and_events(tmp_path: Path):
     assert state_alarm.safe_name is None
     assert state_alarm.display_name is None
     assert state_alarm.parent_region_id == "region_root"
+    assert state_alarm.do_action is None
     assert state_alarm.state_invariant is None
     assert state_alarm.regions == []
     assert state_alarm.is_composite is False
@@ -1272,6 +1277,65 @@ def test_phase2_build_ast_and_roundtrip(tmp_path: Path):
             MixCycle -> BufferReady;
         }"""
     )
+
+
+def test_phase2_state_do_activity_is_lowered_to_during_abstract(tmp_path: Path):
+    """State doActivity should become a FCSTM ``during abstract`` action."""
+    xml_file = _write_xml(
+        tmp_path,
+        """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <xmi:XMI xmi:version="20131001"
+                 xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
+                 xmlns:uml="http://www.eclipse.org/uml2/5.0.0/UML">
+          <uml:Model xmi:id="model_1" name="model">
+            <packagedElement xmi:type="uml:Class" xmi:id="class_1" name="Do Activity Demo" classifierBehavior="machine_1">
+              <ownedBehavior xmi:type="uml:StateMachine" xmi:id="machine_1" name="Do Activity Demo">
+                <region xmi:type="uml:Region" xmi:id="region_root" name="">
+                  <transition xmi:type="uml:Transition" xmi:id="tx_init" source="init_root" target="state_run"/>
+                  <subvertex xmi:type="uml:Pseudostate" xmi:id="init_root"/>
+                  <subvertex xmi:type="uml:State" xmi:id="state_run" name="Run">
+                    <doActivity xmi:type="uml:Activity" xmi:id="do_run" name="PulseLoop"/>
+                  </subvertex>
+                </region>
+              </ownedBehavior>
+            </packagedElement>
+          </uml:Model>
+        </xmi:XMI>
+        """,
+    )
+
+    machine = load_sysdesim_machine(str(xml_file))
+    assert machine.get_vertex("state_run").do_action.raw_name == "PulseLoop"
+
+    normalize_machine(machine)
+    assert machine.get_vertex("state_run").do_action.safe_name == "PulseLoop"
+
+    program = build_machine_ast(machine)
+    parsed, model = validate_program_roundtrip(program)
+    dsl_code = _normalize_newlines(str(program))
+    expected_dsl = dedent(
+        """\
+        state DoActivityDemo named 'Do Activity Demo' {
+            state Run {
+                during abstract PulseLoop;
+            }
+            [*] -> Run;
+        }"""
+    )
+
+    assert dsl_code == expected_dsl
+    assert _normalize_newlines(str(parsed)) == expected_dsl
+    run_state = program.root_state.substates[0]
+    assert len(run_state.durings) == 1
+    assert isinstance(run_state.durings[0], dsl_nodes.DuringAbstractFunction)
+    assert run_state.durings[0].name == "PulseLoop"
+    assert run_state.durings[0].aspect is None
+    assert run_state.durings[0].doc is None
+    assert str(run_state.durings[0]) == "during abstract PulseLoop;"
+    model_run = model.root_state.substates["Run"]
+    assert [item.name for item in model_run.abstract_on_durings] == ["PulseLoop"]
+    assert model_run.non_abstract_on_durings == []
 
 
 def test_phase2_missing_init_in_composite_state_raises(tmp_path: Path):

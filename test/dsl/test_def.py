@@ -355,6 +355,62 @@ class TestDSLCondition:
                 ),
             ),
             # Float definition using absolute value function
+            (
+                "def int padded = 001;",
+                DefAssignment(name="padded", type="int", expr=Integer(raw="001")),
+            ),
+            # Integer definition preserving padded raw literal in AST
+            (
+                "def float leading_dot = .5;",
+                DefAssignment(
+                    name="leading_dot",
+                    type="float",
+                    expr=Float(raw=".5"),
+                ),
+            ),
+            # Float definition with leading-dot literal
+            (
+                "def float exp_plus = 1e+3;",
+                DefAssignment(
+                    name="exp_plus",
+                    type="float",
+                    expr=Float(raw="1e+3"),
+                ),
+            ),
+            # Float definition using explicit positive exponent
+            (
+                "def int hex_mixed = 0xAbCd;",
+                DefAssignment(
+                    name="hex_mixed",
+                    type="int",
+                    expr=HexInt(raw="0xAbCd"),
+                ),
+            ),
+            # Integer definition using mixed-case hexadecimal literal
+            (
+                "def int nested_unary = +(-5);",
+                DefAssignment(
+                    name="nested_unary",
+                    type="int",
+                    expr=UnaryOp(
+                        op="+",
+                        expr=Paren(expr=UnaryOp(op="-", expr=Integer(raw="5"))),
+                    ),
+                ),
+            ),
+            # Integer definition with nested unary expression
+            (
+                "def float chained_func = abs(sin(.5));",
+                DefAssignment(
+                    name="chained_func",
+                    type="float",
+                    expr=UFunc(
+                        func="abs",
+                        expr=UFunc(func="sin", expr=Float(raw=".5")),
+                    ),
+                ),
+            ),
+            # Float definition with chained unary functions
         ],
     )
     def test_positive_cases(self, input_text, expected):
@@ -499,6 +555,36 @@ class TestDSLCondition:
             # Float definition using logarithm function
             ("def float abs_val = abs(-15.0);", "def float abs_val = abs(-15.0);"),
             # Float definition using absolute value function
+            (
+                "def int padded = 001;",
+                "def int padded = 1;",
+            ),
+            # Integer definition canonicalizes padded decimal literal on output
+            (
+                "def float leading_dot = .5;",
+                "def float leading_dot = .5;",
+            ),
+            # Float definition preserves leading-dot literal on output
+            (
+                "def float exp_plus = 1e+3;",
+                "def float exp_plus = 1e+3;",
+            ),
+            # Float definition preserves explicit positive exponent on output
+            (
+                "def int hex_mixed = 0xAbCd;",
+                "def int hex_mixed = 0xabcd;",
+            ),
+            # Integer definition canonicalizes hexadecimal literal case on output
+            (
+                "def int nested_unary = +(-5);",
+                "def int nested_unary = +(-5);",
+            ),
+            # Integer definition preserves nested unary structure on output
+            (
+                "def float chained_func = abs(sin(.5));",
+                "def float chained_func = abs(sin(.5));",
+            ),
+            # Float definition preserves chained function structure on output
         ],
     )
     def test_positive_cases_str(self, input_text, expected_str):

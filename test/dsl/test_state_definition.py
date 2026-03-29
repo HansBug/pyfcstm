@@ -1593,6 +1593,205 @@ class TestDSLTransition:
                                     substates=[], transitions=[], enters=[], durings=[], exits=[], during_aspects=[],
                                     force_transitions=[], is_pseudo=True)
             ),  # Pseudo state with event using single quotes in named clause
+            (
+                    """
+                    state OrderedTransitions {
+                        First -> Second;
+                        Third -> Fourth : Third.Go;
+                        Fifth -> [*];
+                    }
+                    """,
+                    StateDefinition(
+                        name="OrderedTransitions",
+                        substates=[],
+                        transitions=[
+                            TransitionDefinition(
+                                from_state="First",
+                                to_state="Second",
+                                event_id=None,
+                                condition_expr=None,
+                                post_operations=[],
+                            ),
+                            TransitionDefinition(
+                                from_state="Third",
+                                to_state="Fourth",
+                                event_id=ChainID(path=["Third", "Go"]),
+                                condition_expr=None,
+                                post_operations=[],
+                            ),
+                            TransitionDefinition(
+                                from_state="Fifth",
+                                to_state=EXIT_STATE,
+                                event_id=None,
+                                condition_expr=None,
+                                post_operations=[],
+                            ),
+                        ],
+                        enters=[],
+                        durings=[],
+                        exits=[],
+                    ),
+            ),  # State definition preserves transition order within transition list
+            (
+                    """
+                    state OrderedForce {
+                        ! First -> [*];
+                        ! * -> Error : Panic;
+                        ! Third -> Fourth : /Global.Stop;
+                    }
+                    """,
+                    StateDefinition(
+                        name="OrderedForce",
+                        substates=[],
+                        transitions=[],
+                        enters=[],
+                        durings=[],
+                        exits=[],
+                        force_transitions=[
+                            ForceTransitionDefinition(
+                                from_state="First",
+                                to_state=EXIT_STATE,
+                                event_id=None,
+                                condition_expr=None,
+                            ),
+                            ForceTransitionDefinition(
+                                from_state=ALL,
+                                to_state="Error",
+                                event_id=ChainID(path=["Panic"]),
+                                condition_expr=None,
+                            ),
+                            ForceTransitionDefinition(
+                                from_state="Third",
+                                to_state="Fourth",
+                                event_id=ChainID(
+                                    path=["Global", "Stop"], is_absolute=True
+                                ),
+                                condition_expr=None,
+                            ),
+                        ],
+                    ),
+            ),  # State definition preserves force-transition order within force-transition list
+            (
+                    """
+                    state OrderedBodies {
+                        enter First { x = 1; }
+                        event Ev1;
+                        enter Second ref /root.second;
+                        event Ev2 named "Event 2";
+                        state Child1;
+                        state Child2;
+                    }
+                    """,
+                    StateDefinition(
+                        name="OrderedBodies",
+                        events=[
+                            EventDefinition(name="Ev1"),
+                            EventDefinition(name="Ev2", extra_name="Event 2"),
+                        ],
+                        substates=[
+                            StateDefinition(
+                                name="Child1",
+                                substates=[],
+                                transitions=[],
+                                enters=[],
+                                durings=[],
+                                exits=[],
+                            ),
+                            StateDefinition(
+                                name="Child2",
+                                substates=[],
+                                transitions=[],
+                                enters=[],
+                                durings=[],
+                                exits=[],
+                            ),
+                        ],
+                        transitions=[],
+                        enters=[
+                            EnterOperations(
+                                operations=[
+                                    OperationAssignment(
+                                        name="x", expr=Integer(raw="1")
+                                    )
+                                ],
+                                name="First",
+                            ),
+                            EnterRefFunction(
+                                name="Second",
+                                ref=ChainID(
+                                    path=["root", "second"], is_absolute=True
+                                ),
+                            ),
+                        ],
+                        durings=[],
+                        exits=[],
+                    ),
+            ),  # State definition preserves order within enter, event, and substate lists
+            (
+                    """
+                    state OrderedHooks {
+                        during before First { x = 1; }
+                        during after Second ref hooks.second;
+                        exit Finish { y = 2; }
+                        exit abstract Cleanup;
+                        >> during before Watch { z = 3; }
+                        >> during after ref hooks.after_hook;
+                    }
+                    """,
+                    StateDefinition(
+                        name="OrderedHooks",
+                        substates=[],
+                        transitions=[],
+                        enters=[],
+                        durings=[
+                            DuringOperations(
+                                aspect="before",
+                                operations=[
+                                    OperationAssignment(
+                                        name="x", expr=Integer(raw="1")
+                                    )
+                                ],
+                                name="First",
+                            ),
+                            DuringRefFunction(
+                                name="Second",
+                                aspect="after",
+                                ref=ChainID(
+                                    path=["hooks", "second"], is_absolute=False
+                                ),
+                            ),
+                        ],
+                        exits=[
+                            ExitOperations(
+                                operations=[
+                                    OperationAssignment(
+                                        name="y", expr=Integer(raw="2")
+                                    )
+                                ],
+                                name="Finish",
+                            ),
+                            ExitAbstractFunction(name="Cleanup", doc=None),
+                        ],
+                        during_aspects=[
+                            DuringAspectOperations(
+                                aspect="before",
+                                operations=[
+                                    OperationAssignment(
+                                        name="z", expr=Integer(raw="3")
+                                    )
+                                ],
+                                name="Watch",
+                            ),
+                            DuringAspectRefFunction(
+                                name=None,
+                                aspect="after",
+                                ref=ChainID(
+                                    path=["hooks", "after_hook"], is_absolute=False
+                                ),
+                            ),
+                        ],
+                    ),
+            ),  # State definition preserves order within during, exit, and aspect lists
         ],
     )
     def test_positive_cases(self, input_text, expected):
@@ -1763,26 +1962,32 @@ class TestDSLTransition:
                     """
                     pseudo state S1 { ! S2 -> S3; }
                     """,
-                    "pseudo state S1;",
+                    "pseudo state S1 {\n    ! S2 -> S3;\n}",
             ),  # Pseudo state with normal force transition
             (
                     """
                     pseudo state S1 { ! S2 -> [*]; }
                     """,
-                    "pseudo state S1;",
+                    "pseudo state S1 {\n    ! S2 -> [*];\n}",
             ),  # Pseudo state with exit force transition
             (
                     """
                     pseudo state S1 { ! * -> S3; }
                     """,
-                    "pseudo state S1;",
+                    "pseudo state S1 {\n    ! * -> S3;\n}",
             ),  # Pseudo state with normal all force transition
             (
                     """
                     pseudo state S1 { ! * -> [*]; }
                     """,
-                    "pseudo state S1;",
+                    "pseudo state S1 {\n    ! * -> [*];\n}",
             ),  # Pseudo state with exit all force transition
+            (
+                    """
+                    state S1 { S2 -> S3; ! S3 -> [*]; ! * -> Error; S4 -> S5; }
+                    """,
+                    "state S1 {\n    ! S3 -> [*];\n    ! * -> Error;\n    S2 -> S3;\n    S4 -> S5;\n}",
+            ),  # Force transitions are emitted before normal transitions and preserve per-kind source order
             (
                     """
                     pseudo state S1 { enter { x = 10; } }
@@ -2022,6 +2227,67 @@ class TestDSLTransition:
                     """,
                     "pseudo state AlertState named 'Alert Handler' {\n    event WarningTriggered named 'Warning Event';\n}"
             ),  # Pseudo state with event using single quotes in named clause
+            (
+                    """
+                    state Mixed {
+                        event Ev1;
+                        enter First { x = 1; }
+                        state Child1;
+                        event Ev2;
+                        enter Second { y = 2; }
+                        state Child2;
+                        C -> D;
+                        A -> B : A.Go;
+                        ! B -> [*] :: Kill;
+                        ! * -> Error : Panic;
+                    }
+                    """,
+                    "state Mixed {\n    enter First {\n        x = 1;\n    }\n    enter Second {\n        y = 2;\n    }\n    state Child1;\n    state Child2;\n    event Ev1;\n    event Ev2;\n    ! B -> [*] :: Kill;\n    ! * -> Error :: Panic;\n    C -> D;\n    A -> B :: Go;\n}",
+            ),  # Mixed state body preserves per-kind order after grouped serialization
+            (
+                    """
+                    state Hooks {
+                        exit First { x = 1; }
+                        during after Later ref hooks.after_hook;
+                        >> during before Watch1 { y = 2; }
+                        during before Early { z = 3; }
+                        exit abstract Cleanup;
+                        >> during after ref hooks.watch2;
+                    }
+                    """,
+                    "state Hooks {\n    during after Later ref hooks.after_hook;\n    during before Early {\n        z = 3;\n    }\n    exit First {\n        x = 1;\n    }\n    exit abstract Cleanup;\n    >> during before Watch1 {\n        y = 2;\n    }\n    >> during after ref hooks.watch2;\n}",
+            ),  # Grouped serialization preserves per-kind ordering for hooks and lifecycle items
+            (
+                    """
+                    state Sparse {
+                        ;
+                        enter One { x = 1; }
+                        ;
+                        enter Two { x = 2; }
+                        ;
+                        ! A -> [*];
+                        ;
+                        ! * -> Err : Boom;
+                        ;
+                        A -> B;
+                        ;
+                        C -> D;
+                        ;
+                    }
+                    """,
+                    "state Sparse {\n    enter One {\n        x = 1;\n    }\n    enter Two {\n        x = 2;\n    }\n    ! A -> [*];\n    ! * -> Err :: Boom;\n    A -> B;\n    C -> D;\n}",
+            ),  # Empty statements are dropped while per-kind ordering remains stable
+            (
+                    """
+                    state NamedOrder named "Main" {
+                        state ChildA named "A";
+                        event Ev1 named "One";
+                        state ChildB named "B";
+                        event Ev2 named "Two";
+                    }
+                    """,
+                    "state NamedOrder named 'Main' {\n    state ChildA named 'A';\n    state ChildB named 'B';\n    event Ev1 named 'One';\n    event Ev2 named 'Two';\n}",
+            ),  # Named state/event serialization preserves per-kind order and canonical quote style
         ],
     )
     def test_positive_cases_str(self, input_text, expected_str, text_aligner):

@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 修改内容 | 作者 |
 |------|------|----------|------|
+| 0.1.12 | 2026-03-29 | 同步 Phase 7-8 实施进度：补齐 timeline-first import IR、input/event binding 候选、step/SetInput/emit 候选与真实样例验证结果，并更新 checklist 状态 | Codex |
 | 0.1.11 | 2026-03-29 | 同步 Phase 5-6 实施进度：补齐真实样例上的 interaction observation stream、统一 trigger 视图与名字归一化提示，并更新 checklist 状态 | Codex |
 | 0.1.10 | 2026-03-29 | 同步 Phase 1-4 实施进度：补齐 `doActivity -> during abstract` 与原始 XMI 索引层，并更新 checklist 状态 | Codex |
 | 0.1.9 | 2026-03-29 | 补充无条件普通转移的连续时间处理：按最近后继 `emit` 约束隐藏内部迁移时刻，并引入 `delta` 序列建模方向 | Codex |
@@ -3647,27 +3648,61 @@ Idle -> Control : /Sig1;
 
 ## 21.10 Phase 7: 外部输入候选分类与 timeline-first IR
 
-* [ ] 新增 timeline-first 导入 IR，而不是直接把 SysDeSim IR 硬压成 FCSTM AST。
-* [ ] 在 IR 中显式表示 machine graph、condition trigger、signal trigger、observation stream、input candidate、step candidate、event candidate。
-* [ ] 在 IR 中为无 trigger 且无 guard 的普通边增加 `auto_transition` 类别，不再把它们混进普通 event/guard 转移。
-* [ ] 把 guard / change 中涉及的名字优先分类为 external input candidate，而不是内部状态变量。
-* [ ] 只有当某个名字明确出现在动作赋值左值且该写语义不可忽略时，才把它回收为 internal state candidate。
-* [ ] 让 `input_map` 候选显式记录场景层名字、机器内局部名字、来源表达式、歧义说明。
-* [ ] 让 `event_map` 候选显式记录场景消息名、机器内 event path、对应的 signal / message 证据链。
-* [ ] 让 `event_map` / diagnostics 同时保留消息方向，避免把 outbound signal 误绑定成 `emit(...)`。
+* [x] 新增 timeline-first 导入 IR，而不是直接把 SysDeSim IR 硬压成 FCSTM AST。
+* [x] 在 IR 中显式表示 machine graph、condition trigger、signal trigger、observation stream、input candidate、step candidate、event candidate。
+* [x] 在 IR 中为无 trigger 且无 guard 的普通边增加 `auto_transition` 类别，不再把它们混进普通 event/guard 转移。
+* [x] 把 guard / change 中涉及的名字优先分类为 external input candidate，而不是内部状态变量。
+* [x] 只有当某个名字明确出现在动作赋值左值且该写语义不可忽略时，才把它回收为 internal state candidate。
+* [x] 让 `input_map` 候选显式记录场景层名字、机器内局部名字、来源表达式、歧义说明。
+* [x] 让 `event_map` 候选显式记录场景消息名、机器内 event path、对应的 signal / message 证据链。
+* [x] 让 `event_map` / diagnostics 同时保留消息方向，避免把 outbound signal 误绑定成 `emit(...)`。
+
+当前真实样例的 Phase 7 验证结论：
+
+* 已可稳定生成 timeline-first import IR，显式包含 machine graph、input candidate、event candidate、step candidate、time window 与 duration constraint。
+* machine graph 已收敛为 `11` 条 `signal_transition`、`3` 条 `condition_transition`、`6` 条 `initial_transition` 与 `1` 条 `auto_transition`。
+* 当前真实样例里唯一需要显式标记的 `force_transition` 是 `Control.H -> Control.G`。
+* `input_map` 候选当前已稳定抽出 `a / b / c / d / mode / rmt / y` 七个名字，其中：
+  - `a / b / c / d / rmt` 为外部输入优先
+  - `mode` 为内部写变量优先
+  - `y` 为顺序图 observation-only 名字
+* `event_map` 候选已能稳定区分：
+  - `Sig1 / Sig2 / Sig4 / Sig5 / Sig6` 为可绑定机器事件且允许后续 `emit`
+  - `Sig7 / Sig8 / Sig9` 为 machine-relevant 但 direction mismatch 的 outbound 候选
+  - `Sig11 / Sig12 / Sig13 / Sig14 / Sig15 / Sig16 / Sig17 / Sig18` 为 interaction-only outbound 候选
 
 ## 21.11 Phase 8: 从真实样例生成 step / SetInput / emit 候选
 
-* [ ] 基于 observation stream 生成 step 候选顺序。
-* [ ] 把顺序图中的简单赋值观测转换为 `SetInput` 候选。
-* [ ] 只把 external -> internal 的带 signature 消息转换为 `emit` 候选。
-* [ ] 把 internal -> external 的带 signature 消息保留为空 step，并附加 `outbound_signal=...` 说明。
-* [ ] 把 internal self-message 保留为空 step，并附加 `self_message` 说明。
-* [ ] 对 machine-relevant 但方向为 outbound 的消息显式产出 mismatch diagnostics。
-* [ ] 当一个 step 同时包含输入更新和消息时，按 TIMELINE 语义规定“先 `SetInput`，后事件求值”。
-* [ ] 即使某个 step 没有消息，也要允许其成为“只包含输入更新”或“空 step”的候选。
-* [ ] 为每个候选 step 保留来源链，便于后续 witness 输出回指原始顺序图观测。
-* [ ] 对歧义场景保留多候选或 warning，而不是强行猜测唯一场景。
+* [x] 基于 observation stream 生成 step 候选顺序。
+* [x] 把顺序图中的简单赋值观测转换为 `SetInput` 候选。
+* [x] 只把 external -> internal 的带 signature 消息转换为 `emit` 候选。
+* [x] 把 internal -> external 的带 signature 消息保留为空 step，并附加 `outbound_signal=...` 说明。
+* [x] 把 internal self-message 保留为空 step，并附加 `self_message` 说明。
+* [x] 对 machine-relevant 但方向为 outbound 的消息显式产出 mismatch diagnostics。
+* [x] 当一个 step 同时包含输入更新和消息时，按 TIMELINE 语义规定“先 `SetInput`，后事件求值”。
+* [x] 即使某个 step 没有消息，也要允许其成为“只包含输入更新”或“空 step”的候选。
+* [x] 为每个候选 step 保留来源链，便于后续 witness 输出回指原始顺序图观测。
+* [x] 对歧义场景保留多候选或 warning，而不是强行猜测唯一场景。
+
+当前真实样例的 Phase 8 验证结论：
+
+* 已可稳定生成 `24` 个 step 候选：
+  - `6` 个 `emit` step：`s01 / s10 / s14 / s16 / s19 / s22`
+  - `5` 个 `SetInput` step：`s02 / s04 / s06 / s08 / s20`
+  - 其余为 self / outbound / empty anchor step
+* 当前真实样例里的 self anchor step 为 `s03 / s07`，并各自绑定 `0s-1s` 的 time window。
+* 当前真实样例里的 outbound machine-relevant mismatch step 为 `s13 / s23 / s24`，分别对应 `Sig9 / Sig8 / Sig7`。
+* 当前真实样例里的 duration constraint 已稳定绑定到具体 step 对：
+  - `s05 -> s10 : 20s-30s`
+  - `s11 -> s12 : 10s`
+  - `s12 -> s13 : 15s`
+  - `s13 -> s14 : 10s`
+  - `s15 -> s16 : 10s`
+  - `s17 -> s18 : 10s`
+  - `s18 -> s19 : 5s`
+  - `s19 -> s21 : 30s`
+  - `s21 -> s22 : 5s`
+* 当前样例里 step 候选与此前手工 timeline candidate 已基本收敛一致；后续阶段的重点将转向 runtime / SMT 绑定，而不是继续修补 observation 读取本身。
 
 ## 21.12 Phase 9: FCSTM 兼容导出收口
 

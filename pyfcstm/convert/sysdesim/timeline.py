@@ -8,10 +8,15 @@ timeline-first view of one SysDeSim sample:
   duration/time constraints into a stable observation stream.
 * Phase6: expose a unified transition-trigger abstraction and normalized name
   binding hints shared by interaction observations and machine triggers.
+* Phase7: classify machine-graph transitions plus input/event binding
+  candidates for a timeline-first import IR.
+* Phase8: turn the observation stream into ordered step, ``SetInput``, and
+  ``emit`` candidates with timing-anchor metadata.
 
-The APIs in this file do not try to build final timeline steps yet. They stop
-at the "reviewable intermediate data" layer so the user can inspect what was
-actually extracted from the real sample before Phase7/8 candidate generation.
+The APIs in this file still stop short of producing a final executable timeline
+scenario. They intentionally keep the output at the "reviewable intermediate
+data" layer so the user can inspect what was actually extracted from the real
+sample before later runtime/SMT binding stages.
 """
 
 from __future__ import annotations
@@ -353,6 +358,130 @@ class SysDeSimPhase56Report:
     interaction: SysDeSimInteractionExtract
     transitions: Tuple[SysDeSimTimelineTransitionView, ...]
     name_hints: Tuple[SysDeSimNameBindingHint, ...]
+    diagnostics: Tuple[IrDiagnostic, ...]
+
+
+@dataclass(frozen=True)
+class SysDeSimTimelineMachineTransition:
+    """Timeline-first machine-graph edge derived from one normalized transition."""
+
+    source_id: str
+    source_path: Tuple[str, ...]
+    source_vertex_type: str
+    target_id: str
+    target_path: Tuple[str, ...]
+    target_vertex_type: str
+    transition_ids: Tuple[str, ...]
+    semantic_kind: str
+    trigger: object
+    machine_event_path: Optional[str]
+    guard_text: Optional[str]
+    force_transition: bool
+    notes: Tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class SysDeSimTimelineInputCandidate:
+    """Candidate binding between scenario-side input names and machine names."""
+
+    normalized_name: str
+    role: str
+    scenario_names: Tuple[str, ...]
+    machine_local_names: Tuple[str, ...]
+    observation_values: Tuple[str, ...]
+    trigger_expressions: Tuple[str, ...]
+    write_texts: Tuple[str, ...]
+    note: Optional[str]
+
+
+@dataclass(frozen=True)
+class SysDeSimTimelineEventCandidate:
+    """Candidate binding between interaction signal observations and machine events."""
+
+    normalized_name: str
+    scenario_event_name: str
+    machine_event_path: Optional[str]
+    machine_signal_names: Tuple[str, ...]
+    message_directions: Tuple[str, ...]
+    message_ids: Tuple[str, ...]
+    message_display_names: Tuple[str, ...]
+    transition_ids: Tuple[str, ...]
+    emit_allowed: bool
+    is_machine_relevant: bool
+    note: Optional[str]
+
+
+@dataclass(frozen=True)
+class SysDeSimTimelineSetInputAction:
+    """One candidate ``SetInput`` action extracted from a state invariant."""
+
+    kind: str
+    input_name: str
+    raw_name: str
+    machine_local_names: Tuple[str, ...]
+    value_text: str
+    source_observation_id: str
+
+
+@dataclass(frozen=True)
+class SysDeSimTimelineEmitAction:
+    """One candidate ``emit`` action extracted from an inbound signal message."""
+
+    kind: str
+    scenario_event_name: str
+    machine_event_path: str
+    source_message_id: str
+
+
+@dataclass(frozen=True)
+class SysDeSimTimelineStepCandidate:
+    """One ordered step candidate derived from the interaction observation stream."""
+
+    step_id: str
+    order_index: int
+    anchor_kind: str
+    actions: Tuple[object, ...]
+    source_observation_ids: Tuple[str, ...]
+    source_kinds: Tuple[str, ...]
+    direction: Optional[str]
+    notes: Tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class SysDeSimTimelineStepTimeWindow:
+    """One step-local time-window candidate resolved from a ``TimeConstraint``."""
+
+    step_id: str
+    constraint_id: str
+    source_message_id: str
+    value_text: str
+
+
+@dataclass(frozen=True)
+class SysDeSimTimelineDurationConstraint:
+    """One between-step duration candidate resolved from a ``DurationConstraint``."""
+
+    left_step_id: str
+    right_step_id: str
+    constraint_id: str
+    left_source_message_id: str
+    right_source_message_id: str
+    value_text: str
+
+
+@dataclass(frozen=True)
+class SysDeSimPhase78Report:
+    """Reviewable intermediate result for the current Phase7/8 extraction scope."""
+
+    selected_machine_name: str
+    selected_interaction_name: str
+    phase56_report: SysDeSimPhase56Report
+    machine_graph: Tuple[SysDeSimTimelineMachineTransition, ...]
+    input_candidates: Tuple[SysDeSimTimelineInputCandidate, ...]
+    event_candidates: Tuple[SysDeSimTimelineEventCandidate, ...]
+    steps: Tuple[SysDeSimTimelineStepCandidate, ...]
+    time_windows: Tuple[SysDeSimTimelineStepTimeWindow, ...]
+    duration_constraints: Tuple[SysDeSimTimelineDurationConstraint, ...]
     diagnostics: Tuple[IrDiagnostic, ...]
 
 
@@ -847,6 +976,513 @@ def build_sysdesim_phase56_report(
     )
 
 
+def _unique_non_empty(items: Iterable[Optional[str]]) -> Tuple[str, ...]:
+    """Return unique non-empty strings while preserving their first-seen order."""
+    results = []
+    seen = set()
+    for item in items:
+        if item is None:
+            continue
+        text = item.strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        results.append(text)
+    return tuple(results)
+
+
+def _combine_interval_text(
+    min_text: Optional[str], max_text: Optional[str]
+) -> Optional[str]:
+    """Combine one min/max interval pair into a single readable value."""
+    if min_text and max_text:
+        return min_text if min_text == max_text else f"{min_text}-{max_text}"
+    return min_text or max_text
+
+
+def _is_force_transition(
+    machine: IrMachine, transition: SysDeSimTimelineTransitionView
+) -> bool:
+    """Return whether one grouped machine edge should be treated as force transition."""
+    source_vertex = machine.get_vertex(transition.source_id)
+    if source_vertex.vertex_type != "state" or not source_vertex.is_composite:
+        return False
+    descendants = set(machine.descendant_state_ids(transition.source_id))
+    return (
+        transition.target_id != transition.source_id
+        and transition.target_id not in descendants
+    )
+
+
+def _build_machine_graph(
+    machine: IrMachine,
+    transitions: Tuple[SysDeSimTimelineTransitionView, ...],
+) -> Tuple[SysDeSimTimelineMachineTransition, ...]:
+    """Build the Phase7 machine-graph view used by the timeline importer."""
+    results = []
+    for transition in transitions:
+        source_vertex = machine.get_vertex(transition.source_id)
+        target_vertex = machine.get_vertex(transition.target_id)
+        notes = []
+        machine_event_path = None
+        guard_text = None
+        if isinstance(transition.trigger, SysDeSimTriggerSignal):
+            semantic_kind = "signal_transition"
+            machine_event_path = f"/{transition.trigger.signal_name}"
+        elif isinstance(transition.trigger, SysDeSimTriggerCondition):
+            semantic_kind = "condition_transition"
+            guard_text = transition.trigger.raw_text
+        elif source_vertex.vertex_type == "pseudostate":
+            semantic_kind = "initial_transition"
+        else:
+            semantic_kind = "auto_transition"
+            notes.append("hidden_internal_transition")
+            notes.append("continuous_time_binding_deferred")
+
+        force_transition = _is_force_transition(machine, transition)
+        if force_transition:
+            notes.append("force_transition")
+
+        results.append(
+            SysDeSimTimelineMachineTransition(
+                source_id=transition.source_id,
+                source_path=transition.source_path,
+                source_vertex_type=source_vertex.vertex_type,
+                target_id=transition.target_id,
+                target_path=transition.target_path,
+                target_vertex_type=target_vertex.vertex_type,
+                transition_ids=transition.transition_ids,
+                semantic_kind=semantic_kind,
+                trigger=transition.trigger,
+                machine_event_path=machine_event_path,
+                guard_text=guard_text,
+                force_transition=force_transition,
+                notes=tuple(notes),
+            )
+        )
+    results.sort(
+        key=lambda item: (
+            item.source_path,
+            item.target_path,
+            item.semantic_kind,
+            item.transition_ids,
+        )
+    )
+    return tuple(results)
+
+
+def _build_input_candidates(
+    interaction: SysDeSimInteractionExtract,
+    transitions: Tuple[SysDeSimTimelineTransitionView, ...],
+) -> Tuple[SysDeSimTimelineInputCandidate, ...]:
+    """Build input-binding candidates shared by observations and condition triggers."""
+    evidence: Dict[str, Dict[str, List[str]]] = {}
+
+    def _entry(normalized_name: str) -> Dict[str, List[str]]:
+        return evidence.setdefault(
+            normalized_name,
+            {
+                "scenario_names": [],
+                "machine_local_names": [],
+                "observation_values": [],
+                "trigger_expressions": [],
+                "write_texts": [],
+            },
+        )
+
+    for item in interaction.observation_stream:
+        if not isinstance(item, SysDeSimStateInvariantObservation):
+            continue
+        if not item.normalized_name or not item.assignment_name:
+            continue
+        entry = _entry(item.normalized_name)
+        entry["scenario_names"].append(item.assignment_name)
+        if item.value_text:
+            entry["observation_values"].append(item.value_text)
+
+    for item in interaction.activity_assignment_observations:
+        entry = _entry(item.normalized_name)
+        entry["machine_local_names"].append(item.assignment_name)
+        entry["write_texts"].append(item.raw_text)
+
+    for transition in transitions:
+        if not isinstance(transition.trigger, SysDeSimTriggerCondition):
+            continue
+        for raw_name, normalized_name in zip(
+            transition.trigger.variable_names,
+            transition.trigger.normalized_variable_names,
+        ):
+            entry = _entry(normalized_name)
+            entry["machine_local_names"].append(raw_name)
+            entry["trigger_expressions"].append(transition.trigger.raw_text)
+
+    results = []
+    for normalized_name in sorted(evidence):
+        item = evidence[normalized_name]
+        scenario_names = _unique_non_empty(item["scenario_names"])
+        machine_local_names = _unique_non_empty(item["machine_local_names"])
+        observation_values = _unique_non_empty(item["observation_values"])
+        trigger_expressions = _unique_non_empty(item["trigger_expressions"])
+        write_texts = _unique_non_empty(item["write_texts"])
+
+        if trigger_expressions and not write_texts:
+            role = "external_input"
+            note = (
+                "Condition/change variables default to external inputs until "
+                "explicit write evidence appears."
+            )
+        elif trigger_expressions and write_texts:
+            role = "ambiguous"
+            note = (
+                "The name appears both in trigger conditions and in write-side "
+                "activity text; keep it reviewable instead of forcing one role."
+            )
+        elif write_texts:
+            role = "internal_state"
+            note = "Only write-side activity evidence exists for this name."
+        else:
+            role = "observation_only"
+            note = "The name is observed in the interaction but not referenced by current triggers."
+
+        results.append(
+            SysDeSimTimelineInputCandidate(
+                normalized_name=normalized_name,
+                role=role,
+                scenario_names=scenario_names,
+                machine_local_names=machine_local_names,
+                observation_values=observation_values,
+                trigger_expressions=trigger_expressions,
+                write_texts=write_texts,
+                note=note,
+            )
+        )
+    return tuple(results)
+
+
+def _build_event_candidates(
+    interaction: SysDeSimInteractionExtract,
+    machine_graph: Tuple[SysDeSimTimelineMachineTransition, ...],
+) -> Tuple[Tuple[SysDeSimTimelineEventCandidate, ...], Tuple[IrDiagnostic, ...]]:
+    """Build event-binding candidates shared by message observations and machine signals."""
+    machine_signal_index: Dict[str, Dict[str, List[str]]] = {}
+    for transition in machine_graph:
+        if transition.semantic_kind != "signal_transition":
+            continue
+        trigger = transition.trigger
+        if not isinstance(trigger, SysDeSimTriggerSignal):
+            continue
+        key = _normalize_name_key(trigger.signal_name)
+        entry = machine_signal_index.setdefault(
+            key,
+            {
+                "machine_event_paths": [],
+                "machine_signal_names": [],
+                "transition_ids": [],
+            },
+        )
+        if transition.machine_event_path:
+            entry["machine_event_paths"].append(transition.machine_event_path)
+        entry["machine_signal_names"].append(trigger.signal_name)
+        entry["transition_ids"].extend(transition.transition_ids)
+
+    grouped_messages: Dict[str, List[SysDeSimMessageObservation]] = {}
+    for item in interaction.observation_stream:
+        if not isinstance(item, SysDeSimMessageObservation) or not item.signal_name:
+            continue
+        grouped_messages.setdefault(_normalize_name_key(item.signal_name), []).append(
+            item
+        )
+
+    results = []
+    diagnostics = []
+    for normalized_name in sorted(grouped_messages):
+        messages = sorted(
+            grouped_messages[normalized_name],
+            key=lambda item: (item.order_index, item.message_id),
+        )
+        machine_item = machine_signal_index.get(normalized_name, {})
+        machine_event_paths = _unique_non_empty(
+            machine_item.get("machine_event_paths", [])
+        )
+        machine_signal_names = _unique_non_empty(
+            machine_item.get("machine_signal_names", [])
+        )
+        transition_ids = _unique_non_empty(machine_item.get("transition_ids", []))
+        message_directions = _unique_non_empty(item.direction for item in messages)
+        message_ids = tuple(item.message_id for item in messages)
+        message_display_names = _unique_non_empty(
+            item.display_name for item in messages
+        )
+        is_machine_relevant = bool(machine_event_paths or machine_signal_names)
+        emit_allowed = is_machine_relevant and "inbound" in message_directions
+        scenario_event_name = messages[0].signal_name or messages[0].display_name
+
+        note = None
+        if (
+            is_machine_relevant
+            and "outbound" in message_directions
+            and "inbound" not in message_directions
+        ):
+            note = (
+                "The state machine consumes this signal, but the interaction only "
+                "shows outbound observations."
+            )
+            diagnostics.append(
+                IrDiagnostic(
+                    level="warning",
+                    code="timeline_outbound_machine_signal",
+                    message=(
+                        "Signal {!r} is machine-relevant, but the interaction only "
+                        "observes it as outbound."
+                    ).format(scenario_event_name),
+                    source_id=messages[0].message_id,
+                )
+            )
+        elif is_machine_relevant and len(message_directions) > 1:
+            note = (
+                "This signal appears with mixed directions; only inbound "
+                "message instances can become emit candidates."
+            )
+        elif not is_machine_relevant:
+            note = "This signal appears in the interaction but not in the current machine trigger set."
+
+        results.append(
+            SysDeSimTimelineEventCandidate(
+                normalized_name=normalized_name,
+                scenario_event_name=scenario_event_name,
+                machine_event_path=machine_event_paths[0]
+                if machine_event_paths
+                else None,
+                machine_signal_names=machine_signal_names,
+                message_directions=message_directions,
+                message_ids=message_ids,
+                message_display_names=message_display_names,
+                transition_ids=transition_ids,
+                emit_allowed=emit_allowed,
+                is_machine_relevant=is_machine_relevant,
+                note=note,
+            )
+        )
+
+    return tuple(results), tuple(diagnostics)
+
+
+def _sort_step_actions(actions: Iterable[object]) -> Tuple[object, ...]:
+    """Sort step actions so that ``SetInput`` stays before ``emit`` within one step."""
+    order = {"set_input": 0, "emit": 1}
+    return tuple(
+        sorted(actions, key=lambda item: order.get(getattr(item, "kind", ""), 99))
+    )
+
+
+def _build_step_candidates(
+    interaction: SysDeSimInteractionExtract,
+    input_candidates: Tuple[SysDeSimTimelineInputCandidate, ...],
+    event_candidates: Tuple[SysDeSimTimelineEventCandidate, ...],
+) -> Tuple[
+    Tuple[SysDeSimTimelineStepCandidate, ...],
+    Tuple[SysDeSimTimelineStepTimeWindow, ...],
+    Tuple[SysDeSimTimelineDurationConstraint, ...],
+]:
+    """Build ordered step, time-window, and duration candidates from the observation stream."""
+    input_candidate_index = {item.normalized_name: item for item in input_candidates}
+    event_candidate_index = {item.normalized_name: item for item in event_candidates}
+
+    steps = []
+    time_windows = []
+    duration_constraints = []
+    message_step_by_id: Dict[str, str] = {}
+    step_counter = 0
+
+    for item in interaction.observation_stream:
+        if isinstance(item, SysDeSimMessageObservation):
+            step_counter += 1
+            step_id = f"s{step_counter:02d}"
+            actions = []
+            notes = []
+            event_candidate = (
+                event_candidate_index.get(_normalize_name_key(item.signal_name))
+                if item.signal_name
+                else None
+            )
+            if (
+                item.signal_name
+                and item.direction == "inbound"
+                and event_candidate is not None
+                and event_candidate.is_machine_relevant
+                and event_candidate.machine_event_path
+            ):
+                actions.append(
+                    SysDeSimTimelineEmitAction(
+                        kind="emit",
+                        scenario_event_name=item.signal_name,
+                        machine_event_path=event_candidate.machine_event_path,
+                        source_message_id=item.message_id,
+                    )
+                )
+            else:
+                if item.direction == "outbound" and item.signal_name:
+                    notes.append(f"outbound_signal={item.signal_name}")
+                    if (
+                        event_candidate is not None
+                        and event_candidate.is_machine_relevant
+                    ):
+                        notes.append("machine_relevant_direction_mismatch")
+                elif item.direction == "self":
+                    notes.append("self_message")
+                    if item.signal_name:
+                        notes.append(f"self_signal={item.signal_name}")
+                elif item.direction == "inbound" and item.signal_name:
+                    notes.append(f"inbound_observation={item.signal_name}")
+                elif not item.signal_name:
+                    notes.append("no_signature_message")
+
+            if item.raw_name and item.raw_name != item.display_name:
+                notes.append(f"display_name={item.raw_name}")
+
+            steps.append(
+                SysDeSimTimelineStepCandidate(
+                    step_id=step_id,
+                    order_index=item.order_index,
+                    anchor_kind="message",
+                    actions=_sort_step_actions(actions),
+                    source_observation_ids=(item.message_id,),
+                    source_kinds=(item.kind,),
+                    direction=item.direction,
+                    notes=tuple(notes),
+                )
+            )
+            message_step_by_id[item.message_id] = step_id
+
+        elif isinstance(item, SysDeSimStateInvariantObservation):
+            if (
+                not item.assignment_name
+                or not item.normalized_name
+                or item.value_text is None
+            ):
+                continue
+            step_counter += 1
+            step_id = f"s{step_counter:02d}"
+            input_candidate = input_candidate_index.get(item.normalized_name)
+            machine_local_names = (
+                input_candidate.machine_local_names
+                if input_candidate is not None
+                else ()
+            )
+            actions = [
+                SysDeSimTimelineSetInputAction(
+                    kind="set_input",
+                    input_name=item.normalized_name,
+                    raw_name=item.assignment_name,
+                    machine_local_names=machine_local_names,
+                    value_text=item.value_text,
+                    source_observation_id=item.invariant_id,
+                )
+            ]
+            steps.append(
+                SysDeSimTimelineStepCandidate(
+                    step_id=step_id,
+                    order_index=item.order_index,
+                    anchor_kind="state_invariant",
+                    actions=_sort_step_actions(actions),
+                    source_observation_ids=(item.invariant_id,),
+                    source_kinds=(item.kind,),
+                    direction=None,
+                    notes=(),
+                )
+            )
+
+    for item in interaction.observation_stream:
+        if isinstance(item, SysDeSimTimeConstraintObservation):
+            if len(item.constrained_element_ids) != 1:
+                continue
+            source_message_id = item.constrained_element_ids[0]
+            step_id = message_step_by_id.get(source_message_id)
+            value_text = _combine_interval_text(item.min_text, item.max_text)
+            if step_id is None or value_text is None:
+                continue
+            time_windows.append(
+                SysDeSimTimelineStepTimeWindow(
+                    step_id=step_id,
+                    constraint_id=item.constraint_id,
+                    source_message_id=source_message_id,
+                    value_text=value_text,
+                )
+            )
+        elif isinstance(item, SysDeSimDurationConstraintObservation):
+            if len(item.constrained_element_ids) != 2:
+                continue
+            left_message_id, right_message_id = item.constrained_element_ids
+            left_step_id = message_step_by_id.get(left_message_id)
+            right_step_id = message_step_by_id.get(right_message_id)
+            value_text = _combine_interval_text(item.min_text, item.max_text)
+            if left_step_id is None or right_step_id is None or value_text is None:
+                continue
+            duration_constraints.append(
+                SysDeSimTimelineDurationConstraint(
+                    left_step_id=left_step_id,
+                    right_step_id=right_step_id,
+                    constraint_id=item.constraint_id,
+                    left_source_message_id=left_message_id,
+                    right_source_message_id=right_message_id,
+                    value_text=value_text,
+                )
+            )
+
+    return tuple(steps), tuple(time_windows), tuple(duration_constraints)
+
+
+def build_sysdesim_phase78_report(
+    xml_path: str,
+    machine_name: Optional[str] = None,
+    interaction_name: Optional[str] = None,
+) -> SysDeSimPhase78Report:
+    """
+    Build the current Phase7/8 timeline-import report.
+
+    :param xml_path: Path to the source XML/XMI file.
+    :type xml_path: str
+    :param machine_name: Optional machine name to select, defaults to ``None``.
+    :type machine_name: str, optional
+    :param interaction_name: Optional interaction name to select, defaults to
+        ``None``.
+    :type interaction_name: str, optional
+    :return: Reviewable Phase7/8 report.
+    :rtype: SysDeSimPhase78Report
+    """
+
+    phase56_report = build_sysdesim_phase56_report(
+        xml_path, machine_name=machine_name, interaction_name=interaction_name
+    )
+    machine = normalize_machine(
+        load_sysdesim_machine(xml_path, machine_name=machine_name)
+    )
+    machine_graph = _build_machine_graph(machine, phase56_report.transitions)
+    input_candidates = _build_input_candidates(
+        phase56_report.interaction, phase56_report.transitions
+    )
+    event_candidates, event_diagnostics = _build_event_candidates(
+        phase56_report.interaction, machine_graph
+    )
+    steps, time_windows, duration_constraints = _build_step_candidates(
+        phase56_report.interaction, input_candidates, event_candidates
+    )
+    diagnostics = tuple(phase56_report.diagnostics) + tuple(event_diagnostics)
+
+    return SysDeSimPhase78Report(
+        selected_machine_name=phase56_report.selected_machine_name,
+        selected_interaction_name=phase56_report.selected_interaction_name,
+        phase56_report=phase56_report,
+        machine_graph=machine_graph,
+        input_candidates=input_candidates,
+        event_candidates=event_candidates,
+        steps=steps,
+        time_windows=time_windows,
+        duration_constraints=duration_constraints,
+        diagnostics=diagnostics,
+    )
+
+
 __all__ = [
     "SysDeSimActivityAssignmentObservation",
     "SysDeSimDurationConstraintObservation",
@@ -854,13 +1490,23 @@ __all__ = [
     "SysDeSimMessageObservation",
     "SysDeSimNameBindingHint",
     "SysDeSimPhase56Report",
+    "SysDeSimPhase78Report",
     "SysDeSimStateInvariantObservation",
+    "SysDeSimTimelineDurationConstraint",
+    "SysDeSimTimelineEmitAction",
+    "SysDeSimTimelineEventCandidate",
+    "SysDeSimTimelineInputCandidate",
     "SysDeSimTimeConstraintObservation",
     "SysDeSimTimelineLifeline",
+    "SysDeSimTimelineMachineTransition",
+    "SysDeSimTimelineSetInputAction",
+    "SysDeSimTimelineStepCandidate",
+    "SysDeSimTimelineStepTimeWindow",
     "SysDeSimTimelineTransitionView",
     "SysDeSimTriggerCondition",
     "SysDeSimTriggerNone",
     "SysDeSimTriggerSignal",
     "build_sysdesim_phase56_report",
+    "build_sysdesim_phase78_report",
     "extract_sysdesim_interactions",
 ]

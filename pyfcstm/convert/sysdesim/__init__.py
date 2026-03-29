@@ -30,6 +30,9 @@ surface is intentionally small:
 * :func:`extract_sysdesim_interactions` and
   :func:`build_sysdesim_phase56_report` expose the current timeline-oriented
   Phase5/6 intermediate extraction layer.
+* :func:`build_sysdesim_phase78_report` exposes the current timeline-first
+  import IR for machine graph, input/event bindings, and ordered step
+  candidates.
 
 Internals are kept in five files to avoid unnecessary fragmentation:
 
@@ -80,14 +83,24 @@ from .timeline import (
     SysDeSimMessageObservation,
     SysDeSimNameBindingHint,
     SysDeSimPhase56Report,
+    SysDeSimPhase78Report,
     SysDeSimStateInvariantObservation,
     SysDeSimTimeConstraintObservation,
+    SysDeSimTimelineDurationConstraint,
+    SysDeSimTimelineEmitAction,
+    SysDeSimTimelineEventCandidate,
+    SysDeSimTimelineInputCandidate,
     SysDeSimTimelineLifeline,
+    SysDeSimTimelineMachineTransition,
+    SysDeSimTimelineSetInputAction,
+    SysDeSimTimelineStepCandidate,
+    SysDeSimTimelineStepTimeWindow,
     SysDeSimTimelineTransitionView,
     SysDeSimTriggerCondition,
     SysDeSimTriggerNone,
     SysDeSimTriggerSignal,
     build_sysdesim_phase56_report,
+    build_sysdesim_phase78_report,
     extract_sysdesim_interactions,
 )
 
@@ -102,11 +115,20 @@ __all__ = [
     "SysDeSimMessageObservation",
     "SysDeSimNameBindingHint",
     "SysDeSimPhase56Report",
+    "SysDeSimPhase78Report",
     "SysDeSimRawXmiDocument",
     "SysDeSimRawXmiSummary",
     "SysDeSimStateInvariantObservation",
     "SysDeSimTimeConstraintObservation",
+    "SysDeSimTimelineDurationConstraint",
+    "SysDeSimTimelineEmitAction",
+    "SysDeSimTimelineEventCandidate",
+    "SysDeSimTimelineInputCandidate",
     "SysDeSimTimelineLifeline",
+    "SysDeSimTimelineMachineTransition",
+    "SysDeSimTimelineSetInputAction",
+    "SysDeSimTimelineStepCandidate",
+    "SysDeSimTimelineStepTimeWindow",
     "SysDeSimTimelineTransitionView",
     "SysDeSimTriggerCondition",
     "SysDeSimTriggerNone",
@@ -114,6 +136,7 @@ __all__ = [
     "build_machine_ast",
     "build_sysdesim_conversion_report",
     "build_sysdesim_phase56_report",
+    "build_sysdesim_phase78_report",
     "convert_sysdesim_xml_to_ast",
     "convert_sysdesim_xml_to_asts",
     "convert_sysdesim_xml_to_dsl",

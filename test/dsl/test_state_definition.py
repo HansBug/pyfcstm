@@ -1763,26 +1763,32 @@ class TestDSLTransition:
                     """
                     pseudo state S1 { ! S2 -> S3; }
                     """,
-                    "pseudo state S1;",
+                    "pseudo state S1 {\n    ! S2 -> S3;\n}",
             ),  # Pseudo state with normal force transition
             (
                     """
                     pseudo state S1 { ! S2 -> [*]; }
                     """,
-                    "pseudo state S1;",
+                    "pseudo state S1 {\n    ! S2 -> [*];\n}",
             ),  # Pseudo state with exit force transition
             (
                     """
                     pseudo state S1 { ! * -> S3; }
                     """,
-                    "pseudo state S1;",
+                    "pseudo state S1 {\n    ! * -> S3;\n}",
             ),  # Pseudo state with normal all force transition
             (
                     """
                     pseudo state S1 { ! * -> [*]; }
                     """,
-                    "pseudo state S1;",
+                    "pseudo state S1 {\n    ! * -> [*];\n}",
             ),  # Pseudo state with exit all force transition
+            (
+                    """
+                    state S1 { S2 -> S3; ! S3 -> [*]; ! * -> Error; S4 -> S5; }
+                    """,
+                    "state S1 {\n    ! S3 -> [*];\n    ! * -> Error;\n    S2 -> S3;\n    S4 -> S5;\n}",
+            ),  # Force transitions are emitted before normal transitions and preserve per-kind source order
             (
                     """
                     pseudo state S1 { enter { x = 10; } }

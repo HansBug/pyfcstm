@@ -4,6 +4,8 @@
 
 | 版本 | 日期 | 修改内容 | 作者 |
 |------|------|----------|------|
+| 0.1.8 | 2026-03-29 | 按真实样例补充顺序图消息方向过滤规则，明确只把外向内消息当作 `emit`，并新增状态机主干的 pyfcstm DSL 草案与方向冲突说明 | Codex |
+| 0.1.7 | 2026-03-29 | 结合真实 SysDeSim 样例补充 timeline-first 落地计划，新增 XMI 解析、条件触发抽象、顺序图观测提取、binding/scenario 生成与 phased checklist | Codex |
 | 0.1.6 | 2026-03-22 | 收敛状态推导实现方案：有限复用 `SimulationRuntime` 作为单步状态迁移推导器，通过默认空 cycle 求初始稳定状态，通过热启动 + 单次 cycle 求后继稳定状态 | Codex |
 | 0.1.5 | 2026-03-22 | 补充完整示例：多机 fcstm DSL、timeline YAML，以及不同关系类型下的预期 SAT/UNSAT 结果 | Codex |
 | 0.1.4 | 2026-03-22 | 扩充形式化验证算法细节，补充 timeline 约束生成流程与 Python/Z3 编码骨架 | Codex |
@@ -3066,3 +3068,638 @@ relations:
   - 不同 guard 阈值
   - 时间相等与正时长区间的区别
   - `post_step` 与 `open_interval` 两类观测范围
+
+## 21. 基于真实 SysDeSim 样例的落地工作计划
+
+本节是在前文通用 timeline 设计基础上，结合当前真实 SysDeSim 样例、现有 `pyfcstm.convert.sysdesim` 实现现状，以及《SYSDESIM_XML_FORMAT_ANALYSIS.md》《SYSDESIM_CONVERT_DESIGN.md》中的收敛结论，给出的**样例驱动实施计划**。
+
+这一节的目标不是再写一份抽象设计，而是把“接下来真的要怎么做”拆成可执行 phase。
+
+## 21.1 当前现状与问题收敛
+
+当前已知事实如下：
+
+- 当前真实样例不是“纯状态机文件”，而是同时包含：
+  - `uml:StateMachine`
+  - `uml:Interaction`
+  - 多类 `uml:Activity`
+  - `Signal` / `SignalEvent`
+  - `ChangeEvent`
+  - stereotype 与图表示层信息
+- 当前样例应被视为 **TIMELINE 计划的真实输入样本**，而不是一个独立的通用转换样例。
+- 现有 `pyfcstm.convert.sysdesim.convert` 能够读取 machine，但当前仍在两个位置被样例阻塞：
+  - 非 `int/float` 的 property 类型会在变量归一化阶段中止
+  - `ChangeEvent` 触发目前不在 Phase2 支持范围内
+- 从样例分析结论看，后续工作主线不应是“完整导入所有 property”，而应是：
+  - 保留状态机主干
+  - 统一 `SignalEvent` / `ChangeEvent` / `guard`
+  - 提取顺序图中的消息与赋值观测
+  - 生成 TIMELINE 所需的 `event_map`、`input_map`、`step`、`SetInput`
+
+## 21.2 本阶段建议采用的总体技术路线
+
+建议把真实样例接入 TIMELINE 的主链路明确为：
+
+```text
+SysDeSim XMI
+  -> Raw XMI Index
+  -> Machine Extract
+  -> Interaction Extract
+  -> Trigger/Input Normalize
+  -> Timeline Import IR
+  -> Timeline Binding/Scenario Candidate
+  -> timeline runtime / SMT compile
+  -> witness / diagnostics / optional FCSTM compatibility export
+```
+
+这里需要特别强调：
+
+- 主模式应是 **timeline-first import**
+- 纯 FCSTM 导出应退居为 compatibility mode
+- `ChangeEvent` 与文本型 `guard` 应先统一成条件触发抽象
+- 顺序图中的 `name=value` 文本，应优先作为 `SetInput` 候选，而不是内部变量写入
+- guard 中出现的名字，应优先落入 `input_map` 语义，而不是默认当作内部持久变量
+
+## 21.3 建议增加的代码组织
+
+为避免继续把所有逻辑堆在 `pyfcstm/convert/sysdesim/convert.py`，建议按职责拆层。
+
+建议的代码组织如下：
+
+- `pyfcstm/convert/sysdesim/xml_index.py`
+  - 原始 XMI 解析、命名空间处理、`xmi:id` 索引、按 UML 类型分桶
+- `pyfcstm/convert/sysdesim/extract_machine.py`
+  - 提取状态机、region、vertex、transition、signal、event、guard、action 引用
+- `pyfcstm/convert/sysdesim/extract_interaction.py`
+  - 提取顺序图 lifeline、message、state invariant、occurrence 顺序、简单赋值观测
+- `pyfcstm/convert/sysdesim/normalize.py`
+  - 名字归一化、条件表达式归一化、`ChangeEvent/guard` 合流、输入候选分类
+- `pyfcstm/convert/sysdesim/timeline_ir.py`
+  - timeline-first 的导入 IR，例如条件触发、观测流、step 候选、binding 候选
+- `pyfcstm/convert/sysdesim/compat_fcstm.py`
+  - timeline-first IR 到 FCSTM 兼容导出
+- `pyfcstm/timeline/importers/sysdesim.py`
+  - 从 SysDeSim timeline IR 生成 `TimelineScenario`、`TimelineMachineBinding`、候选 step
+
+`convert.py` 不应继续承担“原始 XML 解析 + 归一化 + timeline 方案 + FCSTM 导出 + report”全部职责。更合理的定位是：
+
+- 保留 façade / orchestration 入口
+- 下沉具体解析和转换逻辑到上面的模块
+
+但对当前真实样例的**短期落地顺序**不应一开始就大拆模块，而应先基于现有 `pyfcstm.convert.sysdesim` 做增量修改，把状态机主干语义跑通，再决定如何拆分。
+
+## 21.3.1 基于真实 XMI 的 timeline 提取技术方案
+
+对当前真实样例，建议采用下面这条**样例驱动提取算法**：
+
+1. 先用现有 `load_sysdesim_xml()` / `normalize_machine()` 读取状态机主干。
+2. 基于状态机主干建立：
+   - transition declaration order
+   - machine-relevant signal 集合
+   - composite-source outgoing transition 集合
+3. 在当前样例上，已确认存在一个复合状态直接对外的信号边：
+   - `H -> G` on `Sig8`
+   - 这条边不应继续按普通 same-region edge 看待，而应进入 force transition 语义
+4. 再进入顺序图提取：
+   - 找到类下的 `ownedBehavior / uml:Interaction`
+   - 读取 `fragment` 的原始顺序
+5. 对 `fragment` 做如下分类：
+   - `uml:MessageOccurrenceSpecification`
+     - 只以 **receive side** 作为 step anchor
+     - 先根据 `sendEvent/receiveEvent -> lifeline` 判定消息方向
+     - 当前真实样例中，应先把挂有 `StateInvariant` 的 lifeline 视为 machine-internal lifeline
+     - 若 message 是 **external -> internal** 且有 `signature`，才生成 `emit(signal_name)` 候选
+     - 若 message 是 **internal -> external**，则保留为空 anchor step，并附注它是哪一个 outbound signal
+     - 若 message 是 internal self-message，或 message 无 `signature`，同样保留为空 anchor step
+   - `uml:StateInvariant`
+     - 解析内部 `Constraint -> OpaqueExpression.body`
+     - 若文本满足 `name=value`，生成 `SetInput(name=value)` 候选
+6. 对时间约束做两类提取：
+   - `DurationObservation.event="msgA msgB"` + `DurationConstraint`
+     - 生成 `between(step(msgA), step(msgB))` 的 duration constraint
+   - `TimeObservation.event="msg"` + `TimeConstraint`
+     - 生成某个 anchor step 自身的 time window
+7. 把顺序图消息同时按“方向”和“是否属于 machine-relevant signal”分层：
+   - inbound + machine-relevant
+     - 进入后续 `event_map` 候选
+   - inbound + external-only
+     - 暂保留为 inbound observation
+     - 后续再决定是否绑定给别的机器，或直接丢弃
+   - outbound + machine-relevant
+     - 不生成 `emit`
+     - 保留为空 anchor step
+     - 同时产出 direction mismatch diagnostics
+   - outbound + external-only
+     - 只作为 timing anchor 保留
+8. 把顺序图赋值名与状态机条件名做归一化：
+   - 例如 `Rmt` -> `r_mt`
+   - 但不强行假设 `y` 与 `a/b/c/d` 已天然一一对应
+9. `signature` 解析需要同时兼容两种样式：
+   - interaction message 直接引用 `uml:Signal`
+   - state-machine trigger 通过 `SignalEvent -> Signal` 间接引用
+10. 最终产出不是直接可执行 timeline，而是三层候选：
+   - state-machine main trunk
+   - scenario step / `emit` / `SetInput` candidate
+   - `event_map` / `input_map` candidate
+
+这套算法的关键顺序是：
+
+```text
+先状态机主干
+  -> 再知道哪些消息是 machine-relevant
+  -> 再从 interaction 里挑出 timeline step / emit / set
+  -> 最后生成 binding 候选
+```
+
+而不是反过来先把整个顺序图硬翻成 timeline。
+
+## 21.3.2 基于真实样例的手工 timeline 候选
+
+为避免只停留在抽象设计，仓库中已补了一个简单脚本：
+
+- [tools/sysdesim_hand_timeline_sample.py](/home/hansbug/oo-projects/pyfcstm/tools/sysdesim_hand_timeline_sample.py)
+
+这个脚本不是正式 importer，只是对当前真实样例做一次**手工 candidate 转换**，用来验证我们对 XMI 的理解是否一致。
+
+当前脚本对真实样例给出的核心理解是：
+
+- 挂有状态不变量的 lifeline 可作为当前样例的 machine-internal lifeline：
+  - `控制`
+- 状态机 machine-relevant signals 为：
+  - `Sig1`
+  - `Sig2`
+  - `Sig4`
+  - `Sig5`
+  - `Sig6`
+  - `Sig7`
+  - `Sig8`
+  - `Sig9`
+- 当前样例中存在一条必须按 force transition 处理的边：
+  - `H -> G` on `Sig8`
+- interaction 中真正可作为 `emit` 的 inbound machine-facing 信号只有：
+  - `Sig1`
+  - `Sig2`
+  - `Sig4`
+  - `Sig5`
+  - `Sig6`
+- 但 interaction 同时还观测到三个**方向冲突**的 machine-relevant 信号：
+  - `Sig7`
+  - `Sig8`
+  - `Sig9`
+  - 它们在状态机主干里会触发转移，但在顺序图里都表现为 `控制 -> 模块`
+  - 因此当前阶段不能把它们直接生成 `emit(...)`
+  - 只能先保留为空 anchor step，并把冲突留给后续 binding / importer diagnostics
+- interaction 里可以手工转换出如下 candidate timeline：
+
+```yaml
+steps:
+  - s01: emit Sig1                       # inbound, 模块 -> 控制
+  - s02: set y=2300
+  - s03: anchor                         # self, 控制 -> 控制
+  - s04: set y=2099
+  - s05: anchor                         # outbound Sig11, 发动机点火
+  - s06: set y=1300
+  - s07: anchor                         # self, 控制 -> 控制
+  - s08: set y=1199
+  - s09: anchor                         # outbound Sig17, 切换程序角
+  - s10: emit Sig2                      # inbound, 模块 -> 控制
+  - s11: anchor                         # outbound Sig12, 启动高度控制
+  - s12: anchor                         # outbound Sig18, 平飞
+  - s13: anchor                         # outbound Sig9, machine-relevant mismatch
+  - s14: emit Sig6                      # inbound, 模块 -> 控制
+  - s15: anchor                         # outbound Sig13, 第一次航路转弯
+  - s16: emit Sig4                      # inbound, 模块 -> 控制
+  - s17: anchor                         # outbound Sig14, 直飞
+  - s18: anchor                         # outbound Sig15, 启动转弯控制
+  - s19: emit Sig4                      # inbound, 模块 -> 控制
+  - s20: set r_mt=4999
+  - s21: anchor                         # outbound Sig16, 启动导引头控制
+  - s22: emit Sig5                      # inbound, 模块 -> 控制
+  - s23: anchor                         # outbound Sig8, machine-relevant mismatch, state trunk still has H -> G
+  - s24: anchor                         # outbound Sig7, machine-relevant mismatch
+```
+
+其中：
+
+- `s01`、`s10`、`s14`、`s16`、`s19`、`s22` 才是当前样例里真正落成 `emit(...)` 的 step
+- `s03`、`s07` 是 internal self-message anchor
+- `s05`、`s09`、`s11`、`s12`、`s15`、`s17`、`s18`、`s21` 是 outbound external-only signal anchor
+- `s13`、`s23`、`s24` 是 outbound machine-relevant anchor
+  - 它们必须保留 step，因为 duration / time constraint 仍可能挂在这些消息上
+  - 但当前阶段不能把它们当成 `emit`
+- 当前样例里还能提取出：
+  - `s03` 的局部 time window：`0s-1s`
+  - `s07` 的局部 time window：`0s-1s`
+- 还能提取出若干 message-to-message duration constraint，例如：
+
+```yaml
+duration_constraints:
+  - between: [s05, s10]
+    value: 20s-30s
+  - between: [s11, s12]
+    value: 10s
+  - between: [s12, s13]
+    value: 15s
+  - between: [s13, s14]
+    value: 10s
+  - between: [s15, s16]
+    value: 10s
+  - between: [s17, s18]
+    value: 10s
+  - between: [s18, s19]
+    value: 5s
+  - between: [s19, s21]
+    value: 30s
+  - between: [s21, s22]
+    value: 5s
+```
+
+这份 candidate 不是说它已经是最终 timeline YAML，而是说：
+
+- 当前真实 XMI **确实已经足够支撑**出一条 step-ordered scenario candidate
+- 其中 message、state invariant、duration/time constraint 都能转成 timeline 侧对象
+- 下一步的核心工作是：
+  - 把 inbound / outbound / self 三类 step 先稳定分开
+  - 让只有 inbound message 才进入 `emit(...)`
+  - 对 outbound machine-relevant signal 输出明确 diagnostics，而不是静默丢失
+  - 把 `SetInput` 与条件触发绑定起来
+  - 把 force transition 纳入状态机主干语义
+
+## 21.3.3 状态机主干导出的 pyfcstm DSL 草案
+
+对当前真实样例，不建议把“主干 DSL 草案”理解成一份单文件、无降级的终态输出。原因很直接：
+
+- `Control` 是四个 region 的并行复合状态
+- 现有 `pyfcstm.convert.sysdesim` 的现实路线本来就是 **main shell + split region family**
+- 因此最可讨论、也最接近工程落地的草案应是一组输出，而不是硬凑一个单文件 FCSTM
+
+这里先给出**讨论用目标形态**。它不要求当前 converter 已经完全能生成，但它代表后续兼容导出的预期方向。
+
+先说明几个约定：
+
+- 所有可见信号事件统一声明在文件顶层，并在转移中一律用绝对事件引用 `: /SigX`
+- 与 timeline 直接无关的 property 先不导出成 `def`
+- `ChangeEvent` / `guard` 在 compatibility DSL 里先统一回落为 guard transition
+- `entry` 动作导出为 `enter abstract ...`
+- `doActivity` 的目标导出形态建议视为 `during abstract ...`
+- init transition 上的 `ABC` / `DEF` 属于 transition effect；现有 converter 会忽略这类 effect，因此下面只先保留注释，不伪造错误语义
+
+### 21.3.3.1 main shell 草案
+
+```fcstm
+event Sig1;
+
+state Idle;
+
+state Control;
+
+[*] -> Idle;
+Idle -> Control : /Sig1;
+```
+
+这份 main shell 的作用主要是保留最外层主干轮廓。真正的 region-level 行为建议在 split outputs 中展开。
+
+### 21.3.3.2 `Control` 第 1 个 region 草案
+
+```fcstm
+event Sig1;
+event Sig2;
+event Sig5;
+
+state Idle;
+
+state Control {
+    state A;
+
+    state B {
+        enter abstract P1;
+    }
+
+    state C;
+
+    state D {
+        enter abstract P2;
+    }
+
+    state E {
+        enter abstract P4;
+        during abstract P3;
+    }
+
+    [*] -> A;
+
+    A -> B : if [a < b];
+    B -> C : /Sig2;
+    C -> D : if [r_mt < 5000];
+    D -> E : /Sig5;
+}
+
+[*] -> Idle;
+Idle -> Control : /Sig1;
+```
+
+这份草案中有两个关键点：
+
+- `A -> B` 不是保留两条边，而是把 `ChangeEvent(a<b)` 和 `guard a<b` 合并成一条条件边
+- `C -> D` 的 `R_mt<5000` 在兼容 DSL 层先归一化成 `r_mt < 5000`
+
+### 21.3.3.3 `Control` 第 2 个 region 草案
+
+```fcstm
+event Sig1;
+event Sig2;
+event Sig6;
+event Sig8;
+event Sig9;
+
+state Idle;
+
+state Control {
+    state F {
+        enter abstract L;
+    }
+
+    state W {
+        enter abstract R;
+    }
+
+    state G {
+        enter abstract T;
+    }
+
+    state H {
+        state L {
+            enter abstract N;
+        }
+
+        state M {
+            enter abstract Q;
+        }
+
+        [*] -> L;   // original init edge carries effect DEF
+
+        L -> M : /Sig9;
+        M -> L : /Sig6;
+    }
+
+    [*] -> F;       // original init edge carries effect ABC
+
+    F -> W : if [c < d];
+    W -> H : /Sig2;
+    !H -> G : /Sig8;
+}
+
+[*] -> Idle;
+Idle -> Control : /Sig1;
+```
+
+这部分是当前样例里最关键的一段，因为它同时覆盖了三件事：
+
+- `F -> W` 的 `ChangeEvent(c<d)` 与 `guard c<d>` 合并
+- `H` 保持单 region 复合态，而不是被拍平成普通叶子
+- `H -> G` 应导出成 `!H -> G : /Sig8;`
+  - 也就是把复合源状态的对外转移当作 force transition 处理
+
+同时也要看到真实样例里的歧义：
+
+- `Sig8` 在状态机主干里是消费事件
+- 但在顺序图里它被观测成 outbound message
+- 因此 `!H -> G : /Sig8;` 这条主干 DSL 草案是成立的
+- 但 scenario binding 不能直接把顺序图里的 `s23` 当成这个 transition 的 `emit`
+
+### 21.3.3.4 `Control` 第 3 个 region 草案
+
+```fcstm
+event Sig1;
+event Sig2;
+event Sig4;
+event Sig7;
+
+state Idle;
+
+state Control {
+    state J;
+
+    state K {
+        enter abstract Z;
+    }
+
+    state S {
+        enter abstract U;
+    }
+
+    state X {
+        enter abstract I;
+    }
+
+    state O {
+        enter abstract Y;
+    }
+
+    [*] -> J;
+
+    J -> K : /Sig2;
+    K -> S : /Sig4;
+    S -> X;         // raw XMI confirms: no trigger, no guard, no effect
+    X -> S : /Sig4;
+    S -> O : /Sig7;
+}
+
+[*] -> Idle;
+Idle -> Control : /Sig1;
+```
+
+这里同样存在方向问题：
+
+- `S -> X` 在原始 XMI 里确认为无 trigger、无 guard、无 effect 的无条件边
+- `Sig7` 在主干里是 `S -> O` 的消费信号
+- 但 interaction 里 `Sig7` 是 outbound message
+- 因此它在主干 DSL 里保留 `event Sig7` 与 `S -> O : /Sig7;`
+- 但 timeline importer 需要把对应顺序图 step 保留成空 anchor，而不是 `emit Sig7`
+
+### 21.3.3.5 `Control` 第 4 个 region 草案
+
+```fcstm
+event Sig1;
+
+state Idle;
+
+state Control {
+    state V {
+        enter abstract X;
+    }
+
+    [*] -> V;
+}
+
+[*] -> Idle;
+Idle -> Control : /Sig1;
+```
+
+### 21.3.3.6 这份 DSL 草案对后续 phase 的直接含义
+
+- 先要把“状态机主干可稳定抽取”做成事实，否则 timeline 绑定根本无从谈起
+- 当前样例里真正卡转换的，并不是主干拓扑本身，而是：
+  - 非 `int/float` property 类型先把导出流程中止了
+  - `ChangeEvent` 还没进入统一条件触发抽象
+  - `doActivity` 还没进入 state-level DSL lowering
+  - transition effect `ABC/DEF` 还只能 warning/忽略
+- 因此后续 phase 不该把精力放在“读尽所有 property”，而应优先让上面这几个主干阻塞点消失
+
+## 21.4 Phase 1: 基于现有 sysdesim 支持收敛状态机主干
+
+* [ ] 以现有 `load_sysdesim_xml()`、`load_sysdesim_machine()`、`normalize_machine()` 为起点，不先重写整条解析链。
+* [ ] 先让真实样例的 state machine main trunk 能稳定完成 load / inspect / normalize。
+* [ ] 输出当前样例的状态机主干摘要：state tree、region tree、transition order、signal trigger 集合。
+* [ ] 额外把 state-level action 主干一起盘清：`entry`、`exit`、`doActivity`、init transition effect。
+* [ ] 把“当前阶段完成标准”定义为“状态机主干可稳定抽取”，而不是“interaction 与 timeline 已全部完成”。
+* [ ] 明确第一阶段默认忽略与状态机主干无关的 property、端口、枚举说明类结构和图形元数据。
+* [ ] 明确 timeline-first import 是主路线，但首个工程入口必须先把状态机主干打稳。
+
+## 21.5 Phase 2: composite-source outgoing transition 收敛为 force transition
+
+* [ ] 在现有状态机主干抽取结果上，检测“source 是 composite state 且 transition 指向外部 state”的边。
+* [ ] 针对当前真实样例，显式把 `H -> G` on `Sig8` 收敛为 force transition 语义。
+* [ ] 不再把这类边当成普通 same-region edge，也不再要求 source 必须是 leaf。
+* [ ] 在 timeline-first IR 中为这类边增加 `force_transition` 标记。
+* [ ] 在 FCSTM compatibility mode 中，为这类边设计 propagated exit / force transition lowering。
+* [ ] 为当前样例补回归测试，确保 `H -> G` 不会再次被当作普通边忽略。
+
+## 21.6 Phase 3: 基于现有 converter 收敛当前样例的主干可转换子集
+
+* [ ] 让非 `int/float` property 不再阻塞状态机主干抽取。
+* [ ] 让未参与主干语义的枚举 property 自动旁路为 ignored 或 warning。
+* [ ] 把 `ChangeEvent` 从 unsupported 调整为可进入条件触发抽象的输入。
+* [ ] 让同源同宿同条件的 `ChangeEvent/guard` 在主干层先完成合流。
+* [ ] 增加名称归一化，覆盖 `rmt` / `Rmt` / `R_mt` 这类当前样例已经出现的漂移。
+* [ ] 把 `doActivity` 纳入主干抽取结果，至少能形成 `during abstract ...` 候选。
+* [ ] 为 init transition effect `ABC/DEF` 增加显式保留策略：短期可 warning + 注释化，不能再静默丢失。
+* [ ] 让当前真实样例至少能产出“主干 machine + condition trigger + signal trigger”的中间结果。
+
+## 21.7 Phase 4: 原始 XMI 索引层
+
+* [ ] 在主干语义已经稳定后，再把原始 XMI 索引层独立出来，不和前面的语义收敛同时推进。
+* [ ] 建立 `xmi:id -> element` 的全局索引。
+* [ ] 建立按 `xmi:type`、标签名、父子关系分组的辅助索引，便于后续抽取 `StateMachine`、`Interaction`、`Activity`、`Signal`、`Property`。
+* [ ] 显式保存 namespace 信息，避免在后续解析阶段重复硬编码。
+* [ ] 对 diagram / notation / stereotype / binary object 层做“可见但默认旁路”的索引，不把它们混入状态机语义主链。
+* [ ] 提供一份原始结构摘要报告，用于诊断“当前文件里到底有哪些机器、交互图、信号、属性、动作对象”。
+* [ ] 为原始 XMI 索引层补最小测试，确保真实样例在结构遍历上稳定可重现。
+
+## 21.8 Phase 5: 顺序图与活动观测抽取层
+
+* [ ] 从 `uml:Interaction` 中抽取 lifeline、message、occurrence 顺序、`StateInvariant` 与可关联的文本。
+* [ ] 建立一条稳定的 observation stream，而不是只保留离散对象集合。
+* [ ] 基于 `StateInvariant` 所挂 lifeline，推断当前样例的 machine-internal lifeline 候选。
+* [ ] 对每条 message 同时记录 source lifeline、target lifeline 与相对方向：inbound / outbound / self。
+* [ ] 从顺序图文本中抽取简单的 `name=value` 赋值观测。
+* [ ] 从活动对象或动作体文本中补充简单赋值观测，但只支持保守可识别子集，不做通用脚本求值。
+* [ ] 为每条观测保留来源上下文：所属 interaction、出现次序、原始文本、归一化后名字。
+* [ ] 把消息抽取结果与信号定义建立候选映射，为后续 `emit(...)` 候选提供依据。
+* [ ] 对当前样例显式支持：
+  - receive-side message -> step anchor
+  - no-signature message -> empty step anchor
+  - outbound signal message -> empty step anchor with note
+  - self message -> empty step anchor with note
+  - `StateInvariant.body` -> `SetInput`
+  - `DurationObservation + DurationConstraint` -> between-step duration
+  - `TimeObservation + TimeConstraint` -> step-local time window
+* [ ] 明确这一层的目标是“生成 TIMELINE 场景线索”，不是恢复顺序图的完整执行语义。
+
+## 21.9 Phase 6: 条件触发统一抽象与名字归一化
+
+* [ ] 在 SysDeSim IR 中引入统一触发抽象：`TriggerSignal`、`TriggerCondition`、`TriggerNone`。
+* [ ] 让 `ChangeEvent` 与文本型 `guard` 都落入 `TriggerCondition`，不要再把二者分裂处理。
+* [ ] 对 `(source_state_id, target_state_id, normalized_expr)` 做去重，合并同语义的 `ChangeEvent/guard`。
+* [ ] 若同一条边同时有 `ChangeEvent(expr_a)` 和 `guard(expr_b)` 且两者不同，则生成复合条件触发 `expr_a AND expr_b`。
+* [ ] 引入统一的名字归一化规则，例如忽略大小写、去下划线、token 正规化。
+* [ ] 把顺序图观测中的变量名与 guard/change 中出现的变量名接到同一个归一化空间。
+* [ ] 对当前无法安全解析的条件表达式保留 warning 与原文，不在这一阶段直接中止整个导入。
+
+## 21.10 Phase 7: 外部输入候选分类与 timeline-first IR
+
+* [ ] 新增 timeline-first 导入 IR，而不是直接把 SysDeSim IR 硬压成 FCSTM AST。
+* [ ] 在 IR 中显式表示 machine graph、condition trigger、signal trigger、observation stream、input candidate、step candidate、event candidate。
+* [ ] 把 guard / change 中涉及的名字优先分类为 external input candidate，而不是内部状态变量。
+* [ ] 只有当某个名字明确出现在动作赋值左值且该写语义不可忽略时，才把它回收为 internal state candidate。
+* [ ] 让 `input_map` 候选显式记录场景层名字、机器内局部名字、来源表达式、歧义说明。
+* [ ] 让 `event_map` 候选显式记录场景消息名、机器内 event path、对应的 signal / message 证据链。
+* [ ] 让 `event_map` / diagnostics 同时保留消息方向，避免把 outbound signal 误绑定成 `emit(...)`。
+
+## 21.11 Phase 8: 从真实样例生成 step / SetInput / emit 候选
+
+* [ ] 基于 observation stream 生成 step 候选顺序。
+* [ ] 把顺序图中的简单赋值观测转换为 `SetInput` 候选。
+* [ ] 只把 external -> internal 的带 signature 消息转换为 `emit` 候选。
+* [ ] 把 internal -> external 的带 signature 消息保留为空 step，并附加 `outbound_signal=...` 说明。
+* [ ] 把 internal self-message 保留为空 step，并附加 `self_message` 说明。
+* [ ] 对 machine-relevant 但方向为 outbound 的消息显式产出 mismatch diagnostics。
+* [ ] 当一个 step 同时包含输入更新和消息时，按 TIMELINE 语义规定“先 `SetInput`，后事件求值”。
+* [ ] 即使某个 step 没有消息，也要允许其成为“只包含输入更新”或“空 step”的候选。
+* [ ] 为每个候选 step 保留来源链，便于后续 witness 输出回指原始顺序图观测。
+* [ ] 对歧义场景保留多候选或 warning，而不是强行猜测唯一场景。
+
+## 21.12 Phase 9: FCSTM 兼容导出收口
+
+* [ ] 保持 `pyfcstm.convert.sysdesim` 仍可对支持子集导出 FCSTM，作为调试与兼容产物。
+* [ ] 在 compatibility mode 中，把 `TriggerCondition` 回落成 guard transition。
+* [ ] 在 compatibility mode 中，把 `doActivity` 回落成 `during abstract ...`。
+* [ ] 在 compatibility mode 中，把 composite-source outgoing transition 回落成 `!H -> G : /Sig8;` 这类 force transition。
+* [ ] 对未参与状态机主干的非数值 property 直接忽略，不再阻塞导出。
+* [ ] 对参与条件但仍无法安全表达的名字保留 warning，并在报告中显式列出。
+* [ ] 对 init transition effect `ABC/DEF` 明确采用临时降级策略，并在导出报告中可见。
+* [ ] 明确当前真实样例的兼容导出是 output family，而不是单文件：main shell + `Control` 各 region split outputs。
+* [ ] 让 compatibility mode 与 timeline-first mode 共用同一套前置抽取与归一化，不要形成两套分叉解析器。
+* [ ] 为当前真实样例提供“timeline-first 抽取成功，但 FCSTM 兼容导出允许部分降级”的清晰报告。
+
+## 21.13 Phase 10: 接入 timeline runtime 与单步闭包求值
+
+* [ ] 把 SysDeSim timeline IR 转为 `TimelineScenario` 与 `TimelineMachineBinding` 候选对象。
+* [ ] 让 `event_map` 驱动每个 step 的 bound event 解析。
+* [ ] 让 `input_map` 驱动 guard 的变量绑定环境。
+* [ ] 把 `SetInput` 候选应用到 step 输入快照上，并保证对当前 step 立即可见。
+* [ ] 验证“无显式消息但有输入变化”的 step 仍会触发 guard-only / condition-only 迁移。
+* [ ] 验证 `TriggerCondition` 在 timeline 里不需要单独再模拟一个外部事件对象，而是直接进入更新后快照上的条件求值。
+* [ ] 明确当前样例对 `SimulationRuntime` 的复用边界，只把它当成一次性单步稳定配置推导器。
+
+## 21.14 Phase 11: SMT 编译、反例重建与可解释性输出
+
+* [ ] 让来自真实样例的 imported scenario 能直接进入 timeline SMT 编译流程。
+* [ ] 在 `build_guard_env(...)` 中优先绑定 `input_map` 对应的外部输入，而不是内部可写变量。
+* [ ] 在 witness 中同时输出 step 序号、时间变量、`SetInput`、`emit`、各机器稳定状态、触发该 step 的观测来源。
+* [ ] 对 condition-trigger 命中增加解释字段，例如“由哪个输入更新使条件从 false 变 true”。
+* [ ] 对无法唯一解释的 step 或 binding 保留 diagnostics，而不是只输出失败。
+* [ ] 确保 witness 能反查到“原始顺序图消息 / 赋值观测 -> step -> 状态变化”的链路。
+
+## 21.15 Phase 12: 测试、回归样例与 CLI
+
+* [ ] 为真实样例建立固定测试夹具，不再只依赖临时本地文件。
+* [ ] 覆盖至少三类测试：原始 XMI 抽取测试、timeline import IR 归一化测试、timeline 运行与 SMT 结果测试。
+* [ ] 增加针对当前已知阻塞点的回归测试：非 `int/float` property 不应导致整体导入失败。
+* [ ] 增加针对当前已知阻塞点的回归测试：`ChangeEvent` 不应再被直接判成 unsupported。
+* [ ] 增加针对当前已知阻塞点的回归测试：同源同宿同条件的 `ChangeEvent/guard` 必须合并。
+* [ ] 增加顺序图观测解析测试，验证 `name=value` 能稳定生成 `SetInput` 候选。
+* [ ] 增加 timeline step 语义测试，验证“输入更新在当前 step 立即可见”。
+* [ ] 为 CLI 或 report 输出增加 `--timeline-import-report` 一类入口，方便人工审查 binding 与 scenario 候选。
+
+## 21.16 文档收口与后续扩展点
+
+* [ ] 在 TIMELINE 文档中补一节“真实 SysDeSim 样例导入子系统”，说明主模式与兼容模式的区别。
+* [ ] 在 SysDeSim 相关文档中明确引用 TIMELINE 这条主路线，避免继续把工作目标误写成“完整 XML -> FCSTM”。
+* [ ] 补充一份开发者导图，说明 raw XMI index、machine extract、interaction extract、timeline IR、timeline binding 之间的关系。
+* [ ] 明确第一阶段不做的内容，例如通用脚本动作求值、所有 UML 变体兼容、连续演化输入、混合系统语义。
+* [ ] 在完成第一阶段后，再决定是否扩展到更多 SysDeSim 导出变体和更多 interaction 语法。
+
+## 21.17 阶段完成判据
+
+当下面这些条件都满足时，可以认为“真实 SysDeSim 样例已初步接入 TIMELINE”：
+
+- 能稳定读取真实样例并生成 machine graph
+- 不再因为无关枚举 property 而整体失败
+- `ChangeEvent` 与 `guard` 已统一进入条件触发抽象
+- 能从顺序图中抽取 `emit` 与 `SetInput` 候选
+- 能生成可人工审查的 `event_map` / `input_map` / `step` 候选
+- 能把这些候选喂给 timeline runtime / SMT 编译主链
+- 能输出可解释的 witness / diagnostics
+
+在这之前，不建议把工作完成标准定义为“能导出一个看起来像样的 FCSTM 文件”。对于当前真实样例，那只是辅助手段，不是主目标。

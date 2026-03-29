@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 修改内容 | 作者 |
 |------|------|----------|------|
+| 0.1.13 | 2026-03-29 | 收紧 `TimeConstraint` 语义：不再表述为 step-local time window，而统一收敛为带左端点的二元 duration 约束；补充真实样例中 `s02 -> s03`、`s06 -> s07` 的解释 | Codex |
 | 0.1.12 | 2026-03-29 | 同步 Phase 7-8 实施进度：补齐 timeline-first import IR、input/event binding 候选、step/SetInput/emit 候选与真实样例验证结果，并更新 checklist 状态 | Codex |
 | 0.1.11 | 2026-03-29 | 同步 Phase 5-6 实施进度：补齐真实样例上的 interaction observation stream、统一 trigger 视图与名字归一化提示，并更新 checklist 状态 | Codex |
 | 0.1.10 | 2026-03-29 | 同步 Phase 1-4 实施进度：补齐 `doActivity -> during abstract` 与原始 XMI 索引层，并更新 checklist 状态 | Codex |
@@ -3182,7 +3183,12 @@ SysDeSim XMI
    - `DurationObservation.event="msgA msgB"` + `DurationConstraint`
      - 生成 `between(step(msgA), step(msgB))` 的 duration constraint
    - `TimeObservation.event="msg"` + `TimeConstraint`
-     - 生成某个 anchor step 自身的 time window
+     - 不再把它解释成某个 anchor step 自身的局部 time window
+     - 而是先为该消息锚点补出一个左端点，再统一生成二元 duration constraint
+     - 对当前真实样例，可按“该消息锚点之前最近一个有效 step”来确定左端点
+     - 因而 `s03` 上的 `0s-1s` 应解释为 `between(s02, s03) in [0s, 1s]`
+     - `s07` 上的 `0s-1s` 应解释为 `between(s06, s07) in [0s, 1s]`
+     - 若 timeline 全局并不自动保证严格递增，则这里还需额外要求左端点时刻严格早于右端点时刻
 7. 把顺序图消息同时按“方向”和“是否属于 machine-relevant signal”分层：
    - inbound + machine-relevant
      - 进入后续 `event_map` 候选
@@ -3292,8 +3298,9 @@ steps:
   - 它们必须保留 step，因为 duration / time constraint 仍可能挂在这些消息上
   - 但当前阶段不能把它们当成 `emit`
 - 当前样例里还能提取出：
-  - `s03` 的局部 time window：`0s-1s`
-  - `s07` 的局部 time window：`0s-1s`
+  - `between(s02, s03) in [0s, 1s]`
+  - `between(s06, s07) in [0s, 1s]`
+  - 这里语义上应保证左端点严格早于右端点；若不由全局 step 顺序保证，则需显式写成严格不等式
 - 还能提取出若干 message-to-message duration constraint，例如：
 
 ```yaml
@@ -3620,7 +3627,7 @@ Idle -> Control : /Sig1;
   - self message -> empty step anchor with note
   - `StateInvariant.body` -> `SetInput`
   - `DurationObservation + DurationConstraint` -> between-step duration
-  - `TimeObservation + TimeConstraint` -> step-local time window
+  - `TimeObservation + TimeConstraint` -> 导入后同样收敛为 between-step duration
 * [x] 明确这一层的目标是“生成 TIMELINE 场景线索”，不是恢复顺序图的完整执行语义。
 
 当前真实样例的 Phase 5 验证结论：
@@ -3659,7 +3666,7 @@ Idle -> Control : /Sig1;
 
 当前真实样例的 Phase 7 验证结论：
 
-* 已可稳定生成 timeline-first import IR，显式包含 machine graph、input candidate、event candidate、step candidate、time window 与 duration constraint。
+* 已可稳定生成 timeline-first import IR，显式包含 machine graph、input candidate、event candidate、step candidate，以及统一的时长约束候选。
 * machine graph 已收敛为 `11` 条 `signal_transition`、`3` 条 `condition_transition`、`6` 条 `initial_transition` 与 `1` 条 `auto_transition`。
 * 当前真实样例里唯一需要显式标记的 `force_transition` 是 `Control.H -> Control.G`。
 * `input_map` 候选当前已稳定抽出 `a / b / c / d / mode / rmt / y` 七个名字，其中：
@@ -3690,7 +3697,10 @@ Idle -> Control : /Sig1;
   - `6` 个 `emit` step：`s01 / s10 / s14 / s16 / s19 / s22`
   - `5` 个 `SetInput` step：`s02 / s04 / s06 / s08 / s20`
   - 其余为 self / outbound / empty anchor step
-* 当前真实样例里的 self anchor step 为 `s03 / s07`，并各自绑定 `0s-1s` 的 time window。
+* 当前真实样例里的两条 `TimeConstraint` 更合适的语义应收敛为：
+  - `between(s02, s03) in [0s, 1s]`
+  - `between(s06, s07) in [0s, 1s]`
+* 这两条约束不再推荐单独称为 step-local time window，而应和普通 duration constraint 使用统一表示；若全局 step 顺序本身不保证严格递增，则还需显式补上 `t02 < t03`、`t06 < t07` 这样的严格先后条件。
 * 当前真实样例里的 outbound machine-relevant mismatch step 为 `s13 / s23 / s24`，分别对应 `Sig9 / Sig8 / Sig7`。
 * 当前真实样例里的 duration constraint 已稳定绑定到具体 step 对：
   - `s05 -> s10 : 20s-30s`

@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 修改内容 | 作者 |
 |------|------|----------|------|
+| 0.1.14 | 2026-03-29 | 补回 Phase 9-11 的完整可运行示例代码到文档：覆盖 phase9 output family、phase10 scenario 摘要与 phase11 单条共存时间轴表输出 | Codex |
 | 0.1.13 | 2026-03-29 | 收紧 `TimeConstraint` 语义：不再表述为 step-local time window，而统一收敛为带左端点的二元 duration 约束；补充真实样例中 `s02 -> s03`、`s06 -> s07` 的解释 | Codex |
 | 0.1.12 | 2026-03-29 | 同步 Phase 7-8 实施进度：补齐 timeline-first import IR、input/event binding 候选、step/SetInput/emit 候选与真实样例验证结果，并更新 checklist 状态 | Codex |
 | 0.1.11 | 2026-03-29 | 同步 Phase 5-6 实施进度：补齐真实样例上的 interaction observation stream、统一 trigger 视图与名字归一化提示，并更新 checklist 状态 | Codex |
@@ -3716,37 +3717,254 @@ Idle -> Control : /Sig1;
 
 ## 21.12 Phase 9: FCSTM 兼容导出收口
 
-* [ ] 保持 `pyfcstm.convert.sysdesim` 仍可对支持子集导出 FCSTM，作为调试与兼容产物。
-* [ ] 在 compatibility mode 中，把 `TriggerCondition` 回落成 guard transition。
-* [ ] 在 compatibility mode 中，把 `doActivity` 回落成 `during abstract ...`。
-* [ ] 在 compatibility mode 中，把 composite-source outgoing transition 回落成 `!H -> G : /Sig8;` 这类 force transition。
-* [ ] 对未参与状态机主干的非数值 property 直接忽略，不再阻塞导出。
+* [x] 保持 `pyfcstm.convert.sysdesim` 仍可对支持子集导出 FCSTM，作为调试与兼容产物。
+* [x] 在 compatibility mode 中，把 `TriggerCondition` 回落成 guard transition。
+* [x] 在 compatibility mode 中，把 `doActivity` 回落成 `during abstract ...`。
+* [x] 在 compatibility mode 中，把 composite-source outgoing transition 回落成 `!H -> G : /Sig8;` 这类 force transition。
+* [x] 对未参与状态机主干的非数值 property 直接忽略，不再阻塞导出。
 * [ ] 对参与条件但仍无法安全表达的名字保留 warning，并在报告中显式列出。
 * [ ] 对 init transition effect `ABC/DEF` 明确采用临时降级策略，并在导出报告中可见。
-* [ ] 明确当前真实样例的兼容导出是 output family，而不是单文件：main shell + `Control` 各 region split outputs。
+* [x] 明确当前真实样例的兼容导出是 output family，而不是单文件：main shell + `Control` 各 region split outputs。
 * [ ] 让 compatibility mode 与 timeline-first mode 共用同一套前置抽取与归一化，不要形成两套分叉解析器。
-* [ ] 为当前真实样例提供“timeline-first 抽取成功，但 FCSTM 兼容导出允许部分降级”的清晰报告。
+* [x] 为当前真实样例提供“timeline-first 抽取成功，但 FCSTM 兼容导出允许部分降级”的清晰报告。
 
 ## 21.13 Phase 10: 接入 timeline runtime 与单步闭包求值
 
-* [ ] 把 SysDeSim timeline IR 转为 `TimelineScenario` 与 `TimelineMachineBinding` 候选对象。
-* [ ] 让 `event_map` 驱动每个 step 的 bound event 解析。
+* [x] 把 SysDeSim timeline IR 转为 `TimelineScenario` 与 `TimelineMachineBinding` 候选对象。
+* [x] 让 `event_map` 驱动每个 step 的 bound event 解析。
 * [ ] 让 `input_map` 驱动 guard 的变量绑定环境。
-* [ ] 把 `SetInput` 候选应用到 step 输入快照上，并保证对当前 step 立即可见。
+* [x] 把 `SetInput` 候选应用到 step 输入快照上，并保证对当前 step 立即可见。
 * [ ] 验证“无显式消息但有输入变化”的 step 仍会触发 guard-only / condition-only 迁移。
 * [ ] 验证 `TriggerCondition` 在 timeline 里不需要单独再模拟一个外部事件对象，而是直接进入更新后快照上的条件求值。
 * [ ] 为 `auto_transition` 引入隐藏内部时间变量 `t0 + delta1 + ... + deltaN` 的连续时间建模，并把它们绑定到“当前链起点之后最近一个 machine-facing emit”之前。
-* [ ] 对当前真实样例显式覆盖 `K -> S -> X` 这条链，要求 `K -> S` 之后的 `S -> X` 内部发生时刻严格早于下一次相关 inbound `Sig4`。
-* [ ] 明确当前样例对 `SimulationRuntime` 的复用边界，只把它当成一次性单步稳定配置推导器。
+* [x] 对当前真实样例显式覆盖 `K -> S -> X` 这条链，要求 `K -> S` 之后的 `S -> X` 内部发生时刻严格早于下一次相关 inbound `Sig4`。
+* [x] 明确当前样例对 `SimulationRuntime` 的复用边界，只把它当成一次性单步稳定配置推导器。
 
 ## 21.14 Phase 11: SMT 编译、反例重建与可解释性输出
 
-* [ ] 让来自真实样例的 imported scenario 能直接进入 timeline SMT 编译流程。
+* [x] 让来自真实样例的 imported scenario 能直接进入 timeline SMT 编译流程。
 * [ ] 在 `build_guard_env(...)` 中优先绑定 `input_map` 对应的外部输入，而不是内部可写变量。
-* [ ] 在 witness 中同时输出 step 序号、时间变量、`SetInput`、`emit`、各机器稳定状态、触发该 step 的观测来源。
+* [x] 在 witness 中同时输出 step 序号、时间变量、`SetInput`、`emit`、各机器稳定状态、触发该 step 的观测来源。
 * [ ] 对 condition-trigger 命中增加解释字段，例如“由哪个输入更新使条件从 false 变 true”。
 * [ ] 对无法唯一解释的 step 或 binding 保留 diagnostics，而不是只输出失败。
-* [ ] 确保 witness 能反查到“原始顺序图消息 / 赋值观测 -> step -> 状态变化”的链路。
+* [x] 确保 witness 能反查到“原始顺序图消息 / 赋值观测 -> step -> 状态变化”的链路。
+
+当前实现补充说明：
+
+- 已新增 `timeline_verify.py`，把 phase9 output family、phase10 runtime trace 与 phase11 的 Z3 共存查询串联起来。
+- 当前真实样例里，`StateMachine__Control_region3` 会在 `s16` 和 `s19` 后生成隐藏 auto occurrence：
+  - `StateMachine.Control.S -> StateMachine.Control.X`
+- 当前真实样例里，`StateMachine__Control_region2.M` 与 `StateMachine__Control_region3.X` 的共存查询已可直接编码为 Z3 约束，结果为精确 `unsat`：
+  - 原因不是时间约束冲突，而是 region2 的导入轨迹中根本没有出现 `M`
+
+### 21.14.1 Phase 9-11 完整示例代码
+
+下面这段代码是一个完整的、可直接运行的 Phase 9-11 样例。它刻意不写任何具体本地路径，只要求从命令行传入 XML 路径：
+
+- Phase 9：打印 compatibility output family
+- Phase 10：打印 step 序列与归一化时间约束
+- Phase 11：打印单条共存 witness 时间轴表，重点展示“每个时间点发生了什么、各状态机当前状态是什么、首次共存从哪里开始”
+
+```python
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+from typing import List, Optional, Tuple
+
+from pyfcstm.convert.sysdesim import (
+    build_sysdesim_phase10_report,
+    build_sysdesim_phase9_report,
+    build_sysdesim_state_coexistence_timeline_report,
+)
+
+
+def _fit(text: str, width: int) -> str:
+    if len(text) <= width:
+        return text.ljust(width)
+    if width <= 3:
+        return text[:width]
+    return text[: width - 3] + "..."
+
+
+def _short_machine_alias(machine_alias: str) -> str:
+    if machine_alias == "StateMachine":
+        return "Main"
+    if "_region" in machine_alias:
+        return "R{}".format(machine_alias.rsplit("_region", 1)[-1])
+    return machine_alias
+
+
+def _short_state_text(state_path: str) -> str:
+    if ".Control." in state_path:
+        return state_path.split(".Control.", 1)[1]
+    if state_path.endswith(".Control"):
+        return "Control"
+    return state_path.rsplit(".", 1)[-1]
+
+
+def _format_actions(actions: Tuple[str, ...]) -> str:
+    if not actions:
+        return "-"
+    rendered = []
+    for item in actions:
+        if item.startswith("hidden_auto(") and ": " in item and " -> " in item:
+            prefix = item[len("hidden_auto(") : -1]
+            machine_alias, arc = prefix.split(": ", 1)
+            src, dst = arc.split(" -> ", 1)
+            rendered.append(
+                "tau:{alias} {src}->{dst}".format(
+                    alias=_short_machine_alias(machine_alias),
+                    src=_short_state_text(src),
+                    dst=_short_state_text(dst),
+                )
+            )
+        elif item.startswith("SetInput("):
+            rendered.append(item[len("SetInput(") : -1])
+        else:
+            rendered.append(item)
+    return ",".join(rendered)
+
+
+def _print_timeline_table(
+    timeline_points,
+    first_symbol: Optional[str],
+) -> None:
+    headers = ["t", "pt", "act", "Main", "R1", "R2", "R3", "R4", "co"]
+    widths = [6, 8, 16, 8, 8, 8, 8, 8, 8]
+
+    def _row(values: List[str]) -> str:
+        return "| " + " | ".join(
+            _fit(item, width) for item, width in zip(values, widths)
+        ) + " |"
+
+    print("列说明：")
+    print("  - t: 连续时间上的实数值。")
+    print("  - pt: sXX 表示 step，tau@... 表示隐藏 auto。")
+    print("  - Main/R1/R2/R3/R4: 主状态机与各 region 输出。")
+    print("  - co: start 表示从该行开始首次共存，yes 表示该行时仍在共存。")
+    print()
+    print(_row(headers))
+    print(_row(["-" * width for width in widths]))
+
+    for item in timeline_points:
+        state_map = {
+            _short_machine_alias(alias): _short_state_text(state)
+            for alias, state in item.machine_states
+        }
+        point_label = item.point_label
+        if item.point_kind == "auto":
+            point_label = "tau@{}".format(point_label)
+        co_text = ""
+        if item.is_coexistent:
+            co_text = "start" if item.symbol == first_symbol else "yes"
+        print(
+            _row(
+                [
+                    item.time_value_text,
+                    point_label,
+                    _format_actions(item.actions),
+                    state_map.get("Main", "-"),
+                    state_map.get("R1", "-"),
+                    state_map.get("R2", "-"),
+                    state_map.get("R3", "-"),
+                    state_map.get("R4", "-"),
+                    co_text,
+                ]
+            )
+        )
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    argv = list(sys.argv if argv is None else argv)
+    if len(argv) < 2:
+        print("用法: python phase9_11_demo.py path/to/model.xml", file=sys.stderr)
+        return 2
+
+    xml_path = Path(argv[1]).expanduser()
+    if not xml_path.exists():
+        print("XML 文件不存在。", file=sys.stderr)
+        return 2
+
+    phase9 = build_sysdesim_phase9_report(str(xml_path))
+    phase10 = build_sysdesim_phase10_report(str(xml_path))
+    sat_timeline = build_sysdesim_state_coexistence_timeline_report(
+        str(xml_path),
+        "StateMachine__Control_region2",
+        "F",
+        "StateMachine__Control_region3",
+        "X",
+    )
+    unsat_timeline = build_sysdesim_state_coexistence_timeline_report(
+        str(xml_path),
+        "StateMachine__Control_region2",
+        "M",
+        "StateMachine__Control_region3",
+        "X",
+    )
+
+    print("=" * 80)
+    print("Phase9: output family")
+    print("输出族:", [item.output_name for item in phase9.outputs])
+    for item in phase9.outputs:
+        print(
+            "  - {name} | defines={defines} | events={events}".format(
+                name=item.output_name,
+                defines=list(item.define_names),
+                events=list(item.event_runtime_refs),
+            )
+        )
+
+    print("=" * 80)
+    print("Phase10: scenario 摘要")
+    print("step 序列:", [item.step_id for item in phase10.scenario.steps])
+    print("时间约束:")
+    for item in phase10.scenario.temporal_constraints:
+        print(
+            "  - {left} -> {right} | [{min_text}, {max_text}] | strict={strict}".format(
+                left=item.left_step_id,
+                right=item.right_step_id,
+                min_text=item.min_seconds_text,
+                max_text=item.max_seconds_text,
+                strict=item.strict_lower,
+            )
+        )
+
+    print("=" * 80)
+    print("Phase11: 可共存查询")
+    print("结果:", sat_timeline.status)
+    print("时间域:", sat_timeline.time_domain)
+    print(
+        "首次共存: {symbol} = {time}".format(
+            symbol=sat_timeline.first_coexistence_symbol,
+            time=sat_timeline.first_coexistence_time_text,
+        )
+    )
+    print("说明:", sat_timeline.first_coexistence_note)
+    print()
+    _print_timeline_table(
+        sat_timeline.timeline_points,
+        sat_timeline.first_coexistence_symbol,
+    )
+
+    print()
+    print("=" * 80)
+    print("Phase11: 不可共存查询")
+    print("结果:", unsat_timeline.status)
+    print("原因:", unsat_timeline.reason)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+```
+
+这段脚本的关键点是：
+
+- 时间变量的求解域使用 `Z3 Real`，语义上是连续时间实数，展示时输出为普通十进制文本。
+- Phase 11 不再强调“所有候选构造方式”，而是只输出一条 witness 时间轴。
+- witness 时间轴会把普通 `step` 和隐藏 `auto transition` 都排到同一条时间线上。
+- `co` 列可以直接看出“首次共存从哪一行开始”，以及后续哪些点仍然保持共存。
 
 ## 21.15 Phase 12: 测试、回归样例与 CLI
 

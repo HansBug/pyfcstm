@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 修改内容 | 作者 |
 |------|------|----------|------|
+| 0.1.16 | 2026-03-31 | 补充 timeline -> PlantUML 可视化设计：要求可把完整 timeline 对象渲染成 PlantUML 顺序图，并在当前真实样例上达到与给定顺序图基本一致的效果 | Codex |
 | 0.1.15 | 2026-03-31 | 补充 `model1.xml` 的最小修改建议：新增 `model1_fixed.xml` 所需的顺序图观测 diff，并把 Phase11 示例查询同步到实际可共存的 `region2.L/X` | Codex |
 | 0.1.14 | 2026-03-29 | 补回 Phase 9-11 的完整可运行示例代码到文档：覆盖 phase9 output family、phase10 scenario 摘要与 phase11 单条共存时间轴表输出 | Codex |
 | 0.1.13 | 2026-03-29 | 收紧 `TimeConstraint` 语义：不再表述为 step-local time window，而统一收敛为带左端点的二元 duration 约束；补充真实样例中 `s02 -> s03`、`s06 -> s07` 的解释 | Codex |
@@ -4169,3 +4170,99 @@ if __name__ == "__main__":
 - `region1`: `A -> B -> C -> D -> EState`
 - `region2`: `F -> W -> H.L`
 - `region3.X` 与 `region2.L` 在时间 `67` 处首次共存
+
+## 21.19 Phase 13: timeline -> PlantUML 可视化
+
+这一阶段先补设计，不立刻实现。目标是在 timeline 子系统内部增加一个“可视化导出”能力，把**完整 timeline 对象**渲染成一份可直接交给 PlantUML 的顺序图代码，便于人工核对导入结果、binding、step 顺序与时间约束。
+
+### 21.19.1 目标
+
+- 输入不再是原始 SysDeSim XMI，而是 timeline 已归一化后的对象。
+- 第一优先级是“**可审查**”，不是“像素级复刻”原始工具图形。
+- 对当前真实样例，导出的 PlantUML 顺序图应当能把消息、赋值观测、相对先后顺序与主要时间约束表达清楚，并与原始顺序图**基本一致**。
+- 可视化输出必须能作为 Phase 7-10 导入链路的人工验收产物，而不是另起一条与 timeline 无关的旁路脚本。
+
+### 21.19.2 输入边界
+
+建议把可视化的主输入定义为“timeline 完整对象”，首版可以直接基于当前已存在的 `SysDeSimPhase10Report` 做适配，因为它已经包含：
+
+- 归一化后的 `scenario.steps`
+- 归一化后的 `temporal_constraints`
+- 每个输出机器的 `bindings`
+- 每个输出机器的 `runtime trace`
+- 源 observation id 与 step 的对应关系
+
+约束要求：
+
+- 可视化层不得重新从原始 XMI 直接拼图，避免出现“显示逻辑”和“timeline 实际语义”分叉。
+- 如果后续抽象出更通用的 timeline IR，可视化层应优先消费通用 IR，再保留一个从 `SysDeSimPhase10Report` 到通用 IR 的适配器。
+
+### 21.19.3 输出形态
+
+首版输出建议是一个纯文本 `str`，内容为完整 PlantUML 源码，例如：
+
+```python
+def build_timeline_plantuml(report: SysDeSimPhase10Report) -> str:
+    ...
+```
+
+后续可以再补：
+
+- 文件输出辅助函数，例如写到 `.puml`
+- CLI 入口，例如 `pyfcstm timeline visualize --format plantuml ...`
+- 与 Phase11 witness 联动的附加标记模式
+
+### 21.19.4 渲染规则
+
+首版建议明确下面这些映射规则：
+
+- lifeline / participant：
+  - 优先使用 interaction 中可恢复的人类可读 lifeline 名称。
+  - 对当前真实样例，应优先显示为 `控制`、`模块`，而不是内部 alias。
+- 消息：
+  - `emit(...)` 类型的 step 应渲染为顺序图消息箭头。
+  - 消息名优先使用原始信号显示名，例如 `Sig1`、`Sig2`、`Sig4`。
+- 输入赋值观测：
+  - `SetInput(name=value)` 或由 `StateInvariant` 导入出的输入观测，应渲染为 lifeline 上的 note / hnote / rnote。
+  - 至少要覆盖当前真实样例里的 `y=2300`、`y=2099`、`y=1300`、`y=1199`、`Rmt=4999`，以及新增的 `a/b/c/d` 赋值观测。
+- 时间约束：
+  - `TimeConstraint` / `DurationConstraint` 首版不要求完美图形复刻，但必须以文本可读的方式出现在图里。
+  - 可接受的首版方案包括 `note over`、`legend`、或 `== section ==` 注释块。
+- 隐藏 auto transition：
+  - 这类 occurrence 不在原始顺序图主干里，默认不强制画成普通消息。
+  - 首版可作为可选调试开关，以注释或 note 形式附着在相邻 step 上。
+- step 身份：
+  - 需要保留 `s01`、`s02` 这类 timeline step id，便于把图、report、solver witness 三者对齐。
+
+### 21.19.5 当前真实样例的验收要求
+
+以当前本地样例 `/home/hansbug/文档/damnx_sysdesim_sample/model1_fixed.xml` 为首个验收对象，要求至少满足：
+
+- 能从现有 timeline 主链直接生成一份 `.puml` 文本。
+- 生成出的 PlantUML 代码能在本地成功渲染，不报语法错误。
+- 渲染结果中的 lifeline 数量、名称和消息先后顺序，与给定顺序图基本一致。
+- `y`、`Rmt`、`a`、`b`、`c`、`d` 这些观测值，在图中的相对位置应与当前 timeline step 顺序一致。
+- 图中应能让人直接看出 `a < b`、`c < d` 何时从 false 变为 true，避免再次出现“条件只在 guard 里存在、图里却没有观测证据”的问题。
+- 对于当前样例，渲染结果不要求 100% 复刻 SysDeSim 原图的布局、字体和线型，但必须保证语义可核对。
+
+### 21.19.6 与 Phase11 witness 的关系
+
+这个可视化能力的第一阶段重点是“把 timeline 场景本体画出来”，不是先画 SAT/UNSAT witness。建议分两层：
+
+- 第一层：场景视图
+  - 展示原始导入场景，包括消息、输入观测、step 顺序与时间约束。
+- 第二层：求解结果叠加视图
+  - 在场景视图基础上，叠加 Phase11 的 witness 信息，例如首次共存点、隐藏 auto 发生点、某个状态窗口高亮。
+
+这样可以避免把“场景导入是否正确”和“某个查询是否 sat”混在同一张初版图里。
+
+### 21.19.7 完成判据
+
+当下面这些条件满足时，可以认为这个可视化子能力达到首版可用：
+
+- 已存在稳定 API，可从 timeline 完整对象生成 PlantUML 文本
+- 当前真实样例能跑通该 API
+- 生成结果能被 PlantUML 成功渲染
+- 渲染结果与当前给定顺序图在主要语义上基本一致
+- 人工可以通过该图直接审查 step 顺序、输入观测和时间约束
+- 文档与示例脚本中已有一条固定可复现的演示路径

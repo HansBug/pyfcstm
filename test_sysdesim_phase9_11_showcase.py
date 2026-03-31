@@ -6,7 +6,7 @@
 运行方式::
 
     python test_sysdesim_phase9_11_showcase.py
-    python test_sysdesim_phase9_11_showcase.py /path/to/model1.xml
+    python test_sysdesim_phase9_11_showcase.py /path/to/model1_fixed.xml
 
 这个脚本只展示你真正关心的东西::
 
@@ -25,14 +25,11 @@ from pyfcstm.convert.sysdesim import (
     build_sysdesim_state_coexistence_timeline_report,
 )
 
-DEFAULT_SAMPLE_XML = Path(
-    "/drive/f/电脑管家迁移文件/xwechat_files/"
-    "wxid_8td20f9kf3do21_dfa7/msg/file/2026-03/测试用例图/model/model1.xml"
-)
+DEFAULT_SAMPLE_XML = Path("/home/hansbug/文档/damnx_sysdesim_sample/model1_fixed.xml")
 
 
 def _resolve_xml_path(argv: List[str]) -> Path:
-    """Resolve the XML path from CLI args, falling back to the real sample."""
+    """Resolve the XML path from CLI args, falling back to the fixed real sample."""
     if len(argv) >= 2:
         return Path(argv[1]).expanduser()
     return DEFAULT_SAMPLE_XML
@@ -169,7 +166,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     sat_timeline = build_sysdesim_state_coexistence_timeline_report(
         str(xml_path),
         "StateMachine__Control_region2",
-        "F",
+        "L",
         "StateMachine__Control_region3",
         "X",
     )
@@ -179,11 +176,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         == "The left queried state never appears in the imported trajectory.",
         "M/X 查询原因说明不符合预期。",
     )
-    _require(sat_timeline.status == "sat", "F/X 查询应为 sat。")
+    _require(sat_timeline.status == "sat", "L/X 查询应为 sat。")
     _require(
         sat_timeline.first_coexistence_symbol
-        == "tau__StateMachine__Control_region3__s16__1",
-        "F/X 的首次共存点应从第一个隐藏 auto 时刻开始。",
+        == "tau__StateMachine__Control_region3__s24__1",
+        "L/X 的首次共存点应从 `tau__StateMachine__Control_region3__s24__1` 开始。",
     )
 
     _print_rule()
@@ -197,7 +194,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     )
 
     _print_rule()
-    print("一、可共存示例：StateMachine__Control_region2.F 与 StateMachine__Control_region3.X")
+    print("一、可共存示例：StateMachine__Control_region2.L 与 StateMachine__Control_region3.X")
     print("求解结果：", sat_timeline.status)
     print("时间域类型：", sat_timeline.time_domain)
     print(

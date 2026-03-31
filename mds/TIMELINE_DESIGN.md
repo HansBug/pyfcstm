@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 修改内容 | 作者 |
 |------|------|----------|------|
+| 0.1.15 | 2026-03-31 | 补充 `model1.xml` 的最小修改建议：新增 `model1_fixed.xml` 所需的顺序图观测 diff，并把 Phase11 示例查询同步到实际可共存的 `region2.L/X` | Codex |
 | 0.1.14 | 2026-03-29 | 补回 Phase 9-11 的完整可运行示例代码到文档：覆盖 phase9 output family、phase10 scenario 摘要与 phase11 单条共存时间轴表输出 | Codex |
 | 0.1.13 | 2026-03-29 | 收紧 `TimeConstraint` 语义：不再表述为 step-local time window，而统一收敛为带左端点的二元 duration 约束；补充真实样例中 `s02 -> s03`、`s06 -> s07` 的解释 | Codex |
 | 0.1.12 | 2026-03-29 | 同步 Phase 7-8 实施进度：补齐 timeline-first import IR、input/event binding 候选、step/SetInput/emit 候选与真实样例验证结果，并更新 checklist 状态 | Codex |
@@ -3891,7 +3892,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     sat_timeline = build_sysdesim_state_coexistence_timeline_report(
         str(xml_path),
         "StateMachine__Control_region2",
-        "F",
+        "L",
         "StateMachine__Control_region3",
         "X",
     )
@@ -3998,3 +3999,173 @@ if __name__ == "__main__":
 - 能输出可解释的 witness / diagnostics
 
 在这之前，不建议把工作完成标准定义为“能导出一个看起来像样的 FCSTM 文件”。对于当前真实样例，那只是辅助手段，不是主目标。
+
+## 21.18 当前 `model1.xml` 的最小修改建议
+
+针对当前真实样例，`region1` 的 `a < b` 与 `region2` 的 `c < d` 都缺少像 `y=...`、`Rmt=...` 那样可被顺序图导入器稳定识别的显式赋值观测。实际症状是：
+
+- `a/b/c/d` 只在 guard 或条件里出现，但在 interaction 里没有对应的 `StateInvariant name=value` 观测。
+- 因此导入后 `region2` 会长期停在 `F`，`region1` 也缺少把比较条件从 false 翻到 true 的明确证据。
+
+为满足“**不修改原始 `model1.xml`**、只给出最小修正建议”的要求，建议在同路径创建 `model1_fixed.xml`，并仅增加顺序图上的 8 个 `StateInvariant` 片段，不改状态机结构、不改 transition、不改 guard。本次建议 diff 如下：
+
+```diff
+--- /home/hansbug/文档/damnx_sysdesim_sample/model1.xml
++++ /home/hansbug/文档/damnx_sysdesim_sample/model1_fixed.xml
+@@ -99,30 +99,78 @@
+           </ownedRule>
+           <ownedAttribute xmi:type="uml:Property" xmi:id="_8YItACQGEfGBBP-2kAbLRg" name="控制"/>
+           <ownedAttribute xmi:type="uml:Property" xmi:id="_8uzgkCQGEfGBBP-2kAbLRg" name="模块"/>
+-          <lifeline xmi:type="uml:Lifeline" xmi:id="_8XZGICQGEfGBBP-2kAbLRg" name="控制" represents="_8YItACQGEfGBBP-2kAbLRg" coveredBy="_PtYDYCQHEfGBBP-2kAbLRg _R4wV0CQHEfGBBP-2kAbLRg _aV3sECQHEfGBBP-2kAbLRg _abpj8CQHEfGBBP-2kAbLRg _aZMF0CQHEfGBBP-2kAbLRg _OZ3XoCQIEfGBBP-2kAbLRg _OhtsECQIEfGBBP-2kAbLRg _qtZesCQIEfGBBP-2kAbLRg _qx49ICQIEfGBBP-2kAbLRg _5M_UwCQIEfGBBP-2kAbLRg _5QacMCQIEfGBBP-2kAbLRg _9eUAACQIEfGBBP-2kAbLRg _DIhJwCQJEfGBBP-2kAbLRg _DO760CQJEfGBBP-2kAbLRg _OpCmpCQJEfGBBP-2kAbLRg _OtLfwCQJEfGBBP-2kAbLRg _JEPE0CQKEfGBBP-2kAbLRg _JKMi4CQKEfGBBP-2kAbLRg _0jTh8CQKEfGBBP-2kAbLRg _GVfxMCQLEfGBBP-2kAbLRg _GeQroCQLEfGBBP-2kAbLRg _T4zlMCQLEfGBBP-2kAbLRg _T_ifUCQLEfGBBP-2kAbLRg _ZEsbQCQLEfGBBP-2kAbLRg _ZLJokCQLEfGBBP-2kAbLRg _belq1CQLEfGBBP-2kAbLRg _bh9u8CQLEfGBBP-2kAbLRg _nY7V4CQLEfGBBP-2kAbLRg _nf3EUCQLEfGBBP-2kAbLRg _r3ZsUCQLEfGBBP-2kAbLRg _r78OECQLEfGBBP-2kAbLRg _zQZTICQLEfGBBP-2kAbLRg _zWt9kCQLEfGBBP-2kAbLRg _6x2SYCQLEfGBBP-2kAbLRg _6386YCQLEfGBBP-2kAbLRg _APY5JCQMEfGBBP-2kAbLRg _ATA04CQMEfGBBP-2kAbLRg _HmlJICQMEfGBBP-2kAbLRg _HseVwCQMEfGBBP-2kAbLRg _O5tYgCQMEfGBBP-2kAbLRg _PA3wcCQMEfGBBP-2kAbLRg _BXTRgCQOEfGBBP-2kAbLRg _FJDE0CQOEfGBBP-2kAbLRg _FONRoCQOEfGBBP-2kAbLRg _FMlhACQOEfGBBP-2kAbLRg"/>
++          <lifeline xmi:type="uml:Lifeline" xmi:id="_8XZGICQGEfGBBP-2kAbLRg" name="控制" represents="_8YItACQGEfGBBP-2kAbLRg" coveredBy="_PtYDYCQHEfGBBP-2kAbLRg codex_fix_a0_frag codex_fix_b0_frag codex_fix_c0_frag codex_fix_d0_frag _R4wV0CQHEfGBBP-2kAbLRg codex_fix_a1_frag codex_fix_b1_frag _aV3sECQHEfGBBP-2kAbLRg _abpj8CQHEfGBBP-2kAbLRg _aZMF0CQHEfGBBP-2kAbLRg _OZ3XoCQIEfGBBP-2kAbLRg _OhtsECQIEfGBBP-2kAbLRg _qtZesCQIEfGBBP-2kAbLRg _qx49ICQIEfGBBP-2kAbLRg _5M_UwCQIEfGBBP-2kAbLRg _5QacMCQIEfGBBP-2kAbLRg _9eUAACQIEfGBBP-2kAbLRg _DIhJwCQJEfGBBP-2kAbLRg _DO760CQJEfGBBP-2kAbLRg _OpCmpCQJEfGBBP-2kAbLRg _OtLfwCQJEfGBBP-2kAbLRg _JEPE0CQKEfGBBP-2kAbLRg _JKMi4CQKEfGBBP-2kAbLRg _0jTh8CQKEfGBBP-2kAbLRg codex_fix_c1_frag codex_fix_d1_frag _GVfxMCQLEfGBBP-2kAbLRg _GeQroCQLEfGBBP-2kAbLRg _T4zlMCQLEfGBBP-2kAbLRg _T_ifUCQLEfGBBP-2kAbLRg _ZEsbQCQLEfGBBP-2kAbLRg _ZLJokCQLEfGBBP-2kAbLRg _belq1CQLEfGBBP-2kAbLRg _bh9u8CQLEfGBBP-2kAbLRg _nY7V4CQLEfGBBP-2kAbLRg _nf3EUCQLEfGBBP-2kAbLRg _r3ZsUCQLEfGBBP-2kAbLRg _r78OECQLEfGBBP-2kAbLRg _zQZTICQLEfGBBP-2kAbLRg _zWt9kCQLEfGBBP-2kAbLRg _6x2SYCQLEfGBBP-2kAbLRg _6386YCQLEfGBBP-2kAbLRg _APY5JCQMEfGBBP-2kAbLRg _ATA04CQMEfGBBP-2kAbLRg _HmlJICQMEfGBBP-2kAbLRg _HseVwCQMEfGBBP-2kAbLRg _O5tYgCQMEfGBBP-2kAbLRg _PA3wcCQMEfGBBP-2kAbLRg _BXTRgCQOEfGBBP-2kAbLRg _FJDE0CQOEfGBBP-2kAbLRg _FONRoCQOEfGBBP-2kAbLRg _FMlhACQOEfGBBP-2kAbLRg"/>
+           <lifeline xmi:type="uml:Lifeline" xmi:id="_8twXtCQGEfGBBP-2kAbLRg" name="模块" represents="_8uzgkCQGEfGBBP-2kAbLRg" coveredBy="_Ob0fdCQIEfGBBP-2kAbLRg _OfpPgCQIEfGBBP-2kAbLRg _qrKqECQIEfGBBP-2kAbLRg _qz-AwCQIEfGBBP-2kAbLRg _5LhVICQIEfGBBP-2kAbLRg _5RtcsCQIEfGBBP-2kAbLRg _DKAXhCQJEfGBBP-2kAbLRg _DNsksCQJEfGBBP-2kAbLRg _Om878CQJEfGBBP-2kAbLRg _OumcECQJEfGBBP-2kAbLRg _JFlvsCQKEfGBBP-2kAbLRg _JI5iYCQKEfGBBP-2kAbLRg _GXofNCQLEfGBBP-2kAbLRg _GccGsCQLEfGBBP-2kAbLRg _T6tpsCQLEfGBBP-2kAbLRg _T-O3wCQLEfGBBP-2kAbLRg _ZGhAMCQLEfGBBP-2kAbLRg _ZJ5EUCQLEfGBBP-2kAbLRg _bdNKwCQLEfGBBP-2kAbLRg _bjXdICQLEfGBBP-2kAbLRg _naNvUCQLEfGBBP-2kAbLRg _neRI4CQLEfGBBP-2kAbLRg _r1x7sCQLEfGBBP-2kAbLRg _r9ftQCQLEfGBBP-2kAbLRg _zR4g5CQLEfGBBP-2kAbLRg _zVeAYCQLEfGBBP-2kAbLRg _6zVgICQLEfGBBP-2kAbLRg _62s9MCQLEfGBBP-2kAbLRg _ANmwcCQMEfGBBP-2kAbLRg _AUPj8CQMEfGBBP-2kAbLRg _Hn6l5CQMEfGBBP-2kAbLRg _HrNxgCQMEfGBBP-2kAbLRg _O7C1RCQMEfGBBP-2kAbLRg _O_FAsCQMEfGBBP-2kAbLRg"/>
+           <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="_5RtcsCQIEfGBBP-2kAbLRg" name="sendEvent" covered="_8twXtCQGEfGBBP-2kAbLRg" message="_5OOD1CQIEfGBBP-2kAbLRg"/>
+           <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="_5QacMCQIEfGBBP-2kAbLRg" name="receiveEvent" covered="_8XZGICQGEfGBBP-2kAbLRg" message="_5OOD1CQIEfGBBP-2kAbLRg"/>
+-          <fragment xmi:type="uml:StateInvariant" xmi:id="_PtYDYCQHEfGBBP-2kAbLRg" name="" covered="_8XZGICQGEfGBBP-2kAbLRg">
+-            <invariant xmi:type="uml:Constraint" xmi:id="_Pu0N0CQHEfGBBP-2kAbLRg" name="">
+-              <specification xmi:type="uml:OpaqueExpression" xmi:id="_PvdHACQHEfGBBP-2kAbLRg">
+-                <language>English</language>
+-                <body>y=2300</body>
+-              </specification>
+-            </invariant>
+-          </fragment>
+-          <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="_abpj8CQHEfGBBP-2kAbLRg" name="sendEvent" covered="_8XZGICQGEfGBBP-2kAbLRg" message="_aXfcsCQHEfGBBP-2kAbLRg"/>
+-          <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="_aZMF0CQHEfGBBP-2kAbLRg" name="receiveEvent" covered="_8XZGICQGEfGBBP-2kAbLRg" message="_aXfcsCQHEfGBBP-2kAbLRg"/>
+-          <fragment xmi:type="uml:StateInvariant" xmi:id="_R4wV0CQHEfGBBP-2kAbLRg" name="" covered="_8XZGICQGEfGBBP-2kAbLRg">
+-            <invariant xmi:type="uml:Constraint" xmi:id="_R6L5MCQHEfGBBP-2kAbLRg" name="">
+-              <specification xmi:type="uml:OpaqueExpression" xmi:id="_R6rocCQHEfGBBP-2kAbLRg">
+-                <language>English</language>
+-                <body>y=2099</body>
+-              </specification>
+-            </invariant>
+-          </fragment>
+-          <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="_OhtsECQIEfGBBP-2kAbLRg" name="sendEvent" covered="_8XZGICQGEfGBBP-2kAbLRg" message="_OdkL5CQIEfGBBP-2kAbLRg"/>
+-          <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="_OfpPgCQIEfGBBP-2kAbLRg" name="receiveEvent" covered="_8twXtCQGEfGBBP-2kAbLRg" message="_OdkL5CQIEfGBBP-2kAbLRg"/>
++          <fragment xmi:type="uml:StateInvariant" xmi:id="_PtYDYCQHEfGBBP-2kAbLRg" name="" covered="_8XZGICQGEfGBBP-2kAbLRg">
++            <invariant xmi:type="uml:Constraint" xmi:id="_Pu0N0CQHEfGBBP-2kAbLRg" name="">
++              <specification xmi:type="uml:OpaqueExpression" xmi:id="_PvdHACQHEfGBBP-2kAbLRg">
++                <language>English</language>
++                <body>y=2300</body>
++              </specification>
++            </invariant>
++          </fragment>
++          <fragment xmi:type="uml:StateInvariant" xmi:id="codex_fix_a0_frag" name="" covered="_8XZGICQGEfGBBP-2kAbLRg">
++            <invariant xmi:type="uml:Constraint" xmi:id="codex_fix_a0_constraint" name="">
++              <specification xmi:type="uml:OpaqueExpression" xmi:id="codex_fix_a0_expr">
++                <language>English</language>
++                <body>a=5</body>
++              </specification>
++            </invariant>
++          </fragment>
++          <fragment xmi:type="uml:StateInvariant" xmi:id="codex_fix_b0_frag" name="" covered="_8XZGICQGEfGBBP-2kAbLRg">
++            <invariant xmi:type="uml:Constraint" xmi:id="codex_fix_b0_constraint" name="">
++              <specification xmi:type="uml:OpaqueExpression" xmi:id="codex_fix_b0_expr">
++                <language>English</language>
++                <body>b=1</body>
++              </specification>
++            </invariant>
++          </fragment>
++          <fragment xmi:type="uml:StateInvariant" xmi:id="codex_fix_c0_frag" name="" covered="_8XZGICQGEfGBBP-2kAbLRg">
++            <invariant xmi:type="uml:Constraint" xmi:id="codex_fix_c0_constraint" name="">
++              <specification xmi:type="uml:OpaqueExpression" xmi:id="codex_fix_c0_expr">
++                <language>English</language>
++                <body>c=5</body>
++              </specification>
++            </invariant>
++          </fragment>
++          <fragment xmi:type="uml:StateInvariant" xmi:id="codex_fix_d0_frag" name="" covered="_8XZGICQGEfGBBP-2kAbLRg">
++            <invariant xmi:type="uml:Constraint" xmi:id="codex_fix_d0_constraint" name="">
++              <specification xmi:type="uml:OpaqueExpression" xmi:id="codex_fix_d0_expr">
++                <language>English</language>
++                <body>d=1</body>
++              </specification>
++            </invariant>
++          </fragment>
++          <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="_abpj8CQHEfGBBP-2kAbLRg" name="sendEvent" covered="_8XZGICQGEfGBBP-2kAbLRg" message="_aXfcsCQHEfGBBP-2kAbLRg"/>
++          <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="_aZMF0CQHEfGBBP-2kAbLRg" name="receiveEvent" covered="_8XZGICQGEfGBBP-2kAbLRg" message="_aXfcsCQHEfGBBP-2kAbLRg"/>
++          <fragment xmi:type="uml:StateInvariant" xmi:id="_R4wV0CQHEfGBBP-2kAbLRg" name="" covered="_8XZGICQGEfGBBP-2kAbLRg">
++            <invariant xmi:type="uml:Constraint" xmi:id="_R6L5MCQHEfGBBP-2kAbLRg" name="">
++              <specification xmi:type="uml:OpaqueExpression" xmi:id="_R6rocCQHEfGBBP-2kAbLRg">
++                <language>English</language>
++                <body>y=2099</body>
++              </specification>
++            </invariant>
++          </fragment>
++          <fragment xmi:type="uml:StateInvariant" xmi:id="codex_fix_a1_frag" name="" covered="_8XZGICQGEfGBBP-2kAbLRg">
++            <invariant xmi:type="uml:Constraint" xmi:id="codex_fix_a1_constraint" name="">
++              <specification xmi:type="uml:OpaqueExpression" xmi:id="codex_fix_a1_expr">
++                <language>English</language>
++                <body>a=1</body>
++              </specification>
++            </invariant>
++          </fragment>
++          <fragment xmi:type="uml:StateInvariant" xmi:id="codex_fix_b1_frag" name="" covered="_8XZGICQGEfGBBP-2kAbLRg">
++            <invariant xmi:type="uml:Constraint" xmi:id="codex_fix_b1_constraint" name="">
++              <specification xmi:type="uml:OpaqueExpression" xmi:id="codex_fix_b1_expr">
++                <language>English</language>
++                <body>b=2</body>
++              </specification>
++            </invariant>
++          </fragment>
++          <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="_OhtsECQIEfGBBP-2kAbLRg" name="sendEvent" covered="_8XZGICQGEfGBBP-2kAbLRg" message="_OdkL5CQIEfGBBP-2kAbLRg"/>
++          <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="_OfpPgCQIEfGBBP-2kAbLRg" name="receiveEvent" covered="_8twXtCQGEfGBBP-2kAbLRg" message="_OdkL5CQIEfGBBP-2kAbLRg"/>
+           <fragment xmi:type="uml:StateInvariant" xmi:id="_BXTRgCQOEfGBBP-2kAbLRg" name="" covered="_8XZGICQGEfGBBP-2kAbLRg">
+             <invariant xmi:type="uml:Constraint" xmi:id="_BZPLMCQOEfGBBP-2kAbLRg" name="">
+               <specification xmi:type="uml:OpaqueExpression" xmi:id="_BZ_ZICQOEfGBBP-2kAbLRg">
+@@ -133,15 +181,31 @@
+           </fragment>
+           <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="_FONRoCQOEfGBBP-2kAbLRg" name="sendEvent" covered="_8XZGICQGEfGBBP-2kAbLRg" message="_FKi5oCQOEfGBBP-2kAbLRg"/>
+           <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="_FMlhACQOEfGBBP-2kAbLRg" name="receiveEvent" covered="_8XZGICQGEfGBBP-2kAbLRg" message="_FKi5oCQOEfGBBP-2kAbLRg"/>
+-          <fragment xmi:type="uml:StateInvariant" xmi:id="_0jTh8CQKEfGBBP-2kAbLRg" name="" covered="_8XZGICQGEfGBBP-2kAbLRg">
+-            <invariant xmi:type="uml:Constraint" xmi:id="_0lhvgCQKEfGBBP-2kAbLRg" name="">
+-              <specification xmi:type="uml:OpaqueExpression" xmi:id="_0micICQKEfGBBP-2kAbLRg">
+-                <language>English</language>
+-                <body>y=1199</body>
+-              </specification>
+-            </invariant>
+-          </fragment>
+-          <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="_GeQroCQLEfGBBP-2kAbLRg" name="sendEvent" covered="_8XZGICQGEfGBBP-2kAbLRg" message="_GZuJ5CQLEfGBBP-2kAbLRg"/>
++          <fragment xmi:type="uml:StateInvariant" xmi:id="_0jTh8CQKEfGBBP-2kAbLRg" name="" covered="_8XZGICQGEfGBBP-2kAbLRg">
++            <invariant xmi:type="uml:Constraint" xmi:id="_0lhvgCQKEfGBBP-2kAbLRg" name="">
++              <specification xmi:type="uml:OpaqueExpression" xmi:id="_0micICQKEfGBBP-2kAbLRg">
++                <language>English</language>
++                <body>y=1199</body>
++              </specification>
++            </invariant>
++          </fragment>
++          <fragment xmi:type="uml:StateInvariant" xmi:id="codex_fix_c1_frag" name="" covered="_8XZGICQGEfGBBP-2kAbLRg">
++            <invariant xmi:type="uml:Constraint" xmi:id="codex_fix_c1_constraint" name="">
++              <specification xmi:type="uml:OpaqueExpression" xmi:id="codex_fix_c1_expr">
++                <language>English</language>
++                <body>c=1</body>
++              </specification>
++            </invariant>
++          </fragment>
++          <fragment xmi:type="uml:StateInvariant" xmi:id="codex_fix_d1_frag" name="" covered="_8XZGICQGEfGBBP-2kAbLRg">
++            <invariant xmi:type="uml:Constraint" xmi:id="codex_fix_d1_constraint" name="">
++              <specification xmi:type="uml:OpaqueExpression" xmi:id="codex_fix_d1_expr">
++                <language>English</language>
++                <body>d=2</body>
++              </specification>
++            </invariant>
++          </fragment>
++          <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="_GeQroCQLEfGBBP-2kAbLRg" name="sendEvent" covered="_8XZGICQGEfGBBP-2kAbLRg" message="_GZuJ5CQLEfGBBP-2kAbLRg"/>
+           <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="_GccGsCQLEfGBBP-2kAbLRg" name="receiveEvent" covered="_8twXtCQGEfGBBP-2kAbLRg" message="_GZuJ5CQLEfGBBP-2kAbLRg"/>
+           <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="_qz-AwCQIEfGBBP-2kAbLRg" name="sendEvent" covered="_8twXtCQGEfGBBP-2kAbLRg" message="_qviMsCQIEfGBBP-2kAbLRg"/>
+           <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="_qx49ICQIEfGBBP-2kAbLRg" name="receiveEvent" covered="_8XZGICQGEfGBBP-2kAbLRg" message="_qviMsCQIEfGBBP-2kAbLRg"/>
+```
+
+这些新增观测的语义安排是：
+
+- 初始先令比较条件不成立：`a=5`、`b=1`、`c=5`、`d=1`
+- 在较后的顺序图位置再把条件翻转为成立：`a=1`、`b=2`、`c=1`、`d=2`
+- 插入位置尽量贴近已有 `y=...` 观测：
+  - `y=2300` 后插入 `a/b/c/d` 的初值
+  - `y=2099` 后插入 `a/b` 的翻转值
+  - `y=1199` 后插入 `c/d` 的翻转值
+
+按这份最小修正，`model1.xml` 原文件可保持不动，而 `model1_fixed.xml` 可以让导入器稳定得到：
+
+- `region1`: `A -> B -> C -> D -> EState`
+- `region2`: `F -> W -> H.L`
+- `region3.X` 与 `region2.L` 在时间 `67` 处首次共存

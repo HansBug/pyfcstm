@@ -291,6 +291,102 @@ class TestDSLForceTransition:
                     condition_expr=None,
                 ),
             ),  # Exit force transition with absolute chain ID
+            (
+                """
+                ! StateA -> StateB : StateA.Fire;
+                """,
+                ForceTransitionDefinition(
+                    from_state="StateA",
+                    to_state="StateB",
+                    event_id=ChainID(path=["StateA", "Fire"], is_absolute=False),
+                    condition_expr=None,
+                ),
+            ),  # Normal force transition with equivalent relative local-event path
+            (
+                """
+                ! StateA -> [*] : StateA.Stop;
+                """,
+                ForceTransitionDefinition(
+                    from_state="StateA",
+                    to_state=EXIT_STATE,
+                    event_id=ChainID(path=["StateA", "Stop"], is_absolute=False),
+                    condition_expr=None,
+                ),
+            ),  # Exit force transition with equivalent relative local-event path
+            (
+                """
+                ! * -> StateB : Alarm;
+                """,
+                ForceTransitionDefinition(
+                    from_state=ALL,
+                    to_state="StateB",
+                    event_id=ChainID(path=["Alarm"], is_absolute=False),
+                    condition_expr=None,
+                ),
+            ),  # All-state force transition with single-segment relative event path
+            (
+                """
+                ! * -> [*] : StopAll;
+                """,
+                ForceTransitionDefinition(
+                    from_state=ALL,
+                    to_state=EXIT_STATE,
+                    event_id=ChainID(path=["StopAll"], is_absolute=False),
+                    condition_expr=None,
+                ),
+            ),  # All-state exit force transition with single-segment relative event path
+            (
+                """
+                ! StateA -> StateB : /System.Fail;
+                """,
+                ForceTransitionDefinition(
+                    from_state="StateA",
+                    to_state="StateB",
+                    event_id=ChainID(path=["System", "Fail"], is_absolute=True),
+                    condition_expr=None,
+                ),
+            ),  # Normal force transition with short absolute event path
+            (
+                """
+                ! * -> [*] : /System.Fail;
+                """,
+                ForceTransitionDefinition(
+                    from_state=ALL,
+                    to_state=EXIT_STATE,
+                    event_id=ChainID(path=["System", "Fail"], is_absolute=True),
+                    condition_expr=None,
+                ),
+            ),  # All-state exit force transition with short absolute event path
+            (
+                """
+                ! StateA -> StateB : if [not true or false];
+                """,
+                ForceTransitionDefinition(
+                    from_state="StateA",
+                    to_state="StateB",
+                    event_id=None,
+                    condition_expr=BinaryOp(
+                        expr1=UnaryOp(op="!", expr=Boolean(raw="true")),
+                        op="||",
+                        expr2=Boolean(raw="false"),
+                    ),
+                ),
+            ),  # Normal force transition with keyword logical aliases in guard
+            (
+                """
+                ! * -> StateB : if [not false and true];
+                """,
+                ForceTransitionDefinition(
+                    from_state=ALL,
+                    to_state="StateB",
+                    event_id=None,
+                    condition_expr=BinaryOp(
+                        expr1=UnaryOp(op="!", expr=Boolean(raw="false")),
+                        op="&&",
+                        expr2=Boolean(raw="true"),
+                    ),
+                ),
+            ),  # All-state force transition with keyword logical aliases in guard
         ],
     )
     def test_positive_cases(self, input_text, expected):
@@ -436,6 +532,54 @@ class TestDSLForceTransition:
                 """,
                 "! StateA -> [*] : /root.path;",
             ),  # Exit force transition with absolute chain ID
+            (
+                """
+                ! StateA -> StateB : StateA.Fire;
+                """,
+                "! StateA -> StateB :: Fire;",
+            ),  # Normal force transition canonicalizes equivalent relative local-event path
+            (
+                """
+                ! StateA -> [*] : StateA.Stop;
+                """,
+                "! StateA -> [*] :: Stop;",
+            ),  # Exit force transition canonicalizes equivalent relative local-event path
+            (
+                """
+                ! * -> StateB : Alarm;
+                """,
+                "! * -> StateB :: Alarm;",
+            ),  # All-state force transition canonicalizes single-segment relative event path
+            (
+                """
+                ! * -> [*] : StopAll;
+                """,
+                "! * -> [*] :: StopAll;",
+            ),  # All-state exit force transition canonicalizes single-segment relative event path
+            (
+                """
+                ! StateA -> StateB : /System.Fail;
+                """,
+                "! StateA -> StateB : /System.Fail;",
+            ),  # Normal force transition preserves short absolute event path
+            (
+                """
+                ! * -> [*] : /System.Fail;
+                """,
+                "! * -> [*] : /System.Fail;",
+            ),  # All-state exit force transition preserves short absolute event path
+            (
+                """
+                ! StateA -> StateB : if [not true or false];
+                """,
+                "! StateA -> StateB : if [!True || False];",
+            ),  # Force-transition guard canonicalizes keyword logical aliases and boolean literals
+            (
+                """
+                ! * -> StateB : if [not false and true];
+                """,
+                "! * -> StateB : if [!False && True];",
+            ),  # All-state force-transition guard canonicalizes keyword logical aliases and boolean literals
         ],
     )
     def test_positive_cases_str(self, input_text, expected_str, text_aligner):

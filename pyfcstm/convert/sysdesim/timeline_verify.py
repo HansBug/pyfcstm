@@ -886,15 +886,32 @@ def _build_base_time_constraints(
 def _resolve_state_path(machine: StateMachine, state_ref: str) -> str:
     """Resolve one leaf-like state reference into a unique dot-separated path."""
     path_candidates = []
+    suffix_candidates = []
+    ref_tokens = tuple(token for token in state_ref.split(".") if token)
     for state in machine.walk_states():
-        path_name = ".".join(state.path)
+        path_tokens = tuple(state.path)
+        path_name = ".".join(path_tokens)
         if state_ref == path_name or state_ref == ".".join(state.path[1:]):
             return path_name
+        if (
+            len(ref_tokens) >= 2
+            and len(ref_tokens) <= len(path_tokens)
+            and path_tokens[-len(ref_tokens) :] == ref_tokens
+        ):
+            suffix_candidates.append(path_name)
         if state.name == state_ref:
             path_candidates.append(path_name)
     if len(path_candidates) == 1:
         return path_candidates[0]
+    if len(suffix_candidates) == 1:
+        return suffix_candidates[0]
     if not path_candidates:
+        if len(suffix_candidates) > 1:
+            raise LookupError(
+                "State reference {!r} is ambiguous: {}.".format(
+                    state_ref, ", ".join(suffix_candidates)
+                )
+            )
         raise LookupError("State reference {!r} not found.".format(state_ref))
     raise LookupError(
         "State reference {!r} is ambiguous: {}.".format(

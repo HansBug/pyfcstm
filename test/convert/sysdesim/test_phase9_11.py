@@ -433,3 +433,24 @@ def test_phase11_builds_single_solved_timeline_report(tmp_path: Path):
         unsat_timeline.reason
         == "The left queried state never appears in the imported trajectory."
     )
+
+
+def test_phase11_accepts_suffix_state_refs_for_nested_states(tmp_path: Path):
+    """Nested suffix state refs such as ``H.M`` should resolve for coexistence queries."""
+    xml_file = _build_parallel_timeline_xml(tmp_path)
+
+    unsat_timeline = build_sysdesim_state_coexistence_timeline_report(
+        str(xml_file),
+        "TimelineCoexist__Control_region1",
+        "H.M",
+        "TimelineCoexist__Control_region2",
+        "S",
+    )
+
+    assert unsat_timeline.status == "unsat"
+    assert unsat_timeline.solver_status == "unsat"
+    assert unsat_timeline.timeline_points == ()
+    assert (
+        unsat_timeline.reason
+        == "The left queried state never appears in the imported trajectory."
+    )

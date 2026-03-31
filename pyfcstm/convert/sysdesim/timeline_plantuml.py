@@ -2,10 +2,9 @@
 PlantUML sequence-diagram export for SysDeSim timeline reports.
 
 This module implements the Phase 12 timeline visualization path for the
-current SysDeSim importer. The exported diagram is intentionally review-first:
-it renders the imported interaction order, imported ``SetInput`` observations,
-normalized temporal constraints, and optional hidden auto-transition notes from
-the already-built timeline report rather than re-parsing the raw XML into a
+current SysDeSim importer. The exported diagram is intentionally timeline-
+first: it renders imported sequence points and duration relationships from the
+already-built timeline report rather than re-parsing the raw XML into a
 separate display model.
 
 The primary public APIs are :func:`build_sysdesim_timeline_plantuml` and
@@ -15,6 +14,7 @@ The primary public APIs are :func:`build_sysdesim_timeline_plantuml` and
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from typing import Dict, List, Optional, Tuple
 
 from .timeline import (
@@ -22,6 +22,9 @@ from .timeline import (
     SysDeSimStateInvariantObservation,
 )
 from .timeline_verify import SysDeSimPhase10Report, build_sysdesim_phase10_report
+
+_PLANTUML_PARTICIPANT_PADDING = 50
+_PLANTUML_SAFE_ID_RE = re.compile(r"[^0-9A-Za-z_]+")
 
 
 @dataclass(frozen=True)
@@ -62,6 +65,16 @@ def _escape_text(text: Optional[str]) -> str:
 def _participant_alias(index: int) -> str:
     """Build a stable participant alias."""
     return f"P{index + 1}"
+
+
+def _constraint_anchor_name(constraint_id: str, side: str) -> str:
+    """Build one PlantUML-safe teoz anchor name for a temporal constraint."""
+    safe_id = _PLANTUML_SAFE_ID_RE.sub("_", constraint_id).strip("_")
+    if not safe_id:
+        safe_id = "constraint"
+    if safe_id[0].isdigit():
+        safe_id = f"C_{safe_id}"
+    return f"{safe_id}__{side}"
 
 
 def _constraint_value_text(min_text: Optional[str], max_text: Optional[str], strict_lower: bool) -> str:
@@ -126,6 +139,44 @@ def _collect_auto_notes(report: SysDeSimPhase10Report) -> Dict[str, List[str]]:
     return result
 
 
+def _assign_temporal_constraint_columns(
+    report: SysDeSimPhase10Report,
+) -> Tuple[Dict[str, int], int]:
+    """
+    Assign temporal constraints to right-side columns to reduce overlap.
+
+    Constraints whose step ranges overlap are placed on different columns using
+    a greedy interval-coloring strategy in step-order space.
+    """
+    step_index = {item.step_id: idx for idx, item in enumerate(report.scenario.steps)}
+    ordered_constraints = sorted(
+        report.scenario.temporal_constraints,
+        key=lambda item: (
+            step_index[item.left_step_id],
+            step_index[item.right_step_id],
+            item.constraint_id,
+        ),
+    )
+
+    last_right_index_by_column: List[int] = []
+    column_by_constraint_id: Dict[str, int] = {}
+    for item in ordered_constraints:
+        left_idx = step_index[item.left_step_id]
+        right_idx = step_index[item.right_step_id]
+        assigned_column = None
+        for column, last_right_idx in enumerate(last_right_index_by_column):
+            if left_idx > last_right_idx:
+                assigned_column = column
+                last_right_index_by_column[column] = right_idx
+                break
+        if assigned_column is None:
+            assigned_column = len(last_right_index_by_column)
+            last_right_index_by_column.append(right_idx)
+        column_by_constraint_id[item.constraint_id] = assigned_column
+
+    return column_by_constraint_id, len(last_right_index_by_column)
+
+
 def build_sysdesim_timeline_plantuml(
     report: SysDeSimPhase10Report,
     options: Optional[SysDeSimTimelinePlantumlOptions] = None,
@@ -166,9 +217,6 @@ def build_sysdesim_timeline_plantuml(
         ),
         default_alias,
     )
-    all_aliases = tuple(alias for alias, _ in participant_order)
-    all_alias_text = ",".join(all_aliases) if all_aliases else default_alias
-
     message_index = {
         item.message_id: item
         for item in interaction.observation_stream
@@ -179,21 +227,24 @@ def build_sysdesim_timeline_plantuml(
         for item in interaction.observation_stream
         if isinstance(item, SysDeSimStateInvariantObservation)
     }
-    right_constraint_index: Dict[str, List[Tuple[str, str]]] = {}
+    constraint_column_by_id, constraint_column_count = _assign_temporal_constraint_columns(report)
+    time_lane_aliases = [f"PT{index + 1}" for index in range(constraint_column_count)]
+    constraint_anchor_name_by_id = {
+        item.constraint_id: {
+            "left": _constraint_anchor_name(item.constraint_id, "left"),
+            "right": _constraint_anchor_name(item.constraint_id, "right"),
+        }
+        for item in report.scenario.temporal_constraints
+    }
+
+    anchor_specs_by_step: Dict[str, List[Tuple[int, str]]] = {}
     for item in report.scenario.temporal_constraints:
-        right_constraint_index.setdefault(item.right_step_id, []).append(
-            (
-                item.constraint_id,
-                "{left} -> {right} : {value}".format(
-                    left=item.left_step_id,
-                    right=item.right_step_id,
-                    value=_constraint_value_text(
-                        item.min_seconds_text,
-                        item.max_seconds_text,
-                        item.strict_lower,
-                    ),
-                ),
-            )
+        column = constraint_column_by_id[item.constraint_id]
+        anchor_specs_by_step.setdefault(item.left_step_id, []).append(
+            (column, constraint_anchor_name_by_id[item.constraint_id]["left"])
+        )
+        anchor_specs_by_step.setdefault(item.right_step_id, []).append(
+            (column, constraint_anchor_name_by_id[item.constraint_id]["right"])
         )
 
     auto_notes_by_step = _collect_auto_notes(report) if options.include_hidden_auto else {}
@@ -202,7 +253,9 @@ def build_sysdesim_timeline_plantuml(
 
     lines = [
         "@startuml",
+        "!pragma teoz true",
         "hide footbox",
+        f"skinparam ParticipantPadding {_PLANTUML_PARTICIPANT_PADDING}",
         "skinparam sequenceMessageAlign center",
         'skinparam responseMessageBelowArrow true',
         f"title {_escape_text(title)}",
@@ -210,6 +263,8 @@ def build_sysdesim_timeline_plantuml(
     ]
     for alias, label in participant_order:
         lines.append(f'participant "{_escape_text(label)}" as {alias}')
+    for alias in time_lane_aliases:
+        lines.append(f'participant " " as {alias}')
     if participant_order:
         lines.append("")
 
@@ -251,7 +306,8 @@ def build_sysdesim_timeline_plantuml(
             else:
                 label = _message_label(message_observation)
             lines.append(
-                "{src} -> {dst} : [{step}] {label}".format(
+                "{{{anchor}}} {src} -> {dst} : [{step}] {label}".format(
+                    anchor=step.step_id,
                     src=source_alias,
                     dst=target_alias,
                     step=step.step_id,
@@ -264,21 +320,58 @@ def build_sysdesim_timeline_plantuml(
                 internal_alias,
             )
             note_text = invariant_observation.raw_text or ""
-            lines.append(f"note over {target_alias} : [{step.step_id}] {_escape_text(note_text)}")
+            lines.append(
+                "{{{anchor}}} {target} -> {target} : [{step}] {text}".format(
+                    anchor=step.step_id,
+                    target=target_alias,
+                    step=step.step_id,
+                    text=_escape_text(note_text),
+                )
+            )
         else:
             note_text = "; ".join(_escape_text(item) for item in step.notes) if step.notes else "anchor"
-            lines.append(f"note over {internal_alias} : [{step.step_id}] {note_text}")
-
-        for constraint_id, constraint_text in right_constraint_index.get(step.step_id, ()):
-            if options.include_debug_comments:
-                lines.append(f"' temporal_constraint_id={constraint_id}")
             lines.append(
-                f"note over {all_alias_text} : [{constraint_id}] {_escape_text(constraint_text)}"
+                "{{{anchor}}} {target} -> {target} : [{step}] {text}".format(
+                    anchor=step.step_id,
+                    target=internal_alias,
+                    step=step.step_id,
+                    text=note_text,
+                )
+            )
+
+        for column, anchor_name in sorted(anchor_specs_by_step.get(step.step_id, ())):
+            lane_alias = time_lane_aliases[column]
+            lines.append(
+                "{{{anchor}}} {lane} -[#white]> {lane} : @{step}".format(
+                    anchor=anchor_name,
+                    lane=lane_alias,
+                    step=_escape_text(step.step_id),
+                )
             )
 
         for auto_note in auto_notes_by_step.get(step.step_id, ()):
             lines.append(f"note over {internal_alias} : {_escape_text(auto_note)}")
 
+        lines.append("")
+
+    for item in report.scenario.temporal_constraints:
+        if options.include_debug_comments:
+            lines.append(f"' temporal_constraint_id={item.constraint_id}")
+        lines.append(
+            "{{{left}}} <-> {{{right}}} : {value}".format(
+                left=constraint_anchor_name_by_id[item.constraint_id]["left"],
+                right=constraint_anchor_name_by_id[item.constraint_id]["right"],
+                value=_escape_text(
+                    _constraint_value_text(
+                        item.min_seconds_text,
+                        item.max_seconds_text,
+                        item.strict_lower,
+                    )
+                ),
+            )
+        )
+
+    if report.scenario.temporal_constraints:
         lines.append("")
 
     lines.extend(

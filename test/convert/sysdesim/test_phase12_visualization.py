@@ -1,6 +1,8 @@
 """Unit tests for the SysDeSim Phase12 PlantUML timeline export."""
 
+from dataclasses import replace
 from pathlib import Path
+import re
 from textwrap import dedent
 
 import pytest
@@ -187,15 +189,23 @@ def test_build_sysdesim_timeline_plantuml_from_xml_outputs_reviewable_puml(tmp_p
 
     assert plantuml_text.startswith("@startuml")
     assert plantuml_text.strip().endswith("@enduml")
+    assert "!pragma teoz true" in plantuml_text
+    assert "skinparam ParticipantPadding 50" in plantuml_text
     assert 'participant "控制"' in plantuml_text
     assert 'participant "模块"' in plantuml_text
-    assert "[s01] Sig1" in plantuml_text
-    assert "[s02] c=0" in plantuml_text
-    assert "[s04] d=0" in plantuml_text
-    assert "[s05] Sig2" in plantuml_text
-    assert "[s06] Sig9" in plantuml_text
-    assert "[s08] Sig11" in plantuml_text
-    assert "s05 -> s07 : 10" in plantuml_text
+    assert 'participant " " as PT1' in plantuml_text
+    assert "{s01} ll_module -> ll_control" not in plantuml_text
+    assert "{s01} P2 -> P1 : [s01] Sig1" in plantuml_text
+    assert "{s02} P1 -> P1 : [s02] c=0" in plantuml_text
+    assert "{s04} P1 -> P1 : [s04] d=0" in plantuml_text
+    assert "{s05} P2 -> P1 : [s05] Sig2" in plantuml_text
+    assert "{s06} P1 -> P2 : [s06] Sig9" in plantuml_text
+    assert "{s08} P1 -> P2 : [s08] Sig11" in plantuml_text
+    assert "PT1 -[#white]> PT1" in plantuml_text
+    assert re.search(r"PT1 -\[#white\]> PT1 : @s\d+", plantuml_text)
+    assert "<->" in plantuml_text
+    assert ": 10" in plantuml_text
+    assert "note over P1,P2 : [_" not in plantuml_text
     assert "source_observation_id=msg_start" not in plantuml_text
     assert "outbound_signal=" not in plantuml_text
     assert "machine_relevant_direction_mismatch" not in plantuml_text
@@ -248,3 +258,26 @@ def test_build_sysdesim_timeline_plantuml_can_emit_debug_comments_when_requested
 
     assert "source_observation_id=msg_start" in plantuml_text
     assert "temporal_constraint_id=" in plantuml_text
+    assert "<->" in plantuml_text
+
+
+def test_build_sysdesim_timeline_plantuml_sanitizes_temporal_anchor_ids(tmp_path: Path):
+    """Temporal constraint anchor names should stay PlantUML-safe."""
+    xml_file = _build_parallel_timeline_xml(tmp_path)
+    report = build_sysdesim_phase10_report(str(xml_file))
+    first_constraint = report.scenario.temporal_constraints[0]
+    scenario = replace(
+        report.scenario,
+        temporal_constraints=(
+            replace(first_constraint, constraint_id="9-invalid:id-value"),
+            *report.scenario.temporal_constraints[1:],
+        ),
+    )
+    rewritten_report = replace(report, scenario=scenario)
+
+    plantuml_text = build_sysdesim_timeline_plantuml(rewritten_report)
+
+    assert "{C_9_invalid_id_value__left}" in plantuml_text
+    assert "{C_9_invalid_id_value__right}" in plantuml_text
+    assert "{9-invalid:id-value__left}" not in plantuml_text
+    assert "{9-invalid:id-value__right}" not in plantuml_text

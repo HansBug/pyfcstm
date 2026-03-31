@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 修改内容 | 作者 |
 |------|------|----------|------|
+| 0.1.18 | 2026-03-31 | 完成 Phase 12 首版实现：新增 SysDeSim timeline -> PlantUML 导出模块、公开 API、测试覆盖，并可直接为真实样例产出 review-first 顺序图代码 | Codex |
 | 0.1.17 | 2026-03-31 | 将 timeline 可视化正式前移为 Phase 12，并补充该阶段的 checklist 与更明确的首版验收标准 | Codex |
 | 0.1.16 | 2026-03-31 | 补充 timeline -> PlantUML 可视化设计：要求可把完整 timeline 对象渲染成 PlantUML 顺序图，并在当前真实样例上达到与给定顺序图基本一致的效果 | Codex |
 | 0.1.15 | 2026-03-31 | 补充 `model1.xml` 的最小修改建议：新增 `model1_fixed.xml` 所需的顺序图观测 diff，并把 Phase11 示例查询同步到实际可共存的 `region2.L/X` | Codex |
@@ -4034,14 +4035,14 @@ def build_timeline_plantuml(report: SysDeSimPhase10Report) -> str:
 
 ### 21.15.5 Phase 12 checklist
 
-* [ ] 新增 timeline 可视化实现模块，首版先放在 `pyfcstm.convert.sysdesim` 侧，避免过早抽象成与当前样例脱节的通用层。
-* [ ] 提供稳定纯库 API，例如 `build_sysdesim_timeline_plantuml(report: SysDeSimPhase10Report) -> str`。
-* [ ] 提供从 XML 直接进入可视化主链的辅助入口，但内部必须复用现有 `build_sysdesim_phase10_report(...)`，不得重新走一套 XML 解析与拼图逻辑。
-* [ ] 从 `Phase10Report` 中渲染 lifeline、message、`SetInput` 观测、step id 与 normalized temporal constraints。
-* [ ] 为 message / state invariant / duration constraint 保留对原始 observation 的可回指关系，便于人工审查和后续 witness 联动。
-* [ ] 为 hidden auto occurrence 预留调试开关；首版默认不画普通消息箭头，但允许以 note 或注释附着到相邻 step。
-* [ ] 为 `/home/hansbug/文档/damnx_sysdesim_sample/model1_fixed.xml` 提供一条固定演示路径，可稳定产出 `.puml` 文本。
-* [ ] 增加最小测试覆盖，至少验证 API 输出结构、关键语义片段与 PlantUML 文本边界，不把正确性只寄托在人工肉眼检查上。
+* [x] 新增 timeline 可视化实现模块，首版先放在 `pyfcstm.convert.sysdesim` 侧，避免过早抽象成与当前样例脱节的通用层。
+* [x] 提供稳定纯库 API，例如 `build_sysdesim_timeline_plantuml(report: SysDeSimPhase10Report) -> str`。
+* [x] 提供从 XML 直接进入可视化主链的辅助入口，但内部必须复用现有 `build_sysdesim_phase10_report(...)`，不得重新走一套 XML 解析与拼图逻辑。
+* [x] 从 `Phase10Report` 中渲染 lifeline、message、`SetInput` 观测、step id 与 normalized temporal constraints。
+* [x] 为 message / state invariant / duration constraint 保留对原始 observation 的可回指关系，便于人工审查和后续 witness 联动。
+* [x] 为 hidden auto occurrence 预留调试开关；首版默认不画普通消息箭头，但允许以 note 或注释附着到相邻 step。
+* [x] 为 `/home/hansbug/文档/damnx_sysdesim_sample/model1_fixed.xml` 提供一条固定演示路径，可稳定产出 `.puml` 文本。
+* [x] 增加最小测试覆盖，至少验证 API 输出结构、关键语义片段与 PlantUML 文本边界，不把正确性只寄托在人工肉眼检查上。
 
 ### 21.15.6 当前真实样例的验收要求
 

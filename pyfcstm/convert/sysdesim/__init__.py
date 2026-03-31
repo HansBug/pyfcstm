@@ -33,12 +33,16 @@ surface is intentionally small:
 * :func:`build_sysdesim_phase78_report` exposes the current timeline-first
   import IR for machine graph, input/event bindings, and ordered step
   candidates.
+* :func:`build_sysdesim_timeline_plantuml` and
+  :func:`build_sysdesim_timeline_plantuml_from_xml` expose the current
+  review-oriented Phase12 timeline visualization export.
 
-Internals are kept in five files to avoid unnecessary fragmentation:
+Internals are kept in six files to avoid unnecessary fragmentation:
 
 - ``ir.py`` for the dataclass IR
 - ``xmi.py`` for the raw XML/XMI index layer
 - ``timeline.py`` for interaction extraction and unified trigger reporting
+- ``timeline_plantuml.py`` for Phase12 review-oriented PlantUML export
 - ``convert.py`` for loading, normalization, AST building, and validation
 - ``__init__.py`` for the stable public surface
 
@@ -128,6 +132,11 @@ from .timeline_verify import (
     build_sysdesim_phase9_report,
     solve_sysdesim_state_coexistence,
 )
+from .timeline_plantuml import (
+    SysDeSimTimelinePlantumlOptions,
+    build_sysdesim_timeline_plantuml,
+    build_sysdesim_timeline_plantuml_from_xml,
+)
 
 
 __all__ = [
@@ -156,6 +165,7 @@ __all__ = [
     "SysDeSimTimelineAutoOccurrence",
     "SysDeSimTimelineMachineBinding",
     "SysDeSimTimelineMachineTrace",
+    "SysDeSimTimelinePlantumlOptions",
     "SysDeSimTimelineScenario",
     "SysDeSimTimelineScenarioEmitAction",
     "SysDeSimTimelineScenarioSetInputAction",
@@ -182,6 +192,8 @@ __all__ = [
     "build_sysdesim_phase56_report",
     "build_sysdesim_phase9_report",
     "build_sysdesim_phase78_report",
+    "build_sysdesim_timeline_plantuml",
+    "build_sysdesim_timeline_plantuml_from_xml",
     "build_sysdesim_state_coexistence_constraint_preview",
     "build_sysdesim_state_coexistence_timeline_report",
     "convert_sysdesim_xml_to_ast",

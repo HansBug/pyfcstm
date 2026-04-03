@@ -6,8 +6,8 @@ This directory contains the ANTLR4-generated JavaScript parser artifacts for the
 
 The VSCode extension now uses a pure JavaScript parser path:
 
-1. The canonical grammar remains `pyfcstm/dsl/grammar/Grammar.g4`
-2. Python and JavaScript artifacts are both generated from that same grammar
+1. The canonical grammar remains `pyfcstm/dsl/grammar/GrammarLexer.g4` and `pyfcstm/dsl/grammar/GrammarParser.g4`
+2. Python and JavaScript artifacts are both generated from that same grammar pair
 3. The extension loads the generated lexer/parser from this directory at runtime
 4. `src/parser.ts` normalizes ANTLR diagnostics into the extension's `ParseResult` contract
 
@@ -50,6 +50,5 @@ Typical generated files in this directory include:
 
 - `GrammarLexer.js`
 - `GrammarParser.js`
-- `GrammarVisitor.js`
 
 These files are replaced whenever `make parser` is run.

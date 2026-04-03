@@ -6,7 +6,8 @@
 # ANTLR configuration
 ANTLR_VERSION := 4.9.3
 ANTLR_JAR := ../../antlr-$(ANTLR_VERSION).jar
-GRAMMAR_FILE := ../../pyfcstm/dsl/grammar/Grammar.g4
+GRAMMAR_LEXER_FILE := ../../pyfcstm/dsl/grammar/GrammarLexer.g4
+GRAMMAR_PARSER_FILE := ../../pyfcstm/dsl/grammar/GrammarParser.g4
 PARSER_OUTPUT_DIR := ./parser
 
 # TextMate grammar configuration
@@ -66,17 +67,17 @@ $(TEXTMATE_DST): $(TEXTMATE_SRC)
 	cp $(TEXTMATE_SRC) $(TEXTMATE_DST)
 	@echo "TextMate grammar copied to $(TEXTMATE_DST)"
 
-parser: $(ANTLR_JAR) $(GRAMMAR_FILE)
+parser: $(ANTLR_JAR) $(GRAMMAR_LEXER_FILE) $(GRAMMAR_PARSER_FILE)
 	@echo "Generating JavaScript parser from ANTLR grammar..."
-	@echo "Using the canonical Grammar.g4 with JavaScript-safe labels shared across Python and VSCode."
+	@echo "Using the canonical GrammarLexer.g4 + GrammarParser.g4 shared across Python and VSCode."
 	@mkdir -p $(PARSER_OUTPUT_DIR)
 	@find $(PARSER_OUTPUT_DIR) -mindepth 1 ! -name 'README.md' ! -name 'package.json' -exec rm -rf {} +
 	java -jar $(ANTLR_JAR) -Dlanguage=JavaScript \
 		-o $(PARSER_OUTPUT_DIR) \
 		-Xexact-output-dir \
-		-visitor \
 		-no-listener \
-		$(GRAMMAR_FILE)
+		$(GRAMMAR_LEXER_FILE) \
+		$(GRAMMAR_PARSER_FILE)
 	@echo "Parser generated successfully in $(PARSER_OUTPUT_DIR)/"
 	@echo ""
 	@echo "Generated files:"
@@ -93,7 +94,7 @@ build-dev: icons syntaxes parser
 	@echo "Development build complete. Output in ./dist/"
 
 # Legacy TypeScript compilation (for verification scripts)
-build-tsc: syntaxes
+build-tsc: syntaxes parser
 	@echo "Compiling TypeScript (for verification scripts)..."
 	$(TSC) -p ./
 	@echo "TypeScript compilation complete. Output in ./out/"

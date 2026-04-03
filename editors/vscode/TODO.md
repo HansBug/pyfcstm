@@ -148,7 +148,7 @@ This is the core technical foundation for diagnostics and future lightweight lan
 
 **Scope**
 
-- Generate JavaScript or TypeScript-consumable lexer/parser artifacts from `Grammar.g4`
+- Generate JavaScript or TypeScript-consumable lexer/parser artifacts from `GrammarLexer.g4` and `GrammarParser.g4`
 - Bundle the generated runtime into the extension
 - Expose a small parsing adapter inside the extension codebase
 
@@ -179,10 +179,10 @@ This is the core technical foundation for diagnostics and future lightweight lan
 
 **Implementation Notes**
 
-The VSCode extension now uses a pure JavaScript ANTLR parser generated from the canonical `Grammar.g4`.
+The VSCode extension now uses a pure JavaScript ANTLR parser generated from the canonical grammar pair `GrammarLexer.g4` and `GrammarParser.g4`.
 
 **Parser Architecture:**
-- **Grammar Source**: `pyfcstm/dsl/grammar/Grammar.g4` (single source of truth for both Python and JavaScript)
+- **Grammar Source**: `pyfcstm/dsl/grammar/GrammarLexer.g4` and `pyfcstm/dsl/grammar/GrammarParser.g4` (single source of truth for both Python and JavaScript)
 - **JavaScript Artifacts**: Generated to `editors/vscode/parser/` using ANTLR 4.9.3
 - **Parser Adapter**: `src/parser.ts` loads generated artifacts via dynamic import and normalizes ANTLR diagnostics
 - **Runtime**: `antlr4@4.9.3` (exact version pinned for artifact compatibility)
@@ -195,7 +195,7 @@ The VSCode extension now uses a pure JavaScript ANTLR parser generated from the 
 - Both Python and JavaScript parsers now generate from the same grammar revision
 
 **Regeneration Workflow:**
-1. Modify `pyfcstm/dsl/grammar/Grammar.g4`
+1. Modify `pyfcstm/dsl/grammar/GrammarLexer.g4` and/or `pyfcstm/dsl/grammar/GrammarParser.g4`
 2. Regenerate Python parser: `make antlr_build` (from project root)
 3. Update Python consumers if grammar structure changed
 4. Verify Python tests: `make unittest`
@@ -486,7 +486,7 @@ The original architecture had dependency loading issues in VSCode environments. 
 **Acceptance criteria**
 
 - [x] Single `dist/extension.js` file contains all dependencies
-- [x] ANTLR-generated parser files (GrammarLexer, GrammarParser, GrammarVisitor) bundled
+- [x] ANTLR-generated lexer/parser files (GrammarLexer, GrammarParser) bundled
 - [x] antlr4 runtime library bundled
 - [x] All extension sources bundled
 - [x] No runtime dependency loading issues
@@ -500,7 +500,7 @@ The original architecture had dependency loading issues in VSCode environments. 
 - **Build Tool**: esbuild (replaces tsc for extension bundling)
 - **Bundle Output**: `dist/extension.js` (246KB, single file)
 - **Bundle Contents**:
-  - ANTLR-generated parser: ~104KB (GrammarLexer, GrammarParser, GrammarVisitor)
+  - ANTLR-generated parser: ~104KB (GrammarLexer, GrammarParser)
   - antlr4 runtime library: ~80KB
   - Extension sources: ~20KB (extension.ts, parser.ts, diagnostics.ts, symbols.ts, completion.ts, hover.ts)
 - **Build Time**: ~77ms (26x faster than tsc ~2s)
@@ -582,7 +582,6 @@ Top contributors to bundle size:
 - `antlr4/atn/LexerATNSimulator.js`: 6.9KB (2.8%)
 - `src/hover.ts`: 6.2KB (2.5%)
 - `src/parser.ts`: 4.1KB (1.7%)
-- `parser/GrammarVisitor.js`: 3.4KB (1.4%)
 
 **Migration Impact:**
 

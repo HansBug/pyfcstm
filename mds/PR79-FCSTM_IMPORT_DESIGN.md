@@ -2,9 +2,9 @@
 
 ## PR 信息
 
-- PR 编号：待创建
-- PR 链接：待创建
-- 文档链接：待创建
+- PR 编号：79
+- PR 链接：https://github.com/HansBug/pyfcstm/pull/79
+- 文档链接：https://github.com/HansBug/pyfcstm/blob/dev/import/mds/PR79-FCSTM_IMPORT_DESIGN.md
 
 ## 版本历史
 
@@ -536,4 +536,3 @@ import "./motor.fcstm" as RightMotor {
 - VSCode 先做语法与轻量工作区索引，不切换到 LSP
 
 ---
-

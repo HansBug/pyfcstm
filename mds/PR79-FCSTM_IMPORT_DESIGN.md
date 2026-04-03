@@ -10,6 +10,7 @@
 
 | 版本 | 日期 | 修改内容 | 作者 |
 |------|------|----------|------|
+| 0.2.0 | 2026-04-03 | 补充事件映射右侧相对路径语义，并允许在事件映射上用 `named` 覆盖最终显示名称 | Codex |
 | 0.1.0 | 2026-04-03 | 初始版本，定义 import 装配语义、事件/变量映射规则与 VSCode 支持方案 | Codex |
 
 ---
@@ -102,14 +103,14 @@
 state System {
     import "./motor.fcstm" as LeftMotor named "Left Motor" {
         def * -> "left_*";
-        event /Start -> /Motors.Start;
+        event /Start -> Start named "Motor Start";
         event /Stop -> /Motors.Stop;
         event /Fault -> /Motors.Fault;
     }
 
     import "./motor.fcstm" as RightMotor named "Right Motor" {
         def * -> "right_*";
-        event /Start -> /Motors.Start;
+        event /Start -> Start named "Motor Start";
         event /Stop -> /Motors.Stop;
         event /Fault -> /Motors.Fault;
     }
@@ -130,7 +131,7 @@ import STRING as ID (named STRING)? ('{' import_mapping_statement* '}')? ';'
 其中 `import_mapping_statement` 第一阶段建议只支持两类：
 
 - `def ... -> ...;`
-- `event ... -> ...;`
+- `event ... -> ... (named "...")?;`
 
 这样可以尽量复用现有 DSL 关键字体系，只引入新的 `import`、`as` 两个核心关键字。
 
@@ -270,10 +271,11 @@ StateA -> StateB : /Start;
 
 ### 6.3 显式事件映射
 
-建议只允许对“模块绝对事件”做跨实例绑定：
+建议只允许对“模块绝对事件”做跨实例绑定。左侧必须是模块绝对事件路径，右侧既可以是宿主绝对路径，也可以是宿主相对路径：
 
 ```fcstm
-event /Start -> /Motors.Start;
+event /Start -> Start;
+event /Start -> Start named "Motor Start";
 event /Stop -> /Motors.Stop;
 event /Fault -> /GlobalFault;
 ```
@@ -281,7 +283,23 @@ event /Fault -> /GlobalFault;
 解释：
 
 - 左侧 `/Start` 指模块根绝对事件
-- 右侧 `/Motors.Start` 指宿主装配后的最终事件路径
+- 右侧 `/Motors.Start` 指宿主装配后的最终绝对事件路径
+- 右侧 `Start` 指相对于“import 所在宿主 state”的事件路径
+- `named "Motor Start"` 用于覆盖装配后目标事件的显示名称
+
+例如：
+
+```fcstm
+state System {
+    import "./motor.fcstm" as LeftMotor {
+        event /Start -> Start;
+    }
+}
+```
+
+这里右侧 `Start` 不指向 `System.LeftMotor.Start`，而是指向 import 所在的宿主 state，也就是 `System.Start`。
+
+也就是说，事件映射的右侧相对路径解析基准是“import 所在 state”，而不是“被导入模块实例根”。
 
 ### 6.4 为什么只映射模块绝对事件
 
@@ -296,6 +314,20 @@ event /Fault -> /GlobalFault;
 ### 6.5 共享事件
 
 两个同构模块要共享同一套事件，只需把各自模块绝对事件映射到同一宿主事件路径：
+
+```fcstm
+import "./motor.fcstm" as LeftMotor {
+    event /Start -> Start;
+}
+
+import "./motor.fcstm" as RightMotor {
+    event /Start -> Start;
+}
+```
+
+若这两个 import 都位于宿主 `state System` 内，则此时两个模块都可响应宿主 `System.Start`。
+
+若希望共享到更高层的事件总线，也可以显式写为：
 
 ```fcstm
 import "./motor.fcstm" as LeftMotor {
@@ -318,6 +350,24 @@ import "./motor.fcstm" as RightMotor {
 - 默认展开后解析为 `System.LeftMotor.Start`
 
 这样仍然保持实例隔离。
+
+### 6.7 事件显示名称覆盖
+
+事件映射支持在语句尾部添加 `named`，用于覆盖最终宿主事件的显示名称：
+
+```fcstm
+event /Start -> Start named "Motor Start";
+event /Fault -> /GlobalFault named "Motor Fault";
+```
+
+建议显示名称优先级如下：
+
+1. 事件映射语句上的 `named`
+2. 宿主侧已存在目标事件的 `named`
+3. 模块源事件自带的 `named`
+4. 目标事件名本身
+
+若多个映射命中同一目标事件并给出不同的 `named` 值，建议直接报冲突错误，避免最终显示名称不确定。
 
 ---
 
@@ -349,7 +399,32 @@ import "./motor.fcstm" as RightMotor {
 1. 若命中显式映射规则，则映射到指定宿主目标
 2. 否则重写为导入实例作用域下的默认路径
 
-### 7.4 相对路径重写
+### 7.4 事件映射目标路径重写
+
+事件映射右侧目标路径的解析规则建议为：
+
+- 若右侧以 `/` 开头，则按宿主最终 root 绝对路径解析
+- 若右侧不以 `/` 开头，则按“import 所在宿主 state”相对路径解析
+
+例如：
+
+```fcstm
+state System {
+    import "./motor.fcstm" as LeftMotor {
+        event /Start -> Start;
+        event /Stop -> Bus.Stop;
+        event /Fault -> /GlobalFault;
+    }
+}
+```
+
+应分别解析为：
+
+- `Start` -> `System.Start`
+- `Bus.Stop` -> `System.Bus.Stop`
+- `/GlobalFault` -> `Root.GlobalFault`
+
+### 7.5 相对路径重写
 
 模块内相对路径继续保持相对语义，但其所属状态树已被整体挂载到 `Alias` 之下，因此最终会自然落到导入实例内部。
 

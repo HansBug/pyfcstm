@@ -10,6 +10,7 @@
 
 | 版本 | 日期 | 修改内容 | 作者 |
 |------|------|----------|------|
+| 0.5.1 | 2026-04-03 | 为各 phase 补充回归测试验收要求，并新增 public API 测试约束与 pydoc 编写规范约束 | Codex |
 | 0.5.0 | 2026-04-03 | 新增完整实施计划，按 phase 拆分 TODO 与验收 checklist，并补充每次 push 后同步 MD / PR checkbox 的推进规则 | Codex |
 | 0.4.3 | 2026-04-03 | 收紧单个 import 实例内的变量映射约束，明确禁止任何内部 many-to-one 变量塌缩 | Codex |
 | 0.4.2 | 2026-04-03 | 调整变量共享边界，允许不同 import 实例中的不同源变量汇聚到同一目标变量名，但要求参与汇聚的类型完全一致 | Codex |
@@ -963,6 +964,10 @@ parse_dsl_node_to_state_machine(
 * [ ] 若某个 phase 的范围、拆分方式或验收口径发生变化，必须在同一次 push 中同时更新本文档与 PR body
 * [ ] 只有当某个 phase 的 checklist 全部满足后，才允许勾选该 phase 的总览 checkbox
 * [ ] GitHub PR body 中必须始终保留本文档链接，方便从 PR 直接跳转到详细设计与执行计划
+* [ ] 每个 phase 在验收前都必须按影响范围执行回归测试；最少粒度为 `make unittest RANGE_DIR=./<一级模块>`，若影响跨一级模块或顶层链路，则应提升到更高层级，必要时执行 `make unittest`
+* [ ] 新功能与修复对应的测试应尽可能提高覆盖率，尤其覆盖新增语法、装配逻辑、错误路径与回归场景
+* [ ] 测试构造过程中严禁直接使用任何 private / protected 模块、类、函数、方法、字段；所有测试一律通过 public API 构造输入与断言行为
+* [ ] 所有新增或修改的 Python pydoc / docstring 必须严格遵循 AGENTS 中的 reST 与 docstring 规范，并与现有模块写法保持一致
 
 ### 12.2 Phase 总览
 
@@ -993,6 +998,7 @@ Checklist
 * [ ] 不含 import 的旧 DSL 文件解析行为保持不变
 * [ ] `path` 参数语义明确，且不会破坏现有调用方
 * [ ] 语法错误能定位到具体 import / mapping 语句，而不是只报笼统 parse 失败
+* [ ] 已按影响范围完成回归测试；至少使用 `make unittest RANGE_DIR=./<一级模块>` 级别命令，若本 phase 影响跨一级模块或顶层链路，则已提升到更高层级
 
 ### 12.4 Phase 2: Import 装配器与递归路径解析
 
@@ -1013,6 +1019,7 @@ Checklist
 * [ ] 循环导入能被稳定检测，并给出可读错误链路
 * [ ] 只允许导入外部文件的 root state，其他情况均能明确报错
 * [ ] 装配结果在结构上等价于手工内联，不引入额外运行时概念
+* [ ] 已按影响范围完成回归测试；至少使用 `make unittest RANGE_DIR=./<一级模块>` 级别命令，若本 phase 影响跨一级模块或顶层链路，则已提升到更高层级
 
 ### 12.5 Phase 3: `def` mapping 与变量合流校验
 
@@ -1036,6 +1043,7 @@ Checklist
 * [ ] 单个 import 内部任何 many-to-one 变量收敛都会被直接拒绝
 * [ ] 跨 import 或宿主绑定的变量共享只会在类型完全一致时通过
 * [ ] `int` / `float` 混合汇聚会稳定报错
+* [ ] 已按影响范围完成回归测试；至少使用 `make unittest RANGE_DIR=./<一级模块>` 级别命令，若本 phase 影响跨一级模块或顶层链路，则已提升到更高层级
 
 ### 12.6 Phase 4: event mapping 与路径重写
 
@@ -1057,6 +1065,7 @@ Checklist
 * [ ] `event /Start -> /Motors.Start;` 能正确解析为宿主 root 下的绝对事件路径
 * [ ] 未映射的模块绝对事件会落到实例作用域而不是错误提升到宿主 root
 * [ ] 多个 import 共享同一宿主事件时，路径和显示名行为可预测且冲突可诊断
+* [ ] 已按影响范围完成回归测试；至少使用 `make unittest RANGE_DIR=./<一级模块>` 级别命令，若本 phase 影响跨一级模块或顶层链路，则已提升到更高层级
 
 ### 12.7 Phase 5: CLI / generate / simulate / PlantUML 接入
 
@@ -1077,6 +1086,7 @@ Checklist
 * [ ] `pyfcstm plantuml` 输出的结构与装配后的状态树一致
 * [ ] `pyfcstm simulate` 可以在多文件装配后正常运行
 * [ ] 现有单文件使用路径在 CLI 层保持兼容
+* [ ] 已按影响范围完成回归测试；至少使用 `make unittest RANGE_DIR=./<一级模块>` 级别命令，若本 phase 影响跨一级模块或顶层链路，则已提升到更高层级
 
 ### 12.8 Phase 6: VSCode 扩展支持
 
@@ -1097,6 +1107,7 @@ Checklist
 * [ ] 缺失文件与循环导入能在编辑器内得到可用提示
 * [ ] 至少支持从 import 源路径跳转到被导入文件
 * [ ] 工作区索引不会把扩展复杂度直接推向完整 LSP
+* [ ] 已按影响范围完成回归测试；至少使用 `make unittest RANGE_DIR=./<一级模块>` 级别命令，若本 phase 影响跨一级模块或顶层链路，则已提升到更高层级
 
 ### 12.9 Phase 7: 测试、样例、文档与收尾
 
@@ -1118,6 +1129,7 @@ Checklist
 * [ ] 样例 DSL 能直观展示 import、变量映射、事件映射的推荐写法
 * [ ] 文档、PR body、实现状态三者一致
 * [ ] 不使用 import 的现有功能回归测试全部通过
+* [ ] 已按影响范围完成回归测试；至少使用 `make unittest RANGE_DIR=./<一级模块>` 级别命令，若本 phase 影响跨一级模块或顶层链路，则已提升到更高层级
 
 ---
 

@@ -10,6 +10,7 @@
 
 | 版本 | 日期 | 修改内容 | 作者 |
 |------|------|----------|------|
+| 0.4.1 | 2026-04-03 | 补充映射目标与宿主现有变量同名时的合法性规则，要求类型完全一致，并明确宿主定义优先 | Codex |
 | 0.4.0 | 2026-04-03 | 重写 `def` mapping 规范，定义 selector 类型、多 `*` 捕获、`${n}` / `$n` / 裸 `*` 规则，以及优先级与冲突处理 | Codex |
 | 0.3.0 | 2026-04-03 | 明确 import 文件系统相对路径按当前文件逐级解析，并调整为 `parse_dsl_node_to_state_machine()` 接收 `path` 参数负责递归导入 | Codex |
 | 0.2.1 | 2026-04-03 | 调整 7.4 节事件映射目标路径示例，显式补充最外层 `Root` 并明确相对目标解析结果 | Codex |
@@ -431,9 +432,30 @@ def * -> left_$0;
 
 - `def * -> ...` 只能出现一条
 
-### 5.10 目标名冲突与共享边界
+### 5.10 目标名冲突、共享边界与宿主同名绑定
 
-多个不同源变量若最终展开到同一个目标变量名，默认报错。
+若映射后的目标变量名已经在宿主文件顶层 `def` 中存在，则原则上允许直接绑定到该宿主已有变量，而不视为新建变量。
+
+但前提是：
+
+- 宿主已有变量与被映射过来的模块变量类型必须完全一致
+- 当前阶段仅有 `int` / `float` 两类，因此禁止 `int` 映射到宿主 `float`，也禁止 `float` 映射到宿主 `int`
+
+例如：
+
+```fcstm
+def int shared_counter = 0;
+
+state System {
+    import "./worker.fcstm" as A {
+        def counter -> shared_counter;
+    }
+}
+```
+
+若模块中的 `counter` 也是 `int`，则该映射合法；若模块中的 `counter` 是 `float`，则应直接报错。
+
+除“绑定到宿主已有同名变量”这一情况之外，多个不同源变量若最终展开到同一个目标变量名，默认报错。
 
 例如：
 
@@ -465,16 +487,22 @@ import "./worker.fcstm" as B {
 
 ### 5.11 类型与初始化校验
 
-当多个 import 最终把变量映射到同一目标变量名时，仍需执行一致性校验：
+当映射结果命中宿主已有变量，或多个 import 最终把变量映射到同一目标变量名时，仍需执行一致性校验：
 
-- 变量类型必须一致
-- 初始化表达式必须一致，或宿主文件已显式定义该目标变量
+- 若宿主文件已显式定义该目标变量，则：
+  - 变量类型必须与宿主定义完全一致
+  - 宿主定义视为最终权威定义
+  - import 内部原始变量的初始化表达式不再要求与宿主初始化一致
+- 若宿主文件未显式定义该目标变量，而多个 import 共享同一目标变量名，则：
+  - 变量类型必须一致
+  - 初始化表达式必须一致
 - 若类型不一致，报错
 - 若初始化冲突且宿主未显式覆盖，报错
 
 建议错误示例：
 
 - `Variable mapping conflict: target variable 'shared_counter' has inconsistent type 'int' vs 'float'.`
+- `Variable mapping conflict: target variable 'shared_counter' already exists in host model as type 'int', cannot bind imported type 'float'.`
 - `Variable mapping conflict: target variable 'shared_counter' has conflicting initial values.`
 
 ### 5.12 示例

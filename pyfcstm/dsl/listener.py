@@ -13,6 +13,7 @@ to build higher-level representations of:
 * Numeric and conditional expressions
 * Preamble and operational assignments
 * State machine definitions, transitions, and events
+* Import statements and import mapping rules
 * Entry/exit/during operation blocks and function references
 
 Example::
@@ -32,11 +33,24 @@ Example::
     >>> program_node = listener.nodes[tree]
 """
 
+import ast
 from typing import Any, Dict
 
 from .grammar import GrammarListener, GrammarParser
 from .node import *
 from ..utils import format_multiline_comment
+
+
+def _parse_string_literal(raw_text: str) -> str:
+    """
+    Decode a DSL string literal token into a Python string.
+
+    :param raw_text: Raw token text including surrounding quotes
+    :type raw_text: str
+    :return: Decoded string value
+    :rtype: str
+    """
+    return ast.literal_eval(raw_text)
 
 
 class GrammarParseListener(GrammarListener):
@@ -513,7 +527,9 @@ class GrammarParseListener(GrammarListener):
         super().exitLeafStateDefinition(ctx)
         self.nodes[ctx] = StateDefinition(
             name=str(ctx.ID()),
-            extra_name=eval(ctx.extra_name.text) if ctx.extra_name else None,
+            extra_name=_parse_string_literal(ctx.extra_name.text)
+            if ctx.extra_name
+            else None,
             substates=[],
             transitions=[],
             enters=[],
@@ -534,11 +550,18 @@ class GrammarParseListener(GrammarListener):
         super().exitCompositeStateDefinition(ctx)
         self.nodes[ctx] = StateDefinition(
             name=str(ctx.ID()),
-            extra_name=eval(ctx.extra_name.text) if ctx.extra_name else None,
+            extra_name=_parse_string_literal(ctx.extra_name.text)
+            if ctx.extra_name
+            else None,
             events=[
                 self.nodes[item]
                 for item in ctx.state_inner_statement()
                 if item in self.nodes and isinstance(self.nodes[item], EventDefinition)
+            ],
+            imports=[
+                self.nodes[item]
+                for item in ctx.state_inner_statement()
+                if item in self.nodes and isinstance(self.nodes[item], ImportStatement)
             ],
             substates=[
                 self.nodes[item]
@@ -766,6 +789,8 @@ class GrammarParseListener(GrammarListener):
             self.nodes[ctx] = self.nodes[ctx.transition_force_definition()]
         elif ctx.event_definition():
             self.nodes[ctx] = self.nodes[ctx.event_definition()]
+        elif ctx.import_statement():
+            self.nodes[ctx] = self.nodes[ctx.import_statement()]
 
     def exitOperation_assignment(
         self, ctx: GrammarParser.Operation_assignmentContext
@@ -1073,5 +1098,128 @@ class GrammarParseListener(GrammarListener):
         super().exitEvent_definition(ctx)
         self.nodes[ctx] = EventDefinition(
             name=ctx.event_name.text,
-            extra_name=eval(ctx.extra_name.text) if ctx.extra_name else None,
+            extra_name=_parse_string_literal(ctx.extra_name.text)
+            if ctx.extra_name
+            else None,
+        )
+
+    def exitImport_mapping_statement(
+        self, ctx: GrammarParser.Import_mapping_statementContext
+    ) -> None:
+        """
+        Bind an import mapping statement to its specific node.
+
+        :param ctx: Parse context for the import mapping statement.
+        :type ctx: GrammarParser.Import_mapping_statementContext
+        """
+        super().exitImport_mapping_statement(ctx)
+        if ctx.import_def_mapping():
+            self.nodes[ctx] = self.nodes[ctx.import_def_mapping()]
+        elif ctx.import_event_mapping():
+            self.nodes[ctx] = self.nodes[ctx.import_event_mapping()]
+
+    def exitImport_statement(self, ctx: GrammarParser.Import_statementContext) -> None:
+        """
+        Build an import statement node.
+
+        :param ctx: Parse context for the import statement.
+        :type ctx: GrammarParser.Import_statementContext
+        """
+        super().exitImport_statement(ctx)
+        self.nodes[ctx] = ImportStatement(
+            source_path=_parse_string_literal(ctx.import_path.text),
+            alias=ctx.state_alias.text,
+            extra_name=_parse_string_literal(ctx.extra_name.text)
+            if ctx.extra_name
+            else None,
+            mappings=[
+                self.nodes[item]
+                for item in ctx.import_mapping_statement()
+                if item in self.nodes
+            ],
+        )
+
+    def exitImportDefExactSelector(
+        self, ctx: GrammarParser.ImportDefExactSelectorContext
+    ) -> None:
+        """
+        Build an exact variable selector for an import ``def`` mapping.
+
+        :param ctx: Parse context for the exact selector.
+        :type ctx: GrammarParser.ImportDefExactSelectorContext
+        """
+        super().exitImportDefExactSelector(ctx)
+        self.nodes[ctx] = ImportDefExactSelector(name=ctx.selector_name.text)
+
+    def exitImportDefSetSelector(
+        self, ctx: GrammarParser.ImportDefSetSelectorContext
+    ) -> None:
+        """
+        Build a set selector for an import ``def`` mapping.
+
+        :param ctx: Parse context for the set selector.
+        :type ctx: GrammarParser.ImportDefSetSelectorContext
+        """
+        super().exitImportDefSetSelector(ctx)
+        self.nodes[ctx] = ImportDefSetSelector(
+            names=[item.text for item in ctx.selector_items]
+        )
+
+    def exitImportDefPatternSelector(
+        self, ctx: GrammarParser.ImportDefPatternSelectorContext
+    ) -> None:
+        """
+        Build a wildcard pattern selector for an import ``def`` mapping.
+
+        :param ctx: Parse context for the pattern selector.
+        :type ctx: GrammarParser.ImportDefPatternSelectorContext
+        """
+        super().exitImportDefPatternSelector(ctx)
+        self.nodes[ctx] = ImportDefPatternSelector(pattern=ctx.selector_pattern.text)
+
+    def exitImportDefFallbackSelector(
+        self, ctx: GrammarParser.ImportDefFallbackSelectorContext
+    ) -> None:
+        """
+        Build a fallback selector for an import ``def`` mapping.
+
+        :param ctx: Parse context for the fallback selector.
+        :type ctx: GrammarParser.ImportDefFallbackSelectorContext
+        """
+        super().exitImportDefFallbackSelector(ctx)
+        self.nodes[ctx] = ImportDefFallbackSelector()
+
+    def exitImport_def_mapping(
+        self, ctx: GrammarParser.Import_def_mappingContext
+    ) -> None:
+        """
+        Build a variable mapping rule inside an import block.
+
+        :param ctx: Parse context for the import ``def`` mapping.
+        :type ctx: GrammarParser.Import_def_mappingContext
+        """
+        super().exitImport_def_mapping(ctx)
+        self.nodes[ctx] = ImportDefMapping(
+            selector=self.nodes[ctx.import_def_selector()],
+            target_template=ImportDefTargetTemplate(
+                template=ctx.import_def_target_template().target_text.text
+            ),
+        )
+
+    def exitImport_event_mapping(
+        self, ctx: GrammarParser.Import_event_mappingContext
+    ) -> None:
+        """
+        Build an event mapping rule inside an import block.
+
+        :param ctx: Parse context for the import event mapping.
+        :type ctx: GrammarParser.Import_event_mappingContext
+        """
+        super().exitImport_event_mapping(ctx)
+        self.nodes[ctx] = ImportEventMapping(
+            source_event=self.nodes[ctx.source_event],
+            target_event=self.nodes[ctx.target_event],
+            extra_name=_parse_string_literal(ctx.extra_name.text)
+            if ctx.extra_name
+            else None,
         )

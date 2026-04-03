@@ -2,588 +2,652 @@
 from antlr4 import *
 
 if __name__ is not None and "." in __name__:
-    from .GrammarParser import GrammarParser
+    from .Grammar import Grammar
 else:
-    from GrammarParser import GrammarParser
+    from Grammar import Grammar
 
 
-# This class defines a complete listener for a parse tree produced by GrammarParser.
+# This class defines a complete listener for a parse tree produced by Grammar.
 class GrammarListener(ParseTreeListener):
-    # Enter a parse tree produced by GrammarParser#condition.
-    def enterCondition(self, ctx: GrammarParser.ConditionContext):
+    # Enter a parse tree produced by Grammar#condition.
+    def enterCondition(self, ctx: Grammar.ConditionContext):
         pass
 
-    # Exit a parse tree produced by GrammarParser#condition.
-    def exitCondition(self, ctx: GrammarParser.ConditionContext):
+    # Exit a parse tree produced by Grammar#condition.
+    def exitCondition(self, ctx: Grammar.ConditionContext):
         pass
 
-    # Enter a parse tree produced by GrammarParser#state_machine_dsl.
-    def enterState_machine_dsl(self, ctx: GrammarParser.State_machine_dslContext):
+    # Enter a parse tree produced by Grammar#state_machine_dsl.
+    def enterState_machine_dsl(self, ctx: Grammar.State_machine_dslContext):
         pass
 
-    # Exit a parse tree produced by GrammarParser#state_machine_dsl.
-    def exitState_machine_dsl(self, ctx: GrammarParser.State_machine_dslContext):
+    # Exit a parse tree produced by Grammar#state_machine_dsl.
+    def exitState_machine_dsl(self, ctx: Grammar.State_machine_dslContext):
         pass
 
-    # Enter a parse tree produced by GrammarParser#def_assignment.
-    def enterDef_assignment(self, ctx: GrammarParser.Def_assignmentContext):
+    # Enter a parse tree produced by Grammar#def_assignment.
+    def enterDef_assignment(self, ctx: Grammar.Def_assignmentContext):
         pass
 
-    # Exit a parse tree produced by GrammarParser#def_assignment.
-    def exitDef_assignment(self, ctx: GrammarParser.Def_assignmentContext):
+    # Exit a parse tree produced by Grammar#def_assignment.
+    def exitDef_assignment(self, ctx: Grammar.Def_assignmentContext):
         pass
 
-    # Enter a parse tree produced by GrammarParser#leafStateDefinition.
-    def enterLeafStateDefinition(self, ctx: GrammarParser.LeafStateDefinitionContext):
+    # Enter a parse tree produced by Grammar#leafStateDefinition.
+    def enterLeafStateDefinition(self, ctx: Grammar.LeafStateDefinitionContext):
         pass
 
-    # Exit a parse tree produced by GrammarParser#leafStateDefinition.
-    def exitLeafStateDefinition(self, ctx: GrammarParser.LeafStateDefinitionContext):
+    # Exit a parse tree produced by Grammar#leafStateDefinition.
+    def exitLeafStateDefinition(self, ctx: Grammar.LeafStateDefinitionContext):
         pass
 
-    # Enter a parse tree produced by GrammarParser#compositeStateDefinition.
+    # Enter a parse tree produced by Grammar#compositeStateDefinition.
     def enterCompositeStateDefinition(
-        self, ctx: GrammarParser.CompositeStateDefinitionContext
+        self, ctx: Grammar.CompositeStateDefinitionContext
     ):
         pass
 
-    # Exit a parse tree produced by GrammarParser#compositeStateDefinition.
+    # Exit a parse tree produced by Grammar#compositeStateDefinition.
     def exitCompositeStateDefinition(
-        self, ctx: GrammarParser.CompositeStateDefinitionContext
+        self, ctx: Grammar.CompositeStateDefinitionContext
     ):
         pass
 
-    # Enter a parse tree produced by GrammarParser#entryTransitionDefinition.
+    # Enter a parse tree produced by Grammar#entryTransitionDefinition.
     def enterEntryTransitionDefinition(
-        self, ctx: GrammarParser.EntryTransitionDefinitionContext
+        self, ctx: Grammar.EntryTransitionDefinitionContext
     ):
         pass
 
-    # Exit a parse tree produced by GrammarParser#entryTransitionDefinition.
+    # Exit a parse tree produced by Grammar#entryTransitionDefinition.
     def exitEntryTransitionDefinition(
-        self, ctx: GrammarParser.EntryTransitionDefinitionContext
+        self, ctx: Grammar.EntryTransitionDefinitionContext
     ):
         pass
 
-    # Enter a parse tree produced by GrammarParser#normalTransitionDefinition.
+    # Enter a parse tree produced by Grammar#normalTransitionDefinition.
     def enterNormalTransitionDefinition(
-        self, ctx: GrammarParser.NormalTransitionDefinitionContext
+        self, ctx: Grammar.NormalTransitionDefinitionContext
     ):
         pass
 
-    # Exit a parse tree produced by GrammarParser#normalTransitionDefinition.
+    # Exit a parse tree produced by Grammar#normalTransitionDefinition.
     def exitNormalTransitionDefinition(
-        self, ctx: GrammarParser.NormalTransitionDefinitionContext
+        self, ctx: Grammar.NormalTransitionDefinitionContext
     ):
         pass
 
-    # Enter a parse tree produced by GrammarParser#exitTransitionDefinition.
+    # Enter a parse tree produced by Grammar#exitTransitionDefinition.
     def enterExitTransitionDefinition(
-        self, ctx: GrammarParser.ExitTransitionDefinitionContext
+        self, ctx: Grammar.ExitTransitionDefinitionContext
     ):
         pass
 
-    # Exit a parse tree produced by GrammarParser#exitTransitionDefinition.
+    # Exit a parse tree produced by Grammar#exitTransitionDefinition.
     def exitExitTransitionDefinition(
-        self, ctx: GrammarParser.ExitTransitionDefinitionContext
+        self, ctx: Grammar.ExitTransitionDefinitionContext
     ):
         pass
 
-    # Enter a parse tree produced by GrammarParser#normalForceTransitionDefinition.
+    # Enter a parse tree produced by Grammar#normalForceTransitionDefinition.
     def enterNormalForceTransitionDefinition(
-        self, ctx: GrammarParser.NormalForceTransitionDefinitionContext
+        self, ctx: Grammar.NormalForceTransitionDefinitionContext
     ):
         pass
 
-    # Exit a parse tree produced by GrammarParser#normalForceTransitionDefinition.
+    # Exit a parse tree produced by Grammar#normalForceTransitionDefinition.
     def exitNormalForceTransitionDefinition(
-        self, ctx: GrammarParser.NormalForceTransitionDefinitionContext
+        self, ctx: Grammar.NormalForceTransitionDefinitionContext
     ):
         pass
 
-    # Enter a parse tree produced by GrammarParser#exitForceTransitionDefinition.
+    # Enter a parse tree produced by Grammar#exitForceTransitionDefinition.
     def enterExitForceTransitionDefinition(
-        self, ctx: GrammarParser.ExitForceTransitionDefinitionContext
+        self, ctx: Grammar.ExitForceTransitionDefinitionContext
     ):
         pass
 
-    # Exit a parse tree produced by GrammarParser#exitForceTransitionDefinition.
+    # Exit a parse tree produced by Grammar#exitForceTransitionDefinition.
     def exitExitForceTransitionDefinition(
-        self, ctx: GrammarParser.ExitForceTransitionDefinitionContext
+        self, ctx: Grammar.ExitForceTransitionDefinitionContext
     ):
         pass
 
-    # Enter a parse tree produced by GrammarParser#normalAllForceTransitionDefinition.
+    # Enter a parse tree produced by Grammar#normalAllForceTransitionDefinition.
     def enterNormalAllForceTransitionDefinition(
-        self, ctx: GrammarParser.NormalAllForceTransitionDefinitionContext
+        self, ctx: Grammar.NormalAllForceTransitionDefinitionContext
     ):
         pass
 
-    # Exit a parse tree produced by GrammarParser#normalAllForceTransitionDefinition.
+    # Exit a parse tree produced by Grammar#normalAllForceTransitionDefinition.
     def exitNormalAllForceTransitionDefinition(
-        self, ctx: GrammarParser.NormalAllForceTransitionDefinitionContext
+        self, ctx: Grammar.NormalAllForceTransitionDefinitionContext
     ):
         pass
 
-    # Enter a parse tree produced by GrammarParser#exitAllForceTransitionDefinition.
+    # Enter a parse tree produced by Grammar#exitAllForceTransitionDefinition.
     def enterExitAllForceTransitionDefinition(
-        self, ctx: GrammarParser.ExitAllForceTransitionDefinitionContext
+        self, ctx: Grammar.ExitAllForceTransitionDefinitionContext
     ):
         pass
 
-    # Exit a parse tree produced by GrammarParser#exitAllForceTransitionDefinition.
+    # Exit a parse tree produced by Grammar#exitAllForceTransitionDefinition.
     def exitExitAllForceTransitionDefinition(
-        self, ctx: GrammarParser.ExitAllForceTransitionDefinitionContext
+        self, ctx: Grammar.ExitAllForceTransitionDefinitionContext
     ):
         pass
 
-    # Enter a parse tree produced by GrammarParser#enterOperations.
-    def enterEnterOperations(self, ctx: GrammarParser.EnterOperationsContext):
+    # Enter a parse tree produced by Grammar#enterOperations.
+    def enterEnterOperations(self, ctx: Grammar.EnterOperationsContext):
         pass
 
-    # Exit a parse tree produced by GrammarParser#enterOperations.
-    def exitEnterOperations(self, ctx: GrammarParser.EnterOperationsContext):
+    # Exit a parse tree produced by Grammar#enterOperations.
+    def exitEnterOperations(self, ctx: Grammar.EnterOperationsContext):
         pass
 
-    # Enter a parse tree produced by GrammarParser#enterAbstractFunc.
-    def enterEnterAbstractFunc(self, ctx: GrammarParser.EnterAbstractFuncContext):
+    # Enter a parse tree produced by Grammar#enterAbstractFunc.
+    def enterEnterAbstractFunc(self, ctx: Grammar.EnterAbstractFuncContext):
         pass
 
-    # Exit a parse tree produced by GrammarParser#enterAbstractFunc.
-    def exitEnterAbstractFunc(self, ctx: GrammarParser.EnterAbstractFuncContext):
+    # Exit a parse tree produced by Grammar#enterAbstractFunc.
+    def exitEnterAbstractFunc(self, ctx: Grammar.EnterAbstractFuncContext):
         pass
 
-    # Enter a parse tree produced by GrammarParser#enterRefFunc.
-    def enterEnterRefFunc(self, ctx: GrammarParser.EnterRefFuncContext):
+    # Enter a parse tree produced by Grammar#enterRefFunc.
+    def enterEnterRefFunc(self, ctx: Grammar.EnterRefFuncContext):
         pass
 
-    # Exit a parse tree produced by GrammarParser#enterRefFunc.
-    def exitEnterRefFunc(self, ctx: GrammarParser.EnterRefFuncContext):
+    # Exit a parse tree produced by Grammar#enterRefFunc.
+    def exitEnterRefFunc(self, ctx: Grammar.EnterRefFuncContext):
         pass
 
-    # Enter a parse tree produced by GrammarParser#exitOperations.
-    def enterExitOperations(self, ctx: GrammarParser.ExitOperationsContext):
+    # Enter a parse tree produced by Grammar#exitOperations.
+    def enterExitOperations(self, ctx: Grammar.ExitOperationsContext):
         pass
 
-    # Exit a parse tree produced by GrammarParser#exitOperations.
-    def exitExitOperations(self, ctx: GrammarParser.ExitOperationsContext):
+    # Exit a parse tree produced by Grammar#exitOperations.
+    def exitExitOperations(self, ctx: Grammar.ExitOperationsContext):
         pass
 
-    # Enter a parse tree produced by GrammarParser#exitAbstractFunc.
-    def enterExitAbstractFunc(self, ctx: GrammarParser.ExitAbstractFuncContext):
+    # Enter a parse tree produced by Grammar#exitAbstractFunc.
+    def enterExitAbstractFunc(self, ctx: Grammar.ExitAbstractFuncContext):
         pass
 
-    # Exit a parse tree produced by GrammarParser#exitAbstractFunc.
-    def exitExitAbstractFunc(self, ctx: GrammarParser.ExitAbstractFuncContext):
+    # Exit a parse tree produced by Grammar#exitAbstractFunc.
+    def exitExitAbstractFunc(self, ctx: Grammar.ExitAbstractFuncContext):
         pass
 
-    # Enter a parse tree produced by GrammarParser#exitRefFunc.
-    def enterExitRefFunc(self, ctx: GrammarParser.ExitRefFuncContext):
+    # Enter a parse tree produced by Grammar#exitRefFunc.
+    def enterExitRefFunc(self, ctx: Grammar.ExitRefFuncContext):
         pass
 
-    # Exit a parse tree produced by GrammarParser#exitRefFunc.
-    def exitExitRefFunc(self, ctx: GrammarParser.ExitRefFuncContext):
+    # Exit a parse tree produced by Grammar#exitRefFunc.
+    def exitExitRefFunc(self, ctx: Grammar.ExitRefFuncContext):
         pass
 
-    # Enter a parse tree produced by GrammarParser#duringOperations.
-    def enterDuringOperations(self, ctx: GrammarParser.DuringOperationsContext):
+    # Enter a parse tree produced by Grammar#duringOperations.
+    def enterDuringOperations(self, ctx: Grammar.DuringOperationsContext):
         pass
 
-    # Exit a parse tree produced by GrammarParser#duringOperations.
-    def exitDuringOperations(self, ctx: GrammarParser.DuringOperationsContext):
+    # Exit a parse tree produced by Grammar#duringOperations.
+    def exitDuringOperations(self, ctx: Grammar.DuringOperationsContext):
         pass
 
-    # Enter a parse tree produced by GrammarParser#duringAbstractFunc.
-    def enterDuringAbstractFunc(self, ctx: GrammarParser.DuringAbstractFuncContext):
+    # Enter a parse tree produced by Grammar#duringAbstractFunc.
+    def enterDuringAbstractFunc(self, ctx: Grammar.DuringAbstractFuncContext):
         pass
 
-    # Exit a parse tree produced by GrammarParser#duringAbstractFunc.
-    def exitDuringAbstractFunc(self, ctx: GrammarParser.DuringAbstractFuncContext):
+    # Exit a parse tree produced by Grammar#duringAbstractFunc.
+    def exitDuringAbstractFunc(self, ctx: Grammar.DuringAbstractFuncContext):
         pass
 
-    # Enter a parse tree produced by GrammarParser#duringRefFunc.
-    def enterDuringRefFunc(self, ctx: GrammarParser.DuringRefFuncContext):
+    # Enter a parse tree produced by Grammar#duringRefFunc.
+    def enterDuringRefFunc(self, ctx: Grammar.DuringRefFuncContext):
         pass
 
-    # Exit a parse tree produced by GrammarParser#duringRefFunc.
-    def exitDuringRefFunc(self, ctx: GrammarParser.DuringRefFuncContext):
+    # Exit a parse tree produced by Grammar#duringRefFunc.
+    def exitDuringRefFunc(self, ctx: Grammar.DuringRefFuncContext):
         pass
 
-    # Enter a parse tree produced by GrammarParser#duringAspectOperations.
-    def enterDuringAspectOperations(
-        self, ctx: GrammarParser.DuringAspectOperationsContext
-    ):
+    # Enter a parse tree produced by Grammar#duringAspectOperations.
+    def enterDuringAspectOperations(self, ctx: Grammar.DuringAspectOperationsContext):
         pass
 
-    # Exit a parse tree produced by GrammarParser#duringAspectOperations.
-    def exitDuringAspectOperations(
-        self, ctx: GrammarParser.DuringAspectOperationsContext
-    ):
+    # Exit a parse tree produced by Grammar#duringAspectOperations.
+    def exitDuringAspectOperations(self, ctx: Grammar.DuringAspectOperationsContext):
         pass
 
-    # Enter a parse tree produced by GrammarParser#duringAspectAbstractFunc.
+    # Enter a parse tree produced by Grammar#duringAspectAbstractFunc.
     def enterDuringAspectAbstractFunc(
-        self, ctx: GrammarParser.DuringAspectAbstractFuncContext
+        self, ctx: Grammar.DuringAspectAbstractFuncContext
     ):
         pass
 
-    # Exit a parse tree produced by GrammarParser#duringAspectAbstractFunc.
+    # Exit a parse tree produced by Grammar#duringAspectAbstractFunc.
     def exitDuringAspectAbstractFunc(
-        self, ctx: GrammarParser.DuringAspectAbstractFuncContext
+        self, ctx: Grammar.DuringAspectAbstractFuncContext
     ):
         pass
 
-    # Enter a parse tree produced by GrammarParser#duringAspectRefFunc.
-    def enterDuringAspectRefFunc(self, ctx: GrammarParser.DuringAspectRefFuncContext):
+    # Enter a parse tree produced by Grammar#duringAspectRefFunc.
+    def enterDuringAspectRefFunc(self, ctx: Grammar.DuringAspectRefFuncContext):
         pass
 
-    # Exit a parse tree produced by GrammarParser#duringAspectRefFunc.
-    def exitDuringAspectRefFunc(self, ctx: GrammarParser.DuringAspectRefFuncContext):
+    # Exit a parse tree produced by Grammar#duringAspectRefFunc.
+    def exitDuringAspectRefFunc(self, ctx: Grammar.DuringAspectRefFuncContext):
         pass
 
-    # Enter a parse tree produced by GrammarParser#event_definition.
-    def enterEvent_definition(self, ctx: GrammarParser.Event_definitionContext):
+    # Enter a parse tree produced by Grammar#event_definition.
+    def enterEvent_definition(self, ctx: Grammar.Event_definitionContext):
         pass
 
-    # Exit a parse tree produced by GrammarParser#event_definition.
-    def exitEvent_definition(self, ctx: GrammarParser.Event_definitionContext):
+    # Exit a parse tree produced by Grammar#event_definition.
+    def exitEvent_definition(self, ctx: Grammar.Event_definitionContext):
         pass
 
-    # Enter a parse tree produced by GrammarParser#operation_assignment.
-    def enterOperation_assignment(self, ctx: GrammarParser.Operation_assignmentContext):
+    # Enter a parse tree produced by Grammar#import_statement.
+    def enterImport_statement(self, ctx: Grammar.Import_statementContext):
         pass
 
-    # Exit a parse tree produced by GrammarParser#operation_assignment.
-    def exitOperation_assignment(self, ctx: GrammarParser.Operation_assignmentContext):
+    # Exit a parse tree produced by Grammar#import_statement.
+    def exitImport_statement(self, ctx: Grammar.Import_statementContext):
         pass
 
-    # Enter a parse tree produced by GrammarParser#operation_block.
-    def enterOperation_block(self, ctx: GrammarParser.Operation_blockContext):
-        pass
-
-    # Exit a parse tree produced by GrammarParser#operation_block.
-    def exitOperation_block(self, ctx: GrammarParser.Operation_blockContext):
-        pass
-
-    # Enter a parse tree produced by GrammarParser#if_statement.
-    def enterIf_statement(self, ctx: GrammarParser.If_statementContext):
-        pass
-
-    # Exit a parse tree produced by GrammarParser#if_statement.
-    def exitIf_statement(self, ctx: GrammarParser.If_statementContext):
-        pass
-
-    # Enter a parse tree produced by GrammarParser#operational_statement.
-    def enterOperational_statement(
-        self, ctx: GrammarParser.Operational_statementContext
+    # Enter a parse tree produced by Grammar#import_mapping_statement.
+    def enterImport_mapping_statement(
+        self, ctx: Grammar.Import_mapping_statementContext
     ):
         pass
 
-    # Exit a parse tree produced by GrammarParser#operational_statement.
-    def exitOperational_statement(
-        self, ctx: GrammarParser.Operational_statementContext
+    # Exit a parse tree produced by Grammar#import_mapping_statement.
+    def exitImport_mapping_statement(
+        self, ctx: Grammar.Import_mapping_statementContext
     ):
         pass
 
-    # Enter a parse tree produced by GrammarParser#operational_statement_set.
+    # Enter a parse tree produced by Grammar#import_def_mapping.
+    def enterImport_def_mapping(self, ctx: Grammar.Import_def_mappingContext):
+        pass
+
+    # Exit a parse tree produced by Grammar#import_def_mapping.
+    def exitImport_def_mapping(self, ctx: Grammar.Import_def_mappingContext):
+        pass
+
+    # Enter a parse tree produced by Grammar#importDefFallbackSelector.
+    def enterImportDefFallbackSelector(
+        self, ctx: Grammar.ImportDefFallbackSelectorContext
+    ):
+        pass
+
+    # Exit a parse tree produced by Grammar#importDefFallbackSelector.
+    def exitImportDefFallbackSelector(
+        self, ctx: Grammar.ImportDefFallbackSelectorContext
+    ):
+        pass
+
+    # Enter a parse tree produced by Grammar#importDefSetSelector.
+    def enterImportDefSetSelector(self, ctx: Grammar.ImportDefSetSelectorContext):
+        pass
+
+    # Exit a parse tree produced by Grammar#importDefSetSelector.
+    def exitImportDefSetSelector(self, ctx: Grammar.ImportDefSetSelectorContext):
+        pass
+
+    # Enter a parse tree produced by Grammar#importDefPatternSelector.
+    def enterImportDefPatternSelector(
+        self, ctx: Grammar.ImportDefPatternSelectorContext
+    ):
+        pass
+
+    # Exit a parse tree produced by Grammar#importDefPatternSelector.
+    def exitImportDefPatternSelector(
+        self, ctx: Grammar.ImportDefPatternSelectorContext
+    ):
+        pass
+
+    # Enter a parse tree produced by Grammar#importDefExactSelector.
+    def enterImportDefExactSelector(self, ctx: Grammar.ImportDefExactSelectorContext):
+        pass
+
+    # Exit a parse tree produced by Grammar#importDefExactSelector.
+    def exitImportDefExactSelector(self, ctx: Grammar.ImportDefExactSelectorContext):
+        pass
+
+    # Enter a parse tree produced by Grammar#import_def_target_template.
+    def enterImport_def_target_template(
+        self, ctx: Grammar.Import_def_target_templateContext
+    ):
+        pass
+
+    # Exit a parse tree produced by Grammar#import_def_target_template.
+    def exitImport_def_target_template(
+        self, ctx: Grammar.Import_def_target_templateContext
+    ):
+        pass
+
+    # Enter a parse tree produced by Grammar#import_event_mapping.
+    def enterImport_event_mapping(self, ctx: Grammar.Import_event_mappingContext):
+        pass
+
+    # Exit a parse tree produced by Grammar#import_event_mapping.
+    def exitImport_event_mapping(self, ctx: Grammar.Import_event_mappingContext):
+        pass
+
+    # Enter a parse tree produced by Grammar#operation_assignment.
+    def enterOperation_assignment(self, ctx: Grammar.Operation_assignmentContext):
+        pass
+
+    # Exit a parse tree produced by Grammar#operation_assignment.
+    def exitOperation_assignment(self, ctx: Grammar.Operation_assignmentContext):
+        pass
+
+    # Enter a parse tree produced by Grammar#operation_block.
+    def enterOperation_block(self, ctx: Grammar.Operation_blockContext):
+        pass
+
+    # Exit a parse tree produced by Grammar#operation_block.
+    def exitOperation_block(self, ctx: Grammar.Operation_blockContext):
+        pass
+
+    # Enter a parse tree produced by Grammar#if_statement.
+    def enterIf_statement(self, ctx: Grammar.If_statementContext):
+        pass
+
+    # Exit a parse tree produced by Grammar#if_statement.
+    def exitIf_statement(self, ctx: Grammar.If_statementContext):
+        pass
+
+    # Enter a parse tree produced by Grammar#operational_statement.
+    def enterOperational_statement(self, ctx: Grammar.Operational_statementContext):
+        pass
+
+    # Exit a parse tree produced by Grammar#operational_statement.
+    def exitOperational_statement(self, ctx: Grammar.Operational_statementContext):
+        pass
+
+    # Enter a parse tree produced by Grammar#operational_statement_set.
     def enterOperational_statement_set(
-        self, ctx: GrammarParser.Operational_statement_setContext
+        self, ctx: Grammar.Operational_statement_setContext
     ):
         pass
 
-    # Exit a parse tree produced by GrammarParser#operational_statement_set.
+    # Exit a parse tree produced by Grammar#operational_statement_set.
     def exitOperational_statement_set(
-        self, ctx: GrammarParser.Operational_statement_setContext
+        self, ctx: Grammar.Operational_statement_setContext
     ):
         pass
 
-    # Enter a parse tree produced by GrammarParser#state_inner_statement.
-    def enterState_inner_statement(
-        self, ctx: GrammarParser.State_inner_statementContext
-    ):
+    # Enter a parse tree produced by Grammar#state_inner_statement.
+    def enterState_inner_statement(self, ctx: Grammar.State_inner_statementContext):
         pass
 
-    # Exit a parse tree produced by GrammarParser#state_inner_statement.
-    def exitState_inner_statement(
-        self, ctx: GrammarParser.State_inner_statementContext
-    ):
+    # Exit a parse tree produced by Grammar#state_inner_statement.
+    def exitState_inner_statement(self, ctx: Grammar.State_inner_statementContext):
         pass
 
-    # Enter a parse tree produced by GrammarParser#operation_program.
-    def enterOperation_program(self, ctx: GrammarParser.Operation_programContext):
+    # Enter a parse tree produced by Grammar#operation_program.
+    def enterOperation_program(self, ctx: Grammar.Operation_programContext):
         pass
 
-    # Exit a parse tree produced by GrammarParser#operation_program.
-    def exitOperation_program(self, ctx: GrammarParser.Operation_programContext):
+    # Exit a parse tree produced by Grammar#operation_program.
+    def exitOperation_program(self, ctx: Grammar.Operation_programContext):
         pass
 
-    # Enter a parse tree produced by GrammarParser#preamble_program.
-    def enterPreamble_program(self, ctx: GrammarParser.Preamble_programContext):
+    # Enter a parse tree produced by Grammar#preamble_program.
+    def enterPreamble_program(self, ctx: Grammar.Preamble_programContext):
         pass
 
-    # Exit a parse tree produced by GrammarParser#preamble_program.
-    def exitPreamble_program(self, ctx: GrammarParser.Preamble_programContext):
+    # Exit a parse tree produced by Grammar#preamble_program.
+    def exitPreamble_program(self, ctx: Grammar.Preamble_programContext):
         pass
 
-    # Enter a parse tree produced by GrammarParser#preamble_statement.
-    def enterPreamble_statement(self, ctx: GrammarParser.Preamble_statementContext):
+    # Enter a parse tree produced by Grammar#preamble_statement.
+    def enterPreamble_statement(self, ctx: Grammar.Preamble_statementContext):
         pass
 
-    # Exit a parse tree produced by GrammarParser#preamble_statement.
-    def exitPreamble_statement(self, ctx: GrammarParser.Preamble_statementContext):
+    # Exit a parse tree produced by Grammar#preamble_statement.
+    def exitPreamble_statement(self, ctx: Grammar.Preamble_statementContext):
         pass
 
-    # Enter a parse tree produced by GrammarParser#initial_assignment.
-    def enterInitial_assignment(self, ctx: GrammarParser.Initial_assignmentContext):
+    # Enter a parse tree produced by Grammar#initial_assignment.
+    def enterInitial_assignment(self, ctx: Grammar.Initial_assignmentContext):
         pass
 
-    # Exit a parse tree produced by GrammarParser#initial_assignment.
-    def exitInitial_assignment(self, ctx: GrammarParser.Initial_assignmentContext):
+    # Exit a parse tree produced by Grammar#initial_assignment.
+    def exitInitial_assignment(self, ctx: Grammar.Initial_assignmentContext):
         pass
 
-    # Enter a parse tree produced by GrammarParser#constant_definition.
-    def enterConstant_definition(self, ctx: GrammarParser.Constant_definitionContext):
+    # Enter a parse tree produced by Grammar#constant_definition.
+    def enterConstant_definition(self, ctx: Grammar.Constant_definitionContext):
         pass
 
-    # Exit a parse tree produced by GrammarParser#constant_definition.
-    def exitConstant_definition(self, ctx: GrammarParser.Constant_definitionContext):
+    # Exit a parse tree produced by Grammar#constant_definition.
+    def exitConstant_definition(self, ctx: Grammar.Constant_definitionContext):
         pass
 
-    # Enter a parse tree produced by GrammarParser#operational_assignment.
-    def enterOperational_assignment(
-        self, ctx: GrammarParser.Operational_assignmentContext
-    ):
+    # Enter a parse tree produced by Grammar#operational_assignment.
+    def enterOperational_assignment(self, ctx: Grammar.Operational_assignmentContext):
         pass
 
-    # Exit a parse tree produced by GrammarParser#operational_assignment.
-    def exitOperational_assignment(
-        self, ctx: GrammarParser.Operational_assignmentContext
-    ):
+    # Exit a parse tree produced by Grammar#operational_assignment.
+    def exitOperational_assignment(self, ctx: Grammar.Operational_assignmentContext):
         pass
 
-    # Enter a parse tree produced by GrammarParser#generic_expression.
-    def enterGeneric_expression(self, ctx: GrammarParser.Generic_expressionContext):
+    # Enter a parse tree produced by Grammar#generic_expression.
+    def enterGeneric_expression(self, ctx: Grammar.Generic_expressionContext):
         pass
 
-    # Exit a parse tree produced by GrammarParser#generic_expression.
-    def exitGeneric_expression(self, ctx: GrammarParser.Generic_expressionContext):
+    # Exit a parse tree produced by Grammar#generic_expression.
+    def exitGeneric_expression(self, ctx: Grammar.Generic_expressionContext):
         pass
 
-    # Enter a parse tree produced by GrammarParser#funcExprInit.
-    def enterFuncExprInit(self, ctx: GrammarParser.FuncExprInitContext):
+    # Enter a parse tree produced by Grammar#funcExprInit.
+    def enterFuncExprInit(self, ctx: Grammar.FuncExprInitContext):
         pass
 
-    # Exit a parse tree produced by GrammarParser#funcExprInit.
-    def exitFuncExprInit(self, ctx: GrammarParser.FuncExprInitContext):
+    # Exit a parse tree produced by Grammar#funcExprInit.
+    def exitFuncExprInit(self, ctx: Grammar.FuncExprInitContext):
         pass
 
-    # Enter a parse tree produced by GrammarParser#unaryExprInit.
-    def enterUnaryExprInit(self, ctx: GrammarParser.UnaryExprInitContext):
+    # Enter a parse tree produced by Grammar#unaryExprInit.
+    def enterUnaryExprInit(self, ctx: Grammar.UnaryExprInitContext):
         pass
 
-    # Exit a parse tree produced by GrammarParser#unaryExprInit.
-    def exitUnaryExprInit(self, ctx: GrammarParser.UnaryExprInitContext):
+    # Exit a parse tree produced by Grammar#unaryExprInit.
+    def exitUnaryExprInit(self, ctx: Grammar.UnaryExprInitContext):
         pass
 
-    # Enter a parse tree produced by GrammarParser#binaryExprInit.
-    def enterBinaryExprInit(self, ctx: GrammarParser.BinaryExprInitContext):
+    # Enter a parse tree produced by Grammar#binaryExprInit.
+    def enterBinaryExprInit(self, ctx: Grammar.BinaryExprInitContext):
         pass
 
-    # Exit a parse tree produced by GrammarParser#binaryExprInit.
-    def exitBinaryExprInit(self, ctx: GrammarParser.BinaryExprInitContext):
+    # Exit a parse tree produced by Grammar#binaryExprInit.
+    def exitBinaryExprInit(self, ctx: Grammar.BinaryExprInitContext):
         pass
 
-    # Enter a parse tree produced by GrammarParser#literalExprInit.
-    def enterLiteralExprInit(self, ctx: GrammarParser.LiteralExprInitContext):
+    # Enter a parse tree produced by Grammar#literalExprInit.
+    def enterLiteralExprInit(self, ctx: Grammar.LiteralExprInitContext):
         pass
 
-    # Exit a parse tree produced by GrammarParser#literalExprInit.
-    def exitLiteralExprInit(self, ctx: GrammarParser.LiteralExprInitContext):
+    # Exit a parse tree produced by Grammar#literalExprInit.
+    def exitLiteralExprInit(self, ctx: Grammar.LiteralExprInitContext):
         pass
 
-    # Enter a parse tree produced by GrammarParser#mathConstExprInit.
-    def enterMathConstExprInit(self, ctx: GrammarParser.MathConstExprInitContext):
+    # Enter a parse tree produced by Grammar#mathConstExprInit.
+    def enterMathConstExprInit(self, ctx: Grammar.MathConstExprInitContext):
         pass
 
-    # Exit a parse tree produced by GrammarParser#mathConstExprInit.
-    def exitMathConstExprInit(self, ctx: GrammarParser.MathConstExprInitContext):
+    # Exit a parse tree produced by Grammar#mathConstExprInit.
+    def exitMathConstExprInit(self, ctx: Grammar.MathConstExprInitContext):
         pass
 
-    # Enter a parse tree produced by GrammarParser#parenExprInit.
-    def enterParenExprInit(self, ctx: GrammarParser.ParenExprInitContext):
+    # Enter a parse tree produced by Grammar#parenExprInit.
+    def enterParenExprInit(self, ctx: Grammar.ParenExprInitContext):
         pass
 
-    # Exit a parse tree produced by GrammarParser#parenExprInit.
-    def exitParenExprInit(self, ctx: GrammarParser.ParenExprInitContext):
+    # Exit a parse tree produced by Grammar#parenExprInit.
+    def exitParenExprInit(self, ctx: Grammar.ParenExprInitContext):
         pass
 
-    # Enter a parse tree produced by GrammarParser#unaryExprNum.
-    def enterUnaryExprNum(self, ctx: GrammarParser.UnaryExprNumContext):
+    # Enter a parse tree produced by Grammar#unaryExprNum.
+    def enterUnaryExprNum(self, ctx: Grammar.UnaryExprNumContext):
         pass
 
-    # Exit a parse tree produced by GrammarParser#unaryExprNum.
-    def exitUnaryExprNum(self, ctx: GrammarParser.UnaryExprNumContext):
+    # Exit a parse tree produced by Grammar#unaryExprNum.
+    def exitUnaryExprNum(self, ctx: Grammar.UnaryExprNumContext):
         pass
 
-    # Enter a parse tree produced by GrammarParser#funcExprNum.
-    def enterFuncExprNum(self, ctx: GrammarParser.FuncExprNumContext):
+    # Enter a parse tree produced by Grammar#funcExprNum.
+    def enterFuncExprNum(self, ctx: Grammar.FuncExprNumContext):
         pass
 
-    # Exit a parse tree produced by GrammarParser#funcExprNum.
-    def exitFuncExprNum(self, ctx: GrammarParser.FuncExprNumContext):
+    # Exit a parse tree produced by Grammar#funcExprNum.
+    def exitFuncExprNum(self, ctx: Grammar.FuncExprNumContext):
         pass
 
-    # Enter a parse tree produced by GrammarParser#conditionalCStyleExprNum.
+    # Enter a parse tree produced by Grammar#conditionalCStyleExprNum.
     def enterConditionalCStyleExprNum(
-        self, ctx: GrammarParser.ConditionalCStyleExprNumContext
+        self, ctx: Grammar.ConditionalCStyleExprNumContext
     ):
         pass
 
-    # Exit a parse tree produced by GrammarParser#conditionalCStyleExprNum.
+    # Exit a parse tree produced by Grammar#conditionalCStyleExprNum.
     def exitConditionalCStyleExprNum(
-        self, ctx: GrammarParser.ConditionalCStyleExprNumContext
+        self, ctx: Grammar.ConditionalCStyleExprNumContext
     ):
         pass
 
-    # Enter a parse tree produced by GrammarParser#binaryExprNum.
-    def enterBinaryExprNum(self, ctx: GrammarParser.BinaryExprNumContext):
+    # Enter a parse tree produced by Grammar#binaryExprNum.
+    def enterBinaryExprNum(self, ctx: Grammar.BinaryExprNumContext):
         pass
 
-    # Exit a parse tree produced by GrammarParser#binaryExprNum.
-    def exitBinaryExprNum(self, ctx: GrammarParser.BinaryExprNumContext):
+    # Exit a parse tree produced by Grammar#binaryExprNum.
+    def exitBinaryExprNum(self, ctx: Grammar.BinaryExprNumContext):
         pass
 
-    # Enter a parse tree produced by GrammarParser#literalExprNum.
-    def enterLiteralExprNum(self, ctx: GrammarParser.LiteralExprNumContext):
+    # Enter a parse tree produced by Grammar#literalExprNum.
+    def enterLiteralExprNum(self, ctx: Grammar.LiteralExprNumContext):
         pass
 
-    # Exit a parse tree produced by GrammarParser#literalExprNum.
-    def exitLiteralExprNum(self, ctx: GrammarParser.LiteralExprNumContext):
+    # Exit a parse tree produced by Grammar#literalExprNum.
+    def exitLiteralExprNum(self, ctx: Grammar.LiteralExprNumContext):
         pass
 
-    # Enter a parse tree produced by GrammarParser#mathConstExprNum.
-    def enterMathConstExprNum(self, ctx: GrammarParser.MathConstExprNumContext):
+    # Enter a parse tree produced by Grammar#mathConstExprNum.
+    def enterMathConstExprNum(self, ctx: Grammar.MathConstExprNumContext):
         pass
 
-    # Exit a parse tree produced by GrammarParser#mathConstExprNum.
-    def exitMathConstExprNum(self, ctx: GrammarParser.MathConstExprNumContext):
+    # Exit a parse tree produced by Grammar#mathConstExprNum.
+    def exitMathConstExprNum(self, ctx: Grammar.MathConstExprNumContext):
         pass
 
-    # Enter a parse tree produced by GrammarParser#parenExprNum.
-    def enterParenExprNum(self, ctx: GrammarParser.ParenExprNumContext):
+    # Enter a parse tree produced by Grammar#parenExprNum.
+    def enterParenExprNum(self, ctx: Grammar.ParenExprNumContext):
         pass
 
-    # Exit a parse tree produced by GrammarParser#parenExprNum.
-    def exitParenExprNum(self, ctx: GrammarParser.ParenExprNumContext):
+    # Exit a parse tree produced by Grammar#parenExprNum.
+    def exitParenExprNum(self, ctx: Grammar.ParenExprNumContext):
         pass
 
-    # Enter a parse tree produced by GrammarParser#idExprNum.
-    def enterIdExprNum(self, ctx: GrammarParser.IdExprNumContext):
+    # Enter a parse tree produced by Grammar#idExprNum.
+    def enterIdExprNum(self, ctx: Grammar.IdExprNumContext):
         pass
 
-    # Exit a parse tree produced by GrammarParser#idExprNum.
-    def exitIdExprNum(self, ctx: GrammarParser.IdExprNumContext):
+    # Exit a parse tree produced by Grammar#idExprNum.
+    def exitIdExprNum(self, ctx: Grammar.IdExprNumContext):
         pass
 
-    # Enter a parse tree produced by GrammarParser#binaryExprFromCondCond.
-    def enterBinaryExprFromCondCond(
-        self, ctx: GrammarParser.BinaryExprFromCondCondContext
-    ):
+    # Enter a parse tree produced by Grammar#binaryExprFromCondCond.
+    def enterBinaryExprFromCondCond(self, ctx: Grammar.BinaryExprFromCondCondContext):
         pass
 
-    # Exit a parse tree produced by GrammarParser#binaryExprFromCondCond.
-    def exitBinaryExprFromCondCond(
-        self, ctx: GrammarParser.BinaryExprFromCondCondContext
-    ):
+    # Exit a parse tree produced by Grammar#binaryExprFromCondCond.
+    def exitBinaryExprFromCondCond(self, ctx: Grammar.BinaryExprFromCondCondContext):
         pass
 
-    # Enter a parse tree produced by GrammarParser#binaryExprCond.
-    def enterBinaryExprCond(self, ctx: GrammarParser.BinaryExprCondContext):
+    # Enter a parse tree produced by Grammar#binaryExprCond.
+    def enterBinaryExprCond(self, ctx: Grammar.BinaryExprCondContext):
         pass
 
-    # Exit a parse tree produced by GrammarParser#binaryExprCond.
-    def exitBinaryExprCond(self, ctx: GrammarParser.BinaryExprCondContext):
+    # Exit a parse tree produced by Grammar#binaryExprCond.
+    def exitBinaryExprCond(self, ctx: Grammar.BinaryExprCondContext):
         pass
 
-    # Enter a parse tree produced by GrammarParser#binaryExprFromNumCond.
-    def enterBinaryExprFromNumCond(
-        self, ctx: GrammarParser.BinaryExprFromNumCondContext
-    ):
+    # Enter a parse tree produced by Grammar#binaryExprFromNumCond.
+    def enterBinaryExprFromNumCond(self, ctx: Grammar.BinaryExprFromNumCondContext):
         pass
 
-    # Exit a parse tree produced by GrammarParser#binaryExprFromNumCond.
-    def exitBinaryExprFromNumCond(
-        self, ctx: GrammarParser.BinaryExprFromNumCondContext
-    ):
+    # Exit a parse tree produced by Grammar#binaryExprFromNumCond.
+    def exitBinaryExprFromNumCond(self, ctx: Grammar.BinaryExprFromNumCondContext):
         pass
 
-    # Enter a parse tree produced by GrammarParser#unaryExprCond.
-    def enterUnaryExprCond(self, ctx: GrammarParser.UnaryExprCondContext):
+    # Enter a parse tree produced by Grammar#unaryExprCond.
+    def enterUnaryExprCond(self, ctx: Grammar.UnaryExprCondContext):
         pass
 
-    # Exit a parse tree produced by GrammarParser#unaryExprCond.
-    def exitUnaryExprCond(self, ctx: GrammarParser.UnaryExprCondContext):
+    # Exit a parse tree produced by Grammar#unaryExprCond.
+    def exitUnaryExprCond(self, ctx: Grammar.UnaryExprCondContext):
         pass
 
-    # Enter a parse tree produced by GrammarParser#parenExprCond.
-    def enterParenExprCond(self, ctx: GrammarParser.ParenExprCondContext):
+    # Enter a parse tree produced by Grammar#parenExprCond.
+    def enterParenExprCond(self, ctx: Grammar.ParenExprCondContext):
         pass
 
-    # Exit a parse tree produced by GrammarParser#parenExprCond.
-    def exitParenExprCond(self, ctx: GrammarParser.ParenExprCondContext):
+    # Exit a parse tree produced by Grammar#parenExprCond.
+    def exitParenExprCond(self, ctx: Grammar.ParenExprCondContext):
         pass
 
-    # Enter a parse tree produced by GrammarParser#literalExprCond.
-    def enterLiteralExprCond(self, ctx: GrammarParser.LiteralExprCondContext):
+    # Enter a parse tree produced by Grammar#literalExprCond.
+    def enterLiteralExprCond(self, ctx: Grammar.LiteralExprCondContext):
         pass
 
-    # Exit a parse tree produced by GrammarParser#literalExprCond.
-    def exitLiteralExprCond(self, ctx: GrammarParser.LiteralExprCondContext):
+    # Exit a parse tree produced by Grammar#literalExprCond.
+    def exitLiteralExprCond(self, ctx: Grammar.LiteralExprCondContext):
         pass
 
-    # Enter a parse tree produced by GrammarParser#conditionalCStyleCondNum.
+    # Enter a parse tree produced by Grammar#conditionalCStyleCondNum.
     def enterConditionalCStyleCondNum(
-        self, ctx: GrammarParser.ConditionalCStyleCondNumContext
+        self, ctx: Grammar.ConditionalCStyleCondNumContext
     ):
         pass
 
-    # Exit a parse tree produced by GrammarParser#conditionalCStyleCondNum.
+    # Exit a parse tree produced by Grammar#conditionalCStyleCondNum.
     def exitConditionalCStyleCondNum(
-        self, ctx: GrammarParser.ConditionalCStyleCondNumContext
+        self, ctx: Grammar.ConditionalCStyleCondNumContext
     ):
         pass
 
-    # Enter a parse tree produced by GrammarParser#num_literal.
-    def enterNum_literal(self, ctx: GrammarParser.Num_literalContext):
+    # Enter a parse tree produced by Grammar#num_literal.
+    def enterNum_literal(self, ctx: Grammar.Num_literalContext):
         pass
 
-    # Exit a parse tree produced by GrammarParser#num_literal.
-    def exitNum_literal(self, ctx: GrammarParser.Num_literalContext):
+    # Exit a parse tree produced by Grammar#num_literal.
+    def exitNum_literal(self, ctx: Grammar.Num_literalContext):
         pass
 
-    # Enter a parse tree produced by GrammarParser#bool_literal.
-    def enterBool_literal(self, ctx: GrammarParser.Bool_literalContext):
+    # Enter a parse tree produced by Grammar#bool_literal.
+    def enterBool_literal(self, ctx: Grammar.Bool_literalContext):
         pass
 
-    # Exit a parse tree produced by GrammarParser#bool_literal.
-    def exitBool_literal(self, ctx: GrammarParser.Bool_literalContext):
+    # Exit a parse tree produced by Grammar#bool_literal.
+    def exitBool_literal(self, ctx: Grammar.Bool_literalContext):
         pass
 
-    # Enter a parse tree produced by GrammarParser#math_const.
-    def enterMath_const(self, ctx: GrammarParser.Math_constContext):
+    # Enter a parse tree produced by Grammar#math_const.
+    def enterMath_const(self, ctx: Grammar.Math_constContext):
         pass
 
-    # Exit a parse tree produced by GrammarParser#math_const.
-    def exitMath_const(self, ctx: GrammarParser.Math_constContext):
+    # Exit a parse tree produced by Grammar#math_const.
+    def exitMath_const(self, ctx: Grammar.Math_constContext):
         pass
 
-    # Enter a parse tree produced by GrammarParser#chain_id.
-    def enterChain_id(self, ctx: GrammarParser.Chain_idContext):
+    # Enter a parse tree produced by Grammar#chain_id.
+    def enterChain_id(self, ctx: Grammar.Chain_idContext):
         pass
 
-    # Exit a parse tree produced by GrammarParser#chain_id.
-    def exitChain_id(self, ctx: GrammarParser.Chain_idContext):
+    # Exit a parse tree produced by Grammar#chain_id.
+    def exitChain_id(self, ctx: Grammar.Chain_idContext):
         pass
 
 
-del GrammarParser
+del Grammar

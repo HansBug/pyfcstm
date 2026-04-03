@@ -11,6 +11,7 @@ The module contains the following main components:
 
 * :func:`parse_with_grammar_entry` - Parse text using an arbitrary grammar entry rule.
 * :func:`parse_condition` - Parse a condition expression.
+* :func:`parse_state_machine_dsl` - Parse a complete state machine DSL document.
 * :func:`parse_preamble` - Parse a preamble program.
 * :func:`parse_operation` - Parse an operation program.
 
@@ -26,13 +27,15 @@ Example::
     >>> preamble = parse_preamble("x := 10;")
 """
 
-from typing import Any, Callable
+import os
+from typing import Any, Callable, Optional
 
 from antlr4 import CommonTokenStream, InputStream, ParseTreeWalker
 
 from .error import CollectingErrorListener
 from .grammar import GrammarParser, GrammarLexer
 from .listener import GrammarParseListener
+from .node import StateMachineDSLProgram
 
 
 def _parse_as_element(
@@ -135,6 +138,45 @@ def parse_condition(input_text: str) -> Any:
         >>> condition_node = parse_condition("x > 5 && y < 10")
     """
     return parse_with_grammar_entry(input_text, "condition")
+
+
+def parse_state_machine_dsl(
+    input_text: str,
+    path: Optional[str] = None,
+) -> StateMachineDSLProgram:
+    """
+    Parse input text as a complete state machine DSL document.
+
+    This helper uses the grammar's ``state_machine_dsl`` rule and optionally
+    attaches a source path string to the returned
+    :class:`pyfcstm.dsl.node.StateMachineDSLProgram` node for later assembly
+    phases.
+
+    :param input_text: The state machine DSL text to parse.
+    :type input_text: str
+    :param path: Optional source path associated with the parsed document.
+        When provided, the value is normalized via :func:`os.fspath` and stored
+        on the returned AST node as ``source_path``.
+    :type path: Optional[str]
+    :return: Parsed state machine DSL program node.
+    :rtype: StateMachineDSLProgram
+    :raises pyfcstm.dsl.error.GrammarParseError: If parsing fails.
+
+    Example::
+
+        >>> program = parse_state_machine_dsl("state Root;", path="root.fcstm")
+        >>> program.source_path
+        'root.fcstm'
+    """
+    program = parse_with_grammar_entry(input_text, "state_machine_dsl")
+    if not isinstance(program, StateMachineDSLProgram):
+        raise TypeError(
+            "Expected 'state_machine_dsl' to produce StateMachineDSLProgram, "
+            f"got {type(program)!r}."
+        )
+
+    program.source_path = os.fspath(path) if path is not None else None
+    return program
 
 
 def parse_preamble(input_text: str) -> Any:

@@ -1,5 +1,9 @@
 // Grammar.g4
-grammar Grammar;
+parser grammar Grammar;
+
+options {
+    tokenVocab = GrammarLexer;
+}
 
 // program: statement+;
 
@@ -8,72 +12,104 @@ condition: cond_expression EOF;
 
 state_machine_dsl: def_assignment* state_definition EOF;
 
-def_assignment: 'def' deftype=('int'|'float') ID '=' init_expression ';';
+def_assignment: DEF deftype=(INT_TYPE | FLOAT_TYPE) ID ASSIGN init_expression SEMI;
 
 state_definition
-    : pseudo='pseudo'? 'state' state_id=ID ('named' extra_name=STRING)? ';'                             # leafStateDefinition
-    | pseudo='pseudo'? 'state' state_id=ID ('named' extra_name=STRING)? '{' state_inner_statement* '}'  # compositeStateDefinition
+    : pseudo=PSEUDO? STATE state_id=ID (NAMED extra_name=STRING)? SEMI                             # leafStateDefinition
+    | pseudo=PSEUDO? STATE state_id=ID (NAMED extra_name=STRING)? LBRACE state_inner_statement* RBRACE  # compositeStateDefinition
     ;
 
 transition_definition
-    : '[*]' '->' to_state=ID (|(':'|'::') chain_id|':' 'if' '[' cond_expression ']') (';'|'effect' '{' operational_statement_set '}')                   # entryTransitionDefinition
-    | from_state=ID '->' to_state=ID (|'::' from_id=ID|':' chain_id|':' 'if' '[' cond_expression ']') (';'|'effect' '{' operational_statement_set '}')  # normalTransitionDefinition
-    | from_state=ID '->' '[*]' (|'::' from_id=ID|':' chain_id|':' 'if' '[' cond_expression ']') (';'|'effect' '{' operational_statement_set '}')        # exitTransitionDefinition
+    : INIT_MARKER ARROW to_state=ID (|(COLON | COLONCOLON) chain_id | COLON IF LBRACK cond_expression RBRACK) (SEMI | EFFECT LBRACE operational_statement_set RBRACE)                   # entryTransitionDefinition
+    | from_state=ID ARROW to_state=ID (|COLONCOLON from_id=ID | COLON chain_id | COLON IF LBRACK cond_expression RBRACK) (SEMI | EFFECT LBRACE operational_statement_set RBRACE)  # normalTransitionDefinition
+    | from_state=ID ARROW INIT_MARKER (|COLONCOLON from_id=ID | COLON chain_id | COLON IF LBRACK cond_expression RBRACK) (SEMI | EFFECT LBRACE operational_statement_set RBRACE)        # exitTransitionDefinition
     ;
 
 transition_force_definition
-    : '!' from_state=ID '->' to_state=ID (|'::' from_id=ID|':' chain_id|':' 'if' '[' cond_expression ']') ';'  # normalForceTransitionDefinition
-    | '!' from_state=ID '->' '[*]' (|'::' from_id=ID|':' chain_id|':' 'if' '[' cond_expression ']') ';'        # exitForceTransitionDefinition
-    | '!' '*' '->' to_state=ID (|('::'|':') chain_id|':' 'if' '[' cond_expression ']') ';'                     # normalAllForceTransitionDefinition
-    | '!' '*' '->' '[*]' (|('::'|':') chain_id|':' 'if' '[' cond_expression ']') ';'                           # exitAllForceTransitionDefinition
+    : BANG from_state=ID ARROW to_state=ID (|COLONCOLON from_id=ID | COLON chain_id | COLON IF LBRACK cond_expression RBRACK) SEMI  # normalForceTransitionDefinition
+    | BANG from_state=ID ARROW INIT_MARKER (|COLONCOLON from_id=ID | COLON chain_id | COLON IF LBRACK cond_expression RBRACK) SEMI        # exitForceTransitionDefinition
+    | BANG STAR ARROW to_state=ID (|(COLONCOLON | COLON) chain_id | COLON IF LBRACK cond_expression RBRACK) SEMI                     # normalAllForceTransitionDefinition
+    | BANG STAR ARROW INIT_MARKER (|(COLONCOLON | COLON) chain_id | COLON IF LBRACK cond_expression RBRACK) SEMI                           # exitAllForceTransitionDefinition
     ;
 
 enter_definition
-    : 'enter' (func_name=ID)? '{' operational_statement_set '}'        # enterOperations
-    | 'enter' 'abstract' func_name=ID ';'                           # enterAbstractFunc
-    | 'enter' 'abstract' (func_name=ID)? raw_doc=MULTILINE_COMMENT  # enterAbstractFunc
-    | 'enter' (func_name=ID)? 'ref' chain_id ';'                    # enterRefFunc
+    : ENTER (func_name=ID)? LBRACE operational_statement_set RBRACE        # enterOperations
+    | ENTER ABSTRACT func_name=ID SEMI                           # enterAbstractFunc
+    | ENTER ABSTRACT (func_name=ID)? raw_doc=MULTILINE_COMMENT  # enterAbstractFunc
+    | ENTER (func_name=ID)? REF chain_id SEMI                    # enterRefFunc
     ;
 
 exit_definition
-    : 'exit' (func_name=ID)? '{' operational_statement_set '}'        # exitOperations
-    | 'exit' 'abstract' func_name=ID ';'                           # exitAbstractFunc
-    | 'exit' 'abstract' (func_name=ID)? raw_doc=MULTILINE_COMMENT  # exitAbstractFunc
-    | 'exit' (func_name=ID)? 'ref' chain_id ';'                    # exitRefFunc
+    : EXIT (func_name=ID)? LBRACE operational_statement_set RBRACE        # exitOperations
+    | EXIT ABSTRACT func_name=ID SEMI                           # exitAbstractFunc
+    | EXIT ABSTRACT (func_name=ID)? raw_doc=MULTILINE_COMMENT  # exitAbstractFunc
+    | EXIT (func_name=ID)? REF chain_id SEMI                    # exitRefFunc
     ;
 
 during_definition
-    : 'during' aspect=('before'|'after')? (func_name=ID)? '{' operational_statement_set '}'        # duringOperations
-    | 'during' aspect=('before'|'after')? 'abstract' func_name=ID ';'                           # duringAbstractFunc
-    | 'during' aspect=('before'|'after')? 'abstract' (func_name=ID)? raw_doc=MULTILINE_COMMENT  # duringAbstractFunc
-    | 'during' aspect=('before'|'after')? (func_name=ID)? 'ref' chain_id ';'                    # duringRefFunc
+    : DURING aspect=(BEFORE | AFTER)? (func_name=ID)? LBRACE operational_statement_set RBRACE        # duringOperations
+    | DURING aspect=(BEFORE | AFTER)? ABSTRACT func_name=ID SEMI                           # duringAbstractFunc
+    | DURING aspect=(BEFORE | AFTER)? ABSTRACT (func_name=ID)? raw_doc=MULTILINE_COMMENT  # duringAbstractFunc
+    | DURING aspect=(BEFORE | AFTER)? (func_name=ID)? REF chain_id SEMI                    # duringRefFunc
     ;
 
 during_aspect_definition
-    : '>>' 'during' aspect=('before'|'after') (func_name=ID)? '{' operational_statement_set '}'        # duringAspectOperations
-    | '>>' 'during' aspect=('before'|'after') 'abstract' func_name=ID ';'                           # duringAspectAbstractFunc
-    | '>>' 'during' aspect=('before'|'after') 'abstract' (func_name=ID)? raw_doc=MULTILINE_COMMENT  # duringAspectAbstractFunc
-    | '>>' 'during' aspect=('before'|'after') (func_name=ID)? 'ref' chain_id ';'                    # duringAspectRefFunc
+    : SHIFT_RIGHT DURING aspect=(BEFORE | AFTER) (func_name=ID)? LBRACE operational_statement_set RBRACE        # duringAspectOperations
+    | SHIFT_RIGHT DURING aspect=(BEFORE | AFTER) ABSTRACT func_name=ID SEMI                           # duringAspectAbstractFunc
+    | SHIFT_RIGHT DURING aspect=(BEFORE | AFTER) ABSTRACT (func_name=ID)? raw_doc=MULTILINE_COMMENT  # duringAspectAbstractFunc
+    | SHIFT_RIGHT DURING aspect=(BEFORE | AFTER) (func_name=ID)? REF chain_id SEMI                    # duringAspectRefFunc
     ;
 
-event_definition: 'event' event_name=ID ('named' extra_name=STRING)? ';';
+event_definition: EVENT event_name=ID (NAMED extra_name=STRING)? SEMI;
 
-operation_assignment: ID '=' num_expression ';';
+import_statement
+    : IMPORT import_path=STRING AS state_alias=ID (NAMED extra_name=STRING)?
+      (LBRACE import_mapping_statement* RBRACE | SEMI)
+    ;
+
+import_mapping_statement
+    : import_def_mapping
+    | import_event_mapping
+    | SEMI
+    ;
+
+import_def_mapping
+    : DEF import_def_selector ARROW import_def_target_template SEMI
+    ;
+
+import_def_selector
+    : STAR                                                           # importDefFallbackSelector
+    | LBRACE selector_items+=ID (COMMA selector_items+=ID)* RBRACE   # importDefSetSelector
+    | selector_pattern=IMPORT_DEF_SELECTOR_PATTERN                   # importDefPatternSelector
+    | selector_name=ID                                               # importDefExactSelector
+    ;
+
+import_def_target_template
+    : target_text=ID
+    | target_text=IMPORT_DEF_TARGET_TEMPLATE
+    | target_text=STAR
+    ;
+
+import_event_mapping
+    : EVENT source_event=chain_id ARROW target_event=chain_id (NAMED extra_name=STRING)? SEMI
+    ;
+
+operation_assignment: ID ASSIGN num_expression SEMI;
 
 operation_block
-    : '{' operational_statement_set '}'
+    : LBRACE operational_statement_set RBRACE
     ;
 
 if_statement
-    : 'if' '[' cond_expression ']' operation_block
-      ('else' 'if' '[' cond_expression ']' operation_block)*
-      ('else' operation_block)?
+    : IF LBRACK cond_expression RBRACK operation_block
+      (ELSE IF LBRACK cond_expression RBRACK operation_block)*
+      (ELSE operation_block)?
     ;
 
 operational_statement
     : operation_assignment
     | if_statement
-    | ';'
+    | SEMI
     ;
 
 operational_statement_set
@@ -89,7 +125,8 @@ state_inner_statement
     | exit_definition
     | during_aspect_definition
     | event_definition
-    | ';'
+    | import_statement
+    | SEMI
     ;
 
 // basic configs for the previous design
@@ -103,9 +140,9 @@ preamble_statement
     | constant_definition
     ;
 
-initial_assignment: ID ':=' init_expression ';';
-constant_definition: ID '=' init_expression ';';
-operational_assignment: ID ':=' num_expression ';';
+initial_assignment: ID DECLARE_ASSIGN init_expression SEMI;
+constant_definition: ID ASSIGN init_expression SEMI;
+operational_assignment: ID DECLARE_ASSIGN num_expression SEMI;
 
 generic_expression
     : num_expression
@@ -113,47 +150,47 @@ generic_expression
     ;
 
 init_expression
-    : '(' init_expression ')'                                # parenExprInit
+    : LPAREN init_expression RPAREN                                # parenExprInit
     | num_literal                                            # literalExprInit
     | math_const                                             # mathConstExprInit
-    | op=('+'|'-') init_expression                           # unaryExprInit
-    | <assoc=right> init_expression op='**' init_expression  # binaryExprInit
-    | init_expression op=('*'|'/'|'%') init_expression       # binaryExprInit
-    | init_expression op=('+'|'-') init_expression           # binaryExprInit
-    | init_expression op=('<<'|'>>') init_expression         # binaryExprInit
-    | init_expression op='&' init_expression                 # binaryExprInit
-    | init_expression op='^' init_expression                 # binaryExprInit
-    | init_expression op='|' init_expression                 # binaryExprInit
-    | func_name=UFUNC_NAME '(' init_expression ')'           # funcExprInit
+    | op=(PLUS | MINUS) init_expression                           # unaryExprInit
+    | <assoc=right> init_expression op=POW init_expression  # binaryExprInit
+    | init_expression op=(STAR | SLASH | PERCENT) init_expression       # binaryExprInit
+    | init_expression op=(PLUS | MINUS) init_expression           # binaryExprInit
+    | init_expression op=(SHIFT_LEFT | SHIFT_RIGHT) init_expression         # binaryExprInit
+    | init_expression op=AMP init_expression                 # binaryExprInit
+    | init_expression op=CARET init_expression                 # binaryExprInit
+    | init_expression op=PIPE init_expression                 # binaryExprInit
+    | func_name=UFUNC_NAME LPAREN init_expression RPAREN           # funcExprInit
     ;
 
 num_expression
-    : '(' num_expression ')'                               # parenExprNum
+    : LPAREN num_expression RPAREN                               # parenExprNum
     | num_literal                                          # literalExprNum
     | ID                                                   # idExprNum
     | math_const                                           # mathConstExprNum
-    | op=('+'|'-') num_expression                          # unaryExprNum
-    | <assoc=right> num_expression op='**' num_expression  # binaryExprNum
-    | num_expression op=('*'|'/'|'%') num_expression       # binaryExprNum
-    | num_expression op=('+'|'-') num_expression           # binaryExprNum
-    | num_expression op=('<<'|'>>') num_expression         # binaryExprNum
-    | num_expression op='&' num_expression                 # binaryExprNum
-    | num_expression op='^' num_expression                 # binaryExprNum
-    | num_expression op='|' num_expression                 # binaryExprNum
-    | func_name=UFUNC_NAME '(' num_expression ')'          # funcExprNum
-    | <assoc=right> '(' cond_expression ')' '?' num_expression ':' num_expression  # conditionalCStyleExprNum
+    | op=(PLUS | MINUS) num_expression                          # unaryExprNum
+    | <assoc=right> num_expression op=POW num_expression  # binaryExprNum
+    | num_expression op=(STAR | SLASH | PERCENT) num_expression       # binaryExprNum
+    | num_expression op=(PLUS | MINUS) num_expression           # binaryExprNum
+    | num_expression op=(SHIFT_LEFT | SHIFT_RIGHT) num_expression         # binaryExprNum
+    | num_expression op=AMP num_expression                 # binaryExprNum
+    | num_expression op=CARET num_expression                 # binaryExprNum
+    | num_expression op=PIPE num_expression                 # binaryExprNum
+    | func_name=UFUNC_NAME LPAREN num_expression RPAREN          # funcExprNum
+    | <assoc=right> LPAREN cond_expression RPAREN QUESTION num_expression COLON num_expression  # conditionalCStyleExprNum
     ;
 
 cond_expression
-    : '(' cond_expression ')'                               # parenExprCond
+    : LPAREN cond_expression RPAREN                               # parenExprCond
     | bool_literal                                          # literalExprCond
-    | op=('!'|'not') cond_expression                        # unaryExprCond
-    | num_expression op=('<'|'>'|'<='|'>=') num_expression  # binaryExprFromNumCond
-    | num_expression op=('=='|'!=') num_expression          # binaryExprFromNumCond
-    | cond_expression op=('=='|'!=') cond_expression        # binaryExprFromCondCond
-    | cond_expression op=('&&'|'and') cond_expression       # binaryExprCond
-    | cond_expression op=('||'|'or') cond_expression        # binaryExprCond
-    | <assoc=right> '(' cond_expression ')' '?' cond_expression ':' cond_expression  # conditionalCStyleCondNum
+    | op=(BANG | NOT_KW) cond_expression                        # unaryExprCond
+    | num_expression op=(LT | GT | LE | GE) num_expression  # binaryExprFromNumCond
+    | num_expression op=(EQ | NE) num_expression          # binaryExprFromNumCond
+    | cond_expression op=(EQ | NE) cond_expression        # binaryExprFromCondCond
+    | cond_expression op=(LOGICAL_AND | AND_KW) cond_expression       # binaryExprCond
+    | cond_expression op=(LOGICAL_OR | OR_KW) cond_expression        # binaryExprCond
+    | <assoc=right> LPAREN cond_expression RPAREN QUESTION cond_expression COLON cond_expression  # conditionalCStyleCondNum
     ;
 
 num_literal
@@ -167,46 +204,6 @@ bool_literal
     | FALSE
     ;
 
-math_const: 'pi' | 'E' | 'tau';
+math_const: PI_CONST | E_CONST | TAU_CONST;
 
-chain_id: isabs='/'? ID ('.' ID)*;
-
-FLOAT: [0-9]+'.'[0-9]* ([eE][+-]?[0-9]+)?
-     | '.'[0-9]+ ([eE][+-]?[0-9]+)?
-     | [0-9]+ [eE][+-]?[0-9]+;
-INT: [0-9]+;
-HEX_INT: '0x' HexDigit+;
-
-TRUE: 'True' | 'true' | 'TRUE';
-FALSE: 'False' | 'false' | 'FALSE';
-
-UFUNC_NAME : 'sin' | 'cos' | 'tan' | 'asin' | 'acos' | 'atan'
-           | 'sinh' | 'cosh' | 'tanh' | 'asinh' | 'acosh' | 'atanh'
-           | 'sqrt' | 'cbrt' | 'exp' | 'log' | 'log10' | 'log2' | 'log1p'
-           | 'abs' | 'ceil' | 'floor' | 'round' | 'trunc'
-           | 'sign'
-           ;
-
-ID: [a-zA-Z_][a-zA-Z0-9_]*;
-
-STRING
-    : '"' (~["\\\r\n] | EscapeSequence)* '"'
-    | '\'' (~['\\\r\n] | EscapeSequence)* '\''
-    ;
-
-fragment EscapeSequence
-    : '\\' [btnfr"'\\]
-    | '\\' ([0-3]? [0-7])? [0-7]
-    | '\\' 'u' HexDigit HexDigit HexDigit HexDigit
-    | '\\' 'x' HexDigit HexDigit
-    ;
-
-fragment HexDigit
-    : [0-9a-fA-F]
-    ;
-
-WS: [ \t\n\r]+ -> skip;
-MULTILINE_COMMENT : '/*' .*? '*/';
-// BLOCK_COMMENT: '/*' .*? '*/' -> skip;
-LINE_COMMENT: '//' ~[\r\n]* -> skip;
-PYTHON_COMMENT: '#' ~[\r\n]* -> skip;
+chain_id: isabs=SLASH? ID (DOT ID)*;

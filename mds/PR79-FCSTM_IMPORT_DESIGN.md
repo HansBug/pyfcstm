@@ -10,6 +10,7 @@
 
 | 版本 | 日期 | 修改内容 | 作者 |
 |------|------|----------|------|
+| 0.3.0 | 2026-04-03 | 明确 import 文件系统相对路径按当前文件逐级解析，并调整为 `parse_dsl_node_to_state_machine()` 接收 `path` 参数负责递归导入 | Codex |
 | 0.2.1 | 2026-04-03 | 调整 7.4 节事件映射目标路径示例，显式补充最外层 `Root` 并明确相对目标解析结果 | Codex |
 | 0.2.0 | 2026-04-03 | 补充事件映射右侧相对路径语义，并允许在事件映射上用 `named` 覆盖最终显示名称 | Codex |
 | 0.1.0 | 2026-04-03 | 初始版本，定义 import 装配语义、事件/变量映射规则与 VSCode 支持方案 | Codex |
@@ -47,7 +48,7 @@
 
 - import 不参与运行时决策
 - 导入后的结果应等价于用户手工把目标状态内联到宿主文件
-- 现有 `parse_dsl_node_to_state_machine()` 继续接收展开后的完整 `StateMachineDSLProgram`
+- `parse_dsl_node_to_state_machine()` 应在内部完成 import 展开，并最终继续构建普通 `StateMachine`
 
 ### 2.2 显式优于隐式
 
@@ -77,7 +78,19 @@
 
 `import` 只允许出现在复合状态内部，导入后在当前复合状态下生成一个新的直接子状态。
 
-### 3.3 显式别名
+### 3.3 导入源路径解析
+
+当 `import` 使用文件系统相对路径时，解析基准必须是“声明这条 import 的那个 `.fcstm` 文件所在目录”，而不是顶层入口文件所在目录。
+
+例如：
+
+- `/a/b/c/root.fcstm` 中写 `import "./xxx.fcstm"`，则应解析到 `/a/b/c/xxx.fcstm`
+- `/a/b/c/root.fcstm` 中写 `import "./d/e/xxx.fcstm"`，则应解析到 `/a/b/c/d/e/xxx.fcstm`
+- 若 `/a/b/c/d/e/xxx.fcstm` 中再写 `import "./yyy.fcstm"`，则应继续解析到 `/a/b/c/d/e/yyy.fcstm`
+
+也就是说，多级 import 必须逐级相对各自文件位置解析，而不能始终绑定到顶层入口文件目录。
+
+### 3.4 显式别名
 
 每个 import 必须显式写出本地状态名：
 
@@ -86,7 +99,7 @@
 
 `Alias` 是导入后在宿主状态机中的真实状态名。
 
-### 3.4 显示名称优先级
+### 3.5 显示名称优先级
 
 导入后的显示名称优先级如下：
 
@@ -437,19 +450,20 @@ state Root {
 
 ### 8.1 推荐实现落点
 
-推荐新增“多文件装配层”，而不是直接修改运行时或模板系统。
+推荐让 `parse_dsl_node_to_state_machine()` 直接承担“基于当前文件路径进行递归导入装配”的职责，同时把展开逻辑拆分到独立辅助模块中复用，而不是把 import 支持塞进运行时或模板系统。
 
 建议流程：
 
 1. 读取入口 `.fcstm`
 2. 解析为 AST
-3. 递归处理 import
-4. 检测循环导入
-5. 加载被导入 AST
-6. 对导入模块执行变量与事件映射
-7. 将导入模块根状态注入宿主状态树
-8. 合并并生成最终 `StateMachineDSLProgram`
-9. 将最终 AST 交给现有 `parse_dsl_node_to_state_machine()`
+3. 调用 `parse_dsl_node_to_state_machine(ast_node, path=...)`
+4. 在模型构建过程中递归处理 import
+5. 检测循环导入
+6. 基于当前文件路径加载被导入 AST
+7. 对导入模块执行变量与事件映射
+8. 将导入模块根状态注入宿主状态树
+9. 合并并生成最终 `StateMachineDSLProgram`
+10. 继续完成后续状态机模型构建
 
 ### 8.2 新增组件建议
 
@@ -467,7 +481,30 @@ state Root {
 - `pyfcstm/dsl/parse.py`
   - 增加面向文件的高层入口，例如 `load_state_machine_program_from_file()`
 
-### 8.3 循环导入检测
+### 8.3 文件系统相对路径解析
+
+建议将 import 源路径解析规则固定为：
+
+- 若 `import` 路径是绝对路径，则直接使用该绝对路径
+- 若 `import` 路径是相对路径，则相对于“当前正在解析的 fcstm 文件所在目录”解析
+- 递归进入子 import 后，新的相对路径基准必须切换到子文件自己的所在目录
+
+示例：
+
+- 入口文件：`/a/b/c/root.fcstm`
+- `root.fcstm` 中：`import "./d/e/xxx.fcstm"`
+- 被导入文件：`/a/b/c/d/e/xxx.fcstm`
+- `xxx.fcstm` 中：`import "./yyy.fcstm"`
+
+则第二层 import 必须解析为：
+
+- `/a/b/c/d/e/yyy.fcstm`
+
+而不是：
+
+- `/a/b/c/yyy.fcstm`
+
+### 8.4 循环导入检测
 
 装配器需要维护 import 栈，并在发现同一路径再次进入当前栈时直接报错。
 
@@ -501,14 +538,38 @@ state Root {
 
 ### 9.2 模型层
 
-模型层尽量不理解 import 本身。
+模型层需要最小限度地理解 import，并且需要知道“当前文档文件路径”以正确处理递归导入。
 
-理想状态下：
+建议将接口调整为：
 
-- 装配器输出的是一个已经展开完成的普通 `StateMachineDSLProgram`
-- 现有 `parse_dsl_node_to_state_machine()` 无需理解 import 语义
+```python
+parse_dsl_node_to_state_machine(
+    dnode: StateMachineDSLProgram,
+    path: Optional[str] = None,
+) -> StateMachine
+```
 
-这能最大化减少对 simulate、render、template、PlantUML 的连锁改动。
+其中：
+
+- `path` 可表示当前 `.fcstm` 文件路径，或显式指定的导入基准路径
+- 若 `path` 为文件路径，则相对 import 基于其父目录解析
+- 若 `path` 为目录路径，则直接以该目录作为导入基准
+- 若 `path` 为 `None`，则默认使用当前工作目录
+
+这样设计的原因是：
+
+- 现有调用方不会因为 import 功能引入而崩溃
+- CLI、测试、示例代码可以显式传入当前文件路径
+- 递归导入时，父级 `parse_dsl_node_to_state_machine()` 可以继续调用自身，并把子文件路径传下去
+- 多级相对 import 的解析基准可以自然随文件层级切换
+
+建议实现方式：
+
+- `parse_dsl_node_to_state_machine()` 负责维护当前解析基准与 import 栈
+- 具体的文件读取、AST 解析、映射展开逻辑可委托给 `pyfcstm/dsl/imports.py`
+- 在最终进入现有状态/事件/变量校验逻辑前，先把 import 展开为普通 `StateMachineDSLProgram`
+
+这样虽然模型层不再是“完全不理解 import”，但改动边界仍然集中在构建入口，而不会扩散到 simulate、render、template、PlantUML 的后续流程。
 
 ---
 
@@ -610,7 +671,8 @@ state Root {
 - 通过 `named` 重载显示名称
 - 变量默认按 alias 隔离，靠显式映射实现共享
 - 事件默认实例隔离，仅模块绝对事件支持显式提升或共享
-- 装配层负责统一 AST 重写，模型层尽量不理解 import
+- 文件系统相对 import 一律相对当前声明文件逐级解析
+- `parse_dsl_node_to_state_machine()` 接收 `path` 参数并负责递归 import 装配
 - VSCode 先做语法与轻量工作区索引，不切换到 LSP
 
 ---

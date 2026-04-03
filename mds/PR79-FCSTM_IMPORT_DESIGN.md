@@ -10,6 +10,7 @@
 
 | 版本 | 日期 | 修改内容 | 作者 |
 |------|------|----------|------|
+| 0.4.0 | 2026-04-03 | 重写 `def` mapping 规范，定义 selector 类型、多 `*` 捕获、`${n}` / `$n` / 裸 `*` 规则，以及优先级与冲突处理 | Codex |
 | 0.3.0 | 2026-04-03 | 明确 import 文件系统相对路径按当前文件逐级解析，并调整为 `parse_dsl_node_to_state_machine()` 接收 `path` 参数负责递归导入 | Codex |
 | 0.2.1 | 2026-04-03 | 调整 7.4 节事件映射目标路径示例，显式补充最外层 `Root` 并明确相对目标解析结果 | Codex |
 | 0.2.0 | 2026-04-03 | 补充事件映射右侧相对路径语义，并允许在事件映射上用 `named` 覆盖最终显示名称 | Codex |
@@ -116,14 +117,14 @@
 ```fcstm
 state System {
     import "./motor.fcstm" as LeftMotor named "Left Motor" {
-        def * -> "left_*";
+        def * -> left_*;
         event /Start -> Start named "Motor Start";
         event /Stop -> /Motors.Stop;
         event /Fault -> /Motors.Fault;
     }
 
     import "./motor.fcstm" as RightMotor named "Right Motor" {
-        def * -> "right_*";
+        def * -> right_*;
         event /Start -> Start named "Motor Start";
         event /Stop -> /Motors.Stop;
         event /Fault -> /Motors.Fault;
@@ -155,18 +156,26 @@ import STRING as ID (named STRING)? ('{' import_mapping_statement* '}')? ';'
 
 ### 5.1 设计目标
 
-变量系统必须一开始就支持：
+变量映射系统需要满足以下目标：
 
-- 同一模块多次导入
-- 不同导入实例拥有独立变量
-- 多个导入实例显式共享部分或全部变量
+- 支持同一模块多次导入
+- 支持不同导入实例默认拥有独立变量
+- 支持按变量名结构做批量映射
+- 保持语义可预测，不把 mapping 扩展成完整脚本语言
+
+本设计明确不引入：
+
+- `exclude` / `include`
+- 变量分组
+- 端口系统
+- 正则表达式映射
 
 ### 5.2 默认行为
 
 若 import 未写任何 `def` 映射，则系统对该导入隐式应用：
 
 ```fcstm
-def * -> "<Alias>_*";
+def * -> <Alias>_*;
 ```
 
 例如：
@@ -180,68 +189,283 @@ import "./worker.fcstm" as B;
 
 ```fcstm
 import "./worker.fcstm" as A {
-    def * -> "A_*";
+    def * -> A_*;
 }
 
 import "./worker.fcstm" as B {
-    def * -> "B_*";
+    def * -> B_*;
 }
 ```
 
 这样同一模块多次导入时默认不会发生变量冲突。
 
-### 5.3 映射语法
+### 5.3 Source 侧 selector 语法
 
-建议支持以下形式：
+建议 `def` mapping 支持 4 类 selector：
 
 ```fcstm
-def * -> "left_*";
-def counter -> shared_counter;
-def threshold -> left_threshold;
+def counter -> left_counter;
+def {a, b, c} -> ctl_*;
+def sensor_* -> io_$1;
+def a_*_b_* -> pair_${1}_${2};
+def * -> left_$0;
 ```
 
-解释：
+分别表示：
 
-- `def * -> "prefix_*"`：批量重命名
-- `def x -> y`：单变量精确映射
+1. 精确匹配
 
-### 5.4 映射优先级
+```fcstm
+def counter -> ...;
+```
 
-建议单变量映射优先于通配映射。
+2. 显式集合匹配
+
+```fcstm
+def {a, b, c} -> ...;
+```
+
+3. 通配模式匹配
+
+```fcstm
+def sensor_* -> ...;
+def a_*_b_* -> ...;
+```
+
+4. 兜底匹配
+
+```fcstm
+def * -> ...;
+```
+
+### 5.4 Source 中 `*` 的语义
+
+Source 侧只支持一种通配符：`*`。
+
+规则如下：
+
+- `*` 表示一个捕获槽
+- 可以出现多个
+- 从左到右编号为第 1、第 2... 个捕获组
+- 模式始终匹配整个变量名，而不是子串匹配
+- 多个 `*` 的匹配策略采用“左到右、非贪婪匹配，以保证后续字面量仍可继续匹配”
 
 例如：
 
 ```fcstm
-def * -> "left_*";
+def a_*_b_* -> ...;
+```
+
+对于变量：
+
+```text
+a_foo_b_bar
+```
+
+有：
+
+- 第 1 个捕获组 = `foo`
+- 第 2 个捕获组 = `bar`
+
+对于：
+
+```text
+a_x_b_y_b_z
+```
+
+建议匹配结果为：
+
+- 第 1 个捕获组 = `x`
+- 第 2 个捕获组 = `y_b_z`
+
+### 5.5 Target 模板与占位符语法
+
+Target 侧支持两套等价占位符写法：
+
+- 正式写法：`${n}`
+- 简写写法：`$n`
+
+其中：
+
+- `${0}` 表示完整源变量名
+- `${1}` 表示第 1 个 `*` 捕获内容
+- `${2}` 表示第 2 个 `*` 捕获内容
+- 依此类推
+
+例如：
+
+```fcstm
+def counter -> left_${0};
+def {a, b, c} -> ctl_${0};
+def sensor_* -> io_${1};
+def a_*_b_* -> pair_${1}_${2};
+def * -> left_${0};
+```
+
+### 5.6 `$n` 简写规则
+
+`$n` 只识别 `$` 后面的一个数字，因此：
+
+- `$0` 等价于 `${0}`
+- `$1` 等价于 `${1}`
+- `$2` 等价于 `${2}`
+- `$12` 解释为 `${1}2`
+- `$03` 解释为 `${0}3`
+
+若要引用两位数以上的捕获组编号，必须显式写：
+
+```fcstm
+${12}
+```
+
+这样可以避免 `$12` 究竟是“第 12 组”还是“第 1 组后接字面量 `2`”的歧义。
+
+### 5.7 Target 侧裸 `*` 简写
+
+为了保留更短的写法，Target 侧允许在特定条件下继续使用裸 `*`：
+
+1. 若 Source 没有捕获组
+
+- 裸 `*` 解释为 `${0}`
+
+例如：
+
+```fcstm
+def {a, b, c} -> ctl_*;
+def * -> left_*;
+```
+
+分别等价于：
+
+```fcstm
+def {a, b, c} -> ctl_${0};
+def * -> left_${0};
+```
+
+2. 若 Source 恰好有 1 个 `*`
+
+- 裸 `*` 解释为 `${1}`
+
+例如：
+
+```fcstm
+def sensor_* -> io_*;
+```
+
+等价于：
+
+```fcstm
+def sensor_* -> io_${1};
+```
+
+并且在这种情况下，也允许显式使用：
+
+- `${0}` / `$0`
+- `${1}` / `$1`
+
+3. 若 Source 有多个 `*`
+
+- Target 侧禁止再使用裸 `*`
+- 必须显式写 `${0}`、`${1}`、`${2}` 或对应的 `$0`、`$1`、`$2`
+
+例如：
+
+```fcstm
+def a_*_b_* -> pair_${1}_${2};
+```
+
+而下面这种建议直接判为非法：
+
+```fcstm
+def a_*_b_* -> pair_*;
+```
+
+因为这里的裸 `*` 会产生歧义。
+
+### 5.8 映射优先级
+
+`def` mapping 的优先级固定为：
+
+1. 精确规则
+2. 集合规则
+3. 通配模式规则
+4. 兜底规则 `def * -> ...`
+
+不采用“按书写顺序覆盖”的策略。
+
+例如：
+
+```fcstm
 def counter -> shared_counter;
+def {counter, status_flag} -> ctl_*;
+def *_flag -> flag_$1;
+def * -> left_$0;
 ```
 
 则：
 
-- `counter` 映射到 `shared_counter`
-- 其余变量映射到 `left_<name>`
+- `counter` 使用精确规则
+- `status_flag` 使用集合规则
+- `error_flag` 使用模式规则
+- `timeout` 使用兜底规则
 
-### 5.5 共享变量
+### 5.9 同优先级冲突规则
 
-多个导入实例只要映射到同一目标变量名，即视为显式共享。
+为保证可预测性，建议同优先级规则发生冲突时直接报错：
+
+1. 精确规则
+
+- 同一个变量不能出现两条精确规则
+
+2. 集合规则
+
+- 两条集合规则不能包含同一个变量
+- 集合规则中出现重复变量应报错
+
+3. 模式规则
+
+- 若同一个变量同时命中多条模式规则，应直接报“模式歧义”错误
+- 不再继续发明“更具体模式优先”的附加算法
+
+4. 兜底规则
+
+- `def * -> ...` 只能出现一条
+
+### 5.10 目标名冲突与共享边界
+
+多个不同源变量若最终展开到同一个目标变量名，默认报错。
+
+例如：
+
+```fcstm
+def {a, b} -> shared_var;
+```
+
+若这意味着 `a` 和 `b` 都将映射到同一个 `shared_var`，则应直接报错，而不是隐式制造 many-to-one 共享。
+
+建议第一阶段只允许以下形式的显式共享：
+
+- 不同 import 实例中的同名源变量，通过精确规则映射到同一个目标变量名
 
 例如：
 
 ```fcstm
 import "./worker.fcstm" as A {
-    def * -> "shared_*";
+    def counter -> shared_counter;
 }
 
 import "./worker.fcstm" as B {
-    def * -> "shared_*";
+    def counter -> shared_counter;
 }
 ```
 
-则两个模块实例共享全部变量。
+此时可视为显式共享 `counter`。
 
-### 5.6 冲突与校验
+但集合规则、模式规则、兜底规则不应默认承担“制造共享变量”的职责。
 
-当多个源变量映射到同一目标变量时：
+### 5.11 类型与初始化校验
+
+当多个 import 最终把变量映射到同一目标变量名时，仍需执行一致性校验：
 
 - 变量类型必须一致
 - 初始化表达式必须一致，或宿主文件已显式定义该目标变量
@@ -250,8 +474,40 @@ import "./worker.fcstm" as B {
 
 建议错误示例：
 
-- `Variable mapping conflict: source variables 'counter' and 'counter' resolve to 'shared_counter' with different init expressions.`
 - `Variable mapping conflict: target variable 'shared_counter' has inconsistent type 'int' vs 'float'.`
+- `Variable mapping conflict: target variable 'shared_counter' has conflicting initial values.`
+
+### 5.12 示例
+
+假设模块变量有：
+
+```text
+counter
+status_flag
+sensor_temp
+sensor_pressure
+a_main_b_low
+timeout
+```
+
+宿主映射如下：
+
+```fcstm
+def counter -> shared_counter;
+def {status_flag} -> ctl_*;
+def sensor_* -> io_*;
+def a_*_b_* -> pair_${1}_${2};
+def * -> left_$0;
+```
+
+则结果为：
+
+- `counter -> shared_counter`
+- `status_flag -> ctl_status_flag`
+- `sensor_temp -> io_temp`
+- `sensor_pressure -> io_pressure`
+- `a_main_b_low -> pair_main_low`
+- `timeout -> left_timeout`
 
 ---
 

@@ -10,6 +10,8 @@
 
 | 版本 | 日期 | 修改内容 | 作者 |
 |------|------|----------|------|
+| 0.4.3 | 2026-04-03 | 收紧单个 import 实例内的变量映射约束，明确禁止任何内部 many-to-one 变量塌缩 | Codex |
+| 0.4.2 | 2026-04-03 | 调整变量共享边界，允许不同 import 实例中的不同源变量汇聚到同一目标变量名，但要求参与汇聚的类型完全一致 | Codex |
 | 0.4.1 | 2026-04-03 | 补充映射目标与宿主现有变量同名时的合法性规则，要求类型完全一致，并明确宿主定义优先 | Codex |
 | 0.4.0 | 2026-04-03 | 重写 `def` mapping 规范，定义 selector 类型、多 `*` 捕获、`${n}` / `$n` / 裸 `*` 规则，以及优先级与冲突处理 | Codex |
 | 0.3.0 | 2026-04-03 | 明确 import 文件系统相对路径按当前文件逐级解析，并调整为 `parse_dsl_node_to_state_machine()` 接收 `path` 参数负责递归导入 | Codex |
@@ -455,35 +457,42 @@ state System {
 
 若模块中的 `counter` 也是 `int`，则该映射合法；若模块中的 `counter` 是 `float`，则应直接报错。
 
-除“绑定到宿主已有同名变量”这一情况之外，多个不同源变量若最终展开到同一个目标变量名，默认报错。
+对于“多个导入变量汇聚到同一个目标变量名”的情况，本设计改为区分两类：
+
+1. 同一个 import 实例内部的多源汇聚
+
+- 一律禁止
+- 单个 import 实例内部，变量映射必须满足“不同源变量不能收敛到同一个目标变量名”
+- 换句话说，单个 import 内只允许 many-to-many 中“不收敛”的那一部分；严格禁止内部 many-to-one
+- 例如 `def {a, b} -> shared_var;` 若发生在同一个 import block 内，则必须直接报错
+
+2. 不同 import 实例之间的多源汇聚
+
+- 原则上允许
+- 即使源变量名不同，也允许它们映射到同一个目标变量名
+- 但所有参与汇聚的变量类型必须完全一致
 
 例如：
 
 ```fcstm
-def {a, b} -> shared_var;
-```
-
-若这意味着 `a` 和 `b` 都将映射到同一个 `shared_var`，则应直接报错，而不是隐式制造 many-to-one 共享。
-
-建议第一阶段只允许以下形式的显式共享：
-
-- 不同 import 实例中的同名源变量，通过精确规则映射到同一个目标变量名
-
-例如：
-
-```fcstm
-import "./worker.fcstm" as A {
-    def counter -> shared_counter;
+import "./worker_a.fcstm" as A {
+    def counter -> shared_var;
 }
 
-import "./worker.fcstm" as B {
-    def counter -> shared_counter;
+import "./worker_b.fcstm" as B {
+    def pulse_count -> shared_var;
 }
 ```
 
-此时可视为显式共享 `counter`。
+若 `counter` 与 `pulse_count` 都是 `int`，则该共享合法；若其中一个是 `float`，则应直接报错。
 
-但集合规则、模式规则、兜底规则不应默认承担“制造共享变量”的职责。
+也就是说，第一阶段允许的共享变量来源包括：
+
+- 不同 import 实例中的同名源变量
+- 不同 import 实例中的不同源变量
+- 宿主已有变量与 import 变量的同名绑定
+
+但同一个 import 实例内部，集合规则、模式规则、兜底规则都不允许制造变量收敛。
 
 ### 5.11 类型与初始化校验
 
@@ -496,6 +505,7 @@ import "./worker.fcstm" as B {
 - 若宿主文件未显式定义该目标变量，而多个 import 共享同一目标变量名，则：
   - 变量类型必须一致
   - 初始化表达式必须一致
+- 若同一个 import 实例内部有多个不同源变量试图汇聚到同一目标变量名，则一律直接报错，不进入共享校验分支
 - 若类型不一致，报错
 - 若初始化冲突且宿主未显式覆盖，报错
 
@@ -503,6 +513,8 @@ import "./worker.fcstm" as B {
 
 - `Variable mapping conflict: target variable 'shared_counter' has inconsistent type 'int' vs 'float'.`
 - `Variable mapping conflict: target variable 'shared_counter' already exists in host model as type 'int', cannot bind imported type 'float'.`
+- `Variable mapping conflict: target variable 'shared_var' receives incompatible imported types 'int' and 'float'.`
+- `Variable mapping conflict: import 'A' maps multiple source variables to the same target variable 'shared_var'.`
 - `Variable mapping conflict: target variable 'shared_counter' has conflicting initial values.`
 
 ### 5.12 示例

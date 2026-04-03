@@ -10,6 +10,7 @@
 
 | 版本 | 日期 | 修改内容 | 作者 |
 |------|------|----------|------|
+| 0.5.2 | 2026-04-03 | 同步 Phase 1 当前实现进展，勾选已完成的 DSL / AST / 回归测试项 | Codex |
 | 0.5.1 | 2026-04-03 | 为各 phase 补充回归测试验收要求，并新增 public API 测试约束与 pydoc 编写规范约束 | Codex |
 | 0.5.0 | 2026-04-03 | 新增完整实施计划，按 phase 拆分 TODO 与验收 checklist，并补充每次 push 后同步 MD / PR checkbox 的推进规则 | Codex |
 | 0.4.3 | 2026-04-03 | 收紧单个 import 实例内的变量映射约束，明确禁止任何内部 many-to-one 变量塌缩 | Codex |
@@ -985,20 +986,20 @@ parse_dsl_node_to_state_machine(
 
 TODO
 
-* [ ] 修改 `Grammar.g4`，加入 `import ... as ... named ... { ... }` 及 mapping 语法
-* [ ] 重新生成 ANTLR 产物，并确认生成文件已纳入正确的提交流程
-* [ ] 在 AST 节点层增加 import block、`def` mapping、event mapping 等节点表示
-* [ ] 更新 listener / parse 流程，使 import 语法可被解析为完整 AST
+* [x] 修改 `Grammar.g4`，加入 `import ... as ... named ... { ... }` 及 mapping 语法
+* [x] 重新生成 ANTLR 产物，并确认生成文件已纳入正确的提交流程
+* [x] 在 AST 节点层增加 import block、`def` mapping、event mapping 等节点表示
+* [x] 更新 listener / parse 流程，使 import 语法可被解析为完整 AST
 * [ ] 为 `parse_dsl_node_to_state_machine()` 设计并落地 `path` 参数契约
-* [ ] 补齐最小正反例，覆盖 `as` 必填、`named` 选填、mapping block 可选等语法边界
+* [x] 补齐最小正反例，覆盖 `as` 必填、`named` 选填、mapping block 可选等语法边界
 
 Checklist
 
-* [ ] 新语法可以被 parser 正确接受并生成稳定 AST
-* [ ] 不含 import 的旧 DSL 文件解析行为保持不变
+* [x] 新语法可以被 parser 正确接受并生成稳定 AST
+* [x] 不含 import 的旧 DSL 文件解析行为保持不变
 * [ ] `path` 参数语义明确，且不会破坏现有调用方
 * [ ] 语法错误能定位到具体 import / mapping 语句，而不是只报笼统 parse 失败
-* [ ] 已按影响范围完成回归测试；至少使用 `make unittest RANGE_DIR=./<一级模块>` 级别命令，若本 phase 影响跨一级模块或顶层链路，则已提升到更高层级
+* [x] 已按影响范围完成回归测试；至少使用 `make unittest RANGE_DIR=./<一级模块>` 级别命令，若本 phase 影响跨一级模块或顶层链路，则已提升到更高层级
 
 ### 12.4 Phase 2: Import 装配器与递归路径解析
 

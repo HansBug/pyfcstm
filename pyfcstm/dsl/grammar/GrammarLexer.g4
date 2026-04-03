@@ -1,6 +1,46 @@
-// GrammarLexer.g4
+/*
+ * GrammarLexer.g4
+ *
+ * Overview
+ * --------
+ * The FCSTM grammar is intentionally split into a standalone lexer grammar and
+ * a parser grammar. The import feature needs lexer modes to keep several
+ * compact forms space-sensitive, and ANTLR only allows modes inside a lexer
+ * grammar. This split keeps the resulting grammar cross-language and avoids
+ * target-specific hooks such as @lexer::members.
+ *
+ * Import-related tokenization follows a staged workflow:
+ *
+ * 1. DEFAULT_MODE handles the regular FCSTM language and recognizes the
+ *    top-level ``import`` keyword.
+ * 2. ``import`` switches into IMPORT_HEADER_MODE, which lexes the source path,
+ *    alias, and optional ``named`` clause until it sees either ``;`` or ``{``.
+ * 3. ``{`` switches into IMPORT_BLOCK_MODE, which lexes mapping statements
+ *    inside the import block.
+ * 4. ``def`` inside the block switches into IMPORT_DEF_SELECTOR_MODE, where
+ *    wildcard selectors such as ``sensor_*`` or ``a_*_b_*`` must stay compact
+ *    and are emitted as a single token when appropriate.
+ * 5. ``->`` then switches into IMPORT_DEF_TARGET_MODE, where compact target
+ *    templates such as ``left_$0`` or ``pair_${1}_${2}`` are also emitted as a
+ *    single token.
+ *
+ * Expected behavior
+ * -----------------
+ * Compact selector and template spellings are enforced by tokenization rather
+ * than listener-side validation. If a user inserts whitespace inside one of
+ * these compact forms, the lexer no longer produces the dedicated token, which
+ * lets the parser fail naturally at the exact location.
+ *
+ * Non-goals
+ * ---------
+ * - No semantic validation in the lexer beyond token boundaries.
+ * - No normalization or rewriting of selector/template text here.
+ * - No language-specific embedded code, so the grammar remains reusable across
+ *   all ANTLR targets.
+ */
 lexer grammar GrammarLexer;
 
+// Core FCSTM keywords, including the import entry point that switches modes.
 IMPORT: 'import' -> mode(IMPORT_HEADER_MODE);
 DEF: 'def';
 EVENT: 'event';
@@ -67,6 +107,7 @@ LT: '<';
 GT: '>';
 ASSIGN: '=';
 
+// Numeric literals and boolean literals used by the general DSL.
 FLOAT
     : [0-9]+ '.' [0-9]* ([eE][+-]?[0-9]+)?
     | '.' [0-9]+ ([eE][+-]?[0-9]+)?
@@ -89,6 +130,7 @@ UFUNC_NAME
 
 ID: [a-zA-Z_][a-zA-Z0-9_]*;
 
+// Strings are reused in both the main DSL and the import-specific modes.
 STRING
     : '"' (~["\\\r\n] | EscapeSequence)* '"'
     | '\'' (~['\\\r\n] | EscapeSequence)* '\''
@@ -99,6 +141,8 @@ LINE_COMMENT: '//' ~[\r\n]* -> skip;
 PYTHON_COMMENT: '#' ~[\r\n]* -> skip;
 WS: [ \t\n\r]+ -> skip;
 
+// Import header mode: ``import "path" as Alias named "Display" ...``
+// stays structurally simple and exits either at ``;`` or when entering a block.
 mode IMPORT_HEADER_MODE;
 
 IMPORT_HEADER_WS: [ \t\n\r]+ -> skip;
@@ -117,6 +161,8 @@ IMPORT_HEADER_ID: [a-zA-Z_][a-zA-Z0-9_]* -> type(ID);
 IMPORT_HEADER_LBRACE: '{' -> type(LBRACE), mode(IMPORT_BLOCK_MODE);
 IMPORT_HEADER_SEMI: ';' -> type(SEMI), mode(DEFAULT_MODE);
 
+// Import block mode: accepts only import-local mapping statements plus
+// punctuation. A ``def`` mapping transitions into the selector sub-mode.
 mode IMPORT_BLOCK_MODE;
 
 IMPORT_BLOCK_WS: [ \t\n\r]+ -> skip;
@@ -139,6 +185,9 @@ IMPORT_BLOCK_STRING
       ) -> type(STRING)
     ;
 
+// Import def selector mode: keeps wildcard selectors compact. Patterns are
+// emitted as a dedicated token only when the wildcard expression is contiguous;
+// otherwise the input falls back to normal tokens and the parser rejects it.
 mode IMPORT_DEF_SELECTOR_MODE;
 
 IMPORT_DEF_SELECTOR_WS: [ \t\n\r]+ -> skip;
@@ -156,6 +205,8 @@ IMPORT_DEF_SELECTOR_PATTERN
 IMPORT_DEF_SELECTOR_ID: [a-zA-Z_][a-zA-Z0-9_]* -> type(ID);
 IMPORT_DEF_SELECTOR_ARROW: '->' -> type(ARROW), mode(IMPORT_DEF_TARGET_MODE);
 
+// Import def target mode: target templates follow the same compact-token
+// principle as selectors. ``;`` ends the mapping and returns to the block mode.
 mode IMPORT_DEF_TARGET_MODE;
 
 IMPORT_DEF_TARGET_WS: [ \t\n\r]+ -> skip;

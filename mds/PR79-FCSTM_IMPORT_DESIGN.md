@@ -10,6 +10,7 @@
 
 | 版本 | 日期 | 修改内容 | 作者 |
 |------|------|----------|------|
+| 0.2.1 | 2026-04-03 | 调整 7.4 节事件映射目标路径示例，显式补充最外层 `Root` 并明确相对目标解析结果 | Codex |
 | 0.2.0 | 2026-04-03 | 补充事件映射右侧相对路径语义，并允许在事件映射上用 `named` 覆盖最终显示名称 | Codex |
 | 0.1.0 | 2026-04-03 | 初始版本，定义 import 装配语义、事件/变量映射规则与 VSCode 支持方案 | Codex |
 
@@ -409,19 +410,21 @@ event /Fault -> /GlobalFault named "Motor Fault";
 例如：
 
 ```fcstm
-state System {
-    import "./motor.fcstm" as LeftMotor {
-        event /Start -> Start;
-        event /Stop -> Bus.Stop;
-        event /Fault -> /GlobalFault;
+state Root {
+    state System {
+        import "./motor.fcstm" as LeftMotor {
+            event /Start -> Start;
+            event /Stop -> Bus.Stop;
+            event /Fault -> /GlobalFault;
+        }
     }
 }
 ```
 
 应分别解析为：
 
-- `Start` -> `System.Start`
-- `Bus.Stop` -> `System.Bus.Stop`
+- `Start` -> `Root.System.Start`
+- `Bus.Stop` -> `Root.System.Bus.Stop`
 - `/GlobalFault` -> `Root.GlobalFault`
 
 ### 7.5 相对路径重写

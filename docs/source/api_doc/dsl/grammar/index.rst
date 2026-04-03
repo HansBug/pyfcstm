@@ -9,8 +9,8 @@ pyfcstm.dsl.grammar
 .. toctree::
     :maxdepth: 3
 
-    Grammar
     GrammarLexer
     GrammarListener
     GrammarParser
+    GrammarParserListener
 

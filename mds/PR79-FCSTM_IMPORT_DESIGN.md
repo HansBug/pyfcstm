@@ -10,6 +10,7 @@
 
 | 版本 | 日期 | 修改内容 | 作者 |
 |------|------|----------|------|
+| 0.5.0 | 2026-04-03 | 新增完整实施计划，按 phase 拆分 TODO 与验收 checklist，并补充每次 push 后同步 MD / PR checkbox 的推进规则 | Codex |
 | 0.4.3 | 2026-04-03 | 收紧单个 import 实例内的变量映射约束，明确禁止任何内部 many-to-one 变量塌缩 | Codex |
 | 0.4.2 | 2026-04-03 | 调整变量共享边界，允许不同 import 实例中的不同源变量汇聚到同一目标变量名，但要求参与汇聚的类型完全一致 | Codex |
 | 0.4.1 | 2026-04-03 | 补充映射目标与宿主现有变量同名时的合法性规则，要求类型完全一致，并明确宿主定义优先 | Codex |
@@ -935,15 +936,7 @@ parse_dsl_node_to_state_machine(
 
 ### 11.2 建议分阶段交付
 
-建议按以下顺序推进：
-
-1. 语法与 AST 支持 import
-2. 编译期装配器与展开
-3. 变量映射
-4. 模块绝对事件映射
-5. CLI / generate / simulate / PlantUML 接入文件装配入口
-6. VSCode 第一阶段支持
-7. VSCode 工作区索引
+详细执行计划见第 12 节，后续实际推进应以第 12 节中的 phase / TODO / checklist 为准。
 
 ### 11.3 第一阶段建议边界
 
@@ -957,7 +950,178 @@ parse_dsl_node_to_state_machine(
 
 ---
 
-## 12. 当前建议结论
+## 12. 实施计划与推进规则
+
+### 12.1 维护与同步规则
+
+本节作为本 PR 的执行计划主文档。后续只要该 PR 仍用于跟踪 import 功能推进，就应持续维护本节中的 checkbox 状态。
+
+推进时必须遵守以下规则：
+
+* [ ] 每次准备 push 前，先同步本文档中的 phase、TODO 与 checklist checkbox 状态
+* [ ] 每次 push 完成后，立即同步 GitHub PR body 中对应的 phase checkbox 状态
+* [ ] 若某个 phase 的范围、拆分方式或验收口径发生变化，必须在同一次 push 中同时更新本文档与 PR body
+* [ ] 只有当某个 phase 的 checklist 全部满足后，才允许勾选该 phase 的总览 checkbox
+* [ ] GitHub PR body 中必须始终保留本文档链接，方便从 PR 直接跳转到详细设计与执行计划
+
+### 12.2 Phase 总览
+
+* [ ] Phase 1: DSL Grammar / AST / Parse API 落地
+* [ ] Phase 2: Import 装配器与递归路径解析
+* [ ] Phase 3: `def` mapping 与变量合流校验
+* [ ] Phase 4: event mapping 与路径重写
+* [ ] Phase 5: CLI / generate / simulate / PlantUML 接入
+* [ ] Phase 6: VSCode 扩展支持
+* [ ] Phase 7: 测试、样例、文档与收尾
+
+### 12.3 Phase 1: DSL Grammar / AST / Parse API 落地
+
+本 phase 做到 parser 层已经能完整承载 import 语法、mapping 语法与 `path` 参数入口，语法树与 API 契约稳定可供后续装配实现使用，但尚不要求完成跨文件展开。
+
+TODO
+
+* [ ] 修改 `Grammar.g4`，加入 `import ... as ... named ... { ... }` 及 mapping 语法
+* [ ] 重新生成 ANTLR 产物，并确认生成文件已纳入正确的提交流程
+* [ ] 在 AST 节点层增加 import block、`def` mapping、event mapping 等节点表示
+* [ ] 更新 listener / parse 流程，使 import 语法可被解析为完整 AST
+* [ ] 为 `parse_dsl_node_to_state_machine()` 设计并落地 `path` 参数契约
+* [ ] 补齐最小正反例，覆盖 `as` 必填、`named` 选填、mapping block 可选等语法边界
+
+Checklist
+
+* [ ] 新语法可以被 parser 正确接受并生成稳定 AST
+* [ ] 不含 import 的旧 DSL 文件解析行为保持不变
+* [ ] `path` 参数语义明确，且不会破坏现有调用方
+* [ ] 语法错误能定位到具体 import / mapping 语句，而不是只报笼统 parse 失败
+
+### 12.4 Phase 2: Import 装配器与递归路径解析
+
+本 phase 做到多文件 import 可按声明文件所在目录递归解析、检测循环导入，并把被导入 root state 以内联等价的方式挂载到宿主状态树中。
+
+TODO
+
+* [ ] 增加 import 解析与装配辅助模块，负责文件加载、递归展开与错误组织
+* [ ] 让 `parse_dsl_node_to_state_machine(..., path=...)` 在模型构建前或构建中完成 import 递归处理
+* [ ] 实现“相对路径相对当前声明文件目录解析”的规则，并支持多级 import
+* [ ] 检测并报错：文件不存在、循环导入、被导入文件缺失 root state、同一宿主作用域 alias 冲突
+* [ ] 按 `as Alias` 重命名导入 root state，并应用 `named` 的显示名优先级规则
+* [ ] 保证装配后状态树对后续模型构建、渲染、模拟表现为普通内联状态树
+
+Checklist
+
+* [ ] 多级相对路径 import 能按各自文件位置正确解析
+* [ ] 循环导入能被稳定检测，并给出可读错误链路
+* [ ] 只允许导入外部文件的 root state，其他情况均能明确报错
+* [ ] 装配结果在结构上等价于手工内联，不引入额外运行时概念
+
+### 12.5 Phase 3: `def` mapping 与变量合流校验
+
+本 phase 做到变量映射可在装配期间完整生效，包括 exact / set / pattern / fallback 规则、通配捕获、宿主同名绑定、跨 import 合流，以及严格禁止单个 import 内部 many-to-one。
+
+TODO
+
+* [ ] 实现 exact、set、pattern、fallback 四类 `def` mapping 规则与优先级
+* [ ] 实现 Source 侧 `*` 捕获、Target 侧 `${n}` / `$n` / 裸 `*` 展开逻辑
+* [ ] 在装配阶段统一重写变量定义名、表达式中的变量引用、操作块赋值目标
+* [ ] 实现默认变量隔离规则，即未写 mapping 时等价于 `def * -> <Alias>_*;`
+* [ ] 严格禁止单个 import 实例内部多个源变量映射到同一个目标变量名
+* [ ] 允许不同 import 实例的不同源变量汇聚到同一目标变量名，但要求类型完全一致
+* [ ] 允许映射到宿主已有变量名，但要求宿主类型与 import 变量类型完全一致
+* [ ] 对共享目标变量执行初始化一致性校验：宿主未显式定义时需一致，宿主已定义时宿主定义优先
+
+Checklist
+
+* [ ] 同一模块多次导入时，默认变量不会互相冲突
+* [ ] `def` mapping 的优先级、冲突规则与占位符语义都按文档实现
+* [ ] 单个 import 内部任何 many-to-one 变量收敛都会被直接拒绝
+* [ ] 跨 import 或宿主绑定的变量共享只会在类型完全一致时通过
+* [ ] `int` / `float` 混合汇聚会稳定报错
+
+### 12.6 Phase 4: event mapping 与路径重写
+
+本 phase 做到模块绝对事件 `/...` 可被显式映射到宿主事件空间，并支持右侧相对路径、绝对路径与 `named` 显示名覆盖；未映射事件则继续按实例局部化处理。
+
+TODO
+
+* [ ] 实现模块绝对事件路径的识别、默认实例内重写与显式映射逻辑
+* [ ] 支持 event mapping 左侧仅接受模块绝对事件路径
+* [ ] 支持 event mapping 右侧解析为宿主绝对路径或相对于 import 所在 state 的相对路径
+* [ ] 支持 event mapping 上的 `named`，用于覆盖最终宿主事件显示名称
+* [ ] 在装配阶段重写 transition、force transition 与相关路径引用中的事件路径
+* [ ] 校验共享目标事件的显示名冲突与路径冲突
+* [ ] 保持 `::`、链式 `:` 与模块绝对 `/...` 在导入后的语义边界清晰且可预测
+
+Checklist
+
+* [ ] `event /Start -> Start;` 能正确解析为 import 所在宿主 state 下的 `Start`
+* [ ] `event /Start -> /Motors.Start;` 能正确解析为宿主 root 下的绝对事件路径
+* [ ] 未映射的模块绝对事件会落到实例作用域而不是错误提升到宿主 root
+* [ ] 多个 import 共享同一宿主事件时，路径和显示名行为可预测且冲突可诊断
+
+### 12.7 Phase 5: CLI / generate / simulate / PlantUML 接入
+
+本 phase 做到 import 装配能力进入现有主链路，用户通过现有 CLI 命令即可处理多文件模型，而不需要额外工具或新入口。
+
+TODO
+
+* [ ] 将 import-aware 的 parse / build 流程接入 `generate`
+* [ ] 将 import-aware 的 parse / build 流程接入 `plantuml`
+* [ ] 将 import-aware 的 parse / build 流程接入 `simulate`
+* [ ] 确保 CLI 入口能把输入文件路径正确传入 `path` 参数
+* [ ] 为缺失文件、循环导入、mapping 冲突等错误提供面向用户的可读输出
+* [ ] 验证模板渲染侧看到的是装配完成后的最终状态机，而不是残留 import 语义
+
+Checklist
+
+* [ ] `pyfcstm generate` 可以处理多文件 import 模型
+* [ ] `pyfcstm plantuml` 输出的结构与装配后的状态树一致
+* [ ] `pyfcstm simulate` 可以在多文件装配后正常运行
+* [ ] 现有单文件使用路径在 CLI 层保持兼容
+
+### 12.8 Phase 6: VSCode 扩展支持
+
+本 phase 做到 VSCode 扩展至少能识别 import 语法、给出基础诊断，并在工作区级别支持 import 文件导航与轻量索引，不引入完整 LSP。
+
+TODO
+
+* [ ] 更新 VSCode 语法高亮与相关语法定义，覆盖 `import`、`as`、mapping block、event mapping
+* [ ] 为 import 路径、alias 冲突、缺失文件、循环导入提供基础诊断入口
+* [ ] 增加轻量 `WorkspaceIndex`，索引工作区内 `.fcstm` 文件与 import 依赖关系
+* [ ] 支持从 import 路径跳转到目标文件
+* [ ] 为 import block 提供模块变量名、模块绝对事件路径等基础补全能力
+* [ ] 在 hover 或辅助信息中展示被导入文件 root state 的摘要信息
+
+Checklist
+
+* [ ] 扩展能稳定识别 import 相关新语法
+* [ ] 缺失文件与循环导入能在编辑器内得到可用提示
+* [ ] 至少支持从 import 源路径跳转到被导入文件
+* [ ] 工作区索引不会把扩展复杂度直接推向完整 LSP
+
+### 12.9 Phase 7: 测试、样例、文档与收尾
+
+本 phase 做到 import 功能具备可回归测试、样例工程、用户文档和最终验收口径，能够作为正式功能进入后续发布流程。
+
+TODO
+
+* [ ] 增加 parser 层测试，覆盖 import 语法与正反例
+* [ ] 增加装配层测试，覆盖多级相对路径、循环导入、alias 冲突、root state 限制
+* [ ] 增加变量映射与事件映射测试，覆盖共享、冲突与边界条件
+* [ ] 增加 CLI / PlantUML / simulate 集成测试
+* [ ] 增加多文件 sample DSL，作为回归样例与文档示例
+* [ ] 更新用户文档、教程与必要的变更说明
+* [ ] 在最终合并前统一核对本文档与 PR body 中全部 checkbox 状态
+
+Checklist
+
+* [ ] 关键 pass / fail 路径都有自动化测试覆盖
+* [ ] 样例 DSL 能直观展示 import、变量映射、事件映射的推荐写法
+* [ ] 文档、PR body、实现状态三者一致
+* [ ] 不使用 import 的现有功能回归测试全部通过
+
+---
+
+## 13. 当前建议结论
 
 基于当前代码架构，推荐采用以下方案作为主线：
 

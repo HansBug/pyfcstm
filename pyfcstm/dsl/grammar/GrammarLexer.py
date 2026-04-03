@@ -1,4 +1,4 @@
-# Generated from GrammarLexer.g4 by ANTLR 4.9.3
+# Generated from ./pyfcstm/dsl/grammar/GrammarLexer.g4 by ANTLR 4.9.3
 from antlr4 import *
 from io import StringIO
 import sys

@@ -35,7 +35,7 @@ RST_NONM_FILES    := $(foreach file,${PYTHON_NONM_FILES},$(patsubst %/__init__.p
 ANTLR_VERSION ?= 4.9.3
 ANTLR_GRAMMAR_DIR  := ${SRC_DIR}/dsl/grammar
 ANTLR_LEXER_GRAMMAR_FILE := ${ANTLR_GRAMMAR_DIR}/GrammarLexer.g4
-ANTLR_GRAMMAR_FILE := ${ANTLR_GRAMMAR_DIR}/Grammar.g4
+ANTLR_PARSER_GRAMMAR_FILE := ${ANTLR_GRAMMAR_DIR}/GrammarParser.g4
 
 # VSCode extension variables
 VSCODE_EXT_DIR := ${PROJ_DIR}/editors/vscode
@@ -58,7 +58,8 @@ SAMPLE_NEG_DSL_FILES := $(shell find ${SAMPLE_NEG_CODES_DIR} -name "*.fcstm" 2>/
 SAMPLE_NEG_TEST_FILES := $(patsubst ${SAMPLE_NEG_CODES_DIR}/%.fcstm,${MODEL_TEST_DIR}/test_sample_neg_%.py,${SAMPLE_NEG_DSL_FILES})
 
 MODEL_SOURCE_FILES := \
-	${SRC_DIR}/dsl/grammar/Grammar.g4 \
+	${SRC_DIR}/dsl/grammar/GrammarLexer.g4 \
+	${SRC_DIR}/dsl/grammar/GrammarParser.g4 \
 	${SRC_DIR}/dsl/listener.py \
 	${SRC_DIR}/dsl/node.py \
 	${SRC_DIR}/model/model.py \
@@ -97,7 +98,7 @@ help:
 	@echo ""
 	@echo "ANTLR Grammar:"
 	@echo "  make antlr        - Download ANTLR jar and setup (requires Java)"
-	@echo "  make antlr_build  - Regenerate lexer/parser from GrammarLexer.g4 and Grammar.g4"
+	@echo "  make antlr_build  - Regenerate lexer/parser from GrammarLexer.g4 and GrammarParser.g4"
 	@echo ""
 	@echo "Built-in Templates:"
 	@echo "  make tpl          - Package repository templates into pyfcstm/template zip assets"
@@ -207,22 +208,8 @@ antlr: antlr-${ANTLR_VERSION}.jar
 	pip install -r requirements.txt
 
 antlr_build:
-	cd ${ANTLR_GRAMMAR_DIR} && \
-		java -jar $(abspath antlr-${ANTLR_VERSION}.jar) -Dlanguage=Python3 \
-			$(notdir ${ANTLR_LEXER_GRAMMAR_FILE}) $(notdir ${ANTLR_GRAMMAR_FILE}) && \
-		printf '%s\n' \
-			'"""' \
-			'Compatibility shim for the generated parser class.' \
-			'' \
-			'The ANTLR split-grammar layout emits the parser implementation into' \
-			'``Grammar.py``. Existing repository code imports' \
-			'``pyfcstm.dsl.grammar.GrammarParser.GrammarParser``, so this module re-exports' \
-			'the generated parser class under the historical name.' \
-			'"""' \
-			'' \
-			'from .Grammar import Grammar as GrammarParser' \
-			'' \
-			'__all__ = ["GrammarParser"]' > GrammarParser.py
+	java -jar antlr-${ANTLR_VERSION}.jar -Dlanguage=Python3 -Xexact-output-dir -o ${ANTLR_GRAMMAR_DIR} \
+		${ANTLR_LEXER_GRAMMAR_FILE} ${ANTLR_PARSER_GRAMMAR_FILE}
 	ruff format ${ANTLR_GRAMMAR_DIR}
 
 # Generate sample test files

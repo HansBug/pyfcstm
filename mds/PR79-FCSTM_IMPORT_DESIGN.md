@@ -986,7 +986,7 @@ parse_dsl_node_to_state_machine(
 
 TODO
 
-* [x] 修改 `Grammar.g4`，加入 `import ... as ... named ... { ... }` 及 mapping 语法
+* [x] 修改 `GrammarLexer.g4` / `GrammarParser.g4`，加入 `import ... as ... named ... { ... }` 及 mapping 语法
 * [x] 重新生成 ANTLR 产物，并确认生成文件已纳入正确的提交流程
 * [x] 在 AST 节点层增加 import block、`def` mapping、event mapping 等节点表示
 * [x] 更新 listener / parse 流程，使 import 语法可被解析为完整 AST

@@ -1,5 +1,5 @@
 /*
- * Grammar.g4
+ * GrammarParser.g4
  *
  * Overview
  * --------
@@ -22,7 +22,7 @@
  * loading, conflict detection, mapping precedence, and other assembly
  * semantics belong to later implementation phases in Python code.
  */
-parser grammar Grammar;
+parser grammar GrammarParser;
 
 options {
     tokenVocab = GrammarLexer;

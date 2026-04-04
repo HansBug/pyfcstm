@@ -320,7 +320,7 @@ StateMachineDSLProgram
 -----------------------------------------------------
 
 .. autoclass:: StateMachineDSLProgram
-    :members: __str__,definitions,root_state,source_path
+    :members: __str__,definitions,root_state
 
 
 EnterStatement

@@ -30,3 +30,9 @@ class TestDSLParse:
             match="Expected 'state_machine_dsl' to produce StateMachineDSLProgram",
         ):
             parse_module.parse_state_machine_dsl("state Root;")
+
+    def test_parse_state_machine_dsl_path_does_not_pollute_ast(self):
+        program = parse_module.parse_state_machine_dsl("state Root;")
+
+        assert program.root_state.name == "Root"
+        assert not hasattr(program, "source_path")

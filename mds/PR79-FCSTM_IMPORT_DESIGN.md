@@ -10,6 +10,9 @@
 
 | 版本 | 日期 | 修改内容 | 作者 |
 |------|------|----------|------|
+| 0.5.5 | 2026-04-05 | 收紧分层边界：`dsl.parse.parse_state_machine_dsl()` 回归纯 AST 入口，不再接收 `path`；路径上下文只由 model / import 装配侧处理 | Codex |
+| 0.5.4 | 2026-04-05 | 移除 `StateMachineDSLProgram.source_path`，保持 DSL AST 纯净，并将路径上下文限定在模型构建入口 `path` 参数 | Codex |
+| 0.5.3 | 2026-04-04 | 补齐 Phase 1 剩余的 `path` 参数契约、import fail-fast 保护与 public API 回归测试，并勾选 Phase 1 完成状态 | Codex |
 | 0.5.2 | 2026-04-03 | 同步 Phase 1 当前实现进展，勾选已完成的 DSL / AST / 回归测试项 | Codex |
 | 0.5.1 | 2026-04-03 | 为各 phase 补充回归测试验收要求，并新增 public API 测试约束与 pydoc 编写规范约束 | Codex |
 | 0.5.0 | 2026-04-03 | 新增完整实施计划，按 phase 拆分 TODO 与验收 checklist，并补充每次 push 后同步 MD / PR checkbox 的推进规则 | Codex |
@@ -778,7 +781,9 @@ state Root {
 - `pyfcstm/dsl/listener.py`
   - 构建 import 相关 AST
 - `pyfcstm/dsl/parse.py`
-  - 增加面向文件的高层入口，例如 `load_state_machine_program_from_file()`
+  - 保持纯语法解析职责，只返回 DSL AST，不承载文件路径或 import 装配语义
+- `pyfcstm/model/model.py`
+  - `parse_dsl_node_to_state_machine(..., path=...)` 负责接住路径上下文并驱动后续 import 装配
 
 ### 8.3 文件系统相对路径解析
 
@@ -972,7 +977,7 @@ parse_dsl_node_to_state_machine(
 
 ### 12.2 Phase 总览
 
-* [ ] Phase 1: DSL Grammar / AST / Parse API 落地
+* [x] Phase 1: DSL Grammar / AST / Parse API 落地
 * [ ] Phase 2: Import 装配器与递归路径解析
 * [ ] Phase 3: `def` mapping 与变量合流校验
 * [ ] Phase 4: event mapping 与路径重写
@@ -982,7 +987,7 @@ parse_dsl_node_to_state_machine(
 
 ### 12.3 Phase 1: DSL Grammar / AST / Parse API 落地
 
-本 phase 做到 parser 层已经能完整承载 import 语法、mapping 语法与 `path` 参数入口，语法树与 API 契约稳定可供后续装配实现使用，但尚不要求完成跨文件展开。
+本 phase 做到 parser 层已经能完整承载 import 语法与 mapping 语法，语法树与模型入口契约稳定可供后续装配实现使用，但尚不要求完成跨文件展开。当前实现中，`dsl.parse.parse_state_machine_dsl()` 保持纯 AST 入口，不接收路径上下文；DSL AST 也不在 `StateMachineDSLProgram` 上挂载文件路径。路径与 import 装配语义统一留在模型入口 `parse_dsl_node_to_state_machine(..., path=...)` 侧处理；在 Phase 2 完成前，模型入口遇到尚未装配的 import AST 会显式 fail fast，而不是静默忽略 import。
 
 TODO
 
@@ -990,15 +995,15 @@ TODO
 * [x] 重新生成 ANTLR 产物，并确认生成文件已纳入正确的提交流程
 * [x] 在 AST 节点层增加 import block、`def` mapping、event mapping 等节点表示
 * [x] 更新 listener / parse 流程，使 import 语法可被解析为完整 AST
-* [ ] 为 `parse_dsl_node_to_state_machine()` 设计并落地 `path` 参数契约
+* [x] 为 `parse_dsl_node_to_state_machine()` 设计并落地 `path` 参数契约
 * [x] 补齐最小正反例，覆盖 `as` 必填、`named` 选填、mapping block 可选等语法边界
 
 Checklist
 
 * [x] 新语法可以被 parser 正确接受并生成稳定 AST
 * [x] 不含 import 的旧 DSL 文件解析行为保持不变
-* [ ] `path` 参数语义明确，且不会破坏现有调用方
-* [ ] 语法错误能定位到具体 import / mapping 语句，而不是只报笼统 parse 失败
+* [x] `path` 参数语义明确，且不会破坏现有调用方
+* [x] 语法错误能定位到具体 import / mapping 语句，而不是只报笼统 parse 失败
 * [x] 已按影响范围完成回归测试；至少使用 `make unittest RANGE_DIR=./<一级模块>` 级别命令，若本 phase 影响跨一级模块或顶层链路，则已提升到更高层级
 
 ### 12.4 Phase 2: Import 装配器与递归路径解析

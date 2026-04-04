@@ -217,7 +217,45 @@ class TestDSLImport:
             parse_with_grammar_entry(input_text, entry_name="import_statement")
 
     @pytest.mark.parametrize(
-        ["input_text", "path", "expected"],
+        ["input_text", "line_fragment", "token_fragment"],
+        [
+            (
+                """
+                state Root {
+                    import "./worker.fcstm" as Worker {
+                        event /Start -> ;
+                    }
+                }
+                """,
+                "line 4",
+                "near ';'",
+            ),
+            (
+                """
+                state Root {
+                    import "./worker.fcstm" as Worker {
+                        def {a, b,} -> out_*;
+                    }
+                }
+                """,
+                "line 4",
+                "near '}'",
+            ),
+        ],
+    )
+    def test_negative_cases_report_precise_import_locations(
+        self, input_text, line_fragment, token_fragment
+    ):
+        with pytest.raises(GrammarParseError) as exc_info:
+            parse_state_machine_dsl(input_text)
+
+        message = str(exc_info.value)
+        assert "Syntax error at" in message
+        assert line_fragment in message
+        assert token_fragment in message
+
+    @pytest.mark.parametrize(
+        ["input_text", "expected"],
         [
             (
                 """
@@ -227,7 +265,6 @@ class TestDSLImport:
                     state Local;
                 }
                 """,
-                None,
                 StateMachineDSLProgram(
                     definitions=[
                         DefAssignment(
@@ -261,7 +298,6 @@ class TestDSLImport:
                         durings=[],
                         exits=[],
                     ),
-                    source_path=None,
                 ),
             ),
             # Program with a simple import inside the root state
@@ -283,7 +319,6 @@ class TestDSLImport:
                     state Local;
                 }
                 """,
-                "/tmp/root.fcstm",
                 StateMachineDSLProgram(
                     definitions=[
                         DefAssignment(
@@ -382,11 +417,10 @@ class TestDSLImport:
                         durings=[],
                         exits=[],
                     ),
-                    source_path="/tmp/root.fcstm",
                 ),
             ),
             # Program with multiple imports, root event, transition, and source path
         ],
     )
-    def test_state_machine_positive_cases(self, input_text, path, expected):
-        assert parse_state_machine_dsl(input_text, path=path) == expected
+    def test_state_machine_positive_cases(self, input_text, expected):
+        assert parse_state_machine_dsl(input_text) == expected

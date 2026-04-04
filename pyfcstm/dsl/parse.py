@@ -27,8 +27,7 @@ Example::
     >>> preamble = parse_preamble("x := 10;")
 """
 
-import os
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 
 from antlr4 import CommonTokenStream, InputStream, ParseTreeWalker
 
@@ -140,33 +139,24 @@ def parse_condition(input_text: str) -> Any:
     return parse_with_grammar_entry(input_text, "condition")
 
 
-def parse_state_machine_dsl(
-    input_text: str,
-    path: Optional[str] = None,
-) -> StateMachineDSLProgram:
+def parse_state_machine_dsl(input_text: str) -> StateMachineDSLProgram:
     """
     Parse input text as a complete state machine DSL document.
 
-    This helper uses the grammar's ``state_machine_dsl`` rule and optionally
-    attaches a source path string to the returned
-    :class:`pyfcstm.dsl.node.StateMachineDSLProgram` node for later assembly
-    phases.
+    This helper uses the grammar's ``state_machine_dsl`` rule and returns a
+    pure DSL AST.
 
     :param input_text: The state machine DSL text to parse.
     :type input_text: str
-    :param path: Optional source path associated with the parsed document.
-        When provided, the value is normalized via :func:`os.fspath` and stored
-        on the returned AST node as ``source_path``.
-    :type path: Optional[str]
     :return: Parsed state machine DSL program node.
     :rtype: StateMachineDSLProgram
     :raises pyfcstm.dsl.error.GrammarParseError: If parsing fails.
 
     Example::
 
-        >>> program = parse_state_machine_dsl("state Root;", path="root.fcstm")
-        >>> program.source_path
-        'root.fcstm'
+        >>> program = parse_state_machine_dsl("state Root;")
+        >>> program.root_state.name
+        'Root'
     """
     program = parse_with_grammar_entry(input_text, "state_machine_dsl")
     if not isinstance(program, StateMachineDSLProgram):
@@ -175,7 +165,6 @@ def parse_state_machine_dsl(
             f"got {type(program)!r}."
         )
 
-    program.source_path = os.fspath(path) if path is not None else None
     return program
 
 

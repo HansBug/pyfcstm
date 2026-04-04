@@ -1660,8 +1660,6 @@ class StateMachineDSLProgram(ASTNode):
     :type definitions: List[DefAssignment]
     :param root_state: The root state of the state machine
     :type root_state: StateDefinition
-    :param source_path: Optional source path associated with the parsed document
-    :type source_path: Optional[str]
 
     :rtype: StateMachineDSLProgram
 
@@ -1677,7 +1675,6 @@ class StateMachineDSLProgram(ASTNode):
 
     definitions: List[DefAssignment]
     root_state: StateDefinition
-    source_path: Optional[str] = None
 
     def __str__(self) -> str:
         """

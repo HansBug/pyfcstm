@@ -80,9 +80,11 @@ class TestImportPhase1PathContract:
 
         message = str(exc_info.value)
         assert "import assembly is not available" in message
+        assert "Effective DSL path:" in message
+        assert "Resolved import base directory:" in message
         assert "'./worker.fcstm'" in message
         assert "'Root'" in message
-        assert str(current_dir) in message
+        assert current_dir.name in message
 
     def test_parse_dsl_node_to_state_machine_explicit_path_overrides_cwd(self):
         with isolated_directory():
@@ -120,5 +122,7 @@ class TestImportPhase1PathContract:
                 os.chdir(previous_cwd)
 
         message = str(exc_info.value)
-        assert str(override_dir_abs) in message
-        assert str(cwd_base_abs) not in message
+        assert "Effective DSL path:" in message
+        assert "Resolved import base directory:" in message
+        assert override_dir_abs.name in message
+        assert cwd_base_abs.name not in message

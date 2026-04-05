@@ -52,7 +52,11 @@ APP_ICON_STAMP := ${APP_ICON_DIR}/.stamp
 MODEL_TEST_DIR   := ${TEST_DIR}/model
 SAMPLE_CODES_DIR := ${TESTFILE_DIR}/sample_codes
 SAMPLE_DSL_FILES := $(shell find ${SAMPLE_CODES_DIR} -name "*.fcstm" 2>/dev/null)
-SAMPLE_TEST_FILES := $(patsubst ${SAMPLE_CODES_DIR}/%.fcstm,${MODEL_TEST_DIR}/test_sample_%.py,${SAMPLE_DSL_FILES})
+SAMPLE_DSL_ENTRY_DIRS := $(shell find ${SAMPLE_CODES_DIR} -mindepth 1 -type f -name "main.fcstm" -printf '%h\n' 2>/dev/null)
+SAMPLE_FLAT_DSL_FILES := $(filter-out $(foreach dir,${SAMPLE_DSL_ENTRY_DIRS},${dir}/%),${SAMPLE_DSL_FILES})
+SAMPLE_TEST_FILES := \
+	$(patsubst ${SAMPLE_CODES_DIR}/%.fcstm,${MODEL_TEST_DIR}/test_sample_%.py,${SAMPLE_FLAT_DSL_FILES}) \
+	$(patsubst ${SAMPLE_CODES_DIR}/%,${MODEL_TEST_DIR}/test_sample_%.py,${SAMPLE_DSL_ENTRY_DIRS})
 SAMPLE_NEG_CODES_DIR := ${TESTFILE_DIR}/sample_neg_codes
 SAMPLE_NEG_DSL_FILES := $(shell find ${SAMPLE_NEG_CODES_DIR} -name "*.fcstm" 2>/dev/null)
 SAMPLE_NEG_TEST_FILES := $(patsubst ${SAMPLE_NEG_CODES_DIR}/%.fcstm,${MODEL_TEST_DIR}/test_sample_neg_%.py,${SAMPLE_NEG_DSL_FILES})
@@ -216,6 +220,11 @@ antlr_build:
 sample: ${SAMPLE_TEST_FILES} ${SAMPLE_NEG_TEST_FILES}
 
 ${MODEL_TEST_DIR}/test_sample_%.py: ${SAMPLE_CODES_DIR}/%.fcstm sample_test_generator.py ${MODEL_SOURCE_FILES}
+	@mkdir -p ${MODEL_TEST_DIR}
+	UNITTEST=1 $(PYTHON) sample_test_generator.py -i $< -o $@
+	ruff format $@
+
+${MODEL_TEST_DIR}/test_sample_%.py: ${SAMPLE_CODES_DIR}/% ${SAMPLE_CODES_DIR}/%/main.fcstm sample_test_generator.py ${MODEL_SOURCE_FILES}
 	@mkdir -p ${MODEL_TEST_DIR}
 	UNITTEST=1 $(PYTHON) sample_test_generator.py -i $< -o $@
 	ruff format $@

@@ -1,0 +1,11 @@
+state MotorRoot named "Motor Module" {
+    enter abstract InitMotor;
+    state Idle;
+    state Running {
+        state Spin;
+        [*] -> Spin;
+    }
+    [*] -> Idle;
+    Idle -> Running :: Start;
+    Running -> Idle : /Reset;
+}

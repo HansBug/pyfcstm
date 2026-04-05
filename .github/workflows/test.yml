@@ -195,6 +195,20 @@ jobs:
         shell: bash
         run: |
           choco install tree cloc wget curl make zip
+      - name: Set up Cairo runtime on Windows
+        if: ${{ env.OS_NAME == 'Windows' }}
+        id: msys2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-cairo
+      - name: Expose Cairo runtime on Windows
+        if: ${{ env.OS_NAME == 'Windows' }}
+        shell: bash
+        run: |
+          echo "${{ steps.msys2.outputs.msys2-location }}\\mingw64\\bin" >> "$GITHUB_PATH"
       - name: Set up system dependencies on MacOS
         if: ${{ env.OS_NAME == 'MacOS' }}
         run: |
@@ -209,6 +223,21 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install -r requirements-build.txt
+      - name: Verify Cairo runtime on Windows
+        if: ${{ env.OS_NAME == 'Windows' }}
+        shell: bash
+        run: |
+          python - <<'PY'
+          import cairosvg
+          cairosvg.svg2png(
+              bytestring=(
+                  b'<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1">'
+                  b'<rect width="1" height="1" fill="#000000"/>'
+                  b'</svg>'
+              )
+          )
+          print('CairoSVG runtime is available on Windows.')
+          PY
       - name: Test the basic environment
         shell: bash
         run: |

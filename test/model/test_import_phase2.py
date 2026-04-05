@@ -396,6 +396,148 @@ class TestImportPhase2Assembly:
         assert "./worker.fcstm" in message
         assert "Worker" in message
 
+    @pytest.mark.xfail(
+        strict=True,
+        reason="Phase 3 variable mapping for deep imported variable usage is not implemented yet.",
+    )
+    def test_phase3_def_mapping_rewrites_deep_variable_usage_consistently(self):
+        with isolated_directory():
+            root_file = _write_text_file(
+                "root.fcstm",
+                """
+                def int host_counter = 0;
+                def int host_guard = 1;
+                def int host_limit = 10;
+                def int host_result = 0;
+
+                state Root {
+                    import "./worker.fcstm" as Worker {
+                        def counter -> host_counter;
+                        def guard_flag -> host_guard;
+                        def limit -> host_limit;
+                        def result -> host_result;
+                    }
+                    [*] -> Worker;
+                }
+                """,
+            )
+            _write_text_file(
+                "worker.fcstm",
+                """
+                def int counter = 0;
+                def int guard_flag = 0;
+                def int limit = 0;
+                def int result = 0;
+
+                state WorkerRoot {
+                    enter {
+                        counter = counter + 1;
+                    }
+                    state Idle {
+                        during {
+                            result = counter + limit;
+                        }
+                    }
+                    state Busy {
+                        enter {
+                            counter = counter + 1;
+                        }
+                        during {
+                            result = counter + guard_flag;
+                        }
+                    }
+                    [*] -> Idle;
+                    Idle -> Busy : if [guard_flag > 0];
+                    Busy -> Idle : if [counter >= limit] effect {
+                        result = counter;
+                    }
+                }
+                """,
+            )
+
+            ast_node = parse_state_machine_dsl(root_file.read_text(encoding="utf-8"))
+            state_machine = parse_dsl_node_to_state_machine(ast_node, path=root_file)
+
+        assert sorted(state_machine.defines.keys()) == [
+            "host_counter",
+            "host_guard",
+            "host_limit",
+            "host_result",
+        ]
+        worker_state = state_machine.root_state.substates["Worker"]
+        idle_state = worker_state.substates["Idle"]
+        busy_state = worker_state.substates["Busy"]
+
+        assert worker_state.on_enters[0].operations[0].var_name == "host_counter"
+        assert worker_state.on_enters[0].operations[0].expr.list_variables()[0].name == "host_counter"
+
+        assert idle_state.on_durings[0].operations[0].var_name == "host_result"
+        assert sorted(v.name for v in idle_state.on_durings[0].operations[0].expr.list_variables()) == [
+            "host_counter",
+            "host_limit",
+        ]
+
+        assert busy_state.on_enters[0].operations[0].var_name == "host_counter"
+        assert busy_state.on_durings[0].operations[0].var_name == "host_result"
+        assert sorted(v.name for v in busy_state.on_durings[0].operations[0].expr.list_variables()) == [
+            "host_counter",
+            "host_guard",
+        ]
+
+        idle_to_busy = worker_state.transitions[1]
+        busy_to_idle = worker_state.transitions[2]
+        assert sorted(v.name for v in idle_to_busy.guard.list_variables()) == ["host_guard"]
+        assert sorted(v.name for v in busy_to_idle.guard.list_variables()) == [
+            "host_counter",
+            "host_limit",
+        ]
+        assert busy_to_idle.effects[0].var_name == "host_result"
+        assert sorted(v.name for v in busy_to_idle.effects[0].expr.list_variables()) == [
+            "host_counter"
+        ]
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason="Phase 4 event mapping is not implemented yet.",
+    )
+    def test_phase4_event_mapping_preserves_shared_event_identity_for_multiple_transitions(self):
+        with isolated_directory():
+            root_file = _write_text_file(
+                "root.fcstm",
+                """
+                state Root {
+                    import "./worker.fcstm" as Worker {
+                        event /Tick -> SharedTick;
+                    }
+                    [*] -> Worker;
+                }
+                """,
+            )
+            _write_text_file(
+                "worker.fcstm",
+                """
+                state WorkerRoot {
+                    state Idle;
+                    state Running;
+                    state Done;
+                    [*] -> Idle;
+                    Idle -> Running : /Tick;
+                    Running -> Done : /Tick;
+                    Done -> Idle : /Tick;
+                }
+                """,
+            )
+
+            ast_node = parse_state_machine_dsl(root_file.read_text(encoding="utf-8"))
+            state_machine = parse_dsl_node_to_state_machine(ast_node, path=root_file)
+
+        worker_state = state_machine.root_state.substates["Worker"]
+        assert "SharedTick" in state_machine.root_state.events
+        shared_event = state_machine.root_state.events["SharedTick"]
+        assert worker_state.transitions[1].event is shared_event
+        assert worker_state.transitions[2].event is shared_event
+        assert worker_state.transitions[3].event is shared_event
+
     def test_import_demo_model(self, import_phase2_demo_model):
         assert import_phase2_demo_model.defines == {}
         assert import_phase2_demo_model.root_state.name == "System"

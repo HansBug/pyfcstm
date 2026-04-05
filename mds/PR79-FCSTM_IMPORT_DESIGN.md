@@ -1056,6 +1056,7 @@ Checklist
 * [ ] 单个 import 内部任何 many-to-one 变量收敛都会被直接拒绝
 * [ ] 跨 import 或宿主绑定的变量共享只会在类型完全一致时通过
 * [ ] `int` / `float` 混合汇聚会稳定报错
+* [ ] 当被导入子状态机在多层状态、guard、操作块与生命周期动作中大量使用变量时，`def` mapping 仍会把定义、引用与赋值目标一致地重写到宿主变量空间
 * [ ] 已按影响范围完成回归测试；至少使用 `make unittest RANGE_DIR=./<一级模块>` 级别命令，若本 phase 影响跨一级模块或顶层链路，则已提升到更高层级
 
 ### 12.6 Phase 4: event mapping 与路径重写
@@ -1078,6 +1079,7 @@ Checklist
 * [ ] `event /Start -> /Motors.Start;` 能正确解析为宿主 root 下的绝对事件路径
 * [ ] 未映射的模块绝对事件会落到实例作用域而不是错误提升到宿主 root
 * [ ] 多个 import 共享同一宿主事件时，路径和显示名行为可预测且冲突可诊断
+* [ ] 即便子状态机内有多个 transition 指向同一个模块绝对事件，event mapping 后这些 transition 仍会稳定绑定到同一个宿主事件对象
 * [ ] 已按影响范围完成回归测试；至少使用 `make unittest RANGE_DIR=./<一级模块>` 级别命令，若本 phase 影响跨一级模块或顶层链路，则已提升到更高层级
 
 ### 12.7 Phase 5: CLI / generate / simulate / PlantUML 接入

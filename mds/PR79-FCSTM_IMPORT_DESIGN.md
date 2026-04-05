@@ -10,6 +10,7 @@
 
 | 版本 | 日期 | 修改内容 | 作者 |
 |------|------|----------|------|
+| 0.5.6 | 2026-04-05 | 完成 Phase 2：模型层新增 import 装配器，支持多级相对路径递归解析、循环导入检测、alias 装配与模块绝对路径重写；同时保持 `def/event mapping` 与 imported top-level `def` 继续在 Phase 3/4 显式 fail fast | Codex |
 | 0.5.5 | 2026-04-05 | 收紧分层边界：`dsl.parse.parse_state_machine_dsl()` 回归纯 AST 入口，不再接收 `path`；路径上下文只由 model / import 装配侧处理 | Codex |
 | 0.5.4 | 2026-04-05 | 移除 `StateMachineDSLProgram.source_path`，保持 DSL AST 纯净，并将路径上下文限定在模型构建入口 `path` 参数 | Codex |
 | 0.5.3 | 2026-04-04 | 补齐 Phase 1 剩余的 `path` 参数契约、import fail-fast 保护与 public API 回归测试，并勾选 Phase 1 完成状态 | Codex |
@@ -978,7 +979,7 @@ parse_dsl_node_to_state_machine(
 ### 12.2 Phase 总览
 
 * [x] Phase 1: DSL Grammar / AST / Parse API 落地
-* [ ] Phase 2: Import 装配器与递归路径解析
+* [x] Phase 2: Import 装配器与递归路径解析
 * [ ] Phase 3: `def` mapping 与变量合流校验
 * [ ] Phase 4: event mapping 与路径重写
 * [ ] Phase 5: CLI / generate / simulate / PlantUML 接入
@@ -1010,22 +1011,28 @@ Checklist
 
 本 phase 做到多文件 import 可按声明文件所在目录递归解析、检测循环导入，并把被导入 root state 以内联等价的方式挂载到宿主状态树中。
 
+当前实现说明：
+
+- `dsl.parse.parse_state_machine_dsl()` 仍保持纯 AST 解析，不接触文件路径与 import 装配
+- Phase 2 的文件读取、递归 import 解析、循环检测与状态树内联均落在 model 层辅助装配器中，由 `parse_dsl_node_to_state_machine(..., path=...)` 驱动
+- 本 phase 已完成结构装配与路径重写；`def mapping`、`event mapping`、以及 imported top-level `def` 的合并仍保持显式 fail fast，留待 Phase 3 / 4 完成
+
 TODO
 
-* [ ] 增加 import 解析与装配辅助模块，负责文件加载、递归展开与错误组织
-* [ ] 让 `parse_dsl_node_to_state_machine(..., path=...)` 在模型构建前或构建中完成 import 递归处理
-* [ ] 实现“相对路径相对当前声明文件目录解析”的规则，并支持多级 import
-* [ ] 检测并报错：文件不存在、循环导入、被导入文件缺失 root state、同一宿主作用域 alias 冲突
-* [ ] 按 `as Alias` 重命名导入 root state，并应用 `named` 的显示名优先级规则
-* [ ] 保证装配后状态树对后续模型构建、渲染、模拟表现为普通内联状态树
+* [x] 增加 import 解析与装配辅助模块，负责文件加载、递归展开与错误组织
+* [x] 让 `parse_dsl_node_to_state_machine(..., path=...)` 在模型构建前或构建中完成 import 递归处理
+* [x] 实现“相对路径相对当前声明文件目录解析”的规则，并支持多级 import
+* [x] 检测并报错：文件不存在、循环导入、被导入文件缺失 root state、同一宿主作用域 alias 冲突
+* [x] 按 `as Alias` 重命名导入 root state，并应用 `named` 的显示名优先级规则
+* [x] 保证装配后状态树对后续模型构建、渲染、模拟表现为普通内联状态树
 
 Checklist
 
-* [ ] 多级相对路径 import 能按各自文件位置正确解析
-* [ ] 循环导入能被稳定检测，并给出可读错误链路
-* [ ] 只允许导入外部文件的 root state，其他情况均能明确报错
-* [ ] 装配结果在结构上等价于手工内联，不引入额外运行时概念
-* [ ] 已按影响范围完成回归测试；至少使用 `make unittest RANGE_DIR=./<一级模块>` 级别命令，若本 phase 影响跨一级模块或顶层链路，则已提升到更高层级
+* [x] 多级相对路径 import 能按各自文件位置正确解析
+* [x] 循环导入能被稳定检测，并给出可读错误链路
+* [x] 只允许导入外部文件的 root state，其他情况均能明确报错
+* [x] 装配结果在结构上等价于手工内联，不引入额外运行时概念
+* [x] 已按影响范围完成回归测试；至少使用 `make unittest RANGE_DIR=./<一级模块>` 级别命令，若本 phase 影响跨一级模块或顶层链路，则已提升到更高层级
 
 ### 12.5 Phase 3: `def` mapping 与变量合流校验
 

@@ -42,7 +42,6 @@ Example::
 
 import io
 import json
-import os
 import weakref
 from dataclasses import dataclass
 from textwrap import indent
@@ -50,6 +49,7 @@ from typing import Optional, Union, List, Dict, Tuple, Iterator, Set
 
 from .base import AstExportable, PlantUMLExportable
 from .expr import Expr, parse_expr_node_to_expr
+from .imports import assemble_state_machine_imports
 from .plantuml import PlantUMLOptions, PlantUMLOptionsInput, format_state_name
 from ..dsl import node as dsl_nodes, INIT_STATE, EXIT_STATE
 
@@ -2066,39 +2066,7 @@ def parse_dsl_node_to_state_machine(
         'root'
     """
 
-    def _resolve_path_context() -> Tuple[str, str]:
-        effective_path = path
-        if effective_path is None:
-            effective_path = os.getcwd()
-
-        normalized_path = os.path.abspath(os.fspath(effective_path))
-        if os.path.isdir(normalized_path):
-            return normalized_path, normalized_path
-        else:
-            return normalized_path, os.path.dirname(normalized_path)
-
-    def _collect_imports(
-        node: dsl_nodes.StateDefinition,
-        current_path: Tuple[str, ...],
-    ) -> List[Tuple[dsl_nodes.ImportStatement, Tuple[str, ...]]]:
-        state_path = (*current_path, node.name)
-        items = [(item, state_path) for item in node.imports]
-        for subnode in node.substates:
-            items.extend(_collect_imports(subnode, state_path))
-        return items
-
-    effective_path, import_base_dir = _resolve_path_context()
-    import_items = _collect_imports(dnode.root_state, current_path=())
-    if import_items:
-        import_node, owner_path = import_items[0]
-        raise SyntaxError(
-            "Import statements are parsed but import assembly is not available "
-            "in parse_dsl_node_to_state_machine() yet. "
-            f"Found import {import_node.source_path!r} as {import_node.alias!r} "
-            f"in state {'.'.join(owner_path)!r}. "
-            f"Effective DSL path: {effective_path!r}. "
-            f"Resolved import base directory: {import_base_dir!r}."
-        )
+    dnode = assemble_state_machine_imports(dnode, path=path)
 
     d_defines = {}
     for def_item in dnode.definitions:

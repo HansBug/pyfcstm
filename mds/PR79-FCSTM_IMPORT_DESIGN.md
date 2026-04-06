@@ -1169,28 +1169,28 @@ Checklist
 - 给定 DSL 代码字符串直接加载为 `StateMachine`
 - 当输入为 DSL 代码字符串时，默认以当前工作目录作为 `path` 上下文，但也允许显式传入 `path`
 
-同时，该 phase 的边界是“补一条更直接的 public convenience API”，而不是替换现有 `parse_state_machine_dsl()` 或 `parse_dsl_node_to_state_machine()` 的职责；现有 API 继续保留且语义不变。实现形式要求在 `model` 模块下新增一个顶层 `*.py` 模块承载该能力，并在 `pyfcstm.model.__init__` 中导出相关函数。新增模块与函数文档需补足较多 `Examples::` 段落，覆盖按文件加载、按文本加载、显式 path、默认 path 等典型用法。
+同时，该 phase 的边界是“补一条更直接的 public convenience API”，而不是替换现有 `parse_state_machine_dsl()` 或 `parse_dsl_node_to_state_machine()` 的职责；现有 API 继续保留且语义不变。实现形式要求在 `model` 模块下新增一个顶层 `*.py` 模块承载该能力，并在 `pyfcstm.model.__init__` 中导出相关函数。新增模块与函数文档需补足较多 `Example::` 段落，覆盖按文件加载、按文本加载、显式 path、默认 path 等典型用法。
 
 TODO
 
-* [ ] 在 `pyfcstm/model/` 下新增顶层快捷加载模块，用于承载一键加载 `StateMachine` 的 public API
-* [ ] 设计并实现“按文件路径加载 model”的快捷函数，内部串联解析、import 装配与 model 构建
-* [ ] 设计并实现“按 DSL 文本加载 model”的快捷函数；默认 `path` 为当前目录，并支持显式覆盖
-* [ ] 在 `pyfcstm/model/__init__.py` 中导出上述快捷函数，同时不破坏现有导出面
-* [ ] 明确该快捷入口与现有 `parse_state_machine_dsl()`、`parse_dsl_node_to_state_machine()` 的职责边界，避免语义重叠或反向污染 DSL 层纯度
-* [ ] 为新增模块与函数补足 reST 风格 docstring，并提供较多 `Examples::` 覆盖典型调用方式
-* [ ] 为该 phase 增加独立测试，覆盖按文件、按文本、默认 path、显式 path、import 解析与错误路径
+* [x] 在 `pyfcstm/model/` 下新增顶层快捷加载模块，用于承载一键加载 `StateMachine` 的 public API
+* [x] 设计并实现“按文件路径加载 model”的快捷函数，内部串联解析、import 装配与 model 构建
+* [x] 设计并实现“按 DSL 文本加载 model”的快捷函数；默认 `path` 为当前目录，并支持显式覆盖
+* [x] 在 `pyfcstm/model/__init__.py` 中导出上述快捷函数，同时不破坏现有导出面
+* [x] 明确该快捷入口与现有 `parse_state_machine_dsl()`、`parse_dsl_node_to_state_machine()` 的职责边界，避免语义重叠或反向污染 DSL 层纯度
+* [x] 为新增模块与函数补足 reST 风格 docstring，并提供较多 `Example::` 覆盖典型调用方式
+* [x] 为该 phase 增加独立测试，覆盖按文件、按文本、默认 path、显式 path、import 解析与错误路径
 
 Checklist
 
-* [ ] 调用方可以不手工拆 AST 解析与 model 构建，直接从文件或文本得到 `StateMachine`
-* [ ] 现有 `parse_state_machine_dsl()` 与 `parse_dsl_node_to_state_machine()` 的公开契约保持不变
-* [ ] 字符串加载模式下默认 path 语义明确，且显式 path 覆盖行为可预测
-* [ ] 新增 public API 位于 `model` 顶层模块并在 `pyfcstm.model` 中可直接导入
-* [ ] 新增模块与函数 docstring 完整，且包含多个 `Examples::`
-* [ ] Phase 7 单元测试归属于 `model` 子模块，并使用独立的 `test_import_phase7.py`
-* [ ] 典型正向 case 至少包含 `text_aligner` 驱动的 `to_ast_node()` 全量导出 DSL 比对
-* [ ] 已按影响范围完成回归测试；至少使用 `make unittest RANGE_DIR=./<一级模块>` 级别命令，若本 phase 影响跨一级模块或顶层链路，则已提升到更高层级
+* [x] 调用方可以不手工拆 AST 解析与 model 构建，直接从文件或文本得到 `StateMachine`
+* [x] 现有 `parse_state_machine_dsl()` 与 `parse_dsl_node_to_state_machine()` 的公开契约保持不变
+* [x] 字符串加载模式下默认 path 语义明确，且显式 path 覆盖行为可预测
+* [x] 新增 public API 位于 `model` 顶层模块并在 `pyfcstm.model` 中可直接导入
+* [x] 新增模块与函数 docstring 完整，且包含多个 `Example::`
+* [x] Phase 7 单元测试归属于 `model` 子模块，并使用独立的 `test_load.py`
+* [x] 典型正向 case 至少包含 `text_aligner` 驱动的 `to_ast_node()` 全量导出 DSL 比对
+* [x] 已按影响范围完成回归测试；至少使用 `make unittest RANGE_DIR=./<一级模块>` 级别命令，若本 phase 影响跨一级模块或顶层链路，则已提升到更高层级
 
 ### 12.10 Phase 8: VSCode 扩展支持
 

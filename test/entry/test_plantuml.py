@@ -765,3 +765,120 @@ class TestEntryPlantuml:
             plantuml_text = build_plantuml_output(root_file, detail_level="full")
 
         text_aligner.assert_equal(expect=expected, actual=plantuml_text)
+
+    def test_plantuml_with_directory_entry_import_supports_multi_file_model(
+        self, text_aligner
+    ):
+        expected = textwrap.dedent(
+            """
+            @startuml
+            hide empty description
+
+            skinparam state {
+              BackgroundColor<<pseudo>> LightGray
+              BackgroundColor<<composite>> LightBlue
+              BorderColor<<pseudo>> Gray
+              FontStyle<<pseudo>> italic
+            }
+
+            state "Root" as root <<composite>> {
+                state "Line" as root__line <<composite>> {
+                    state "Worker" as root__line__worker <<composite>> {
+                        state "Idle" as root__line__worker__idle
+                        [*] --> root__line__worker__idle
+                    }
+                    [*] --> root__line__worker
+                }
+                [*] --> root__line
+            }
+            [*] --> root
+            root --> [*]
+            @enduml
+            """
+        ).strip()
+
+        with isolated_directory():
+            root_file = os.path.abspath("root.fcstm")
+            os.makedirs("modules/subsystems", exist_ok=True)
+
+            with open(root_file, "w", encoding="utf-8") as f:
+                print(
+                    textwrap.dedent(
+                        """
+                        state Root {
+                            import "./modules/main.fcstm" as Line;
+                            [*] -> Line;
+                        }
+                        """
+                    ).strip(),
+                    file=f,
+                )
+
+            with open("modules/main.fcstm", "w", encoding="utf-8") as f:
+                print(
+                    textwrap.dedent(
+                        """
+                        state LineRoot {
+                            import "./subsystems/worker.fcstm" as Worker;
+                            [*] -> Worker;
+                        }
+                        """
+                    ).strip(),
+                    file=f,
+                )
+
+            with open("modules/subsystems/worker.fcstm", "w", encoding="utf-8") as f:
+                print(
+                    textwrap.dedent(
+                        """
+                        state WorkerRoot {
+                            state Idle;
+                            [*] -> Idle;
+                        }
+                        """
+                    ).strip(),
+                    file=f,
+                )
+
+            result = simulate_entry(
+                pyfcstmcli,
+                [
+                    "pyfcstm",
+                    "plantuml",
+                    "-i",
+                    root_file,
+                    "-l",
+                    "full",
+                ],
+            )
+
+            assert result.exitcode == 0
+            text_aligner.assert_equal(expect=expected, actual=result.stdout)
+
+    def test_plantuml_with_missing_import_fails(self):
+        with isolated_directory():
+            root_file = os.path.abspath("root.fcstm")
+            with open(root_file, "w", encoding="utf-8") as f:
+                print(
+                    textwrap.dedent(
+                        """
+                        state Root {
+                            import "./missing.fcstm" as Worker;
+                            [*] -> Worker;
+                        }
+                        """
+                    ).strip(),
+                    file=f,
+                )
+
+            result = simulate_entry(
+                pyfcstmcli,
+                [
+                    "pyfcstm",
+                    "plantuml",
+                    "-i",
+                    root_file,
+                ],
+            )
+
+            assert result.exitcode != 0

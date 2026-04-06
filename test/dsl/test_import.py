@@ -424,3 +424,42 @@ class TestDSLImport:
     )
     def test_state_machine_positive_cases(self, input_text, expected):
         assert parse_state_machine_dsl(input_text) == expected
+
+    def test_state_machine_parser_accepts_import_without_touching_filesystem(self):
+        program = parse_state_machine_dsl(
+            """
+            state Root {
+                import "./missing/worker.fcstm" as Worker named "Worker Module" {
+                    def * -> Worker_$0;
+                    event /Start -> Start;
+                }
+                [*] -> Worker;
+            }
+            """
+        )
+
+        assert program.root_state.name == "Root"
+        assert len(program.root_state.imports) == 1
+
+        import_item = program.root_state.imports[0]
+        assert import_item.source_path == "./missing/worker.fcstm"
+        assert import_item.alias == "Worker"
+        assert import_item.extra_name == "Worker Module"
+        assert len(import_item.mappings) == 2
+
+    @pytest.mark.parametrize(
+        "input_text",
+        [
+            """
+            import "./worker.fcstm" as Worker;
+            state Root;
+            """,
+            """
+            state Root;
+            import "./worker.fcstm" as Worker;
+            """,
+        ],
+    )
+    def test_state_machine_negative_cases(self, input_text):
+        with pytest.raises(GrammarParseError):
+            parse_state_machine_dsl(input_text)

@@ -10,6 +10,7 @@
 
 | 版本 | 日期 | 修改内容 | 作者 |
 |------|------|----------|------|
+| 0.5.12 | 2026-04-06 | 完成 Phase 10：补齐 parser 层 import 整程序正反例、entry 层目录入口 import 集成测试、模块级 import 回归与 sample DSL 覆盖，并同步修复 DSL 语法错误提示中 `SEMI` 等 token 名的人类可读错误信息 | Codex |
 | 0.5.11 | 2026-04-06 | 完成 Phase 5：补齐 Pygments 对 import / mapping 语法的高亮与识别，明确后续预判 / 检测器应位于独立分析层的边界、输入输出、分级与误报控制策略，并同步勾选 phase5 状态 | Codex |
 | 0.5.10 | 2026-04-06 | 在实施计划中插入新的 Phase 5：Pygments 语法高亮与预判/检测器规划；原后续 phase 顺延，仅补文档不落实现 | Codex |
 | 0.5.9 | 2026-04-06 | 完成 Phase 4：模型层新增 event mapping 装配、宿主事件合成、显示名冲突校验、force transition 覆盖与独立 Phase 4 回归测试，并补充导出 DSL 的保真路径说明 | Codex |
@@ -994,7 +995,7 @@ parse_dsl_node_to_state_machine(
 * [x] Phase 7: Model 顶层一键加载入口
 * [x] Phase 8: VSCode 扩展支持
 * [x] Phase 9: 教程与用户文档
-* [ ] Phase 10: 测试与回归样例补完
+* [x] Phase 10: 测试与回归样例补完
 * [ ] Phase 11: 收尾与合并前核对
 
 ### 12.3 Phase 1: DSL Grammar / AST / Parse API 落地
@@ -1273,18 +1274,18 @@ Checklist
 
 TODO
 
-* [ ] 增加 parser 层测试，覆盖 import 语法与正反例
-* [ ] 增加装配层测试，覆盖多级相对路径、循环导入、alias 冲突、root state 限制
-* [ ] 增加变量映射与事件映射测试，覆盖共享、冲突与边界条件
-* [ ] 增加 CLI / PlantUML / simulate 集成测试
-* [ ] 增加多文件 sample DSL，作为回归样例与文档示例
+* [x] 增加 parser 层测试，覆盖 import 语法与正反例
+* [x] 增加装配层测试，覆盖多级相对路径、循环导入、alias 冲突、root state 限制
+* [x] 增加变量映射与事件映射测试，覆盖共享、冲突与边界条件
+* [x] 增加 CLI / PlantUML / simulate 集成测试
+* [x] 增加多文件 sample DSL，作为回归样例与文档示例
 
 Checklist
 
-* [ ] 关键 pass / fail 路径都有自动化测试覆盖
-* [ ] 样例 DSL 能直观展示 import、变量映射、事件映射的推荐写法
-* [ ] 不使用 import 的现有功能回归测试全部通过
-* [ ] 已按影响范围完成回归测试；至少使用 `make unittest RANGE_DIR=./<一级模块>` 级别命令，若本 phase 影响跨一级模块或顶层链路，则已提升到更高层级
+* [x] 关键 pass / fail 路径都有自动化测试覆盖
+* [x] 样例 DSL 能直观展示 import、变量映射、事件映射的推荐写法
+* [x] 不使用 import 的现有功能回归测试全部通过
+* [x] 已按影响范围完成回归测试；至少使用 `make unittest RANGE_DIR=./<一级模块>` 级别命令，或在当前环境缺失 `pytest-xdist` 等依赖时使用等价的模块级 `pytest` 命令完成同级回归
 
 ### 12.13 Phase 11: 收尾与合并前核对
 

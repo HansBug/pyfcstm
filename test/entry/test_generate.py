@@ -355,3 +355,99 @@ class TestEntryGenerate:
             ).strip(),
             actual=str(state_machine.to_ast_node()),
         )
+
+    def test_generate_with_directory_entry_import_renders_builtin_template(self):
+        with isolated_directory():
+            root_file = os.path.abspath("root.fcstm")
+            os.makedirs("modules/subsystems", exist_ok=True)
+
+            with open(root_file, "w", encoding="utf-8") as f:
+                print(
+                    textwrap.dedent(
+                        """
+                        state Root {
+                            import "./modules/main.fcstm" as Line;
+                            [*] -> Line;
+                        }
+                        """
+                    ).strip(),
+                    file=f,
+                )
+
+            with open("modules/main.fcstm", "w", encoding="utf-8") as f:
+                print(
+                    textwrap.dedent(
+                        """
+                        state LineRoot {
+                            import "./subsystems/worker.fcstm" as Worker;
+                            [*] -> Worker;
+                        }
+                        """
+                    ).strip(),
+                    file=f,
+                )
+
+            with open("modules/subsystems/worker.fcstm", "w", encoding="utf-8") as f:
+                print(
+                    textwrap.dedent(
+                        """
+                        state WorkerRoot {
+                            state Idle;
+                            [*] -> Idle;
+                        }
+                        """
+                    ).strip(),
+                    file=f,
+                )
+
+            result = simulate_entry(
+                pyfcstmcli,
+                [
+                    "pyfcstm",
+                    "generate",
+                    "-i",
+                    root_file,
+                    "--template",
+                    "python",
+                    "-o",
+                    "out",
+                ],
+            )
+
+            assert result.exitcode == 0
+            assert os.path.isfile("out/machine.py")
+            with open("out/machine.py", "r", encoding="utf-8") as f:
+                content = f.read()
+            assert "class RootMachine" in content
+
+    def test_generate_with_missing_import_fails(self):
+        with isolated_directory():
+            root_file = os.path.abspath("root.fcstm")
+            with open(root_file, "w", encoding="utf-8") as f:
+                print(
+                    textwrap.dedent(
+                        """
+                        state Root {
+                            import "./missing.fcstm" as Worker;
+                            [*] -> Worker;
+                        }
+                        """
+                    ).strip(),
+                    file=f,
+                )
+
+            result = simulate_entry(
+                pyfcstmcli,
+                [
+                    "pyfcstm",
+                    "generate",
+                    "-i",
+                    root_file,
+                    "--template",
+                    "python",
+                    "-o",
+                    "out",
+                ],
+            )
+
+            assert result.exitcode != 0

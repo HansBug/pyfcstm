@@ -26,7 +26,9 @@ state Root named "根状态" {
     """,
         entry_name="state_machine_dsl",
     )
-    model = parse_dsl_node_to_state_machine(ast_node)
+    model = parse_dsl_node_to_state_machine(
+        ast_node, path="test/testfile/sample_codes/dlc7_state_extra_names.fcstm"
+    )
     return model
 
 
@@ -189,11 +191,13 @@ class TestModelStateRoot:
             name="Root",
             extra_name="根状态",
             events=[],
+            imports=[],
             substates=[
                 dsl_nodes.StateDefinition(
                     name="state1",
                     extra_name="Zhuang Tai I",
                     events=[],
+                    imports=[],
                     substates=[],
                     transitions=[],
                     enters=[],
@@ -207,6 +211,7 @@ class TestModelStateRoot:
                     name="state2",
                     extra_name="状態2",
                     events=[],
+                    imports=[],
                     substates=[],
                     transitions=[],
                     enters=[],
@@ -220,6 +225,7 @@ class TestModelStateRoot:
                     name="state3",
                     extra_name="상태3",
                     events=[],
+                    imports=[],
                     substates=[],
                     transitions=[],
                     enters=[],
@@ -233,6 +239,7 @@ class TestModelStateRoot:
                     name="state4",
                     extra_name=None,
                     events=[],
+                    imports=[],
                     substates=[],
                     transitions=[],
                     enters=[],
@@ -393,6 +400,7 @@ class TestModelStateRoot:
             name="state1",
             extra_name="Zhuang Tai I",
             events=[],
+            imports=[],
             substates=[],
             transitions=[],
             enters=[],
@@ -528,6 +536,7 @@ class TestModelStateRoot:
             name="state2",
             extra_name="状態2",
             events=[],
+            imports=[],
             substates=[],
             transitions=[],
             enters=[],
@@ -663,6 +672,7 @@ class TestModelStateRoot:
             name="state3",
             extra_name="상태3",
             events=[],
+            imports=[],
             substates=[],
             transitions=[],
             enters=[],
@@ -791,6 +801,7 @@ class TestModelStateRoot:
             name="state4",
             extra_name=None,
             events=[],
+            imports=[],
             substates=[],
             transitions=[],
             enters=[],

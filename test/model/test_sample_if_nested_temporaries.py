@@ -47,7 +47,9 @@ state Root {
     """,
         entry_name="state_machine_dsl",
     )
-    model = parse_dsl_node_to_state_machine(ast_node)
+    model = parse_dsl_node_to_state_machine(
+        ast_node, path="test/testfile/sample_codes/if_nested_temporaries.fcstm"
+    )
     return model
 
 
@@ -182,11 +184,13 @@ class TestModelStateRoot:
             name="Root",
             extra_name=None,
             events=[],
+            imports=[],
             substates=[
                 dsl_nodes.StateDefinition(
                     name="Active",
                     extra_name=None,
                     events=[],
+                    imports=[],
                     substates=[],
                     transitions=[],
                     enters=[],
@@ -678,6 +682,7 @@ class TestModelStateRoot:
             name="Active",
             extra_name=None,
             events=[],
+            imports=[],
             substates=[],
             transitions=[],
             enters=[],

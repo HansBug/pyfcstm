@@ -1,0 +1,10 @@
+def int host_ticks = 0;
+def int host_load = 0;
+
+state Factory {
+    import "./modules/line.fcstm" as Line named "Assembly Line" {
+        def line_ticks -> host_ticks;
+        def load -> host_load;
+    }
+    [*] -> Line;
+}

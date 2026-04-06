@@ -1,0 +1,23 @@
+def int shared_counter = 100;
+def int shared_ready = 1;
+def int left_limit = 5;
+def int right_limit = 6;
+def int left_result = 0;
+def int right_result = 0;
+
+state Plant {
+    import "./modules/left.fcstm" as LeftUnit named "Left Unit" {
+        def counter -> shared_counter;
+        def ready_flag -> shared_ready;
+        def limit -> left_limit;
+        def result -> left_result;
+    }
+    import "./modules/right.fcstm" as RightUnit named "Right Unit" {
+        def pulse_count -> shared_counter;
+        def armed_flag -> shared_ready;
+        def limit -> right_limit;
+        def result -> right_result;
+    }
+    [*] -> LeftUnit;
+    LeftUnit -> RightUnit;
+}

@@ -1,0 +1,17 @@
+def int counter = 0;
+def int ready_flag = 1;
+def int limit = 5;
+def int result = 0;
+
+state LeftRoot {
+    state Idle;
+    state Busy;
+    [*] -> Idle;
+    Idle -> Busy : if [ready_flag > 0] effect {
+        result = counter + limit;
+    }
+    Busy -> Idle : if [counter < limit] effect {
+        counter = counter + 1;
+        result = counter;
+    }
+}

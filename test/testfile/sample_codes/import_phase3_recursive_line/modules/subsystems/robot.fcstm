@@ -1,0 +1,11 @@
+def int cycle_count = 0;
+def int arm_load = 0;
+
+state RobotRoot {
+    state Picking;
+    [*] -> Picking;
+    Picking -> Picking : if [arm_load < 4] effect {
+        cycle_count = cycle_count + 1;
+        arm_load = arm_load + 1;
+    }
+}

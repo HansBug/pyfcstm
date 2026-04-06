@@ -1,0 +1,11 @@
+def int speed = 0;
+def int load = 0;
+
+state ConveyorRoot {
+    state Feeding;
+    [*] -> Feeding;
+    Feeding -> Feeding : if [speed < 2] effect {
+        speed = speed + 1;
+        load = load + 1;
+    }
+}

@@ -56,7 +56,9 @@ state L1 {
     """,
         entry_name="state_machine_dsl",
     )
-    model = parse_dsl_node_to_state_machine(ast_node)
+    model = parse_dsl_node_to_state_machine(
+        ast_node, path="test/testfile/sample_codes/dlc6_more.fcstm"
+    )
     return model
 
 
@@ -485,11 +487,13 @@ class TestModelStateL1:
             name="L1",
             extra_name=None,
             events=[],
+            imports=[],
             substates=[
                 dsl_nodes.StateDefinition(
                     name="L21",
                     extra_name=None,
                     events=[],
+                    imports=[],
                     substates=[],
                     transitions=[],
                     enters=[
@@ -531,6 +535,7 @@ class TestModelStateL1:
                     name="L22",
                     extra_name=None,
                     events=[],
+                    imports=[],
                     substates=[],
                     transitions=[],
                     enters=[
@@ -1159,6 +1164,7 @@ class TestModelStateL1:
             name="L21",
             extra_name=None,
             events=[],
+            imports=[],
             substates=[],
             transitions=[],
             enters=[
@@ -1879,6 +1885,7 @@ class TestModelStateL1:
             name="L22",
             extra_name=None,
             events=[],
+            imports=[],
             substates=[],
             transitions=[],
             enters=[

@@ -1,0 +1,13 @@
+def int speed = 0;
+
+state RobotModule {
+    event Start;
+
+    state Idle;
+    state Moving;
+
+    [*] -> Idle;
+    Idle -> Moving : /Start effect {
+        speed = speed + 1;
+    }
+}

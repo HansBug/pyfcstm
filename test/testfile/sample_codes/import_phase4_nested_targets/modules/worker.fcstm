@@ -1,0 +1,11 @@
+state WorkerRoot {
+    event Fault named "Local Fault";
+    event Reset named "Local Reset";
+    state Idle;
+    state Failed;
+    state Halted;
+    [*] -> Idle;
+    Idle -> Failed : Fault;
+    Failed -> Halted : /Stop;
+    Halted -> Idle : Reset;
+}

@@ -31,7 +31,9 @@ state Root{
     """,
         entry_name="state_machine_dsl",
     )
-    model = parse_dsl_node_to_state_machine(ast_node)
+    model = parse_dsl_node_to_state_machine(
+        ast_node, path="test/testfile/sample_codes/dlc7_event_extra_names.fcstm"
+    )
     return model
 
 
@@ -211,6 +213,7 @@ class TestModelStateRoot:
             name="Root",
             extra_name=None,
             events=[dsl_nodes.EventDefinition(name="E1", extra_name="事件1")],
+            imports=[],
             substates=[
                 dsl_nodes.StateDefinition(
                     name="state1",
@@ -218,6 +221,7 @@ class TestModelStateRoot:
                     events=[
                         dsl_nodes.EventDefinition(name="E1", extra_name="S1 -> 事件1")
                     ],
+                    imports=[],
                     substates=[],
                     transitions=[],
                     enters=[],
@@ -231,6 +235,7 @@ class TestModelStateRoot:
                     name="state2",
                     extra_name=None,
                     events=[],
+                    imports=[],
                     substates=[],
                     transitions=[],
                     enters=[],
@@ -246,6 +251,7 @@ class TestModelStateRoot:
                     events=[
                         dsl_nodes.EventDefinition(name="E2", extra_name="S3 -> 事件2")
                     ],
+                    imports=[],
                     substates=[],
                     transitions=[],
                     enters=[],
@@ -259,6 +265,7 @@ class TestModelStateRoot:
                     name="state4",
                     extra_name=None,
                     events=[],
+                    imports=[],
                     substates=[],
                     transitions=[],
                     enters=[],
@@ -431,6 +438,7 @@ class TestModelStateRoot:
             name="state1",
             extra_name=None,
             events=[dsl_nodes.EventDefinition(name="E1", extra_name="S1 -> 事件1")],
+            imports=[],
             substates=[],
             transitions=[],
             enters=[],
@@ -570,6 +578,7 @@ class TestModelStateRoot:
             name="state2",
             extra_name=None,
             events=[],
+            imports=[],
             substates=[],
             transitions=[],
             enters=[],
@@ -713,6 +722,7 @@ class TestModelStateRoot:
             name="state3",
             extra_name=None,
             events=[dsl_nodes.EventDefinition(name="E2", extra_name="S3 -> 事件2")],
+            imports=[],
             substates=[],
             transitions=[],
             enters=[],
@@ -843,6 +853,7 @@ class TestModelStateRoot:
             name="state4",
             extra_name=None,
             events=[],
+            imports=[],
             substates=[],
             transitions=[],
             enters=[],

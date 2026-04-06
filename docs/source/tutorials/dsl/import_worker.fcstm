@@ -1,0 +1,16 @@
+def int sensor_input = 0;
+def int speed = 0;
+
+state WorkerModule named "Worker Module" {
+    event Start named "Worker Start";
+    event Stop named "Worker Stop";
+
+    state Idle;
+    state Running;
+
+    [*] -> Idle;
+    Idle -> Running : /Start effect {
+        speed = sensor_input;
+    }
+    Running -> Idle : /Stop;
+}

@@ -7,6 +7,7 @@
 
 import * as vscode from 'vscode';
 import { getParser, ParseError } from './parser';
+import { getImportWorkspaceIndex } from './imports';
 
 /**
  * Diagnostics provider for FCSTM documents
@@ -14,6 +15,7 @@ import { getParser, ParseError } from './parser';
 export class FcstmDiagnosticsProvider {
     private readonly diagnosticCollection: vscode.DiagnosticCollection;
     private readonly parser = getParser();
+    private readonly importIndex = getImportWorkspaceIndex();
     private readonly documentVersions = new Map<string, number>();
 
     constructor() {
@@ -116,6 +118,7 @@ export class FcstmDiagnosticsProvider {
             const diagnostics = parseResult.errors.map(error =>
                 this.convertToDiagnostic(error, document)
             );
+            diagnostics.push(...await this.importIndex.collectImportDiagnostics(document));
 
             this.diagnosticCollection.set(document.uri, diagnostics);
         } catch (error) {

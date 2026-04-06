@@ -8,7 +8,7 @@
  *
  * Test coverage:
  * - Bundle file existence and basic structure
- * - ANTLR-generated parser classes bundled
+ * - ANTLR-generated lexer/parser classes bundled
  * - antlr4 runtime library bundled
  * - Extension source modules bundled
  * - Basic functionality tests (parser, diagnostics, symbols, completion, hover)
@@ -139,21 +139,9 @@ const tests = [
         }
     ),
 
-    new TestCase(
-        'E2E-06',
-        'GrammarVisitor class is bundled',
-        async () => {
-            const bundlePath = path.join(__dirname, '..', 'dist', 'extension.js');
-            const bundleContent = fs.readFileSync(bundlePath, 'utf8');
-            if (!bundleContent.includes('GrammarVisitor')) {
-                throw new Error('GrammarVisitor not found in bundle');
-            }
-        }
-    ),
-
     // antlr4 Runtime Tests
     new TestCase(
-        'E2E-07',
+        'E2E-06',
         'antlr4 InputStream is bundled',
         async () => {
             const bundlePath = path.join(__dirname, '..', 'dist', 'extension.js');
@@ -165,7 +153,7 @@ const tests = [
     ),
 
     new TestCase(
-        'E2E-08',
+        'E2E-07',
         'antlr4 CommonTokenStream is bundled',
         async () => {
             const bundlePath = path.join(__dirname, '..', 'dist', 'extension.js');
@@ -177,7 +165,7 @@ const tests = [
     ),
 
     new TestCase(
-        'E2E-09',
+        'E2E-08',
         'antlr4 ParserATNSimulator is bundled',
         async () => {
             const bundlePath = path.join(__dirname, '..', 'dist', 'extension.js');
@@ -190,7 +178,7 @@ const tests = [
 
     // Extension Source Modules Tests
     new TestCase(
-        'E2E-10',
+        'E2E-09',
         'FcstmParser class is bundled',
         async () => {
             const bundlePath = path.join(__dirname, '..', 'dist', 'extension.js');
@@ -202,7 +190,7 @@ const tests = [
     ),
 
     new TestCase(
-        'E2E-11',
+        'E2E-10',
         'FcstmDiagnosticsProvider class is bundled',
         async () => {
             const bundlePath = path.join(__dirname, '..', 'dist', 'extension.js');
@@ -214,7 +202,7 @@ const tests = [
     ),
 
     new TestCase(
-        'E2E-12',
+        'E2E-11',
         'FcstmDocumentSymbolProvider class is bundled',
         async () => {
             const bundlePath = path.join(__dirname, '..', 'dist', 'extension.js');
@@ -226,7 +214,7 @@ const tests = [
     ),
 
     new TestCase(
-        'E2E-13',
+        'E2E-12',
         'FcstmCompletionProvider class is bundled',
         async () => {
             const bundlePath = path.join(__dirname, '..', 'dist', 'extension.js');
@@ -238,7 +226,7 @@ const tests = [
     ),
 
     new TestCase(
-        'E2E-14',
+        'E2E-13',
         'FcstmHoverProvider class is bundled',
         async () => {
             const bundlePath = path.join(__dirname, '..', 'dist', 'extension.js');
@@ -251,7 +239,7 @@ const tests = [
 
     // Extension Entry Points Tests
     new TestCase(
-        'E2E-15',
+        'E2E-14',
         'Extension activate function is exported',
         async () => {
             const bundlePath = path.join(__dirname, '..', 'dist', 'extension.js');
@@ -263,7 +251,7 @@ const tests = [
     ),
 
     new TestCase(
-        'E2E-16',
+        'E2E-15',
         'Extension deactivate function is exported',
         async () => {
             const bundlePath = path.join(__dirname, '..', 'dist', 'extension.js');
@@ -276,7 +264,7 @@ const tests = [
 
     // Bundle Integrity Tests
     new TestCase(
-        'E2E-17',
+        'E2E-16',
         'Bundle uses CommonJS module format',
         async () => {
             const bundlePath = path.join(__dirname, '..', 'dist', 'extension.js');
@@ -293,7 +281,7 @@ const tests = [
     ),
 
     new TestCase(
-        'E2E-18',
+        'E2E-17',
         'Bundle does not include vscode module (should be external)',
         async () => {
             const bundlePath = path.join(__dirname, '..', 'dist', 'extension.js');
@@ -308,7 +296,7 @@ const tests = [
     ),
 
     new TestCase(
-        'E2E-19',
+        'E2E-18',
         'Bundle contains error message normalization logic',
         async () => {
             const bundlePath = path.join(__dirname, '..', 'dist', 'extension.js');
@@ -320,7 +308,7 @@ const tests = [
     ),
 
     new TestCase(
-        'E2E-20',
+        'E2E-19',
         'Bundle contains ANTLR error listener implementation',
         async () => {
             const bundlePath = path.join(__dirname, '..', 'dist', 'extension.js');

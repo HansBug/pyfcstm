@@ -161,7 +161,7 @@ make verify
 
 #### Regenerating Parser After Grammar Changes
 
-When the ANTLR grammar (`pyfcstm/dsl/grammar/Grammar.g4`) changes:
+When the ANTLR grammar pair (`pyfcstm/dsl/grammar/GrammarLexer.g4` and `pyfcstm/dsl/grammar/GrammarParser.g4`) changes:
 
 1. From project root, regenerate Python parser:
    ```bash
@@ -385,8 +385,8 @@ The long-term plan is to keep generated JavaScript lexer/parser assets and their
 
 The extension uses a pure JavaScript ANTLR parser generated from the canonical FCSTM grammar:
 
-- **Grammar Source**: `pyfcstm/dsl/grammar/Grammar.g4` (single source of truth)
-- **Generated Artifacts**: `editors/vscode/parser/` (GrammarLexer.js, GrammarParser.js, GrammarVisitor.js)
+- **Grammar Source**: `pyfcstm/dsl/grammar/GrammarLexer.g4` and `pyfcstm/dsl/grammar/GrammarParser.g4` (single source of truth)
+- **Generated Artifacts**: `editors/vscode/parser/` (GrammarLexer.js, GrammarParser.js)
 - **Parser Adapter**: `src/parser.ts` (loads generated artifacts and normalizes diagnostics)
 - **Runtime**: `antlr4` version 4.9.3 (exact match with generation toolchain)
 
@@ -412,7 +412,6 @@ editors/vscode/
 ├── parser/
 │   ├── GrammarLexer.js    # Generated lexer (from ANTLR)
 │   ├── GrammarParser.js   # Generated parser (from ANTLR)
-│   ├── GrammarVisitor.js  # Generated visitor (from ANTLR)
 │   ├── package.json       # Parser metadata
 │   └── README.md          # Parser regeneration notes
 ├── syntaxes/
@@ -449,7 +448,7 @@ The extension uses **esbuild** for bundling, creating a single all-in-one `exten
    - Copies `editors/fcstm.tmLanguage.json` to `syntaxes/`
 
 3. **Generate JavaScript Parser** (`make parser`)
-   - Uses ANTLR 4.9.3 to generate JS artifacts from `Grammar.g4`
+   - Uses ANTLR 4.9.3 to generate JS artifacts from `GrammarLexer.g4` and `GrammarParser.g4`
    - Outputs to `parser/` directory
 
 4. **Bundle Extension** (`make build`)
@@ -465,7 +464,7 @@ The extension uses **esbuild** for bundling, creating a single all-in-one `exten
 
 **All-in-One Bundle:**
 - Single `dist/extension.js` file contains all dependencies
-- ANTLR-generated parser files (GrammarLexer, GrammarParser, GrammarVisitor) bundled
+- ANTLR-generated lexer/parser files (GrammarLexer, GrammarParser) bundled
 - antlr4 runtime library bundled
 - All extension sources bundled
 - No runtime dependency loading issues
@@ -479,7 +478,7 @@ The extension uses **esbuild** for bundling, creating a single all-in-one `exten
 
 ### Grammar Synchronization
 
-Both Python and JavaScript parsers are generated from the same canonical grammar:
+Both Python and JavaScript parsers are generated from the same canonical grammar pair:
 
 - **Python Target**: `pyfcstm/dsl/grammar/` (for CLI and library)
 - **JavaScript Target**: `editors/vscode/parser/` (for VSCode extension)

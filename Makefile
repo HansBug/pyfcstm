@@ -34,7 +34,8 @@ RST_NONM_FILES    := $(foreach file,${PYTHON_NONM_FILES},$(patsubst %/__init__.p
 
 ANTLR_VERSION ?= 4.9.3
 ANTLR_GRAMMAR_DIR  := ${SRC_DIR}/dsl/grammar
-ANTLR_GRAMMAR_FILE := ${ANTLR_GRAMMAR_DIR}/Grammar.g4
+ANTLR_LEXER_GRAMMAR_FILE := ${ANTLR_GRAMMAR_DIR}/GrammarLexer.g4
+ANTLR_PARSER_GRAMMAR_FILE := ${ANTLR_GRAMMAR_DIR}/GrammarParser.g4
 
 # VSCode extension variables
 VSCODE_EXT_DIR := ${PROJ_DIR}/editors/vscode
@@ -51,13 +52,18 @@ APP_ICON_STAMP := ${APP_ICON_DIR}/.stamp
 MODEL_TEST_DIR   := ${TEST_DIR}/model
 SAMPLE_CODES_DIR := ${TESTFILE_DIR}/sample_codes
 SAMPLE_DSL_FILES := $(shell find ${SAMPLE_CODES_DIR} -name "*.fcstm" 2>/dev/null)
-SAMPLE_TEST_FILES := $(patsubst ${SAMPLE_CODES_DIR}/%.fcstm,${MODEL_TEST_DIR}/test_sample_%.py,${SAMPLE_DSL_FILES})
+SAMPLE_DSL_ENTRY_DIRS := $(shell find ${SAMPLE_CODES_DIR} -mindepth 1 -type f -name "main.fcstm" -printf '%h\n' 2>/dev/null)
+SAMPLE_FLAT_DSL_FILES := $(filter-out $(foreach dir,${SAMPLE_DSL_ENTRY_DIRS},${dir}/%),${SAMPLE_DSL_FILES})
+SAMPLE_TEST_FILES := \
+	$(patsubst ${SAMPLE_CODES_DIR}/%.fcstm,${MODEL_TEST_DIR}/test_sample_%.py,${SAMPLE_FLAT_DSL_FILES}) \
+	$(patsubst ${SAMPLE_CODES_DIR}/%,${MODEL_TEST_DIR}/test_sample_%.py,${SAMPLE_DSL_ENTRY_DIRS})
 SAMPLE_NEG_CODES_DIR := ${TESTFILE_DIR}/sample_neg_codes
 SAMPLE_NEG_DSL_FILES := $(shell find ${SAMPLE_NEG_CODES_DIR} -name "*.fcstm" 2>/dev/null)
 SAMPLE_NEG_TEST_FILES := $(patsubst ${SAMPLE_NEG_CODES_DIR}/%.fcstm,${MODEL_TEST_DIR}/test_sample_neg_%.py,${SAMPLE_NEG_DSL_FILES})
 
 MODEL_SOURCE_FILES := \
-	${SRC_DIR}/dsl/grammar/Grammar.g4 \
+	${SRC_DIR}/dsl/grammar/GrammarLexer.g4 \
+	${SRC_DIR}/dsl/grammar/GrammarParser.g4 \
 	${SRC_DIR}/dsl/listener.py \
 	${SRC_DIR}/dsl/node.py \
 	${SRC_DIR}/model/model.py \
@@ -96,7 +102,7 @@ help:
 	@echo ""
 	@echo "ANTLR Grammar:"
 	@echo "  make antlr        - Download ANTLR jar and setup (requires Java)"
-	@echo "  make antlr_build  - Regenerate parser from Grammar.g4"
+	@echo "  make antlr_build  - Regenerate lexer/parser from GrammarLexer.g4 and GrammarParser.g4"
 	@echo ""
 	@echo "Built-in Templates:"
 	@echo "  make tpl          - Package repository templates into pyfcstm/template zip assets"
@@ -206,13 +212,19 @@ antlr: antlr-${ANTLR_VERSION}.jar
 	pip install -r requirements.txt
 
 antlr_build:
-	java -jar antlr-${ANTLR_VERSION}.jar -Dlanguage=Python3 ${ANTLR_GRAMMAR_FILE}
+	java -jar antlr-${ANTLR_VERSION}.jar -Dlanguage=Python3 -Xexact-output-dir -o ${ANTLR_GRAMMAR_DIR} \
+		${ANTLR_LEXER_GRAMMAR_FILE} ${ANTLR_PARSER_GRAMMAR_FILE}
 	ruff format ${ANTLR_GRAMMAR_DIR}
 
 # Generate sample test files
 sample: ${SAMPLE_TEST_FILES} ${SAMPLE_NEG_TEST_FILES}
 
 ${MODEL_TEST_DIR}/test_sample_%.py: ${SAMPLE_CODES_DIR}/%.fcstm sample_test_generator.py ${MODEL_SOURCE_FILES}
+	@mkdir -p ${MODEL_TEST_DIR}
+	UNITTEST=1 $(PYTHON) sample_test_generator.py -i $< -o $@
+	ruff format $@
+
+${MODEL_TEST_DIR}/test_sample_%.py: ${SAMPLE_CODES_DIR}/% ${SAMPLE_CODES_DIR}/%/main.fcstm sample_test_generator.py ${MODEL_SOURCE_FILES}
 	@mkdir -p ${MODEL_TEST_DIR}
 	UNITTEST=1 $(PYTHON) sample_test_generator.py -i $< -o $@
 	ruff format $@

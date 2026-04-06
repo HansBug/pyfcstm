@@ -1,0 +1,4 @@
+state Factory {
+    import "./import_line/main.fcstm" as Line;
+    [*] -> Line;
+}

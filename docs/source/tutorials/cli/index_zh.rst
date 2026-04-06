@@ -259,6 +259,17 @@ generate 命令
    # 生成 Python 代码
    pyfcstm generate -i simple_machine.fcstm -t ./templates/python -o ./output
 
+**示例：从多文件 import 工程生成代码**
+
+当 DSL 工程开始使用 import 后，对外 CLI 用法并不会变化。您仍然只需要
+给出一个入口文件，pyfcstm 会自动装配它导入的其他模块。
+
+.. code-block:: bash
+
+   # 入口文件可以 import 其他 FCSTM 文件，或 import 一个带 main.fcstm 的目录
+   pyfcstm generate -i ./docs/source/tutorials/dsl/import_host_directory.fcstm \
+     -t ./templates/python -o ./output --clear
+
 **模板上下文**
 
 模板可以访问完整的状态机模型：
@@ -300,6 +311,13 @@ generate 命令
    # 3. 如果需要 PlantUML 源文本，再单独生成 .puml
    pyfcstm plantuml -i my_machine.fcstm -o my_machine.puml
 
+对于多文件状态机，同样沿用这一工作流：
+
+.. code-block:: bash
+
+   pyfcstm plantuml -i ./docs/source/tutorials/dsl/import_host_mapped.fcstm \
+     -o import_host_mapped.puml
+
 工作流 2：DSL 到代码
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -328,6 +346,13 @@ generate 命令
 
    # 生成测试代码
    pyfcstm generate -i machine.fcstm -t ./templates/test -o ./tests/generated
+
+对于 import 工程，只需要检查入口文件：
+
+.. code-block:: bash
+
+   pyfcstm plantuml -i ./docs/source/tutorials/dsl/import_host_directory.fcstm \
+     > /dev/null && echo "Import 工程语法正确"
 
 工作流 4：CI/CD 集成
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

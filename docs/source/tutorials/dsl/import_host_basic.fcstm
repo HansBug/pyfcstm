@@ -1,0 +1,4 @@
+state System {
+    import "./import_worker.fcstm" as Worker;
+    [*] -> Worker;
+}

@@ -1,0 +1,9 @@
+state ChildRoot {
+    state InnerBus;
+    import "./grand/grand.fcstm" as Grand named "Grand Layer" {
+        event /Pulse -> Start named "Child Start";
+        event /Halt -> /InnerBus.Stop named "Child Stop";
+        event /Trip -> Trip named "Child Trip";
+    }
+    [*] -> Grand;
+}

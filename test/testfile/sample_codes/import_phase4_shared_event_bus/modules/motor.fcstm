@@ -1,0 +1,10 @@
+state MotorRoot {
+    event Alarm named "Local Alarm";
+    state Idle;
+    state Running;
+    state Error;
+    [*] -> Idle;
+    Idle -> Running : /Start;
+    Running -> Idle : /Stop;
+    ! * -> Error : Alarm;
+}

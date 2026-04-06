@@ -11,7 +11,7 @@ from pathlib import Path
 from textwrap import dedent
 
 import pytest
-from pygments.token import Keyword
+from pygments.token import Error, Keyword, Name, Operator, String
 
 from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.highlight import FcstmLexer
@@ -538,6 +538,58 @@ class TestControlFlowKeywords:
 
         assert (Keyword.Reserved, 'if') in tokens
         assert (Keyword.Reserved, 'else') in tokens
+
+
+@pytest.mark.unittest
+class TestImportSyntaxHighlighting:
+    def test_import_header_keywords_are_highlighted(self):
+        lexer = FcstmLexer()
+        tokens = [
+            (token_type, text)
+            for token_type, text in lexer.get_tokens(
+                'state Root { import "./worker.fcstm" as Worker named "Worker Module"; }'
+            )
+            if text.strip()
+        ]
+
+        assert (Keyword.Declaration, 'import') in tokens
+        assert (String.Double, '"./worker.fcstm"') in tokens
+        assert (Keyword.Namespace, 'as') in tokens
+        assert (Name, 'Worker') in tokens
+        assert (Keyword.Declaration, 'named') in tokens
+        assert (String.Double, '"Worker Module"') in tokens
+
+    def test_import_mapping_tokens_do_not_fall_back_to_errors(self):
+        lexer = FcstmLexer()
+        tokens = [
+            (token_type, text)
+            for token_type, text in lexer.get_tokens(
+                dedent(
+                    '''\
+                    state Root {
+                        import "./worker.fcstm" as Worker {
+                            def counter -> shared_counter;
+                            def sensor_* -> io_$1;
+                            def * -> Worker_${1};
+                            event /Start -> Start named "Mapped Start";
+                            event /Alarm -> /Bus.Alarm;
+                        }
+                    }
+                    '''
+                )
+            )
+            if text.strip()
+        ]
+
+        assert (Keyword.Declaration, 'def') in tokens
+        assert (Name.Variable, 'sensor_*') in tokens
+        assert (Name.Variable, 'io_$1') in tokens
+        assert (Name.Variable, 'Worker_${1}') in tokens
+        assert (Keyword.Declaration, 'event') in tokens
+        assert (Operator, '/') in tokens
+        assert (Keyword.Declaration, 'named') in tokens
+        assert (String.Double, '"Mapped Start"') in tokens
+        assert not any(token_type is Error for token_type, _ in tokens)
 
 _LANGCHECK_HACK_CASES += [
     (
@@ -4832,5 +4884,43 @@ class TestFcstmLexerAnalyseText:
 
         assert score >= 0.70, (
             f'{path.name} is real FCSTM input and should keep a strong score, '
+            f'but analyse_text returned {score:.2f}.'
+        )
+
+    def test_import_only_fcstm_remains_detectable(self):
+        code = dedent(
+            '''\
+            state Root {
+                import "./worker.fcstm" as Worker;
+            }
+            '''
+        )
+
+        score = FcstmLexer.analyse_text(code)
+
+        assert score >= 0.70, (
+            'Import-only FCSTM should remain recognizable as FCSTM input, '
+            f'but analyse_text returned {score:.2f}.'
+        )
+
+    def test_import_mapping_fcstm_remains_detectable(self):
+        code = dedent(
+            '''\
+            state Root {
+                import "./worker.fcstm" as Worker named "Worker Module" {
+                    def counter -> shared_counter;
+                    def sensor_* -> io_$1;
+                    def * -> Worker_${1};
+                    event /Start -> Start named "Mapped Start";
+                    event /Alarm -> /Bus.Alarm;
+                }
+            }
+            '''
+        )
+
+        score = FcstmLexer.analyse_text(code)
+
+        assert score >= 0.90, (
+            'Import block FCSTM should keep a strong confidence score, '
             f'but analyse_text returned {score:.2f}.'
         )

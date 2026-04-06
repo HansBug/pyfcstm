@@ -64,7 +64,7 @@ def _add_simulate_subcommand(cli: click.Group) -> click.Group:
         try:
             code = auto_decode(Path(input_code_file).read_bytes())
             ast_node = parse_with_grammar_entry(code, entry_name='state_machine_dsl')
-            model = parse_dsl_node_to_state_machine(ast_node)
+            model = parse_dsl_node_to_state_machine(ast_node, path=input_code_file)
         except Exception as e:
             click.echo(f"Failed to parse DSL file: {e}", err=True)
             return

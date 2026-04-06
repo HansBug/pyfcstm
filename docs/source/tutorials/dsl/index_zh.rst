@@ -2392,6 +2392,159 @@ DSL 解析器在解析过程中执行广泛的语义验证：
    Error: Missing entry transition for composite state 'Container' at line 45
    Error: Invalid aspect 'before' on leaf state 'Running' at line 67
 
+Import 装配
+----------------------------------------------------
+
+概述
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+import 支持让 FCSTM 工程从单文件扩展成多文件装配结构。它的设计保持克制：
+
+- import 是编译期装配，不是运行时模块系统
+- 每个 import 只导入一个 root state
+- 每个 import 都必须显式写出 ``as Alias``
+- 变量默认隔离，只有 ``def`` mapping 才共享
+- 事件默认实例隔离，只有 ``event`` mapping 才会重写模块绝对事件
+
+最小 import
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+被导入模块：
+
+.. literalinclude:: import_worker.fcstm
+   :language: fcstm
+   :caption: import_worker.fcstm
+
+宿主状态机：
+
+.. literalinclude:: import_host_basic.fcstm
+   :language: fcstm
+   :caption: import_host_basic.fcstm
+
+这里的行为是：
+
+- 宿主 root state ``System`` 仍然是最终模型的根
+- 被导入 root state 会以 alias ``Worker`` 挂到宿主下
+- ``[*] -> Worker;`` 让导入子树成为宿主的初始子状态
+
+最终装配后的模型图：
+
+.. image:: import_host_basic.fcstm.puml.svg
+   :alt: 最小 import 示例的最终装配模型图
+   :align: center
+   :width: 90%
+
+.. important::
+   alias 是必需的。import 故意保持模块边界显式存在，这样装配后的状态
+   路径才可预测。
+
+在 import 上使用 ``named``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+可以覆盖导入 root state 的显示名称，而不改变它的语义路径：
+
+.. code-block:: fcstm
+
+   state System {
+       import "./import_worker.fcstm" as Worker named "Left Worker";
+       [*] -> Worker;
+   }
+
+这里的 ``named`` 只影响展示文本，不改变用于路径解析的 alias。
+
+使用 ``def`` 做变量映射
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+导入变量不会自动与宿主变量合流。只有显式写出 ``def`` mapping 时，宿主
+变量才会接收导入模块的值：
+
+.. literalinclude:: import_host_mapped.fcstm
+   :language: fcstm
+   :caption: import_host_mapped.fcstm
+
+这个例子展示了：
+
+- 通配映射：``def sensor_* -> left_$1;``
+- 精确映射：``def speed -> plant_speed;``
+- 变量共享必须显式声明，而不是隐式按名字合流
+
+使用 ``event`` 做事件映射
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+事件映射比变量映射更严格。左侧必须是模块绝对事件路径：
+
+* ``event /Start -> Start named "Shared Start";``
+* ``event /Stop -> Stop named "Shared Stop";``
+
+需要记住的规则：
+
+- 左侧只能是导入模块的绝对事件，例如 ``/Start``
+- 宿主侧目标既可以是相对路径，也可以是绝对路径
+- 如果 mapping 上带 ``named``，则会覆盖最终宿主事件显示名
+
+通过 ``main.fcstm`` 组织目录入口
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+当导入子系统变得不再适合只放在一个文件里时，可以围绕 ``main.fcstm`` 组织
+一个约定好的入口文件。
+
+宿主文件：
+
+.. literalinclude:: import_host_directory.fcstm
+   :language: fcstm
+   :caption: import_host_directory.fcstm
+
+子系统入口：
+
+.. literalinclude:: import_line/main.fcstm
+   :language: fcstm
+   :caption: import_line/main.fcstm
+
+子系统内部的嵌套导入文件：
+
+.. literalinclude:: import_line/subsystems/robot.fcstm
+   :language: fcstm
+   :caption: import_line/subsystems/robot.fcstm
+
+在当前语法下，宿主需要显式导入入口文件：
+
+.. code-block:: fcstm
+
+   import "./import_line/main.fcstm" as Line;
+
+这样宿主侧契约保持稳定，而子系统内部仍然可以继续拆分。
+
+入口文件装配后的最终模型图：
+
+.. image:: import_host_directory.fcstm.puml.svg
+   :alt: 目录入口 import 示例的最终装配模型图
+   :align: center
+   :width: 100%
+
+常见错误
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+最常见的 import 错误包括：
+
+- 忘记写 ``as Alias``，误以为系统会自动推导 alias
+- 误以为 ``named`` 会改变语义状态路径或事件路径
+- 误以为未映射的导入变量会自动与宿主变量合流
+- 在事件映射左侧使用非绝对事件路径
+- 忘记把宿主 import 指向子系统入口文件，例如 ``./import_line/main.fcstm``
+
+公开入口保持不变
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+import 功能是接入到现有公开入口中的。文件组织正确后，命令形态并不会变化：
+
+.. code-block:: bash
+
+   pyfcstm plantuml -i import_host_mapped.fcstm -o import_host_mapped.puml
+   pyfcstm generate -i import_host_directory.fcstm -t ./templates/python -o ./out
+   pyfcstm simulate -i import_host_directory.fcstm
+
+这就是 import 功能的目标：工程结构更丰富，但对外命令形态不变。
+
 总结
 ----------------------------------------------------
 
@@ -2408,6 +2561,7 @@ DSL 解析器在解析过程中执行广泛的语义验证：
 - **层次化执行**：复合状态和叶状态中嵌套状态的执行顺序
 - **抽象函数**：声明平台特定的实现
 - **引用动作**：跨状态重用动作
+- **Import 装配**：通过 alias、变量映射和事件映射完成多文件组合
 - **注释**：用于文档的行注释和块注释
 
 .. important::
@@ -2418,6 +2572,7 @@ DSL 解析器在解析过程中执行广泛的语义验证：
    - **复合状态生命周期**：``during before/after`` 仅在进入/退出时执行，在子状态之间转换时不执行
    - **事件命名空间**：三种作用域机制（``::`` 用于本地，``:`` 用于链，``/`` 用于绝对）
    - **事件解析**：所有事件作用域机制都等同于具有不同起点的绝对路径
+   - **Import 边界**：通过 alias 和 mapping 规则保持多文件装配语义显式可控
    - **语义验证**：全面的验证确保正确的状态机定义
 
 .. seealso::

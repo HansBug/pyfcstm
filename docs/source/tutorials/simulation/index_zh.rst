@@ -155,6 +155,12 @@ CLI 用法
 
    pyfcstm simulate -i example.fcstm
 
+对于多文件 import 工程，命令形态同样不变，输入仍然只是入口文件：
+
+.. code-block:: bash
+
+   pyfcstm simulate -i ./docs/source/tutorials/dsl/import_host_directory.fcstm
+
 这将启动一个具有命令历史、自动补全和语法高亮的交互式会话。
 
 可用命令

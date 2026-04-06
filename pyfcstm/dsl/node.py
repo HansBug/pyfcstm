@@ -13,6 +13,8 @@ The main public components include:
 * :class:`Expr` and :class:`Literal` families - Expression nodes and literals.
 * :class:`StateDefinition` - State declarations with nested structure.
 * :class:`TransitionDefinition` and :class:`ForceTransitionDefinition` - State transitions.
+* Import-related nodes such as :class:`ImportStatement`,
+  :class:`ImportDefMapping`, and :class:`ImportEventMapping`.
 * :class:`StateMachineDSLProgram` - Root program container.
 * Statement and action blocks such as :class:`OperationAssignment`,
   :class:`EnterStatement`, :class:`ExitStatement`, and :class:`DuringStatement`.
@@ -71,6 +73,16 @@ __all__ = [
     "ConstantDefinition",
     "InitialAssignment",
     "DefAssignment",
+    "ImportMappingStatement",
+    "ImportDefSelector",
+    "ImportDefExactSelector",
+    "ImportDefSetSelector",
+    "ImportDefPatternSelector",
+    "ImportDefFallbackSelector",
+    "ImportDefTargetTemplate",
+    "ImportDefMapping",
+    "ImportEventMapping",
+    "ImportStatement",
     "OperationalDeprecatedAssignment",
     "Preamble",
     "Operation",
@@ -963,6 +975,264 @@ This is used to define transitions or actions that apply to all states.
 
 
 @dataclass
+class ImportMappingStatement(ASTNode):
+    """
+    Abstract base class for mapping statements inside an import block.
+
+    Import mapping statements configure how imported variables and events should
+    be exposed or remapped when the imported module is assembled into the host
+    state tree.
+
+    :rtype: ImportMappingStatement
+    """
+
+    pass
+
+
+@dataclass
+class ImportDefSelector(ASTNode):
+    """
+    Abstract base class for ``def`` mapping source selectors in import blocks.
+
+    Source selectors determine which imported variable names a ``def`` mapping
+    rule applies to.
+
+    :rtype: ImportDefSelector
+    """
+
+    pass
+
+
+@dataclass
+class ImportDefExactSelector(ImportDefSelector):
+    """
+    Represents an exact source variable selector in an import ``def`` mapping.
+
+    :param name: Exact variable name to match
+    :type name: str
+
+    :rtype: ImportDefExactSelector
+    """
+
+    name: str
+
+    def __str__(self) -> str:
+        """
+        Convert the selector to its DSL representation.
+
+        :return: String representation of the selector
+        :rtype: str
+        """
+        return self.name
+
+
+@dataclass
+class ImportDefSetSelector(ImportDefSelector):
+    """
+    Represents a set-based source selector in an import ``def`` mapping.
+
+    :param names: Exact variable names listed in the selector set
+    :type names: List[str]
+
+    :rtype: ImportDefSetSelector
+    """
+
+    names: List[str]
+
+    def __str__(self) -> str:
+        """
+        Convert the selector to its DSL representation.
+
+        :return: String representation of the selector
+        :rtype: str
+        """
+        return "{%s}" % ", ".join(self.names)
+
+
+@dataclass
+class ImportDefPatternSelector(ImportDefSelector):
+    """
+    Represents a wildcard-based source selector in an import ``def`` mapping.
+
+    The selector is intentionally preserved as raw DSL text rather than being
+    decomposed into finer-grained AST nodes. This keeps the DSL layer permissive
+    enough for patterns whose literal segments would not fit the plain ``ID``
+    token constraints, such as suffixes that start with digits.
+
+    :param pattern: Raw selector pattern text
+    :type pattern: str
+
+    :rtype: ImportDefPatternSelector
+    """
+
+    pattern: str
+
+    def __str__(self) -> str:
+        """
+        Convert the selector to its DSL representation.
+
+        :return: String representation of the selector
+        :rtype: str
+        """
+        return self.pattern
+
+
+@dataclass
+class ImportDefFallbackSelector(ImportDefSelector):
+    """
+    Represents the fallback ``*`` selector in an import ``def`` mapping.
+
+    :rtype: ImportDefFallbackSelector
+    """
+
+    def __str__(self) -> str:
+        """
+        Convert the selector to its DSL representation.
+
+        :return: Wildcard text
+        :rtype: str
+        """
+        return "*"
+
+
+@dataclass
+class ImportDefTargetTemplate(ASTNode):
+    """
+    Represents the right-hand target template of an import ``def`` mapping.
+
+    The template is stored as raw DSL text at the AST layer. Placeholder and
+    wildcard semantics are validated and interpreted in later assembly phases.
+
+    :param template: Raw template text
+    :type template: str
+
+    :rtype: ImportDefTargetTemplate
+    """
+
+    template: str
+
+    def __str__(self) -> str:
+        """
+        Convert the template to its DSL representation.
+
+        :return: String representation of the target template
+        :rtype: str
+        """
+        return self.template
+
+
+@dataclass
+class ImportDefMapping(ImportMappingStatement):
+    """
+    Represents a variable mapping rule inside an import block.
+
+    :param selector: Source selector of the mapping rule
+    :type selector: ImportDefSelector
+    :param target_template: Target template of the mapping rule
+    :type target_template: ImportDefTargetTemplate
+
+    :rtype: ImportDefMapping
+    """
+
+    selector: ImportDefSelector
+    target_template: ImportDefTargetTemplate
+
+    def __str__(self) -> str:
+        """
+        Convert the mapping rule to its DSL representation.
+
+        :return: String representation of the mapping rule
+        :rtype: str
+        """
+        return f"def {self.selector} -> {self.target_template};"
+
+
+@dataclass
+class ImportEventMapping(ImportMappingStatement):
+    """
+    Represents an event mapping rule inside an import block.
+
+    :param source_event: Source event path inside the imported module
+    :type source_event: ChainID
+    :param target_event: Target event path in the host state tree
+    :type target_event: ChainID
+    :param extra_name: Optional display-name override for the target event
+    :type extra_name: Optional[str]
+
+    :rtype: ImportEventMapping
+    """
+
+    source_event: ChainID
+    target_event: ChainID
+    extra_name: Optional[str] = None
+
+    def __str__(self) -> str:
+        """
+        Convert the event mapping to its DSL representation.
+
+        :return: String representation of the event mapping
+        :rtype: str
+        """
+        with io.StringIO() as sf:
+            print(f"event {self.source_event} -> {self.target_event}", file=sf, end="")
+            if self.extra_name is not None:
+                print(f" named {self.extra_name!r}", file=sf, end="")
+            print(";", file=sf, end="")
+            return sf.getvalue()
+
+
+@dataclass
+class ImportStatement(ASTNode):
+    """
+    Represents a single import statement inside a composite state.
+
+    :param source_path: Import source path string from the DSL
+    :type source_path: str
+    :param alias: Local alias name of the imported root state
+    :type alias: str
+    :param extra_name: Optional display-name override for the imported state
+    :type extra_name: Optional[str]
+    :param mappings: Mapping rules declared inside the import block
+    :type mappings: List[ImportMappingStatement]
+
+    :rtype: ImportStatement
+    """
+
+    source_path: str
+    alias: str
+    extra_name: Optional[str] = None
+    mappings: List[ImportMappingStatement] = None
+
+    def __post_init__(self) -> None:
+        """
+        Initialize default empty lists for optional parameters.
+        """
+        self.mappings = self.mappings or []
+
+    def __str__(self) -> str:
+        """
+        Convert the import statement to its DSL representation.
+
+        :return: String representation of the import statement
+        :rtype: str
+        """
+        with io.StringIO() as sf:
+            print(f"import {self.source_path!r} as {self.alias}", file=sf, end="")
+            if self.extra_name is not None:
+                print(f" named {self.extra_name!r}", file=sf, end="")
+
+            if self.mappings:
+                print(" {", file=sf)
+                for mapping in self.mappings:
+                    print(indent(str(mapping), prefix="    "), file=sf)
+                print("}", file=sf, end="")
+            else:
+                print(";", file=sf, end="")
+
+            return sf.getvalue()
+
+
+@dataclass
 class TransitionDefinition(ASTNode):
     """
     Represents a transition definition in the state machine DSL.
@@ -1129,6 +1399,8 @@ class StateDefinition(ASTNode):
     :type extra_name: Optional[str]
     :param events: List of events defined within this state
     :type events: List[EventDefinition]
+    :param imports: List of import statements declared within this state
+    :type imports: List[ImportStatement]
     :param substates: List of nested state definitions
     :type substates: List[StateDefinition]
     :param transitions: List of transitions from this state
@@ -1163,6 +1435,7 @@ class StateDefinition(ASTNode):
     name: str
     extra_name: Optional[str] = None
     events: List["EventDefinition"] = None
+    imports: List["ImportStatement"] = None
     substates: List["StateDefinition"] = None
     transitions: List[TransitionDefinition] = None
     enters: List["EnterStatement"] = None
@@ -1177,6 +1450,7 @@ class StateDefinition(ASTNode):
         Initialize default empty lists for optional parameters.
         """
         self.events = self.events or []
+        self.imports = self.imports or []
         self.substates = self.substates or []
         self.transitions = self.transitions or []
         self.force_transitions = self.force_transitions or []
@@ -1204,6 +1478,7 @@ class StateDefinition(ASTNode):
                 and not self.transitions
                 and not self.force_transitions
                 and not self.events
+                and not self.imports
                 and not self.enters
                 and not self.durings
                 and not self.exits
@@ -1220,6 +1495,8 @@ class StateDefinition(ASTNode):
                     print(indent(str(exit_item), prefix="    "), file=sf)
                 for during_aspect_item in self.during_aspects:
                     print(indent(str(during_aspect_item), prefix="    "), file=sf)
+                for import_item in self.imports:
+                    print(indent(str(import_item), prefix="    "), file=sf)
                 for substate in self.substates:
                     print(indent(str(substate), prefix="    "), file=sf)
                 for event in self.events:

@@ -49,6 +49,7 @@ from typing import Optional, Union, List, Dict, Tuple, Iterator, Set
 
 from .base import AstExportable, PlantUMLExportable
 from .expr import Expr, parse_expr_node_to_expr
+from .imports import assemble_state_machine_imports
 from .plantuml import PlantUMLOptions, PlantUMLOptionsInput, format_state_name
 from ..dsl import node as dsl_nodes, INIT_STATE, EXIT_STATE
 
@@ -1438,7 +1439,7 @@ class State(AstExportable, PlantUMLExportable):
             if not self.is_leaf_state:
                 stereotype_parts.append("composite")
         stereotype_str = (
-            f' <<{",".join(stereotype_parts)}>>' if stereotype_parts else ""
+            f" <<{','.join(stereotype_parts)}>>" if stereotype_parts else ""
         )
 
         with io.StringIO() as sf:
@@ -1748,7 +1749,7 @@ class State(AstExportable, PlantUMLExportable):
         for i, state_name in enumerate(target_state_path[1:], 1):  # Skip root name
             if state_name not in current_state.substates:
                 raise LookupError(
-                    f"State {'.'.join(target_state_path[:i+1])!r} not found in hierarchy "
+                    f"State {'.'.join(target_state_path[: i + 1])!r} not found in hierarchy "
                     f"while resolving event reference {event_ref!r}"
                 )
             current_state = current_state.substates[state_name]
@@ -1929,7 +1930,7 @@ class StateMachine(AstExportable, PlantUMLExportable):
                     )
                     # Show event path
                     print(
-                        f'  <size:10><color:gray>/{".".join(event_path.split(".")[1:])}</color></size>',
+                        f"  <size:10><color:gray>/{'.'.join(event_path.split('.')[1:])}</color></size>",
                         file=sf,
                     )
                 print("endlegend", file=sf)
@@ -2028,30 +2029,45 @@ class StateMachine(AstExportable, PlantUMLExportable):
 
 def parse_dsl_node_to_state_machine(
     dnode: dsl_nodes.StateMachineDSLProgram,
+    path: Optional[str] = None,
 ) -> StateMachine:
     """
     Parse a state machine DSL program AST node into a StateMachine object.
 
     This function validates the state machine structure and builds a complete
-    StateMachine object with all states, transitions, events, and variable definitions.
+    StateMachine object with all states, transitions, events, and variable
+    definitions.
 
     :param dnode: The state machine DSL program AST node to parse
     :type dnode: dsl_nodes.StateMachineDSLProgram
+    :param path: Optional path contract reserved for import-aware assembly.
+        When provided, the value defines the current DSL location for import
+        resolution. When omitted, the current working directory is used.
+        Existing directories are treated as import base directories directly,
+        while file paths use their parent directory as the import base.
+    :type path: Optional[str]
 
     :return: The parsed state machine
     :rtype: StateMachine
 
     :raises SyntaxError: If there are syntax errors in the state machine definition,
-                         such as duplicate variable definitions, unknown states in
-                         transitions, missing entry transitions, or invalid references.
+        such as duplicate variable definitions, unknown states in transitions,
+        missing entry transitions, invalid references, or import statements
+        that have not yet been assembled.
 
     Example::
 
         >>> # Assuming you have a parsed DSL node
-        >>> state_machine = parse_dsl_node_to_state_machine(dsl_program_node)
+        >>> state_machine = parse_dsl_node_to_state_machine(
+        ...     dsl_program_node,
+        ...     path="root.fcstm",
+        ... )
         >>> state_machine.root_state.name
         'root'
     """
+
+    dnode = assemble_state_machine_imports(dnode, path=path)
+
     d_defines = {}
     for def_item in dnode.definitions:
         if def_item.name not in d_defines:
@@ -2098,7 +2114,7 @@ def parse_dsl_node_to_state_machine(
 
             if unknown_vars:
                 raise SyntaxError(
-                    f'{unknown_var_message} {", ".join(unknown_vars)} in transition:\n{owner_node}'
+                    f"{unknown_var_message} {', '.join(unknown_vars)} in transition:\n{owner_node}"
                 )
 
             operation = Operation(var_name=op_item.name, expr=operation_val)
@@ -2135,7 +2151,7 @@ def parse_dsl_node_to_state_machine(
                         unknown_vars.append(var.name)
                 if unknown_vars:
                     raise SyntaxError(
-                        f'{unknown_var_message} {", ".join(unknown_vars)} in transition:\n{owner_node}'
+                        f"{unknown_var_message} {', '.join(unknown_vars)} in transition:\n{owner_node}"
                     )
 
             branch_available_vars = set(base_available_vars)
@@ -2164,7 +2180,7 @@ def parse_dsl_node_to_state_machine(
                 )
             else:
                 raise SyntaxError(
-                    f'Duplicate state name in namespace {".".join(current_path)!r}:\n{subnode}'
+                    f"Duplicate state name in namespace {'.'.join(current_path)!r}:\n{subnode}"
                 )
 
         named_functions = {}
@@ -2444,7 +2460,7 @@ def parse_dsl_node_to_state_machine(
         )
         if my_state.is_pseudo and not my_state.is_leaf_state:
             raise SyntaxError(
-                f'Pseudo state {".".join(current_path)} must be a leaf state:\n{node}'
+                f"Pseudo state {'.'.join(current_path)} must be a leaf state:\n{node}"
             )
         for func_item in [
             *my_state.on_enters,
@@ -2503,7 +2519,7 @@ def parse_dsl_node_to_state_machine(
                         start_state = start_state.substates[seg]
                     else:
                         raise SyntaxError(
-                            f'Cannot find state {".".join((*base_path, *my_event_id.path[:-1]))} for transition:\n{f_transnode}'
+                            f"Cannot find state {'.'.join((*base_path, *my_event_id.path[:-1]))} for transition:\n{f_transnode}"
                         )
 
                 suffix_name = my_event_id.path[-1]
@@ -2523,7 +2539,7 @@ def parse_dsl_node_to_state_machine(
                         unknown_vars.append(var.name)
                 if unknown_vars:
                     raise SyntaxError(
-                        f'Unknown guard variable {", ".join(unknown_vars)} in force transition:\n{f_transnode}'
+                        f"Unknown guard variable {', '.join(unknown_vars)} in force transition:\n{f_transnode}"
                     )
 
             force_transition_tuples_to_inherit.append(
@@ -2601,7 +2617,7 @@ def parse_dsl_node_to_state_machine(
                         start_state = start_state.substates[seg]
                     else:
                         raise SyntaxError(
-                            f'Cannot find state {".".join((*base_path, *transnode.event_id.path[:-1]))} for transition:\n{transnode}'
+                            f"Cannot find state {'.'.join((*base_path, *transnode.event_id.path[:-1]))} for transition:\n{transnode}"
                         )
 
                 suffix_name = transnode.event_id.path[-1]
@@ -2620,7 +2636,7 @@ def parse_dsl_node_to_state_machine(
                         unknown_vars.append(var.name)
                 if unknown_vars:
                     raise SyntaxError(
-                        f'Unknown guard variable {", ".join(unknown_vars)} in transition:\n{transnode}'
+                        f"Unknown guard variable {', '.join(unknown_vars)} in transition:\n{transnode}"
                     )
 
             post_operations = _parse_operation_block(
@@ -2654,9 +2670,9 @@ def parse_dsl_node_to_state_machine(
                 for i, segment in enumerate(func_item.ref_state_path[1:-1], start=1):
                     if segment not in state.substates:
                         raise SyntaxError(
-                            f'Cannot find state {".".join(func_item.ref_state_path[:i + 1])} '
-                            f'under state {".".join(func_item.ref_state_path[:i])}, '
-                            f'so cannot resolve reference {".".join(func_item.ref_state_path)!r}.'
+                            f"Cannot find state {'.'.join(func_item.ref_state_path[: i + 1])} "
+                            f"under state {'.'.join(func_item.ref_state_path[:i])}, "
+                            f"so cannot resolve reference {'.'.join(func_item.ref_state_path)!r}."
                         )
                     state = state.substates[segment]
 

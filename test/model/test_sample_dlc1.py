@@ -87,7 +87,9 @@ state TrafficLight {
     """,
         entry_name="state_machine_dsl",
     )
-    model = parse_dsl_node_to_state_machine(ast_node)
+    model = parse_dsl_node_to_state_machine(
+        ast_node, path="test/testfile/sample_codes/dlc1.fcstm"
+    )
     return model
 
 
@@ -591,6 +593,7 @@ class TestModelStateTrafficLight:
             name="TrafficLight",
             extra_name=None,
             events=[dsl_nodes.EventDefinition(name="E2", extra_name=None)],
+            imports=[],
             substates=[
                 dsl_nodes.StateDefinition(
                     name="InService",
@@ -599,11 +602,13 @@ class TestModelStateTrafficLight:
                         dsl_nodes.EventDefinition(name="Start", extra_name=None),
                         dsl_nodes.EventDefinition(name="Maintain", extra_name=None),
                     ],
+                    imports=[],
                     substates=[
                         dsl_nodes.StateDefinition(
                             name="Red",
                             extra_name=None,
                             events=[],
+                            imports=[],
                             substates=[],
                             transitions=[],
                             enters=[],
@@ -632,6 +637,7 @@ class TestModelStateTrafficLight:
                             name="Yellow",
                             extra_name=None,
                             events=[],
+                            imports=[],
                             substates=[],
                             transitions=[],
                             enters=[],
@@ -645,6 +651,7 @@ class TestModelStateTrafficLight:
                             name="Green",
                             extra_name=None,
                             events=[],
+                            imports=[],
                             substates=[],
                             transitions=[],
                             enters=[],
@@ -777,6 +784,7 @@ class TestModelStateTrafficLight:
                     name="Idle",
                     extra_name=None,
                     events=[dsl_nodes.EventDefinition(name="E2", extra_name=None)],
+                    imports=[],
                     substates=[],
                     transitions=[],
                     enters=[],
@@ -2153,11 +2161,13 @@ class TestModelStateTrafficLight:
                 dsl_nodes.EventDefinition(name="Start", extra_name=None),
                 dsl_nodes.EventDefinition(name="Maintain", extra_name=None),
             ],
+            imports=[],
             substates=[
                 dsl_nodes.StateDefinition(
                     name="Red",
                     extra_name=None,
                     events=[],
+                    imports=[],
                     substates=[],
                     transitions=[],
                     enters=[],
@@ -2186,6 +2196,7 @@ class TestModelStateTrafficLight:
                     name="Yellow",
                     extra_name=None,
                     events=[],
+                    imports=[],
                     substates=[],
                     transitions=[],
                     enters=[],
@@ -2199,6 +2210,7 @@ class TestModelStateTrafficLight:
                     name="Green",
                     extra_name=None,
                     events=[],
+                    imports=[],
                     substates=[],
                     transitions=[],
                     enters=[],
@@ -2879,6 +2891,7 @@ class TestModelStateTrafficLight:
             name="Red",
             extra_name=None,
             events=[],
+            imports=[],
             substates=[],
             transitions=[],
             enters=[],
@@ -3366,6 +3379,7 @@ class TestModelStateTrafficLight:
             name="Yellow",
             extra_name=None,
             events=[],
+            imports=[],
             substates=[],
             transitions=[],
             enters=[],
@@ -3747,6 +3761,7 @@ class TestModelStateTrafficLight:
             name="Green",
             extra_name=None,
             events=[],
+            imports=[],
             substates=[],
             transitions=[],
             enters=[],
@@ -4112,6 +4127,7 @@ class TestModelStateTrafficLight:
             name="Idle",
             extra_name=None,
             events=[dsl_nodes.EventDefinition(name="E2", extra_name=None)],
+            imports=[],
             substates=[],
             transitions=[],
             enters=[],

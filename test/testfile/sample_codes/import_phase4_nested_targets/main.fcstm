@@ -1,0 +1,9 @@
+state Plant {
+    state Bus;
+    import "./modules/worker.fcstm" as Worker named "Mapped Worker" {
+        event /Stop -> Bus.Stop named "Plant Stop";
+        event /Fault -> /GlobalFault named "Global Fault";
+        event /Reset -> Bus.Reset;
+    }
+    [*] -> Worker;
+}

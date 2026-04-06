@@ -1,0 +1,14 @@
+def int counter = 0;
+def int limit = 3;
+
+state MotorRoot {
+    state Idle;
+    state Running;
+    [*] -> Idle;
+    Idle -> Running : if [counter < limit] effect {
+        counter = counter + 1;
+    }
+    Running -> Idle : if [counter >= limit] effect {
+        counter = 0;
+    }
+}

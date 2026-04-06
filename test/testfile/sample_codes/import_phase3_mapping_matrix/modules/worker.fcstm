@@ -1,0 +1,28 @@
+def int counter = 1;
+def int status_flag = 2;
+def int sensor_temp = 3;
+def int a_main_b_low = 4;
+def int timeout = 5;
+def int a = 6;
+def int b = 7;
+def int c = 8;
+
+state WorkerRoot named "Matrix Worker" {
+    state Idle {
+        during {
+            counter = counter + status_flag;
+            status_flag = status_flag + a + b + c;
+            sensor_temp = sensor_temp + 1;
+        }
+    }
+    state Active {
+        during {
+            timeout = timeout + a_main_b_low;
+        }
+    }
+    [*] -> Idle;
+    Idle -> Active : if [sensor_temp > status_flag];
+    Active -> Idle : if [timeout > a_main_b_low] effect {
+        counter = counter + timeout;
+    }
+}

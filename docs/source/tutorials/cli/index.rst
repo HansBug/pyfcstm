@@ -259,6 +259,18 @@ A template directory must contain:
    # Generate Python code
    pyfcstm generate -i simple_machine.fcstm -t ./templates/python -o ./output
 
+**Example: Generating from a Multi-file Import Project**
+
+The public command line interface does not change when your DSL project starts
+using imports. You still pass one entry file, and pyfcstm assembles the imported
+modules automatically.
+
+.. code-block:: bash
+
+   # Entry file imports other FCSTM files or an import directory with main.fcstm
+   pyfcstm generate -i ./docs/source/tutorials/dsl/import_host_directory.fcstm \
+     -t ./templates/python -o ./output --clear
+
 **Template Context**
 
 Templates have access to the complete state machine model:
@@ -300,6 +312,13 @@ Visualize your state machine design:
    # 3. Or generate raw PlantUML when you need the source text
    pyfcstm plantuml -i my_machine.fcstm -o my_machine.puml
 
+The same workflow also applies to multi-file machines:
+
+.. code-block:: bash
+
+   pyfcstm plantuml -i ./docs/source/tutorials/dsl/import_host_mapped.fcstm \
+     -o import_host_mapped.puml
+
 Workflow 2: DSL to Code
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -317,7 +336,7 @@ Generate executable code for embedded systems:
    make build
 
 Workflow 3: Validation and Testing
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Validate DSL syntax before committing:
 
@@ -328,6 +347,13 @@ Validate DSL syntax before committing:
 
    # Generate test code
    pyfcstm generate -i machine.fcstm -t ./templates/test -o ./tests/generated
+
+For import-based projects, validate the entry file only:
+
+.. code-block:: bash
+
+   pyfcstm plantuml -i ./docs/source/tutorials/dsl/import_host_directory.fcstm \
+     > /dev/null && echo "Import project syntax OK"
 
 Workflow 4: CI/CD Integration
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

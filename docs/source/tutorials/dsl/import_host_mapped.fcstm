@@ -1,0 +1,16 @@
+def int left_sensor_input = 0;
+def int plant_speed = 0;
+
+state System {
+    event Start;
+    event Stop;
+
+    import "./import_worker.fcstm" as LeftWorker named "Left Worker" {
+        def sensor_* -> left_$1;
+        def speed -> plant_speed;
+        event /Start -> Start named "Shared Start";
+        event /Stop -> Stop named "Shared Stop";
+    }
+
+    [*] -> LeftWorker;
+}

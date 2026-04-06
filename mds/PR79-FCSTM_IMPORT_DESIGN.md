@@ -993,7 +993,7 @@ parse_dsl_node_to_state_machine(
 * [x] Phase 6: CLI / generate / simulate / PlantUML 接入
 * [x] Phase 7: Model 顶层一键加载入口
 * [x] Phase 8: VSCode 扩展支持
-* [ ] Phase 9: 教程与用户文档
+* [x] Phase 9: 教程与用户文档
 * [ ] Phase 10: 测试与回归样例补完
 * [ ] Phase 11: 收尾与合并前核对
 
@@ -1219,7 +1219,7 @@ Checklist
 
 ### 12.11 Phase 9: 教程与用户文档
 
-本 phase 专门面向“用户如何真正学会并正确使用 import 功能”。目标不是只补几段零碎说明，而是形成一套可从入门读到进阶的教程路径，让用户能理解 import 的设计边界、推荐写法、常见错误与与现有链路的配合方式。该 phase 只负责教程、用户文档、示例说明与叙述结构，不负责补测试或最终合并收尾。教程落点必须尽量复用并扩展现有 DSL / grammar 教程体系，而不是另起一个分散的新文档角落；具体来说，应优先在现有 [docs/source/tutorials/grammar/index.rst](/home/hansbug/oo-projects/pyfcstm-2/docs/source/tutorials/grammar/index.rst) 及其中文对应页 [docs/source/tutorials/grammar/index_zh.rst](/home/hansbug/oo-projects/pyfcstm-2/docs/source/tutorials/grammar/index_zh.rst) 中新增专门的 import 机制章节，并把 import 视作 DSL 教程的一部分来讲。
+本 phase 专门面向“用户如何真正学会并正确使用 import 功能”。目标不是只补几段零碎说明，而是形成一套可从入门读到进阶的教程路径，让用户能理解 import 的设计边界、推荐写法、常见错误与与现有链路的配合方式。该 phase 只负责教程、用户文档、示例说明与叙述结构，不负责补测试或最终合并收尾。教程落点必须尽量复用并扩展现有 DSL / grammar 教程体系，而不是另起一个分散的新文档角落；其中详细的 import 语义、示例与排查应放在现有 [docs/source/tutorials/dsl/index.rst](/home/hansbug/oo-projects/pyfcstm-2/docs/source/tutorials/dsl/index.rst) 及其中文对应页 [docs/source/tutorials/dsl/index_zh.rst](/home/hansbug/oo-projects/pyfcstm-2/docs/source/tutorials/dsl/index_zh.rst) 中展开，而 [docs/source/tutorials/grammar/index.rst](/home/hansbug/oo-projects/pyfcstm-2/docs/source/tutorials/grammar/index.rst) 与 [docs/source/tutorials/grammar/index_zh.rst](/home/hansbug/oo-projects/pyfcstm-2/docs/source/tutorials/grammar/index_zh.rst) 只保留 import 相关语法高亮与编辑器支持的简述。
 
 建议交付结构
 
@@ -1228,7 +1228,7 @@ Checklist
 - 一篇“语义与规则说明”文档，把 alias、路径解析、变量映射、事件映射、`named` 覆盖、默认行为与冲突规则讲清楚
 - 一篇“常见错误与排查”文档，覆盖缺失文件、循环导入、alias 冲突、mapping 冲突、目标路径不合法、与 VSCode 诊断/CLI 报错的对应关系
 - 在现有教程或 CLI 文档中补充 `generate` / `plantuml` / `simulate` 面对多文件 import 工程时的用法示例
-- 其中 DSL 语义与 import 机制主教程必须直接落在现有 grammar tutorials 中扩展，而不是新开平行教程树；换言之，主入口应是对现有 `tutorials/grammar` 的增量扩写
+- 其中 DSL 语义与 import 机制主教程必须直接落在现有 DSL tutorials 中扩展，而 grammar tutorials 只保留高亮与编辑器支持的简述；换言之，主入口应是对现有 `tutorials/dsl` 的增量扩写
 
 教程展开建议
 
@@ -1238,7 +1238,7 @@ Checklist
 - 第三段示例引入 `def mapping`，明确默认变量按 alias 隔离，只有显式映射才共享
 - 第四段示例引入 `event mapping`，明确只有模块绝对事件 `/...` 才能被映射，且右侧目标既可相对也可绝对
 - 第五段示例引入多级 import / 多文件目录入口 `main.fcstm`，解释工程组织推荐写法
-- 以上这些内容应尽量组织成现有 grammar 教程中的一节或连续若干节，使用户在阅读 DSL 教程时自然过渡到 import 机制，而不是需要跳到另一套独立教程体系
+- 以上这些内容应尽量组织成现有 DSL 教程中的一节或连续若干节，使用户在阅读 DSL 教程时自然过渡到 import 机制，而不是需要跳到另一套独立教程体系；grammar 教程只负责补一句到几句的 import 高亮 / 编辑器支持说明并回链到 DSL 教程
 - 每段教程都应同时给出：
   - 输入 DSL 文件结构
   - 装配后的语义结果
@@ -1248,23 +1248,24 @@ Checklist
 
 TODO
 
-* [ ] 在现有 `docs/source/tutorials/grammar/index.rst` 与 `index_zh.rst` 中新增专门的 import 机制章节，而不是另起平行教程体系
-* [ ] 在 grammar tutorials 中补入 import 功能总览，说明能力边界、默认行为与设计目标
-* [ ] 在 grammar tutorials 中补入 import 快速开始教程，覆盖最小双文件示例到多文件目录入口 `main.fcstm`
-* [ ] 在 grammar tutorials 中补入 import 语义说明，系统讲清 alias、相对路径、`named`、`def mapping`、`event mapping`
-* [ ] 增加 import 常见错误与排查文档，覆盖缺失文件、循环导入、alias 冲突、mapping 冲突等
-* [ ] 在 `generate` / `plantuml` / `simulate` 相关用户文档中补充多文件 import 工程示例
-* [ ] 确保教程中的代码与 sample DSL / 当前实现一致，不出现文档语义先行漂移
-* [ ] 明确文档内推荐写法与不推荐写法，避免用户把测试边界 case 当成日常实践模板
+* [x] 在现有 `docs/source/tutorials/dsl/index.rst` 与 `index_zh.rst` 中新增专门的 import 机制章节，而不是另起平行教程体系
+* [x] 在 DSL tutorials 中补入 import 功能总览，说明能力边界、默认行为与设计目标
+* [x] 在 DSL tutorials 中补入 import 快速开始教程，覆盖最小双文件示例到多文件目录入口 `main.fcstm`
+* [x] 在 DSL tutorials 中补入 import 语义说明，系统讲清 alias、相对路径、`named`、`def mapping`、`event mapping`
+* [x] 增加 import 常见错误与排查文档，覆盖缺失文件、循环导入、alias 冲突、mapping 冲突等
+* [x] 在 `generate` / `plantuml` / `simulate` 相关用户文档中补充多文件 import 工程示例
+* [x] 确保教程中的代码与 sample DSL / 当前实现一致，不出现文档语义先行漂移
+* [x] 明确文档内推荐写法与不推荐写法，避免用户把测试边界 case 当成日常实践模板
+* [x] 在 `docs/source/tutorials/grammar/index.rst` 与 `index_zh.rst` 中仅保留 import 相关语法高亮 / 编辑器支持简述，并显式回链到 DSL 教程
 
 Checklist
 
-* [ ] 用户可以仅通过教程理解 import 的核心语义与推荐写法
-* [ ] 教程内容覆盖从最小示例到变量映射、事件映射、多级 import 的渐进路径
-* [ ] import 教程主入口已经并入现有 grammar tutorials，而不是散落在独立文档角落
-* [ ] 教程中的所有 DSL 片段与当前实现、sample DSL、CLI 行为保持一致
-* [ ] 文档中已显式说明默认行为、覆盖行为与常见误区，而非仅罗列语法
-* [ ] 用户在阅读教程后，能独立完成一个多文件 import 工程并知道如何排查常见错误
+* [x] 用户可以仅通过教程理解 import 的核心语义与推荐写法
+* [x] 教程内容覆盖从最小示例到变量映射、事件映射、多级 import 的渐进路径
+* [x] import 教程主入口已经并入现有 DSL tutorials，而 grammar tutorials 只保留高亮 / 编辑器支持简述
+* [x] 教程中的所有 DSL 片段与当前实现、sample DSL、CLI 行为保持一致
+* [x] 文档中已显式说明默认行为、覆盖行为与常见误区，而非仅罗列语法
+* [x] 用户在阅读教程后，能独立完成一个多文件 import 工程并知道如何排查常见错误
 
 ### 12.12 Phase 10: 测试与回归样例补完
 

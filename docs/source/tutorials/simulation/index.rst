@@ -155,6 +155,13 @@ Launch the simulator with a DSL file:
 
    pyfcstm simulate -i example.fcstm
 
+The same command shape works for multi-file import projects. The input is still
+just the entry file:
+
+.. code-block:: bash
+
+   pyfcstm simulate -i ./docs/source/tutorials/dsl/import_host_directory.fcstm
+
 This starts an interactive session with command history, auto-completion, and syntax highlighting.
 
 Available Commands

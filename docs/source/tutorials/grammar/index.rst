@@ -494,17 +494,32 @@ Special Symbols
 
 **Comments:** ``//`` (line comment), ``/* */`` (block comment), ``#`` (Python-style comment)
 
-Import Mapping Syntax
+Import-aware Highlighting
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The Pygments lexer also highlights the PR79 import forms used during model
-assembly:
+The lexer and editor grammar also recognize the import-related syntax used by
+multi-file FCSTM projects. This tutorial only covers highlighting and editor
+support. For import assembly semantics, mapping rules, and end-to-end examples,
+see :doc:`/tutorials/dsl/index`.
+
+The following forms are highlighted correctly by the Pygments lexer, the
+TextMate grammar, and the VS Code extension:
 
 * ``import "./worker.fcstm" as Worker;``
 * ``import "./worker.fcstm" as Worker named "Worker Module" { ... }``
 * ``def sensor_* -> io_$1;``
 * ``def * -> Worker_${1};``
 * ``event /Start -> Start named "Mapped Start";``
+
+In practice that means the editor tooling can distinguish:
+
+- import keywords such as ``import`` and ``as``
+- import-scoped ``named`` clauses
+- wildcard-based ``def`` mapping patterns and capture substitutions
+- module absolute event paths used by ``event`` mappings
+
+Use the grammar tutorial when you need lexer or editor support details. Use the
+DSL tutorial when you need the actual import rules.
 
 Complete Example
 ---------------------------------------
@@ -667,7 +682,7 @@ VS Code Extension Not Working
 5. Check the Output panel (View → Output) and select "FCSTM Language Support" for diagnostic messages
 
 VS Code Syntax Diagnostics Not Appearing
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 1. Ensure the file is saved (diagnostics update on save)
 2. Check the Problems panel (View → Problems or ``Ctrl+Shift+M``)
@@ -675,7 +690,7 @@ VS Code Syntax Diagnostics Not Appearing
 4. Try opening a known invalid FCSTM file to test error detection
 
 VS Code Code Completion Not Working
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 1. Ensure IntelliSense is enabled in VS Code settings
 2. Try triggering completion manually (``Ctrl+Space``)

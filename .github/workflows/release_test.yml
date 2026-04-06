@@ -129,7 +129,16 @@ jobs:
         if: ${{ env.OS_NAME == 'MacOS' }}
         shell: bash
         run: |
-          brew install tree cloc wget curl make zip cairo pkg-config
+          brew install tree cloc wget curl make zip
+      - name: Set up Cairo runtime on MacOS
+        if: ${{ env.OS_NAME == 'MacOS' }}
+        shell: bash
+        run: |
+          brew install cairo pkg-config
+      - name: Expose Cairo runtime on MacOS
+        if: ${{ env.OS_NAME == 'MacOS' }}
+        shell: bash
+        run: |
           BREW_PREFIX="$(brew --prefix)"
           echo "PKG_CONFIG_PATH=${BREW_PREFIX}/lib/pkgconfig${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}" >> $GITHUB_ENV
           echo "DYLD_FALLBACK_LIBRARY_PATH=${BREW_PREFIX}/lib${DYLD_FALLBACK_LIBRARY_PATH:+:${DYLD_FALLBACK_LIBRARY_PATH}}" >> $GITHUB_ENV
@@ -143,8 +152,8 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install -r requirements-build.txt
-      - name: Verify Cairo runtime on Windows
-        if: ${{ env.OS_NAME == 'Windows' }}
+      - name: Verify Cairo runtime on Windows and MacOS
+        if: ${{ env.OS_NAME == 'Windows' || env.OS_NAME == 'MacOS' }}
         shell: bash
         run: |
           python - <<'PY'
@@ -156,7 +165,7 @@ jobs:
                   b'</svg>'
               )
           )
-          print('CairoSVG runtime is available on Windows.')
+          print('CairoSVG runtime is available on', "${{ env.OS_NAME }}")
           PY
       - name: Test the basic environment
         shell: bash

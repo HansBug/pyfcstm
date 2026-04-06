@@ -1139,16 +1139,17 @@ Checklist
 
 ### 12.8 Phase 6: CLI / generate / simulate / PlantUML 接入
 
-本 phase 做到 import 装配能力进入现有主链路，用户通过现有 CLI 命令即可处理多文件模型，而不需要额外工具或新入口。
+本 phase 做到 import 装配能力进入现有主链路，用户通过现有 CLI 命令即可处理多文件模型，而不需要额外工具或新入口。该 phase 的核心约束是对外接口保持完全不变：不新增新的 CLI 子命令、参数形态、公开 Python API 入口或调用契约，只在现有 `generate` / `plantuml` / `simulate` / 相关模型加载链路内部补齐 import-aware 适配，使其在面对新语法与多文件模型时表现为“原接口支持了更多合法输入”，而不是“用户需要学新的接口”。
 
 TODO
 
-* [ ] 将 import-aware 的 parse / build 流程接入 `generate`
-* [ ] 将 import-aware 的 parse / build 流程接入 `plantuml`
-* [ ] 将 import-aware 的 parse / build 流程接入 `simulate`
-* [ ] 确保 CLI 入口能把输入文件路径正确传入 `path` 参数
+* [ ] 在不改变现有 CLI / public API 形态的前提下，将 import-aware 的 parse / build 流程接入 `generate`
+* [ ] 在不改变现有 CLI / public API 形态的前提下，将 import-aware 的 parse / build 流程接入 `plantuml`
+* [ ] 在不改变现有 CLI / public API 形态的前提下，将 import-aware 的 parse / build 流程接入 `simulate`
+* [ ] 确保现有 CLI / public API 入口能继续沿用原有参数与调用方式，并仅在内部把输入文件路径正确传入 `path` 参数
 * [ ] 为缺失文件、循环导入、mapping 冲突等错误提供面向用户的可读输出
 * [ ] 验证模板渲染侧看到的是装配完成后的最终状态机，而不是残留 import 语义
+* [ ] 明确核对并记录本 phase 不允许发生的外部变化：不新增 CLI 子命令、不新增 import 专用入口、不修改现有命令参数含义、不要求调用方额外补传新参数
 
 Checklist
 
@@ -1156,7 +1157,7 @@ Checklist
 * [ ] `pyfcstm plantuml` 输出的结构与装配后的状态树一致
 * [ ] `pyfcstm simulate` 可以在多文件装配后正常运行
 * [ ] 现有单文件使用路径在 CLI 层保持兼容
-* [ ] Phase 6 单元测试使用独立的 `test_import_phase6.py`，且典型正向 case 至少包含 `text_aligner` 驱动的 `to_ast_node()` 全量导出 DSL 比对
+* [ ] 现有 CLI 子命令、参数名、参数语义、返回行为与公开 Python API 入口保持不变；兼容性提升仅体现为同一入口现可接受 import/multi-file 输入
 * [ ] 已按影响范围完成回归测试；至少使用 `make unittest RANGE_DIR=./<一级模块>` 级别命令，若本 phase 影响跨一级模块或顶层链路，则已提升到更高层级
 
 ### 12.9 Phase 7: VSCode 扩展支持
@@ -1178,7 +1179,6 @@ Checklist
 * [ ] 缺失文件与循环导入能在编辑器内得到可用提示
 * [ ] 至少支持从 import 源路径跳转到被导入文件
 * [ ] 工作区索引不会把扩展复杂度直接推向完整 LSP
-* [ ] Phase 7 单元测试使用独立的 `test_import_phase7.py`，且典型正向 case 至少包含 `text_aligner` 驱动的 `to_ast_node()` 全量导出 DSL 比对
 * [ ] 已按影响范围完成回归测试；至少使用 `make unittest RANGE_DIR=./<一级模块>` 级别命令，若本 phase 影响跨一级模块或顶层链路，则已提升到更高层级
 
 ### 12.10 Phase 8: 测试、样例、文档与收尾
@@ -1201,7 +1201,6 @@ Checklist
 * [ ] 样例 DSL 能直观展示 import、变量映射、事件映射的推荐写法
 * [ ] 文档、PR body、实现状态三者一致
 * [ ] 不使用 import 的现有功能回归测试全部通过
-* [ ] Phase 8 单元测试使用独立的 `test_import_phase8.py`，且典型正向 case 至少包含 `text_aligner` 驱动的 `to_ast_node()` 全量导出 DSL 比对
 * [ ] 已按影响范围完成回归测试；至少使用 `make unittest RANGE_DIR=./<一级模块>` 级别命令，若本 phase 影响跨一级模块或顶层链路，则已提升到更高层级
 
 ---

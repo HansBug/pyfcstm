@@ -7,6 +7,7 @@ from hbutils.system import TemporaryDirectory
 from hbutils.testing import simulate_entry, isolated_directory
 
 from pyfcstm.entry import pyfcstmcli
+from pyfcstm.entry.plantuml import build_plantuml_output
 
 
 @pytest.fixture()
@@ -629,3 +630,138 @@ class TestEntryPlantuml:
             assert result.exitcode == 0
             assert f"legend {position}" in result.stdout
             assert "@startuml" in result.stdout
+
+    def test_plantuml_with_import_supports_multi_file_model(self, text_aligner):
+        expected = textwrap.dedent(
+            """
+            @startuml
+            hide empty description
+
+            skinparam state {
+              BackgroundColor<<pseudo>> LightGray
+              BackgroundColor<<composite>> LightBlue
+              BorderColor<<pseudo>> Gray
+              FontStyle<<pseudo>> italic
+            }
+
+            state "Root" as root <<composite>> {
+                state "Worker" as root__worker <<composite>> {
+                    state "Idle" as root__worker__idle
+                    state "Running" as root__worker__running
+                    [*] --> root__worker__idle
+                    root__worker__idle --> root__worker__running : Idle.Start
+                }
+                [*] --> root__worker
+            }
+            [*] --> root
+            root --> [*]
+            @enduml
+            """
+        ).strip()
+
+        with isolated_directory():
+            root_file = os.path.abspath("root.fcstm")
+            with open(root_file, "w", encoding="utf-8") as f:
+                print(
+                    textwrap.dedent(
+                        """
+                        state Root {
+                            import "./worker.fcstm" as Worker;
+                            [*] -> Worker;
+                        }
+                        """
+                    ).strip(),
+                    file=f,
+                )
+            with open("worker.fcstm", "w", encoding="utf-8") as f:
+                print(
+                    textwrap.dedent(
+                        """
+                        state WorkerRoot {
+                            state Idle;
+                            state Running;
+                            [*] -> Idle;
+                            Idle -> Running :: Start;
+                        }
+                        """
+                    ).strip(),
+                    file=f,
+                )
+
+            result = simulate_entry(
+                pyfcstmcli,
+                [
+                    "pyfcstm",
+                    "plantuml",
+                    "-i",
+                    root_file,
+                    "-l",
+                    "full",
+                ],
+            )
+
+            assert result.exitcode == 0
+            text_aligner.assert_equal(expect=expected, actual=result.stdout)
+
+    def test_build_plantuml_output_with_import_supports_multi_file_model(
+        self, text_aligner
+    ):
+        expected = textwrap.dedent(
+            """
+            @startuml
+            hide empty description
+
+            skinparam state {
+              BackgroundColor<<pseudo>> LightGray
+              BackgroundColor<<composite>> LightBlue
+              BorderColor<<pseudo>> Gray
+              FontStyle<<pseudo>> italic
+            }
+
+            state "Root" as root <<composite>> {
+                state "Worker" as root__worker <<composite>> {
+                    state "Idle" as root__worker__idle
+                    state "Running" as root__worker__running
+                    [*] --> root__worker__idle
+                    root__worker__idle --> root__worker__running : Idle.Start
+                }
+                [*] --> root__worker
+            }
+            [*] --> root
+            root --> [*]
+            @enduml
+            """
+        ).strip()
+
+        with isolated_directory():
+            root_file = os.path.abspath("root.fcstm")
+            with open(root_file, "w", encoding="utf-8") as f:
+                print(
+                    textwrap.dedent(
+                        """
+                        state Root {
+                            import "./worker.fcstm" as Worker;
+                            [*] -> Worker;
+                        }
+                        """
+                    ).strip(),
+                    file=f,
+                )
+            with open("worker.fcstm", "w", encoding="utf-8") as f:
+                print(
+                    textwrap.dedent(
+                        """
+                        state WorkerRoot {
+                            state Idle;
+                            state Running;
+                            [*] -> Idle;
+                            Idle -> Running :: Start;
+                        }
+                        """
+                    ).strip(),
+                    file=f,
+                )
+
+            plantuml_text = build_plantuml_output(root_file, detail_level="full")
+
+        text_aligner.assert_equal(expect=expected, actual=plantuml_text)

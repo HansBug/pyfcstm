@@ -147,7 +147,7 @@ def _add_generate_subcommand(cli: click.Group) -> click.Group:
 
         code = auto_decode(pathlib.Path(input_code_file).read_bytes())
         ast_node = parse_with_grammar_entry(code, entry_name="state_machine_dsl")
-        model = parse_dsl_node_to_state_machine(ast_node)
+        model = parse_dsl_node_to_state_machine(ast_node, path=input_code_file)
 
         if template_name:
             with TemporaryDirectory() as td:

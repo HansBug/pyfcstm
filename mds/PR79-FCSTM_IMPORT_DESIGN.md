@@ -1143,22 +1143,22 @@ Checklist
 
 TODO
 
-* [ ] 在不改变现有 CLI / public API 形态的前提下，将 import-aware 的 parse / build 流程接入 `generate`
-* [ ] 在不改变现有 CLI / public API 形态的前提下，将 import-aware 的 parse / build 流程接入 `plantuml`
-* [ ] 在不改变现有 CLI / public API 形态的前提下，将 import-aware 的 parse / build 流程接入 `simulate`
-* [ ] 确保现有 CLI / public API 入口能继续沿用原有参数与调用方式，并仅在内部把输入文件路径正确传入 `path` 参数
-* [ ] 为缺失文件、循环导入、mapping 冲突等错误提供面向用户的可读输出
-* [ ] 验证模板渲染侧看到的是装配完成后的最终状态机，而不是残留 import 语义
-* [ ] 明确核对并记录本 phase 不允许发生的外部变化：不新增 CLI 子命令、不新增 import 专用入口、不修改现有命令参数含义、不要求调用方额外补传新参数
+* [x] 在不改变现有 CLI / public API 形态的前提下，将 import-aware 的 parse / build 流程接入 `generate`
+* [x] 在不改变现有 CLI / public API 形态的前提下，将 import-aware 的 parse / build 流程接入 `plantuml`
+* [x] 在不改变现有 CLI / public API 形态的前提下，将 import-aware 的 parse / build 流程接入 `simulate`
+* [x] 确保现有 CLI / public API 入口能继续沿用原有参数与调用方式，并仅在内部把输入文件路径正确传入 `path` 参数
+* [x] 为缺失文件、循环导入、mapping 冲突等错误提供面向用户的可读输出
+* [x] 验证模板渲染侧看到的是装配完成后的最终状态机，而不是残留 import 语义
+* [x] 明确核对并记录本 phase 不允许发生的外部变化：不新增 CLI 子命令、不新增 import 专用入口、不修改现有命令参数含义、不要求调用方额外补传新参数
 
 Checklist
 
-* [ ] `pyfcstm generate` 可以处理多文件 import 模型
-* [ ] `pyfcstm plantuml` 输出的结构与装配后的状态树一致
-* [ ] `pyfcstm simulate` 可以在多文件装配后正常运行
-* [ ] 现有单文件使用路径在 CLI 层保持兼容
-* [ ] 现有 CLI 子命令、参数名、参数语义、返回行为与公开 Python API 入口保持不变；兼容性提升仅体现为同一入口现可接受 import/multi-file 输入
-* [ ] 已按影响范围完成回归测试；至少使用 `make unittest RANGE_DIR=./<一级模块>` 级别命令，若本 phase 影响跨一级模块或顶层链路，则已提升到更高层级
+* [x] `pyfcstm generate` 可以处理多文件 import 模型
+* [x] `pyfcstm plantuml` 输出的结构与装配后的状态树一致
+* [x] `pyfcstm simulate` 可以在多文件装配后正常运行
+* [x] 现有单文件使用路径在 CLI 层保持兼容
+* [x] 现有 CLI 子命令、参数名、参数语义、返回行为与公开 Python API 入口保持不变；兼容性提升仅体现为同一入口现可接受 import/multi-file 输入
+* [x] 已按影响范围完成回归测试；至少使用 `make unittest RANGE_DIR=./<一级模块>` 级别命令，若本 phase 影响跨一级模块或顶层链路，则已提升到更高层级
 
 ### 12.9 Phase 7: VSCode 扩展支持
 

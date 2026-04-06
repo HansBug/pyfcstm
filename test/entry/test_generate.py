@@ -4,9 +4,11 @@ import textwrap
 from tempfile import TemporaryDirectory
 
 import pytest
-from hbutils.testing import simulate_entry
+from hbutils.testing import isolated_directory, simulate_entry
 
 from pyfcstm.entry.dispatch import pyfcstmcli
+from pyfcstm.dsl import parse_state_machine_dsl
+from pyfcstm.model import parse_dsl_node_to_state_machine
 from test.testings import get_testfile, dir_compare, walk_files
 
 
@@ -246,3 +248,110 @@ class TestEntryGenerate:
             assert "Exactly one of --template-dir/-t or --template must be provided." in (
                 result.stderr or result.stdout
             )
+
+    def test_generate_with_import_keeps_cli_contract_and_renders_builtin_template(self):
+        with isolated_directory():
+            root_file = os.path.abspath("root.fcstm")
+            with open(root_file, "w", encoding="utf-8") as f:
+                print(
+                    textwrap.dedent(
+                        """
+                        state Root {
+                            import "./worker.fcstm" as Worker;
+                            [*] -> Worker;
+                        }
+                        """
+                    ).strip(),
+                    file=f,
+                )
+            with open("worker.fcstm", "w", encoding="utf-8") as f:
+                print(
+                    textwrap.dedent(
+                        """
+                        state WorkerRoot {
+                            state Idle;
+                            [*] -> Idle;
+                        }
+                        """
+                    ).strip(),
+                    file=f,
+                )
+
+            result = simulate_entry(
+                pyfcstmcli,
+                [
+                    "pyfcstm",
+                    "generate",
+                    "-i",
+                    root_file,
+                    "--template",
+                    "python",
+                    "-o",
+                    "out",
+                ],
+            )
+
+            assert result.exitcode == 0
+            assert os.path.isfile("out/machine.py")
+            assert os.path.isfile("out/README.md")
+            assert os.path.isfile("out/README_zh.md")
+
+    def test_generate_import_phase6_to_ast_node_str(self, text_aligner):
+        with isolated_directory():
+            with open("root.fcstm", "w", encoding="utf-8") as f:
+                print(
+                    textwrap.dedent(
+                        """
+                        state Root {
+                            state Bus;
+                            import "./worker.fcstm" as Worker {
+                                event /Start -> /Bus.Start named "Shared Start";
+                                def counter -> host_counter;
+                            }
+                            [*] -> Worker;
+                        }
+                        """
+                    ).strip(),
+                    file=f,
+                )
+            with open("worker.fcstm", "w", encoding="utf-8") as f:
+                print(
+                    textwrap.dedent(
+                        """
+                        def int counter = 0;
+
+                        state WorkerRoot {
+                            state Idle;
+                            state Running;
+                            [*] -> Idle;
+                            Idle -> Running : /Start;
+                        }
+                        """
+                    ).strip(),
+                    file=f,
+                )
+
+            root_file = os.path.abspath("root.fcstm")
+            ast_node = parse_state_machine_dsl(open(root_file, "r", encoding="utf-8").read())
+            state_machine = parse_dsl_node_to_state_machine(ast_node, path=root_file)
+
+        text_aligner.assert_equal(
+            expect=textwrap.dedent(
+                """
+                def int host_counter = 0;
+                state Root {
+                    state Worker {
+                        state Idle;
+                        state Running;
+                        [*] -> Idle;
+                        Idle -> Running : /Bus.Start;
+                    }
+                    state Bus {
+                        event Start named 'Shared Start';
+                    }
+                    [*] -> Worker;
+                }
+                """
+            ).strip(),
+            actual=str(state_machine.to_ast_node()),
+        )

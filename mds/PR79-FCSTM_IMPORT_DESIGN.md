@@ -993,7 +993,9 @@ parse_dsl_node_to_state_machine(
 * [x] Phase 6: CLI / generate / simulate / PlantUML 接入
 * [x] Phase 7: Model 顶层一键加载入口
 * [x] Phase 8: VSCode 扩展支持
-* [ ] Phase 9: 测试、样例、文档与收尾
+* [ ] Phase 9: 教程与用户文档
+* [ ] Phase 10: 测试与回归样例补完
+* [ ] Phase 11: 收尾与合并前核对
 
 ### 12.3 Phase 1: DSL Grammar / AST / Parse API 落地
 
@@ -1215,9 +1217,58 @@ Checklist
 * [x] 已为 VSCode 扩展适度补足 verify 覆盖，至少覆盖 import 新语法识别、import 路径跳转或目标解析、以及新增 hover / completion / diagnostics 中受影响的关键路径
 * [x] 已按影响范围完成回归测试；至少使用 `make unittest RANGE_DIR=./<一级模块>` 级别命令，若本 phase 影响跨一级模块或顶层链路，则已提升到更高层级
 
-### 12.11 Phase 9: 测试、样例、文档与收尾
+### 12.11 Phase 9: 教程与用户文档
 
-本 phase 做到 import 功能具备可回归测试、样例工程、用户文档和最终验收口径，能够作为正式功能进入后续发布流程。
+本 phase 专门面向“用户如何真正学会并正确使用 import 功能”。目标不是只补几段零碎说明，而是形成一套可从入门读到进阶的教程路径，让用户能理解 import 的设计边界、推荐写法、常见错误与与现有链路的配合方式。该 phase 只负责教程、用户文档、示例说明与叙述结构，不负责补测试或最终合并收尾。教程落点必须尽量复用并扩展现有 DSL / grammar 教程体系，而不是另起一个分散的新文档角落；具体来说，应优先在现有 [docs/source/tutorials/grammar/index.rst](/home/hansbug/oo-projects/pyfcstm-2/docs/source/tutorials/grammar/index.rst) 及其中文对应页 [docs/source/tutorials/grammar/index_zh.rst](/home/hansbug/oo-projects/pyfcstm-2/docs/source/tutorials/grammar/index_zh.rst) 中新增专门的 import 机制章节，并把 import 视作 DSL 教程的一部分来讲。
+
+建议交付结构
+
+- 一篇面向已有 pyfcstm 用户的“import 功能总览”文档，解释 import 的核心定位：编译期装配、导入 root state、显式 alias、默认变量隔离、事件默认实例隔离
+- 一篇“快速开始”教程，从单文件状态机逐步演进到双文件 import，再到带 `named`、`def mapping`、`event mapping` 的完整例子
+- 一篇“语义与规则说明”文档，把 alias、路径解析、变量映射、事件映射、`named` 覆盖、默认行为与冲突规则讲清楚
+- 一篇“常见错误与排查”文档，覆盖缺失文件、循环导入、alias 冲突、mapping 冲突、目标路径不合法、与 VSCode 诊断/CLI 报错的对应关系
+- 在现有教程或 CLI 文档中补充 `generate` / `plantuml` / `simulate` 面对多文件 import 工程时的用法示例
+- 其中 DSL 语义与 import 机制主教程必须直接落在现有 grammar tutorials 中扩展，而不是新开平行教程树；换言之，主入口应是对现有 `tutorials/grammar` 的增量扩写
+
+教程展开建议
+
+- 教程必须从“为什么需要 import”开始，而不是直接堆语法片段
+- 第一段示例应尽量小，只展示 `import "./worker.fcstm" as Worker;` 的最小可运行例子
+- 第二段示例引入 `named`，说明显示名称只影响展示，不改变内部语义路径
+- 第三段示例引入 `def mapping`，明确默认变量按 alias 隔离，只有显式映射才共享
+- 第四段示例引入 `event mapping`，明确只有模块绝对事件 `/...` 才能被映射，且右侧目标既可相对也可绝对
+- 第五段示例引入多级 import / 多文件目录入口 `main.fcstm`，解释工程组织推荐写法
+- 以上这些内容应尽量组织成现有 grammar 教程中的一节或连续若干节，使用户在阅读 DSL 教程时自然过渡到 import 机制，而不是需要跳到另一套独立教程体系
+- 每段教程都应同时给出：
+  - 输入 DSL 文件结构
+  - 装配后的语义结果
+  - 必要时给出 `to_ast_node()` / 导出 DSL 或 PlantUML 结果片段
+  - 用户最容易误解的点
+- 教程中必须显式区分“DSL 层纯语法”“model 层装配语义”“CLI / 编辑器侧用户体验”，避免再把职责讲混
+
+TODO
+
+* [ ] 在现有 `docs/source/tutorials/grammar/index.rst` 与 `index_zh.rst` 中新增专门的 import 机制章节，而不是另起平行教程体系
+* [ ] 在 grammar tutorials 中补入 import 功能总览，说明能力边界、默认行为与设计目标
+* [ ] 在 grammar tutorials 中补入 import 快速开始教程，覆盖最小双文件示例到多文件目录入口 `main.fcstm`
+* [ ] 在 grammar tutorials 中补入 import 语义说明，系统讲清 alias、相对路径、`named`、`def mapping`、`event mapping`
+* [ ] 增加 import 常见错误与排查文档，覆盖缺失文件、循环导入、alias 冲突、mapping 冲突等
+* [ ] 在 `generate` / `plantuml` / `simulate` 相关用户文档中补充多文件 import 工程示例
+* [ ] 确保教程中的代码与 sample DSL / 当前实现一致，不出现文档语义先行漂移
+* [ ] 明确文档内推荐写法与不推荐写法，避免用户把测试边界 case 当成日常实践模板
+
+Checklist
+
+* [ ] 用户可以仅通过教程理解 import 的核心语义与推荐写法
+* [ ] 教程内容覆盖从最小示例到变量映射、事件映射、多级 import 的渐进路径
+* [ ] import 教程主入口已经并入现有 grammar tutorials，而不是散落在独立文档角落
+* [ ] 教程中的所有 DSL 片段与当前实现、sample DSL、CLI 行为保持一致
+* [ ] 文档中已显式说明默认行为、覆盖行为与常见误区，而非仅罗列语法
+* [ ] 用户在阅读教程后，能独立完成一个多文件 import 工程并知道如何排查常见错误
+
+### 12.12 Phase 10: 测试与回归样例补完
+
+本 phase 做到 import 功能具备更完整的自动化测试覆盖和多文件回归样例，覆盖 parser、装配、集成链路与 sample DSL 生成流程，但不再承担教程编写或最终合并收尾的职责。
 
 TODO
 
@@ -1226,16 +1277,29 @@ TODO
 * [ ] 增加变量映射与事件映射测试，覆盖共享、冲突与边界条件
 * [ ] 增加 CLI / PlantUML / simulate 集成测试
 * [ ] 增加多文件 sample DSL，作为回归样例与文档示例
-* [ ] 更新用户文档、教程与必要的变更说明
-* [ ] 在最终合并前统一核对本文档与 PR body 中全部 checkbox 状态
 
 Checklist
 
 * [ ] 关键 pass / fail 路径都有自动化测试覆盖
 * [ ] 样例 DSL 能直观展示 import、变量映射、事件映射的推荐写法
-* [ ] 文档、PR body、实现状态三者一致
 * [ ] 不使用 import 的现有功能回归测试全部通过
 * [ ] 已按影响范围完成回归测试；至少使用 `make unittest RANGE_DIR=./<一级模块>` 级别命令，若本 phase 影响跨一级模块或顶层链路，则已提升到更高层级
+
+### 12.13 Phase 11: 收尾与合并前核对
+
+本 phase 专门做收口，确保实现、样例、教程、PR 状态与最终验收口径一致，不再承担主要功能开发。
+
+TODO
+
+* [ ] 在最终合并前统一核对本文档与 PR body 中全部 checkbox 状态
+* [ ] 核对教程、sample DSL、测试、实现状态四者的一致性
+* [ ] 对 import 相关用户可见入口做一次最终 smoke check，确认发布口径稳定
+
+Checklist
+
+* [ ] 文档、PR body、实现状态三者一致
+* [ ] 最终合并前不存在已完成但未勾选、或已勾选但未落地的条目
+* [ ] 发布前的最终用户可见链路核对已完成
 
 ---
 

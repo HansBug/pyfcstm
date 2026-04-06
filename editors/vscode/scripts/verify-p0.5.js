@@ -12,6 +12,7 @@
  */
 
 const Module = require('module');
+const path = require('path');
 const originalRequire = Module.prototype.require;
 
 // Mock VSCode module
@@ -52,6 +53,17 @@ const vscode = {
             this.line = line;
             this.character = character;
         }
+    },
+    Range: class Range {
+        constructor(startLine, startCharacter, endLine, endCharacter) {
+            this.start = new vscode.Position(startLine, startCharacter);
+            this.end = new vscode.Position(endLine, endCharacter);
+        }
+    },
+    Uri: {
+        file(filePath) {
+            return { fsPath: filePath };
+        }
     }
 };
 
@@ -88,6 +100,12 @@ class MockDocument {
         this.text = text;
         this.lines = text.split('\n');
         this.lineCount = this.lines.length;
+        this.uri = {
+            fsPath: path.join(process.cwd(), '__mock__.fcstm'),
+            toString() {
+                return this.fsPath;
+            }
+        };
     }
 
     getText() {
@@ -219,6 +237,25 @@ const testCases = [
         [
             { label: 'if', kind: vscode.CompletionItemKind.Keyword },
             { label: 'effect', kind: vscode.CompletionItemKind.Keyword }
+        ]
+    ),
+    new TestCase(
+        'P0.5-05A',
+        'Complete import keywords',
+        'state Root {\n    import "./worker.fcstm" ',
+        { line: 1, character: 27 },
+        [
+            { label: 'as', kind: vscode.CompletionItemKind.Keyword }
+        ]
+    ),
+    new TestCase(
+        'P0.5-05B',
+        'Complete import mapping block keywords',
+        'state Root {\n    import "./worker.fcstm" as Worker {\n        \n    }\n}',
+        { line: 2, character: 8 },
+        [
+            { label: 'def', kind: vscode.CompletionItemKind.Keyword },
+            { label: 'event', kind: vscode.CompletionItemKind.Keyword }
         ]
     ),
 
@@ -554,6 +591,23 @@ state Root {
             { label: 'and', kind: vscode.CompletionItemKind.Keyword },
             { label: 'or', kind: vscode.CompletionItemKind.Keyword },
             { label: 'not', kind: vscode.CompletionItemKind.Keyword }
+        ]
+    ),
+
+    new TestCase(
+        'P0.5-31',
+        'Complete else keyword inside operation block',
+        `def int counter = 0;
+state Root {
+    during {
+        if [counter > 0] {
+            counter = 1;
+        } 
+    }
+}`,
+        { line: 5, character: 8 },
+        [
+            { label: 'else', kind: vscode.CompletionItemKind.Keyword }
         ]
     ),
 ];

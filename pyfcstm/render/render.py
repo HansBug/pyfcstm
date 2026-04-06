@@ -18,6 +18,9 @@ Configuration file (``config.yaml``) structure:
 * ``expr_styles`` - Mapping of expression rendering styles. Each style is a
   mapping with a ``base_lang`` key and optional template overrides.
   The ``default`` style is always created if absent.
+* ``stmt_styles`` - Mapping of statement rendering styles. Each style is a
+  mapping with a ``base_lang`` key and optional overrides such as
+  ``declare_temp`` and ``temp_type_aliases`` for static-language backends.
 * ``globals`` - Mapping of Jinja2 globals (see :func:`pyfcstm.render.func.process_item_to_object`)
 * ``filters`` - Mapping of Jinja2 filters (same structure as ``globals``)
 * ``tests`` - Mapping of Jinja2 tests (same structure as ``globals``)
@@ -42,6 +45,7 @@ Example::
 import copy
 import os.path
 import pathlib
+import re
 import shutil
 import warnings
 from functools import partial
@@ -51,7 +55,11 @@ import pathspec
 import yaml
 
 from .env import create_env
-from .expr import create_expr_render_template, fn_expr_render, _KNOWN_STYLES
+from .expr import create_expr_render_template, fn_expr_render, _KNOWN_STYLES, _normalize_lang_style
+from .statement import (
+    create_stmt_render_template, fn_stmt_render, fn_stmts_render,
+    _KNOWN_STMT_STYLES, _normalize_stmt_style,
+)
 from .func import process_item_to_object
 from ..dsl import node as dsl_nodes
 from ..model import StateMachine
@@ -118,8 +126,9 @@ class StateMachineCodeRenderer:
         """
         Load and process the configuration file.
 
-        This method reads the configuration file, sets up expression rendering
-        styles, and registers globals, filters, and tests in the Jinja2 environment.
+        This method reads the configuration file, sets up expression and
+        statement rendering styles, and registers globals, filters, and tests
+        in the Jinja2 environment.
 
         :raises FileNotFoundError: If the configuration file does not exist
         :raises yaml.YAMLError: If the configuration file contains invalid YAML
@@ -137,26 +146,89 @@ class StateMachineCodeRenderer:
                 ext_configs=expr_style,
             )
 
+        expr_style_stack = []
+
         def _fn_expr_render(node: Union[float, int, dict, dsl_nodes.Expr, Any],
-                            style: str = 'default') -> str:
+                            style: str = None) -> str:
             """
             Render an expression node using the specified style.
 
             :param node: The expression node to render
             :type node: Union[float, int, dict, dsl_nodes.Expr, Any]
-            :param style: The expression rendering style to use, defaults to ``'default'``
-            :type style: str, optional
+            :param style: The expression rendering style to use. When omitted
+                in a nested render call, the current expression style is
+                inherited; otherwise ``'default'`` is used.
+            :type style: Optional[str]
             :return: The rendered expression as a string
             :rtype: str
             """
-            return fn_expr_render(
-                node=node,
-                templates=d_templates[style],
-                env=self.env,
-            )
+            if style is None:
+                style = expr_style_stack[-1] if expr_style_stack else 'default'
+            style = _normalize_lang_style(style)
+            expr_style_stack.append(style)
+            try:
+                return fn_expr_render(
+                    node=node,
+                    templates=d_templates[style],
+                    env=self.env,
+                )
+            finally:
+                expr_style_stack.pop()
 
         self.env.globals['expr_render'] = _fn_expr_render
         self.env.filters['expr_render'] = _fn_expr_render
+
+        stmt_styles = config_info.pop('stmt_styles', None) or {}
+        stmt_styles['default'] = stmt_styles.get('default') or {'base_lang': 'dsl'}
+        d_stmt_templates = {
+            style_name: create_stmt_render_template(style_name)
+            for style_name in _KNOWN_STMT_STYLES.keys()
+        }
+        for style_name, stmt_style in stmt_styles.items():
+            stmt_style = copy.deepcopy(stmt_style)
+            lang_style = stmt_style.pop('base_lang')
+            d_stmt_templates[style_name] = create_stmt_render_template(
+                lang_style=lang_style,
+                ext_configs=stmt_style,
+            )
+
+        def _fn_stmt_render(node, style: str = 'default', state_vars=None, var_types=None,
+                            visible_names=None, visible_var_types=None,
+                            indent: str = '    ', level: int = 0) -> str:
+            style = _normalize_stmt_style(style)
+            return fn_stmt_render(
+                node=node,
+                templates=d_stmt_templates[style],
+                env=self.env,
+                state_vars=self.env.globals.get('_stmt_default_state_vars') if state_vars is None else state_vars,
+                var_types=self.env.globals.get('_stmt_default_var_types') if var_types is None else var_types,
+                visible_names=visible_names,
+                visible_var_types=visible_var_types,
+                indent=indent,
+                level=level,
+            )
+
+        def _fn_stmts_render(nodes, style: str = 'default', state_vars=None, var_types=None,
+                             visible_names=None, visible_var_types=None,
+                             indent: str = '    ', level: int = 0, sep: str = '\n') -> str:
+            style = _normalize_stmt_style(style)
+            return fn_stmts_render(
+                nodes=nodes,
+                templates=d_stmt_templates[style],
+                env=self.env,
+                state_vars=self.env.globals.get('_stmt_default_state_vars') if state_vars is None else state_vars,
+                var_types=self.env.globals.get('_stmt_default_var_types') if var_types is None else var_types,
+                visible_names=visible_names,
+                visible_var_types=visible_var_types,
+                indent=indent,
+                level=level,
+                sep=sep,
+            )
+
+        self.env.globals['stmt_render'] = _fn_stmt_render
+        self.env.filters['stmt_render'] = _fn_stmt_render
+        self.env.globals['stmts_render'] = _fn_stmts_render
+        self.env.filters['stmts_render'] = _fn_stmts_render
 
         globals_ = config_info.pop('globals', None) or {}
         for name, value in globals_.items():
@@ -214,12 +286,40 @@ class StateMachineCodeRenderer:
         :raises jinja2.exceptions.TemplateError: If there is an error in the template
         :raises IOError: If there is an error reading or writing files
         """
+        previous_state_vars = self.env.globals.get('_stmt_default_state_vars')
+        previous_var_types = self.env.globals.get('_stmt_default_var_types')
+        self.env.globals['_stmt_default_state_vars'] = tuple(model.defines.keys())
+        self.env.globals['_stmt_default_var_types'] = {
+            name: define.type for name, define in model.defines.items()
+        }
         tp = self.env.from_string(auto_decode(pathlib.Path(template_file).read_bytes()))
         if os.path.dirname(output_file):
             os.makedirs(os.path.dirname(self.config_file), exist_ok=True)
         os.makedirs(os.path.dirname(output_file), exist_ok=True)
-        with open(output_file, 'w') as f:
-            f.write(tp.render(model=model))
+        try:
+            rendered = tp.render(model=model)
+            if os.path.basename(template_file) == 'machine.py.j2':
+                rendered = re.sub(r'([\(\[\{]\n)\n+', r'\1', rendered)
+                rendered = re.sub(r'\n{3,}', '\n\n', rendered)
+                rendered = re.sub(r',\n\n([ \t]*["\]\}])', r',\n\1', rendered)
+                rendered = re.sub(r'\n\n(?=(?:class|def|@))', '\n\n\n', rendered)
+                rendered = re.sub(
+                    r'\n([ \t]*)\n(?=[ \t]*[\]\)\}](?:,)?\n)',
+                    r'\n\1',
+                    rendered,
+                )
+                rendered = re.sub(r'\n+\Z', '\n', rendered)
+            with open(output_file, 'w', encoding='utf-8', newline='\n') as f:
+                f.write(rendered)
+        finally:
+            if previous_state_vars is None:
+                self.env.globals.pop('_stmt_default_state_vars', None)
+            else:
+                self.env.globals['_stmt_default_state_vars'] = previous_state_vars
+            if previous_var_types is None:
+                self.env.globals.pop('_stmt_default_var_types', None)
+            else:
+                self.env.globals['_stmt_default_var_types'] = previous_var_types
 
     def copy_one_file(self, model: StateMachine, output_file: str, src_file: str) -> None:
         """

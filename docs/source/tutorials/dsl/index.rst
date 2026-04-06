@@ -1170,6 +1170,64 @@ But this is still invalid:
        z = a + b;
    }
 
+If Blocks Inside Operation Blocks
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Concrete operation blocks also support structured control flow:
+
+- ``if [condition] { ... }``
+- ``else if [condition] { ... }``
+- ``else { ... }``
+
+The condition syntax is the same boolean condition syntax used by transition
+guards.
+
+.. code-block:: fcstm
+
+   during {
+       tmp = target - measured;
+       if [tmp > 0] {
+           drive = tmp * 10;
+       } else {
+           drive = 0;
+       }
+       output = drive;
+   }
+
+Branch scope follows the same temporary-variable rules as the rest of the
+block, with one extra boundary:
+
+1. A temporary created **before** the ``if`` remains visible inside every branch
+2. A temporary created **inside** one branch is visible only to later statements
+   in that same branch
+3. A branch-local temporary does **not** become visible after the ``if`` block,
+   even if multiple branches assign the same name
+
+So this is valid:
+
+.. code-block:: fcstm
+
+   effect {
+       tmp = x + 1;
+       if [x > 0] {
+           tmp = tmp + 10;
+       }
+       y = tmp;
+   }
+
+But this is invalid:
+
+.. code-block:: fcstm
+
+   effect {
+       if [x > 0] {
+           tmp = x + 1;
+       } else {
+           tmp = x + 2;
+       }
+       y = tmp;  // ERROR: tmp was introduced only inside branches
+   }
+
 .. important::
    Temporary variables are a convenience for local calculations, not hidden
    machine state. If a name is already declared globally with ``def``, assigning
@@ -2345,6 +2403,168 @@ The parser provides detailed error messages for common mistakes:
    Error: Missing entry transition for composite state 'Container' at line 45
    Error: Invalid aspect 'before' on leaf state 'Running' at line 67
 
+Import Assembly
+----------------------------------------------------
+
+Overview
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Import support lets FCSTM projects grow from a single file into a multi-file
+assembly structure. The model stays conservative:
+
+- import is compile-time assembly, not a runtime module system
+- each import brings in exactly one root state
+- every import must use an explicit ``as Alias``
+- variables are isolated by default unless a ``def`` mapping shares them
+- events remain instance-local by default unless an ``event`` mapping rewrites
+  a module absolute event
+
+Minimal Import
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Imported module:
+
+.. literalinclude:: import_worker.fcstm
+   :language: fcstm
+   :caption: import_worker.fcstm
+
+Host machine:
+
+.. literalinclude:: import_host_basic.fcstm
+   :language: fcstm
+   :caption: import_host_basic.fcstm
+
+What happens here:
+
+- the host root state ``System`` remains the root of the final machine
+- the imported root state is mounted under the alias ``Worker``
+- ``[*] -> Worker;`` makes the imported subtree the initial child of the host
+
+Final assembled model:
+
+.. image:: import_host_basic.fcstm.puml.svg
+   :alt: Final assembled model for the minimal import example
+   :align: center
+   :width: 90%
+
+.. important::
+   The alias is mandatory. Import intentionally keeps module boundaries explicit
+   so the assembled state paths stay predictable.
+
+Using ``named`` on imports
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+You can override the imported root state's display label without changing its
+semantic path:
+
+.. code-block:: fcstm
+
+   state System {
+       import "./import_worker.fcstm" as Worker named "Left Worker";
+       [*] -> Worker;
+   }
+
+``named`` changes visualization-facing display text only. It does not change
+the alias used for semantic path resolution.
+
+Variable Mapping with ``def``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Imported variables do not merge into host variables automatically. Use ``def``
+mapping when a host variable should receive values from the imported module:
+
+.. literalinclude:: import_host_mapped.fcstm
+   :language: fcstm
+   :caption: import_host_mapped.fcstm
+
+This demonstrates:
+
+- wildcard mapping: ``def sensor_* -> left_$1;``
+- exact mapping: ``def speed -> plant_speed;``
+- explicit sharing instead of implicit name-based merging
+
+Event Mapping with ``event``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Event mapping is stricter than variable mapping. The left-hand side must be a
+module absolute event path:
+
+* ``event /Start -> Start named "Shared Start";``
+* ``event /Stop -> Stop named "Shared Stop";``
+
+Rules to remember:
+
+- only imported absolute events such as ``/Start`` can appear on the left
+- the host-side target may be relative or absolute
+- ``named`` on the mapping overrides the final host event display name
+
+Directory-organized subsystem entry via ``main.fcstm``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+When an imported subsystem becomes too large for one file, a common pattern is
+to organize it around ``main.fcstm`` as the documented entry file.
+
+Host file:
+
+.. literalinclude:: import_host_directory.fcstm
+   :language: fcstm
+   :caption: import_host_directory.fcstm
+
+Subsystem entry:
+
+.. literalinclude:: import_line/main.fcstm
+   :language: fcstm
+   :caption: import_line/main.fcstm
+
+Nested imported file inside the subsystem:
+
+.. literalinclude:: import_line/subsystems/robot.fcstm
+   :language: fcstm
+   :caption: import_line/subsystems/robot.fcstm
+
+In the current syntax, the host imports the entry file explicitly:
+
+.. code-block:: fcstm
+
+   import "./import_line/main.fcstm" as Line;
+
+This keeps the host-facing import contract stable while still allowing the
+subsystem to grow internally.
+
+Final assembled model from the entry file:
+
+.. image:: import_host_directory.fcstm.puml.svg
+   :alt: Final assembled model for the directory entry import example
+   :align: center
+   :width: 100%
+
+Common Mistakes
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The most common import mistakes are:
+
+- forgetting ``as Alias`` and expecting alias inference
+- assuming ``named`` changes semantic state or event paths
+- expecting unmapped imported variables to merge automatically
+- mapping a non-absolute imported event on the left-hand side
+- forgetting to point the host import at the subsystem entry file such as
+  ``./import_line/main.fcstm``
+
+Public Entry Points Stay the Same
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Import support is intentionally integrated into the existing public entry
+points. Once your files are organized correctly, the commands do not change:
+
+.. code-block:: bash
+
+   pyfcstm plantuml -i import_host_mapped.fcstm -o import_host_mapped.puml
+   pyfcstm generate -i import_host_directory.fcstm -t ./templates/python -o ./out
+   pyfcstm simulate -i import_host_directory.fcstm
+
+That is the intended user experience: richer project structure, unchanged
+public command shape.
+
 Summary
 ----------------------------------------------------
 
@@ -2361,6 +2581,7 @@ This tutorial has covered the complete PyFCSTM DSL syntax, including:
 - **Hierarchical Execution**: Execution order in nested states with composite and leaf states
 - **Abstract Functions**: Declaring platform-specific implementations
 - **Reference Actions**: Reusing actions across states
+- **Import Assembly**: Multi-file composition through aliases, variable mappings, and event mappings
 - **Comments**: Line and block comments for documentation
 
 .. important::
@@ -2371,6 +2592,7 @@ This tutorial has covered the complete PyFCSTM DSL syntax, including:
    - **Composite State Lifecycle**: ``during before/after`` execute only on entry/exit, not during child-to-child transitions
    - **Event Namespacing**: Three scoping mechanisms (``::`` for local, ``:`` for chain, ``/`` for absolute)
    - **Event Resolution**: All event scoping mechanisms are equivalent to absolute paths with different starting points
+   - **Import Boundaries**: import keeps file assembly explicit through aliases and mapping rules
    - **Semantic Validation**: Comprehensive validation ensures correct state machine definitions
 
 .. seealso::

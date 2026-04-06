@@ -6,9 +6,12 @@ functionality of the interactive state machine simulator.
 """
 
 import logging
+import os
 import sys
+import textwrap
 
 import pytest
+from hbutils.testing import isolated_directory
 
 from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.entry.simulate.batch import BatchProcessor
@@ -1466,6 +1469,155 @@ class TestCLIEntry:
 
         assert result.exit_code == 0
         assert 'System' in result.output
+
+    def test_simulate_with_import_supports_multi_file_model(self):
+        """Test simulate command can load imported multi-file models."""
+        from click.testing import CliRunner
+        from pyfcstm.entry.cli import pyfcstmcli
+
+        with isolated_directory():
+            root_file = os.path.abspath("root.fcstm")
+            with open(root_file, "w", encoding="utf-8") as f:
+                print(
+                    textwrap.dedent(
+                        """
+                        state Root {
+                            import "./worker.fcstm" as Worker;
+                            [*] -> Worker;
+                        }
+                        """
+                    ).strip(),
+                    file=f,
+                )
+            with open("worker.fcstm", "w", encoding="utf-8") as f:
+                print(
+                    textwrap.dedent(
+                        """
+                        state WorkerRoot {
+                            state Idle;
+                            [*] -> Idle;
+                        }
+                        """
+                    ).strip(),
+                    file=f,
+                )
+
+            runner = CliRunner()
+            result = runner.invoke(
+                pyfcstmcli,
+                [
+                    "simulate",
+                    "-i",
+                    root_file,
+                    "-e",
+                    "cycle; current",
+                    "--no-color",
+                ],
+            )
+
+        assert result.exit_code == 0
+        assert "Root.Worker.Idle" in result.output
+
+    def test_simulate_with_directory_entry_import_supports_multi_file_model(self):
+        """Test simulate command can load directory-entry imported models."""
+        from click.testing import CliRunner
+        from pyfcstm.entry.cli import pyfcstmcli
+
+        with isolated_directory():
+            root_file = os.path.abspath("root.fcstm")
+            os.makedirs("modules/subsystems", exist_ok=True)
+
+            with open(root_file, "w", encoding="utf-8") as f:
+                print(
+                    textwrap.dedent(
+                        """
+                        state Root {
+                            import "./modules/main.fcstm" as Line;
+                            [*] -> Line;
+                        }
+                        """
+                    ).strip(),
+                    file=f,
+                )
+
+            with open("modules/main.fcstm", "w", encoding="utf-8") as f:
+                print(
+                    textwrap.dedent(
+                        """
+                        state LineRoot {
+                            import "./subsystems/worker.fcstm" as Worker;
+                            [*] -> Worker;
+                        }
+                        """
+                    ).strip(),
+                    file=f,
+                )
+
+            with open("modules/subsystems/worker.fcstm", "w", encoding="utf-8") as f:
+                print(
+                    textwrap.dedent(
+                        """
+                        state WorkerRoot {
+                            state Idle;
+                            [*] -> Idle;
+                        }
+                        """
+                    ).strip(),
+                    file=f,
+                )
+
+            runner = CliRunner()
+            result = runner.invoke(
+                pyfcstmcli,
+                [
+                    "simulate",
+                    "-i",
+                    root_file,
+                    "-e",
+                    "cycle; current",
+                    "--no-color",
+                ],
+            )
+
+        assert result.exit_code == 0
+        assert "Root.Line.Worker.Idle" in result.output
+
+    def test_simulate_import_error_is_reported_readably(self):
+        """Test simulate command reports import loading errors readably."""
+        from click.testing import CliRunner
+        from pyfcstm.entry.cli import pyfcstmcli
+
+        with isolated_directory():
+            root_file = os.path.abspath("root.fcstm")
+            with open(root_file, "w", encoding="utf-8") as f:
+                print(
+                    textwrap.dedent(
+                        """
+                        state Root {
+                            import "./missing.fcstm" as Worker;
+                            [*] -> Worker;
+                        }
+                        """
+                    ).strip(),
+                    file=f,
+                )
+
+            runner = CliRunner()
+            result = runner.invoke(
+                pyfcstmcli,
+                [
+                    "simulate",
+                    "-i",
+                    root_file,
+                    "-e",
+                    "current",
+                ],
+            )
+
+        assert result.exit_code == 0
+        assert "Failed to parse DSL file:" in result.output
+        assert "Import source file not found" in result.output
+        assert "missing.fcstm" in result.output
 
 
 @pytest.mark.unittest

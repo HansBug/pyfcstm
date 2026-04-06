@@ -112,7 +112,7 @@ def build_plantuml_output(
         raise ClickErrorException(f'Failed to read input DSL file {input_code_file}: {err}')
 
     ast_node = parse_with_grammar_entry(code, entry_name='state_machine_dsl')
-    model = parse_dsl_node_to_state_machine(ast_node)
+    model = parse_dsl_node_to_state_machine(ast_node, path=input_code_file)
 
     try:
         parsed_options = parse_key_value_pairs(config_options, type_hints=PLANTUML_OPTION_TYPES)

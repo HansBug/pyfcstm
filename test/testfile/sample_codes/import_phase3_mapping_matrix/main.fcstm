@@ -1,0 +1,10 @@
+state Lab {
+    import "./modules/worker.fcstm" as Worker named "Mapping Matrix" {
+        def counter -> exact_counter;
+        def {status_flag, a, b, c} -> set_*;
+        def sensor_* -> sensor_$1;
+        def a_*_b_* -> pair_${1}_${2}_${0};
+        def * -> fallback_$0;
+    }
+    [*] -> Worker;
+}

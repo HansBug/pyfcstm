@@ -53,9 +53,11 @@ The TextMate grammar (`editors/fcstm.tmLanguage.json`) provides syntax highlight
 
 ## Supported Syntax
 
-Both implementations support the complete FCSTM syntax:
+Both implementations support the complete FCSTM syntax. The Pygments lexer is
+already updated for import-related syntax added in PR79, while the TextMate /
+VSCode side is tracked separately in the later editor-support phase.
 
-**Keywords:** `state`, `pseudo`, `named`, `def`, `event`, `enter`, `during`, `exit`, `before`, `after`, `abstract`, `ref`, `effect`, `if`, `and`, `or`, `not`
+**Keywords:** `state`, `pseudo`, `import`, `as`, `named`, `def`, `event`, `enter`, `during`, `exit`, `before`, `after`, `abstract`, `ref`, `effect`, `if`, `else`, `and`, `or`, `not`
 
 **Types:** `int`, `float`
 
@@ -66,6 +68,8 @@ Both implementations support the complete FCSTM syntax:
 **Built-in Functions:** `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`, `sqrt`, `cbrt`, `exp`, `log`, `log10`, `log2`, `log1p`, `abs`, `ceil`, `floor`, `round`, `trunc`, `sign`
 
 **Special Symbols:** `[*]` (pseudo-state), `//` (line comment), `/* */` (block comment), `#` (Python-style comment)
+
+**Import Mapping Forms:** `import "./worker.fcstm" as Worker { ... }`, `def sensor_* -> io_$1;`, `def * -> Worker_${1};`, `event /Start -> Start named "Mapped Start";`
 
 ## Example
 

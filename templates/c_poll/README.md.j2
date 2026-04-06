@@ -1,0 +1,596 @@
+{% set state_items = model.walk_states() | list -%}
+{% set event_ns = namespace(items=[]) -%}
+{% for state in state_items -%}
+{% for event in state.events.values() -%}
+{% set event_ns.items = event_ns.items + [event.path_name] -%}
+{% endfor -%}
+{% endfor -%}
+{% set abstract_ns = namespace(rows=[]) -%}
+{% for state in state_items -%}
+{% for group in [
+    state.list_on_enters(with_ids=True),
+    state.list_on_durings(aspect=None, with_ids=True),
+    state.list_on_exits(with_ids=True),
+    state.list_on_durings(aspect='before', with_ids=True),
+    state.list_on_durings(aspect='after', with_ids=True),
+    state.list_on_during_aspects(aspect='before', with_ids=True),
+    state.list_on_during_aspects(aspect='after', with_ids=True),
+] -%}
+{% for _, item in group -%}
+{% set resolved = namespace(item=item) -%}
+{% for _ in range(16) -%}
+{% if resolved.item.ref is not none -%}
+{% set resolved.item = resolved.item.ref -%}
+{% endif -%}
+{% endfor -%}
+{% if resolved.item.is_abstract and resolved.item.func_name not in abstract_ns.rows | map(attribute='func_name') | list -%}
+{% set abstract_ns.rows = abstract_ns.rows + [{
+    'func_name': resolved.item.func_name,
+    'hook_name': hook_field_name(resolved.item),
+    'owner_path': action_owner_path(resolved.item),
+    'stage': resolved.item.stage,
+    'aspect': resolved.item.aspect,
+}] -%}
+{% endif -%}
+{% endfor -%}
+{% endfor -%}
+{% endfor -%}
+# {{ machine_class_name(model) }}
+
+This directory contains the generated C99 / C++98-compatible `c_poll` runtime
+for the DSL root state `{{ model.root_state.name }}`.
+
+The generated `machine.h` and `machine.c` are intended to stay close to a
+4-space `clang-format` style so formatter-driven integration should converge
+cleanly.
+
+## Generated Files
+
+- `machine.h`: public runtime header
+- `machine.c`: generated runtime implementation
+- `README.md`: English usage guide for this generated machine
+- `README_zh.md`: Chinese usage guide for this generated machine
+
+## Runtime Overview
+
+This generated runtime is a self-contained C99 / C++98+ state-machine engine
+specialized for the concrete DSL model. It follows the `c_poll` event-input
+contract:
+
+- `machine.h` is the integration surface for application code
+- `machine.c` contains generated execution logic and should usually be treated
+  as a black-box implementation detail
+- abstract lifecycle hooks are registered through
+  `{{ machine_class_name(model) }}Hooks`
+- event input is provided through `{{ machine_class_name(model) }}EventChecks`
+  instead of per-cycle event-id arrays
+- `{{ machine_class_name(model) }}_cycle(&machine)` executes one cycle using
+  the installed event-check table
+- if the model declares events, `cycle()` fails fast until a complete event-
+  check table has been mounted with
+  `{{ machine_class_name(model) }}_set_event_checks(...)`
+- hot start restores a full variable snapshot into a generated state id and
+  preserves any already-installed hook and event-check tables
+- failed speculative transitions still roll back to the previous committed
+  machine state
+- generated identifiers are normalized for both C and C++, including escaping
+  keyword collisions such as `class` or `template`
+
+The public header exposes some runtime-layout structs for ABI simplicity, but
+runtime-owned internals should not be modified directly unless the field is
+explicitly documented for external use.
+
+## Event-Check Contract
+
+`c_poll` does not accept per-cycle external event-id arrays. Instead, each DSL
+event is mapped to one generated `check_xxx` field inside
+`{{ machine_class_name(model) }}EventChecks`.
+
+When the runtime needs to decide whether a transition guarded by an event may
+fire in the current cycle, it calls the corresponding event-check function:
+
+- return non-zero: the event is considered active or triggered for the current
+  cycle, so the transition may continue to guard evaluation
+- return `0`: the event is considered inactive or not triggered for the current
+  cycle, so the transition must not fire through that event path
+
+The generated runtime caches the first observation of each event inside one
+cycle. That means a single event-check function should behave like a read-only
+probe for "is this event active now?" rather than a destructive consume/ack
+operation.
+
+## Build
+
+Compile the generated runtime directly with a C99 compiler:
+
+```bash
+cc -std=c99 -Wall -Wextra -pedantic -c machine.c -o machine.o
+```
+
+For optimized production builds:
+
+```bash
+cc -std=c99 -O3 -DNDEBUG -c machine.c -o machine.o
+```
+
+On POSIX-like platforms, a shared-library build can look like this:
+
+```bash
+cc -std=c99 -shared -fPIC machine.c -lm -o libmachine.so
+```
+
+On Windows, use the equivalent DLL flags for your compiler toolchain and
+define `{{ machine_macro_name(model) }}_BUILD_SHARED` when exporting symbols.
+
+Compile checking with a C++ compiler is also supported and recommended when
+your integration layer is C++:
+
+```bash
+g++ -x c++ -std=c++98 -Wall -Wextra -Werror -pedantic-errors -c machine.c -o machine.o
+g++ -x c++ -std=c++17 -Wall -Wextra -Werror -pedantic-errors -c machine.c -o machine.o
+```
+
+### Linkage and Visibility
+
+- `{{ machine_macro_name(model) }}_API` is the generated symbol-visibility macro
+  used by all public functions.
+- Define `{{ machine_macro_name(model) }}_BUILD_SHARED` when building the
+  generated runtime itself as a Windows DLL.
+- Define `{{ machine_macro_name(model) }}_USE_SHARED` when consuming that DLL
+  from external code on Windows.
+- `machine.h` wraps only the public API declarations in `extern "C"` when
+  included from C++.
+- Public layout structs, hook typedefs, and event-check typedefs stay usable
+  from both C and C++.
+- In generated integer fields, `{{ machine_class_name(model) }}Int` is the
+  public signed 64-bit type alias chosen to stay valid in both C99 and C++98+.
+
+## Quick Start
+
+```c
+#include "machine.h"
+
+static int event_check(
+    {{ machine_class_name(model) }} *machine,
+    const {{ machine_class_name(model) }}EventContext *ctx,
+    void *user_data
+)
+{
+    (void)machine;
+    (void)ctx;
+    (void)user_data;
+    return 0;  /* Return 1/non-zero when the event is active this cycle. */
+               /* Return 0 when the event is not active this cycle. */
+}
+
+int main(void)
+{
+    {{ machine_class_name(model) }} machine;
+{% if event_ns.items %}
+    {{ machine_class_name(model) }}EventChecks event_checks =
+        {{ machine_class_name(model) | upper }}_EVENT_CHECKS_INIT;
+{% endif %}
+
+    if (!{{ machine_class_name(model) }}_init(&machine)) {
+        return 1;
+    }
+{% if event_ns.items %}
+
+{% for event_path in event_ns.items -%}
+    event_checks.{{ event_check_field_name(event_path) }} = event_check;
+{% endfor %}
+    {{ machine_class_name(model) }}_set_event_checks(&machine, &event_checks, NULL);
+{% endif %}
+
+    if (!{{ machine_class_name(model) }}_cycle(&machine)) {
+        return 2;
+    }
+    return 0;
+}
+```
+
+## Public Header Reference
+
+### Core Macros
+
+| Macro | Value | Meaning |
+| --- | ---: | --- |
+| `{{ machine_macro_name(model) }}_SUCCESS` | `1` | Successful API result |
+| `{{ machine_macro_name(model) }}_FAILURE` | `0` | Failed API result |
+| `{{ machine_macro_name(model) }}_MAX_STACK_DEPTH` | `64` | Internal maximum state-stack depth |
+| `{{ machine_macro_name(model) }}_MAX_DFS_STEPS` | `1000` | Internal maximum validation DFS steps |
+| `{{ machine_macro_name(model) }}_INVALID_STATE_ID` | `-1` | Invalid state id sentinel |
+| `{{ machine_macro_name(model) }}_INVALID_EVENT_ID` | `-1` | Invalid event id sentinel |
+| `{{ machine_macro_name(model) }}_STATE_COUNT` | `{{ state_items | length }}` | Number of generated state ids |
+| `{{ machine_macro_name(model) }}_EVENT_COUNT` | `{{ event_ns.items | length }}` | Number of generated event ids |
+| `{{ machine_class_name(model) | upper }}_HOOKS_INIT` | generated brace initializer | Zero-init helper for the abstract-hook table |
+| `{{ machine_class_name(model) | upper }}_EVENT_CHECKS_INIT` | generated brace initializer | Zero-init helper for the event-check table |
+
+### Public Types
+
+| Type | Description |
+| --- | --- |
+| `{{ machine_class_name(model) }}` | Runtime instance type |
+| `{{ machine_class_name(model) }}ExecutionContext` | Read-only context passed to abstract hooks |
+| `{{ machine_class_name(model) }}EventContext` | Read-only context passed to event-check hooks |
+| `{{ machine_class_name(model) }}StateId` | Integer state id type |
+| `{{ machine_class_name(model) }}EventId` | Integer event id type |
+| `{{ machine_class_name(model) }}Int` | Public signed 64-bit integer alias used by generated integer vars |
+| `{{ machine_class_name(model) }}Vars` | Persistent variable snapshot type |
+| `{{ machine_class_name(model) }}HookFn` | Abstract lifecycle hook callback function type |
+| `{{ machine_class_name(model) }}EventCheckFn` | Event-check callback function type |
+| `{{ machine_class_name(model) }}Hooks` | Abstract lifecycle hook table |
+| `{{ machine_class_name(model) }}EventChecks` | Event-check registration table |
+| `{{ machine_class_name(model) }}Frame` | Publicly visible internal frame layout |
+
+### `{{ machine_class_name(model) }}Vars`
+
+{% if model.defines.values() | list %}
+| Field | C Type | Initial DSL |
+| --- | --- | --- |
+{% for def_item in model.defines.values() -%}
+| `{{ def_item.name | to_c_identifier }}` | `{% if def_item.type == 'int' %}{{ machine_class_name(model) }}Int{% else %}double{% endif %}` | `{{ def_item.init.to_ast_node() | string }}` |
+{% endfor %}
+{% else %}
+This state machine does not define persistent variables.
+{% endif %}
+
+Use `{{ machine_class_name(model) }}_vars(&machine)` to read the current
+persistent values. The returned pointer is owned by the runtime and remains
+valid as long as the machine object remains valid.
+
+### `{{ machine_class_name(model) }}ExecutionContext`
+
+| Field | Meaning |
+| --- | --- |
+| `state_path` | Full DSL path of the current state/action owner |
+| `vars` | Read-only snapshot pointer to persistent machine variables |
+| `action_name` | DSL action path/name currently being executed |
+| `action_stage` | Stage string such as `enter`, `during`, `exit`, or aspect stage |
+
+This structure is intended for observation only. Abstract hooks should not
+mutate persistent machine variables through `machine` or any other
+runtime-owned storage.
+
+### `{{ machine_class_name(model) }}EventContext`
+
+| Field | Meaning |
+| --- | --- |
+| `event_path` | Full DSL path of the queried event |
+| `current_state_path` | Current leaf-state DSL path when the check runs |
+| `vars` | Read-only snapshot pointer to persistent machine variables |
+
+This structure is the read-only observation surface for event checks. Event-
+check callbacks should be treated as probes, not as mutation points for
+persistent machine state.
+
+### `{{ machine_class_name(model) }}HookFn`
+
+```c
+typedef void (*{{ machine_class_name(model) }}HookFn)(
+    {{ machine_class_name(model) }} *machine,
+    const {{ machine_class_name(model) }}ExecutionContext *ctx,
+    void *user_data
+);
+```
+
+- `machine`: current runtime instance
+- `ctx`: read-only execution context
+- `user_data`: pointer previously passed to `{{ machine_class_name(model) }}_set_hooks(...)`
+
+### `{{ machine_class_name(model) }}EventCheckFn`
+
+```c
+typedef int (*{{ machine_class_name(model) }}EventCheckFn)(
+    {{ machine_class_name(model) }} *machine,
+    const {{ machine_class_name(model) }}EventContext *ctx,
+    void *user_data
+);
+```
+
+- `machine`: current runtime instance
+- `ctx`: read-only event-check context
+- `user_data`: pointer previously passed to `{{ machine_class_name(model) }}_set_event_checks(...)`
+- return value: non-zero means the event is considered active or triggered for
+  the current cycle; `0` means it is inactive and must not drive the
+  transition
+
+### `{{ machine_class_name(model) }}Hooks`
+
+{% if abstract_ns.rows %}
+| Hook field | DSL action path | Owner state | Stage |
+| --- | --- | --- | --- |
+{% for row in abstract_ns.rows -%}
+| `{{ row['hook_name'] }}` | `{{ row['func_name'] }}` | `{{ row['owner_path'] }}` | `{{ row['stage'] }}{% if row['aspect'] %} {{ row['aspect'] }}{% endif %}` |
+{% endfor %}
+{% else %}
+This state machine does not declare any abstract actions, so the hook table has
+no usable slots.
+{% endif %}
+
+Initialize the table with `{{ machine_class_name(model) | upper }}_HOOKS_INIT`,
+assign the fields you need, and register it with
+`{{ machine_class_name(model) }}_set_hooks(...)`.
+
+### `{{ machine_class_name(model) }}EventChecks`
+
+{% if event_ns.items %}
+| Event path | Hook field |
+| --- | --- |
+{% for event_path in event_ns.items -%}
+| `{{ event_path }}` | `{{ event_check_field_name(event_path) }}` |
+{% endfor %}
+
+Initialize the table with
+`{{ machine_class_name(model) | upper }}_EVENT_CHECKS_INIT`, assign every
+generated field, and register it with
+`{{ machine_class_name(model) }}_set_event_checks(...)`.
+
+Each generated field is one event-check probe:
+
+- return non-zero from `check_xxx`: treat that DSL event as active in the
+  current cycle
+- return `0` from `check_xxx`: treat that DSL event as inactive in the current
+  cycle
+
+For machines that declare events, `cycle()` requires a complete event-check
+table. Missing fields or a missing table will cause
+`{{ machine_class_name(model) }}_cycle(...)` to fail with a clear error string.
+{% else %}
+This state machine does not declare any events, so no event-check table is
+required.
+{% endif %}
+
+### `{{ machine_class_name(model) }}Frame`
+
+`{{ machine_class_name(model) }}Frame` is part of the exposed runtime layout but
+is primarily internal:
+
+| Field | Meaning |
+| --- | --- |
+| `state_id` | Internal active-state id stored in the runtime stack |
+| `mode` | Internal frame mode used by generated execution logic |
+
+Application code should treat this struct as runtime-owned.
+
+### `struct {{ machine_class_name(model) }}`
+
+The machine object is not opaque in C, but most fields are runtime-owned.
+
+| Field | Meaning | External usage |
+| --- | --- | --- |
+| `vars` | Persistent variable storage | Read through `{{ machine_class_name(model) }}_vars(...)` |
+| `_active_vars` | Internal active variable pointer | Internal |
+| `stack` | Internal execution stack | Internal |
+| `stack_size` | Current internal stack depth | Internal |
+| `ended` | Internal terminal flag | Prefer `{{ machine_class_name(model) }}_is_ended(...)` |
+| `entered_root` | Internal root-entry flag | Internal |
+| `hooks` | Installed abstract-hook table pointer | Prefer `{{ machine_class_name(model) }}_set_hooks(...)` |
+| `hook_user_data` | Installed abstract-hook user pointer | Prefer `{{ machine_class_name(model) }}_set_hooks(...)` |
+| `event_checks` | Installed event-check table pointer | Prefer `{{ machine_class_name(model) }}_set_event_checks(...)` |
+| `event_check_user_data` | Installed event-check user pointer | Prefer `{{ machine_class_name(model) }}_set_event_checks(...)` |
+| `event_checks_mounted` | Whether a complete event-check table is mounted | Prefer `{{ machine_class_name(model) }}_set_event_checks(...)` and `{{ machine_class_name(model) }}_last_error(...)` |
+| `last_error` | Internal last-error buffer | Prefer `{{ machine_class_name(model) }}_last_error(...)` |
+
+## Function Reference
+
+| Function | Purpose |
+| --- | --- |
+| `{{ machine_class_name(model) }}_create()` | Allocate and initialize a machine on the heap |
+| `{{ machine_class_name(model) }}_destroy(machine)` | Destroy a heap-allocated machine |
+| `{{ machine_class_name(model) }}_init(machine)` | Cold-initialize or reset a machine |
+| `{{ machine_class_name(model) }}_hot_start(machine, state_id, vars)` | Start from a concrete generated state id and variable snapshot |
+| `{{ machine_class_name(model) }}_set_hooks(machine, hooks, user_data)` | Register abstract lifecycle hooks |
+| `{{ machine_class_name(model) }}_set_event_checks(machine, event_checks, user_data)` | Register and validate the event-check table |
+| `{{ machine_class_name(model) }}_cycle(machine)` | Execute one cycle using the installed event-check table |
+| `{{ machine_class_name(model) }}_vars(machine)` | Read persistent variables |
+| `{{ machine_class_name(model) }}_is_ended(machine)` | Test whether the machine has ended |
+| `{{ machine_class_name(model) }}_current_state_path(machine)` | Read the current leaf-state full path |
+| `{{ machine_class_name(model) }}_current_state_name(machine)` | Read the current leaf-state short name |
+| `{{ machine_class_name(model) }}_last_error(machine)` | Read the last error message |
+| `{{ machine_class_name(model) }}_dsl_source()` | Read the embedded original DSL text |
+
+### Function Usage Notes
+
+- `{{ machine_class_name(model) }}_create()` /
+  `{{ machine_class_name(model) }}_destroy()`:
+  use these if you want heap allocation managed by the generated runtime.
+- `{{ machine_class_name(model) }}_init()`:
+  use this for stack-allocated machines or to reset an existing machine. After
+  reset, reinstall hooks and event checks as needed.
+- `{{ machine_class_name(model) }}_hot_start()`:
+  `initial_vars` must describe a complete persistent-state snapshot compatible
+  with `initial_state_id`. Hot start preserves already-installed hook and
+  event-check tables.
+- `{{ machine_class_name(model) }}_set_event_checks()`:
+  for eventful machines, provide a complete generated table. Partial tables are
+  rejected and leave the machine non-runnable for `cycle()`.
+- `{{ machine_class_name(model) }}_cycle()`:
+  executes one cycle using the currently installed event-check table. If the
+  table is missing or incomplete, the call returns
+  `{{ machine_macro_name(model) }}_FAILURE` and `last_error` explains why.
+- `{{ machine_class_name(model) }}_vars()`:
+  returns a read-only pointer; if you need a mutable external snapshot, copy the
+  struct value out first.
+- `{{ machine_class_name(model) }}_last_error()`:
+  useful after any API call that returned `{{ machine_macro_name(model) }}_FAILURE`.
+- `{{ machine_class_name(model) }}_dsl_source()`:
+  useful for diagnostics, traceability, or embedding the original model text in
+  tooling.
+
+## Full Usage Guide
+
+### 1. Cold Start
+
+```c
+{{ machine_class_name(model) }} machine;
+
+if (!{{ machine_class_name(model) }}_init(&machine)) {
+    fprintf(stderr, "init failed: %s\n", {{ machine_class_name(model) }}_last_error(&machine));
+    return 1;
+}
+```
+
+### 2. Install Event Checks
+
+{% if event_ns.items %}
+For `c_poll`, eventful machines must install a complete generated event-check
+table before calling `cycle()`:
+
+```c
+static int event_check(
+    {{ machine_class_name(model) }} *machine,
+    const {{ machine_class_name(model) }}EventContext *ctx,
+    void *user_data
+)
+{
+    (void)machine;
+    (void)ctx;
+    (void)user_data;
+    return 0;
+}
+
+{{ machine_class_name(model) }}EventChecks event_checks =
+    {{ machine_class_name(model) | upper }}_EVENT_CHECKS_INIT;
+
+{% for event_path in event_ns.items -%}
+event_checks.{{ event_check_field_name(event_path) }} = event_check;
+{% endfor %}
+{{ machine_class_name(model) }}_set_event_checks(&machine, &event_checks, NULL);
+```
+{% else %}
+This state machine does not define events, so no event-check installation step
+is required before `cycle()`.
+{% endif %}
+
+### 3. Drive Cycles
+
+```c
+if (!{{ machine_class_name(model) }}_cycle(&machine)) {
+    fprintf(stderr, "cycle failed: %s\n", {{ machine_class_name(model) }}_last_error(&machine));
+    return 2;
+}
+```
+
+### 4. Read Variables
+
+```c
+const {{ machine_class_name(model) }}Vars *vars = {{ machine_class_name(model) }}_vars(&machine);
+{% if model.defines.values() | list %}
+{% if (model.defines.values() | list)[0].type == 'int' %}
+{{ machine_class_name(model) }}Int value = vars->{{ (model.defines.values() | list)[0].name | to_c_identifier }};
+(void)value;
+{% else %}
+double value = vars->{{ (model.defines.values() | list)[0].name | to_c_identifier }};
+(void)value;
+{% endif %}
+{% else %}
+(void)vars;
+{% endif %}
+```
+
+### 5. Hot Start
+
+Hot start restores a full variable snapshot into a generated state id:
+
+```c
+{{ machine_class_name(model) }}Vars initial_vars;
+
+{{ machine_class_name(model) }}_init(&machine);
+initial_vars = *{{ machine_class_name(model) }}_vars(&machine);
+{% for def_item in model.defines.values() -%}
+initial_vars.{{ def_item.name | to_c_identifier }} = {{ def_item.init.to_ast_node() | expr_render(style='c') }};
+{% endfor %}
+{{ machine_class_name(model) }}_hot_start(
+    &machine,
+    {{ machine_macro_name(model) }}_STATE_{{ (model.root_state | state_path) | to_c_identifier | upper }},
+    &initial_vars
+);
+```
+
+### 6. Register Abstract Hooks
+
+Abstract hooks are read-only extension points. They are intended for logging,
+metrics, tracing, or external side effects, but not for mutating machine
+persistent state.
+
+```c
+static void custom_hook(
+    {{ machine_class_name(model) }} *machine,
+    const {{ machine_class_name(model) }}ExecutionContext *ctx,
+    void *user_data
+)
+{
+    (void)machine;
+    (void)ctx;
+    (void)user_data;
+}
+
+int main(void)
+{
+    {{ machine_class_name(model) }} machine;
+    {{ machine_class_name(model) }}Hooks hooks = {{ machine_class_name(model) | upper }}_HOOKS_INIT;
+
+    {{ machine_class_name(model) }}_init(&machine);
+{% if abstract_ns.rows %}
+    hooks.{{ abstract_ns.rows[0]['hook_name'] }} = custom_hook;
+{% endif %}
+    {{ machine_class_name(model) }}_set_hooks(&machine, &hooks, NULL);
+    return 0;
+}
+```
+
+### 7. Inspect State and Errors
+
+```c
+printf("state path: %s\n", {{ machine_class_name(model) }}_current_state_path(&machine));
+printf("state name: %s\n", {{ machine_class_name(model) }}_current_state_name(&machine));
+printf("ended: %d\n", {{ machine_class_name(model) }}_is_ended(&machine));
+printf("last error: %s\n", {{ machine_class_name(model) }}_last_error(&machine));
+```
+
+## State IDs
+
+| State path | Macro | Value |
+| --- | --- | ---: |
+{% for state in state_items -%}
+| `{{ state | state_path }}` | `{{ machine_macro_name(model) }}_STATE_{{ (state | state_path) | to_c_identifier | upper }}` | `{{ loop.index0 }}` |
+{% endfor %}
+
+## Event IDs
+
+{% if event_ns.items %}
+| Event path | Macro | Value |
+| --- | --- | ---: |
+{% for event_path in event_ns.items -%}
+| `{{ event_path }}` | `{{ machine_macro_name(model) }}_EVENT_{{ event_path | to_c_identifier | upper }}` | `{{ loop.index0 }}` |
+{% endfor %}
+{% else %}
+This state machine does not define any events.
+{% endif %}
+
+## Performance Advice
+
+- Treat the generated runtime as reusable stateful infrastructure: initialize
+  once, cycle many times, and avoid unnecessary create/destroy churn.
+- Keep abstract-hook registration sparse on critical paths; installed hooks
+  introduce extra callback overhead.
+- Event-check callbacks should be lightweight and read-only. Do not mutate
+  persistent machine variables from event-check callbacks.
+- Use `machine.h` as the stable public contract. Do not mutate runtime-owned
+  internal fields such as `stack`, `stack_size`, `hooks`, `event_checks`, or
+  `last_error` directly.
+- Build production binaries with optimization enabled, for example `-O2` or
+  `-O3`, and usually `-DNDEBUG`.
+- If your toolchain supports it and your build policy allows it, LTO can help
+  further: for example `-flto`.
+- Prefer hot start when restoring from a known checkpoint, because it avoids
+  reconstructing that checkpoint externally through many normal cycles.
+
+## Compatibility Notes
+
+- The generated runtime targets C99 and C++98 or later.
+- The `c_poll` template keeps the same broad compatibility envelope as the
+  built-in `c` runtime family while changing the event-input contract.
+- Template regression checks are expected to compile representative generated
+  machines with both a C compiler and a C++ compiler.

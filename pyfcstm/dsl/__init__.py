@@ -11,6 +11,8 @@ The module exposes the following public components:
 * :class:`~pyfcstm.dsl.listener.GrammarParseListener` - Parse tree listener that
   builds AST nodes from the grammar.
 * :func:`~pyfcstm.dsl.parse.parse_condition` - Parse a conditional expression.
+* :func:`~pyfcstm.dsl.parse.parse_state_machine_dsl` - Parse a complete state
+  machine DSL document.
 * :func:`~pyfcstm.dsl.parse.parse_preamble` - Parse a preamble program.
 * :func:`~pyfcstm.dsl.parse.parse_operation` - Parse an operation program.
 * :func:`~pyfcstm.dsl.parse.parse_with_grammar_entry` - Parse using a specific
@@ -31,9 +33,23 @@ Example::
     ...     print(exc)
 
 """
-from .error import CollectingErrorListener, GrammarItemError, GrammarParseError, SyntaxFailError, AmbiguityError, \
-    FullContextAttemptError, ContextSensitivityError
+
+from .error import (
+    CollectingErrorListener,
+    GrammarItemError,
+    GrammarParseError,
+    SyntaxFailError,
+    AmbiguityError,
+    FullContextAttemptError,
+    ContextSensitivityError,
+)
 from .grammar import *
 from .listener import GrammarParseListener
 from .node import *
-from .parse import parse_condition, parse_preamble, parse_operation, parse_with_grammar_entry
+from .parse import (
+    parse_condition,
+    parse_state_machine_dsl,
+    parse_preamble,
+    parse_operation,
+    parse_with_grammar_entry,
+)

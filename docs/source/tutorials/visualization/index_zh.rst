@@ -97,6 +97,12 @@ CLI 可视化
 
 命令行界面提供快速访问可视化功能，配置灵活。
 
+.. note::
+
+   本页主要介绍 ``pyfcstm plantuml`` 和 ``pyfcstm visualize`` 共享的
+   PlantUML 输出配置。如果你关注渲染后端选择、直接输出 ``png`` / ``svg`` /
+   ``pdf``、后端检查或自动打开行为，请参见 :doc:`/tutorials/cli/index_zh`。
+
 **基本用法**
 
 .. literalinclude:: cli_basic.demo.sh
@@ -755,7 +761,7 @@ CLI 配置系统支持自动类型推断和显式类型提示：
 
 - 探索 :doc:`../cli/index_zh` 了解更多 CLI 功能
 - 学习 :doc:`../dsl/index_zh` 创建你自己的状态机
-- 查看 :doc:`../render/index` 了解从状态机生成代码
+- 查看 :doc:`../render/index_zh` 了解从状态机生成代码
 
 总结
 ---------------------------------------

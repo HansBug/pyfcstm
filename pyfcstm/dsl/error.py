@@ -74,10 +74,11 @@ class SyntaxFailError(GrammarItemError):
         self.line = line
         self.column = column
         self.offending_symbol_text = offending_symbol_text
-        self.msg = msg
 
         # Enhance error message with actionable suggestions
         enhanced_msg = self._enhance_error_message(msg, offending_symbol_text)
+        self.raw_msg = msg
+        self.msg = enhanced_msg
 
         ctx_info = f", near '{offending_symbol_text}'" if offending_symbol_text else ""
         error_msg = f"Syntax error at line {line}, column {column}{ctx_info}: {enhanced_msg}"
@@ -95,8 +96,10 @@ class SyntaxFailError(GrammarItemError):
         :return: Enhanced error message with suggestions.
         :rtype: str
         """
+        normalized_msg = msg.lower()
+
         # Pattern matching for common errors with actionable suggestions
-        if "missing ';'" in msg:
+        if "missing ';'" in normalized_msg or "missing semi" in normalized_msg:
             # Determine context based on offending symbol
             if offending_symbol == 'def':
                 return "Missing semicolon after variable definition"
@@ -108,27 +111,27 @@ class SyntaxFailError(GrammarItemError):
                 return "Missing semicolon after previous statement"
             return "Missing semicolon"
 
-        elif "missing '}'" in msg:
+        elif "missing '}'" in normalized_msg:
             if offending_symbol == '<EOF>':
                 return "Missing closing brace - check for unclosed state definitions or action blocks"
             return "Missing closing brace"
 
-        elif "missing '{'" in msg:
+        elif "missing '{'" in normalized_msg:
             return "Missing opening brace for block"
 
-        elif "missing ']'" in msg:
+        elif "missing ']'" in normalized_msg:
             return "Missing closing bracket in guard condition"
 
-        elif "missing '['" in msg:
+        elif "missing '['" in normalized_msg:
             return "Missing opening bracket for guard condition"
 
-        elif "missing '->'" in msg:
+        elif "missing '->'" in normalized_msg:
             return "Missing transition arrow '->'"
 
-        elif "missing '='" in msg:
+        elif "missing '='" in normalized_msg:
             return "Missing equals sign in assignment or definition"
 
-        elif "extraneous input" in msg:
+        elif "extraneous input" in normalized_msg:
             if offending_symbol == '<EOF>':
                 return "Unexpected end of file - missing closing brace"
             elif offending_symbol == '}':
@@ -137,20 +140,20 @@ class SyntaxFailError(GrammarItemError):
                 return "Unexpected 'during' keyword - missing closing brace before this line"
             return f"Unexpected token '{offending_symbol}'"
 
-        elif "mismatched input" in msg:
-            if "expecting ';'" in msg:
+        elif "mismatched input" in normalized_msg:
+            if "expecting ';'" in normalized_msg or "expecting semi" in normalized_msg:
                 if offending_symbol == 'state':
                     return "Missing semicolon after previous state definition"
                 elif offending_symbol == '}':
                     return "Missing semicolon before closing brace"
                 return "Missing semicolon on previous line"
-            elif "expecting '='" in msg:
+            elif "expecting '='" in normalized_msg:
                 return "Missing equals sign in variable definition"
-            elif "expecting {';', 'named'}" in msg:
+            elif "named" in normalized_msg and ("';'" in normalized_msg or "semi" in normalized_msg):
                 return "Missing semicolon after event definition"
             return f"Unexpected token '{offending_symbol}'"
 
-        elif "no viable alternative at input" in msg:
+        elif "no viable alternative at input" in normalized_msg:
             # Analyze the offending symbol to provide better context
             if offending_symbol:
                 # Check for common patterns
@@ -178,7 +181,7 @@ class SyntaxFailError(GrammarItemError):
 
             return "Invalid syntax - check for missing semicolons, braces, or operators"
 
-        elif "token recognition error" in msg:
+        elif "token recognition error" in normalized_msg:
             if '"' in str(offending_symbol):
                 return "Unclosed string literal - add closing quote"
             return "Invalid character or token"
@@ -596,16 +599,20 @@ class CollectingErrorListener(ErrorListener):
         cascading_errors = []
 
         for error in syntax_errors:
+            raw_msg = getattr(error, "raw_msg", error.msg).lower()
             # Primary errors are those that indicate a missing syntax element
             is_primary = (
-                "missing ';'" in error.msg or
-                "missing ']'" in error.msg or
-                "missing '}'" in error.msg or
-                "missing '{'" in error.msg or
-                "missing '['" in error.msg or
-                "missing '->'" in error.msg or
-                "missing '='" in error.msg or
-                "token recognition error" in error.msg
+                "missing ';'" in raw_msg or
+                "missing semi" in raw_msg or
+                "missing ']'" in raw_msg or
+                "missing '}'" in raw_msg or
+                "missing '{'" in raw_msg or
+                "missing '['" in raw_msg or
+                "missing '->'" in raw_msg or
+                "missing '='" in raw_msg or
+                "expecting semi" in raw_msg or
+                "expecting ';'" in raw_msg or
+                "token recognition error" in raw_msg
             )
 
             if is_primary:

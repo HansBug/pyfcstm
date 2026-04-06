@@ -144,6 +144,12 @@ Statement
 .. autoclass:: Statement
 
 
+OperationalStatement
+-----------------------------------------------------
+
+.. autoclass:: OperationalStatement
+
+
 ConstantDefinition
 -----------------------------------------------------
 
@@ -193,6 +199,74 @@ Operation
     :members: __str__,stats
 
 
+ImportMappingStatement
+-----------------------------------------------------
+
+.. autoclass:: ImportMappingStatement
+
+
+ImportDefSelector
+-----------------------------------------------------
+
+.. autoclass:: ImportDefSelector
+
+
+ImportDefExactSelector
+-----------------------------------------------------
+
+.. autoclass:: ImportDefExactSelector
+    :members: __str__,name
+
+
+ImportDefSetSelector
+-----------------------------------------------------
+
+.. autoclass:: ImportDefSetSelector
+    :members: __str__,names
+
+
+ImportDefPatternSelector
+-----------------------------------------------------
+
+.. autoclass:: ImportDefPatternSelector
+    :members: __str__,pattern
+
+
+ImportDefFallbackSelector
+-----------------------------------------------------
+
+.. autoclass:: ImportDefFallbackSelector
+    :members: __str__
+
+
+ImportDefTargetTemplate
+-----------------------------------------------------
+
+.. autoclass:: ImportDefTargetTemplate
+    :members: __str__,template
+
+
+ImportDefMapping
+-----------------------------------------------------
+
+.. autoclass:: ImportDefMapping
+    :members: __str__,selector,target_template
+
+
+ImportEventMapping
+-----------------------------------------------------
+
+.. autoclass:: ImportEventMapping
+    :members: __str__,source_event,target_event,extra_name
+
+
+ImportStatement
+-----------------------------------------------------
+
+.. autoclass:: ImportStatement
+    :members: __post_init__,__str__,source_path,alias,extra_name,mappings
+
+
 TransitionDefinition
 -----------------------------------------------------
 
@@ -211,7 +285,7 @@ StateDefinition
 -----------------------------------------------------
 
 .. autoclass:: StateDefinition
-    :members: __post_init__,__str__,name,extra_name,events,substates,transitions,enters,durings,exits,during_aspects,force_transitions,is_pseudo
+    :members: __post_init__,__str__,name,extra_name,events,imports,substates,transitions,enters,durings,exits,during_aspects,force_transitions,is_pseudo
 
 
 OperationAssignment
@@ -219,6 +293,20 @@ OperationAssignment
 
 .. autoclass:: OperationAssignment
     :members: __str__,name,expr
+
+
+OperationIfBranch
+-----------------------------------------------------
+
+.. autoclass:: OperationIfBranch
+    :members: condition,statements
+
+
+OperationIf
+-----------------------------------------------------
+
+.. autoclass:: OperationIf
+    :members: __str__,branches
 
 
 EventDefinition

@@ -70,7 +70,7 @@ function normalizeSyntaxMessage(message: string, tokenText?: string): string {
     }
 
     // Missing semicolon patterns
-    if (/missing ';'|expecting ';'/i.test(message)) {
+    if (/missing ';'|expecting ';'|missing SEMI|expecting SEMI/i.test(message)) {
         if (tokenText === 'def') {
             return 'Missing semicolon after variable definition';
         } else if (tokenText === 'state') {
@@ -84,12 +84,12 @@ function normalizeSyntaxMessage(message: string, tokenText?: string): string {
     }
 
     // Missing closing bracket
-    if (/missing '\]'|expecting '\]'/i.test(message)) {
+    if (/missing '\]'|expecting '\]'|missing RBRACK|expecting RBRACK/i.test(message)) {
         return 'Missing closing bracket in guard condition.';
     }
 
     // Missing closing brace
-    if (/missing '\}'|expecting '\}'/i.test(message)) {
+    if (/missing '\}'|expecting '\}'|missing RBRACE|expecting RBRACE/i.test(message)) {
         if (tokenText === '<EOF>') {
             return 'Missing closing brace - check for unclosed state definitions or action blocks';
         }
@@ -97,22 +97,22 @@ function normalizeSyntaxMessage(message: string, tokenText?: string): string {
     }
 
     // Missing opening brace
-    if (/missing '\{'|expecting '\{'/i.test(message)) {
+    if (/missing '\{'|expecting '\{'|missing LBRACE|expecting LBRACE/i.test(message)) {
         return 'Missing opening brace for block';
     }
 
     // Missing opening bracket
-    if (/missing '\['|expecting '\['/i.test(message)) {
+    if (/missing '\['|expecting '\['|missing LBRACK|expecting LBRACK/i.test(message)) {
         return 'Missing opening bracket for guard condition';
     }
 
     // Missing transition arrow
-    if (/missing '->'|expecting '->'/i.test(message)) {
+    if (/missing '->'|expecting '->'|missing ARROW|expecting ARROW/i.test(message)) {
         return 'Missing transition arrow \'->\'';
     }
 
     // Missing equals sign
-    if (/missing '='|expecting '='/i.test(message)) {
+    if (/missing '='|expecting '='|missing ASSIGN|expecting ASSIGN/i.test(message)) {
         return 'Missing equals sign in assignment or definition';
     }
 
@@ -130,16 +130,19 @@ function normalizeSyntaxMessage(message: string, tokenText?: string): string {
 
     // Mismatched input patterns
     if (/mismatched input/i.test(message)) {
-        if (/expecting ';'/i.test(message)) {
+        if (/expecting ';'|expecting SEMI/i.test(message)) {
             if (tokenText === 'state') {
                 return 'Missing semicolon after previous state definition';
             } else if (tokenText === '}') {
                 return 'Missing semicolon before closing brace';
             }
             return 'Missing semicolon on previous line';
-        } else if (/expecting '='/i.test(message)) {
+        } else if (/expecting '='|expecting ASSIGN/i.test(message)) {
             return 'Missing equals sign in variable definition';
-        } else if (/expecting \{';', 'named'\}/i.test(message)) {
+        } else if (
+            /expecting \{';', 'named'\}/i.test(message)
+            || /expecting \{(?:NAMED|SEMI), (?:NAMED|SEMI)\}/i.test(message)
+        ) {
             return 'Missing semicolon after event definition';
         }
         return `Unexpected token ${formatTokenText(tokenText)}.`;

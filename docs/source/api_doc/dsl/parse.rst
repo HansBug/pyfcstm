@@ -18,6 +18,12 @@ parse\_condition
 .. autofunction:: parse_condition
 
 
+parse\_state\_machine\_dsl
+-----------------------------------------------------
+
+.. autofunction:: parse_state_machine_dsl
+
+
 parse\_preamble
 -----------------------------------------------------
 

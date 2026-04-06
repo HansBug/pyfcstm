@@ -1,0 +1,32 @@
+def int x = 0;
+def int y = 0;
+def int z = 0;
+def int flag = 0;
+
+state Root {
+    state Active {
+        during {
+            tmp = x + 1;
+
+            if [flag > 0] {
+                tmp = tmp + 10;
+
+                if [y > 5] {
+                    bonus = y + 2;
+                    z = tmp + bonus;
+                } else {
+                    z = tmp - y;
+                }
+            } else if [x > 3] {
+                tmp = tmp + 20;
+                z = tmp;
+            } else {
+                z = tmp;
+            }
+
+            x = z + tmp;
+        }
+    }
+
+    [*] -> Active;
+}

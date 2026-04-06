@@ -12,4 +12,5 @@ pyfcstm.dsl.grammar
     GrammarLexer
     GrammarListener
     GrammarParser
+    GrammarParserListener
 

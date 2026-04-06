@@ -1,12 +1,13 @@
 # Makefile for FCSTM VSCode Extension
 # This file provides commands for building and maintaining the extension
 
-.PHONY: all parser clean install build package verify-p0.2 verify-p0.3 verify-p0.4 verify-p0.5 verify-p0.6 verify-p1.b verify test-e2e help syntaxes icons
+.PHONY: all parser clean install build package verify-p0.2 verify-p0.3 verify-p0.4 verify-p0.5 verify-p0.6 verify-p1.b verify-import-editor-support verify test-e2e help syntaxes icons
 
 # ANTLR configuration
 ANTLR_VERSION := 4.9.3
 ANTLR_JAR := ../../antlr-$(ANTLR_VERSION).jar
-GRAMMAR_FILE := ../../pyfcstm/dsl/grammar/Grammar.g4
+GRAMMAR_LEXER_FILE := ../../pyfcstm/dsl/grammar/GrammarLexer.g4
+GRAMMAR_PARSER_FILE := ../../pyfcstm/dsl/grammar/GrammarParser.g4
 PARSER_OUTPUT_DIR := ./parser
 
 # TextMate grammar configuration
@@ -35,8 +36,9 @@ help:
 	@echo "  make verify-p0.5  - Verify P0.5 completion support (30 tests)"
 	@echo "  make verify-p0.6  - Verify P0.6 hover documentation (35 tests)"
 	@echo "  make verify-p1.b  - Verify P1.B language configuration reinforcement"
+	@echo "  make verify-import-editor-support - Verify import-aware editor support"
 	@echo "  make test-e2e     - Run end-to-end bundle verification (20 tests)"
-	@echo "  make verify       - Run all verification tests (187 tests total)"
+	@echo "  make verify       - Run all verification tests"
 	@echo "  make package      - Build VSIX package (runs all prerequisites)"
 	@echo "  make clean        - Remove generated files"
 	@echo "  make all          - Install deps, copy syntaxes, generate parser, and build"
@@ -66,17 +68,17 @@ $(TEXTMATE_DST): $(TEXTMATE_SRC)
 	cp $(TEXTMATE_SRC) $(TEXTMATE_DST)
 	@echo "TextMate grammar copied to $(TEXTMATE_DST)"
 
-parser: $(ANTLR_JAR) $(GRAMMAR_FILE)
+parser: $(ANTLR_JAR) $(GRAMMAR_LEXER_FILE) $(GRAMMAR_PARSER_FILE)
 	@echo "Generating JavaScript parser from ANTLR grammar..."
-	@echo "Using the canonical Grammar.g4 with JavaScript-safe labels shared across Python and VSCode."
+	@echo "Using the canonical GrammarLexer.g4 + GrammarParser.g4 shared across Python and VSCode."
 	@mkdir -p $(PARSER_OUTPUT_DIR)
 	@find $(PARSER_OUTPUT_DIR) -mindepth 1 ! -name 'README.md' ! -name 'package.json' -exec rm -rf {} +
 	java -jar $(ANTLR_JAR) -Dlanguage=JavaScript \
 		-o $(PARSER_OUTPUT_DIR) \
 		-Xexact-output-dir \
-		-visitor \
 		-no-listener \
-		$(GRAMMAR_FILE)
+		$(GRAMMAR_LEXER_FILE) \
+		$(GRAMMAR_PARSER_FILE)
 	@echo "Parser generated successfully in $(PARSER_OUTPUT_DIR)/"
 	@echo ""
 	@echo "Generated files:"
@@ -93,7 +95,7 @@ build-dev: icons syntaxes parser
 	@echo "Development build complete. Output in ./dist/"
 
 # Legacy TypeScript compilation (for verification scripts)
-build-tsc: syntaxes
+build-tsc: syntaxes parser
 	@echo "Compiling TypeScript (for verification scripts)..."
 	$(TSC) -p ./
 	@echo "TypeScript compilation complete. Output in ./out/"
@@ -128,12 +130,17 @@ verify-p1.b:
 	node ./scripts/verify-p1.b.js
 	@echo ""
 
+verify-import-editor-support: build-tsc
+	@echo "Running import editor support verification script..."
+	node ./scripts/verify-import-editor-support.js
+	@echo ""
+
 test-e2e: build
 	@echo "Running end-to-end bundle verification..."
 	node ./scripts/test-e2e.js
 	@echo ""
 
-verify: verify-p0.2 verify-p0.3 verify-p0.4 verify-p0.5 verify-p0.6 verify-p1.b test-e2e
+verify: verify-p0.2 verify-p0.3 verify-p0.4 verify-p0.5 verify-p0.6 verify-p1.b verify-import-editor-support test-e2e
 	@echo "All verification tests passed!"
 
 package: all

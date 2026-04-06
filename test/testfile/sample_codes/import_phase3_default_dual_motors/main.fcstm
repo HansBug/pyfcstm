@@ -1,0 +1,6 @@
+state Fleet {
+    import "./modules/motor.fcstm" as LeftMotor;
+    import "./modules/motor.fcstm" as RightMotor;
+    [*] -> LeftMotor;
+    LeftMotor -> RightMotor;
+}

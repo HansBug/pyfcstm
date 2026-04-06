@@ -24,7 +24,7 @@ class Transition {
   - to_state: str
   - event: Event
   - guard: Expr
-  - effects: List[Operation]
+  - effects: List[OperationStatement]
 }
 
 class Event {
@@ -32,16 +32,24 @@ class Event {
   - state_path: Tuple[str, ...]
 }
 
+abstract class OperationStatement
+
 class Operation {
   - var_name: str
   - expr: Expr
+}
+
+class IfBlock {
+  - branches: List[IfBlockBranch]
 }
 
 StateMachine *-- State : root_state
 State *-- State : substates
 State *-- Transition : transitions
 Transition --> Event : event
-Transition --> Operation : effects
+Transition --> OperationStatement : effects
+OperationStatement <|-- Operation
+OperationStatement <|-- IfBlock
 
 note right of State
   State objects form a tree structure,

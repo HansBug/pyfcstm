@@ -1,13 +1,15 @@
 import argparse
 import dataclasses
+import os
 import pathlib
 import re
+import tempfile
 import textwrap
 
 from hbutils.reflection import nested_for
 from hbutils.string import titleize
 
-from pyfcstm.dsl import parse_with_grammar_entry
+from pyfcstm.dsl import parse_state_machine_dsl, parse_with_grammar_entry
 from pyfcstm.model.model import parse_dsl_node_to_state_machine, State, OnStage, OnAspect
 
 
@@ -36,30 +38,92 @@ def get_properties(o):
     return ext
 
 
-def sample_generation_to_file(code: str, test_file: str):
+def _load_model(code: str, input_path: pathlib.Path = None, sample_files=None):
     code = textwrap.dedent(code).strip()
-    ast_node = parse_with_grammar_entry(code, entry_name='state_machine_dsl')
-    model = parse_dsl_node_to_state_machine(ast_node)
+    if sample_files is None:
+        ast_node = parse_with_grammar_entry(code, entry_name='state_machine_dsl')
+        model = parse_dsl_node_to_state_machine(ast_node, path=input_path)
+    else:
+        with tempfile.TemporaryDirectory() as td:
+            td_path = pathlib.Path(td)
+            for relpath, content in sample_files:
+                file_path = td_path / relpath
+                file_path.parent.mkdir(parents=True, exist_ok=True)
+                file_path.write_text(content, encoding='utf-8')
+
+            entry_file = td_path / 'main.fcstm'
+            ast_node = parse_state_machine_dsl(entry_file.read_text(encoding='utf-8'))
+            model = parse_dsl_node_to_state_machine(ast_node, path=entry_file)
+
+    return code, model
+
+
+def sample_generation_to_file(
+    code: str,
+    test_file: str,
+    input_path: pathlib.Path = None,
+    sample_files=None,
+):
+    code, model = _load_model(code=code, input_path=input_path, sample_files=sample_files)
 
     with open(test_file, 'w') as tf:
         print(f'import textwrap', file=tf)
         print(f'import pytest', file=tf)
+        if sample_files is not None:
+            print(f'import os', file=tf)
+            print(f'import pathlib', file=tf)
+            print(f'from hbutils.testing import isolated_directory', file=tf)
         print(f'', file=tf)
         print(f'from pyfcstm.dsl import node as dsl_nodes', file=tf)
         print(f'from pyfcstm.dsl.node import INIT_STATE, EXIT_STATE', file=tf)
-        print(f'from pyfcstm.dsl import parse_with_grammar_entry', file=tf)
+        if sample_files is None:
+            print(f'from pyfcstm.dsl import parse_with_grammar_entry', file=tf)
+        else:
+            print(f'from pyfcstm.dsl import parse_state_machine_dsl', file=tf)
         print(f'from pyfcstm.model.expr import *', file=tf)
         print(f'from pyfcstm.model.model import *', file=tf)
         print(f'', file=tf)
         print(f'', file=tf)
 
+        if sample_files is not None:
+            print(f'def _write_text_file(path: str, content: str):', file=tf)
+            print(f'    file_path = pathlib.Path(path)', file=tf)
+            print(f'    file_path.parent.mkdir(parents=True, exist_ok=True)', file=tf)
+            print(
+                f'    file_path.write_text(textwrap.dedent(content).strip() + os.linesep, encoding="utf-8")',
+                file=tf,
+            )
+            print(f'    return file_path', file=tf)
+            print(f'', file=tf)
+            print(f'', file=tf)
+
         print(f'@pytest.fixture()', file=tf)
         print(f'def model():', file=tf)
-        print(f'    ast_node = parse_with_grammar_entry("""', file=tf)
-        print(code, file=tf)
-        print(f'    """, entry_name=\'state_machine_dsl\')', file=tf)
-        print(f'    model = parse_dsl_node_to_state_machine(ast_node)', file=tf)
-        print(f'    return model', file=tf)
+        if sample_files is None:
+            print(f'    ast_node = parse_with_grammar_entry("""', file=tf)
+            print(code, file=tf)
+            print(f'    """, entry_name=\'state_machine_dsl\')', file=tf)
+            print(
+                f'    model = parse_dsl_node_to_state_machine(ast_node{f", path={str(input_path)!r}" if input_path is not None else ""})',
+                file=tf,
+            )
+            print(f'    return model', file=tf)
+        else:
+            print(f'    with isolated_directory():', file=tf)
+            for relpath, content in sample_files:
+                print(f'        _write_text_file({relpath!r}, """', file=tf)
+                print(textwrap.dedent(content).strip(), file=tf)
+                print(f'        """)', file=tf)
+            print(f'        entry_file = pathlib.Path("main.fcstm")', file=tf)
+            print(
+                f'        ast_node = parse_state_machine_dsl(entry_file.read_text(encoding="utf-8"))',
+                file=tf,
+            )
+            print(
+                f'        model = parse_dsl_node_to_state_machine(ast_node, path=entry_file)',
+                file=tf,
+            )
+            print(f'        return model', file=tf)
         print(f'', file=tf)
         print(f'', file=tf)
 
@@ -554,10 +618,35 @@ def main():
     parser.add_argument('-o', '--output-file', required=True, help='Output unittest code file')
     args = parser.parse_args()
 
-    sample_generation_to_file(
-        code=pathlib.Path(args.input_file).read_text(),
-        test_file=args.output_file,
-    )
+    input_path = pathlib.Path(args.input_file)
+    if input_path.is_dir():
+        entry_file = input_path / 'main.fcstm'
+        if not entry_file.is_file():
+            raise FileNotFoundError(
+                f'Directory sample {str(input_path)!r} must contain a main.fcstm entry file.'
+            )
+
+        sample_files = []
+        for file_path in sorted(input_path.rglob('*.fcstm')):
+            sample_files.append(
+                (
+                    file_path.relative_to(input_path).as_posix(),
+                    file_path.read_text(encoding='utf-8'),
+                )
+            )
+
+        sample_generation_to_file(
+            code=entry_file.read_text(encoding='utf-8'),
+            test_file=args.output_file,
+            input_path=input_path,
+            sample_files=sample_files,
+        )
+    else:
+        sample_generation_to_file(
+            code=input_path.read_text(encoding='utf-8'),
+            test_file=args.output_file,
+            input_path=input_path,
+        )
 
 
 if __name__ == "__main__":

@@ -1,0 +1,15 @@
+state Fleet {
+    state Bus;
+    import "./modules/motor.fcstm" as LeftMotor named "Left Motor" {
+        event /Start -> Start named "Fleet Start";
+        event /Stop -> /Bus.Stop;
+        event /Alarm -> /Bus.Alarm named "Fleet Alarm";
+    }
+    import "./modules/motor.fcstm" as RightMotor named "Right Motor" {
+        event /Start -> Start named "Fleet Start";
+        event /Stop -> /Bus.Stop;
+        event /Alarm -> /Bus.Alarm named "Fleet Alarm";
+    }
+    [*] -> LeftMotor;
+    LeftMotor -> RightMotor;
+}

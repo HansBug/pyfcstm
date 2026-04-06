@@ -1979,3 +1979,163 @@ state Root {
         run_cycle_and_assert(runtime, ['Root.A.Go'], current_path=('Root', 'B'), vars={'x': 11, 'y': 12})
         assert set(runtime.vars.keys()) == {'x', 'y'}
         assert 'tmp' not in runtime.vars
+
+
+@pytest.mark.unittest
+class TestIfBlockRuntime:
+    @pytest.mark.parametrize(
+        ['block_code', 'initial_values', 'expected_values'],
+        [
+            (
+                '''
+if [flag == 0] {
+    x = x + 10;
+}
+flag = 1;
+''',
+                {'x': 0, 'y': 0, 'flag': 0, 'mode': 0},
+                {'x': 10, 'y': 0, 'flag': 1, 'mode': 0},
+            ),
+            (
+                '''
+if [flag == 1] {
+    x = x + 10;
+}
+x = x + 1;
+''',
+                {'x': 0, 'y': 0, 'flag': 0, 'mode': 0},
+                {'x': 1, 'y': 0, 'flag': 0, 'mode': 0},
+            ),
+            (
+                '''
+if [flag == 0] {
+    x = x + 10;
+} else {
+    x = x + 100;
+}
+''',
+                {'x': 0, 'y': 0, 'flag': 1, 'mode': 0},
+                {'x': 100, 'y': 0, 'flag': 1, 'mode': 0},
+            ),
+            (
+                '''
+if [mode == 0] {
+    x = x + 1;
+} else if [mode == 1] {
+    x = x + 10;
+} else {
+    x = x + 100;
+}
+''',
+                {'x': 0, 'y': 0, 'flag': 0, 'mode': 1},
+                {'x': 10, 'y': 0, 'flag': 0, 'mode': 1},
+            ),
+            (
+                '''
+if [mode == 1] {
+    tmp = 10;
+    if [flag == 1] {
+        x = x + tmp;
+    } else {
+        x = x + 100;
+    }
+} else {
+    x = x + 1000;
+}
+''',
+                {'x': 0, 'y': 0, 'flag': 1, 'mode': 1},
+                {'x': 10, 'y': 0, 'flag': 1, 'mode': 1},
+            ),
+            (
+                '''
+if [mode == 1] {
+    tmp = 10;
+    if [flag == 1] {
+        x = x + tmp;
+    } else {
+        x = x + 100;
+    }
+} else {
+    x = x + 1000;
+}
+''',
+                {'x': 0, 'y': 0, 'flag': 1, 'mode': 0},
+                {'x': 1000, 'y': 0, 'flag': 1, 'mode': 0},
+            ),
+            (
+                '''
+tmp = x + 1;
+if [flag == 1] {
+    tmp = tmp + 10;
+}
+x = tmp;
+''',
+                {'x': 0, 'y': 0, 'flag': 1, 'mode': 0},
+                {'x': 11, 'y': 0, 'flag': 1, 'mode': 0},
+            ),
+            (
+                '''
+if [flag == 0] {
+    x = x + 1;
+    y = x + 10;
+}
+''',
+                {'x': 1, 'y': 0, 'flag': 0, 'mode': 0},
+                {'x': 2, 'y': 12, 'flag': 0, 'mode': 0},
+            ),
+        ]
+    )
+    def test_if_blocks_in_during_actions(self, block_code, initial_values, expected_values):
+        dsl_code = f'''
+def int x = {initial_values["x"]};
+def int y = {initial_values["y"]};
+def int flag = {initial_values["flag"]};
+def int mode = {initial_values["mode"]};
+state Root {{
+    state A {{
+        during {{
+{block_code}
+        }}
+    }}
+    [*] -> A;
+}}
+'''
+        runtime = build_runtime(dsl_code)
+
+        run_cycle_and_assert(runtime, current_path=('Root', 'A'), vars=expected_values)
+
+    def test_if_blocks_in_exit_effect_and_enter_actions(self):
+        dsl_code = '''
+def int x = 0;
+def int flag = 0;
+state Root {
+    state A {
+        exit {
+            if [flag == 0] {
+                x = x + 1;
+            }
+        }
+    }
+
+    state B {
+        enter {
+            if [flag == 0] {
+                x = x + 10;
+            }
+        }
+    }
+
+    [*] -> A;
+    A -> B :: Go effect {
+        if [flag == 0] {
+            x = x + 100;
+        } else {
+            x = x + 1000;
+        }
+    };
+}
+'''
+        runtime = build_runtime(dsl_code)
+
+        run_cycle_and_assert(runtime, current_path=('Root', 'A'), vars={'x': 0, 'flag': 0})
+        run_cycle_and_assert(runtime, ['Root.A.Go'], current_path=('Root', 'B'), vars={'x': 111, 'flag': 0})

@@ -1,0 +1,16 @@
+def int line_ticks = 0;
+def int load = 0;
+
+state LineRoot {
+    import "./subsystems/conveyor.fcstm" as Conveyor {
+        def speed -> line_ticks;
+        def load -> load;
+    }
+    import "./subsystems/robot.fcstm" as Robot {
+        def cycle_count -> line_ticks;
+        def arm_load -> load;
+    }
+    [*] -> Conveyor;
+    Conveyor -> Robot : if [line_ticks >= 2];
+    Robot -> Conveyor : if [load >= 4];
+}

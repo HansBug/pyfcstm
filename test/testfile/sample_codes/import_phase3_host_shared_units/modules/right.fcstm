@@ -1,0 +1,17 @@
+def int pulse_count = 100;
+def int armed_flag = 1;
+def int limit = 6;
+def int result = 0;
+
+state RightRoot {
+    state Idle;
+    state Busy;
+    [*] -> Idle;
+    Idle -> Busy : if [armed_flag > 0] effect {
+        result = pulse_count + limit;
+    }
+    Busy -> Idle : if [pulse_count >= limit] effect {
+        pulse_count = pulse_count + 1;
+        result = pulse_count;
+    }
+}

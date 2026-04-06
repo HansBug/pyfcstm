@@ -1,0 +1,422 @@
+# {{ machine_class_name(model) }}
+
+这里存放 DSL 根状态 `{{ model.root_state.name }}` 对应的 Python 生成运行时。
+
+## 生成文件
+
+- `machine.py`：可执行运行时模块
+- `README.md`：当前状态机的英文使用说明
+- `README_zh.md`：当前状态机的中文使用说明
+
+## 运行时概览
+
+生成出的 `machine.py` 是一个自包含运行时模块，内部包含：
+
+- 状态元数据和状态路径表
+- 事件规范化与转换选择逻辑
+- `enter`、`during`、`exit`、`during before/after`、`>> during before/after`
+  的生命周期执行逻辑
+- 从具体状态路径和完整变量快照恢复的 hot start
+- 面向 DSL abstract action 的受保护子类 hook 扩展点
+
+通常把它当普通 Python 模块直接导入即可。对外可用接口主要包括：
+
+- 生成的异常类
+- 只读执行上下文类
+- 生成的状态机类
+- 生成的 protected hook 方法
+
+## 执行模型
+
+一次 `cycle(...)` 大致会做这些事情：
+
+1. 规范化输入事件。
+2. 如果根状态尚未进入，则先进入根状态并沿初始转换推进。
+3. 在当前活动状态上尝试可用转换。
+4. 如果没有转换触发，则执行当前叶状态的 `during` 流程。
+5. 只有当本轮能够到达有效的 stoppable 状态时，才会真正提交结果。
+
+如果 speculative validation 失败，运行时会回滚本轮执行，而不是提交一半的中间状态。
+
+## 快速开始
+
+```python
+from machine import {{ machine_class_name(model) }}
+
+machine = {{ machine_class_name(model) }}()
+machine.cycle()
+
+print(machine.current_state_path)
+print(machine.current_state_name)
+print(machine.vars)
+```
+
+更常见的事件发送方式是直接传事件路径：
+
+```python
+machine.cycle(["<event-path-1>", "<event-path-2>"])
+```
+
+如果只有一个事件，也可以直接传单个字符串：
+
+```python
+machine.cycle("<event-path>")
+```
+
+## 事件解析规则
+
+`cycle(events=None)` 接受：
+
+- `None`
+- 单个事件字符串
+- 事件字符串组成的 `list`、`tuple`、`set`
+- 带有 `path_name` 属性的事件对象
+
+生成运行时支持：
+
+- 完整绝对事件路径，例如 `Root.Parent.Event`
+- 以 `/` 开头的根相对路径，例如 `/Parent.Event`
+- 以 `.` 开头的父级相对路径，例如 `..Sibling.Event`
+- 在当前状态上下文中可解析的兼容短名称
+
+如果事件无法解析，会抛出 `LookupError` 或 `ValueError`。
+
+## Hot Start
+
+如需从指定状态开始启动，需要同时提供 `initial_state` 和
+`initial_vars`。
+
+约束是：
+
+- `initial_state` 必须位于当前生成运行时的根状态之下
+- `initial_vars` 必须提供全部持久变量
+- `initial_vars` 不能包含未知变量名
+
+例如：
+
+{% set hot_start_var_lines = namespace(items=[]) -%}
+{% for def_item in model.defines.values() -%}
+{% set hot_start_var_lines.items = hot_start_var_lines.items + [
+    '        "' ~ def_item.name ~ '": ' ~ (def_item.init.value | default(0, true) if def_item.init.value is defined else 0) ~ ','
+] -%}
+{% endfor -%}
+
+```python
+from machine import {{ machine_class_name(model) }}
+
+machine = {{ machine_class_name(model) }}(
+    initial_state="{{ model.root_state.name }}",
+    initial_vars={
+{{ hot_start_var_lines.items | join('\n') }}
+    },
+)
+```
+
+## Hook 规则
+
+abstract hook 是只读扩展点。
+
+在生成的 hook 里，应该做的是：
+
+- 读取 `ctx`
+- 观察状态推进
+- 记录日志、指标、trace
+- 与外部系统协作
+
+在 hook 里不要做这些事：
+
+- 不要修改 `self._vars`
+- 不要修改 `self.vars`
+- 不要依赖写入 `ctx.vars`
+- 不要调用私有运行时辅助函数强行改状态
+
+运行时传给 `ctx` 的是一个快照。hook 代码应把它视为只读观察对象。如果确实需要修改持久变量，应在 hook 外部修改，例如在 `cycle(...)` 前后处理，或者调整 DSL 设计，而不是在 hook 内部动手。
+一句话概括：不要在 hook 里修改状态机持久变量。
+
+## 对外 API
+
+### `SimulationRuntimeDfsError`
+
+当 speculative validation 超过生成运行时的安全限制时抛出。大多数用户不需要主动创建它；只有在你希望显式处理异常复杂的运行时结构时，才需要捕获它。
+
+例如：
+
+```python
+from machine import SimulationRuntimeDfsError, {{ machine_class_name(model) }}
+
+machine = {{ machine_class_name(model) }}()
+
+try:
+    machine.cycle()
+except SimulationRuntimeDfsError as err:
+    print(err)
+```
+
+### `ReadOnlyExecutionContext`
+
+这个对象会在每次 abstract hook 执行时传入。
+
+字段：
+
+- `state_path`：所属动作状态路径，类型为 `Tuple[str, ...]`
+- `vars`：持久变量快照字典
+- `action_name`：完整 DSL 动作路径
+- `action_stage`：生命周期阶段字符串
+
+方法：
+
+- `get_var(name)`：从快照中读取变量
+- `has_var(name)`：判断快照中是否存在变量
+- `get_state_name()`：返回所属状态的短名
+- `get_full_state_path()`：返回以 `.` 拼接的完整状态路径
+
+例如：
+
+```python
+def some_hook(self, ctx):
+    if ctx.has_var("counter"):
+        print(ctx.get_var("counter"))
+    print(ctx.get_state_name())
+    print(ctx.get_full_state_path())
+    print(ctx.action_name, ctx.action_stage)
+```
+
+### `{{ machine_class_name(model) }}`
+
+这是生成出来的状态机运行时类。
+
+#### 类属性
+
+- `DSL_SOURCE`：原始 DSL 源码字符串
+- `STATE_PATHS`：全部状态路径组成的元组
+- `VARIABLE_NAMES`：全部持久变量名组成的元组
+- `ABSTRACT_HOOKS`：从 DSL abstract action 路径到生成 hook 方法名的映射
+- `EVENT_PATHS`：全部事件路径组成的元组
+
+例如：
+
+```python
+from machine import {{ machine_class_name(model) }}
+
+print({{ machine_class_name(model) }}.DSL_SOURCE)
+print({{ machine_class_name(model) }}.STATE_PATHS)
+print({{ machine_class_name(model) }}.VARIABLE_NAMES)
+print({{ machine_class_name(model) }}.ABSTRACT_HOOKS)
+print({{ machine_class_name(model) }}.EVENT_PATHS)
+```
+
+#### 构造函数
+
+`{{ machine_class_name(model) }}(initial_state=None, initial_vars=None)`
+
+用于创建冷启动或 hot start 的状态机实例。
+
+- 冷启动：两个参数都保持 `None`
+- hot start：同时提供 `initial_state` 和 `initial_vars`
+
+例如：
+
+```python
+machine = {{ machine_class_name(model) }}()
+```
+
+#### 属性
+
+- `vars`
+  - 返回当前活动的持久变量字典
+- `is_ended`
+  - 返回运行时是否已结束
+- `current_state_path`
+  - 返回当前叶状态路径元组，或 `None`
+- `current_state_name`
+  - 返回当前叶状态短名，或 `None`
+
+例如：
+
+```python
+machine = {{ machine_class_name(model) }}()
+machine.cycle()
+
+print(machine.vars)
+print(machine.is_ended)
+print(machine.current_state_path)
+print(machine.current_state_name)
+```
+
+#### 方法
+
+- `cycle(events=None)`
+  - 推进一个 cycle
+- `info()`
+  - 返回摘要字典，包含根状态名、当前状态路径、变量名、状态路径、abstract hook 映射和结束状态
+- `get_abstract_hook_map()`
+  - 类方法，返回 abstract hook 映射表
+
+例如：
+
+```python
+machine = {{ machine_class_name(model) }}()
+
+machine.cycle()
+machine.cycle("<event-path>")
+machine.cycle(["<event-path-1>", "<event-path-2>"])
+
+print(machine.info())
+print({{ machine_class_name(model) }}.get_abstract_hook_map())
+```
+
+## Hook 用法
+
+推荐继承生成类，并覆写下表列出的 protected hook 方法。
+
+```python
+from machine import {{ machine_class_name(model) }}
+
+
+class CustomMachine({{ machine_class_name(model) }}):
+    pass
+```
+
+{% set abstract_ns = namespace(rows=[]) -%}
+{% for state in model.walk_states() -%}
+{% for group in [
+    state.list_on_enters(with_ids=True),
+    state.list_on_durings(aspect=None, with_ids=True),
+    state.list_on_exits(with_ids=True),
+    state.list_on_durings(aspect='before', with_ids=True),
+    state.list_on_durings(aspect='after', with_ids=True),
+    state.list_on_during_aspects(aspect='before', with_ids=True),
+    state.list_on_during_aspects(aspect='after', with_ids=True),
+] -%}
+{% for _, item in group -%}
+{% set resolved = namespace(item=item) -%}
+{% for _ in range(16) -%}
+{% if resolved.item.ref is not none -%}
+{% set resolved.item = resolved.item.ref -%}
+{% endif -%}
+{% endfor -%}
+{% if resolved.item.is_abstract and resolved.item.func_name not in abstract_ns.rows | map(attribute='func_name') | list -%}
+{% set abstract_ns.rows = abstract_ns.rows + [{
+    'func_name': resolved.item.func_name,
+    'hook_name': action_hook_name(resolved.item),
+    'owner_path': action_owner_path(resolved.item),
+    'stage': resolved.item.stage,
+    'aspect': resolved.item.aspect,
+}] -%}
+{% endif -%}
+{% endfor -%}
+{% endfor -%}
+{% endfor %}
+
+{% if abstract_ns.rows %}
+例如：
+
+```python
+class CustomMachine({{ machine_class_name(model) }}):
+    def {{ abstract_ns.rows[0]['hook_name'] }}(self, ctx):
+        print(ctx.get_full_state_path(), ctx.action_name, ctx.action_stage)
+        print(ctx.vars)
+        return None
+```
+
+### 可覆写的 Abstract Hook 清单
+
+| DSL 动作路径 | Hook 方法名 | 所属状态 | 阶段 |
+| --- | --- | --- | --- |
+{% for row in abstract_ns.rows -%}
+| `{{ row['func_name'] }}` | `{{ row['hook_name'] }}` | `{{ row['owner_path'] }}` | `{{ row['stage'] }}{% if row['aspect'] %} {{ row['aspect'] }}{% endif %}` |
+{% endfor %}
+{% else %}
+当前状态机没有声明 abstract action，因此没有需要覆写的受保护 hook。
+{% endif %}
+
+## 使用指南
+
+### 冷启动
+
+```python
+machine = {{ machine_class_name(model) }}()
+machine.cycle()
+```
+
+### 读取变量
+
+```python
+print(machine.vars)
+{% if model.defines.values() | list -%}
+print(machine.vars["{{ (model.defines.values() | list)[0].name }}"])
+{% endif -%}
+```
+
+### 在 Hook 外修改变量
+
+如果你的业务确实需要直接调整持久变量，应在 hook 外部进行：
+
+```python
+{% if model.defines.values() | list -%}
+machine.vars["{{ (model.defines.values() | list)[0].name }}"] = machine.vars["{{ (model.defines.values() | list)[0].name }}"]
+{% else %}
+# 当前状态机没有持久变量。
+pass
+{% endif -%}
+```
+
+### 发送事件
+
+```python
+machine.cycle()
+machine.cycle("<event-path>")
+machine.cycle(["<event-path-1>", "<event-path-2>"])
+```
+
+### 查询状态
+
+```python
+print(machine.current_state_path)
+print(machine.current_state_name)
+print(machine.is_ended)
+```
+
+### 查看元数据
+
+```python
+print(machine.info())
+print({{ machine_class_name(model) }}.DSL_SOURCE)
+print({{ machine_class_name(model) }}.STATE_PATHS)
+print({{ machine_class_name(model) }}.EVENT_PATHS)
+print({{ machine_class_name(model) }}.get_abstract_hook_map())
+```
+
+## 变量
+
+{% if model.defines.values() | list -%}
+| 名称 | 类型 | 初始 DSL |
+| --- | --- | --- |
+{% for def_item in model.defines.values() -%}
+| `{{ def_item.name }}` | `{{ def_item.type }}` | `{{ def_item.init.to_ast_node() | string }}` |
+{% endfor %}
+{% else %}
+当前状态机没有定义持久变量。
+{% endif -%}
+
+## 状态路径
+
+{% for state in model.walk_states() -%}
+- `{{ state | state_path }}`
+{% endfor %}
+
+## 事件路径
+
+{% set event_rows = namespace(items=[]) -%}
+{% for state in model.walk_states() -%}
+{% for event in state.events.values() -%}
+{% set event_rows.items = event_rows.items + [event.path_name] -%}
+{% endfor -%}
+{% endfor %}
+{% if event_rows.items -%}
+{% for event_path in event_rows.items | unique | list -%}
+- `{{ event_path }}`
+{% endfor %}
+{% else %}
+当前状态机没有声明任何事件。
+{% endif -%}

@@ -74,7 +74,9 @@ state L1
     """,
         entry_name="state_machine_dsl",
     )
-    model = parse_dsl_node_to_state_machine(ast_node)
+    model = parse_dsl_node_to_state_machine(
+        ast_node, path="test/testfile/sample_codes/dlc4.fcstm"
+    )
     return model
 
 
@@ -253,11 +255,13 @@ class TestModelStateL1:
             name="L1",
             extra_name=None,
             events=[],
+            imports=[],
             substates=[
                 dsl_nodes.StateDefinition(
                     name="L11",
                     extra_name=None,
                     events=[dsl_nodes.EventDefinition(name="E1", extra_name=None)],
+                    imports=[],
                     substates=[
                         dsl_nodes.StateDefinition(
                             name="L111",
@@ -266,6 +270,7 @@ class TestModelStateL1:
                                 dsl_nodes.EventDefinition(name="E1", extra_name=None),
                                 dsl_nodes.EventDefinition(name="E2", extra_name=None),
                             ],
+                            imports=[],
                             substates=[
                                 dsl_nodes.StateDefinition(
                                     name="L1111",
@@ -278,6 +283,7 @@ class TestModelStateL1:
                                             name="E2", extra_name=None
                                         ),
                                     ],
+                                    imports=[],
                                     substates=[
                                         dsl_nodes.StateDefinition(
                                             name="L11111",
@@ -290,6 +296,7 @@ class TestModelStateL1:
                                                     name="E2", extra_name=None
                                                 ),
                                             ],
+                                            imports=[],
                                             substates=[],
                                             transitions=[],
                                             enters=[],
@@ -307,6 +314,7 @@ class TestModelStateL1:
                                                     name="E1", extra_name=None
                                                 )
                                             ],
+                                            imports=[],
                                             substates=[],
                                             transitions=[],
                                             enters=[],
@@ -324,6 +332,7 @@ class TestModelStateL1:
                                                     name="E1", extra_name=None
                                                 )
                                             ],
+                                            imports=[],
                                             substates=[],
                                             transitions=[],
                                             enters=[],
@@ -421,6 +430,7 @@ class TestModelStateL1:
                                             name="E1", extra_name=None
                                         )
                                     ],
+                                    imports=[],
                                     substates=[],
                                     transitions=[],
                                     enters=[],
@@ -438,6 +448,7 @@ class TestModelStateL1:
                                             name="E1", extra_name=None
                                         )
                                     ],
+                                    imports=[],
                                     substates=[],
                                     transitions=[],
                                     enters=[],
@@ -533,6 +544,7 @@ class TestModelStateL1:
                             events=[
                                 dsl_nodes.EventDefinition(name="E1", extra_name=None)
                             ],
+                            imports=[],
                             substates=[],
                             transitions=[],
                             enters=[],
@@ -548,6 +560,7 @@ class TestModelStateL1:
                             events=[
                                 dsl_nodes.EventDefinition(name="E1", extra_name=None)
                             ],
+                            imports=[],
                             substates=[],
                             transitions=[],
                             enters=[],
@@ -635,6 +648,7 @@ class TestModelStateL1:
                     name="L12",
                     extra_name=None,
                     events=[],
+                    imports=[],
                     substates=[],
                     transitions=[],
                     enters=[],
@@ -895,6 +909,7 @@ class TestModelStateL1:
             name="L11",
             extra_name=None,
             events=[dsl_nodes.EventDefinition(name="E1", extra_name=None)],
+            imports=[],
             substates=[
                 dsl_nodes.StateDefinition(
                     name="L111",
@@ -903,6 +918,7 @@ class TestModelStateL1:
                         dsl_nodes.EventDefinition(name="E1", extra_name=None),
                         dsl_nodes.EventDefinition(name="E2", extra_name=None),
                     ],
+                    imports=[],
                     substates=[
                         dsl_nodes.StateDefinition(
                             name="L1111",
@@ -911,6 +927,7 @@ class TestModelStateL1:
                                 dsl_nodes.EventDefinition(name="E1", extra_name=None),
                                 dsl_nodes.EventDefinition(name="E2", extra_name=None),
                             ],
+                            imports=[],
                             substates=[
                                 dsl_nodes.StateDefinition(
                                     name="L11111",
@@ -923,6 +940,7 @@ class TestModelStateL1:
                                             name="E2", extra_name=None
                                         ),
                                     ],
+                                    imports=[],
                                     substates=[],
                                     transitions=[],
                                     enters=[],
@@ -940,6 +958,7 @@ class TestModelStateL1:
                                             name="E1", extra_name=None
                                         )
                                     ],
+                                    imports=[],
                                     substates=[],
                                     transitions=[],
                                     enters=[],
@@ -957,6 +976,7 @@ class TestModelStateL1:
                                             name="E1", extra_name=None
                                         )
                                     ],
+                                    imports=[],
                                     substates=[],
                                     transitions=[],
                                     enters=[],
@@ -1052,6 +1072,7 @@ class TestModelStateL1:
                             events=[
                                 dsl_nodes.EventDefinition(name="E1", extra_name=None)
                             ],
+                            imports=[],
                             substates=[],
                             transitions=[],
                             enters=[],
@@ -1067,6 +1088,7 @@ class TestModelStateL1:
                             events=[
                                 dsl_nodes.EventDefinition(name="E1", extra_name=None)
                             ],
+                            imports=[],
                             substates=[],
                             transitions=[],
                             enters=[],
@@ -1160,6 +1182,7 @@ class TestModelStateL1:
                     name="L112",
                     extra_name=None,
                     events=[dsl_nodes.EventDefinition(name="E1", extra_name=None)],
+                    imports=[],
                     substates=[],
                     transitions=[],
                     enters=[],
@@ -1173,6 +1196,7 @@ class TestModelStateL1:
                     name="L113",
                     extra_name=None,
                     events=[dsl_nodes.EventDefinition(name="E1", extra_name=None)],
+                    imports=[],
                     substates=[],
                     transitions=[],
                     enters=[],
@@ -1545,6 +1569,7 @@ class TestModelStateL1:
                 dsl_nodes.EventDefinition(name="E1", extra_name=None),
                 dsl_nodes.EventDefinition(name="E2", extra_name=None),
             ],
+            imports=[],
             substates=[
                 dsl_nodes.StateDefinition(
                     name="L1111",
@@ -1553,6 +1578,7 @@ class TestModelStateL1:
                         dsl_nodes.EventDefinition(name="E1", extra_name=None),
                         dsl_nodes.EventDefinition(name="E2", extra_name=None),
                     ],
+                    imports=[],
                     substates=[
                         dsl_nodes.StateDefinition(
                             name="L11111",
@@ -1561,6 +1587,7 @@ class TestModelStateL1:
                                 dsl_nodes.EventDefinition(name="E1", extra_name=None),
                                 dsl_nodes.EventDefinition(name="E2", extra_name=None),
                             ],
+                            imports=[],
                             substates=[],
                             transitions=[],
                             enters=[],
@@ -1576,6 +1603,7 @@ class TestModelStateL1:
                             events=[
                                 dsl_nodes.EventDefinition(name="E1", extra_name=None)
                             ],
+                            imports=[],
                             substates=[],
                             transitions=[],
                             enters=[],
@@ -1591,6 +1619,7 @@ class TestModelStateL1:
                             events=[
                                 dsl_nodes.EventDefinition(name="E1", extra_name=None)
                             ],
+                            imports=[],
                             substates=[],
                             transitions=[],
                             enters=[],
@@ -1684,6 +1713,7 @@ class TestModelStateL1:
                     name="L1112",
                     extra_name=None,
                     events=[dsl_nodes.EventDefinition(name="E1", extra_name=None)],
+                    imports=[],
                     substates=[],
                     transitions=[],
                     enters=[],
@@ -1697,6 +1727,7 @@ class TestModelStateL1:
                     name="L1113",
                     extra_name=None,
                     events=[dsl_nodes.EventDefinition(name="E1", extra_name=None)],
+                    imports=[],
                     substates=[],
                     transitions=[],
                     enters=[],
@@ -2125,6 +2156,7 @@ class TestModelStateL1:
                 dsl_nodes.EventDefinition(name="E1", extra_name=None),
                 dsl_nodes.EventDefinition(name="E2", extra_name=None),
             ],
+            imports=[],
             substates=[
                 dsl_nodes.StateDefinition(
                     name="L11111",
@@ -2133,6 +2165,7 @@ class TestModelStateL1:
                         dsl_nodes.EventDefinition(name="E1", extra_name=None),
                         dsl_nodes.EventDefinition(name="E2", extra_name=None),
                     ],
+                    imports=[],
                     substates=[],
                     transitions=[],
                     enters=[],
@@ -2146,6 +2179,7 @@ class TestModelStateL1:
                     name="L11112",
                     extra_name=None,
                     events=[dsl_nodes.EventDefinition(name="E1", extra_name=None)],
+                    imports=[],
                     substates=[],
                     transitions=[],
                     enters=[],
@@ -2159,6 +2193,7 @@ class TestModelStateL1:
                     name="L11113",
                     extra_name=None,
                     events=[dsl_nodes.EventDefinition(name="E1", extra_name=None)],
+                    imports=[],
                     substates=[],
                     transitions=[],
                     enters=[],
@@ -2457,6 +2492,7 @@ class TestModelStateL1:
                 dsl_nodes.EventDefinition(name="E1", extra_name=None),
                 dsl_nodes.EventDefinition(name="E2", extra_name=None),
             ],
+            imports=[],
             substates=[],
             transitions=[],
             enters=[],
@@ -2681,6 +2717,7 @@ class TestModelStateL1:
             name="L11112",
             extra_name=None,
             events=[dsl_nodes.EventDefinition(name="E1", extra_name=None)],
+            imports=[],
             substates=[],
             transitions=[],
             enters=[],
@@ -2905,6 +2942,7 @@ class TestModelStateL1:
             name="L11113",
             extra_name=None,
             events=[dsl_nodes.EventDefinition(name="E1", extra_name=None)],
+            imports=[],
             substates=[],
             transitions=[],
             enters=[],
@@ -3091,6 +3129,7 @@ class TestModelStateL1:
             name="L1112",
             extra_name=None,
             events=[dsl_nodes.EventDefinition(name="E1", extra_name=None)],
+            imports=[],
             substates=[],
             transitions=[],
             enters=[],
@@ -3263,6 +3302,7 @@ class TestModelStateL1:
             name="L1113",
             extra_name=None,
             events=[dsl_nodes.EventDefinition(name="E1", extra_name=None)],
+            imports=[],
             substates=[],
             transitions=[],
             enters=[],
@@ -3417,6 +3457,7 @@ class TestModelStateL1:
             name="L112",
             extra_name=None,
             events=[dsl_nodes.EventDefinition(name="E1", extra_name=None)],
+            imports=[],
             substates=[],
             transitions=[],
             enters=[],
@@ -3567,6 +3608,7 @@ class TestModelStateL1:
             name="L113",
             extra_name=None,
             events=[dsl_nodes.EventDefinition(name="E1", extra_name=None)],
+            imports=[],
             substates=[],
             transitions=[],
             enters=[],
@@ -3695,6 +3737,7 @@ class TestModelStateL1:
             name="L12",
             extra_name=None,
             events=[],
+            imports=[],
             substates=[],
             transitions=[],
             enters=[],

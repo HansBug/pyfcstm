@@ -13,6 +13,8 @@ The main public components include:
 * :class:`Expr` and :class:`Literal` families - Expression nodes and literals.
 * :class:`StateDefinition` - State declarations with nested structure.
 * :class:`TransitionDefinition` and :class:`ForceTransitionDefinition` - State transitions.
+* Import-related nodes such as :class:`ImportStatement`,
+  :class:`ImportDefMapping`, and :class:`ImportEventMapping`.
 * :class:`StateMachineDSLProgram` - Root program container.
 * Statement and action blocks such as :class:`OperationAssignment`,
   :class:`EnterStatement`, :class:`ExitStatement`, and :class:`DuringStatement`.
@@ -51,55 +53,68 @@ from typing import List, Union, Optional, Any
 from hbutils.design import SingletonMark
 
 __all__ = [
-    'ASTNode',
-    'Identifier',
-    'ChainID',
-    'Expr',
-    'Literal',
-    'Boolean',
-    'Integer',
-    'HexInt',
-    'Float',
-    'Constant',
-    'Name',
-    'Paren',
-    'UnaryOp',
-    'BinaryOp',
-    'ConditionalOp',
-    'UFunc',
-    'Statement',
-    'ConstantDefinition',
-    'InitialAssignment',
-    'DefAssignment',
-    'OperationalDeprecatedAssignment',
-    'Preamble',
-    'Operation',
-    'Condition',
-    'TransitionDefinition',
-    'ForceTransitionDefinition',
-    'StateDefinition',
-    'OperationAssignment',
-    'EventDefinition',
-    'StateMachineDSLProgram',
-    'INIT_STATE',
-    'EXIT_STATE',
-    'ALL',
-    'EnterStatement',
-    'EnterOperations',
-    'EnterAbstractFunction',
-    'EnterRefFunction',
-    'ExitStatement',
-    'ExitOperations',
-    'ExitAbstractFunction',
-    'ExitRefFunction',
-    'DuringStatement',
-    'DuringOperations',
-    'DuringAbstractFunction',
-    'DuringRefFunction',
-    'DuringAspectStatement',
-    'DuringAspectOperations',
-    'DuringAspectAbstractFunction',
-    'DuringAspectRefFunction',
+    "ASTNode",
+    "Identifier",
+    "ChainID",
+    "Expr",
+    "Literal",
+    "Boolean",
+    "Integer",
+    "HexInt",
+    "Float",
+    "Constant",
+    "Name",
+    "Paren",
+    "UnaryOp",
+    "BinaryOp",
+    "ConditionalOp",
+    "UFunc",
+    "Statement",
+    "ConstantDefinition",
+    "InitialAssignment",
+    "DefAssignment",
+    "ImportMappingStatement",
+    "ImportDefSelector",
+    "ImportDefExactSelector",
+    "ImportDefSetSelector",
+    "ImportDefPatternSelector",
+    "ImportDefFallbackSelector",
+    "ImportDefTargetTemplate",
+    "ImportDefMapping",
+    "ImportEventMapping",
+    "ImportStatement",
+    "OperationalDeprecatedAssignment",
+    "Preamble",
+    "Operation",
+    "Condition",
+    "TransitionDefinition",
+    "ForceTransitionDefinition",
+    "StateDefinition",
+    "OperationalStatement",
+    "OperationAssignment",
+    "OperationIfBranch",
+    "OperationIf",
+    "EventDefinition",
+    "StateMachineDSLProgram",
+    "INIT_STATE",
+    "EXIT_STATE",
+    "ALL",
+    "EnterStatement",
+    "EnterOperations",
+    "EnterAbstractFunction",
+    "EnterRefFunction",
+    "ExitStatement",
+    "ExitOperations",
+    "ExitAbstractFunction",
+    "ExitRefFunction",
+    "DuringStatement",
+    "DuringOperations",
+    "DuringAbstractFunction",
+    "DuringRefFunction",
+    "DuringAspectStatement",
+    "DuringAspectOperations",
+    "DuringAspectAbstractFunction",
+    "DuringAspectRefFunction",
 ]
 
 
@@ -113,6 +128,7 @@ class ASTNode(ABC):
 
     :rtype: ASTNode
     """
+
     pass
 
 
@@ -126,6 +142,7 @@ class Identifier(ASTNode):
 
     :rtype: Identifier
     """
+
     pass
 
 
@@ -150,6 +167,7 @@ class ChainID(Identifier):
         >>> str(abs_id)
         '/root.event'
     """
+
     path: List[str]
     is_absolute: bool = False
 
@@ -160,9 +178,9 @@ class ChainID(Identifier):
         :return: String representation of the chained identifier
         :rtype: str
         """
-        pth = '.'.join(self.path)
+        pth = ".".join(self.path)
         if self.is_absolute:
-            pth = f'/{pth}'
+            pth = f"/{pth}"
         return pth
 
 
@@ -176,6 +194,7 @@ class Expr(ASTNode):
 
     :rtype: Expr
     """
+
     pass
 
 
@@ -192,6 +211,7 @@ class Literal(Expr):
 
     :rtype: Literal
     """
+
     raw: str
 
     @property
@@ -372,10 +392,11 @@ class Constant(Literal):
         >>> pi_const.value
         3.141592653589793
     """
+
     __KNOWN_CONSTANTS__ = {
-        'E': math.e,
-        'pi': math.pi,
-        'tau': math.tau,
+        "E": math.e,
+        "pi": math.pi,
+        "tau": math.tau,
     }
 
     def _value(self) -> float:
@@ -394,7 +415,7 @@ class Constant(Literal):
         :return: The name of the constant
         :rtype: str
         """
-        return f'{self.raw}'
+        return f"{self.raw}"
 
 
 @dataclass
@@ -415,6 +436,7 @@ class Name(Expr):
         >>> str(var_name)
         'counter'
     """
+
     name: str
 
     def __str__(self) -> str:
@@ -446,6 +468,7 @@ class Paren(Expr):
         >>> str(paren_expr)
         '(a + b)'
     """
+
     expr: Expr
 
     def __str__(self) -> str:
@@ -455,7 +478,7 @@ class Paren(Expr):
         :return: The expression surrounded by parentheses
         :rtype: str
         """
-        return f'({self.expr})'
+        return f"({self.expr})"
 
 
 @dataclass
@@ -478,8 +501,9 @@ class UnaryOp(Expr):
         >>> str(not_expr)
         '!condition'
     """
+
     __aliases__ = {
-        'not': '!',
+        "not": "!",
     }
 
     op: str
@@ -498,7 +522,7 @@ class UnaryOp(Expr):
         :return: String representation of the unary operation
         :rtype: str
         """
-        return f'{self.op}{self.expr}'
+        return f"{self.op}{self.expr}"
 
 
 @dataclass
@@ -526,9 +550,10 @@ class BinaryOp(Expr):
         >>> str(and_expr)
         'x && y'
     """
+
     __aliases__ = {
-        'and': '&&',
-        'or': '||',
+        "and": "&&",
+        "or": "||",
     }
 
     expr1: Expr
@@ -548,7 +573,7 @@ class BinaryOp(Expr):
         :return: String representation of the binary operation
         :rtype: str
         """
-        return f'{self.expr1} {self.op} {self.expr2}'
+        return f"{self.expr1} {self.op} {self.expr2}"
 
 
 @dataclass
@@ -574,6 +599,7 @@ class ConditionalOp(Expr):
         >>> str(cond_op)
         '(x) ? 1 : 0'
     """
+
     cond: Expr
     value_true: Expr
     value_false: Expr
@@ -585,7 +611,7 @@ class ConditionalOp(Expr):
         :return: String representation of the conditional operation
         :rtype: str
         """
-        return f'({self.cond}) ? {self.value_true} : {self.value_false}'
+        return f"({self.cond}) ? {self.value_true} : {self.value_false}"
 
 
 @dataclass
@@ -608,6 +634,7 @@ class UFunc(Expr):
         >>> str(func_call)
         'abs(x)'
     """
+
     func: str
     expr: Expr
 
@@ -618,7 +645,7 @@ class UFunc(Expr):
         :return: String representation of the function call
         :rtype: str
         """
-        return f'{self.func}({self.expr})'
+        return f"{self.func}({self.expr})"
 
 
 @dataclass
@@ -630,7 +657,40 @@ class Statement(ASTNode):
 
     :rtype: Statement
     """
+
     pass
+
+
+@dataclass
+class OperationalStatement(Statement):
+    """
+    Abstract base class for statements inside operation blocks.
+
+    Operation statements are the executable statements that may appear inside
+    ``effect { ... }``, ``enter { ... }``, ``during { ... }``, and ``exit { ... }``
+    blocks.
+
+    :rtype: OperationalStatement
+    """
+
+    pass
+
+
+def _render_operational_statement_block(
+    statements: List["OperationalStatement"],
+) -> str:
+    """
+    Render an operation statement list as an indented block body.
+
+    :param statements: Statements to render.
+    :type statements: List[OperationalStatement]
+    :return: Rendered block body without surrounding braces.
+    :rtype: str
+    """
+    with io.StringIO() as sf:
+        for statement in statements:
+            print(indent(str(statement), prefix="    "), file=sf)
+        return sf.getvalue()
 
 
 @dataclass
@@ -651,6 +711,7 @@ class ConstantDefinition(Statement):
         >>> str(const_def)
         'MAX_COUNT = 100;'
     """
+
     name: str
     expr: Expr
 
@@ -661,7 +722,7 @@ class ConstantDefinition(Statement):
         :return: String representation of the constant definition
         :rtype: str
         """
-        return f'{self.name} = {self.expr};'
+        return f"{self.name} = {self.expr};"
 
 
 @dataclass
@@ -684,6 +745,7 @@ class InitialAssignment(Statement):
         >>> str(init_assign)
         'counter := 0;'
     """
+
     name: str
     expr: Expr
 
@@ -694,7 +756,7 @@ class InitialAssignment(Statement):
         :return: String representation of the initial assignment
         :rtype: str
         """
-        return f'{self.name} := {self.expr};'
+        return f"{self.name} := {self.expr};"
 
 
 @dataclass
@@ -719,6 +781,7 @@ class DefAssignment(Statement):
         >>> str(def_assign)
         'def int counter = 0;'
     """
+
     name: str
     type: str
     expr: Expr
@@ -730,7 +793,7 @@ class DefAssignment(Statement):
         :return: String representation of the definition assignment
         :rtype: str
         """
-        return f'def {self.type} {self.name} = {self.expr};'
+        return f"def {self.type} {self.name} = {self.expr};"
 
 
 @dataclass
@@ -753,6 +816,7 @@ class OperationalDeprecatedAssignment(Statement):
         >>> str(op_assign)
         'counter := counter + 1;'
     """
+
     name: str
     expr: Expr
 
@@ -763,7 +827,7 @@ class OperationalDeprecatedAssignment(Statement):
         :return: String representation of the operational deprecated assignment
         :rtype: str
         """
-        return f'{self.name} := {self.expr};'
+        return f"{self.name} := {self.expr};"
 
 
 @dataclass
@@ -784,6 +848,7 @@ class Condition(ASTNode):
         >>> str(cond)
         'counter >= 10'
     """
+
     expr: Expr
 
     def __str__(self) -> str:
@@ -793,7 +858,7 @@ class Condition(ASTNode):
         :return: String representation of the condition
         :rtype: str
         """
-        return f'{self.expr}'
+        return f"{self.expr}"
 
 
 @dataclass
@@ -818,6 +883,7 @@ class Preamble(ASTNode):
         MAX = 100;
         counter := 0;
     """
+
     stats: List[Union[ConstantDefinition, InitialAssignment]]
 
     def __str__(self) -> str:
@@ -853,6 +919,7 @@ class Operation(ASTNode):
         counter := counter + 1;
         flag := true;
     """
+
     stats: List[OperationalDeprecatedAssignment]
 
     def __str__(self) -> str:
@@ -885,26 +952,284 @@ class _StateSingletonMark(SingletonMark):
         return self.mark
 
 
-INIT_STATE = _StateSingletonMark('INIT_STATE')
+INIT_STATE = _StateSingletonMark("INIT_STATE")
 """
 Special singleton marker representing the initial state in a state machine.
 
 This is used to define transitions from the initial pseudo-state.
 """
 
-EXIT_STATE = _StateSingletonMark('EXIT_STATE')
+EXIT_STATE = _StateSingletonMark("EXIT_STATE")
 """
 Special singleton marker representing the exit state in a state machine.
 
 This is used to define transitions to the final pseudo-state.
 """
 
-ALL = _StateSingletonMark('ALL')
+ALL = _StateSingletonMark("ALL")
 """
 Special singleton marker representing all states in a state machine.
 
 This is used to define transitions or actions that apply to all states.
 """
+
+
+@dataclass
+class ImportMappingStatement(ASTNode):
+    """
+    Abstract base class for mapping statements inside an import block.
+
+    Import mapping statements configure how imported variables and events should
+    be exposed or remapped when the imported module is assembled into the host
+    state tree.
+
+    :rtype: ImportMappingStatement
+    """
+
+    pass
+
+
+@dataclass
+class ImportDefSelector(ASTNode):
+    """
+    Abstract base class for ``def`` mapping source selectors in import blocks.
+
+    Source selectors determine which imported variable names a ``def`` mapping
+    rule applies to.
+
+    :rtype: ImportDefSelector
+    """
+
+    pass
+
+
+@dataclass
+class ImportDefExactSelector(ImportDefSelector):
+    """
+    Represents an exact source variable selector in an import ``def`` mapping.
+
+    :param name: Exact variable name to match
+    :type name: str
+
+    :rtype: ImportDefExactSelector
+    """
+
+    name: str
+
+    def __str__(self) -> str:
+        """
+        Convert the selector to its DSL representation.
+
+        :return: String representation of the selector
+        :rtype: str
+        """
+        return self.name
+
+
+@dataclass
+class ImportDefSetSelector(ImportDefSelector):
+    """
+    Represents a set-based source selector in an import ``def`` mapping.
+
+    :param names: Exact variable names listed in the selector set
+    :type names: List[str]
+
+    :rtype: ImportDefSetSelector
+    """
+
+    names: List[str]
+
+    def __str__(self) -> str:
+        """
+        Convert the selector to its DSL representation.
+
+        :return: String representation of the selector
+        :rtype: str
+        """
+        return "{%s}" % ", ".join(self.names)
+
+
+@dataclass
+class ImportDefPatternSelector(ImportDefSelector):
+    """
+    Represents a wildcard-based source selector in an import ``def`` mapping.
+
+    The selector is intentionally preserved as raw DSL text rather than being
+    decomposed into finer-grained AST nodes. This keeps the DSL layer permissive
+    enough for patterns whose literal segments would not fit the plain ``ID``
+    token constraints, such as suffixes that start with digits.
+
+    :param pattern: Raw selector pattern text
+    :type pattern: str
+
+    :rtype: ImportDefPatternSelector
+    """
+
+    pattern: str
+
+    def __str__(self) -> str:
+        """
+        Convert the selector to its DSL representation.
+
+        :return: String representation of the selector
+        :rtype: str
+        """
+        return self.pattern
+
+
+@dataclass
+class ImportDefFallbackSelector(ImportDefSelector):
+    """
+    Represents the fallback ``*`` selector in an import ``def`` mapping.
+
+    :rtype: ImportDefFallbackSelector
+    """
+
+    def __str__(self) -> str:
+        """
+        Convert the selector to its DSL representation.
+
+        :return: Wildcard text
+        :rtype: str
+        """
+        return "*"
+
+
+@dataclass
+class ImportDefTargetTemplate(ASTNode):
+    """
+    Represents the right-hand target template of an import ``def`` mapping.
+
+    The template is stored as raw DSL text at the AST layer. Placeholder and
+    wildcard semantics are validated and interpreted in later assembly phases.
+
+    :param template: Raw template text
+    :type template: str
+
+    :rtype: ImportDefTargetTemplate
+    """
+
+    template: str
+
+    def __str__(self) -> str:
+        """
+        Convert the template to its DSL representation.
+
+        :return: String representation of the target template
+        :rtype: str
+        """
+        return self.template
+
+
+@dataclass
+class ImportDefMapping(ImportMappingStatement):
+    """
+    Represents a variable mapping rule inside an import block.
+
+    :param selector: Source selector of the mapping rule
+    :type selector: ImportDefSelector
+    :param target_template: Target template of the mapping rule
+    :type target_template: ImportDefTargetTemplate
+
+    :rtype: ImportDefMapping
+    """
+
+    selector: ImportDefSelector
+    target_template: ImportDefTargetTemplate
+
+    def __str__(self) -> str:
+        """
+        Convert the mapping rule to its DSL representation.
+
+        :return: String representation of the mapping rule
+        :rtype: str
+        """
+        return f"def {self.selector} -> {self.target_template};"
+
+
+@dataclass
+class ImportEventMapping(ImportMappingStatement):
+    """
+    Represents an event mapping rule inside an import block.
+
+    :param source_event: Source event path inside the imported module
+    :type source_event: ChainID
+    :param target_event: Target event path in the host state tree
+    :type target_event: ChainID
+    :param extra_name: Optional display-name override for the target event
+    :type extra_name: Optional[str]
+
+    :rtype: ImportEventMapping
+    """
+
+    source_event: ChainID
+    target_event: ChainID
+    extra_name: Optional[str] = None
+
+    def __str__(self) -> str:
+        """
+        Convert the event mapping to its DSL representation.
+
+        :return: String representation of the event mapping
+        :rtype: str
+        """
+        with io.StringIO() as sf:
+            print(f"event {self.source_event} -> {self.target_event}", file=sf, end="")
+            if self.extra_name is not None:
+                print(f" named {self.extra_name!r}", file=sf, end="")
+            print(";", file=sf, end="")
+            return sf.getvalue()
+
+
+@dataclass
+class ImportStatement(ASTNode):
+    """
+    Represents a single import statement inside a composite state.
+
+    :param source_path: Import source path string from the DSL
+    :type source_path: str
+    :param alias: Local alias name of the imported root state
+    :type alias: str
+    :param extra_name: Optional display-name override for the imported state
+    :type extra_name: Optional[str]
+    :param mappings: Mapping rules declared inside the import block
+    :type mappings: List[ImportMappingStatement]
+
+    :rtype: ImportStatement
+    """
+
+    source_path: str
+    alias: str
+    extra_name: Optional[str] = None
+    mappings: List[ImportMappingStatement] = None
+
+    def __post_init__(self) -> None:
+        """
+        Initialize default empty lists for optional parameters.
+        """
+        self.mappings = self.mappings or []
+
+    def __str__(self) -> str:
+        """
+        Convert the import statement to its DSL representation.
+
+        :return: String representation of the import statement
+        :rtype: str
+        """
+        with io.StringIO() as sf:
+            print(f"import {self.source_path!r} as {self.alias}", file=sf, end="")
+            if self.extra_name is not None:
+                print(f" named {self.extra_name!r}", file=sf, end="")
+
+            if self.mappings:
+                print(" {", file=sf)
+                for mapping in self.mappings:
+                    print(indent(str(mapping), prefix="    "), file=sf)
+                print("}", file=sf, end="")
+            else:
+                print(";", file=sf, end="")
+
+            return sf.getvalue()
 
 
 @dataclass
@@ -923,8 +1248,8 @@ class TransitionDefinition(ASTNode):
     :type event_id: Optional[ChainID]
     :param condition_expr: Optional condition expression that must be true for the transition
     :type condition_expr: Optional[Expr]
-    :param post_operations: List of operations to perform after the transition
-    :type post_operations: List[OperationAssignment]
+    :param post_operations: List of operation statements to perform after the transition
+    :type post_operations: List[OperationalStatement]
 
     :rtype: TransitionDefinition
 
@@ -941,11 +1266,12 @@ class TransitionDefinition(ASTNode):
         ...     [op],
         ... )
     """
+
     from_state: Union[str, _StateSingletonMark]
     to_state: Union[str, _StateSingletonMark]
     event_id: Optional[ChainID]
     condition_expr: Optional[Expr]
-    post_operations: List['OperationAssignment']
+    post_operations: List["OperationalStatement"]
 
     def __str__(self) -> str:
         """
@@ -955,28 +1281,41 @@ class TransitionDefinition(ASTNode):
         :rtype: str
         """
         with io.StringIO() as sf:
-            print('[*]' if self.from_state is INIT_STATE else self.from_state, file=sf, end='')
-            print(' -> ', file=sf, end='')
-            print('[*]' if self.to_state is EXIT_STATE else self.to_state, file=sf, end='')
+            print(
+                "[*]" if self.from_state is INIT_STATE else self.from_state,
+                file=sf,
+                end="",
+            )
+            print(" -> ", file=sf, end="")
+            print(
+                "[*]" if self.to_state is EXIT_STATE else self.to_state, file=sf, end=""
+            )
 
             if self.event_id is not None:
-                if not self.event_id.is_absolute and \
-                        ((self.from_state is INIT_STATE and len(self.event_id.path) == 1) or
-                         (self.from_state is not INIT_STATE and len(self.event_id.path) == 2 and
-                          self.event_id.path[0] == self.from_state)):
-                    print(f' :: {self.event_id.path[-1]}', file=sf, end='')
+                if not self.event_id.is_absolute and (
+                    (self.from_state is INIT_STATE and len(self.event_id.path) == 1)
+                    or (
+                        self.from_state is not INIT_STATE
+                        and len(self.event_id.path) == 2
+                        and self.event_id.path[0] == self.from_state
+                    )
+                ):
+                    print(f" :: {self.event_id.path[-1]}", file=sf, end="")
                 else:
-                    print(f' : {self.event_id}', file=sf, end='')
+                    print(f" : {self.event_id}", file=sf, end="")
             elif self.condition_expr is not None:
-                print(f' : if [{self.condition_expr}]', file=sf, end='')
+                print(f" : if [{self.condition_expr}]", file=sf, end="")
 
             if len(self.post_operations) > 0:
-                print(' effect {', file=sf)
-                for operation in self.post_operations:
-                    print(f'    {operation}', file=sf)
-                print('}', file=sf, end='')
+                print(" effect {", file=sf)
+                print(
+                    _render_operational_statement_block(self.post_operations),
+                    file=sf,
+                    end="",
+                )
+                print("}", file=sf, end="")
             else:
-                print(';', file=sf, end='')
+                print(";", file=sf, end="")
 
             return sf.getvalue()
 
@@ -1006,6 +1345,7 @@ class ForceTransitionDefinition(ASTNode):
         >>> str(force_trans)
         '! * -> error;'
     """
+
     from_state: Union[str, _StateSingletonMark]
     to_state: Union[str, _StateSingletonMark]
     event_id: Optional[ChainID]
@@ -1019,23 +1359,29 @@ class ForceTransitionDefinition(ASTNode):
         :rtype: str
         """
         with io.StringIO() as sf:
-            print('! ', file=sf, end='')
-            print('*' if self.from_state is ALL else self.from_state, file=sf, end='')
-            print(' -> ', file=sf, end='')
-            print('[*]' if self.to_state is EXIT_STATE else self.to_state, file=sf, end='')
+            print("! ", file=sf, end="")
+            print("*" if self.from_state is ALL else self.from_state, file=sf, end="")
+            print(" -> ", file=sf, end="")
+            print(
+                "[*]" if self.to_state is EXIT_STATE else self.to_state, file=sf, end=""
+            )
 
             if self.event_id is not None:
-                if not self.event_id.is_absolute and \
-                        ((self.from_state is ALL and len(self.event_id.path) == 1) or
-                         (self.from_state is not ALL and len(self.event_id.path) == 2 and
-                          self.event_id.path[0] == self.from_state)):
-                    print(f' :: {self.event_id.path[-1]}', file=sf, end='')
+                if not self.event_id.is_absolute and (
+                    (self.from_state is ALL and len(self.event_id.path) == 1)
+                    or (
+                        self.from_state is not ALL
+                        and len(self.event_id.path) == 2
+                        and self.event_id.path[0] == self.from_state
+                    )
+                ):
+                    print(f" :: {self.event_id.path[-1]}", file=sf, end="")
                 else:
-                    print(f' : {self.event_id}', file=sf, end='')
+                    print(f" : {self.event_id}", file=sf, end="")
             elif self.condition_expr is not None:
-                print(f' : if [{self.condition_expr}]', file=sf, end='')
+                print(f" : if [{self.condition_expr}]", file=sf, end="")
 
-            print(';', file=sf, end='')
+            print(";", file=sf, end="")
             return sf.getvalue()
 
 
@@ -1053,6 +1399,8 @@ class StateDefinition(ASTNode):
     :type extra_name: Optional[str]
     :param events: List of events defined within this state
     :type events: List[EventDefinition]
+    :param imports: List of import statements declared within this state
+    :type imports: List[ImportStatement]
     :param substates: List of nested state definitions
     :type substates: List[StateDefinition]
     :param transitions: List of transitions from this state
@@ -1083,16 +1431,18 @@ class StateDefinition(ASTNode):
         ... )
         >>> state_with_trans = StateDefinition("idle", transitions=[trans])
     """
+
     name: str
     extra_name: Optional[str] = None
-    events: List['EventDefinition'] = None
-    substates: List['StateDefinition'] = None
+    events: List["EventDefinition"] = None
+    imports: List["ImportStatement"] = None
+    substates: List["StateDefinition"] = None
     transitions: List[TransitionDefinition] = None
-    enters: List['EnterStatement'] = None
-    durings: List['DuringStatement'] = None
-    exits: List['ExitStatement'] = None
-    during_aspects: List['DuringAspectStatement'] = None
-    force_transitions: List['ForceTransitionDefinition'] = None
+    enters: List["EnterStatement"] = None
+    durings: List["DuringStatement"] = None
+    exits: List["ExitStatement"] = None
+    during_aspects: List["DuringAspectStatement"] = None
+    force_transitions: List["ForceTransitionDefinition"] = None
     is_pseudo: bool = False
 
     def __post_init__(self) -> None:
@@ -1100,6 +1450,7 @@ class StateDefinition(ASTNode):
         Initialize default empty lists for optional parameters.
         """
         self.events = self.events or []
+        self.imports = self.imports or []
         self.substates = self.substates or []
         self.transitions = self.transitions or []
         self.force_transitions = self.force_transitions or []
@@ -1117,37 +1468,50 @@ class StateDefinition(ASTNode):
         """
         with io.StringIO() as sf:
             if self.is_pseudo:
-                print('pseudo ', file=sf, end='')
-            print(f'state {self.name}', file=sf, end='')
+                print("pseudo ", file=sf, end="")
+            print(f"state {self.name}", file=sf, end="")
             if self.extra_name is not None:
-                print(f' named {self.extra_name!r}', file=sf, end='')
+                print(f" named {self.extra_name!r}", file=sf, end="")
 
-            if not self.substates and not self.transitions and not self.events and \
-                    not self.enters and not self.durings and not self.exits and not self.during_aspects:
-                print(f';', file=sf, end='')
+            if (
+                not self.substates
+                and not self.transitions
+                and not self.force_transitions
+                and not self.events
+                and not self.imports
+                and not self.enters
+                and not self.durings
+                and not self.exits
+                and not self.during_aspects
+            ):
+                print(f";", file=sf, end="")
             else:
-                print(f' {{', file=sf)
+                print(f" {{", file=sf)
                 for enter_item in self.enters:
-                    print(indent(str(enter_item), prefix='    '), file=sf)
+                    print(indent(str(enter_item), prefix="    "), file=sf)
                 for during_item in self.durings:
-                    print(indent(str(during_item), prefix='    '), file=sf)
+                    print(indent(str(during_item), prefix="    "), file=sf)
                 for exit_item in self.exits:
-                    print(indent(str(exit_item), prefix='    '), file=sf)
+                    print(indent(str(exit_item), prefix="    "), file=sf)
                 for during_aspect_item in self.during_aspects:
-                    print(indent(str(during_aspect_item), prefix='    '), file=sf)
+                    print(indent(str(during_aspect_item), prefix="    "), file=sf)
+                for import_item in self.imports:
+                    print(indent(str(import_item), prefix="    "), file=sf)
                 for substate in self.substates:
-                    print(indent(str(substate), prefix='    '), file=sf)
+                    print(indent(str(substate), prefix="    "), file=sf)
                 for event in self.events:
-                    print(indent(str(event), prefix='    '), file=sf)
+                    print(indent(str(event), prefix="    "), file=sf)
+                for force_transition in self.force_transitions:
+                    print(indent(str(force_transition), prefix="    "), file=sf)
                 for transition in self.transitions:
-                    print(indent(str(transition), prefix='    '), file=sf)
-                print(f'}}', file=sf, end='')
+                    print(indent(str(transition), prefix="    "), file=sf)
+                print(f"}}", file=sf, end="")
 
             return sf.getvalue()
 
 
 @dataclass
-class OperationAssignment(Statement):
+class OperationAssignment(OperationalStatement):
     """
     Represents an operation assignment in the state machine DSL.
 
@@ -1168,6 +1532,7 @@ class OperationAssignment(Statement):
         >>> str(op_assign)
         'counter = counter + 1;'
     """
+
     name: str
     expr: Expr
 
@@ -1178,7 +1543,67 @@ class OperationAssignment(Statement):
         :return: String representation of the operation assignment
         :rtype: str
         """
-        return f'{self.name} = {self.expr};'
+        return f"{self.name} = {self.expr};"
+
+
+@dataclass
+class OperationIfBranch(ASTNode):
+    """
+    Represents a single branch inside an operation-block ``if`` statement.
+
+    :param condition: Branch condition, or ``None`` for the final ``else`` branch.
+    :type condition: Optional[Expr]
+    :param statements: Statements executed when the branch is selected.
+    :type statements: List[OperationalStatement]
+
+    :rtype: OperationIfBranch
+    """
+
+    condition: Optional[Expr]
+    statements: List[OperationalStatement]
+
+
+@dataclass
+class OperationIf(OperationalStatement):
+    """
+    Represents an ``if / else if / else`` statement inside an operation block.
+
+    :param branches: Ordered branch list. The last branch may have
+        ``condition=None`` to represent ``else``.
+    :type branches: List[OperationIfBranch]
+
+    :rtype: OperationIf
+    """
+
+    branches: List[OperationIfBranch]
+
+    def __str__(self) -> str:
+        """
+        Convert the operation ``if`` statement to its DSL representation.
+
+        :return: String representation of the operation ``if`` statement.
+        :rtype: str
+        """
+        with io.StringIO() as sf:
+            first_branch = self.branches[0]
+            print(f"if [{first_branch.condition}] {{", file=sf)
+
+            for index, branch in enumerate(self.branches):
+                if index > 0:
+                    if branch.condition is None:
+                        print("} else {", file=sf)
+                    else:
+                        print(f"}} else if [{branch.condition}] {{", file=sf)
+
+                print(
+                    _render_operational_statement_block(branch.statements),
+                    file=sf,
+                    end="",
+                )
+
+            print("}", file=sf, end="")
+
+            return sf.getvalue()
 
 
 @dataclass
@@ -1204,6 +1629,7 @@ class EventDefinition(ASTNode):
         >>> str(named_event)
         'event start named "Start Event";'
     """
+
     name: str
     extra_name: Optional[str] = None
 
@@ -1215,10 +1641,10 @@ class EventDefinition(ASTNode):
         :rtype: str
         """
         with io.StringIO() as sf:
-            print(f'event {self.name}', file=sf, end='')
+            print(f"event {self.name}", file=sf, end="")
             if self.extra_name is not None:
-                print(f' named {self.extra_name!r}', file=sf, end='')
-            print(';', file=sf, end='')
+                print(f" named {self.extra_name!r}", file=sf, end="")
+            print(";", file=sf, end="")
             return sf.getvalue()
 
 
@@ -1246,6 +1672,7 @@ class StateMachineDSLProgram(ASTNode):
         def int counter = 0;
         state root;
     """
+
     definitions: List[DefAssignment]
     root_state: StateDefinition
 
@@ -1259,7 +1686,7 @@ class StateMachineDSLProgram(ASTNode):
         with io.StringIO() as f:
             for definition in self.definitions:
                 print(definition, file=f)
-            print(self.root_state, file=f, end='')
+            print(self.root_state, file=f, end="")
             return f.getvalue()
 
 
@@ -1272,6 +1699,7 @@ class EnterStatement(ASTNode):
 
     :rtype: EnterStatement
     """
+
     pass
 
 
@@ -1280,8 +1708,8 @@ class EnterOperations(EnterStatement):
     """
     Represents a block of operations to perform when entering a state.
 
-    :param operations: List of operation assignments
-    :type operations: List[OperationAssignment]
+    :param operations: List of operation statements
+    :type operations: List[OperationalStatement]
     :param name: Optional name for the operation block
     :type name: Optional[str]
 
@@ -1296,7 +1724,8 @@ class EnterOperations(EnterStatement):
             counter = 0;
         }
     """
-    operations: List[OperationAssignment]
+
+    operations: List[OperationalStatement]
     name: Optional[str] = None
 
     def __str__(self) -> str:
@@ -1308,12 +1737,11 @@ class EnterOperations(EnterStatement):
         """
         with io.StringIO() as f:
             if self.name:
-                print(f'enter {self.name} {{', file=f)
+                print(f"enter {self.name} {{", file=f)
             else:
-                print(f'enter {{', file=f)
-            for operation in self.operations:
-                print(f'    {operation}', file=f)
-            print('}', file=f, end='')
+                print(f"enter {{", file=f)
+            print(_render_operational_statement_block(self.operations), file=f, end="")
+            print("}", file=f, end="")
             return f.getvalue()
 
 
@@ -1339,6 +1767,7 @@ class EnterAbstractFunction(EnterStatement):
             Initialize the state
         */
     """
+
     name: Optional[str]
     doc: Optional[str]
 
@@ -1351,16 +1780,16 @@ class EnterAbstractFunction(EnterStatement):
         """
         with io.StringIO() as f:
             if self.name:
-                print(f'enter abstract {self.name}', file=f, end='')
+                print(f"enter abstract {self.name}", file=f, end="")
             else:
-                print(f'enter abstract', file=f, end='')
+                print(f"enter abstract", file=f, end="")
 
             if self.doc is not None:
-                print(' /*', file=f)
-                print(indent(self.doc, prefix='    '), file=f)
-                print('*/', file=f, end='')
+                print(" /*", file=f)
+                print(indent(self.doc, prefix="    "), file=f)
+                print("*/", file=f, end="")
             else:
-                print(';', file=f, end='')
+                print(";", file=f, end="")
 
             return f.getvalue()
 
@@ -1385,6 +1814,7 @@ class EnterRefFunction(EnterStatement):
         >>> str(ref_func)
         'enter init ref common.initialize;'
     """
+
     name: Optional[str]
     ref: ChainID
 
@@ -1396,9 +1826,9 @@ class EnterRefFunction(EnterStatement):
         :rtype: str
         """
         if self.name:
-            return f'enter {self.name} ref {self.ref};'
+            return f"enter {self.name} ref {self.ref};"
         else:
-            return f'enter ref {self.ref};'
+            return f"enter ref {self.ref};"
 
 
 @dataclass
@@ -1410,6 +1840,7 @@ class ExitStatement(ASTNode):
 
     :rtype: ExitStatement
     """
+
     pass
 
 
@@ -1418,8 +1849,8 @@ class ExitOperations(ExitStatement):
     """
     Represents a block of operations to perform when exiting a state.
 
-    :param operations: List of operation assignments
-    :type operations: List[OperationAssignment]
+    :param operations: List of operation statements
+    :type operations: List[OperationalStatement]
     :param name: Optional name for the operation block
     :type name: Optional[str]
 
@@ -1434,7 +1865,8 @@ class ExitOperations(ExitStatement):
             active = false;
         }
     """
-    operations: List[OperationAssignment]
+
+    operations: List[OperationalStatement]
     name: Optional[str] = None
 
     def __str__(self) -> str:
@@ -1446,13 +1878,12 @@ class ExitOperations(ExitStatement):
         """
         with io.StringIO() as f:
             if self.name:
-                print(f'exit {self.name} {{', file=f)
+                print(f"exit {self.name} {{", file=f)
             else:
-                print(f'exit {{', file=f)
+                print(f"exit {{", file=f)
 
-            for operation in self.operations:
-                print(f'    {operation}', file=f)
-            print('}', file=f, end='')
+            print(_render_operational_statement_block(self.operations), file=f, end="")
+            print("}", file=f, end="")
             return f.getvalue()
 
 
@@ -1478,6 +1909,7 @@ class ExitAbstractFunction(ExitStatement):
             Clean up resources
         */
     """
+
     name: Optional[str]
     doc: Optional[str]
 
@@ -1490,16 +1922,16 @@ class ExitAbstractFunction(ExitStatement):
         """
         with io.StringIO() as f:
             if self.name:
-                print(f'exit abstract {self.name}', file=f, end='')
+                print(f"exit abstract {self.name}", file=f, end="")
             else:
-                print(f'exit abstract', file=f, end='')
+                print(f"exit abstract", file=f, end="")
 
             if self.doc is not None:
-                print(' /*', file=f)
-                print(indent(self.doc, prefix='    '), file=f)
-                print('*/', file=f, end='')
+                print(" /*", file=f)
+                print(indent(self.doc, prefix="    "), file=f)
+                print("*/", file=f, end="")
             else:
-                print(';', file=f, end='')
+                print(";", file=f, end="")
 
             return f.getvalue()
 
@@ -1524,6 +1956,7 @@ class ExitRefFunction(ExitStatement):
         >>> str(ref_func)
         'exit cleanup ref common.cleanup;'
     """
+
     name: Optional[str]
     ref: ChainID
 
@@ -1535,9 +1968,9 @@ class ExitRefFunction(ExitStatement):
         :rtype: str
         """
         if self.name:
-            return f'exit {self.name} ref {self.ref};'
+            return f"exit {self.name} ref {self.ref};"
         else:
-            return f'exit ref {self.ref};'
+            return f"exit ref {self.ref};"
 
 
 @dataclass
@@ -1549,6 +1982,7 @@ class DuringStatement(ASTNode):
 
     :rtype: DuringStatement
     """
+
     pass
 
 
@@ -1559,8 +1993,8 @@ class DuringOperations(DuringStatement):
 
     :param aspect: Optional aspect name (e.g., ``"entry"``, ``"do"``, ``"exit"``)
     :type aspect: Optional[str]
-    :param operations: List of operation assignments
-    :type operations: List[OperationAssignment]
+    :param operations: List of operation statements
+    :type operations: List[OperationalStatement]
     :param name: Optional name for the operation block
     :type name: Optional[str]
 
@@ -1575,8 +2009,9 @@ class DuringOperations(DuringStatement):
             counter = counter + 1;
         }
     """
+
     aspect: Optional[str]
-    operations: List[OperationAssignment]
+    operations: List[OperationalStatement]
     name: Optional[str] = None
 
     def __str__(self) -> str:
@@ -1589,17 +2024,16 @@ class DuringOperations(DuringStatement):
         with io.StringIO() as f:
             if self.name:
                 if self.aspect:
-                    print(f'during {self.aspect} {self.name} {{', file=f)
+                    print(f"during {self.aspect} {self.name} {{", file=f)
                 else:
-                    print(f'during {self.name} {{', file=f)
+                    print(f"during {self.name} {{", file=f)
             else:
                 if self.aspect:
-                    print(f'during {self.aspect} {{', file=f)
+                    print(f"during {self.aspect} {{", file=f)
                 else:
-                    print(f'during {{', file=f)
-            for operation in self.operations:
-                print(f'    {operation}', file=f)
-            print('}', file=f, end='')
+                    print(f"during {{", file=f)
+            print(_render_operational_statement_block(self.operations), file=f, end="")
+            print("}", file=f, end="")
             return f.getvalue()
 
 
@@ -1627,6 +2061,7 @@ class DuringAbstractFunction(DuringStatement):
             Process incoming data
         */
     """
+
     name: Optional[str]
     aspect: Optional[str]
     doc: Optional[str]
@@ -1641,21 +2076,21 @@ class DuringAbstractFunction(DuringStatement):
         with io.StringIO() as f:
             if self.name:
                 if self.aspect:
-                    print(f'during {self.aspect} abstract {self.name}', file=f, end='')
+                    print(f"during {self.aspect} abstract {self.name}", file=f, end="")
                 else:
-                    print(f'during abstract {self.name}', file=f, end='')
+                    print(f"during abstract {self.name}", file=f, end="")
             else:
                 if self.aspect:
-                    print(f'during {self.aspect} abstract', file=f, end='')
+                    print(f"during {self.aspect} abstract", file=f, end="")
                 else:
-                    print(f'during abstract', file=f, end='')
+                    print(f"during abstract", file=f, end="")
 
             if self.doc is not None:
-                print(' /*', file=f)
-                print(indent(self.doc, prefix='    '), file=f)
-                print('*/', file=f, end='')
+                print(" /*", file=f)
+                print(indent(self.doc, prefix="    "), file=f)
+                print("*/", file=f, end="")
             else:
-                print(';', file=f, end='')
+                print(";", file=f, end="")
 
             return f.getvalue()
 
@@ -1682,6 +2117,7 @@ class DuringRefFunction(DuringStatement):
         >>> str(ref_func)
         'during do process ref common.process;'
     """
+
     name: Optional[str]
     aspect: Optional[str]
     ref: ChainID
@@ -1695,14 +2131,14 @@ class DuringRefFunction(DuringStatement):
         """
         if self.name:
             if self.aspect:
-                return f'during {self.aspect} {self.name} ref {self.ref};'
+                return f"during {self.aspect} {self.name} ref {self.ref};"
             else:
-                return f'during {self.name} ref {self.ref};'
+                return f"during {self.name} ref {self.ref};"
         else:
             if self.aspect:
-                return f'during {self.aspect} ref {self.ref};'
+                return f"during {self.aspect} ref {self.ref};"
             else:
-                return f'during ref {self.ref};'
+                return f"during ref {self.ref};"
 
 
 @dataclass
@@ -1714,6 +2150,7 @@ class DuringAspectStatement(ASTNode):
 
     :rtype: DuringAspectStatement
     """
+
     pass
 
 
@@ -1724,8 +2161,8 @@ class DuringAspectOperations(DuringAspectStatement):
 
     :param aspect: The aspect name (e.g., ``"before"``, ``"after"``)
     :type aspect: str
-    :param operations: List of operation assignments
-    :type operations: List[OperationAssignment]
+    :param operations: List of operation statements
+    :type operations: List[OperationalStatement]
     :param name: Optional name for the operation block
     :type name: Optional[str]
 
@@ -1740,8 +2177,9 @@ class DuringAspectOperations(DuringAspectStatement):
             counter = counter + 1;
         }
     """
+
     aspect: str
-    operations: List[OperationAssignment]
+    operations: List[OperationalStatement]
     name: Optional[str] = None
 
     def __str__(self) -> str:
@@ -1753,12 +2191,11 @@ class DuringAspectOperations(DuringAspectStatement):
         """
         with io.StringIO() as f:
             if self.name:
-                print(f'>> during {self.aspect} {self.name} {{', file=f)
+                print(f">> during {self.aspect} {self.name} {{", file=f)
             else:
-                print(f'>> during {self.aspect} {{', file=f)
-            for operation in self.operations:
-                print(f'    {operation}', file=f)
-            print('}', file=f, end='')
+                print(f">> during {self.aspect} {{", file=f)
+            print(_render_operational_statement_block(self.operations), file=f, end="")
+            print("}", file=f, end="")
             return f.getvalue()
 
 
@@ -1788,6 +2225,7 @@ class DuringAspectAbstractFunction(DuringAspectStatement):
             Process incoming data
         */
     """
+
     name: Optional[str]
     aspect: str
     doc: Optional[str]
@@ -1801,16 +2239,16 @@ class DuringAspectAbstractFunction(DuringAspectStatement):
         """
         with io.StringIO() as f:
             if self.name:
-                print(f'>> during {self.aspect} abstract {self.name}', file=f, end='')
+                print(f">> during {self.aspect} abstract {self.name}", file=f, end="")
             else:
-                print(f'>> during {self.aspect} abstract', file=f, end='')
+                print(f">> during {self.aspect} abstract", file=f, end="")
 
             if self.doc is not None:
-                print(' /*', file=f)
-                print(indent(self.doc, prefix='    '), file=f)
-                print('*/', file=f, end='')
+                print(" /*", file=f)
+                print(indent(self.doc, prefix="    "), file=f)
+                print("*/", file=f, end="")
             else:
-                print(';', file=f, end='')
+                print(";", file=f, end="")
 
             return f.getvalue()
 
@@ -1839,6 +2277,7 @@ class DuringAspectRefFunction(DuringAspectStatement):
         >>> str(ref_func)
         '>> during before process ref common.process;'
     """
+
     name: Optional[str]
     aspect: str
     ref: ChainID
@@ -1851,6 +2290,6 @@ class DuringAspectRefFunction(DuringAspectStatement):
         :rtype: str
         """
         if self.name:
-            return f'>> during {self.aspect} {self.name} ref {self.ref};'
+            return f">> during {self.aspect} {self.name} ref {self.ref};"
         else:
-            return f'>> during {self.aspect} ref {self.ref};'
+            return f">> during {self.aspect} ref {self.ref};"

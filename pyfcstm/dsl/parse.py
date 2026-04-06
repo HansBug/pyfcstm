@@ -11,6 +11,7 @@ The module contains the following main components:
 
 * :func:`parse_with_grammar_entry` - Parse text using an arbitrary grammar entry rule.
 * :func:`parse_condition` - Parse a condition expression.
+* :func:`parse_state_machine_dsl` - Parse a complete state machine DSL document.
 * :func:`parse_preamble` - Parse a preamble program.
 * :func:`parse_operation` - Parse an operation program.
 
@@ -33,6 +34,7 @@ from antlr4 import CommonTokenStream, InputStream, ParseTreeWalker
 from .error import CollectingErrorListener
 from .grammar import GrammarParser, GrammarLexer
 from .listener import GrammarParseListener
+from .node import StateMachineDSLProgram
 
 
 def _parse_as_element(
@@ -135,6 +137,35 @@ def parse_condition(input_text: str) -> Any:
         >>> condition_node = parse_condition("x > 5 && y < 10")
     """
     return parse_with_grammar_entry(input_text, "condition")
+
+
+def parse_state_machine_dsl(input_text: str) -> StateMachineDSLProgram:
+    """
+    Parse input text as a complete state machine DSL document.
+
+    This helper uses the grammar's ``state_machine_dsl`` rule and returns a
+    pure DSL AST.
+
+    :param input_text: The state machine DSL text to parse.
+    :type input_text: str
+    :return: Parsed state machine DSL program node.
+    :rtype: StateMachineDSLProgram
+    :raises pyfcstm.dsl.error.GrammarParseError: If parsing fails.
+
+    Example::
+
+        >>> program = parse_state_machine_dsl("state Root;")
+        >>> program.root_state.name
+        'Root'
+    """
+    program = parse_with_grammar_entry(input_text, "state_machine_dsl")
+    if not isinstance(program, StateMachineDSLProgram):
+        raise TypeError(
+            "Expected 'state_machine_dsl' to produce StateMachineDSLProgram, "
+            f"got {type(program)!r}."
+        )
+
+    return program
 
 
 def parse_preamble(input_text: str) -> Any:

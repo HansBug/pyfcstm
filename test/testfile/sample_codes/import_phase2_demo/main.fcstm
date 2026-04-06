@@ -1,0 +1,4 @@
+state System {
+    import "./modules/motor.fcstm" as LeftMotor named "Left Motor";
+    [*] -> LeftMotor;
+}

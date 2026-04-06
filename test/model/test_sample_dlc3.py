@@ -41,7 +41,9 @@ state LX
     """,
         entry_name="state_machine_dsl",
     )
-    model = parse_dsl_node_to_state_machine(ast_node)
+    model = parse_dsl_node_to_state_machine(
+        ast_node, path="test/testfile/sample_codes/dlc3.fcstm"
+    )
     return model
 
 
@@ -287,26 +289,31 @@ class TestModelStateLx:
             name="LX",
             extra_name=None,
             events=[dsl_nodes.EventDefinition(name="E1", extra_name=None)],
+            imports=[],
             substates=[
                 dsl_nodes.StateDefinition(
                     name="LX2",
                     extra_name=None,
                     events=[],
+                    imports=[],
                     substates=[
                         dsl_nodes.StateDefinition(
                             name="start",
                             extra_name=None,
                             events=[],
+                            imports=[],
                             substates=[
                                 dsl_nodes.StateDefinition(
                                     name="LX4",
                                     extra_name=None,
                                     events=[],
+                                    imports=[],
                                     substates=[
                                         dsl_nodes.StateDefinition(
                                             name="LX5",
                                             extra_name=None,
                                             events=[],
+                                            imports=[],
                                             substates=[],
                                             transitions=[],
                                             enters=[],
@@ -396,6 +403,7 @@ class TestModelStateLx:
                     name="ERROR",
                     extra_name=None,
                     events=[],
+                    imports=[],
                     substates=[],
                     transitions=[],
                     enters=[],
@@ -818,21 +826,25 @@ class TestModelStateLx:
             name="LX2",
             extra_name=None,
             events=[],
+            imports=[],
             substates=[
                 dsl_nodes.StateDefinition(
                     name="start",
                     extra_name=None,
                     events=[],
+                    imports=[],
                     substates=[
                         dsl_nodes.StateDefinition(
                             name="LX4",
                             extra_name=None,
                             events=[],
+                            imports=[],
                             substates=[
                                 dsl_nodes.StateDefinition(
                                     name="LX5",
                                     extra_name=None,
                                     events=[],
+                                    imports=[],
                                     substates=[],
                                     transitions=[],
                                     enters=[],
@@ -1105,16 +1117,19 @@ class TestModelStateLx:
             name="start",
             extra_name=None,
             events=[],
+            imports=[],
             substates=[
                 dsl_nodes.StateDefinition(
                     name="LX4",
                     extra_name=None,
                     events=[],
+                    imports=[],
                     substates=[
                         dsl_nodes.StateDefinition(
                             name="LX5",
                             extra_name=None,
                             events=[],
+                            imports=[],
                             substates=[],
                             transitions=[],
                             enters=[],
@@ -1386,11 +1401,13 @@ class TestModelStateLx:
             name="LX4",
             extra_name=None,
             events=[],
+            imports=[],
             substates=[
                 dsl_nodes.StateDefinition(
                     name="LX5",
                     extra_name=None,
                     events=[],
+                    imports=[],
                     substates=[],
                     transitions=[],
                     enters=[],
@@ -1568,6 +1585,7 @@ class TestModelStateLx:
             name="LX5",
             extra_name=None,
             events=[],
+            imports=[],
             substates=[],
             transitions=[],
             enters=[],
@@ -1739,6 +1757,7 @@ class TestModelStateLx:
             name="ERROR",
             extra_name=None,
             events=[],
+            imports=[],
             substates=[],
             transitions=[],
             enters=[],

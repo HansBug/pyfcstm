@@ -13,4 +13,5 @@ pyfcstm.render
     expr
     func
     render
+    statement
 

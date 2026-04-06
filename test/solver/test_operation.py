@@ -5,10 +5,52 @@ Tests for solver operation parsing and execution.
 import pytest
 import z3
 
+from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.solver.operation import parse_operations, execute_operations
-from pyfcstm.model.model import Operation
+from pyfcstm.model import IfBlock, IfBlockBranch, Operation, parse_dsl_node_to_state_machine
 from pyfcstm.model.expr import Variable, Integer, BinaryOp
 from pyfcstm.dsl.error import GrammarParseError
+from pyfcstm.simulate import SimulationRuntime
+
+
+def assert_symbolic_outputs(var_exprs, new_exprs, assumptions, expected_outputs):
+    solver = z3.Solver()
+    for name, value in assumptions.items():
+        solver.add(var_exprs[name] == value)
+    for name, value in expected_outputs.items():
+        solver.add(new_exprs[name] == value)
+    assert solver.check() == z3.sat
+
+
+def assert_z3_expr_equal(actual_expr, expected_expr):
+    actual_simplified = z3.simplify(actual_expr)
+    expected_simplified = z3.simplify(expected_expr)
+    assert z3.eq(actual_simplified, expected_simplified), (
+        f"Expected Z3 expr {expected_simplified.sexpr()}, "
+        f"got {actual_simplified.sexpr()}"
+    )
+
+
+def build_runtime_for_block(block_code: str, initial_values):
+    define_lines = [
+        f"def int {name} = {value};"
+        for name, value in initial_values.items()
+    ]
+    dsl_code = "\n".join(
+        define_lines + [
+            "state Root {",
+            "    state A {",
+            "        during {",
+            block_code,
+            "        }",
+            "    }",
+            "    [*] -> A;",
+            "}",
+        ]
+    )
+    ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
+    sm = parse_dsl_node_to_state_machine(ast)
+    return SimulationRuntime(sm)
 
 
 @pytest.mark.unittest
@@ -99,6 +141,53 @@ class TestParseOperations:
         """Test parsing with missing semicolon."""
         with pytest.raises(GrammarParseError):
             parse_operations("x = 10")
+
+    def test_parse_if_statement(self):
+        """Test parsing an operation-block if statement."""
+        statements = parse_operations("""
+        if [x > 0] {
+            y = x + 1;
+        } else {
+            y = x + 2;
+        }
+        """, allowed_vars=['x', 'y'])
+
+        assert len(statements) == 1
+        assert isinstance(statements[0], IfBlock)
+        assert len(statements[0].branches) == 2
+        assert statements[0].branches[1].condition is None
+
+    def test_parse_if_condition_rejects_unknown_variable(self):
+        """Test restricted mode rejects unknown variables in if conditions."""
+        with pytest.raises(ValueError, match="Variable 'missing' is not in allowed variables"):
+            parse_operations("""
+            if [missing > 0] {
+                x = x + 1;
+            }
+            """, allowed_vars=['x'])
+
+    def test_parse_branch_local_temp_does_not_escape(self):
+        """Test restricted mode rejects branch-local temporaries after the if block."""
+        with pytest.raises(ValueError, match="Variable 'tmp' is not in allowed variables"):
+            parse_operations("""
+            if [x > 0] {
+                tmp = x + 1;
+            }
+            y = tmp;
+            """, allowed_vars=['x', 'y'])
+
+    def test_parse_outer_temp_can_be_used_after_if(self):
+        """Test restricted mode allows pre-if temporaries to be used after the if block."""
+        statements = parse_operations("""
+        tmp = x + 1;
+        if [x > 0] {
+            tmp = tmp + 10;
+        }
+        y = tmp;
+        """, allowed_vars=['x', 'y'])
+
+        assert len(statements) == 3
+        assert isinstance(statements[1], IfBlock)
 
 
 @pytest.mark.unittest
@@ -247,6 +336,142 @@ class TestExecuteOperations:
         solver.add(new_exprs['y'] == 15)
         assert solver.check() == z3.sat
 
+    @pytest.mark.parametrize(
+        ['code', 'var_names', 'expected_builder'],
+        [
+            (
+                """
+                if [x > 0] {
+                    y = x + 10;
+                }
+                """,
+                ['x', 'y'],
+                lambda vars_: {
+                    'x': vars_['x'],
+                    'y': z3.If(vars_['x'] > 0, vars_['x'] + 10, vars_['y']),
+                },
+            ),
+            (
+                """
+                if [x > 0] {
+                    y = x + 10;
+                } else {
+                    y = x + 20;
+                }
+                """,
+                ['x', 'y'],
+                lambda vars_: {
+                    'x': vars_['x'],
+                    'y': z3.If(vars_['x'] > 0, vars_['x'] + 10, vars_['x'] + 20),
+                },
+            ),
+            (
+                """
+                if [mode == 0] {
+                    y = 10;
+                } else if [mode == 1] {
+                    y = 20;
+                } else {
+                    y = 30;
+                }
+                """,
+                ['x', 'y', 'mode'],
+                lambda vars_: {
+                    'x': vars_['x'],
+                    'y': z3.If(
+                        z3.IntVal(0) == vars_['mode'],
+                        z3.IntVal(10),
+                        z3.If(z3.IntVal(1) == vars_['mode'], z3.IntVal(20), z3.IntVal(30)),
+                    ),
+                    'mode': vars_['mode'],
+                },
+            ),
+            (
+                """
+                if [x > 0] {
+                    tmp = x + 1;
+                    if [y > 0] {
+                        z = tmp + y;
+                    } else {
+                        z = tmp + 100;
+                    }
+                } else {
+                    z = 999;
+                }
+                """,
+                ['x', 'y', 'z'],
+                lambda vars_: {
+                    'x': vars_['x'],
+                    'y': vars_['y'],
+                    'z': z3.If(
+                        vars_['x'] > 0,
+                        z3.If(vars_['y'] > 0, vars_['x'] + 1 + vars_['y'], vars_['x'] + 101),
+                        z3.IntVal(999),
+                    ),
+                },
+            ),
+            (
+                """
+                if [x > 0] {
+                    x = x + 1;
+                    y = x + 10;
+                } else {
+                    y = y + 100;
+                }
+                """,
+                ['x', 'y'],
+                lambda vars_: {
+                    'x': z3.If(vars_['x'] > 0, vars_['x'] + 1, vars_['x']),
+                    'y': z3.If(vars_['x'] > 0, vars_['x'] + 11, vars_['y'] + 100),
+                },
+            ),
+        ]
+    )
+    def test_execute_if_blocks_symbolically(self, code, var_names, expected_builder):
+        statements = parse_operations(code, allowed_vars=var_names)
+        var_exprs = {name: z3.Int(name) for name in var_names}
+
+        new_exprs = execute_operations(statements, var_exprs)
+        expected_exprs = expected_builder(var_exprs)
+
+        assert set(new_exprs.keys()) == set(var_exprs.keys())
+        for name in var_names:
+            assert_z3_expr_equal(new_exprs[name], expected_exprs[name])
+
+    def test_execute_branch_local_temp_does_not_leak(self):
+        """Test branch-local temporary expressions do not appear in final output."""
+        statements = parse_operations("""
+        if [x > 0] {
+            tmp = x + y;
+            x = tmp + 1;
+        }
+        """, allowed_vars=['x', 'y'])
+        var_exprs = {'x': z3.Int('x'), 'y': z3.Int('y')}
+
+        new_exprs = execute_operations(statements, var_exprs)
+
+        assert set(new_exprs.keys()) == {'x', 'y'}
+        assert 'tmp' not in new_exprs
+        assert_z3_expr_equal(new_exprs['x'], z3.If(var_exprs['x'] > 0, var_exprs['x'] + var_exprs['y'] + 1, var_exprs['x']))
+        assert_z3_expr_equal(new_exprs['y'], var_exprs['y'])
+
+    def test_execute_outer_temp_participates_in_merge(self):
+        """Test pre-if temporary expressions participate in branch merge."""
+        statements = parse_operations("""
+        tmp = x + 1;
+        if [x > 0] {
+            tmp = tmp + 10;
+        }
+        y = tmp;
+        """, allowed_vars=['x', 'y'])
+        var_exprs = {'x': z3.Int('x'), 'y': z3.Int('y')}
+
+        new_exprs = execute_operations(statements, var_exprs)
+
+        assert set(new_exprs.keys()) == {'x', 'y'}
+        assert_z3_expr_equal(new_exprs['x'], var_exprs['x'])
+        assert_z3_expr_equal(new_exprs['y'], z3.If(var_exprs['x'] > 0, var_exprs['x'] + 11, var_exprs['x'] + 1))
+
 
 @pytest.mark.unittest
 class TestIntegration:
@@ -316,3 +541,71 @@ class TestIntegration:
         solver.add(new_exprs['x'] == 3)
         solver.add(new_exprs['y'] == 14)
         assert solver.check() == z3.sat
+
+    @pytest.mark.parametrize(
+        ['block_code', 'initial_values'],
+        [
+            (
+                """
+            if [x > 0] {
+                tmp = x + 1;
+                if [flag > 0] {
+                    y = tmp + 10;
+                } else {
+                    y = tmp + 20;
+                }
+            } else {
+                y = y + 100;
+            }
+                """,
+                {'x': 5, 'y': 1, 'flag': 1},
+            ),
+            (
+                """
+            if [x > 0] {
+                tmp = x + 1;
+                if [flag > 0] {
+                    y = tmp + 10;
+                } else {
+                    y = tmp + 20;
+                }
+            } else {
+                y = y + 100;
+            }
+                """,
+                {'x': 5, 'y': 1, 'flag': 0},
+            ),
+            (
+                """
+            if [x > 0] {
+                tmp = x + 1;
+                if [flag > 0] {
+                    y = tmp + 10;
+                } else {
+                    y = tmp + 20;
+                }
+            } else {
+                y = y + 100;
+            }
+                """,
+                {'x': 0, 'y': 1, 'flag': 0},
+            ),
+        ]
+    )
+    def test_solver_and_runtime_match_for_if_blocks(self, block_code, initial_values):
+        statements = parse_operations(block_code, allowed_vars=list(initial_values.keys()))
+        var_exprs = {
+            name: z3.Int(name)
+            for name in initial_values.keys()
+        }
+        new_exprs = execute_operations(statements, var_exprs)
+
+        runtime = build_runtime_for_block(block_code, initial_values)
+        runtime.cycle()
+
+        expected_outputs = {
+            name: runtime.vars[name]
+            for name in initial_values.keys()
+        }
+
+        assert_symbolic_outputs(var_exprs, new_exprs, initial_values, expected_outputs)

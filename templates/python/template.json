@@ -1,0 +1,7 @@
+{
+  "name": "python",
+  "title": "Python",
+  "description": "Native Python built-in template with embedded runtime logic.",
+  "language": "python",
+  "experimental": true
+}

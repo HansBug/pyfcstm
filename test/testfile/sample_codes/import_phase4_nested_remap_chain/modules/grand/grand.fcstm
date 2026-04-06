@@ -1,0 +1,11 @@
+state GrandRoot {
+    event Pulse named "Pulse Source";
+    event Trip named "Trip Source";
+    state Idle;
+    state Running;
+    state Tripped;
+    [*] -> Idle;
+    Idle -> Running : Pulse;
+    Running -> Idle : /Halt;
+    ! * -> Tripped : Trip;
+}

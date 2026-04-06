@@ -1,0 +1,12 @@
+def int line_speed = 0;
+
+state Line {
+    event Start;
+
+    import "./subsystems/robot.fcstm" as Robot {
+        def speed -> line_speed;
+        event /Start -> Start;
+    }
+
+    [*] -> Robot;
+}

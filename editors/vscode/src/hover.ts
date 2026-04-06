@@ -9,6 +9,7 @@
  */
 
 import * as vscode from 'vscode';
+import { getImportWorkspaceIndex } from './imports';
 
 /**
  * Hover documentation for FCSTM constructs
@@ -109,6 +110,11 @@ const HOVER_DOCS: Record<string, { title: string; description: string; example?:
         description: 'Specifies a condition that must be true for a transition to be taken. Evaluated at runtime.',
         example: '```fcstm\nStateA -> StateB : if [counter >= 10];\n```'
     },
+    'else': {
+        title: 'Else Branch',
+        description: 'Selects the fallback branch in an operation-block if statement when all earlier conditions are false.',
+        example: '```fcstm\nduring {\n    if [counter > 0] {\n        level = 1;\n    } else {\n        level = 0;\n    }\n}\n```'
+    },
     'def': {
         title: 'Variable Definition',
         description: 'Defines a state machine variable with a type and initial value. Variables must be defined before states.',
@@ -123,6 +129,16 @@ const HOVER_DOCS: Record<string, { title: string; description: string; example?:
         title: 'Event Definition',
         description: 'Explicitly defines an event within a state scope. Events can have display names for documentation.',
         example: '```fcstm\nevent Start;\nevent Stop named "Stop Event";\n```'
+    },
+    'import': {
+        title: 'Import Statement',
+        description: 'Imports another FCSTM module root state into the current composite state, optionally with variable or event mappings.',
+        example: '```fcstm\nimport "./worker.fcstm" as Worker {\n    def sensor_* -> left_$1;\n    event /Start -> /Bus.Start;\n}\n```'
+    },
+    'as': {
+        title: 'Import Alias',
+        description: 'Assigns the imported root state to a host-visible alias. The alias becomes the imported state name inside the current scope.',
+        example: '```fcstm\nimport "./worker.fcstm" as Worker;\n```'
     }
 };
 
@@ -130,11 +146,20 @@ const HOVER_DOCS: Record<string, { title: string; description: string; example?:
  * Hover provider for FCSTM documents
  */
 export class FcstmHoverProvider implements vscode.HoverProvider {
+    private readonly importIndex = getImportWorkspaceIndex();
+
     provideHover(
         document: vscode.TextDocument,
         position: vscode.Position,
         _token: vscode.CancellationToken
-    ): vscode.Hover | null {
+    ): Thenable<vscode.Hover | null> | vscode.Hover | null {
+        return this.provideHoverInternal(document, position);
+    }
+
+    private async provideHoverInternal(
+        document: vscode.TextDocument,
+        position: vscode.Position
+    ): Promise<vscode.Hover | null> {
         const line = document.lineAt(position.line);
         const text = line.text;
 
@@ -155,6 +180,29 @@ export class FcstmHoverProvider implements vscode.HoverProvider {
             }
 
             return new vscode.Hover(markdown);
+        }
+
+        const importTarget = await this.importIndex.getResolvedImportAtPosition(document, position);
+        if (importTarget) {
+            const markdown = new vscode.MarkdownString();
+            markdown.appendMarkdown('**Imported Module**\n\n');
+            markdown.appendMarkdown(`Path: \`${importTarget.entry.sourcePath}\`\n\n`);
+            if (importTarget.target.entryFile) {
+                markdown.appendMarkdown(`Resolved file: \`${importTarget.target.entryFile}\`\n\n`);
+            } else if (importTarget.target.resolvedFile) {
+                markdown.appendMarkdown(`Resolved path: \`${importTarget.target.resolvedFile}\`\n\n`);
+            }
+            if (importTarget.target.rootStateName) {
+                markdown.appendMarkdown(`Root state: \`${importTarget.target.rootStateName}\`\n\n`);
+            }
+            if (importTarget.target.explicitVariables.length > 0) {
+                markdown.appendMarkdown(`Variables: \`${importTarget.target.explicitVariables.join('`, `')}\`\n\n`);
+            }
+            if (importTarget.target.absoluteEvents.length > 0) {
+                markdown.appendMarkdown(`Absolute events: \`${importTarget.target.absoluteEvents.join('`, `')}\``);
+            }
+
+            return new vscode.Hover(markdown, importTarget.entry.pathRange);
         }
 
         return null;

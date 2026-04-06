@@ -439,7 +439,7 @@ Pygments 和 TextMate 实现都支持完整的 FCSTM 语法：
 关键字
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-**声明关键字：** ``state``、``pseudo``、``named``、``def``、``event``
+**声明关键字：** ``state``、``pseudo``、``import``、``as``、``named``、``def``、``event``
 
 **生命周期关键字：** ``enter``、``during``、``exit``、``before``、``after``
 
@@ -493,6 +493,32 @@ Pygments 和 TextMate 实现都支持完整的 FCSTM 语法：
 **伪状态：** ``[*]``
 
 **注释：** ``//``\ （行注释）、``/* */``\ （块注释）、``#``\ （Python 风格注释）
+
+Import 相关语法高亮
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+词法分析器和编辑器语法同样能够识别多文件 FCSTM 工程所使用的 import 相关
+语法。本教程只负责说明高亮与编辑器支持；关于 import 装配语义、mapping
+规则和完整示例，请参见 :doc:`/tutorials/dsl/index_zh`。
+
+下面这些形式都能被 Pygments 词法分析器、TextMate 语法和 VS Code 扩展
+正确高亮：
+
+* ``import "./worker.fcstm" as Worker;``
+* ``import "./worker.fcstm" as Worker named "Worker Module" { ... }``
+* ``def sensor_* -> io_$1;``
+* ``def * -> Worker_${1};``
+* ``event /Start -> Start named "Mapped Start";``
+
+这意味着编辑器侧可以正确区分：
+
+- ``import``、``as`` 等导入关键字
+- import 语句上的 ``named`` 子句
+- 带通配符与捕获替换的 ``def`` mapping 模式
+- ``event`` mapping 中使用的模块绝对事件路径
+
+如果您关注的是词法分析器、语法高亮和编辑器能力，请继续阅读本教程；如果
+您关注的是 import 的真实语义规则，请转到 DSL 教程。
 
 完整示例
 ---------------------------------------

@@ -3,6 +3,12 @@ PyFCSTM 命令行界面指南
 
 pyfcstm 是一个强大的状态机 DSL 工具，提供命令行界面用于解析、可视化和从层次化有限状态机生成代码。
 
+文档中最常用的几个命令是：
+
+- ``pyfcstm plantuml``：生成原始 PlantUML 文本
+- ``pyfcstm visualize``：直接渲染最终图像文件
+- ``pyfcstm generate``：基于模板生成源码
+
 安装
 ---------------------------------------
 
@@ -146,6 +152,61 @@ plantuml 命令
 - 将输出传递给其他工具
 - 与 CI/CD 流水线集成
 
+visualize 命令
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+直接将状态机 DSL 文件渲染为最终图像或 PDF，并可选择使用系统默认查看器打开结果文件。
+
+与 ``plantuml`` 命令的区别：
+
+- ``pyfcstm plantuml`` 输出 PlantUML 源文本，更适合检查、版本管理或交给外部 PlantUML 工具继续处理
+- ``pyfcstm visualize`` 通过 ``plantumlcli`` 直接渲染最终产物，更适合本地预览和快速导出图片或 PDF
+
+**语法**：
+
+.. code-block:: bash
+
+   pyfcstm visualize -i <输入文件> [-o <输出文件>] [-t png|svg|pdf] \
+     [--renderer auto|local|remote] [--open/--no-open] [--check]
+
+**参数**：
+
+- ``-i, --input-code``：输入状态机 DSL 文件路径（除 ``--check`` 外必需）
+- ``-o, --output``：渲染后输出文件路径（可选，未指定时写入缓存目录）
+- ``-l, --level``：与 ``plantuml`` 共用的 PlantUML 详细级别预设（``minimal`` / ``normal`` / ``full``）
+- ``-c, --config``：``key=value`` 格式的 PlantUML 配置覆盖项，可重复指定
+- ``-t, --type``：渲染输出类型，可选 ``png``、``svg`` 或 ``pdf``
+- ``--renderer``：后端选择，可选 ``auto``、``local`` 或 ``remote``
+- ``--check``：只检查后端可用性，不执行渲染
+- ``--open/--no-open``：开启或关闭渲染完成后的自动打开行为
+- ``--strict-open``：将查看器启动失败视为错误
+- ``-j, --java``：本地渲染器使用的 Java 可执行文件路径
+- ``-p, --plantuml-jar``：本地渲染器使用的 PlantUML jar 路径，也可通过 ``PLANTUML_JAR`` 读取
+- ``-r, --remote-host``：远端 PlantUML 服务地址，也可通过 ``PLANTUML_HOST`` 读取
+
+**示例**：
+
+.. code-block:: bash
+
+   # 渲染 PNG，并在有图形界面时自动打开
+   pyfcstm visualize -i simple_machine.fcstm
+
+   # 导出 SVG，但不自动打开查看器
+   pyfcstm visualize -i simple_machine.fcstm -t svg -o simple_machine.svg --no-open
+
+   # 检查本地或远端渲染后端是否可用
+   pyfcstm visualize --check --renderer auto
+
+**渲染后端行为**
+
+- ``auto`` 会先尝试本地 PlantUML 后端，失败后再回退到远端后端
+- ``local`` 使用 Java 和 PlantUML jar 文件
+- ``remote`` 使用 PlantUML 服务端，适合没有 Java 的机器
+
+如果当前进程运行在 CI 等无图形界面的环境中，渲染仍然可以完成，但会跳过自动打开查看器。
+
+``visualize`` 与 ``plantuml`` 共用同一套 ``-l/--level`` 和 ``-c/--config`` PlantUML 输出配置。完整配置项和效果示例请参见 :doc:`/tutorials/visualization/index_zh`。
+
 generate 命令
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -198,6 +259,17 @@ generate 命令
    # 生成 Python 代码
    pyfcstm generate -i simple_machine.fcstm -t ./templates/python -o ./output
 
+**示例：从多文件 import 工程生成代码**
+
+当 DSL 工程开始使用 import 后，对外 CLI 用法并不会变化。您仍然只需要
+给出一个入口文件，pyfcstm 会自动装配它导入的其他模块。
+
+.. code-block:: bash
+
+   # 入口文件可以 import 其他 FCSTM 文件，或 import 一个带 main.fcstm 的目录
+   pyfcstm generate -i ./docs/source/tutorials/dsl/import_host_directory.fcstm \
+     -t ./templates/python -o ./output --clear
+
 **模板上下文**
 
 模板可以访问完整的状态机模型：
@@ -233,11 +305,18 @@ generate 命令
    # 1. 编写状态机 DSL
    vim my_machine.fcstm
 
-   # 2. 生成 PlantUML
+   # 2. 直接渲染预览图
+   pyfcstm visualize -i my_machine.fcstm -t svg -o my_machine.svg --no-open
+
+   # 3. 如果需要 PlantUML 源文本，再单独生成 .puml
    pyfcstm plantuml -i my_machine.fcstm -o my_machine.puml
 
-   # 3. 渲染图表（在线或本地）
-   plantuml my_machine.puml
+对于多文件状态机，同样沿用这一工作流：
+
+.. code-block:: bash
+
+   pyfcstm plantuml -i ./docs/source/tutorials/dsl/import_host_mapped.fcstm \
+     -o import_host_mapped.puml
 
 工作流 2：DSL 到代码
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -267,6 +346,13 @@ generate 命令
 
    # 生成测试代码
    pyfcstm generate -i machine.fcstm -t ./templates/test -o ./tests/generated
+
+对于 import 工程，只需要检查入口文件：
+
+.. code-block:: bash
+
+   pyfcstm plantuml -i ./docs/source/tutorials/dsl/import_host_directory.fcstm \
+     > /dev/null && echo "Import 工程语法正确"
 
 工作流 4：CI/CD 集成
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

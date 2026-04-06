@@ -22,13 +22,14 @@ At the current phase boundary, this module provides:
 * Module-local absolute paths are rewritten into the final host instance scope
   so assembled state trees behave like ordinary inlined DSL.
 
-Event mappings remain Phase 4 work and therefore still fail fast here with
-explicit error messages.
+Event mappings support module-absolute event promotion into host-relative or
+host-absolute event paths, including display-name propagation and conflict
+checks defined by PR79.
 """
 
 import os
 import re
-from dataclasses import fields, is_dataclass
+from dataclasses import dataclass, fields, is_dataclass
 from typing import Dict, List, Optional, Tuple
 
 from ..dsl import node as dsl_nodes
@@ -39,6 +40,25 @@ from ..utils import auto_decode
 __all__ = [
     "assemble_state_machine_imports",
 ]
+
+
+@dataclass
+class _ResolvedImportEventMapping:
+    source_path: Tuple[str, ...]
+    target_state_path: Tuple[str, ...]
+    target_event_name: str
+    target_event_id_path: Tuple[str, ...]
+    extra_name: Optional[str]
+
+
+@dataclass
+class _PendingEventRegistration:
+    target_state_path: Tuple[str, ...]
+    target_event_name: str
+    mapping_extra_name: Optional[str]
+    source_extra_name: Optional[str]
+    import_alias: str
+    source_path: Tuple[str, ...]
 
 
 def assemble_state_machine_imports(
@@ -151,8 +171,6 @@ def _assemble_state(
             )
         occupied_names.append(import_item.alias)
 
-        _validate_import_statement_supported(import_item, current_state_path)
-
         resolved_file = _resolve_import_file(
             source_path=import_item.source_path,
             import_base_dir=import_base_dir,
@@ -194,11 +212,24 @@ def _assemble_state(
         )
 
         imported_root = imported_program.root_state
+        event_mappings = _resolve_import_event_mappings(
+            program=imported_program,
+            import_item=import_item,
+            owner_state_path=current_state_path,
+        )
         imported_root.name = import_item.alias
         imported_root.extra_name = import_item.extra_name or imported_root.extra_name
+        preserved_event_paths = _apply_import_event_mappings(
+            program=imported_program,
+            host_program=host_program,
+            import_item=import_item,
+            owner_state_path=current_state_path,
+            resolved_event_mappings=event_mappings,
+        )
         _rewrite_absolute_paths_for_imported_root(
             node=imported_root,
             instance_prefix=(*current_state_path[1:], import_item.alias),
+            preserved_absolute_event_paths=preserved_event_paths,
         )
         imported_substates.append(imported_root)
 
@@ -215,25 +246,6 @@ def _assemble_state(
         )
 
     node.substates = [*imported_substates, *node.substates]
-
-
-def _validate_import_statement_supported(
-    import_item: dsl_nodes.ImportStatement,
-    owner_state_path: Tuple[str, ...],
-) -> None:
-    event_mappings = [
-        item
-        for item in import_item.mappings
-        if isinstance(item, dsl_nodes.ImportEventMapping)
-    ]
-    if event_mappings:
-        raise SyntaxError(
-            "Import event mappings are parsed but not available in import assembly "
-            "yet. Event mappings belong to Phase 4. "
-            f"Found import {import_item.source_path!r} as {import_item.alias!r} "
-            f"in state {'.'.join(owner_state_path)!r} with "
-            f"{len(event_mappings)} event mapping statement(s)."
-        )
 
 
 def _resolve_import_file(
@@ -302,13 +314,23 @@ def _load_imported_program(
 def _rewrite_absolute_paths_for_imported_root(
     node: dsl_nodes.StateDefinition,
     instance_prefix: Tuple[str, ...],
+    preserved_absolute_event_paths: Optional[set] = None,
 ) -> None:
+    preserved_absolute_event_paths = set(preserved_absolute_event_paths or set())
     for transition in node.transitions:
-        if transition.event_id is not None and transition.event_id.is_absolute:
+        if (
+            transition.event_id is not None
+            and transition.event_id.is_absolute
+            and tuple(transition.event_id.path) not in preserved_absolute_event_paths
+        ):
             transition.event_id.path = [*instance_prefix, *transition.event_id.path]
 
     for transition in node.force_transitions:
-        if transition.event_id is not None and transition.event_id.is_absolute:
+        if (
+            transition.event_id is not None
+            and transition.event_id.is_absolute
+            and tuple(transition.event_id.path) not in preserved_absolute_event_paths
+        ):
             transition.event_id.path = [*instance_prefix, *transition.event_id.path]
 
     for enter_item in node.enters:
@@ -340,7 +362,345 @@ def _rewrite_absolute_paths_for_imported_root(
         _rewrite_absolute_paths_for_imported_root(
             node=subnode,
             instance_prefix=instance_prefix,
+            preserved_absolute_event_paths=preserved_absolute_event_paths,
         )
+
+
+def _resolve_import_event_mappings(
+    program: dsl_nodes.StateMachineDSLProgram,
+    import_item: dsl_nodes.ImportStatement,
+    owner_state_path: Tuple[str, ...],
+) -> Dict[Tuple[str, ...], _ResolvedImportEventMapping]:
+    event_mappings = [
+        item
+        for item in import_item.mappings
+        if isinstance(item, dsl_nodes.ImportEventMapping)
+    ]
+    resolved = {}
+    target_to_source = {}
+
+    for mapping in event_mappings:
+        if not mapping.source_event.is_absolute:
+            raise SyntaxError(
+                f"Invalid event mapping in import {import_item.alias!r} under state "
+                f"{'.'.join(owner_state_path)!r}: source event {mapping.source_event} "
+                "must be a module-absolute path."
+            )
+
+        source_path = tuple(mapping.source_event.path)
+        (
+            target_state_path,
+            target_event_name,
+            target_event_id_path,
+        ) = _resolve_import_event_target_path(
+            target_event=mapping.target_event,
+            owner_state_path=owner_state_path,
+        )
+        if source_path in resolved:
+            raise SyntaxError(
+                f"Event mapping conflict: source event "
+                f"{_format_event_path(source_path, is_absolute=True)!r} appears "
+                f"multiple times in import {import_item.alias!r}."
+            )
+        target_key = (*target_state_path, target_event_name)
+        if target_key in target_to_source and target_to_source[target_key] != source_path:
+            raise SyntaxError(
+                f"Event mapping conflict: import {import_item.alias!r} maps multiple "
+                f"module events to the same host event "
+                f"{_format_event_path(target_key, is_absolute=True)!r}."
+            )
+
+        resolved[source_path] = _ResolvedImportEventMapping(
+            source_path=source_path,
+            target_state_path=target_state_path,
+            target_event_name=target_event_name,
+            target_event_id_path=target_event_id_path,
+            extra_name=mapping.extra_name,
+        )
+        target_to_source[target_key] = source_path
+
+    return resolved
+
+
+def _resolve_import_event_target_path(
+    target_event: dsl_nodes.ChainID,
+    owner_state_path: Tuple[str, ...],
+) -> Tuple[Tuple[str, ...], str, Tuple[str, ...]]:
+    if target_event.is_absolute:
+        if len(target_event.path) < 1:
+            raise SyntaxError("Invalid empty absolute target event path.")
+        target_state_path = tuple((owner_state_path[0], *target_event.path[:-1]))
+        return (
+            target_state_path,
+            target_event.path[-1],
+            tuple(target_event.path),
+        )
+    else:
+        if len(target_event.path) < 1:
+            raise SyntaxError("Invalid empty relative target event path.")
+        target_state_path = tuple((*owner_state_path, *target_event.path[:-1]))
+        target_event_name = target_event.path[-1]
+        target_event_id_path = tuple((*owner_state_path[1:], *target_event.path))
+        return target_state_path, target_event_name, target_event_id_path
+
+
+def _apply_import_event_mappings(
+    program: dsl_nodes.StateMachineDSLProgram,
+    host_program: dsl_nodes.StateMachineDSLProgram,
+    import_item: dsl_nodes.ImportStatement,
+    owner_state_path: Tuple[str, ...],
+    resolved_event_mappings: Dict[Tuple[str, ...], _ResolvedImportEventMapping],
+) -> set:
+    source_event_names = {}
+    _collect_event_extra_names(program.root_state, current_path=(), output=source_event_names)
+    pending_registrations = []
+    _rewrite_imported_state_event_paths(
+        node=program.root_state,
+        current_path=(),
+        source_event_names=source_event_names,
+        resolved_event_mappings=resolved_event_mappings,
+        pending_registrations=pending_registrations,
+    )
+    _prune_mapped_source_event_definitions(
+        node=program.root_state,
+        current_path=(),
+        resolved_event_mappings=resolved_event_mappings,
+    )
+    _validate_pending_event_registrations(
+        registrations=pending_registrations,
+        import_item=import_item,
+        owner_state_path=owner_state_path,
+    )
+    _synthesize_host_events_for_import(
+        host_root=host_program.root_state,
+        registrations=pending_registrations,
+    )
+    return {
+        tuple(item.target_state_path[1:]) + (item.target_event_name,)
+        for item in pending_registrations
+    }
+
+
+def _collect_event_extra_names(
+    node: dsl_nodes.StateDefinition,
+    current_path: Tuple[str, ...],
+    output: Dict[Tuple[str, ...], Optional[str]],
+) -> None:
+    current_state_path = tuple((*current_path, node.name))
+    for event in node.events:
+        output[(node.name, event.name)] = output.get((node.name, event.name), event.extra_name)
+        output[(*current_state_path[1:], event.name)] = event.extra_name
+        output[(event.name,)] = output.get((event.name,), event.extra_name)
+
+    for subnode in node.substates:
+        _collect_event_extra_names(subnode, current_state_path, output)
+
+
+def _rewrite_imported_state_event_paths(
+    node: dsl_nodes.StateDefinition,
+    current_path: Tuple[str, ...],
+    source_event_names: Dict[Tuple[str, ...], Optional[str]],
+    resolved_event_mappings: Dict[Tuple[str, ...], _ResolvedImportEventMapping],
+    pending_registrations: List[_PendingEventRegistration],
+) -> None:
+    current_state_path = tuple((*current_path, node.name))
+    current_scope_path = current_state_path[1:]
+
+    for transition in node.transitions:
+        _rewrite_transition_event_id(
+            transition=transition,
+            current_scope_path=current_scope_path,
+            source_event_names=source_event_names,
+            resolved_event_mappings=resolved_event_mappings,
+            pending_registrations=pending_registrations,
+        )
+
+    for transition in node.force_transitions:
+        if transition.event_id is not None:
+            _rewrite_transition_event_id(
+                transition=transition,
+                current_scope_path=current_scope_path,
+                source_event_names=source_event_names,
+                resolved_event_mappings=resolved_event_mappings,
+                pending_registrations=pending_registrations,
+            )
+
+    for subnode in node.substates:
+        _rewrite_imported_state_event_paths(
+            node=subnode,
+            current_path=current_state_path,
+            source_event_names=source_event_names,
+            resolved_event_mappings=resolved_event_mappings,
+            pending_registrations=pending_registrations,
+        )
+
+
+def _rewrite_transition_event_id(
+    transition,
+    current_scope_path: Tuple[str, ...],
+    source_event_names: Dict[Tuple[str, ...], Optional[str]],
+    resolved_event_mappings: Dict[Tuple[str, ...], _ResolvedImportEventMapping],
+    pending_registrations: List[_PendingEventRegistration],
+) -> None:
+    if transition.event_id is None:
+        return
+
+    if transition.event_id.is_absolute:
+        source_path = tuple(transition.event_id.path)
+    else:
+        source_path = tuple((*current_scope_path, *transition.event_id.path))
+
+    source_extra_name = _lookup_source_event_extra_name(
+        source_path=source_path,
+        source_event_names=source_event_names,
+    )
+    mapping = resolved_event_mappings.get(source_path)
+    if mapping is not None:
+        transition.event_id.is_absolute = True
+        transition.event_id.path = list(mapping.target_event_id_path)
+        pending_registrations.append(
+            _PendingEventRegistration(
+                target_state_path=mapping.target_state_path,
+                target_event_name=mapping.target_event_name,
+                mapping_extra_name=mapping.extra_name,
+                source_extra_name=source_extra_name,
+                import_alias="",
+                source_path=source_path,
+            )
+        )
+    elif transition.event_id.is_absolute:
+        transition.event_id.path = [*current_scope_path, *transition.event_id.path]
+
+
+def _prune_mapped_source_event_definitions(
+    node: dsl_nodes.StateDefinition,
+    current_path: Tuple[str, ...],
+    resolved_event_mappings: Dict[Tuple[str, ...], _ResolvedImportEventMapping],
+) -> None:
+    current_state_path = tuple((*current_path, node.name))
+    current_scope_path = current_state_path[1:]
+    node.events = [
+        item
+        for item in node.events
+        if tuple((*current_scope_path, item.name)) not in resolved_event_mappings
+    ]
+
+    for subnode in node.substates:
+        _prune_mapped_source_event_definitions(
+            node=subnode,
+            current_path=current_state_path,
+            resolved_event_mappings=resolved_event_mappings,
+        )
+
+
+def _lookup_source_event_extra_name(
+    source_path: Tuple[str, ...],
+    source_event_names: Dict[Tuple[str, ...], Optional[str]],
+) -> Optional[str]:
+    return source_event_names.get(source_path)
+
+
+def _validate_pending_event_registrations(
+    registrations: List[_PendingEventRegistration],
+    import_item: dsl_nodes.ImportStatement,
+    owner_state_path: Tuple[str, ...],
+) -> None:
+    by_target = {}
+    for item in registrations:
+        target_key = (*item.target_state_path, item.target_event_name)
+        if target_key not in by_target:
+            by_target[target_key] = item
+            continue
+
+        existing = by_target[target_key]
+        if item.mapping_extra_name is not None and existing.mapping_extra_name is not None:
+            if item.mapping_extra_name != existing.mapping_extra_name:
+                raise SyntaxError(
+                    f"Event mapping conflict: host event "
+                    f"{_format_event_path(target_key, is_absolute=True)!r} "
+                    f"receives conflicting display names "
+                    f"{existing.mapping_extra_name!r} and {item.mapping_extra_name!r} "
+                    f"in import {import_item.alias!r} under state "
+                    f"{'.'.join(owner_state_path)!r}."
+                )
+
+
+def _synthesize_host_events_for_import(
+    host_root: dsl_nodes.StateDefinition,
+    registrations: List[_PendingEventRegistration],
+) -> None:
+    if not registrations:
+        return
+
+    for item in registrations:
+        owner_state = _ensure_state_path_exists(
+            root=host_root,
+            state_path=item.target_state_path,
+        )
+        event_name = item.target_event_name
+        existing_event = None
+        for event in owner_state.events:
+            if event.name == event_name:
+                existing_event = event
+                break
+
+        final_extra_name = (
+            item.mapping_extra_name
+            or (existing_event.extra_name if existing_event is not None else None)
+            or item.source_extra_name
+        )
+        if existing_event is None:
+            owner_state.events.append(
+                dsl_nodes.EventDefinition(name=event_name, extra_name=final_extra_name)
+            )
+        else:
+            if (
+                item.mapping_extra_name is not None
+                and existing_event.extra_name is not None
+                and existing_event.extra_name != item.mapping_extra_name
+            ):
+                raise SyntaxError(
+                    f"Event mapping conflict: host event "
+                    f"{_format_event_path((*item.target_state_path, event_name), is_absolute=True)!r} "
+                    f"receives conflicting display names "
+                    f"{existing_event.extra_name!r} and {item.mapping_extra_name!r}."
+                )
+            if existing_event.extra_name is None and final_extra_name is not None:
+                existing_event.extra_name = final_extra_name
+
+
+def _ensure_state_path_exists(
+    root: dsl_nodes.StateDefinition,
+    state_path: Tuple[str, ...],
+) -> dsl_nodes.StateDefinition:
+    if not state_path:
+        raise SyntaxError("Invalid empty host state path for event mapping.")
+    if root.name != state_path[0]:
+        raise SyntaxError(
+            f"Invalid host root path for event mapping: expected root {root.name!r}, "
+            f"got {state_path[0]!r}."
+        )
+
+    state = root
+    for segment in state_path[1:]:
+        next_state = None
+        for subnode in state.substates:
+            if subnode.name == segment:
+                next_state = subnode
+                break
+        if next_state is None:
+            raise SyntaxError(
+                f"Event mapping target state "
+                f"{_format_event_path(state_path, is_absolute=True)!r} does not exist "
+                f"in host model."
+            )
+        state = next_state
+    return state
+
+
+def _format_event_path(path: Tuple[str, ...], is_absolute: bool) -> str:
+    prefix = "/" if is_absolute else ""
+    return prefix + ".".join(path)
 
 
 def _apply_import_def_mappings(

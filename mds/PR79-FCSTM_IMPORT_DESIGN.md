@@ -10,6 +10,7 @@
 
 | 版本 | 日期 | 修改内容 | 作者 |
 |------|------|----------|------|
+| 0.5.9 | 2026-04-06 | 完成 Phase 4：模型层新增 event mapping 装配、宿主事件合成、显示名冲突校验、force transition 覆盖与独立 Phase 4 回归测试，并补充导出 DSL 的保真路径说明 | Codex |
 | 0.5.8 | 2026-04-06 | 制度化后续 phase 测试规范：每个 phase 单独使用 `test_import_phaseN.py`，且典型 case 必须补 `text_aligner` 驱动的 `to_ast_node()` 全量导出比对，并将该要求写入后续 phase checklist | Codex |
 | 0.5.7 | 2026-04-06 | 完成 Phase 3：模型层新增 `def` mapping 规则求值、变量深度重写、宿主 / 跨 import 变量合流校验，并补齐 Phase 3 回归测试与勾选状态 | Codex |
 | 0.5.6 | 2026-04-05 | 完成 Phase 2：模型层新增 import 装配器，支持多级相对路径递归解析、循环导入检测、alias 装配与模块绝对路径重写；同时保持 `def/event mapping` 与 imported top-level `def` 继续在 Phase 3/4 显式 fail fast | Codex |
@@ -1067,25 +1068,35 @@ Checklist
 
 本 phase 做到模块绝对事件 `/...` 可被显式映射到宿主事件空间，并支持右侧相对路径、绝对路径与 `named` 显示名覆盖；未映射事件则继续按实例局部化处理。
 
+当前实现说明：
+
+- 仅允许 `event mapping` 左侧使用模块绝对事件路径 `/...`
+- 右侧相对路径按 `import` 所在宿主 state 解析，右侧绝对路径按宿主 root 解析
+- 映射不仅会重写普通 transition，也会覆盖 force transition 与指向同一模块根事件的等价相对引用
+- 若被映射的模块事件在源 AST 中有显式 `event` 定义，其定义会迁移到宿主目标作用域，避免装配后残留重复事件节点
+- 宿主目标事件支持 `named` 覆盖，并会对跨 import / 宿主已有事件的显示名冲突做显式报错
+- 对于“最终落到宿主祖先 state 上的事件引用”，当前 `to_ast_node()` 会保真导出为绝对路径，如 `/System.Start`。这是因为现有 DSL / AST 尚无专门语法无歧义表达“祖先作用域 chain event 引用”
+
 TODO
 
-* [ ] 实现模块绝对事件路径的识别、默认实例内重写与显式映射逻辑
-* [ ] 支持 event mapping 左侧仅接受模块绝对事件路径
-* [ ] 支持 event mapping 右侧解析为宿主绝对路径或相对于 import 所在 state 的相对路径
-* [ ] 支持 event mapping 上的 `named`，用于覆盖最终宿主事件显示名称
-* [ ] 在装配阶段重写 transition、force transition 与相关路径引用中的事件路径
-* [ ] 校验共享目标事件的显示名冲突与路径冲突
-* [ ] 保持 `::`、链式 `:` 与模块绝对 `/...` 在导入后的语义边界清晰且可预测
+* [x] 实现模块绝对事件路径的识别、默认实例内重写与显式映射逻辑
+* [x] 支持 event mapping 左侧仅接受模块绝对事件路径
+* [x] 支持 event mapping 右侧解析为宿主绝对路径或相对于 import 所在 state 的相对路径
+* [x] 支持 event mapping 上的 `named`，用于覆盖最终宿主事件显示名称
+* [x] 在装配阶段重写 transition、force transition 与相关路径引用中的事件路径
+* [x] 校验共享目标事件的显示名冲突与路径冲突
+* [x] 保持 `::`、链式 `:` 与模块绝对 `/...` 在导入后的语义边界清晰且可预测
 
 Checklist
 
-* [ ] `event /Start -> Start;` 能正确解析为 import 所在宿主 state 下的 `Start`
-* [ ] `event /Start -> /Motors.Start;` 能正确解析为宿主 root 下的绝对事件路径
-* [ ] 未映射的模块绝对事件会落到实例作用域而不是错误提升到宿主 root
-* [ ] 多个 import 共享同一宿主事件时，路径和显示名行为可预测且冲突可诊断
-* [ ] 即便子状态机内有多个 transition 指向同一个模块绝对事件，event mapping 后这些 transition 仍会稳定绑定到同一个宿主事件对象
-* [ ] Phase 4 单元测试使用独立的 `test_import_phase4.py`，且典型正向 case 至少包含 `text_aligner` 驱动的 `to_ast_node()` 全量导出 DSL 比对
-* [ ] 已按影响范围完成回归测试；至少使用 `make unittest RANGE_DIR=./<一级模块>` 级别命令，若本 phase 影响跨一级模块或顶层链路，则已提升到更高层级
+* [x] `event /Start -> Start;` 能正确解析为 import 所在宿主 state 下的 `Start`
+* [x] `event /Start -> /Motors.Start;` 能正确解析为宿主 root 下的绝对事件路径
+* [x] 未映射的模块绝对事件会落到实例作用域而不是错误提升到宿主 root
+* [x] 多个 import 共享同一宿主事件时，路径和显示名行为可预测且冲突可诊断
+* [x] 即便子状态机内有多个 transition 指向同一个模块绝对事件，event mapping 后这些 transition 仍会稳定绑定到同一个宿主事件对象
+* [x] Phase 4 单元测试使用独立的 `test_import_phase4.py`，且典型正向 case 至少包含 `text_aligner` 驱动的 `to_ast_node()` 全量导出 DSL 比对
+* [x] Phase 4 的复杂正向 case 也必须覆盖多 import 共享事件、宿主相对多段目标、显式事件定义迁移、force transition 重写，以及嵌套 import 下的二次 event remap 链，并继续使用 `text_aligner` 做完整 DSL 结构比对
+* [x] 已按影响范围完成回归测试；至少使用 `make unittest RANGE_DIR=./<一级模块>` 级别命令，若本 phase 影响跨一级模块或顶层链路，则已提升到更高层级
 
 ### 12.7 Phase 5: CLI / generate / simulate / PlantUML 接入
 

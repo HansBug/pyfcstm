@@ -1,0 +1,9 @@
+state Root {
+    state Bus;
+    import "./modules/child.fcstm" as Child named "Child Layer" {
+        event /Start -> /Bus.Start named "Top Start";
+        event /InnerBus.Stop -> /Bus.Stop named "Top Stop";
+        event /Trip -> /Bus.Trip named "Top Trip";
+    }
+    [*] -> Child;
+}

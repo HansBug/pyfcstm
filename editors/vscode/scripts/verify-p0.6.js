@@ -13,6 +13,7 @@
  */
 
 const Module = require('module');
+const path = require('path');
 const originalRequire = Module.prototype.require;
 
 // Mock VSCode module
@@ -35,6 +36,17 @@ const vscode = {
         constructor(contents, range) {
             this.contents = contents;
             this.range = range;
+        }
+    },
+    Range: class Range {
+        constructor(startLine, startCharacter, endLine, endCharacter) {
+            this.start = new vscode.Position(startLine, startCharacter);
+            this.end = new vscode.Position(endLine, endCharacter);
+        }
+    },
+    Uri: {
+        file(filePath) {
+            return { fsPath: filePath };
         }
     }
 };
@@ -72,6 +84,12 @@ class MockDocument {
         this.text = text;
         this.lines = text.split('\n');
         this.lineCount = this.lines.length;
+        this.uri = {
+            fsPath: path.join(process.cwd(), '__mock__.fcstm'),
+            toString() {
+                return this.fsPath;
+            }
+        };
     }
 
     getText(range) {
@@ -132,13 +150,13 @@ class TestCase {
 /**
  * Run a single test case
  */
-function runTest(testCase) {
+async function runTest(testCase) {
     const provider = new FcstmHoverProvider();
     const document = new MockDocument(testCase.code);
     const position = new vscode.Position(testCase.position.line, testCase.position.character);
 
     try {
-        const hover = provider.provideHover(document, position, {});
+        const hover = await provider.provideHover(document, position, {});
 
         if (testCase.expectedTitle === null) {
             // Expect no hover
@@ -380,6 +398,20 @@ const testCases = [
         { line: 0, character: 3 },  // Middle of "event"
         'Event Definition'
     ),
+    new TestCase(
+        'P0.6-24A',
+        'Hover on import keyword',
+        'state Root {\n    import "./worker.fcstm" as Worker;\n}',
+        { line: 1, character: 7 },
+        'Import Statement'
+    ),
+    new TestCase(
+        'P0.6-24B',
+        'Hover on as keyword',
+        'state Root {\n    import "./worker.fcstm" as Worker;\n}',
+        { line: 1, character: 29 },
+        'Import Alias'
+    ),
 
     // Edge case tests - no hover expected
     new TestCase(
@@ -489,7 +521,7 @@ async function main() {
     console.log(`${colors.cyan}=====================================${colors.reset}`);
 
     for (const testCase of testCases) {
-        runTest(testCase);
+        await runTest(testCase);
     }
 
     console.log();

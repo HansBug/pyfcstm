@@ -10,12 +10,13 @@
 
 import * as vscode from 'vscode';
 import { getParser } from './parser';
+import { getImportWorkspaceIndex } from './imports';
 
 /**
  * FCSTM keywords
  */
 const KEYWORDS = [
-    'state', 'pseudo', 'named', 'def', 'event',
+    'state', 'pseudo', 'named', 'def', 'event', 'import', 'as',
     'enter', 'during', 'exit', 'before', 'after',
     'abstract', 'ref', 'effect', 'if', 'else',
     'int', 'float',
@@ -82,6 +83,7 @@ interface ParseTreeNode {
  */
 export class FcstmCompletionProvider implements vscode.CompletionItemProvider {
     private readonly parser = getParser();
+    private readonly importIndex = getImportWorkspaceIndex();
 
     async provideCompletionItems(
         document: vscode.TextDocument,
@@ -111,6 +113,9 @@ export class FcstmCompletionProvider implements vscode.CompletionItemProvider {
         // Add document-local symbol completions
         const localSymbols = await this.getDocumentSymbols(document);
         items.push(...localSymbols);
+
+        // Add import-aware completions
+        items.push(...await this.getImportAwareCompletions(document, position));
 
         return items;
     }
@@ -232,6 +237,79 @@ export class FcstmCompletionProvider implements vscode.CompletionItemProvider {
         }
 
         return items;
+    }
+
+    /**
+     * Get import-aware completions
+     */
+    private async getImportAwareCompletions(
+        document: vscode.TextDocument,
+        position: vscode.Position
+    ): Promise<vscode.CompletionItem[]> {
+        const items: vscode.CompletionItem[] = [];
+        const lineText = document.lineAt(position.line).text;
+        const beforeCursor = lineText.substring(0, position.character);
+
+        if (/\bimport\b/.test(beforeCursor) && !/\bas\b/.test(beforeCursor)) {
+            const asItem = new vscode.CompletionItem('as', vscode.CompletionItemKind.Keyword);
+            asItem.sortText = '0_as';
+            items.push(asItem);
+        }
+
+        if (/\bimport\b/.test(beforeCursor) && /\bas\b/.test(beforeCursor) && !/\bnamed\b/.test(beforeCursor)) {
+            const namedItem = new vscode.CompletionItem('named', vscode.CompletionItemKind.Keyword);
+            namedItem.sortText = '0_named';
+            items.push(namedItem);
+        }
+
+        if (/\bimport\b/.test(beforeCursor) && /\{\s*$/.test(beforeCursor)) {
+            const defItem = new vscode.CompletionItem('def', vscode.CompletionItemKind.Keyword);
+            defItem.sortText = '0_def_import';
+            items.push(defItem);
+
+            const eventItem = new vscode.CompletionItem('event', vscode.CompletionItemKind.Keyword);
+            eventItem.sortText = '0_event_import';
+            items.push(eventItem);
+        }
+
+        const resolved = await this.importIndex.resolveImportsForDocument(document);
+        const activeImport = await this.getActiveImportEntry(document, position);
+        if (!activeImport) {
+            return items;
+        }
+
+        const target = resolved.find(item => item.sourcePath === activeImport.sourcePath);
+        if (!target) {
+            return items;
+        }
+
+        for (const variableName of target.explicitVariables) {
+            const item = new vscode.CompletionItem(variableName, vscode.CompletionItemKind.Variable);
+            item.detail = 'Imported variable';
+            item.sortText = `3_import_var_${variableName}`;
+            items.push(item);
+        }
+
+        for (const eventPath of target.absoluteEvents) {
+            const item = new vscode.CompletionItem(eventPath, vscode.CompletionItemKind.Event);
+            item.detail = 'Imported absolute event';
+            item.sortText = `5_import_event_${eventPath}`;
+            items.push(item);
+        }
+
+        return items;
+    }
+
+    private async getActiveImportEntry(
+        document: vscode.TextDocument,
+        position: vscode.Position
+    ): Promise<{ sourcePath: string } | null> {
+        const parsed = await this.importIndex.parseDocument(document);
+        const entry = parsed.imports.find(item =>
+            position.line >= item.statementRange.start.line
+            && position.line <= item.statementRange.end.line
+        );
+        return entry ? { sourcePath: entry.sourcePath } : null;
     }
 
     /**

@@ -988,11 +988,11 @@ parse_dsl_node_to_state_machine(
 * [x] Phase 1: DSL Grammar / AST / Parse API 落地
 * [x] Phase 2: Import 装配器与递归路径解析
 * [x] Phase 3: `def` mapping 与变量合流校验
-* [ ] Phase 4: event mapping 与路径重写
-* [ ] Phase 5: Pygments 语法支持与预判/检测器规划
-* [ ] Phase 6: CLI / generate / simulate / PlantUML 接入
-* [ ] Phase 7: Model 顶层一键加载入口
-* [ ] Phase 8: VSCode 扩展支持
+* [x] Phase 4: event mapping 与路径重写
+* [x] Phase 5: Pygments 语法支持与预判/检测器规划
+* [x] Phase 6: CLI / generate / simulate / PlantUML 接入
+* [x] Phase 7: Model 顶层一键加载入口
+* [x] Phase 8: VSCode 扩展支持
 * [ ] Phase 9: 测试、样例、文档与收尾
 
 ### 12.3 Phase 1: DSL Grammar / AST / Parse API 落地
@@ -1198,20 +1198,22 @@ Checklist
 
 TODO
 
-* [ ] 更新 VSCode 语法高亮与相关语法定义，覆盖 `import`、`as`、mapping block、event mapping
-* [ ] 为 import 路径、alias 冲突、缺失文件、循环导入提供基础诊断入口
-* [ ] 增加轻量 `WorkspaceIndex`，索引工作区内 `.fcstm` 文件与 import 依赖关系
-* [ ] 支持从 import 路径跳转到目标文件
-* [ ] 为 import block 提供模块变量名、模块绝对事件路径等基础补全能力
-* [ ] 在 hover 或辅助信息中展示被导入文件 root state 的摘要信息
+* [x] 更新 VSCode 语法高亮与相关语法定义，覆盖 `import`、`as`、mapping block、event mapping
+* [x] 为 import 路径、alias 冲突、缺失文件、循环导入提供基础诊断入口
+* [x] 增加轻量 `WorkspaceIndex`，索引工作区内 `.fcstm` 文件与 import 依赖关系
+* [x] 支持从 import 路径跳转到目标文件
+* [x] 为 import block 提供模块变量名、模块绝对事件路径等基础补全能力
+* [x] 在 hover 或辅助信息中展示被导入文件 root state 的摘要信息
+* [x] 适度增加必要的 verify 项目或测试用例，覆盖 VSCode 扩展此前未覆盖到的 import 新语法与相关编辑器能力
 
 Checklist
 
-* [ ] 扩展能稳定识别 import 相关新语法
-* [ ] 缺失文件与循环导入能在编辑器内得到可用提示
-* [ ] 至少支持从 import 源路径跳转到被导入文件
-* [ ] 工作区索引不会把扩展复杂度直接推向完整 LSP
-* [ ] 已按影响范围完成回归测试；至少使用 `make unittest RANGE_DIR=./<一级模块>` 级别命令，若本 phase 影响跨一级模块或顶层链路，则已提升到更高层级
+* [x] 扩展能稳定识别 import 相关新语法
+* [x] 缺失文件与循环导入能在编辑器内得到可用提示
+* [x] 至少支持从 import 源路径跳转到被导入文件
+* [x] 工作区索引不会把扩展复杂度直接推向完整 LSP
+* [x] 已为 VSCode 扩展适度补足 verify 覆盖，至少覆盖 import 新语法识别、import 路径跳转或目标解析、以及新增 hover / completion / diagnostics 中受影响的关键路径
+* [x] 已按影响范围完成回归测试；至少使用 `make unittest RANGE_DIR=./<一级模块>` 级别命令，若本 phase 影响跨一级模块或顶层链路，则已提升到更高层级
 
 ### 12.11 Phase 9: 测试、样例、文档与收尾
 

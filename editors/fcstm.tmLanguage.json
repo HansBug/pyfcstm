@@ -92,6 +92,30 @@
               "name": "entity.name.event.fcstm"
             }
           }
+        },
+        {
+          "name": "meta.definition.import.fcstm",
+          "match": "\\b(import)\\s+((?:\"[^\"]*\"|'[^']*'))\\s+(as)\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\b(?:\\s+(named)\\s+((?:\"[^\"]*\"|'[^']*')))?",
+          "captures": {
+            "1": {
+              "name": "keyword.control.fcstm"
+            },
+            "2": {
+              "name": "string.quoted.double.fcstm"
+            },
+            "3": {
+              "name": "keyword.control.fcstm"
+            },
+            "4": {
+              "name": "entity.name.type.state.fcstm"
+            },
+            "5": {
+              "name": "keyword.control.fcstm"
+            },
+            "6": {
+              "name": "string.quoted.double.fcstm"
+            }
+          }
         }
       ]
     },
@@ -99,7 +123,7 @@
       "patterns": [
         {
           "name": "keyword.control.fcstm",
-          "match": "\\b(state|pseudo|named|def|event|if|else)\\b"
+          "match": "\\b(state|pseudo|named|def|event|import|as|if|else)\\b"
         },
         {
           "name": "keyword.other.lifecycle.fcstm",
@@ -128,6 +152,14 @@
         {
           "name": "keyword.operator.transition.fcstm",
           "match": "->"
+        },
+        {
+          "name": "punctuation.separator.mapping.fcstm",
+          "match": ","
+        },
+        {
+          "name": "punctuation.section.mapping.fcstm",
+          "match": "\\{|\\}"
         },
         {
           "name": "constant.language.pseudo-state.fcstm",

@@ -11,6 +11,7 @@ import { FcstmDiagnosticsProvider } from './diagnostics';
 import { FcstmDocumentSymbolProvider } from './symbols';
 import { FcstmCompletionProvider } from './completion';
 import { FcstmHoverProvider } from './hover';
+import { FcstmDefinitionProvider } from './definition';
 
 /**
  * Extension activation
@@ -62,6 +63,17 @@ export function activate(context: vscode.ExtensionContext) {
         )
     );
     console.log('[FCSTM Extension] Hover provider registered');
+
+    // Register definition provider for import navigation
+    console.log('[FCSTM Extension] Registering definition provider...');
+    const definitionProvider = new FcstmDefinitionProvider();
+    context.subscriptions.push(
+        vscode.languages.registerDefinitionProvider(
+            { language: 'fcstm' },
+            definitionProvider
+        )
+    );
+    console.log('[FCSTM Extension] Definition provider registered');
 
     // Register a simple command to test parser availability
     const testParserCommand = vscode.commands.registerCommand(

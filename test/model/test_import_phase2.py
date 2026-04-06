@@ -1,13 +1,16 @@
 import os
 import pathlib
 import textwrap
+from dataclasses import dataclass
 
 import pytest
 from hbutils.testing import isolated_directory
 
 from pyfcstm.dsl import parse_state_machine_dsl
 from pyfcstm.dsl import node as dsl_nodes
+from pyfcstm.dsl.error import GrammarParseError, SyntaxFailError
 from pyfcstm.dsl.node import INIT_STATE
+from pyfcstm.model.imports import assemble_state_machine_imports
 from pyfcstm.model import parse_dsl_node_to_state_machine
 from pyfcstm.model.model import Event
 
@@ -17,6 +20,16 @@ def _write_text_file(path: str, content: str) -> pathlib.Path:
     file_path.parent.mkdir(parents=True, exist_ok=True)
     file_path.write_text(textwrap.dedent(content).strip() + os.linesep, encoding="utf-8")
     return file_path
+
+
+def _build_state_machine(root_content: str, **extra_files):
+    with isolated_directory():
+        root_file = _write_text_file("root.fcstm", root_content)
+        for relative_path, content in extra_files.items():
+            _write_text_file(relative_path, content)
+
+        ast_node = parse_state_machine_dsl(root_file.read_text(encoding="utf-8"))
+        return parse_dsl_node_to_state_machine(ast_node, path=root_file)
 
 
 @pytest.fixture()
@@ -80,6 +93,15 @@ def import_phase2_demo_spin(import_phase2_demo_running):
 
 @pytest.mark.unittest
 class TestImportPhase2Assembly:
+    def test_assemble_state_machine_imports_rejects_program_without_root_state(self):
+        with pytest.raises(SyntaxError) as exc_info:
+            assemble_state_machine_imports(
+                dsl_nodes.StateMachineDSLProgram(definitions=[], root_state=None),
+                path="root.fcstm",
+            )
+
+        assert "does not contain a root state" in str(exc_info.value)
+
     def test_parse_dsl_node_to_state_machine_uses_cwd_for_import_context(self):
         with isolated_directory():
             _write_text_file(
@@ -343,6 +365,284 @@ class TestImportPhase2Assembly:
         assert "Start" in worker_state.events
         transition = worker_state.transitions[1]
         assert transition.event is worker_state.events["Start"]
+
+    def test_imported_root_rewrites_absolute_refs_for_all_supported_ref_kinds(self):
+        with isolated_directory():
+            root_file = _write_text_file(
+                "root.fcstm",
+                """
+                state Root {
+                    import "./worker.fcstm" as Worker;
+                    [*] -> Worker;
+                }
+                """,
+            )
+            _write_text_file(
+                "worker.fcstm",
+                """
+                state WorkerRoot {
+                    enter ref /GlobalEnter;
+                    during before ref /GlobalDuring;
+                    exit ref /GlobalExit;
+                    >> during before ref /GlobalAspect;
+                    state Idle;
+                    [*] -> Idle;
+                }
+                """,
+            )
+
+            ast_node = parse_state_machine_dsl(root_file.read_text(encoding="utf-8"))
+            assembled = assemble_state_machine_imports(ast_node, path=root_file)
+
+        worker_state = assembled.root_state.substates[0]
+        assert str(worker_state.enters[0].ref) == "/Worker.GlobalEnter"
+        assert str(worker_state.durings[0].ref) == "/Worker.GlobalDuring"
+        assert str(worker_state.exits[0].ref) == "/Worker.GlobalExit"
+        assert str(worker_state.during_aspects[0].ref) == "/Worker.GlobalAspect"
+
+    def test_imported_force_transition_without_event_is_preserved(self):
+        state_machine = _build_state_machine(
+            """
+            state Root {
+                import "./worker.fcstm" as Worker;
+                [*] -> Worker;
+            }
+            """,
+            **{
+                "worker.fcstm": """
+                state WorkerRoot {
+                    state Idle;
+                    state Error;
+                    [*] -> Idle;
+                    ! Idle -> Error;
+                }
+                """,
+            },
+        )
+
+        worker_state = state_machine.root_state.substates["Worker"]
+        assert len(worker_state.transitions) == 2
+        forced_transition = next(
+            item
+            for item in worker_state.transitions
+            if item.from_state == "Idle" and item.to_state == "Error"
+        )
+        assert forced_transition.from_state == "Idle"
+        assert forced_transition.to_state == "Error"
+        assert forced_transition.event is None
+
+    def test_imported_absolute_force_transition_event_rewrites_to_instance_scope(self):
+        state_machine = _build_state_machine(
+            """
+            state Root {
+                import "./worker.fcstm" as Worker;
+                [*] -> Worker;
+            }
+            """,
+            **{
+                "worker.fcstm": """
+                state WorkerRoot {
+                    state Idle;
+                    state Error;
+                    [*] -> Idle;
+                    ! Idle -> Error : /Alarm;
+                }
+                """,
+            },
+        )
+
+        worker_state = state_machine.root_state.substates["Worker"]
+        forced_transition = next(
+            item
+            for item in worker_state.transitions
+            if item.from_state == "Idle" and item.to_state == "Error"
+        )
+        assert forced_transition.event is worker_state.events["Alarm"]
+        assert forced_transition.event.path == ("Root", "Worker", "Alarm")
+
+    def test_imported_file_parse_failure_is_reported_as_syntax_error(self, monkeypatch):
+        with isolated_directory():
+            root_file = _write_text_file(
+                "root.fcstm",
+                """
+                state Root {
+                    import "./worker.fcstm" as Worker;
+                    [*] -> Worker;
+                }
+                """,
+            )
+            _write_text_file("worker.fcstm", "state Worker;")
+
+            def _raise_parse_error(_content):
+                raise GrammarParseError([SyntaxFailError(1, 0, "state", "broken import")])
+
+            monkeypatch.setattr(
+                "pyfcstm.model.imports.parse_state_machine_dsl",
+                _raise_parse_error,
+            )
+
+            ast_node = parse_state_machine_dsl(root_file.read_text(encoding="utf-8"))
+            with pytest.raises(SyntaxError) as exc_info:
+                parse_dsl_node_to_state_machine(ast_node, path=root_file)
+
+        message = str(exc_info.value)
+        assert "Failed to parse imported file" in message
+        assert "worker.fcstm" in message
+
+    def test_imported_file_without_root_state_is_reported(self, monkeypatch):
+        with isolated_directory():
+            root_file = _write_text_file(
+                "root.fcstm",
+                """
+                state Root {
+                    import "./worker.fcstm" as Worker;
+                    [*] -> Worker;
+                }
+                """,
+            )
+            _write_text_file("worker.fcstm", "state Worker;")
+
+            monkeypatch.setattr(
+                "pyfcstm.model.imports.parse_state_machine_dsl",
+                lambda _content: dsl_nodes.StateMachineDSLProgram(
+                    definitions=[],
+                    root_state=None,
+                ),
+            )
+
+            ast_node = parse_state_machine_dsl(root_file.read_text(encoding="utf-8"))
+            with pytest.raises(SyntaxError) as exc_info:
+                parse_dsl_node_to_state_machine(ast_node, path=root_file)
+
+        message = str(exc_info.value)
+        assert "does not contain a root state" in message
+        assert "worker.fcstm" in message
+
+    def test_imported_file_read_failure_is_reported(self, monkeypatch):
+        with isolated_directory():
+            root_file = _write_text_file(
+                "root.fcstm",
+                """
+                state Root {
+                    import "./worker.fcstm" as Worker;
+                    [*] -> Worker;
+                }
+                """,
+            )
+            worker_file = _write_text_file("worker.fcstm", "state Worker;")
+            real_open = open
+
+            def _patched_open(file_path, mode="r", *args, **kwargs):
+                if os.path.abspath(file_path) == os.path.abspath(worker_file) and "rb" in mode:
+                    raise OSError("permission denied for test")
+                return real_open(file_path, mode, *args, **kwargs)
+
+            monkeypatch.setattr("builtins.open", _patched_open)
+
+            ast_node = parse_state_machine_dsl(root_file.read_text(encoding="utf-8"))
+            with pytest.raises(SyntaxError) as exc_info:
+                parse_dsl_node_to_state_machine(ast_node, path=root_file)
+
+        message = str(exc_info.value)
+        assert "Failed to read imported file" in message
+        assert "permission denied for test" in message
+
+    def test_absolute_import_source_path_is_supported(self):
+        with isolated_directory():
+            worker_file = _write_text_file(
+                "worker.fcstm",
+                """
+                state WorkerRoot {
+                    state Idle;
+                    [*] -> Idle;
+                }
+                """,
+            )
+            root_file = _write_text_file(
+                "root.fcstm",
+                f"""
+                state Root {{
+                    import {str(worker_file.resolve())!r} as Worker;
+                    [*] -> Worker;
+                }}
+                """,
+            )
+
+            ast_node = parse_state_machine_dsl(root_file.read_text(encoding="utf-8"))
+            state_machine = parse_dsl_node_to_state_machine(ast_node, path=root_file)
+
+        assert "Worker" in state_machine.root_state.substates
+        assert "Idle" in state_machine.root_state.substates["Worker"].substates
+
+    def test_public_ast_assembly_keeps_tuple_dict_and_singleton_fields_cloned(self):
+        @dataclass
+        class ExtendedStateDefinition(dsl_nodes.StateDefinition):
+            payload: object = None
+
+        imported_program = dsl_nodes.StateMachineDSLProgram(
+            definitions=[],
+            root_state=ExtendedStateDefinition(
+                name="WorkerRoot",
+                payload={"markers": (dsl_nodes.EXIT_STATE, dsl_nodes.ALL)},
+                transitions=(
+                    dsl_nodes.TransitionDefinition(
+                        from_state=INIT_STATE,
+                        to_state=dsl_nodes.EXIT_STATE,
+                        event_id=None,
+                        condition_expr=None,
+                        post_operations=[],
+                    ),
+                ),
+                force_transitions=(
+                    dsl_nodes.ForceTransitionDefinition(
+                        from_state=dsl_nodes.ALL,
+                        to_state="Error",
+                        event_id=None,
+                        condition_expr=None,
+                    ),
+                ),
+                substates=(dsl_nodes.StateDefinition(name="Error"),),
+            ),
+        )
+        host_program = dsl_nodes.StateMachineDSLProgram(
+            definitions=[],
+            root_state=ExtendedStateDefinition(
+                name="Root",
+                payload={"host": (dsl_nodes.EXIT_STATE, dsl_nodes.ALL)},
+                imports=(
+                    dsl_nodes.ImportStatement(
+                        source_path="./worker.fcstm",
+                        alias="Worker",
+                    ),
+                ),
+            ),
+        )
+
+        original_import_alias = host_program.root_state.imports[0].alias
+
+        with isolated_directory():
+            worker_file = _write_text_file("worker.fcstm", "state WorkerRoot;")
+            monkeypatch_target = "pyfcstm.model.imports.parse_state_machine_dsl"
+
+            with pytest.MonkeyPatch.context() as mp:
+                mp.setattr(
+                    monkeypatch_target,
+                    lambda _content: imported_program,
+                )
+
+                assembled = assemble_state_machine_imports(host_program, path=worker_file.parent)
+
+        assert host_program.root_state.imports[0].alias == original_import_alias
+        assert assembled.root_state.imports == []
+        assert isinstance(assembled.root_state, ExtendedStateDefinition)
+        assert assembled.root_state.payload["host"][0] is dsl_nodes.EXIT_STATE
+        assert assembled.root_state.payload["host"][1] is dsl_nodes.ALL
+        assert assembled.root_state.substates[0].name == "Worker"
+        assert isinstance(assembled.root_state.substates[0], ExtendedStateDefinition)
+        assert assembled.root_state.substates[0].payload["markers"][0] is dsl_nodes.EXIT_STATE
+        assert assembled.root_state.substates[0].payload["markers"][1] is dsl_nodes.ALL
+        assert assembled.root_state.substates[0].transitions[0].to_state is dsl_nodes.EXIT_STATE
+        assert assembled.root_state.substates[0].force_transitions[0].from_state is dsl_nodes.ALL
 
     def test_import_demo_model(self, import_phase2_demo_model):
         assert import_phase2_demo_model.defines == {}

@@ -6,6 +6,8 @@ import pytest
 from hbutils.testing import isolated_directory
 
 from pyfcstm.dsl import parse_state_machine_dsl
+from pyfcstm.dsl import node as dsl_nodes
+from pyfcstm.model.imports import assemble_state_machine_imports
 from pyfcstm.model import parse_dsl_node_to_state_machine
 
 
@@ -28,6 +30,73 @@ def _build_state_machine(root_content: str, **extra_files):
 
 @pytest.mark.unittest
 class TestImportPhase4Assembly:
+    def test_event_mapping_duplicate_same_source_is_rejected(self):
+        with isolated_directory():
+            root_file = _write_text_file(
+                "root.fcstm",
+                """
+                state Root {
+                    import "./worker.fcstm" as Worker {
+                        event /Start -> Start;
+                        event /Start -> /Bus.Start;
+                    }
+                    [*] -> Worker;
+                }
+                """,
+            )
+            _write_text_file(
+                "worker.fcstm",
+                """
+                state WorkerRoot {
+                    state Idle;
+                    state Running;
+                    [*] -> Idle;
+                    Idle -> Running : /Start;
+                }
+                """,
+            )
+
+            ast_node = parse_state_machine_dsl(root_file.read_text(encoding="utf-8"))
+            with pytest.raises(SyntaxError) as exc_info:
+                parse_dsl_node_to_state_machine(ast_node, path=root_file)
+
+        assert "source event '/Start' appears multiple times" in str(exc_info.value)
+
+    def test_event_mapping_multiple_sources_to_same_host_event_is_rejected(self):
+        with isolated_directory():
+            root_file = _write_text_file(
+                "root.fcstm",
+                """
+                state Root {
+                    import "./worker.fcstm" as Worker {
+                        event /Start -> Shared;
+                        event /Stop -> Shared;
+                    }
+                    [*] -> Worker;
+                }
+                """,
+            )
+            _write_text_file(
+                "worker.fcstm",
+                """
+                state WorkerRoot {
+                    state Idle;
+                    state Running;
+                    [*] -> Idle;
+                    Idle -> Running : /Start;
+                    Running -> Idle : /Stop;
+                }
+                """,
+            )
+
+            ast_node = parse_state_machine_dsl(root_file.read_text(encoding="utf-8"))
+            with pytest.raises(SyntaxError) as exc_info:
+                parse_dsl_node_to_state_machine(ast_node, path=root_file)
+
+        assert "maps multiple module events to the same host event '/Root.Shared'" in str(
+            exc_info.value
+        )
+
     def test_event_mapping_relative_target_promotes_to_owner_scope(self):
         state_machine = _build_state_machine(
             """
@@ -342,6 +411,414 @@ class TestImportPhase4Assembly:
                 parse_dsl_node_to_state_machine(ast_node, path=root_file)
 
         assert "must be a module-absolute path" in str(exc_info.value)
+
+    def test_public_ast_event_mapping_rejects_empty_target_paths_and_invalid_host_paths(self):
+        worker_program = dsl_nodes.StateMachineDSLProgram(
+            definitions=[],
+            root_state=dsl_nodes.StateDefinition(
+                name="WorkerRoot",
+                events=[dsl_nodes.EventDefinition(name="Start")],
+                transitions=[
+                    dsl_nodes.TransitionDefinition(
+                        from_state=dsl_nodes.INIT_STATE,
+                        to_state="Idle",
+                        event_id=None,
+                        condition_expr=None,
+                        post_operations=[],
+                    ),
+                    dsl_nodes.TransitionDefinition(
+                        from_state="Idle",
+                        to_state="Idle",
+                        event_id=dsl_nodes.ChainID(path=["Start"], is_absolute=True),
+                        condition_expr=None,
+                        post_operations=[],
+                    ),
+                ],
+                substates=[dsl_nodes.StateDefinition(name="Idle")],
+            ),
+        )
+
+        invalid_cases = [
+            (
+                dsl_nodes.ImportEventMapping(
+                    source_event=dsl_nodes.ChainID(path=["Start"], is_absolute=True),
+                    target_event=dsl_nodes.ChainID(path=[], is_absolute=True),
+                ),
+                dsl_nodes.StateMachineDSLProgram(
+                    definitions=[],
+                    root_state=dsl_nodes.StateDefinition(name="Root"),
+                ),
+                "Invalid empty absolute target event path.",
+            ),
+            (
+                dsl_nodes.ImportEventMapping(
+                    source_event=dsl_nodes.ChainID(path=["Start"], is_absolute=True),
+                    target_event=dsl_nodes.ChainID(path=[], is_absolute=False),
+                ),
+                dsl_nodes.StateMachineDSLProgram(
+                    definitions=[],
+                    root_state=dsl_nodes.StateDefinition(name="Root"),
+                ),
+                "Invalid empty relative target event path.",
+            ),
+            (
+                dsl_nodes.ImportEventMapping(
+                    source_event=dsl_nodes.ChainID(path=["Start"], is_absolute=True),
+                    target_event=dsl_nodes.ChainID(path=["Missing", "Start"], is_absolute=False),
+                ),
+                dsl_nodes.StateMachineDSLProgram(
+                    definitions=[],
+                    root_state=dsl_nodes.StateDefinition(name="Root"),
+                ),
+                "does not exist in host model",
+            ),
+        ]
+
+        for mapping, host_program, message_fragment in invalid_cases:
+            host_program.root_state.imports = [
+                dsl_nodes.ImportStatement(
+                    source_path="./worker.fcstm",
+                    alias="Worker",
+                    mappings=[mapping],
+                )
+            ]
+
+            with isolated_directory():
+                worker_file = _write_text_file("worker.fcstm", "state WorkerRoot { state Idle; [*] -> Idle; }")
+                with pytest.MonkeyPatch.context() as mp:
+                    mp.setattr(
+                        "pyfcstm.model.imports.parse_state_machine_dsl",
+                        lambda _content: worker_program,
+                    )
+                    with pytest.raises(SyntaxError) as exc_info:
+                        assemble_state_machine_imports(host_program, path=worker_file.parent)
+
+            assert message_fragment in str(exc_info.value)
+
+    def test_public_ast_event_mapping_rejects_invalid_root_state_paths(self):
+        class NeverEqualRootName(str):
+            def __eq__(self, other):
+                return True
+
+            def __ne__(self, other):
+                return True
+
+            __hash__ = str.__hash__
+
+        worker_program = dsl_nodes.StateMachineDSLProgram(
+            definitions=[],
+            root_state=dsl_nodes.StateDefinition(
+                name="WorkerRoot",
+                transitions=[
+                    dsl_nodes.TransitionDefinition(
+                        from_state=dsl_nodes.INIT_STATE,
+                        to_state="Idle",
+                        event_id=None,
+                        condition_expr=None,
+                        post_operations=[],
+                    ),
+                    dsl_nodes.TransitionDefinition(
+                        from_state="Idle",
+                        to_state="Idle",
+                        event_id=dsl_nodes.ChainID(path=["Start"], is_absolute=True),
+                        condition_expr=None,
+                        post_operations=[],
+                    ),
+                ],
+                substates=[dsl_nodes.StateDefinition(name="Idle")],
+            ),
+        )
+        host_program = dsl_nodes.StateMachineDSLProgram(
+            definitions=[],
+            root_state=dsl_nodes.StateDefinition(name=NeverEqualRootName("OtherRoot")),
+        )
+        host_program.root_state.imports = [
+            dsl_nodes.ImportStatement(
+                source_path="./worker.fcstm",
+                alias="Worker",
+                mappings=[
+                    dsl_nodes.ImportEventMapping(
+                        source_event=dsl_nodes.ChainID(path=["Start"], is_absolute=True),
+                        target_event=dsl_nodes.ChainID(path=["Start"], is_absolute=False),
+                    )
+                ],
+            )
+        ]
+
+        with isolated_directory():
+            worker_file = _write_text_file("worker.fcstm", "state WorkerRoot;")
+            with pytest.MonkeyPatch.context() as mp:
+                mp.setattr(
+                    "pyfcstm.model.imports.parse_state_machine_dsl",
+                    lambda _content: worker_program,
+                )
+                with pytest.raises(SyntaxError) as exc_info:
+                    assemble_state_machine_imports(host_program, path=worker_file.parent)
+
+        assert "Invalid host root path for event mapping" in str(exc_info.value)
+
+    def test_public_ast_event_mapping_propagates_source_or_existing_host_display_name(self):
+        worker_program = dsl_nodes.StateMachineDSLProgram(
+            definitions=[],
+            root_state=dsl_nodes.StateDefinition(
+                name="WorkerRoot",
+                events=[dsl_nodes.EventDefinition(name="Start", extra_name="Worker Start")],
+                transitions=[
+                    dsl_nodes.TransitionDefinition(
+                        from_state=dsl_nodes.INIT_STATE,
+                        to_state="Idle",
+                        event_id=None,
+                        condition_expr=None,
+                        post_operations=[],
+                    ),
+                    dsl_nodes.TransitionDefinition(
+                        from_state="Idle",
+                        to_state="Idle",
+                        event_id=dsl_nodes.ChainID(path=["Start"], is_absolute=False),
+                        condition_expr=None,
+                        post_operations=[],
+                    ),
+                ],
+                substates=[dsl_nodes.StateDefinition(name="Idle")],
+            ),
+        )
+
+        host_program = dsl_nodes.StateMachineDSLProgram(
+            definitions=[],
+            root_state=dsl_nodes.StateDefinition(
+                name="Root",
+                events=[dsl_nodes.EventDefinition(name="Existing", extra_name="Existing Name")],
+                imports=[
+                    dsl_nodes.ImportStatement(
+                        source_path="./worker.fcstm",
+                        alias="Worker",
+                        mappings=[
+                            dsl_nodes.ImportEventMapping(
+                                source_event=dsl_nodes.ChainID(path=["Start"], is_absolute=True),
+                                target_event=dsl_nodes.ChainID(path=["Promoted"], is_absolute=False),
+                            ),
+                        ],
+                    )
+                ],
+            ),
+        )
+
+        with isolated_directory():
+            worker_file = _write_text_file("worker.fcstm", "state WorkerRoot { state Idle; [*] -> Idle; }")
+            with pytest.MonkeyPatch.context() as mp:
+                mp.setattr(
+                    "pyfcstm.model.imports.parse_state_machine_dsl",
+                    lambda _content: worker_program,
+                )
+                assembled = assemble_state_machine_imports(host_program, path=worker_file.parent)
+
+        assert assembled.root_state.events[0].extra_name == "Existing Name"
+        assert assembled.root_state.events[1].extra_name == "Worker Start"
+
+    def test_public_ast_event_mapping_conflicting_named_registrations_are_rejected(self):
+        worker_program = dsl_nodes.StateMachineDSLProgram(
+            definitions=[],
+            root_state=dsl_nodes.StateDefinition(
+                name="WorkerRoot",
+                transitions=[
+                    dsl_nodes.TransitionDefinition(
+                        from_state=dsl_nodes.INIT_STATE,
+                        to_state="Idle",
+                        event_id=None,
+                        condition_expr=None,
+                        post_operations=[],
+                    ),
+                    dsl_nodes.TransitionDefinition(
+                        from_state="Idle",
+                        to_state="Idle",
+                        event_id=dsl_nodes.ChainID(path=["Start"], is_absolute=True),
+                        condition_expr=None,
+                        post_operations=[],
+                    ),
+                    dsl_nodes.TransitionDefinition(
+                        from_state="Idle",
+                        to_state="Idle",
+                        event_id=dsl_nodes.ChainID(path=["Stop"], is_absolute=True),
+                        condition_expr=None,
+                        post_operations=[],
+                    ),
+                ],
+                substates=[dsl_nodes.StateDefinition(name="Idle")],
+            ),
+        )
+        host_program = dsl_nodes.StateMachineDSLProgram(
+            definitions=[],
+            root_state=dsl_nodes.StateDefinition(
+                name="Root",
+                imports=[
+                    dsl_nodes.ImportStatement(
+                        source_path="./worker.fcstm",
+                        alias="Worker",
+                        mappings=[
+                            dsl_nodes.ImportEventMapping(
+                                source_event=dsl_nodes.ChainID(path=["Start"], is_absolute=True),
+                                target_event=dsl_nodes.ChainID(path=["Promoted"], is_absolute=False),
+                                extra_name="Left",
+                            ),
+                            dsl_nodes.ImportEventMapping(
+                                source_event=dsl_nodes.ChainID(path=["Stop"], is_absolute=True),
+                                target_event=dsl_nodes.ChainID(path=["Promoted"], is_absolute=False),
+                                extra_name="Right",
+                            ),
+                        ],
+                    )
+                ],
+            ),
+        )
+
+        with isolated_directory():
+            worker_file = _write_text_file("worker.fcstm", "state WorkerRoot;")
+            with pytest.MonkeyPatch.context() as mp:
+                mp.setattr(
+                    "pyfcstm.model.imports.parse_state_machine_dsl",
+                    lambda _content: worker_program,
+                )
+                with pytest.raises(SyntaxError) as exc_info:
+                    assemble_state_machine_imports(host_program, path=worker_file.parent)
+
+        assert "maps multiple module events to the same host event '/Root.Promoted'" in str(
+            exc_info.value
+        )
+
+    def test_public_ast_event_mapping_rejects_conflicting_pending_display_names(self):
+        class SelfUnequalDisplayName:
+            def __repr__(self):
+                return "'Shared Name'"
+
+            def __eq__(self, other):
+                return False
+
+            def __ne__(self, other):
+                return True
+
+        shared_name = SelfUnequalDisplayName()
+        worker_program = dsl_nodes.StateMachineDSLProgram(
+            definitions=[],
+            root_state=dsl_nodes.StateDefinition(
+                name="WorkerRoot",
+                transitions=[
+                    dsl_nodes.TransitionDefinition(
+                        from_state=dsl_nodes.INIT_STATE,
+                        to_state="Idle",
+                        event_id=None,
+                        condition_expr=None,
+                        post_operations=[],
+                    ),
+                    dsl_nodes.TransitionDefinition(
+                        from_state="Idle",
+                        to_state="Idle",
+                        event_id=dsl_nodes.ChainID(path=["Start"], is_absolute=True),
+                        condition_expr=None,
+                        post_operations=[],
+                    ),
+                    dsl_nodes.TransitionDefinition(
+                        from_state="Idle",
+                        to_state="Done",
+                        event_id=dsl_nodes.ChainID(path=["Start"], is_absolute=True),
+                        condition_expr=None,
+                        post_operations=[],
+                    ),
+                ],
+                substates=[
+                    dsl_nodes.StateDefinition(name="Idle"),
+                    dsl_nodes.StateDefinition(name="Done"),
+                ],
+            ),
+        )
+        host_program = dsl_nodes.StateMachineDSLProgram(
+            definitions=[],
+            root_state=dsl_nodes.StateDefinition(
+                name="Root",
+                imports=[
+                    dsl_nodes.ImportStatement(
+                        source_path="./worker.fcstm",
+                        alias="Worker",
+                        mappings=[
+                            dsl_nodes.ImportEventMapping(
+                                source_event=dsl_nodes.ChainID(path=["Start"], is_absolute=True),
+                                target_event=dsl_nodes.ChainID(path=["Promoted"], is_absolute=False),
+                                extra_name=shared_name,
+                            ),
+                        ],
+                    )
+                ],
+            ),
+        )
+
+        with isolated_directory():
+            worker_file = _write_text_file("worker.fcstm", "state WorkerRoot;")
+            with pytest.MonkeyPatch.context() as mp:
+                mp.setattr(
+                    "pyfcstm.model.imports.parse_state_machine_dsl",
+                    lambda _content: worker_program,
+                )
+                with pytest.raises(SyntaxError) as exc_info:
+                    assemble_state_machine_imports(host_program, path=worker_file.parent)
+
+        assert "receives conflicting display names" in str(exc_info.value)
+
+    def test_event_mapping_existing_host_event_without_name_adopts_source_display_name(self):
+        worker_program = dsl_nodes.StateMachineDSLProgram(
+            definitions=[],
+            root_state=dsl_nodes.StateDefinition(
+                name="WorkerRoot",
+                events=[dsl_nodes.EventDefinition(name="Start", extra_name="Worker Start")],
+                transitions=[
+                    dsl_nodes.TransitionDefinition(
+                        from_state=dsl_nodes.INIT_STATE,
+                        to_state="Idle",
+                        event_id=None,
+                        condition_expr=None,
+                        post_operations=[],
+                    ),
+                    dsl_nodes.TransitionDefinition(
+                        from_state="Idle",
+                        to_state="Idle",
+                        event_id=dsl_nodes.ChainID(path=["Start"], is_absolute=True),
+                        condition_expr=None,
+                        post_operations=[],
+                    ),
+                ],
+                substates=[dsl_nodes.StateDefinition(name="Idle")],
+            ),
+        )
+        host_program = dsl_nodes.StateMachineDSLProgram(
+            definitions=[],
+            root_state=dsl_nodes.StateDefinition(
+                name="Root",
+                events=[dsl_nodes.EventDefinition(name="Promoted")],
+                imports=[
+                    dsl_nodes.ImportStatement(
+                        source_path="./worker.fcstm",
+                        alias="Worker",
+                        mappings=[
+                            dsl_nodes.ImportEventMapping(
+                                source_event=dsl_nodes.ChainID(path=["Start"], is_absolute=True),
+                                target_event=dsl_nodes.ChainID(path=["Promoted"], is_absolute=False),
+                            ),
+                        ],
+                    )
+                ],
+            ),
+        )
+
+        with isolated_directory():
+            worker_file = _write_text_file("worker.fcstm", "state WorkerRoot;")
+            with pytest.MonkeyPatch.context() as mp:
+                mp.setattr(
+                    "pyfcstm.model.imports.parse_state_machine_dsl",
+                    lambda _content: worker_program,
+                )
+                assembled = assemble_state_machine_imports(host_program, path=worker_file.parent)
+
+        assert [(event.name, event.extra_name) for event in assembled.root_state.events] == [
+            ("Promoted", "Worker Start")
+        ]
 
     def test_phase4_complete_example_to_ast_node_str(self, text_aligner):
         state_machine = _build_state_machine(

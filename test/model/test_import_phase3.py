@@ -1,11 +1,14 @@
 import os
 import pathlib
 import textwrap
+from dataclasses import dataclass
 
 import pytest
 from hbutils.testing import isolated_directory
 
 from pyfcstm.dsl import parse_state_machine_dsl
+from pyfcstm.dsl import node as dsl_nodes
+from pyfcstm.model.imports import assemble_state_machine_imports
 from pyfcstm.model import parse_dsl_node_to_state_machine
 
 
@@ -28,6 +31,245 @@ def _build_state_machine(root_content: str, **extra_files):
 
 @pytest.mark.unittest
 class TestImportPhase3Assembly:
+    def test_public_ast_mapping_rewrites_all_expression_and_operation_shapes(self):
+        program = dsl_nodes.StateMachineDSLProgram(
+            definitions=[
+                dsl_nodes.DefAssignment(
+                    name="src",
+                    type="int",
+                    expr=dsl_nodes.Paren(dsl_nodes.Name("src")),
+                ),
+                dsl_nodes.DefAssignment(
+                    name="flag",
+                    type="int",
+                    expr=dsl_nodes.ConditionalOp(
+                        cond=dsl_nodes.UnaryOp("not", dsl_nodes.Name("src")),
+                        value_true=dsl_nodes.UFunc("abs", dsl_nodes.Name("src")),
+                        value_false=dsl_nodes.BinaryOp(
+                            dsl_nodes.Name("src"),
+                            "+",
+                            dsl_nodes.Name("src"),
+                        ),
+                    ),
+                ),
+            ],
+            root_state=dsl_nodes.StateDefinition(
+                name="WorkerRoot",
+                enters=[
+                    dsl_nodes.EnterOperations(
+                        operations=[
+                            dsl_nodes.OperationAssignment(
+                                "src",
+                                dsl_nodes.Name("src"),
+                            )
+                        ]
+                    )
+                ],
+                durings=[
+                    dsl_nodes.DuringOperations(
+                        aspect=None,
+                        operations=[
+                            dsl_nodes.OperationAssignment(
+                                "src",
+                                dsl_nodes.Paren(dsl_nodes.Name("src")),
+                            )
+                        ],
+                    )
+                ],
+                exits=[
+                    dsl_nodes.ExitOperations(
+                        operations=[
+                            dsl_nodes.OperationAssignment(
+                                "src",
+                                dsl_nodes.UFunc("abs", dsl_nodes.Name("src")),
+                            )
+                        ]
+                    )
+                ],
+                during_aspects=[
+                    dsl_nodes.DuringAspectOperations(
+                        aspect="before",
+                        operations=[
+                            dsl_nodes.OperationAssignment(
+                                "src",
+                                dsl_nodes.BinaryOp(
+                                    dsl_nodes.Name("src"),
+                                    "+",
+                                    dsl_nodes.Name("src"),
+                                ),
+                            )
+                        ],
+                    )
+                ],
+                transitions=[
+                    dsl_nodes.TransitionDefinition(
+                        from_state=dsl_nodes.INIT_STATE,
+                        to_state="Idle",
+                        event_id=None,
+                        condition_expr=None,
+                        post_operations=[],
+                    ),
+                    dsl_nodes.TransitionDefinition(
+                        from_state="Idle",
+                        to_state="Busy",
+                        event_id=None,
+                        condition_expr=dsl_nodes.ConditionalOp(
+                            cond=dsl_nodes.Name("src"),
+                            value_true=dsl_nodes.Name("src"),
+                            value_false=dsl_nodes.Name("flag"),
+                        ),
+                        post_operations=[
+                            dsl_nodes.OperationAssignment(
+                                "src",
+                                dsl_nodes.UnaryOp("-", dsl_nodes.Name("src")),
+                            )
+                        ],
+                    ),
+                ],
+                force_transitions=[
+                    dsl_nodes.ForceTransitionDefinition(
+                        from_state="Busy",
+                        to_state="Idle",
+                        event_id=None,
+                        condition_expr=dsl_nodes.UnaryOp("not", dsl_nodes.Name("flag")),
+                    )
+                ],
+                substates=[
+                    dsl_nodes.StateDefinition(name="Idle"),
+                    dsl_nodes.StateDefinition(name="Busy"),
+                ],
+            ),
+        )
+        host_program = dsl_nodes.StateMachineDSLProgram(
+            definitions=[],
+            root_state=dsl_nodes.StateDefinition(
+                name="Root",
+                imports=[
+                    dsl_nodes.ImportStatement(
+                        source_path="./worker.fcstm",
+                        alias="Worker",
+                        mappings=[
+                            dsl_nodes.ImportDefMapping(
+                                selector=dsl_nodes.ImportDefExactSelector(name="src"),
+                                target_template=dsl_nodes.ImportDefTargetTemplate(
+                                    template="host_src"
+                                ),
+                            ),
+                            dsl_nodes.ImportDefMapping(
+                                selector=dsl_nodes.ImportDefExactSelector(name="flag"),
+                                target_template=dsl_nodes.ImportDefTargetTemplate(
+                                    template="host_flag"
+                                ),
+                            ),
+                        ],
+                    )
+                ],
+            ),
+        )
+
+        with isolated_directory():
+            worker_file = _write_text_file("worker.fcstm", "state WorkerRoot;")
+            with pytest.MonkeyPatch.context() as mp:
+                mp.setattr(
+                    "pyfcstm.model.imports.parse_state_machine_dsl",
+                    lambda _content: program,
+                )
+                assembled = assemble_state_machine_imports(host_program, path=worker_file.parent)
+
+        worker_state = assembled.root_state.substates[0]
+        assert sorted(item.name for item in assembled.definitions) == ["host_flag", "host_src"]
+        assert str(assembled.definitions[0]) == "def int host_src = (host_src);"
+        assert "host_src" in str(assembled.definitions[1])
+        assert worker_state.enters[0].operations[0].name == "host_src"
+        assert str(worker_state.enters[0].operations[0].expr) == "host_src"
+        assert str(worker_state.durings[0].operations[0].expr) == "(host_src)"
+        assert str(worker_state.exits[0].operations[0].expr) == "abs(host_src)"
+        assert str(worker_state.during_aspects[0].operations[0].expr) == "host_src + host_src"
+        assert "host_src" in str(worker_state.transitions[1].condition_expr)
+        assert "host_flag" in str(worker_state.force_transitions[0].condition_expr)
+        assert str(worker_state.transitions[1].post_operations[0].expr) == "-host_src"
+
+    def test_public_ast_mapping_rejects_unknown_selector_type(self):
+        class UnknownSelector(dsl_nodes.ImportDefSelector):
+            pass
+
+        program = dsl_nodes.StateMachineDSLProgram(
+            definitions=[
+                dsl_nodes.DefAssignment(name="counter", type="int", expr=dsl_nodes.Integer("0"))
+            ],
+            root_state=dsl_nodes.StateDefinition(name="WorkerRoot"),
+        )
+        host_program = dsl_nodes.StateMachineDSLProgram(
+            definitions=[],
+            root_state=dsl_nodes.StateDefinition(
+                name="Root",
+                imports=[
+                    dsl_nodes.ImportStatement(
+                        source_path="./worker.fcstm",
+                        alias="Worker",
+                        mappings=[
+                            dsl_nodes.ImportDefMapping(
+                                selector=UnknownSelector(),
+                                target_template=dsl_nodes.ImportDefTargetTemplate(
+                                    template="host_counter"
+                                ),
+                            )
+                        ],
+                    )
+                ],
+            ),
+        )
+
+        with isolated_directory():
+            worker_file = _write_text_file("worker.fcstm", "state WorkerRoot;")
+            with pytest.MonkeyPatch.context() as mp:
+                mp.setattr(
+                    "pyfcstm.model.imports.parse_state_machine_dsl",
+                    lambda _content: program,
+                )
+                with pytest.raises(TypeError) as exc_info:
+                    assemble_state_machine_imports(host_program, path=worker_file.parent)
+
+        assert "Unknown import def selector" in str(exc_info.value)
+
+    def test_public_ast_mapping_rejects_unknown_operation_statement_node(self):
+        @dataclass
+        class UnknownOperationalStatement(dsl_nodes.OperationalStatement):
+            pass
+
+        program = dsl_nodes.StateMachineDSLProgram(
+            definitions=[
+                dsl_nodes.DefAssignment(name="counter", type="int", expr=dsl_nodes.Integer("0"))
+            ],
+            root_state=dsl_nodes.StateDefinition(
+                name="WorkerRoot",
+                enters=[
+                    dsl_nodes.EnterOperations(
+                        operations=[UnknownOperationalStatement()]
+                    )
+                ],
+            ),
+        )
+        host_program = dsl_nodes.StateMachineDSLProgram(
+            definitions=[],
+            root_state=dsl_nodes.StateDefinition(
+                name="Root",
+                imports=[dsl_nodes.ImportStatement(source_path="./worker.fcstm", alias="Worker")],
+            ),
+        )
+
+        with isolated_directory():
+            worker_file = _write_text_file("worker.fcstm", "state WorkerRoot;")
+            with pytest.MonkeyPatch.context() as mp:
+                mp.setattr(
+                    "pyfcstm.model.imports.parse_state_machine_dsl",
+                    lambda _content: program,
+                )
+                with pytest.raises(TypeError) as exc_info:
+                    assemble_state_machine_imports(host_program, path=worker_file.parent)
+
+        assert "Unknown operation statement node" in str(exc_info.value)
+
     def test_imported_top_level_definitions_use_default_alias_prefix_mapping(self):
         with isolated_directory():
             root_file = _write_text_file(
@@ -431,6 +673,58 @@ class TestImportPhase3Assembly:
         assert "placeholder $2 is out of range" in message
         assert "sensor_temp" in message
 
+    def test_public_ast_mapping_rejects_invalid_template_placeholders(self):
+        invalid_templates = [
+            ("sensor_${1", "missing closing '}'"),
+            ("sensor_${x}", "placeholder index 'x' is not numeric"),
+        ]
+
+        for template, message_fragment in invalid_templates:
+            program = dsl_nodes.StateMachineDSLProgram(
+                definitions=[
+                    dsl_nodes.DefAssignment(
+                        name="sensor_temp",
+                        type="int",
+                        expr=dsl_nodes.Integer("0"),
+                    )
+                ],
+                root_state=dsl_nodes.StateDefinition(name="WorkerRoot"),
+            )
+            host_program = dsl_nodes.StateMachineDSLProgram(
+                definitions=[],
+                root_state=dsl_nodes.StateDefinition(
+                    name="Root",
+                    imports=[
+                        dsl_nodes.ImportStatement(
+                            source_path="./worker.fcstm",
+                            alias="Worker",
+                            mappings=[
+                                dsl_nodes.ImportDefMapping(
+                                    selector=dsl_nodes.ImportDefPatternSelector(
+                                        pattern="sensor_*"
+                                    ),
+                                    target_template=dsl_nodes.ImportDefTargetTemplate(
+                                        template=template
+                                    ),
+                                )
+                            ],
+                        )
+                    ],
+                ),
+            )
+
+            with isolated_directory():
+                worker_file = _write_text_file("worker.fcstm", "state WorkerRoot;")
+                with pytest.MonkeyPatch.context() as mp:
+                    mp.setattr(
+                        "pyfcstm.model.imports.parse_state_machine_dsl",
+                        lambda _content: program,
+                    )
+                    with pytest.raises(SyntaxError) as exc_info:
+                        assemble_state_machine_imports(host_program, path=worker_file.parent)
+
+            assert message_fragment in str(exc_info.value)
+
     def test_missing_mapping_match_is_rejected_without_fallback(self):
         with isolated_directory():
             root_file = _write_text_file(
@@ -464,6 +758,65 @@ class TestImportPhase3Assembly:
         message = str(exc_info.value)
         assert "source variable 'timeout'" in message
         assert "is not matched by any def mapping rule" in message
+
+    def test_public_ast_mapping_rejects_runtime_overlapping_set_rule_match(self):
+        class WeirdNames:
+            def __init__(self):
+                self._stage = 0
+
+            def __iter__(self):
+                if self._stage == 0:
+                    self._stage = 1
+                    return iter(["a"])
+                return iter(["a", "b"])
+
+            def __contains__(self, item):
+                return item in {"a", "b"}
+
+        program = dsl_nodes.StateMachineDSLProgram(
+            definitions=[
+                dsl_nodes.DefAssignment(name="b", type="int", expr=dsl_nodes.Integer("1"))
+            ],
+            root_state=dsl_nodes.StateDefinition(name="WorkerRoot"),
+        )
+        host_program = dsl_nodes.StateMachineDSLProgram(
+            definitions=[],
+            root_state=dsl_nodes.StateDefinition(
+                name="Root",
+                imports=[
+                    dsl_nodes.ImportStatement(
+                        source_path="./worker.fcstm",
+                        alias="Worker",
+                        mappings=[
+                            dsl_nodes.ImportDefMapping(
+                                selector=dsl_nodes.ImportDefSetSelector(names=WeirdNames()),
+                                target_template=dsl_nodes.ImportDefTargetTemplate(
+                                    template="x_$0"
+                                ),
+                            ),
+                            dsl_nodes.ImportDefMapping(
+                                selector=dsl_nodes.ImportDefSetSelector(names=["b"]),
+                                target_template=dsl_nodes.ImportDefTargetTemplate(
+                                    template="y_$0"
+                                ),
+                            ),
+                        ],
+                    )
+                ],
+            ),
+        )
+
+        with isolated_directory():
+            worker_file = _write_text_file("worker.fcstm", "state WorkerRoot;")
+            with pytest.MonkeyPatch.context() as mp:
+                mp.setattr(
+                    "pyfcstm.model.imports.parse_state_machine_dsl",
+                    lambda _content: program,
+                )
+                with pytest.raises(SyntaxError) as exc_info:
+                    assemble_state_machine_imports(host_program, path=worker_file.parent)
+
+        assert "matches multiple set rules" in str(exc_info.value)
 
     def test_host_existing_variable_type_mismatch_is_rejected(self):
         with isolated_directory():

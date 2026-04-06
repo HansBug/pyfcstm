@@ -1,713 +1,722 @@
-# VSCode 扩展与 FCSTM Node.js 语义层设计
+# FCSTM VSCode 扩展与纯 JS Language Server 设计
 
 ## 版本历史
 
 | 版本 | 日期 | 修改内容 | 作者 |
 |------|------|----------|------|
-| 0.1.0 | 2026-03-18 | 初始版本，定义 VSCode 可视化方案、Node.js 原生语义层定位与分阶段实施计划 | Codex |
+| 0.1.0 | 2026-03-18 | 初始版本，聚焦 VSCode 可视化方案与 Node.js 原生语义层路线 | Codex |
+| 0.2.0 | 2026-04-06 | 基于当前仓库状态重构文档，补充现状快照、构建链路、纯 JS runtime 约束、完整 language server 路线与 phased execution plan | Codex |
 
 ---
 
-## 1. 文档目标
+## 1. 文档定位
 
-本文讨论的不是一个孤立的“VSCode 里把 FCSTM 画出来”的小功能，而是一条更长的技术路线：
+本文档在 `0.1.0` 版本基础上做两个关键修正。
 
-1. 先在 Node.js 上建立 **FCSTM 原生语义层**
-2. 在此基础上实现 **FCSTM -> PlantUML** 的原生生成能力
-3. 再把这一能力接入 VSCode，形成可预览、可配置、可扩展的可视化系统
+第一，基于当前仓库真实状态更新判断。今天的 `editors/vscode/` 已经不是一个只有语法高亮的静态语言包，而是一个具备 ANTLR JS 解析、诊断、符号、补全、悬停、import-aware 轻量工作区能力和 import path definition 的 parser-backed 扩展。
 
-这里的核心判断是：
+第二，正式把目标从“先做可视化”提升为“构造一个完整的、纯 JS 的 FCSTM language server”，并把可视化明确降级为该 language server 语义能力的一个下游能力，而不是架构中心。
 
-- **FCSTM 语义层值得被单独视为一个 project**
-- 它的用途绝不只限于 to PlantUML
-- 从长期演进看，**优先做 Node.js 原生移植** 明显优于通过外部 CLI 调用 Python
+这里的“纯 JS”需要定义清楚：
+
+- 运行时只依赖 VSCode 扩展宿主自带的 Node.js 环境和可 bundle 的 npm JavaScript 依赖
+- 不依赖 Python CLI
+- 不依赖 Java / PlantUML jar
+- 不依赖其他 VSCode 扩展作为核心功能前提
+- 不依赖远程服务或网络渲染
+
+考虑到当前仓库的 VSCode 扩展已经采用 `TypeScript + esbuild + CommonJS + ES2015 target` 的工程基线，源码层继续使用 TypeScript 是与现有 repo 最兼容、成本最低的做法。最终交付物仍然是纯 JavaScript bundle，因此不与“纯 JS runtime”目标冲突。
 
 ---
 
-## 2. 为什么不能把这件事简单理解为“调一下 PlantUML”
+## 2. 当前仓库状态快照（截至 2026-04-06）
 
-### 2.1 PlantUML 只负责渲染，不负责理解 FCSTM
+### 2.1 当前扩展已经具备的能力
 
-PlantUML 能做的是：
+当前 `editors/vscode/` 已经具备以下能力：
 
-- 接收 `.puml`
-- 渲染成 `png`、`svg`、`pdf`
-
-PlantUML 不能做的是：
-
-- 解析 `.fcstm`
-- 建立 FCSTM 的状态机模型
-- 理解事件作用域、层次状态、aspect actions、forced transitions、guard/effect 等语义
-
-所以“FCSTM 可视化”至少天然包含两个阶段：
-
-1. **FCSTM -> 语义模型**
-2. **语义模型 -> PlantUML**
-
-之后才是：
-
-3. **PlantUML -> 图像或预览**
-
-第三步只是渲染后端问题，前两步才是能力核心。
-
-### 2.2 当前仓库里，VSCode 扩展只有语法层能力，没有语义层能力
-
-目前 VSCode 扩展已经具备：
-
-- 语法高亮
-- 基于 ANTLR JS 解析器的语法诊断
-- outline/document symbols
+- TextMate 语法高亮
+- language configuration
+- snippets
+- 基于 ANTLR JavaScript parser 的 syntax diagnostics
+- document symbols / outline
 - completion
 - hover
+- import-aware diagnostics
+- import-aware completion / hover
+- import path go to definition
 
-但这些能力本质上还是停留在：
+也就是说，当前扩展已经跨过“静态语法包”的阶段，进入了“轻量 parser-backed editor support”的阶段。
 
-- token
-- parse tree
-- 轻量级文档结构提取
+### 2.2 当前扩展的实现与构建事实
 
-它还没有：
+当前工程里与 VSCode 扩展相关的关键事实如下：
 
-- 完整的 FCSTM 语义模型
-- 从 parse tree 到状态机模型的 Node.js 语义构建流程
-- Node.js 原生的 `to_plantuml()`
-- Node.js 原生的语义验证、跳转解析、路径解析、事件归一化
+| 维度 | 当前状态 |
+|------|----------|
+| Manifest | `editors/vscode/package.json`，扩展名 `fcstm-language-support`，`engines.vscode` 为 `^1.60.0` |
+| 入口 | `main` 指向 `./dist/extension.js` |
+| 源码语言 | TypeScript |
+| Bundle 方式 | `esbuild`，当前单入口 `src/extension.ts -> dist/extension.js` |
+| Bundle 标准 | `platform: node`、`format: cjs`、`target: es2015`、`external: ['vscode']` |
+| Parser 来源 | 从仓库 canonical grammar 生成的 ANTLR JavaScript artifacts |
+| Parser 版本约束 | `antlr4` 固定为 `4.9.3` |
+| 本地构建总入口 | repo root 的 `make vscode` |
+| 扩展目录构建入口 | `editors/vscode/Makefile` |
+| 打包方式 | `@vscode/vsce`，输出 `.vsix` 到 `editors/vscode/build/` |
+| 现有验证 | `verify-p0.2` 到 `verify-p0.6`、`verify-import-editor-support`、`test-e2e` |
 
-因此，如果现在直接讨论“VSCode 里怎么 preview”，容易把真正的大头工作误判成“接个插件”。
+### 2.3 当前构建链路
 
----
+当前构建链路不是抽象设想，而是已经存在并在仓库里落地的流程：
 
-## 3. 核心技术判断
+1. repo root 执行 `make vscode`
+2. root `Makefile` 调用 `$(MAKE) -C editors/vscode package`
+3. `editors/vscode/Makefile` 的 `package` 依赖 `all`
+4. `all` 当前依次执行：
+   - `icons`
+   - `install`
+   - `syntaxes`
+   - `parser`
+   - `build`
+5. `build` 使用 `node esbuild.config.js --production`
+6. `package` 使用 `npm run package` 产出 `.vsix`
 
-### 3.1 Node.js 原生语义层应优先于调用 Python CLI
+当前 parser 生成仍然依赖 ANTLR jar，这属于开发期构建依赖，不属于扩展运行时依赖。已打包好的 VSIX 在用户机器上运行时并不依赖 Java 或 Python。
 
-我倾向于明确把下面这条路线作为正式方向：
+### 2.4 当前架构的边界与问题
 
-- **正式方向**：Node.js 原生语义层
-- **不推荐作为正式架构**：VSCode 扩展内通过命令行调用 `pyfcstm`
+当前实现虽然已经有不少 editor features，但它们仍然主要堆叠在扩展宿主侧的 provider 和 utility 上：
 
-原因如下。
+- 语法解析与语义建模尚未分层
+- 多文件 import-aware 能力是轻量工作区 helper，不是完整 workspace semantic graph
+- diagnostics / completion / hover / definition 还不是通过标准 LSP server 提供
+- 语义规则还没有形成独立、可复用、可测试的 Node.js core
+- 可视化如果继续往外接 PlantUML，会把真正的核心问题掩盖掉
 
-#### 3.1.1 性能与交互模型
-
-VSCode 场景是高频、增量、交互式的：
-
-- 用户正在输入
-- 文档经常处于未保存状态
-- 设置项可能频繁切换
-- 预览需要去抖刷新
-
-如果每次都调用外部 CLI：
-
-- 进程启动有固定开销
-- Python 环境定位有额外不确定性
-- 未保存 buffer 需要走临时文件中转
-- 错误回传和调试体验会更差
-- Windows/macOS/Linux 的环境差异会被放大
-
-而 Node.js 原生方案可以直接读取当前编辑器内存文本，避免额外进程编排。
-
-#### 3.1.2 产品边界更干净
-
-当前扩展本身的定位是：
-
-- 轻量
-- 离线可用
-- 运行时不依赖 Python
-
-如果在最核心的新能力上重新引入 Python CLI，产品边界会变得不清晰：
-
-- 安装说明复杂化
-- 故障定位复杂化
-- 平台兼容矩阵膨胀
-- 用户会把扩展质量和本机 Python 环境耦合在一起
-
-#### 3.1.3 可复用性远大于可视化
-
-一旦有了 Node.js 原生语义层，可直接支撑的功能不止是 PlantUML：
-
-- richer diagnostics
-- semantic validation
-- rename / go to definition / find references
-- code actions
-- formatter
-- folding by semantic structure
-- dead transition / unreachable state analysis
-- event scope inspection
-- simulation assistant
-- quick fixes
-- model export to other targets
-- future language server
-
-所以这不是为可视化单独修一条临时通道，而是在补整个 VSCode 生态的真正基础设施。
-
-### 3.2 FCSTM 语义层值得单独立项
-
-我认为这部分非常值得单独当一个子项目来规划。推荐的命名方式可以类似：
-
-- `fcstm-js-semantics`
-- `fcstm-node-core`
-- `@pyfcstm/fcstm-core`
-
-它的定位不是“VSCode 专用”，而是：
-
-- 由 VSCode 首先驱动需求
-- 但本身是可独立复用的 Node.js 核心库
-
-推荐目标：
-
-- 输入：FCSTM 源码文本
-- 输出：语法树、语义模型、诊断信息、导出结果
-- 运行环境：Node.js
-- 不依赖 Python 运行时
+这说明继续沿着“在 `extension.ts` 周边追加 provider”的方式扩展，边际收益会越来越低。
 
 ---
 
-## 4. FCSTM Node.js 语义层的职责边界
+## 3. 为什么当前阶段应该正式转向完整 language server
 
-建议把 Node.js 侧能力分成四层。
+### 3.1 当前 repo 的 DSL 已经是多文件、带 import、带语义规则的语言
 
-### 4.1 第 1 层：语法层
-
-职责：
-
-- ANTLR lexer/parser
-- parse tree 构建
-- syntax diagnostics
-
-当前扩展已经有这部分基础。
-
-### 4.2 第 2 层：AST 层
-
-职责：
-
-- 将 parse tree 归一化为更稳定的 AST
-- 消除 ANTLR 生成结构带来的不便
-- 建立统一的 source range 与节点映射
-
-这一层的价值在于：
-
-- 让上层逻辑不直接依赖 ANTLR 细节
-- 便于未来 grammar 演进时降低连锁修改
-- 便于做测试和序列化
-
-### 4.3 第 3 层：语义模型层
-
-这是最关键的一层，建议与 Python 的 model 层对齐，但不是机械照搬。
-
-职责包括：
-
-- 状态、事件、转换、变量、操作、生命周期动作的语义建模
-- 层次状态结构建立
-- 名称解析与路径解析
-- `ref` 引用解析
-- `::` / `:` / `/` 事件作用域归一化
-- initial transition / exit transition 规则化
-- pseudo state / composite state / leaf state 分类
-- forced transitions 展开
-- guard / effect / lifecycle action 语义挂接
-- 语义级错误与告警
-
-这一层的产物应该是一个稳定的、可遍历、可导出的状态机语义对象图。
-
-### 4.4 第 4 层：派生能力层
-
-依赖语义模型层实现：
-
-- `to_plantuml`
-- semantic diagnostics
-- symbol resolution
-- code navigation
-- simulation support
-- export to other IR / formats
-
-PlantUML 只是这一层中的一个输出器。
-
----
-
-## 5. 为什么语义层是“项目级工作”
-
-### 5.1 FCSTM 不是简单 DSL 文本替换问题
-
-FCSTM 涉及的核心语义远超过“把几行代码映射成几行字符串”：
+当前仓库的 FCSTM DSL 已经不是只有单文件状态定义的早期形态。它已经包含：
 
 - hierarchical states
 - pseudo states
-- composite state initial/exit rules
 - lifecycle actions
 - aspect actions
 - event scoping
-- forced transition expansion
-- name/display name/path formatting
-- expression 分类与约束
-- transition guard/effect 绑定
+- forced transitions
+- import 语法与映射
+- import-aware 的多文件模型装配
 
-这些都要求先建立正确的语义模型，再谈输出。
+这类语言如果继续只用“编辑器端若干轻量 helper”支撑，会越来越难维护。
 
-### 5.2 VSCode 后续能力几乎都会复用这套语义
+### 3.2 当前扩展已经出现向 language tooling 演进的自然信号
 
-如果没有语义层，很多编辑器能力只能停留在非常脆弱的启发式：
+当前扩展已经有：
 
-- hover 只能写静态文案
-- completion 难以做上下文语义补全
-- diagnostics 只能做语法错误
-- symbol 导航很难做到语义准确
-- preview 也只能依赖外部工具黑盒输出
+- parser-backed diagnostics
+- parser-backed symbols
+- parser-backed completion
+- parser-backed hover
+- import-aware workspace resolution
+- import path definition
 
-一旦有了语义层，这些都可以统一建立在同一份模型之上。
+这些能力本身已经在逼近 language server 的职责边界。再往前做 references、rename、code actions、semantic diagnostics、workspace symbols、folding、semantic tokens，就不应该继续靠离散 provider 拼出来。
 
-### 5.3 语义层还能反向提升 Python 端的一致性
+### 3.3 可视化不是目标本身，而是语义能力的派生产物
 
-如果 Node.js 语义层建设得足够干净，长期甚至可以倒逼仓库把“语义规则”和“输出规则”进一步显式化：
+如果把重心放在“如何在 VSCode 里把图画出来”，很容易误判真正的工作量。
 
-- 哪些是 grammar 规则
-- 哪些是 AST 归一化规则
-- 哪些是 model 语义规则
-- 哪些是 PlantUML 表达规则
+真正难的是：
 
-这对 Python 与 Node.js 双实现保持一致非常有价值。
+- 建立稳定 AST
+- 建立完整语义模型
+- 做多文件 workspace graph
+- 做名称解析、作用域解析、引用解析
+- 保证与 Python 端核心语义一致
 
----
+一旦这些成立：
 
-## 6. VSCode 可视化的正式方案
+- preview 只是语义模型的一个 consumer
+- references / rename / code actions 是同一套语义模型的 consumer
+- semantic diagnostics 也是同一套语义模型的 consumer
 
-## 6.1 总体目标
-
-在 `.fcstm` 文档中提供以下体验：
-
-- 可以直接预览状态机图
-- 可以通过 Settings 配置 PlantUML 可视化参数
-- 可以在未安装 PlantUML 扩展时仍然工作
-- 优先保持离线、本地、稳定
-
-## 6.2 渲染链路拆分
-
-推荐将可视化链路明确拆分为三段：
-
-1. `FCSTM source -> semantic model`
-2. `semantic model -> PlantUML source`
-3. `PlantUML source -> rendered preview`
-
-其中：
-
-- 第 1 段和第 2 段由我们自己负责
-- 第 3 段可以复用现有 PlantUML 生态，也可以自己做 fallback
-
-## 6.3 后端策略
-
-推荐定义如下后端策略：
-
-- `auto`
-- `plantuml-extension`
-- `local-java`
-
-### 6.3.1 `plantuml-extension`
-
-优先复用 `jebbs.plantuml` 扩展。
-
-方式建议为：
-
-1. 生成临时 `.puml`
-2. 以 PlantUML 文档方式打开
-3. 调用该扩展提供的 `plantuml.preview` 命令
-
-理由：
-
-- 它已经具备成熟的预览 UI
-- 支持缩放、滚动、多页等能力
-- 减少我们第一版自建预览 UI 的工作量
-
-注意：
-
-- 不建议做 `extensionDependencies` 硬依赖
-- 应做运行时软集成
-- 若插件不存在，不能影响扩展主功能
-
-### 6.3.2 `local-java`
-
-当 `jebbs.plantuml` 不存在或用户显式选择本地后端时，fallback 到：
-
-```bash
-java -jar <plantuml.jar>
-```
-
-建议默认通过 `-pipe` 工作：
-
-- 扩展生成 `.puml` 文本
-- 将文本送入 stdin
-- 获取 `svg` 或 `png`
-- 在我们自己的 webview 中展示
-
-推荐优先 `svg`：
-
-- 文本更清晰
-- 缩放体验更好
-- 错误提示也更容易处理
-
-### 6.3.3 为什么不考虑 `plantumlcli`
-
-这里不再把 `plantumlcli` 纳入正式方案，原因是：
-
-- 额外引入 Python 依赖
-- 和当前扩展定位冲突
-- 相比 `java -jar plantuml.jar` 没有明显体系优势
+因此，这里应该把“完整 language server”作为主目标，把“可视化”降为其中一个高价值交付面。
 
 ---
 
-## 7. VSCode 设置模型设计
+## 4. 新的正式技术结论
 
-建议直接使用 VSCode 原生 Settings UI，不单独做一个自定义设置页面。
+### 4.1 主目标
 
-理由：
+正式方向应调整为：
 
-- 用户已熟悉 VSCode 设置系统
-- 搜索、工作区覆盖、用户级覆盖都天然具备
-- 维护成本远低于自建配置界面
+- 构建 **纯 JS runtime 的 FCSTM language server**
+- 让 VSCode 扩展变成一个 **client + bundled server** 的标准结构
+- 所有核心 editor intelligence 能力都建立在 Node.js 语义核心之上
+- 可视化走 **纯 JS renderer / webview** 路线，不依赖 PlantUML 作为主链路
 
-## 7.1 设置分层
+### 4.2 不推荐再作为正式主架构的方案
 
-建议把设置分成三组。
+以下方案不应再作为正式主架构：
 
-### 7.1.1 运行后端与环境
+- 通过 Python CLI 驱动 VSCode 功能
+- 通过 Java / `plantuml.jar` 作为预览主链路
+- 依赖 `jebbs.plantuml` 之类其他扩展提供核心体验
+- 继续把复杂语义功能长期堆在 extension host 端的零散 provider 上
 
-- `fcstm.visualization.backend`
-- `fcstm.visualization.javaPath`
-- `fcstm.visualization.plantumlJarPath`
-- `fcstm.visualization.renderFormat`
-- `fcstm.visualization.autoRefresh`
-- `fcstm.visualization.refreshDebounceMs`
+### 4.3 与 Python 端的关系
 
-### 7.1.2 常用可视化选项
+Python 端仍然是当前仓库最成熟的语义实现与功能参考，但 Node.js 侧不应通过“桥接调用 Python”获得能力。
 
-- `fcstm.visualization.detailLevel`
-- `fcstm.visualization.maxDepth`
-- `fcstm.visualization.showEvents`
-- `fcstm.visualization.showLifecycleActions`
-- `fcstm.visualization.transitionEffectMode`
+正确关系应是：
 
-### 7.1.3 高级选项
+- grammar 继续共享
+- 语义规则尽可能行为对齐
+- 用 golden tests / parity tests 校验一致性
+- 运行时各自独立
 
-这部分应尽量与 `PlantUMLOptions` 对齐：
-
-- `showVariableDefinitions`
-- `variableDisplayMode`
-- `variableLegendPosition`
-- `stateNameFormat`
-- `showPseudoStateStyle`
-- `collapseEmptyStates`
-- `showEnterActions`
-- `showDuringActions`
-- `showExitActions`
-- `showAspectActions`
-- `showAbstractActions`
-- `showConcreteActions`
-- `abstractActionMarker`
-- `maxActionLines`
-- `showTransitionGuards`
-- `showTransitionEffects`
-- `showEvents`
-- `eventNameFormat`
-- `eventVisualizationMode`
-- `eventLegendPosition`
-- `collapsedStateMarker`
-- `useSkinparam`
-- `useStereotypes`
-- `customColors`
-
-## 7.2 选项元数据需要先统一
-
-在做 VSCode 设置映射前，必须先统一一份 **可视化选项元数据**。
-
-原因：
-
-- Python model 层已有完整定义
-- CLI 层的类型表目前不是完全同步的
-- 文档里也可能已经存在局部漂移
-
-因此建议新增一个统一的 options schema 作为事实源，至少包含：
-
-- key
-- type
-- allowed values
-- default
-- inheritance rule
-- description
-- VSCode settings title/description
-
-这份 schema 可用于：
-
-- Python CLI 参数解析
-- VSCode settings 生成
-- 文档生成
-- 测试校验
+Node.js 侧的目标是 editor tooling，不是立刻完整复刻 Python 端所有生成、渲染、模板能力。
 
 ---
 
-## 8. FCSTM 语义层对 VSCode 的具体价值
+## 5. 纯 JS 路线下的目标架构
 
-下面列出语义层一旦建好，VSCode 里可以自然获得的能力。
+### 5.1 架构分层
 
-## 8.1 可视化
+推荐把 VSCode 相关代码组织成四层。
 
-- 当前文档直接预览
-- 未保存内容实时预览
-- 悬停查看状态/事件的语义信息
-- 可视化定位回源代码
+#### A. Client 层
 
-## 8.2 语义诊断
+职责：
 
-例如：
+- VSCode activation
+- 启动 / 监管 language server
+- 注册 commands
+- settings 映射
+- webview / preview UI
 
-- 无效 `ref`
-- 重复定义
-- 事件作用域冲突
-- 找不到目标状态
-- 非法 forced transition 展开
-- 无法到达的状态
-- 无法触发的 transition
+这一层应该尽量薄，不承载语义逻辑。
 
-## 8.3 导航与重构
+#### B. Server 层
 
-- go to definition
-- find references
-- rename state / event / action
-- path completion
+职责：
 
-## 8.4 编辑器辅助
+- LSP 协议处理
+- 文档同步
+- workspace graph 管理
+- 调用 core 完成语义计算
+- 返回 diagnostics、completion、hover、definition、references、rename 等结果
 
-- 更准确的 completion
-- semantic folding
-- semantic document outline
-- context-aware code actions
+这一层是扩展能力中心。
 
-## 8.5 分析与模拟辅助
+#### C. Core 层
 
-- 静态 reachability 提示
-- transition graph inspection
-- event dependency inspection
-- 面向 simulate 的 editor assistant
+职责：
 
----
+- parser adapter
+- AST
+- semantic model
+- symbol resolution
+- import-aware workspace model
+- semantic diagnostics
+- exporters / analyzers / diagram IR
 
-## 9. 推荐的代码组织方式
+这一层必须完全不依赖 VSCode API。
 
-建议不要把语义层直接塞成 VSCode 扩展里的几个 util 文件，而是做出清晰边界。
+#### D. Renderer 层
 
-推荐结构：
+职责：
+
+- 从 diagram IR 生成 SVG / HTML
+- 在 webview 中展示
+- 维护 source-to-diagram 映射
+
+这层是 visualization consumer，不是语义事实源。
+
+### 5.2 推荐目录结构
+
+为了兼容当前 repo，可以不立刻拆成 npm workspace，但逻辑边界应明确。推荐结构类似：
 
 ```text
 editors/vscode/
   src/
-    extension.ts
-    visualization/
-      commands.ts
+    client/
+      extension.ts
+      commands/
       preview/
-      backends/
-    integration/
-      plantumlExtension.ts
-  packages/
-    fcstm-core/
-      syntax/
+    server/
+      main.ts
+      handlers/
+    core/
+      parser/
       ast/
       semantics/
+      workspace/
       diagnostics/
-      exporters/
-        plantuml/
+      diagram/
+    webview/
+      preview.ts
+  parser/
+  scripts/
+  syntaxes/
+  dist/
 ```
 
-也可以不做 workspace package，但逻辑边界应保持一致。
+如果后续需要更强复用性，再把 `core/` 提升成单独 package 也可以，但在本 repo 当前阶段不是必须条件。
 
-核心要求：
+### 5.3 关键约束
 
-- 语义核心不依赖 VSCode API
-- VSCode 只依赖语义核心
-- PlantUML exporter 依赖语义核心
-- preview/backend 层依赖 exporter，但不反向侵入语义核心
+新的架构必须满足以下硬约束：
 
-这样后面如果想做：
-
-- CLI for Node.js
-- web playground
-- language server
-- testing toolkit
-
-都会更顺。
+- core 不依赖 `vscode`
+- client 不重复实现语义逻辑
+- server 通过标准 LSP 提供 editor intelligence
+- preview 不依赖 Python / Java / PlantUML / 网络服务
+- 保持与当前 `engines.vscode = ^1.60.0`、`CommonJS`、`ES2015` 的兼容思路
 
 ---
 
-## 10. 分阶段实施计划
+## 6. 语义核心需要覆盖的对象
 
-## Phase A: 语义基础设施立项
+language server 不只是把现在的 provider 搬到另一个进程，而是要补齐一套真正可复用的语义模型。
 
-目标：
+推荐最少覆盖以下对象：
 
-- 把 Node.js 原生语义层正式确认为独立工程方向
+- machine
+- file / module
+- variable definition
+- state
+- pseudo state
+- event
+- import statement
+- import mappings
+- transition
+- forced transition expansion result
+- lifecycle action
+- aspect action
+- `ref` target
+- operation block
+- expression
+- source range / symbol identity
 
-任务：
+推荐最少覆盖以下语义过程：
 
-- 梳理 Python 现有 DSL/AST/model/export 结构
-- 定义 Node.js 侧分层边界
-- 定义 AST 与语义模型初稿
-- 明确 Python / Node.js 行为一致性测试策略
+- state path resolution
+- event scope normalization
+- import target resolution
+- alias mapping
+- `ref` resolution
+- forced transition expansion
+- duplicate definition detection
+- unresolved symbol detection
+- cross-file cycle detection
+- incremental workspace invalidation
 
-产出：
+如果这些不先建立起来，后面的 references、rename、preview、semantic diagnostics 都会很脆弱。
 
-- 语义层设计文档
-- 模型草图
-- 测试样例目录
+---
 
-## Phase B: AST 与语义模型
+## 7. 可视化在新路线里的定位
 
-目标：
+### 7.1 可视化仍然重要，但不是主架构
 
-- 从 parse tree 到 AST
-- 从 AST 到语义模型
+可视化在 editor 体验上仍然有很高价值，但在新的技术路线里，它的前置条件变成：
 
-任务：
+1. FCSTM source -> AST
+2. AST -> semantic model
+3. semantic model -> diagram IR
+4. diagram IR -> SVG / HTML preview
 
-- 建立 source range 映射
-- 实现 state / event / transition / operation 基础节点
-- 建立路径解析和命名空间机制
-- 建立 forced transition 展开逻辑
-- 建立生命周期动作语义挂接
+这里的关键变化是第 4 步不再要求绑定 PlantUML。
 
-产出：
+### 7.2 为什么不再把 PlantUML 当作预览主链路
 
-- 可序列化 AST
-- 可遍历语义模型
-- 基础语义诊断
+如果坚持 PlantUML 主链路，会直接违背“纯 JS runtime、无额外依赖”的目标，因为它通常意味着：
 
-## Phase C: PlantUML exporter
+- Java
+- `plantuml.jar`
+- 额外 VSCode 扩展
+- 或远程渲染服务
 
-目标：
+这些都不适合作为 FCSTM 扩展的正式主路径。
 
-- 在 Node.js 侧实现 `semantic model -> PlantUML`
+### 7.3 新的推荐方式
 
-任务：
+推荐方式是：
 
-- 对齐 `PlantUMLOptions`
-- 实现 detail level 继承规则
-- 实现 state / event / transition 文本格式化
-- 复现变量、legend、颜色、max depth 等规则
+- language server 输出 diagram IR
+- VSCode client 打开 webview
+- webview 侧用纯 JS renderer 生成 SVG
 
-产出：
+后续如果需要兼容导出：
 
-- `toPlantUml()` API
-- 与 Python 结果对比测试
+- 可以增加可选的 PlantUML exporter
+- 但它只能是一个 export / interop capability
+- 不能反向决定 preview 主架构
 
-## Phase D: VSCode preview integration
+---
 
-目标：
+## 8. 与当前 repo 兼容的构建与工程标准
 
-- 在 VSCode 中提供可用预览
+### 8.1 应保留的现有标准
 
-任务：
+新的 language server 方案应显式适配当前 repo，而不是推翻现有构建体系。
 
-- 注册 preview/open/export 命令
-- 实现 settings 映射
-- 实现 `jebbs.plantuml` 软集成
-- 实现 `java -jar plantuml.jar` fallback
-- 实现自动刷新与错误展示
+以下标准建议保留：
 
-产出：
+- repo root 继续以 `make vscode` 作为总入口
+- `editors/vscode/Makefile` 继续作为本地扩展构建入口
+- parser 继续从 canonical grammar 生成
+- parser runtime 继续锁定 `antlr4 4.9.3`
+- JS bundle 继续使用 `esbuild`
+- client / server bundle 继续使用 `CommonJS`
+- target 继续保持保守兼容的 `ES2015`
+- `vsce` 继续负责 `.vsix` 打包
+- `build-tsc` 可以继续保留给验证脚本使用
 
-- 用户可见预览能力
-- 工作区级设置
-- 状态栏/命令面板入口
+### 8.2 需要改造的地方
 
-## Phase E: 语义能力扩展
+当前单入口 bundle 需要升级为多入口 bundle。
 
-目标：
+推荐产物布局改成：
 
-- 把语义层价值扩展到可视化之外
+```text
+dist/
+  client/
+    extension.js
+  server/
+    server.js
+  webview/
+    preview.js
+```
 
-任务：
+对应的建议：
 
+- `package.json` 的 `main` 改为 `./dist/client/extension.js`
+- client bundle 只对 `vscode` 做 external
+- server bundle 不依赖 `vscode`
+- webview bundle 与 client / server 分离，不混在 extension host bundle 中
+
+### 8.3 当前 `esbuild` 规范对新方案的影响
+
+当前 `esbuild.config.js` 已经明确了以下风格：
+
+- `platform: 'node'`
+- `format: 'cjs'`
+- `target: 'es2015'`
+- `keepNames: true`
+- `treeShaking: true`
+
+language server 方案应延续这组标准，而不是引入 ESM-only、Node version 要求更高、或难以和旧 VSCode 兼容的新技术栈。
+
+### 8.4 依赖选择标准
+
+为了适配当前 repo 和 `engines.vscode` 约束，新引入依赖建议满足：
+
+- 可通过 npm 安装并被 esbuild 打包
+- 不要求原生编译扩展
+- 不要求额外系统级 runtime
+- 不要求仅支持 ESM
+- 与 VSCode `^1.60.0` 对应的 Node/Electron 能力兼容
+
+这意味着：
+
+- 可以使用 `vscode-languageclient` / `vscode-languageserver`
+- 但要选兼容当前 VSCode 引擎范围的版本
+- 不应随意引入 native addon 或高版本 Node 专属依赖
+
+### 8.5 构建完成定义
+
+language server 路线落地后，构建完成至少应满足：
+
+- `make parser`
+- `make build`
+- `make package`
+- `make verify`
+
+都能在 `editors/vscode/` 目录中稳定执行。
+
+同时，repo root 的：
+
+- `make vscode`
+
+也必须保持可用，不要求用户学习新的顶层构建入口。
+
+---
+
+## 9. 新的正式 scope
+
+### 9.1 第一优先级能力
+
+完整 language server 的第一优先级能力应为：
+
+- syntax diagnostics
 - semantic diagnostics
-- navigation
-- references / rename
+- document symbols
+- completion
+- hover
+- definition
+- references
+- rename
 - code actions
-- more analyzers
+- folding ranges
+- document links
 
-产出：
+### 9.2 第二优先级能力
 
-- 从“语言支持扩展”升级为“语义编辑器扩展”
+在第一优先级稳定后，再进入：
 
----
+- workspace symbols
+- semantic tokens
+- diagram preview
+- diagram export
+- static analyzers
+- simulation assistant
 
-## 11. MVP 建议
+### 9.3 暂不作为早期目标的能力
 
-如果要尽快落一个第一版，建议 MVP 范围如下：
+以下能力不适合在 language server 第一轮中扩张：
 
-1. 先不做完整 language server
-2. 先做 Node.js 原生 `FCSTM -> PlantUML`
-3. VSCode 先提供一个 `Preview FCSTM Diagram` 命令
-4. 优先支持最常用的 `PlantUMLOptions`
-5. 优先复用 `jebbs.plantuml`
-6. 缺失时 fallback 到本地 `java -jar <plantuml.jar>`
-
-MVP 不建议做的内容：
-
-- Python CLI 作为正式主链路
-- 自定义设置 webview
-- 过早引入远程服务渲染
-- 在语义层没稳之前做大规模编辑器重构功能
+- 完整模板渲染 / 代码生成移植
+- 完整复刻 Python simulate runtime
+- 依赖外部工具链的图形输出
+- 跨进程桥接 Python 作为语义主实现
 
 ---
 
-## 12. 风险与注意事项
+## 10. 执行规则
 
-## 12.1 最大成本不在渲染，而在语义移植
+本计划采用 phased execution。
 
-真正复杂的部分不是：
+每个 phase 都同时包含：
 
-- 怎么弹出一个 webview
-- 怎么调 `plantuml.preview`
-- 怎么执行 `java -jar`
+- TODO list
+- Checklist
 
-真正复杂的是：
+规则如下：
 
-- 如何在 Node.js 上准确复现 FCSTM 语义
-- 如何保证与 Python 现有行为尽量一致
-- 如何避免 grammar、AST、model、export 规则在双端漂移
+- TODO list 是该 phase 需要完成的工作项
+- Checklist 是该 phase 的验收门槛
+- 只有当该 phase 的 Checklist 全部勾选，才算 phase 完成
+- 不允许只完成部分实现就宣称 phase 结束
 
-## 12.2 一致性测试必须从一开始就准备
+---
 
-建议用同一批 `.fcstm` 样例，双端比较：
+## 11. 分阶段执行计划
 
-- 语义模型摘要
-- diagnostics
-- PlantUML 输出
+## Phase 0：基线固化与构建重构
 
-不要等到实现快完成时才想起做一致性校验。
+### 目标
 
-## 12.3 设置项不要直接人工复制
+在不破坏当前扩展能力的前提下，把工程形态从“单 bundle 的 provider 扩展”重构到“client/server/core/webview”结构，并保持当前 repo 构建入口不变。
 
-可视化设置很多，如果纯手工在：
+### TODO
 
-- Python model
-- CLI
-- VSCode `package.json`
-- 文档
+* [ ] 盘点并冻结当前扩展已具备的行为基线：diagnostics、symbols、completion、hover、import-aware 诊断与跳转
+* [ ] 把当前 `src/` 中的实现重新划分到 `client/`、`server/`、`core/`、`webview/` 的逻辑边界
+* [ ] 将当前单入口 `esbuild.config.js` 改造成多入口 bundle 配置
+* [ ] 调整 `package.json` 的 `main`、scripts 和打包清单，使其适配 client/server 双产物
+* [ ] 更新 `editors/vscode/Makefile`，让 `build`、`package`、`verify` 认知新的 dist 布局
+* [ ] 保持 repo root `make vscode`、`vscode_install`、`vscode_clean` 的使用方式不变
 
-之间复制，后面极易漂移。应尽早建立统一 schema。
+### Checklist
+
+* [ ] `cd editors/vscode && make parser && make build && make package` 可以成功执行
+* [ ] repo root 的 `make vscode` 可以成功执行
+* [ ] VSIX 中包含新的 client bundle、server bundle 和 icon
+* [ ] 当前已有的 parser-backed 功能在重构后不发生明显行为回退
+
+## Phase 1：语法核心与 AST 正规化
+
+### 目标
+
+把 parser 从“供扩展直接消费的工具”提升为“供 language server 与后续 analyzer 复用的核心能力”，并建立稳定 AST。
+
+### TODO
+
+* [ ] 从当前扩展代码中抽离 parser adapter，放入不依赖 VSCode API 的 core 层
+* [ ] 定义统一 AST 节点模型和 source range 模型
+* [ ] 为 states、events、transitions、forced transitions、lifecycle actions、imports、mappings、operation blocks、expressions 建立 AST 节点
+* [ ] 建立 AST 序列化 / dump 能力，便于 golden test 与调试
+* [ ] 补充 AST 级测试语料，覆盖当前 repo 已支持的 import 语法与多文件基础场景
+* [ ] 保持 `make parser` 仍然以 canonical grammar 为事实源，不复制手写 grammar 逻辑
+
+### Checklist
+
+* [ ] AST 能稳定覆盖当前 grammar 中的关键结构，不依赖 ANTLR parse tree 细节直接暴露给上层
+* [ ] source range 可以稳定用于 diagnostics、hover、definition、rename 等后续能力
+* [ ] import 相关语法、forced transition、lifecycle action 和 expression 都有 AST 覆盖
+* [ ] parser regeneration 流程仍然可通过 `make parser` 复现
+
+## Phase 2：语义模型与多文件 workspace graph
+
+### 目标
+
+建立真正可供 language server 使用的语义模型，而不是停留在 parse tree 辅助工具层。
+
+### TODO
+
+* [ ] 定义 machine、file/module、state、event、transition、action、variable、import、symbol identity 等语义对象
+* [ ] 实现 state path resolution、event scope normalization、`ref` resolution、import target resolution、alias mapping、forced transition expansion
+* [ ] 建立多文件 workspace graph，并支持未保存 buffer 与磁盘文件的混合视图
+* [ ] 把当前 import-aware 轻量 helper 升级为正式的 workspace semantic index
+* [ ] 增加 semantic diagnostics：重复定义、未解析引用、循环 import、非法 mapping、目标状态不存在、事件冲突等
+* [ ] 建立与 Python 侧的 parity corpus，比对代表性语义行为而不是桥接调用 Python
+
+### Checklist
+
+* [ ] 多文件模型在 workspace 中可以被稳定解析和组装
+* [ ] 语义模型不依赖 `vscode` 模块，可单独测试
+* [ ] semantic diagnostics 对同一输入具有确定性输出
+* [ ] parity corpus 已覆盖 import、event scope、hierarchy、`ref`、forced transition 等高风险规则
+
+## Phase 3：完整 language server 迁移
+
+### 目标
+
+把当前 extension-host 内的智能能力迁移到标准 LSP server 中，形成正式的 client/server 架构。
+
+### TODO
+
+* [ ] 引入与 `engines.vscode = ^1.60.0` 兼容的 `vscode-languageclient` / `vscode-languageserver` 版本
+* [ ] 建立 bundled JS server entrypoint，并由 client 启动和监管
+* [ ] 把 diagnostics、document symbols、completion、hover、definition 迁移到 LSP handlers
+* [ ] 实现 text document sync、workspace folder sync、cancellation、debounce、server restart 恢复
+* [ ] 增加 document links，用于 import path 的跳转体验
+* [ ] 保持 client 侧尽量薄，只负责 activation、commands、settings、preview bridge
+
+### Checklist
+
+* [ ] 在 Windows、macOS、Linux 三个平台上都能正常启动 bundled language server
+* [ ] 当前已有 editor intelligence 能力已经通过 LSP 提供，而不是继续分散在 extension host 内
+* [ ] server 崩溃与重启路径可被验证，不需要用户手工恢复
+* [ ] 运行时不依赖 Python、Java、其他 VSCode 扩展或网络服务
+
+## Phase 4：高级语义编辑能力
+
+### 目标
+
+从“会提示”升级到“可导航、可重构、可修复”的完整语言工具体验。
+
+### TODO
+
+* [ ] 实现 references、rename、workspace symbols
+* [ ] 实现 folding ranges、semantic tokens
+* [ ] 实现 code actions 与 quick fixes，覆盖 import path、alias 冲突、未解析符号、事件作用域等典型问题
+* [ ] 增强 completion，使其具备 path-aware、scope-aware、import-aware 的上下文补全能力
+* [ ] 增加静态 analyzer：unreachable state、dead transition、unused event、重复 mapping 等
+* [ ] 把 definition / references / rename 建立在统一 symbol identity 之上
+
+### Checklist
+
+* [ ] references、definition、rename 在同一 symbol 上结果一致
+* [ ] rename 能正确处理多文件 workspace，不破坏 import 场景
+* [ ] quick fixes 只在可证明安全时出现，不给出误导性修复
+* [ ] 高级能力启用后不会在编辑时产生明显卡顿
+
+## Phase 5：纯 JS 可视化与预览
+
+### 目标
+
+在不引入外部 runtime 的前提下，提供基于语义模型的图形预览能力。
+
+### TODO
+
+* [ ] 定义 diagram IR，使其由 semantic model 直接派生
+* [ ] 设计纯 JS renderer，输出 SVG 作为首选预览格式
+* [ ] 在 VSCode client 中接入 webview preview，不依赖 PlantUML、Java 或其他扩展
+* [ ] 支持 unsaved buffer 的实时刷新
+* [ ] 支持 source-to-diagram 与 diagram-to-source 的定位映射
+* [ ] 提供最小可用命令集，例如 `Open Diagram Preview`、`Reveal Symbol in Diagram`、`Export SVG`
+* [ ] 如确有互操作需求，再增加可选 PlantUML exporter，但不作为 preview 主链路
+
+### Checklist
+
+* [ ] 在一台干净的 VSCode 环境中，仅安装本扩展即可完成图形预览
+* [ ] 预览可以消费未保存编辑内容，而不是只读磁盘文件
+* [ ] 点击图中状态或转换可以回到源码位置
+* [ ] SVG 导出结果稳定、可测试、可复现
+
+## Phase 6：加固、文档收敛与发布
+
+### 目标
+
+把 language server 和 preview 方案从“技术可行”推进到“可发布、可回归、可维护”。
+
+### TODO
+
+* [ ] 扩展现有 `verify-*` 体系，新增 LSP、语义模型、preview、package smoke test
+* [ ] 为 activation time、server startup、diagnostics latency 建立性能基线
+* [ ] 更新 `editors/vscode/README.md`、教程文档、marketplace 文案、`TODO.md`
+* [ ] 定义版本发布节奏与 alpha / beta / stable 的收敛策略
+* [ ] 为 VSIX 安装、升级、回滚、故障排查准备 release checklist
+* [ ] 对老 VSCode 版本兼容性、bundle 体积、server 崩溃恢复做专项验证
+
+### Checklist
+
+* [ ] `make verify` 已覆盖 language server 主路径与 preview 主路径
+* [ ] `make package` 产出的 VSIX 可安装、可启动、可 smoke test
+* [ ] 文档已不再把扩展描述为“短期内不做 full language server”
+* [ ] 发布物、回滚方案和兼容性说明都已准备完毕
+
+---
+
+## 12. 风险与控制点
+
+### 12.1 最大成本在语义建模，不在 LSP 壳子
+
+language server 的协议层本身不是主要风险，主要风险是：
+
+- 语义模型是否完整
+- 多文件 import 场景是否稳定
+- Python / Node.js 规则是否漂移
+- 预览是否真的能不依赖外部工具
+
+因此项目管理上不能把“server 已经跑起来”误认为核心完成。
+
+### 12.2 不能一边继续堆 provider，一边声称在做 LSP
+
+一旦 Phase 3 开始，就不应该继续在 extension host 侧大规模新增平行语义逻辑，否则最终只会得到两套实现：
+
+- 一套 extension-host helper
+- 一套 language server handler
+
+这会直接制造漂移。
+
+### 12.3 可视化不能倒逼语义走捷径
+
+如果为了尽快出图而跳过 AST / semantic model / workspace graph，最后会得到一个看起来能 preview、但无法支撑 rename / references / code actions 的半成品体系。
+
+### 12.4 当前 repo 兼容性约束必须持续生效
+
+本仓库对兼容范围非常敏感，因此 VSCode 侧实现不能轻易引入：
+
+- 需要更高 Node 版本的新语法或依赖
+- ESM-only 包
+- native addon
+- 依赖额外系统运行时的工具链
+
+所有技术选择都需要先经过“能否适配当前 repo 构建标准”的审查。
 
 ---
 
 ## 13. 最终建议
 
-基于当前仓库状态，推荐的正式结论如下：
+基于当前仓库状态，建议正式确认以下结论：
 
-- 把 **FCSTM Node.js 原生语义层** 作为一个独立项目来做
-- 把 **VSCode 可视化** 作为语义层落地的第一批高价值场景
-- **优先 Node.js 原生移植**，不要把 Python CLI 当作正式方案主链路
-- 渲染后端采用：
-  - 优先 `jebbs.plantuml`
-  - fallback 到本地 `java -jar plantuml.jar`
-- 设置项基于 VSCode 原生 settings，不另做自定义配置页
-- 先统一可视化 options schema，再做设置映射
+- `VSCODE_EXT.md` 不应再以“PlantUML 可视化路线”作为核心叙事
+- FCSTM VSCode 扩展下一阶段的正式目标应是 **完整的纯 JS language server**
+- 可视化是 language server 语义能力的下游能力，而不是主架构
+- 运行时必须坚持纯 JS，不依赖 Python、Java、PlantUML 扩展或远程服务
+- 工程上必须适配当前 repo 的 `make vscode`、`esbuild`、`vsce`、`CommonJS`、`ES2015`、`antlr4 4.9.3` 基线
+- 实施上必须按 phase 推进，并以每个 phase 的 checklist 作为唯一完成标准
 
-简而言之：
+一句话总结：
 
-**可视化不是一个独立小功能，而是 FCSTM 语义基础设施建设的第一个大用例。**
-
+**这件事的正确目标不是“给 FCSTM 接一个图形预览”，而是“把当前 parser-backed 扩展升级成完整、纯 JS、可离线、可发布的 FCSTM language server，并让可视化成为它自然长出来的能力”。**

@@ -22,7 +22,7 @@ Example::
     >>> from pygments import highlight
     >>> from pygments.formatters import HtmlFormatter
     >>> from pygments.lexers import get_lexer_by_name
-    >>> code = "state MyState { enter { counter = 0; } }"
+    >>> code = 'state Root { import "./worker.fcstm" as Worker; }'
     >>> lexer = get_lexer_by_name("fcstm")
     >>> html = highlight(code, lexer, HtmlFormatter())
 
@@ -30,9 +30,11 @@ Usage in Sphinx documentation::
 
     .. code-block:: fcstm
 
-        def int counter = 0;
-        state MyState {
-            enter { counter = 0; }
+        state Root {
+            import "./worker.fcstm" as Worker {
+                def counter -> shared_counter;
+                event /Start -> Start named "Mapped Start";
+            }
         }
 """
 
@@ -61,10 +63,11 @@ class FcstmLexer(RegexLexer):
     The lexer supports:
 
     * Variable definitions and types (``def``, ``int``, ``float``)
-    * State definitions (``state``, ``pseudo``, ``named``)
+    * State and import definitions (``state``, ``pseudo``, ``import``, ``as``, ``named``)
     * Transitions and lifecycle actions (``enter``, ``during``, ``exit``)
     * Aspect-oriented actions (``before``, ``after``, ``>>``)
     * Guards and effects (``if``, ``effect``)
+    * Import mapping blocks (``def`` mapping, ``event`` mapping, ``$n`` / ``${n}`` templates)
     * Logical and arithmetic expressions
     * Events and scoped references (``::``)
 
@@ -72,7 +75,7 @@ class FcstmLexer(RegexLexer):
 
         >>> from pygments.lexers import get_lexer_by_name
         >>> lexer = get_lexer_by_name("fcstm")
-        >>> list(lexer.get_tokens("state A { enter { x = 1; } }"))[:5]
+        >>> list(lexer.get_tokens('state Root { import "./worker.fcstm" as Worker; }'))[:5]
         [(Token.Keyword.Declaration, 'state'), ...]
 
     .. note::
@@ -136,7 +139,12 @@ class FcstmLexer(RegexLexer):
             ),
             0.25,
         ),
-        (re.compile(r'(?m)^\s*def[^\S\n]+\w+\s*\(|^\s*from\s+\w+\s+import\b|^\s*import\s+\w+\b'), 0.25),
+        (
+            re.compile(
+                r'(?m)^\s*def[^\S\n]+\w+\s*\(|^\s*from\s+\w+\s+import\b|^\s*import\s+(?!as\b)\w+\b'
+            ),
+            0.25,
+        ),
         (
             re.compile(
                 r'(?m)^\s*#include\b|\bstd::\w|\btemplate\s*<|^\s*using\s+namespace\b|^\s*using\s+[A-Za-z_]\w*\s*=|'
@@ -176,17 +184,18 @@ class FcstmLexer(RegexLexer):
     )
     _ANALYSIS_IDENTIFIER_PATTERN = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
     _ANALYSIS_RESERVED_WORDS = frozenset((
-        'abstract', 'after', 'before', 'def', 'during', 'effect', 'enter',
-        'else', 'event', 'exit', 'float', 'if', 'int', 'named', 'pseudo', 'ref',
-        'state',
+        'abstract', 'after', 'as', 'before', 'def', 'during', 'effect', 'enter',
+        'else', 'event', 'exit', 'float', 'if', 'import', 'int', 'named',
+        'pseudo', 'ref', 'state',
     ))
     _ANALYSIS_LIFECYCLE_KEYWORDS = frozenset(('enter', 'during', 'exit'))
-    _ANALYSIS_KEYWORDS = ('pseudo', 'named', 'abstract', 'ref', 'effect')
 
     tokens = {
         'root': [
             include('whitespace'),
             include('comments'),
+
+            (r'\bimport\b', Keyword.Declaration, 'import-header'),
 
             # Keywords - state machine structure
             (words((
@@ -200,7 +209,7 @@ class FcstmLexer(RegexLexer):
 
             # Keywords - modifiers
             (words((
-                'abstract', 'ref', 'effect',
+                'abstract', 'ref', 'effect', 'as',
             ), suffix=r'\b'), Keyword.Namespace),
 
             # Keywords - types
@@ -289,6 +298,61 @@ class FcstmLexer(RegexLexer):
             (r"'([^'\\]|\\[btnfr\"'\\]|\\[0-7]{1,3}|\\u[0-9a-fA-F]{4}|\\x[0-9a-fA-F]{2})*'", String.Single),
 
             # Identifiers (must come after keywords)
+            (r'[a-zA-Z_][a-zA-Z0-9_]*', Name),
+        ],
+
+        'import-header': [
+            include('whitespace'),
+            include('comments'),
+            (r'\b(?:as)\b', Keyword.Namespace),
+            (r'\bnamed\b', Keyword.Declaration),
+            (r'"([^"\\]|\\[btnfr"\'\\]|\\[0-7]{1,3}|\\u[0-9a-fA-F]{4}|\\x[0-9a-fA-F]{2})*"', String.Double),
+            (r"'([^'\\]|\\[btnfr\"'\\]|\\[0-7]{1,3}|\\u[0-9a-fA-F]{4}|\\x[0-9a-fA-F]{2})*'", String.Single),
+            (r'\{', Punctuation, ('#pop', 'import-block')),
+            (r';', Punctuation, '#pop'),
+            (r'[a-zA-Z_][a-zA-Z0-9_]*', Name),
+        ],
+
+        'import-block': [
+            include('whitespace'),
+            include('comments'),
+            (r'\bdef\b', Keyword.Declaration, 'import-def-selector'),
+            (r'\bevent\b', Keyword.Declaration),
+            (r'\bnamed\b', Keyword.Declaration),
+            (r'->', Operator),
+            (r'\$\{[0-9]+\}|\$[0-9]+', Name.Variable),
+            (r'[a-zA-Z_][a-zA-Z0-9_]*\*(?:[a-zA-Z0-9_*]*)', Name.Variable),
+            (r'\*', Operator),
+            (r'/', Operator),
+            (r'\.', Punctuation),
+            (r';', Punctuation),
+            (r'\{', Punctuation),
+            (r'\}', Punctuation, '#pop'),
+            (r'"([^"\\]|\\[btnfr"\'\\]|\\[0-7]{1,3}|\\u[0-9a-fA-F]{4}|\\x[0-9a-fA-F]{2})*"', String.Double),
+            (r"'([^'\\]|\\[btnfr\"'\\]|\\[0-7]{1,3}|\\u[0-9a-fA-F]{4}|\\x[0-9a-fA-F]{2})*'", String.Single),
+            (r'[a-zA-Z_][a-zA-Z0-9_]*', Name),
+        ],
+
+        'import-def-selector': [
+            include('whitespace'),
+            include('comments'),
+            (r'->', Operator, 'import-def-target'),
+            (r'\{', Punctuation),
+            (r'\}', Punctuation),
+            (r',', Punctuation),
+            (r'[a-zA-Z_][a-zA-Z0-9_]*\*(?:[a-zA-Z0-9_*]*)', Name.Variable),
+            (r'\*[a-zA-Z0-9_][a-zA-Z0-9_*]*', Name.Variable),
+            (r'[a-zA-Z_][a-zA-Z0-9_]*', Name),
+            (r'\*', Operator),
+        ],
+
+        'import-def-target': [
+            include('whitespace'),
+            include('comments'),
+            (r';', Punctuation, ('#pop', '#pop')),
+            (r'\$\{[0-9]+\}|\$[0-9]+', Name.Variable),
+            (r'[a-zA-Z_][a-zA-Z0-9_]*(?:(?:\$\{[0-9]+\}|\$[0-9]+|\*)(?:[a-zA-Z0-9_]*))*', Name.Variable),
+            (r'\*', Operator),
             (r'[a-zA-Z_][a-zA-Z0-9_]*', Name),
         ],
 
@@ -472,6 +536,95 @@ class FcstmLexer(RegexLexer):
         return spans
 
     @classmethod
+    def _analysis_collect_import_spans(cls, tokens: List[str]) -> List[Tuple[int, int, bool, bool]]:
+        """Collect spans for ``import`` declarations and mapping blocks."""
+        spans = []
+
+        for index, token in enumerate(tokens):
+            if token != 'import' or index + 2 >= len(tokens):
+                continue
+
+            if tokens[index + 1] == 'as':
+                alias_index = index + 2
+            elif index + 3 < len(tokens) and tokens[index + 2] == 'as':
+                alias_index = index + 3
+            else:
+                continue
+
+            if alias_index >= len(tokens) or not cls._analysis_is_identifier(tokens[alias_index]):
+                continue
+
+            tail_index = alias_index + 1
+            has_named = False
+            if tail_index < len(tokens) and tokens[tail_index] == 'named':
+                has_named = True
+                tail_index += 1
+                if tail_index < len(tokens) and tokens[tail_index] not in {';', '{', '}'}:
+                    tail_index += 1
+
+            if tail_index < len(tokens) and tokens[tail_index] in {';', '{'}:
+                spans.append((index, tail_index, tokens[tail_index] == '{', has_named))
+
+        return spans
+
+    @classmethod
+    def _analysis_collect_import_def_mapping_spans(cls, tokens: List[str]) -> List[Tuple[int, int]]:
+        """Collect shallow spans for ``def ... -> ...;`` mappings inside import blocks."""
+        spans = []
+
+        for index, token in enumerate(tokens):
+            if token != 'def':
+                continue
+
+            arrow_index = index + 1
+            while arrow_index < len(tokens) and tokens[arrow_index] != ';' and arrow_index - index <= 16:
+                if tokens[arrow_index] == '->':
+                    break
+                arrow_index += 1
+
+            if arrow_index >= len(tokens) or tokens[arrow_index] != '->':
+                continue
+
+            tail_index = arrow_index + 1
+            while tail_index < len(tokens) and tokens[tail_index] != ';' and tail_index - index <= 24:
+                tail_index += 1
+
+            if tail_index < len(tokens) and tokens[tail_index] == ';':
+                spans.append((index, tail_index))
+
+        return spans
+
+    @classmethod
+    def _analysis_collect_import_event_mapping_spans(cls, tokens: List[str]) -> List[Tuple[int, int, bool]]:
+        """Collect shallow spans for ``event ... -> ...;`` mappings inside import blocks."""
+        spans = []
+
+        for index, token in enumerate(tokens):
+            if token != 'event':
+                continue
+
+            arrow_index = index + 1
+            while arrow_index < len(tokens) and tokens[arrow_index] != ';' and arrow_index - index <= 20:
+                if tokens[arrow_index] == '->':
+                    break
+                arrow_index += 1
+
+            if arrow_index >= len(tokens) or tokens[arrow_index] != '->':
+                continue
+
+            tail_index = arrow_index + 1
+            has_named = False
+            while tail_index < len(tokens) and tokens[tail_index] != ';' and tail_index - index <= 28:
+                if tokens[tail_index] == 'named':
+                    has_named = True
+                tail_index += 1
+
+            if tail_index < len(tokens) and tokens[tail_index] == ';':
+                spans.append((index, tail_index, has_named))
+
+        return spans
+
+    @classmethod
     def _analysis_collect_def_spans(cls, tokens: List[str]) -> List[Tuple[int, int]]:
         """Collect spans for ``def int/float`` declarations."""
         spans = []
@@ -634,6 +787,9 @@ class FcstmLexer(RegexLexer):
         if len(tokens) >= 3 and tokens[0] == 'event' and cls._analysis_is_identifier(tokens[1]):
             return tokens[2] == ';' or (len(tokens) >= 4 and tokens[2] == 'named' and tokens[3] == ';')
 
+        if len(tokens) >= 4 and tokens[0] == 'import' and tokens[2] == 'as' and cls._analysis_is_identifier(tokens[3]):
+            return ';' in tokens[4:] or '{' in tokens[4:]
+
         return False
 
     @staticmethod
@@ -726,7 +882,10 @@ class FcstmLexer(RegexLexer):
 
         state_spans = FcstmLexer._analysis_collect_state_spans(tokens)
         event_spans = FcstmLexer._analysis_collect_event_spans(tokens)
+        import_spans = FcstmLexer._analysis_collect_import_spans(tokens)
         def_spans = FcstmLexer._analysis_collect_def_spans(tokens)
+        import_def_mapping_spans = FcstmLexer._analysis_collect_import_def_mapping_spans(tokens)
+        import_event_mapping_spans = FcstmLexer._analysis_collect_import_event_mapping_spans(tokens)
         lifecycle_spans = FcstmLexer._analysis_collect_lifecycle_spans(tokens)
         aspect_spans = FcstmLexer._analysis_collect_aspect_spans(tokens)
         transition_spans = FcstmLexer._analysis_collect_transition_spans(tokens)
@@ -741,6 +900,9 @@ class FcstmLexer(RegexLexer):
             1 for start, _ in event_spans
             if 'named' in tokens[start:min(len(tokens), start + 5)]
         )
+        import_blocks = sum(1 for _, _, is_block, _ in import_spans if is_block)
+        import_named = sum(1 for _, _, _, has_named in import_spans if has_named)
+        import_event_named = sum(1 for _, _, has_named in import_event_mapping_spans if has_named)
         lifecycle_blocks = sum(1 for _, _, is_block, _ in lifecycle_spans if is_block)
         lifecycle_bare = sum(1 for _, _, _, is_bare in lifecycle_spans if is_bare)
         lifecycle_abstract = sum(
@@ -763,14 +925,22 @@ class FcstmLexer(RegexLexer):
         # Structural FCSTM signals from the token stream.
         score += min(state_blocks * 0.26 + state_decls * 0.18, 0.46)
         score += min(len(event_spans) * 0.10, 0.14)
+        score += min(len(import_spans) * 0.14 + import_blocks * 0.04, 0.18)
         score += min(len(def_spans) * 0.16, 0.20)
+        score += min(len(import_def_mapping_spans) * 0.10 + len(import_event_mapping_spans) * 0.12, 0.28)
         score += min(
             lifecycle_blocks * 0.16 + lifecycle_bare * 0.08 + max(len(lifecycle_spans) - lifecycle_blocks - lifecycle_bare, 0) * 0.12,
             0.24,
         )
         score += min(len(aspect_spans) * 0.18, 0.18)
         score += min(rich_transitions * 0.24 + plain_transitions * 0.14, 0.32)
-        score += min((state_named + event_named + lifecycle_abstract + lifecycle_ref + lifecycle_before_after) * 0.04, 0.12)
+        score += min(
+            (
+                state_named + event_named + import_named + import_event_named + lifecycle_abstract + lifecycle_ref
+                + lifecycle_before_after
+            ) * 0.04,
+            0.12,
+        )
 
         has_leading_construct = FcstmLexer._analysis_has_leading_construct(tokens)
         if has_leading_construct:
@@ -778,7 +948,15 @@ class FcstmLexer(RegexLexer):
 
         span_density = FcstmLexer._analysis_span_density(
             len(tokens),
-            state_spans + event_spans + def_spans + lifecycle_spans + aspect_spans + transition_spans,
+            state_spans
+            + event_spans
+            + import_spans
+            + def_spans
+            + import_def_mapping_spans
+            + import_event_mapping_spans
+            + lifecycle_spans
+            + aspect_spans
+            + transition_spans,
         )
 
         for pattern, penalty in FcstmLexer._ANALYSIS_NEGATIVE_PATTERNS:

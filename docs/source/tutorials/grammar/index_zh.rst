@@ -439,7 +439,7 @@ Pygments 和 TextMate 实现都支持完整的 FCSTM 语法：
 关键字
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-**声明关键字：** ``state``、``pseudo``、``named``、``def``、``event``
+**声明关键字：** ``state``、``pseudo``、``import``、``as``、``named``、``def``、``event``
 
 **生命周期关键字：** ``enter``、``during``、``exit``、``before``、``after``
 
@@ -493,6 +493,17 @@ Pygments 和 TextMate 实现都支持完整的 FCSTM 语法：
 **伪状态：** ``[*]``
 
 **注释：** ``//``\ （行注释）、``/* */``\ （块注释）、``#``\ （Python 风格注释）
+
+Import Mapping 语法
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Pygments 词法分析器也已经覆盖 PR79 中新增的 import / mapping 语法高亮：
+
+* ``import "./worker.fcstm" as Worker;``
+* ``import "./worker.fcstm" as Worker named "Worker Module" { ... }``
+* ``def sensor_* -> io_$1;``
+* ``def * -> Worker_${1};``
+* ``event /Start -> Start named "Mapped Start";``
 
 完整示例
 ---------------------------------------

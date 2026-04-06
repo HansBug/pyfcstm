@@ -11,6 +11,7 @@ pyfcstm.model
 
     base
     expr
+    imports
     model
     plantuml
 

@@ -439,7 +439,7 @@ Both Pygments and TextMate implementations support the complete FCSTM syntax:
 Keywords
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-**Declaration Keywords:** ``state``, ``pseudo``, ``named``, ``def``, ``event``
+**Declaration Keywords:** ``state``, ``pseudo``, ``import``, ``as``, ``named``, ``def``, ``event``
 
 **Lifecycle Keywords:** ``enter``, ``during``, ``exit``, ``before``, ``after``
 
@@ -493,6 +493,18 @@ Special Symbols
 **Pseudo-state:** ``[*]``
 
 **Comments:** ``//`` (line comment), ``/* */`` (block comment), ``#`` (Python-style comment)
+
+Import Mapping Syntax
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The Pygments lexer also highlights the PR79 import forms used during model
+assembly:
+
+* ``import "./worker.fcstm" as Worker;``
+* ``import "./worker.fcstm" as Worker named "Worker Module" { ... }``
+* ``def sensor_* -> io_$1;``
+* ``def * -> Worker_${1};``
+* ``event /Start -> Start named "Mapped Start";``
 
 Complete Example
 ---------------------------------------

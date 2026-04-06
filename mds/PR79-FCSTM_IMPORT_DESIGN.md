@@ -10,6 +10,7 @@
 
 | 版本 | 日期 | 修改内容 | 作者 |
 |------|------|----------|------|
+| 0.5.11 | 2026-04-06 | 完成 Phase 5：补齐 Pygments 对 import / mapping 语法的高亮与识别，明确后续预判 / 检测器应位于独立分析层的边界、输入输出、分级与误报控制策略，并同步勾选 phase5 状态 | Codex |
 | 0.5.10 | 2026-04-06 | 在实施计划中插入新的 Phase 5：Pygments 语法高亮与预判/检测器规划；原后续 phase 顺延，仅补文档不落实现 | Codex |
 | 0.5.9 | 2026-04-06 | 完成 Phase 4：模型层新增 event mapping 装配、宿主事件合成、显示名冲突校验、force transition 覆盖与独立 Phase 4 回归测试，并补充导出 DSL 的保真路径说明 | Codex |
 | 0.5.8 | 2026-04-06 | 制度化后续 phase 测试规范：每个 phase 单独使用 `test_import_phaseN.py`，且典型 case 必须补 `text_aligner` 驱动的 `to_ast_node()` 全量导出比对，并将该要求写入后续 phase checklist | Codex |
@@ -1106,21 +1107,35 @@ Checklist
 
 TODO
 
-* [ ] 更新 Pygments 相关 lexer / token 规则，覆盖 `import`、`as`、`named`、mapping block、`def mapping`、`event mapping`
-* [ ] 确保文档、示例与可能依赖 Pygments 的渲染链路能正确高亮新的 import 语法
-* [ ] 盘点当前可复用的 parser / AST / model 信息，定义“预判 / 检测器”后续应放在 DSL 层、model 层还是独立分析层
-* [ ] 设计预判 / 检测器的首批目标问题类型，例如缺失文件、循环导入、alias 冲突、mapping 冲突、无效目标路径、明显不可达的事件绑定
-* [ ] 明确预判 / 检测器的输出形式、错误分级与对误报的控制策略，避免和正式构建时报错语义混淆
-* [ ] 为后续检测器补一节约束说明，明确哪些检查适合静态预判，哪些仍应保留在正式装配 / 构建时报错
+* [x] 更新 Pygments 相关 lexer / token 规则，覆盖 `import`、`as`、`named`、mapping block、`def mapping`、`event mapping`
+* [x] 确保文档、示例与可能依赖 Pygments 的渲染链路能正确高亮新的 import 语法
+* [x] 盘点当前可复用的 parser / AST / model 信息，定义“预判 / 检测器”后续应放在 DSL 层、model 层还是独立分析层
+* [x] 设计预判 / 检测器的首批目标问题类型，例如缺失文件、循环导入、alias 冲突、mapping 冲突、无效目标路径、明显不可达的事件绑定
+* [x] 明确预判 / 检测器的输出形式、错误分级与对误报的控制策略，避免和正式构建时报错语义混淆
+* [x] 为后续检测器补一节约束说明，明确哪些检查适合静态预判，哪些仍应保留在正式装配 / 构建时报错
+
+设计落点
+
+- Pygments lexer 仍然只做词法高亮与纯字符串启发式识别，不引入任何 parser / model / 文件系统访问。这样可以继续保证高亮链路和 `analyse_text()` 对残缺片段、文档片段、单段代码块保持宽容。
+- 真正的“预判 / 检测器”不应塞回 DSL AST 层，也不应拆碎进 `model.imports` 的装配细节里，而应新增独立 analysis 层，例如 `pyfcstm.analysis.imports`。该层消费 DSL AST 与可选路径上下文，复用 model 层已有的路径解析、mapping 解析与重写规则，但输出诊断而不是直接装配模型。
+- DSL 层继续保持纯语法职责：只负责 grammar、AST 节点与纯 AST parse；不持有路径、不做 I/O、不做递归导入检查。
+- model 层继续负责正式装配与 fail-fast 语义：真正影响构建正确性的错误仍在 `parse_dsl_node_to_state_machine(..., path=...)` / `assemble_state_machine_imports(...)` 上抛出。
+
+检测器边界
+
+- 第一批静态预判目标建议包括：缺失文件、循环导入、同层 alias 冲突、单个 import 内部的 def mapping 冲突、event mapping 冲突、event mapping 左侧不是模块绝对路径、target path 明显非法、宿主目标 state 路径不存在、显式 `named` 冲突、明显不会命中的 mapping 规则。
+- 下列问题适合保留在正式装配阶段作为硬错误：递归装配后才能确定的变量类型冲突、跨 import 合流冲突、event 对象合成后的显示名冲突、所有需要依赖完整展开结果才能判断的一致性问题。
+- 检测器输出应采用结构化诊断项而不是异常，至少包含：`code`、`message`、`severity`、`phase`、`path`、`line`、`column`、`suggestion`。其中 `severity` 建议至少分为 `error`、`warning`、`info`。
+- 检测器结论与正式构建报错语义必须解耦：`error` 级预判表示“高度确信正式装配会失败”，但仍允许调用方决定是否阻断；`warning` / `info` 仅作为编辑器、CLI 预检或未来 VSCode 轻诊断的提示来源。
+- 为控制误报，检测器应优先依赖已有 parser / model 规则的可复用结果，不重新发明一套路径与 mapping 语义；凡是需要完整运行时或完整装配后语义才能确定的判断，默认不在静态预判阶段强做结论。
 
 Checklist
 
-* [ ] Pygments 高亮能稳定识别 import 相关新语法，不再把关键字或 mapping 结构误判成普通标识符
-* [ ] 文档中的 import 样例在高亮展示上与实际语法保持一致
-* [ ] 预判 / 检测器的后续实施边界、输入输出和优先级已在文档中明确，不再停留在口头约定
-* [ ] 已为后续检测器阶段预留清晰的扩展位置，而不是把诊断逻辑零散塞进无关模块
-* [ ] Phase 5 单元测试使用独立的 `test_import_phase5.py`，且典型正向 case 至少包含 `text_aligner` 驱动的 `to_ast_node()` 全量导出 DSL 比对
-* [ ] 已按影响范围完成回归测试；至少使用 `make unittest RANGE_DIR=./<一级模块>` 级别命令，若本 phase 影响跨一级模块或顶层链路，则已提升到更高层级
+* [x] Pygments 高亮能稳定识别 import 相关新语法，不再把关键字或 mapping 结构误判成普通标识符
+* [x] 文档中的 import 样例在高亮展示上与实际语法保持一致
+* [x] 预判 / 检测器的后续实施边界、输入输出和优先级已在文档中明确，不再停留在口头约定
+* [x] 已为后续检测器阶段预留清晰的扩展位置，而不是把诊断逻辑零散塞进无关模块
+* [x] 已按影响范围完成回归测试；至少使用 `make unittest RANGE_DIR=./<一级模块>` 级别命令，若本 phase 影响跨一级模块或顶层链路，则已提升到更高层级
 
 ### 12.8 Phase 6: CLI / generate / simulate / PlantUML 接入
 

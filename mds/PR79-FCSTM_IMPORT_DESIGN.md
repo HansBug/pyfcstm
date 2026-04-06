@@ -10,6 +10,7 @@
 
 | 版本 | 日期 | 修改内容 | 作者 |
 |------|------|----------|------|
+| 0.5.13 | 2026-04-06 | 完成 Phase 11：统一核对 MD / PR body / 实现状态，完成 import 用户可见入口的最终 smoke check（`model.load`、`plantuml`、`generate`、`simulate`），并收口为合并前状态 | Codex |
 | 0.5.12 | 2026-04-06 | 完成 Phase 10：补齐 parser 层 import 整程序正反例、entry 层目录入口 import 集成测试、模块级 import 回归与 sample DSL 覆盖，并同步修复 DSL 语法错误提示中 `SEMI` 等 token 名的人类可读错误信息 | Codex |
 | 0.5.11 | 2026-04-06 | 完成 Phase 5：补齐 Pygments 对 import / mapping 语法的高亮与识别，明确后续预判 / 检测器应位于独立分析层的边界、输入输出、分级与误报控制策略，并同步勾选 phase5 状态 | Codex |
 | 0.5.10 | 2026-04-06 | 在实施计划中插入新的 Phase 5：Pygments 语法高亮与预判/检测器规划；原后续 phase 顺延，仅补文档不落实现 | Codex |
@@ -996,7 +997,7 @@ parse_dsl_node_to_state_machine(
 * [x] Phase 8: VSCode 扩展支持
 * [x] Phase 9: 教程与用户文档
 * [x] Phase 10: 测试与回归样例补完
-* [ ] Phase 11: 收尾与合并前核对
+* [x] Phase 11: 收尾与合并前核对
 
 ### 12.3 Phase 1: DSL Grammar / AST / Parse API 落地
 
@@ -1293,15 +1294,15 @@ Checklist
 
 TODO
 
-* [ ] 在最终合并前统一核对本文档与 PR body 中全部 checkbox 状态
-* [ ] 核对教程、sample DSL、测试、实现状态四者的一致性
-* [ ] 对 import 相关用户可见入口做一次最终 smoke check，确认发布口径稳定
+* [x] 在最终合并前统一核对本文档与 PR body 中全部 checkbox 状态
+* [x] 核对教程、sample DSL、测试、实现状态四者的一致性
+* [x] 对 import 相关用户可见入口做一次最终 smoke check，确认发布口径稳定
 
 Checklist
 
-* [ ] 文档、PR body、实现状态三者一致
-* [ ] 最终合并前不存在已完成但未勾选、或已勾选但未落地的条目
-* [ ] 发布前的最终用户可见链路核对已完成
+* [x] 文档、PR body、实现状态三者一致
+* [x] 最终合并前不存在已完成但未勾选、或已勾选但未落地的条目
+* [x] 发布前的最终用户可见链路核对已完成
 
 ---
 

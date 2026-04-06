@@ -278,7 +278,7 @@ class TestImportPhase2Assembly:
         [
             ("Outer Name", "Inner Name", "Outer Name"),
             (None, "Inner Name", "Inner Name"),
-            (None, None, "Alias"),
+            (None, None, None),
         ],
     )
     def test_import_display_name_priority(
@@ -344,14 +344,14 @@ class TestImportPhase2Assembly:
         transition = worker_state.transitions[1]
         assert transition.event is worker_state.events["Start"]
 
-    def test_import_mapping_remains_fail_fast_before_phase3_and_phase4(self):
+    def test_import_event_mapping_remains_fail_fast_before_phase4(self):
         with isolated_directory():
             root_file = _write_text_file(
                 "root.fcstm",
                 """
                 state Root {
                     import "./worker.fcstm" as Worker {
-                        def * -> worker_*;
+                        event /Tick -> SharedTick;
                     }
                     [*] -> Worker;
                 }
@@ -364,137 +364,9 @@ class TestImportPhase2Assembly:
                 parse_dsl_node_to_state_machine(ast_node, path=root_file)
 
         message = str(exc_info.value)
-        assert "Import mappings are parsed but not available" in message
+        assert "Import event mappings are parsed but not available" in message
         assert "./worker.fcstm" in message
         assert "Worker" in message
-
-    def test_imported_top_level_definitions_remain_fail_fast_before_phase3(self):
-        with isolated_directory():
-            root_file = _write_text_file(
-                "root.fcstm",
-                """
-                state Root {
-                    import "./worker.fcstm" as Worker;
-                    [*] -> Worker;
-                }
-                """,
-            )
-            _write_text_file(
-                "worker.fcstm",
-                """
-                def int counter = 0;
-                state Worker;
-                """,
-            )
-
-            ast_node = parse_state_machine_dsl(root_file.read_text(encoding="utf-8"))
-            with pytest.raises(SyntaxError) as exc_info:
-                parse_dsl_node_to_state_machine(ast_node, path=root_file)
-
-        message = str(exc_info.value)
-        assert "Imported top-level variable definitions are not available" in message
-        assert "./worker.fcstm" in message
-        assert "Worker" in message
-
-    @pytest.mark.xfail(
-        strict=True,
-        reason="Phase 3 variable mapping for deep imported variable usage is not implemented yet.",
-    )
-    def test_phase3_def_mapping_rewrites_deep_variable_usage_consistently(self):
-        with isolated_directory():
-            root_file = _write_text_file(
-                "root.fcstm",
-                """
-                def int host_counter = 0;
-                def int host_guard = 1;
-                def int host_limit = 10;
-                def int host_result = 0;
-
-                state Root {
-                    import "./worker.fcstm" as Worker {
-                        def counter -> host_counter;
-                        def guard_flag -> host_guard;
-                        def limit -> host_limit;
-                        def result -> host_result;
-                    }
-                    [*] -> Worker;
-                }
-                """,
-            )
-            _write_text_file(
-                "worker.fcstm",
-                """
-                def int counter = 0;
-                def int guard_flag = 0;
-                def int limit = 0;
-                def int result = 0;
-
-                state WorkerRoot {
-                    enter {
-                        counter = counter + 1;
-                    }
-                    state Idle {
-                        during {
-                            result = counter + limit;
-                        }
-                    }
-                    state Busy {
-                        enter {
-                            counter = counter + 1;
-                        }
-                        during {
-                            result = counter + guard_flag;
-                        }
-                    }
-                    [*] -> Idle;
-                    Idle -> Busy : if [guard_flag > 0];
-                    Busy -> Idle : if [counter >= limit] effect {
-                        result = counter;
-                    }
-                }
-                """,
-            )
-
-            ast_node = parse_state_machine_dsl(root_file.read_text(encoding="utf-8"))
-            state_machine = parse_dsl_node_to_state_machine(ast_node, path=root_file)
-
-        assert sorted(state_machine.defines.keys()) == [
-            "host_counter",
-            "host_guard",
-            "host_limit",
-            "host_result",
-        ]
-        worker_state = state_machine.root_state.substates["Worker"]
-        idle_state = worker_state.substates["Idle"]
-        busy_state = worker_state.substates["Busy"]
-
-        assert worker_state.on_enters[0].operations[0].var_name == "host_counter"
-        assert worker_state.on_enters[0].operations[0].expr.list_variables()[0].name == "host_counter"
-
-        assert idle_state.on_durings[0].operations[0].var_name == "host_result"
-        assert sorted(v.name for v in idle_state.on_durings[0].operations[0].expr.list_variables()) == [
-            "host_counter",
-            "host_limit",
-        ]
-
-        assert busy_state.on_enters[0].operations[0].var_name == "host_counter"
-        assert busy_state.on_durings[0].operations[0].var_name == "host_result"
-        assert sorted(v.name for v in busy_state.on_durings[0].operations[0].expr.list_variables()) == [
-            "host_counter",
-            "host_guard",
-        ]
-
-        idle_to_busy = worker_state.transitions[1]
-        busy_to_idle = worker_state.transitions[2]
-        assert sorted(v.name for v in idle_to_busy.guard.list_variables()) == ["host_guard"]
-        assert sorted(v.name for v in busy_to_idle.guard.list_variables()) == [
-            "host_counter",
-            "host_limit",
-        ]
-        assert busy_to_idle.effects[0].var_name == "host_result"
-        assert sorted(v.name for v in busy_to_idle.effects[0].expr.list_variables()) == [
-            "host_counter"
-        ]
 
     @pytest.mark.xfail(
         strict=True,

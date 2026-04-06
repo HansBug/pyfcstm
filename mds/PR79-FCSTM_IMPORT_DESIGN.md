@@ -10,6 +10,8 @@
 
 | 版本 | 日期 | 修改内容 | 作者 |
 |------|------|----------|------|
+| 0.5.8 | 2026-04-06 | 制度化后续 phase 测试规范：每个 phase 单独使用 `test_import_phaseN.py`，且典型 case 必须补 `text_aligner` 驱动的 `to_ast_node()` 全量导出比对，并将该要求写入后续 phase checklist | Codex |
+| 0.5.7 | 2026-04-06 | 完成 Phase 3：模型层新增 `def` mapping 规则求值、变量深度重写、宿主 / 跨 import 变量合流校验，并补齐 Phase 3 回归测试与勾选状态 | Codex |
 | 0.5.6 | 2026-04-05 | 完成 Phase 2：模型层新增 import 装配器，支持多级相对路径递归解析、循环导入检测、alias 装配与模块绝对路径重写；同时保持 `def/event mapping` 与 imported top-level `def` 继续在 Phase 3/4 显式 fail fast | Codex |
 | 0.5.5 | 2026-04-05 | 收紧分层边界：`dsl.parse.parse_state_machine_dsl()` 回归纯 AST 入口，不再接收 `path`；路径上下文只由 model / import 装配侧处理 | Codex |
 | 0.5.4 | 2026-04-05 | 移除 `StateMachineDSLProgram.source_path`，保持 DSL AST 纯净，并将路径上下文限定在模型构建入口 `path` 参数 | Codex |
@@ -973,6 +975,8 @@ parse_dsl_node_to_state_machine(
 * [ ] GitHub PR body 中必须始终保留本文档链接，方便从 PR 直接跳转到详细设计与执行计划
 * [ ] 每个 phase 在验收前都必须按影响范围执行回归测试；最少粒度为 `make unittest RANGE_DIR=./<一级模块>`，若影响跨一级模块或顶层链路，则应提升到更高层级，必要时执行 `make unittest`
 * [ ] 新功能与修复对应的测试应尽可能提高覆盖率，尤其覆盖新增语法、装配逻辑、错误路径与回归场景
+* [ ] 每个 phase 的单元测试必须拆分到对应的独立测试文件中，命名采用 `test_import_phaseN.py`
+* [ ] 每个 phase 的典型正向 case 必须至少包含一类 `text_aligner` 驱动的整体验证：从 public API 加载模型后执行 `to_ast_node()` 再 `str(...)`，并对完整导出 DSL 文本做全量比对
 * [ ] 测试构造过程中严禁直接使用任何 private / protected 模块、类、函数、方法、字段；所有测试一律通过 public API 构造输入与断言行为
 * [ ] 所有新增或修改的 Python pydoc / docstring 必须严格遵循 AGENTS 中的 reST 与 docstring 规范，并与现有模块写法保持一致
 
@@ -980,7 +984,7 @@ parse_dsl_node_to_state_machine(
 
 * [x] Phase 1: DSL Grammar / AST / Parse API 落地
 * [x] Phase 2: Import 装配器与递归路径解析
-* [ ] Phase 3: `def` mapping 与变量合流校验
+* [x] Phase 3: `def` mapping 与变量合流校验
 * [ ] Phase 4: event mapping 与路径重写
 * [ ] Phase 5: CLI / generate / simulate / PlantUML 接入
 * [ ] Phase 6: VSCode 扩展支持
@@ -1015,7 +1019,7 @@ Checklist
 
 - `dsl.parse.parse_state_machine_dsl()` 仍保持纯 AST 解析，不接触文件路径与 import 装配
 - Phase 2 的文件读取、递归 import 解析、循环检测与状态树内联均落在 model 层辅助装配器中，由 `parse_dsl_node_to_state_machine(..., path=...)` 驱动
-- 本 phase 已完成结构装配与路径重写；`def mapping`、`event mapping`、以及 imported top-level `def` 的合并仍保持显式 fail fast，留待 Phase 3 / 4 完成
+- 本 phase 已完成结构装配与模块绝对路径默认实例化重写；后续 Phase 3 已在同一装配器内补完 `def mapping` 与 imported top-level `def` 合并，当前仅 `event mapping` 仍保留到 Phase 4
 
 TODO
 
@@ -1040,24 +1044,24 @@ Checklist
 
 TODO
 
-* [ ] 实现 exact、set、pattern、fallback 四类 `def` mapping 规则与优先级
-* [ ] 实现 Source 侧 `*` 捕获、Target 侧 `${n}` / `$n` / 裸 `*` 展开逻辑
-* [ ] 在装配阶段统一重写变量定义名、表达式中的变量引用、操作块赋值目标
-* [ ] 实现默认变量隔离规则，即未写 mapping 时等价于 `def * -> <Alias>_*;`
-* [ ] 严格禁止单个 import 实例内部多个源变量映射到同一个目标变量名
-* [ ] 允许不同 import 实例的不同源变量汇聚到同一目标变量名，但要求类型完全一致
-* [ ] 允许映射到宿主已有变量名，但要求宿主类型与 import 变量类型完全一致
-* [ ] 对共享目标变量执行初始化一致性校验：宿主未显式定义时需一致，宿主已定义时宿主定义优先
+* [x] 实现 exact、set、pattern、fallback 四类 `def` mapping 规则与优先级
+* [x] 实现 Source 侧 `*` 捕获、Target 侧 `${n}` / `$n` / 裸 `*` 展开逻辑
+* [x] 在装配阶段统一重写变量定义名、表达式中的变量引用、操作块赋值目标
+* [x] 实现默认变量隔离规则，即未写 mapping 时等价于 `def * -> <Alias>_*;`
+* [x] 严格禁止单个 import 实例内部多个源变量映射到同一个目标变量名
+* [x] 允许不同 import 实例的不同源变量汇聚到同一目标变量名，但要求类型完全一致
+* [x] 允许映射到宿主已有变量名，但要求宿主类型与 import 变量类型完全一致
+* [x] 对共享目标变量执行初始化一致性校验：宿主未显式定义时需一致，宿主已定义时宿主定义优先
 
 Checklist
 
-* [ ] 同一模块多次导入时，默认变量不会互相冲突
-* [ ] `def` mapping 的优先级、冲突规则与占位符语义都按文档实现
-* [ ] 单个 import 内部任何 many-to-one 变量收敛都会被直接拒绝
-* [ ] 跨 import 或宿主绑定的变量共享只会在类型完全一致时通过
-* [ ] `int` / `float` 混合汇聚会稳定报错
-* [ ] 当被导入子状态机在多层状态、guard、操作块与生命周期动作中大量使用变量时，`def` mapping 仍会把定义、引用与赋值目标一致地重写到宿主变量空间
-* [ ] 已按影响范围完成回归测试；至少使用 `make unittest RANGE_DIR=./<一级模块>` 级别命令，若本 phase 影响跨一级模块或顶层链路，则已提升到更高层级
+* [x] 同一模块多次导入时，默认变量不会互相冲突
+* [x] `def` mapping 的优先级、冲突规则与占位符语义都按文档实现
+* [x] 单个 import 内部任何 many-to-one 变量收敛都会被直接拒绝
+* [x] 跨 import 或宿主绑定的变量共享只会在类型完全一致时通过
+* [x] `int` / `float` 混合汇聚会稳定报错
+* [x] 当被导入子状态机在多层状态、guard、操作块与生命周期动作中大量使用变量时，`def` mapping 仍会把定义、引用与赋值目标一致地重写到宿主变量空间
+* [x] 已按影响范围完成回归测试；至少使用 `make unittest RANGE_DIR=./<一级模块>` 级别命令，若本 phase 影响跨一级模块或顶层链路，则已提升到更高层级
 
 ### 12.6 Phase 4: event mapping 与路径重写
 
@@ -1080,6 +1084,7 @@ Checklist
 * [ ] 未映射的模块绝对事件会落到实例作用域而不是错误提升到宿主 root
 * [ ] 多个 import 共享同一宿主事件时，路径和显示名行为可预测且冲突可诊断
 * [ ] 即便子状态机内有多个 transition 指向同一个模块绝对事件，event mapping 后这些 transition 仍会稳定绑定到同一个宿主事件对象
+* [ ] Phase 4 单元测试使用独立的 `test_import_phase4.py`，且典型正向 case 至少包含 `text_aligner` 驱动的 `to_ast_node()` 全量导出 DSL 比对
 * [ ] 已按影响范围完成回归测试；至少使用 `make unittest RANGE_DIR=./<一级模块>` 级别命令，若本 phase 影响跨一级模块或顶层链路，则已提升到更高层级
 
 ### 12.7 Phase 5: CLI / generate / simulate / PlantUML 接入
@@ -1101,6 +1106,7 @@ Checklist
 * [ ] `pyfcstm plantuml` 输出的结构与装配后的状态树一致
 * [ ] `pyfcstm simulate` 可以在多文件装配后正常运行
 * [ ] 现有单文件使用路径在 CLI 层保持兼容
+* [ ] Phase 5 单元测试使用独立的 `test_import_phase5.py`，且典型正向 case 至少包含 `text_aligner` 驱动的 `to_ast_node()` 全量导出 DSL 比对
 * [ ] 已按影响范围完成回归测试；至少使用 `make unittest RANGE_DIR=./<一级模块>` 级别命令，若本 phase 影响跨一级模块或顶层链路，则已提升到更高层级
 
 ### 12.8 Phase 6: VSCode 扩展支持
@@ -1122,6 +1128,7 @@ Checklist
 * [ ] 缺失文件与循环导入能在编辑器内得到可用提示
 * [ ] 至少支持从 import 源路径跳转到被导入文件
 * [ ] 工作区索引不会把扩展复杂度直接推向完整 LSP
+* [ ] Phase 6 单元测试使用独立的 `test_import_phase6.py`，且典型正向 case 至少包含 `text_aligner` 驱动的 `to_ast_node()` 全量导出 DSL 比对
 * [ ] 已按影响范围完成回归测试；至少使用 `make unittest RANGE_DIR=./<一级模块>` 级别命令，若本 phase 影响跨一级模块或顶层链路，则已提升到更高层级
 
 ### 12.9 Phase 7: 测试、样例、文档与收尾
@@ -1144,6 +1151,7 @@ Checklist
 * [ ] 样例 DSL 能直观展示 import、变量映射、事件映射的推荐写法
 * [ ] 文档、PR body、实现状态三者一致
 * [ ] 不使用 import 的现有功能回归测试全部通过
+* [ ] Phase 7 单元测试使用独立的 `test_import_phase7.py`，且典型正向 case 至少包含 `text_aligner` 驱动的 `to_ast_node()` 全量导出 DSL 比对
 * [ ] 已按影响范围完成回归测试；至少使用 `make unittest RANGE_DIR=./<一级模块>` 级别命令，若本 phase 影响跨一级模块或顶层链路，则已提升到更高层级
 
 ---

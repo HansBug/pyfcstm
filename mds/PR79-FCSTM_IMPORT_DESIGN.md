@@ -10,6 +10,7 @@
 
 | 版本 | 日期 | 修改内容 | 作者 |
 |------|------|----------|------|
+| 0.5.10 | 2026-04-06 | 在实施计划中插入新的 Phase 5：Pygments 语法高亮与预判/检测器规划；原后续 phase 顺延，仅补文档不落实现 | Codex |
 | 0.5.9 | 2026-04-06 | 完成 Phase 4：模型层新增 event mapping 装配、宿主事件合成、显示名冲突校验、force transition 覆盖与独立 Phase 4 回归测试，并补充导出 DSL 的保真路径说明 | Codex |
 | 0.5.8 | 2026-04-06 | 制度化后续 phase 测试规范：每个 phase 单独使用 `test_import_phaseN.py`，且典型 case 必须补 `text_aligner` 驱动的 `to_ast_node()` 全量导出比对，并将该要求写入后续 phase checklist | Codex |
 | 0.5.7 | 2026-04-06 | 完成 Phase 3：模型层新增 `def` mapping 规则求值、变量深度重写、宿主 / 跨 import 变量合流校验，并补齐 Phase 3 回归测试与勾选状态 | Codex |
@@ -987,9 +988,10 @@ parse_dsl_node_to_state_machine(
 * [x] Phase 2: Import 装配器与递归路径解析
 * [x] Phase 3: `def` mapping 与变量合流校验
 * [ ] Phase 4: event mapping 与路径重写
-* [ ] Phase 5: CLI / generate / simulate / PlantUML 接入
-* [ ] Phase 6: VSCode 扩展支持
-* [ ] Phase 7: 测试、样例、文档与收尾
+* [ ] Phase 5: Pygments 语法支持与预判/检测器规划
+* [ ] Phase 6: CLI / generate / simulate / PlantUML 接入
+* [ ] Phase 7: VSCode 扩展支持
+* [ ] Phase 8: 测试、样例、文档与收尾
 
 ### 12.3 Phase 1: DSL Grammar / AST / Parse API 落地
 
@@ -1098,7 +1100,29 @@ Checklist
 * [x] Phase 4 的复杂正向 case 也必须覆盖多 import 共享事件、宿主相对多段目标、显式事件定义迁移、force transition 重写，以及嵌套 import 下的二次 event remap 链，并继续使用 `text_aligner` 做完整 DSL 结构比对
 * [x] 已按影响范围完成回归测试；至少使用 `make unittest RANGE_DIR=./<一级模块>` 级别命令，若本 phase 影响跨一级模块或顶层链路，则已提升到更高层级
 
-### 12.7 Phase 5: CLI / generate / simulate / PlantUML 接入
+### 12.7 Phase 5: Pygments 语法支持与预判/检测器规划
+
+本 phase 先把 import 新语法在 Pygments / 文档高亮侧补齐，并把后续“预判 / 检测器”能力的接口边界、输入输出与误报控制策略先设计清楚；此 phase 只补支持面与规划，不直接落完整检测器实现。
+
+TODO
+
+* [ ] 更新 Pygments 相关 lexer / token 规则，覆盖 `import`、`as`、`named`、mapping block、`def mapping`、`event mapping`
+* [ ] 确保文档、示例与可能依赖 Pygments 的渲染链路能正确高亮新的 import 语法
+* [ ] 盘点当前可复用的 parser / AST / model 信息，定义“预判 / 检测器”后续应放在 DSL 层、model 层还是独立分析层
+* [ ] 设计预判 / 检测器的首批目标问题类型，例如缺失文件、循环导入、alias 冲突、mapping 冲突、无效目标路径、明显不可达的事件绑定
+* [ ] 明确预判 / 检测器的输出形式、错误分级与对误报的控制策略，避免和正式构建时报错语义混淆
+* [ ] 为后续检测器补一节约束说明，明确哪些检查适合静态预判，哪些仍应保留在正式装配 / 构建时报错
+
+Checklist
+
+* [ ] Pygments 高亮能稳定识别 import 相关新语法，不再把关键字或 mapping 结构误判成普通标识符
+* [ ] 文档中的 import 样例在高亮展示上与实际语法保持一致
+* [ ] 预判 / 检测器的后续实施边界、输入输出和优先级已在文档中明确，不再停留在口头约定
+* [ ] 已为后续检测器阶段预留清晰的扩展位置，而不是把诊断逻辑零散塞进无关模块
+* [ ] Phase 5 单元测试使用独立的 `test_import_phase5.py`，且典型正向 case 至少包含 `text_aligner` 驱动的 `to_ast_node()` 全量导出 DSL 比对
+* [ ] 已按影响范围完成回归测试；至少使用 `make unittest RANGE_DIR=./<一级模块>` 级别命令，若本 phase 影响跨一级模块或顶层链路，则已提升到更高层级
+
+### 12.8 Phase 6: CLI / generate / simulate / PlantUML 接入
 
 本 phase 做到 import 装配能力进入现有主链路，用户通过现有 CLI 命令即可处理多文件模型，而不需要额外工具或新入口。
 
@@ -1117,10 +1141,10 @@ Checklist
 * [ ] `pyfcstm plantuml` 输出的结构与装配后的状态树一致
 * [ ] `pyfcstm simulate` 可以在多文件装配后正常运行
 * [ ] 现有单文件使用路径在 CLI 层保持兼容
-* [ ] Phase 5 单元测试使用独立的 `test_import_phase5.py`，且典型正向 case 至少包含 `text_aligner` 驱动的 `to_ast_node()` 全量导出 DSL 比对
+* [ ] Phase 6 单元测试使用独立的 `test_import_phase6.py`，且典型正向 case 至少包含 `text_aligner` 驱动的 `to_ast_node()` 全量导出 DSL 比对
 * [ ] 已按影响范围完成回归测试；至少使用 `make unittest RANGE_DIR=./<一级模块>` 级别命令，若本 phase 影响跨一级模块或顶层链路，则已提升到更高层级
 
-### 12.8 Phase 6: VSCode 扩展支持
+### 12.9 Phase 7: VSCode 扩展支持
 
 本 phase 做到 VSCode 扩展至少能识别 import 语法、给出基础诊断，并在工作区级别支持 import 文件导航与轻量索引，不引入完整 LSP。
 
@@ -1139,10 +1163,10 @@ Checklist
 * [ ] 缺失文件与循环导入能在编辑器内得到可用提示
 * [ ] 至少支持从 import 源路径跳转到被导入文件
 * [ ] 工作区索引不会把扩展复杂度直接推向完整 LSP
-* [ ] Phase 6 单元测试使用独立的 `test_import_phase6.py`，且典型正向 case 至少包含 `text_aligner` 驱动的 `to_ast_node()` 全量导出 DSL 比对
+* [ ] Phase 7 单元测试使用独立的 `test_import_phase7.py`，且典型正向 case 至少包含 `text_aligner` 驱动的 `to_ast_node()` 全量导出 DSL 比对
 * [ ] 已按影响范围完成回归测试；至少使用 `make unittest RANGE_DIR=./<一级模块>` 级别命令，若本 phase 影响跨一级模块或顶层链路，则已提升到更高层级
 
-### 12.9 Phase 7: 测试、样例、文档与收尾
+### 12.10 Phase 8: 测试、样例、文档与收尾
 
 本 phase 做到 import 功能具备可回归测试、样例工程、用户文档和最终验收口径，能够作为正式功能进入后续发布流程。
 
@@ -1162,7 +1186,7 @@ Checklist
 * [ ] 样例 DSL 能直观展示 import、变量映射、事件映射的推荐写法
 * [ ] 文档、PR body、实现状态三者一致
 * [ ] 不使用 import 的现有功能回归测试全部通过
-* [ ] Phase 7 单元测试使用独立的 `test_import_phase7.py`，且典型正向 case 至少包含 `text_aligner` 驱动的 `to_ast_node()` 全量导出 DSL 比对
+* [ ] Phase 8 单元测试使用独立的 `test_import_phase8.py`，且典型正向 case 至少包含 `text_aligner` 驱动的 `to_ast_node()` 全量导出 DSL 比对
 * [ ] 已按影响范围完成回归测试；至少使用 `make unittest RANGE_DIR=./<一级模块>` 级别命令，若本 phase 影响跨一级模块或顶层链路，则已提升到更高层级
 
 ---

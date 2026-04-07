@@ -1,4 +1,6 @@
 # Build outputs
+coverage/
+.c8rc.json
 dist/
 *.tgz
 parser/

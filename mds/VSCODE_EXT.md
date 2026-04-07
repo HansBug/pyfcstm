@@ -11,6 +11,7 @@
 | 0.3.2 | 2026-04-07 | 增补 `jsfcstm` 独立单元测试要求，明确测试配套是完成标准的一部分 | Codex |
 | 0.4.0 | 2026-04-07 | 完成 Phase 0/1 首轮落地：新增 `editors/jsfcstm` 可打包骨架，VSCode 侧改为通过本地 tarball 正常消费依赖，并同步阶段验收状态 | Codex |
 | 0.5.0 | 2026-04-07 | 完成 Phase 2：将 parser/imports/symbols/completion/hover/diagnostics 核心迁入 `editors/jsfcstm`，VSCode 侧收敛为薄适配层，并补齐 `jsfcstm` 单元测试 | Codex |
+| 0.5.1 | 2026-04-07 | 将 `jsfcstm` 单元测试升级为正式框架化测试，并要求默认输出覆盖率与未覆盖行号 | Codex |
 
 ---
 
@@ -915,6 +916,7 @@ npm publish --access public
 * [x] 保持现有验证脚本继续可用，并用它们做迁移前后行为对齐
 * [x] 明确此阶段不增加 references、rename、preview 等新功能
 * [x] 为迁入 `jsfcstm` 的已有能力补齐对应单元测试，而不是只依赖 VSCode 侧集成验证
+* [x] `jsfcstm` 的单元测试采用正式测试框架执行，并默认输出覆盖率与未覆盖行号
 
 ### Checklist
 
@@ -922,6 +924,7 @@ npm publish --access public
 * [x] `verify-p0.2` 到 `verify-p0.6`、`verify-import-editor-support`、`test-e2e` 仍可作为主要回归基线
 * [x] `editors/vscode` 对 `editors/jsfcstm` 的依赖链已经在真实构建中走通
 * [x] 已迁入 `jsfcstm` 的核心能力都有对应单元测试覆盖
+* [x] `jsfcstm` 当前可以直接输出覆盖率报表，并在终端清晰展示未覆盖行号
 * [x] Phase 2 完成后，新增功能默认应先开发在 `editors/jsfcstm`，而不是回写到 `editors/vscode`
 
 ## Phase 3：在 `editors/jsfcstm` 中建立 AST、语义模型与 workspace graph
@@ -1033,6 +1036,7 @@ npm publish --access public
 * [ ] 为 VSIX 安装、升级、回滚、故障排查准备 release checklist
 * [ ] 对老 VSCode 版本兼容性、bundle 体积、server 崩溃恢复做专项验证
 * [ ] 固化 `jsfcstm` 的测试标准：单元测试、集成测试、发布前 smoke test 分层执行
+* [ ] 为 `jsfcstm` 增加稳定的覆盖率门槛策略，并按模块逐步收紧
 
 ### Checklist
 
@@ -1067,6 +1071,8 @@ npm publish --access public
 因此这里必须明确：
 
 - `jsfcstm` 需要自己的单元测试
+- `jsfcstm` 的单元测试应使用正式测试框架，而不是手写脚本驱动
+- `jsfcstm` 的默认测试输出必须包含覆盖率和未覆盖行号
 - VSCode 验证只能作为上层集成回归
 - 不能用“端到端能跑”代替“库本身可测试”
 
@@ -1124,6 +1130,7 @@ language server 的协议层本身不是主要风险，主要风险是：
 - 可复用的 language server 部分也应进入 `editors/jsfcstm`
 - VSCode 扩展只负责适配 VSCode 插件系统，而不是继续把主要逻辑堆在 `editors/vscode`
 - `jsfcstm` 必须配齐独立单元测试，并将其作为默认门禁
+- `jsfcstm` 的默认测试链必须明确输出覆盖率与未覆盖行号
 - FCSTM VSCode 扩展下一阶段的正式目标应是 **完整的纯 JS language server**
 - 可视化是 language server 语义能力的下游能力，而不是主架构
 - 运行时必须坚持纯 JS，不依赖 Python、Java、PlantUML 扩展或远程服务

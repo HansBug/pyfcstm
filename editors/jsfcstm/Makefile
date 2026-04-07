@@ -1,4 +1,4 @@
-.PHONY: all help install build test pack clean
+.PHONY: all help install build test coverage pack clean
 
 NPM := npm
 
@@ -8,7 +8,8 @@ help:
 	@echo ""
 	@echo "  make install  - Install npm dependencies"
 	@echo "  make build    - Generate parser artifacts and build TypeScript sources into dist/"
-	@echo "  make test     - Run package unit tests"
+	@echo "  make test     - Run package unit tests with coverage reporting"
+	@echo "  make coverage - Alias of make test"
 	@echo "  make pack     - Build and create both npm tarball outputs and jsfcstm.tgz for local repo consumers"
 	@echo "  make clean    - Remove generated files"
 	@echo "  make all      - Install, build, and test"
@@ -24,8 +25,10 @@ build:
 	$(NPM) run build
 
 test:
-	@echo "Running jsfcstm unit tests..."
+	@echo "Running jsfcstm unit tests with coverage..."
 	$(NPM) test
+
+coverage: test
 
 pack: build
 	@echo "Packing jsfcstm..."
@@ -35,6 +38,7 @@ clean:
 	@echo "Cleaning jsfcstm..."
 	rm -rf dist
 	rm -rf parser
+	rm -rf coverage
 	rm -rf node_modules
 	rm -f ./*.tgz
 	rm -f ./jsfcstm.tgz

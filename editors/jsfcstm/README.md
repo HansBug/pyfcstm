@@ -18,7 +18,8 @@ At the current phase, this package provides:
 - hover metadata resolution
 - syntax and import diagnostics helpers
 - independent TypeScript build output under `dist/`
-- independent unit tests
+- independent Mocha-based unit tests
+- coverage reporting via `c8`, including uncovered line numbers in the terminal report
 - npm pack / publish-ready package metadata
 
 The package still does **not** yet contain the future unified AST, semantic model, workspace graph, or full language
@@ -33,8 +34,14 @@ npm install
 # Generate parser artifacts and build dist/
 npm run build
 
-# Run unit tests
+# Run unit tests with coverage, uncovered lines, and HTML/LCOV reports
 npm test
+
+# Run the Mocha suite without coverage wrapping
+npm run test:unit
+
+# Re-run the coverage report directly
+npm run test:coverage
 
 # Inspect what would be published
 npm pack
@@ -47,6 +54,17 @@ The intended long-term package name is `@pyfcstm/jsfcstm`.
 
 If the `@pyfcstm` scope is not ready yet, a temporary scope such as `@hansbug/jsfcstm` can be used during local
 validation, but the repository plan treats `@pyfcstm/jsfcstm` as the preferred public identity.
+
+## Test Standard
+
+`jsfcstm` now treats framework-based unit tests and explicit coverage output as part of the package contract:
+
+- unit tests run under `mocha`
+- coverage runs under `c8`
+- terminal coverage output includes per-file percentages and uncovered line numbers
+- HTML and LCOV artifacts are written under `coverage/`
+- machine-readable summary data is written to `coverage/coverage-summary.json`
+- overall coverage thresholds are enforced in the default test command
 
 ## License
 

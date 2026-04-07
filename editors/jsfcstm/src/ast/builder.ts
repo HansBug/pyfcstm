@@ -78,6 +78,59 @@ function nodeText(node: ParseTreeNode | undefined): string {
     return node?.getText?.() || '';
 }
 
+function decodeEscapedString(value: string): string {
+    let result = '';
+
+    for (let index = 0; index < value.length; index += 1) {
+        const current = value[index];
+        if (current !== '\\' || index === value.length - 1) {
+            result += current;
+            continue;
+        }
+
+        const next = value[index + 1];
+        if (next === 'b') {
+            result += '\b';
+            index += 1;
+        } else if (next === 't') {
+            result += '\t';
+            index += 1;
+        } else if (next === 'n') {
+            result += '\n';
+            index += 1;
+        } else if (next === 'f') {
+            result += '\f';
+            index += 1;
+        } else if (next === 'r') {
+            result += '\r';
+            index += 1;
+        } else if (next === '"' || next === '\'' || next === '\\') {
+            result += next;
+            index += 1;
+        } else if (next === 'u' && /^[0-9a-fA-F]{4}$/.test(value.slice(index + 2, index + 6))) {
+            result += String.fromCharCode(parseInt(value.slice(index + 2, index + 6), 16));
+            index += 5;
+        } else if (next === 'x' && /^[0-9a-fA-F]{2}$/.test(value.slice(index + 2, index + 4))) {
+            result += String.fromCharCode(parseInt(value.slice(index + 2, index + 4), 16));
+            index += 3;
+        } else if (/[0-7]/.test(next)) {
+            let octal = next;
+            let octalIndex = index + 2;
+            while (octal.length < 3 && octalIndex < value.length && /[0-7]/.test(value[octalIndex])) {
+                octal += value[octalIndex];
+                octalIndex += 1;
+            }
+            result += String.fromCharCode(parseInt(octal, 8));
+            index += octal.length;
+        } else {
+            result += next;
+            index += 1;
+        }
+    }
+
+    return result;
+}
+
 function unquoteText(value: string | undefined): string {
     if (!value) {
         return '';
@@ -86,9 +139,13 @@ function unquoteText(value: string | undefined): string {
         (value.startsWith('"') && value.endsWith('"'))
         || (value.startsWith('\'') && value.endsWith('\''))
     ) {
-        return value.slice(1, -1);
+        return decodeEscapedString(value.slice(1, -1));
     }
     return value;
+}
+
+function unquoteTokenValue(token: { text?: string } | undefined): string | undefined {
+    return token ? unquoteText(tokenText(token)) : undefined;
 }
 
 function formatMultilineComment(rawDoc: string | undefined): string | undefined {
@@ -662,7 +719,7 @@ function buildAction(
     const refPath = chainNode ? buildChainPath(chainNode, document) : undefined;
     const operationBlock = statementSet ? buildOperationBlockFromStatementSet(statementSet, document) : undefined;
     const operations = mode === 'operations' ? operationBlock?.statements || [] : undefined;
-    const doc = formatMultilineComment(tokenText(node.raw_doc) || undefined) || undefined;
+    const doc = node.raw_doc ? formatMultilineComment(tokenText(node.raw_doc)) : undefined;
     return {
         kind: 'action',
         pyNodeType: buildActionPyNodeType(stage, mode, isGlobalAspect),
@@ -770,7 +827,7 @@ function buildImportMapping(
         const childContexts = contextChildren(inner).filter(child => child.constructor?.name === 'Chain_idContext');
         const sourceEvent = buildChainPath(childContexts[0], document);
         const targetEvent = buildChainPath(childContexts[1], document);
-        const extraName = unquoteText(tokenText(inner.extra_name)) || undefined;
+        const extraName = unquoteTokenValue(inner.extra_name);
         return {
             kind: 'importEventMapping',
             pyNodeType: 'ImportEventMapping',
@@ -799,7 +856,7 @@ function buildImport(
         .filter(Boolean) as FcstmAstImportMapping[];
 
     const sourcePath = unquoteText(tokenText(node.import_path));
-    const extraName = unquoteText(tokenText(node.extra_name)) || undefined;
+    const extraName = unquoteTokenValue(node.extra_name);
     return {
         kind: 'importStatement',
         pyNodeType: 'ImportStatement',
@@ -852,7 +909,7 @@ function buildEventDefinition(
     node: ParseTreeContext,
     document: TextDocumentLike
 ): FcstmAstEventDefinition {
-    const extraName = unquoteText(tokenText(node.extra_name)) || undefined;
+    const extraName = unquoteTokenValue(node.extra_name);
     return {
         kind: 'eventDefinition',
         pyNodeType: 'EventDefinition',
@@ -877,7 +934,7 @@ function buildStateDefinition(
             .filter(Boolean) as FcstmAstStateStatement[]
         : [];
 
-    const extraName = unquoteText(tokenText(node.extra_name)) || undefined;
+    const extraName = unquoteTokenValue(node.extra_name);
     const substates = statements.filter(item => item.kind === 'stateDefinition') as FcstmAstStateDefinition[];
     const transitions = statements.filter(item => item.kind === 'transition') as FcstmAstTransition[];
     const forceTransitions = statements.filter(item => item.kind === 'forcedTransition') as FcstmAstForcedTransition[];

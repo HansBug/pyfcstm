@@ -25,6 +25,20 @@ At the current phase, this package provides:
 The package still does **not** yet contain the future unified AST, semantic model, workspace graph, or full language
 server implementation. Those remain Phase 3+ work.
 
+## Current Layout
+
+`jsfcstm` now uses a layered internal structure aligned with the Python package boundary:
+
+- `src/config/`: package metadata and future package-level configuration
+- `src/dsl/`: parser entry points and generated grammar runtime
+- `src/workspace/`: import resolution and workspace indexing
+- `src/editor/`: completion, hover, diagnostics, and symbol extraction
+- `src/utils/`: text ranges and document abstractions
+
+The ANTLR JavaScript runtime is generated into `src/dsl/grammar/` during build time, then mirrored into
+`dist/dsl/grammar/` so the published tarball keeps a self-contained parser runtime without exposing a legacy package-root
+`parser/` directory.
+
 ## Commands
 
 ```bash
@@ -47,6 +61,10 @@ npm run test:coverage
 npm pack
 npm publish --access public --dry-run
 ```
+
+The package root export remains `@pyfcstm/jsfcstm`, and the package now also exposes stable subpath entry points such
+as `@pyfcstm/jsfcstm/dsl`, `@pyfcstm/jsfcstm/editor`, `@pyfcstm/jsfcstm/workspace`, `@pyfcstm/jsfcstm/utils`, and
+`@pyfcstm/jsfcstm/config`.
 
 ## Intended Package Name
 

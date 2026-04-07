@@ -1,5 +1,5 @@
-import {getImportWorkspaceIndex} from './imports';
-import {TextDocumentLike, TextPositionLike, TextRange} from './text';
+import {TextDocumentLike, TextPositionLike, TextRange} from '../utils/text';
+import {getImportWorkspaceIndex} from '../workspace/imports';
 
 export interface FcstmHoverDoc {
     title: string;

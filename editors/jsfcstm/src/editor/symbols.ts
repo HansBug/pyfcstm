@@ -1,10 +1,10 @@
-import {getParser} from './parser';
+import {getParser} from '../dsl/parser';
 import {
     createRange,
     ParseTreeNode,
     TextDocumentLike,
     TextRange,
-} from './text';
+} from '../utils/text';
 
 export type FcstmSymbolKind = 'variable' | 'class' | 'event';
 

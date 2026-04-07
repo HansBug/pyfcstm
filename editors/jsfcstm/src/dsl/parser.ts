@@ -4,9 +4,9 @@ const antlr4 = require('antlr4') as {
 };
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const GrammarLexer = require('../parser/GrammarLexer').default;
+const GrammarLexer = require('./grammar/GrammarLexer').default;
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const GrammarParser = require('../parser/GrammarParser').default;
+const GrammarParser = require('./grammar/GrammarParser').default;
 
 type GeneratedLexerClass = new (input: unknown) => {
     removeErrorListeners(): void;

@@ -7,7 +7,7 @@ help:
 	@echo "====================="
 	@echo ""
 	@echo "  make install  - Install npm dependencies"
-	@echo "  make build    - Generate parser artifacts and build TypeScript sources into dist/"
+	@echo "  make build    - Generate parser artifacts under src/dsl/grammar/ and build dist/"
 	@echo "  make test     - Run package unit tests with coverage reporting"
 	@echo "  make coverage - Alias of make test"
 	@echo "  make pack     - Build and create both npm tarball outputs and jsfcstm.tgz for local repo consumers"
@@ -37,6 +37,7 @@ pack: build
 clean:
 	@echo "Cleaning jsfcstm..."
 	rm -rf dist
+	rm -rf src/dsl/grammar
 	rm -rf parser
 	rm -rf coverage
 	rm -rf node_modules

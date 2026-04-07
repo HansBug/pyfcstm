@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-import {getParser} from './parser';
+import {getParser} from '../dsl/parser';
 import {
     fallbackRangeFromText,
     FcstmDiagnostic,
@@ -14,7 +14,7 @@ import {
     TextPositionLike,
     TextRange,
     tokenText,
-} from './text';
+} from '../utils/text';
 
 export interface ImportEntry {
     sourcePath: string;

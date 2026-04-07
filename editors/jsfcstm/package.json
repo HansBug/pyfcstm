@@ -31,11 +31,35 @@
       "types": "./dist/index.d.ts",
       "require": "./dist/index.js",
       "default": "./dist/index.js"
+    },
+    "./config": {
+      "types": "./dist/config/index.d.ts",
+      "require": "./dist/config/index.js",
+      "default": "./dist/config/index.js"
+    },
+    "./dsl": {
+      "types": "./dist/dsl/index.d.ts",
+      "require": "./dist/dsl/index.js",
+      "default": "./dist/dsl/index.js"
+    },
+    "./editor": {
+      "types": "./dist/editor/index.d.ts",
+      "require": "./dist/editor/index.js",
+      "default": "./dist/editor/index.js"
+    },
+    "./utils": {
+      "types": "./dist/utils/index.d.ts",
+      "require": "./dist/utils/index.js",
+      "default": "./dist/utils/index.js"
+    },
+    "./workspace": {
+      "types": "./dist/workspace/index.d.ts",
+      "require": "./dist/workspace/index.js",
+      "default": "./dist/workspace/index.js"
     }
   },
   "files": [
     "dist",
-    "parser",
     "README.md",
     "LICENSE"
   ],
@@ -43,13 +67,13 @@
     "node": ">=16"
   },
   "scripts": {
-    "build": "node ./scripts/generate-parser.js && tsc -p ./",
-    "clean": "rm -rf coverage dist parser tsconfig.tsbuildinfo",
+    "build": "rm -rf dist && node ./scripts/generate-parser.js && tsc -p ./ && node ./scripts/sync-runtime-assets.js",
+    "clean": "rm -rf coverage dist parser src/dsl/grammar tsconfig.tsbuildinfo",
     "pack:local": "node ./scripts/pack-local.js",
     "pack:check": "npm pack --dry-run",
     "prepack": "npm run build",
     "test:unit": "mocha --require ts-node/register/transpile-only --extension ts \"test/**/*.test.ts\" --reporter spec",
-    "test:coverage": "c8 --all --src src --include 'src/**/*.ts' --exclude 'parser/**' --exclude-after-remap --check-coverage --lines 85 --statements 85 --functions 90 --branches 70 --reporter=text --reporter=text-summary --reporter=html --reporter=lcov --reporter=json-summary mocha --require ts-node/register/transpile-only --extension ts \"test/**/*.test.ts\" --reporter spec",
+    "test:coverage": "c8 --all --src src --include 'src/**/*.ts' --exclude 'src/dsl/grammar/**' --exclude-after-remap --check-coverage --lines 85 --statements 85 --functions 90 --branches 70 --reporter=text --reporter=text-summary --reporter=html --reporter=lcov --reporter=json-summary mocha --require ts-node/register/transpile-only --extension ts \"test/**/*.test.ts\" --reporter spec",
     "test": "npm run build && npm run test:coverage"
   },
   "publishConfig": {

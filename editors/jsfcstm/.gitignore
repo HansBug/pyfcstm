@@ -4,6 +4,7 @@ coverage/
 dist/
 *.tgz
 parser/
+src/dsl/grammar/
 
 # Dependencies
 node_modules/

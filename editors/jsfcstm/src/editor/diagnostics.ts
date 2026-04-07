@@ -1,10 +1,10 @@
-import {getImportWorkspaceIndex} from './imports';
-import {getParser, ParseError} from './parser';
+import {getParser, ParseError} from '../dsl/parser';
 import {
     createRange,
     FcstmDiagnostic,
     TextDocumentLike,
-} from './text';
+} from '../utils/text';
+import {getImportWorkspaceIndex} from '../workspace/imports';
 
 export function convertParseErrorToDiagnostic(
     error: ParseError,

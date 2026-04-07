@@ -3,11 +3,11 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import type * as JsFcstmPackage from '../dist/index';
-import type * as CompletionModule from '../dist/completion';
-import type * as HoverModule from '../dist/hover';
-import type * as ImportsModule from '../dist/imports';
-import type * as ParserModule from '../dist/parser';
-import type * as SymbolsModule from '../dist/symbols';
+import type * as CompletionModule from '../dist/editor/completion';
+import type * as HoverModule from '../dist/editor/hover';
+import type * as SymbolsModule from '../dist/editor/symbols';
+import type * as ParserModule from '../dist/dsl/parser';
+import type * as ImportsModule from '../dist/workspace/imports';
 
 export const packageJson = require('../package.json') as {
     name: string;
@@ -16,11 +16,11 @@ export const packageJson = require('../package.json') as {
 };
 
 export const packageModule = require('../dist/index.js') as typeof JsFcstmPackage;
-export const parserModule = require('../dist/parser.js') as typeof ParserModule;
-export const importsModule = require('../dist/imports.js') as typeof ImportsModule;
-export const symbolsModule = require('../dist/symbols.js') as typeof SymbolsModule;
-export const completionModule = require('../dist/completion.js') as typeof CompletionModule;
-export const hoverModule = require('../dist/hover.js') as typeof HoverModule;
+export const parserModule = require('../dist/dsl/parser.js') as typeof ParserModule;
+export const importsModule = require('../dist/workspace/imports.js') as typeof ImportsModule;
+export const symbolsModule = require('../dist/editor/symbols.js') as typeof SymbolsModule;
+export const completionModule = require('../dist/editor/completion.js') as typeof CompletionModule;
+export const hoverModule = require('../dist/editor/hover.js') as typeof HoverModule;
 
 const tempDirs: string[] = [];
 

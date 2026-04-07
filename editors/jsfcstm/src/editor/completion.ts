@@ -1,7 +1,7 @@
-import {getImportWorkspaceIndex} from './imports';
-import {getParser} from './parser';
+import {getParser} from '../dsl/parser';
+import {getImportWorkspaceIndex} from '../workspace/imports';
+import {ParseTreeNode, rangeContains, TextDocumentLike, TextPositionLike} from '../utils/text';
 import {collectSymbolsFromTree} from './symbols';
-import {ParseTreeNode, rangeContains, TextDocumentLike, TextPositionLike} from './text';
 
 export type FcstmCompletionKind =
     | 'keyword'

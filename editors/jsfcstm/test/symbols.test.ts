@@ -203,6 +203,60 @@ describe('jsfcstm symbol extraction', () => {
         assert.equal(documentSymbols[0].children.length, 0);
     });
 
+    it('handles sparse parse tree nodes while extracting document symbols', () => {
+        const document = createDocument('state Root;', '/tmp/sparse-symbols.fcstm');
+        const sparseTree = createNode('StateMachineDSLProgramContext', [
+            {constructor: {name: 'Def_assignmentContext'}} as packageModule.ParseTreeNode,
+            createNode('LeafStateDefinitionContext', [
+                createLeafTextNode('state'),
+                {} as packageModule.ParseTreeNode,
+            ]),
+            createNode('Event_definitionContext', [
+                createLeafTextNode('event'),
+                {} as packageModule.ParseTreeNode,
+            ]),
+            createNode('CompositeStateDefinitionContext', [
+                createLeafTextNode('state'),
+                createLeafTextNode('Root'),
+                createLeafTextNode('named'),
+                {} as packageModule.ParseTreeNode,
+                {constructor: {name: 'State_bodyContext'}} as packageModule.ParseTreeNode,
+                createNode('State_bodyContext', [
+                    {} as packageModule.ParseTreeNode,
+                    createNode('Event_definitionContext', [
+                        createLeafTextNode('event'),
+                        createLeafTextNode('Start'),
+                        createLeafTextNode('named'),
+                        {} as packageModule.ParseTreeNode,
+                    ]),
+                    createNode('LeafStateDefinitionContext', [
+                        createLeafTextNode('state'),
+                        {} as packageModule.ParseTreeNode,
+                    ]),
+                    createNode('CompositeStateDefinitionContext', [
+                        createLeafTextNode('state'),
+                        createLeafTextNode('Nested'),
+                    ]),
+                ]),
+            ]),
+            {} as packageModule.ParseTreeNode,
+        ]);
+
+        assert.deepEqual(packageModule.collectSymbolsFromTree({} as packageModule.ParseTreeNode), {
+            variables: [],
+            states: [],
+            events: [],
+        });
+        assert.deepEqual(packageModule.extractDocumentSymbolsFromTree({} as packageModule.ParseTreeNode, document), []);
+
+        const symbols = packageModule.extractDocumentSymbolsFromTree(sparseTree, document);
+        assert.equal(symbols.length, 1);
+        assert.equal(symbols[0].name, 'Root');
+        assert.equal(symbols[0].detail, '');
+        assert.ok(symbols[0].children.some(item => item.name === 'Start' && item.detail === ''));
+        assert.ok(symbols[0].children.some(item => item.name === 'Nested' && item.kind === 'class'));
+    });
+
     it('collects document symbols through the public parser-backed entry point', async () => {
         const document = createDocument(
             'def int counter = 0;\nstate Root { event Start; state Child; }',
@@ -222,6 +276,76 @@ describe('jsfcstm symbol extraction', () => {
         await withPatchedProperty(parser, 'parseTree', async () => null, async () => {
             const symbols = await packageModule.collectDocumentSymbols(document);
             assert.deepEqual(symbols, []);
+        });
+    });
+
+    it('collects semantic document symbols for pseudo states and declared events', async () => {
+        const document = createDocument('state Root;', '/tmp/semantic-symbols.fcstm');
+        const rootRange = packageModule.createRange(0, 0, 0, 10);
+        const eventRange = packageModule.createRange(0, 2, 0, 8);
+        const rootStateId = 'state:/tmp/semantic-symbols.fcstm:Root:1';
+        const pseudoStateId = 'state:/tmp/semantic-symbols.fcstm:Root.Junction:2';
+        const semantic = {
+            variables: [],
+            states: [
+                {
+                    identity: {
+                        id: rootStateId,
+                        kind: 'state',
+                        name: 'Root',
+                        qualifiedName: 'Root',
+                        path: ['Root'],
+                    },
+                    name: 'Root',
+                    displayName: 'System Root',
+                    pseudo: false,
+                    composite: true,
+                    range: rootRange,
+                    childStateIds: [pseudoStateId],
+                },
+                {
+                    identity: {
+                        id: pseudoStateId,
+                        kind: 'state',
+                        name: 'Junction',
+                        qualifiedName: 'Root.Junction',
+                        path: ['Root', 'Junction'],
+                    },
+                    name: 'Junction',
+                    pseudo: true,
+                    composite: false,
+                    range: rootRange,
+                    parentStateId: rootStateId,
+                    childStateIds: [],
+                },
+            ],
+            events: [
+                {
+                    identity: {
+                        id: 'event:/tmp/semantic-symbols.fcstm:Root.Start:3',
+                        kind: 'event',
+                        name: 'Start',
+                        qualifiedName: 'Root.Start',
+                        path: ['Root', 'Start'],
+                    },
+                    name: 'Start',
+                    displayName: 'Start Event',
+                    range: eventRange,
+                    statePath: ['Root'],
+                    declared: true,
+                    origins: ['declared'],
+                },
+            ],
+        } as unknown as packageModule.FcstmSemanticDocument;
+        const graph = packageModule.getWorkspaceGraph();
+
+        await withPatchedProperty(graph, 'getSemanticDocument', async () => semantic, async () => {
+            const symbols = await packageModule.collectDocumentSymbols(document);
+            assert.equal(symbols.length, 1);
+            assert.equal(symbols[0].name, 'Root');
+            assert.equal(symbols[0].detail, 'System Root');
+            assert.ok(symbols[0].children.some(item => item.name === 'Start' && item.detail === 'Start Event'));
+            assert.ok(symbols[0].children.some(item => item.name === 'Junction' && item.detail === 'pseudo state'));
         });
     });
 });

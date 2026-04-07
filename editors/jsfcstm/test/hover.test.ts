@@ -53,6 +53,7 @@ describe('jsfcstm hover support', () => {
             packageModule.findHoverInfo('state Root;', 2, 'state')?.title,
             'State Definition'
         );
+        assert.equal(packageModule.findHoverInfo('prefix :: suffix', 1, ''), null);
         assert.equal(packageModule.findHoverInfo('plain text', 0, ''), null);
         assert.equal(packageModule.findHoverInfo('state Root;', 5, ''), null);
     });
@@ -61,6 +62,18 @@ describe('jsfcstm hover support', () => {
         assert.equal(hoverModule.HOVER_DOCS.import.title, 'Import Statement');
         assert.equal(hoverModule.HOVER_DOCS['::'].title, 'Local Event Scope');
         assert.equal(hoverModule.HOVER_DOCS.effect.title, 'Transition Effect');
+    });
+
+    it('returns null when an operator hover entry is intentionally unavailable', () => {
+        const original = hoverModule.HOVER_DOCS['::'];
+        (hoverModule.HOVER_DOCS as Record<string, typeof original | undefined>)['::'] = undefined;
+
+        try {
+            const line = 'StateA -> StateB :: LocalEvent;';
+            assert.equal(packageModule.findHoverInfo(line, line.indexOf('::'), ''), null);
+        } finally {
+            hoverModule.HOVER_DOCS['::'] = original;
+        }
     });
 
     it('resolves documentation and import hovers', async () => {

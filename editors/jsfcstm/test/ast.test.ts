@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
 
-import {createDocument, packageModule} from './support';
+import {
+    createDocument,
+    createLeafTextNode,
+    createNode,
+    createToken,
+    packageModule,
+} from './support';
 
 describe('jsfcstm AST builder', () => {
     it('builds a structured AST for variables, actions, forced transitions, and imports', async () => {
@@ -139,5 +145,235 @@ describe('jsfcstm AST builder', () => {
         } finally {
             parser.parseTree = original;
         }
+    });
+
+    it('covers additional expression, selector, and trigger variants from real DSL', async () => {
+        const document = createDocument([
+            'def int mask = 0xFF;',
+            'state Root {',
+            '    enter {',
+            '        value = abs(-mask);',
+            '        choice = (mask > 0) ? 1 : 0;',
+            '        ;',
+            '    }',
+            '    during {',
+            '        constant_value = (pi);',
+            '    }',
+            '    during abstract Tick;',
+            '    during ref Shared.Run;',
+            '    import "./worker.fcstm" as Worker {',
+            '        def {left,right} -> grouped;',
+            '        def exact -> renamed;',
+            '        def * -> kept;',
+            '        ;',
+            '    }',
+            '    state A;',
+            '    A -> Root;',
+            '}',
+        ].join('\n'), '/tmp/ast-extra.fcstm');
+
+        const ast = await packageModule.parseAstDocument(document);
+        const enterAction = ast?.rootState?.enters[0];
+        assert.equal(enterAction?.operationsList.length, 3);
+        assert.equal(enterAction?.operationsList[0].kind, 'assignmentStatement');
+        assert.equal(enterAction?.operationsList[0].expr.pyNodeType, 'UFunc');
+        assert.equal(enterAction?.operationsList[0].expr.expr.pyNodeType, 'UnaryOp');
+        assert.equal(enterAction?.operationsList[1].expr.pyNodeType, 'ConditionalOp');
+        assert.equal(enterAction?.operationsList[1].expr.cond.pyNodeType, 'BinaryOp');
+        assert.equal(enterAction?.operationsList[2].kind, 'emptyStatement');
+
+        assert.deepEqual(ast?.rootState?.durings.map(item => item.pyNodeType), [
+            'DuringOperations',
+            'DuringAbstractFunction',
+            'DuringRefFunction',
+        ]);
+        assert.equal(ast?.rootState?.durings[0].operationsList[0].expr.pyNodeType, 'Paren');
+        assert.equal(ast?.rootState?.durings[0].operationsList[0].expr.expr.pyNodeType, 'Constant');
+
+        const importStatement = ast?.rootState?.imports[0];
+        assert.equal(importStatement?.mappings.length, 3);
+        assert.deepEqual(importStatement?.mappings.map(item => item.pyNodeType), [
+            'ImportDefMapping',
+            'ImportDefMapping',
+            'ImportDefMapping',
+        ]);
+        assert.equal(importStatement?.mappings[0].selector.pyNodeType, 'ImportDefSetSelector');
+        assert.equal(importStatement?.mappings[1].selector.pyNodeType, 'ImportDefExactSelector');
+        assert.equal(importStatement?.mappings[2].selector.pyNodeType, 'ImportDefFallbackSelector');
+
+        const plainTransition = ast?.rootState?.transitions[0];
+        assert.equal(plainTransition?.trigger, undefined);
+        assert.equal(plainTransition?.event_id, undefined);
+    });
+
+    it('covers synthetic AST fallback branches that the grammar rarely emits directly', () => {
+        const document = createDocument([
+            'state Root {',
+            '    enter { }',
+            '}',
+        ].join('\n'), '/tmp/ast-synthetic.fcstm');
+
+        const tree = createNode('StateMachineDSLProgramContext', [
+            createNode('CompositeStateDefinitionContext', [
+                createNode('State_inner_statementContext', [
+                    createNode('EnterOperationsContext', [
+                        createNode('Operational_statement_setContext', [
+                            createNode('Operational_statementContext', []),
+                            createNode('Operational_statementContext', [
+                                createNode('Operational_assignmentContext', [
+                                    createNode('UnknownExprContext', [], {
+                                        start: createToken('mystery', 1, 0),
+                                        stop: createToken('mystery', 1, 6),
+                                        getText() {
+                                            return 'mystery';
+                                        },
+                                    }),
+                                ], {
+                                    start: createToken('value', 1, 0),
+                                    stop: createToken(';', 1, 14),
+                                    getText() {
+                                        return 'value=mystery;';
+                                    },
+                                }),
+                            ]),
+                            createNode('Operational_statementContext', [
+                                createNode('If_statementContext', [
+                                    createNode('LiteralExprCondContext', [
+                                        createNode('Bool_literalContext', [], {
+                                            start: createToken('true', 1, 0),
+                                            stop: createToken('true', 1, 3),
+                                            getText() {
+                                                return 'true';
+                                            },
+                                        }),
+                                    ], {
+                                        start: createToken('true', 1, 0),
+                                        stop: createToken('true', 1, 3),
+                                        getText() {
+                                            return 'true';
+                                        },
+                                    }),
+                                    createNode('Operation_blockContext', [], {
+                                        start: createToken('{', 1, 8),
+                                        stop: createToken('}', 1, 9),
+                                        getText() {
+                                            return '{}';
+                                        },
+                                    }),
+                            ], {
+                                start: createToken('if', 1, 0),
+                                stop: createToken('}', 1, 9),
+                                getText() {
+                                    return 'if[true]{}';
+                                },
+                            }),
+                        ]),
+                        ]),
+                    ], {
+                        start: createToken('enter', 1, 4),
+                        stop: createToken('}', 1, 20),
+                        getText() {
+                            return 'enter{}';
+                        },
+                    }),
+                ]),
+                createNode('State_inner_statementContext', [
+                    createNode('Import_statementContext', [
+                        createNode('Import_mapping_statementContext', [
+                            createNode('Import_def_mappingContext', [
+                                createNode('ImportDefExactSelectorContext', [], {
+                                    selector_name: createToken('exact', 1, 0),
+                                    getText() {
+                                        return 'exact';
+                                    },
+                                }),
+                                createNode('Import_def_target_templateContext', [], {
+                                    target_text: createToken('target', 1, 0),
+                                    getText() {
+                                        return 'target';
+                                    },
+                                }),
+                            ], {
+                                getText() {
+                                    return 'def exact -> target;';
+                                },
+                            }),
+                        ]),
+                        createNode('Import_mapping_statementContext', []),
+                    ], {
+                        import_path: createToken('"./worker.fcstm"', 1, 0),
+                        state_alias: createToken('Worker', 1, 18),
+                        start: createToken('import', 1, 0),
+                        stop: createToken('}', 1, 40),
+                        getText() {
+                            return 'import"./worker.fcstm"asWorker{;}';
+                        },
+                    }),
+                ]),
+                createNode('State_inner_statementContext', [
+                    createNode('UnknownContext', [
+                        createLeafTextNode('ignored'),
+                    ]),
+                ]),
+            ], {
+                state_id: createToken('Root', 1, 6),
+                extra_name: createToken('RootAlias', 1, 12),
+                start: createToken('state', 1, 0),
+                stop: createToken('}', 3, 0),
+                getText() {
+                    return 'stateRoot{}';
+                },
+            }),
+        ], {
+            start: createToken('state', 1, 0),
+            stop: createToken('}', 3, 0),
+            getText() {
+                return document.getText();
+            },
+        });
+
+        const ast = packageModule.buildAstFromTree(tree, document);
+        assert.ok(ast);
+        assert.equal(ast?.rootState?.displayName, 'RootAlias');
+        assert.equal(ast?.rootState?.statements.length, 2);
+        assert.equal(ast?.rootState?.enters[0].operationsList[0].kind, 'emptyStatement');
+        assert.equal(ast?.rootState?.enters[0].operationsList[1].kind, 'assignmentStatement');
+        assert.equal(ast?.rootState?.enters[0].operationsList[1].expr.pyNodeType, 'Name');
+        assert.equal(ast?.rootState?.enters[0].operationsList[2].kind, 'ifStatement');
+        assert.equal(ast?.rootState?.enters[0].operationsList[2].branches[0].statements.length, 0);
+        assert.equal(ast?.rootState?.imports[0].mappings.length, 1);
+
+        assert.equal(packageModule.buildAstFromTree(null as unknown as packageModule.ParseTreeNode, document), null);
+    });
+
+    it('covers remaining action pyNodeType variants for enter/exit/during-aspect nodes', async () => {
+        const document = createDocument([
+            'state Root {',
+            '    enter abstract EnterHook;',
+            '    exit { ; }',
+            '    exit abstract ExitHook;',
+            '    exit ref /Shared.Cleanup;',
+            '    >> during before { ; }',
+            '    >> during after abstract AuditHook;',
+            '    >> during before ref /Shared.BeforeHook;',
+            '}',
+        ].join('\n'), '/tmp/ast-actions.fcstm');
+
+        const ast = await packageModule.parseAstDocument(document);
+        assert.deepEqual(ast?.rootState?.statements.map(item => item.kind === 'action' ? item.pyNodeType : item.kind), [
+            'EnterAbstractFunction',
+            'ExitOperations',
+            'ExitAbstractFunction',
+            'ExitRefFunction',
+            'DuringAspectOperations',
+            'DuringAspectAbstractFunction',
+            'DuringAspectRefFunction',
+        ]);
+        assert.equal(ast?.rootState?.exits[0].operationsList[0].kind, 'emptyStatement');
+        assert.deepEqual(ast?.rootState?.during_aspects.map(item => item.pyNodeType), [
+            'DuringAspectOperations',
+            'DuringAspectAbstractFunction',
+            'DuringAspectRefFunction',
+        ]);
     });
 });

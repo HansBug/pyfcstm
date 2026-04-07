@@ -140,4 +140,52 @@ describe('jsfcstm import workspace support', () => {
     it('shares the singleton import workspace index', () => {
         assert.equal(packageModule.getImportWorkspaceIndex(), packageModule.getImportWorkspaceIndex());
     });
+
+    it('covers null-semantic and fallback-range branches with a stub graph', async () => {
+        const graph = {
+            async getSemanticDocument() {
+                return null;
+            },
+            async buildSnapshotForDocument() {
+                return {
+                    rootFile: '/tmp/stub.fcstm',
+                    nodes: {
+                        '/tmp/stub.fcstm': {
+                            semantic: {
+                                imports: [],
+                            },
+                        },
+                    },
+                    cycles: [{files: ['/tmp/stub.fcstm', '/tmp/other.fcstm', '/tmp/stub.fcstm']}],
+                };
+            },
+        } as unknown as packageModule.FcstmWorkspaceGraph;
+        const index = new packageModule.FcstmImportWorkspaceIndex(graph);
+        const document = createDocument('state Root;', '/tmp/stub.fcstm');
+
+        assert.deepEqual(await index.resolveImportsForDocument(document), []);
+        assert.equal(await index.getResolvedImportAtPosition(document, {line: 0, character: 0}), null);
+        const diagnostics = await index.collectImportDiagnostics(document);
+        assert.equal(diagnostics.length, 1);
+        assert.deepEqual(diagnostics[0].range, packageModule.createRange(0, 0, 0, 1));
+    });
+
+    it('returns no diagnostics when snapshot semantic data is unavailable', async () => {
+        const graph = {
+            async getSemanticDocument() {
+                return null;
+            },
+            async buildSnapshotForDocument() {
+                return {
+                    rootFile: '/tmp/stub.fcstm',
+                    nodes: {},
+                    cycles: [],
+                };
+            },
+        } as unknown as packageModule.FcstmWorkspaceGraph;
+        const index = new packageModule.FcstmImportWorkspaceIndex(graph);
+        const document = createDocument('state Root;', '/tmp/stub.fcstm');
+
+        assert.deepEqual(await index.collectImportDiagnostics(document), []);
+    });
 });

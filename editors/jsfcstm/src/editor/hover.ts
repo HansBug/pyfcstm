@@ -196,10 +196,6 @@ export function findHoverInfo(text: string, column: number, word: string): Fcstm
         const prevChar = text[column - 1];
         const nextChar = text[column + 1];
 
-        if (char === ':' && (prevChar === ':' || nextChar === ':')) {
-            return HOVER_DOCS['::'];
-        }
-
         if (char === ':' && prevChar !== ':' && nextChar !== ':') {
             if (prevChar !== ')' && nextChar !== ' ') {
                 return HOVER_DOCS[':'];

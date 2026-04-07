@@ -105,4 +105,138 @@ describe('jsfcstm workspace graph', () => {
         const sharedB = packageModule.getWorkspaceGraph();
         assert.equal(sharedA, sharedB);
     });
+
+    it('covers private graph fallbacks for caching, missing targets, and null semantics', async () => {
+        const dir = trackTempDir('jsfcstm-graph-private-');
+        const hostFile = path.join(dir, 'host.fcstm');
+        const workerFile = path.join(dir, 'worker.fcstm');
+
+        writeFile(workerFile, 'state Worker;');
+
+        const graph = new packageModule.FcstmWorkspaceGraph() as packageModule.FcstmWorkspaceGraph & {
+            createTraversalState(): {
+                nodes: Map<string, unknown>;
+                order: string[];
+                cycles: Array<{files: string[]}>;
+                cycleKeys: Set<string>;
+                stack: string[];
+            };
+            traverseDocument(
+                document: ReturnType<typeof createDocument>,
+                filePath: string,
+                state: {
+                    nodes: Map<string, unknown>;
+                    order: string[];
+                    cycles: Array<{files: string[]}>;
+                    cycleKeys: Set<string>;
+                    stack: string[];
+                }
+            ): Promise<unknown>;
+            traverseFile(filePath: string, state: unknown): Promise<unknown>;
+            loadDocument(filePath: string): ReturnType<typeof createDocument> | null;
+            recordCycle(
+                files: string[],
+                state: {
+                    nodes: Map<string, unknown>;
+                    order: string[];
+                    cycles: Array<{files: string[]}>;
+                    cycleKeys: Set<string>;
+                    stack: string[];
+                }
+            ): void;
+            hydrateImport(semanticImport: {
+                exists: boolean;
+                missing: boolean;
+                entryFile?: string;
+                sourceVariables: string[];
+                sourceAbsoluteEvents: string[];
+                mappedVariables: string[];
+                mappedAbsoluteEvents: string[];
+            }, targetSemantic: null, targetFile: string): void;
+        };
+        const document = createDocument('state Root { import "./worker.fcstm" as Worker; }', hostFile);
+
+        const state = graph.createTraversalState();
+        const firstNode = await graph.traverseDocument(document, hostFile, state);
+        const secondNode = await graph.traverseDocument(document, hostFile, state);
+        assert.equal(firstNode, secondNode);
+
+        const originalTraverseFile = graph.traverseFile;
+        graph.traverseFile = async () => undefined;
+        try {
+            const missingTargetState = graph.createTraversalState();
+            await graph.traverseDocument(document, hostFile, missingTargetState);
+            assert.equal(
+                (missingTargetState.nodes.get(hostFile) as {imports: Array<{target?: unknown}>}).imports[0].target,
+                undefined
+            );
+        } finally {
+            graph.traverseFile = originalTraverseFile;
+        }
+
+        const missingImport = {
+            exists: false,
+            missing: true,
+            entryFile: undefined,
+            sourceVariables: ['x'],
+            sourceAbsoluteEvents: ['/E'],
+            mappedVariables: ['x'],
+            mappedAbsoluteEvents: ['/E'],
+        };
+        graph.hydrateImport(missingImport, null, workerFile);
+        assert.equal(missingImport.exists, true);
+        assert.equal(missingImport.missing, false);
+        assert.equal(missingImport.entryFile, workerFile);
+        assert.deepEqual(missingImport.sourceVariables, []);
+        assert.deepEqual(missingImport.mappedAbsoluteEvents, []);
+
+        const cycleState = graph.createTraversalState();
+        graph.recordCycle([hostFile, workerFile, hostFile], cycleState);
+        graph.recordCycle([hostFile, workerFile, hostFile], cycleState);
+        assert.equal(cycleState.cycles.length, 1);
+
+        assert.equal(graph.loadDocument(path.join(dir, 'missing.fcstm')), null);
+    });
+
+    it('returns a null-semantic node when parser output is unavailable', async () => {
+        const dir = trackTempDir('jsfcstm-graph-null-semantic-');
+        const filePath = path.join(dir, 'broken.fcstm');
+        const document = createDocument('state Root;', filePath);
+        const graph = new packageModule.FcstmWorkspaceGraph();
+        const parser = packageModule.getParser();
+        const original = parser.parseTree;
+        parser.parseTree = async () => null;
+
+        try {
+            const snapshot = await graph.buildSnapshotForDocument(document);
+            assert.equal(snapshot.nodes[filePath].ast, null);
+            assert.equal(snapshot.nodes[filePath].semantic, null);
+        } finally {
+            parser.parseTree = original;
+        }
+    });
+
+    it('covers memory-document and missing-file snapshot helpers', async () => {
+        const graph = new packageModule.FcstmWorkspaceGraph();
+        const memoryDocument = {
+            lineCount: 1,
+            getText() {
+                return 'state Root;';
+            },
+            lineAt() {
+                return {text: 'state Root;'};
+            },
+        } as packageModule.TextDocumentLike;
+
+        const memorySnapshot = await graph.buildSnapshotForDocument(memoryDocument);
+        assert.equal(memorySnapshot.rootFile, '<memory>');
+        assert.deepEqual(memorySnapshot.order, ['<memory>']);
+        assert.equal(memorySnapshot.nodes['<memory>'].semantic?.summary.rootStateName, 'Root');
+
+        const missingFile = path.join(trackTempDir('jsfcstm-graph-missing-'), 'missing.fcstm');
+        const missingSnapshot = await graph.buildSnapshotForFile(missingFile);
+        assert.deepEqual(missingSnapshot.order, []);
+        assert.deepEqual(missingSnapshot.nodes, {});
+        assert.equal(await graph.getSemanticDocumentForFile(missingFile), null);
+    });
 });

@@ -105,16 +105,7 @@ function normalizeSyntaxMessage(message: string, tokenText?: string): string {
     }
 
     if (/mismatched input/i.test(message)) {
-        if (/expecting ';'|expecting SEMI/i.test(message)) {
-            if (tokenText === 'state') {
-                return 'Missing semicolon after previous state definition';
-            } else if (tokenText === '}') {
-                return 'Missing semicolon before closing brace';
-            }
-            return 'Missing semicolon on previous line';
-        } else if (/expecting '='|expecting ASSIGN/i.test(message)) {
-            return 'Missing equals sign in variable definition';
-        } else if (
+        if (
             /expecting \{';', 'named'\}/i.test(message)
             || /expecting \{(?:NAMED|SEMI), (?:NAMED|SEMI)\}/i.test(message)
         ) {
@@ -126,8 +117,9 @@ function normalizeSyntaxMessage(message: string, tokenText?: string): string {
     if (/no viable alternative at input/i.test(message)) {
         if (tokenText) {
             const tokenLower = tokenText.toLowerCase();
+            const stateMatches = tokenLower.match(/state/g);
 
-            if (tokenLower.includes('state') && (tokenLower.match(/state/g) || []).length >= 2) {
+            if (stateMatches && stateMatches.length >= 2) {
                 return 'Missing semicolon between state definitions';
             }
 

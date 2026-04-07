@@ -69,9 +69,10 @@ describe('jsfcstm AST builder', () => {
         assert.equal(enterAction?.kind, 'action');
         assert.equal(enterAction?.name, 'Init');
         assert.equal(enterAction?.pyNodeType, 'EnterOperations');
-        assert.equal(enterAction?.operationsList, enterAction?.operations?.statements);
-        assert.equal(enterAction?.operations?.statements.length, 2);
-        const ifStatement = enterAction?.operations?.statements[1];
+        assert.equal(enterAction?.operationsList, enterAction?.operations);
+        assert.equal(enterAction?.operationBlock?.statements.length, 2);
+        assert.equal(enterAction?.operations?.length, 2);
+        const ifStatement = enterAction?.operations?.[1];
         assert.equal(ifStatement?.kind, 'ifStatement');
         assert.equal(ifStatement?.pyNodeType, 'OperationIf');
         assert.equal(ifStatement?.branches.length, 2);
@@ -174,13 +175,12 @@ describe('jsfcstm AST builder', () => {
 
         const ast = await packageModule.parseAstDocument(document);
         const enterAction = ast?.rootState?.enters[0];
-        assert.equal(enterAction?.operationsList.length, 3);
+        assert.equal(enterAction?.operationsList.length, 2);
         assert.equal(enterAction?.operationsList[0].kind, 'assignmentStatement');
         assert.equal(enterAction?.operationsList[0].expr.pyNodeType, 'UFunc');
         assert.equal(enterAction?.operationsList[0].expr.expr.pyNodeType, 'UnaryOp');
         assert.equal(enterAction?.operationsList[1].expr.pyNodeType, 'ConditionalOp');
         assert.equal(enterAction?.operationsList[1].expr.cond.pyNodeType, 'BinaryOp');
-        assert.equal(enterAction?.operationsList[2].kind, 'emptyStatement');
 
         assert.deepEqual(ast?.rootState?.durings.map(item => item.pyNodeType), [
             'DuringOperations',
@@ -189,6 +189,7 @@ describe('jsfcstm AST builder', () => {
         ]);
         assert.equal(ast?.rootState?.durings[0].operationsList[0].expr.pyNodeType, 'Paren');
         assert.equal(ast?.rootState?.durings[0].operationsList[0].expr.expr.pyNodeType, 'Constant');
+        assert.equal(ast?.rootState?.durings[1].aspect, undefined);
 
         const importStatement = ast?.rootState?.imports[0];
         assert.equal(importStatement?.mappings.length, 3);
@@ -336,11 +337,10 @@ describe('jsfcstm AST builder', () => {
         assert.ok(ast);
         assert.equal(ast?.rootState?.displayName, 'RootAlias');
         assert.equal(ast?.rootState?.statements.length, 2);
-        assert.equal(ast?.rootState?.enters[0].operationsList[0].kind, 'emptyStatement');
-        assert.equal(ast?.rootState?.enters[0].operationsList[1].kind, 'assignmentStatement');
-        assert.equal(ast?.rootState?.enters[0].operationsList[1].expr.pyNodeType, 'Name');
-        assert.equal(ast?.rootState?.enters[0].operationsList[2].kind, 'ifStatement');
-        assert.equal(ast?.rootState?.enters[0].operationsList[2].branches[0].statements.length, 0);
+        assert.equal(ast?.rootState?.enters[0].operationsList[0].kind, 'assignmentStatement');
+        assert.equal(ast?.rootState?.enters[0].operationsList[0].expr.pyNodeType, 'Name');
+        assert.equal(ast?.rootState?.enters[0].operationsList[1].kind, 'ifStatement');
+        assert.equal(ast?.rootState?.enters[0].operationsList[1].branches[0].statements.length, 0);
         assert.equal(ast?.rootState?.imports[0].mappings.length, 1);
 
         assert.equal(packageModule.buildAstFromTree(null as unknown as packageModule.ParseTreeNode, document), null);
@@ -369,7 +369,7 @@ describe('jsfcstm AST builder', () => {
             'DuringAspectAbstractFunction',
             'DuringAspectRefFunction',
         ]);
-        assert.equal(ast?.rootState?.exits[0].operationsList[0].kind, 'emptyStatement');
+        assert.deepEqual(ast?.rootState?.exits[0].operationsList, []);
         assert.deepEqual(ast?.rootState?.during_aspects.map(item => item.pyNodeType), [
             'DuringAspectOperations',
             'DuringAspectAbstractFunction',

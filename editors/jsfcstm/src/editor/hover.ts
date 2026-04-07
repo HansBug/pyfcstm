@@ -1,12 +1,18 @@
 import {TextDocumentLike, TextPositionLike, TextRange} from '../utils/text';
 import {getImportWorkspaceIndex} from '../workspace/imports';
 
+/**
+ * Static documentation entry returned by hover resolution.
+ */
 export interface FcstmHoverDoc {
     title: string;
     description: string;
     example?: string;
 }
 
+/**
+ * Hover payload returned by jsfcstm editor features.
+ */
 export type FcstmHoverResult =
     | {
         kind: 'doc';
@@ -24,6 +30,9 @@ export type FcstmHoverResult =
         range: TextRange;
     };
 
+/**
+ * Built-in hover documentation table for FCSTM operators and keywords.
+ */
 export const HOVER_DOCS: Record<string, FcstmHoverDoc> = {
     '::': {
         title: 'Local Event Scope',
@@ -182,6 +191,9 @@ function findOperatorAtPosition(text: string, column: number, operator: string):
     return -1;
 }
 
+/**
+ * Resolve a hover documentation entry from a single line of FCSTM source text.
+ */
 export function findHoverInfo(text: string, column: number, word: string): FcstmHoverDoc | null {
     const operators = ['::', '>> during before', '>> during after', 'during before', 'during after'];
     for (const operator of operators) {
@@ -221,6 +233,9 @@ export function findHoverInfo(text: string, column: number, word: string): Fcstm
     return null;
 }
 
+/**
+ * Resolve either built-in keyword/operator docs or import-target metadata for a cursor position.
+ */
 export async function resolveHover(
     document: TextDocumentLike,
     position: TextPositionLike

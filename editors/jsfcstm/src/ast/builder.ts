@@ -49,6 +49,15 @@ import type {
     FcstmAstVariableDefinition,
 } from './model';
 
+const UNARY_OPERATOR_ALIASES: Record<string, string> = {
+    not: '!',
+};
+
+const BINARY_OPERATOR_ALIASES: Record<string, string> = {
+    and: '&&',
+    or: '||',
+};
+
 interface ParseTreeContext extends ParseTreeNode {
     from_state?: { text?: string };
     to_state?: { text?: string };
@@ -80,6 +89,44 @@ function unquoteText(value: string | undefined): string {
         return value.slice(1, -1);
     }
     return value;
+}
+
+function formatMultilineComment(rawDoc: string | undefined): string | undefined {
+    if (!rawDoc) {
+        return undefined;
+    }
+
+    const trimmed = rawDoc.trim();
+    if (/^\s*\/\*+\s*\*\/\s*$/.test(trimmed)) {
+        return '';
+    }
+
+    let content = trimmed.replace(/^\s*\/\*+/, '');
+    content = content.replace(/\*+\/\s*$/, '');
+
+    let lines = content.split(/\r?\n/);
+
+    while (lines.length > 0 && !lines[0].trim()) {
+        lines = lines.slice(1);
+    }
+    while (lines.length > 1 && !lines[lines.length - 1].trim()) {
+        lines = lines.slice(0, -1);
+    }
+
+    const trailingTrimmed = lines.map(line => line.replace(/\s+$/g, ''));
+    const nonEmptyLines = trailingTrimmed.filter(line => line.trim());
+    if (nonEmptyLines.length === 0) {
+        return '';
+    }
+
+    const indent = nonEmptyLines.reduce((minIndent, line) => {
+        const currentIndent = line.match(/^\s*/)![0].length;
+        return Math.min(minIndent, currentIndent);
+    }, Number.POSITIVE_INFINITY);
+
+    return trailingTrimmed
+        .map(line => line.slice(Math.min(indent, line.length)))
+        .join('\n');
 }
 
 function contextChildren(node: ParseTreeNode | undefined): ParseTreeContext[] {
@@ -147,6 +194,14 @@ function inferLiteralPyNodeType(text: string, expressionType: 'init' | 'num' | '
         return 'Float';
     }
     return 'Integer';
+}
+
+function canonicalizeUnaryOperator(operator: string): string {
+    return UNARY_OPERATOR_ALIASES[operator] || operator;
+}
+
+function canonicalizeBinaryOperator(operator: string): string {
+    return BINARY_OPERATOR_ALIASES[operator] || operator;
 }
 
 function buildLocalEventPath(
@@ -273,7 +328,7 @@ function buildExpression(
     }
 
     if (/UnaryExpr/.test(nodeName)) {
-        const operator = tokenText(node.op);
+        const operator = canonicalizeUnaryOperator(tokenText(node.op));
         const operand = buildExpression(childContexts[0], document);
         return {
             kind: 'expression',
@@ -292,7 +347,7 @@ function buildExpression(
     if (/BinaryExpr/.test(nodeName)) {
         const left = buildExpression(childContexts[0], document);
         const right = buildExpression(childContexts[1], document);
-        const operator = tokenText(node.op);
+        const operator = canonicalizeBinaryOperator(tokenText(node.op));
         return {
             kind: 'expression',
             pyNodeType: 'BinaryOp',
@@ -363,13 +418,16 @@ function buildOperationBlockFromStatementSet(
     node: ParseTreeContext,
     document: TextDocumentLike
 ): FcstmAstOperationBlock {
+    const statements = contextChildren(node)
+        .filter(child => child.constructor?.name === 'Operational_statementContext')
+        .map(child => buildOperationalStatement(firstContextChild(child) || child, document))
+        .filter(statement => statement.kind !== 'emptyStatement');
+
     return {
         kind: 'operationBlock',
         range: getNodeRange(node, document, nodeText(node)),
         text: nodeText(node),
-        statements: contextChildren(node)
-            .filter(child => child.constructor?.name === 'Operational_statementContext')
-            .map(child => buildOperationalStatement(firstContextChild(child) || child, document)),
+        statements,
     };
 }
 
@@ -505,7 +563,7 @@ function buildTransitionLikeBase(
             ? 'init'
             : 'state';
     const targetKind = /Exit/.test(nodeName) ? 'exit' : 'state';
-    const condNode = contextChildren(node).find(child => /Cond_expressionContext$/.test(child.constructor?.name || ''));
+    const condNode = contextChildren(node).find(child => /Cond/.test(child.constructor?.name || ''));
     const effectNode = contextChildren(node).find(child => child.constructor?.name === 'Operational_statement_setContext');
     const trigger = buildTrigger(node, document);
     const guard = condNode ? buildExpression(condNode, document) : undefined;
@@ -602,22 +660,26 @@ function buildAction(
     const chainNode = contextChildren(node).find(child => child.constructor?.name === 'Chain_idContext');
     const statementSet = contextChildren(node).find(child => child.constructor?.name === 'Operational_statement_setContext');
     const refPath = chainNode ? buildChainPath(chainNode, document) : undefined;
-    const operations = statementSet ? buildOperationBlockFromStatementSet(statementSet, document) : undefined;
+    const operationBlock = statementSet ? buildOperationBlockFromStatementSet(statementSet, document) : undefined;
+    const operations = mode === 'operations' ? operationBlock?.statements || [] : undefined;
+    const doc = formatMultilineComment(tokenText(node.raw_doc) || undefined) || undefined;
     return {
         kind: 'action',
         pyNodeType: buildActionPyNodeType(stage, mode, isGlobalAspect),
         range: getNodeRange(node, document, nodeText(node)),
         text: nodeText(node),
         stage,
-        aspect: tokenText(node.aspect) as 'before' | 'after' | undefined,
+        aspect: (tokenText(node.aspect) || undefined) as 'before' | 'after' | undefined,
         isGlobalAspect,
         mode,
         name: tokenText(node.func_name) || undefined,
+        operationBlock,
+        operation_block: operationBlock,
         operations,
-        operationsList: operations?.statements || [],
+        operationsList: operations || [],
         refPath,
-        ref: refPath,
-        doc: unquoteText(tokenText(node.raw_doc) || undefined) || undefined,
+        ref: mode === 'ref' ? refPath : undefined,
+        doc,
     };
 }
 
@@ -871,6 +933,7 @@ function buildVariableDefinition(
         range: getNodeRange(node, document, nodeText(node)),
         text: nodeText(node),
         name: terminals[2]?.getText?.() || '',
+        type: valueType,
         valueType,
         deftype: valueType,
         initializer,
@@ -878,6 +941,13 @@ function buildVariableDefinition(
     };
 }
 
+/**
+ * Build a jsfcstm AST document from a parser-generated FCSTM parse tree.
+ *
+ * The returned structure preserves pyfcstm-compatible field aliases such as
+ * ``definitions`` and ``root_state`` while retaining editor-friendly metadata
+ * such as ranges and source text.
+ */
 export function buildAstFromTree(
     tree: ParseTreeNode,
     document: TextDocumentLike
@@ -909,6 +979,9 @@ export function buildAstFromTree(
     };
 }
 
+/**
+ * Parse a document and convert it into the jsfcstm AST model.
+ */
 export async function parseAstDocument(
     document: TextDocumentLike
 ): Promise<FcstmAstDocument | null> {

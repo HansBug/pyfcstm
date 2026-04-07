@@ -1,3 +1,10 @@
+/**
+ * AST model types for the jsfcstm parser.
+ *
+ * The exported interfaces intentionally keep a pyfcstm-facing surface alongside
+ * a few editor-oriented convenience aliases so downstream tooling can reason in
+ * either vocabulary without having to re-normalize every parsed document.
+ */
 import type {TextRange} from '../utils/text';
 
 export type FcstmPyNodeType =
@@ -45,6 +52,9 @@ export type FcstmPyNodeType =
 
 export type FcstmAstSpecialStateMark = 'INIT_STATE' | 'EXIT_STATE' | 'ALL';
 
+/**
+ * Shared base fields for all jsfcstm AST nodes.
+ */
 export interface FcstmAstNodeBase {
     kind: string;
     pyNodeType?: FcstmPyNodeType;
@@ -52,6 +62,9 @@ export interface FcstmAstNodeBase {
     text: string;
 }
 
+/**
+ * Root AST document node produced from a full FCSTM source file.
+ */
 export interface FcstmAstDocument extends FcstmAstNodeBase {
     kind: 'document';
     pyNodeType: 'StateMachineDSLProgram';
@@ -62,16 +75,23 @@ export interface FcstmAstDocument extends FcstmAstNodeBase {
     root_state?: FcstmAstStateDefinition;
 }
 
+/**
+ * Variable definition aligned with pyfcstm's ``DefAssignment`` node.
+ */
 export interface FcstmAstVariableDefinition extends FcstmAstNodeBase {
     kind: 'variableDefinition';
     pyNodeType: 'DefAssignment';
     name: string;
+    type: 'int' | 'float';
     valueType: 'int' | 'float';
     deftype: 'int' | 'float';
     initializer: FcstmAstExpression;
     expr: FcstmAstExpression;
 }
 
+/**
+ * State definition aligned with pyfcstm's ``StateDefinition`` node.
+ */
 export interface FcstmAstStateDefinition extends FcstmAstNodeBase {
     kind: 'stateDefinition';
     pyNodeType: 'StateDefinition';
@@ -105,6 +125,9 @@ export type FcstmAstStateStatement =
     | FcstmAstEventDefinition
     | FcstmAstImportStatement;
 
+/**
+ * Event definition aligned with pyfcstm's ``EventDefinition`` node.
+ */
 export interface FcstmAstEventDefinition extends FcstmAstNodeBase {
     kind: 'eventDefinition';
     pyNodeType: 'EventDefinition';
@@ -114,6 +137,9 @@ export interface FcstmAstEventDefinition extends FcstmAstNodeBase {
     extra_name?: string;
 }
 
+/**
+ * Chained identifier aligned with pyfcstm's ``ChainID`` node.
+ */
 export interface FcstmAstChainPath extends FcstmAstNodeBase {
     kind: 'chainPath';
     pyNodeType: 'ChainID';
@@ -135,6 +161,9 @@ export interface FcstmAstChainTrigger extends FcstmAstNodeBase {
 
 export type FcstmAstTrigger = FcstmAstLocalTrigger | FcstmAstChainTrigger;
 
+/**
+ * Common transition fields shared by normal and forced transitions.
+ */
 export interface FcstmAstTransitionBase extends FcstmAstNodeBase {
     sourceStateName?: string;
     targetStateName?: string;
@@ -167,6 +196,12 @@ export interface FcstmAstForcedTransition extends FcstmAstTransitionBase {
     transitionKind: 'normal' | 'exit' | 'normalAll' | 'exitAll';
 }
 
+/**
+ * Lifecycle action node family.
+ *
+ * ``operations`` is the pyfcstm-shaped statement list for operation variants,
+ * while ``operationBlock`` preserves editor-facing source-block metadata.
+ */
 export interface FcstmAstAction extends FcstmAstNodeBase {
     kind: 'action';
     pyNodeType:
@@ -187,7 +222,9 @@ export interface FcstmAstAction extends FcstmAstNodeBase {
     isGlobalAspect: boolean;
     mode: 'operations' | 'abstract' | 'ref';
     name?: string;
-    operations?: FcstmAstOperationBlock;
+    operationBlock?: FcstmAstOperationBlock;
+    operation_block?: FcstmAstOperationBlock;
+    operations?: FcstmAstOperationStatement[];
     operationsList: FcstmAstOperationStatement[];
     refPath?: FcstmAstChainPath;
     ref?: FcstmAstChainPath;
@@ -200,6 +237,9 @@ export interface FcstmAstImportDefTargetTemplate extends FcstmAstNodeBase {
     template: string;
 }
 
+/**
+ * Import statement aligned with pyfcstm's ``ImportStatement`` node.
+ */
 export interface FcstmAstImportStatement extends FcstmAstNodeBase {
     kind: 'importStatement';
     pyNodeType: 'ImportStatement';
@@ -285,6 +325,9 @@ export type FcstmAstOperationStatement =
     | FcstmAstIfStatement
     | FcstmAstEmptyStatement;
 
+/**
+ * Operational assignment aligned with pyfcstm's ``OperationAssignment`` node.
+ */
 export interface FcstmAstAssignmentStatement extends FcstmAstNodeBase {
     kind: 'assignmentStatement';
     pyNodeType: 'OperationAssignment';
@@ -294,6 +337,9 @@ export interface FcstmAstAssignmentStatement extends FcstmAstNodeBase {
     expr: FcstmAstExpression;
 }
 
+/**
+ * Single ``if`` branch aligned with pyfcstm's ``OperationIfBranch`` node.
+ */
 export interface FcstmAstIfBranch extends FcstmAstNodeBase {
     kind: 'ifBranch';
     pyNodeType: 'OperationIfBranch';
@@ -302,6 +348,9 @@ export interface FcstmAstIfBranch extends FcstmAstNodeBase {
     block: FcstmAstOperationBlock;
 }
 
+/**
+ * ``if / else if / else`` statement aligned with pyfcstm's ``OperationIf`` node.
+ */
 export interface FcstmAstIfStatement extends FcstmAstNodeBase {
     kind: 'ifStatement';
     pyNodeType: 'OperationIf';
@@ -323,6 +372,9 @@ export type FcstmAstExpression =
     | FcstmAstConditionalExpression
     | FcstmAstParenthesizedExpression;
 
+/**
+ * Shared expression fields for pyfcstm-aligned expression nodes.
+ */
 export interface FcstmAstExpressionBase extends FcstmAstNodeBase {
     pyNodeType:
         | 'Boolean'

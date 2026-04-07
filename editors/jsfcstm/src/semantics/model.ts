@@ -1,3 +1,10 @@
+/**
+ * Semantic model types derived from the jsfcstm AST.
+ *
+ * These structures capture pyfcstm-compatible symbol identities and the
+ * resolved relationships that editor features need for hover, import analysis,
+ * workspace graph assembly, and navigation.
+ */
 import type {
     FcstmAstAction,
     FcstmAstDocument,
@@ -24,6 +31,9 @@ export type FcstmSemanticSymbolKind =
     | 'action'
     | 'import';
 
+/**
+ * Stable identity for a semantic symbol inside a parsed FCSTM workspace.
+ */
 export interface FcstmSymbolIdentity {
     id: string;
     kind: FcstmSemanticSymbolKind;
@@ -32,12 +42,18 @@ export interface FcstmSymbolIdentity {
     path: string[];
 }
 
+/**
+ * Semantic record for a source file.
+ */
 export interface FcstmSemanticFile {
     identity: FcstmSymbolIdentity;
     filePath: string;
     range: TextRange;
 }
 
+/**
+ * Semantic record for a module-level FCSTM document.
+ */
 export interface FcstmSemanticModule {
     identity: FcstmSymbolIdentity;
     fileId: string;
@@ -45,12 +61,18 @@ export interface FcstmSemanticModule {
     rootStateId?: string;
 }
 
+/**
+ * Semantic record for the root state machine object in a module.
+ */
 export interface FcstmSemanticMachine {
     identity: FcstmSymbolIdentity;
     moduleId: string;
     rootStateId?: string;
 }
 
+/**
+ * Semantic variable entry aligned with a ``DefAssignment`` AST node.
+ */
 export interface FcstmSemanticVariable {
     identity: FcstmSymbolIdentity;
     name: string;
@@ -60,6 +82,9 @@ export interface FcstmSemanticVariable {
     range: TextRange;
 }
 
+/**
+ * Semantic state entry aligned with a ``StateDefinition`` AST node.
+ */
 export interface FcstmSemanticState {
     identity: FcstmSymbolIdentity;
     name: string;
@@ -72,6 +97,9 @@ export interface FcstmSemanticState {
     childStateIds: string[];
 }
 
+/**
+ * Semantic event entry, including implicit events synthesized from transitions.
+ */
 export interface FcstmSemanticEvent {
     identity: FcstmSymbolIdentity;
     name: string;
@@ -84,6 +112,9 @@ export interface FcstmSemanticEvent {
     declarationAst?: FcstmAstEventDefinition;
 }
 
+/**
+ * Resolved event reference attached to a transition trigger.
+ */
 export interface FcstmSemanticEventReference {
     scope: 'local' | 'chain' | 'absolute';
     rawText: string;
@@ -94,6 +125,9 @@ export interface FcstmSemanticEventReference {
     absolutePathText?: string;
 }
 
+/**
+ * Resolved or unresolved action reference attached to a ref-style action.
+ */
 export interface FcstmSemanticActionReference {
     rawPath: string;
     range: TextRange;
@@ -102,6 +136,9 @@ export interface FcstmSemanticActionReference {
     resolved: boolean;
 }
 
+/**
+ * Semantic action entry aligned with a lifecycle action AST node.
+ */
 export interface FcstmSemanticAction {
     identity: FcstmSymbolIdentity;
     stage: 'enter' | 'during' | 'exit';
@@ -118,6 +155,9 @@ export interface FcstmSemanticAction {
     doc?: string;
 }
 
+/**
+ * Expanded transition generated from a forced-transition definition.
+ */
 export interface FcstmExpandedForceTransition {
     sourceStateId: string;
     sourceStatePath: string[];
@@ -127,6 +167,9 @@ export interface FcstmExpandedForceTransition {
     targetStatePath?: string[];
 }
 
+/**
+ * Semantic transition entry aligned with either a normal or forced transition AST node.
+ */
 export interface FcstmSemanticTransition {
     identity: FcstmSymbolIdentity;
     transitionKind: 'entry' | 'normal' | 'exit' | 'normalAll' | 'exitAll';
@@ -149,6 +192,9 @@ export interface FcstmSemanticTransition {
     expandedTransitions: FcstmExpandedForceTransition[];
 }
 
+/**
+ * Semantic import entry aligned with an ``ImportStatement`` AST node.
+ */
 export interface FcstmSemanticImport {
     identity: FcstmSymbolIdentity;
     range: TextRange;
@@ -175,12 +221,18 @@ export interface FcstmSemanticImport {
     mappedAbsoluteEvents: string[];
 }
 
+/**
+ * Lightweight summary used by workspace import hydration and editor UIs.
+ */
 export interface FcstmSemanticSummary {
     rootStateName?: string;
     explicitVariables: string[];
     absoluteEvents: string[];
 }
 
+/**
+ * Precomputed lookup tables for common semantic resolution paths.
+ */
 export interface FcstmSemanticLookups {
     statesByPath: Record<string, FcstmSemanticState>;
     actionsByPath: Record<string, FcstmSemanticAction>;
@@ -188,6 +240,9 @@ export interface FcstmSemanticLookups {
     importsByPath: Record<string, FcstmSemanticImport>;
 }
 
+/**
+ * Full semantic document produced from a jsfcstm AST.
+ */
 export interface FcstmSemanticDocument {
     kind: 'semanticDocument';
     file: FcstmSemanticFile;

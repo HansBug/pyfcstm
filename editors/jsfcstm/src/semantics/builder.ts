@@ -56,6 +56,9 @@ function escapeRegex(text: string): string {
     return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/**
+ * Apply pyfcstm-style ``def`` import mappings to a list of imported variable names.
+ */
 export function applyImportDefMappings(
     names: string[],
     mappings: FcstmAstImportDefMapping[]
@@ -95,6 +98,9 @@ export function applyImportDefMappings(
     return results;
 }
 
+/**
+ * Apply pyfcstm-style absolute event remapping rules to imported event paths.
+ */
 export function applyImportEventMappings(
     paths: string[],
     mappings: FcstmAstImportEventMapping[]
@@ -362,7 +368,7 @@ class SemanticBuilder {
             ast: action,
             ownerStateId: ownerState.identity.id,
             ownerStatePath: ownerState.identity.path,
-            operationsText: action.operations?.text,
+            operationsText: action.operationBlock?.text,
             ref: action.refPath ? {
                 rawPath: action.refPath.text,
                 range: action.refPath.range,
@@ -635,6 +641,9 @@ class SemanticBuilder {
     }
 }
 
+/**
+ * Build the semantic model that powers editor analysis from a parsed AST document.
+ */
 export function buildSemanticDocument(
     ast: FcstmAstDocument | null
 ): FcstmSemanticDocument | null {

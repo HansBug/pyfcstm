@@ -74,8 +74,9 @@ icons:
 
 install: jsfcstm-install jsfcstm-build jsfcstm-pack
 	@echo "Installing npm dependencies..."
-	$(NPM) install --force
-	$(NPM) install --force ../jsfcstm/jsfcstm.tgz
+	@echo "Using package-lock-free install for the local jsfcstm tarball because each fresh npm pack can change tarball integrity."
+	$(NPM) install --force --package-lock=false
+	$(NPM) install --force --package-lock=false ../jsfcstm/jsfcstm.tgz
 
 syntaxes: $(TEXTMATE_DST)
 

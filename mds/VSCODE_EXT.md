@@ -93,8 +93,9 @@
    - `make -C ../jsfcstm install`
    - `make -C ../jsfcstm build`
    - `make -C ../jsfcstm pack`
-   - 然后执行 `npm install --force`
-   - 再执行 `npm install --force ../jsfcstm/jsfcstm.tgz`，显式刷新本地 tarball 依赖
+   - 然后执行 `npm install --force --package-lock=false`
+   - 再执行 `npm install --force --package-lock=false ../jsfcstm/jsfcstm.tgz`，显式刷新本地 tarball 依赖
+   - 这里刻意不让 `editors/vscode/package-lock.json` 去约束本地 tarball integrity，因为 `jsfcstm.tgz` 是每次本地 / CI 重新 `npm pack` 生成的动态构建产物
 7. `editors/jsfcstm/Makefile pack` 会生成稳定文件 `editors/jsfcstm/jsfcstm.tgz`
    - 该文件是本地构建产物，应保持 gitignored，不进入版本控制
 8. `editors/vscode/package.json` 通过 `file:../jsfcstm/jsfcstm.tgz` 把它作为正常 npm 依赖安装进 `node_modules`

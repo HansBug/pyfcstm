@@ -1,7 +1,7 @@
 # Makefile for FCSTM VSCode Extension
 # This file provides commands for building and maintaining the extension
 
-.PHONY: all parser clean install build package verify-p0.2 verify-p0.3 verify-p0.4 verify-p0.5 verify-p0.6 verify-p1.b verify-import-editor-support verify test-e2e help syntaxes icons
+.PHONY: all parser clean install build package verify-p0.2 verify-p0.3 verify-p0.4 verify-p0.5 verify-p0.6 verify-p1.b verify-import-editor-support verify test-e2e help syntaxes icons jsfcstm-install jsfcstm-build jsfcstm-pack
 
 # ANTLR configuration
 ANTLR_VERSION := 4.9.3
@@ -19,12 +19,16 @@ TEXTMATE_DST := $(SYNTAXES_DIR)/fcstm.tmLanguage.json
 NPM := npm
 TSC := npx tsc
 ROOT_DIR := ../..
+JSFCSTM_DIR := ../jsfcstm
 
 help:
 	@echo "FCSTM VSCode Extension Build Commands"
 	@echo "======================================"
 	@echo ""
 	@echo "  make install      - Install npm dependencies"
+	@echo "  make jsfcstm-install - Install jsfcstm local package dependencies"
+	@echo "  make jsfcstm-build - Build the local jsfcstm package"
+	@echo "  make jsfcstm-pack  - Create the local jsfcstm tarball consumed by the extension"
 	@echo "  make syntaxes     - Copy TextMate grammar from editors/"
 	@echo "  make parser       - Generate JavaScript parser from ANTLR grammar"
 	@echo "  make build        - Build extension with esbuild (production, all-in-one)"
@@ -50,13 +54,25 @@ help:
 	@echo "  - ANTLR jar at $(ANTLR_JAR)"
 	@echo ""
 
-all: icons install syntaxes parser build
+all: build
+
+jsfcstm-install:
+	@echo "Installing jsfcstm local package dependencies..."
+	$(MAKE) -C $(JSFCSTM_DIR) install
+
+jsfcstm-build:
+	@echo "Building jsfcstm local package..."
+	$(MAKE) -C $(JSFCSTM_DIR) build
+
+jsfcstm-pack:
+	@echo "Packing jsfcstm local package for extension consumption..."
+	$(MAKE) -C $(JSFCSTM_DIR) pack
 
 icons:
 	@echo "Generating VSCode extension icon..."
 	$(MAKE) -C $(ROOT_DIR) app_icons
 
-install:
+install: jsfcstm-install jsfcstm-build jsfcstm-pack
 	@echo "Installing npm dependencies..."
 	$(NPM) install
 
@@ -84,18 +100,18 @@ parser: $(ANTLR_JAR) $(GRAMMAR_LEXER_FILE) $(GRAMMAR_PARSER_FILE)
 	@echo "Generated files:"
 	@ls -1 $(PARSER_OUTPUT_DIR)/*.js 2>/dev/null || echo "  (none yet - check for errors above)"
 
-build: icons syntaxes parser
+build: install icons syntaxes parser
 	@echo "Building extension with esbuild..."
 	node esbuild.config.js --production
 	@echo "Build complete. Output in ./dist/"
 
-build-dev: icons syntaxes parser
+build-dev: install icons syntaxes parser
 	@echo "Building extension (development mode)..."
 	node esbuild.config.js
 	@echo "Development build complete. Output in ./dist/"
 
 # Legacy TypeScript compilation (for verification scripts)
-build-tsc: syntaxes parser
+build-tsc: install syntaxes parser
 	@echo "Compiling TypeScript (for verification scripts)..."
 	$(TSC) -p ./
 	@echo "TypeScript compilation complete. Output in ./out/"
@@ -145,7 +161,7 @@ verify: verify-p0.2 verify-p0.3 verify-p0.4 verify-p0.5 verify-p0.6 verify-p1.b 
 
 package: all
 	@echo "Building VSIX package..."
-	@echo "Note: All dependencies are bundled into dist/extension.js"
+	@echo "Note: VSIX packaging keeps normal npm dependency traversal"
 	@mkdir -p ./build
 	$(NPM) run package
 	@echo "Package built successfully in ./build/"
@@ -165,6 +181,7 @@ clean:
 	rm -rf ./node_modules
 	rm -rf ./build
 	rm -f ./*.vsix
+	$(MAKE) -C $(JSFCSTM_DIR) clean
 	@echo "Clean complete."
 
 # Check if ANTLR jar exists

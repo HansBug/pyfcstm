@@ -9,6 +9,7 @@
 | 0.3.0 | 2026-04-07 | 引入 JS 库拆分方案，明确 npm 可发布 JS 库优先、VSCode 消费该库、拆分完成前不新增功能 | Codex |
 | 0.3.1 | 2026-04-07 | 将库命名统一为 `jsfcstm`，路径调整为 `editors/jsfcstm`，并同步 npm 包命名与发布配置建议 | Codex |
 | 0.3.2 | 2026-04-07 | 增补 `jsfcstm` 独立单元测试要求，明确测试配套是完成标准的一部分 | Codex |
+| 0.4.0 | 2026-04-07 | 完成 Phase 0/1 首轮落地：新增 `editors/jsfcstm` 可打包骨架，VSCode 侧改为通过本地 tarball 正常消费依赖，并同步阶段验收状态 | Codex |
 
 ---
 
@@ -66,9 +67,11 @@
 | Bundle 标准 | `platform: node`、`format: cjs`、`target: es2015`、`external: ['vscode']` |
 | Parser 来源 | 从仓库 canonical grammar 生成的 ANTLR JavaScript artifacts |
 | Parser 版本约束 | `antlr4` 固定为 `4.9.3` |
+| JS 核心库 | `editors/jsfcstm` 已创建，可独立 `build` / `test` / `pack` |
+| 本地依赖消费 | `editors/vscode` 当前通过 `file:../jsfcstm/jsfcstm.tgz` 消费 `@pyfcstm/jsfcstm` |
 | 本地构建总入口 | repo root 的 `make vscode` |
 | 扩展目录构建入口 | `editors/vscode/Makefile` |
-| 打包方式 | `@vscode/vsce`，输出 `.vsix` 到 `editors/vscode/build/` |
+| 打包方式 | `@vscode/vsce`，保持正常 npm dependency traversal，输出 `.vsix` 到 `editors/vscode/build/` |
 | 现有验证 | `verify-p0.2` 到 `verify-p0.6`、`verify-import-editor-support`、`test-e2e` |
 
 ### 2.3 当前构建链路
@@ -78,14 +81,21 @@
 1. repo root 执行 `make vscode`
 2. root `Makefile` 调用 `$(MAKE) -C editors/vscode package`
 3. `editors/vscode/Makefile` 的 `package` 依赖 `all`
-4. `all` 当前依次执行：
-   - `icons`
+4. `all` 当前收敛到 `build`
+5. `build` 会先执行：
    - `install`
+   - `icons`
    - `syntaxes`
    - `parser`
-   - `build`
-5. `build` 使用 `node esbuild.config.js --production`
-6. `package` 使用 `npm run package` 产出 `.vsix`
+6. `install` 当前会先执行：
+   - `make -C ../jsfcstm install`
+   - `make -C ../jsfcstm build`
+   - `make -C ../jsfcstm pack`
+   - 然后再执行 `npm install`
+7. `editors/jsfcstm/Makefile pack` 会生成稳定文件 `editors/jsfcstm/jsfcstm.tgz`
+   - 该文件是本地构建产物，应保持 gitignored，不进入版本控制
+8. `editors/vscode/package.json` 通过 `file:../jsfcstm/jsfcstm.tgz` 把它作为正常 npm 依赖安装进 `node_modules`
+9. `package` 使用 `npm run package` 产出 `.vsix`
 
 当前 parser 生成仍然依赖 ANTLR jar，这属于开发期构建依赖，不属于扩展运行时依赖。已打包好的 VSIX 在用户机器上运行时并不依赖 Java 或 Python。
 
@@ -94,7 +104,7 @@
 当前实现虽然已经有不少 editor features，但它们仍然主要堆叠在扩展宿主侧的 provider 和 utility 上：
 
 - 语法解析与语义建模尚未分层
-- 还没有一个可独立发布到 npm 的 `editors/jsfcstm` 库承载主要 JS 能力
+- 已经有一个可独立 `build` / `test` / `pack`、并能以本地 tarball 形式供 VSCode 消费的 `editors/jsfcstm` 骨架，但主要 FCSTM JS 能力尚未迁入
 - 多文件 import-aware 能力是轻量工作区 helper，不是完整 workspace semantic graph
 - diagnostics / completion / hover / definition 还不是通过标准 LSP server 提供
 - 语义规则还没有形成独立、可复用、可测试的 Node.js core
@@ -327,7 +337,8 @@ editors/
 
 - 先创建独立的 `editors/jsfcstm/package.json`
 - 先让 `editors/vscode/package.json` 通过本地依赖方式消费它
-  - 例如 `file:../jsfcstm`
+  - 当前 Phase 1 采用 `file:../jsfcstm/jsfcstm.tgz`
+  - 该 tarball 由构建流程生成，并保持 gitignored
   - 或后续再升级到 workspace dependency
 - 一旦包结构、exports、构建和 smoke test 稳定，再考虑真正发布到 npm
 
@@ -488,11 +499,12 @@ language server 不只是把现在的 provider 搬到另一个进程，而是要
 - client / server bundle 继续使用 `CommonJS`
 - target 继续保持保守兼容的 `ES2015`
 - `vsce` 继续负责 `.vsix` 打包
+- VSCode 侧继续保留正常 npm dependency traversal，而不是依赖本地目录软链接行为
 - `build-tsc` 可以继续保留给验证脚本使用
 
 ### 8.2 需要改造的地方
 
-除了 `editors/vscode` 需要升级为多入口 bundle，仓库里还需要新增 `editors/jsfcstm` 的独立包构建。
+除了 `editors/vscode` 未来需要升级为多入口 bundle，仓库里已经新增 `editors/jsfcstm` 的独立包构建；当前下一阶段的重点应是迁移能力，而不是继续讨论包边界是否存在。
 
 推荐未来的构建关系是：
 
@@ -522,6 +534,8 @@ editors/vscode/
 - `editors/jsfcstm/package.json` 应具备清晰的 `name`、`main`、`exports`、`files`、`license`
 - `editors/jsfcstm` 应能单独执行 `npm pack`
 - `editors/vscode/package.json` 在仓库内先通过本地依赖引用 `editors/jsfcstm`
+- 当前 repo 内消费方式已经落地为稳定 tarball 路径 `file:../jsfcstm/jsfcstm.tgz`
+- 该 tarball 是本地构建产物，不纳入版本控制
 - `editors/vscode/package.json` 的 `main` 改为 `./dist/client/extension.js`
 - client bundle 只对 `vscode` 做 external
 - server bundle 不依赖 `vscode`
@@ -570,6 +584,12 @@ language server 路线落地后，构建完成至少应满足：
 
 - `editors/jsfcstm` 需要能单独构建、单独跑测试、单独打包
 - `editors/vscode` 需要在消费本地 `editors/jsfcstm` 的前提下稳定构建和打包
+- 截至 2026-04-07，当前分支已实测走通：
+  - `cd editors/jsfcstm && npm test`
+  - `cd editors/jsfcstm && make pack`
+  - 在 tarball 已由前一步生成后，`cd editors/vscode && npm install`
+  - `cd editors/vscode && make build-tsc`
+  - repo root `make vscode`
 
 同时，repo root 的：
 
@@ -819,6 +839,8 @@ npm publish --access public
 
 ## 11. 分阶段执行计划
 
+截至 2026-04-07，Phase 0 与 Phase 1 已在当前分支完成首轮落地。下面的勾选状态反映当前仓库真实状态。
+
 ## Phase 0：拆分原则确认与现状基线冻结
 
 ### 目标
@@ -827,19 +849,19 @@ npm publish --access public
 
 ### TODO
 
-* [ ] 盘点并冻结当前扩展已具备的行为基线：diagnostics、symbols、completion、hover、import-aware 诊断与跳转
-* [ ] 明确 `editors/jsfcstm` 与 `editors/vscode` 的边界、职责、依赖方向和所有权
-* [ ] 确认 `editors/jsfcstm` 的目标定位是“可独立发布到 npm 的 FCSTM JS 库”
-* [ ] 确认 `editors/vscode` 在拆分后只保留 VSCode API glue、最薄的 LSP bootstrap / transport、commands、settings、webview 等宿主职责
-* [ ] 明确拆分期 feature freeze 规则：Phase 0 到 Phase 2 不新增功能
-* [ ] 把现有验证脚本视为迁移验收基线，而不是在拆分期重写需求
+* [x] 盘点并冻结当前扩展已具备的行为基线：diagnostics、symbols、completion、hover、import-aware 诊断与跳转
+* [x] 明确 `editors/jsfcstm` 与 `editors/vscode` 的边界、职责、依赖方向和所有权
+* [x] 确认 `editors/jsfcstm` 的目标定位是“可独立发布到 npm 的 FCSTM JS 库”
+* [x] 确认 `editors/vscode` 在拆分后只保留 VSCode API glue、最薄的 LSP bootstrap / transport、commands、settings、webview 等宿主职责
+* [x] 明确拆分期 feature freeze 规则：Phase 0 到 Phase 2 不新增功能
+* [x] 把现有验证脚本视为迁移验收基线，而不是在拆分期重写需求
 
 ### Checklist
 
-* [ ] `editors/jsfcstm` 与 `editors/vscode` 的职责边界已经明确写清
-* [ ] 当前扩展已有能力已经被列成可验收的 baseline
-* [ ] feature freeze 规则已经明确：拆分完成前不启动新功能
-* [ ] 后续阶段都以“先拆分、先维持现状”为默认前提
+* [x] `editors/jsfcstm` 与 `editors/vscode` 的职责边界已经明确写清
+* [x] 当前扩展已有能力已经被列成可验收的 baseline
+* [x] feature freeze 规则已经明确：拆分完成前不启动新功能
+* [x] 后续阶段都以“先拆分、先维持现状”为默认前提
 
 ## Phase 1：建立 `editors/jsfcstm` 可发布库骨架
 
@@ -849,20 +871,25 @@ npm publish --access public
 
 ### TODO
 
-* [ ] 创建 `editors/jsfcstm/` 目录及基础文件：`package.json`、`tsconfig.json`、`README.md`、`src/index.ts`
-* [ ] 为 `editors/jsfcstm` 设计清晰的包元数据：`name`、`version`、`main`、`exports`、`files`、`license`
-* [ ] 为 `editors/jsfcstm` 建立独立构建脚本、独立单元测试入口和最小 smoke test
-* [ ] 让 `editors/vscode/package.json` 通过本地依赖方式消费 `editors/jsfcstm`
-* [ ] 调整 `editors/vscode` 构建流程，使其在需要时先解析并使用本地 `editors/jsfcstm`
-* [ ] 保持 repo root 的 `make vscode` 路线可演进到“先 js、后 vscode”的顺序
+* [x] 创建 `editors/jsfcstm/` 目录及基础文件：`package.json`、`tsconfig.json`、`README.md`、`src/index.ts`
+* [x] 为 `editors/jsfcstm` 设计清晰的包元数据：`name`、`version`、`main`、`exports`、`files`、`license`
+* [x] 为 `editors/jsfcstm` 建立独立构建脚本、独立单元测试入口和最小 smoke test
+* [x] 让 `editors/vscode/package.json` 通过本地依赖方式消费 `editors/jsfcstm`
+* [x] 调整 `editors/vscode` 构建流程，使其在需要时先解析并使用本地 `editors/jsfcstm`
+* [x] 当前 repo 内本地消费方式已固定为稳定 tarball：`editors/jsfcstm/jsfcstm.tgz`
+* [x] `jsfcstm.tgz` 明确为本地构建产物，并保持 gitignored
+* [x] 保持 repo root 的 `make vscode` 路线可演进到“先 js、后 vscode”的顺序
 
 ### Checklist
 
-* [ ] `cd editors/jsfcstm && npm test` 可以成功执行
-* [ ] `cd editors/jsfcstm && npm pack` 可以成功执行
-* [ ] `cd editors/vscode && npm install` 可以成功解析本地 `editors/jsfcstm` 依赖
-* [ ] `editors/jsfcstm` 已具备未来发布到 npm 所需的最小包结构
-* [ ] 此阶段结束时，扩展功能没有新增，也没有因为拆出空壳包而回退
+* [x] `cd editors/jsfcstm && npm test` 可以成功执行
+* [x] `cd editors/jsfcstm && npm pack` 可以成功执行
+* [x] 在本地 tarball 已由标准构建链生成后，`cd editors/vscode && npm install` 可以成功解析本地 `editors/jsfcstm` 依赖
+* [x] `editors/jsfcstm` 已具备未来发布到 npm 所需的最小包结构
+* [x] repo root `make vscode` 可以成功产出 VSIX，并保持正常 npm dependency traversal
+* [x] 此阶段结束时，扩展功能没有新增，也没有因为拆出空壳包而回退
+
+截至当前版本，Phase 1 交付物仍然是一个最小可发布骨架，公开 API 只暴露包元数据读取；真正的 FCSTM parser、语义模型、language server core 迁移仍属于 Phase 2 及之后的工作。
 
 ## Phase 2：把现有能力迁入 `editors/jsfcstm` 并维持现状
 

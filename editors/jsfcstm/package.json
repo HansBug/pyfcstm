@@ -1,0 +1,57 @@
+{
+  "name": "@pyfcstm/jsfcstm",
+  "version": "0.1.0-alpha.1",
+  "description": "FCSTM core parser, semantics, diagnostics, and language-server foundations for JavaScript and TypeScript",
+  "author": {
+    "name": "HansBug",
+    "email": "hansbug@buaa.edu.cn"
+  },
+  "license": "LGPL-3.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/HansBug/pyfcstm.git"
+  },
+  "bugs": {
+    "url": "https://github.com/HansBug/pyfcstm/issues"
+  },
+  "homepage": "https://github.com/HansBug/pyfcstm#readme",
+  "keywords": [
+    "fcstm",
+    "fsm",
+    "state-machine",
+    "dsl",
+    "language-server",
+    "parser",
+    "semantics"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=16"
+  },
+  "scripts": {
+    "build": "tsc -p ./",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo",
+    "pack:local": "node ./scripts/pack-local.js",
+    "pack:check": "npm pack --dry-run",
+    "test": "npm run build && node ./test/index.test.js"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "devDependencies": {
+    "@types/node": "^16.0.0",
+    "typescript": "^4.5.0"
+  }
+}

@@ -57,6 +57,7 @@
     "package": "vsce package --out build/"
   },
   "dependencies": {
+    "@pyfcstm/jsfcstm": "file:../jsfcstm/jsfcstm.tgz",
     "antlr4": "4.9.3"
   },
   "devDependencies": {

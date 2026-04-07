@@ -4,6 +4,69 @@ const packageJson = require('../package.json') as {
     description: string;
 };
 
+export type {
+    FcstmDiagnostic,
+    FcstmDiagnosticSeverity,
+    ParseTreeNode,
+    TextDocumentLike,
+    TextLineLike,
+    TextPositionLike,
+    TextRange,
+    TokenLike,
+} from './text';
+export {
+    cloneRange,
+    createRange,
+    fallbackRangeFromText,
+    getDocumentFilePath,
+    makeNodeRange,
+    makeTokenRange,
+    rangeContains,
+    tokenText,
+} from './text';
+export type {ParseError, ParseResult} from './parser';
+export {FcstmParser, getParser} from './parser';
+export type {
+    ImportCycle,
+    ImportEntry,
+    ParsedDocumentInfo,
+    ResolvedImportTarget,
+} from './imports';
+export {
+    FcstmImportWorkspaceIndex,
+    getImportWorkspaceIndex,
+    resolveImportReference,
+} from './imports';
+export type {
+    FcstmCollectedSymbols,
+    FcstmDocumentSymbol,
+    FcstmSymbolKind,
+} from './symbols';
+export {
+    collectDocumentSymbols,
+    collectSymbolsFromTree,
+    extractDocumentSymbolsFromTree,
+} from './symbols';
+export type {FcstmCompletionItem, FcstmCompletionKind} from './completion';
+export {
+    collectCompletionItems,
+    isInComment,
+    isInString,
+    KEYWORDS,
+    MATH_CONSTANTS,
+    MATH_FUNCTIONS,
+} from './completion';
+export type {FcstmHoverDoc, FcstmHoverResult} from './hover';
+export {
+    findHoverInfo,
+    HOVER_DOCS,
+    resolveHover,
+} from './hover';
+export {
+    collectDocumentDiagnostics,
+    convertParseErrorToDiagnostic,
+} from './diagnostics';
+
 export interface JsFcstmPackageInfo {
     name: string;
     version: string;

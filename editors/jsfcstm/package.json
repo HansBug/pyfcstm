@@ -29,11 +29,13 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "require": "./dist/index.js"
+      "require": "./dist/index.js",
+      "default": "./dist/index.js"
     }
   },
   "files": [
     "dist",
+    "parser",
     "README.md",
     "LICENSE"
   ],
@@ -41,14 +43,18 @@
     "node": ">=16"
   },
   "scripts": {
-    "build": "tsc -p ./",
-    "clean": "rm -rf dist tsconfig.tsbuildinfo",
+    "build": "node ./scripts/generate-parser.js && tsc -p ./",
+    "clean": "rm -rf dist parser tsconfig.tsbuildinfo",
     "pack:local": "node ./scripts/pack-local.js",
     "pack:check": "npm pack --dry-run",
+    "prepack": "npm run build",
     "test": "npm run build && node ./test/index.test.js"
   },
   "publishConfig": {
     "access": "public"
+  },
+  "dependencies": {
+    "antlr4": "4.9.3"
   },
   "devDependencies": {
     "@types/node": "^16.0.0",

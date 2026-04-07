@@ -10,6 +10,7 @@
 | 0.3.1 | 2026-04-07 | 将库命名统一为 `jsfcstm`，路径调整为 `editors/jsfcstm`，并同步 npm 包命名与发布配置建议 | Codex |
 | 0.3.2 | 2026-04-07 | 增补 `jsfcstm` 独立单元测试要求，明确测试配套是完成标准的一部分 | Codex |
 | 0.4.0 | 2026-04-07 | 完成 Phase 0/1 首轮落地：新增 `editors/jsfcstm` 可打包骨架，VSCode 侧改为通过本地 tarball 正常消费依赖，并同步阶段验收状态 | Codex |
+| 0.5.0 | 2026-04-07 | 完成 Phase 2：将 parser/imports/symbols/completion/hover/diagnostics 核心迁入 `editors/jsfcstm`，VSCode 侧收敛为薄适配层，并补齐 `jsfcstm` 单元测试 | Codex |
 
 ---
 
@@ -65,9 +66,9 @@
 | 源码语言 | TypeScript |
 | Bundle 方式 | `esbuild`，当前单入口 `src/extension.ts -> dist/extension.js` |
 | Bundle 标准 | `platform: node`、`format: cjs`、`target: es2015`、`external: ['vscode']` |
-| Parser 来源 | 从仓库 canonical grammar 生成的 ANTLR JavaScript artifacts |
+| Parser 来源 | 从仓库 canonical grammar 生成的 ANTLR JavaScript artifacts，当前由 `editors/jsfcstm` 构建时生成并打包 |
 | Parser 版本约束 | `antlr4` 固定为 `4.9.3` |
-| JS 核心库 | `editors/jsfcstm` 已创建，可独立 `build` / `test` / `pack` |
+| JS 核心库 | `editors/jsfcstm` 已承载 parser、imports、symbols、completion、hover、diagnostics 等核心逻辑，并可独立 `build` / `test` / `pack` |
 | 本地依赖消费 | `editors/vscode` 当前通过 `file:../jsfcstm/jsfcstm.tgz` 消费 `@pyfcstm/jsfcstm` |
 | 本地构建总入口 | repo root 的 `make vscode` |
 | 扩展目录构建入口 | `editors/vscode/Makefile` |
@@ -86,28 +87,28 @@
    - `install`
    - `icons`
    - `syntaxes`
-   - `parser`
 6. `install` 当前会先执行：
    - `make -C ../jsfcstm install`
    - `make -C ../jsfcstm build`
    - `make -C ../jsfcstm pack`
-   - 然后再执行 `npm install`
+   - 然后执行 `npm install --force`
+   - 再执行 `npm install --force ../jsfcstm/jsfcstm.tgz`，显式刷新本地 tarball 依赖
 7. `editors/jsfcstm/Makefile pack` 会生成稳定文件 `editors/jsfcstm/jsfcstm.tgz`
    - 该文件是本地构建产物，应保持 gitignored，不进入版本控制
 8. `editors/vscode/package.json` 通过 `file:../jsfcstm/jsfcstm.tgz` 把它作为正常 npm 依赖安装进 `node_modules`
 9. `package` 使用 `npm run package` 产出 `.vsix`
 
-当前 parser 生成仍然依赖 ANTLR jar，这属于开发期构建依赖，不属于扩展运行时依赖。已打包好的 VSIX 在用户机器上运行时并不依赖 Java 或 Python。
+当前 parser 生成仍然依赖 ANTLR jar，但这一步已经收敛到 `editors/jsfcstm` 的构建流程中，属于开发期构建依赖，不属于扩展运行时依赖。已打包好的 VSIX 在用户机器上运行时并不依赖 Java 或 Python。
 
 ### 2.4 当前架构的边界与问题
 
-当前实现虽然已经有不少 editor features，但它们仍然主要堆叠在扩展宿主侧的 provider 和 utility 上：
+当前实现虽然已经有不少 editor features，但在完成 Phase 2 之后，其边界已经明显收敛：
 
-- 语法解析与语义建模尚未分层
-- 已经有一个可独立 `build` / `test` / `pack`、并能以本地 tarball 形式供 VSCode 消费的 `editors/jsfcstm` 骨架，但主要 FCSTM JS 能力尚未迁入
-- 多文件 import-aware 能力是轻量工作区 helper，不是完整 workspace semantic graph
-- diagnostics / completion / hover / definition 还不是通过标准 LSP server 提供
-- 语义规则还没有形成独立、可复用、可测试的 Node.js core
+- parser adapter、source range helpers、import resolution / workspace indexing 已迁入 `editors/jsfcstm`
+- symbols、completion、hover、diagnostics 的 VSCode 无关核心逻辑已迁入 `editors/jsfcstm`
+- `editors/vscode` 当前主要保留 provider 注册、`vscode.*` 对象转换、commands 和宿主 glue
+- diagnostics / completion / hover / definition 仍然还不是通过标准 LSP server 提供
+- 多文件 import-aware 能力仍然是轻量工作区 helper，不是完整 workspace semantic graph
 - 可视化如果继续往外接 PlantUML，会把真正的核心问题掩盖掉
 
 这说明继续沿着“在 `extension.ts` 周边追加 provider”的方式扩展，边际收益会越来越低。
@@ -589,6 +590,13 @@ language server 路线落地后，构建完成至少应满足：
   - `cd editors/jsfcstm && make pack`
   - 在 tarball 已由前一步生成后，`cd editors/vscode && npm install`
   - `cd editors/vscode && make build-tsc`
+  - `cd editors/vscode && node ./scripts/verify-p0.2.js`
+  - `cd editors/vscode && node ./scripts/verify-p0.3.js`
+  - `cd editors/vscode && node ./scripts/verify-p0.4.js`
+  - `cd editors/vscode && node ./scripts/verify-p0.5.js`
+  - `cd editors/vscode && node ./scripts/verify-p0.6.js`
+  - `cd editors/vscode && node ./scripts/verify-import-editor-support.js`
+  - `cd editors/vscode && node ./scripts/test-e2e.js`
   - repo root `make vscode`
 
 同时，repo root 的：
@@ -889,7 +897,7 @@ npm publish --access public
 * [x] repo root `make vscode` 可以成功产出 VSIX，并保持正常 npm dependency traversal
 * [x] 此阶段结束时，扩展功能没有新增，也没有因为拆出空壳包而回退
 
-截至当前版本，Phase 1 交付物仍然是一个最小可发布骨架，公开 API 只暴露包元数据读取；真正的 FCSTM parser、语义模型、language server core 迁移仍属于 Phase 2 及之后的工作。
+截至当前版本，Phase 2 已经完成：`editors/jsfcstm` 不再只是空壳包，而是已经承载了现有 parser-backed editor intelligence 的主要可复用核心。真正尚未开始的部分，是 Phase 3 及之后的 AST、统一语义模型、workspace graph 与标准 LSP server。
 
 ## Phase 2：把现有能力迁入 `editors/jsfcstm` 并维持现状
 
@@ -899,22 +907,22 @@ npm publish --access public
 
 ### TODO
 
-* [ ] 将 parser adapter 从 `editors/vscode` 抽出到 `editors/jsfcstm`
-* [ ] 将可复用的 parse helpers、source range helpers、import resolution / workspace indexing 逻辑迁入 `editors/jsfcstm`
-* [ ] 将 VSCode 无关的数据提取逻辑迁入 `editors/jsfcstm`，例如符号提取、补全候选构造、悬停元数据等
-* [ ] 将可复用的 language server 侧公共逻辑迁入 `editors/jsfcstm`，避免在 `editors/vscode` 中形成第二套 server 实现
-* [ ] 让 `editors/vscode` 中现有 providers 改为优先调用 `editors/jsfcstm`
-* [ ] 保持现有验证脚本继续可用，并用它们做迁移前后行为对齐
-* [ ] 明确此阶段不增加 references、rename、preview 等新功能
-* [ ] 为迁入 `jsfcstm` 的已有能力补齐对应单元测试，而不是只依赖 VSCode 侧集成验证
+* [x] 将 parser adapter 从 `editors/vscode` 抽出到 `editors/jsfcstm`
+* [x] 将可复用的 parse helpers、source range helpers、import resolution / workspace indexing 逻辑迁入 `editors/jsfcstm`
+* [x] 将 VSCode 无关的数据提取逻辑迁入 `editors/jsfcstm`，例如符号提取、补全候选构造、悬停元数据等
+* [x] 将可复用的 language server 侧公共逻辑迁入 `editors/jsfcstm`，避免在 `editors/vscode` 中形成第二套 server 实现
+* [x] 让 `editors/vscode` 中现有 providers 改为优先调用 `editors/jsfcstm`
+* [x] 保持现有验证脚本继续可用，并用它们做迁移前后行为对齐
+* [x] 明确此阶段不增加 references、rename、preview 等新功能
+* [x] 为迁入 `jsfcstm` 的已有能力补齐对应单元测试，而不是只依赖 VSCode 侧集成验证
 
 ### Checklist
 
-* [ ] 现有 parser-backed 功能在用户视角上基本维持现状
-* [ ] `verify-p0.2` 到 `verify-p0.6`、`verify-import-editor-support`、`test-e2e` 仍可作为主要回归基线
-* [ ] `editors/vscode` 对 `editors/jsfcstm` 的依赖链已经在真实构建中走通
-* [ ] 已迁入 `jsfcstm` 的核心能力都有对应单元测试覆盖
-* [ ] Phase 2 完成后，新增功能默认应先开发在 `editors/jsfcstm`，而不是回写到 `editors/vscode`
+* [x] 现有 parser-backed 功能在用户视角上基本维持现状
+* [x] `verify-p0.2` 到 `verify-p0.6`、`verify-import-editor-support`、`test-e2e` 仍可作为主要回归基线
+* [x] `editors/vscode` 对 `editors/jsfcstm` 的依赖链已经在真实构建中走通
+* [x] 已迁入 `jsfcstm` 的核心能力都有对应单元测试覆盖
+* [x] Phase 2 完成后，新增功能默认应先开发在 `editors/jsfcstm`，而不是回写到 `editors/vscode`
 
 ## Phase 3：在 `editors/jsfcstm` 中建立 AST、语义模型与 workspace graph
 

@@ -1,6 +1,7 @@
 # Build outputs
 dist/
 *.tgz
+parser/
 
 # Dependencies
 node_modules/

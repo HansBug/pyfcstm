@@ -30,7 +30,7 @@ help:
 	@echo "  make jsfcstm-build - Build the local jsfcstm package"
 	@echo "  make jsfcstm-pack  - Create the local jsfcstm tarball consumed by the extension"
 	@echo "  make syntaxes     - Copy TextMate grammar from editors/"
-	@echo "  make parser       - Generate JavaScript parser from ANTLR grammar"
+	@echo "  make parser       - Generate legacy local parser artifacts from ANTLR grammar"
 	@echo "  make build        - Build extension with esbuild (production, all-in-one)"
 	@echo "  make build-dev    - Build extension (development mode with sourcemaps)"
 	@echo "  make build-tsc    - Compile TypeScript only (for verification scripts)"
@@ -45,7 +45,7 @@ help:
 	@echo "  make verify       - Run all verification tests"
 	@echo "  make package      - Build VSIX package (runs all prerequisites)"
 	@echo "  make clean        - Remove generated files"
-	@echo "  make all          - Install deps, copy syntaxes, generate parser, and build"
+	@echo "  make all          - Install deps, copy syntaxes, and build"
 	@echo "  make icons        - Generate the packaged extension marketplace icon"
 	@echo ""
 	@echo "Prerequisites:"
@@ -74,7 +74,8 @@ icons:
 
 install: jsfcstm-install jsfcstm-build jsfcstm-pack
 	@echo "Installing npm dependencies..."
-	$(NPM) install
+	$(NPM) install --force
+	$(NPM) install --force ../jsfcstm/jsfcstm.tgz
 
 syntaxes: $(TEXTMATE_DST)
 
@@ -100,18 +101,18 @@ parser: $(ANTLR_JAR) $(GRAMMAR_LEXER_FILE) $(GRAMMAR_PARSER_FILE)
 	@echo "Generated files:"
 	@ls -1 $(PARSER_OUTPUT_DIR)/*.js 2>/dev/null || echo "  (none yet - check for errors above)"
 
-build: install icons syntaxes parser
+build: install icons syntaxes
 	@echo "Building extension with esbuild..."
 	node esbuild.config.js --production
 	@echo "Build complete. Output in ./dist/"
 
-build-dev: install icons syntaxes parser
+build-dev: install icons syntaxes
 	@echo "Building extension (development mode)..."
 	node esbuild.config.js
 	@echo "Development build complete. Output in ./dist/"
 
 # Legacy TypeScript compilation (for verification scripts)
-build-tsc: install syntaxes parser
+build-tsc: install syntaxes
 	@echo "Compiling TypeScript (for verification scripts)..."
 	$(TSC) -p ./
 	@echo "TypeScript compilation complete. Output in ./out/"

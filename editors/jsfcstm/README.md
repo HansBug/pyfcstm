@@ -2,21 +2,27 @@
 
 `jsfcstm` is the JavaScript/TypeScript package boundary for FCSTM-related logic in this repository.
 
-The package is being introduced before large-scale feature migration on purpose. Phase 0/1 only establishes a
-publishable, testable npm package skeleton so later work can move FCSTM parser, semantics, diagnostics, language
-server core, and diagram logic into a dedicated package instead of growing them directly inside the VSCode extension.
+The package was introduced first as a publishable skeleton in Phase 0/1. In Phase 2, the existing parser-backed
+editor core has started to move here so the VSCode extension can stay focused on host integration instead of owning
+FCSTM language logic directly.
 
 ## Current Scope
 
 At the current phase, this package provides:
 
-- package metadata exports
+- ANTLR-backed FCSTM parser runtime generated from the canonical repository grammar
+- source range helpers and document abstractions
+- import resolution and lightweight workspace indexing
+- document symbol extraction
+- completion candidate generation
+- hover metadata resolution
+- syntax and import diagnostics helpers
 - independent TypeScript build output under `dist/`
 - independent unit tests
 - npm pack / publish-ready package metadata
 
-The package does **not** yet contain the real FCSTM parser, semantics, or language-server implementation. Those are
-intended to move here in later phases.
+The package still does **not** yet contain the future unified AST, semantic model, workspace graph, or full language
+server implementation. Those remain Phase 3+ work.
 
 ## Commands
 
@@ -24,7 +30,7 @@ intended to move here in later phases.
 # Install dependencies
 npm install
 
-# Build dist/
+# Generate parser artifacts and build dist/
 npm run build
 
 # Run unit tests

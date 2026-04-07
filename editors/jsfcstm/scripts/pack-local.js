@@ -6,7 +6,7 @@ const packageDir = path.resolve(__dirname, '..');
 const localTarball = path.join(packageDir, 'jsfcstm.tgz');
 
 function main() {
-    const output = execFileSync('npm', ['pack', '--json'], {
+    const output = execFileSync('npm', ['pack', '--json', '--ignore-scripts'], {
         cwd: packageDir,
         encoding: 'utf8',
     });

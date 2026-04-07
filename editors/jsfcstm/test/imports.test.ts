@@ -3,8 +3,6 @@ import * as path from 'node:path';
 
 import {
     createDocument,
-    createNode,
-    createToken,
     packageModule,
     trackTempDir,
     withPatchedProperty,
@@ -39,16 +37,11 @@ describe('jsfcstm import workspace support', () => {
     });
 
     it('returns an empty parse result when parseTree is unavailable', async () => {
-        const index = new packageModule.FcstmImportWorkspaceIndex() as packageModule.FcstmImportWorkspaceIndex & {
-            parser: { parseTree(text: string): Promise<unknown | null> };
-        };
+        const index = new packageModule.FcstmImportWorkspaceIndex();
+        const parser = packageModule.getParser();
         const document = createDocument('state Root;', '/tmp/parse-null.fcstm');
 
-        await withPatchedProperty(index, 'parser', {
-            async parseTree() {
-                return null;
-            },
-        }, async () => {
+        await withPatchedProperty(parser, 'parseTree', async () => null, async () => {
             const parsed = await index.parseDocument(document);
             assert.deepEqual(parsed, {
                 imports: [],
@@ -130,8 +123,8 @@ describe('jsfcstm import workspace support', () => {
 
         const index = new packageModule.FcstmImportWorkspaceIndex();
         const duplicateDiagnostics = await index.collectImportDiagnostics(duplicateDocument);
-        assert.ok(duplicateDiagnostics.some(item => /Duplicate import alias/.test(item.message)));
-        assert.ok(duplicateDiagnostics.some(item => /cannot be resolved/.test(item.message)));
+        assert.ok(duplicateDiagnostics.some((item: { message: string }) => /Duplicate import alias/.test(item.message)));
+        assert.ok(duplicateDiagnostics.some((item: { message: string }) => /cannot be resolved/.test(item.message)));
 
         writeFile(path.join(dir, 'a.fcstm'), 'state A { import "./b.fcstm" as B; }');
         writeFile(path.join(dir, 'b.fcstm'), 'state B { import "./a.fcstm" as A; }');
@@ -141,115 +134,10 @@ describe('jsfcstm import workspace support', () => {
         );
 
         const cycleDiagnostics = await index.collectImportDiagnostics(cycleDocument);
-        assert.ok(cycleDiagnostics.some(item => /circular import/i.test(item.message)));
+        assert.ok(cycleDiagnostics.some((item: { message: string }) => /circular import/i.test(item.message)));
     });
 
-    it('covers private import summary and cycle helpers', () => {
-        const dir = trackTempDir('jsfcstm-import-private-');
-        const ownerFile = path.join(dir, 'owner.fcstm');
-        const moduleFile = path.join(dir, 'module.fcstm');
-        const missingFile = path.join(dir, 'missing.fcstm');
-        const nestedA = path.join(dir, 'nested-a.fcstm');
-        const nestedB = path.join(dir, 'nested-b.fcstm');
-
-        writeFile(ownerFile, 'state Owner;');
-        writeFile(moduleFile, 'def int speed = 0;\nevent Start;\nimport "./missing.fcstm" as Missing;\nstate Module;');
-        writeFile(nestedA, 'state NestedA { import "./nested-b.fcstm" as NestedB; }');
-        writeFile(nestedB, 'state NestedB { import "./owner.fcstm" as Owner; }');
-
-        const index = new packageModule.FcstmImportWorkspaceIndex() as packageModule.FcstmImportWorkspaceIndex & {
-            readFileSummary(filePath: string): {
-                filePath: string;
-                exists: boolean;
-                rootStateName?: string;
-                explicitVariables: string[];
-                absoluteEvents: string[];
-                imports: Array<{ sourcePath: string; resolvedFile?: string; missing: boolean }>;
-            };
-            summarizeTextFile(filePath: string, text: string): {
-                rootStateName?: string;
-                explicitVariables: string[];
-                absoluteEvents: string[];
-                imports: Array<{ sourcePath: string; resolvedFile?: string; missing: boolean }>;
-            };
-            detectCycle(ownerFile: string, currentFile: string, chain: string[]): { files: string[] } | null;
-        };
-
-        const missingSummary = index.readFileSummary(missingFile);
-        assert.equal(missingSummary.exists, false);
-        assert.equal(index.readFileSummary(missingFile), missingSummary);
-
-        const existingSummary = index.readFileSummary(moduleFile);
-        assert.equal(existingSummary.exists, true);
-        assert.equal(existingSummary.rootStateName, 'Module');
-        assert.deepEqual(existingSummary.explicitVariables, ['speed']);
-        assert.deepEqual(existingSummary.absoluteEvents, ['/Start']);
-        assert.equal(existingSummary.imports[0].missing, true);
-
-        const summarized = index.summarizeTextFile(ownerFile, 'def float temp = 1.0;\nstate Root;');
-        assert.equal(summarized.rootStateName, 'Root');
-        assert.deepEqual(summarized.explicitVariables, ['temp']);
-
-        assert.deepEqual(index.detectCycle(ownerFile, ownerFile, [ownerFile]), {
-            files: [ownerFile, ownerFile],
-        });
-        assert.equal(index.detectCycle(ownerFile, missingFile, []), null);
-        assert.equal(index.detectCycle(ownerFile, moduleFile, [ownerFile]), null);
-        assert.deepEqual(index.detectCycle(ownerFile, nestedA, [ownerFile]), {
-            files: [ownerFile, nestedA, nestedB, ownerFile],
-        });
-    });
-
-    it('covers synthetic tree extraction branches and fallback ranges', () => {
-        const documentText = [
-            'state Root {',
-            '    import "./worker.fcstm" as Worker named "Worker Module";',
-            '}',
-        ].join('\n');
-        const document = createDocument(documentText, '/tmp/synthetic-imports.fcstm');
-        const index = new packageModule.FcstmImportWorkspaceIndex() as packageModule.FcstmImportWorkspaceIndex & {
-            extractFromTree(tree: packageModule.ParseTreeNode, documentLike: packageModule.TextDocumentLike): packageModule.ParsedDocumentInfo;
-        };
-
-        const tree = createNode('StateMachineDSLProgramContext', [
-            createNode('CompositeStateDefinitionContext', [
-                createNode('State_bodyContext', [
-                    undefined as unknown as packageModule.ParseTreeNode,
-                    createNode('Event_definitionContext', [], {
-                        event_name: createToken('Start', 1, 6),
-                    }),
-                    createNode('Import_event_mappingContext', [], {
-                        source_event: {
-                            getText() {
-                                return '/Reset';
-                            },
-                        },
-                    }),
-                    createNode('Import_statementContext', [], {
-                        import_path: {
-                            text: '"./worker.fcstm"',
-                        },
-                        state_alias: {
-                            text: 'Worker',
-                        },
-                        extra_name: {
-                            text: '"Worker Module"',
-                        },
-                    }),
-                ]),
-            ], {
-                state_id: createToken('Root', 1, 6),
-            }),
-        ]);
-
-        const parsed = index.extractFromTree(tree, document);
-        assert.equal(parsed.rootStateName, 'Root');
-        assert.deepEqual(parsed.absoluteEvents.sort(), ['/Reset', '/Start']);
-        assert.equal(parsed.imports.length, 1);
-        assert.equal(parsed.imports[0].sourcePath, './worker.fcstm');
-        assert.equal(parsed.imports[0].alias, 'Worker');
-        assert.equal(parsed.imports[0].extraName, 'Worker Module');
-        assert.deepEqual(parsed.imports[0].pathRange, packageModule.createRange(1, 11, 1, 27));
-        assert.deepEqual(parsed.imports[0].aliasRange, packageModule.createRange(1, 31, 1, 37));
+    it('shares the singleton import workspace index', () => {
+        assert.equal(packageModule.getImportWorkspaceIndex(), packageModule.getImportWorkspaceIndex());
     });
 });

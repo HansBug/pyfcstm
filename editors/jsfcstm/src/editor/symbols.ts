@@ -5,6 +5,8 @@ import {
     TextDocumentLike,
     TextRange,
 } from '../utils/text';
+import type {FcstmSemanticDocument, FcstmSemanticState} from '../semantics';
+import {getWorkspaceGraph} from '../workspace';
 
 export type FcstmSymbolKind = 'variable' | 'class' | 'event';
 
@@ -325,13 +327,67 @@ export function extractDocumentSymbolsFromTree(
     return symbols;
 }
 
-export async function collectDocumentSymbols(
-    document: TextDocumentLike
-): Promise<FcstmDocumentSymbol[]> {
-    const tree = await getParser().parseTree(document.getText());
-    if (!tree) {
+function buildSemanticEventSymbol(
+    name: string,
+    detail: string,
+    range: TextRange
+): FcstmDocumentSymbol {
+    return {
+        name,
+        detail,
+        kind: 'event',
+        range,
+        selectionRange: range,
+        children: [],
+    };
+}
+
+function buildSemanticStateSymbol(
+    state: FcstmSemanticState,
+    semantic: FcstmSemanticDocument
+): FcstmDocumentSymbol {
+    const childStates = semantic.states
+        .filter(candidate => candidate.parentStateId === state.identity.id)
+        .map(candidate => buildSemanticStateSymbol(candidate, semantic));
+    const declaredEvents = semantic.events
+        .filter(event => event.declared && event.statePath.join('.') === state.identity.path.join('.'))
+        .map(event => buildSemanticEventSymbol(event.name, event.displayName || '', event.range));
+
+    return {
+        name: state.name,
+        detail: state.pseudo ? 'pseudo state' : state.displayName || '',
+        kind: 'class',
+        range: state.range,
+        selectionRange: state.range,
+        children: [...declaredEvents, ...childStates],
+    };
+}
+
+function extractDocumentSymbolsFromSemantic(
+    semantic: FcstmSemanticDocument | null
+): FcstmDocumentSymbol[] {
+    if (!semantic) {
         return [];
     }
 
-    return extractDocumentSymbolsFromTree(tree as ParseTreeNode, document);
+    const variables = semantic.variables.map(variable => ({
+        name: variable.name,
+        detail: variable.valueType,
+        kind: 'variable' as const,
+        range: variable.range,
+        selectionRange: variable.range,
+        children: [],
+    }));
+    const rootStates = semantic.states
+        .filter(state => !state.parentStateId)
+        .map(state => buildSemanticStateSymbol(state, semantic));
+
+    return [...variables, ...rootStates];
+}
+
+export async function collectDocumentSymbols(
+    document: TextDocumentLike
+): Promise<FcstmDocumentSymbol[]> {
+    const semantic = await getWorkspaceGraph().getSemanticDocument(document);
+    return extractDocumentSymbolsFromSemantic(semantic);
 }

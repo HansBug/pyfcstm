@@ -1,7 +1,6 @@
-import {getParser} from '../dsl/parser';
 import {getImportWorkspaceIndex} from '../workspace/imports';
-import {ParseTreeNode, rangeContains, TextDocumentLike, TextPositionLike} from '../utils/text';
-import {collectSymbolsFromTree} from './symbols';
+import {getWorkspaceGraph} from '../workspace';
+import {rangeContains, TextDocumentLike, TextPositionLike} from '../utils/text';
 
 export type FcstmCompletionKind =
     | 'keyword'
@@ -129,31 +128,30 @@ function getFunctionCompletions(): FcstmCompletionItem[] {
 
 async function getDocumentSymbolCompletions(document: TextDocumentLike): Promise<FcstmCompletionItem[]> {
     const items: FcstmCompletionItem[] = [];
-    const tree = await getParser().parseTree(document.getText());
-    if (!tree) {
+    const semantic = await getWorkspaceGraph().getSemanticDocument(document);
+    if (!semantic) {
         return items;
     }
 
-    const symbols = collectSymbolsFromTree(tree as ParseTreeNode);
-    for (const varName of symbols.variables) {
+    for (const variable of semantic.variables) {
         items.push({
-            label: varName,
+            label: variable.name,
             kind: 'variable',
-            sortText: `3_${varName}`,
+            sortText: `3_${variable.name}`,
         });
     }
-    for (const stateName of symbols.states) {
+    for (const state of semantic.states) {
         items.push({
-            label: stateName,
+            label: state.name,
             kind: 'class',
-            sortText: `4_${stateName}`,
+            sortText: `4_${state.name}`,
         });
     }
-    for (const eventName of symbols.events) {
+    for (const event of semantic.events.filter(item => item.declared)) {
         items.push({
-            label: eventName,
+            label: event.name,
             kind: 'event',
-            sortText: `5_${eventName}`,
+            sortText: `5_${event.name}`,
         });
     }
 

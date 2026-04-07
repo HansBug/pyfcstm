@@ -37,6 +37,11 @@
       "require": "./dist/config/index.js",
       "default": "./dist/config/index.js"
     },
+    "./ast": {
+      "types": "./dist/ast/index.d.ts",
+      "require": "./dist/ast/index.js",
+      "default": "./dist/ast/index.js"
+    },
     "./dsl": {
       "types": "./dist/dsl/index.d.ts",
       "require": "./dist/dsl/index.js",
@@ -46,6 +51,11 @@
       "types": "./dist/editor/index.d.ts",
       "require": "./dist/editor/index.js",
       "default": "./dist/editor/index.js"
+    },
+    "./semantics": {
+      "types": "./dist/semantics/index.d.ts",
+      "require": "./dist/semantics/index.js",
+      "default": "./dist/semantics/index.js"
     },
     "./utils": {
       "types": "./dist/utils/index.d.ts",

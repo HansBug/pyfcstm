@@ -949,23 +949,27 @@ npm publish --access public
 
 在拆分完成且现状跑通之后，再开始真正的新内容开发，而且主要开发位置应在 `editors/jsfcstm`。
 
+截至 2026-04-07，这一阶段已经完成：`editors/jsfcstm` 已建立独立的 AST、语义模型与多文件 workspace graph，现有 VSCode editor intelligence 已切换为消费这套 graph-backed core，而不是继续堆叠 parse-tree helper。
+
+补充约束：AST public node 设计应优先对齐 `pyfcstm/dsl/node.py` 的类语义与分层关系。当前 `jsfcstm` AST 已补入稳定的 Python 对齐 `pyNodeType`，并为 `StateMachineDSLProgram / DefAssignment / StateDefinition / TransitionDefinition / ForceTransitionDefinition / EventDefinition / ImportStatement / Enter|Exit|During* / Expr` 等节点提供可稳定映射的字段别名与结构分组，避免继续扩散仅限 VSCode 侧消费的临时节点形状。
+
 ### TODO
 
-* [ ] 定义统一 AST 节点模型和 source range 模型
-* [ ] 为 states、events、transitions、forced transitions、lifecycle actions、imports、mappings、operation blocks、expressions 建立 AST 节点
-* [ ] 定义 machine、file/module、state、event、transition、action、variable、import、symbol identity 等语义对象
-* [ ] 实现 state path resolution、event scope normalization、`ref` resolution、import target resolution、alias mapping、forced transition expansion
-* [ ] 建立多文件 workspace graph，并支持未保存 buffer 与磁盘文件的混合视图
-* [ ] 建立与 Python 侧的 parity corpus，比对代表性语义行为而不是桥接调用 Python
-* [ ] 为 AST、语义模型、workspace graph 建立分层单元测试
+* [x] 定义统一 AST 节点模型和 source range 模型
+* [x] 为 states、events、transitions、forced transitions、lifecycle actions、imports、mappings、operation blocks、expressions 建立 AST 节点
+* [x] 定义 machine、file/module、state、event、transition、action、variable、import、symbol identity 等语义对象
+* [x] 实现 state path resolution、event scope normalization、`ref` resolution、import target resolution、alias mapping、forced transition expansion
+* [x] 建立多文件 workspace graph，并支持未保存 buffer 与磁盘文件的混合视图
+* [x] 建立与 Python 侧的 parity corpus，比对代表性语义行为而不是桥接调用 Python
+* [x] 为 AST、语义模型、workspace graph 建立分层单元测试
 
 ### Checklist
 
-* [ ] AST 和语义模型都位于 `editors/jsfcstm`，而不是散落在 `editors/vscode`
-* [ ] 语义模型不依赖 `vscode` 模块，可单独测试
-* [ ] workspace graph 可以稳定支撑 import-aware 多文件模型
-* [ ] AST、语义模型、workspace graph 都具备可独立运行的单元测试
-* [ ] parity corpus 已覆盖 import、event scope、hierarchy、`ref`、forced transition 等高风险规则
+* [x] AST 和语义模型都位于 `editors/jsfcstm`，而不是散落在 `editors/vscode`
+* [x] 语义模型不依赖 `vscode` 模块，可单独测试
+* [x] workspace graph 可以稳定支撑 import-aware 多文件模型
+* [x] AST、语义模型、workspace graph 都具备可独立运行的单元测试
+* [x] parity corpus 已覆盖 import、event scope、hierarchy、`ref`、forced transition 等高风险规则
 
 ## Phase 4：完整 language server 迁移
 

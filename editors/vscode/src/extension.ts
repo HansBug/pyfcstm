@@ -12,6 +12,7 @@ import { FcstmDocumentSymbolProvider } from './symbols';
 import { FcstmCompletionProvider } from './completion';
 import { FcstmHoverProvider } from './hover';
 import { FcstmDefinitionProvider } from './definition';
+import { FcstmWorkspaceSync } from './workspace';
 
 /**
  * Extension activation
@@ -23,6 +24,11 @@ export function activate(context: vscode.ExtensionContext) {
     // Initialize parser
     const parser = getParser();
     console.log('[FCSTM Extension] Parser instance created');
+
+    console.log('[FCSTM Extension] Syncing workspace overlays into jsfcstm graph...');
+    const workspaceSync = new FcstmWorkspaceSync();
+    workspaceSync.register(context);
+    console.log('[FCSTM Extension] Workspace overlay sync registered');
 
     // Register diagnostics provider (P0.3)
     console.log('[FCSTM Extension] Registering diagnostics provider...');

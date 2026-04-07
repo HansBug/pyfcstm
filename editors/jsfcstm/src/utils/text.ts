@@ -32,12 +32,27 @@ export interface ParseTreeNode {
     children?: ParseTreeNode[];
     getText?: () => string;
     constructor?: { name: string };
+    pseudo?: TokenLike;
+    deftype?: TokenLike;
     state_id?: TokenLike;
     event_name?: TokenLike;
     extra_name?: TokenLike;
     import_path?: TokenLike;
     state_alias?: TokenLike;
+    target_text?: TokenLike;
+    func_name?: TokenLike;
+    aspect?: TokenLike;
+    raw_doc?: TokenLike;
+    from_state?: TokenLike;
+    to_state?: TokenLike;
+    from_id?: TokenLike;
+    selector_pattern?: TokenLike;
+    selector_name?: TokenLike;
+    selector_items?: TokenLike[];
+    op?: TokenLike;
+    isabs?: TokenLike;
     source_event?: { getText?: () => string };
+    target_event?: { getText?: () => string };
 }
 
 export type FcstmDiagnosticSeverity = 'error' | 'warning';

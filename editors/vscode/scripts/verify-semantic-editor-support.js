@@ -7,6 +7,7 @@
  * - scope-aware completion for states and imported aliases
  * - incomplete target edits keep semantic completion alive
  * - partial symbols typed on empty lines still surface visible state and event symbols
+ * - transition trigger completions respect ``:``, ``::``, and absolute-path scopes
  * - event declaration keyword hits resolve to the same event identity
  * - import aliases and import paths participate in references/highlights/definition
  * - import event mappings participate in state/event references and definitions
@@ -407,6 +408,247 @@ const tests = [
             });
             const nestedLabels = new Set(nestedItems.map(item => item.label));
             assert(nestedLabels.has('Yellow'), 'Blank-line nested completion should include Yellow');
+        }
+    ),
+    new TestCase(
+        'SEM-07',
+        'Transition trigger completions respect chain, local, and absolute event scopes',
+        async () => {
+            const document = new MockDocument('/tmp/verify-semantic-trigger-scopes.fcstm', [
+                'state Root {',
+                '    event RootEvent;',
+                '    state Parent {',
+                '        event ParentEvent;',
+                '        state Leaf {',
+                '            event LeafEvent;',
+                '            state Child;',
+                '            [*] -> Child;',
+                '        }',
+                '        Leaf -> Leaf :',
+                '        Leaf -> Leaf ::',
+                '        Leaf -> Leaf : /',
+                '        Leaf -> Leaf : /Parent.',
+                '    }',
+                '}',
+            ].join('\n'));
+
+            const chainItems = await collectCompletionItems(document, {
+                line: 9,
+                character: document.lineAt(9).text.length,
+            });
+            const chainLabels = new Set(chainItems.map(item => item.label));
+            assert(chainLabels.has('ParentEvent'), 'Chain event completion should include parent-scope event');
+            assert(!chainLabels.has('LeafEvent'), 'Chain event completion should exclude source-state local event');
+            assert(!chainLabels.has('RootEvent'), 'Chain event completion should exclude ancestor event');
+            assert(!chainLabels.has('Entering'), 'Chain event completion should not include raw doc/string words');
+            assert(chainItems.every(item => item.kind === 'event'), 'Chain event completion should only contain events');
+            assert(
+                chainItems.find(item => item.label === 'ParentEvent')?.insertText === ' ParentEvent',
+                'Chain event completion should insert a leading space when none is present yet'
+            );
+
+            const localItems = await collectCompletionItems(document, {
+                line: 10,
+                character: document.lineAt(10).text.length,
+            });
+            const localLabels = new Set(localItems.map(item => item.label));
+            assert(localLabels.has('LeafEvent'), 'Local event completion should include source-state event');
+            assert(!localLabels.has('ParentEvent'), 'Local event completion should exclude parent-scope event');
+            assert(!localLabels.has('RootEvent'), 'Local event completion should exclude ancestor event');
+            assert(localItems.every(item => item.kind === 'event'), 'Local event completion should only contain events');
+            assert(
+                localItems.find(item => item.label === 'LeafEvent')?.insertText === ' LeafEvent',
+                'Local event completion should insert a leading space when none is present yet'
+            );
+
+            const absoluteRootItems = await collectCompletionItems(document, {
+                line: 11,
+                character: document.lineAt(11).text.length,
+            });
+            const absoluteRootLabels = new Set(absoluteRootItems.map(item => item.label));
+            assert(absoluteRootLabels.has('/Parent'), 'Absolute root completion should include root child state');
+            assert(absoluteRootLabels.has('/RootEvent'), 'Absolute root completion should include root event');
+            assert(!absoluteRootLabels.has('ParentEvent'), 'Absolute root completion should keep path-prefixed labels only');
+            assert(!absoluteRootLabels.has('Entering'), 'Absolute root completion should not include raw doc/string words');
+            assert(
+                absoluteRootItems.find(item => item.label === '/Parent')?.insertText === 'Parent',
+                'Absolute root completion should insert only the unresolved suffix, not a duplicate slash'
+            );
+            assert(
+                absoluteRootItems.find(item => item.label === '/RootEvent')?.insertText === 'RootEvent',
+                'Absolute root event completion should insert only the unresolved suffix'
+            );
+
+            const absoluteNestedItems = await collectCompletionItems(document, {
+                line: 12,
+                character: document.lineAt(12).text.length,
+            });
+            const absoluteNestedLabels = new Set(absoluteNestedItems.map(item => item.label));
+            assert(absoluteNestedLabels.has('/Parent.ParentEvent'), 'Absolute nested completion should include nested event');
+            assert(absoluteNestedLabels.has('/Parent.Leaf'), 'Absolute nested completion should include nested state');
+            assert(!absoluteNestedLabels.has('/RootEvent'), 'Absolute nested completion should exclude root sibling events');
+            assert(!absoluteNestedLabels.has('before'), 'Absolute nested completion should exclude generic keywords');
+            assert(!absoluteNestedLabels.has('after'), 'Absolute nested completion should exclude generic keywords');
+            assert(
+                absoluteNestedItems.find(item => item.label === '/Parent.ParentEvent')?.insertText === 'ParentEvent',
+                'Absolute nested event completion should insert only the final path segment'
+            );
+            assert(
+                absoluteNestedItems.find(item => item.label === '/Parent.Leaf')?.insertText === 'Leaf',
+                'Absolute nested state completion should insert only the final path segment'
+            );
+        }
+    ),
+    new TestCase(
+        'SEM-08',
+        'Root-scope E2 and pseudo-state marker completions remain available in chain, local, source, and target positions',
+        async () => {
+            const document = new MockDocument('/tmp/verify-semantic-root-e2-and-init-marker.fcstm', [
+                'state TrafficLight {',
+                '    state InService {',
+                '        state Yellow;',
+                '        Green -> Yellow : /Idle.E2;',
+                '        Yellow -> Yellow : /E2;',
+                '    }',
+                '    state Idle;',
+                '    Idle -> Idle :: E2;',
+                '    Idle -> Idle ::',
+                '    Idle -> Idle :',
+                '    [',
+                '    Idle -> ',
+                '}',
+            ].join('\n'));
+
+            const localItems = await collectCompletionItems(document, {
+                line: 8,
+                character: document.lineAt(8).text.length,
+            });
+            assert(
+                localItems.some(item => item.label === 'E2' && item.kind === 'event'),
+                'Local trigger completion should surface the Idle-scoped E2 candidate'
+            );
+            assert(
+                !localItems.some(item => item.label === 'Idle' && item.kind === 'event'),
+                'Local trigger completion should not leak parser-recovery ghost event names'
+            );
+            assert(
+                localItems.find(item => item.label === 'E2')?.insertText === ' E2',
+                'Local trigger completion should preserve the leading space insertion rule'
+            );
+
+            const chainItems = await collectCompletionItems(document, {
+                line: 9,
+                character: document.lineAt(9).text.length,
+            });
+            assert(
+                chainItems.some(item => item.label === 'E2' && item.kind === 'event'),
+                'Root chain trigger completion should surface the root-namespace E2 candidate'
+            );
+            assert(
+                !chainItems.some(item => item.label === 'Idle' && item.kind === 'event'),
+                'Root chain trigger completion should not leak parser-recovery ghost event names'
+            );
+            assert(
+                chainItems.find(item => item.label === 'E2')?.insertText === ' E2',
+                'Root chain trigger completion should preserve the leading space insertion rule'
+            );
+
+            const sourceItems = await collectCompletionItems(document, {
+                line: 10,
+                character: document.lineAt(10).text.length,
+            });
+            assert(
+                sourceItems.some(item => item.label === '[*]' && item.kind === 'keyword'),
+                'Typing "[" should offer the pseudo-state marker as a source completion'
+            );
+
+            const targetItems = await collectCompletionItems(document, {
+                line: 11,
+                character: document.lineAt(11).text.length,
+            });
+            assert(
+                targetItems.some(item => item.label === '[*]' && item.kind === 'keyword'),
+                'Transition target completion should offer the pseudo-state marker'
+            );
+            assert(
+                targetItems.some(item => item.label === 'Idle' && item.kind === 'class'),
+                'Transition target completion should still offer visible sibling states'
+            );
+        }
+    ),
+    new TestCase(
+        'SEM-09',
+        'Trigger partials stay live for spaced/unspaced prefixes and absolute path completion excludes ghost events',
+        async () => {
+            const document = new MockDocument('/tmp/verify-semantic-trigger-partials-and-legal-absolute-events.fcstm', [
+                'state Root {',
+                '    event E2;',
+                '    state Idle {',
+                '        event E2;',
+                '    }',
+                '    Idle -> Idle :: E2;',
+                '    Idle -> Idle : E2;',
+                '    Idle -> Idle ::E',
+                '    Idle -> Idle :: E',
+                '    Idle -> Idle :E',
+                '    Idle -> Idle : E',
+                '    Idle -> Idle : /Idle.E2;',
+                '    Idle -> Idle : /Idle.',
+                '}',
+            ].join('\n'));
+
+            const localNoSpaceItems = await collectCompletionItems(document, {
+                line: 7,
+                character: document.lineAt(7).text.length,
+            });
+            assert(
+                localNoSpaceItems.some(item => item.label === 'E2' && item.kind === 'event' && item.detail === 'Root.Idle.E2'),
+                'Unspaced local trigger prefixes should keep the existing local E2 visible'
+            );
+
+            const localSpacedItems = await collectCompletionItems(document, {
+                line: 8,
+                character: document.lineAt(8).text.length,
+            });
+            assert(
+                localSpacedItems.some(item => item.label === 'E2' && item.kind === 'event' && item.detail === 'Root.Idle.E2'),
+                'Spaced local trigger prefixes should keep the existing local E2 visible'
+            );
+
+            const chainNoSpaceItems = await collectCompletionItems(document, {
+                line: 9,
+                character: document.lineAt(9).text.length,
+            });
+            assert(
+                chainNoSpaceItems.some(item => item.label === 'E2' && item.kind === 'event' && item.detail === 'Root.E2'),
+                'Unspaced chain trigger prefixes should keep the root E2 visible'
+            );
+
+            const chainSpacedItems = await collectCompletionItems(document, {
+                line: 10,
+                character: document.lineAt(10).text.length,
+            });
+            assert(
+                chainSpacedItems.some(item => item.label === 'E2' && item.kind === 'event' && item.detail === 'Root.E2'),
+                'Spaced chain trigger prefixes should keep the root E2 visible'
+            );
+
+            const absoluteItems = await collectCompletionItems(document, {
+                line: 12,
+                character: document.lineAt(12).text.length,
+            });
+            const absoluteEventLabels = absoluteItems
+                .filter(item => item.kind === 'event')
+                .map(item => item.label)
+                .sort();
+            assert(
+                JSON.stringify(absoluteEventLabels) === JSON.stringify(['/Idle.E2']),
+                `Absolute path completion should only surface legal existing events, got ${JSON.stringify(absoluteEventLabels)}`
+            );
+            assert(
+                !absoluteItems.some(item => item.label === '/Idle./Idle.'),
+                'Absolute path completion should not surface ghost /Idle./Idle. events'
+            );
         }
     ),
 ];

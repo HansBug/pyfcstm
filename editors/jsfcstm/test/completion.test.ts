@@ -158,7 +158,7 @@ describe('jsfcstm completion support', () => {
             character: document.lineAt(12).text.length,
         });
         assert.ok(eventItems.some(item => item.label === 'ParentEvent' && item.kind === 'event'));
-        assert.ok(eventItems.some(item => item.label === 'RootEvent' && item.kind === 'event'));
+        assert.equal(eventItems.some(item => item.label === 'RootEvent'), false);
         assert.equal(eventItems.some(item => item.label === 'HiddenEvent'), false);
         assert.equal(eventItems.some(item => item.label === 'OutsideEvent'), false);
     });
@@ -302,6 +302,260 @@ describe('jsfcstm completion support', () => {
         assert.ok(nestedItems.some(item => item.label === 'Red' && item.kind === 'class'));
         assert.ok(nestedItems.some(item => item.label === 'Green' && item.kind === 'class'));
         assert.equal(nestedItems.some(item => item.label === 'Idle'), false);
+    });
+
+    it('distinguishes chain, local, and absolute event-trigger completions by semantic scope', async () => {
+        const document = createDocument([
+            'state Root {',
+            '    event RootEvent;',
+            '    state Parent {',
+            '        event ParentEvent;',
+            '        state Leaf {',
+            '            event LeafEvent;',
+            '            state Child;',
+            '            [*] -> Child;',
+            '        }',
+            '        Leaf -> Leaf :',
+            '        Leaf -> Leaf ::',
+            '        Leaf -> Leaf : /',
+            '        Leaf -> Leaf : /Parent.',
+            '    }',
+            '}',
+        ].join('\n'), '/tmp/trigger-scope-completion.fcstm');
+
+        const chainItems = await packageModule.collectCompletionItems(document, {
+            line: 9,
+            character: document.lineAt(9).text.length,
+        });
+        assert.ok(chainItems.some(item => item.label === 'ParentEvent' && item.kind === 'event'));
+        assert.equal(chainItems.find(item => item.label === 'ParentEvent')?.insertText, ' ParentEvent');
+        assert.equal(chainItems.some(item => item.label === 'LeafEvent'), false);
+        assert.equal(chainItems.some(item => item.label === 'RootEvent'), false);
+        assert.equal(chainItems.some(item => item.label === 'Entering'), false);
+        assert.equal(chainItems.some(item => item.kind !== 'event'), false);
+
+        const localItems = await packageModule.collectCompletionItems(document, {
+            line: 10,
+            character: document.lineAt(10).text.length,
+        });
+        assert.ok(localItems.some(item => item.label === 'LeafEvent' && item.kind === 'event'));
+        assert.equal(localItems.find(item => item.label === 'LeafEvent')?.insertText, ' LeafEvent');
+        assert.equal(localItems.some(item => item.label === 'ParentEvent'), false);
+        assert.equal(localItems.some(item => item.label === 'RootEvent'), false);
+        assert.equal(localItems.some(item => item.kind !== 'event'), false);
+
+        const absoluteRootItems = await packageModule.collectCompletionItems(document, {
+            line: 11,
+            character: document.lineAt(11).text.length,
+        });
+        assert.ok(absoluteRootItems.some(item => item.label === '/Parent' && item.kind === 'class'));
+        assert.ok(absoluteRootItems.some(item => item.label === '/RootEvent' && item.kind === 'event'));
+        assert.equal(absoluteRootItems.find(item => item.label === '/Parent')?.insertText, 'Parent');
+        assert.equal(absoluteRootItems.find(item => item.label === '/RootEvent')?.insertText, 'RootEvent');
+        assert.equal(absoluteRootItems.some(item => item.label === 'ParentEvent'), false);
+        assert.equal(absoluteRootItems.some(item => item.label === 'Entering'), false);
+
+        const absoluteNestedItems = await packageModule.collectCompletionItems(document, {
+            line: 12,
+            character: document.lineAt(12).text.length,
+        });
+        assert.ok(absoluteNestedItems.some(item => item.label === '/Parent.ParentEvent' && item.kind === 'event'));
+        assert.ok(absoluteNestedItems.some(item => item.label === '/Parent.Leaf' && item.kind === 'class'));
+        assert.equal(absoluteNestedItems.some(item => item.label === '/RootEvent'), false);
+        assert.equal(absoluteNestedItems.some(item => item.label === 'before'), false);
+        assert.equal(absoluteNestedItems.some(item => item.label === 'after'), false);
+        assert.equal(absoluteNestedItems.find(item => item.label === '/Parent.ParentEvent')?.insertText, 'ParentEvent');
+        assert.equal(absoluteNestedItems.find(item => item.label === '/Parent.Leaf')?.insertText, 'Leaf');
+    });
+
+    it('formats trigger completion insert text for implicit local events and pre-spaced chain events', async () => {
+        const localDocument = createDocument([
+            'state TrafficLight {',
+            '    state Idle;',
+            '    Idle -> Idle :: E2;',
+            '    Idle -> Idle ::',
+            '}',
+        ].join('\n'), '/tmp/local-trigger-insert-text.fcstm');
+        const localItems = await packageModule.collectCompletionItems(localDocument, {
+            line: 3,
+            character: localDocument.lineAt(3).text.length,
+        });
+        assert.ok(localItems.some(item => item.label === 'E2' && item.kind === 'event'));
+        assert.equal(localItems.find(item => item.label === 'E2')?.insertText, ' E2');
+
+        const chainDocument = createDocument([
+            'state Root {',
+            '    event E2;',
+            '    state Idle;',
+            '    Idle -> Idle : ',
+            '}',
+        ].join('\n'), '/tmp/chain-trigger-insert-text.fcstm');
+        const chainItems = await packageModule.collectCompletionItems(chainDocument, {
+            line: 3,
+            character: chainDocument.lineAt(3).text.length,
+        });
+        assert.ok(chainItems.some(item => item.label === 'E2' && item.kind === 'event'));
+        assert.equal(chainItems.find(item => item.label === 'E2')?.insertText, 'E2');
+    });
+
+    it('keeps local and chain trigger completions active for spaced and unspaced partial prefixes', async () => {
+        const document = createDocument([
+            'state Root {',
+            '    event E2;',
+            '    state Idle {',
+            '        event E2;',
+            '    }',
+            '    Idle -> Idle :: E2;',
+            '    Idle -> Idle : E2;',
+            '    Idle -> Idle ::E',
+            '    Idle -> Idle :: E',
+            '    Idle -> Idle :E',
+            '    Idle -> Idle : E',
+            '}',
+        ].join('\n'), '/tmp/trigger-partial-prefixes.fcstm');
+
+        const localNoSpaceItems = await packageModule.collectCompletionItems(document, {
+            line: 7,
+            character: document.lineAt(7).text.length,
+        });
+        assert.ok(localNoSpaceItems.some(item => item.label === 'E2' && item.kind === 'event'));
+        assert.equal(localNoSpaceItems.find(item => item.label === 'E2')?.detail, 'Root.Idle.E2');
+        assert.equal(localNoSpaceItems.find(item => item.label === 'E2')?.insertText, ' E2');
+
+        const localSpacedItems = await packageModule.collectCompletionItems(document, {
+            line: 8,
+            character: document.lineAt(8).text.length,
+        });
+        assert.ok(localSpacedItems.some(item => item.label === 'E2' && item.kind === 'event'));
+        assert.equal(localSpacedItems.find(item => item.label === 'E2')?.detail, 'Root.Idle.E2');
+        assert.equal(localSpacedItems.find(item => item.label === 'E2')?.insertText, 'E2');
+
+        const chainNoSpaceItems = await packageModule.collectCompletionItems(document, {
+            line: 9,
+            character: document.lineAt(9).text.length,
+        });
+        assert.ok(chainNoSpaceItems.some(item => item.label === 'E2' && item.kind === 'event'));
+        assert.equal(chainNoSpaceItems.find(item => item.label === 'E2')?.detail, 'Root.E2');
+        assert.equal(chainNoSpaceItems.find(item => item.label === 'E2')?.insertText, ' E2');
+
+        const chainSpacedItems = await packageModule.collectCompletionItems(document, {
+            line: 10,
+            character: document.lineAt(10).text.length,
+        });
+        assert.ok(chainSpacedItems.some(item => item.label === 'E2' && item.kind === 'event'));
+        assert.equal(chainSpacedItems.find(item => item.label === 'E2')?.detail, 'Root.E2');
+        assert.equal(chainSpacedItems.find(item => item.label === 'E2')?.insertText, 'E2');
+    });
+
+    it('offers root-scope chain and local completions for same-named E2 events without conflating namespaces', async () => {
+        const document = createDocument([
+            'state TrafficLight {',
+            '    state InService {',
+            '        state Yellow;',
+            '        Green -> Yellow : /Idle.E2;',
+            '        Yellow -> Yellow : /E2;',
+            '    }',
+            '    state Idle;',
+            '    Idle -> Idle :: E2;',
+            '    Idle -> Idle ::',
+            '    Idle -> Idle :',
+            '}',
+        ].join('\n'), '/tmp/root-chain-vs-local-e2.fcstm');
+
+        const localItems = await packageModule.collectCompletionItems(document, {
+            line: 8,
+            character: document.lineAt(8).text.length,
+        });
+        assert.ok(localItems.some(item => item.label === 'E2' && item.kind === 'event'));
+        assert.equal(localItems.find(item => item.label === 'E2')?.insertText, ' E2');
+        assert.equal(localItems.find(item => item.label === 'E2')?.detail, 'TrafficLight.Idle.E2');
+        assert.equal(localItems.some(item => item.label === 'Idle' && item.kind === 'event'), false);
+
+        const chainItems = await packageModule.collectCompletionItems(document, {
+            line: 9,
+            character: document.lineAt(9).text.length,
+        });
+        assert.ok(chainItems.some(item => item.label === 'E2' && item.kind === 'event'));
+        assert.equal(chainItems.find(item => item.label === 'E2')?.insertText, ' E2');
+        assert.equal(chainItems.find(item => item.label === 'E2')?.detail, 'TrafficLight.E2');
+        assert.notEqual(
+            localItems.find(item => item.label === 'E2')?.detail,
+            chainItems.find(item => item.label === 'E2')?.detail
+        );
+        assert.equal(chainItems.some(item => item.label === 'Idle' && item.kind === 'event'), false);
+    });
+
+    it('offers pseudo-state marker completions for source and target positions', async () => {
+        const document = createDocument([
+            'state Root {',
+            '    state Idle;',
+            '    [',
+            '    Idle -> ',
+            '}',
+        ].join('\n'), '/tmp/pseudo-state-marker-completion.fcstm');
+
+        const sourceItems = await packageModule.collectCompletionItems(document, {
+            line: 2,
+            character: document.lineAt(2).text.length,
+        });
+        assert.ok(sourceItems.some(item => item.label === '[*]' && item.kind === 'keyword'));
+        assert.equal(sourceItems.find(item => item.label === '[*]')?.insertText, '[*]');
+
+        const targetItems = await packageModule.collectCompletionItems(document, {
+            line: 3,
+            character: document.lineAt(3).text.length,
+        });
+        assert.ok(targetItems.some(item => item.label === '[*]' && item.kind === 'keyword'));
+        assert.equal(targetItems.find(item => item.label === '[*]')?.insertText, '[*]');
+        assert.ok(targetItems.some(item => item.label === 'Idle' && item.kind === 'class'));
+    });
+
+    it('completes absolute trigger paths without duplicating the slash prefix', async () => {
+        const document = createDocument([
+            'state TrafficLight {',
+            '    state InService;',
+            '    state Idle;',
+            '    event E2;',
+            '    Idle -> Idle : /',
+            '}',
+        ].join('\n'), '/tmp/absolute-trigger-path-insert-text.fcstm');
+
+        const items = await packageModule.collectCompletionItems(document, {
+            line: 4,
+            character: document.lineAt(4).text.length,
+        });
+
+        assert.ok(items.some(item => item.label === '/Idle' && item.kind === 'class'));
+        assert.equal(items.find(item => item.label === '/Idle')?.insertText, 'Idle');
+        assert.ok(items.some(item => item.label === '/E2' && item.kind === 'event'));
+        assert.equal(items.find(item => item.label === '/E2')?.insertText, 'E2');
+        assert.equal(items.some(item => item.label === '//'), false);
+        assert.equal(items.some(item => item.insertText?.startsWith('/')), false);
+    });
+
+    it('only offers legal existing event candidates for absolute path trigger completions', async () => {
+        const document = createDocument([
+            'state Root {',
+            '    state Idle {',
+            '        event E2;',
+            '    }',
+            '    Idle -> Idle : /Idle.E2;',
+            '    Idle -> Idle : /Idle.',
+            '}',
+        ].join('\n'), '/tmp/absolute-trigger-legal-events-only.fcstm');
+
+        const items = await packageModule.collectCompletionItems(document, {
+            line: 5,
+            character: document.lineAt(5).text.length,
+        });
+        const eventLabels = items
+            .filter(item => item.kind === 'event')
+            .map(item => item.label)
+            .sort();
+
+        assert.deepEqual(eventLabels, ['/Idle.E2']);
+        assert.equal(items.some(item => item.label === '/Idle./Idle.'), false);
+        assert.equal(items.some(item => item.insertText === '/Idle.'), false);
     });
 
     it('handles parser-null and missing-import-target completion branches', async () => {

@@ -185,13 +185,37 @@ describe('jsfcstm semantic navigation and rename support', () => {
             '    Idle -> Idle :: E2;',
             '}',
         ].join('\n'), filePath);
+        const declarationCharacter = charOf(document, 2, 'E2');
+        const displayNameCharacter = document.lineAt(2).text.lastIndexOf('E2');
 
         const definition = await packageModule.resolveDefinitionLocation(document, {
             line: 4,
             character: charOf(document, 4, 'E2') + 1,
         });
         assert.equal(definition?.range.start.line, 2);
-        assert.equal(definition?.range.start.character, charOf(document, 2, 'E2'));
+        assert.equal(definition?.range.start.character, declarationCharacter);
+
+        const references = await packageModule.collectReferences(document, {
+            line: 4,
+            character: charOf(document, 4, 'E2') + 1,
+        });
+        assert.equal(references.length, 2);
+        assert.ok(references.some(item => item.range.start.line === 2 && item.range.start.character === declarationCharacter));
+        assert.equal(references.some(item => (
+            item.range.start.line === 2
+            && item.range.start.character === displayNameCharacter
+        )), false);
+
+        const highlights = await packageModule.collectDocumentHighlights(document, {
+            line: 4,
+            character: charOf(document, 4, 'E2') + 1,
+        });
+        assert.equal(highlights.length, 2);
+        assert.ok(highlights.some(item => item.range.start.line === 2 && item.range.start.character === declarationCharacter));
+        assert.equal(highlights.some(item => (
+            item.range.start.line === 2
+            && item.range.start.character === displayNameCharacter
+        )), false);
     });
 
     it('links import event mappings to host and imported event/state definitions', async () => {
@@ -241,10 +265,40 @@ describe('jsfcstm semantic navigation and rename support', () => {
         assert.equal(hostTargetRefs.length, 3);
 
         const hostTargetHighlights = await packageModule.collectDocumentHighlights(document, {
+            line: 7,
+            character: leftStartTargetCharacter,
+        });
+        assert.equal(hostTargetHighlights.length, 3);
+        assert.ok(hostTargetHighlights.some(item => item.kind === 'text'));
+        assert.ok(hostTargetHighlights.some(item => item.kind === 'read'));
+
+        const hostStopRefs = await packageModule.collectReferences(document, {
             line: 12,
             character: rightStopTargetCharacter,
         });
-        assert.equal(hostTargetHighlights.length, 3);
+        assert.equal(hostStopRefs.length, 3);
+
+        const hostStopHighlights = await packageModule.collectDocumentHighlights(document, {
+            line: 12,
+            character: rightStopTargetCharacter,
+        });
+        assert.equal(hostStopHighlights.length, 3);
+        assert.ok(hostStopHighlights.some(item => item.kind === 'text'));
+        assert.ok(hostStopHighlights.some(item => item.kind === 'read'));
+
+        const hostBusRefs = await packageModule.collectReferences(document, {
+            line: 8,
+            character: leftBusTargetCharacter,
+        });
+        assert.equal(hostBusRefs.length, 3);
+
+        const hostBusHighlights = await packageModule.collectDocumentHighlights(document, {
+            line: 8,
+            character: leftBusTargetCharacter,
+        });
+        assert.equal(hostBusHighlights.length, 3);
+        assert.ok(hostBusHighlights.some(item => item.kind === 'text'));
+        assert.ok(hostBusHighlights.some(item => item.kind === 'read'));
 
         const hostEventDefinition = await packageModule.resolveDefinitionLocation(document, {
             line: 8,

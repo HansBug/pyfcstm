@@ -11,6 +11,7 @@ const GrammarParser = require('./grammar/GrammarParser').default;
 type GeneratedLexerClass = new (input: unknown) => {
     removeErrorListeners(): void;
     addErrorListener(listener: unknown): void;
+    nextToken(): { text?: string; line?: number; column?: number; type?: number };
 };
 
 type GeneratedParserClass = new (tokens: unknown) => {
@@ -35,6 +36,12 @@ export interface ParseError {
 export interface ParseResult {
     success: boolean;
     errors: ParseError[];
+}
+
+export interface LexToken {
+    text: string;
+    line: number;
+    column: number;
 }
 
 function formatTokenText(tokenText: string | undefined): string {
@@ -261,6 +268,35 @@ export class FcstmParser {
             return parser.state_machine_dsl();
         } catch {
             return null;
+        }
+    }
+
+    async lex(text: string): Promise<LexToken[]> {
+        if (!this.modules) {
+            return [];
+        }
+
+        try {
+            const input = new antlr4.InputStream(text);
+            const lexer = new this.modules.GrammarLexer(input);
+            const tokens: LexToken[] = [];
+
+            while (true) {
+                const token = lexer.nextToken();
+                if (!token || token.type === -1) {
+                    break;
+                }
+
+                tokens.push({
+                    text: token.text || '',
+                    line: (token.line || 1) - 1,
+                    column: token.column || 0,
+                });
+            }
+
+            return tokens;
+        } catch {
+            return [];
         }
     }
 }

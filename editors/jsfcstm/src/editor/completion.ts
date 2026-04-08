@@ -1,12 +1,19 @@
-import {getParser} from '../dsl/parser';
+import {getParser, type LexToken} from '../dsl/parser';
 import type {
     FcstmSemanticDocument,
+    FcstmSemanticTransition,
     FcstmSemanticState,
 } from '../semantics';
 import {getImportWorkspaceIndex} from '../workspace/imports';
 import {getWorkspaceGraph} from '../workspace';
 import {collectSymbolsFromTree} from './symbols';
-import {ParseTreeNode, rangeContains, TextDocumentLike, TextPositionLike} from '../utils/text';
+import {
+    ParseTreeNode,
+    rangeContains,
+    TextDocumentLike,
+    TextPositionLike,
+    TextRange,
+} from '../utils/text';
 import {rangeLength} from './ranges';
 
 export type FcstmCompletionKind =
@@ -31,6 +38,21 @@ interface FcstmContextCompletionResult {
     matched: boolean;
     items: FcstmCompletionItem[];
 }
+
+type FcstmSyntaxCompletionContext =
+    | { kind: 'none' }
+    | { kind: 'transitionTarget'; transition?: FcstmSemanticTransition; partial?: string }
+    | { kind: 'localEvent'; transition?: FcstmSemanticTransition; sourceStateName?: string; partial?: string }
+    | { kind: 'chainEvent'; transition?: FcstmSemanticTransition; partial?: string }
+    | { kind: 'absoluteEventPath'; rawPath: string }
+    | { kind: 'actionRef' }
+    | { kind: 'pseudoStateMarker'; partial?: string };
+
+type FcstmImportCompletionContext =
+    | { kind: 'none' }
+    | { kind: 'importAliasKeyword' }
+    | { kind: 'importNamedKeyword' }
+    | { kind: 'importBlock' };
 
 export const KEYWORDS = [
     'state', 'pseudo', 'named', 'def', 'event', 'import', 'as',
@@ -161,6 +183,9 @@ async function getDocumentSymbolCompletions(document: TextDocumentLike): Promise
         });
     }
     for (const event of fallbackSymbols.events) {
+        if (!isValidIdentifierSegment(event)) {
+            continue;
+        }
         items.push({
             label: event,
             kind: 'event',
@@ -229,6 +254,177 @@ function matchesPartial(candidate: string, partial: string): boolean {
     return !partial || candidate.toLowerCase().startsWith(partial.toLowerCase());
 }
 
+function isValidIdentifierSegment(text: string): boolean {
+    return /^[A-Za-z_][A-Za-z0-9_]*$/.test(text);
+}
+
+function comparePositions(left: TextPositionLike, right: TextPositionLike): number {
+    if (left.line !== right.line) {
+        return left.line - right.line;
+    }
+
+    return left.character - right.character;
+}
+
+function findSemanticTransitionAtPosition(
+    semantic: FcstmSemanticDocument,
+    position: TextPositionLike
+): FcstmSemanticTransition | undefined {
+    return semantic.transitions
+        .filter(item => rangeContains(item.range, position))
+        .sort((left, right) => rangeLength(left.range) - rangeLength(right.range))
+        [0];
+}
+
+function findStateById(
+    semantic: FcstmSemanticDocument,
+    stateId?: string
+): FcstmSemanticState | undefined {
+    if (!stateId) {
+        return undefined;
+    }
+
+    return semantic.states.find(item => item.identity.id === stateId);
+}
+
+function isQuotedToken(token: LexToken | undefined): boolean {
+    const text = token?.text || '';
+    return (text.startsWith('"') && text.endsWith('"')) || (text.startsWith('\'') && text.endsWith('\''));
+}
+
+function extractImportCompletionContextFromLineTokens(tokens: LexToken[]): FcstmImportCompletionContext {
+    if ((tokens[0]?.text || '') !== 'import') {
+        return {kind: 'none'};
+    }
+
+    if (tokens.length >= 2 && isQuotedToken(tokens[1]) && !tokens.some(token => token.text === 'as')) {
+        return {kind: 'importAliasKeyword'};
+    }
+
+    const asIndex = tokens.findIndex(token => token.text === 'as');
+    if (asIndex >= 0) {
+        const aliasToken = tokens[asIndex + 1];
+        const namedIndex = tokens.findIndex(token => token.text === 'named');
+        const braceIndex = tokens.findIndex(token => token.text === '{');
+        if (aliasToken && namedIndex < 0 && braceIndex < 0) {
+            return {kind: 'importNamedKeyword'};
+        }
+    }
+
+    if (tokens.some(token => token.text === '{')) {
+        return {kind: 'importBlock'};
+    }
+
+    return {kind: 'none'};
+}
+
+function extractSyntaxCompletionContextFromLineTokens(
+    tokens: LexToken[],
+    semantic: FcstmSemanticDocument,
+    position: TextPositionLike
+): FcstmSyntaxCompletionContext {
+    if (tokens.length === 1 && tokens[0]?.text === '[') {
+        return {kind: 'pseudoStateMarker', partial: '['};
+    }
+
+    const refIndex = tokens.findIndex(token => token.text === 'ref');
+    if (refIndex >= 0) {
+        return {kind: 'actionRef'};
+    }
+
+    const arrowIndex = tokens.findIndex(token => token.text === '->');
+    if (arrowIndex < 0) {
+        return {kind: 'none'};
+    }
+
+    const transition = findSemanticTransitionAtPosition(semantic, position);
+    const afterArrow = tokens.slice(arrowIndex + 1);
+    const sourceStateName = tokens[arrowIndex - 1]?.text;
+    if (afterArrow.length === 0) {
+        return {kind: 'transitionTarget', transition, partial: ''};
+    }
+
+    const targetToken = afterArrow[0];
+    const operatorToken = afterArrow[1];
+    if (!targetToken) {
+        return {kind: 'transitionTarget', transition, partial: ''};
+    }
+
+    if (!operatorToken) {
+        return {kind: 'transitionTarget', transition, partial: targetToken.text};
+    }
+
+    if (operatorToken.text === '::') {
+        const partial = afterArrow.slice(2).map(token => token.text).join('');
+        return {kind: 'localEvent', transition, sourceStateName, partial};
+    }
+
+    if (operatorToken.text === ':') {
+        const rawPath = afterArrow.slice(2).map(token => token.text).join('');
+        if (rawPath.startsWith('/')) {
+            return {kind: 'absoluteEventPath', rawPath};
+        }
+
+        if (rawPath === 'if') {
+            return {kind: 'none'};
+        }
+
+        return {kind: 'chainEvent', transition, partial: rawPath};
+    }
+
+    return {kind: 'transitionTarget', transition};
+}
+
+function findTransitionOperatorToken(
+    tokens: LexToken[],
+    operatorText: ':' | '::'
+): LexToken | undefined {
+    const arrowIndex = tokens.findIndex(token => token.text === '->');
+    if (arrowIndex < 0) {
+        return undefined;
+    }
+
+    return tokens.slice(arrowIndex + 1).find(token => token.text === operatorText);
+}
+
+function getTriggerInsertTextPrefix(
+    beforeCursor: string,
+    operatorToken: LexToken | undefined
+): string {
+    if (!operatorToken) {
+        return '';
+    }
+
+    const operatorEnd = operatorToken.column + operatorToken.text.length;
+    const afterOperatorText = beforeCursor.slice(operatorEnd);
+    if (afterOperatorText.startsWith(' ') || afterOperatorText.startsWith('\t')) {
+        return '';
+    }
+
+    return ' ';
+}
+
+function makePseudoStateCompletionItem(): FcstmCompletionItem {
+    return {
+        label: '[*]',
+        kind: 'keyword',
+        detail: 'Pseudo-state marker',
+        insertText: '[*]',
+        sortText: '0_init_marker',
+    };
+}
+
+function pushPseudoStateMarker(
+    items: FcstmCompletionItem[],
+    partial = ''
+): void {
+    if (!matchesPartial('[*]', partial)) {
+        return;
+    }
+
+    items.push(makePseudoStateCompletionItem());
+}
+
 function pushChildStateNames(
     semantic: FcstmSemanticDocument,
     scopeState: FcstmSemanticState | undefined,
@@ -236,6 +432,7 @@ function pushChildStateNames(
     options: {
         includeSelf?: boolean;
         pathPrefix?: string;
+        insertTextPrefix?: string;
         partial?: string;
         detailPrefix?: string;
         sortPrefix?: string;
@@ -248,6 +445,7 @@ function pushChildStateNames(
     const {
         includeSelf = false,
         pathPrefix = '',
+        insertTextPrefix = pathPrefix,
         partial = '',
         detailPrefix,
         sortPrefix = '4_state',
@@ -260,7 +458,7 @@ function pushChildStateNames(
             label: `${pathPrefix}${scopeState.name}`,
             kind: 'class',
             detail: detailPrefix || scopeState.identity.path.join('.'),
-            insertText: `${pathPrefix}${scopeState.name}`,
+            insertText: `${insertTextPrefix}${scopeState.name}`,
             sortText: `${sortPrefix}_${scopeState.name}`,
         });
     }
@@ -275,7 +473,7 @@ function pushChildStateNames(
             label: `${pathPrefix}${candidate.name}`,
             kind: 'class',
             detail: detailPrefix || candidate.identity.path.join('.'),
-            insertText: `${pathPrefix}${candidate.name}`,
+            insertText: `${insertTextPrefix}${candidate.name}`,
             sortText: `${sortPrefix}_${candidate.name}`,
         });
     }
@@ -313,9 +511,11 @@ function pushDeclaredEventsForState(
     items: FcstmCompletionItem[],
     options: {
         pathPrefix?: string;
+        insertTextPrefix?: string;
         partial?: string;
         detailPrefix?: string;
         sortPrefix?: string;
+        declaredOnly?: boolean;
     } = {}
 ): void {
     if (!scopeState) {
@@ -324,17 +524,23 @@ function pushDeclaredEventsForState(
 
     const {
         pathPrefix = '',
+        insertTextPrefix = pathPrefix,
         partial = '',
         detailPrefix,
         sortPrefix = '5_event',
+        declaredOnly = true,
     } = options;
     const seen = new Set<string>();
 
     for (const event of semantic.events.filter(item => (
-        item.declared
+        (!declaredOnly || item.declared)
         && item.statePath.join('.') === scopeState.identity.path.join('.')
     ))) {
-        if (seen.has(event.name) || !matchesPartial(event.name, partial)) {
+        if (
+            seen.has(event.name)
+            || !isValidIdentifierSegment(event.name)
+            || !matchesPartial(event.name, partial)
+        ) {
             continue;
         }
 
@@ -343,7 +549,7 @@ function pushDeclaredEventsForState(
             label: `${pathPrefix}${event.name}`,
             kind: 'event',
             detail: detailPrefix || event.identity.qualifiedName,
-            insertText: `${pathPrefix}${event.name}`,
+            insertText: `${insertTextPrefix}${event.name}`,
             sortText: `${sortPrefix}_${event.name}`,
         });
     }
@@ -370,6 +576,144 @@ function pushVisibleNamedActions(
                 sortText: `2_ref_${action.identity.qualifiedName}`,
             });
         }
+    }
+}
+
+function findStateOwningRangeStart(
+    semantic: FcstmSemanticDocument,
+    range: TextRange | undefined
+): FcstmSemanticState | undefined {
+    if (!range) {
+        return undefined;
+    }
+
+    return semantic.states
+        .filter(state => rangeContains(state.range, range.start))
+        .sort((left, right) => rangeLength(left.range) - rangeLength(right.range))
+        [0];
+}
+
+function hasPathMatch(candidates: string[][], expectedPath: string[]): boolean {
+    const expectedKey = expectedPath.join('.');
+    return candidates.some(path => path.join('.') === expectedKey);
+}
+
+function collectDerivedEventContainerPaths(
+    semantic: FcstmSemanticDocument,
+    event: FcstmSemanticDocument['events'][number],
+    position?: TextPositionLike
+): {
+    declarationPath?: string[];
+    localPaths: string[][];
+    chainPaths: string[][];
+    absolutePaths: string[][];
+} {
+    const localPathMap = new Map<string, string[]>();
+    const chainPathMap = new Map<string, string[]>();
+    const absolutePathMap = new Map<string, string[]>();
+    const declarationPath = findStateOwningRangeStart(semantic, event.declarationAst?.range)?.identity.path;
+
+    for (const transition of semantic.transitions) {
+        if (!transition.trigger || transition.trigger.eventId !== event.identity.id) {
+            continue;
+        }
+        if (position && comparePositions(transition.trigger.range.start, position) > 0) {
+            continue;
+        }
+
+        if (transition.trigger.scope === 'local' && transition.sourceStatePath) {
+            localPathMap.set(transition.sourceStatePath.join('.'), transition.sourceStatePath);
+        } else if (transition.trigger.scope === 'chain') {
+            chainPathMap.set(transition.ownerStatePath.join('.'), transition.ownerStatePath);
+        } else if (transition.trigger.scope === 'absolute') {
+            const containerPath = transition.trigger.normalizedPath.slice(0, -1);
+            absolutePathMap.set(containerPath.join('.'), containerPath);
+        }
+    }
+
+    return {
+        declarationPath,
+        localPaths: [...localPathMap.values()],
+        chainPaths: [...chainPathMap.values()],
+        absolutePaths: [...absolutePathMap.values()],
+    };
+}
+
+function eventMatchesScopeState(
+    semantic: FcstmSemanticDocument,
+    event: FcstmSemanticDocument['events'][number],
+    scopeState: FcstmSemanticState,
+    scope: 'local' | 'chain' | 'absolute',
+    position?: TextPositionLike
+): boolean {
+    const {declarationPath, localPaths, chainPaths, absolutePaths} = collectDerivedEventContainerPaths(
+        semantic,
+        event,
+        position
+    );
+
+    if (declarationPath && declarationPath.join('.') === scopeState.identity.path.join('.')) {
+        return true;
+    }
+
+    if (scope === 'local') {
+        return hasPathMatch(localPaths, scopeState.identity.path);
+    }
+    if (scope === 'chain') {
+        const rootState = findRootState(semantic);
+        const isRootScope = Boolean(rootState && rootState.identity.path.join('.') === scopeState.identity.path.join('.'));
+        return hasPathMatch(chainPaths, scopeState.identity.path)
+            || (isRootScope && hasPathMatch(absolutePaths, scopeState.identity.path));
+    }
+    return hasPathMatch(absolutePaths, scopeState.identity.path);
+}
+
+function pushVisibleScopedEvents(
+    semantic: FcstmSemanticDocument,
+    scopeState: FcstmSemanticState | undefined,
+    scope: 'local' | 'chain' | 'absolute',
+    items: FcstmCompletionItem[],
+    options: {
+        position?: TextPositionLike;
+        pathPrefix?: string;
+        insertTextPrefix?: string;
+        partial?: string;
+        detailPrefix?: string;
+        sortPrefix?: string;
+    } = {}
+): void {
+    if (!scopeState) {
+        return;
+    }
+
+    const {
+        pathPrefix = '',
+        insertTextPrefix = pathPrefix,
+        position,
+        partial = '',
+        detailPrefix,
+        sortPrefix = '5_event',
+    } = options;
+    const seen = new Set<string>();
+
+    for (const event of semantic.events) {
+        if (
+            seen.has(event.name)
+            || !isValidIdentifierSegment(event.name)
+            || !matchesPartial(event.name, partial)
+            || !eventMatchesScopeState(semantic, event, scopeState, scope, position)
+        ) {
+            continue;
+        }
+
+        seen.add(event.name);
+        items.push({
+            label: `${pathPrefix}${event.name}`,
+            kind: 'event',
+            detail: detailPrefix || event.identity.qualifiedName,
+            insertText: `${insertTextPrefix}${event.name}`,
+            sortText: `${sortPrefix}_${event.name}`,
+        });
     }
 }
 
@@ -480,15 +824,14 @@ async function getActiveImportEntry(
 
 async function getImportAwareCompletions(
     document: TextDocumentLike,
-    position: TextPositionLike
+    position: TextPositionLike,
+    lineTokens: LexToken[]
 ): Promise<FcstmContextCompletionResult> {
     const items: FcstmCompletionItem[] = [];
-    const lineText = document.lineAt(position.line).text;
-    const beforeCursor = lineText.substring(0, position.character);
-    let matched = false;
+    const syntaxContext = extractImportCompletionContextFromLineTokens(lineTokens);
+    let matched = syntaxContext.kind !== 'none';
 
-    if (/\bimport\b/.test(beforeCursor) && !/\bas\b/.test(beforeCursor)) {
-        matched = true;
+    if (syntaxContext.kind === 'importAliasKeyword') {
         items.push({
             label: 'as',
             kind: 'keyword',
@@ -496,8 +839,7 @@ async function getImportAwareCompletions(
         });
     }
 
-    if (/\bimport\b/.test(beforeCursor) && /\bas\b/.test(beforeCursor) && !/\bnamed\b/.test(beforeCursor)) {
-        matched = true;
+    if (syntaxContext.kind === 'importNamedKeyword') {
         items.push({
             label: 'named',
             kind: 'keyword',
@@ -505,8 +847,7 @@ async function getImportAwareCompletions(
         });
     }
 
-    if (/\bimport\b/.test(beforeCursor) && /\{\s*$/.test(beforeCursor)) {
-        matched = true;
+    if (syntaxContext.kind === 'importBlock') {
         items.push({
             label: 'def',
             kind: 'keyword',
@@ -601,16 +942,12 @@ function resolveAbsoluteStatePath(
 
 function collectAbsolutePathCompletions(
     semantic: FcstmSemanticDocument,
-    beforeCursor: string
+    rawPath: string,
+    position: TextPositionLike
 ): FcstmContextCompletionResult {
-    const match = beforeCursor.match(/(^|[^:]):\s*\/([A-Za-z0-9_.]*)$/);
-    if (!match) {
-        return {matched: false, items: []};
-    }
-
-    const rawPath = match[2] || '';
-    const pathParts = rawPath ? rawPath.split('.') : [];
-    const endsWithDot = rawPath.endsWith('.');
+    const normalizedPath = rawPath.startsWith('/') ? rawPath.slice(1) : rawPath;
+    const pathParts = normalizedPath ? normalizedPath.split('.') : [];
+    const endsWithDot = normalizedPath.endsWith('.');
     const partial = endsWithDot ? '' : (pathParts.pop() || '');
     const parentSegments = pathParts.filter(Boolean);
     const containerState = resolveAbsoluteStatePath(semantic, parentSegments);
@@ -624,12 +961,15 @@ function collectAbsolutePathCompletions(
     const items: FcstmCompletionItem[] = [];
     pushChildStateNames(semantic, containerState, items, {
         pathPrefix,
+        insertTextPrefix: '',
         partial,
         sortPrefix: '4_abs_state',
         detailPrefix: 'Absolute state path',
     });
-    pushDeclaredEventsForState(semantic, containerState, items, {
+    pushVisibleScopedEvents(semantic, containerState, 'absolute', items, {
+        position,
         pathPrefix,
+        insertTextPrefix: '',
         partial,
         sortPrefix: '5_abs_event',
         detailPrefix: 'Absolute event path',
@@ -638,44 +978,67 @@ function collectAbsolutePathCompletions(
     return {matched: true, items};
 }
 
-function collectContextAwareCompletions(
+async function collectContextAwareCompletions(
     semantic: FcstmSemanticDocument,
     position: TextPositionLike,
+    lineTokens: LexToken[],
     beforeCursor: string
-): FcstmContextCompletionResult {
+): Promise<FcstmContextCompletionResult> {
     const items: FcstmCompletionItem[] = [];
     const lookupStates = collectLookupStates(semantic, position);
     const currentScope = getCurrentScopeState(semantic, position);
+    const syntaxContext = extractSyntaxCompletionContextFromLineTokens(lineTokens, semantic, position);
 
-    const absolutePathResult = collectAbsolutePathCompletions(semantic, beforeCursor);
-    if (absolutePathResult.matched) {
-        return absolutePathResult;
+    if (syntaxContext.kind === 'absoluteEventPath') {
+        return collectAbsolutePathCompletions(semantic, syntaxContext.rawPath, position);
     }
 
-    if (/(^|\s)ref\s+[./A-Za-z0-9_]*$/.test(beforeCursor)) {
+    if (syntaxContext.kind === 'pseudoStateMarker') {
+        pushPseudoStateMarker(items, syntaxContext.partial);
+        return {matched: true, items};
+    }
+
+    if (syntaxContext.kind === 'actionRef') {
         pushVisibleNamedActions(semantic, lookupStates, items);
         return {matched: true, items};
     }
 
-    if (/::\s*[A-Za-z0-9_.]*$/.test(beforeCursor)) {
-        const sourceMatch = beforeCursor.match(/([A-Za-z_][A-Za-z0-9_]*)\s*->[^:]*::\s*[A-Za-z0-9_.]*$/);
-        const sourceState = resolveVisibleStateReference(semantic, lookupStates, sourceMatch?.[1]);
-        pushDeclaredEventsForState(semantic, sourceState, items, {
+    if (syntaxContext.kind === 'localEvent') {
+        const insertTextPrefix = getTriggerInsertTextPrefix(
+            beforeCursor,
+            findTransitionOperatorToken(lineTokens, '::')
+        );
+        const sourceState = syntaxContext.transition?.sourceStateId
+            ? findStateById(semantic, syntaxContext.transition.sourceStateId)
+            : resolveVisibleStateReference(semantic, lookupStates, syntaxContext.sourceStateName || syntaxContext.transition?.sourceStateName);
+        pushVisibleScopedEvents(semantic, sourceState, 'local', items, {
+            position,
+            insertTextPrefix,
+            partial: syntaxContext.partial,
             sortPrefix: '5_local_event',
         });
         return {matched: true, items};
     }
 
-    if (/(^|[^:]):\s*[A-Za-z0-9_.]*$/.test(beforeCursor) && !/:\s*\/[A-Za-z0-9_.]*$/.test(beforeCursor)) {
-        for (const scopeState of lookupStates) {
-            pushDeclaredEventsForState(semantic, scopeState, items, {
-                sortPrefix: '5_chain_event',
-            });
-        }
+    if (syntaxContext.kind === 'chainEvent') {
+        const insertTextPrefix = getTriggerInsertTextPrefix(
+            beforeCursor,
+            findTransitionOperatorToken(lineTokens, ':')
+        );
+        const ownerState = syntaxContext.transition
+            ? findStateById(semantic, syntaxContext.transition.ownerStateId)
+            : currentScope;
+        pushVisibleScopedEvents(semantic, ownerState, 'chain', items, {
+            position,
+            insertTextPrefix,
+            partial: syntaxContext.partial,
+            sortPrefix: '5_chain_event',
+        });
         return {matched: true, items};
     }
 
-    if (/->\s*[A-Za-z0-9_]*$/.test(beforeCursor)) {
+    if (syntaxContext.kind === 'transitionTarget') {
+        pushPseudoStateMarker(items, syntaxContext.partial);
         pushChildStateNames(semantic, currentScope, items, {
             includeSelf: false,
             sortPrefix: '4_target_state',
@@ -701,9 +1064,10 @@ export async function collectCompletionItems(
     }
 
     const semantic = await getWorkspaceGraph().getSemanticDocument(document);
-    const importAware = await getImportAwareCompletions(document, position);
+    const lineTokens = await getParser().lex(beforeCursor);
+    const importAware = await getImportAwareCompletions(document, position, lineTokens);
     const contextAware = semantic
-        ? collectContextAwareCompletions(semantic, position, beforeCursor)
+        ? await collectContextAwareCompletions(semantic, position, lineTokens, beforeCursor)
         : {matched: false, items: []} as FcstmContextCompletionResult;
 
     if (importAware.matched || contextAware.matched) {

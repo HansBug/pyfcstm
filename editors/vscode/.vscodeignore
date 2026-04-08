@@ -31,3 +31,4 @@ scripts/**
 
 # Keep bundled extension
 !dist/extension.js
+!dist/server.js

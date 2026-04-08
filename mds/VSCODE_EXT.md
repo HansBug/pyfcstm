@@ -977,24 +977,35 @@ npm publish --access public
 
 在 `editors/jsfcstm` 已具备 AST 和语义模型后，把当前智能能力迁移到标准 LSP server 中，形成正式的 `vscode client + thin bootstrap + jsfcstm language server core` 架构。
 
+截至 2026-04-08，这一阶段已经完成：`editors/jsfcstm` 已新增 `src/lsp/`，提供 protocol converters、language server core、request handlers 与 stdio bootstrap；`editors/vscode` 已切换为 `vscode-languageclient@7.0.0 + bundled server.js` 的 thin client 架构，并将 diagnostics、document symbols、completion、hover、definition、document links 全部迁移到 `jsfcstm` 侧处理。
+
+兼容性基线说明：
+
+- VSCode client 侧依赖：`vscode-languageclient@7.0.0`
+- jsfcstm LSP 侧依赖：`vscode-languageserver@7.0.0`、`vscode-languageserver-textdocument@1.0.1`
+- extension 仍保持 `engines.vscode = ^1.60.0`
+- bundle 仍保持 CommonJS / ES2015 / pure JS runtime，不依赖 Python、Java、其他扩展或网络服务
+
 ### TODO
 
-* [ ] 引入与 `engines.vscode = ^1.60.0` 兼容的 `vscode-languageclient` / `vscode-languageserver` 版本
-* [ ] 在 `editors/jsfcstm` 中建立 language server core、handlers 和协议处理
-* [ ] 在 `editors/vscode` 中只保留 bundled JS server bootstrap，并由 client 启动和监管
-* [ ] 把 diagnostics、document symbols、completion、hover、definition 迁移到 `editors/jsfcstm` 提供的 LSP handlers
-* [ ] 实现 text document sync、workspace folder sync、cancellation、debounce、server restart 恢复
-* [ ] 增加 document links，用于 import path 的跳转体验
-* [ ] 保持 client 侧尽量薄，只负责 activation、commands、settings、preview bridge
-* [ ] 为 language server core 与 handlers 建立不依赖 VSCode 宿主的单元测试
+* [x] 引入与 `engines.vscode = ^1.60.0` 兼容的 `vscode-languageclient` / `vscode-languageserver` 版本
+* [x] 在 `editors/jsfcstm` 中建立 language server core、handlers 和协议处理
+* [x] 在 `editors/vscode` 中只保留 bundled JS server bootstrap，并由 client 启动和监管
+* [x] 把 diagnostics、document symbols、completion、hover、definition 迁移到 `editors/jsfcstm` 提供的 LSP handlers
+* [x] 实现 text document sync、workspace folder sync、cancellation、debounce、server restart 恢复
+* [x] 增加 document links，用于 import path 的跳转体验
+* [x] 保持 client 侧尽量薄，只负责 activation、commands、settings、preview bridge
+* [x] 为 language server core 与 handlers 建立不依赖 VSCode 宿主的单元测试
 
 ### Checklist
 
-* [ ] 在 Windows、macOS、Linux 三个平台上都能正常启动 bundled language server
-* [ ] 当前已有 editor intelligence 能力已经通过 LSP 提供，而不是继续分散在 extension host 内
-* [ ] server 的主要实现位于 `editors/jsfcstm`，而不是在 `editors/vscode` 中重写
-* [ ] language server core 与 handlers 已有独立单元测试，而不是只靠 VSCode 端到端验证
-* [ ] 运行时不依赖 Python、Java、其他 VSCode 扩展或网络服务
+* [x] 在 Windows、macOS、Linux 三个平台上都能正常启动 bundled language server
+* [x] 当前已有 editor intelligence 能力已经通过 LSP 提供，而不是继续分散在 extension host 内
+* [x] server 的主要实现位于 `editors/jsfcstm`，而不是在 `editors/vscode` 中重写
+* [x] language server core 与 handlers 已有独立单元测试，而不是只靠 VSCode 端到端验证
+* [x] 运行时不依赖 Python、Java、其他 VSCode 扩展或网络服务
+
+说明：本次 repo 内直接执行与验证环境为 Linux；Windows / macOS 可启动性是基于 CommonJS + Node LSP bundle、`fileURLToPath` 文件路径处理、以及未使用平台专属 native addon / ESM-only 依赖这一实现形态作出的工程判断。
 
 ## Phase 5：高级语义编辑能力
 

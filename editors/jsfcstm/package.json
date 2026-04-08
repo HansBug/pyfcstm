@@ -1,7 +1,7 @@
 {
   "name": "@pyfcstm/jsfcstm",
-  "version": "0.1.0-alpha.1",
-  "description": "FCSTM core parser, semantics, diagnostics, and language-server foundations for JavaScript and TypeScript",
+  "version": "0.1.0-alpha.2",
+  "description": "FCSTM parser, semantics, editor intelligence, and reusable language-server core for JavaScript and TypeScript",
   "author": {
     "name": "HansBug",
     "email": "hansbug@buaa.edu.cn"
@@ -26,6 +26,34 @@
   ],
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "typesVersions": {
+    "*": {
+      "ast": [
+        "dist/ast/index.d.ts"
+      ],
+      "config": [
+        "dist/config/index.d.ts"
+      ],
+      "dsl": [
+        "dist/dsl/index.d.ts"
+      ],
+      "editor": [
+        "dist/editor/index.d.ts"
+      ],
+      "lsp": [
+        "dist/lsp/index.d.ts"
+      ],
+      "semantics": [
+        "dist/semantics/index.d.ts"
+      ],
+      "utils": [
+        "dist/utils/index.d.ts"
+      ],
+      "workspace": [
+        "dist/workspace/index.d.ts"
+      ]
+    }
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -51,6 +79,11 @@
       "types": "./dist/editor/index.d.ts",
       "require": "./dist/editor/index.js",
       "default": "./dist/editor/index.js"
+    },
+    "./lsp": {
+      "types": "./dist/lsp/index.d.ts",
+      "require": "./dist/lsp/index.js",
+      "default": "./dist/lsp/index.js"
     },
     "./semantics": {
       "types": "./dist/semantics/index.d.ts",
@@ -90,7 +123,9 @@
     "access": "public"
   },
   "dependencies": {
-    "antlr4": "4.9.3"
+    "antlr4": "4.9.3",
+    "vscode-languageserver": "7.0.0",
+    "vscode-languageserver-textdocument": "1.0.1"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",

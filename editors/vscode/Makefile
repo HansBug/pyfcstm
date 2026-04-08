@@ -170,6 +170,7 @@ package: all
 	@echo ""
 	@echo "Verifying package contents..."
 	@unzip -l ./build/*.vsix | grep -q "dist/extension.js" && echo "✓ Bundled extension.js included" || echo "✗ WARNING: extension.js not found in package!"
+	@unzip -l ./build/*.vsix | grep -q "dist/server.js" && echo "✓ Bundled server.js included" || (echo "✗ Bundled server.js missing from package!" && exit 1)
 	@unzip -l ./build/*.vsix | grep -q "resources/icon.png" && echo "✓ Extension icon included in package" || (echo "✗ Extension icon missing from package!" && exit 1)
 	@echo "Package size:"
 	@ls -lh ./build/*.vsix | awk '{print "  " $$9 ": " $$5}'

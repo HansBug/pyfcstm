@@ -1042,10 +1042,14 @@ export function buildAstFromTree(
 export async function parseAstDocument(
     document: TextDocumentLike
 ): Promise<FcstmAstDocument | null> {
-    const tree = await getParser().parseTree(document.getText());
-    if (!tree) {
+    try {
+        const tree = await getParser().parseTree(document.getText());
+        if (!tree) {
+            return null;
+        }
+
+        return buildAstFromTree(tree as ParseTreeNode, document);
+    } catch {
         return null;
     }
-
-    return buildAstFromTree(tree as ParseTreeNode, document);
 }

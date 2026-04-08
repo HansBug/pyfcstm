@@ -112,6 +112,33 @@ describe('jsfcstm completion support', () => {
         });
     });
 
+    it('gracefully falls back to keyword completions when semantic AST building cannot recover', async () => {
+        const document = createDocument('def ', '/tmp/incomplete-definition.fcstm');
+
+        const items = await packageModule.collectCompletionItems(document, {line: 0, character: 4});
+
+        assert.ok(items.some(item => item.label === 'int' && item.kind === 'keyword'));
+        assert.ok(items.some(item => item.label === 'pi' && item.kind === 'constant'));
+        assert.ok(items.some(item => item.label === 'sin' && item.kind === 'function'));
+    });
+
+    it('falls back to parse-tree symbol completions when semantic construction fails on partial input', async () => {
+        const document = createDocument([
+            'def int counter = 0;',
+            'def int count = 1;',
+            'state Root {',
+            '    enter {',
+            '        cou',
+            '    }',
+            '}',
+        ].join('\n'), '/tmp/partial-symbol.fcstm');
+
+        const items = await packageModule.collectCompletionItems(document, {line: 4, character: 11});
+
+        assert.ok(items.some(item => item.label === 'counter' && item.kind === 'variable'));
+        assert.ok(items.some(item => item.label === 'count' && item.kind === 'variable'));
+    });
+
     it('exposes stable keyword, constant, and function catalogs', () => {
         assert.ok(completionModule.KEYWORDS.includes('state'));
         assert.ok(completionModule.KEYWORDS.includes('import'));

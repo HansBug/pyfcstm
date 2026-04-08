@@ -1,8 +1,8 @@
 /**
  * esbuild configuration for FCSTM VSCode Extension
  *
- * This configuration bundles all TypeScript sources and dependencies
- * (including antlr4 runtime and generated parser) into a single extension.js file.
+ * This configuration bundles the VSCode client entry point and the bundled
+ * Node-based language server entry point into dist/.
  */
 
 const esbuild = require('esbuild');
@@ -15,12 +15,16 @@ const watch = process.argv.includes('--watch');
  * @type {esbuild.BuildOptions}
  */
 const buildOptions = {
-  entryPoints: ['src/extension.ts'],
+  entryPoints: {
+    extension: 'src/extension.ts',
+    server: 'src/server.ts',
+  },
   bundle: true,
-  outfile: 'dist/extension.js',
+  outdir: 'dist',
+  entryNames: '[name]',
 
   // VSCode extension configuration
-  external: ['vscode'], // VSCode API must be external
+  external: ['vscode'], // VSCode API must stay external to the bundle
   format: 'cjs',        // CommonJS format required by VSCode
   platform: 'node',     // Node.js environment
   target: 'es2015',    // Prefer broad compatibility with older VSCode extension hosts

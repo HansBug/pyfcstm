@@ -1,6 +1,8 @@
+import {getParser} from '../dsl/parser';
 import {getImportWorkspaceIndex} from '../workspace/imports';
 import {getWorkspaceGraph} from '../workspace';
-import {rangeContains, TextDocumentLike, TextPositionLike} from '../utils/text';
+import {collectSymbolsFromTree} from './symbols';
+import {ParseTreeNode, rangeContains, TextDocumentLike, TextPositionLike} from '../utils/text';
 
 export type FcstmCompletionKind =
     | 'keyword'
@@ -129,29 +131,57 @@ function getFunctionCompletions(): FcstmCompletionItem[] {
 async function getDocumentSymbolCompletions(document: TextDocumentLike): Promise<FcstmCompletionItem[]> {
     const items: FcstmCompletionItem[] = [];
     const semantic = await getWorkspaceGraph().getSemanticDocument(document);
-    if (!semantic) {
+    if (semantic) {
+        for (const variable of semantic.variables) {
+            items.push({
+                label: variable.name,
+                kind: 'variable',
+                sortText: `3_${variable.name}`,
+            });
+        }
+        for (const state of semantic.states) {
+            items.push({
+                label: state.name,
+                kind: 'class',
+                sortText: `4_${state.name}`,
+            });
+        }
+        for (const event of semantic.events.filter(item => item.declared)) {
+            items.push({
+                label: event.name,
+                kind: 'event',
+                sortText: `5_${event.name}`,
+            });
+        }
+
         return items;
     }
 
-    for (const variable of semantic.variables) {
+    const tree = await getParser().parseTree(document.getText());
+    if (!tree) {
+        return items;
+    }
+
+    const fallbackSymbols = collectSymbolsFromTree(tree as ParseTreeNode);
+    for (const variable of fallbackSymbols.variables) {
         items.push({
-            label: variable.name,
+            label: variable,
             kind: 'variable',
-            sortText: `3_${variable.name}`,
+            sortText: `3_${variable}`,
         });
     }
-    for (const state of semantic.states) {
+    for (const state of fallbackSymbols.states) {
         items.push({
-            label: state.name,
+            label: state,
             kind: 'class',
-            sortText: `4_${state.name}`,
+            sortText: `4_${state}`,
         });
     }
-    for (const event of semantic.events.filter(item => item.declared)) {
+    for (const event of fallbackSymbols.events) {
         items.push({
-            label: event.name,
+            label: event,
             kind: 'event',
-            sortText: `5_${event.name}`,
+            sortText: `5_${event}`,
         });
     }
 

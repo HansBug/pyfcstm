@@ -2,37 +2,36 @@
 
 `jsfcstm` is the JavaScript/TypeScript package boundary for FCSTM-related logic in this repository.
 
-The package was introduced first as a publishable skeleton in Phase 0/1. In Phase 2, the existing parser-backed
-editor core has started to move here so the VSCode extension can stay focused on host integration instead of owning
-FCSTM language logic directly.
+The package was introduced first as a publishable skeleton in Phase 0/1. It has now grown into the main reusable
+FCSTM implementation for JavaScript consumers, while the VSCode extension stays focused on editor-host integration
+and delegates language logic to `jsfcstm`.
 
 ## Current Scope
 
 At the current phase, this package provides:
 
 - ANTLR-backed FCSTM parser runtime generated from the canonical repository grammar
+- AST nodes aligned with `pyfcstm.dsl.node` semantics and stable `pyNodeType` mapping
+- semantic model construction and import-aware multi-file workspace graph support
 - source range helpers and document abstractions
-- import resolution and lightweight workspace indexing
-- document symbol extraction
-- completion candidate generation
-- hover metadata resolution
-- syntax and import diagnostics helpers
+- editor-facing diagnostics, document symbols, completion, hover, definition, and document links
+- reusable LSP converters, language-server core, and bundled server bootstrap entry points
 - independent TypeScript build output under `dist/`
 - independent Mocha-based unit tests
 - coverage reporting via `c8`, including uncovered line numbers in the terminal report
 - npm pack / publish-ready package metadata
 
-The package still does **not** yet contain the future unified AST, semantic model, workspace graph, or full language
-server implementation. Those remain Phase 3+ work.
-
 ## Current Layout
 
 `jsfcstm` now uses a layered internal structure aligned with the Python package boundary:
 
+- `src/ast/`: pyfcstm-aligned AST nodes and AST builder
 - `src/config/`: package metadata and future package-level configuration
 - `src/dsl/`: parser entry points and generated grammar runtime
-- `src/workspace/`: import resolution and workspace indexing
-- `src/editor/`: completion, hover, diagnostics, and symbol extraction
+- `src/editor/`: diagnostics, symbols, completion, hover, definition, and document links
+- `src/lsp/`: LSP converters, request handlers, language-server core, and stdio bootstrap
+- `src/semantics/`: semantic model construction and pyfcstm-aligned normalization rules
+- `src/workspace/`: import resolution and workspace graph
 - `src/utils/`: text ranges and document abstractions
 
 The ANTLR JavaScript runtime is generated into `src/dsl/grammar/` during build time, then mirrored into
@@ -63,7 +62,8 @@ npm publish --access public --dry-run
 ```
 
 The package root export remains `@pyfcstm/jsfcstm`, and the package now also exposes stable subpath entry points such
-as `@pyfcstm/jsfcstm/dsl`, `@pyfcstm/jsfcstm/editor`, `@pyfcstm/jsfcstm/workspace`, `@pyfcstm/jsfcstm/utils`, and
+as `@pyfcstm/jsfcstm/ast`, `@pyfcstm/jsfcstm/dsl`, `@pyfcstm/jsfcstm/editor`, `@pyfcstm/jsfcstm/lsp`,
+`@pyfcstm/jsfcstm/semantics`, `@pyfcstm/jsfcstm/workspace`, `@pyfcstm/jsfcstm/utils`, and
 `@pyfcstm/jsfcstm/config`.
 
 ## Intended Package Name

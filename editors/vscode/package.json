@@ -1,7 +1,7 @@
 {
   "name": "fcstm-language-support",
   "displayName": "FCSTM Language Support",
-  "description": "Syntax highlighting and language support for FCSTM (Finite State Machine) DSL - a domain-specific language for modeling hierarchical state machines",
+  "description": "Language support for FCSTM (Finite State Machine) DSL with a bundled pure-JS language server",
   "version": "0.1.0",
   "publisher": "hansbug",
   "author": {
@@ -57,7 +57,8 @@
     "package": "vsce package --out build/"
   },
   "dependencies": {
-    "@pyfcstm/jsfcstm": "file:../jsfcstm/jsfcstm.tgz"
+    "@pyfcstm/jsfcstm": "file:../jsfcstm/jsfcstm.tgz",
+    "vscode-languageclient": "7.0.0"
   },
   "devDependencies": {
     "@types/node": "^16.0.0",

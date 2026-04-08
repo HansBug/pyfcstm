@@ -3,15 +3,14 @@
 /**
  * End-to-End Bundle Verification Script
  *
- * This script validates that the bundled dist/extension.js is a complete,
- * functional JavaScript file with all required dependencies and functionality.
+ * This script validates that the bundled dist/extension.js and dist/server.js
+ * are complete JavaScript outputs with the required client/server wiring.
  *
  * Test coverage:
- * - Bundle file existence and basic structure
- * - ANTLR-generated lexer/parser classes bundled
- * - antlr4 runtime library bundled
- * - Extension source modules bundled
- * - Basic functionality tests (parser, diagnostics, symbols, completion, hover)
+ * - Client/server bundle existence and basic structure
+ * - ANTLR-generated lexer/parser classes bundled into the server bundle
+ * - antlr4 runtime library bundled into the server bundle
+ * - Language client/server entry points bundled correctly
  */
 
 const fs = require('fs');
@@ -82,34 +81,59 @@ const tests = [
 
     new TestCase(
         'E2E-02',
-        'Bundle file is non-empty and has reasonable size',
+        'Bundle file exists at dist/server.js',
         async () => {
-            const bundlePath = path.join(__dirname, '..', 'dist', 'extension.js');
-            const stats = fs.statSync(bundlePath);
-            if (stats.size === 0) {
-                throw new Error('Bundle file is empty');
-            }
-            if (stats.size < 100000) { // Less than 100KB is suspicious
-                throw new Error(`Bundle file is too small (${stats.size} bytes), expected > 100KB`);
-            }
-            if (stats.size > 10000000) { // More than 10MB is suspicious
-                throw new Error(`Bundle file is too large (${stats.size} bytes), expected < 10MB`);
+            const bundlePath = path.join(__dirname, '..', 'dist', 'server.js');
+            if (!fs.existsSync(bundlePath)) {
+                throw new Error(`Bundle file not found at ${bundlePath}`);
             }
         }
     ),
 
     new TestCase(
         'E2E-03',
-        'Bundle file is valid JavaScript syntax',
+        'Client and server bundles are non-empty and have reasonable size',
+        async () => {
+            const clientBundlePath = path.join(__dirname, '..', 'dist', 'extension.js');
+            const serverBundlePath = path.join(__dirname, '..', 'dist', 'server.js');
+            const clientStats = fs.statSync(clientBundlePath);
+            const serverStats = fs.statSync(serverBundlePath);
+
+            if (clientStats.size === 0) {
+                throw new Error('Client bundle is empty');
+            }
+            if (serverStats.size === 0) {
+                throw new Error('Server bundle is empty');
+            }
+            if (clientStats.size < 10000) {
+                throw new Error(`Client bundle is too small (${clientStats.size} bytes), expected > 10KB`);
+            }
+            if (serverStats.size < 100000) {
+                throw new Error(`Server bundle is too small (${serverStats.size} bytes), expected > 100KB`);
+            }
+            if (clientStats.size > 10000000 || serverStats.size > 10000000) {
+                throw new Error('Bundle file is suspiciously large (> 10MB)');
+            }
+        }
+    ),
+
+    new TestCase(
+        'E2E-04',
+        'Client and server bundles are valid JavaScript syntax',
         async () => {
             const bundlePath = path.join(__dirname, '..', 'dist', 'extension.js');
-            const bundleContent = fs.readFileSync(bundlePath, 'utf8');
+            const serverBundlePath = path.join(__dirname, '..', 'dist', 'server.js');
+            const bundleContents = [
+                fs.readFileSync(bundlePath, 'utf8'),
+                fs.readFileSync(serverBundlePath, 'utf8'),
+            ];
 
-            // Try to parse as JavaScript (will throw if invalid)
-            try {
-                new Function(bundleContent);
-            } catch (e) {
-                throw new Error(`Bundle contains invalid JavaScript: ${e.message}`);
+            for (const bundleContent of bundleContents) {
+                try {
+                    new Function(bundleContent);
+                } catch (e) {
+                    throw new Error(`Bundle contains invalid JavaScript: ${e.message}`);
+                }
             }
         }
     ),
@@ -119,7 +143,7 @@ const tests = [
         'E2E-04',
         'GrammarLexer class is bundled',
         async () => {
-            const bundlePath = path.join(__dirname, '..', 'dist', 'extension.js');
+            const bundlePath = path.join(__dirname, '..', 'dist', 'server.js');
             const bundleContent = fs.readFileSync(bundlePath, 'utf8');
             if (!bundleContent.includes('GrammarLexer')) {
                 throw new Error('GrammarLexer not found in bundle');
@@ -131,7 +155,7 @@ const tests = [
         'E2E-05',
         'GrammarParser class is bundled',
         async () => {
-            const bundlePath = path.join(__dirname, '..', 'dist', 'extension.js');
+            const bundlePath = path.join(__dirname, '..', 'dist', 'server.js');
             const bundleContent = fs.readFileSync(bundlePath, 'utf8');
             if (!bundleContent.includes('GrammarParser')) {
                 throw new Error('GrammarParser not found in bundle');
@@ -144,7 +168,7 @@ const tests = [
         'E2E-06',
         'antlr4 InputStream is bundled',
         async () => {
-            const bundlePath = path.join(__dirname, '..', 'dist', 'extension.js');
+            const bundlePath = path.join(__dirname, '..', 'dist', 'server.js');
             const bundleContent = fs.readFileSync(bundlePath, 'utf8');
             if (!bundleContent.includes('InputStream')) {
                 throw new Error('antlr4 InputStream not found in bundle');
@@ -156,7 +180,7 @@ const tests = [
         'E2E-07',
         'antlr4 CommonTokenStream is bundled',
         async () => {
-            const bundlePath = path.join(__dirname, '..', 'dist', 'extension.js');
+            const bundlePath = path.join(__dirname, '..', 'dist', 'server.js');
             const bundleContent = fs.readFileSync(bundlePath, 'utf8');
             if (!bundleContent.includes('CommonTokenStream')) {
                 throw new Error('antlr4 CommonTokenStream not found in bundle');
@@ -168,7 +192,7 @@ const tests = [
         'E2E-08',
         'antlr4 ParserATNSimulator is bundled',
         async () => {
-            const bundlePath = path.join(__dirname, '..', 'dist', 'extension.js');
+            const bundlePath = path.join(__dirname, '..', 'dist', 'server.js');
             const bundleContent = fs.readFileSync(bundlePath, 'utf8');
             if (!bundleContent.includes('ParserATNSimulator')) {
                 throw new Error('antlr4 ParserATNSimulator not found in bundle');
@@ -179,9 +203,9 @@ const tests = [
     // Extension Source Modules Tests
     new TestCase(
         'E2E-09',
-        'FcstmParser class is bundled',
+        'FcstmParser class is bundled into the server',
         async () => {
-            const bundlePath = path.join(__dirname, '..', 'dist', 'extension.js');
+            const bundlePath = path.join(__dirname, '..', 'dist', 'server.js');
             const bundleContent = fs.readFileSync(bundlePath, 'utf8');
             if (!bundleContent.includes('FcstmParser')) {
                 throw new Error('FcstmParser class not found in bundle');
@@ -191,48 +215,48 @@ const tests = [
 
     new TestCase(
         'E2E-10',
-        'FcstmDiagnosticsProvider class is bundled',
+        'FcstmLanguageServerCore class is bundled into the server',
         async () => {
-            const bundlePath = path.join(__dirname, '..', 'dist', 'extension.js');
+            const bundlePath = path.join(__dirname, '..', 'dist', 'server.js');
             const bundleContent = fs.readFileSync(bundlePath, 'utf8');
-            if (!bundleContent.includes('FcstmDiagnosticsProvider')) {
-                throw new Error('FcstmDiagnosticsProvider class not found in bundle');
+            if (!bundleContent.includes('FcstmLanguageServerCore')) {
+                throw new Error('FcstmLanguageServerCore class not found in bundle');
             }
         }
     ),
 
     new TestCase(
         'E2E-11',
-        'FcstmDocumentSymbolProvider class is bundled',
+        'Server bundle contains vscode-languageserver connection wiring',
         async () => {
-            const bundlePath = path.join(__dirname, '..', 'dist', 'extension.js');
+            const bundlePath = path.join(__dirname, '..', 'dist', 'server.js');
             const bundleContent = fs.readFileSync(bundlePath, 'utf8');
-            if (!bundleContent.includes('FcstmDocumentSymbolProvider')) {
-                throw new Error('FcstmDocumentSymbolProvider class not found in bundle');
+            if (!bundleContent.includes('createConnection') || !bundleContent.includes('sendDiagnostics')) {
+                throw new Error('Language server connection wiring not found in server bundle');
             }
         }
     ),
 
     new TestCase(
         'E2E-12',
-        'FcstmCompletionProvider class is bundled',
+        'Client bundle contains vscode-languageclient wiring',
         async () => {
             const bundlePath = path.join(__dirname, '..', 'dist', 'extension.js');
             const bundleContent = fs.readFileSync(bundlePath, 'utf8');
-            if (!bundleContent.includes('FcstmCompletionProvider')) {
-                throw new Error('FcstmCompletionProvider class not found in bundle');
+            if (!bundleContent.includes('LanguageClient') || !bundleContent.includes('TransportKind')) {
+                throw new Error('LanguageClient wiring not found in client bundle');
             }
         }
     ),
 
     new TestCase(
         'E2E-13',
-        'FcstmHoverProvider class is bundled',
+        'Client bundle references the bundled server entrypoint',
         async () => {
             const bundlePath = path.join(__dirname, '..', 'dist', 'extension.js');
             const bundleContent = fs.readFileSync(bundlePath, 'utf8');
-            if (!bundleContent.includes('FcstmHoverProvider')) {
-                throw new Error('FcstmHoverProvider class not found in bundle');
+            if (!bundleContent.includes('server.js') || !bundleContent.includes('fcstmLanguageServer')) {
+                throw new Error('Bundled server entrypoint not referenced by the client');
             }
         }
     ),
@@ -265,24 +289,24 @@ const tests = [
     // Bundle Integrity Tests
     new TestCase(
         'E2E-16',
-        'Bundle uses CommonJS module format',
+        'Client and server bundles use CommonJS module format',
         async () => {
-            const bundlePath = path.join(__dirname, '..', 'dist', 'extension.js');
-            const bundleContent = fs.readFileSync(bundlePath, 'utf8');
+            for (const fileName of ['extension.js', 'server.js']) {
+                const bundlePath = path.join(__dirname, '..', 'dist', fileName);
+                const bundleContent = fs.readFileSync(bundlePath, 'utf8');
+                const hasExports = bundleContent.includes('exports') || bundleContent.includes('module.exports');
+                const hasRequire = bundleContent.includes('require');
 
-            // Check for CommonJS patterns
-            const hasExports = bundleContent.includes('exports') || bundleContent.includes('module.exports');
-            const hasRequire = bundleContent.includes('require');
-
-            if (!hasExports && !hasRequire) {
-                throw new Error('Bundle does not appear to use CommonJS format');
+                if (!hasExports && !hasRequire) {
+                    throw new Error(`${fileName} does not appear to use CommonJS format`);
+                }
             }
         }
     ),
 
     new TestCase(
         'E2E-17',
-        'Bundle does not include vscode module (should be external)',
+        'Client bundle does not include vscode module internals',
         async () => {
             const bundlePath = path.join(__dirname, '..', 'dist', 'extension.js');
             const bundleContent = fs.readFileSync(bundlePath, 'utf8');
@@ -297,9 +321,9 @@ const tests = [
 
     new TestCase(
         'E2E-18',
-        'Bundle contains error message normalization logic',
+        'Server bundle contains error message normalization logic',
         async () => {
-            const bundlePath = path.join(__dirname, '..', 'dist', 'extension.js');
+            const bundlePath = path.join(__dirname, '..', 'dist', 'server.js');
             const bundleContent = fs.readFileSync(bundlePath, 'utf8');
             if (!bundleContent.includes('normalizeSyntaxMessage') && !bundleContent.includes('Missing semicolon')) {
                 throw new Error('Error message normalization logic not found in bundle');
@@ -309,9 +333,9 @@ const tests = [
 
     new TestCase(
         'E2E-19',
-        'Bundle contains ANTLR error listener implementation',
+        'Server bundle contains ANTLR error listener implementation',
         async () => {
-            const bundlePath = path.join(__dirname, '..', 'dist', 'extension.js');
+            const bundlePath = path.join(__dirname, '..', 'dist', 'server.js');
             const bundleContent = fs.readFileSync(bundlePath, 'utf8');
             if (!bundleContent.includes('syntaxError') && !bundleContent.includes('ErrorListener')) {
                 throw new Error('ANTLR error listener implementation not found in bundle');

@@ -5,6 +5,17 @@ runPyGeneratedModelCase({
     name: "import_phase2_demo",
     relativeSourcePath: "import_phase2_demo",
     source: "state System {\n    state LeftMotor named 'Left Motor' {\n        enter abstract InitMotor;\n        state Idle {\n            event Start;\n        }\n        state Running {\n            state Spin;\n            [*] -> Spin;\n        }\n        event Reset;\n        [*] -> Idle;\n        Idle -> Running :: Start;\n        Running -> Idle : Reset;\n    }\n    [*] -> LeftMotor;\n}",
+    files: [
+    [
+        "main.fcstm",
+        "state System {\n    import \"./modules/motor.fcstm\" as LeftMotor named \"Left Motor\";\n    [*] -> LeftMotor;\n}\n"
+    ],
+    [
+        "modules/motor.fcstm",
+        "state MotorRoot named \"Motor Module\" {\n    enter abstract InitMotor;\n    state Idle;\n    state Running {\n        state Spin;\n        [*] -> Spin;\n    }\n    [*] -> Idle;\n    Idle -> Running :: Start;\n    Running -> Idle : /Reset;\n}\n"
+    ]
+],
+    entryFile: "main.fcstm",
     expected: {
     "defines": {},
     "root_state": "System",

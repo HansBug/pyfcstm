@@ -500,6 +500,8 @@ def _write_test_file(
     source: str,
     expected: Dict[str, Any],
     output_file: Path,
+    sample_files: List[Tuple[str, str]] | None = None,
+    entry_file: str | None = None,
 ) -> None:
     support_import_path = os.path.relpath(SUPPORT_FILE, output_file.parent).replace(
         os.path.sep, "/"
@@ -516,6 +518,8 @@ def _write_test_file(
         f"    name: {json.dumps(relative_source_path, ensure_ascii=False)},\n"
         f"    relativeSourcePath: {json.dumps(relative_source_path, ensure_ascii=False)},\n"
         f"    source: {json.dumps(source, ensure_ascii=False)},\n"
+        f"    files: {json.dumps(sample_files, ensure_ascii=False, indent=4) if sample_files is not None else 'undefined'},\n"
+        f"    entryFile: {json.dumps(entry_file, ensure_ascii=False) if entry_file is not None else 'undefined'},\n"
         f"    expected: {json.dumps(expected, ensure_ascii=False, indent=4)},\n"
         "});\n"
     )
@@ -547,13 +551,37 @@ def _resolve_sample_input(sample_input: Path) -> Tuple[Path, str]:
     raise FileNotFoundError(f"Sample input {sample_input} is neither a DSL file nor a sample directory.")
 
 
+def _collect_sample_files(sample_input: Path) -> Tuple[List[Tuple[str, str]] | None, str | None]:
+    resolved_input = sample_input.resolve()
+    if resolved_input.is_dir():
+        files = []
+        for item in sorted(resolved_input.rglob("*.fcstm")):
+            files.append(
+                (
+                    item.relative_to(resolved_input).as_posix(),
+                    item.read_text(encoding="utf-8"),
+                )
+            )
+        return files, "main.fcstm"
+
+    return None, None
+
+
 def generate_sample_test(sample_input: Path, output_file: Path) -> None:
     entry_file, relative_source_path = _resolve_sample_input(sample_input)
     ast_node = parse_state_machine_dsl(entry_file.read_text(encoding="utf-8"))
     model = parse_dsl_node_to_state_machine(ast_node, path=entry_file)
     source = str(model.to_ast_node())
     expected = _normalize_model(model)
-    _write_test_file(relative_source_path, source, expected, output_file)
+    sample_files, entry_file_path = _collect_sample_files(sample_input)
+    _write_test_file(
+        relative_source_path,
+        source,
+        expected,
+        output_file,
+        sample_files=sample_files,
+        entry_file=entry_file_path,
+    )
 
 
 def main() -> None:

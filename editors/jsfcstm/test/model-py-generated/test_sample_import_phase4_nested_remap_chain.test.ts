@@ -5,6 +5,21 @@ runPyGeneratedModelCase({
     name: "import_phase4_nested_remap_chain",
     relativeSourcePath: "import_phase4_nested_remap_chain",
     source: "state Root {\n    state Child named 'Child Layer' {\n        state Grand named 'Grand Layer' {\n            state Idle;\n            state Running;\n            state Tripped;\n            Idle -> Tripped : /Bus.Trip;\n            Running -> Tripped : /Bus.Trip;\n            Tripped -> Tripped : /Bus.Trip;\n            [*] -> Idle;\n            Idle -> Running : /Bus.Start;\n            Running -> Idle : /Bus.Stop;\n        }\n        state InnerBus;\n        [*] -> Grand;\n    }\n    state Bus {\n        event Start named 'Top Start';\n        event Stop named 'Top Stop';\n        event Trip named 'Top Trip';\n    }\n    [*] -> Child;\n}",
+    files: [
+    [
+        "main.fcstm",
+        "state Root {\n    state Bus;\n    import \"./modules/child.fcstm\" as Child named \"Child Layer\" {\n        event /Start -> /Bus.Start named \"Top Start\";\n        event /InnerBus.Stop -> /Bus.Stop named \"Top Stop\";\n        event /Trip -> /Bus.Trip named \"Top Trip\";\n    }\n    [*] -> Child;\n}\n"
+    ],
+    [
+        "modules/child.fcstm",
+        "state ChildRoot {\n    state InnerBus;\n    import \"./grand/grand.fcstm\" as Grand named \"Grand Layer\" {\n        event /Pulse -> Start named \"Child Start\";\n        event /Halt -> /InnerBus.Stop named \"Child Stop\";\n        event /Trip -> Trip named \"Child Trip\";\n    }\n    [*] -> Grand;\n}\n"
+    ],
+    [
+        "modules/grand/grand.fcstm",
+        "state GrandRoot {\n    event Pulse named \"Pulse Source\";\n    event Trip named \"Trip Source\";\n    state Idle;\n    state Running;\n    state Tripped;\n    [*] -> Idle;\n    Idle -> Running : Pulse;\n    Running -> Idle : /Halt;\n    ! * -> Tripped : Trip;\n}\n"
+    ]
+],
+    entryFile: "main.fcstm",
     expected: {
     "defines": {},
     "root_state": "Root",

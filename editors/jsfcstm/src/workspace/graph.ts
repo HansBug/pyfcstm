@@ -15,6 +15,7 @@ import {
     type FcstmSemanticImport,
 } from '../semantics';
 import {getDocumentFilePath, TextDocumentLike} from '../utils/text';
+import {buildStateMachineModelFromWorkspaceSnapshot} from './model-assembly';
 
 export interface FcstmWorkspaceOverlay {
     filePath: string;
@@ -180,6 +181,7 @@ export class FcstmWorkspaceGraph {
         const normalizedFile = normalizeFile(filePath);
         const state = this.createTraversalState();
         await this.traverseDocument(document, normalizedFile, state);
+        this.hydrateModels(normalizedFile, state);
         return this.snapshotFromState(normalizedFile, state);
     }
 
@@ -187,6 +189,7 @@ export class FcstmWorkspaceGraph {
         const normalizedFile = normalizeFile(filePath);
         const state = this.createTraversalState();
         await this.traverseFile(normalizedFile, state);
+        this.hydrateModels(normalizedFile, state);
         return this.snapshotFromState(normalizedFile, state);
     }
 
@@ -315,6 +318,23 @@ export class FcstmWorkspaceGraph {
         }
 
         return node;
+    }
+
+    private hydrateModels(rootFile: string, state: TraversalState): void {
+        const nodes = Object.fromEntries(state.nodes.entries());
+        for (const [filePath, node] of state.nodes.entries()) {
+            try {
+                node.model = buildStateMachineModelFromWorkspaceSnapshot(
+                    {
+                        rootFile,
+                        nodes,
+                    },
+                    filePath
+                ) || buildStateMachineModel(node.semantic || node.ast);
+            } catch {
+                node.model = buildStateMachineModel(node.semantic || node.ast);
+            }
+        }
     }
 
     private hydrateImport(

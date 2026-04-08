@@ -5,6 +5,8 @@ runPyGeneratedModelCase({
     name: "dlc3.fcstm",
     relativeSourcePath: "dlc3.fcstm",
     source: "def int Event = 0;\nstate LX {\n    enter {\n    }\n    enter abstract act1;\n    state LX2 {\n        state start {\n            state LX4 {\n                state LX5;\n                LX5 -> [*] : /E1;\n                [*] -> LX5;\n            }\n            LX4 -> [*] : /E1;\n            [*] -> LX4;\n        }\n        start -> [*] : /E1;\n        [*] -> start;\n    }\n    state ERROR;\n    event E1;\n    LX2 -> ERROR : E1;\n    ERROR -> ERROR : E1;\n    [*] -> LX2;\n    ERROR -> [*];\n}",
+    files: undefined,
+    entryFile: undefined,
     expected: {
     "defines": {
         "Event": {

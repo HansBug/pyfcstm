@@ -5,6 +5,17 @@ runPyGeneratedModelCase({
     name: "import_phase3_default_dual_motors",
     relativeSourcePath: "import_phase3_default_dual_motors",
     source: "def int LeftMotor_counter = 0;\ndef int LeftMotor_limit = 3;\ndef int RightMotor_counter = 0;\ndef int RightMotor_limit = 3;\nstate Fleet {\n    state LeftMotor {\n        state Idle;\n        state Running;\n        [*] -> Idle;\n        Idle -> Running : if [LeftMotor_counter < LeftMotor_limit] effect {\n            LeftMotor_counter = LeftMotor_counter + 1;\n        }\n        Running -> Idle : if [LeftMotor_counter >= LeftMotor_limit] effect {\n            LeftMotor_counter = 0;\n        }\n    }\n    state RightMotor {\n        state Idle;\n        state Running;\n        [*] -> Idle;\n        Idle -> Running : if [RightMotor_counter < RightMotor_limit] effect {\n            RightMotor_counter = RightMotor_counter + 1;\n        }\n        Running -> Idle : if [RightMotor_counter >= RightMotor_limit] effect {\n            RightMotor_counter = 0;\n        }\n    }\n    [*] -> LeftMotor;\n    LeftMotor -> RightMotor;\n}",
+    files: [
+    [
+        "main.fcstm",
+        "state Fleet {\n    import \"./modules/motor.fcstm\" as LeftMotor;\n    import \"./modules/motor.fcstm\" as RightMotor;\n    [*] -> LeftMotor;\n    LeftMotor -> RightMotor;\n}\n"
+    ],
+    [
+        "modules/motor.fcstm",
+        "def int counter = 0;\ndef int limit = 3;\n\nstate MotorRoot {\n    state Idle;\n    state Running;\n    [*] -> Idle;\n    Idle -> Running : if [counter < limit] effect {\n        counter = counter + 1;\n    }\n    Running -> Idle : if [counter >= limit] effect {\n        counter = 0;\n    }\n}\n"
+    ]
+],
+    entryFile: "main.fcstm",
     expected: {
     "defines": {
         "LeftMotor_counter": {

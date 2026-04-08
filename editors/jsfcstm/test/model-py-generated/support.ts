@@ -1,13 +1,21 @@
 import assert from 'node:assert/strict';
+import * as path from 'node:path';
 
-import {createDocument, packageModule} from '../support';
+import {createDocument, packageModule, trackTempDir, writeFile} from '../support';
 
 export type PyGeneratedSnapshot = Record<string, unknown>;
+
+export interface PyGeneratedSourceFile {
+    0: string;
+    1: string;
+}
 
 export interface PyGeneratedModelCase {
     name: string;
     relativeSourcePath: string;
     source: string;
+    files?: PyGeneratedSourceFile[];
+    entryFile?: string;
     expected: PyGeneratedSnapshot;
 }
 
@@ -545,14 +553,25 @@ function sanitizeSlug(text: string): string {
 export function runPyGeneratedModelCase(testCase: PyGeneratedModelCase): void {
     describe(`jsfcstm pyfcstm-generated model sample: ${testCase.relativeSourcePath}`, () => {
         it(`matches pyfcstm for ${testCase.name}`, async () => {
-            const document = createDocument(
-                testCase.source,
-                `/tmp/${sanitizeSlug(testCase.relativeSourcePath || testCase.name)}.fcstm`
-            );
-            const ast = await packageModule.parseAstDocument(document);
-            assert.ok(ast);
+            let model: ReturnType<typeof packageModule.buildStateMachineModel> | Awaited<ReturnType<InstanceType<typeof packageModule.FcstmWorkspaceGraph>['getStateMachineModelForFile']>>;
+            if (testCase.files && testCase.entryFile) {
+                const dir = trackTempDir(`jsfcstm-py-generated-${sanitizeSlug(testCase.relativeSourcePath || testCase.name)}-`);
+                for (const [relativePath, text] of testCase.files) {
+                    writeFile(path.join(dir, relativePath), text);
+                }
 
-            const model = packageModule.buildStateMachineModel(ast);
+                const graph = new packageModule.FcstmWorkspaceGraph();
+                model = await graph.getStateMachineModelForFile(path.join(dir, testCase.entryFile));
+            } else {
+                const document = createDocument(
+                    testCase.source,
+                    `/tmp/${sanitizeSlug(testCase.relativeSourcePath || testCase.name)}.fcstm`
+                );
+                const ast = await packageModule.parseAstDocument(document);
+                assert.ok(ast);
+                model = packageModule.buildStateMachineModel(ast);
+            }
+
             assert.ok(model);
             assert.deepEqual(normalizeStateMachine(model!), testCase.expected);
         });

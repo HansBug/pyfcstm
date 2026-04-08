@@ -5,6 +5,21 @@ runPyGeneratedModelCase({
     name: "import_phase3_host_shared_units",
     relativeSourcePath: "import_phase3_host_shared_units",
     source: "def int shared_counter = 100;\ndef int shared_ready = 1;\ndef int left_limit = 5;\ndef int right_limit = 6;\ndef int left_result = 0;\ndef int right_result = 0;\nstate Plant {\n    state LeftUnit named 'Left Unit' {\n        state Idle;\n        state Busy;\n        [*] -> Idle;\n        Idle -> Busy : if [shared_ready > 0] effect {\n            left_result = shared_counter + left_limit;\n        }\n        Busy -> Idle : if [shared_counter < left_limit] effect {\n            shared_counter = shared_counter + 1;\n            left_result = shared_counter;\n        }\n    }\n    state RightUnit named 'Right Unit' {\n        state Idle;\n        state Busy;\n        [*] -> Idle;\n        Idle -> Busy : if [shared_ready > 0] effect {\n            right_result = shared_counter + right_limit;\n        }\n        Busy -> Idle : if [shared_counter >= right_limit] effect {\n            shared_counter = shared_counter + 1;\n            right_result = shared_counter;\n        }\n    }\n    [*] -> LeftUnit;\n    LeftUnit -> RightUnit;\n}",
+    files: [
+    [
+        "main.fcstm",
+        "def int shared_counter = 100;\ndef int shared_ready = 1;\ndef int left_limit = 5;\ndef int right_limit = 6;\ndef int left_result = 0;\ndef int right_result = 0;\n\nstate Plant {\n    import \"./modules/left.fcstm\" as LeftUnit named \"Left Unit\" {\n        def counter -> shared_counter;\n        def ready_flag -> shared_ready;\n        def limit -> left_limit;\n        def result -> left_result;\n    }\n    import \"./modules/right.fcstm\" as RightUnit named \"Right Unit\" {\n        def pulse_count -> shared_counter;\n        def armed_flag -> shared_ready;\n        def limit -> right_limit;\n        def result -> right_result;\n    }\n    [*] -> LeftUnit;\n    LeftUnit -> RightUnit;\n}\n"
+    ],
+    [
+        "modules/left.fcstm",
+        "def int counter = 0;\ndef int ready_flag = 1;\ndef int limit = 5;\ndef int result = 0;\n\nstate LeftRoot {\n    state Idle;\n    state Busy;\n    [*] -> Idle;\n    Idle -> Busy : if [ready_flag > 0] effect {\n        result = counter + limit;\n    }\n    Busy -> Idle : if [counter < limit] effect {\n        counter = counter + 1;\n        result = counter;\n    }\n}\n"
+    ],
+    [
+        "modules/right.fcstm",
+        "def int pulse_count = 100;\ndef int armed_flag = 1;\ndef int limit = 6;\ndef int result = 0;\n\nstate RightRoot {\n    state Idle;\n    state Busy;\n    [*] -> Idle;\n    Idle -> Busy : if [armed_flag > 0] effect {\n        result = pulse_count + limit;\n    }\n    Busy -> Idle : if [pulse_count >= limit] effect {\n        pulse_count = pulse_count + 1;\n        result = pulse_count;\n    }\n}\n"
+    ]
+],
+    entryFile: "main.fcstm",
     expected: {
     "defines": {
         "left_limit": {

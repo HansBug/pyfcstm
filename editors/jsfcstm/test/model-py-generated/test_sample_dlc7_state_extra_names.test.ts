@@ -5,6 +5,8 @@ runPyGeneratedModelCase({
     name: "dlc7_state_extra_names.fcstm",
     relativeSourcePath: "dlc7_state_extra_names.fcstm",
     source: "state Root named '根状态' {\n    state state1 named 'Zhuang Tai I';\n    state state2 named '状態2';\n    pseudo state state3 named '상태3';\n    state state4;\n    [*] -> state1;\n    state1 -> state2;\n    state2 -> state3;\n    state3 -> state4;\n}",
+    files: undefined,
+    entryFile: undefined,
     expected: {
     "defines": {},
     "root_state": "Root",

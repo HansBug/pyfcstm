@@ -4,6 +4,10 @@ import type * as ModelModule from '../dist/model/index';
 import {createDocument, packageModule} from './support';
 
 const modelModule = require('../dist/model/index.js') as typeof ModelModule;
+const ZERO_RANGE = {
+    start: {line: 0, character: 0},
+    end: {line: 0, character: 0},
+} as const;
 
 function normalizeTransition(transition: {
     fromState: string;
@@ -21,6 +25,241 @@ function normalizeTransition(transition: {
         toState: transition.toState,
         event: transition.event?.path_name || null,
         parent: transition.parentPath.join('.'),
+    };
+}
+
+function createRawLeafState(name: string, path: string[]) {
+    return {
+        kind: 'state',
+        pyModelType: 'State',
+        range: ZERO_RANGE,
+        text: `state ${name};`,
+        name,
+        path,
+        pathName: path.join('.'),
+        path_name: path.join('.'),
+        substates: {},
+        events: {},
+        transitions: [],
+        namedFunctions: {},
+        named_functions: {},
+        onEnters: [],
+        on_enters: [],
+        onDurings: [],
+        on_durings: [],
+        onExits: [],
+        on_exits: [],
+        onDuringAspects: [],
+        on_during_aspects: [],
+        parentPath: path.slice(0, -1),
+        parent_path: path.slice(0, -1),
+        substateNameToId: {},
+        substate_name_to_id: {},
+        extraName: undefined,
+        extra_name: undefined,
+        isPseudo: false,
+        is_pseudo: false,
+        isLeafState: true,
+        is_leaf_state: true,
+        isRootState: false,
+        is_root_state: false,
+        isStoppable: true,
+        is_stoppable: true,
+    };
+}
+
+function createHydrationRawStateMachine() {
+    const rawInteger = {
+        kind: 'integer',
+        pyModelType: 'Integer',
+        range: ZERO_RANGE,
+        text: '1',
+        value: 1,
+    };
+    const rawEvent = {
+        kind: 'event',
+        pyModelType: 'Event',
+        range: ZERO_RANGE,
+        text: 'Tick',
+        name: 'Tick',
+        statePath: ['Root'],
+        state_path: ['Root'],
+        path: ['Root', 'Tick'],
+        pathName: 'Root.Tick',
+        path_name: 'Root.Tick',
+        extraName: undefined,
+        extra_name: undefined,
+        declared: true,
+        origins: ['declared'],
+    };
+    const rawOperation = {
+        kind: 'operation',
+        pyModelType: 'Operation',
+        range: ZERO_RANGE,
+        text: 'counter = 1;',
+        varName: 'counter',
+        var_name: 'counter',
+        expr: rawInteger,
+    };
+    const rawBranch = {
+        kind: 'ifBlockBranch',
+        pyModelType: 'IfBlockBranch',
+        range: ZERO_RANGE,
+        text: 'else { counter = 1; }',
+        condition: null,
+        statements: [rawOperation],
+    };
+    const rawIfBlock = {
+        kind: 'ifBlock',
+        pyModelType: 'IfBlock',
+        range: ZERO_RANGE,
+        text: 'if [true] { counter = 1; } else { counter = 1; }',
+        branches: [rawBranch, rawBranch],
+    };
+    const rawAction = {
+        kind: 'onStage',
+        pyModelType: 'OnStage',
+        range: ZERO_RANGE,
+        text: 'enter Init { counter = 1; }',
+        stage: 'enter',
+        aspect: undefined,
+        name: 'Init',
+        doc: undefined,
+        operations: [rawOperation, rawIfBlock],
+        isAbstract: false,
+        is_abstract: false,
+        isRef: false,
+        is_ref: false,
+        isAspect: false,
+        is_aspect: false,
+        mode: 'operations',
+        statePath: ['Root', 'Init'],
+        state_path: ['Root', 'Init'],
+        funcName: 'Root.Init',
+        func_name: 'Root.Init',
+        parentPath: ['Root'],
+        parent_path: ['Root'],
+        refStatePath: undefined,
+        ref_state_path: undefined,
+        refResolved: false,
+        ref_resolved: false,
+        refTargetQualifiedName: undefined,
+        ref_target_qualified_name: undefined,
+    };
+    const sharedState = createRawLeafState('Shared', ['Root', 'Shared']);
+    const rawTransition = {
+        kind: 'transition',
+        pyModelType: 'Transition',
+        range: ZERO_RANGE,
+        text: '[*] -> Shared : Tick;',
+        fromState: 'INIT_STATE',
+        from_state: 'INIT_STATE',
+        toState: 'Shared',
+        to_state: 'Shared',
+        event: rawEvent,
+        guard: undefined,
+        effects: [rawOperation],
+        parentPath: ['Root'],
+        parent_path: ['Root'],
+        sourceStatePath: undefined,
+        source_state_path: undefined,
+        targetStatePath: ['Root', 'Shared'],
+        target_state_path: ['Root', 'Shared'],
+        sourceKind: 'init',
+        targetKind: 'state',
+        transitionKind: 'entry',
+        forced: false,
+        declaredInStatePath: ['Root'],
+        declared_in_state_path: ['Root'],
+        triggerScope: 'chain',
+        trigger_scope: 'chain',
+    };
+    const rawRootState = {
+        kind: 'state',
+        pyModelType: 'State',
+        range: ZERO_RANGE,
+        text: 'state Root { }',
+        name: 'Root',
+        path: ['Root'],
+        pathName: 'Root',
+        path_name: 'Root',
+        substates: {
+            Shared: sharedState,
+            SharedAlias: sharedState,
+        },
+        events: {
+            Tick: rawEvent,
+        },
+        transitions: [rawTransition],
+        namedFunctions: {
+            Init: rawAction,
+        },
+        named_functions: {
+            Init: rawAction,
+        },
+        onEnters: [rawAction],
+        on_enters: [rawAction],
+        onDurings: [],
+        on_durings: [],
+        onExits: [],
+        on_exits: [],
+        onDuringAspects: [],
+        on_during_aspects: [],
+        parentPath: undefined,
+        parent_path: undefined,
+        substateNameToId: {
+            Shared: 0,
+            SharedAlias: 1,
+        },
+        substate_name_to_id: {
+            Shared: 0,
+            SharedAlias: 1,
+        },
+        extraName: undefined,
+        extra_name: undefined,
+        isPseudo: false,
+        is_pseudo: false,
+        isLeafState: false,
+        is_leaf_state: false,
+        isRootState: true,
+        is_root_state: true,
+        isStoppable: false,
+        is_stoppable: false,
+    };
+
+    return {
+        kind: 'stateMachine',
+        pyModelType: 'StateMachine',
+        range: ZERO_RANGE,
+        text: 'state Root { }',
+        filePath: '/tmp/raw-model.fcstm',
+        defines: {},
+        rootState: rawRootState,
+        root_state: rawRootState,
+        allStates: [rawRootState, sharedState],
+        all_states: [rawRootState, sharedState],
+        allEvents: [rawEvent],
+        all_events: [rawEvent],
+        allTransitions: [rawTransition],
+        all_transitions: [rawTransition],
+        allActions: [rawAction],
+        all_actions: [rawAction],
+        lookups: {
+            definesByName: {},
+            statesByPath: {
+                Root: rawRootState,
+                'Root.Shared': sharedState,
+            },
+            eventsByPathName: {
+                'Root.Tick': rawEvent,
+            },
+            namedFunctionsByPath: {
+                'Root.Init': rawAction,
+            },
+            transitionsByParentPath: {
+                Root: [rawTransition],
+            },
+        },
     };
 }
 
@@ -307,5 +546,82 @@ describe('jsfcstm state-machine model', () => {
         assert.equal(operation.expr.ifFalse.op, '+');
         assert.equal(operation.expr.ifFalse.x.value, 1);
         assert.equal(operation.expr.ifFalse.y.value, 2);
+    });
+
+    it('hydrates cached raw nodes consistently across shared references', () => {
+        const model = modelModule.hydrateStateMachine(createHydrationRawStateMachine() as never);
+
+        assert.equal(model.rootState.substates.Shared, model.rootState.substates.SharedAlias);
+        assert.equal(model.rootState.substates.Shared.parent, model.rootState);
+        assert.equal(model.rootState.onEnters[0], model.lookups.namedFunctionsByPath['Root.Init']);
+        assert.equal(model.rootState.onEnters[0].operations[0], model.rootState.transitions[0].effects[0]);
+        assert.equal(
+            (model.rootState.onEnters[0].operations[1] as {branches: unknown[]}).branches[0],
+            (model.rootState.onEnters[0].operations[1] as {branches: unknown[]}).branches[1]
+        );
+    });
+
+    it('throws on unsupported raw expression kinds during hydration', () => {
+        const raw = createHydrationRawStateMachine() as {
+            defines: Record<string, unknown>;
+        };
+        raw.defines.bad = {
+            kind: 'varDefine',
+            pyModelType: 'VarDefine',
+            range: ZERO_RANGE,
+            text: 'def int bad = ???;',
+            name: 'bad',
+            type: 'int',
+            init: {
+                kind: 'mystery',
+                pyModelType: 'Variable',
+                range: ZERO_RANGE,
+                text: '???',
+                name: 'mystery',
+            },
+        };
+
+        assert.throws(
+            () => modelModule.hydrateStateMachine(raw as never),
+            /Unsupported raw expression kind: mystery/
+        );
+    });
+
+    it('resolves event references from state and machine helpers and validates bad paths', async () => {
+        const document = createDocument([
+            'state Root {',
+            '    event Global;',
+            '    state Parent {',
+            '        event ParentEvent;',
+            '        state Child {',
+            '            event LocalEvent;',
+            '        }',
+            '        [*] -> Child;',
+            '    }',
+            '    [*] -> Parent;',
+            '}',
+        ].join('\n'), '/tmp/model-events.fcstm');
+
+        const ast = await packageModule.parseAstDocument(document);
+        const model = modelModule.buildStateMachineModel(ast);
+
+        assert.ok(model);
+        const child = model!.rootState.substates.Parent.substates.Child;
+        assert.equal(child.resolve_event('/Global').path_name, 'Root.Global');
+        assert.equal(child.resolve_event('.ParentEvent').path_name, 'Root.Parent.ParentEvent');
+        assert.equal(child.resolve_event('LocalEvent').path_name, 'Root.Parent.Child.LocalEvent');
+        assert.equal(model!.resolve_event('Root.Parent.ParentEvent').path_name, 'Root.Parent.ParentEvent');
+
+        assert.throws(() => model!.resolve_event(''), /Event path cannot be empty/);
+        assert.throws(
+            () => model!.resolve_event('Other.ParentEvent'),
+            /does not match state machine root/
+        );
+        assert.throws(() => model!.resolve_event('Root.Parent.Missing'), /Event "Missing" not found/);
+
+        assert.throws(() => child.resolve_event('/'), /cannot be just/);
+        assert.throws(() => child.resolve_event('Bad..Path'), /Invalid relative event reference/);
+        assert.throws(() => child.resolve_event('...ParentEvent'), /goes beyond root state/);
+        assert.throws(() => child.resolve_event('/Parent.Missing'), /Event "Missing" not found in state "Root.Parent"/);
     });
 });

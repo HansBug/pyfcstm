@@ -5,6 +5,25 @@ runPyGeneratedModelCase({
     name: "import_phase3_recursive_line",
     relativeSourcePath: "import_phase3_recursive_line",
     source: "def int host_ticks = 0;\ndef int host_load = 0;\nstate Factory {\n    state Line named 'Assembly Line' {\n        state Conveyor {\n            state Feeding;\n            [*] -> Feeding;\n            Feeding -> Feeding : if [host_ticks < 2] effect {\n                host_ticks = host_ticks + 1;\n                host_load = host_load + 1;\n            }\n        }\n        state Robot {\n            state Picking;\n            [*] -> Picking;\n            Picking -> Picking : if [host_load < 4] effect {\n                host_ticks = host_ticks + 1;\n                host_load = host_load + 1;\n            }\n        }\n        [*] -> Conveyor;\n        Conveyor -> Robot : if [host_ticks >= 2];\n        Robot -> Conveyor : if [host_load >= 4];\n    }\n    [*] -> Line;\n}",
+    files: [
+    [
+        "main.fcstm",
+        "def int host_ticks = 0;\ndef int host_load = 0;\n\nstate Factory {\n    import \"./modules/line.fcstm\" as Line named \"Assembly Line\" {\n        def line_ticks -> host_ticks;\n        def load -> host_load;\n    }\n    [*] -> Line;\n}\n"
+    ],
+    [
+        "modules/line.fcstm",
+        "def int line_ticks = 0;\ndef int load = 0;\n\nstate LineRoot {\n    import \"./subsystems/conveyor.fcstm\" as Conveyor {\n        def speed -> line_ticks;\n        def load -> load;\n    }\n    import \"./subsystems/robot.fcstm\" as Robot {\n        def cycle_count -> line_ticks;\n        def arm_load -> load;\n    }\n    [*] -> Conveyor;\n    Conveyor -> Robot : if [line_ticks >= 2];\n    Robot -> Conveyor : if [load >= 4];\n}\n"
+    ],
+    [
+        "modules/subsystems/conveyor.fcstm",
+        "def int speed = 0;\ndef int load = 0;\n\nstate ConveyorRoot {\n    state Feeding;\n    [*] -> Feeding;\n    Feeding -> Feeding : if [speed < 2] effect {\n        speed = speed + 1;\n        load = load + 1;\n    }\n}\n"
+    ],
+    [
+        "modules/subsystems/robot.fcstm",
+        "def int cycle_count = 0;\ndef int arm_load = 0;\n\nstate RobotRoot {\n    state Picking;\n    [*] -> Picking;\n    Picking -> Picking : if [arm_load < 4] effect {\n        cycle_count = cycle_count + 1;\n        arm_load = arm_load + 1;\n    }\n}\n"
+    ]
+],
+    entryFile: "main.fcstm",
     expected: {
     "defines": {
         "host_load": {

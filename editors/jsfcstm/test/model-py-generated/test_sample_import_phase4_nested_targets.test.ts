@@ -5,6 +5,17 @@ runPyGeneratedModelCase({
     name: "import_phase4_nested_targets",
     relativeSourcePath: "import_phase4_nested_targets",
     source: "state Plant {\n    state Worker named 'Mapped Worker' {\n        state Idle;\n        state Failed;\n        state Halted;\n        [*] -> Idle;\n        Idle -> Failed : /GlobalFault;\n        Failed -> Halted : /Bus.Stop;\n        Halted -> Idle : /Bus.Reset;\n    }\n    state Bus {\n        event Stop named 'Plant Stop';\n        event Reset named 'Local Reset';\n    }\n    event GlobalFault named 'Global Fault';\n    [*] -> Worker;\n}",
+    files: [
+    [
+        "main.fcstm",
+        "state Plant {\n    state Bus;\n    import \"./modules/worker.fcstm\" as Worker named \"Mapped Worker\" {\n        event /Stop -> Bus.Stop named \"Plant Stop\";\n        event /Fault -> /GlobalFault named \"Global Fault\";\n        event /Reset -> Bus.Reset;\n    }\n    [*] -> Worker;\n}\n"
+    ],
+    [
+        "modules/worker.fcstm",
+        "state WorkerRoot {\n    event Fault named \"Local Fault\";\n    event Reset named \"Local Reset\";\n    state Idle;\n    state Failed;\n    state Halted;\n    [*] -> Idle;\n    Idle -> Failed : Fault;\n    Failed -> Halted : /Stop;\n    Halted -> Idle : Reset;\n}\n"
+    ]
+],
+    entryFile: "main.fcstm",
     expected: {
     "defines": {},
     "root_state": "Plant",

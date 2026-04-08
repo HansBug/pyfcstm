@@ -5,6 +5,8 @@ runPyGeneratedModelCase({
     name: "dlc6_more.fcstm",
     relativeSourcePath: "dlc6_more.fcstm",
     source: "def int x = 0;\ndef int y = 0;\nstate L1 {\n    enter abstract F1;\n    during before F12 {\n        x = 1;\n    }\n    during after abstract F13;\n    exit F1x ref F1;\n    >> during before ref L21.F1;\n    >> during after ref L22.F1;\n    state L21 {\n        enter F1 {\n            x = 0;\n            y = y + 1;\n        }\n        exit ref /F1x;\n        >> during after ref /F1x;\n    }\n    state L22 {\n        enter ref /F1x;\n        during ref /F1x;\n        during ref F1;\n        exit F1 {\n            x = x + 1;\n            y = 0;\n        }\n        exit ref /F1;\n    }\n    [*] -> L21;\n    L21 -> L22 : if [x > 0];\n}",
+    files: undefined,
+    entryFile: undefined,
     expected: {
     "defines": {
         "x": {

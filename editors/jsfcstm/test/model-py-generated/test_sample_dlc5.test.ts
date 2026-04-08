@@ -5,6 +5,8 @@ runPyGeneratedModelCase({
     name: "dlc5.fcstm",
     relativeSourcePath: "dlc5.fcstm",
     source: "def int a = 0;\nstate L1 {\n    during before {\n        a = 1;\n    }\n    during before abstract mock;\n    >> during before abstract user_B;\n    >> during before abstract user_A;\n    state L2 {\n        >> during before abstract user_B;\n        >> during before abstract user_A;\n        pseudo state L21 {\n            event E1;\n        }\n        state L22 {\n            event E1;\n        }\n        [*] -> L21;\n        L21 -> L22 :: E1;\n        L22 -> [*] :: E1;\n    }\n    [*] -> L2;\n    L2 -> [*];\n}",
+    files: undefined,
+    entryFile: undefined,
     expected: {
     "defines": {
         "a": {

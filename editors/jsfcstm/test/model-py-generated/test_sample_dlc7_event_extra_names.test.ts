@@ -5,6 +5,8 @@ runPyGeneratedModelCase({
     name: "dlc7_event_extra_names.fcstm",
     relativeSourcePath: "dlc7_event_extra_names.fcstm",
     source: "state Root {\n    state state1 {\n        event E1 named 'S1 -> 事件1';\n    }\n    state state2;\n    pseudo state state3 {\n        event E2 named 'S3 -> 事件2';\n    }\n    state state4;\n    event E1 named '事件1';\n    [*] -> state1 :: E1;\n    state1 -> state2 :: E1;\n    state2 -> state3 : E1;\n    state3 -> state4 :: E2;\n}",
+    files: undefined,
+    entryFile: undefined,
     expected: {
     "defines": {},
     "root_state": "Root",

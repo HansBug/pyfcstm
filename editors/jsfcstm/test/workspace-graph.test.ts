@@ -108,6 +108,90 @@ describe('jsfcstm workspace graph', () => {
         assert.equal(sharedA, sharedB);
     });
 
+    it('assembles imported models into the host state machine for file-based loading', async () => {
+        const dir = trackTempDir('jsfcstm-graph-model-import-');
+        const hostFile = path.join(dir, 'main.fcstm');
+        const workerFile = path.join(dir, 'modules', 'motor.fcstm');
+
+        writeFile(hostFile, [
+            'state Fleet {',
+            '    import "./modules/motor.fcstm" as LeftMotor;',
+            '    import "./modules/motor.fcstm" as RightMotor;',
+            '    [*] -> LeftMotor;',
+            '}',
+        ].join('\n'));
+        writeFile(workerFile, [
+            'def int counter = 0;',
+            'def int limit = 3;',
+            'state MotorRoot {',
+            '    state Idle;',
+            '    state Running;',
+            '    [*] -> Idle;',
+            '    Idle -> Running : if [counter < limit] effect { counter = counter + 1; }',
+            '}',
+        ].join('\n'));
+
+        const graph = new packageModule.FcstmWorkspaceGraph();
+        const snapshot = await graph.buildSnapshotForFile(hostFile);
+        const model = snapshot.nodes[hostFile].model;
+        assert.ok(model);
+        assert.deepEqual(Object.keys(model!.defines).sort(), [
+            'LeftMotor_counter',
+            'LeftMotor_limit',
+            'RightMotor_counter',
+            'RightMotor_limit',
+        ]);
+        assert.deepEqual(Object.keys(model!.rootState.substates), ['LeftMotor', 'RightMotor']);
+        assert.equal(
+            (model!.rootState.substates.LeftMotor.transitions[1].guard as {x: {name: string}}).x.name,
+            'LeftMotor_counter'
+        );
+        assert.equal(
+            (model!.rootState.substates.LeftMotor.transitions[1].guard as {y: {name: string}}).y.name,
+            'LeftMotor_limit'
+        );
+    });
+
+    it('assembles event mappings into host-visible events for imported models', async () => {
+        const dir = trackTempDir('jsfcstm-graph-model-events-');
+        const hostFile = path.join(dir, 'main.fcstm');
+        const workerFile = path.join(dir, 'modules', 'motor.fcstm');
+
+        writeFile(hostFile, [
+            'state Fleet {',
+            '    state Bus;',
+            '    import "./modules/motor.fcstm" as LeftMotor {',
+            '        event /Start -> Start named "Fleet Start";',
+            '        event /Stop -> /Bus.Stop;',
+            '    }',
+            '    [*] -> LeftMotor;',
+            '}',
+        ].join('\n'));
+        writeFile(workerFile, [
+            'state MotorRoot {',
+            '    state Idle;',
+            '    state Running;',
+            '    [*] -> Idle;',
+            '    Idle -> Running : /Start;',
+            '    Running -> Idle : /Stop;',
+            '}',
+        ].join('\n'));
+
+        const graph = new packageModule.FcstmWorkspaceGraph();
+        const model = await graph.getStateMachineModelForFile(hostFile);
+        assert.ok(model);
+        assert.equal(model!.rootState.events.Start.path_name, 'Fleet.Start');
+        assert.equal(model!.rootState.substates.Bus.events.Stop.path_name, 'Fleet.Bus.Stop');
+        assert.equal(
+            model!.rootState.substates.LeftMotor.transitions[1].event?.path_name,
+            'Fleet.Start'
+        );
+        assert.equal(
+            model!.rootState.substates.LeftMotor.transitions[2].event?.path_name,
+            'Fleet.Bus.Stop'
+        );
+    });
+
     it('covers private graph fallbacks for caching, missing targets, and null semantics', async () => {
         const dir = trackTempDir('jsfcstm-graph-private-');
         const hostFile = path.join(dir, 'host.fcstm');

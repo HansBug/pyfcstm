@@ -5,6 +5,17 @@ runPyGeneratedModelCase({
     name: "import_phase3_mapping_matrix",
     relativeSourcePath: "import_phase3_mapping_matrix",
     source: "def int exact_counter = 1;\ndef int set_status_flag = 2;\ndef int sensor_temp = 3;\ndef int pair_main_low_a_main_b_low = 4;\ndef int fallback_timeout = 5;\ndef int set_a = 6;\ndef int set_b = 7;\ndef int set_c = 8;\nstate Lab {\n    state Worker named 'Mapping Matrix' {\n        state Idle {\n            during {\n                exact_counter = exact_counter + set_status_flag;\n                set_status_flag = set_status_flag + set_a + set_b + set_c;\n                sensor_temp = sensor_temp + 1;\n            }\n        }\n        state Active {\n            during {\n                fallback_timeout = fallback_timeout + pair_main_low_a_main_b_low;\n            }\n        }\n        [*] -> Idle;\n        Idle -> Active : if [sensor_temp > set_status_flag];\n        Active -> Idle : if [fallback_timeout > pair_main_low_a_main_b_low] effect {\n            exact_counter = exact_counter + fallback_timeout;\n        }\n    }\n    [*] -> Worker;\n}",
+    files: [
+    [
+        "main.fcstm",
+        "state Lab {\n    import \"./modules/worker.fcstm\" as Worker named \"Mapping Matrix\" {\n        def counter -> exact_counter;\n        def {status_flag, a, b, c} -> set_*;\n        def sensor_* -> sensor_$1;\n        def a_*_b_* -> pair_${1}_${2}_${0};\n        def * -> fallback_$0;\n    }\n    [*] -> Worker;\n}\n"
+    ],
+    [
+        "modules/worker.fcstm",
+        "def int counter = 1;\ndef int status_flag = 2;\ndef int sensor_temp = 3;\ndef int a_main_b_low = 4;\ndef int timeout = 5;\ndef int a = 6;\ndef int b = 7;\ndef int c = 8;\n\nstate WorkerRoot named \"Matrix Worker\" {\n    state Idle {\n        during {\n            counter = counter + status_flag;\n            status_flag = status_flag + a + b + c;\n            sensor_temp = sensor_temp + 1;\n        }\n    }\n    state Active {\n        during {\n            timeout = timeout + a_main_b_low;\n        }\n    }\n    [*] -> Idle;\n    Idle -> Active : if [sensor_temp > status_flag];\n    Active -> Idle : if [timeout > a_main_b_low] effect {\n        counter = counter + timeout;\n    }\n}\n"
+    ]
+],
+    entryFile: "main.fcstm",
     expected: {
     "defines": {
         "exact_counter": {

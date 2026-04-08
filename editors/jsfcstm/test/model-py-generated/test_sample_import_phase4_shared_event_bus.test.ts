@@ -5,6 +5,17 @@ runPyGeneratedModelCase({
     name: "import_phase4_shared_event_bus",
     relativeSourcePath: "import_phase4_shared_event_bus",
     source: "state Fleet {\n    state LeftMotor named 'Left Motor' {\n        state Idle;\n        state Running;\n        state Error;\n        Idle -> Error : /Bus.Alarm;\n        Running -> Error : /Bus.Alarm;\n        Error -> Error : /Bus.Alarm;\n        [*] -> Idle;\n        Idle -> Running : /Start;\n        Running -> Idle : /Bus.Stop;\n    }\n    state RightMotor named 'Right Motor' {\n        state Idle;\n        state Running;\n        state Error;\n        Idle -> Error : /Bus.Alarm;\n        Running -> Error : /Bus.Alarm;\n        Error -> Error : /Bus.Alarm;\n        [*] -> Idle;\n        Idle -> Running : /Start;\n        Running -> Idle : /Bus.Stop;\n    }\n    state Bus {\n        event Stop;\n        event Alarm named 'Fleet Alarm';\n    }\n    event Start named 'Fleet Start';\n    [*] -> LeftMotor;\n    LeftMotor -> RightMotor;\n}",
+    files: [
+    [
+        "main.fcstm",
+        "state Fleet {\n    state Bus;\n    import \"./modules/motor.fcstm\" as LeftMotor named \"Left Motor\" {\n        event /Start -> Start named \"Fleet Start\";\n        event /Stop -> /Bus.Stop;\n        event /Alarm -> /Bus.Alarm named \"Fleet Alarm\";\n    }\n    import \"./modules/motor.fcstm\" as RightMotor named \"Right Motor\" {\n        event /Start -> Start named \"Fleet Start\";\n        event /Stop -> /Bus.Stop;\n        event /Alarm -> /Bus.Alarm named \"Fleet Alarm\";\n    }\n    [*] -> LeftMotor;\n    LeftMotor -> RightMotor;\n}\n"
+    ],
+    [
+        "modules/motor.fcstm",
+        "state MotorRoot {\n    event Alarm named \"Local Alarm\";\n    state Idle;\n    state Running;\n    state Error;\n    [*] -> Idle;\n    Idle -> Running : /Start;\n    Running -> Idle : /Stop;\n    ! * -> Error : Alarm;\n}\n"
+    ]
+],
+    entryFile: "main.fcstm",
     expected: {
     "defines": {},
     "root_state": "Fleet",

@@ -145,10 +145,10 @@ const tests = [
             });
             const labels = new Set(items.map(item => item.label));
 
-            assert(labels.has('Parent'), 'Current scope state should be suggested');
             assert(labels.has('Leaf'), 'Direct child state should be suggested');
             assert(labels.has('Hidden'), 'Sibling child state should be suggested');
             assert(labels.has('ParentWorker'), 'Current scope import alias should be suggested');
+            assert(!labels.has('Parent'), 'Current scope state should not be suggested as a transition target');
             assert(!labels.has('DeepHidden'), 'Deep child state should not be suggested');
             assert(!labels.has('Outside'), 'Outer sibling state should not be suggested');
             assert(!labels.has('RootWorker'), 'Ancestor import alias should not be suggested');

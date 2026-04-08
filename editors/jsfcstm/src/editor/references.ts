@@ -390,7 +390,7 @@ function collectNodeOccurrences(
             name: state.name,
             qualifiedName: state.identity.qualifiedName,
             filePath: node.filePath,
-            range: findIdentifierRange(node.document, state.name, state.range),
+            range: state.ast.nameRange || findIdentifierRange(node.document, state.name, state.range),
             role: 'definition',
             containerName: getContainerName(state.identity.path),
             renameable: true,
@@ -404,7 +404,7 @@ function collectNodeOccurrences(
         const identifierRange = findIdentifierRange(
             node.document,
             event.name,
-            event.declarationAst?.range || event.range,
+            event.declarationAst?.nameRange || event.declarationAst?.range || event.range,
             {preferLast: true}
         );
         occurrences.push({
@@ -445,7 +445,7 @@ function collectNodeOccurrences(
                 name: action.name,
                 qualifiedName: action.identity.qualifiedName,
                 filePath: node.filePath,
-                range: findIdentifierRange(node.document, action.name, action.range, {preferLast: true}),
+                range: action.ast.nameRange || findIdentifierRange(node.document, action.name, action.range, {preferLast: true}),
                 role: 'definition',
                 containerName: getContainerName(action.identity.path),
                 renameable: true,

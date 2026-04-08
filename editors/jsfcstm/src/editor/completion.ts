@@ -27,6 +27,11 @@ export interface FcstmCompletionItem {
     sortText?: string;
 }
 
+interface FcstmContextCompletionResult {
+    matched: boolean;
+    items: FcstmCompletionItem[];
+}
+
 export const KEYWORDS = [
     'state', 'pseudo', 'named', 'def', 'event', 'import', 'as',
     'enter', 'during', 'exit', 'before', 'after',
@@ -148,20 +153,6 @@ async function getDocumentSymbolCompletions(document: TextDocumentLike): Promise
             sortText: `3_${variable}`,
         });
     }
-    for (const state of fallbackSymbols.states) {
-        items.push({
-            label: state,
-            kind: 'class',
-            sortText: `4_${state}`,
-        });
-    }
-    for (const event of fallbackSymbols.events) {
-        items.push({
-            label: event,
-            kind: 'event',
-            sortText: `5_${event}`,
-        });
-    }
 
     return items;
 }
@@ -214,38 +205,64 @@ function getCurrentScopeState(
         : undefined;
 }
 
-function pushVisibleStateNames(
+function findRootState(semantic: FcstmSemanticDocument): FcstmSemanticState | undefined {
+    return semantic.machine.rootStateId
+        ? semantic.states.find(item => item.identity.id === semantic.machine.rootStateId)
+        : semantic.states.find(item => !item.parentStateId);
+}
+
+function matchesPartial(candidate: string, partial: string): boolean {
+    return !partial || candidate.toLowerCase().startsWith(partial.toLowerCase());
+}
+
+function pushChildStateNames(
     semantic: FcstmSemanticDocument,
     scopeState: FcstmSemanticState | undefined,
-    items: FcstmCompletionItem[]
+    items: FcstmCompletionItem[],
+    options: {
+        includeSelf?: boolean;
+        pathPrefix?: string;
+        partial?: string;
+        detailPrefix?: string;
+        sortPrefix?: string;
+    } = {}
 ): void {
     if (!scopeState) {
         return;
     }
 
+    const {
+        includeSelf = false,
+        pathPrefix = '',
+        partial = '',
+        detailPrefix,
+        sortPrefix = '4_state',
+    } = options;
     const seen = new Set<string>();
 
-    if (!seen.has(scopeState.name)) {
+    if (includeSelf && !seen.has(scopeState.name) && matchesPartial(scopeState.name, partial)) {
         seen.add(scopeState.name);
         items.push({
-            label: scopeState.name,
+            label: `${pathPrefix}${scopeState.name}`,
             kind: 'class',
-            detail: scopeState.identity.path.join('.'),
-            sortText: `4_state_${scopeState.name}`,
+            detail: detailPrefix || scopeState.identity.path.join('.'),
+            insertText: `${pathPrefix}${scopeState.name}`,
+            sortText: `${sortPrefix}_${scopeState.name}`,
         });
     }
 
     for (const candidate of semantic.states.filter(item => item.parentStateId === scopeState.identity.id)) {
-        if (seen.has(candidate.name)) {
+        if (seen.has(candidate.name) || !matchesPartial(candidate.name, partial)) {
             continue;
         }
 
         seen.add(candidate.name);
         items.push({
-            label: candidate.name,
+            label: `${pathPrefix}${candidate.name}`,
             kind: 'class',
-            detail: candidate.identity.path.join('.'),
-            sortText: `4_state_${candidate.name}`,
+            detail: detailPrefix || candidate.identity.path.join('.'),
+            insertText: `${pathPrefix}${candidate.name}`,
+            sortText: `${sortPrefix}_${candidate.name}`,
         });
     }
 }
@@ -276,29 +293,45 @@ function pushVisibleImportAliases(
     }
 }
 
-function pushVisibleDeclaredEvents(
+function pushDeclaredEventsForState(
     semantic: FcstmSemanticDocument,
-    lookupStates: FcstmSemanticState[],
-    items: FcstmCompletionItem[]
+    scopeState: FcstmSemanticState | undefined,
+    items: FcstmCompletionItem[],
+    options: {
+        pathPrefix?: string;
+        partial?: string;
+        detailPrefix?: string;
+        sortPrefix?: string;
+    } = {}
 ): void {
-    const seen = new Set<string>();
-    for (const scopeState of lookupStates) {
-        for (const event of semantic.events.filter(item => (
-            item.declared
-            && item.statePath.join('.') === scopeState.identity.path.join('.')
-        ))) {
-            if (seen.has(event.name)) {
-                continue;
-            }
+    if (!scopeState) {
+        return;
+    }
 
-            seen.add(event.name);
-            items.push({
-                label: event.name,
-                kind: 'event',
-                detail: event.identity.qualifiedName,
-                sortText: `5_event_${event.name}`,
-            });
+    const {
+        pathPrefix = '',
+        partial = '',
+        detailPrefix,
+        sortPrefix = '5_event',
+    } = options;
+    const seen = new Set<string>();
+
+    for (const event of semantic.events.filter(item => (
+        item.declared
+        && item.statePath.join('.') === scopeState.identity.path.join('.')
+    ))) {
+        if (seen.has(event.name) || !matchesPartial(event.name, partial)) {
+            continue;
         }
+
+        seen.add(event.name);
+        items.push({
+            label: `${pathPrefix}${event.name}`,
+            kind: 'event',
+            detail: detailPrefix || event.identity.qualifiedName,
+            insertText: `${pathPrefix}${event.name}`,
+            sortText: `${sortPrefix}_${event.name}`,
+        });
     }
 }
 
@@ -358,11 +391,9 @@ function resolveVisibleStateReference(
 
 function collectScopedSymbolCompletions(
     semantic: FcstmSemanticDocument,
-    position: TextPositionLike
+    _position: TextPositionLike
 ): FcstmCompletionItem[] {
     const items: FcstmCompletionItem[] = [];
-    const lookupStates = collectLookupStates(semantic, position);
-    const currentScope = getCurrentScopeState(semantic, position);
 
     for (const variable of semantic.variables) {
         items.push({
@@ -371,10 +402,6 @@ function collectScopedSymbolCompletions(
             sortText: `3_${variable.name}`,
         });
     }
-
-    pushVisibleStateNames(semantic, currentScope, items);
-    pushVisibleImportAliases(semantic, currentScope, items);
-    pushVisibleDeclaredEvents(semantic, lookupStates, items);
 
     return items;
 }
@@ -391,12 +418,14 @@ async function getActiveImportEntry(
 async function getImportAwareCompletions(
     document: TextDocumentLike,
     position: TextPositionLike
-): Promise<FcstmCompletionItem[]> {
+): Promise<FcstmContextCompletionResult> {
     const items: FcstmCompletionItem[] = [];
     const lineText = document.lineAt(position.line).text;
     const beforeCursor = lineText.substring(0, position.character);
+    let matched = false;
 
     if (/\bimport\b/.test(beforeCursor) && !/\bas\b/.test(beforeCursor)) {
+        matched = true;
         items.push({
             label: 'as',
             kind: 'keyword',
@@ -405,6 +434,7 @@ async function getImportAwareCompletions(
     }
 
     if (/\bimport\b/.test(beforeCursor) && /\bas\b/.test(beforeCursor) && !/\bnamed\b/.test(beforeCursor)) {
+        matched = true;
         items.push({
             label: 'named',
             kind: 'keyword',
@@ -413,6 +443,7 @@ async function getImportAwareCompletions(
     }
 
     if (/\bimport\b/.test(beforeCursor) && /\{\s*$/.test(beforeCursor)) {
+        matched = true;
         items.push({
             label: 'def',
             kind: 'keyword',
@@ -427,13 +458,24 @@ async function getImportAwareCompletions(
 
     const activeImport = await getActiveImportEntry(document, position);
     if (!activeImport) {
-        return items;
+        return {matched, items};
     }
 
+    matched = true;
+    items.push({
+        label: 'def',
+        kind: 'keyword',
+        sortText: '0_def_import',
+    });
+    items.push({
+        label: 'event',
+        kind: 'keyword',
+        sortText: '0_event_import',
+    });
     const resolved = await getImportWorkspaceIndex().resolveImportsForDocument(document);
     const target = resolved.find(item => item.sourcePath === activeImport.sourcePath);
     if (!target) {
-        return items;
+        return {matched, items};
     }
 
     for (const variableName of target.explicitVariables) {
@@ -454,7 +496,7 @@ async function getImportAwareCompletions(
         });
     }
 
-    return items;
+    return {matched, items};
 }
 
 function pushUniqueCompletion(
@@ -471,60 +513,115 @@ function pushUniqueCompletion(
     items.push(item);
 }
 
+function resolveAbsoluteStatePath(
+    semantic: FcstmSemanticDocument,
+    pathSegments: string[]
+): FcstmSemanticState | undefined {
+    let current = findRootState(semantic);
+    if (!current) {
+        return undefined;
+    }
+
+    for (const segment of pathSegments) {
+        const next = semantic.states.find(item => (
+            item.parentStateId === current?.identity.id
+            && item.name === segment
+        ));
+        if (!next) {
+            return undefined;
+        }
+        current = next;
+    }
+
+    return current;
+}
+
+function collectAbsolutePathCompletions(
+    semantic: FcstmSemanticDocument,
+    beforeCursor: string
+): FcstmContextCompletionResult {
+    const match = beforeCursor.match(/(^|[^:]):\s*\/([A-Za-z0-9_.]*)$/);
+    if (!match) {
+        return {matched: false, items: []};
+    }
+
+    const rawPath = match[2] || '';
+    const pathParts = rawPath ? rawPath.split('.') : [];
+    const endsWithDot = rawPath.endsWith('.');
+    const partial = endsWithDot ? '' : (pathParts.pop() || '');
+    const parentSegments = pathParts.filter(Boolean);
+    const containerState = resolveAbsoluteStatePath(semantic, parentSegments);
+    if (!containerState) {
+        return {matched: true, items: []};
+    }
+
+    const pathPrefix = parentSegments.length > 0
+        ? `/${parentSegments.join('.')}.`
+        : '/';
+    const items: FcstmCompletionItem[] = [];
+    pushChildStateNames(semantic, containerState, items, {
+        pathPrefix,
+        partial,
+        sortPrefix: '4_abs_state',
+        detailPrefix: 'Absolute state path',
+    });
+    pushDeclaredEventsForState(semantic, containerState, items, {
+        pathPrefix,
+        partial,
+        sortPrefix: '5_abs_event',
+        detailPrefix: 'Absolute event path',
+    });
+
+    return {matched: true, items};
+}
+
 function collectContextAwareCompletions(
     semantic: FcstmSemanticDocument,
     position: TextPositionLike,
     beforeCursor: string
-): FcstmCompletionItem[] {
+): FcstmContextCompletionResult {
     const items: FcstmCompletionItem[] = [];
     const lookupStates = collectLookupStates(semantic, position);
     const currentScope = getCurrentScopeState(semantic, position);
 
-    if (/(^|\s)ref\s+[./A-Za-z0-9_]*$/.test(beforeCursor)) {
-        pushVisibleNamedActions(semantic, lookupStates, items);
+    const absolutePathResult = collectAbsolutePathCompletions(semantic, beforeCursor);
+    if (absolutePathResult.matched) {
+        return absolutePathResult;
     }
 
-    if (/:?\s*\/[A-Za-z0-9_.]*$/.test(beforeCursor)) {
-        for (const absoluteEvent of semantic.summary.absoluteEvents) {
-            items.push({
-                label: absoluteEvent,
-                kind: 'event',
-                detail: 'Absolute event path',
-                insertText: absoluteEvent,
-                sortText: `5_abs_event_${absoluteEvent}`,
-            });
-        }
+    if (/(^|\s)ref\s+[./A-Za-z0-9_]*$/.test(beforeCursor)) {
+        pushVisibleNamedActions(semantic, lookupStates, items);
+        return {matched: true, items};
     }
 
     if (/::\s*[A-Za-z0-9_.]*$/.test(beforeCursor)) {
         const sourceMatch = beforeCursor.match(/([A-Za-z_][A-Za-z0-9_]*)\s*->[^:]*::\s*[A-Za-z0-9_.]*$/);
         const sourceState = resolveVisibleStateReference(semantic, lookupStates, sourceMatch?.[1]);
-        const localEvents = semantic.events.filter(item => (
-            item.declared
-            && sourceState
-            && item.statePath.join('.') === sourceState.identity.path.join('.')
-        ));
-
-        for (const event of localEvents) {
-            items.push({
-                label: event.name,
-                kind: 'event',
-                detail: event.identity.qualifiedName,
-                sortText: `5_local_event_${event.name}`,
-            });
-        }
+        pushDeclaredEventsForState(semantic, sourceState, items, {
+            sortPrefix: '5_local_event',
+        });
+        return {matched: true, items};
     }
 
     if (/(^|[^:]):\s*[A-Za-z0-9_.]*$/.test(beforeCursor) && !/:\s*\/[A-Za-z0-9_.]*$/.test(beforeCursor)) {
-        pushVisibleDeclaredEvents(semantic, lookupStates, items);
+        for (const scopeState of lookupStates) {
+            pushDeclaredEventsForState(semantic, scopeState, items, {
+                sortPrefix: '5_chain_event',
+            });
+        }
+        return {matched: true, items};
     }
 
     if (/->\s*[A-Za-z0-9_]*$/.test(beforeCursor)) {
-        pushVisibleStateNames(semantic, currentScope, items);
+        pushChildStateNames(semantic, currentScope, items, {
+            includeSelf: false,
+            sortPrefix: '4_target_state',
+        });
         pushVisibleImportAliases(semantic, currentScope, items);
+        return {matched: true, items};
     }
 
-    return items;
+    return {matched: false, items: []};
 }
 
 export async function collectCompletionItems(
@@ -540,6 +637,22 @@ export async function collectCompletionItems(
         return items;
     }
 
+    const semantic = await getWorkspaceGraph().getSemanticDocument(document);
+    const importAware = await getImportAwareCompletions(document, position);
+    const contextAware = semantic
+        ? collectContextAwareCompletions(semantic, position, beforeCursor)
+        : {matched: false, items: []} as FcstmContextCompletionResult;
+
+    if (importAware.matched || contextAware.matched) {
+        for (const item of contextAware.items) {
+            pushUniqueCompletion(items, seen, item);
+        }
+        for (const item of importAware.items) {
+            pushUniqueCompletion(items, seen, item);
+        }
+        return items;
+    }
+
     for (const item of getKeywordCompletions()) {
         pushUniqueCompletion(items, seen, item);
     }
@@ -549,21 +662,14 @@ export async function collectCompletionItems(
     for (const item of getFunctionCompletions()) {
         pushUniqueCompletion(items, seen, item);
     }
-    const semantic = await getWorkspaceGraph().getSemanticDocument(document);
     if (semantic) {
         for (const item of collectScopedSymbolCompletions(semantic, position)) {
-            pushUniqueCompletion(items, seen, item);
-        }
-        for (const item of collectContextAwareCompletions(semantic, position, beforeCursor)) {
             pushUniqueCompletion(items, seen, item);
         }
     } else {
         for (const item of await getDocumentSymbolCompletions(document)) {
             pushUniqueCompletion(items, seen, item);
         }
-    }
-    for (const item of await getImportAwareCompletions(document, position)) {
-        pushUniqueCompletion(items, seen, item);
     }
 
     return items;

@@ -96,6 +96,7 @@ export interface FcstmAstStateDefinition extends FcstmAstNodeBase {
     kind: 'stateDefinition';
     pyNodeType: 'StateDefinition';
     name: string;
+    nameRange?: TextRange;
     displayName?: string;
     extraName?: string;
     extra_name?: string;
@@ -132,6 +133,7 @@ export interface FcstmAstEventDefinition extends FcstmAstNodeBase {
     kind: 'eventDefinition';
     pyNodeType: 'EventDefinition';
     name: string;
+    nameRange?: TextRange;
     displayName?: string;
     extraName?: string;
     extra_name?: string;
@@ -222,6 +224,7 @@ export interface FcstmAstAction extends FcstmAstNodeBase {
     isGlobalAspect: boolean;
     mode: 'operations' | 'abstract' | 'ref';
     name?: string;
+    nameRange?: TextRange;
     operationBlock?: FcstmAstOperationBlock;
     operation_block?: FcstmAstOperationBlock;
     operations?: FcstmAstOperationStatement[];

@@ -86,8 +86,6 @@ describe('jsfcstm completion support', () => {
         assert.ok(generalItems.some(item => item.label === 'pi' && item.kind === 'constant'));
         assert.ok(generalItems.some(item => item.label === 'sin' && item.kind === 'function'));
         assert.ok(generalItems.some(item => item.label === 'counter' && item.kind === 'variable'));
-        assert.ok(generalItems.some(item => item.label === 'Root' && item.kind === 'class'));
-        assert.ok(generalItems.some(item => item.label === 'Start' && item.kind === 'event'));
         assert.ok(generalItems.some(item => item.label === 'sin' && item.insertTextFormat === 'snippet'));
     });
 
@@ -145,10 +143,10 @@ describe('jsfcstm completion support', () => {
             line: 11,
             character: document.lineAt(11).text.length,
         });
-        assert.ok(stateItems.some(item => item.label === 'Parent' && item.kind === 'class'));
         assert.ok(stateItems.some(item => item.label === 'Leaf' && item.kind === 'class'));
         assert.ok(stateItems.some(item => item.label === 'Hidden' && item.kind === 'class'));
         assert.ok(stateItems.some(item => item.label === 'ParentWorker' && item.kind === 'class'));
+        assert.equal(stateItems.some(item => item.label === 'Parent'), false);
         assert.equal(stateItems.some(item => item.label === 'DeepHidden'), false);
         assert.equal(stateItems.some(item => item.label === 'Outside'), false);
         assert.equal(stateItems.some(item => item.label === 'RootWorker'), false);
@@ -163,6 +161,69 @@ describe('jsfcstm completion support', () => {
         assert.ok(eventItems.some(item => item.label === 'RootEvent' && item.kind === 'event'));
         assert.equal(eventItems.some(item => item.label === 'HiddenEvent'), false);
         assert.equal(eventItems.some(item => item.label === 'OutsideEvent'), false);
+    });
+
+    it('keeps nested transition and absolute-path completions focused on semantic scope', async () => {
+        const baseText = [
+            'def int a = 0;',
+            'def int b = 0x0 * 0;',
+            'def int round_count = 0;',
+            'state TrafficLight {',
+            '    state InService {',
+            '        state Red;',
+            '        state Yellow;',
+            '        state Green;',
+            '        [*] -> Red :: Start effect {',
+            '            b = 0x1;',
+            '        };',
+            '        Green -> Yellow : /Idle.E2;',
+            '    }',
+            '    state Idle {',
+            '        event E2 named \'fuck E2\';',
+            '    };',
+            '    [*] -> InService;',
+            '}',
+        ].join('\n');
+
+        const topTargetDocument = createDocument(
+            baseText.replace('[*] -> InService;', '[*] -> Ye'),
+            '/tmp/trafficlight-top-target.fcstm'
+        );
+        const topTargetLine = 16;
+        const topTargetItems = await packageModule.collectCompletionItems(topTargetDocument, {
+            line: topTargetLine,
+            character: topTargetDocument.lineAt(topTargetLine).text.length,
+        });
+        assert.ok(topTargetItems.some(item => item.label === 'InService' && item.kind === 'class'));
+        assert.ok(topTargetItems.some(item => item.label === 'Idle' && item.kind === 'class'));
+        assert.equal(topTargetItems.some(item => item.label === 'Yellow'), false);
+
+        const innerTargetDocument = createDocument(
+            baseText.replace('Green -> Yellow : /Idle.E2;', 'Green -> Id'),
+            '/tmp/trafficlight-inner-target.fcstm'
+        );
+        const innerTargetLine = 11;
+        const innerTargetItems = await packageModule.collectCompletionItems(innerTargetDocument, {
+            line: innerTargetLine,
+            character: innerTargetDocument.lineAt(innerTargetLine).text.length,
+        });
+        assert.ok(innerTargetItems.some(item => item.label === 'Red' && item.kind === 'class'));
+        assert.ok(innerTargetItems.some(item => item.label === 'Yellow' && item.kind === 'class'));
+        assert.ok(innerTargetItems.some(item => item.label === 'Green' && item.kind === 'class'));
+        assert.equal(innerTargetItems.some(item => item.label === 'Idle'), false);
+        assert.equal(innerTargetItems.some(item => item.label === 'InService'), false);
+
+        const absolutePathDocument = createDocument(
+            baseText.replace('Green -> Yellow : /Idle.E2;', 'Green -> Yellow : /Idle.'),
+            '/tmp/trafficlight-absolute-path.fcstm'
+        );
+        const absolutePathItems = await packageModule.collectCompletionItems(absolutePathDocument, {
+            line: innerTargetLine,
+            character: absolutePathDocument.lineAt(innerTargetLine).text.length,
+        });
+        assert.ok(absolutePathItems.some(item => item.label === '/Idle.E2' && item.kind === 'event'));
+        assert.equal(absolutePathItems.some(item => item.label === 'before'), false);
+        assert.equal(absolutePathItems.some(item => item.label === 'after'), false);
     });
 
     it('handles parser-null and missing-import-target completion branches', async () => {

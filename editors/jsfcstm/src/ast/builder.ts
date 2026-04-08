@@ -720,6 +720,7 @@ function buildAction(
     const operationBlock = statementSet ? buildOperationBlockFromStatementSet(statementSet, document) : undefined;
     const operations = mode === 'operations' ? operationBlock?.statements || [] : undefined;
     const doc = node.raw_doc ? formatMultilineComment(tokenText(node.raw_doc)) : undefined;
+    const name = tokenText(node.func_name) || undefined;
     return {
         kind: 'action',
         pyNodeType: buildActionPyNodeType(stage, mode, isGlobalAspect),
@@ -729,7 +730,11 @@ function buildAction(
         aspect: (tokenText(node.aspect) || undefined) as 'before' | 'after' | undefined,
         isGlobalAspect,
         mode,
-        name: tokenText(node.func_name) || undefined,
+        name,
+        nameRange: name
+            ? (makeTokenRange(node.func_name, document)
+                || fallbackRangeFromText(document, document.getText(), name))
+            : undefined,
         operationBlock,
         operation_block: operationBlock,
         operations,
@@ -910,12 +915,15 @@ function buildEventDefinition(
     document: TextDocumentLike
 ): FcstmAstEventDefinition {
     const extraName = unquoteTokenValue(node.extra_name);
+    const name = tokenText(node.event_name);
     return {
         kind: 'eventDefinition',
         pyNodeType: 'EventDefinition',
         range: getNodeRange(node, document, nodeText(node)),
         text: nodeText(node),
-        name: tokenText(node.event_name),
+        name,
+        nameRange: makeTokenRange(node.event_name, document)
+            || fallbackRangeFromText(document, document.getText(), name),
         displayName: extraName,
         extraName,
         extra_name: extraName,
@@ -935,6 +943,7 @@ function buildStateDefinition(
         : [];
 
     const extraName = unquoteTokenValue(node.extra_name);
+    const name = tokenText(node.state_id);
     const substates = statements.filter(item => item.kind === 'stateDefinition') as FcstmAstStateDefinition[];
     const transitions = statements.filter(item => item.kind === 'transition') as FcstmAstTransition[];
     const forceTransitions = statements.filter(item => item.kind === 'forcedTransition') as FcstmAstForcedTransition[];
@@ -953,7 +962,9 @@ function buildStateDefinition(
         pyNodeType: 'StateDefinition',
         range: getNodeRange(node, document, nodeText(node)),
         text: nodeText(node),
-        name: tokenText(node.state_id),
+        name,
+        nameRange: makeTokenRange(node.state_id, document)
+            || fallbackRangeFromText(document, document.getText(), name),
         displayName: extraName,
         extraName,
         extra_name: extraName,

@@ -174,4 +174,23 @@ describe('jsfcstm semantic navigation and rename support', () => {
         });
         assert.equal(keywordRefs.length, 3);
     });
+
+    it('resolves event declarations by AST name range instead of matching display-name text', async () => {
+        const filePath = '/tmp/jsfcstm-event-display-name.fcstm';
+        const document = createDocument([
+            'state Root {',
+            '    state Idle {',
+            '        event E2 named \'fuck E2\';',
+            '    }',
+            '    Idle -> Idle :: E2;',
+            '}',
+        ].join('\n'), filePath);
+
+        const definition = await packageModule.resolveDefinitionLocation(document, {
+            line: 4,
+            character: charOf(document, 4, 'E2') + 1,
+        });
+        assert.equal(definition?.range.start.line, 2);
+        assert.equal(definition?.range.start.character, charOf(document, 2, 'E2'));
+    });
 });

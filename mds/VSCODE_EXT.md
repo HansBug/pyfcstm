@@ -15,6 +15,7 @@
 | 0.5.2 | 2026-04-07 | 重构 `jsfcstm` 内部目录为分层 submodule，并将 parser 生成物收敛到 `src/dsl/grammar/ -> dist/dsl/grammar/` | Codex |
 | 0.5.3 | 2026-04-08 | 基于当前仓库现状调整 phase plan：在可视化前新增 VSCode 主流能力补齐阶段，并加入 `pyfcstm` model 向 `jsfcstm` 收敛的评估 / 迁移阶段 | Codex |
 | 0.5.4 | 2026-04-08 | 重新评估依赖顺序，将 `pyfcstm` model 收敛评估前移到高级语义能力之前，避免在不稳定 public object shape 上先做 references / rename / analyzer | Codex |
+| 0.5.5 | 2026-04-08 | 明确 `jsfcstm make sample` 采用 Python `pyfcstm` 生成可直接运行的 TypeScript parity tests，再由 TS 执行，避免测试时桥接 Python | Codex |
 
 ---
 
@@ -1032,6 +1033,7 @@ npm publish --access public
 * 后续的 references / rename / analyzers / diagram IR 需要一个稳定、可复用、尽量接近 `pyfcstm.model` 的对象层，而不是直接依赖 ad-hoc semantic records
 * 因此本阶段已经新增 `editors/jsfcstm/src/model/`，并把 workspace graph 扩展为同时暴露 `ast + semantic + model` 三层快照
 * 该 model 层保持纯 JS/TS、无 Python 运行时依赖；正确答案来自预先固化的 TS golden tests，而不是测试时调用 Python
+* `editors/jsfcstm` 的 `make sample` / `npm run sample` 采用 Python `pyfcstm` 解析 repo 内 sample DSL，按 root `Makefile` 同样的粒度逐例生成固定的 `test/model-py-generated/test_sample_*.test.ts`；测试执行阶段只运行这些 TS 文件，不在 Mocha 运行时桥接 Python
 
 ### TODO
 
@@ -1040,6 +1042,7 @@ npm publish --access public
 * [x] 在 `editors/jsfcstm/src/model/` 中引入 `StateMachine`、`State`、`Transition`、`Event`、`Operation`、`VarDefine`、`Expr` 对应对象，并通过 `@pyfcstm/jsfcstm/model` 对外导出
 * [x] 让 workspace graph 快照同步暴露稳定 `model` 层，为后续 LSP / analyzers / diagram IR 提供前置数据层
 * [x] 为 model 层建立 parity corpus；测试正确答案来自预先固化的 Python 侧期望，而不是测试时调用 Python
+* [x] 建立 `make sample` / `npm run sample` 生成链路：由 Python `pyfcstm` 解析 sample corpus，并以“一个样例一个生成目标”的方式直接生成可运行的 TS parity tests
 * [x] 清理抽象边界：AST 负责 parser fidelity，semantics 负责 editor resolution，model 负责长期稳定公共对象层
 
 ### Checklist
@@ -1049,6 +1052,7 @@ npm publish --access public
 * [x] LSP、analyzers、diagram IR 的前置数据层不再只能依赖临时 ad-hoc object shape；workspace graph 已可直接暴露 `model`
 * [x] `src/model/` 的测试、文档和 package exports 已补齐，且不依赖 Python runtime
 * [x] parity evidence 已固化在 TypeScript 单元测试中，而不是在测试时动态调用 Python
+* [x] sample parity 流程已经固定为“Python 逐样例生成 TS 用例，TS 执行用例”，从机制上保证期望结果直接来自 `pyfcstm`
 
 ## Phase 6：高级语义导航与安全编辑能力
 

@@ -50,6 +50,14 @@ npm install
 # Generate parser artifacts and build dist/
 npm run build
 
+# Generate pyfcstm-backed sample model tests as runnable TypeScript files
+npm run sample
+make sample
+
+# Remove generated sample model tests
+npm run sample:clean
+make sample_clean
+
 # Run unit tests with coverage, uncovered lines, and HTML/LCOV reports
 npm test
 
@@ -63,6 +71,24 @@ npm run test:coverage
 npm pack
 npm publish --access public --dry-run
 ```
+
+`npm run sample` and `make sample` are intentionally generation-time parity tools, not runtime bridges.
+Their build shape now follows the repository root `make sample` pattern:
+
+- each sample example has its own generated target
+- each flat `*.fcstm` sample produces one TS test file
+- each import sample directory with `main.fcstm` produces one TS test file
+
+Generation still loads the repository sample DSL corpus through Python `pyfcstm`, normalizes the resulting model into
+fixed expectation snapshots, flattens the model back into import-free DSL text, and emits directly runnable
+TypeScript test files under `test/model-py-generated/`.
+
+That means:
+
+- Python is used only while generating the test files
+- Mocha test execution itself stays pure TypeScript / Node.js
+- expected answers come from `pyfcstm`, not from duplicated JavaScript-side hand maintenance
+- import-heavy samples are still testable in TS because the generator emits flattened DSL from the Python model
 
 The package root export remains `@pyfcstm/jsfcstm`, and the package now also exposes stable subpath entry points such
 as `@pyfcstm/jsfcstm/ast`, `@pyfcstm/jsfcstm/dsl`, `@pyfcstm/jsfcstm/editor`, `@pyfcstm/jsfcstm/lsp`,
@@ -86,6 +112,7 @@ validation, but the repository plan treats `@pyfcstm/jsfcstm` as the preferred p
 - HTML and LCOV artifacts are written under `coverage/`
 - machine-readable summary data is written to `coverage/coverage-summary.json`
 - overall coverage thresholds are enforced in the default test command
+- sample-based model parity tests are generated ahead of time from Python `pyfcstm` and then executed as normal TS tests
 
 ## License
 

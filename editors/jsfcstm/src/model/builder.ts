@@ -14,28 +14,29 @@ import type {
 import type {FcstmSemanticDocument} from '../semantics';
 import type {
     FcstmModelActionPath,
-    FcstmModelBinaryOp,
-    FcstmModelBoolean,
-    FcstmModelConditionalOp,
-    FcstmModelEvent,
-    FcstmModelExpression,
-    FcstmModelFloat,
-    FcstmModelIfBlock,
-    FcstmModelIfBlockBranch,
-    FcstmModelInteger,
-    FcstmModelNamedFunction,
-    FcstmModelOnAspect,
-    FcstmModelOnStage,
-    FcstmModelOperation,
-    FcstmModelOperationStatement,
-    FcstmModelState,
-    FcstmModelStateMachine,
-    FcstmModelTransition,
-    FcstmModelUFunc,
-    FcstmModelUnaryOp,
-    FcstmModelVarDefine,
-    FcstmModelVariable,
-} from './model';
+    RawFcstmModelBinaryOp as FcstmModelBinaryOp,
+    RawFcstmModelBoolean as FcstmModelBoolean,
+    RawFcstmModelConditionalOp as FcstmModelConditionalOp,
+    RawFcstmModelEvent as FcstmModelEvent,
+    RawFcstmModelExpression as FcstmModelExpression,
+    RawFcstmModelFloat as FcstmModelFloat,
+    RawFcstmModelIfBlock as FcstmModelIfBlock,
+    RawFcstmModelIfBlockBranch as FcstmModelIfBlockBranch,
+    RawFcstmModelInteger as FcstmModelInteger,
+    RawFcstmModelNamedFunction as FcstmModelNamedFunction,
+    RawFcstmModelOnAspect as FcstmModelOnAspect,
+    RawFcstmModelOnStage as FcstmModelOnStage,
+    RawFcstmModelOperation as FcstmModelOperation,
+    RawFcstmModelOperationStatement as FcstmModelOperationStatement,
+    RawFcstmModelState as FcstmModelState,
+    RawFcstmModelStateMachine as FcstmRawStateMachine,
+    RawFcstmModelTransition as FcstmModelTransition,
+    RawFcstmModelUFunc as FcstmModelUFunc,
+    RawFcstmModelUnaryOp as FcstmModelUnaryOp,
+    RawFcstmModelVarDefine as FcstmModelVarDefine,
+    RawFcstmModelVariable as FcstmModelVariable,
+} from './raw';
+import {hydrateStateMachine, type FcstmModelStateMachine as FcstmRuntimeStateMachine} from './runtime';
 
 const MATH_CONSTANTS: Record<string, number> = {
     E: Math.E,
@@ -101,7 +102,7 @@ class StateMachineModelBuilder {
         this.rootStateName = ast.rootState?.name || '';
     }
 
-    build(): FcstmModelStateMachine | null {
+    build(): FcstmRuntimeStateMachine | null {
         if (!this.ast.rootState) {
             return null;
         }
@@ -131,7 +132,7 @@ class StateMachineModelBuilder {
             transitionsByParentPath,
         };
 
-        return {
+        const rawStateMachine: FcstmRawStateMachine = {
             kind: 'stateMachine',
             pyModelType: 'StateMachine',
             range: this.ast.range,
@@ -150,6 +151,7 @@ class StateMachineModelBuilder {
             all_actions: this.allActions,
             lookups,
         };
+        return hydrateStateMachine(rawStateMachine);
     }
 
     private buildVarDefine(definition: FcstmAstVariableDefinition): FcstmModelVarDefine {
@@ -806,7 +808,7 @@ class StateMachineModelBuilder {
  */
 export function buildStateMachineModelFromAst(
     ast: FcstmAstDocument | null
-): FcstmModelStateMachine | null {
+): FcstmRuntimeStateMachine | null {
     if (!ast) {
         return null;
     }
@@ -819,7 +821,7 @@ export function buildStateMachineModelFromAst(
  */
 export function buildStateMachineModelFromSemantic(
     semantic: FcstmSemanticDocument | null
-): FcstmModelStateMachine | null {
+): FcstmRuntimeStateMachine | null {
     if (!semantic?.ast) {
         return null;
     }
@@ -832,7 +834,7 @@ export function buildStateMachineModelFromSemantic(
  */
 export function buildStateMachineModel(
     source: FcstmAstDocument | FcstmSemanticDocument | null
-): FcstmModelStateMachine | null {
+): FcstmRuntimeStateMachine | null {
     if (!source) {
         return null;
     }

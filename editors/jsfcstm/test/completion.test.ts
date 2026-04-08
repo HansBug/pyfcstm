@@ -117,6 +117,54 @@ describe('jsfcstm completion support', () => {
         assert.ok(actionItems.some(item => item.label === 'Root.ResetCounter' && item.kind === 'function'));
     });
 
+    it('limits scoped state, event, and import alias completions to visible lookup scopes', async () => {
+        const document = createDocument([
+            'state Root {',
+            '    event RootEvent;',
+            '    import "./root.fcstm" as RootWorker;',
+            '    state Parent {',
+            '        event ParentEvent;',
+            '        import "./parent.fcstm" as ParentWorker;',
+            '        state Leaf;',
+            '        state Hidden {',
+            '            event HiddenEvent;',
+            '            state DeepHidden;',
+            '        }',
+            '        Leaf -> ',
+            '        Leaf -> Leaf : ',
+            '    }',
+            '    state Outside {',
+            '        event OutsideEvent;',
+            '        import "./outside.fcstm" as OutsideWorker;',
+            '        state DeepOutside;',
+            '    }',
+            '}',
+        ].join('\n'), '/tmp/scoped-completion.fcstm');
+
+        const stateItems = await packageModule.collectCompletionItems(document, {
+            line: 11,
+            character: document.lineAt(11).text.length,
+        });
+        assert.ok(stateItems.some(item => item.label === 'Parent' && item.kind === 'class'));
+        assert.ok(stateItems.some(item => item.label === 'Leaf' && item.kind === 'class'));
+        assert.ok(stateItems.some(item => item.label === 'Hidden' && item.kind === 'class'));
+        assert.ok(stateItems.some(item => item.label === 'ParentWorker' && item.kind === 'class'));
+        assert.equal(stateItems.some(item => item.label === 'DeepHidden'), false);
+        assert.equal(stateItems.some(item => item.label === 'Outside'), false);
+        assert.equal(stateItems.some(item => item.label === 'RootWorker'), false);
+        assert.equal(stateItems.some(item => item.label === 'DeepOutside'), false);
+        assert.equal(stateItems.some(item => item.label === 'OutsideWorker'), false);
+
+        const eventItems = await packageModule.collectCompletionItems(document, {
+            line: 12,
+            character: document.lineAt(12).text.length,
+        });
+        assert.ok(eventItems.some(item => item.label === 'ParentEvent' && item.kind === 'event'));
+        assert.ok(eventItems.some(item => item.label === 'RootEvent' && item.kind === 'event'));
+        assert.equal(eventItems.some(item => item.label === 'HiddenEvent'), false);
+        assert.equal(eventItems.some(item => item.label === 'OutsideEvent'), false);
+    });
+
     it('handles parser-null and missing-import-target completion branches', async () => {
         const parser = packageModule.getParser();
         const index = packageModule.getImportWorkspaceIndex();

@@ -18,7 +18,11 @@ describe('jsfcstm semantic navigation and rename support', () => {
         const hostFile = path.join(dir, 'host.fcstm');
         const workerFile = path.join(dir, 'worker.fcstm');
 
-        writeFile(workerFile, 'state WorkerRoot;');
+        writeFile(workerFile, [
+            'state WorkerRoot {',
+            '    state Idle;',
+            '}',
+        ].join('\n'));
         const hostDocument = createDocument([
             'state Root {',
             '    import "./worker.fcstm" as Worker;',
@@ -31,19 +35,25 @@ describe('jsfcstm semantic navigation and rename support', () => {
             line: 2,
             character: charOf(hostDocument, 2, 'Worker') + 1,
         });
-        assert.equal(definition?.uri, pathToFileURL(hostFile).toString());
+        assert.equal(definition?.uri, pathToFileURL(workerFile).toString());
+
+        const pathDefinition = await packageModule.resolveDefinitionLocation(hostDocument, {
+            line: 1,
+            character: charOf(hostDocument, 1, './worker.fcstm') + 2,
+        });
+        assert.equal(pathDefinition?.uri, pathToFileURL(workerFile).toString());
 
         const references = await packageModule.collectReferences(hostDocument, {
             line: 1,
             character: charOf(hostDocument, 1, 'Worker') + 1,
         });
-        assert.equal(references.length, 4);
+        assert.equal(references.length, 5);
 
         const highlights = await packageModule.collectDocumentHighlights(hostDocument, {
             line: 3,
             character: charOf(hostDocument, 3, 'Worker') + 1,
         });
-        assert.equal(highlights.length, 4);
+        assert.equal(highlights.length, 5);
         assert.ok(highlights.some(item => item.kind === 'text'));
         assert.ok(highlights.some(item => item.kind === 'read'));
 
@@ -54,6 +64,17 @@ describe('jsfcstm semantic navigation and rename support', () => {
         const renameEdits = rename?.changes[pathToFileURL(hostFile).toString()] || [];
         assert.equal(renameEdits.length, 4);
         assert.ok(renameEdits.every((item: {newText: string}) => item.newText === 'Motor'));
+
+        const pathHighlights = await packageModule.collectDocumentHighlights(hostDocument, {
+            line: 1,
+            character: charOf(hostDocument, 1, './worker.fcstm') + 2,
+        });
+        assert.equal(pathHighlights.length, 5);
+        const pathReferences = await packageModule.collectReferences(hostDocument, {
+            line: 1,
+            character: charOf(hostDocument, 1, './worker.fcstm') + 2,
+        });
+        assert.equal(pathReferences.length, 5);
     });
 
     it('collects references and rename edits for variables and named actions', async () => {
@@ -118,5 +139,39 @@ describe('jsfcstm semantic navigation and rename support', () => {
         const symbols = await packageModule.collectWorkspaceSymbols([hostDocument], 'work');
         assert.ok(symbols.some(item => item.name === 'WorkerModule'));
         assert.ok(symbols.some(item => item.name === 'Worker'));
+    });
+
+    it('links declared events to all matching transition references, including keyword-range hits', async () => {
+        const filePath = '/tmp/jsfcstm-event-refs.fcstm';
+        const document = createDocument([
+            'state Root {',
+            '    event Start;',
+            '    state Idle;',
+            '    state Running;',
+            '    [*] -> Idle;',
+            '    Idle -> Running : Start;',
+            '    Running -> Idle : /Start;',
+            '}',
+        ].join('\n'), filePath);
+
+        const declarationRefs = await packageModule.collectReferences(document, {
+            line: 1,
+            character: charOf(document, 1, 'Start') + 1,
+        });
+        assert.equal(declarationRefs.length, 3);
+
+        const keywordHighlights = await packageModule.collectDocumentHighlights(document, {
+            line: 1,
+            character: charOf(document, 1, 'event') + 1,
+        });
+        assert.equal(keywordHighlights.length, 3);
+        assert.ok(keywordHighlights.some(item => item.kind === 'text'));
+        assert.ok(keywordHighlights.some(item => item.kind === 'read'));
+
+        const keywordRefs = await packageModule.collectReferences(document, {
+            line: 1,
+            character: charOf(document, 1, 'event') + 1,
+        });
+        assert.equal(keywordRefs.length, 3);
     });
 });

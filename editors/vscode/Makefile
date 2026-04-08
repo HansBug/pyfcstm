@@ -1,7 +1,7 @@
 # Makefile for FCSTM VSCode Extension
 # This file provides commands for building and maintaining the extension
 
-.PHONY: all parser clean install build package verify-p0.2 verify-p0.3 verify-p0.4 verify-p0.5 verify-p0.6 verify-p1.b verify-import-editor-support verify test-e2e help syntaxes icons jsfcstm-install jsfcstm-build jsfcstm-pack
+.PHONY: all parser clean install build package verify-p0.2 verify-p0.3 verify-p0.4 verify-p0.5 verify-p0.6 verify-p1.b verify-import-editor-support verify-semantic-editor-support verify test-e2e help syntaxes icons jsfcstm-install jsfcstm-build jsfcstm-pack
 
 # ANTLR configuration
 ANTLR_VERSION := 4.9.3
@@ -41,6 +41,7 @@ help:
 	@echo "  make verify-p0.6  - Verify P0.6 hover documentation (35 tests)"
 	@echo "  make verify-p1.b  - Verify P1.B language configuration reinforcement"
 	@echo "  make verify-import-editor-support - Verify import-aware editor support"
+	@echo "  make verify-semantic-editor-support - Verify scope/event/import semantic editor behavior"
 	@echo "  make test-e2e     - Run end-to-end bundle verification (20 tests)"
 	@echo "  make verify       - Run all verification tests"
 	@echo "  make package      - Build VSIX package (runs all prerequisites)"
@@ -153,12 +154,17 @@ verify-import-editor-support: build-tsc
 	node ./scripts/verify-import-editor-support.js
 	@echo ""
 
+verify-semantic-editor-support: build-tsc
+	@echo "Running semantic editor support verification script..."
+	node ./scripts/verify-semantic-editor-support.js
+	@echo ""
+
 test-e2e: build
 	@echo "Running end-to-end bundle verification..."
 	node ./scripts/test-e2e.js
 	@echo ""
 
-verify: verify-p0.2 verify-p0.3 verify-p0.4 verify-p0.5 verify-p0.6 verify-p1.b verify-import-editor-support test-e2e
+verify: verify-p0.2 verify-p0.3 verify-p0.4 verify-p0.5 verify-p0.6 verify-p1.b verify-import-editor-support verify-semantic-editor-support test-e2e
 	@echo "All verification tests passed!"
 
 package: all

@@ -127,7 +127,10 @@ export class FcstmImportWorkspaceIndex {
             return null;
         }
 
-        const targetImport = semantic.imports.find(item => rangeContains(item.pathRange, position));
+        const targetImport = semantic.imports.find(item => (
+            rangeContains(item.pathRange, position)
+            || rangeContains(item.aliasRange, position)
+        ));
         if (!targetImport) {
             return null;
         }

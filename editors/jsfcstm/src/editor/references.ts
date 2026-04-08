@@ -71,12 +71,15 @@ interface FcstmSymbolOccurrence {
     role: FcstmSymbolOccurrenceRole;
     containerName?: string;
     renameable: boolean;
+    targetFilePath?: string;
+    targetRange?: TextRange;
 }
 
 interface FcstmWorkspaceSymbolGraph {
     rootFile: string;
     occurrences: FcstmSymbolOccurrence[];
     rootDocument: TextDocumentLike;
+    snapshot: FcstmWorkspaceGraphSnapshot;
 }
 
 const IDENTIFIER_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -117,8 +120,34 @@ function dedupeOccurrences(occurrences: FcstmSymbolOccurrence[]): FcstmSymbolOcc
     return results;
 }
 
+function rangeContainsRange(outer: TextRange, inner: TextRange): boolean {
+    return rangeContains(outer, inner.start) && rangeContains(outer, inner.end);
+}
+
+function isShadowedDefinitionOccurrence(
+    candidate: FcstmSymbolOccurrence,
+    occurrences: FcstmSymbolOccurrence[]
+): boolean {
+    if (candidate.role !== 'definition') {
+        return false;
+    }
+
+    return occurrences.some(other => (
+        other !== candidate
+        && other.key === candidate.key
+        && other.filePath === candidate.filePath
+        && other.role === 'definition'
+        && rangeLength(other.range) < rangeLength(candidate.range)
+        && rangeContainsRange(candidate.range, other.range)
+    ));
+}
+
+function visibleOccurrences(occurrences: FcstmSymbolOccurrence[]): FcstmSymbolOccurrence[] {
+    return occurrences.filter(item => !isShadowedDefinitionOccurrence(item, occurrences));
+}
+
 function definitionOnly(occurrences: FcstmSymbolOccurrence[]): FcstmSymbolOccurrence[] {
-    return occurrences.filter(item => item.role === 'definition');
+    return visibleOccurrences(occurrences).filter(item => item.role === 'definition');
 }
 
 function getContainerName(path: string[]): string | undefined {
@@ -309,7 +338,27 @@ function collectActionOperationOccurrences(
     }
 }
 
-function collectNodeOccurrences(node: FcstmWorkspaceGraphNode): FcstmSymbolOccurrence[] {
+function importTargetRange(
+    snapshot: FcstmWorkspaceGraphSnapshot,
+    importItem: FcstmSemanticImport
+): {filePath?: string; range?: TextRange} {
+    const targetFile = importItem.entryFile;
+    if (!targetFile) {
+        return {};
+    }
+
+    const targetSemantic = snapshot.nodes[targetFile]?.semantic;
+    const rootState = targetSemantic?.states.find(item => !item.parentStateId);
+    return {
+        filePath: targetFile,
+        range: rootState?.range || createRange(0, 0, 0, 0),
+    };
+}
+
+function collectNodeOccurrences(
+    node: FcstmWorkspaceGraphNode,
+    snapshot: FcstmWorkspaceGraphSnapshot
+): FcstmSymbolOccurrence[] {
     const semantic = node.semantic;
     if (!semantic) {
         return [];
@@ -352,22 +401,40 @@ function collectNodeOccurrences(node: FcstmWorkspaceGraphNode): FcstmSymbolOccur
         if (!event.declared) {
             continue;
         }
+        const identifierRange = findIdentifierRange(
+            node.document,
+            event.name,
+            event.declarationAst?.range || event.range,
+            {preferLast: true}
+        );
         occurrences.push({
             key: eventOccurrenceKey(event),
             kind: 'event',
             name: event.name,
             qualifiedName: event.identity.qualifiedName,
             filePath: node.filePath,
-            range: findIdentifierRange(
-                node.document,
-                event.name,
-                event.declarationAst?.range || event.range,
-                {preferLast: true}
-            ),
+            range: identifierRange,
             role: 'definition',
             containerName: getContainerName(event.identity.path),
             renameable: true,
         });
+        const declarationRange = event.declarationAst?.range || event.range;
+        if (declarationRange.start.line !== identifierRange.start.line
+            || declarationRange.start.character !== identifierRange.start.character
+            || declarationRange.end.line !== identifierRange.end.line
+            || declarationRange.end.character !== identifierRange.end.character) {
+            occurrences.push({
+                key: eventOccurrenceKey(event),
+                kind: 'event',
+                name: event.name,
+                qualifiedName: event.identity.qualifiedName,
+                filePath: node.filePath,
+                range: declarationRange,
+                role: 'definition',
+                containerName: getContainerName(event.identity.path),
+                renameable: false,
+            });
+        }
     }
 
     for (const action of semantic.actions) {
@@ -407,6 +474,7 @@ function collectNodeOccurrences(node: FcstmWorkspaceGraphNode): FcstmSymbolOccur
     }
 
     for (const importItem of semantic.imports) {
+        const target = importTargetRange(snapshot, importItem);
         occurrences.push({
             key: buildStateAliasKey(importItem, aliasCountMap),
             kind: 'import',
@@ -417,6 +485,21 @@ function collectNodeOccurrences(node: FcstmWorkspaceGraphNode): FcstmSymbolOccur
             role: 'definition',
             containerName: importItem.ownerStatePath.join('.'),
             renameable: true,
+            targetFilePath: target.filePath,
+            targetRange: target.range,
+        });
+        occurrences.push({
+            key: buildStateAliasKey(importItem, aliasCountMap),
+            kind: 'import',
+            name: importItem.alias,
+            qualifiedName: importItem.mountedStatePath.join('.'),
+            filePath: node.filePath,
+            range: importItem.pathRange,
+            role: 'definition',
+            containerName: importItem.ownerStatePath.join('.'),
+            renameable: false,
+            targetFilePath: target.filePath,
+            targetRange: target.range,
         });
     }
 
@@ -437,6 +520,7 @@ function collectNodeOccurrences(node: FcstmWorkspaceGraphNode): FcstmSymbolOccur
         } else if (transition.sourceStateName) {
             const aliasImport = findImportAlias(semantic, transition.ownerStatePath, transition.sourceStateName);
             if (aliasImport) {
+                const target = importTargetRange(snapshot, aliasImport);
                 occurrences.push({
                     key: buildStateAliasKey(aliasImport, aliasCountMap),
                     kind: 'import',
@@ -447,6 +531,8 @@ function collectNodeOccurrences(node: FcstmWorkspaceGraphNode): FcstmSymbolOccur
                     role: 'reference',
                     containerName: aliasImport.ownerStatePath.join('.'),
                     renameable: true,
+                    targetFilePath: target.filePath,
+                    targetRange: target.range,
                 });
             }
         }
@@ -467,6 +553,7 @@ function collectNodeOccurrences(node: FcstmWorkspaceGraphNode): FcstmSymbolOccur
         } else if (transition.targetStateName) {
             const aliasImport = findImportAlias(semantic, transition.ownerStatePath, transition.targetStateName);
             if (aliasImport) {
+                const target = importTargetRange(snapshot, aliasImport);
                 occurrences.push({
                     key: buildStateAliasKey(aliasImport, aliasCountMap),
                     kind: 'import',
@@ -477,6 +564,8 @@ function collectNodeOccurrences(node: FcstmWorkspaceGraphNode): FcstmSymbolOccur
                     role: 'reference',
                     containerName: aliasImport.ownerStatePath.join('.'),
                     renameable: true,
+                    targetFilePath: target.filePath,
+                    targetRange: target.range,
                 });
             }
         }
@@ -514,12 +603,13 @@ function collectNodeOccurrences(node: FcstmWorkspaceGraphNode): FcstmSymbolOccur
 async function buildSymbolGraph(document: TextDocumentLike): Promise<FcstmWorkspaceSymbolGraph> {
     const snapshot = await getWorkspaceGraph().buildSnapshotForDocument(document);
     const occurrences = dedupeOccurrences(
-        Object.values(snapshot.nodes).flatMap(node => collectNodeOccurrences(node))
+        Object.values(snapshot.nodes).flatMap(node => collectNodeOccurrences(node, snapshot))
     );
     return {
         rootFile: snapshot.rootFile,
         occurrences,
         rootDocument: snapshot.nodes[snapshot.rootFile]?.document || document,
+        snapshot,
     };
 }
 
@@ -538,7 +628,10 @@ function findDefinitionOccurrence(
     graph: FcstmWorkspaceSymbolGraph,
     occurrence: FcstmSymbolOccurrence
 ): FcstmSymbolOccurrence | undefined {
-    return graph.occurrences.find(item => item.key === occurrence.key && item.role === 'definition');
+    return graph.occurrences
+        .filter(item => item.key === occurrence.key && item.role === 'definition')
+        .sort((left, right) => rangeLength(left.range) - rangeLength(right.range))
+        [0];
 }
 
 function isRenameConflict(
@@ -577,7 +670,21 @@ export async function resolveSymbolDefinitionLocation(
         return null;
     }
 
+    if (occurrence.kind === 'import' && occurrence.targetFilePath) {
+        return makeLocation(
+            occurrence.targetFilePath,
+            occurrence.targetRange || createRange(0, 0, 0, 0)
+        );
+    }
+
     const definition = findDefinitionOccurrence(graph, occurrence);
+    if (definition?.kind === 'import' && definition.targetFilePath) {
+        return makeLocation(
+            definition.targetFilePath,
+            definition.targetRange || createRange(0, 0, 0, 0)
+        );
+    }
+
     return definition ? makeLocation(definition.filePath, definition.range) : null;
 }
 
@@ -595,8 +702,9 @@ export async function collectReferences(
         return [];
     }
 
-    return sortReferences(graph.occurrences
+    return sortReferences(visibleOccurrences(graph.occurrences
         .filter(item => item.key === occurrence.key && (includeDeclaration || item.role !== 'definition'))
+    )
         .map(item => ({
             uri: toFileUri(item.filePath),
             range: item.range,
@@ -617,8 +725,9 @@ export async function collectDocumentHighlights(
         return [];
     }
 
-    return graph.occurrences
+    return visibleOccurrences(graph.occurrences
         .filter(item => item.key === occurrence.key && item.filePath === graph.rootFile)
+    )
         .map(item => ({
             range: item.range,
             kind: item.role === 'write' ? 'write' : item.role === 'reference' ? 'read' : 'text',
@@ -707,7 +816,7 @@ export async function planRename(
     }
 
     const changes: Record<string, FcstmTextEdit[]> = {};
-    for (const item of graph.occurrences.filter(candidate => candidate.key === occurrence.key)) {
+    for (const item of graph.occurrences.filter(candidate => candidate.key === occurrence.key && candidate.renameable)) {
         const uri = toFileUri(item.filePath);
         changes[uri] = changes[uri] || [];
         changes[uri].push({

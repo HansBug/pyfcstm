@@ -1,4 +1,5 @@
 import * as path from 'path';
+import {pathToFileURL} from 'node:url';
 
 import type {FcstmSemanticDocument, FcstmSemanticImport} from '../semantics';
 import {
@@ -52,6 +53,10 @@ export interface ImportCycle {
 
 function fallbackImportRange(): TextRange {
     return createRange(0, 0, 0, 1);
+}
+
+function toFileUri(filePath: string): string {
+    return filePath ? pathToFileURL(filePath).toString() : 'untitled:fcstm';
 }
 
 function toImportEntry(semanticImport: FcstmSemanticImport): ImportEntry {
@@ -142,25 +147,33 @@ export class FcstmImportWorkspaceIndex {
             return diagnostics;
         }
 
-        const stateAliasSeen = new Map<string, Set<string>>();
+        const stateAliasSeen = new Map<string, Map<string, FcstmSemanticImport>>();
         for (const semanticImport of semantic.imports) {
             const stateKey = semanticImport.ownerStatePath.join('.') || '<root>';
-            let aliasSet = stateAliasSeen.get(stateKey);
-            if (!aliasSet) {
-                aliasSet = new Set<string>();
-                stateAliasSeen.set(stateKey, aliasSet);
+            let aliasMap = stateAliasSeen.get(stateKey);
+            if (!aliasMap) {
+                aliasMap = new Map<string, FcstmSemanticImport>();
+                stateAliasSeen.set(stateKey, aliasMap);
             }
 
-            if (aliasSet.has(semanticImport.alias)) {
+            const firstAlias = aliasMap.get(semanticImport.alias);
+            if (firstAlias) {
                 diagnostics.push({
                     range: semanticImport.aliasRange,
                     message: `Duplicate import alias ${JSON.stringify(semanticImport.alias)} in state ${JSON.stringify(stateKey)}.`,
                     severity: 'error',
                     source: 'fcstm',
                     code: FCSTM_DIAGNOSTIC_CODES.duplicateImportAlias,
+                    relatedInformation: [{
+                        location: {
+                            uri: toFileUri(ownerFile),
+                            range: firstAlias.aliasRange,
+                        },
+                        message: `First declaration of alias ${JSON.stringify(semanticImport.alias)} is here.`,
+                    }],
                 });
             } else {
-                aliasSet.add(semanticImport.alias);
+                aliasMap.set(semanticImport.alias, semanticImport);
             }
 
             if (semanticImport.missing) {

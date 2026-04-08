@@ -1,3 +1,5 @@
+import {pathToFileURL} from 'node:url';
+
 import type {FcstmAstExpression, FcstmAstImportMapping} from '../ast';
 import type {FcstmSemanticDocument, FcstmSemanticImport, FcstmSemanticTransition} from '../semantics';
 import {FcstmDiagnostic, TextDocumentLike} from '../utils/text';
@@ -20,6 +22,11 @@ function isFalseLiteral(expression: FcstmAstExpression): boolean {
     return expression.expressionKind === 'literal'
         && expression.literalType === 'boolean'
         && /^(false|False)$/i.test(expression.valueText);
+}
+
+function toFileUri(document: TextDocumentLike): string {
+    const filePath = document.filePath || document.uri?.fsPath;
+    return filePath ? pathToFileURL(filePath).toString() : 'untitled:fcstm';
 }
 
 function findImportAlias(
@@ -75,24 +82,33 @@ function collectReachableStateIds(semantic: FcstmSemanticDocument): Set<string> 
 
 function addImportMappingDiagnostics(
     semantic: FcstmSemanticDocument,
+    document: TextDocumentLike,
     diagnostics: FcstmDiagnostic[]
 ): void {
     for (const importItem of semantic.imports) {
-        const seen = new Set<string>();
+        const seen = new Map<string, FcstmAstImportMapping>();
         for (const mapping of importItem.ast.mappings) {
             const key = mapping.kind === 'importDefMapping'
                 ? `${mapping.kind}:${mapping.selector.text}->${mapping.targetTemplate}`
                 : `${mapping.kind}:${mapping.sourceEvent.text}->${mapping.targetEvent.text}`;
-            if (seen.has(key)) {
+            const firstMapping = seen.get(key);
+            if (firstMapping) {
                 diagnostics.push({
                     range: mapping.range,
                     message: `Duplicate import mapping ${JSON.stringify(mapping.text)} in alias ${JSON.stringify(importItem.alias)}.`,
                     severity: 'warning',
                     source: 'fcstm',
                     code: FCSTM_DIAGNOSTIC_CODES.duplicateImportMapping,
+                    relatedInformation: [{
+                        location: {
+                            uri: toFileUri(document),
+                            range: firstMapping.range,
+                        },
+                        message: `First mapping ${JSON.stringify(firstMapping.text)} is here.`,
+                    }],
                 });
             } else {
-                seen.add(key);
+                seen.set(key, mapping);
             }
         }
     }
@@ -159,6 +175,7 @@ function addTransitionDiagnostics(
             && transition.sourceStateId !== semantic.machine.rootStateId
         );
         if (sourceUnreachable || (transition.guard && isFalseLiteral(transition.guard))) {
+            const sourceState = semantic.states.find(item => item.identity.id === transition.sourceStateId);
             diagnostics.push({
                 range: transition.range,
                 message: sourceUnreachable
@@ -167,6 +184,15 @@ function addTransitionDiagnostics(
                 severity: 'warning',
                 source: 'fcstm',
                 code: FCSTM_DIAGNOSTIC_CODES.deadTransition,
+                relatedInformation: sourceState
+                    ? [{
+                        location: {
+                            uri: toFileUri(document),
+                            range: findIdentifierRange(document, sourceState.name, sourceState.range),
+                        },
+                        message: `The transition source state ${JSON.stringify(sourceState.identity.qualifiedName)} is defined here.`,
+                    }]
+                    : undefined,
             });
         }
     }
@@ -231,7 +257,7 @@ export async function collectSemanticAnalysisDiagnostics(
         return diagnostics;
     }
 
-    addImportMappingDiagnostics(semantic, diagnostics);
+    addImportMappingDiagnostics(semantic, document, diagnostics);
     addUnreachableStateDiagnostics(semantic, document, diagnostics);
     addTransitionDiagnostics(semantic, document, diagnostics);
     addUnusedEventDiagnostics(semantic, document, diagnostics);

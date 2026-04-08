@@ -35,6 +35,9 @@ interface HandlerMap {
     prepareRename?: (params: { textDocument: { uri: string }; position: { line: number; character: number } }, token?: unknown) => Promise<unknown> | unknown;
     rename?: (params: { textDocument: { uri: string }; position: { line: number; character: number }; newName: string }, token?: unknown) => Promise<unknown> | unknown;
     links?: (params: { textDocument: { uri: string } }, token?: unknown) => Promise<unknown> | unknown;
+    folding?: (params: { textDocument: { uri: string } }, token?: unknown) => Promise<unknown> | unknown;
+    selection?: (params: { textDocument: { uri: string }; positions: Array<{ line: number; character: number }> }, token?: unknown) => Promise<unknown> | unknown;
+    semanticTokens?: (params: { textDocument: { uri: string } }, token?: unknown) => Promise<unknown> | unknown;
     workspaceSymbol?: (params: { query: string }, token?: unknown) => Promise<unknown> | unknown;
     codeAction?: (params: { textDocument: { uri: string }; range: { start: { line: number; character: number }; end: { line: number; character: number } }; context: { diagnostics: unknown[] } }, token?: unknown) => Promise<unknown> | unknown;
     initialized?: () => void;
@@ -52,6 +55,14 @@ class FakeConnection {
             callback: (event: { added: Array<{ uri: string; name: string }>; removed: Array<{ uri: string; name: string }> }) => Promise<void> | void
         ) => {
             this.workspaceFolderHandler = callback;
+        },
+    };
+
+    readonly languages = {
+        semanticTokens: {
+            on: (callback: HandlerMap['semanticTokens']) => {
+                this.handlers.semanticTokens = callback;
+            },
         },
     };
 
@@ -117,6 +128,14 @@ class FakeConnection {
 
     onDocumentLinks(callback: HandlerMap['links']): void {
         this.handlers.links = callback;
+    }
+
+    onFoldingRanges(callback: HandlerMap['folding']): void {
+        this.handlers.folding = callback;
+    }
+
+    onSelectionRanges(callback: HandlerMap['selection']): void {
+        this.handlers.selection = callback;
     }
 
     onWorkspaceSymbol(callback: HandlerMap['workspaceSymbol']): void {
@@ -247,6 +266,13 @@ describe('jsfcstm lsp coverage support', () => {
             message: 'Broken',
             severity: 'error',
             source: 'fcstm',
+            relatedInformation: [{
+                location: {
+                    uri: toUri('/tmp/original.fcstm'),
+                    range: packageModule.createRange(1, 0, 1, 5),
+                },
+                message: 'Original diagnostic anchor',
+            }],
         });
         const warningDiagnostic = packageModule.toLspDiagnostic({
             range: packageModule.createRange(0, 1, 0, 2),
@@ -256,10 +282,13 @@ describe('jsfcstm lsp coverage support', () => {
         });
         assert.equal(errorDiagnostic.severity, DiagnosticSeverity.Error);
         assert.equal(warningDiagnostic.severity, DiagnosticSeverity.Warning);
+        assert.equal(errorDiagnostic.relatedInformation?.[0]?.location.uri, toUri('/tmp/original.fcstm'));
 
         assert.equal(packageModule.toLspSymbolKind('variable'), SymbolKind.Variable);
         assert.equal(packageModule.toLspSymbolKind('event'), SymbolKind.Event);
         assert.equal(packageModule.toLspSymbolKind('class'), SymbolKind.Class);
+        assert.equal(packageModule.toLspSymbolKind('function'), SymbolKind.Function);
+        assert.equal(packageModule.toLspSymbolKind('module'), SymbolKind.Module);
 
         const symbol = packageModule.toLspDocumentSymbol({
             name: 'Root',
@@ -360,6 +389,17 @@ describe('jsfcstm lsp coverage support', () => {
         assert.equal(workspaceSymbol.containerName, 'Root');
         assert.equal(workspaceSymbol.kind, SymbolKind.Class);
 
+        const importWorkspaceSymbol = packageModule.toLspWorkspaceSymbol({
+            name: 'Worker',
+            kind: 'import',
+            containerName: 'Root',
+            location: {
+                uri: toUri('/tmp/worker.fcstm'),
+                range: packageModule.createRange(0, 0, 0, 5),
+            },
+        });
+        assert.equal(importWorkspaceSymbol.kind, SymbolKind.Module);
+
         const codeAction = packageModule.toLspCodeAction({
             title: 'Remove unresolved import',
             kind: 'quickfix',
@@ -381,6 +421,24 @@ describe('jsfcstm lsp coverage support', () => {
         });
         assert.equal(codeAction.kind, CodeActionKind.QuickFix);
         assert.equal(codeAction.edit?.changes?.[toUri('/tmp/worker.fcstm')]?.[0]?.newText, '');
+
+        const foldingRange = packageModule.toLspFoldingRange({
+            startLine: 0,
+            endLine: 3,
+            kind: 'region',
+        });
+        assert.equal(foldingRange.kind, 'region');
+
+        const selectionRange = packageModule.toLspSelectionRange({
+            range: packageModule.createRange(0, 0, 0, 4),
+            parent: {
+                range: packageModule.createRange(0, 0, 1, 0),
+            },
+        });
+        assert.deepEqual(selectionRange.parent?.range, packageModule.toLspRange(packageModule.createRange(0, 0, 1, 0)));
+
+        const semanticTokens = packageModule.toLspSemanticTokens({data: [0, 0, 4, 0, 0]});
+        assert.deepEqual(semanticTokens.data, [0, 0, 4, 0, 0]);
     });
 
     it('covers default scheduler behavior and internal core guard branches', async () => {
@@ -396,8 +454,11 @@ describe('jsfcstm lsp coverage support', () => {
         });
         const diagnosticsModule = require('../dist/editor/diagnostics.js') as typeof import('../dist/editor/diagnostics');
         const completionModule = require('../dist/editor/completion.js') as typeof import('../dist/editor/completion');
+        const foldingModule = require('../dist/editor/folding.js') as typeof import('../dist/editor/folding');
         const hoverModule = require('../dist/editor/hover.js') as typeof import('../dist/editor/hover');
         const navigationModule = require('../dist/editor/navigation.js') as typeof import('../dist/editor/navigation');
+        const selectionModule = require('../dist/editor/selection.js') as typeof import('../dist/editor/selection');
+        const semanticTokensModule = require('../dist/editor/semantic-tokens.js') as typeof import('../dist/editor/semantic-tokens');
         const symbolsModule = require('../dist/editor/symbols.js') as typeof import('../dist/editor/symbols');
 
         await core.openTextDocument({
@@ -431,6 +492,9 @@ describe('jsfcstm lsp coverage support', () => {
         assert.equal(await core.provideHover('untitled:absent.fcstm', {line: 0, character: 0}), null);
         assert.equal(await core.provideDefinition('untitled:absent.fcstm', {line: 0, character: 0}), null);
         assert.deepEqual(await core.provideDocumentLinks('untitled:absent.fcstm'), []);
+        assert.deepEqual(await core.provideFoldingRanges('untitled:absent.fcstm'), []);
+        assert.deepEqual(await core.provideSelectionRanges('untitled:absent.fcstm', [{line: 0, character: 0}]), []);
+        assert.deepEqual(await core.provideSemanticTokens('untitled:absent.fcstm'), {data: []});
 
         await core.openTextDocument({
             uri: hostUri,
@@ -464,6 +528,22 @@ describe('jsfcstm lsp coverage support', () => {
         assert.deepEqual(
             await core.provideDocumentLinks(hostUri, {isCancellationRequested: true}),
             []
+        );
+        assert.deepEqual(
+            await core.provideFoldingRanges(hostUri, {isCancellationRequested: true}),
+            []
+        );
+        assert.deepEqual(
+            await core.provideSelectionRanges(
+                hostUri,
+                [{line: 0, character: 0}],
+                {isCancellationRequested: true}
+            ),
+            []
+        );
+        assert.deepEqual(
+            await core.provideSemanticTokens(hostUri, {isCancellationRequested: true}),
+            {data: []}
         );
         assert.deepEqual(
             await core.provideReferences(hostUri, {line: 0, character: 0}, true, {isCancellationRequested: true}),
@@ -521,6 +601,52 @@ describe('jsfcstm lsp coverage support', () => {
                 async () => core.provideCompletionItems(hostUri, {line: 0, character: 0}, completionCancelToken)
             ),
             []
+        );
+
+        const foldingCancelToken = {isCancellationRequested: false};
+        assert.deepEqual(
+            await withPatchedProperty(
+                foldingModule,
+                'collectFoldingRanges',
+                async () => {
+                    foldingCancelToken.isCancellationRequested = true;
+                    return [];
+                },
+                async () => core.provideFoldingRanges(hostUri, foldingCancelToken)
+            ),
+            []
+        );
+
+        const selectionCancelToken = {isCancellationRequested: false};
+        assert.deepEqual(
+            await withPatchedProperty(
+                selectionModule,
+                'collectSelectionRanges',
+                async () => {
+                    selectionCancelToken.isCancellationRequested = true;
+                    return [];
+                },
+                async () => core.provideSelectionRanges(
+                    hostUri,
+                    [{line: 0, character: 0}],
+                    selectionCancelToken
+                )
+            ),
+            []
+        );
+
+        const semanticTokensCancelToken = {isCancellationRequested: false};
+        assert.deepEqual(
+            await withPatchedProperty(
+                semanticTokensModule,
+                'collectSemanticTokens',
+                async () => {
+                    semanticTokensCancelToken.isCancellationRequested = true;
+                    return {data: [0, 0, 4, 0, 0]};
+                },
+                async () => core.provideSemanticTokens(hostUri, semanticTokensCancelToken)
+            ),
+            {data: []}
         );
 
         const lateCancelToken = {isCancellationRequested: false};
@@ -785,10 +911,22 @@ describe('jsfcstm lsp coverage support', () => {
 
         const initializeResult = await fakeConnection.handlers.initialize?.({
             workspaceFolders: [{uri: toUri(dir), name: 'fixture'}],
-        }) as { capabilities?: { definitionProvider?: boolean; referencesProvider?: boolean; codeActionProvider?: boolean } };
+        }) as {
+            capabilities?: {
+                definitionProvider?: boolean;
+                referencesProvider?: boolean;
+                codeActionProvider?: boolean;
+                foldingRangeProvider?: boolean;
+                selectionRangeProvider?: boolean;
+                semanticTokensProvider?: { legend?: { tokenTypes?: string[] } };
+            };
+        };
         assert.equal(initializeResult.capabilities?.definitionProvider, true);
         assert.equal(initializeResult.capabilities?.referencesProvider, true);
         assert.equal(initializeResult.capabilities?.codeActionProvider, true);
+        assert.equal(initializeResult.capabilities?.foldingRangeProvider, true);
+        assert.equal(initializeResult.capabilities?.selectionRangeProvider, true);
+        assert.ok(initializeResult.capabilities?.semanticTokensProvider?.legend?.tokenTypes?.includes('class'));
         const initializeWithoutFolders = await fakeConnection.handlers.initialize?.({}) as { capabilities?: { hoverProvider?: boolean } };
         assert.equal(initializeWithoutFolders.capabilities?.hoverProvider, true);
 
@@ -847,6 +985,16 @@ describe('jsfcstm lsp coverage support', () => {
         const links = await fakeConnection.handlers.links?.({
             textDocument: {uri: toUri(hostFile)},
         }) as Array<{ target: string }>;
+        const foldingRanges = await fakeConnection.handlers.folding?.({
+            textDocument: {uri: toUri(hostFile)},
+        }) as Array<{ startLine: number; endLine: number }>;
+        const selectionRanges = await fakeConnection.handlers.selection?.({
+            textDocument: {uri: toUri(hostFile)},
+            positions: [{line: 2, character: hostText.split('\n')[2].indexOf('Worker') + 1}],
+        }) as Array<{ range: { start: { line: number } }; parent?: unknown }>;
+        const semanticTokens = await fakeConnection.handlers.semanticTokens?.({
+            textDocument: {uri: toUri(hostFile)},
+        }) as { data: number[] };
         const workspaceSymbols = await fakeConnection.handlers.workspaceSymbol?.({
             query: 'work',
         }) as Array<{ name: string }>;
@@ -865,6 +1013,10 @@ describe('jsfcstm lsp coverage support', () => {
         assert.ok(prepareRename);
         assert.ok(Object.values(rename.changes || {}).flat().length >= 1);
         assert.equal(links[0]?.target, toUri(workerFile));
+        assert.ok(foldingRanges.some(item => item.startLine === 1 && item.endLine === 3));
+        assert.equal(selectionRanges[0]?.range.start.line, 2);
+        assert.ok(selectionRanges[0]?.parent);
+        assert.ok(semanticTokens.data.length > 0);
         assert.ok(workspaceSymbols.some(item => item.name === 'Worker'));
         assert.deepEqual(codeActions, []);
 

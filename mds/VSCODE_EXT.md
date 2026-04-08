@@ -1088,20 +1088,32 @@ npm publish --access public
 
 ### TODO
 
-* [ ] 建立一份面向 FCSTM 的主流 VSCode language feature 清单，并逐项评估价值、依赖前置、实现位置与测试方案
-* [ ] 实现 folding ranges、selection ranges、semantic tokens，并确保 token taxonomy 与 AST / semantics / model 层对齐
-* [ ] 实现或明确取舍 document highlights、code lens、inlay hints、linked editing、call hierarchy 等常见语言能力中对 FCSTM 真实有价值的部分
-* [ ] 增强 diagnostics 的编辑器表现层信息，例如 related information、稳定 diagnostic code、可追踪的 quick fix 关联
-* [ ] 将这些能力默认接到 `jsfcstm` 的 language server 能力面，而不是在 `editors/vscode` 单独堆 extension-host fallback
-* [ ] 为新增 capability 补齐单元测试、LSP 集成测试和 `verify-*` / `test-e2e` 验证
+* [x] 建立一份面向 FCSTM 的主流 VSCode language feature 清单，并逐项评估价值、依赖前置、实现位置与测试方案
+* [x] 实现 folding ranges、selection ranges、semantic tokens，并确保 token taxonomy 与 AST / semantics / model 层对齐
+* [x] 将 outline / breadcrumb / Go to Symbol 相关体验纳入本 phase，并通过 richer document symbols 实现 imports、actions、events、substates 的层级化节点与精确 selection range
+* [x] 对 document highlights、code lens、inlay hints、linked editing、call hierarchy 等常见语言能力完成逐项取舍
+* [x] 增强 diagnostics 的编辑器表现层信息，例如 related information、稳定 diagnostic code、可追踪的 quick fix 关联
+* [x] 将这些能力默认接到 `jsfcstm` 的 language server 能力面，而不是在 `editors/vscode` 单独堆 extension-host fallback
+* [x] 为新增 capability 补齐单元测试、LSP 集成测试和 VSCode 侧打包编译验证
+
+### 取舍结论
+
+* [x] `document highlights` 已在 Phase 6 落地，继续作为主流编辑体验的一部分保留
+* [x] `code lens` 当前不做：FCSTM 没有稳定且高价值的引用计数 / run target / test target 展示场景，先避免引入噪声 UI
+* [x] `inlay hints` 当前不做：DSL 语法短、参数位少，现阶段收益不足以抵消维护成本
+* [x] `linked editing` 当前不做：FCSTM 缺乏类似 tag pair / paired identifier 的强约束编辑场景
+* [x] `call hierarchy` 当前不做：FCSTM 当前更接近状态迁移图而非函数调用图，若未来引入更稳定的 action / model call graph 再单列 phase
+* [x] 高价值项优先级已经固定为：Outline / Breadcrumb / Go to Symbol、folding、selection expansion、semantic coloring、rich diagnostics
 
 ### Checklist
 
-* [ ] 主流 VSCode 语言能力清单已经写清楚，不再靠口头判断“哪些以后再说”
-* [ ] `semantic tokens`、`folding ranges`、`selection ranges` 已稳定提供
-* [ ] 其余常见能力中，对 FCSTM 明确高价值的部分已经实现；不实现的项也有书面理由
-* [ ] rich editor experience 的主实现仍位于 `editors/jsfcstm`，`editors/vscode` 只做 capability wiring
-* [ ] 对应验证链已经扩展，不能只靠手工点点看
+* [x] 主流 VSCode 语言能力清单已经写清楚，不再靠口头判断“哪些以后再说”
+* [x] `semantic tokens`、`folding ranges`、`selection ranges` 已稳定提供
+* [x] Outline / Breadcrumb / Go to Symbol 已可直接消费 richer document symbols，且 symbol kind / selection range 已细化到 import alias、action、event、state
+* [x] 其余常见能力中，对 FCSTM 明确高价值的部分已经实现；不实现的项也有书面理由
+* [x] rich editor experience 的主实现仍位于 `editors/jsfcstm`，`editors/vscode` 只做 capability wiring
+* [x] 对应验证链已经扩展，不能只靠手工点点看
+* [x] `editors/jsfcstm` 已通过 `npm test` 覆盖率验证，`editors/vscode` 已在刷新本地 `jsfcstm.tgz` 依赖后重新 `npm run compile`
 ## Phase 8：纯 JS 可视化与预览
 
 ### 目标

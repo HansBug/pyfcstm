@@ -9,14 +9,17 @@ import {
     DocumentHighlightKind,
     DocumentLink,
     DocumentSymbol,
+    FoldingRange,
     Hover,
     InsertTextFormat,
     Location,
     MarkupKind,
     Position,
     Range,
+    SelectionRange,
     SymbolInformation,
     SymbolKind,
+    SemanticTokens,
     TextEdit,
     WorkspaceEdit,
 } from 'vscode-languageserver/node';
@@ -30,6 +33,8 @@ import type {
     FcstmDefinitionLocation,
     FcstmDocumentHighlight,
     FcstmDocumentLink,
+    FcstmFoldingRange,
+    FcstmSelectionRange,
     FcstmWorkspaceEdit,
     FcstmWorkspaceSymbol,
 } from '../editor';
@@ -61,11 +66,22 @@ export function toLspDiagnostic(item: FcstmDiagnostic): Diagnostic {
         source: item.source,
         code: item.code,
         data: item.data,
+        relatedInformation: item.relatedInformation?.map(info => ({
+            location: {
+                uri: info.location.uri,
+                range: toLspRange(info.location.range),
+            },
+            message: info.message,
+        })),
     };
 }
 
 export function toLspSymbolKind(kind: FcstmSymbolKind): SymbolKind {
     switch (kind) {
+        case 'module':
+            return SymbolKind.Module;
+        case 'function':
+            return SymbolKind.Function;
         case 'variable':
             return SymbolKind.Variable;
         case 'event':
@@ -197,12 +213,49 @@ export function toLspWorkspaceEdit(edit: FcstmWorkspaceEdit): WorkspaceEdit {
 }
 
 export function toLspWorkspaceSymbol(symbol: FcstmWorkspaceSymbol): SymbolInformation {
+    const kindMap: Record<FcstmWorkspaceSymbol['kind'], SymbolKind> = {
+        variable: SymbolKind.Variable,
+        state: SymbolKind.Class,
+        event: SymbolKind.Event,
+        action: SymbolKind.Function,
+        import: SymbolKind.Module,
+    };
     return {
         name: symbol.name,
         containerName: symbol.containerName,
-        kind: toLspSymbolKind(symbol.kind === 'import' ? 'class' : symbol.kind as FcstmSymbolKind),
+        kind: kindMap[symbol.kind],
         location: toLspLocation(symbol.location),
     };
+}
+
+/**
+ * Convert jsfcstm folding metadata into an LSP ``FoldingRange``.
+ */
+export function toLspFoldingRange(range: FcstmFoldingRange): FoldingRange {
+    return {
+        startLine: range.startLine,
+        endLine: range.endLine,
+        startCharacter: range.startCharacter,
+        endCharacter: range.endCharacter,
+        kind: range.kind,
+    };
+}
+
+/**
+ * Convert nested jsfcstm selection ranges into the recursive LSP shape.
+ */
+export function toLspSelectionRange(range: FcstmSelectionRange): SelectionRange {
+    return {
+        range: toLspRange(range.range),
+        parent: range.parent ? toLspSelectionRange(range.parent) : undefined,
+    };
+}
+
+/**
+ * Pass through semantic tokens while keeping a named converter API.
+ */
+export function toLspSemanticTokens(tokens: SemanticTokens): SemanticTokens {
+    return tokens;
 }
 
 export function toLspCodeAction(action: FcstmCodeAction): CodeAction {

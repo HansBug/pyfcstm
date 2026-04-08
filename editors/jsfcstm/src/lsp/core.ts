@@ -8,11 +8,14 @@ import {
     DocumentHighlight,
     DocumentLink,
     DocumentSymbol,
+    FoldingRange,
     Hover,
     InitializeResult,
     Location,
     Position,
     Range,
+    SelectionRange,
+    SemanticTokens,
     ServerCapabilities,
     SymbolInformation,
     TextDocumentContentChangeEvent,
@@ -31,8 +34,12 @@ import {
     collectDocumentHighlights,
     collectDocumentLinks,
     collectDocumentSymbols,
+    collectFoldingRanges,
     collectReferences,
+    collectSelectionRanges,
+    collectSemanticTokens,
     collectWorkspaceSymbols,
+    getFcstmSemanticTokensLegend,
     planRename,
     prepareRename,
     resolveDefinitionLocation,
@@ -47,8 +54,11 @@ import {
     toLspDocumentHighlight,
     toLspDocumentLink,
     toLspDocumentSymbol,
+    toLspFoldingRange,
     toLspHover,
     toLspLocation,
+    toLspSelectionRange,
+    toLspSemanticTokens,
     toLspWorkspaceEdit,
     toLspWorkspaceSymbol,
 } from './converters';
@@ -175,6 +185,12 @@ export class FcstmLanguageServerCore {
             },
             documentLinkProvider: {
                 resolveProvider: false,
+            },
+            foldingRangeProvider: true,
+            selectionRangeProvider: true,
+            semanticTokensProvider: {
+                legend: getFcstmSemanticTokensLegend(),
+                full: true,
             },
             workspaceSymbolProvider: true,
             codeActionProvider: true,
@@ -490,6 +506,70 @@ export class FcstmLanguageServerCore {
         return links.map(item => toLspDocumentLink(item));
     }
 
+    async provideFoldingRanges(
+        uri: string,
+        token?: CancellationToken
+    ): Promise<FoldingRange[]> {
+        if (shouldCancel(token)) {
+            return [];
+        }
+
+        const document = this.getDocumentLike(uri);
+        if (!document) {
+            return [];
+        }
+
+        const ranges = await collectFoldingRanges(document);
+        if (shouldCancel(token)) {
+            return [];
+        }
+
+        return ranges.map(item => toLspFoldingRange(item));
+    }
+
+    async provideSelectionRanges(
+        uri: string,
+        positions: Position[],
+        token?: CancellationToken
+    ): Promise<SelectionRange[]> {
+        if (shouldCancel(token)) {
+            return [];
+        }
+
+        const document = this.getDocumentLike(uri);
+        if (!document) {
+            return [];
+        }
+
+        const ranges = await collectSelectionRanges(document, positions);
+        if (shouldCancel(token)) {
+            return [];
+        }
+
+        return ranges.map(item => toLspSelectionRange(item));
+    }
+
+    async provideSemanticTokens(
+        uri: string,
+        token?: CancellationToken
+    ): Promise<SemanticTokens> {
+        if (shouldCancel(token)) {
+            return {data: []};
+        }
+
+        const document = this.getDocumentLike(uri);
+        if (!document) {
+            return {data: []};
+        }
+
+        const tokens = await collectSemanticTokens(document);
+        if (shouldCancel(token)) {
+            return {data: []};
+        }
+
+        return toLspSemanticTokens(tokens);
+    }
+
     async provideCodeActions(
         uri: string,
         range: Range,
@@ -512,6 +592,13 @@ export class FcstmLanguageServerCore {
             source: item.source || 'fcstm',
             code: item.code ? String(item.code) : undefined,
             data: item.data as Record<string, unknown> | undefined,
+            relatedInformation: item.relatedInformation?.map(info => ({
+                location: {
+                    uri: info.location.uri,
+                    range: info.location.range,
+                },
+                message: info.message,
+            })),
         })));
         if (shouldCancel(token)) {
             return [];

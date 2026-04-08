@@ -348,4 +348,199 @@ describe('jsfcstm symbol extraction', () => {
             assert.ok(symbols[0].children.some(item => item.name === 'Junction' && item.detail === 'pseudo state'));
         });
     });
+
+    it('collects richer outline symbols for imports, actions, and narrowed selections', async () => {
+        const document = createDocument([
+            'state Root {',
+            '    import "./worker.fcstm" as Worker;',
+            '    enter Setup {',
+            '        counter = 0;',
+            '    }',
+            '    event Start;',
+            '    state Child;',
+            '}',
+        ].join('\n'), '/tmp/outline-symbols.fcstm');
+        const rootStateId = 'state:/tmp/outline-symbols.fcstm:Root:1';
+        const childStateId = 'state:/tmp/outline-symbols.fcstm:Root.Child:2';
+        const semantic = {
+            file: {
+                identity: {
+                    id: 'file:/tmp/outline-symbols.fcstm',
+                    kind: 'file',
+                    name: 'outline-symbols.fcstm',
+                    qualifiedName: 'outline-symbols.fcstm',
+                    path: ['outline-symbols.fcstm'],
+                },
+                filePath: '/tmp/outline-symbols.fcstm',
+                range: packageModule.createRange(0, 0, 7, 1),
+            },
+            module: {
+                identity: {
+                    id: 'module:/tmp/outline-symbols.fcstm',
+                    kind: 'module',
+                    name: 'outline-symbols',
+                    qualifiedName: 'outline-symbols',
+                    path: ['outline-symbols'],
+                },
+                fileId: 'file:/tmp/outline-symbols.fcstm',
+                filePath: '/tmp/outline-symbols.fcstm',
+                rootStateId,
+            },
+            machine: {
+                identity: {
+                    id: 'machine:/tmp/outline-symbols.fcstm',
+                    kind: 'machine',
+                    name: 'Root',
+                    qualifiedName: 'Root',
+                    path: ['Root'],
+                },
+                moduleId: 'module:/tmp/outline-symbols.fcstm',
+                rootStateId,
+            },
+            ast: null,
+            variables: [],
+            states: [
+                {
+                    identity: {
+                        id: rootStateId,
+                        kind: 'state',
+                        name: 'Root',
+                        qualifiedName: 'Root',
+                        path: ['Root'],
+                    },
+                    name: 'Root',
+                    pseudo: false,
+                    composite: true,
+                    range: packageModule.createRange(0, 0, 7, 1),
+                    childStateIds: [childStateId],
+                },
+                {
+                    identity: {
+                        id: childStateId,
+                        kind: 'state',
+                        name: 'Child',
+                        qualifiedName: 'Root.Child',
+                        path: ['Root', 'Child'],
+                    },
+                    name: 'Child',
+                    pseudo: false,
+                    composite: false,
+                    range: packageModule.createRange(6, 4, 6, 16),
+                    parentStateId: rootStateId,
+                    childStateIds: [],
+                },
+            ],
+            events: [{
+                identity: {
+                    id: 'event:/tmp/outline-symbols.fcstm:Root.Start:1',
+                    kind: 'event',
+                    name: 'Start',
+                    qualifiedName: 'Root.Start',
+                    path: ['Root', 'Start'],
+                },
+                name: 'Start',
+                range: packageModule.createRange(5, 4, 5, 16),
+                statePath: ['Root'],
+                declared: true,
+                origins: ['declared'],
+            }],
+            transitions: [],
+            actions: [{
+                identity: {
+                    id: 'action:/tmp/outline-symbols.fcstm:Root.Setup:1',
+                    kind: 'action',
+                    name: 'Setup',
+                    qualifiedName: 'Root.Setup',
+                    path: ['Root', 'Setup'],
+                },
+                stage: 'enter',
+                isGlobalAspect: false,
+                mode: 'operations',
+                name: 'Setup',
+                range: packageModule.createRange(2, 4, 4, 5),
+                ast: {
+                    kind: 'action',
+                    range: packageModule.createRange(2, 4, 4, 5),
+                    text: 'enter Setup { counter = 0; }',
+                    pyNodeType: 'EnterOperations',
+                    stage: 'enter',
+                    isGlobalAspect: false,
+                    mode: 'operations',
+                    operationsList: [],
+                },
+                ownerStateId: rootStateId,
+                ownerStatePath: ['Root'],
+                operationsText: 'counter = 0;',
+            }],
+            imports: [{
+                identity: {
+                    id: 'import:/tmp/outline-symbols.fcstm:Root.Worker:1',
+                    kind: 'import',
+                    name: 'Worker',
+                    qualifiedName: 'Root.Worker',
+                    path: ['Root', 'Worker'],
+                },
+                range: packageModule.createRange(1, 4, 1, 37),
+                pathRange: packageModule.createRange(1, 11, 1, 27),
+                aliasRange: packageModule.createRange(1, 31, 1, 37),
+                ast: {
+                    kind: 'importStatement',
+                    range: packageModule.createRange(1, 4, 1, 37),
+                    text: 'import "./worker.fcstm" as Worker;',
+                    pyNodeType: 'ImportStatement',
+                    sourcePath: './worker.fcstm',
+                    source_path: './worker.fcstm',
+                    alias: 'Worker',
+                    mappings: [],
+                    pathRange: packageModule.createRange(1, 11, 1, 27),
+                    aliasRange: packageModule.createRange(1, 31, 1, 37),
+                },
+                ownerStateId: rootStateId,
+                ownerStatePath: ['Root'],
+                sourcePath: './worker.fcstm',
+                alias: 'Worker',
+                mountedStatePath: ['Root', 'Worker'],
+                defMappings: [],
+                eventMappings: [],
+                exists: true,
+                missing: false,
+                sourceVariables: [],
+                sourceAbsoluteEvents: [],
+                mappedVariables: [],
+                mappedAbsoluteEvents: [],
+            }],
+            summary: {
+                rootStateName: 'Root',
+                explicitVariables: [],
+                absoluteEvents: [],
+            },
+            lookups: {
+                statesByPath: {},
+                actionsByPath: {},
+                eventsByQualifiedName: {},
+                importsByPath: {},
+            },
+        } as unknown as packageModule.FcstmSemanticDocument;
+        const graph = packageModule.getWorkspaceGraph();
+
+        await withPatchedProperty(graph, 'getSemanticDocument', async () => semantic, async () => {
+            const symbols = await packageModule.collectDocumentSymbols(document);
+            assert.equal(symbols.length, 1);
+            assert.equal(symbols[0].name, 'Root');
+
+            const importSymbol = symbols[0].children.find(item => item.name === 'Worker');
+            const actionSymbol = symbols[0].children.find(item => item.name === 'Setup');
+            const eventSymbol = symbols[0].children.find(item => item.name === 'Start');
+            const childSymbol = symbols[0].children.find(item => item.name === 'Child');
+
+            assert.equal(importSymbol?.kind, 'module');
+            assert.deepEqual(importSymbol?.selectionRange, packageModule.createRange(1, 31, 1, 37));
+            assert.equal(actionSymbol?.kind, 'function');
+            assert.deepEqual(actionSymbol?.selectionRange, packageModule.createRange(2, 10, 2, 15));
+            assert.equal(eventSymbol?.kind, 'event');
+            assert.deepEqual(eventSymbol?.selectionRange, packageModule.createRange(5, 10, 5, 15));
+            assert.equal(childSymbol?.kind, 'class');
+            assert.deepEqual(childSymbol?.selectionRange, packageModule.createRange(6, 10, 6, 15));
+        });
+    });
 });

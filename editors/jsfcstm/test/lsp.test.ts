@@ -87,17 +87,21 @@ describe('jsfcstm lsp core', () => {
         assert.equal(initializeResult.capabilities.documentHighlightProvider, true);
         assert.equal(initializeResult.capabilities.workspaceSymbolProvider, true);
         assert.equal(initializeResult.capabilities.codeActionProvider, true);
+        assert.equal(initializeResult.capabilities.foldingRangeProvider, true);
+        assert.equal(initializeResult.capabilities.selectionRangeProvider, true);
         assert.equal(initializeResult.capabilities.renameProvider?.prepareProvider, true);
         assert.deepEqual(
             initializeResult.capabilities.completionProvider?.triggerCharacters,
             ['.', ':', '/']
         );
+        assert.ok(initializeResult.capabilities.semanticTokensProvider?.legend.tokenTypes.includes('class'));
         assert.equal(publications.length, 1);
         assert.deepEqual(publications[0].diagnostics, []);
 
         const symbols = await core.provideDocumentSymbols(toUri(hostFile));
         assert.equal(symbols[0]?.name, 'counter');
         assert.equal(symbols[1]?.name, 'Root');
+        assert.ok(symbols[1]?.children?.some(item => item.name === 'Worker'));
 
         const completionItems = await core.provideCompletionItems(toUri(hostFile), {
             line: 1,
@@ -147,6 +151,22 @@ describe('jsfcstm lsp core', () => {
         const links = await core.provideDocumentLinks(toUri(hostFile));
         assert.equal(links.length, 1);
         assert.equal(links[0].target, toUri(workerFile));
+
+        const foldingRanges = await core.provideFoldingRanges(toUri(hostFile));
+        assert.ok(foldingRanges.some(item => item.startLine === 1 && item.endLine === 3));
+
+        const selectionRanges = await core.provideSelectionRanges(toUri(hostFile), [{
+            line: 2,
+            character: hostText.split('\n')[2].indexOf('Worker') + 1,
+        }]);
+        assert.deepEqual(selectionRanges[0]?.range, {
+            start: {line: 2, character: hostText.split('\n')[2].indexOf('Worker')},
+            end: {line: 2, character: hostText.split('\n')[2].indexOf('Worker') + 'Worker'.length},
+        });
+        assert.ok(selectionRanges[0]?.parent);
+
+        const semanticTokens = await core.provideSemanticTokens(toUri(hostFile));
+        assert.ok(semanticTokens.data.length > 0);
 
         const workspaceSymbols = await core.provideWorkspaceSymbols('work');
         assert.ok(workspaceSymbols.some(item => item.name === 'Worker'));

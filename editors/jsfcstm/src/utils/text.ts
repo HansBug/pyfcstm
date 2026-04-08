@@ -8,6 +8,11 @@ export interface TextRange {
     end: TextPositionLike;
 }
 
+export interface TextLocation {
+    uri: string;
+    range: TextRange;
+}
+
 export interface TextLineLike {
     text: string;
 }
@@ -57,6 +62,11 @@ export interface ParseTreeNode {
 
 export type FcstmDiagnosticSeverity = 'error' | 'warning';
 
+export interface FcstmDiagnosticRelatedInformation {
+    location: TextLocation;
+    message: string;
+}
+
 export interface FcstmDiagnostic {
     range: TextRange;
     message: string;
@@ -64,6 +74,7 @@ export interface FcstmDiagnostic {
     source: string;
     code?: string;
     data?: Record<string, unknown>;
+    relatedInformation?: FcstmDiagnosticRelatedInformation[];
 }
 
 export function createRange(

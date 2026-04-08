@@ -92,6 +92,18 @@ export function createFcstmLanguageServer(
         return core.provideDocumentLinks(params.textDocument.uri, token);
     });
 
+    connection.onFoldingRanges(async (params, token) => {
+        return core.provideFoldingRanges(params.textDocument.uri, token);
+    });
+
+    connection.onSelectionRanges(async (params, token) => {
+        return core.provideSelectionRanges(params.textDocument.uri, params.positions, token);
+    });
+
+    connection.languages.semanticTokens.on(async (params, token) => {
+        return core.provideSemanticTokens(params.textDocument.uri, token);
+    });
+
     connection.onWorkspaceSymbol(async (params, token) => {
         return core.provideWorkspaceSymbols(params.query, token);
     });

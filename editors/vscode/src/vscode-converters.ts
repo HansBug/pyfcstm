@@ -43,11 +43,25 @@ export function toVscodeDiagnostic(item: FcstmDiagnostic): vscode.Diagnostic {
         : vscode.DiagnosticSeverity.Warning;
     const diagnostic = new vscode.Diagnostic(toVscodeRange(item.range), item.message, severity);
     diagnostic.source = item.source;
+    if (item.code) {
+        diagnostic.code = item.code;
+    }
+    diagnostic.relatedInformation = item.relatedInformation?.map(info => new vscode.DiagnosticRelatedInformation(
+        new vscode.Location(
+            vscode.Uri.parse(info.location.uri),
+            toVscodeRange(info.location.range)
+        ),
+        info.message
+    ));
     return diagnostic;
 }
 
 export function toVscodeSymbolKind(kind: FcstmSymbolKind): vscode.SymbolKind {
     switch (kind) {
+        case 'module':
+            return vscode.SymbolKind.Module;
+        case 'function':
+            return vscode.SymbolKind.Function;
         case 'variable':
             return vscode.SymbolKind.Variable;
         case 'event':

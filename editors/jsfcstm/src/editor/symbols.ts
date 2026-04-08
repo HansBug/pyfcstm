@@ -1,14 +1,19 @@
-import {getParser} from '../dsl/parser';
 import {
     createRange,
     ParseTreeNode,
     TextDocumentLike,
     TextRange,
 } from '../utils/text';
-import type {FcstmSemanticDocument, FcstmSemanticState} from '../semantics';
+import type {
+    FcstmSemanticAction,
+    FcstmSemanticDocument,
+    FcstmSemanticImport,
+    FcstmSemanticState,
+} from '../semantics';
 import {getWorkspaceGraph} from '../workspace';
+import {findIdentifierRange} from './ranges';
 
-export type FcstmSymbolKind = 'variable' | 'class' | 'event';
+export type FcstmSymbolKind = 'variable' | 'class' | 'event' | 'function' | 'module';
 
 export interface FcstmDocumentSymbol {
     name: string;
@@ -170,7 +175,7 @@ function extractVariableSymbol(
             detail: varType,
             kind: 'variable',
             range,
-            selectionRange: range,
+            selectionRange: findIdentifierRange(document, varName, range),
             children: [],
         };
     } catch {
@@ -211,7 +216,7 @@ function extractEventSymbol(
             detail: displayName || '',
             kind: 'event',
             range,
-            selectionRange: range,
+            selectionRange: findIdentifierRange(document, eventName, range),
             children: [],
         };
     } catch {
@@ -285,7 +290,7 @@ function extractStateSymbol(
             detail: isPseudo ? 'pseudo state' : displayName || '',
             kind: 'class',
             range,
-            selectionRange: range,
+            selectionRange: findIdentifierRange(document, stateName, range),
             children: [],
         };
 
@@ -330,57 +335,121 @@ export function extractDocumentSymbolsFromTree(
 function buildSemanticEventSymbol(
     name: string,
     detail: string,
-    range: TextRange
+    range: TextRange,
+    document: TextDocumentLike
 ): FcstmDocumentSymbol {
     return {
         name,
         detail,
         kind: 'event',
         range,
-        selectionRange: range,
+        selectionRange: findIdentifierRange(document, name, range),
+        children: [],
+    };
+}
+
+function buildSemanticImportSymbol(item: FcstmSemanticImport): FcstmDocumentSymbol {
+    return {
+        name: item.alias,
+        detail: item.sourcePath,
+        kind: 'module',
+        range: item.range,
+        selectionRange: item.aliasRange,
+        children: [],
+    };
+}
+
+function actionSymbolName(action: FcstmSemanticAction): string {
+    if (action.name) {
+        return action.name;
+    }
+    if (action.mode === 'abstract') {
+        return `${action.stage} abstract`;
+    }
+    if (action.mode === 'ref') {
+        return `${action.stage} ref`;
+    }
+    return action.aspect ? `${action.stage} ${action.aspect}` : action.stage;
+}
+
+function buildSemanticActionSymbol(
+    action: FcstmSemanticAction,
+    document: TextDocumentLike
+): FcstmDocumentSymbol {
+    const detail: string[] = [action.stage];
+    if (action.aspect) {
+        detail.push(action.aspect);
+    }
+    if (action.mode === 'abstract') {
+        detail.push('abstract');
+    } else if (action.mode === 'ref' && action.ref?.rawPath) {
+        detail.push(`ref ${action.ref.rawPath}`);
+    } else if (action.mode === 'operations') {
+        detail.push('operations');
+    }
+
+    return {
+        name: actionSymbolName(action),
+        detail: detail.join(' '),
+        kind: 'function',
+        range: action.range,
+        selectionRange: findIdentifierRange(
+            document,
+            action.name || action.ref?.rawPath.split('.').pop() || action.stage,
+            action.range,
+            {preferLast: true}
+        ),
         children: [],
     };
 }
 
 function buildSemanticStateSymbol(
     state: FcstmSemanticState,
-    semantic: FcstmSemanticDocument
+    semantic: FcstmSemanticDocument,
+    document: TextDocumentLike
 ): FcstmDocumentSymbol {
-    const childStates = semantic.states
+    const childStates = (semantic.states || [])
         .filter(candidate => candidate.parentStateId === state.identity.id)
-        .map(candidate => buildSemanticStateSymbol(candidate, semantic));
-    const declaredEvents = semantic.events
+        .map(candidate => buildSemanticStateSymbol(candidate, semantic, document));
+    const declaredEvents = (semantic.events || [])
         .filter(event => event.declared && event.statePath.join('.') === state.identity.path.join('.'))
-        .map(event => buildSemanticEventSymbol(event.name, event.displayName || '', event.range));
+        .map(event => buildSemanticEventSymbol(event.name, event.displayName || '', event.range, document));
+    const imports = (semantic.imports || [])
+        .filter(item => item.ownerStateId === state.identity.id)
+        .map(item => buildSemanticImportSymbol(item));
+    const actions = (semantic.actions || [])
+        .filter(item => item.ownerStateId === state.identity.id)
+        .map(item => buildSemanticActionSymbol(item, document));
 
     return {
         name: state.name,
         detail: state.pseudo ? 'pseudo state' : state.displayName || '',
         kind: 'class',
         range: state.range,
-        selectionRange: state.range,
-        children: [...declaredEvents, ...childStates],
+        selectionRange: findIdentifierRange(document, state.name, state.range),
+        children: [...imports, ...actions, ...declaredEvents, ...childStates],
     };
 }
 
 function extractDocumentSymbolsFromSemantic(
-    semantic: FcstmSemanticDocument | null
+    semantic: FcstmSemanticDocument | null,
+    document: TextDocumentLike
 ): FcstmDocumentSymbol[] {
     if (!semantic) {
         return [];
     }
 
-    const variables = semantic.variables.map(variable => ({
+    const variables = (semantic.variables || []).map(variable => ({
         name: variable.name,
         detail: variable.valueType,
         kind: 'variable' as const,
         range: variable.range,
-        selectionRange: variable.range,
+        selectionRange: findIdentifierRange(document, variable.name, variable.range),
         children: [],
     }));
-    const rootStates = semantic.states
+    const rootStates = (semantic.states || [])
         .filter(state => !state.parentStateId)
-        .map(state => buildSemanticStateSymbol(state, semantic));
+        .map(state => buildSemanticStateSymbol(state, semantic, document));
 
     return [...variables, ...rootStates];
 }
@@ -389,5 +458,5 @@ export async function collectDocumentSymbols(
     document: TextDocumentLike
 ): Promise<FcstmDocumentSymbol[]> {
     const semantic = await getWorkspaceGraph().getSemanticDocument(document);
-    return extractDocumentSymbolsFromSemantic(semantic);
+    return extractDocumentSymbolsFromSemantic(semantic, document);
 }

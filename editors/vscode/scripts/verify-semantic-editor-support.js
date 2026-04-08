@@ -19,6 +19,7 @@ const path = require('path');
 
 const {
     collectCompletionItems,
+    collectDocumentSymbols,
     collectDocumentHighlights,
     collectReferences,
     getWorkspaceGraph,
@@ -649,6 +650,53 @@ const tests = [
                 !absoluteItems.some(item => item.label === '/Idle./Idle.'),
                 'Absolute path completion should not surface ghost /Idle./Idle. events'
             );
+        }
+    ),
+    new TestCase(
+        'SEM-10',
+        'Outline symbols group state children into imports, events, transitions, actions, aspects, and substates',
+        async () => {
+            const document = new MockDocument('/tmp/verify-semantic-rich-outline.fcstm', [
+                'state Root {',
+                '    import "./worker.fcstm" as Worker;',
+                '    enter Setup {',
+                '        counter = 0;',
+                '    }',
+                '    >> during before abstract Audit;',
+                '    event Start;',
+                '    [*] -> Child;',
+                '    state Child;',
+                '}',
+            ].join('\n'));
+
+            const symbols = await collectDocumentSymbols(document);
+            const rootSymbol = symbols.find(item => item.name === 'Root');
+            assert(rootSymbol, 'Outline should include the root state');
+            assert(
+                JSON.stringify(rootSymbol.children.map(item => item.name)) === JSON.stringify([
+                    'Imports',
+                    'Events',
+                    'Transitions',
+                    'Actions',
+                    'States',
+                ]),
+                `Root outline groups should be stable, got ${JSON.stringify(rootSymbol.children.map(item => item.name))}`
+            );
+
+            const imports = rootSymbol.children.find(item => item.name === 'Imports');
+            const events = rootSymbol.children.find(item => item.name === 'Events');
+            const transitions = rootSymbol.children.find(item => item.name === 'Transitions');
+            const actions = rootSymbol.children.find(item => item.name === 'Actions');
+            const states = rootSymbol.children.find(item => item.name === 'States');
+            const lifecycle = actions?.children.find(item => item.name === 'Lifecycle');
+            const aspects = actions?.children.find(item => item.name === 'Aspects');
+
+            assert(imports?.children.some(item => item.name === 'Worker'), 'Imports group should include import aliases');
+            assert(events?.children.some(item => item.name === 'Start'), 'Events group should include declared events');
+            assert(transitions?.children.some(item => item.name === '[*] -> Child'), 'Transitions group should include transitions');
+            assert(lifecycle?.children.some(item => item.name === 'Setup'), 'Lifecycle action group should include normal actions');
+            assert(aspects?.children.some(item => item.name === 'Audit'), 'Aspect action group should include aspect actions');
+            assert(states?.children.some(item => item.name === 'Child'), 'States group should include substates');
         }
     ),
 ];

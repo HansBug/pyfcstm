@@ -9,6 +9,22 @@ import {
     withPatchedProperty,
 } from './support';
 
+function findNestedSymbol(
+    symbol: packageModule.FcstmDocumentSymbol,
+    path: string[]
+): packageModule.FcstmDocumentSymbol | undefined {
+    let current: packageModule.FcstmDocumentSymbol | undefined = symbol;
+
+    for (const name of path) {
+        current = current?.children.find(item => item.name === name);
+        if (!current) {
+            return undefined;
+        }
+    }
+
+    return current;
+}
+
 describe('jsfcstm symbol extraction', () => {
     it('collects flattened symbol names from parse trees, including duplicates and ignored nodes', () => {
         const tree = createNode('StateMachineDSLProgramContext', [
@@ -344,19 +360,23 @@ describe('jsfcstm symbol extraction', () => {
             assert.equal(symbols.length, 1);
             assert.equal(symbols[0].name, 'Root');
             assert.equal(symbols[0].detail, 'System Root');
-            assert.ok(symbols[0].children.some(item => item.name === 'Start' && item.detail === 'Start Event'));
-            assert.ok(symbols[0].children.some(item => item.name === 'Junction' && item.detail === 'pseudo state'));
+            assert.equal(findNestedSymbol(symbols[0], ['Events'])?.detail, '1 event');
+            assert.equal(findNestedSymbol(symbols[0], ['Events', 'Start'])?.detail, 'Start Event');
+            assert.equal(findNestedSymbol(symbols[0], ['States'])?.detail, '1 state');
+            assert.equal(findNestedSymbol(symbols[0], ['States', 'Junction'])?.detail, 'pseudo state');
         });
     });
 
-    it('collects richer outline symbols for imports, actions, and narrowed selections', async () => {
+    it('collects richer outline symbols for imports, events, transitions, actions, aspects, and nested states', async () => {
         const document = createDocument([
             'state Root {',
             '    import "./worker.fcstm" as Worker;',
             '    enter Setup {',
             '        counter = 0;',
             '    }',
+            '    >> during before abstract Audit;',
             '    event Start;',
+            '    [*] -> Child;',
             '    state Child;',
             '}',
         ].join('\n'), '/tmp/outline-symbols.fcstm');
@@ -372,7 +392,7 @@ describe('jsfcstm symbol extraction', () => {
                     path: ['outline-symbols.fcstm'],
                 },
                 filePath: '/tmp/outline-symbols.fcstm',
-                range: packageModule.createRange(0, 0, 7, 1),
+                range: packageModule.createRange(0, 0, 9, 1),
             },
             module: {
                 identity: {
@@ -411,7 +431,7 @@ describe('jsfcstm symbol extraction', () => {
                     name: 'Root',
                     pseudo: false,
                     composite: true,
-                    range: packageModule.createRange(0, 0, 7, 1),
+                    range: packageModule.createRange(0, 0, 9, 1),
                     childStateIds: [childStateId],
                 },
                 {
@@ -425,7 +445,7 @@ describe('jsfcstm symbol extraction', () => {
                     name: 'Child',
                     pseudo: false,
                     composite: false,
-                    range: packageModule.createRange(6, 4, 6, 16),
+                    range: packageModule.createRange(8, 4, 8, 16),
                     parentStateId: rootStateId,
                     childStateIds: [],
                 },
@@ -439,12 +459,41 @@ describe('jsfcstm symbol extraction', () => {
                     path: ['Root', 'Start'],
                 },
                 name: 'Start',
-                range: packageModule.createRange(5, 4, 5, 16),
+                range: packageModule.createRange(6, 4, 6, 16),
                 statePath: ['Root'],
                 declared: true,
                 origins: ['declared'],
             }],
-            transitions: [],
+            transitions: [{
+                identity: {
+                    id: 'transition:/tmp/outline-symbols.fcstm:Root:$transition:1',
+                    kind: 'transition',
+                    name: 'Root:$transition:1',
+                    qualifiedName: 'Root.$transition:1',
+                    path: ['Root', '$transition:1'],
+                },
+                transitionKind: 'entry',
+                forced: false,
+                range: packageModule.createRange(7, 4, 7, 17),
+                ast: {
+                    kind: 'transition',
+                    range: packageModule.createRange(7, 4, 7, 17),
+                    text: '[*] -> Child;',
+                    pyNodeType: 'EntryTransition',
+                    transitionKind: 'entry',
+                    sourceKind: 'init',
+                    targetKind: 'state',
+                    targetStateName: 'Child',
+                },
+                ownerStateId: rootStateId,
+                ownerStatePath: ['Root'],
+                sourceKind: 'init',
+                targetKind: 'state',
+                targetStateName: 'Child',
+                targetStateId: childStateId,
+                targetStatePath: ['Root', 'Child'],
+                expandedTransitions: [],
+            }],
             actions: [{
                 identity: {
                     id: 'action:/tmp/outline-symbols.fcstm:Root.Setup:1',
@@ -471,6 +520,33 @@ describe('jsfcstm symbol extraction', () => {
                 ownerStateId: rootStateId,
                 ownerStatePath: ['Root'],
                 operationsText: 'counter = 0;',
+            }, {
+                identity: {
+                    id: 'action:/tmp/outline-symbols.fcstm:Root.Audit:2',
+                    kind: 'action',
+                    name: 'Audit',
+                    qualifiedName: 'Root.Audit',
+                    path: ['Root', 'Audit'],
+                },
+                stage: 'during',
+                aspect: 'before',
+                isGlobalAspect: true,
+                mode: 'abstract',
+                name: 'Audit',
+                range: packageModule.createRange(5, 4, 5, 36),
+                ast: {
+                    kind: 'action',
+                    range: packageModule.createRange(5, 4, 5, 36),
+                    text: '>> during before abstract Audit;',
+                    pyNodeType: 'GlobalDuringBeforeAbstract',
+                    stage: 'during',
+                    aspect: 'before',
+                    isGlobalAspect: true,
+                    mode: 'abstract',
+                },
+                ownerStateId: rootStateId,
+                ownerStatePath: ['Root'],
+                doc: undefined,
             }],
             imports: [{
                 identity: {
@@ -527,20 +603,33 @@ describe('jsfcstm symbol extraction', () => {
             const symbols = await packageModule.collectDocumentSymbols(document);
             assert.equal(symbols.length, 1);
             assert.equal(symbols[0].name, 'Root');
+            assert.deepEqual(
+                symbols[0].children.map(item => item.name),
+                ['Imports', 'Events', 'Transitions', 'Actions', 'States']
+            );
 
-            const importSymbol = symbols[0].children.find(item => item.name === 'Worker');
-            const actionSymbol = symbols[0].children.find(item => item.name === 'Setup');
-            const eventSymbol = symbols[0].children.find(item => item.name === 'Start');
-            const childSymbol = symbols[0].children.find(item => item.name === 'Child');
+            const importSymbol = findNestedSymbol(symbols[0], ['Imports', 'Worker']);
+            const transitionSymbol = findNestedSymbol(symbols[0], ['Transitions', '[*] -> Child']);
+            const lifecycleSymbol = findNestedSymbol(symbols[0], ['Actions', 'Lifecycle', 'Setup']);
+            const aspectSymbol = findNestedSymbol(symbols[0], ['Actions', 'Aspects', 'Audit']);
+            const eventSymbol = findNestedSymbol(symbols[0], ['Events', 'Start']);
+            const childSymbol = findNestedSymbol(symbols[0], ['States', 'Child']);
 
             assert.equal(importSymbol?.kind, 'module');
             assert.deepEqual(importSymbol?.selectionRange, packageModule.createRange(1, 31, 1, 37));
-            assert.equal(actionSymbol?.kind, 'function');
-            assert.deepEqual(actionSymbol?.selectionRange, packageModule.createRange(2, 10, 2, 15));
+            assert.equal(transitionSymbol?.kind, 'function');
+            assert.equal(transitionSymbol?.detail, 'entry');
+            assert.deepEqual(transitionSymbol?.selectionRange, packageModule.createRange(7, 11, 7, 16));
+            assert.equal(lifecycleSymbol?.kind, 'function');
+            assert.equal(lifecycleSymbol?.detail, 'enter action operations');
+            assert.deepEqual(lifecycleSymbol?.selectionRange, packageModule.createRange(2, 10, 2, 15));
+            assert.equal(aspectSymbol?.kind, 'function');
+            assert.equal(aspectSymbol?.detail, 'during aspect before global abstract');
+            assert.deepEqual(aspectSymbol?.selectionRange, packageModule.createRange(5, 30, 5, 35));
             assert.equal(eventSymbol?.kind, 'event');
-            assert.deepEqual(eventSymbol?.selectionRange, packageModule.createRange(5, 10, 5, 15));
+            assert.deepEqual(eventSymbol?.selectionRange, packageModule.createRange(6, 10, 6, 15));
             assert.equal(childSymbol?.kind, 'class');
-            assert.deepEqual(childSymbol?.selectionRange, packageModule.createRange(6, 10, 6, 15));
+            assert.deepEqual(childSymbol?.selectionRange, packageModule.createRange(8, 10, 8, 15));
         });
     });
 });

@@ -9,6 +9,7 @@ import type {
     FcstmSemanticDocument,
     FcstmSemanticImport,
     FcstmSemanticState,
+    FcstmSemanticTransition,
 } from '../semantics';
 import {getWorkspaceGraph} from '../workspace';
 import {findIdentifierRange} from './ranges';
@@ -28,6 +29,84 @@ export interface FcstmCollectedSymbols {
     variables: string[];
     states: string[];
     events: string[];
+}
+
+function comparePositions(
+    left: TextRange['start'],
+    right: TextRange['start']
+): number {
+    if (left.line !== right.line) {
+        return left.line - right.line;
+    }
+
+    return left.character - right.character;
+}
+
+function compareDocumentSymbols(
+    left: FcstmDocumentSymbol,
+    right: FcstmDocumentSymbol
+): number {
+    const startDiff = comparePositions(left.selectionRange.start, right.selectionRange.start);
+    if (startDiff !== 0) {
+        return startDiff;
+    }
+
+    const endDiff = comparePositions(left.selectionRange.end, right.selectionRange.end);
+    if (endDiff !== 0) {
+        return endDiff;
+    }
+
+    return left.name.localeCompare(right.name);
+}
+
+function sortDocumentSymbols(
+    symbols: FcstmDocumentSymbol[]
+): FcstmDocumentSymbol[] {
+    return [...symbols].sort(compareDocumentSymbols);
+}
+
+function mergeSymbolRanges(
+    symbols: FcstmDocumentSymbol[],
+    fallback: TextRange
+): TextRange {
+    if (symbols.length === 0) {
+        return fallback;
+    }
+
+    let start = symbols[0].range.start;
+    let end = symbols[0].range.end;
+
+    for (const symbol of symbols.slice(1)) {
+        if (comparePositions(symbol.range.start, start) < 0) {
+            start = symbol.range.start;
+        }
+        if (comparePositions(symbol.range.end, end) > 0) {
+            end = symbol.range.end;
+        }
+    }
+
+    return createRange(start.line, start.character, end.line, end.character);
+}
+
+function pluralize(count: number, singular: string, plural = `${singular}s`): string {
+    return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function buildGroupSymbol(
+    name: string,
+    detail: string,
+    children: FcstmDocumentSymbol[],
+    fallbackRange: TextRange
+): FcstmDocumentSymbol {
+    const sortedChildren = sortDocumentSymbols(children);
+    return {
+        name,
+        detail,
+        kind: 'module',
+        range: mergeSymbolRanges(sortedChildren, fallbackRange),
+        selectionRange: sortedChildren[0]?.selectionRange || fallbackRange,
+        children: sortedChildren,
+    };
 }
 
 function getNodeRange(node: ParseTreeNode, document: TextDocumentLike): TextRange {
@@ -359,6 +438,10 @@ function buildSemanticImportSymbol(item: FcstmSemanticImport): FcstmDocumentSymb
     };
 }
 
+function isAspectAction(action: FcstmSemanticAction): boolean {
+    return Boolean(action.aspect) || action.isGlobalAspect;
+}
+
 function actionSymbolName(action: FcstmSemanticAction): string {
     if (action.name) {
         return action.name;
@@ -377,8 +460,16 @@ function buildSemanticActionSymbol(
     document: TextDocumentLike
 ): FcstmDocumentSymbol {
     const detail: string[] = [action.stage];
+    if (isAspectAction(action)) {
+        detail.push('aspect');
+    } else {
+        detail.push('action');
+    }
     if (action.aspect) {
         detail.push(action.aspect);
+    }
+    if (action.isGlobalAspect) {
+        detail.push('global');
     }
     if (action.mode === 'abstract') {
         detail.push('abstract');
@@ -403,6 +494,67 @@ function buildSemanticActionSymbol(
     };
 }
 
+function transitionSourceName(transition: FcstmSemanticTransition): string {
+    if (transition.sourceKind === 'init') {
+        return '[*]';
+    }
+    if (transition.sourceKind === 'all') {
+        return '!*';
+    }
+
+    return transition.sourceStateName || '?';
+}
+
+function transitionTargetName(transition: FcstmSemanticTransition): string {
+    if (transition.targetKind === 'exit') {
+        return '[*]';
+    }
+
+    return transition.targetStateName || '?';
+}
+
+function transitionSymbolName(transition: FcstmSemanticTransition): string {
+    const base = `${transitionSourceName(transition)} -> ${transitionTargetName(transition)}`;
+    if (!transition.trigger) {
+        return base;
+    }
+
+    const separator = transition.trigger.scope === 'local' ? '::' : ':';
+    return `${base} ${separator} ${transition.trigger.rawText}`;
+}
+
+function buildSemanticTransitionSymbol(
+    transition: FcstmSemanticTransition,
+    document: TextDocumentLike
+): FcstmDocumentSymbol {
+    const detail: string[] = [];
+    if (transition.forced) {
+        detail.push('forced');
+    }
+    detail.push(transition.transitionKind);
+    if (transition.trigger) {
+        detail.push(`${transition.trigger.scope} trigger`);
+    }
+    if (transition.guard) {
+        detail.push('guard');
+    }
+    if (transition.effectText?.trim()) {
+        detail.push('effect');
+    }
+
+    const selectionHint = transition.sourceStateName || transition.targetStateName;
+    return {
+        name: transitionSymbolName(transition),
+        detail: detail.join(' '),
+        kind: 'function',
+        range: transition.range,
+        selectionRange: selectionHint
+            ? findIdentifierRange(document, selectionHint, transition.range)
+            : transition.range,
+        children: [],
+    };
+}
+
 function buildSemanticStateSymbol(
     state: FcstmSemanticState,
     semantic: FcstmSemanticDocument,
@@ -417,9 +569,78 @@ function buildSemanticStateSymbol(
     const imports = (semantic.imports || [])
         .filter(item => item.ownerStateId === state.identity.id)
         .map(item => buildSemanticImportSymbol(item));
-    const actions = (semantic.actions || [])
-        .filter(item => item.ownerStateId === state.identity.id)
+    const ownedActions = (semantic.actions || [])
+        .filter(item => item.ownerStateId === state.identity.id);
+    const actions = ownedActions
         .map(item => buildSemanticActionSymbol(item, document));
+    const transitions = (semantic.transitions || [])
+        .filter(item => item.ownerStateId === state.identity.id)
+        .map(item => buildSemanticTransitionSymbol(item, document));
+    const lifecycleActions = ownedActions
+        .filter(item => !isAspectAction(item))
+        .map(item => buildSemanticActionSymbol(item, document));
+    const aspectActions = ownedActions
+        .filter(item => isAspectAction(item))
+        .map(item => buildSemanticActionSymbol(item, document));
+    const stateChildren: FcstmDocumentSymbol[] = [];
+
+    if (imports.length > 0) {
+        stateChildren.push(buildGroupSymbol(
+            'Imports',
+            pluralize(imports.length, 'import'),
+            imports,
+            state.range
+        ));
+    }
+    if (declaredEvents.length > 0) {
+        stateChildren.push(buildGroupSymbol(
+            'Events',
+            pluralize(declaredEvents.length, 'event'),
+            declaredEvents,
+            state.range
+        ));
+    }
+    if (transitions.length > 0) {
+        stateChildren.push(buildGroupSymbol(
+            'Transitions',
+            pluralize(transitions.length, 'transition'),
+            transitions,
+            state.range
+        ));
+    }
+    if (actions.length > 0) {
+        const actionGroups: FcstmDocumentSymbol[] = [];
+        if (lifecycleActions.length > 0) {
+            actionGroups.push(buildGroupSymbol(
+                'Lifecycle',
+                pluralize(lifecycleActions.length, 'action'),
+                lifecycleActions,
+                state.range
+            ));
+        }
+        if (aspectActions.length > 0) {
+            actionGroups.push(buildGroupSymbol(
+                'Aspects',
+                pluralize(aspectActions.length, 'aspect'),
+                aspectActions,
+                state.range
+            ));
+        }
+        stateChildren.push(buildGroupSymbol(
+            'Actions',
+            pluralize(actions.length, 'action entry', 'action entries'),
+            actionGroups,
+            state.range
+        ));
+    }
+    if (childStates.length > 0) {
+        stateChildren.push(buildGroupSymbol(
+            'States',
+            pluralize(childStates.length, 'state'),
+            childStates,
+            state.range
+        ));
+    }
 
     return {
         name: state.name,
@@ -427,7 +648,7 @@ function buildSemanticStateSymbol(
         kind: 'class',
         range: state.range,
         selectionRange: findIdentifierRange(document, state.name, state.range),
-        children: [...imports, ...actions, ...declaredEvents, ...childStates],
+        children: stateChildren,
     };
 }
 

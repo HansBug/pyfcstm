@@ -104,7 +104,10 @@ describe('jsfcstm lsp core', () => {
         const symbols = await core.provideDocumentSymbols(toUri(hostFile));
         assert.equal(symbols[0]?.name, 'counter');
         assert.equal(symbols[1]?.name, 'Root');
-        assert.ok(symbols[1]?.children?.some(item => item.name === 'Worker'));
+        assert.ok(symbols[1]?.children?.some(item => item.name === 'Imports'));
+        assert.ok(symbols[1]?.children
+            ?.find(item => item.name === 'Imports')
+            ?.children?.some(item => item.name === 'Worker'));
 
         const completionItems = await core.provideCompletionItems(toUri(hostFile), {
             line: 1,

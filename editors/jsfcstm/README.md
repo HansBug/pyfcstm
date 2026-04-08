@@ -12,7 +12,9 @@ At the current phase, this package provides:
 
 - ANTLR-backed FCSTM parser runtime generated from the canonical repository grammar
 - AST nodes aligned with `pyfcstm.dsl.node` semantics and stable `pyNodeType` mapping
+- stable `pyfcstm.model`-aligned `src/model/` objects for `StateMachine`, `State`, `Transition`, `Event`, actions, operations, and expressions
 - semantic model construction and import-aware multi-file workspace graph support
+- workspace graph snapshots that expose AST, semantic, and stable model layers together
 - source range helpers and document abstractions
 - editor-facing diagnostics, document symbols, completion, hover, definition, and document links
 - reusable LSP converters, language-server core, and bundled server bootstrap entry points
@@ -30,8 +32,9 @@ At the current phase, this package provides:
 - `src/dsl/`: parser entry points and generated grammar runtime
 - `src/editor/`: diagnostics, symbols, completion, hover, definition, and document links
 - `src/lsp/`: LSP converters, request handlers, language-server core, and stdio bootstrap
+- `src/model/`: stable pyfcstm-aligned state-machine model and builders
 - `src/semantics/`: semantic model construction and pyfcstm-aligned normalization rules
-- `src/workspace/`: import resolution and workspace graph
+- `src/workspace/`: import resolution and workspace graph snapshots exposing AST, semantic, and model layers
 - `src/utils/`: text ranges and document abstractions
 
 The ANTLR JavaScript runtime is generated into `src/dsl/grammar/` during build time, then mirrored into
@@ -63,7 +66,7 @@ npm publish --access public --dry-run
 
 The package root export remains `@pyfcstm/jsfcstm`, and the package now also exposes stable subpath entry points such
 as `@pyfcstm/jsfcstm/ast`, `@pyfcstm/jsfcstm/dsl`, `@pyfcstm/jsfcstm/editor`, `@pyfcstm/jsfcstm/lsp`,
-`@pyfcstm/jsfcstm/semantics`, `@pyfcstm/jsfcstm/workspace`, `@pyfcstm/jsfcstm/utils`, and
+`@pyfcstm/jsfcstm/model`, `@pyfcstm/jsfcstm/semantics`, `@pyfcstm/jsfcstm/workspace`, `@pyfcstm/jsfcstm/utils`, and
 `@pyfcstm/jsfcstm/config`.
 
 ## Intended Package Name

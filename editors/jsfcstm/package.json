@@ -43,6 +43,9 @@
       "lsp": [
         "dist/lsp/index.d.ts"
       ],
+      "model": [
+        "dist/model/index.d.ts"
+      ],
       "semantics": [
         "dist/semantics/index.d.ts"
       ],
@@ -84,6 +87,11 @@
       "types": "./dist/lsp/index.d.ts",
       "require": "./dist/lsp/index.js",
       "default": "./dist/lsp/index.js"
+    },
+    "./model": {
+      "types": "./dist/model/index.d.ts",
+      "require": "./dist/model/index.js",
+      "default": "./dist/model/index.js"
     },
     "./semantics": {
       "types": "./dist/semantics/index.d.ts",

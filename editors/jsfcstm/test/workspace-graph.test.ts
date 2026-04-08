@@ -29,6 +29,8 @@ describe('jsfcstm workspace graph', () => {
         const snapshot = await graph.buildSnapshotForDocument(hostDocument);
         assert.deepEqual(snapshot.order.sort(), [hostFile, workerFile].sort());
         assert.equal(snapshot.cycles.length, 0);
+        assert.equal(snapshot.nodes[hostFile].model?.rootState.name, 'Root');
+        assert.equal(snapshot.nodes[workerFile].model?.rootState.name, 'Worker');
 
         const rootImport = snapshot.nodes[hostFile].semantic?.imports[0];
         assert.ok(rootImport);
@@ -232,11 +234,14 @@ describe('jsfcstm workspace graph', () => {
         assert.equal(memorySnapshot.rootFile, '<memory>');
         assert.deepEqual(memorySnapshot.order, ['<memory>']);
         assert.equal(memorySnapshot.nodes['<memory>'].semantic?.summary.rootStateName, 'Root');
+        assert.equal(memorySnapshot.nodes['<memory>'].model?.rootState.name, 'Root');
+        assert.equal((await graph.getStateMachineModel(memoryDocument))?.rootState.name, 'Root');
 
         const missingFile = path.join(trackTempDir('jsfcstm-graph-missing-'), 'missing.fcstm');
         const missingSnapshot = await graph.buildSnapshotForFile(missingFile);
         assert.deepEqual(missingSnapshot.order, []);
         assert.deepEqual(missingSnapshot.nodes, {});
         assert.equal(await graph.getSemanticDocumentForFile(missingFile), null);
+        assert.equal(await graph.getStateMachineModelForFile(missingFile), null);
     });
 });

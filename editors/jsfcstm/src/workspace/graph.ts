@@ -4,6 +4,10 @@ import * as path from 'path';
 import type {FcstmAstDocument} from '../ast';
 import {parseAstDocument} from '../ast';
 import {
+    buildStateMachineModel,
+    type StateMachine as FcstmStateMachineModel,
+} from '../model';
+import {
     applyImportDefMappings,
     applyImportEventMappings,
     buildSemanticDocument,
@@ -37,6 +41,7 @@ export interface FcstmWorkspaceGraphNode {
     document: TextDocumentLike;
     ast: FcstmAstDocument | null;
     semantic: FcstmSemanticDocument | null;
+    model: FcstmStateMachineModel | null;
     imports: FcstmImportResolution[];
 }
 
@@ -163,6 +168,7 @@ export class FcstmWorkspaceGraph {
                         document,
                         ast,
                         semantic,
+                        model: buildStateMachineModel(ast),
                         imports: [],
                     },
                 },
@@ -192,6 +198,16 @@ export class FcstmWorkspaceGraph {
     async getSemanticDocumentForFile(filePath: string): Promise<FcstmSemanticDocument | null> {
         const snapshot = await this.buildSnapshotForFile(filePath);
         return snapshot.nodes[snapshot.rootFile]?.semantic || null;
+    }
+
+    async getStateMachineModel(document: TextDocumentLike): Promise<FcstmStateMachineModel | null> {
+        const snapshot = await this.buildSnapshotForDocument(document);
+        return snapshot.nodes[snapshot.rootFile]?.model || null;
+    }
+
+    async getStateMachineModelForFile(filePath: string): Promise<FcstmStateMachineModel | null> {
+        const snapshot = await this.buildSnapshotForFile(filePath);
+        return snapshot.nodes[snapshot.rootFile]?.model || null;
     }
 
     private createTraversalState(): TraversalState {
@@ -239,11 +255,13 @@ export class FcstmWorkspaceGraph {
 
         const ast = await parseAstDocument(document);
         const semantic = buildSemanticDocument(ast);
+        const model = buildStateMachineModel(semantic || ast);
         const node: FcstmWorkspaceGraphNode = {
             filePath,
             document,
             ast,
             semantic,
+            model,
             imports: [],
         };
 

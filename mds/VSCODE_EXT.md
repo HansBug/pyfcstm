@@ -1024,22 +1024,31 @@ npm publish --access public
 
 这一步的重点不是“为了迁移而迁移”，而是防止未来在 rename、analyzer、preview、export、其他 JS consumer 之间长期维持多套概念接缝。
 
+当前结论已经明确：**需要引入显式 `src/model/` 层。**
+
+原因也已经在 repo 内被工程化验证：
+
+* `semantics/` 仍然是 editor-facing resolved graph，适合 hover/completion/import workspace，但不适合作为长期公共 `StateMachine` / `State` / `Transition` / `Expr` 契约
+* 后续的 references / rename / analyzers / diagram IR 需要一个稳定、可复用、尽量接近 `pyfcstm.model` 的对象层，而不是直接依赖 ad-hoc semantic records
+* 因此本阶段已经新增 `editors/jsfcstm/src/model/`，并把 workspace graph 扩展为同时暴露 `ast + semantic + model` 三层快照
+* 该 model 层保持纯 JS/TS、无 Python 运行时依赖；正确答案来自预先固化的 TS golden tests，而不是测试时调用 Python
+
 ### TODO
 
-* [ ] 系统比对 `pyfcstm/model/*`、`pyfcstm/dsl/node.py` 与 `jsfcstm` 现有 `ast/`、`semantics/` public object shape 的差异
-* [ ] 定义明确判定标准：何时只维护稳定 mapping，何时需要在 `editors/jsfcstm` 中新增显式 `model/` 层
-* [ ] 如果判定需要迁移，则在 `editors/jsfcstm/src/model/` 中引入 `StateMachine`、`State`、`Transition`、`Event`、`Operation`、`VarDefine`、`Expr` 等核心对象，并让 LSP / analyzers / diagram IR 逐步切换消费它
-* [ ] 如果判定暂不需要全量迁移，则至少固化 `jsfcstm semantics <-> pyfcstm model` 的稳定 mapping 文档和 golden tests
-* [ ] 为 model 层或 mapping 层建立 parity corpus；测试正确答案来自预先固化的 Python 侧期望，而不是测试时调用 Python
-* [ ] 清理重复抽象，避免 AST、semantics、model 三层长期形成多套互相漂移的 public shape
+* [x] 系统比对 `pyfcstm/model/*`、`pyfcstm/dsl/node.py` 与 `jsfcstm` 现有 `ast/`、`semantics/` public object shape 的差异
+* [x] 定义明确判定标准：何时只维护稳定 mapping，何时需要在 `editors/jsfcstm` 中新增显式 `model/` 层
+* [x] 在 `editors/jsfcstm/src/model/` 中引入 `StateMachine`、`State`、`Transition`、`Event`、`Operation`、`VarDefine`、`Expr` 对应对象，并通过 `@pyfcstm/jsfcstm/model` 对外导出
+* [x] 让 workspace graph 快照同步暴露稳定 `model` 层，为后续 LSP / analyzers / diagram IR 提供前置数据层
+* [x] 为 model 层建立 parity corpus；测试正确答案来自预先固化的 Python 侧期望，而不是测试时调用 Python
+* [x] 清理抽象边界：AST 负责 parser fidelity，semantics 负责 editor resolution，model 负责长期稳定公共对象层
 
 ### Checklist
 
-* [ ] 已有明确结论：迁移或不迁移，以及对应理由都已写入文档
-* [ ] 无论是否引入 `src/model/`，`jsfcstm` 与 `pyfcstm` 的核心 public concepts 都已建立稳定的一一对应关系
-* [ ] LSP、analyzers、diagram IR 前置数据层不再依赖临时 ad-hoc object shape
-* [ ] 如果引入 `src/model/`，其测试、文档和 package exports 都已补齐，且不依赖 Python runtime
-* [ ] 如果不引入 `src/model/`，现有 `semantics/` 也已被证明能稳定承担相同职责，并有 parity evidence 支撑
+* [x] 已有明确结论：需要迁移到显式 `src/model/`，并且理由已经写入文档
+* [x] `jsfcstm` 与 `pyfcstm` 的核心 public concepts 已建立稳定的一一对应关系，尤其覆盖 `StateMachine`、`State`、`Transition`、`Event`、`OnStage`、`OnAspect`、`Operation`、`IfBlock`、表达式对象
+* [x] LSP、analyzers、diagram IR 的前置数据层不再只能依赖临时 ad-hoc object shape；workspace graph 已可直接暴露 `model`
+* [x] `src/model/` 的测试、文档和 package exports 已补齐，且不依赖 Python runtime
+* [x] parity evidence 已固化在 TypeScript 单元测试中，而不是在测试时动态调用 Python
 
 ## Phase 6：高级语义导航与安全编辑能力
 

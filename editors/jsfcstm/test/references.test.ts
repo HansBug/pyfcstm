@@ -193,4 +193,84 @@ describe('jsfcstm semantic navigation and rename support', () => {
         assert.equal(definition?.range.start.line, 2);
         assert.equal(definition?.range.start.character, charOf(document, 2, 'E2'));
     });
+
+    it('links import event mappings to host and imported event/state definitions', async () => {
+        const dir = trackTempDir('jsfcstm-import-event-mapping-');
+        const hostFile = path.join(dir, 'fleet.fcstm');
+        const motorFile = path.join(dir, 'modules', 'motor.fcstm');
+
+        writeFile(motorFile, [
+            'state Motor {',
+            '    event Start;',
+            '    state Bus {',
+            '        event Stop;',
+            '        event Alarm;',
+            '    }',
+            '}',
+        ].join('\n'));
+
+        const document = createDocument([
+            'state Fleet {',
+            '    event Start;',
+            '    state Bus {',
+            '        event Stop;',
+            '        event Alarm;',
+            '    };',
+            '    import "./modules/motor.fcstm" as LeftMotor named "Left Motor" {',
+            '        event /Start -> Start named "Fleet Start";',
+            '        event /Bus.Stop -> /Bus.Stop;',
+            '    }',
+            '    import "./modules/motor.fcstm" as RightMotor named "Right Motor" {',
+            '        event /Start -> Start named "Fleet Start";',
+            '        event /Bus.Stop -> /Bus.Stop;',
+            '    }',
+            '    [*] -> LeftMotor;',
+            '    LeftMotor -> RightMotor;',
+            '}',
+        ].join('\n'), hostFile);
+        const leftStartTargetCharacter = document.lineAt(7).text.indexOf('Start', document.lineAt(7).text.indexOf('->')) + 1;
+        const leftStopSourceCharacter = document.lineAt(8).text.indexOf('Stop') + 1;
+        const leftBusTargetCharacter = document.lineAt(8).text.indexOf('Bus', document.lineAt(8).text.indexOf('->')) + 1;
+        const leftStopTargetCharacter = document.lineAt(8).text.lastIndexOf('Stop') + 1;
+        const rightStopTargetCharacter = document.lineAt(12).text.lastIndexOf('Stop') + 1;
+
+        const hostTargetRefs = await packageModule.collectReferences(document, {
+            line: 7,
+            character: leftStartTargetCharacter,
+        });
+        assert.equal(hostTargetRefs.length, 3);
+
+        const hostTargetHighlights = await packageModule.collectDocumentHighlights(document, {
+            line: 12,
+            character: rightStopTargetCharacter,
+        });
+        assert.equal(hostTargetHighlights.length, 3);
+
+        const hostEventDefinition = await packageModule.resolveDefinitionLocation(document, {
+            line: 8,
+            character: leftStopTargetCharacter,
+        });
+        assert.equal(hostEventDefinition?.uri, pathToFileURL(hostFile).toString());
+        assert.equal(hostEventDefinition?.range.start.line, 3);
+
+        const hostStateDefinition = await packageModule.resolveDefinitionLocation(document, {
+            line: 8,
+            character: leftBusTargetCharacter,
+        });
+        assert.equal(hostStateDefinition?.uri, pathToFileURL(hostFile).toString());
+        assert.equal(hostStateDefinition?.range.start.line, 2);
+
+        const sourceEventRefs = await packageModule.collectReferences(document, {
+            line: 7,
+            character: charOf(document, 7, 'Start') + 1,
+        });
+        assert.equal(sourceEventRefs.length, 3);
+
+        const sourceEventDefinition = await packageModule.resolveDefinitionLocation(document, {
+            line: 8,
+            character: leftStopSourceCharacter,
+        });
+        assert.equal(sourceEventDefinition?.uri, pathToFileURL(motorFile).toString());
+        assert.equal(sourceEventDefinition?.range.start.line, 3);
+    });
 });

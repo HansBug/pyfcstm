@@ -90,10 +90,13 @@ describe('jsfcstm lsp core', () => {
         assert.equal(initializeResult.capabilities.foldingRangeProvider, true);
         assert.equal(initializeResult.capabilities.selectionRangeProvider, true);
         assert.equal(initializeResult.capabilities.renameProvider?.prepareProvider, true);
-        assert.deepEqual(
-            initializeResult.capabilities.completionProvider?.triggerCharacters,
-            ['.', ':', '/']
-        );
+        const triggerCharacters = initializeResult.capabilities.completionProvider?.triggerCharacters || [];
+        assert.ok(triggerCharacters.includes('.'));
+        assert.ok(triggerCharacters.includes(':'));
+        assert.ok(triggerCharacters.includes('/'));
+        assert.ok(triggerCharacters.includes('I'));
+        assert.ok(triggerCharacters.includes('Y'));
+        assert.ok(triggerCharacters.includes('_'));
         assert.ok(initializeResult.capabilities.semanticTokensProvider?.legend.tokenTypes.includes('class'));
         assert.equal(publications.length, 1);
         assert.deepEqual(publications[0].diagnostics, []);

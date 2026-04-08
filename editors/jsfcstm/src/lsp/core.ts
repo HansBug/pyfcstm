@@ -88,6 +88,13 @@ interface ManagedTimer {
     handle: FcstmTimerHandle;
 }
 
+const FCSTM_COMPLETION_TRIGGER_CHARACTERS = [
+    '.', ':', '/',
+    ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
+    ...'abcdefghijklmnopqrstuvwxyz',
+    '_',
+];
+
 function createScheduler(): FcstmLanguageServerScheduler {
     return {
         setTimeout(callback, delayMs) {
@@ -174,7 +181,7 @@ export class FcstmLanguageServerCore {
             documentSymbolProvider: true,
             completionProvider: {
                 resolveProvider: false,
-                triggerCharacters: ['.', ':', '/'],
+                triggerCharacters: FCSTM_COMPLETION_TRIGGER_CHARACTERS,
             },
             hoverProvider: true,
             definitionProvider: true,

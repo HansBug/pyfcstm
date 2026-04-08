@@ -153,6 +153,20 @@ async function getDocumentSymbolCompletions(document: TextDocumentLike): Promise
             sortText: `3_${variable}`,
         });
     }
+    for (const state of fallbackSymbols.states) {
+        items.push({
+            label: state,
+            kind: 'class',
+            sortText: `4_${state}`,
+        });
+    }
+    for (const event of fallbackSymbols.events) {
+        items.push({
+            label: event,
+            kind: 'event',
+            sortText: `5_${event}`,
+        });
+    }
 
     return items;
 }
@@ -391,18 +405,67 @@ function resolveVisibleStateReference(
 
 function collectScopedSymbolCompletions(
     semantic: FcstmSemanticDocument,
-    _position: TextPositionLike
+    position: TextPositionLike
 ): FcstmCompletionItem[] {
     const items: FcstmCompletionItem[] = [];
+    const seen = new Set<string>();
+    const lookupStates = collectLookupStates(semantic, position);
+    const currentScope = getCurrentScopeState(semantic, position);
 
     for (const variable of semantic.variables) {
-        items.push({
+        pushUniqueCompletion(items, seen, {
             label: variable.name,
             kind: 'variable',
             sortText: `3_${variable.name}`,
         });
     }
 
+    for (const candidate of collectStateAndImportCompletions(semantic, currentScope)) {
+        pushUniqueCompletion(items, seen, candidate);
+    }
+
+    for (const candidate of collectEventCompletions(semantic, lookupStates)) {
+        pushUniqueCompletion(items, seen, candidate);
+    }
+
+    for (const candidate of collectNamedActionCompletions(semantic, lookupStates)) {
+        pushUniqueCompletion(items, seen, candidate);
+    }
+
+    return items;
+}
+
+function collectStateAndImportCompletions(
+    semantic: FcstmSemanticDocument,
+    currentScope: FcstmSemanticState | undefined
+): FcstmCompletionItem[] {
+    const items: FcstmCompletionItem[] = [];
+    pushChildStateNames(semantic, currentScope, items, {
+        sortPrefix: '4_scoped_state',
+    });
+    pushVisibleImportAliases(semantic, currentScope, items);
+    return items;
+}
+
+function collectEventCompletions(
+    semantic: FcstmSemanticDocument,
+    lookupStates: FcstmSemanticState[]
+): FcstmCompletionItem[] {
+    const items: FcstmCompletionItem[] = [];
+    for (const scopeState of lookupStates) {
+        pushDeclaredEventsForState(semantic, scopeState, items, {
+            sortPrefix: '5_scoped_event',
+        });
+    }
+    return items;
+}
+
+function collectNamedActionCompletions(
+    semantic: FcstmSemanticDocument,
+    lookupStates: FcstmSemanticState[]
+): FcstmCompletionItem[] {
+    const items: FcstmCompletionItem[] = [];
+    pushVisibleNamedActions(semantic, lookupStates, items);
     return items;
 }
 

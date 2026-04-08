@@ -2,6 +2,7 @@ import {pathToFileURL} from 'node:url';
 
 import type {
     FcstmAstAction,
+    FcstmAstChainPath,
     FcstmAstExpression,
     FcstmAstIfStatement,
     FcstmAstOperationStatement,
@@ -175,6 +176,12 @@ function findEventById(semantic: FcstmSemanticDocument, eventId?: string): Fcstm
     return semantic.events.find(item => item.identity.id === eventId);
 }
 
+function findRootState(semantic: FcstmSemanticDocument): FcstmSemanticState | undefined {
+    return semantic.machine.rootStateId
+        ? semantic.states.find(item => item.identity.id === semantic.machine.rootStateId)
+        : semantic.states.find(item => !item.parentStateId);
+}
+
 function stateAliasCountKey(ownerStatePath: string[], alias: string): string {
     return `${ownerStatePath.join('.')}::${alias}`;
 }
@@ -235,6 +242,125 @@ function eventOccurrenceKey(event: FcstmSemanticEvent): string {
 
 function actionOccurrenceKey(action: FcstmSemanticAction): string {
     return action.identity.id;
+}
+
+function semanticPathKey(path: string[]): string {
+    return path.join('.');
+}
+
+function findStateByPath(
+    semantic: FcstmSemanticDocument,
+    statePath: string[]
+): FcstmSemanticState | undefined {
+    const key = semanticPathKey(statePath);
+    return semantic.lookups.statesByPath[key]
+        || semantic.states.find(item => item.identity.path.join('.') === key);
+}
+
+function findEventByPath(
+    semantic: FcstmSemanticDocument,
+    eventPath: string[]
+): FcstmSemanticEvent | undefined {
+    const key = semanticPathKey(eventPath);
+    return semantic.lookups.eventsByQualifiedName[key]
+        || semantic.events.find(item => item.identity.path.join('.') === key);
+}
+
+function eventPathSegmentRange(
+    document: TextDocumentLike,
+    eventPath: FcstmAstChainPath,
+    segmentIndex: number
+): TextRange {
+    const fallbackName = eventPath.segments[segmentIndex];
+    if (!fallbackName) {
+        return eventPath.range;
+    }
+
+    if (eventPath.range.start.line !== eventPath.range.end.line) {
+        return findIdentifierRange(document, fallbackName, eventPath.range, {
+            preferLast: segmentIndex === eventPath.segments.length - 1,
+        });
+    }
+
+    let offset = eventPath.isAbsolute ? 1 : 0;
+    for (let index = 0; index < eventPath.segments.length; index += 1) {
+        const segment = eventPath.segments[index];
+        const startOffset = offset;
+        const endOffset = startOffset + segment.length;
+        if (index === segmentIndex) {
+            return createRange(
+                eventPath.range.start.line,
+                eventPath.range.start.character + startOffset,
+                eventPath.range.end.line,
+                eventPath.range.start.character + endOffset
+            );
+        }
+        offset = endOffset + 1;
+    }
+
+    return findIdentifierRange(document, fallbackName, eventPath.range, {
+        preferLast: segmentIndex === eventPath.segments.length - 1,
+    });
+}
+
+function collectEventPathOccurrences(
+    semantic: FcstmSemanticDocument,
+    ownerStatePath: string[],
+    eventPath: FcstmAstChainPath,
+    document: TextDocumentLike,
+    filePath: string,
+    occurrences: FcstmSymbolOccurrence[],
+    renameable: boolean
+): void {
+    if (eventPath.segments.length === 0) {
+        return;
+    }
+
+    const rootState = findRootState(semantic);
+    const baseStatePath = eventPath.isAbsolute
+        ? rootState?.identity.path
+        : ownerStatePath;
+    if (!baseStatePath || baseStatePath.length === 0) {
+        return;
+    }
+
+    let currentStatePath = [...baseStatePath];
+    for (let index = 0; index < eventPath.segments.length - 1; index += 1) {
+        currentStatePath = [...currentStatePath, eventPath.segments[index]];
+        const state = findStateByPath(semantic, currentStatePath);
+        if (!state) {
+            return;
+        }
+
+        occurrences.push({
+            key: stateOccurrenceKey(state),
+            kind: 'state',
+            name: state.name,
+            qualifiedName: state.identity.qualifiedName,
+            filePath,
+            range: eventPathSegmentRange(document, eventPath, index),
+            role: 'reference',
+            containerName: getContainerName(state.identity.path),
+            renameable,
+        });
+    }
+
+    const event = findEventByPath(semantic, [...baseStatePath, ...eventPath.segments]);
+    if (!event) {
+        return;
+    }
+
+    occurrences.push({
+        key: eventOccurrenceKey(event),
+        kind: 'event',
+        name: event.name,
+        qualifiedName: event.identity.qualifiedName,
+        filePath,
+        range: eventPathSegmentRange(document, eventPath, eventPath.segments.length - 1),
+        role: 'reference',
+        containerName: getContainerName(event.identity.path),
+        renameable,
+    });
 }
 
 function collectExpressionOccurrences(
@@ -501,6 +627,37 @@ function collectNodeOccurrences(
             targetFilePath: target.filePath,
             targetRange: target.range,
         });
+
+        const importedSemantic = importItem.entryFile
+            ? snapshot.nodes[importItem.entryFile]?.semantic
+            : undefined;
+        const importedRootState = importedSemantic
+            ? findRootState(importedSemantic)
+            : undefined;
+
+        for (const eventMapping of importItem.eventMappings) {
+            collectEventPathOccurrences(
+                semantic,
+                importItem.ownerStatePath,
+                eventMapping.targetEvent,
+                node.document,
+                node.filePath,
+                occurrences,
+                true
+            );
+
+            if (importedSemantic && importedRootState) {
+                collectEventPathOccurrences(
+                    importedSemantic,
+                    importedRootState.identity.path,
+                    eventMapping.sourceEvent,
+                    node.document,
+                    node.filePath,
+                    occurrences,
+                    false
+                );
+            }
+        }
     }
 
     for (const transition of semantic.transitions) {

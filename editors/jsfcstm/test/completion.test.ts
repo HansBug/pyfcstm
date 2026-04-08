@@ -226,6 +226,84 @@ describe('jsfcstm completion support', () => {
         assert.equal(absolutePathItems.some(item => item.label === 'after'), false);
     });
 
+    it('keeps completion alive for the user-reported full-sample target edits', async () => {
+        const baseText = [
+            'def int a = 0;',
+            'def int b = 0x0 * 0;',
+            'def int round_count = 0;  // define variables',
+            'state TrafficLight {',
+            '    >> during before {',
+            '        a = 0;',
+            '    }',
+            '    >> during before abstract FFT;',
+            '    >> during before abstract TTT /* this is the line */;',
+            '    >> during after {',
+            '        a = 0xff;',
+            '        b = 0x1;',
+            '    }',
+            '',
+            '    state InService {',
+            '        state Red {',
+            '            during {',
+            '                a = 0x1 << 2;',
+            '            }',
+            '        }',
+            '        state Yellow;',
+            '        state Green;',
+            '        [*] -> Red :: Start effect {',
+            '            b = 0x1;',
+            '        };',
+            '        Red -> Green effect {',
+            '            b = 0x3;',
+            '        };',
+            '        Green -> Yellow effect {',
+            '            b = 0x2;',
+            '        };',
+            '        Yellow -> Red : if [a >= 10] effect {',
+            '            b = 0x1;',
+            '            round_count = round_count + 1;',
+            '        };',
+            '        Green -> Yellow : /Idle.E2;',
+            '        Yellow -> Yellow : /E2;',
+            '    }',
+            '    state Idle;',
+            '',
+            '    [*] -> InService;',
+            '    InService -> Idle :: Maintain;',
+            '    Idle -> Idle :: E2;',
+            '    Idle -> [*];',
+            '}',
+        ].join('\n');
+
+        const rootDocument = createDocument(
+            baseText.replace('    Idle -> [*];', '    Idle -> Id'),
+            '/tmp/trafficlight-reported-root-target.fcstm'
+        );
+        const rootLine = rootDocument.lineCount - 2;
+        const rootItems = await packageModule.collectCompletionItems(rootDocument, {
+            line: rootLine,
+            character: rootDocument.lineAt(rootLine).text.length,
+        });
+        assert.ok(rootItems.some(item => item.label === 'Idle' && item.kind === 'class'));
+        assert.ok(rootItems.some(item => item.label === 'InService' && item.kind === 'class'));
+        assert.equal(rootItems.some(item => item.label === 'Yellow'), false);
+
+        const nestedDocument = createDocument(
+            baseText.replace('        Green -> Yellow effect {', '        Green -> Yel effect {'),
+            '/tmp/trafficlight-reported-nested-target.fcstm'
+        );
+        const nestedLine = nestedDocument.getText().split('\n').findIndex(line => line.includes('Green -> Yel effect {'));
+        const nestedColumn = nestedDocument.lineAt(nestedLine).text.indexOf('Yel') + 'Yel'.length;
+        const nestedItems = await packageModule.collectCompletionItems(nestedDocument, {
+            line: nestedLine,
+            character: nestedColumn,
+        });
+        assert.ok(nestedItems.some(item => item.label === 'Yellow' && item.kind === 'class'));
+        assert.ok(nestedItems.some(item => item.label === 'Red' && item.kind === 'class'));
+        assert.ok(nestedItems.some(item => item.label === 'Green' && item.kind === 'class'));
+        assert.equal(nestedItems.some(item => item.label === 'Idle'), false);
+    });
+
     it('handles parser-null and missing-import-target completion branches', async () => {
         const parser = packageModule.getParser();
         const index = packageModule.getImportWorkspaceIndex();
@@ -272,6 +350,50 @@ describe('jsfcstm completion support', () => {
 
         assert.ok(items.some(item => item.label === 'counter' && item.kind === 'variable'));
         assert.ok(items.some(item => item.label === 'count' && item.kind === 'variable'));
+    });
+
+    it('offers state and event completions for partial symbols typed on an otherwise empty line', async () => {
+        const rootDocument = createDocument([
+            'state Root {',
+            '    state Idle;',
+            '    event InitDone;',
+            '    Id',
+            '}',
+        ].join('\n'), '/tmp/blank-line-root-symbol.fcstm');
+
+        const rootItems = await packageModule.collectCompletionItems(rootDocument, {
+            line: 3,
+            character: rootDocument.lineAt(3).text.length,
+        });
+        assert.ok(rootItems.some(item => item.label === 'Idle' && item.kind === 'class'));
+
+        const eventDocument = createDocument([
+            'state Root {',
+            '    event InitDone;',
+            '    Ini',
+            '}',
+        ].join('\n'), '/tmp/blank-line-event-symbol.fcstm');
+
+        const eventItems = await packageModule.collectCompletionItems(eventDocument, {
+            line: 2,
+            character: eventDocument.lineAt(2).text.length,
+        });
+        assert.ok(eventItems.some(item => item.label === 'InitDone' && item.kind === 'event'));
+
+        const nestedDocument = createDocument([
+            'state Root {',
+            '    state InService {',
+            '        state Yellow;',
+            '        Yel',
+            '    }',
+            '}',
+        ].join('\n'), '/tmp/blank-line-nested-symbol.fcstm');
+
+        const nestedItems = await packageModule.collectCompletionItems(nestedDocument, {
+            line: 3,
+            character: nestedDocument.lineAt(3).text.length,
+        });
+        assert.ok(nestedItems.some(item => item.label === 'Yellow' && item.kind === 'class'));
     });
 
     it('exposes stable keyword, constant, and function catalogs', () => {

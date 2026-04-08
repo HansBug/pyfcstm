@@ -5,8 +5,11 @@
  *
  * This script validates the editor behaviors that now live in @pyfcstm/jsfcstm:
  * - scope-aware completion for states and imported aliases
+ * - incomplete target edits keep semantic completion alive
+ * - partial symbols typed on empty lines still surface visible state and event symbols
  * - event declaration keyword hits resolve to the same event identity
  * - import aliases and import paths participate in references/highlights/definition
+ * - import event mappings participate in state/event references and definitions
  */
 
 const fs = require('fs');
@@ -234,6 +237,176 @@ const tests = [
                 character: charOf(document, 1, './worker.fcstm') + 2,
             });
             assert(pathReferences.length === 5, `Expected 5 import references, got ${pathReferences.length}`);
+        }
+    ),
+    new TestCase(
+        'SEM-04',
+        'Import event mappings resolve to local and imported event/state definitions',
+        async () => {
+            const dir = makeTempDir();
+            const motorFile = path.join(dir, 'modules', 'motor.fcstm');
+            const hostFile = path.join(dir, 'fleet.fcstm');
+
+            writeFile(motorFile, [
+                'state Motor {',
+                '    event Start;',
+                '    state Bus {',
+                '        event Stop;',
+                '        event Alarm;',
+                '    }',
+                '}',
+            ].join('\n'));
+
+            const document = new MockDocument(hostFile, [
+                'state Fleet {',
+                '    event Start;',
+                '    state Bus {',
+                '        event Stop;',
+                '        event Alarm;',
+                '    };',
+                '    import "./modules/motor.fcstm" as LeftMotor named "Left Motor" {',
+                '        event /Start -> Start named "Fleet Start";',
+                '        event /Bus.Stop -> /Bus.Stop;',
+                '    }',
+                '    import "./modules/motor.fcstm" as RightMotor named "Right Motor" {',
+                '        event /Start -> Start named "Fleet Start";',
+                '        event /Bus.Stop -> /Bus.Stop;',
+                '    }',
+                '    [*] -> LeftMotor;',
+                '    LeftMotor -> RightMotor;',
+                '}',
+            ].join('\n'));
+
+            const hostStartTarget = await collectReferences(document, {
+                line: 7,
+                character: document.lineAt(7).text.indexOf('Start', document.lineAt(7).text.indexOf('->')) + 1,
+            });
+            assert(hostStartTarget.length === 3, `Expected 3 local Start references, got ${hostStartTarget.length}`);
+
+            const hostStopDefinition = await resolveDefinitionLocation(document, {
+                line: 8,
+                character: document.lineAt(8).text.lastIndexOf('Stop') + 1,
+            });
+            assert(hostStopDefinition, 'Mapped local Stop should resolve to a definition');
+            assert(hostStopDefinition.uri === pathToFileURL(hostFile).toString(), 'Mapped local Stop should resolve in the host file');
+            assert(hostStopDefinition.range.start.line === 3, 'Mapped local Stop should point at state Bus event Stop');
+
+            const hostBusDefinition = await resolveDefinitionLocation(document, {
+                line: 8,
+                character: document.lineAt(8).text.indexOf('Bus', document.lineAt(8).text.indexOf('->')) + 1,
+            });
+            assert(hostBusDefinition, 'Mapped /Bus.Stop state segment should resolve to a definition');
+            assert(hostBusDefinition.uri === pathToFileURL(hostFile).toString(), 'Mapped Bus segment should resolve in the host file');
+            assert(hostBusDefinition.range.start.line === 2, 'Mapped Bus segment should point at state Bus');
+
+            const importedStopDefinition = await resolveDefinitionLocation(document, {
+                line: 8,
+                character: document.lineAt(8).text.indexOf('Stop') + 1,
+            });
+            assert(importedStopDefinition, 'Imported source Stop should resolve to a definition');
+            assert(importedStopDefinition.uri === pathToFileURL(motorFile).toString(), 'Imported source Stop should jump to the imported file');
+            assert(importedStopDefinition.range.start.line === 3, 'Imported source Stop should point at imported event Stop');
+        }
+    ),
+    new TestCase(
+        'SEM-05',
+        'User-reported incomplete target edits still get scope-correct completions',
+        async () => {
+            const baseText = [
+                'def int a = 0;',
+                'def int b = 0x0 * 0;',
+                'def int round_count = 0;  // define variables',
+                'state TrafficLight {',
+                '    state InService {',
+                '        state Red;',
+                '        state Yellow;',
+                '        state Green;',
+                '        Green -> Yellow effect {',
+                '        };',
+                '    }',
+                '    state Idle;',
+                '    [*] -> InService;',
+                '    InService -> Idle :: Maintain;',
+                '    Idle -> Idle :: E2;',
+                '    Idle -> [*];',
+                '}',
+            ].join('\n');
+
+            const rootDocument = new MockDocument('/tmp/verify-semantic-root-target.fcstm', baseText.replace(
+                '    Idle -> [*];',
+                '    Idle -> Id'
+            ));
+            const rootLine = rootDocument.lineCount - 2;
+            const rootItems = await collectCompletionItems(rootDocument, {
+                line: rootLine,
+                character: rootDocument.lineAt(rootLine).text.length,
+            });
+            const rootLabels = new Set(rootItems.map(item => item.label));
+            assert(rootLabels.has('Idle'), 'Top-level target completion should include Idle');
+            assert(rootLabels.has('InService'), 'Top-level target completion should include InService');
+            assert(!rootLabels.has('Yellow'), 'Top-level target completion should not include nested Yellow');
+
+            const nestedDocument = new MockDocument('/tmp/verify-semantic-nested-target.fcstm', baseText.replace(
+                '        Green -> Yellow effect {',
+                '        Green -> Yel effect {'
+            ));
+            const nestedLine = 8;
+            const nestedItems = await collectCompletionItems(nestedDocument, {
+                line: nestedLine,
+                character: nestedDocument.lineAt(nestedLine).text.indexOf('Yel') + 'Yel'.length,
+            });
+            const nestedLabels = new Set(nestedItems.map(item => item.label));
+            assert(nestedLabels.has('Yellow'), 'Nested target completion should include Yellow');
+            assert(nestedLabels.has('Red'), 'Nested target completion should include Red');
+            assert(nestedLabels.has('Green'), 'Nested target completion should include Green');
+            assert(!nestedLabels.has('Idle'), 'Nested target completion should not include outer Idle');
+        }
+    ),
+    new TestCase(
+        'SEM-06',
+        'Typing partial symbols on an otherwise empty line still suggests visible states and events',
+        async () => {
+            const rootDocument = new MockDocument('/tmp/verify-semantic-empty-line-root.fcstm', [
+                'state Root {',
+                '    state Idle;',
+                '    event InitDone;',
+                '    Id',
+                '}',
+            ].join('\n'));
+            const rootItems = await collectCompletionItems(rootDocument, {
+                line: 3,
+                character: rootDocument.lineAt(3).text.length,
+            });
+            const rootLabels = new Set(rootItems.map(item => item.label));
+            assert(rootLabels.has('Idle'), 'Blank-line root completion should include Idle');
+
+            const eventDocument = new MockDocument('/tmp/verify-semantic-empty-line-event.fcstm', [
+                'state Root {',
+                '    event InitDone;',
+                '    Ini',
+                '}',
+            ].join('\n'));
+            const eventItems = await collectCompletionItems(eventDocument, {
+                line: 2,
+                character: eventDocument.lineAt(2).text.length,
+            });
+            const eventLabels = new Set(eventItems.map(item => item.label));
+            assert(eventLabels.has('InitDone'), 'Blank-line completion should include visible events');
+
+            const nestedDocument = new MockDocument('/tmp/verify-semantic-empty-line-nested.fcstm', [
+                'state Root {',
+                '    state InService {',
+                '        state Yellow;',
+                '        Yel',
+                '    }',
+                '}',
+            ].join('\n'));
+            const nestedItems = await collectCompletionItems(nestedDocument, {
+                line: 3,
+                character: nestedDocument.lineAt(3).text.length,
+            });
+            const nestedLabels = new Set(nestedItems.map(item => item.label));
+            assert(nestedLabels.has('Yellow'), 'Blank-line nested completion should include Yellow');
         }
     ),
 ];

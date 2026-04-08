@@ -83,6 +83,11 @@ describe('jsfcstm lsp core', () => {
         const initializeResult = core.getInitializeResult();
         assert.equal(initializeResult.capabilities.textDocumentSync, TextDocumentSyncKind.Incremental);
         assert.equal(initializeResult.capabilities.definitionProvider, true);
+        assert.equal(initializeResult.capabilities.referencesProvider, true);
+        assert.equal(initializeResult.capabilities.documentHighlightProvider, true);
+        assert.equal(initializeResult.capabilities.workspaceSymbolProvider, true);
+        assert.equal(initializeResult.capabilities.codeActionProvider, true);
+        assert.equal(initializeResult.capabilities.renameProvider?.prepareProvider, true);
         assert.deepEqual(
             initializeResult.capabilities.completionProvider?.triggerCharacters,
             ['.', ':', '/']
@@ -115,9 +120,43 @@ describe('jsfcstm lsp core', () => {
         });
         assert.equal(definition?.[0]?.uri, toUri(workerFile));
 
+        const references = await core.provideReferences(toUri(hostFile), {
+            line: 2,
+            character: hostText.split('\n')[2].indexOf('Worker') + 1,
+        }, true);
+        assert.ok(references.length >= 1);
+
+        const highlights = await core.provideDocumentHighlights(toUri(hostFile), {
+            line: 2,
+            character: hostText.split('\n')[2].indexOf('Worker') + 1,
+        });
+        assert.ok(highlights.length >= 1);
+
+        const renameRange = await core.providePrepareRename(toUri(hostFile), {
+            line: 2,
+            character: hostText.split('\n')[2].indexOf('Worker') + 1,
+        });
+        assert.ok(renameRange);
+
+        const renameEdit = await core.provideRename(toUri(hostFile), {
+            line: 2,
+            character: hostText.split('\n')[2].indexOf('Worker') + 1,
+        }, 'Motor');
+        assert.ok(Object.values(renameEdit?.changes || {}).flat().length >= 1);
+
         const links = await core.provideDocumentLinks(toUri(hostFile));
         assert.equal(links.length, 1);
         assert.equal(links[0].target, toUri(workerFile));
+
+        const workspaceSymbols = await core.provideWorkspaceSymbols('work');
+        assert.ok(workspaceSymbols.some(item => item.name === 'Worker'));
+
+        const codeActions = await core.provideCodeActions(
+            toUri(hostFile),
+            packageModule.toLspRange(packageModule.createRange(0, 0, 3, 1)),
+            []
+        );
+        assert.deepEqual(codeActions, []);
 
         core.dispose();
     });

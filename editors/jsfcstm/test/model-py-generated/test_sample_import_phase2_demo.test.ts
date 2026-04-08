@@ -4,7 +4,7 @@ import {runPyGeneratedModelCase} from "./support";
 runPyGeneratedModelCase({
     name: "import_phase2_demo",
     relativeSourcePath: "import_phase2_demo",
-    source: "state System {\n    state LeftMotor named 'Left Motor' {\n        enter abstract InitMotor;\n        state Idle {\n            event Start;\n        }\n        state Running {\n            state Spin;\n            [*] -> Spin;\n        }\n        event Reset;\n        [*] -> Idle;\n        Idle -> Running :: Start;\n        Running -> Idle : Reset;\n    }\n    [*] -> LeftMotor;\n}",
+    source: null,
     files: [
     [
         "main.fcstm",

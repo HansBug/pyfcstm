@@ -3,6 +3,7 @@ import {pathToFileURL} from 'node:url';
 import {getWorkspaceGraph} from '../workspace';
 import {getImportWorkspaceIndex} from '../workspace/imports';
 import {createRange, TextDocumentLike, TextPositionLike, TextRange} from '../utils/text';
+import {resolveSymbolDefinitionLocation} from './references';
 
 /**
  * Definition target resolved from an FCSTM source location.
@@ -36,14 +37,14 @@ export async function resolveDefinitionLocation(
     position: TextPositionLike
 ): Promise<FcstmDefinitionLocation | null> {
     const resolved = await getImportWorkspaceIndex().getResolvedImportAtPosition(document, position);
-    if (!resolved?.target.entryFile) {
-        return null;
+    if (resolved?.target.entryFile) {
+        return {
+            uri: toFileUri(resolved.target.entryFile),
+            range: createRange(0, 0, 0, 0),
+        };
     }
 
-    return {
-        uri: toFileUri(resolved.target.entryFile),
-        range: createRange(0, 0, 0, 0),
-    };
+    return resolveSymbolDefinitionLocation(document, position);
 }
 
 /**

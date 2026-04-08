@@ -4,7 +4,7 @@ import {runPyGeneratedModelCase} from "./support";
 runPyGeneratedModelCase({
     name: "import_phase3_host_shared_units",
     relativeSourcePath: "import_phase3_host_shared_units",
-    source: "def int shared_counter = 100;\ndef int shared_ready = 1;\ndef int left_limit = 5;\ndef int right_limit = 6;\ndef int left_result = 0;\ndef int right_result = 0;\nstate Plant {\n    state LeftUnit named 'Left Unit' {\n        state Idle;\n        state Busy;\n        [*] -> Idle;\n        Idle -> Busy : if [shared_ready > 0] effect {\n            left_result = shared_counter + left_limit;\n        }\n        Busy -> Idle : if [shared_counter < left_limit] effect {\n            shared_counter = shared_counter + 1;\n            left_result = shared_counter;\n        }\n    }\n    state RightUnit named 'Right Unit' {\n        state Idle;\n        state Busy;\n        [*] -> Idle;\n        Idle -> Busy : if [shared_ready > 0] effect {\n            right_result = shared_counter + right_limit;\n        }\n        Busy -> Idle : if [shared_counter >= right_limit] effect {\n            shared_counter = shared_counter + 1;\n            right_result = shared_counter;\n        }\n    }\n    [*] -> LeftUnit;\n    LeftUnit -> RightUnit;\n}",
+    source: null,
     files: [
     [
         "main.fcstm",

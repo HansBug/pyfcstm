@@ -3,8 +3,10 @@ import * as path from 'node:path';
 import {pathToFileURL} from 'node:url';
 
 import {
+    CodeActionKind,
     CompletionItemKind,
     DiagnosticSeverity,
+    DocumentHighlightKind,
     InsertTextFormat,
     MarkupKind,
     SymbolKind,
@@ -28,7 +30,13 @@ interface HandlerMap {
     completion?: (params: { textDocument: { uri: string }; position: { line: number; character: number } }, token?: unknown) => Promise<unknown> | unknown;
     hover?: (params: { textDocument: { uri: string }; position: { line: number; character: number } }, token?: unknown) => Promise<unknown> | unknown;
     definition?: (params: { textDocument: { uri: string }; position: { line: number; character: number } }, token?: unknown) => Promise<unknown> | unknown;
+    references?: (params: { textDocument: { uri: string }; position: { line: number; character: number }; context: { includeDeclaration: boolean } }, token?: unknown) => Promise<unknown> | unknown;
+    highlights?: (params: { textDocument: { uri: string }; position: { line: number; character: number } }, token?: unknown) => Promise<unknown> | unknown;
+    prepareRename?: (params: { textDocument: { uri: string }; position: { line: number; character: number } }, token?: unknown) => Promise<unknown> | unknown;
+    rename?: (params: { textDocument: { uri: string }; position: { line: number; character: number }; newName: string }, token?: unknown) => Promise<unknown> | unknown;
     links?: (params: { textDocument: { uri: string } }, token?: unknown) => Promise<unknown> | unknown;
+    workspaceSymbol?: (params: { query: string }, token?: unknown) => Promise<unknown> | unknown;
+    codeAction?: (params: { textDocument: { uri: string }; range: { start: { line: number; character: number }; end: { line: number; character: number } }; context: { diagnostics: unknown[] } }, token?: unknown) => Promise<unknown> | unknown;
     initialized?: () => void;
     shutdown?: () => void;
 }
@@ -91,8 +99,32 @@ class FakeConnection {
         this.handlers.definition = callback;
     }
 
+    onReferences(callback: HandlerMap['references']): void {
+        this.handlers.references = callback;
+    }
+
+    onDocumentHighlight(callback: HandlerMap['highlights']): void {
+        this.handlers.highlights = callback;
+    }
+
+    onPrepareRename(callback: HandlerMap['prepareRename']): void {
+        this.handlers.prepareRename = callback;
+    }
+
+    onRenameRequest(callback: HandlerMap['rename']): void {
+        this.handlers.rename = callback;
+    }
+
     onDocumentLinks(callback: HandlerMap['links']): void {
         this.handlers.links = callback;
+    }
+
+    onWorkspaceSymbol(callback: HandlerMap['workspaceSymbol']): void {
+        this.handlers.workspaceSymbol = callback;
+    }
+
+    onCodeAction(callback: HandlerMap['codeAction']): void {
+        this.handlers.codeAction = callback;
     }
 
     onInitialized(callback: HandlerMap['initialized']): void {
@@ -299,6 +331,56 @@ describe('jsfcstm lsp coverage support', () => {
         });
         assert.equal(link.target, toUri('/tmp/worker.fcstm'));
         assert.equal(link.tooltip, undefined);
+
+        const highlight = packageModule.toLspDocumentHighlight({
+            range: packageModule.createRange(0, 0, 0, 5),
+            kind: 'write',
+        });
+        assert.equal(highlight.kind, DocumentHighlightKind.Write);
+
+        const workspaceEdit = packageModule.toLspWorkspaceEdit({
+            changes: {
+                [toUri('/tmp/worker.fcstm')]: [{
+                    range: packageModule.createRange(0, 0, 0, 5),
+                    newText: 'WorkerRenamed',
+                }],
+            },
+        });
+        assert.equal(workspaceEdit.changes?.[toUri('/tmp/worker.fcstm')]?.[0]?.newText, 'WorkerRenamed');
+
+        const workspaceSymbol = packageModule.toLspWorkspaceSymbol({
+            name: 'Worker',
+            kind: 'state',
+            containerName: 'Root',
+            location: {
+                uri: toUri('/tmp/worker.fcstm'),
+                range: packageModule.createRange(0, 0, 0, 5),
+            },
+        });
+        assert.equal(workspaceSymbol.containerName, 'Root');
+        assert.equal(workspaceSymbol.kind, SymbolKind.Class);
+
+        const codeAction = packageModule.toLspCodeAction({
+            title: 'Remove unresolved import',
+            kind: 'quickfix',
+            diagnostics: [{
+                range: packageModule.createRange(0, 0, 0, 5),
+                message: 'missing import',
+                severity: 'error',
+                source: 'fcstm',
+                code: packageModule.FCSTM_DIAGNOSTIC_CODES.missingImport,
+            }],
+            edit: {
+                changes: {
+                    [toUri('/tmp/worker.fcstm')]: [{
+                        range: packageModule.createRange(0, 0, 0, 5),
+                        newText: '',
+                    }],
+                },
+            },
+        });
+        assert.equal(codeAction.kind, CodeActionKind.QuickFix);
+        assert.equal(codeAction.edit?.changes?.[toUri('/tmp/worker.fcstm')]?.[0]?.newText, '');
     });
 
     it('covers default scheduler behavior and internal core guard branches', async () => {
@@ -381,6 +463,35 @@ describe('jsfcstm lsp coverage support', () => {
         );
         assert.deepEqual(
             await core.provideDocumentLinks(hostUri, {isCancellationRequested: true}),
+            []
+        );
+        assert.deepEqual(
+            await core.provideReferences(hostUri, {line: 0, character: 0}, true, {isCancellationRequested: true}),
+            []
+        );
+        assert.deepEqual(
+            await core.provideDocumentHighlights(hostUri, {line: 0, character: 0}, {isCancellationRequested: true}),
+            []
+        );
+        assert.equal(
+            await core.providePrepareRename(hostUri, {line: 0, character: 0}, {isCancellationRequested: true}),
+            null
+        );
+        assert.equal(
+            await core.provideRename(hostUri, {line: 0, character: 0}, 'Renamed', {isCancellationRequested: true}),
+            null
+        );
+        assert.deepEqual(
+            await core.provideWorkspaceSymbols('root', {isCancellationRequested: true}),
+            []
+        );
+        assert.deepEqual(
+            await core.provideCodeActions(
+                hostUri,
+                packageModule.toLspRange(packageModule.createRange(0, 0, 0, 1)),
+                [],
+                {isCancellationRequested: true}
+            ),
             []
         );
 
@@ -521,6 +632,128 @@ describe('jsfcstm lsp coverage support', () => {
             []
         );
 
+        const referencesModule = require('../dist/editor/references.js') as typeof import('../dist/editor/references');
+        const codeActionsModule = require('../dist/editor/code-actions.js') as typeof import('../dist/editor/code-actions');
+
+        const referencesCancelToken = {isCancellationRequested: false};
+        assert.deepEqual(
+            await withPatchedProperty(
+                referencesModule,
+                'collectReferences',
+                async () => {
+                    referencesCancelToken.isCancellationRequested = true;
+                    return [];
+                },
+                async () => core.provideReferences(hostUri, {line: 0, character: 0}, true, referencesCancelToken)
+            ),
+            []
+        );
+
+        const highlightCancelToken = {isCancellationRequested: false};
+        assert.deepEqual(
+            await withPatchedProperty(
+                referencesModule,
+                'collectDocumentHighlights',
+                async () => {
+                    highlightCancelToken.isCancellationRequested = true;
+                    return [];
+                },
+                async () => core.provideDocumentHighlights(hostUri, {line: 0, character: 0}, highlightCancelToken)
+            ),
+            []
+        );
+
+        assert.equal(
+            await withPatchedProperty(
+                referencesModule,
+                'prepareRename',
+                async () => null,
+                async () => core.providePrepareRename(hostUri, {line: 0, character: 0})
+            ),
+            null
+        );
+
+        const prepareRenameCancelToken = {isCancellationRequested: false};
+        assert.equal(
+            await withPatchedProperty(
+                referencesModule,
+                'prepareRename',
+                async () => {
+                    prepareRenameCancelToken.isCancellationRequested = true;
+                    return {
+                        range: packageModule.createRange(0, 0, 0, 4),
+                        placeholder: 'Root',
+                    };
+                },
+                async () => core.providePrepareRename(hostUri, {line: 0, character: 0}, prepareRenameCancelToken)
+            ),
+            null
+        );
+
+        assert.equal(
+            await withPatchedProperty(
+                referencesModule,
+                'planRename',
+                async () => null,
+                async () => core.provideRename(hostUri, {line: 0, character: 0}, 'Renamed')
+            ),
+            null
+        );
+
+        const renameCancelToken = {isCancellationRequested: false};
+        assert.equal(
+            await withPatchedProperty(
+                referencesModule,
+                'planRename',
+                async () => {
+                    renameCancelToken.isCancellationRequested = true;
+                    return {
+                        changes: {
+                            [hostUri]: [{
+                                range: packageModule.createRange(0, 0, 0, 4),
+                                newText: 'Renamed',
+                            }],
+                        },
+                    };
+                },
+                async () => core.provideRename(hostUri, {line: 0, character: 0}, 'Renamed', renameCancelToken)
+            ),
+            null
+        );
+
+        const workspaceSymbolsCancelToken = {isCancellationRequested: false};
+        assert.deepEqual(
+            await withPatchedProperty(
+                referencesModule,
+                'collectWorkspaceSymbols',
+                async () => {
+                    workspaceSymbolsCancelToken.isCancellationRequested = true;
+                    return [];
+                },
+                async () => core.provideWorkspaceSymbols('root', workspaceSymbolsCancelToken)
+            ),
+            []
+        );
+
+        const codeActionsCancelToken = {isCancellationRequested: false};
+        assert.deepEqual(
+            await withPatchedProperty(
+                codeActionsModule,
+                'collectCodeActions',
+                async () => {
+                    codeActionsCancelToken.isCancellationRequested = true;
+                    return [];
+                },
+                async () => core.provideCodeActions(
+                    hostUri,
+                    packageModule.toLspRange(packageModule.createRange(0, 0, 0, 1)),
+                    [],
+                    codeActionsCancelToken
+                )
+            ),
+            []
+        );
+
         (core as unknown as { clearDiagnosticsTimer: (uri: string) => void }).clearDiagnosticsTimer('file:///no-timer.fcstm');
         (core as unknown as { removeOverlay: (uri: string) => void }).removeOverlay('untitled:no-overlay.fcstm');
         await core.applyWorkspaceFolderChange(
@@ -552,8 +785,10 @@ describe('jsfcstm lsp coverage support', () => {
 
         const initializeResult = await fakeConnection.handlers.initialize?.({
             workspaceFolders: [{uri: toUri(dir), name: 'fixture'}],
-        }) as { capabilities?: { definitionProvider?: boolean } };
+        }) as { capabilities?: { definitionProvider?: boolean; referencesProvider?: boolean; codeActionProvider?: boolean } };
         assert.equal(initializeResult.capabilities?.definitionProvider, true);
+        assert.equal(initializeResult.capabilities?.referencesProvider, true);
+        assert.equal(initializeResult.capabilities?.codeActionProvider, true);
         const initializeWithoutFolders = await fakeConnection.handlers.initialize?.({}) as { capabilities?: { hoverProvider?: boolean } };
         assert.equal(initializeWithoutFolders.capabilities?.hoverProvider, true);
 
@@ -591,15 +826,47 @@ describe('jsfcstm lsp coverage support', () => {
             textDocument: {uri: toUri(hostFile)},
             position: {line: 2, character: 15},
         }) as Array<{ uri: string }>;
+        const references = await fakeConnection.handlers.references?.({
+            textDocument: {uri: toUri(hostFile)},
+            position: {line: 2, character: hostText.split('\n')[2].indexOf('Worker') + 1},
+            context: {includeDeclaration: true},
+        }) as Array<{ uri: string }>;
+        const highlights = await fakeConnection.handlers.highlights?.({
+            textDocument: {uri: toUri(hostFile)},
+            position: {line: 2, character: hostText.split('\n')[2].indexOf('Worker') + 1},
+        }) as Array<{ kind: number }>;
+        const prepareRename = await fakeConnection.handlers.prepareRename?.({
+            textDocument: {uri: toUri(hostFile)},
+            position: {line: 2, character: hostText.split('\n')[2].indexOf('Worker') + 1},
+        }) as { start: { line: number } };
+        const rename = await fakeConnection.handlers.rename?.({
+            textDocument: {uri: toUri(hostFile)},
+            position: {line: 2, character: hostText.split('\n')[2].indexOf('Worker') + 1},
+            newName: 'Motor',
+        }) as { changes?: Record<string, unknown[]> };
         const links = await fakeConnection.handlers.links?.({
             textDocument: {uri: toUri(hostFile)},
         }) as Array<{ target: string }>;
+        const workspaceSymbols = await fakeConnection.handlers.workspaceSymbol?.({
+            query: 'work',
+        }) as Array<{ name: string }>;
+        const codeActions = await fakeConnection.handlers.codeAction?.({
+            textDocument: {uri: toUri(hostFile)},
+            range: packageModule.toLspRange(packageModule.createRange(0, 0, 3, 1)),
+            context: {diagnostics: []},
+        }) as unknown[];
 
         assert.ok(symbols.some(item => item.name === 'Root'));
         assert.ok(completionItems.some(item => item.label === 'counter'));
         assert.match(hover.contents?.value || '', /State Definition/);
         assert.equal(definition[0]?.uri, toUri(workerFile));
+        assert.ok(references.length >= 1);
+        assert.ok(highlights.length >= 1);
+        assert.ok(prepareRename);
+        assert.ok(Object.values(rename.changes || {}).flat().length >= 1);
         assert.equal(links[0]?.target, toUri(workerFile));
+        assert.ok(workspaceSymbols.some(item => item.name === 'Worker'));
+        assert.deepEqual(codeActions, []);
 
         fakeConnection.handlers.initialized?.();
         await fakeConnection.workspaceFolderHandler?.({

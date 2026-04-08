@@ -1,4 +1,5 @@
 import {getParser} from '../dsl/parser';
+import type {FcstmSemanticDocument} from '../semantics';
 import {getImportWorkspaceIndex} from '../workspace/imports';
 import {getWorkspaceGraph} from '../workspace';
 import {collectSymbolsFromTree} from './symbols';
@@ -266,11 +267,89 @@ async function getImportAwareCompletions(
     return items;
 }
 
+function pushUniqueCompletion(
+    items: FcstmCompletionItem[],
+    seen: Set<string>,
+    item: FcstmCompletionItem
+): void {
+    const key = `${item.kind}:${item.label}:${item.insertText || ''}`;
+    if (seen.has(key)) {
+        return;
+    }
+
+    seen.add(key);
+    items.push(item);
+}
+
+function collectContextAwareCompletions(
+    semantic: FcstmSemanticDocument,
+    beforeCursor: string
+): FcstmCompletionItem[] {
+    const items: FcstmCompletionItem[] = [];
+
+    if (/(^|\s)ref\s+[./A-Za-z0-9_]*$/.test(beforeCursor)) {
+        for (const action of semantic.actions.filter(item => item.name)) {
+            items.push({
+                label: action.identity.qualifiedName,
+                kind: 'function',
+                detail: 'Named lifecycle action',
+                insertText: action.identity.qualifiedName,
+                sortText: `2_ref_${action.identity.qualifiedName}`,
+            });
+        }
+    }
+
+    if (/:?\s*\/[A-Za-z0-9_.]*$/.test(beforeCursor)) {
+        for (const absoluteEvent of semantic.summary.absoluteEvents) {
+            items.push({
+                label: absoluteEvent,
+                kind: 'event',
+                detail: 'Absolute event path',
+                insertText: absoluteEvent,
+                sortText: `5_abs_event_${absoluteEvent}`,
+            });
+        }
+    }
+
+    if (/->\s*[A-Za-z0-9_]*$/.test(beforeCursor)) {
+        for (const state of semantic.states) {
+            items.push({
+                label: state.name,
+                kind: 'class',
+                detail: 'Reachable state',
+                sortText: `4_state_target_${state.name}`,
+            });
+        }
+        for (const importItem of semantic.imports) {
+            items.push({
+                label: importItem.alias,
+                kind: 'class',
+                detail: 'Imported state alias',
+                sortText: `4_import_alias_${importItem.alias}`,
+            });
+        }
+    }
+
+    if (/\b(import|event)\b/.test(beforeCursor)) {
+        for (const importItem of semantic.imports) {
+            items.push({
+                label: importItem.alias,
+                kind: 'class',
+                detail: 'Imported alias in scope',
+                sortText: `4_import_scope_${importItem.alias}`,
+            });
+        }
+    }
+
+    return items;
+}
+
 export async function collectCompletionItems(
     document: TextDocumentLike,
     position: TextPositionLike
 ): Promise<FcstmCompletionItem[]> {
     const items: FcstmCompletionItem[] = [];
+    const seen = new Set<string>();
     const lineText = document.lineAt(position.line).text;
     const beforeCursor = lineText.substring(0, position.character);
 
@@ -278,11 +357,28 @@ export async function collectCompletionItems(
         return items;
     }
 
-    items.push(...getKeywordCompletions());
-    items.push(...getConstantCompletions());
-    items.push(...getFunctionCompletions());
-    items.push(...await getDocumentSymbolCompletions(document));
-    items.push(...await getImportAwareCompletions(document, position));
+    for (const item of getKeywordCompletions()) {
+        pushUniqueCompletion(items, seen, item);
+    }
+    for (const item of getConstantCompletions()) {
+        pushUniqueCompletion(items, seen, item);
+    }
+    for (const item of getFunctionCompletions()) {
+        pushUniqueCompletion(items, seen, item);
+    }
+    for (const item of await getDocumentSymbolCompletions(document)) {
+        pushUniqueCompletion(items, seen, item);
+    }
+    for (const item of await getImportAwareCompletions(document, position)) {
+        pushUniqueCompletion(items, seen, item);
+    }
+
+    const semantic = await getWorkspaceGraph().getSemanticDocument(document);
+    if (semantic) {
+        for (const item of collectContextAwareCompletions(semantic, beforeCursor)) {
+            pushUniqueCompletion(items, seen, item);
+        }
+    }
 
     return items;
 }

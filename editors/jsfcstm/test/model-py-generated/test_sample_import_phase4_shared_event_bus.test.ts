@@ -4,7 +4,7 @@ import {runPyGeneratedModelCase} from "./support";
 runPyGeneratedModelCase({
     name: "import_phase4_shared_event_bus",
     relativeSourcePath: "import_phase4_shared_event_bus",
-    source: "state Fleet {\n    state LeftMotor named 'Left Motor' {\n        state Idle;\n        state Running;\n        state Error;\n        Idle -> Error : /Bus.Alarm;\n        Running -> Error : /Bus.Alarm;\n        Error -> Error : /Bus.Alarm;\n        [*] -> Idle;\n        Idle -> Running : /Start;\n        Running -> Idle : /Bus.Stop;\n    }\n    state RightMotor named 'Right Motor' {\n        state Idle;\n        state Running;\n        state Error;\n        Idle -> Error : /Bus.Alarm;\n        Running -> Error : /Bus.Alarm;\n        Error -> Error : /Bus.Alarm;\n        [*] -> Idle;\n        Idle -> Running : /Start;\n        Running -> Idle : /Bus.Stop;\n    }\n    state Bus {\n        event Stop;\n        event Alarm named 'Fleet Alarm';\n    }\n    event Start named 'Fleet Start';\n    [*] -> LeftMotor;\n    LeftMotor -> RightMotor;\n}",
+    source: null,
     files: [
     [
         "main.fcstm",

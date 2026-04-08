@@ -4,7 +4,7 @@ import {runPyGeneratedModelCase} from "./support";
 runPyGeneratedModelCase({
     name: "import_phase4_nested_targets",
     relativeSourcePath: "import_phase4_nested_targets",
-    source: "state Plant {\n    state Worker named 'Mapped Worker' {\n        state Idle;\n        state Failed;\n        state Halted;\n        [*] -> Idle;\n        Idle -> Failed : /GlobalFault;\n        Failed -> Halted : /Bus.Stop;\n        Halted -> Idle : /Bus.Reset;\n    }\n    state Bus {\n        event Stop named 'Plant Stop';\n        event Reset named 'Local Reset';\n    }\n    event GlobalFault named 'Global Fault';\n    [*] -> Worker;\n}",
+    source: null,
     files: [
     [
         "main.fcstm",

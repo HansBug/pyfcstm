@@ -10,6 +10,7 @@ import {
     TextPositionLike,
     TextRange,
 } from '../utils/text';
+import {FCSTM_DIAGNOSTIC_CODES} from '../editor/analyzers';
 import {
     type FcstmImportCycle,
     type FcstmWorkspaceGraph,
@@ -156,6 +157,7 @@ export class FcstmImportWorkspaceIndex {
                     message: `Duplicate import alias ${JSON.stringify(semanticImport.alias)} in state ${JSON.stringify(stateKey)}.`,
                     severity: 'error',
                     source: 'fcstm',
+                    code: FCSTM_DIAGNOSTIC_CODES.duplicateImportAlias,
                 });
             } else {
                 aliasSet.add(semanticImport.alias);
@@ -167,6 +169,7 @@ export class FcstmImportWorkspaceIndex {
                     message: `Import source ${JSON.stringify(semanticImport.sourcePath)} cannot be resolved from ${JSON.stringify(path.dirname(ownerFile))}.`,
                     severity: 'error',
                     source: 'fcstm',
+                    code: FCSTM_DIAGNOSTIC_CODES.missingImport,
                 });
             }
         }
@@ -179,6 +182,7 @@ export class FcstmImportWorkspaceIndex {
                 message: `Circular import detected: ${cycle.files.map(item => path.basename(item)).join(' -> ')}.`,
                 severity: 'warning',
                 source: 'fcstm',
+                code: FCSTM_DIAGNOSTIC_CODES.circularImport,
             });
         }
 

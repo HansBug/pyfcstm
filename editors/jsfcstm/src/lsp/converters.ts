@@ -1,8 +1,12 @@
 import {
+    CodeAction,
+    CodeActionKind,
     CompletionItem,
     CompletionItemKind,
     Diagnostic,
     DiagnosticSeverity,
+    DocumentHighlight,
+    DocumentHighlightKind,
     DocumentLink,
     DocumentSymbol,
     Hover,
@@ -11,14 +15,24 @@ import {
     MarkupKind,
     Position,
     Range,
+    SymbolInformation,
     SymbolKind,
+    TextEdit,
+    WorkspaceEdit,
 } from 'vscode-languageserver/node';
 
 import type {
     FcstmCompletionItem,
 } from '../editor/completion';
+import type {FcstmCodeAction} from '../editor/code-actions';
 import type {FcstmHoverResult} from '../editor/hover';
-import type {FcstmDefinitionLocation, FcstmDocumentLink} from '../editor/navigation';
+import type {
+    FcstmDefinitionLocation,
+    FcstmDocumentHighlight,
+    FcstmDocumentLink,
+    FcstmWorkspaceEdit,
+    FcstmWorkspaceSymbol,
+} from '../editor';
 import type {FcstmDocumentSymbol, FcstmSymbolKind} from '../editor/symbols';
 import type {FcstmDiagnostic, TextPositionLike, TextRange} from '../utils/text';
 
@@ -45,6 +59,8 @@ export function toLspDiagnostic(item: FcstmDiagnostic): Diagnostic {
             ? DiagnosticSeverity.Error
             : DiagnosticSeverity.Warning,
         source: item.source,
+        code: item.code,
+        data: item.data,
     };
 }
 
@@ -149,5 +165,56 @@ export function toLspDocumentLink(link: FcstmDocumentLink): DocumentLink {
         range: toLspRange(link.range),
         target: link.target,
         tooltip: link.tooltip,
+    };
+}
+
+export function toLspDocumentHighlight(highlight: FcstmDocumentHighlight): DocumentHighlight {
+    const kindMap: Record<FcstmDocumentHighlight['kind'], DocumentHighlightKind> = {
+        text: DocumentHighlightKind.Text,
+        read: DocumentHighlightKind.Read,
+        write: DocumentHighlightKind.Write,
+    };
+
+    return {
+        range: toLspRange(highlight.range),
+        kind: kindMap[highlight.kind],
+    };
+}
+
+function toLspTextEdit(edit: { range: TextRange; newText: string }): TextEdit {
+    return {
+        range: toLspRange(edit.range),
+        newText: edit.newText,
+    };
+}
+
+export function toLspWorkspaceEdit(edit: FcstmWorkspaceEdit): WorkspaceEdit {
+    return {
+        changes: Object.fromEntries(
+            Object.entries(edit.changes).map(([uri, edits]) => [uri, edits.map(item => toLspTextEdit(item))])
+        ),
+    };
+}
+
+export function toLspWorkspaceSymbol(symbol: FcstmWorkspaceSymbol): SymbolInformation {
+    return {
+        name: symbol.name,
+        containerName: symbol.containerName,
+        kind: toLspSymbolKind(symbol.kind === 'import' ? 'class' : symbol.kind as FcstmSymbolKind),
+        location: toLspLocation(symbol.location),
+    };
+}
+
+export function toLspCodeAction(action: FcstmCodeAction): CodeAction {
+    const kindMap: Record<FcstmCodeAction['kind'], CodeActionKind> = {
+        quickfix: CodeActionKind.QuickFix,
+        'refactor.rename': CodeActionKind.RefactorRewrite,
+    };
+
+    return {
+        title: action.title,
+        kind: kindMap[action.kind],
+        diagnostics: action.diagnostics?.map(item => toLspDiagnostic(item)),
+        edit: action.edit ? toLspWorkspaceEdit(action.edit) : undefined,
     };
 }

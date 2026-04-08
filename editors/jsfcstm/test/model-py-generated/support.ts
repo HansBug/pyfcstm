@@ -10,14 +10,25 @@ export interface PyGeneratedSourceFile {
     1: string;
 }
 
-export interface PyGeneratedModelCase {
+interface PyGeneratedModelCaseBase {
     name: string;
     relativeSourcePath: string;
-    source: string;
-    files?: PyGeneratedSourceFile[];
-    entryFile?: string;
     expected: PyGeneratedSnapshot;
 }
+
+export interface PyGeneratedSingleFileModelCase extends PyGeneratedModelCaseBase {
+    source: string;
+    files?: never;
+    entryFile?: never;
+}
+
+export interface PyGeneratedWorkspaceModelCase extends PyGeneratedModelCaseBase {
+    source: null;
+    files: PyGeneratedSourceFile[];
+    entryFile: string;
+}
+
+export type PyGeneratedModelCase = PyGeneratedSingleFileModelCase | PyGeneratedWorkspaceModelCase;
 
 function pathName(path: string[]): string {
     return path.join('.');
@@ -550,11 +561,15 @@ function sanitizeSlug(text: string): string {
         .replace(/^-+|-+$/g, '');
 }
 
+function isWorkspaceModelCase(testCase: PyGeneratedModelCase): testCase is PyGeneratedWorkspaceModelCase {
+    return testCase.source === null;
+}
+
 export function runPyGeneratedModelCase(testCase: PyGeneratedModelCase): void {
     describe(`jsfcstm pyfcstm-generated model sample: ${testCase.relativeSourcePath}`, () => {
         it(`matches pyfcstm for ${testCase.name}`, async () => {
             let model: ReturnType<typeof packageModule.buildStateMachineModel> | Awaited<ReturnType<InstanceType<typeof packageModule.FcstmWorkspaceGraph>['getStateMachineModelForFile']>>;
-            if (testCase.files && testCase.entryFile) {
+            if (isWorkspaceModelCase(testCase)) {
                 const dir = trackTempDir(`jsfcstm-py-generated-${sanitizeSlug(testCase.relativeSourcePath || testCase.name)}-`);
                 for (const [relativePath, text] of testCase.files) {
                     writeFile(path.join(dir, relativePath), text);
@@ -563,6 +578,8 @@ export function runPyGeneratedModelCase(testCase: PyGeneratedModelCase): void {
                 const graph = new packageModule.FcstmWorkspaceGraph();
                 model = await graph.getStateMachineModelForFile(path.join(dir, testCase.entryFile));
             } else {
+                assert.equal(testCase.files, undefined);
+                assert.equal(testCase.entryFile, undefined);
                 const document = createDocument(
                     testCase.source,
                     `/tmp/${sanitizeSlug(testCase.relativeSourcePath || testCase.name)}.fcstm`

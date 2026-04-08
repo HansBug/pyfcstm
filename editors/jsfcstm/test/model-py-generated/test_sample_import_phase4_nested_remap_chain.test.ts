@@ -4,7 +4,7 @@ import {runPyGeneratedModelCase} from "./support";
 runPyGeneratedModelCase({
     name: "import_phase4_nested_remap_chain",
     relativeSourcePath: "import_phase4_nested_remap_chain",
-    source: "state Root {\n    state Child named 'Child Layer' {\n        state Grand named 'Grand Layer' {\n            state Idle;\n            state Running;\n            state Tripped;\n            Idle -> Tripped : /Bus.Trip;\n            Running -> Tripped : /Bus.Trip;\n            Tripped -> Tripped : /Bus.Trip;\n            [*] -> Idle;\n            Idle -> Running : /Bus.Start;\n            Running -> Idle : /Bus.Stop;\n        }\n        state InnerBus;\n        [*] -> Grand;\n    }\n    state Bus {\n        event Start named 'Top Start';\n        event Stop named 'Top Stop';\n        event Trip named 'Top Trip';\n    }\n    [*] -> Child;\n}",
+    source: null,
     files: [
     [
         "main.fcstm",

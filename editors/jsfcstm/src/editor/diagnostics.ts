@@ -1,4 +1,5 @@
 import {getParser, ParseError} from '../dsl/parser';
+import {collectSemanticAnalysisDiagnostics} from './analyzers';
 import {
     createRange,
     FcstmDiagnostic,
@@ -38,5 +39,6 @@ export async function collectDocumentDiagnostics(
     const parseResult = await getParser().parse(document.getText());
     const diagnostics = parseResult.errors.map(error => convertParseErrorToDiagnostic(error, document));
     diagnostics.push(...await getImportWorkspaceIndex().collectImportDiagnostics(document));
+    diagnostics.push(...await collectSemanticAnalysisDiagnostics(document));
     return diagnostics;
 }

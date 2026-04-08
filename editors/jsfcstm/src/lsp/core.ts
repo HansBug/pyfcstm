@@ -1,29 +1,40 @@
 import {fileURLToPath} from 'node:url';
 
 import {
+    CodeAction,
     CancellationToken,
     CompletionItem,
     Diagnostic,
+    DocumentHighlight,
     DocumentLink,
     DocumentSymbol,
     Hover,
     InitializeResult,
     Location,
     Position,
+    Range,
     ServerCapabilities,
+    SymbolInformation,
     TextDocumentContentChangeEvent,
     TextDocumentItem,
     TextDocumentSyncKind,
+    WorkspaceEdit,
     WorkspaceFolder,
 } from 'vscode-languageserver/node';
 import {TextDocument} from 'vscode-languageserver-textdocument';
 
 import {getJsFcstmPackageInfo} from '../config';
 import {
+    collectCodeActions,
     collectCompletionItems,
     collectDocumentDiagnostics,
+    collectDocumentHighlights,
     collectDocumentLinks,
     collectDocumentSymbols,
+    collectReferences,
+    collectWorkspaceSymbols,
+    planRename,
+    prepareRename,
     resolveDefinitionLocation,
     resolveHover,
 } from '../editor';
@@ -31,11 +42,15 @@ import type {TextDocumentLike} from '../utils/text';
 import {getWorkspaceGraph} from '../workspace';
 import {
     toLspCompletionItem,
+    toLspCodeAction,
     toLspDiagnostic,
+    toLspDocumentHighlight,
     toLspDocumentLink,
     toLspDocumentSymbol,
     toLspHover,
     toLspLocation,
+    toLspWorkspaceEdit,
+    toLspWorkspaceSymbol,
 } from './converters';
 
 export interface FcstmPublishedDiagnostics {
@@ -153,9 +168,16 @@ export class FcstmLanguageServerCore {
             },
             hoverProvider: true,
             definitionProvider: true,
+            referencesProvider: true,
+            documentHighlightProvider: true,
+            renameProvider: {
+                prepareProvider: true,
+            },
             documentLinkProvider: {
                 resolveProvider: false,
             },
+            workspaceSymbolProvider: true,
+            codeActionProvider: true,
             workspace: {
                 workspaceFolders: {
                     supported: true,
@@ -338,6 +360,115 @@ export class FcstmLanguageServerCore {
         return [toLspLocation(definition)];
     }
 
+    async provideReferences(
+        uri: string,
+        position: Position,
+        includeDeclaration: boolean,
+        token?: CancellationToken
+    ): Promise<Location[]> {
+        if (shouldCancel(token)) {
+            return [];
+        }
+
+        const document = this.getDocumentLike(uri);
+        if (!document) {
+            return [];
+        }
+
+        const references = await collectReferences(document, position, includeDeclaration);
+        if (shouldCancel(token)) {
+            return [];
+        }
+
+        return references.map(item => toLspLocation(item));
+    }
+
+    async provideDocumentHighlights(
+        uri: string,
+        position: Position,
+        token?: CancellationToken
+    ): Promise<DocumentHighlight[]> {
+        if (shouldCancel(token)) {
+            return [];
+        }
+
+        const document = this.getDocumentLike(uri);
+        if (!document) {
+            return [];
+        }
+
+        const highlights = await collectDocumentHighlights(document, position);
+        if (shouldCancel(token)) {
+            return [];
+        }
+
+        return highlights.map(item => toLspDocumentHighlight(item));
+    }
+
+    async providePrepareRename(
+        uri: string,
+        position: Position,
+        token?: CancellationToken
+    ): Promise<Range | null> {
+        if (shouldCancel(token)) {
+            return null;
+        }
+
+        const document = this.getDocumentLike(uri);
+        if (!document) {
+            return null;
+        }
+
+        const rename = await prepareRename(document, position);
+        if (!rename || shouldCancel(token)) {
+            return null;
+        }
+
+        return toLspLocation({
+            uri,
+            range: rename.range,
+        }).range;
+    }
+
+    async provideRename(
+        uri: string,
+        position: Position,
+        newName: string,
+        token?: CancellationToken
+    ): Promise<WorkspaceEdit | null> {
+        if (shouldCancel(token)) {
+            return null;
+        }
+
+        const document = this.getDocumentLike(uri);
+        if (!document) {
+            return null;
+        }
+
+        const edit = await planRename(document, position, newName);
+        if (!edit || shouldCancel(token)) {
+            return null;
+        }
+
+        return toLspWorkspaceEdit(edit);
+    }
+
+    async provideWorkspaceSymbols(
+        query: string,
+        token?: CancellationToken
+    ): Promise<SymbolInformation[]> {
+        if (shouldCancel(token)) {
+            return [];
+        }
+
+        const symbols = await collectWorkspaceSymbols(this.getOpenDocuments(), query);
+        if (shouldCancel(token)) {
+            return [];
+        }
+
+        return symbols.map(item => toLspWorkspaceSymbol(item));
+    }
+
     async provideDocumentLinks(
         uri: string,
         token?: CancellationToken
@@ -359,6 +490,36 @@ export class FcstmLanguageServerCore {
         return links.map(item => toLspDocumentLink(item));
     }
 
+    async provideCodeActions(
+        uri: string,
+        range: Range,
+        diagnostics: Diagnostic[],
+        token?: CancellationToken
+    ): Promise<CodeAction[]> {
+        if (shouldCancel(token)) {
+            return [];
+        }
+
+        const document = this.getDocumentLike(uri);
+        if (!document) {
+            return [];
+        }
+
+        const actions = await collectCodeActions(document, range, diagnostics.map(item => ({
+            range: item.range,
+            message: item.message,
+            severity: item.severity === 1 ? 'error' : 'warning',
+            source: item.source || 'fcstm',
+            code: item.code ? String(item.code) : undefined,
+            data: item.data as Record<string, unknown> | undefined,
+        })));
+        if (shouldCancel(token)) {
+            return [];
+        }
+
+        return actions.map(item => toLspCodeAction(item));
+    }
+
     dispose(): void {
         for (const uri of [...this.diagnosticsTimers.keys()]) {
             this.clearDiagnosticsTimer(uri);
@@ -373,6 +534,10 @@ export class FcstmLanguageServerCore {
     private getDocumentLike(uri: string): TextDocumentLike | undefined {
         const document = this.documents.get(uri);
         return document ? toDocumentLike(document) : undefined;
+    }
+
+    private getOpenDocuments(): TextDocumentLike[] {
+        return [...this.documents.values()].map(item => toDocumentLike(item));
     }
 
     private scheduleDiagnostics(uri: string, version: number): void {

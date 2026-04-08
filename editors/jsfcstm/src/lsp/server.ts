@@ -67,8 +67,42 @@ export function createFcstmLanguageServer(
         return core.provideDefinition(params.textDocument.uri, params.position, token);
     });
 
+    connection.onReferences(async (params, token) => {
+        return core.provideReferences(
+            params.textDocument.uri,
+            params.position,
+            params.context.includeDeclaration,
+            token
+        );
+    });
+
+    connection.onDocumentHighlight(async (params, token) => {
+        return core.provideDocumentHighlights(params.textDocument.uri, params.position, token);
+    });
+
+    connection.onPrepareRename(async (params, token) => {
+        return core.providePrepareRename(params.textDocument.uri, params.position, token);
+    });
+
+    connection.onRenameRequest(async (params, token) => {
+        return core.provideRename(params.textDocument.uri, params.position, params.newName, token);
+    });
+
     connection.onDocumentLinks(async (params, token) => {
         return core.provideDocumentLinks(params.textDocument.uri, token);
+    });
+
+    connection.onWorkspaceSymbol(async (params, token) => {
+        return core.provideWorkspaceSymbols(params.query, token);
+    });
+
+    connection.onCodeAction(async (params, token) => {
+        return core.provideCodeActions(
+            params.textDocument.uri,
+            params.range,
+            params.context.diagnostics,
+            token
+        );
     });
 
     connection.onInitialized(() => {

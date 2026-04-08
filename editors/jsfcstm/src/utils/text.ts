@@ -62,6 +62,8 @@ export interface FcstmDiagnostic {
     message: string;
     severity: FcstmDiagnosticSeverity;
     source: string;
+    code?: string;
+    data?: Record<string, unknown>;
 }
 
 export function createRange(

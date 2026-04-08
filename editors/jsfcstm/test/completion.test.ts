@@ -91,6 +91,32 @@ describe('jsfcstm completion support', () => {
         assert.ok(generalItems.some(item => item.label === 'sin' && item.insertTextFormat === 'snippet'));
     });
 
+    it('adds path-aware and action-aware contextual completions', async () => {
+        const document = createDocument([
+            'state Root {',
+            '    event Start;',
+            '    enter ResetCounter {',
+            '    }',
+            '    state Idle;',
+            '    [*] -> Idle;',
+            '    Idle -> Idle : /',
+            '    exit ref Re',
+            '}',
+        ].join('\n'), '/tmp/contextual-completion.fcstm');
+
+        const eventItems = await packageModule.collectCompletionItems(document, {
+            line: 6,
+            character: document.lineAt(6).text.length,
+        });
+        assert.ok(eventItems.some(item => item.label === '/Start' && item.kind === 'event'));
+
+        const actionItems = await packageModule.collectCompletionItems(document, {
+            line: 7,
+            character: document.lineAt(7).text.length,
+        });
+        assert.ok(actionItems.some(item => item.label === 'Root.ResetCounter' && item.kind === 'function'));
+    });
+
     it('handles parser-null and missing-import-target completion branches', async () => {
         const parser = packageModule.getParser();
         const index = packageModule.getImportWorkspaceIndex();

@@ -16,6 +16,7 @@
 | 0.5.3 | 2026-04-08 | 基于当前仓库现状调整 phase plan：在可视化前新增 VSCode 主流能力补齐阶段，并加入 `pyfcstm` model 向 `jsfcstm` 收敛的评估 / 迁移阶段 | Codex |
 | 0.5.4 | 2026-04-08 | 重新评估依赖顺序，将 `pyfcstm` model 收敛评估前移到高级语义能力之前，避免在不稳定 public object shape 上先做 references / rename / analyzer | Codex |
 | 0.5.5 | 2026-04-08 | 明确 `jsfcstm make sample` 采用 Python `pyfcstm` 生成可直接运行的 TypeScript parity tests，再由 TS 执行，避免测试时桥接 Python | Codex |
+| 0.6.0 | 2026-04-08 | 完成 Phase 6：在 `jsfcstm` 中落地 references / rename / workspace symbols / document highlights / analyzers / quick fixes，并通过 LSP 对外提供 | Codex |
 
 ---
 
@@ -871,7 +872,7 @@ npm publish --access public
 
 ## 11. 分阶段执行计划
 
-截至 2026-04-08，Phase 0 到 Phase 4 已在当前分支完成首轮落地。下面的勾选状态反映当前仓库真实状态与后续规划。
+截至 2026-04-08，Phase 0 到 Phase 6 已在当前分支完成首轮落地。下面的勾选状态反映当前仓库真实状态与后续规划。
 
 ## Phase 0：拆分原则确认与现状基线冻结
 
@@ -1062,20 +1063,20 @@ npm publish --access public
 
 ### TODO
 
-* [ ] 在 `editors/jsfcstm` 中补齐 symbol identity、references graph 和 rename planning 所需数据结构
-* [ ] 实现 references、rename、workspace symbols、document highlights
-* [ ] 实现 code actions 与 quick fixes，覆盖 import path、alias 冲突、未解析符号、事件作用域等典型问题
-* [ ] 增强 completion，使其具备 path-aware、scope-aware、import-aware 的上下文补全能力
-* [ ] 增加静态 analyzer：unreachable state、dead transition、unused event、重复 mapping 等
-* [ ] 为 references / rename / quick fixes 建立跨文件 golden tests，覆盖 import、alias、workspace rename、冲突回滚等高风险场景
+* [x] 在 `editors/jsfcstm` 中补齐 symbol identity、references graph 和 rename planning 所需数据结构
+* [x] 实现 references、rename、workspace symbols、document highlights
+* [x] 实现 code actions 与 quick fixes，覆盖 import path、alias 冲突、未解析符号、事件作用域等典型问题
+* [x] 增强 completion，使其具备 path-aware、scope-aware、import-aware 的上下文补全能力
+* [x] 增加静态 analyzer：unreachable state、dead transition、unused event、重复 mapping 等
+* [x] 为 references / rename / quick fixes 建立跨文件 golden tests，覆盖 import、alias、workspace rename、冲突回滚等高风险场景
 
 ### Checklist
 
-* [ ] references、definition、rename 在同一 symbol 上结果一致
-* [ ] rename 能正确处理多文件 workspace，不破坏 import 场景
-* [ ] quick fixes 只在可证明安全时出现，不给出误导性修复
-* [ ] analyzer 结果能稳定落到 source range，并可与 diagnostics / code actions 对接
-* [ ] 新能力的主要实现仍然位于 `editors/jsfcstm`，而不是回流到 `editors/vscode`
+* [x] references、definition、rename 在同一 symbol 上结果一致
+* [x] rename 能正确处理多文件 workspace，不破坏 import 场景
+* [x] quick fixes 只在可证明安全时出现，不给出误导性修复
+* [x] analyzer 结果能稳定落到 source range，并可与 diagnostics / code actions 对接
+* [x] 新能力的主要实现仍然位于 `editors/jsfcstm`，而不是回流到 `editors/vscode`
 
 ## Phase 7：VSCode 主流语言体验补齐
 
@@ -1101,7 +1102,6 @@ npm publish --access public
 * [ ] 其余常见能力中，对 FCSTM 明确高价值的部分已经实现；不实现的项也有书面理由
 * [ ] rich editor experience 的主实现仍位于 `editors/jsfcstm`，`editors/vscode` 只做 capability wiring
 * [ ] 对应验证链已经扩展，不能只靠手工点点看
-
 ## Phase 8：纯 JS 可视化与预览
 
 ### 目标

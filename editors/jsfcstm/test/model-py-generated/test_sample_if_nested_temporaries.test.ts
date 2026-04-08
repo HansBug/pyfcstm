@@ -5,8 +5,6 @@ runPyGeneratedModelCase({
     name: "if_nested_temporaries.fcstm",
     relativeSourcePath: "if_nested_temporaries.fcstm",
     source: "def int x = 0;\ndef int y = 0;\ndef int z = 0;\ndef int flag = 0;\nstate Root {\n    state Active {\n        during {\n            tmp = x + 1;\n            if [flag > 0] {\n                tmp = tmp + 10;\n                if [y > 5] {\n                    bonus = y + 2;\n                    z = tmp + bonus;\n                } else {\n                    z = tmp - y;\n                }\n            } else if [x > 3] {\n                tmp = tmp + 20;\n                z = tmp;\n            } else {\n                z = tmp;\n            }\n            x = z + tmp;\n        }\n    }\n    [*] -> Active;\n}",
-    files: undefined,
-    entryFile: undefined,
     expected: {
     "defines": {
         "flag": {

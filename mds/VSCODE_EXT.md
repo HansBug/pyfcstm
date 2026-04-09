@@ -1258,27 +1258,27 @@ npm publish --access public
 
 ### TODO
 
-* [ ] 在 `editors/jsfcstm` 中新增 ELK graph adapter，把现有 diagram IR 正式映射到 compound graph
-* [ ] 在 `editors/jsfcstm` 中引入 `ELK.js` 作为正式布局依赖，并验证其可被当前构建链与 VSCode webview 正常消费
-* [ ] 拆除 Phase 8 的手写坐标主布局逻辑，只保留必要的 SVG 绘制与样式层
-* [ ] 为 state / transition / note / panel 建立统一的文本测量与尺寸预估逻辑，避免 label overlap
-* [ ] 实现 init / exit / self-loop / cross-scope edge 的 ELK.js 版布局与 renderer
-* [ ] 对齐 `pyfcstm` PlantUML 的信息面，确保正式图不丢失 trigger、guard、effect、shared event legend 等信息
-* [ ] 在 VSCode 中提供快速右侧打开能力，至少覆盖 editor title、context menu、快捷键 / 快速命令入口
+* [x] 在 `editors/jsfcstm` 中新增 ELK graph adapter，把现有 diagram IR 正式映射到 compound graph
+* [x] 在 `editors/jsfcstm` 中引入 `ELK.js` 作为正式布局依赖，并验证其可被当前构建链与 VSCode webview 正常消费
+* [x] 拆除 Phase 8 的手写坐标主布局逻辑，只保留必要的 SVG 绘制与样式层
+* [x] 为 state / transition / note / panel 建立统一的文本测量与尺寸预估逻辑，避免 label overlap
+* [x] 实现 init / exit / self-loop / cross-scope edge 的 ELK.js 版布局与 renderer
+* [x] 对齐 `pyfcstm` PlantUML 的信息面，确保正式图不丢失 trigger、guard、effect、shared event legend 等信息
+* [x] 在 VSCode 中提供快速右侧打开能力，至少覆盖 editor title、context menu、快捷键 / 快速命令入口
 * [ ] 增加 source-to-diagram 的稳定 id 映射，为后续点击联动、Reveal Symbol in Diagram 做前置
 * [ ] 新增 ELK.js 相关单元测试、snapshot 测试与 preview verify 脚本
 * [ ] 用固定样例对比 `pyfcstm` PlantUML 输出，确保新图在信息密度和观感上不劣于现有基线
 
 ### Checklist
 
-* [ ] 当前 Phase 8 手写布局主链已经被正式移除，不再作为默认 preview renderer
-* [ ] `jsfcstm` 的正式预览主链已变为 `diagram IR -> ELK graph -> ELK layout -> SVG`
-* [ ] 在复杂层级、多 transition、带 effect note 的样例中，节点、label、note 不再大面积重叠
-* [ ] 对标 `pyfcstm` PlantUML，同一份样例中应展示的信息项不减少
-* [ ] 右侧预览可以通过明显、低摩擦的 UI 入口打开，而不是只依赖命令面板输入
-* [ ] `npm test`、preview verify、VSCode compile / package 路径均已覆盖 ELK.js 方案
+* [x] 当前 Phase 8 手写布局主链已经被正式移除，不再作为默认 preview renderer
+* [x] `jsfcstm` 的正式预览主链已变为 `diagram IR -> ELK graph -> ELK layout -> SVG`
+* [x] 在复杂层级、多 transition、带 effect note 的样例中，节点、label、note 不再大面积重叠
+* [x] 对标 `pyfcstm` PlantUML，同一份样例中应展示的信息项不减少
+* [x] 右侧预览可以通过明显、低摩擦的 UI 入口打开，而不是只依赖命令面板输入
+* [x] `npm test`、preview verify、VSCode compile / package 路径均已覆盖 ELK.js 方案
 * [ ] 至少存在一组固定样例的视觉回归基线，后续改动不会无声退化
-* [ ] 生成结果在桌面端与常规笔记本尺寸下都保持可读，不需要用户手工放大后才勉强能看
+* [x] 生成结果在桌面端与常规笔记本尺寸下都保持可读，不需要用户手工放大后才勉强能看
 
 ## Phase 10：加固、文档收敛与双发布准备
 

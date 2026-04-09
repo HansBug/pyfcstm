@@ -10,6 +10,7 @@ const path = require('path');
 
 const production = process.argv.includes('--production');
 const watch = process.argv.includes('--watch');
+const svgdomCjsEntry = path.resolve(__dirname, 'node_modules', 'svgdom', 'dist', 'main-require.cjs');
 
 /**
  * @type {esbuild.BuildOptions}
@@ -22,6 +23,14 @@ const buildOptions = {
   bundle: true,
   outdir: 'dist',
   entryNames: '[name]',
+
+  // svgdom publishes an ESM-only default entry that relies on import.meta.url.
+  // When it gets bundled into the CommonJS VSCode extension host, that path
+  // breaks during module load and prevents extension activation entirely.
+  // Force the package's CJS build for the extension bundle.
+  alias: {
+    svgdom: svgdomCjsEntry,
+  },
 
   // VSCode extension configuration
   external: ['vscode'], // VSCode API must stay external to the bundle

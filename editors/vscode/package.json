@@ -45,7 +45,8 @@
   "icon": "resources/icon.png",
   "main": "./dist/extension.js",
   "activationEvents": [
-    "onLanguage:fcstm"
+    "onLanguage:fcstm",
+    "onCommand:fcstm.preview.open"
   ],
   "scripts": {
     "vscode:prepublish": "npm run compile",
@@ -71,6 +72,14 @@
     "typescript": "^4.5.0"
   },
   "contributes": {
+    "commands": [
+      {
+        "command": "fcstm.preview.open",
+        "title": "Open Preview to the Side",
+        "category": "FCSTM",
+        "icon": "$(open-preview)"
+      }
+    ],
     "languages": [
       {
         "id": "fcstm",
@@ -95,6 +104,37 @@
       {
         "language": "fcstm",
         "path": "./snippets/fcstm.code-snippets"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "fcstm.preview.open",
+          "when": "editorLangId == fcstm",
+          "group": "navigation"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "fcstm.preview.open",
+          "when": "resourceLangId == fcstm",
+          "group": "navigation@20"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "fcstm.preview.open",
+          "when": "explorerResourceIsFolder == false && resourceExtname == .fcstm",
+          "group": "navigation@20"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "fcstm.preview.open",
+        "key": "ctrl+k v",
+        "mac": "cmd+k v",
+        "when": "editorLangId == fcstm"
       }
     ]
   }

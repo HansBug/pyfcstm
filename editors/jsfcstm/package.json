@@ -34,6 +34,9 @@
       "config": [
         "dist/config/index.d.ts"
       ],
+      "diagram": [
+        "dist/diagram/index.d.ts"
+      ],
       "dsl": [
         "dist/dsl/index.d.ts"
       ],
@@ -67,6 +70,11 @@
       "types": "./dist/config/index.d.ts",
       "require": "./dist/config/index.js",
       "default": "./dist/config/index.js"
+    },
+    "./diagram": {
+      "types": "./dist/diagram/index.d.ts",
+      "require": "./dist/diagram/index.js",
+      "default": "./dist/diagram/index.js"
     },
     "./ast": {
       "types": "./dist/ast/index.d.ts",
@@ -133,7 +141,10 @@
     "access": "public"
   },
   "dependencies": {
+    "@svgdotjs/svg.js": "^3.2.5",
     "antlr4": "4.9.3",
+    "elkjs": "^0.11.1",
+    "svgdom": "^0.1.23",
     "vscode-languageserver": "7.0.0",
     "vscode-languageserver-textdocument": "1.0.1"
   },

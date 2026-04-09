@@ -1,5 +1,6 @@
 export * from './ast';
 export * from './config';
+export * from './diagram';
 export * from './dsl';
 export * from './editor';
 export * from './lsp';

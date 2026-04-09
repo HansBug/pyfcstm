@@ -11,7 +11,10 @@ import {
     TransportKind,
 } from 'vscode-languageclient/node';
 
+import {FcstmPreviewController} from './preview';
+
 let client: LanguageClient | null = null;
+let previewController: FcstmPreviewController | null = null;
 
 /**
  * Activate the FCSTM VSCode extension.
@@ -61,13 +64,19 @@ export function activate(context: vscode.ExtensionContext): void {
         clientOptions
     );
 
-    context.subscriptions.push(outputChannel, client.start());
+    previewController = new FcstmPreviewController(context);
+    context.subscriptions.push(outputChannel, client.start(), previewController);
 }
 
 /**
  * Stop the language client during extension shutdown.
  */
 export async function deactivate(): Promise<void> {
+    if (previewController) {
+        previewController.dispose();
+        previewController = null;
+    }
+
     if (!client) {
         return;
     }

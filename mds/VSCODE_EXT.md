@@ -17,6 +17,9 @@
 | 0.5.4 | 2026-04-08 | 重新评估依赖顺序，将 `pyfcstm` model 收敛评估前移到高级语义能力之前，避免在不稳定 public object shape 上先做 references / rename / analyzer | Codex |
 | 0.5.5 | 2026-04-08 | 明确 `jsfcstm make sample` 采用 Python `pyfcstm` 生成可直接运行的 TypeScript parity tests，再由 TS 执行，避免测试时桥接 Python | Codex |
 | 0.6.0 | 2026-04-08 | 完成 Phase 6：在 `jsfcstm` 中落地 references / rename / workspace symbols / document highlights / analyzers / quick fixes，并通过 LSP 对外提供 | Codex |
+| 0.7.0 | 2026-04-09 | 完成 Phase 8 首轮落地：在 `jsfcstm` 中新增 diagram IR 与纯 JS SVG renderer，并在 VSCode 中接入右侧 webview 实时预览与对应验证脚本 | Codex |
+| 0.7.1 | 2026-04-09 | 重构 Phase 8 预览目标：预览不再停留在文本式摘要，而是按 `pyfcstm` PlantUML 语义输出层级状态图，明确展示 hierarchy、`[*]` 起止节点、transition from/to、trigger、guard、effect note 与共享 event 颜色图例 | Codex |
+| 0.8.0 | 2026-04-09 | 将 Phase 8 标记为已废弃的过渡原型，新增基于 `ELK.js` 的正式可视化 Phase 9，明确替换旧布局、提供快速右侧打开体验，并以 `pyfcstm` PlantUML 语义密度与视觉质量为对标基线 | Codex |
 
 ---
 
@@ -469,9 +472,11 @@ language server 不只是把现在的 provider 搬到另一个进程，而是要
 1. FCSTM source -> AST
 2. AST -> semantic model
 3. semantic model -> diagram IR
-4. diagram IR -> SVG / HTML preview
+4. diagram IR -> ELK graph
+5. ELK graph -> laid out graph
+6. laid out graph -> SVG / HTML preview
 
-这里的关键变化是第 4 步不再要求绑定 PlantUML。
+这里的关键变化是最后一步不再要求绑定 PlantUML，同时中间正式引入可独立测试的自动布局层，而不是继续依赖手写坐标摆放。
 
 ### 7.2 为什么不再把 PlantUML 当作预览主链路
 
@@ -489,8 +494,11 @@ language server 不只是把现在的 provider 搬到另一个进程，而是要
 推荐方式是：
 
 - language server 输出 diagram IR
+- `jsfcstm` 内部把 diagram IR 映射为 ELK graph
+- 用 `ELK.js` 在纯 JS runtime 内完成 layered / compound graph 自动布局
+- 布局结果再由 renderer 转成 SVG
 - VSCode client 打开 webview
-- webview 侧用纯 JS renderer 生成 SVG
+- webview 侧只负责承载与交互，不再承担核心布局逻辑
 
 后续如果需要兼容导出：
 
@@ -1114,30 +1122,165 @@ npm publish --access public
 * [x] rich editor experience 的主实现仍位于 `editors/jsfcstm`，`editors/vscode` 只做 capability wiring
 * [x] 对应验证链已经扩展，不能只靠手工点点看
 * [x] `editors/jsfcstm` 已通过 `npm test` 覆盖率验证，`editors/vscode` 已在刷新本地 `jsfcstm.tgz` 依赖后重新 `npm run compile`
-## Phase 8：纯 JS 可视化与预览
+## Phase 8：纯 JS 可视化原型验证（Deprecated）
 
 ### 目标
 
-在语义基础设施已经稳定之后，再基于 `editors/jsfcstm` 提供的 diagram IR 和 renderer 能力构建预览。
+在语义基础设施已经稳定之后，先验证 `diagram IR -> webview preview` 这条链路是否能纯 JS 走通。
+
+### 状态
+
+本阶段已经证明如下事实：
+
+- `jsfcstm` 可以稳定生成 diagram IR
+- VSCode 可以通过 webview 做 unsaved-buffer 实时预览
+- 纯 JS renderer / verify 链是可行的
+
+但本阶段的手写 SVG 布局方案已经确认不适合作为正式长期方案，原因是：
+
+- 复合状态与跨层级 transition 增多时，布局很容易拥挤和交叉
+- label / effect note 缺乏系统性的避让
+- 视觉质量难以稳定对齐 `pyfcstm` PlantUML
+- 继续在手写坐标系统上修补，性价比过低
 
 ### TODO
 
-* [ ] 在 `editors/jsfcstm` 中定义 diagram IR，使其由 semantic model 直接派生
-* [ ] 在 `editors/jsfcstm` 中设计纯 JS renderer，输出 SVG 作为首选预览格式
-* [ ] 在 VSCode client 中接入 webview preview，不依赖 PlantUML、Java 或其他扩展
-* [ ] 支持 unsaved buffer 的实时刷新
-* [ ] 支持 source-to-diagram 与 diagram-to-source 的定位映射
-* [ ] 提供最小可用命令集，例如 `Open Diagram Preview`、`Reveal Symbol in Diagram`、`Export SVG`
-* [ ] 如确有互操作需求，再增加可选 PlantUML exporter，但不作为 preview 主链路
+* [x] 在 `editors/jsfcstm` 中定义 diagram IR，使其由 semantic model 直接派生
+* [x] 在 VSCode client 中接入 webview preview，不依赖 PlantUML、Java 或其他扩展
+* [x] 支持 unsaved buffer 的实时刷新
+* [x] 验证 diagram preview 的测试链与打包链可走通
+* [x] 明确该阶段只作为原型验证，不再继续在手写布局上追加正式投入
+* [x] 为下一阶段的 ELK.js 正式替换提供迁移前提和拆除范围
 
 ### Checklist
 
-* [ ] 在一台干净的 VSCode 环境中，仅安装本扩展即可完成图形预览
-* [ ] 预览可以消费未保存编辑内容，而不是只读磁盘文件
-* [ ] diagram IR 与 renderer 主实现位于 `editors/jsfcstm`
-* [ ] SVG 导出结果稳定、可测试、可复现
+* [x] 在一台干净的 VSCode 环境中，仅安装本扩展即可完成图形预览
+* [x] 预览可以消费未保存编辑内容，而不是只读磁盘文件
+* [x] diagram IR 主实现位于 `editors/jsfcstm`
+* [x] 旧预览链已经足够证明“纯 JS preview 可行”，但不再视为正式验收终点
 
-## Phase 9：加固、文档收敛与双发布准备
+## Phase 9：基于 ELK.js 的正式可视化替换
+
+### 目标
+
+拆除 Phase 8 的手写布局 renderer，全面替换为基于 `ELK.js` 的自动布局方案，使 FCSTM 预览在信息密度上不低于 `pyfcstm` PlantUML 输出，在视觉质量上显著优于当前原型。
+
+### 技术方案
+
+#### 9.1 选型结论
+
+本阶段不采用 `Mermaid` 作为主 renderer，也不继续迭代手写 SVG 布局，原因如下：
+
+- `Mermaid` 虽然是纯 JS，但更适合通用文档图，不适合承担 FCSTM 专用、强语义、强交互的长期主链路
+- 手写 SVG 布局已经证明维护成本过高，无法系统解决 edge crossing、label collision、compound state spacing 等问题
+- `ELK.js` 提供纯 JS 的 layered / compound graph 自动布局，更适合 FCSTM 这种层次状态机
+
+因此正式方案是：
+
+1. FCSTM source -> AST
+2. AST -> semantic model
+3. semantic model -> diagram IR
+4. diagram IR -> ELK graph
+5. `ELK.js` 布局
+6. laid out graph -> SVG renderer
+7. VSCode webview 展示、交互与 source mapping
+
+#### 9.2 ELK graph 建模
+
+`ELK.js` 的输入将以 compound graph 为中心组织：
+
+- 每个 FCSTM state 对应一个 ELK node
+- composite state 通过 `children` 表达层级关系
+- `[*]` 初始 / 结束节点在每个 scope 内建成 synthetic child nodes
+- transition 转成 ELK edge，并保留稳定 id，后续回连 source range
+- transition label、guard、effect note 不再手写坐标，而是先做文本测量，再转成 edge labels / secondary note boxes 的布局输入
+- variables、event legend、machine summary 不参与主图布局，保留为 SVG 顶部独立 panel
+
+#### 9.3 预期布局策略
+
+本阶段的默认方向以 top-down 为主，内部采用 layered layout，并优先保证以下视觉性质：
+
+- hierarchy 边界清晰，composite state 有稳定 padding
+- `[*]` 节点与普通 state 节点不会挤在同一热点区
+- edge routing 以 orthogonal / polyline 风格优先，减少任意贝塞尔飘线
+- self-loop、exit edge、cross-scope edge 使用专门策略，避免覆盖标题栏与 child boxes
+- transition label 与 effect note 需要避让 state box 边界
+
+计划采用的 ELK 关键选项包括：
+
+- `elk.algorithm = layered`
+- `org.eclipse.elk.direction = DOWN`
+- `org.eclipse.elk.hierarchyHandling = INCLUDE_CHILDREN`
+- `org.eclipse.elk.edgeRouting = ORTHOGONAL`
+- `org.eclipse.elk.spacing.nodeNode`
+- `org.eclipse.elk.layered.spacing.nodeNodeBetweenLayers`
+- `org.eclipse.elk.spacing.edgeNode`
+- `org.eclipse.elk.spacing.edgeLabel`
+- `org.eclipse.elk.edgeLabels.placement`
+- `org.eclipse.elk.layered.nodePlacement.favorStraightEdges`
+
+#### 9.4 与 `pyfcstm` PlantUML 的信息对齐
+
+正式图中至少要保留与 `pyfcstm` PlantUML 同级别的信息面：
+
+- machine root
+- variable definitions / summary
+- state extra name 与 canonical name
+- pseudo / composite / leaf 的区分
+- init / exit markers
+- from / to transition
+- trigger event 文本
+- guard
+- effect note
+- 共享 event 的颜色联动与 legend
+- lifecycle actions 的可视化入口
+
+这意味着 ELK.js 只是替换布局层，不改变 FCSTM 语义展示的基准线。
+
+#### 9.5 VSCode 快速右侧打开体验
+
+本阶段不满足于仅通过命令面板输入命令打开预览，而要尽量对齐 Markdown / PlantUML 一类扩展的使用感：
+
+- 保留 editor title 的一键预览按钮
+- 增加 explorer / editor context 的 `Open Preview to the Side`
+- 增加面向 FCSTM 文档的快捷键入口
+- 若已有预览 panel，则优先 reveal，而不是重复创建
+- 后续可以评估 `Open With...` / custom readonly editor，但不作为本阶段阻塞项
+
+#### 9.6 验证策略
+
+本阶段的验证不只看“能不能出图”，还必须同时满足：
+
+- 结构正确性：基于 sample corpus 与 import 场景的自动验证
+- 视觉回归：固定样例 SVG snapshot / golden comparison
+- 语义对齐：与 `pyfcstm` PlantUML 的信息面逐项比对
+- 交互验证：右侧快速打开、unsaved refresh、panel reveal、source mapping 基础能力
+
+### TODO
+
+* [ ] 在 `editors/jsfcstm` 中新增 ELK graph adapter，把现有 diagram IR 正式映射到 compound graph
+* [ ] 在 `editors/jsfcstm` 中引入 `ELK.js` 作为正式布局依赖，并验证其可被当前构建链与 VSCode webview 正常消费
+* [ ] 拆除 Phase 8 的手写坐标主布局逻辑，只保留必要的 SVG 绘制与样式层
+* [ ] 为 state / transition / note / panel 建立统一的文本测量与尺寸预估逻辑，避免 label overlap
+* [ ] 实现 init / exit / self-loop / cross-scope edge 的 ELK.js 版布局与 renderer
+* [ ] 对齐 `pyfcstm` PlantUML 的信息面，确保正式图不丢失 trigger、guard、effect、shared event legend 等信息
+* [ ] 在 VSCode 中提供快速右侧打开能力，至少覆盖 editor title、context menu、快捷键 / 快速命令入口
+* [ ] 增加 source-to-diagram 的稳定 id 映射，为后续点击联动、Reveal Symbol in Diagram 做前置
+* [ ] 新增 ELK.js 相关单元测试、snapshot 测试与 preview verify 脚本
+* [ ] 用固定样例对比 `pyfcstm` PlantUML 输出，确保新图在信息密度和观感上不劣于现有基线
+
+### Checklist
+
+* [ ] 当前 Phase 8 手写布局主链已经被正式移除，不再作为默认 preview renderer
+* [ ] `jsfcstm` 的正式预览主链已变为 `diagram IR -> ELK graph -> ELK layout -> SVG`
+* [ ] 在复杂层级、多 transition、带 effect note 的样例中，节点、label、note 不再大面积重叠
+* [ ] 对标 `pyfcstm` PlantUML，同一份样例中应展示的信息项不减少
+* [ ] 右侧预览可以通过明显、低摩擦的 UI 入口打开，而不是只依赖命令面板输入
+* [ ] `npm test`、preview verify、VSCode compile / package 路径均已覆盖 ELK.js 方案
+* [ ] 至少存在一组固定样例的视觉回归基线，后续改动不会无声退化
+* [ ] 生成结果在桌面端与常规笔记本尺寸下都保持可读，不需要用户手工放大后才勉强能看
+
+## Phase 10：加固、文档收敛与双发布准备
 
 ### 目标
 

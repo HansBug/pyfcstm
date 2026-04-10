@@ -20,6 +20,7 @@
 | 0.7.0 | 2026-04-09 | 完成 Phase 8 首轮落地：在 `jsfcstm` 中新增 diagram IR 与纯 JS SVG renderer，并在 VSCode 中接入右侧 webview 实时预览与对应验证脚本 | Codex |
 | 0.7.1 | 2026-04-09 | 重构 Phase 8 预览目标：预览不再停留在文本式摘要，而是按 `pyfcstm` PlantUML 语义输出层级状态图，明确展示 hierarchy、`[*]` 起止节点、transition from/to、trigger、guard、effect note 与共享 event 颜色图例 | Codex |
 | 0.8.0 | 2026-04-09 | 将 Phase 8 标记为已废弃的过渡原型，新增基于 `ELK.js` 的正式可视化 Phase 9，明确替换旧布局、提供快速右侧打开体验，并以 `pyfcstm` PlantUML 语义密度与视觉质量为对标基线 | Codex |
+| 0.8.1 | 2026-04-10 | 新增 Phase 10：先收敛预览 transition 语义、effect 展示与顶部选项系统，对齐 `pyfcstm` 的成熟可视化配置模型；原发布加固阶段顺延为 Phase 11 | Codex |
 
 ---
 
@@ -1280,7 +1281,216 @@ npm publish --access public
 * [ ] 至少存在一组固定样例的视觉回归基线，后续改动不会无声退化
 * [x] 生成结果在桌面端与常规笔记本尺寸下都保持可读，不需要用户手工放大后才勉强能看
 
-## Phase 10：加固、文档收敛与双发布准备
+## Phase 10：预览语义对齐、effect 展示修正与选项系统迁移
+
+### 目标
+
+在右侧预览已经具备“可打开、可刷新、可出图”的前提下，先把图的**语义表达质量**拉到一个可以长期维护的基线，再进入发布加固。
+
+这一阶段不再把重点放在“还能不能出图”，而是放在以下三件已经直接影响可读性与正确性的事情上：
+
+- transition 上的 event 文本应对齐 `pyfcstm` PlantUML 的成熟处理方式，去掉当前预览里额外拼出来的 `event` / `local` 前缀噪声
+- effect 的展示应区分 inline 与多行 block 两类语义，尤其要把多行执行逻辑稳定、清晰地呈现出来，而不是继续压扁成格式错乱的一行
+- 预览需要一套位于顶部、可即时切换的“展示哪些内容”选项系统，并尽量复用 `pyfcstm.model.plantuml.PlantUMLOptions` 已经验证过的设计语言，而不是继续扩散 ad-hoc 的单项开关
+
+### 设计原则
+
+- 先统一**语义选项模型**，再让具体 renderer / webview 消费该模型；不允许把选项语义写死在某个渲染分支里
+- 与 `pyfcstm` 对齐时，优先复用已有概念命名与默认值习惯，只有在 Mermaid / webview 交互场景下确实不适合时才做显式适配
+- “预览可配置”不等于“任意放大配置面”：第一轮只迁入对 FCSTM 阅读最有价值、且已经在 Python 侧有成熟先例的选项
+- transition 的 trigger / guard / effect 三层信息应明确分离；不允许再把不同层次的语义压成一段难以扫描的杂糅文本
+- 多行 effect 的展示必须以**语句边界稳定、换行稳定、缩进稳定**为完成标准，而不是“肉眼大致能看”
+
+### 10.1 对齐基线
+
+这一阶段的预览语义基线明确以 `pyfcstm` 当前 PlantUML 体系为参考，重点对齐如下配置与行为：
+
+- `detail_level = minimal / normal / full`
+- `show_events`
+- `event_name_format`
+- `show_transition_guards`
+- `show_transition_effects`
+- `transition_effect_mode = note / inline / hide`
+- `show_variable_definitions`
+- `event_visualization_mode = none / color / legend / both`
+
+其中有两点需要直接搬运语义，而不是重新发明：
+
+- event label 的格式应来自 `format_event_name(...)` 的同类思路，重点是 `name / extra_name / path / relpath` 这组组合规则
+- transition effect 的显示模式应延续 Python 侧的 `note / inline / hide` 结构，而不是继续使用“永远往同一个 label 里塞内容”的临时策略
+
+### 10.2 JS 侧选项模型
+
+在 `editors/jsfcstm` 中新增一层独立、renderer-agnostic 的预览选项模型，例如 `FcstmDiagramPreviewOptions`，作为 diagram builder、renderer 与 VSCode webview 之间的统一契约。
+
+第一轮迁入的字段范围固定为：
+
+- `detailLevel`
+- `showVariableDefinitions`
+- `showEvents`
+- `eventNameFormat`
+- `showTransitionGuards`
+- `showTransitionEffects`
+- `transitionEffectMode`
+- `eventVisualizationMode`
+- `showStateEvents`
+- `showStateActions`
+- `maxStateEvents`
+- `maxStateActions`
+- `maxTransitionEffectLines`
+- `maxLabelLength`
+
+并要求具备以下行为：
+
+- 支持 `fromValue()` / `toConfig()` 一类的规范化流程，避免调用方手动补默认值
+- detail level 必须能像 `pyfcstm` 那样下发一组预设默认值，而不是只保存一个字符串却没有真正解析
+- 允许 VSCode 侧只传递少量覆盖项，`jsfcstm` 侧负责合成最终配置
+- 选项命名尽量对齐 `PlantUMLOptions`，让 Python 与 JS 两边的心智模型尽可能一致
+
+### 10.3 顶部选项栏与交互流
+
+VSCode webview 顶部新增一条紧贴标题区的 options bar，第一轮不追求复杂 UI，而是要求足够快、足够稳定、足够可测。
+
+必须提供的入口：
+
+- `Detail`：`minimal / normal / full`
+- `Events`：显示 / 隐藏
+- `Guards`：显示 / 隐藏
+- `Effects`：`note / inline / hide`
+- `Variables`：显示 / 隐藏
+- `Shared Events`：`none / color / legend / both`
+
+交互要求：
+
+- 切换后无需重新打开 panel，直接对当前未保存 buffer 重新渲染
+- 选项状态要通过 `vscode.setState()` 与 extension host 双向同步，避免 panel reveal 后丢失
+- 默认值必须来自 `detailLevel`，而不是由前端各控件各自写死
+- 第一轮先做 session-level persistence；是否落到 VSCode workspace settings 留到后续阶段单列评估
+
+### 10.4 Transition event 文本规则
+
+这一阶段明确废弃当前 Mermaid 预览里额外拼接出来的 `event xxx` / `local xxx` 文字。
+
+新规则如下：
+
+- event 是否显示，由 `showEvents` 控制
+- event 文本内容，由 `eventNameFormat` 决定
+- local / chain / absolute 的差异，应体现在事件引用本身的路径文本里，而不是额外再加一个英语类别前缀
+- 当 event 被隐藏但 guard 仍显示时，label 仍应保持合法且可读
+- 当 event 与 guard 同时显示时，顺序对齐 `pyfcstm`：先 event，后 guard
+
+最低可接受输出示例：
+
+- `Start`
+- `启动 (Start)`
+- `/Bus.Start`
+- `Worker.Start`
+- `Start [counter > 0]`
+
+明确不再接受的输出示例：
+
+- `event Start`
+- `local Start`
+- `event 启动 (Start) | if counter > 0`
+
+### 10.5 Transition effect 展示规则
+
+effect 展示分三档，且三档都要有明确测试与视觉验收：
+
+- `hide`
+  - transition 不显示 effect 内容
+- `inline`
+  - 仅适用于单行或可安全压缩的短 effect
+  - 文本格式对齐 Python 侧 `/ expr` 风格，不再额外拼 `effect` 关键字
+  - 多行 effect 不允许硬压成一行乱码；必须按规则截断、汇总或自动回退到 note 视图
+- `note`
+  - 多行 effect 的正式展示模式
+  - 需要保留 `effect { ... }` 的块结构、语句边界与语句顺序
+  - 如果底层 renderer 不适合直接承载 link note，也必须在 webview 层提供稳定的替代可视化，而不是退化成 edge label 拼接
+
+这里的关键不是“形式上有 note”，而是：
+
+- 语句换行稳定
+- 缩进稳定
+- `if / else if / else`、嵌套块、多语句 effect 的结构能看明白
+- 与 trigger / guard 信息视觉分层，不互相污染
+
+第一轮建议的 renderer 策略如下：
+
+- edge label 只承载 trigger + guard + 可安全 inline 的短 effect
+- 多行 effect 由独立的 transition note 展示层承载
+- note 与 transition 之间用稳定 id 绑定，后续可继续扩展到 source reveal / hover / click 联动
+
+### 10.6 State / Header 展示项迁移
+
+为了让顶部选项系统形成完整闭环，当前 preview header 与 info card 也要纳入同一套配置，而不是保持“图上可关、顶部永远显示”。
+
+具体要求：
+
+- `showVariableDefinitions=false` 时，顶部变量卡片隐藏
+- `event_visualization_mode=none` 时，共享 event legend 区域隐藏
+- `event_visualization_mode=color` 时，只保留图上颜色联动，不显示 legend 卡片
+- `event_visualization_mode=legend` 时，不强制上色，但显示 legend 卡片
+- `event_visualization_mode=both` 时，同时启用颜色联动与 legend 卡片
+- `showStateEvents` / `showStateActions` 控制 state detail lines 是否出现在节点摘要中
+
+### 10.7 实现拆分
+
+为了避免这一阶段再次把预览逻辑写散，实施时按下面的模块边界推进：
+
+- `editors/jsfcstm/src/diagram/`
+  - 新增预览选项模型与 detail-level 解析
+  - 收敛 transition label / effect note 的格式化函数
+  - 让 renderer 接收 resolved options，而不是只接收零散数值项
+- `editors/vscode/src/preview.ts`
+  - 新增顶部选项栏 UI
+  - 维护当前 panel 的 preview options state
+  - 把 options 传入 `jsfcstm` 渲染主链
+  - 负责 effect note 的 webview 层展示与样式组织
+- `editors/vscode/scripts/`
+  - 扩展 preview verify，覆盖 options 切换、event/effect 展示模式切换、多行 effect 稳定展示
+
+### 10.8 验证策略
+
+这一阶段的完成标准必须同时覆盖单元、集成与视觉三层：
+
+- 单元测试
+  - options 解析、detail-level 默认值、单项 override、事件名称格式化、effect 模式切换
+- 集成测试
+  - `build diagram -> render -> preview state` 主链在不同 options 下输出稳定
+  - unsaved buffer + options 切换同时存在时，panel 内容仍与当前文本一致
+- 视觉验收
+  - 至少一组含 local / chain / absolute event 的样例
+  - 至少一组含单行 effect 的样例
+  - 至少一组含多行 / 嵌套 if effect 的样例
+  - 至少一组同时展示 shared event color / legend / diagnostics 的样例
+
+视觉验收的最低要求不是截图“看起来差不多”，而是要把关键 DOM / 文本结构固定下来，例如：
+
+- edge label 中不再出现 `event ` / `local `
+- multi-line effect note 中包含完整 `effect {`、中间语句与结束 `}`
+- 顶部 options 切换后，相应卡片与图内文本会同步变化
+
+### TODO
+
+* [ ] 在 `editors/jsfcstm` 中新增 renderer-agnostic 的 preview options 模型，并提供 detail-level 解析与 resolved config 导出
+* [ ] 对齐 event label 规则，移除当前预览里额外的 `event` / `local` 前缀，改为由 `eventNameFormat` 决定展示文本
+* [ ] 按 `hide / inline / note` 三档重做 transition effect 展示，并稳定支持多行 / 嵌套 effect
+* [ ] 让顶部变量区、shared event 区、state detail lines 与图内 transition 文本都消费同一套 preview options
+* [ ] 在 webview 顶部新增 options bar，并支持当前 session 内的状态保持与 reveal 后恢复
+* [ ] 扩展 `verify-phase9-preview` 覆盖 options 切换与多行 effect 展示，不再只验证“能打开和能刷新”
+* [ ] 新增固定样例的视觉回归基线，至少覆盖 event 文本模式与 effect note 模式
+
+### Checklist
+
+* [ ] transition event 文本已经与 `pyfcstm` 的成熟显示语义对齐，不再出现额外英文前缀噪声
+* [ ] multi-line effect 已具备稳定、可读、可测试的块状展示，不再挤进一行 label
+* [ ] preview 顶部已经具备最小但完整的 options bar，可控制“展示哪些内容”
+* [ ] detail level 与单项覆盖可以共同工作，且默认值来自 `jsfcstm` 侧 resolved config
+* [ ] 顶部信息卡片与图内内容不会出现配置漂移
+* [ ] 单元测试、preview verify 与视觉回归基线都已覆盖本阶段新行为
+
+## Phase 11：加固、文档收敛与双发布准备
 
 ### 目标
 

@@ -6,7 +6,7 @@ import {
     buildFcstmDiagramFromDocument,
     collectDocumentDiagnostics,
     getWorkspaceGraph,
-    renderFcstmDiagramSvg,
+    renderFcstmDiagramMermaid,
 } from '@pyfcstm/jsfcstm';
 
 interface PreviewDiagnosticView {
@@ -15,15 +15,55 @@ interface PreviewDiagnosticView {
     location: string;
 }
 
+interface PreviewSummaryEntry {
+    label: string;
+    value: number;
+}
+
+interface PreviewSharedEventView {
+    label: string;
+    qualifiedName: string;
+    transitionCount: number;
+    color: string;
+}
+
 interface PreviewWebviewState {
     title: string;
     filePath: string;
     rootStateName?: string;
-    svg: string;
+    mermaidSource?: string;
+    emptyTitle: string;
+    emptyMessage: string;
+    summary: PreviewSummaryEntry[];
+    variables: string[];
+    sharedEvents: PreviewSharedEventView[];
     diagnostics: PreviewDiagnosticView[];
     status: 'ok' | 'warning' | 'error';
     statusText: string;
 }
+
+function loadMermaidBrowserBundle(): string {
+    try {
+        const inlineModule = require('@fcstm/mermaid-inline');
+        if (typeof inlineModule === 'string') {
+            return inlineModule;
+        }
+        if (inlineModule && typeof inlineModule.default === 'string') {
+            return inlineModule.default;
+        }
+    } catch {
+        // Fall through to the development-time file fallback used by the
+        // verification scripts that execute the tsc output directly.
+    }
+
+    const fs = require('fs') as typeof import('fs');
+    return fs.readFileSync(
+        path.join(__dirname, '..', 'node_modules', 'mermaid', 'dist', 'mermaid.min.js'),
+        'utf8'
+    );
+}
+
+const mermaidBrowserBundle = loadMermaidBrowserBundle();
 
 function isFcstmPath(filePath: string | undefined): boolean {
     return Boolean(filePath && filePath.toLowerCase().endsWith('.fcstm'));
@@ -55,26 +95,6 @@ function basenameForDocument(document: vscode.TextDocument): string {
     return path.basename(fileName);
 }
 
-function buildEmptyPreviewSvg(title: string, message: string): string {
-    const safeTitle = escapeHtml(title);
-    const safeMessage = escapeHtml(message);
-
-    return [
-        '<svg xmlns="http://www.w3.org/2000/svg" width="960" height="220" viewBox="0 0 960 220" role="img">',
-        '<style>',
-        '.bg{fill:#f7fbff;}',
-        '.panel{fill:#ffffff;stroke:#92b8e6;stroke-width:1.5;}',
-        '.title{font:700 24px "JetBrains Mono","Fira Code","Consolas",monospace;fill:#1d446b;}',
-        '.message{font:500 14px "JetBrains Mono","Fira Code","Consolas",monospace;fill:#527393;}',
-        '</style>',
-        '<rect class="bg" x="0" y="0" width="960" height="220" />',
-        '<rect class="panel" x="24" y="24" rx="18" ry="18" width="912" height="172" />',
-        `<text class="title" x="48" y="74">${safeTitle}</text>`,
-        `<text class="message" x="48" y="112">${safeMessage}</text>`,
-        '</svg>',
-    ].join('');
-}
-
 function createNonce(): string {
     return crypto.randomBytes(16).toString('hex');
 }
@@ -84,6 +104,10 @@ function toScriptLiteral<T>(value: T): string {
         .replace(/</g, '\\u003c')
         .replace(/>/g, '\\u003e')
         .replace(/&/g, '\\u0026');
+}
+
+function escapeInlineScript(value: string): string {
+    return value.replace(/<\/script/gi, '<\\/script');
 }
 
 function buildDiagnosticView(
@@ -98,18 +122,55 @@ function buildDiagnosticView(
     };
 }
 
+function buildPreviewSummaryEntries(diagram: Awaited<ReturnType<typeof buildFcstmDiagramFromDocument>>): PreviewSummaryEntry[] {
+    if (!diagram) {
+        return [];
+    }
+
+    return [
+        {label: 'vars', value: diagram.summary.variables},
+        {label: 'states', value: diagram.summary.states},
+        {label: 'events', value: diagram.summary.events},
+        {label: 'transitions', value: diagram.summary.transitions},
+        {label: 'actions', value: diagram.summary.actions},
+    ];
+}
+
+function buildPreviewVariables(diagram: Awaited<ReturnType<typeof buildFcstmDiagramFromDocument>>): string[] {
+    if (!diagram) {
+        return [];
+    }
+
+    return diagram.variables.map(variable => `def ${variable.valueType} ${variable.name} = ${variable.initializer}`);
+}
+
+function buildPreviewSharedEvents(diagram: Awaited<ReturnType<typeof buildFcstmDiagramFromDocument>>): PreviewSharedEventView[] {
+    if (!diagram) {
+        return [];
+    }
+
+    return diagram.eventLegend.map(item => ({
+        label: item.label,
+        qualifiedName: `/${item.qualifiedName.split('.').slice(1).join('.')}`,
+        transitionCount: item.transitionCount,
+        color: item.color,
+    }));
+}
+
 function createPreviewHtml(
     webview: vscode.Webview,
+    mermaidRuntimeScript: string,
     initialState: PreviewWebviewState
 ): string {
     const nonce = createNonce();
     const initialData = toScriptLiteral(initialState);
+    const mermaidRuntime = escapeInlineScript(mermaidRuntimeScript);
 
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data:; style-src 'unsafe-inline' ${webview.cspSource}; script-src 'nonce-${nonce}';" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data:; style-src 'unsafe-inline' ${webview.cspSource}; script-src 'nonce-${nonce}' ${webview.cspSource};" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>FCSTM Preview</title>
     <style>
@@ -142,6 +203,10 @@ function createPreviewHtml(
             display: flex;
             flex-direction: column;
             gap: 12px;
+        }
+
+        .hidden {
+            display: none !important;
         }
 
         .meta {
@@ -192,22 +257,160 @@ function createPreviewHtml(
             color: var(--error);
         }
 
+        .summary {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .summary-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 12px;
+            border-radius: 999px;
+            border: 1px solid var(--border);
+            background: rgba(255, 255, 255, 0.08);
+            font-size: 12px;
+            color: var(--muted);
+        }
+
+        .summary-value {
+            color: var(--fg);
+            font-weight: 700;
+        }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 12px;
+        }
+
+        .info-card {
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            background: rgba(255, 255, 255, 0.05);
+            padding: 12px 14px;
+        }
+
+        .info-title {
+            font-size: 13px;
+            font-weight: 700;
+            margin-bottom: 10px;
+        }
+
+        .info-list {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .info-item {
+            font-size: 12px;
+            line-height: 1.45;
+            color: var(--fg);
+            word-break: break-word;
+        }
+
+        .info-item.mono {
+            font-family: "JetBrains Mono", "Fira Code", Consolas, monospace;
+        }
+
+        .event-item {
+            display: grid;
+            grid-template-columns: 10px 1fr;
+            gap: 10px;
+            align-items: start;
+        }
+
+        .event-swatch {
+            width: 10px;
+            height: 10px;
+            border-radius: 999px;
+            margin-top: 4px;
+        }
+
+        .event-meta {
+            font-size: 11px;
+            color: var(--muted);
+            margin-top: 2px;
+        }
+
         .preview {
             display: flex;
-            justify-content: center;
+            justify-content: flex-start;
             align-items: flex-start;
             border: 1px solid var(--border);
             border-radius: 18px;
             background: rgba(255, 255, 255, 0.04);
-            padding: 12px;
+            padding: 10px;
             overflow: auto;
         }
 
-        .preview svg {
+        .preview-inner {
+            width: max-content;
+            min-width: 100%;
+            min-height: 260px;
+        }
+
+        .preview-inner svg {
             display: block;
             width: auto;
-            max-width: none;
             height: auto;
+            max-width: none;
+        }
+
+        .preview-empty {
+            border: 1px dashed var(--border);
+            border-radius: 18px;
+            background: rgba(255, 255, 255, 0.05);
+            padding: 22px;
+        }
+
+        .preview-empty-title {
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 10px;
+        }
+
+        .preview-empty-message {
+            font-size: 13px;
+            line-height: 1.55;
+            color: var(--muted);
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .preview-loading {
+            display: inline-flex;
+            align-items: center;
+            padding: 8px 12px;
+            border-radius: 999px;
+            background: rgba(45, 106, 168, 0.16);
+            color: var(--accent);
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .mermaid svg {
+            display: block;
+            margin: 0 auto;
+        }
+
+        .mermaid .edgeLabel rect {
+            fill: rgba(255, 255, 255, 0.96) !important;
+        }
+
+        .mermaid .label foreignObject div,
+        .mermaid .edgeLabel foreignObject div {
+            font-family: "JetBrains Mono", "Fira Code", Consolas, monospace !important;
+        }
+
+        .mermaid .state-title {
+            font-weight: 700;
         }
 
         .diagnostics {
@@ -270,23 +473,235 @@ function createPreviewHtml(
             </div>
             <div class="subtitle" id="file-path"></div>
         </section>
-        <section class="preview" id="preview"></section>
+        <section class="summary" id="summary"></section>
+        <section class="info-grid">
+            <section class="info-card" id="variables-card">
+                <div class="info-title">Variables</div>
+                <ul class="info-list" id="variables-list"></ul>
+            </section>
+            <section class="info-card" id="shared-events-card">
+                <div class="info-title">Shared Events</div>
+                <ul class="info-list" id="shared-events-list"></ul>
+            </section>
+        </section>
+        <section class="preview">
+            <div class="preview-inner" id="preview"></div>
+        </section>
         <section class="diagnostics hidden" id="diagnostics">
             <div class="diagnostics-title">Diagnostics</div>
             <ul class="diagnostic-list" id="diagnostic-list"></ul>
         </section>
     </div>
     <script nonce="${nonce}">
+        /* FCSTM embedded Mermaid runtime */
+${mermaidRuntime}
+    </script>
+    <script nonce="${nonce}">
         const vscode = acquireVsCodeApi();
         const titleNode = document.getElementById('title');
         const filePathNode = document.getElementById('file-path');
         const statusNode = document.getElementById('status');
+        const summaryNode = document.getElementById('summary');
+        const variablesCardNode = document.getElementById('variables-card');
+        const variablesListNode = document.getElementById('variables-list');
+        const sharedEventsCardNode = document.getElementById('shared-events-card');
+        const sharedEventsListNode = document.getElementById('shared-events-list');
         const previewNode = document.getElementById('preview');
         const diagnosticsNode = document.getElementById('diagnostics');
         const diagnosticListNode = document.getElementById('diagnostic-list');
         const initialState = ${initialData};
+        let renderToken = 0;
+        const mermaidApi = globalThis.mermaid;
 
-        function render(state) {
+        if (mermaidApi) {
+            mermaidApi.initialize({
+                startOnLoad: false,
+                securityLevel: 'strict',
+                theme: 'base',
+                state: {
+                    useMaxWidth: false,
+                    nodeSpacing: 18,
+                    rankSpacing: 28,
+                    padding: 8,
+                    fontSize: 17,
+                    compositTitleSize: 22,
+                },
+                themeVariables: {
+                    primaryColor: '#f8fbff',
+                    primaryTextColor: '#183b61',
+                    primaryBorderColor: '#7da9d7',
+                    lineColor: '#2d6aa8',
+                    tertiaryColor: '#eef5ff',
+                    clusterBkg: '#f8fbff',
+                    clusterBorder: '#8cb3dc',
+                    labelBoxBkgColor: '#ffffff',
+                    labelBoxBorderColor: '#aec8e7',
+                    fontFamily: '"JetBrains Mono","Fira Code",Consolas,monospace',
+                    fontSize: '17px',
+                },
+                themeCSS: [
+                    '.statediagram-cluster rect { rx: 18px; ry: 18px; }',
+                    '.statediagram-state rect { rx: 14px; ry: 14px; }',
+                    '.statediagram-note rect { rx: 14px; ry: 14px; }',
+                    '.nodeLabel, .nodeLabel p, .edgeLabel, .edgeLabel p { font-size: 17px !important; }',
+                    '.cluster-label .nodeLabel, .cluster-label .nodeLabel p { font-size: 18px !important; font-weight: 700 !important; }',
+                    '.statediagram .edgeLabel .label { padding: 6px 10px; }',
+                ].join('\\n'),
+            });
+        }
+
+        function postProcessRenderedSvg() {
+            const svg = previewNode.querySelector('svg');
+            if (!svg) {
+                return;
+            }
+
+            svg.style.maxWidth = 'none';
+            svg.style.height = 'auto';
+
+            for (const node of previewNode.querySelectorAll('.nodeLabel, .edgeLabel, .labelBkg')) {
+                if (node instanceof HTMLElement) {
+                    node.style.fontSize = node.classList.contains('edgeLabel') ? '15px' : '16px';
+                    node.style.lineHeight = '1.45';
+                }
+            }
+
+            for (const node of previewNode.querySelectorAll('.cluster-label .nodeLabel')) {
+                if (node instanceof HTMLElement) {
+                    node.style.fontSize = '17px';
+                    node.style.fontWeight = '700';
+                }
+            }
+        }
+
+        function renderSummary(state) {
+            summaryNode.innerHTML = '';
+            if (!state.summary.length) {
+                summaryNode.classList.add('hidden');
+                return;
+            }
+
+            summaryNode.classList.remove('hidden');
+            for (const entry of state.summary) {
+                const badge = document.createElement('div');
+                badge.className = 'summary-badge';
+
+                const label = document.createElement('span');
+                label.textContent = entry.label;
+
+                const value = document.createElement('span');
+                value.className = 'summary-value';
+                value.textContent = String(entry.value);
+
+                badge.appendChild(label);
+                badge.appendChild(value);
+                summaryNode.appendChild(badge);
+            }
+        }
+
+        function renderVariables(state) {
+            variablesListNode.innerHTML = '';
+            if (!state.variables.length) {
+                variablesCardNode.classList.add('hidden');
+                return;
+            }
+
+            variablesCardNode.classList.remove('hidden');
+            for (const variable of state.variables) {
+                const item = document.createElement('li');
+                item.className = 'info-item mono';
+                item.textContent = variable;
+                variablesListNode.appendChild(item);
+            }
+        }
+
+        function renderSharedEvents(state) {
+            sharedEventsListNode.innerHTML = '';
+            if (!state.sharedEvents.length) {
+                sharedEventsCardNode.classList.add('hidden');
+                return;
+            }
+
+            sharedEventsCardNode.classList.remove('hidden');
+            for (const event of state.sharedEvents) {
+                const item = document.createElement('li');
+                item.className = 'info-item event-item';
+
+                const swatch = document.createElement('span');
+                swatch.className = 'event-swatch';
+                swatch.style.backgroundColor = event.color;
+
+                const body = document.createElement('div');
+                const label = document.createElement('div');
+                label.textContent = event.label;
+                const meta = document.createElement('div');
+                meta.className = 'event-meta';
+                meta.textContent = event.transitionCount + ' transition' + (event.transitionCount === 1 ? '' : 's') + ' · ' + event.qualifiedName;
+
+                body.appendChild(label);
+                body.appendChild(meta);
+                item.appendChild(swatch);
+                item.appendChild(body);
+                sharedEventsListNode.appendChild(item);
+            }
+        }
+
+        function renderEmptyState(title, message) {
+            previewNode.innerHTML = '';
+
+            const emptyNode = document.createElement('div');
+            emptyNode.className = 'preview-empty';
+
+            const titleNode = document.createElement('div');
+            titleNode.className = 'preview-empty-title';
+            titleNode.textContent = title;
+
+            const messageNode = document.createElement('div');
+            messageNode.className = 'preview-empty-message';
+            messageNode.textContent = message;
+
+            emptyNode.appendChild(titleNode);
+            emptyNode.appendChild(messageNode);
+            previewNode.appendChild(emptyNode);
+        }
+
+        async function renderMermaidSource(source) {
+            const currentToken = ++renderToken;
+            previewNode.innerHTML = '';
+
+            if (!mermaidApi) {
+                renderEmptyState('Mermaid Unavailable', 'The Mermaid runtime script did not load inside the preview webview.');
+                return;
+            }
+
+            const loadingNode = document.createElement('div');
+            loadingNode.className = 'preview-loading';
+            loadingNode.textContent = 'Rendering Mermaid preview...';
+            previewNode.appendChild(loadingNode);
+
+            try {
+                const renderId = 'fcstm-mermaid-' + currentToken;
+                const renderResult = await mermaidApi.render(renderId, source);
+                if (currentToken !== renderToken) {
+                    return;
+                }
+
+                previewNode.innerHTML = renderResult.svg;
+                if (typeof renderResult.bindFunctions === 'function') {
+                    renderResult.bindFunctions(previewNode);
+                }
+                postProcessRenderedSvg();
+            } catch (error) {
+                if (currentToken !== renderToken) {
+                    return;
+                }
+
+                const message = error instanceof Error ? error.message : String(error);
+                renderEmptyState('Mermaid Render Failed', message);
+            }
+        }
+
+        async function render(state) {
             vscode.setState(state);
             titleNode.textContent = state.rootStateName
                 ? state.title + ' · ' + state.rootStateName
@@ -294,8 +709,16 @@ function createPreviewHtml(
             filePathNode.textContent = state.filePath || '<memory>';
             statusNode.textContent = state.statusText;
             statusNode.className = 'badge ' + (state.status === 'ok' ? '' : state.status);
-            previewNode.innerHTML = state.svg;
+            renderSummary(state);
+            renderVariables(state);
+            renderSharedEvents(state);
             diagnosticListNode.innerHTML = '';
+
+            if (state.mermaidSource) {
+                await renderMermaidSource(state.mermaidSource);
+            } else {
+                renderEmptyState(state.emptyTitle, state.emptyMessage);
+            }
 
             if (state.diagnostics.length > 0) {
                 diagnosticsNode.classList.remove('hidden');
@@ -321,10 +744,10 @@ function createPreviewHtml(
         }
 
         window.addEventListener('message', event => {
-            render(event.data);
+            void render(event.data);
         });
 
-        render(vscode.getState() || initialState);
+        void render(vscode.getState() || initialState);
     </script>
 </body>
 </html>`;
@@ -430,6 +853,7 @@ export class FcstmPreviewController implements vscode.Disposable {
                 {
                     enableFindWidget: true,
                     enableScripts: true,
+                    localResourceRoots: [this.context.extensionUri],
                     retainContextWhenHidden: true,
                 }
             );
@@ -441,12 +865,20 @@ export class FcstmPreviewController implements vscode.Disposable {
             const initialState: PreviewWebviewState = {
                 title: basenameForDocument(document),
                 filePath: document.uri.fsPath,
-                svg: buildEmptyPreviewSvg('FCSTM Preview', 'Preparing preview...'),
+                emptyTitle: 'FCSTM Preview',
+                emptyMessage: 'Preparing Mermaid preview...',
+                summary: [],
+                variables: [],
+                sharedEvents: [],
                 diagnostics: [],
                 status: 'ok',
                 statusText: 'Loading preview',
             };
-            this.panel.webview.html = createPreviewHtml(this.panel.webview, initialState);
+            this.panel.webview.html = createPreviewHtml(
+                this.panel.webview,
+                mermaidBrowserBundle,
+                initialState
+            );
         } else {
             this.panel.reveal(vscode.ViewColumn.Beside, true);
         }
@@ -519,9 +951,14 @@ export class FcstmPreviewController implements vscode.Disposable {
                 title,
                 filePath: document.uri.fsPath || document.uri.toString(),
                 rootStateName: diagram ? diagram.machineName : undefined,
-                svg: diagram
-                    ? await renderFcstmDiagramSvg(diagram)
-                    : buildEmptyPreviewSvg(title, diagnostics.length > 0 ? diagnostics[0].message : 'No diagram available.'),
+                mermaidSource: diagram
+                    ? await renderFcstmDiagramMermaid(diagram)
+                    : undefined,
+                emptyTitle: title,
+                emptyMessage: diagnostics.length > 0 ? diagnostics[0].message : 'No diagram available.',
+                summary: buildPreviewSummaryEntries(diagram),
+                variables: buildPreviewVariables(diagram),
+                sharedEvents: buildPreviewSharedEvents(diagram),
                 diagnostics: diagnosticViews,
                 status,
                 statusText,
@@ -532,7 +969,11 @@ export class FcstmPreviewController implements vscode.Disposable {
             state = {
                 title,
                 filePath: document.uri.fsPath || document.uri.toString(),
-                svg: buildEmptyPreviewSvg(title, message),
+                emptyTitle: title,
+                emptyMessage: message,
+                summary: [],
+                variables: [],
+                sharedEvents: [],
                 diagnostics: [{
                     severity: 'error',
                     message,

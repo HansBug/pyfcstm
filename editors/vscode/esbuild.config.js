@@ -5,12 +5,47 @@
  * Node-based language server entry point into dist/.
  */
 
-const esbuild = require('esbuild');
+const fs = require('fs');
 const path = require('path');
+const esbuild = require('esbuild');
 
 const production = process.argv.includes('--production');
 const watch = process.argv.includes('--watch');
-const svgdomCjsEntry = path.resolve(__dirname, 'node_modules', 'svgdom', 'dist', 'main-require.cjs');
+
+function prepareOutputDirectory() {
+  const outputDir = path.resolve(__dirname, 'dist');
+  fs.rmSync(outputDir, {recursive: true, force: true});
+}
+
+function loadMermaidRuntimeSource() {
+  const sourceFile = path.resolve(__dirname, 'node_modules', 'mermaid', 'dist', 'mermaid.min.js');
+
+  if (!fs.existsSync(sourceFile)) {
+    throw new Error(`Missing Mermaid runtime source: ${sourceFile}`);
+  }
+  return fs.readFileSync(sourceFile, 'utf8');
+}
+
+const mermaidInlinePlugin = {
+  name: 'mermaid-inline',
+  setup(build) {
+    const mermaidSource = loadMermaidRuntimeSource();
+
+    build.onResolve({filter: /^@fcstm\/mermaid-inline$/}, args => {
+      return {
+        path: args.path,
+        namespace: 'fcstm-mermaid-inline',
+      };
+    });
+
+    build.onLoad({filter: /.*/, namespace: 'fcstm-mermaid-inline'}, () => {
+      return {
+        contents: `export default ${JSON.stringify(mermaidSource)};`,
+        loader: 'js',
+      };
+    });
+  },
+};
 
 /**
  * @type {esbuild.BuildOptions}
@@ -23,14 +58,6 @@ const buildOptions = {
   bundle: true,
   outdir: 'dist',
   entryNames: '[name]',
-
-  // svgdom publishes an ESM-only default entry that relies on import.meta.url.
-  // When it gets bundled into the CommonJS VSCode extension host, that path
-  // breaks during module load and prevents extension activation entirely.
-  // Force the package's CJS build for the extension bundle.
-  alias: {
-    svgdom: svgdomCjsEntry,
-  },
 
   // VSCode extension configuration
   external: ['vscode'], // VSCode API must stay external to the bundle
@@ -60,11 +87,14 @@ const buildOptions = {
   define: {
     'process.env.NODE_ENV': production ? '"production"' : '"development"'
   },
+
+  plugins: [mermaidInlinePlugin],
 };
 
 async function build() {
   try {
     console.log(`Building extension (${production ? 'production' : 'development'} mode)...`);
+    prepareOutputDirectory();
 
     if (watch) {
       const context = await esbuild.context(buildOptions);

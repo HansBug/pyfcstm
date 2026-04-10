@@ -60,6 +60,16 @@ const createdPanels = [];
 const warningMessages = [];
 
 const vscode = {
+    Uri: {
+        joinPath(base, ...segments) {
+            return {
+                fsPath: path.join(base.fsPath, ...segments),
+                toString() {
+                    return this.fsPath;
+                },
+            };
+        },
+    },
     ViewColumn: {
         Beside: 2,
     },
@@ -116,6 +126,16 @@ const vscode = {
                 webview: {
                     cspSource: 'vscode-resource://fcstm',
                     html: '',
+                    asWebviewUri(resource) {
+                        return {
+                            toString() {
+                                return `vscode-resource:${resource.fsPath}`;
+                            },
+                        };
+                    },
+                    onDidReceiveMessage() {
+                        return createDisposable();
+                    },
                     postMessage(message) {
                         panel.postedMessages.push(message);
                         return Promise.resolve(true);
@@ -196,8 +216,8 @@ function sleep(ms) {
 
 async function main() {
     const distBundle = fs.readFileSync(distExtensionFile, 'utf8');
-    if (/fileURLToPath\)\([A-Za-z0-9_$]+\.url\)/.test(distBundle)) {
-        throw new Error('The bundled dist/extension.js still contains an import.meta.url-derived svgdom path and will fail to activate in VSCode.');
+    if (distBundle.includes('svgdom') || distBundle.includes('elkjs/lib/elk.bundled.js')) {
+        throw new Error('The bundled dist/extension.js still contains the removed ELK/SVG preview stack.');
     }
 
     fs.writeFileSync(previewFile, [
@@ -253,26 +273,32 @@ async function main() {
     }
 
     const firstMessage = panel.postedMessages[panel.postedMessages.length - 1];
-    if (!firstMessage.svg || !firstMessage.svg.includes('<svg')) {
-        throw new Error('Rendered preview SVG is missing.');
+    if (!panel.webview.html.includes('FCSTM embedded Mermaid runtime')) {
+        throw new Error('Preview webview HTML does not embed the Mermaid runtime.');
+    }
+    if (panel.webview.html.includes('node_modules/mermaid') || panel.webview.html.includes('dist/webview/mermaid.min.js')) {
+        throw new Error('Preview webview HTML still references an external Mermaid script.');
+    }
+    if (!firstMessage.mermaidSource || !firstMessage.mermaidSource.includes('stateDiagram-v2')) {
+        throw new Error('Rendered preview Mermaid source is missing.');
     }
     if (firstMessage.rootStateName !== 'Fleet') {
         throw new Error(`Unexpected root state in preview: ${JSON.stringify(firstMessage.rootStateName)}`);
     }
-    if (!firstMessage.svg.includes('class="fcstm-transition-path"')) {
-        throw new Error('Preview SVG does not contain rendered transition arrows.');
+    if (!firstMessage.mermaidSource.includes('[*] -->')) {
+        throw new Error('Preview Mermaid source does not contain start transitions.');
     }
-    if (!firstMessage.svg.includes('class="fcstm-start-node"')) {
-        throw new Error('Preview SVG does not contain start markers.');
+    if (firstMessage.mermaidSource.includes('state "Fleet"')) {
+        throw new Error('Preview Mermaid source should flatten the root state wrapper.');
     }
-    if (!firstMessage.svg.includes('class="fcstm-end-node-ring"')) {
-        throw new Error('Preview SVG does not contain end markers.');
+    if (!firstMessage.mermaidSource.includes('state "Idle"')) {
+        throw new Error('Preview Mermaid source does not contain the expected child states.');
     }
-    if (!firstMessage.svg.includes('class="fcstm-transition-note-box"')) {
-        throw new Error('Preview SVG does not contain effect note rendering.');
+    if (!firstMessage.mermaidSource.includes('Go & Run')) {
+        throw new Error('Preview Mermaid source does not expose the shared event label.');
     }
-    if (!firstMessage.svg.includes('Go &amp; Run')) {
-        throw new Error('Preview SVG does not expose the shared event label.');
+    if (!Array.isArray(firstMessage.sharedEvents) || firstMessage.sharedEvents.length !== 1) {
+        throw new Error('Preview payload does not expose shared-event metadata.');
     }
 
     document.update([
@@ -289,7 +315,7 @@ async function main() {
     await sleep(520);
 
     const updatedMessage = panel.postedMessages[panel.postedMessages.length - 1];
-    if (!updatedMessage.svg.includes('Maintenance')) {
+    if (!updatedMessage.mermaidSource.includes('Maintenance')) {
         throw new Error('Preview did not update after document edits.');
     }
 

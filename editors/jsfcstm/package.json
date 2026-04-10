@@ -141,10 +141,7 @@
     "access": "public"
   },
   "dependencies": {
-    "@svgdotjs/svg.js": "^3.2.5",
     "antlr4": "4.9.3",
-    "elkjs": "^0.11.1",
-    "svgdom": "^0.1.23",
     "vscode-languageserver": "7.0.0",
     "vscode-languageserver-textdocument": "1.0.1"
   },

@@ -113,19 +113,12 @@ export interface FcstmDiagram {
 }
 
 /**
- * SVG renderer options for the diagram preview.
+ * Mermaid renderer options for the diagram preview.
  */
 export interface FcstmDiagramRenderOptions {
-    minWidth: number;
-    headerHeight: number;
-    padding: number;
-    lineHeight: number;
-    titleHeight: number;
-    stateGap: number;
-    sectionGap: number;
-    childGap: number;
-    childColumnGap: number;
-    markerRadius: number;
-    notePadding: number;
-    panelGap: number;
+    direction: 'TB' | 'LR';
+    maxStateEvents: number;
+    maxStateActions: number;
+    maxTransitionEffectLines: number;
+    maxLabelLength: number;
 }

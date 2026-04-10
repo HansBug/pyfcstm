@@ -59,6 +59,7 @@
   },
   "dependencies": {
     "@pyfcstm/jsfcstm": "file:../jsfcstm/jsfcstm.tgz",
+    "mermaid": "^11.14.0",
     "vscode-languageclient": "7.0.0"
   },
   "devDependencies": {

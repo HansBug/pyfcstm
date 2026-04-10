@@ -6,7 +6,7 @@ export {
     formatFcstmDiagramEventLabel,
     formatFcstmDiagramTransitionLabel,
 } from './builder';
-export {renderFcstmDiagramSvg} from './render';
+export {renderFcstmDiagramMermaid} from './render';
 export type {
     FcstmDiagram,
     FcstmDiagramAction,

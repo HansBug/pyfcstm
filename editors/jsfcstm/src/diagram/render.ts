@@ -1,26 +1,15 @@
 import type {
     FcstmDiagram,
+    FcstmDiagramEffectNote,
     FcstmDiagramAction,
-    FcstmDiagramRenderOptions,
+    FcstmDiagramMermaidRenderResult,
+    FcstmDiagramPreviewOptionsInput,
+    FcstmDiagramRenderedTransition,
     FcstmDiagramState,
     FcstmDiagramTransition,
+    ResolvedFcstmDiagramPreviewOptions,
 } from './model';
-
-interface ResolvedRenderOptions {
-    direction: 'TB' | 'LR';
-    maxStateEvents: number;
-    maxStateActions: number;
-    maxTransitionEffectLines: number;
-    maxLabelLength: number;
-}
-
-const DEFAULT_RENDER_OPTIONS: ResolvedRenderOptions = {
-    direction: 'TB',
-    maxStateEvents: 4,
-    maxStateActions: 4,
-    maxTransitionEffectLines: 3,
-    maxLabelLength: 160,
-};
+import {resolveFcstmDiagramPreviewOptions} from './options';
 
 function sanitizeMermaidText(value: string): string {
     return value
@@ -43,6 +32,30 @@ function summarizeItems(items: string[], limit: number): string {
         return items.join(', ');
     }
     return `${items.slice(0, limit).join(', ')}, +${items.length - limit}`;
+}
+
+function dedupeLabels(parts: Array<string | undefined>): string[] {
+    const result: string[] = [];
+    for (const part of parts) {
+        if (!part) {
+            continue;
+        }
+        if (!result.includes(part)) {
+            result.push(part);
+        }
+    }
+    return result;
+}
+
+function formatCompositeLabel(parts: Array<string | undefined>): string | undefined {
+    const compactParts = dedupeLabels(parts);
+    if (compactParts.length === 0) {
+        return undefined;
+    }
+    if (compactParts.length === 1) {
+        return compactParts[0];
+    }
+    return `${compactParts[0]} (${compactParts.slice(1).join(' / ')})`;
 }
 
 function formatStateLabel(state: FcstmDiagramState): string {
@@ -97,7 +110,7 @@ function formatActionForSummary(action: FcstmDiagramAction): string {
 
 function buildStateDetailLines(
     state: FcstmDiagramState,
-    options: ResolvedRenderOptions
+    options: ResolvedFcstmDiagramPreviewOptions
 ): string[] {
     if (state.children.length > 0) {
         return [];
@@ -105,22 +118,21 @@ function buildStateDetailLines(
 
     const lines: string[] = [];
 
-    if (state.events.length > 0) {
+    if (options.showStateEvents && state.events.length > 0) {
         const eventLabels = state.events.map(event => sanitizeMermaidText(
-            event.displayName ? `${event.displayName} (${event.name})` : event.name
+            formatCompositeLabel([
+                event.displayName,
+                event.name,
+            ]) || event.name
         ));
         lines.push(`events: ${summarizeItems(eventLabels, options.maxStateEvents)}`);
     }
 
-    if (state.actions.length > 0) {
+    if (options.showStateActions && state.actions.length > 0) {
         const actionLabels = state.actions.map(action => sanitizeMermaidText(
             formatActionForSummary(action)
         ));
         lines.push(`actions: ${summarizeItems(actionLabels, options.maxStateActions)}`);
-    }
-
-    if (state.children.length > 0 && !state.root) {
-        lines.push(`substates: ${state.children.length}`);
     }
 
     return lines.map(line => truncateText(line, options.maxLabelLength));
@@ -142,84 +154,116 @@ function collectStateAliases(state: FcstmDiagramState): Map<string, string> {
     return aliases;
 }
 
-function formatTriggerForTransition(triggerLabel: string | undefined): string | undefined {
-    if (!triggerLabel) {
-        return undefined;
+function collectEffectBodyLines(transition: FcstmDiagramTransition): string[] {
+    if (transition.effectLines.length <= 2) {
+        return [];
     }
-
-    if (triggerLabel.startsWith('::')) {
-        return `local ${triggerLabel.slice(2).trim()}`;
-    }
-    if (triggerLabel.startsWith(':')) {
-        return `event ${triggerLabel.slice(1).trim()}`;
-    }
-    return triggerLabel.trim();
+    return transition.effectLines
+        .slice(1, transition.effectLines.length - 1)
+        .map(line => line.trim())
+        .filter(Boolean);
 }
 
-function formatEffectForTransition(
+function formatTransitionEventLabel(
     transition: FcstmDiagramTransition,
-    options: ResolvedRenderOptions
+    options: ResolvedFcstmDiagramPreviewOptions
 ): string | undefined {
-    if (transition.effectLines.length === 0) {
+    if (!options.showEvents || !transition.eventQualifiedName) {
         return undefined;
     }
 
-    const statements = transition.effectLines
-        .slice(1, Math.max(1, transition.effectLines.length - 1))
-        .map(line => sanitizeMermaidText(line.replace(/;+\s*$/g, '')))
-        .filter(Boolean);
+    return formatCompositeLabel(options.eventNameFormat.map(part => {
+        if (part === 'name') {
+            return transition.eventName;
+        }
+        if (part === 'extra_name') {
+            return transition.eventDisplayName;
+        }
+        if (part === 'path') {
+            return transition.eventAbsolutePath;
+        }
+        if (part === 'relpath') {
+            return transition.eventRelativePath;
+        }
+        return undefined;
+    })) || transition.eventRelativePath || transition.eventName;
+}
 
-    if (statements.length === 0) {
-        return 'effect';
+function formatTransitionGuardLabel(
+    transition: FcstmDiagramTransition,
+    options: ResolvedFcstmDiagramPreviewOptions
+): string | undefined {
+    if (!options.showTransitionGuards || !transition.guardLabel) {
+        return undefined;
+    }
+    return `[${sanitizeMermaidText(transition.guardLabel)}]`;
+}
+
+function formatTransitionInlineEffectLabel(
+    transition: FcstmDiagramTransition,
+    options: ResolvedFcstmDiagramPreviewOptions
+): string | undefined {
+    if (!options.showTransitionEffects || options.transitionEffectMode !== 'inline') {
+        return undefined;
     }
 
-    const summarizedStatements = statements.slice(0, options.maxTransitionEffectLines);
-    const suffix = statements.length > summarizedStatements.length
-        ? ` +${statements.length - summarizedStatements.length}`
+    const statements = collectEffectBodyLines(transition);
+    if (statements.length === 0) {
+        return undefined;
+    }
+
+    const visibleStatements = statements.slice(0, options.maxTransitionEffectLines);
+    const suffix = statements.length > visibleStatements.length
+        ? ` +${statements.length - visibleStatements.length} lines`
         : '';
-    return `effect ${summarizedStatements.join(', ')}${suffix}`;
+    return truncateText(
+        sanitizeMermaidText(`${visibleStatements.join(' ')}${suffix}`),
+        options.maxLabelLength
+    );
 }
 
 function buildTransitionLabel(
     transition: FcstmDiagramTransition,
-    options: ResolvedRenderOptions
+    options: ResolvedFcstmDiagramPreviewOptions
 ): string | undefined {
-    const parts: string[] = [];
+    const parts = dedupeLabels([
+        formatTransitionEventLabel(transition, options),
+        formatTransitionGuardLabel(transition, options),
+    ]);
+    const inlineEffect = formatTransitionInlineEffectLabel(transition, options);
+    const baseLabel = parts.join(' ');
 
-    if (transition.forced) {
-        parts.push('forced');
+    if (inlineEffect) {
+        return baseLabel
+            ? truncateText(sanitizeMermaidText(`${baseLabel} / ${inlineEffect}`), options.maxLabelLength)
+            : truncateText(sanitizeMermaidText(`/ ${inlineEffect}`), options.maxLabelLength);
     }
 
-    const trigger = formatTriggerForTransition(transition.triggerLabel);
-    if (trigger) {
-        parts.push(trigger);
-    }
-
-    if (transition.guardLabel) {
-        parts.push(`if ${sanitizeMermaidText(transition.guardLabel)}`);
-    }
-
-    const effect = formatEffectForTransition(transition, options);
-    if (effect) {
-        parts.push(effect);
-    }
-
-    if (parts.length === 0) {
+    if (!baseLabel) {
         return undefined;
     }
-
-    return truncateText(sanitizeMermaidText(parts.join(' | ')), options.maxLabelLength);
+    return truncateText(sanitizeMermaidText(baseLabel), options.maxLabelLength);
 }
 
 function indent(depth: number): string {
     return '    '.repeat(depth);
 }
 
+function shouldColorTransition(
+    transition: FcstmDiagramTransition,
+    options: ResolvedFcstmDiagramPreviewOptions
+): boolean {
+    return (
+        (options.eventVisualizationMode === 'color' || options.eventVisualizationMode === 'both')
+        && Boolean(transition.eventColor)
+    );
+}
+
 function buildTransitionLine(
     transition: FcstmDiagramTransition,
     aliases: Map<string, string>,
     childAliasesByName: Map<string, string>,
-    options: ResolvedRenderOptions
+    options: ResolvedFcstmDiagramPreviewOptions
 ): string | null {
     const source = transition.sourceKind === 'init'
         ? '[*]'
@@ -250,9 +294,10 @@ function buildTransitionLine(
 function renderStateBlock(
     state: FcstmDiagramState,
     aliases: Map<string, string>,
-    options: ResolvedRenderOptions,
+    options: ResolvedFcstmDiagramPreviewOptions,
     lines: string[],
     detailLines: string[],
+    renderedTransitions: FcstmDiagramRenderedTransition[],
     depth: number
 ): void {
     if (state.root && state.children.length > 0) {
@@ -262,13 +307,17 @@ function renderStateBlock(
             if (childAlias) {
                 childAliasesByName.set(child.name, childAlias);
             }
-            renderStateBlock(child, aliases, options, lines, detailLines, depth);
+            renderStateBlock(child, aliases, options, lines, detailLines, renderedTransitions, depth);
         }
 
         for (const transition of state.transitions) {
             const transitionLine = buildTransitionLine(transition, aliases, childAliasesByName, options);
             if (transitionLine) {
                 lines.push(`${indent(depth)}${transitionLine}`);
+                renderedTransitions.push({
+                    id: transition.id,
+                    eventColor: shouldColorTransition(transition, options) ? transition.eventColor : undefined,
+                });
             }
         }
         return;
@@ -297,30 +346,79 @@ function renderStateBlock(
         if (childAlias) {
             childAliasesByName.set(child.name, childAlias);
         }
-        renderStateBlock(child, aliases, options, lines, detailLines, depth + 1);
+        renderStateBlock(child, aliases, options, lines, detailLines, renderedTransitions, depth + 1);
     }
 
     for (const transition of state.transitions) {
         const transitionLine = buildTransitionLine(transition, aliases, childAliasesByName, options);
         if (transitionLine) {
             lines.push(`${indent(depth + 1)}${transitionLine}`);
+            renderedTransitions.push({
+                id: transition.id,
+                eventColor: shouldColorTransition(transition, options) ? transition.eventColor : undefined,
+            });
         }
     }
 
     lines.push(`${indent(depth)}}`);
 }
 
+function transitionSummaryTitle(transition: FcstmDiagramTransition): string {
+    return `${transition.sourceLabel} -> ${transition.targetLabel}`;
+}
+
 /**
- * Render the diagram IR into Mermaid ``stateDiagram-v2`` source.
+ * Collect transition-effect notes for note-mode preview rendering.
  */
-export async function renderFcstmDiagramMermaid(
+export function collectFcstmDiagramEffectNotes(
     diagram: FcstmDiagram,
-    renderOptions: Partial<FcstmDiagramRenderOptions> = {}
-): Promise<string> {
-    const options: ResolvedRenderOptions = {
-        ...DEFAULT_RENDER_OPTIONS,
-        ...renderOptions,
+    previewOptions: FcstmDiagramPreviewOptionsInput = undefined
+): FcstmDiagramEffectNote[] {
+    const options = resolveFcstmDiagramPreviewOptions(previewOptions);
+    if (!options.showTransitionEffects || options.transitionEffectMode !== 'note') {
+        return [];
+    }
+
+    const notes: FcstmDiagramEffectNote[] = [];
+
+    const visit = (state: FcstmDiagramState) => {
+        for (const transition of state.transitions) {
+            const effectBodyLines = collectEffectBodyLines(transition);
+            if (effectBodyLines.length === 0) {
+                continue;
+            }
+
+            const metaParts = dedupeLabels([
+                formatTransitionEventLabel(transition, options),
+                formatTransitionGuardLabel(transition, options),
+            ]);
+            notes.push({
+                transitionId: transition.id,
+                title: transitionSummaryTitle(transition),
+                meta: metaParts.length > 0 ? metaParts.join(' · ') : undefined,
+                effectText: transition.effectLines.join('\n'),
+                lineCount: effectBodyLines.length,
+                eventColor: shouldColorTransition(transition, options) ? transition.eventColor : undefined,
+            });
+        }
+
+        for (const child of state.children) {
+            visit(child);
+        }
     };
+
+    visit(diagram.rootState);
+    return notes;
+}
+
+/**
+ * Render the diagram IR into Mermaid ``stateDiagram-v2`` source plus transition metadata.
+ */
+export async function renderFcstmDiagramMermaidView(
+    diagram: FcstmDiagram,
+    previewOptions: FcstmDiagramPreviewOptionsInput = undefined
+): Promise<FcstmDiagramMermaidRenderResult> {
+    const options = resolveFcstmDiagramPreviewOptions(previewOptions);
     const aliases = collectStateAliases(diagram.rootState);
     const diagramLines: string[] = [
         '%% FCSTM Mermaid preview generated by jsfcstm',
@@ -328,8 +426,17 @@ export async function renderFcstmDiagramMermaid(
         `direction ${options.direction}`,
     ];
     const detailLines: string[] = [];
+    const renderedTransitions: FcstmDiagramRenderedTransition[] = [];
 
-    renderStateBlock(diagram.rootState, aliases, options, diagramLines, detailLines, 0);
+    renderStateBlock(
+        diagram.rootState,
+        aliases,
+        options,
+        diagramLines,
+        detailLines,
+        renderedTransitions,
+        0
+    );
 
     if (detailLines.length > 0) {
         diagramLines.push('');
@@ -338,5 +445,25 @@ export async function renderFcstmDiagramMermaid(
         }
     }
 
-    return diagramLines.join('\n');
+    return {
+        source: diagramLines.join('\n'),
+        renderedTransitions,
+    };
 }
+
+/**
+ * Render the diagram IR into Mermaid ``stateDiagram-v2`` source.
+ */
+export async function renderFcstmDiagramMermaid(
+    diagram: FcstmDiagram,
+    previewOptions: FcstmDiagramPreviewOptionsInput = undefined
+): Promise<string> {
+    const rendered = await renderFcstmDiagramMermaidView(diagram, previewOptions);
+    return rendered.source;
+}
+
+export {
+    formatTransitionEventLabel as formatFcstmDiagramTransitionEventLabel,
+    formatTransitionInlineEffectLabel as formatFcstmDiagramTransitionInlineEffectLabel,
+    formatTransitionGuardLabel as formatFcstmDiagramTransitionGuardLabel,
+};

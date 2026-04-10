@@ -6,14 +6,31 @@ export {
     formatFcstmDiagramEventLabel,
     formatFcstmDiagramTransitionLabel,
 } from './builder';
-export {renderFcstmDiagramMermaid} from './render';
+export {resolveFcstmDiagramPreviewOptions} from './options';
+export {
+    collectFcstmDiagramEffectNotes,
+    formatFcstmDiagramTransitionEventLabel,
+    formatFcstmDiagramTransitionGuardLabel,
+    formatFcstmDiagramTransitionInlineEffectLabel,
+    renderFcstmDiagramMermaid,
+    renderFcstmDiagramMermaidView,
+} from './render';
 export type {
     FcstmDiagram,
     FcstmDiagramAction,
+    FcstmDiagramDetailLevel,
+    FcstmDiagramEffectNote,
     FcstmDiagramEvent,
-    FcstmDiagramRenderOptions,
+    FcstmDiagramEventNameFormatPart,
+    FcstmDiagramEventVisualizationMode,
+    FcstmDiagramMermaidRenderResult,
+    FcstmDiagramPreviewOptions,
+    FcstmDiagramPreviewOptionsInput,
+    FcstmDiagramRenderedTransition,
     FcstmDiagramState,
     FcstmDiagramSummary,
     FcstmDiagramTransition,
+    FcstmDiagramTransitionEffectMode,
     FcstmDiagramVariable,
+    ResolvedFcstmDiagramPreviewOptions,
 } from './model';

@@ -61,6 +61,11 @@ export interface FcstmDiagramTransition {
     triggerLabel?: string;
     guardLabel?: string;
     effectLines: string[];
+    eventName?: string;
+    eventDisplayName?: string;
+    eventRelativePath?: string;
+    eventAbsolutePath?: string;
+    triggerScope?: 'local' | 'chain' | 'absolute';
     forced: boolean;
     sourceKind: 'init' | 'state';
     targetKind: 'state' | 'exit';
@@ -113,12 +118,100 @@ export interface FcstmDiagram {
 }
 
 /**
- * Mermaid renderer options for the diagram preview.
+ * Preview detail-level preset aligned with the pyfcstm PlantUML option system.
  */
-export interface FcstmDiagramRenderOptions {
+export type FcstmDiagramDetailLevel = 'minimal' | 'normal' | 'full';
+
+/**
+ * Supported event-name display elements.
+ */
+export type FcstmDiagramEventNameFormatPart = 'name' | 'extra_name' | 'path' | 'relpath';
+
+/**
+ * Supported transition-effect display modes.
+ */
+export type FcstmDiagramTransitionEffectMode = 'note' | 'inline' | 'hide';
+
+/**
+ * Shared-event visualization mode for the preview.
+ */
+export type FcstmDiagramEventVisualizationMode = 'none' | 'color' | 'legend' | 'both';
+
+/**
+ * Input options for the diagram preview and Mermaid renderer.
+ */
+export interface FcstmDiagramPreviewOptions {
+    detailLevel?: FcstmDiagramDetailLevel;
+    direction?: 'TB' | 'LR';
+    showVariableDefinitions?: boolean;
+    showEvents?: boolean;
+    eventNameFormat?: FcstmDiagramEventNameFormatPart[];
+    showTransitionGuards?: boolean;
+    showTransitionEffects?: boolean;
+    transitionEffectMode?: FcstmDiagramTransitionEffectMode;
+    eventVisualizationMode?: FcstmDiagramEventVisualizationMode;
+    showStateEvents?: boolean;
+    showStateActions?: boolean;
+    maxStateEvents?: number;
+    maxStateActions?: number;
+    maxTransitionEffectLines?: number;
+    maxLabelLength?: number;
+}
+
+/**
+ * Fully-resolved preview options with defaults applied.
+ */
+export interface ResolvedFcstmDiagramPreviewOptions {
+    detailLevel: FcstmDiagramDetailLevel;
     direction: 'TB' | 'LR';
+    showVariableDefinitions: boolean;
+    showEvents: boolean;
+    eventNameFormat: FcstmDiagramEventNameFormatPart[];
+    showTransitionGuards: boolean;
+    showTransitionEffects: boolean;
+    transitionEffectMode: FcstmDiagramTransitionEffectMode;
+    eventVisualizationMode: FcstmDiagramEventVisualizationMode;
+    showStateEvents: boolean;
+    showStateActions: boolean;
     maxStateEvents: number;
     maxStateActions: number;
     maxTransitionEffectLines: number;
     maxLabelLength: number;
+}
+
+/**
+ * External preview-option input accepted by jsfcstm.
+ */
+export type FcstmDiagramPreviewOptionsInput =
+    | FcstmDiagramDetailLevel
+    | Partial<FcstmDiagramPreviewOptions>
+    | null
+    | undefined;
+
+/**
+ * Stable note payload for transition effects rendered outside the Mermaid edge label.
+ */
+export interface FcstmDiagramEffectNote {
+    transitionId: string;
+    title: string;
+    meta?: string;
+    effectText: string;
+    lineCount: number;
+    eventColor?: string;
+}
+
+/**
+ * Transition order metadata for post-render color application in the webview layer.
+ */
+export interface FcstmDiagramRenderedTransition {
+    id: string;
+    eventColor?: string;
+}
+
+/**
+ * Mermaid render result that carries the emitted source plus transition order metadata.
+ */
+export interface FcstmDiagramMermaidRenderResult {
+    source: string;
+    renderedTransitions: FcstmDiagramRenderedTransition[];
 }

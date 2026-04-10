@@ -126,6 +126,7 @@ const vscode = {
                 webview: {
                     cspSource: 'vscode-resource://fcstm',
                     html: '',
+                    receiveMessageListeners: [],
                     asWebviewUri(resource) {
                         return {
                             toString() {
@@ -133,7 +134,8 @@ const vscode = {
                             },
                         };
                     },
-                    onDidReceiveMessage() {
+                    onDidReceiveMessage(listener) {
+                        panel.webview.receiveMessageListeners.push(listener);
                         return createDisposable();
                     },
                     postMessage(message) {
@@ -203,6 +205,12 @@ function fireWorkspaceChange(document) {
     }
 }
 
+function fireWebviewMessage(panel, message) {
+    for (const listener of panel.webview.receiveMessageListeners) {
+        listener(message);
+    }
+}
+
 function fireActiveEditor(editor) {
     vscode.window.activeTextEditor = editor;
     for (const listener of windowListeners.activeEditor) {
@@ -229,6 +237,7 @@ async function main() {
         '    [*] -> Idle;',
         '    Idle -> Running : Start effect {',
         '        counter = counter + 1;',
+        '        counter = counter + 2;',
         '    };',
         '    Running -> [*] : Start;',
         '}',
@@ -268,6 +277,12 @@ async function main() {
     if (!panel.webview.html.includes('FCSTM Preview')) {
         throw new Error('Preview webview HTML was not initialized.');
     }
+    if (!panel.webview.html.includes('Preview Options')) {
+        throw new Error('Preview webview HTML does not expose the options bar.');
+    }
+    if (!panel.webview.html.includes('Transition Effects')) {
+        throw new Error('Preview webview HTML does not expose the effect-note section.');
+    }
     if (panel.postedMessages.length === 0) {
         throw new Error('Preview panel did not receive any rendered state.');
     }
@@ -297,8 +312,47 @@ async function main() {
     if (!firstMessage.mermaidSource.includes('Go & Run')) {
         throw new Error('Preview Mermaid source does not expose the shared event label.');
     }
+    if (firstMessage.mermaidSource.includes('event Go & Run') || firstMessage.mermaidSource.includes('local Go & Run')) {
+        throw new Error('Preview Mermaid source still contains redundant event/local prefixes.');
+    }
+    if (!firstMessage.previewOptions || firstMessage.previewOptions.transitionEffectMode !== 'note') {
+        throw new Error('Preview payload does not expose resolved preview options.');
+    }
+    if (!Array.isArray(firstMessage.effectNotes) || firstMessage.effectNotes.length !== 1) {
+        throw new Error('Preview payload does not expose transition effect notes.');
+    }
+    if (!firstMessage.effectNotes[0].effectText.includes('effect {') || !firstMessage.effectNotes[0].effectText.includes('counter=counter+2;')) {
+        throw new Error('Preview effect note does not preserve the multiline effect block.');
+    }
     if (!Array.isArray(firstMessage.sharedEvents) || firstMessage.sharedEvents.length !== 1) {
         throw new Error('Preview payload does not expose shared-event metadata.');
+    }
+
+    fireWebviewMessage(panel, {
+        type: 'patchOptions',
+        options: {
+            transitionEffectMode: 'inline',
+            showVariableDefinitions: false,
+            eventVisualizationMode: 'none',
+        },
+    });
+    await sleep(520);
+
+    const optionUpdatedMessage = panel.postedMessages[panel.postedMessages.length - 1];
+    if (optionUpdatedMessage.previewOptions.transitionEffectMode !== 'inline') {
+        throw new Error('Preview options patch did not round-trip through the extension host.');
+    }
+    if (!optionUpdatedMessage.mermaidSource.includes('/ counter=counter+1, counter=counter+2')) {
+        throw new Error('Inline effect mode did not rewrite the Mermaid edge label.');
+    }
+    if (optionUpdatedMessage.variables.length !== 0) {
+        throw new Error('Variables should be hidden when showVariableDefinitions is false.');
+    }
+    if (optionUpdatedMessage.sharedEvents.length !== 0) {
+        throw new Error('Shared event legend should be hidden when eventVisualizationMode is none.');
+    }
+    if (optionUpdatedMessage.effectNotes.length !== 0) {
+        throw new Error('Effect notes should be hidden outside note mode.');
     }
 
     document.update([
@@ -366,6 +420,7 @@ async function main() {
     console.log('✅ Phase 9 preview verification passed');
     console.log(`   Panel title: ${panel.title}`);
     console.log(`   Initial status: ${firstMessage.statusText}`);
+    console.log(`   Initial effect mode: ${firstMessage.previewOptions.transitionEffectMode}`);
     console.log(`   Updated root: ${switchedMessage.rootStateName}`);
 
     await extension.deactivate();

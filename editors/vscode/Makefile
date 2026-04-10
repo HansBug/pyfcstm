@@ -42,7 +42,7 @@ help:
 	@echo "  make verify-p1.b  - Verify P1.B language configuration reinforcement"
 	@echo "  make verify-import-editor-support - Verify import-aware editor support"
 	@echo "  make verify-semantic-editor-support - Verify scope/event/import semantic editor behavior"
-	@echo "  make verify-phase9-preview - Verify the ELK.js right-side preview flow"
+	@echo "  make verify-phase9-preview - Verify the Mermaid right-side preview flow"
 	@echo "  make verify-phase8-preview - Compatibility alias of verify-phase9-preview"
 	@echo "  make test-e2e     - Run end-to-end bundle verification (20 tests)"
 	@echo "  make verify       - Run all verification tests"
@@ -161,8 +161,10 @@ verify-semantic-editor-support: build-tsc
 	node ./scripts/verify-semantic-editor-support.js
 	@echo ""
 
-verify-phase9-preview: build-tsc
+verify-phase9-preview: install syntaxes
 	@echo "Running Phase 9 preview verification script..."
+	$(NPM) run compile
+	$(TSC) -p ./
 	node ./scripts/verify-phase9-preview.js
 	@echo ""
 

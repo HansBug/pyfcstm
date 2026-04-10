@@ -4,9 +4,13 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import {
     buildFcstmDiagramFromDocument,
+    collectFcstmDiagramEffectNotes,
     collectDocumentDiagnostics,
     getWorkspaceGraph,
-    renderFcstmDiagramMermaid,
+    renderFcstmDiagramMermaidView,
+    resolveFcstmDiagramPreviewOptions,
+    type FcstmDiagramPreviewOptions,
+    type ResolvedFcstmDiagramPreviewOptions,
 } from '@pyfcstm/jsfcstm';
 
 interface PreviewDiagnosticView {
@@ -27,16 +31,26 @@ interface PreviewSharedEventView {
     color: string;
 }
 
+interface PreviewEffectNoteView {
+    title: string;
+    meta?: string;
+    effectText: string;
+    color?: string;
+}
+
 interface PreviewWebviewState {
     title: string;
     filePath: string;
     rootStateName?: string;
     mermaidSource?: string;
+    previewOptions: ResolvedFcstmDiagramPreviewOptions;
+    transitionColors: Array<string | null>;
     emptyTitle: string;
     emptyMessage: string;
     summary: PreviewSummaryEntry[];
     variables: string[];
     sharedEvents: PreviewSharedEventView[];
+    effectNotes: PreviewEffectNoteView[];
     diagnostics: PreviewDiagnosticView[];
     status: 'ok' | 'warning' | 'error';
     statusText: string;
@@ -136,16 +150,22 @@ function buildPreviewSummaryEntries(diagram: Awaited<ReturnType<typeof buildFcst
     ];
 }
 
-function buildPreviewVariables(diagram: Awaited<ReturnType<typeof buildFcstmDiagramFromDocument>>): string[] {
-    if (!diagram) {
+function buildPreviewVariables(
+    diagram: Awaited<ReturnType<typeof buildFcstmDiagramFromDocument>>,
+    options: ResolvedFcstmDiagramPreviewOptions
+): string[] {
+    if (!diagram || !options.showVariableDefinitions) {
         return [];
     }
 
     return diagram.variables.map(variable => `def ${variable.valueType} ${variable.name} = ${variable.initializer}`);
 }
 
-function buildPreviewSharedEvents(diagram: Awaited<ReturnType<typeof buildFcstmDiagramFromDocument>>): PreviewSharedEventView[] {
-    if (!diagram) {
+function buildPreviewSharedEvents(
+    diagram: Awaited<ReturnType<typeof buildFcstmDiagramFromDocument>>,
+    options: ResolvedFcstmDiagramPreviewOptions
+): PreviewSharedEventView[] {
+    if (!diagram || (options.eventVisualizationMode !== 'legend' && options.eventVisualizationMode !== 'both')) {
         return [];
     }
 
@@ -154,6 +174,22 @@ function buildPreviewSharedEvents(diagram: Awaited<ReturnType<typeof buildFcstmD
         qualifiedName: `/${item.qualifiedName.split('.').slice(1).join('.')}`,
         transitionCount: item.transitionCount,
         color: item.color,
+    }));
+}
+
+function buildPreviewEffectNotes(
+    diagram: Awaited<ReturnType<typeof buildFcstmDiagramFromDocument>>,
+    options: ResolvedFcstmDiagramPreviewOptions
+): PreviewEffectNoteView[] {
+    if (!diagram) {
+        return [];
+    }
+
+    return collectFcstmDiagramEffectNotes(diagram, options).map(note => ({
+        title: note.title,
+        meta: note.meta,
+        effectText: note.effectText,
+        color: note.eventColor,
     }));
 }
 
@@ -278,6 +314,72 @@ function createPreviewHtml(
         .summary-value {
             color: var(--fg);
             font-weight: 700;
+        }
+
+        .options {
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            background: rgba(255, 255, 255, 0.05);
+            padding: 12px 14px;
+        }
+
+        .options-title {
+            font-size: 13px;
+            font-weight: 700;
+            margin-bottom: 10px;
+        }
+
+        .options-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px 12px;
+            align-items: end;
+        }
+
+        .option-field {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            min-width: 108px;
+        }
+
+        .option-field.toggle {
+            min-width: auto;
+        }
+
+        .option-label {
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+            color: var(--muted);
+            text-transform: uppercase;
+        }
+
+        .option-select {
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--fg);
+            padding: 7px 10px;
+            font-size: 12px;
+            font-family: "JetBrains Mono", "Fira Code", Consolas, monospace;
+        }
+
+        .option-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 7px 10px;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.06);
+            font-size: 12px;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .option-toggle input {
+            margin: 0;
         }
 
         .info-grid {
@@ -413,6 +515,58 @@ function createPreviewHtml(
             font-weight: 700;
         }
 
+        .effects {
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            background: rgba(255, 255, 255, 0.03);
+            padding: 12px 14px;
+        }
+
+        .effects.hidden {
+            display: none;
+        }
+
+        .effects-title {
+            font-size: 13px;
+            font-weight: 700;
+            margin-bottom: 10px;
+        }
+
+        .effect-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .effect-card {
+            border: 1px solid var(--border);
+            border-left-width: 4px;
+            border-radius: 12px;
+            padding: 12px 14px;
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .effect-heading {
+            font-size: 12px;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+
+        .effect-meta {
+            font-size: 11px;
+            color: var(--muted);
+            margin-bottom: 8px;
+        }
+
+        .effect-code {
+            margin: 0;
+            white-space: pre-wrap;
+            word-break: break-word;
+            font-size: 12px;
+            line-height: 1.5;
+            font-family: "JetBrains Mono", "Fira Code", Consolas, monospace;
+        }
+
         .diagnostics {
             border: 1px solid var(--border);
             border-radius: 14px;
@@ -473,6 +627,56 @@ function createPreviewHtml(
             </div>
             <div class="subtitle" id="file-path"></div>
         </section>
+        <section class="options" id="options">
+            <div class="options-title">Preview Options</div>
+            <div class="options-grid">
+                <label class="option-field">
+                    <span class="option-label">Detail</span>
+                    <select class="option-select" id="option-detail">
+                        <option value="minimal">minimal</option>
+                        <option value="normal">normal</option>
+                        <option value="full">full</option>
+                    </select>
+                </label>
+                <label class="option-field">
+                    <span class="option-label">Effects</span>
+                    <select class="option-select" id="option-effects">
+                        <option value="note">note</option>
+                        <option value="inline">inline</option>
+                        <option value="hide">hide</option>
+                    </select>
+                </label>
+                <label class="option-field">
+                    <span class="option-label">Shared Events</span>
+                    <select class="option-select" id="option-shared-events">
+                        <option value="none">none</option>
+                        <option value="color">color</option>
+                        <option value="legend">legend</option>
+                        <option value="both">both</option>
+                    </select>
+                </label>
+                <label class="option-toggle">
+                    <input type="checkbox" id="option-events" />
+                    <span>Events</span>
+                </label>
+                <label class="option-toggle">
+                    <input type="checkbox" id="option-guards" />
+                    <span>Guards</span>
+                </label>
+                <label class="option-toggle">
+                    <input type="checkbox" id="option-variables" />
+                    <span>Variables</span>
+                </label>
+                <label class="option-toggle">
+                    <input type="checkbox" id="option-state-events" />
+                    <span>State Events</span>
+                </label>
+                <label class="option-toggle">
+                    <input type="checkbox" id="option-state-actions" />
+                    <span>Actions</span>
+                </label>
+            </div>
+        </section>
         <section class="summary" id="summary"></section>
         <section class="info-grid">
             <section class="info-card" id="variables-card">
@@ -486,6 +690,10 @@ function createPreviewHtml(
         </section>
         <section class="preview">
             <div class="preview-inner" id="preview"></div>
+        </section>
+        <section class="effects hidden" id="effects">
+            <div class="effects-title">Transition Effects</div>
+            <div class="effect-list" id="effect-list"></div>
         </section>
         <section class="diagnostics hidden" id="diagnostics">
             <div class="diagnostics-title">Diagnostics</div>
@@ -501,12 +709,22 @@ ${mermaidRuntime}
         const titleNode = document.getElementById('title');
         const filePathNode = document.getElementById('file-path');
         const statusNode = document.getElementById('status');
+        const detailSelectNode = document.getElementById('option-detail');
+        const effectsSelectNode = document.getElementById('option-effects');
+        const sharedEventsSelectNode = document.getElementById('option-shared-events');
+        const eventsToggleNode = document.getElementById('option-events');
+        const guardsToggleNode = document.getElementById('option-guards');
+        const variablesToggleNode = document.getElementById('option-variables');
+        const stateEventsToggleNode = document.getElementById('option-state-events');
+        const stateActionsToggleNode = document.getElementById('option-state-actions');
         const summaryNode = document.getElementById('summary');
         const variablesCardNode = document.getElementById('variables-card');
         const variablesListNode = document.getElementById('variables-list');
         const sharedEventsCardNode = document.getElementById('shared-events-card');
         const sharedEventsListNode = document.getElementById('shared-events-list');
         const previewNode = document.getElementById('preview');
+        const effectsNode = document.getElementById('effects');
+        const effectListNode = document.getElementById('effect-list');
         const diagnosticsNode = document.getElementById('diagnostics');
         const diagnosticListNode = document.getElementById('diagnostic-list');
         const initialState = ${initialData};
@@ -550,7 +768,7 @@ ${mermaidRuntime}
             });
         }
 
-        function postProcessRenderedSvg() {
+        function postProcessRenderedSvg(state) {
             const svg = previewNode.querySelector('svg');
             if (!svg) {
                 return;
@@ -571,6 +789,96 @@ ${mermaidRuntime}
                     node.style.fontSize = '17px';
                     node.style.fontWeight = '700';
                 }
+            }
+
+            const colors = Array.isArray(state.transitionColors) ? state.transitionColors : [];
+            if (colors.length === 0) {
+                return;
+            }
+
+            const edgePaths = Array.from(svg.querySelectorAll('.edgePath path.path, .edgePaths .edgePath path.path'));
+            const edgeLabels = Array.from(svg.querySelectorAll('.edgeLabel'));
+            const edgeLabelTextNodes = Array.from(svg.querySelectorAll('.edgeLabel tspan'));
+            const edgeLabelBackgrounds = Array.from(svg.querySelectorAll('.edgeLabel rect'));
+
+            for (const [index, color] of colors.entries()) {
+                if (!color) {
+                    continue;
+                }
+
+                const edgePath = edgePaths[index];
+                if (edgePath instanceof SVGElement) {
+                    edgePath.style.stroke = color;
+                    edgePath.style.strokeWidth = '2.6px';
+                }
+
+                const edgeLabel = edgeLabels[index];
+                if (edgeLabel instanceof SVGElement) {
+                    edgeLabel.style.color = color;
+                }
+
+                const edgeLabelText = edgeLabelTextNodes[index];
+                if (edgeLabelText instanceof SVGElement) {
+                    edgeLabelText.style.fill = color;
+                }
+
+                const edgeLabelBackground = edgeLabelBackgrounds[index];
+                if (edgeLabelBackground instanceof SVGElement) {
+                    edgeLabelBackground.style.stroke = color;
+                    edgeLabelBackground.style.strokeWidth = '1.2px';
+                }
+            }
+        }
+
+        function sendOptionPatch(options) {
+            vscode.postMessage({
+                type: 'patchOptions',
+                options,
+            });
+        }
+
+        function renderPreviewOptions(state) {
+            const options = state.previewOptions;
+            detailSelectNode.value = options.detailLevel;
+            effectsSelectNode.value = options.transitionEffectMode;
+            sharedEventsSelectNode.value = options.eventVisualizationMode;
+            eventsToggleNode.checked = options.showEvents;
+            guardsToggleNode.checked = options.showTransitionGuards;
+            variablesToggleNode.checked = options.showVariableDefinitions;
+            stateEventsToggleNode.checked = options.showStateEvents;
+            stateActionsToggleNode.checked = options.showStateActions;
+        }
+
+        function renderEffectNotes(state) {
+            effectListNode.innerHTML = '';
+            if (!state.effectNotes.length) {
+                effectsNode.classList.add('hidden');
+                return;
+            }
+
+            effectsNode.classList.remove('hidden');
+            for (const note of state.effectNotes) {
+                const card = document.createElement('section');
+                card.className = 'effect-card';
+                card.style.borderLeftColor = note.color || 'var(--border)';
+
+                const heading = document.createElement('div');
+                heading.className = 'effect-heading';
+                heading.textContent = note.title;
+                card.appendChild(heading);
+
+                if (note.meta) {
+                    const meta = document.createElement('div');
+                    meta.className = 'effect-meta';
+                    meta.textContent = note.meta;
+                    card.appendChild(meta);
+                }
+
+                const code = document.createElement('pre');
+                code.className = 'effect-code';
+                code.textContent = note.effectText;
+                card.appendChild(code);
+                effectListNode.appendChild(card);
             }
         }
 
@@ -665,7 +973,7 @@ ${mermaidRuntime}
             previewNode.appendChild(emptyNode);
         }
 
-        async function renderMermaidSource(source) {
+        async function renderMermaidSource(source, state) {
             const currentToken = ++renderToken;
             previewNode.innerHTML = '';
 
@@ -690,7 +998,7 @@ ${mermaidRuntime}
                 if (typeof renderResult.bindFunctions === 'function') {
                     renderResult.bindFunctions(previewNode);
                 }
-                postProcessRenderedSvg();
+                postProcessRenderedSvg(state);
             } catch (error) {
                 if (currentToken !== renderToken) {
                     return;
@@ -709,13 +1017,15 @@ ${mermaidRuntime}
             filePathNode.textContent = state.filePath || '<memory>';
             statusNode.textContent = state.statusText;
             statusNode.className = 'badge ' + (state.status === 'ok' ? '' : state.status);
+            renderPreviewOptions(state);
             renderSummary(state);
             renderVariables(state);
             renderSharedEvents(state);
+            renderEffectNotes(state);
             diagnosticListNode.innerHTML = '';
 
             if (state.mermaidSource) {
-                await renderMermaidSource(state.mermaidSource);
+                await renderMermaidSource(state.mermaidSource, state);
             } else {
                 renderEmptyState(state.emptyTitle, state.emptyMessage);
             }
@@ -747,6 +1057,48 @@ ${mermaidRuntime}
             void render(event.data);
         });
 
+        detailSelectNode.addEventListener('change', () => {
+            vscode.postMessage({
+                type: 'setDetailLevel',
+                detailLevel: detailSelectNode.value,
+            });
+        });
+        effectsSelectNode.addEventListener('change', () => {
+            sendOptionPatch({
+                transitionEffectMode: effectsSelectNode.value,
+            });
+        });
+        sharedEventsSelectNode.addEventListener('change', () => {
+            sendOptionPatch({
+                eventVisualizationMode: sharedEventsSelectNode.value,
+            });
+        });
+        eventsToggleNode.addEventListener('change', () => {
+            sendOptionPatch({
+                showEvents: eventsToggleNode.checked,
+            });
+        });
+        guardsToggleNode.addEventListener('change', () => {
+            sendOptionPatch({
+                showTransitionGuards: guardsToggleNode.checked,
+            });
+        });
+        variablesToggleNode.addEventListener('change', () => {
+            sendOptionPatch({
+                showVariableDefinitions: variablesToggleNode.checked,
+            });
+        });
+        stateEventsToggleNode.addEventListener('change', () => {
+            sendOptionPatch({
+                showStateEvents: stateEventsToggleNode.checked,
+            });
+        });
+        stateActionsToggleNode.addEventListener('change', () => {
+            sendOptionPatch({
+                showStateActions: stateActionsToggleNode.checked,
+            });
+        });
+
         void render(vscode.getState() || initialState);
     </script>
 </body>
@@ -762,6 +1114,7 @@ export class FcstmPreviewController implements vscode.Disposable {
     private currentDocumentUri: string | null = null;
     private updateTimer: NodeJS.Timeout | undefined;
     private updateSequence = 0;
+    private previewOptions: FcstmDiagramPreviewOptions = {detailLevel: 'normal'};
 
     constructor(private readonly context: vscode.ExtensionContext) {
         const graph = getWorkspaceGraph();
@@ -821,6 +1174,44 @@ export class FcstmPreviewController implements vscode.Disposable {
         }
     }
 
+    private async handleWebviewMessage(message: unknown): Promise<void> {
+        if (!message || typeof message !== 'object' || !this.panel) {
+            return;
+        }
+
+        const payload = message as {
+            type?: string;
+            detailLevel?: string;
+            options?: Partial<FcstmDiagramPreviewOptions>;
+        };
+
+        if (payload.type === 'setDetailLevel' && typeof payload.detailLevel === 'string') {
+            this.previewOptions = {detailLevel: payload.detailLevel as FcstmDiagramPreviewOptions['detailLevel']};
+            await this.refreshCurrentDocument();
+            return;
+        }
+
+        if (payload.type === 'patchOptions' && payload.options && typeof payload.options === 'object') {
+            this.previewOptions = {
+                ...this.previewOptions,
+                ...payload.options,
+            };
+            await this.refreshCurrentDocument();
+        }
+    }
+
+    private async refreshCurrentDocument(): Promise<void> {
+        if (!this.panel || !this.currentDocumentUri) {
+            return;
+        }
+
+        const document = vscode.workspace.textDocuments.find(item => item.uri.toString() === this.currentDocumentUri)
+            || vscode.window.activeTextEditor?.document;
+        if (document && isFcstmDocument(document)) {
+            await this.refresh(document);
+        }
+    }
+
     private syncOverlay(document: vscode.TextDocument): void {
         if (!isFcstmDocument(document) || !hasFileSystemPath(document)) {
             return;
@@ -861,15 +1252,22 @@ export class FcstmPreviewController implements vscode.Disposable {
                 this.panel = null;
                 this.currentDocumentUri = null;
             }, null, this.disposables);
+            this.panel.webview.onDidReceiveMessage(message => {
+                void this.handleWebviewMessage(message);
+            }, null, this.disposables);
 
+            const initialOptions = resolveFcstmDiagramPreviewOptions(this.previewOptions);
             const initialState: PreviewWebviewState = {
                 title: basenameForDocument(document),
                 filePath: document.uri.fsPath,
+                previewOptions: initialOptions,
+                transitionColors: [],
                 emptyTitle: 'FCSTM Preview',
                 emptyMessage: 'Preparing Mermaid preview...',
                 summary: [],
                 variables: [],
                 sharedEvents: [],
+                effectNotes: [],
                 diagnostics: [],
                 status: 'ok',
                 statusText: 'Loading preview',
@@ -931,10 +1329,14 @@ export class FcstmPreviewController implements vscode.Disposable {
 
         let state: PreviewWebviewState;
         try {
+            const previewOptions = resolveFcstmDiagramPreviewOptions(this.previewOptions);
             const [diagram, diagnostics] = await Promise.all([
                 buildFcstmDiagramFromDocument(document),
                 collectDocumentDiagnostics(document),
             ]);
+            const renderResult = diagram
+                ? await renderFcstmDiagramMermaidView(diagram, previewOptions)
+                : null;
 
             const diagnosticViews = diagnostics.map(buildDiagnosticView);
             const errorCount = diagnosticViews.filter(item => item.severity === 'error').length;
@@ -951,14 +1353,17 @@ export class FcstmPreviewController implements vscode.Disposable {
                 title,
                 filePath: document.uri.fsPath || document.uri.toString(),
                 rootStateName: diagram ? diagram.machineName : undefined,
-                mermaidSource: diagram
-                    ? await renderFcstmDiagramMermaid(diagram)
-                    : undefined,
+                mermaidSource: renderResult ? renderResult.source : undefined,
+                previewOptions,
+                transitionColors: renderResult
+                    ? renderResult.renderedTransitions.map(item => item.eventColor || null)
+                    : [],
                 emptyTitle: title,
                 emptyMessage: diagnostics.length > 0 ? diagnostics[0].message : 'No diagram available.',
                 summary: buildPreviewSummaryEntries(diagram),
-                variables: buildPreviewVariables(diagram),
-                sharedEvents: buildPreviewSharedEvents(diagram),
+                variables: buildPreviewVariables(diagram, previewOptions),
+                sharedEvents: buildPreviewSharedEvents(diagram, previewOptions),
+                effectNotes: buildPreviewEffectNotes(diagram, previewOptions),
                 diagnostics: diagnosticViews,
                 status,
                 statusText,
@@ -969,11 +1374,14 @@ export class FcstmPreviewController implements vscode.Disposable {
             state = {
                 title,
                 filePath: document.uri.fsPath || document.uri.toString(),
+                previewOptions: resolveFcstmDiagramPreviewOptions(this.previewOptions),
+                transitionColors: [],
                 emptyTitle: title,
                 emptyMessage: message,
                 summary: [],
                 variables: [],
                 sharedEvents: [],
+                effectNotes: [],
                 diagnostics: [{
                     severity: 'error',
                     message,

@@ -62,6 +62,12 @@ function buildEventLabel(event: Event): string {
     return event.name;
 }
 
+function formatAbsoluteEventReference(event: Event): string {
+    return event.path.length > 1
+        ? `/${joinPath(event.path.slice(1))}`
+        : `/${event.name}`;
+}
+
 function formatEventReference(transition: Transition): string {
     const event = transition.event;
     if (!event) {
@@ -72,16 +78,13 @@ function formatEventReference(transition: Transition): string {
         return event.name;
     }
     if (transition.triggerScope === 'absolute') {
-        return `/${joinPath(event.path.slice(1))}`;
+        return formatAbsoluteEventReference(event);
     }
     if (transition.triggerScope === 'chain') {
         return formatChainEventReference(transition);
     }
 
-    if (event.path.length > 1) {
-        return `/${joinPath(event.path.slice(1))}`;
-    }
-    return event.name;
+    return formatAbsoluteEventReference(event);
 }
 
 function formatTriggerText(transition: Transition): string {
@@ -167,7 +170,7 @@ function formatChainEventReference(transition: Transition): string {
     }
 
     if (event.path.length > 1) {
-        return `/${joinPath(event.path.slice(1))}`;
+        return formatAbsoluteEventReference(event);
     }
     return event.name;
 }
@@ -177,11 +180,52 @@ function formatTriggerLabel(transition: Transition): string | undefined {
         return undefined;
     }
 
-    if (transition.triggerScope === 'local') {
-        return `:: ${formatTriggerText(transition)}`;
+    return formatTriggerText(transition);
+}
+
+function ensureTerminatedStatement(text: string): string {
+    const trimmed = text.trim();
+    if (!trimmed) {
+        return '...';
+    }
+    if (/[;{}]$/.test(trimmed)) {
+        return trimmed;
+    }
+    return `${trimmed};`;
+}
+
+function formatOperationStatementLines(statement: { kind?: string; text?: string; branches?: Array<{ condition?: { text?: string } | null; statements?: unknown[] }> }, depth: number): string[] {
+    const prefix = '    '.repeat(depth);
+    if (statement.kind === 'operation') {
+        return [`${prefix}${ensureTerminatedStatement(statement.text || '')}`];
     }
 
-    return `: ${formatTriggerText(transition)}`;
+    if (statement.kind === 'ifBlock' && Array.isArray(statement.branches) && statement.branches.length > 0) {
+        const lines: string[] = [];
+        for (const [index, branch] of statement.branches.entries()) {
+            const conditionText = branch.condition?.text || '';
+            if (index === 0) {
+                lines.push(`${prefix}if [${conditionText}] {`);
+            } else if (branch.condition) {
+                lines.push(`${prefix}else if [${conditionText}] {`);
+            } else {
+                lines.push(`${prefix}else {`);
+            }
+
+            if (Array.isArray(branch.statements) && branch.statements.length > 0) {
+                for (const childStatement of branch.statements as Array<{ kind?: string; text?: string; branches?: Array<{ condition?: { text?: string } | null; statements?: unknown[] }> }>) {
+                    lines.push(...formatOperationStatementLines(childStatement, depth + 1));
+                }
+            } else {
+                lines.push(`${prefix}    ...`);
+            }
+
+            lines.push(`${prefix}}`);
+        }
+        return lines;
+    }
+
+    return [`${prefix}${ensureTerminatedStatement(statement.text || '')}`];
 }
 
 function buildEffectLines(transition: Transition): string[] {
@@ -191,20 +235,7 @@ function buildEffectLines(transition: Transition): string[] {
 
     const lines: string[] = ['effect {'];
     for (const statement of transition.effects) {
-        const rawText = statement.text || '';
-        const statementLines = rawText
-            .split(/\r?\n/)
-            .map(line => line.trim())
-            .filter(Boolean);
-
-        if (statementLines.length === 0) {
-            lines.push('    ...');
-            continue;
-        }
-
-        for (const line of statementLines) {
-            lines.push(`    ${line}`);
-        }
+        lines.push(...formatOperationStatementLines(statement as never, 1));
     }
     lines.push('}');
     return lines;
@@ -248,6 +279,10 @@ function buildTransition(
     const guardLabel = transition.guard ? transition.guard.text || '' : undefined;
     const effectLines = buildEffectLines(transition);
     const eventQualifiedName = transition.event?.pathName;
+    const eventName = transition.event?.name;
+    const eventDisplayName = transition.event?.extraName;
+    const eventRelativePath = transition.event ? formatEventReference(transition) : undefined;
+    const eventAbsolutePath = transition.event ? formatAbsoluteEventReference(transition.event) : undefined;
 
     return {
         id: `${joinPath(transition.parentPath)}::${sourceLabel}->${targetLabel}::${transition.range.start.line}:${transition.range.start.character}`,
@@ -256,6 +291,11 @@ function buildTransition(
         triggerLabel,
         guardLabel,
         effectLines,
+        eventName,
+        eventDisplayName,
+        eventRelativePath,
+        eventAbsolutePath,
+        triggerScope: transition.triggerScope,
         label: buildTransitionLabel(
             sourceLabel,
             targetLabel,

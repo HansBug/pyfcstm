@@ -287,7 +287,8 @@ def test_sysdesim_cli_validate_writes_timeline_import_report(tmp_path: Path):
     )
 
     assert result.exit_code == 0, result.output
-    assert "Wrote SysDeSim timeline validation report" in _strip_ansi(result.output)
+    plain_output = _strip_ansi(result.output)
+    assert "Wrote SysDeSim timeline import report" in plain_output
     report_data = json.loads(report_file.read_text(encoding="utf-8"))
     assert report_data["selected_machine_name"] == "Timeline Coexist"
     assert report_data["selected_interaction_name"] == "Scenario 1"
@@ -302,6 +303,135 @@ def test_sysdesim_cli_validate_writes_timeline_import_report(tmp_path: Path):
         == "initial"
     )
     assert "phase11" not in report_data
+    assert "SysDeSim Timeline Import Report Complete" in plain_output
+    assert "Mode: import report only (no Phase11 state query provided)" in plain_output
+    assert "Machine: Timeline Coexist" in plain_output
+    assert "Interaction: Scenario 1" in plain_output
+    assert f"Report: {report_file}" in plain_output
+    assert (
+        "Import Phase78: graph_edges={graph} inputs={inputs} events={events} "
+        "steps={steps} windows={windows} durations={durations} diagnostics={diagnostics}".format(
+            graph=len(report_data["phase78"]["machine_graph"]),
+            inputs=len(report_data["phase78"]["input_candidates"]),
+            events=len(report_data["phase78"]["event_candidates"]),
+            steps=len(report_data["phase78"]["steps"]),
+            windows=len(report_data["phase78"]["time_windows"]),
+            durations=len(report_data["phase78"]["duration_constraints"]),
+            diagnostics=len(report_data["phase78"]["diagnostics"]),
+        )
+        in plain_output
+    )
+    assert "Import Phase9 Outputs: 3" in plain_output
+    assert (
+        "Import Phase10: scenario={name} steps={steps} temporal_constraints={constraints} "
+        "bindings={bindings} traces={traces} diagnostics={diagnostics}".format(
+            name=report_data["phase10"]["scenario"]["name"],
+            steps=len(report_data["phase10"]["scenario"]["steps"]),
+            constraints=len(report_data["phase10"]["scenario"]["temporal_constraints"]),
+            bindings=len(report_data["phase10"]["bindings"]),
+            traces=len(report_data["phase10"]["traces"]),
+            diagnostics=len(report_data["phase10"]["diagnostics"]),
+        )
+        in plain_output
+    )
+    assert "initial states:" in plain_output
+    assert "TimelineCoexist -> TimelineCoexist.Idle" in plain_output
+    assert "Phase11 Query" not in plain_output
+    assert (
+        "Phase11: no state query was requested; this run only checked the import/report pipeline."
+        in plain_output
+    )
+
+
+@pytest.mark.unittest
+def test_sysdesim_cli_validate_writes_phase11_summary_when_report_file_is_used(
+    tmp_path: Path,
+):
+    """The nested validate command should print a readable Phase11 summary when exporting JSON."""
+    xml_file = _build_parallel_timeline_xml(tmp_path)
+    report_file = tmp_path / "phase11_report.json"
+
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "validate",
+            "-i",
+            str(xml_file),
+            "--report-file",
+            str(report_file),
+            "--left-machine-alias",
+            "TimelineCoexist",
+            "--left-state",
+            "Idle",
+            "--right-machine-alias",
+            "TimelineCoexist__Control_region1",
+            "--right-state",
+            "Idle",
+        ],
+        color=True,
+    )
+
+    assert result.exit_code == 0, result.output
+    plain_output = _strip_ansi(result.output)
+    report_data = json.loads(report_file.read_text(encoding="utf-8"))
+    assert report_data["phase11"]["solve_result"]["status"] == "sat"
+    assert "SysDeSim State Query Validation Complete" in plain_output
+    assert "Mode: import report + Phase11 state query" in plain_output
+    assert (
+        "Phase11 Query: TimelineCoexist:TimelineCoexist.Idle <-> "
+        "TimelineCoexist__Control_region1:TimelineCoexist.Idle"
+    ) in plain_output
+    assert "scope: both | candidates: 2 | status: SAT" in plain_output
+    assert "first coexistence: t00 = 0" in plain_output
+    assert "witness timeline:" in plain_output
+    assert "| t" in plain_output
+    assert "| Main" in plain_output
+    assert "| R1" in plain_output
+    assert "| co" in plain_output
+    assert "| 0" in plain_output
+    assert "| initial" in plain_output
+    assert "| Idle" in plain_output
+    assert "| start" in plain_output
+    assert "Wrote SysDeSim timeline validation report" in plain_output
+
+
+@pytest.mark.unittest
+def test_sysdesim_cli_validate_unsat_query_does_not_print_witness_table(
+    tmp_path: Path,
+):
+    """The nested validate command should keep UNSAT output concise."""
+    xml_file = _build_parallel_timeline_xml(tmp_path)
+    report_file = tmp_path / "phase11_unsat_report.json"
+
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "validate",
+            "-i",
+            str(xml_file),
+            "--report-file",
+            str(report_file),
+            "--left-machine-alias",
+            "TimelineCoexist__Control_region1",
+            "--left-state",
+            "M",
+            "--right-machine-alias",
+            "TimelineCoexist__Control_region2",
+            "--right-state",
+            "X",
+        ],
+        color=True,
+    )
+
+    assert result.exit_code == 0, result.output
+    plain_output = _strip_ansi(result.output)
+    report_data = json.loads(report_file.read_text(encoding="utf-8"))
+    assert report_data["phase11"]["solve_result"]["status"] == "unsat"
+    assert "status: UNSAT" in plain_output
+    assert "reason:" in plain_output
+    assert "witness timeline:" not in plain_output
 
 
 @pytest.mark.unittest

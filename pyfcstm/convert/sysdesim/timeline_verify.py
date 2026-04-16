@@ -21,7 +21,7 @@ supported SysDeSim subset and keeps every intermediate layer inspectable.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from decimal import Decimal
 from typing import Dict, Iterable, List, Optional, Tuple
 
@@ -51,6 +51,8 @@ _TIME_UNITS = {
     "min": Decimal("60"),
     "h": Decimal("3600"),
 }
+_INITIAL_TIME_SYMBOL = "t00"
+_INITIAL_SOURCE_STEP_ID = "initial"
 
 
 @dataclass(frozen=True)
@@ -398,9 +400,7 @@ def build_sysdesim_phase9_report(
         machine_name=machine_name,
         tick_duration_ms=tick_duration_ms,
     )
-    conversion_index = {
-        item.output_name: item for item in conversion_report.outputs
-    }
+    conversion_index = {item.output_name: item for item in conversion_report.outputs}
     outputs = []
     diagnostics = []
     for output_name, dsl_code in output_dsl_map.items():
@@ -607,14 +607,26 @@ def _current_auto_transition(runtime: SimulationRuntime):
 
 def _build_state_windows(
     machine_alias: str,
+    initial_state_path: str,
     steps: Tuple[SysDeSimTimelineStepExecution, ...],
     scenario_steps: Tuple[SysDeSimTimelineScenarioStep, ...],
 ) -> Tuple[SysDeSimTimelineStateWindow, ...]:
     """Build open-interval state windows from one runtime trace."""
-    if len(steps) < 2:
-        return ()
-    step_by_id = {item.step_id: item for item in steps}
     windows = []
+    if scenario_steps:
+        windows.append(
+            SysDeSimTimelineStateWindow(
+                machine_alias=machine_alias,
+                source_step_id=_INITIAL_SOURCE_STEP_ID,
+                state_path=initial_state_path,
+                start_symbol=_INITIAL_TIME_SYMBOL,
+                end_symbol=scenario_steps[0].time_symbol,
+                note="initial_before_first_step",
+            )
+        )
+    if len(steps) < 2:
+        return tuple(windows)
+    step_by_id = {item.step_id: item for item in steps}
     for index, scenario_step in enumerate(scenario_steps[:-1]):
         current = step_by_id[scenario_step.step_id]
         next_step = scenario_steps[index + 1]
@@ -677,6 +689,11 @@ def _build_machine_trace(
     """Execute one scenario over one output machine with runtime-assisted closure."""
     runtime = SimulationRuntime(output.machine, abstract_error_mode="log")
     runtime.cycle([])
+    initial_state_path = ".".join(runtime.current_state.path)
+    initial_vars = tuple(
+        (name, _format_runtime_number(value))
+        for name, value in sorted(runtime.vars.items())
+    )
 
     trace_steps = []
     for index, step in enumerate(scenario.steps):
@@ -755,18 +772,14 @@ def _build_machine_trace(
 
     return SysDeSimTimelineMachineTrace(
         machine_alias=output.output_name,
-        initial_state_path=".".join(runtime.history[0]["state"].split("."))
-        if runtime.history
-        else ".".join(runtime.current_state.path),
-        initial_vars=tuple(
-            (name, _format_runtime_number(value))
-            for name, value in sorted(runtime.history[0]["vars"].items())
-        )
-        if runtime.history
-        else tuple((name, _format_runtime_number(value)) for name, value in sorted(runtime.vars.items())),
+        initial_state_path=initial_state_path,
+        initial_vars=initial_vars,
         steps=tuple(trace_steps),
         state_windows=_build_state_windows(
-            output.output_name, tuple(trace_steps), scenario.steps
+            output.output_name,
+            initial_state_path,
+            tuple(trace_steps),
+            scenario.steps,
         ),
     )
 
@@ -827,7 +840,7 @@ def _symbol_vars(
     phase10_report: SysDeSimPhase10Report,
 ) -> Dict[str, z3.ArithRef]:
     """Create Z3 real variables for step times and hidden auto times."""
-    symbols = {}
+    symbols = {_INITIAL_TIME_SYMBOL: z3.Real(_INITIAL_TIME_SYMBOL)}
     for step in phase10_report.scenario.steps:
         symbols[step.time_symbol] = z3.Real(step.time_symbol)
     for trace in phase10_report.traces:
@@ -842,10 +855,13 @@ def _build_base_time_constraints(
     symbol_vars: Dict[str, z3.ArithRef],
 ) -> List[z3.BoolRef]:
     """Build monotonic, duration, and hidden-auto timing constraints."""
-    constraints = []
+    constraints = [symbol_vars[_INITIAL_TIME_SYMBOL] == z3.RealVal("0")]
     steps = phase10_report.scenario.steps
     if steps:
         constraints.append(symbol_vars[steps[0].time_symbol] >= z3.RealVal("0"))
+        constraints.append(
+            symbol_vars[_INITIAL_TIME_SYMBOL] <= symbol_vars[steps[0].time_symbol]
+        )
     for left, right in zip(steps, steps[1:]):
         constraints.append(
             symbol_vars[left.time_symbol] <= symbol_vars[right.time_symbol]
@@ -868,7 +884,9 @@ def _build_base_time_constraints(
         for step in trace.steps:
             previous_symbol = step_time_by_id[step.step_id]
             for item in step.auto_occurrences:
-                constraints.append(symbol_vars[item.occurrence_symbol] > previous_symbol)
+                constraints.append(
+                    symbol_vars[item.occurrence_symbol] > previous_symbol
+                )
                 if item.right_observation_step_id is not None:
                     constraints.append(
                         symbol_vars[item.occurrence_symbol]
@@ -982,6 +1000,11 @@ def _describe_post_step_reason(
     step_id: str,
 ) -> str:
     """Build a short, user-facing reason for one post-step state occupancy."""
+    if step_id == _INITIAL_SOURCE_STEP_ID:
+        return "{alias} 在导入场景开始前的初始稳定状态就是 `{state}`。".format(
+            alias=machine_alias,
+            state=state_path,
+        )
     execution = _step_by_id(trace, step_id)
     first_seen_step_id = None
     for item in trace.steps:
@@ -1000,23 +1023,19 @@ def _describe_post_step_reason(
             and previous_execution.stabilized_state_path == state_path
             and previous_execution.post_state_path != state_path
         ):
-            return (
-                "{alias} 在 `{prev_step}` 先到 `{post_state}`，再经隐藏 auto 于 `{step}` 观测前到达 `{state}`。".format(
-                    alias=machine_alias,
-                    prev_step=previous_execution.step_id,
-                    post_state=previous_execution.post_state_path,
-                    step=step_id,
-                    state=state_path,
-                )
+            return "{alias} 在 `{prev_step}` 先到 `{post_state}`，再经隐藏 auto 于 `{step}` 观测前到达 `{state}`。".format(
+                alias=machine_alias,
+                prev_step=previous_execution.step_id,
+                post_state=previous_execution.post_state_path,
+                step=step_id,
+                state=state_path,
             )
         if execution.bound_event_path:
-            return (
-                "{alias} 在 `{step}` 因事件 `{event}` 到达 `{state}`。".format(
-                    alias=machine_alias,
-                    step=step_id,
-                    event=execution.bound_event_path,
-                    state=state_path,
-                )
+            return "{alias} 在 `{step}` 因事件 `{event}` 到达 `{state}`。".format(
+                alias=machine_alias,
+                step=step_id,
+                event=execution.bound_event_path,
+                state=state_path,
             )
         return "{alias} 在 `{step}` 时到达 `{state}`。".format(
             alias=machine_alias,
@@ -1024,12 +1043,36 @@ def _describe_post_step_reason(
             state=state_path,
         )
 
-    return "{alias} 从 `{first}` 起已保持 `{state}`，到 `{step}` 观测时仍然成立。".format(
-        alias=machine_alias,
-        first=first_seen_step_id,
-        state=state_path,
-        step=step_id,
+    return (
+        "{alias} 从 `{first}` 起已保持 `{state}`，到 `{step}` 观测时仍然成立。".format(
+            alias=machine_alias,
+            first=first_seen_step_id,
+            state=state_path,
+            step=step_id,
+        )
     )
+
+
+def _format_discrete_match_label(match_kind: str, step_id: Optional[str]) -> str:
+    """Render one discrete observation match into a short label."""
+    if match_kind == "initial":
+        return "initial({})".format(_INITIAL_TIME_SYMBOL)
+    return "post_step({})".format(step_id)
+
+
+def _state_seen_in_trace(
+    trace: SysDeSimTimelineMachineTrace,
+    state_path: str,
+) -> bool:
+    """Return whether one state appears anywhere in the imported trace."""
+    if trace.initial_state_path == state_path:
+        return True
+    if any(
+        item.post_state_path == state_path or item.stabilized_state_path == state_path
+        for item in trace.steps
+    ):
+        return True
+    return any(item.state_path == state_path for item in trace.state_windows)
 
 
 def _build_candidate_summary_notes(
@@ -1039,31 +1082,44 @@ def _build_candidate_summary_notes(
     right_machine_alias: str,
     right_state_path: str,
     right_trace: SysDeSimTimelineMachineTrace,
-    post_step_matches: Tuple[str, ...],
+    discrete_matches: Tuple[Tuple[str, Optional[str]], ...],
     open_interval_matches: Tuple[Tuple[str, str, str, str], ...],
 ) -> Tuple[str, ...]:
     """Summarize raw candidate points into a small user-facing explanation set."""
     notes = []
 
-    if post_step_matches:
-        preview_ids = ", ".join(post_step_matches[:6])
-        if len(post_step_matches) > 6:
+    if discrete_matches:
+        preview_ids = ", ".join(
+            _format_discrete_match_label(kind, step_id)
+            for kind, step_id in discrete_matches[:6]
+        )
+        if len(discrete_matches) > 6:
             preview_ids = "{}, ...".format(preview_ids)
         notes.append(
             "离散观测点上共有 {count} 个可构造共存的位置：{steps}。".format(
-                count=len(post_step_matches),
+                count=len(discrete_matches),
                 steps=preview_ids,
             )
         )
-        first_step_id = post_step_matches[0]
+        first_match_kind, first_step_id = discrete_matches[0]
         notes.append(
-            "最早可在 `post_step({step})` 构造：{left_reason} {right_reason}".format(
-                step=first_step_id,
+            "最早可在 `{label}` 构造：{left_reason} {right_reason}".format(
+                label=_format_discrete_match_label(first_match_kind, first_step_id),
                 left_reason=_describe_post_step_reason(
-                    left_machine_alias, left_state_path, left_trace, first_step_id
+                    left_machine_alias,
+                    left_state_path,
+                    left_trace,
+                    _INITIAL_SOURCE_STEP_ID
+                    if first_match_kind == "initial"
+                    else first_step_id,
                 ),
                 right_reason=_describe_post_step_reason(
-                    right_machine_alias, right_state_path, right_trace, first_step_id
+                    right_machine_alias,
+                    right_state_path,
+                    right_trace,
+                    _INITIAL_SOURCE_STEP_ID
+                    if first_match_kind == "initial"
+                    else first_step_id,
                 ),
             )
         )
@@ -1087,8 +1143,8 @@ def _build_candidate_summary_notes(
         )
 
     if not notes:
-        left_seen = any(item.post_state_path == left_state_path for item in left_trace.steps)
-        right_seen = any(item.post_state_path == right_state_path for item in right_trace.steps)
+        left_seen = _state_seen_in_trace(left_trace, left_state_path)
+        right_seen = _state_seen_in_trace(right_trace, right_state_path)
         if not left_seen:
             notes.append(
                 "`{alias}` 的 `{state}` 在当前导入轨迹里一次都没有出现，所以不存在可构造的共存点。".format(
@@ -1113,7 +1169,10 @@ def _preview_items(items: Tuple[str, ...], prefix: str) -> str:
     """Render a short preview list for one query-summary sentence."""
     if not items:
         return ""
-    preview = [prefix.format(item) for item in items[:6]]
+    if prefix:
+        preview = [prefix.format(item) for item in items[:6]]
+    else:
+        preview = list(items[:6])
     if len(items) > 6:
         preview.append("...")
     return "、".join(preview)
@@ -1124,11 +1183,16 @@ def _build_query_summary(
     left_state_path: str,
     right_machine_alias: str,
     right_state_path: str,
-    post_step_matches: Tuple[str, ...],
+    discrete_matches: Tuple[Tuple[str, Optional[str]], ...],
     open_interval_matches: Tuple[Tuple[str, str, str, str], ...],
 ) -> str:
     """Explain the coexistence query in direct user-facing language."""
-    if post_step_matches and open_interval_matches:
+    discrete_labels = tuple(
+        _format_discrete_match_label(kind, step_id)
+        for kind, step_id in discrete_matches
+    )
+
+    if discrete_labels and open_interval_matches:
         left_start, left_end, right_start, right_end = open_interval_matches[0]
         return (
             "查询逻辑：接受两类证据。"
@@ -1138,7 +1202,7 @@ def _build_query_summary(
             " `{right_state}` 可落在 `({right_start}, {right_end})`。"
             " 只要任一类成立，就说明这两个状态可共存。"
         ).format(
-            points=_preview_items(post_step_matches, "post_step({})"),
+            points=_preview_items(discrete_labels, ""),
             left_alias=left_machine_alias,
             left_state=left_state_path,
             left_start=left_start,
@@ -1149,13 +1213,13 @@ def _build_query_summary(
             right_end=right_end,
         )
 
-    if post_step_matches:
+    if discrete_labels:
         return (
             "查询逻辑：这是一个“离散观测点取逻辑或”的查询。"
             " 只要命中任一观测点 {points}，就说明 `{left_alias}` 的 `{left_state}`"
             " 与 `{right_alias}` 的 `{right_state}` 可以在同一个观测时刻共存。"
         ).format(
-            points=_preview_items(post_step_matches, "post_step({})"),
+            points=_preview_items(discrete_labels, ""),
             left_alias=left_machine_alias,
             left_state=left_state_path,
             right_alias=right_machine_alias,
@@ -1226,10 +1290,17 @@ def _prepare_state_coexistence_problem(
 
     candidate_terms = []
     candidate_meta = []
-    post_step_matches = []
+    discrete_matches = []
     open_interval_matches = []
 
     if observation_scope in {"post_step", "both"}:
+        if (
+            left_trace.initial_state_path == left_state_path
+            and right_trace.initial_state_path == right_state_path
+        ):
+            candidate_terms.append(z3.BoolVal(True))
+            candidate_meta.append(("initial", _INITIAL_TIME_SYMBOL, None, None))
+            discrete_matches.append(("initial", None))
         for left_step, right_step in zip(left_trace.steps, right_trace.steps):
             if (
                 left_step.post_state_path == left_state_path
@@ -1237,11 +1308,13 @@ def _prepare_state_coexistence_problem(
             ):
                 candidate_terms.append(z3.BoolVal(True))
                 candidate_meta.append(("post_step", left_step.step_id, None, None))
-                post_step_matches.append(left_step.step_id)
+                discrete_matches.append(("post_step", left_step.step_id))
 
     if observation_scope in {"open_interval", "both"}:
         left_windows = [
-            item for item in left_trace.state_windows if item.state_path == left_state_path
+            item
+            for item in left_trace.state_windows
+            if item.state_path == left_state_path
         ]
         right_windows = [
             item
@@ -1282,7 +1355,7 @@ def _prepare_state_coexistence_problem(
         right_machine_alias=right_machine_alias,
         right_state_path=right_state_path,
         right_trace=right_trace,
-        post_step_matches=tuple(post_step_matches),
+        discrete_matches=tuple(discrete_matches),
         open_interval_matches=tuple(open_interval_matches),
     )
     query_summary = _build_query_summary(
@@ -1290,7 +1363,7 @@ def _prepare_state_coexistence_problem(
         left_state_path=left_state_path,
         right_machine_alias=right_machine_alias,
         right_state_path=right_state_path,
-        post_step_matches=tuple(post_step_matches),
+        discrete_matches=tuple(discrete_matches),
         open_interval_matches=tuple(open_interval_matches),
     )
 
@@ -1318,7 +1391,9 @@ def _build_witness_steps(
     for step in phase10_report.scenario.steps:
         states = []
         for trace in phase10_report.traces:
-            execution = next(item for item in trace.steps if item.step_id == step.step_id)
+            execution = next(
+                item for item in trace.steps if item.step_id == step.step_id
+            )
             state_text = execution.post_state_path
             if execution.stabilized_state_path != execution.post_state_path:
                 state_text = "{} -> {}".format(
@@ -1441,12 +1516,28 @@ def build_sysdesim_state_coexistence_timeline_report(
     )
     time_value_by_symbol = dict(coexistence.time_values)
     machine_order = [trace.machine_alias for trace in phase10_report.traces]
-    current_states = {
-        trace.machine_alias: trace.initial_state_path for trace in phase10_report.traces
-    }
+    current_states = {}
 
     events = []
     order = 0
+    events.append(
+        {
+            "time_text": time_value_by_symbol[_INITIAL_TIME_SYMBOL],
+            "time_value": _decimal_from_text(
+                time_value_by_symbol[_INITIAL_TIME_SYMBOL]
+            ),
+            "order": order,
+            "symbol": _INITIAL_TIME_SYMBOL,
+            "point_kind": "initial",
+            "point_label": _INITIAL_SOURCE_STEP_ID,
+            "actions": (),
+            "updates": tuple(
+                (trace.machine_alias, trace.initial_state_path)
+                for trace in phase10_report.traces
+            ),
+        }
+    )
+    order += 1
     for scenario_step in phase10_report.scenario.steps:
         step_updates = []
         for trace in phase10_report.traces:
@@ -1488,9 +1579,7 @@ def build_sysdesim_state_coexistence_timeline_report(
                                 occurrence.to_state_path,
                             ),
                         ),
-                        "updates": (
-                            (trace.machine_alias, occurrence.to_state_path),
-                        ),
+                        "updates": ((trace.machine_alias, occurrence.to_state_path),),
                     }
                 )
                 order += 1
@@ -1589,7 +1678,9 @@ def build_sysdesim_state_coexistence_constraint_preview(
     :rtype: SysDeSimStateCoexistenceConstraintPreview
     """
     if observation_scope not in {"post_step", "open_interval", "both"}:
-        raise ValueError("Unsupported observation_scope: {!r}".format(observation_scope))
+        raise ValueError(
+            "Unsupported observation_scope: {!r}".format(observation_scope)
+        )
 
     prepared = _prepare_state_coexistence_problem(
         xml_path=xml_path,
@@ -1604,6 +1695,12 @@ def build_sysdesim_state_coexistence_constraint_preview(
     )
 
     symbol_meanings = []
+    symbol_meanings.append(
+        (
+            _INITIAL_TIME_SYMBOL,
+            "导入场景开始前的初始稳定时刻。",
+        )
+    )
     for step in prepared.phase10_report.scenario.steps:
         symbol_meanings.append(
             (
@@ -1679,7 +1776,9 @@ def solve_sysdesim_state_coexistence(
     :rtype: SysDeSimStateCoexistenceResult
     """
     if observation_scope not in {"post_step", "open_interval", "both"}:
-        raise ValueError("Unsupported observation_scope: {!r}".format(observation_scope))
+        raise ValueError(
+            "Unsupported observation_scope: {!r}".format(observation_scope)
+        )
 
     prepared = _prepare_state_coexistence_problem(
         xml_path=xml_path,
@@ -1736,7 +1835,9 @@ def solve_sysdesim_state_coexistence(
         for meta, term in zip(candidate_meta, candidate_terms):
             if z3.is_true(model.evaluate(term, model_completion=True)):
                 observation_kind = meta[0]
-                if observation_kind == "post_step":
+                if observation_kind == "initial":
+                    witness_notes.append("violation_at_initial={}".format(meta[1]))
+                elif observation_kind == "post_step":
                     witness_notes.append("violation_at_post_step={}".format(meta[1]))
                 else:
                     witness_notes.append(
@@ -1771,16 +1872,12 @@ def solve_sysdesim_state_coexistence(
         trace_index = _trace_index_by_alias(phase10_report)
         left_trace = trace_index[left_machine_alias]
         right_trace = trace_index[right_machine_alias]
-        left_seen = any(
-            item.post_state_path == left_state_path or item.stabilized_state_path == left_state_path
-            for item in left_trace.steps
-        ) or any(item.state_path == left_state_path for item in left_trace.state_windows)
-        right_seen = any(
-            item.post_state_path == right_state_path or item.stabilized_state_path == right_state_path
-            for item in right_trace.steps
-        ) or any(item.state_path == right_state_path for item in right_trace.state_windows)
+        left_seen = _state_seen_in_trace(left_trace, left_state_path)
+        right_seen = _state_seen_in_trace(right_trace, right_state_path)
         if not left_seen and not right_seen:
-            reason = "Neither queried state appears anywhere in the imported trajectories."
+            reason = (
+                "Neither queried state appears anywhere in the imported trajectories."
+            )
         elif not left_seen:
             reason = "The left queried state never appears in the imported trajectory."
         elif not right_seen:
@@ -1806,6 +1903,144 @@ def solve_sysdesim_state_coexistence(
     )
 
 
+def build_sysdesim_timeline_import_report(
+    xml_path: str,
+    machine_name: Optional[str] = None,
+    interaction_name: Optional[str] = None,
+    tick_duration_ms: Optional[float] = None,
+    left_machine_alias: Optional[str] = None,
+    left_state_ref: Optional[str] = None,
+    right_machine_alias: Optional[str] = None,
+    right_state_ref: Optional[str] = None,
+    observation_scope: str = "both",
+) -> Dict[str, object]:
+    """
+    Build a review-oriented JSON-serializable timeline import report.
+
+    This report is designed for CLI/manual review. It exposes the imported
+    Phase7/8 candidates, Phase9 compatibility outputs, Phase10 runtime traces,
+    and optionally one Phase11 coexistence query bundle.
+
+    :param xml_path: Source SysDeSim XML path.
+    :type xml_path: str
+    :param machine_name: Optional machine selector.
+    :type machine_name: str, optional
+    :param interaction_name: Optional interaction selector.
+    :type interaction_name: str, optional
+    :param tick_duration_ms: Optional tick duration for compatibility export.
+    :type tick_duration_ms: float, optional
+    :param left_machine_alias: Optional left machine alias for one Phase11 query.
+    :type left_machine_alias: str, optional
+    :param left_state_ref: Optional left state reference for one Phase11 query.
+    :type left_state_ref: str, optional
+    :param right_machine_alias: Optional right machine alias for one Phase11 query.
+    :type right_machine_alias: str, optional
+    :param right_state_ref: Optional right state reference for one Phase11 query.
+    :type right_state_ref: str, optional
+    :param observation_scope: ``post_step``, ``open_interval``, or ``both``.
+    :type observation_scope: str
+    :return: Plain report dictionary ready for JSON serialization.
+    :rtype: dict[str, object]
+    :raises ValueError: If only part of the optional Phase11 query is provided.
+    """
+    query_values = (
+        left_machine_alias,
+        left_state_ref,
+        right_machine_alias,
+        right_state_ref,
+    )
+    has_query = any(value is not None for value in query_values)
+    if has_query and not all(value is not None for value in query_values):
+        raise ValueError(
+            "left_machine_alias, left_state_ref, right_machine_alias, and "
+            "right_state_ref must either all be provided or all be omitted."
+        )
+
+    phase10_report = build_sysdesim_phase10_report(
+        xml_path,
+        machine_name=machine_name,
+        interaction_name=interaction_name,
+        tick_duration_ms=tick_duration_ms,
+    )
+    phase9_report = phase10_report.phase9_report
+    phase78_report = phase9_report.phase78_report
+
+    report = {
+        "source_xml_path": xml_path,
+        "selected_machine_name": phase9_report.selected_machine_name,
+        "selected_interaction_name": phase9_report.selected_interaction_name,
+        "tick_duration_ms": tick_duration_ms,
+        "phase78": asdict(phase78_report),
+        "phase9": {
+            "selected_machine_name": phase9_report.selected_machine_name,
+            "selected_interaction_name": phase9_report.selected_interaction_name,
+            "outputs": [
+                {
+                    "output_name": item.output_name,
+                    "define_names": list(item.define_names),
+                    "event_runtime_refs": list(item.event_runtime_refs),
+                    "semantic_note": item.semantic_note,
+                    "diagnostic_codes": list(item.diagnostic_codes),
+                }
+                for item in phase9_report.outputs
+            ],
+            "diagnostics": list(phase9_report.diagnostics),
+        },
+        "phase10": {
+            "scenario": asdict(phase10_report.scenario),
+            "bindings": [asdict(item) for item in phase10_report.bindings],
+            "traces": [asdict(item) for item in phase10_report.traces],
+            "diagnostics": list(phase10_report.diagnostics),
+        },
+    }
+
+    if has_query:
+        report["phase11"] = {
+            "observation_scope": observation_scope,
+            "constraint_preview": asdict(
+                build_sysdesim_state_coexistence_constraint_preview(
+                    xml_path=xml_path,
+                    left_machine_alias=left_machine_alias,
+                    left_state_ref=left_state_ref,
+                    right_machine_alias=right_machine_alias,
+                    right_state_ref=right_state_ref,
+                    observation_scope=observation_scope,
+                    machine_name=machine_name,
+                    interaction_name=interaction_name,
+                    tick_duration_ms=tick_duration_ms,
+                )
+            ),
+            "solve_result": asdict(
+                solve_sysdesim_state_coexistence(
+                    xml_path=xml_path,
+                    left_machine_alias=left_machine_alias,
+                    left_state_ref=left_state_ref,
+                    right_machine_alias=right_machine_alias,
+                    right_state_ref=right_state_ref,
+                    observation_scope=observation_scope,
+                    machine_name=machine_name,
+                    interaction_name=interaction_name,
+                    tick_duration_ms=tick_duration_ms,
+                )
+            ),
+            "timeline_report": asdict(
+                build_sysdesim_state_coexistence_timeline_report(
+                    xml_path=xml_path,
+                    left_machine_alias=left_machine_alias,
+                    left_state_ref=left_state_ref,
+                    right_machine_alias=right_machine_alias,
+                    right_state_ref=right_state_ref,
+                    observation_scope=observation_scope,
+                    machine_name=machine_name,
+                    interaction_name=interaction_name,
+                    tick_duration_ms=tick_duration_ms,
+                )
+            ),
+        }
+
+    return report
+
+
 __all__ = [
     "SysDeSimNormalizedTemporalConstraint",
     "SysDeSimPhase9Output",
@@ -1829,5 +2064,6 @@ __all__ = [
     "build_sysdesim_state_coexistence_timeline_report",
     "build_sysdesim_phase9_report",
     "build_sysdesim_phase10_report",
+    "build_sysdesim_timeline_import_report",
     "solve_sysdesim_state_coexistence",
 ]

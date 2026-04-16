@@ -1,10 +1,10 @@
 """
 SysDeSim XML/XMI to FCSTM CLI integration.
 
-This module registers a ``sysdesim`` subcommand that converts one SysDeSim
-XML/XMI file into one or more FCSTM DSL files. The command also writes a
-phase6 JSON conversion report containing validation results and carried
-diagnostics for each emitted output.
+This module registers a ``sysdesim`` command group. The group keeps the
+existing XML/XMI -> FCSTM conversion behavior on the bare
+``pyfcstm sysdesim`` entry, and also exposes nested validation/report
+subcommands such as ``pyfcstm sysdesim validate``.
 
 Example::
 
@@ -25,7 +25,11 @@ from typing import Dict, Optional
 import click
 
 from .base import CONTEXT_SETTINGS, ClickErrorException, command_wrap
-from ..convert import build_sysdesim_conversion_report, convert_sysdesim_xml_to_dsls
+from ..convert import (
+    build_sysdesim_conversion_report,
+    build_sysdesim_timeline_import_report,
+    convert_sysdesim_xml_to_dsls,
+)
 
 
 def _format_sysdesim_cli_error(err: BaseException) -> str:
@@ -40,11 +44,18 @@ def _format_sysdesim_cli_error(err: BaseException) -> str:
     message = str(err)
     if isinstance(err, KeyError):
         return message.strip("'")
-    if isinstance(err, ValueError) and "tick_duration_ms is required when lowering uml:TimeEvent transitions." in message:
+    if (
+        isinstance(err, ValueError)
+        and "tick_duration_ms is required when lowering uml:TimeEvent transitions."
+        in message
+    ):
         return "The selected SysDeSim machine contains uml:TimeEvent transitions; please provide --tick-duration-ms."
     if isinstance(err, NotImplementedError) and "transition effects yet" in message:
         return "SysDeSim conversion does not support transition effects yet in the current subset."
-    if isinstance(err, NotImplementedError) and "cross-region transitions under parallel owner" in message:
+    if (
+        isinstance(err, NotImplementedError)
+        and "cross-region transitions under parallel owner" in message
+    ):
         return "SysDeSim conversion does not support cross-region transitions under one parallel owner."
     return message
 
@@ -58,10 +69,16 @@ def _status_text(ok: bool) -> str:
     :return: ANSI-colored status label.
     :rtype: str
     """
-    return click.style("OK", fg="green", bold=True) if ok else click.style("FAIL", fg="red", bold=True)
+    return (
+        click.style("OK", fg="green", bold=True)
+        if ok
+        else click.style("FAIL", fg="red", bold=True)
+    )
 
 
-def _emit_sysdesim_cli_summary(report, output_file_by_name: Dict[str, str], report_path: Path) -> None:
+def _emit_sysdesim_cli_summary(
+    report, output_file_by_name: Dict[str, str], report_path: Path
+) -> None:
     """
     Print a colored phase6 summary for the conversion report.
 
@@ -149,6 +166,113 @@ def _emit_sysdesim_cli_summary(report, output_file_by_name: Dict[str, str], repo
             )
 
 
+def _run_sysdesim_convert(
+    input_xml_file: str,
+    output_dir: str,
+    machine_name: Optional[str],
+    machine_id: Optional[str],
+    tick_duration_ms: Optional[float],
+    report_file: Optional[str],
+    clear_directory: bool,
+) -> None:
+    """Run the legacy SysDeSim conversion flow."""
+    try:
+        dsl_outputs = convert_sysdesim_xml_to_dsls(
+            input_xml_file,
+            machine_name=machine_name,
+            machine_id=machine_id,
+            tick_duration_ms=tick_duration_ms,
+        )
+        report = build_sysdesim_conversion_report(
+            input_xml_file,
+            machine_name=machine_name,
+            machine_id=machine_id,
+            tick_duration_ms=tick_duration_ms,
+        )
+    except (KeyError, NotImplementedError, ValueError) as err:
+        raise ClickErrorException(_format_sysdesim_cli_error(err))
+
+    output_root = Path(output_dir)
+    if clear_directory and output_root.exists():
+        shutil.rmtree(str(output_root))
+    output_root.mkdir(parents=True, exist_ok=True)
+
+    report_path = (
+        Path(report_file)
+        if report_file is not None
+        else output_root / "sysdesim_conversion_report.json"
+    )
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+
+    output_files = []
+    for output_name, dsl_code in dsl_outputs.items():
+        output_file = output_root / f"{output_name}.fcstm"
+        output_file.write_text(dsl_code, encoding="utf-8")
+        output_files.append((output_name, output_file))
+
+    report_data = report.to_dict()
+    output_file_by_name = {
+        output_name: str(output_file) for output_name, output_file in output_files
+    }
+    for output_item in report_data["outputs"]:
+        output_item["output_file"] = output_file_by_name[output_item["output_name"]]
+    report_path.write_text(
+        json.dumps(report_data, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+    click.echo(
+        "Converted SysDeSim machine {name!r} into {count} FCSTM output(s).".format(
+            name=report.selected_machine_name,
+            count=len(output_files),
+        )
+    )
+    _emit_sysdesim_cli_summary(report, output_file_by_name, report_path)
+
+
+def _run_sysdesim_validate(
+    input_xml_file: str,
+    machine_name: Optional[str],
+    interaction_name: Optional[str],
+    tick_duration_ms: Optional[float],
+    report_file: Optional[str],
+    left_machine_alias: Optional[str],
+    left_state_ref: Optional[str],
+    right_machine_alias: Optional[str],
+    right_state_ref: Optional[str],
+    observation_scope: str,
+) -> None:
+    """Run the timeline validation/report flow."""
+    try:
+        report_data = build_sysdesim_timeline_import_report(
+            xml_path=input_xml_file,
+            machine_name=machine_name,
+            interaction_name=interaction_name,
+            tick_duration_ms=tick_duration_ms,
+            left_machine_alias=left_machine_alias,
+            left_state_ref=left_state_ref,
+            right_machine_alias=right_machine_alias,
+            right_state_ref=right_state_ref,
+            observation_scope=observation_scope,
+        )
+    except (KeyError, LookupError, NotImplementedError, ValueError) as err:
+        raise ClickErrorException(_format_sysdesim_cli_error(err))
+
+    rendered = (
+        json.dumps(report_data, indent=2, ensure_ascii=False, sort_keys=True) + "\n"
+    )
+    if report_file is None:
+        click.echo(rendered, nl=False)
+        return
+
+    report_path = Path(report_file)
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(rendered, encoding="utf-8")
+    click.echo(
+        "Wrote SysDeSim timeline validation report to {path}.".format(path=report_path)
+    )
+
+
 def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
     """
     Add the ``sysdesim`` conversion subcommand to a Click CLI group.
@@ -159,17 +283,21 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
     :rtype: click.Group
     """
 
-    @cli.command(
+    @cli.group(
         "sysdesim",
-        help="Convert one SysDeSim XML/XMI machine into FCSTM DSL files and a validation report.",
+        help=(
+            "Convert one SysDeSim XML/XMI machine into FCSTM DSL files, or run "
+            "timeline validation/report subcommands."
+        ),
         context_settings=CONTEXT_SETTINGS,
+        invoke_without_command=True,
     )
     @click.option(
         "-i",
         "--input-xml",
         "input_xml_file",
         type=str,
-        required=True,
+        default=None,
         help="Input SysDeSim XML/XMI file.",
     )
     @click.option(
@@ -177,7 +305,7 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
         "--output-dir",
         "output_dir",
         type=str,
-        required=True,
+        default=None,
         help="Output directory for emitted FCSTM DSL files.",
     )
     @click.option(
@@ -214,10 +342,12 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
         is_flag=True,
         help="Clear the output directory before writing converted files.",
     )
+    @click.pass_context
     @command_wrap()
     def sysdesim(
-        input_xml_file: str,
-        output_dir: str,
+        ctx: click.Context,
+        input_xml_file: Optional[str],
+        output_dir: Optional[str],
         machine_name: Optional[str],
         machine_id: Optional[str],
         tick_duration_ms: Optional[float],
@@ -225,12 +355,12 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
         clear_directory: bool,
     ) -> None:
         """
-        Convert a SysDeSim XML/XMI file into FCSTM DSL outputs plus a JSON report.
+        Convert SysDeSim XML/XMI into FCSTM outputs when invoked directly.
 
         :param input_xml_file: Input SysDeSim XML/XMI file.
-        :type input_xml_file: str
+        :type input_xml_file: str, optional
         :param output_dir: Output directory for emitted FCSTM DSL files.
-        :type output_dir: str
+        :type output_dir: str, optional
         :param machine_name: Exact UML state-machine name to convert.
         :type machine_name: str, optional
         :param machine_id: Exact UML state-machine xmi:id to convert.
@@ -245,51 +375,153 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
         :return: ``None``.
         :rtype: None
         """
-        try:
-            dsl_outputs = convert_sysdesim_xml_to_dsls(
-                input_xml_file,
-                machine_name=machine_name,
-                machine_id=machine_id,
-                tick_duration_ms=tick_duration_ms,
-            )
-            report = build_sysdesim_conversion_report(
-                input_xml_file,
-                machine_name=machine_name,
-                machine_id=machine_id,
-                tick_duration_ms=tick_duration_ms,
-            )
-        except (KeyError, NotImplementedError, ValueError) as err:
-            raise ClickErrorException(_format_sysdesim_cli_error(err))
-
-        output_root = Path(output_dir)
-        if clear_directory and output_root.exists():
-            shutil.rmtree(str(output_root))
-        output_root.mkdir(parents=True, exist_ok=True)
-
-        report_path = Path(report_file) if report_file is not None else output_root / "sysdesim_conversion_report.json"
-        report_path.parent.mkdir(parents=True, exist_ok=True)
-
-        output_files = []
-        for output_name, dsl_code in dsl_outputs.items():
-            output_file = output_root / f"{output_name}.fcstm"
-            output_file.write_text(dsl_code, encoding="utf-8")
-            output_files.append((output_name, output_file))
-
-        report_data = report.to_dict()
-        output_file_by_name = {output_name: str(output_file) for output_name, output_file in output_files}
-        for output_item in report_data["outputs"]:
-            output_item["output_file"] = output_file_by_name[output_item["output_name"]]
-        report_path.write_text(
-            json.dumps(report_data, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
-            encoding="utf-8",
+        if ctx.invoked_subcommand is not None:
+            return
+        if not input_xml_file:
+            raise ClickErrorException("Missing option '--input-xml' / '-i'.")
+        if not output_dir:
+            raise ClickErrorException("Missing option '--output-dir' / '-o'.")
+        _run_sysdesim_convert(
+            input_xml_file=input_xml_file,
+            output_dir=output_dir,
+            machine_name=machine_name,
+            machine_id=machine_id,
+            tick_duration_ms=tick_duration_ms,
+            report_file=report_file,
+            clear_directory=clear_directory,
         )
 
-        click.echo(
-            "Converted SysDeSim machine {name!r} into {count} FCSTM output(s).".format(
-                name=report.selected_machine_name,
-                count=len(output_files),
-            )
+    @sysdesim.command(
+        "validate",
+        help=(
+            "Build a timeline import validation report under sysdesim without "
+            "mixing it into the conversion entry."
+        ),
+        context_settings=CONTEXT_SETTINGS,
+    )
+    @click.option(
+        "-i",
+        "--input-xml",
+        "input_xml_file",
+        type=str,
+        required=True,
+        help="Input SysDeSim XML/XMI file.",
+    )
+    @click.option(
+        "--machine-name",
+        "machine_name",
+        type=str,
+        default=None,
+        help="Exact UML state-machine name to inspect.",
+    )
+    @click.option(
+        "--interaction-name",
+        "interaction_name",
+        type=str,
+        default=None,
+        help="Exact UML interaction name to inspect.",
+    )
+    @click.option(
+        "--tick-duration-ms",
+        "tick_duration_ms",
+        type=float,
+        default=None,
+        help="Runtime tick duration in milliseconds required for uml:TimeEvent lowering.",
+    )
+    @click.option(
+        "--report-file",
+        "report_file",
+        type=str,
+        default=None,
+        help="Optional JSON report path. Defaults to stdout.",
+    )
+    @click.option(
+        "--left-machine-alias",
+        "left_machine_alias",
+        type=str,
+        default=None,
+        help="Optional left machine alias for a Phase11 coexistence query.",
+    )
+    @click.option(
+        "--left-state",
+        "left_state_ref",
+        type=str,
+        default=None,
+        help="Optional left state ref for a Phase11 coexistence query.",
+    )
+    @click.option(
+        "--right-machine-alias",
+        "right_machine_alias",
+        type=str,
+        default=None,
+        help="Optional right machine alias for a Phase11 coexistence query.",
+    )
+    @click.option(
+        "--right-state",
+        "right_state_ref",
+        type=str,
+        default=None,
+        help="Optional right state ref for a Phase11 coexistence query.",
+    )
+    @click.option(
+        "--observation-scope",
+        "observation_scope",
+        type=click.Choice(["post_step", "open_interval", "both"]),
+        default="both",
+        show_default=True,
+        help="Observation scope used when an optional Phase11 query is included.",
+    )
+    @command_wrap()
+    def sysdesim_validate(
+        input_xml_file: str,
+        machine_name: Optional[str],
+        interaction_name: Optional[str],
+        tick_duration_ms: Optional[float],
+        report_file: Optional[str],
+        left_machine_alias: Optional[str],
+        left_state_ref: Optional[str],
+        right_machine_alias: Optional[str],
+        right_state_ref: Optional[str],
+        observation_scope: str,
+    ) -> None:
+        """
+        Build a JSON timeline validation report for one SysDeSim input.
+
+        :param input_xml_file: Input SysDeSim XML/XMI file.
+        :type input_xml_file: str
+        :param machine_name: Exact UML state-machine name to inspect.
+        :type machine_name: str, optional
+        :param interaction_name: Exact UML interaction name to inspect.
+        :type interaction_name: str, optional
+        :param tick_duration_ms: Runtime tick duration in milliseconds used for
+            compatibility lowering.
+        :type tick_duration_ms: float, optional
+        :param report_file: Optional JSON report path. Defaults to stdout.
+        :type report_file: str, optional
+        :param left_machine_alias: Optional left machine alias for one Phase11 query.
+        :type left_machine_alias: str, optional
+        :param left_state_ref: Optional left state reference for one Phase11 query.
+        :type left_state_ref: str, optional
+        :param right_machine_alias: Optional right machine alias for one Phase11 query.
+        :type right_machine_alias: str, optional
+        :param right_state_ref: Optional right state reference for one Phase11 query.
+        :type right_state_ref: str, optional
+        :param observation_scope: Observation scope for the optional Phase11 query.
+        :type observation_scope: str
+        :return: ``None``.
+        :rtype: None
+        """
+        _run_sysdesim_validate(
+            input_xml_file=input_xml_file,
+            machine_name=machine_name,
+            interaction_name=interaction_name,
+            tick_duration_ms=tick_duration_ms,
+            report_file=report_file,
+            left_machine_alias=left_machine_alias,
+            left_state_ref=left_state_ref,
+            right_machine_alias=right_machine_alias,
+            right_state_ref=right_state_ref,
+            observation_scope=observation_scope,
         )
-        _emit_sysdesim_cli_summary(report, output_file_by_name, report_path)
 
     return cli

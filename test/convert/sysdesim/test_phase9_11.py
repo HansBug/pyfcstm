@@ -194,12 +194,12 @@ def test_phase9_builds_output_family_from_parallel_timeline_xml(tmp_path: Path):
         "TimelineCoexist__Control_region2",
     ]
 
-    left_output = {
-        item.output_name: item for item in report.outputs
-    }["TimelineCoexist__Control_region1"]
-    right_output = {
-        item.output_name: item for item in report.outputs
-    }["TimelineCoexist__Control_region2"]
+    left_output = {item.output_name: item for item in report.outputs}[
+        "TimelineCoexist__Control_region1"
+    ]
+    right_output = {item.output_name: item for item in report.outputs}[
+        "TimelineCoexist__Control_region2"
+    ]
 
     assert left_output.define_names == ("c", "d")
     assert "/SIG1" in left_output.event_runtime_refs
@@ -326,8 +326,14 @@ def test_phase11_solves_sat_and_unsat_state_coexistence_queries(tmp_path: Path):
         "隐藏 auto occurrence：TimelineCoexist.Control.S -> TimelineCoexist.Control.X 在 step `s07` 之后的内部发生时刻。",
     ) in sat_preview.symbol_meanings
     assert "0 <= t01" in sat_preview.base_constraints
-    assert "tau__TimelineCoexist__Control_region2__s07__1 > t07" in sat_preview.base_constraints
-    assert "tau__TimelineCoexist__Control_region2__s07__1 < t08" in sat_preview.base_constraints
+    assert (
+        "tau__TimelineCoexist__Control_region2__s07__1 > t07"
+        in sat_preview.base_constraints
+    )
+    assert (
+        "tau__TimelineCoexist__Control_region2__s07__1 < t08"
+        in sat_preview.base_constraints
+    )
     assert sat_preview.candidate_count > 0
     assert "接受两类证据" in sat_preview.query_summary
     assert "post_step(s08)" in sat_preview.query_summary
@@ -348,8 +354,12 @@ def test_phase11_solves_sat_and_unsat_state_coexistence_queries(tmp_path: Path):
         for symbol, _ in sat_result.time_values
     )
     final_states = dict(sat_result.witness_steps[-1].machine_states)
-    assert final_states["TimelineCoexist__Control_region1"] == "TimelineCoexist.Control.F"
-    assert final_states["TimelineCoexist__Control_region2"] == "TimelineCoexist.Control.X"
+    assert (
+        final_states["TimelineCoexist__Control_region1"] == "TimelineCoexist.Control.F"
+    )
+    assert (
+        final_states["TimelineCoexist__Control_region2"] == "TimelineCoexist.Control.X"
+    )
 
     interval_result = solve_sysdesim_state_coexistence(
         str(xml_file),
@@ -378,16 +388,57 @@ def test_phase11_solves_sat_and_unsat_state_coexistence_queries(tmp_path: Path):
     )
     assert unsat_result.status == "unsat"
     assert unsat_result.solver_status == "unsat"
-    assert unsat_result.reason == "The left queried state never appears in the imported trajectory."
+    assert (
+        unsat_result.reason
+        == "The left queried state never appears in the imported trajectory."
+    )
     assert unsat_result.time_values == ()
     assert unsat_result.witness_steps == ()
     assert unsat_preview.candidate_count == 0
     assert "这个查询恒为假" in unsat_preview.query_summary
-    assert (
-        unsat_preview.candidate_notes
-        == (
-            "`TimelineCoexist__Control_region1` 的 `TimelineCoexist.Control.H.M` 在当前导入轨迹里一次都没有出现，所以不存在可构造的共存点。",
-        )
+    assert unsat_preview.candidate_notes == (
+        "`TimelineCoexist__Control_region1` 的 `TimelineCoexist.Control.H.M` 在当前导入轨迹里一次都没有出现，所以不存在可构造的共存点。",
+    )
+
+
+def test_phase11_accepts_initial_state_coexistence_before_first_step(tmp_path: Path):
+    """Initial stable states should count as a valid coexistence witness."""
+    xml_file = _build_parallel_timeline_xml(tmp_path)
+
+    preview = build_sysdesim_state_coexistence_constraint_preview(
+        str(xml_file),
+        "TimelineCoexist",
+        "Idle",
+        "TimelineCoexist__Control_region1",
+        "Idle",
+    )
+    result = solve_sysdesim_state_coexistence(
+        str(xml_file),
+        "TimelineCoexist",
+        "Idle",
+        "TimelineCoexist__Control_region1",
+        "Idle",
+    )
+    timeline = build_sysdesim_state_coexistence_timeline_report(
+        str(xml_file),
+        "TimelineCoexist",
+        "Idle",
+        "TimelineCoexist__Control_region1",
+        "Idle",
+    )
+
+    assert ("t00", "导入场景开始前的初始稳定时刻。") in preview.symbol_meanings
+    assert "initial(t00)" in preview.query_summary
+    assert preview.candidate_count == 2
+    assert result.status == "sat"
+    assert result.observation_kind == "initial"
+    assert result.witness_notes == ("violation_at_initial=t00",)
+    assert timeline.status == "sat"
+    assert timeline.first_coexistence_symbol == "t00"
+    assert timeline.timeline_points[0].point_kind == "initial"
+    assert timeline.timeline_points[0].machine_states[:2] == (
+        ("TimelineCoexist", "TimelineCoexist.Idle"),
+        ("TimelineCoexist__Control_region1", "TimelineCoexist.Idle"),
     )
 
 

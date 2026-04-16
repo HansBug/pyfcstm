@@ -11,6 +11,7 @@ from click.testing import CliRunner
 from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.entry import pyfcstmcli
 from pyfcstm.model.model import StateMachine, parse_dsl_node_to_state_machine
+from test.convert.sysdesim.test_phase9_11 import _build_parallel_timeline_xml
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
@@ -134,19 +135,26 @@ def test_sysdesim_cli_writes_outputs_and_report(tmp_path: Path):
     report_data = json.loads(report_file.read_text(encoding="utf-8"))
     assert report_data["selected_machine_name"] == "Parallel Split"
     assert report_data["output_count"] == 3
-    assert [item["output_name"] for item in report_data["outputs"]] == list(expected_outputs.keys())
+    assert [item["output_name"] for item in report_data["outputs"]] == list(
+        expected_outputs.keys()
+    )
     assert all(item["parser_roundtrip_ok"] for item in report_data["outputs"])
     assert all(item["model_build_ok"] for item in report_data["outputs"])
     assert all(item["guard_variables_defined"] for item in report_data["outputs"])
     assert all(item["event_paths_valid"] for item in report_data["outputs"])
     assert all(item["composite_states_have_init"] for item in report_data["outputs"])
-    assert "Converted SysDeSim machine 'Parallel Split' into 3 FCSTM output(s)." in plain_output
+    assert (
+        "Converted SysDeSim machine 'Parallel Split' into 3 FCSTM output(s)."
+        in plain_output
+    )
     assert "SysDeSim Conversion Complete" in plain_output
     assert "Machine: Parallel Split [machine_1]" in plain_output
     assert "Tick: not required" in plain_output
     assert "Outputs: 3" in plain_output
     assert "validation: parser=OK model=OK guards=OK events=OK init=OK" in plain_output
-    assert "semantic: Parallel-region main output is a semantic downgrade" in plain_output
+    assert (
+        "semantic: Parallel-region main output is a semantic downgrade" in plain_output
+    )
     assert "diagnostics: parallel_main_machine_semantic_downgrade" in plain_output
 
 
@@ -242,11 +250,89 @@ def test_sysdesim_cli_ignores_transition_effects_with_report_diagnostic(tmp_path
             Idle -> Run;
         }"""
     )
-    dsl_code = _normalize_newlines((output_dir / "EffectSample.fcstm").read_text(encoding="utf-8"))
+    dsl_code = _normalize_newlines(
+        (output_dir / "EffectSample.fcstm").read_text(encoding="utf-8")
+    )
     assert dsl_code == expected_dsl
     _assert_dsl_code_loads_to_state_machine(dsl_code)
 
-    report_data = json.loads((output_dir / "sysdesim_conversion_report.json").read_text(encoding="utf-8"))
+    report_data = json.loads(
+        (output_dir / "sysdesim_conversion_report.json").read_text(encoding="utf-8")
+    )
     assert report_data["output_count"] == 1
-    assert report_data["outputs"][0]["diagnostics"][-1]["code"] == "transition_effect_semantic_downgrade"
+    assert (
+        report_data["outputs"][0]["diagnostics"][-1]["code"]
+        == "transition_effect_semantic_downgrade"
+    )
     assert "diagnostics: transition_effect_semantic_downgrade" in plain_output
+
+
+@pytest.mark.unittest
+def test_sysdesim_cli_validate_writes_timeline_import_report(tmp_path: Path):
+    """The nested validate command should write one review-oriented timeline report."""
+    xml_file = _build_parallel_timeline_xml(tmp_path)
+    report_file = tmp_path / "timeline_import_report.json"
+
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "validate",
+            "-i",
+            str(xml_file),
+            "--report-file",
+            str(report_file),
+        ],
+        color=True,
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Wrote SysDeSim timeline validation report" in _strip_ansi(result.output)
+    report_data = json.loads(report_file.read_text(encoding="utf-8"))
+    assert report_data["selected_machine_name"] == "Timeline Coexist"
+    assert report_data["selected_interaction_name"] == "Scenario 1"
+    assert [item["output_name"] for item in report_data["phase9"]["outputs"]] == [
+        "TimelineCoexist",
+        "TimelineCoexist__Control_region1",
+        "TimelineCoexist__Control_region2",
+    ]
+    assert report_data["phase10"]["scenario"]["steps"][0]["step_id"] == "s01"
+    assert (
+        report_data["phase10"]["traces"][0]["state_windows"][0]["source_step_id"]
+        == "initial"
+    )
+    assert "phase11" not in report_data
+
+
+@pytest.mark.unittest
+def test_sysdesim_cli_validate_can_include_phase11_query_in_stdout(tmp_path: Path):
+    """The nested validate command should optionally embed one Phase11 query bundle."""
+    xml_file = _build_parallel_timeline_xml(tmp_path)
+
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "validate",
+            "-i",
+            str(xml_file),
+            "--left-machine-alias",
+            "TimelineCoexist",
+            "--left-state",
+            "Idle",
+            "--right-machine-alias",
+            "TimelineCoexist__Control_region1",
+            "--right-state",
+            "Idle",
+        ],
+        color=False,
+    )
+
+    assert result.exit_code == 0, result.output
+    report_data = json.loads(result.output)
+    assert report_data["phase11"]["constraint_preview"]["candidate_count"] == 2
+    assert report_data["phase11"]["solve_result"]["status"] == "sat"
+    assert report_data["phase11"]["solve_result"]["observation_kind"] == "initial"
+    assert (
+        report_data["phase11"]["timeline_report"]["first_coexistence_symbol"] == "t00"
+    )

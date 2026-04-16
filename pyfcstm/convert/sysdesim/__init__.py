@@ -130,6 +130,7 @@ from .timeline_verify import (
     build_sysdesim_state_coexistence_timeline_report,
     build_sysdesim_phase10_report,
     build_sysdesim_phase9_report,
+    build_sysdesim_timeline_import_report,
     solve_sysdesim_state_coexistence,
 )
 from .timeline_plantuml import (
@@ -208,6 +209,7 @@ __all__ = [
     "make_internal_name",
     "normalize_machine",
     "prepare_sysdesim_output_machines",
+    "build_sysdesim_timeline_import_report",
     "solve_sysdesim_state_coexistence",
     "summarize_sysdesim_raw_xmi",
     "validate_program_roundtrip",

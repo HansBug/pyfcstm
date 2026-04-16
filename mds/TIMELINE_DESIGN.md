@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 修改内容 | 作者 |
 |------|------|----------|------|
+| 0.1.19 | 2026-04-16 | 补充 `model1_fixed_v2.xml` 的 CLI 全流程复现：`pyfcstm sysdesim` 默认转换、`pyfcstm sysdesim validate` import report、以及带 Phase11 查询的 validate 报告；并记录初始 `t00` 观测点已进入当前求解语义 | Codex |
 | 0.1.18 | 2026-03-31 | 完成 Phase 12 首版实现：新增 SysDeSim timeline -> PlantUML 导出模块、公开 API、测试覆盖，并可直接为真实样例产出 review-first 顺序图代码 | Codex |
 | 0.1.17 | 2026-03-31 | 将 timeline 可视化正式前移为 Phase 12，并补充该阶段的 checklist 与更明确的首版验收标准 | Codex |
 | 0.1.16 | 2026-03-31 | 补充 timeline -> PlantUML 可视化设计：要求可把完整 timeline 对象渲染成 PlantUML 顺序图，并在当前真实样例上达到与给定顺序图基本一致的效果 | Codex |
@@ -4115,7 +4116,110 @@ def build_timeline_plantuml(report: SysDeSimPhase10Report) -> str:
 * [ ] 增加针对当前已知阻塞点的回归测试：同源同宿同条件的 `ChangeEvent/guard` 必须合并。
 * [ ] 增加顺序图观测解析测试，验证 `name=value` 能稳定生成 `SetInput` 候选。
 * [ ] 增加 timeline step 语义测试，验证“输入更新在当前 step 立即可见”。
-* [ ] 为 CLI 或 report 输出增加 `--timeline-import-report` 一类入口，方便人工审查 binding 与 scenario 候选。
+* [x] 为 CLI 或 report 输出增加 `--timeline-import-report` 一类入口，方便人工审查 binding 与 scenario 候选。
+
+### 21.16.1 `model1_fixed_v2.xml` 的 CLI 全流程复现
+
+截至 `2026-04-16`，下面这组命令已经在真实样例
+`/home/zhangshaoang/Nutstore/work/20260424文档拷贝/damnx_sysdesim_sample/model1_fixed_v2.xml`
+上实跑通过。这里刻意只使用 CLI，不依赖临时 Python 脚本。
+
+仓库根目录：
+
+```bash
+cd /home/zhangshaoang/oo-projects/pyfcstm
+
+export XML='/home/zhangshaoang/Nutstore/work/20260424文档拷贝/damnx_sysdesim_sample/model1_fixed_v2.xml'
+export OUT='/tmp/pyfcstm_model1_fixed_v2_cli_20260416'
+
+mkdir -p "$OUT/convert" "$OUT/reports"
+```
+
+1. 兼容导出：真实 XML -> FCSTM 输出族 + conversion report
+
+```bash
+venv/bin/python -m pyfcstm sysdesim \
+  -i "$XML" \
+  -o "$OUT/convert" \
+  --clear
+```
+
+这一步当前的实跑结果：
+
+- 成功导出 `5` 个 FCSTM 输出：
+  - `StateMachine`
+  - `StateMachine__Control_region1`
+  - `StateMachine__Control_region2`
+  - `StateMachine__Control_region3`
+  - `StateMachine__Control_region4`
+- CLI 明确打印 `Tick: not required`，说明这个真实样例在当前导入路径下不需要额外传 `--tick-duration-ms`。
+- conversion report 写到：
+  - `/tmp/pyfcstm_model1_fixed_v2_cli_20260416/convert/sysdesim_conversion_report.json`
+
+2. timeline import 验证：导入候选 / binding / scenario / trace 报告
+
+```bash
+venv/bin/python -m pyfcstm sysdesim validate \
+  -i "$XML" \
+  --report-file "$OUT/reports/timeline_import_report.json"
+```
+
+这一步当前的实跑结果：
+
+- `phase78.steps` 数量为 `28`
+- `phase78.duration_constraints` 数量为 `9`
+- `phase10.bindings` 数量为 `5`
+- `phase10.traces` 数量为 `5`
+- 每条 trace 都带有初始窗口，例如主输出的第一条窗口是：
+  - `{'machine_alias': 'StateMachine', 'source_step_id': 'initial', 'state_path': 'StateMachine.Idle', 'start_symbol': 't00', 'end_symbol': 't01', 'note': 'initial_before_first_step'}`
+
+3. 带 Phase11 查询的 validate 报告：验证 `region2.H.L` 与 `region3.X`
+
+```bash
+venv/bin/python -m pyfcstm sysdesim validate \
+  -i "$XML" \
+  --left-machine-alias StateMachine__Control_region2 \
+  --left-state H.L \
+  --right-machine-alias StateMachine__Control_region3 \
+  --right-state X \
+  --report-file "$OUT/reports/phase11_sat_report.json"
+```
+
+这一步当前的实跑结果：
+
+- `phase11.solve_result.status = sat`
+- `phase11.timeline_report.first_coexistence_symbol = tau__StateMachine__Control_region3__s20__1`
+- `phase11.timeline_report.first_coexistence_time_text = 67`
+
+4. 可选的结果核对命令
+
+```bash
+python - <<'PY'
+import json
+from pathlib import Path
+
+base = Path('/tmp/pyfcstm_model1_fixed_v2_cli_20260416')
+conv = json.loads((base / 'convert/sysdesim_conversion_report.json').read_text(encoding='utf-8'))
+imp = json.loads((base / 'reports/timeline_import_report.json').read_text(encoding='utf-8'))
+sat = json.loads((base / 'reports/phase11_sat_report.json').read_text(encoding='utf-8'))
+
+print([item['output_name'] for item in conv['outputs']])
+print(len(imp['phase78']['steps']), len(imp['phase78']['duration_constraints']))
+print(sat['phase11']['solve_result']['status'])
+print(sat['phase11']['timeline_report']['first_coexistence_symbol'])
+print(sat['phase11']['timeline_report']['first_coexistence_time_text'])
+PY
+```
+
+期望看到：
+
+```text
+['StateMachine', 'StateMachine__Control_region1', 'StateMachine__Control_region2', 'StateMachine__Control_region3', 'StateMachine__Control_region4']
+28 9
+sat
+tau__StateMachine__Control_region3__s20__1
+67
+```
 
 ## 21.17 文档收口与后续扩展点
 

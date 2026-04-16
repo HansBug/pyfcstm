@@ -3233,7 +3233,7 @@ SysDeSim XMI
 
 为避免只停留在抽象设计，仓库中已补了一个简单脚本：
 
-- [tools/sysdesim_hand_timeline_sample.py](/home/hansbug/oo-projects/pyfcstm/tools/sysdesim_hand_timeline_sample.py)
+- `tools/sysdesim_hand_timeline_sample.py`
 
 这个脚本不是正式 importer，只是对当前真实样例做一次**手工 candidate 转换**，用来验证我们对 XMI 的理解是否一致。
 
@@ -4042,12 +4042,12 @@ def build_timeline_plantuml(report: SysDeSimPhase10Report) -> str:
 * [x] 从 `Phase10Report` 中渲染 lifeline、message、`SetInput` 观测、step id 与 normalized temporal constraints。
 * [x] 为 message / state invariant / duration constraint 保留对原始 observation 的可回指关系，便于人工审查和后续 witness 联动。
 * [x] 为 hidden auto occurrence 预留调试开关；首版默认不画普通消息箭头，但允许以 note 或注释附着到相邻 step。
-* [x] 为 `/home/hansbug/文档/damnx_sysdesim_sample/model1_fixed.xml` 提供一条固定演示路径，可稳定产出 `.puml` 文本。
+* [x] 为 `model1_fixed.xml` 提供一条固定演示路径，可稳定产出 `.puml` 文本。
 * [x] 增加最小测试覆盖，至少验证 API 输出结构、关键语义片段与 PlantUML 文本边界，不把正确性只寄托在人工肉眼检查上。
 
 ### 21.15.6 当前真实样例的验收要求
 
-以当前本地样例 `/home/hansbug/文档/damnx_sysdesim_sample/model1_fixed.xml` 为首个验收对象，要求至少满足：
+以当前本地样例 `model1_fixed.xml` 为首个验收对象，要求至少满足：
 
 - 能从现有 timeline 主链直接生成一份 `.puml` 文本。
 - 生成出的 PlantUML 代码能在本地成功渲染，不报语法错误。
@@ -4120,17 +4120,17 @@ def build_timeline_plantuml(report: SysDeSimPhase10Report) -> str:
 
 ### 21.16.1 `model1_fixed_v2.xml` 的 CLI 全流程复现
 
-截至 `2026-04-16`，下面这组命令已经在真实样例
-`/home/zhangshaoang/Nutstore/work/20260424文档拷贝/damnx_sysdesim_sample/model1_fixed_v2.xml`
-上实跑通过。这里刻意只使用 CLI，不依赖临时 Python 脚本。
+截至 `2026-04-16`，下面这组命令已经在真实样例 `model1_fixed_v2.xml`
+上实跑通过。这里刻意只使用 CLI，不依赖临时 Python 脚本。运行时只需要把
+环境变量 `XML` 指向你手头那份 `model1_fixed_v2.xml` 即可。
 
 仓库根目录：
 
 ```bash
-cd /home/zhangshaoang/oo-projects/pyfcstm
+cd path/to/pyfcstm
 
-export XML='/home/zhangshaoang/Nutstore/work/20260424文档拷贝/damnx_sysdesim_sample/model1_fixed_v2.xml'
-export OUT='/tmp/pyfcstm_model1_fixed_v2_cli_20260416'
+export XML='path/to/model1_fixed_v2.xml'
+export OUT='./.tmp/model1_fixed_v2_cli_20260416'
 
 mkdir -p "$OUT/convert" "$OUT/reports"
 ```
@@ -4154,7 +4154,7 @@ venv/bin/python -m pyfcstm sysdesim \
   - `StateMachine__Control_region4`
 - CLI 明确打印 `Tick: not required`，说明这个真实样例在当前导入路径下不需要额外传 `--tick-duration-ms`。
 - conversion report 写到：
-  - `/tmp/pyfcstm_model1_fixed_v2_cli_20260416/convert/sysdesim_conversion_report.json`
+  - `./.tmp/model1_fixed_v2_cli_20260416/convert/sysdesim_conversion_report.json`
 
 2. timeline import 验证：导入候选 / binding / scenario / trace 报告
 
@@ -4198,7 +4198,7 @@ python - <<'PY'
 import json
 from pathlib import Path
 
-base = Path('/tmp/pyfcstm_model1_fixed_v2_cli_20260416')
+base = Path('./.tmp/model1_fixed_v2_cli_20260416')
 conv = json.loads((base / 'convert/sysdesim_conversion_report.json').read_text(encoding='utf-8'))
 imp = json.loads((base / 'reports/timeline_import_report.json').read_text(encoding='utf-8'))
 sat = json.loads((base / 'reports/phase11_sat_report.json').read_text(encoding='utf-8'))
@@ -4253,8 +4253,8 @@ tau__StateMachine__Control_region3__s20__1
 为满足“**不修改原始 `model1.xml`**、只给出最小修正建议”的要求，建议在同路径创建 `model1_fixed.xml`，并仅增加顺序图上的 8 个 `StateInvariant` 片段，不改状态机结构、不改 transition、不改 guard。本次建议 diff 如下：
 
 ```diff
---- /home/hansbug/文档/damnx_sysdesim_sample/model1.xml
-+++ /home/hansbug/文档/damnx_sysdesim_sample/model1_fixed.xml
+--- model1.xml
++++ model1_fixed.xml
 @@ -99,30 +99,78 @@
            </ownedRule>
            <ownedAttribute xmi:type="uml:Property" xmi:id="_8YItACQGEfGBBP-2kAbLRg" name="控制"/>

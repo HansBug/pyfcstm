@@ -11,18 +11,14 @@
 
 ## 真实样例 CLI 复现
 
-下面这组命令已于 `2026-04-16` 在真实样例上实跑通过：
-
-- XML：
-  - `/home/zhangshaoang/Nutstore/work/20260424文档拷贝/damnx_sysdesim_sample/model1_fixed_v2.xml`
-- 仓库根目录：
-  - `/home/zhangshaoang/oo-projects/pyfcstm`
+下面这组命令已于 `2026-04-16` 在真实样例 `model1_fixed_v2.xml` 上实跑通过。
+运行时只需要把 `XML` 改成你手头那份 `model1_fixed_v2.xml` 的路径即可。
 
 ```bash
-cd /home/zhangshaoang/oo-projects/pyfcstm
+cd path/to/pyfcstm
 
-export XML='/home/zhangshaoang/Nutstore/work/20260424文档拷贝/damnx_sysdesim_sample/model1_fixed_v2.xml'
-export OUT='/tmp/pyfcstm_model1_fixed_v2_cli_20260416'
+export XML='path/to/model1_fixed_v2.xml'
+export OUT='./.tmp/model1_fixed_v2_cli_20260416'
 
 mkdir -p "$OUT/convert" "$OUT/reports"
 

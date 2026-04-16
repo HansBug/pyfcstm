@@ -6,7 +6,8 @@
 运行方式::
 
     python test_sysdesim_phase9_11_showcase.py
-    python test_sysdesim_phase9_11_showcase.py /path/to/model1_fixed.xml
+    python test_sysdesim_phase9_11_showcase.py /path/to/model.xml
+    python test_sysdesim_phase9_11_showcase.py --xml /path/to/model.xml
 
 这个脚本只展示你真正关心的东西::
 
@@ -17,16 +18,20 @@
 
 from __future__ import annotations
 
+import argparse
 from dataclasses import dataclass
 import sys
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Optional, Sequence, Tuple
 
 from pyfcstm.convert.sysdesim import (
     build_sysdesim_state_coexistence_timeline_report,
 )
 
-DEFAULT_SAMPLE_XML = Path("/home/hansbug/文档/damnx_sysdesim_sample/model1_fixed.xml")
+DEFAULT_SAMPLE_XML = Path(
+    "/home/zhangshaoang/Nutstore/work/20260424文档拷贝/"
+    "damnx_sysdesim_sample/model1_fixed_v2.xml"
+)
 
 
 @dataclass(frozen=True)
@@ -38,9 +43,6 @@ class _ShowcaseExample:
     left_state_ref: str
     right_machine_alias: str
     right_state_ref: str
-    expected_status: str
-    expected_reason: Optional[str] = None
-    expected_first_symbol: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -60,17 +62,13 @@ SHOWCASE_EXAMPLES = (
         left_state_ref="H.L",
         right_machine_alias="StateMachine__Control_region3",
         right_state_ref="X",
-        expected_status="sat",
-        expected_first_symbol="tau__StateMachine__Control_region3__s24__1",
     ),
     _ShowcaseExample(
-        title="不可共存示例：StateMachine__Control_region2.M 与 StateMachine__Control_region3.X",
+        title="检查示例：StateMachine__Control_region2.H.M 与 StateMachine__Control_region3.X",
         left_machine_alias="StateMachine__Control_region2",
-        left_state_ref="M",
+        left_state_ref="H.M",
         right_machine_alias="StateMachine__Control_region3",
         right_state_ref="X",
-        expected_status="unsat",
-        expected_reason="The left queried state never appears in the imported trajectory.",
     ),
     _ShowcaseExample(
         title="新增检查：StateMachine__Control_region2.H.M 与 StateMachine__Control_region3.S",
@@ -78,16 +76,30 @@ SHOWCASE_EXAMPLES = (
         left_state_ref="H.M",
         right_machine_alias="StateMachine__Control_region3",
         right_state_ref="S",
-        expected_status="unsat",
-        expected_reason="The left queried state never appears in the imported trajectory.",
     ),
 )
 
 
-def _resolve_xml_path(argv: List[str]) -> Path:
-    """Resolve the XML path from CLI args, falling back to the fixed real sample."""
-    if len(argv) >= 2:
-        return Path(argv[1]).expanduser()
+def _resolve_xml_path(argv: Sequence[str]) -> Path:
+    """Resolve the XML path from CLI args, falling back to the v2 sample."""
+    parser = argparse.ArgumentParser(
+        description="展示 SysDeSim Phase9/10/11 在指定 XML 上的共存时间轴结果。"
+    )
+    parser.add_argument(
+        "xml_path",
+        nargs="?",
+        help="待分析的 SysDeSim XML 文件路径；省略时使用默认 v2 样例。",
+    )
+    parser.add_argument(
+        "--xml",
+        dest="xml_path_option",
+        help="待分析的 SysDeSim XML 文件路径；优先级高于位置参数。",
+    )
+    args = parser.parse_args(list(argv[1:]))
+
+    raw_path = args.xml_path_option or args.xml_path
+    if raw_path:
+        return Path(raw_path).expanduser()
     return DEFAULT_SAMPLE_XML
 
 
@@ -224,24 +236,20 @@ def _run_showcase_example(
         status = timeline.status
         reason = timeline.reason
 
-    _require(
-        status == example.expected_status,
-        "{title} 的结果应为 {expected}，实际为 {actual}。".format(
-            title=example.title,
-            expected=example.expected_status,
-            actual=status,
-        ),
-    )
-    if example.expected_reason is not None:
-        _require(
-            reason == example.expected_reason,
-            "{title} 的原因说明不符合预期。".format(title=example.title),
-        )
-    if example.expected_first_symbol is not None:
+    if status == "sat":
         _require(timeline is not None, "{title} 应返回 timeline。".format(title=example.title))
         _require(
-            timeline.first_coexistence_symbol == example.expected_first_symbol,
-            "{title} 的首次共存点不符合预期。".format(title=example.title),
+            bool(timeline.first_coexistence_symbol),
+            "{title} 返回 sat 时必须给出首次共存点。".format(title=example.title),
+        )
+        _require(
+            bool(timeline.first_coexistence_time_text),
+            "{title} 返回 sat 时必须给出首次共存时间。".format(title=example.title),
+        )
+    elif status == "unsat":
+        _require(
+            bool(reason),
+            "{title} 返回 unsat 时必须给出原因。".format(title=example.title),
         )
 
     return _ShowcaseExampleResult(
@@ -285,13 +293,15 @@ def main(argv: Optional[List[str]] = None) -> int:
     xml_path = _resolve_xml_path(argv)
 
     if not xml_path.exists():
-        print("未找到默认真实样例；如需运行，请显式传入 XML 路径。", file=sys.stderr)
+        print("未找到 XML 文件：{path}".format(path=xml_path), file=sys.stderr)
         return 2
 
     results = [_run_showcase_example(xml_path, example) for example in SHOWCASE_EXAMPLES]
 
     _print_rule()
     print("Phase11 共存时间轴展示")
+    print()
+    print("模型文件：", xml_path)
     print()
     print(
         "时间变量在求解器里使用的是 Z3 Real，也就是连续时间上的实数。"

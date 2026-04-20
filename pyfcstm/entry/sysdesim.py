@@ -119,7 +119,7 @@ def _format_tick_duration_text(tick_duration_ms: Optional[float]) -> str:
     return f"{tick_duration_ms:g} ms"
 
 
-def _fit_text(text: str, width: int) -> str:
+def _fit_text(text: str, width: int, align: str = "left") -> str:
     """
     Fit one cell value into a fixed CLI table width.
 
@@ -127,14 +127,277 @@ def _fit_text(text: str, width: int) -> str:
     :type text: str
     :param width: Target width.
     :type width: int
+    :param align: Text alignment inside the fixed width, defaults to ``left``
+    :type align: str, optional
     :return: Width-limited cell text.
     :rtype: str
     """
     if len(text) <= width:
+        if align == "right":
+            return text.rjust(width)
         return text.ljust(width)
     if width <= 3:
         return text[:width]
     return text[: width - 3] + "..."
+
+
+def _output_status_summary(item) -> str:
+    """
+    Build one compact validation status text for the conversion summary table.
+
+    :param item: One conversion output report item.
+    :type item: pyfcstm.convert.sysdesim.convert.SysDeSimOutputValidationReport
+    :return: Compact status summary.
+    :rtype: str
+    """
+    failed_checks = []
+    if not item.parser_roundtrip_ok:
+        failed_checks.append("parser")
+    if not item.model_build_ok:
+        failed_checks.append("model")
+    if not item.guard_variables_defined:
+        failed_checks.append("guards")
+    if not item.event_paths_valid:
+        failed_checks.append("events")
+    if not item.composite_states_have_init:
+        failed_checks.append("init")
+    if not failed_checks:
+        return "OK"
+    return "FAIL({})".format(",".join(failed_checks))
+
+
+def _diagnostic_summary(
+    diagnostic_codes: Sequence[str], semantic_note: Optional[str]
+) -> str:
+    """
+    Build one compact diagnostic summary for CLI tables.
+
+    :param diagnostic_codes: Diagnostic codes attached to the output.
+    :type diagnostic_codes: collections.abc.Sequence[str]
+    :param semantic_note: Optional semantic note attached to the output.
+    :type semantic_note: str, optional
+    :return: Compact diagnostic summary.
+    :rtype: str
+    """
+    if diagnostic_codes:
+        return ",".join(_short_diagnostic_code(code) for code in diagnostic_codes)
+    if semantic_note:
+        return "semantic"
+    return "-"
+
+
+def _short_diagnostic_code(code: str) -> str:
+    """
+    Build one compact diagnostic code label for CLI table display.
+
+    :param code: Original diagnostic code.
+    :type code: str
+    :return: Short diagnostic label.
+    :rtype: str
+    """
+    short_code_map = {
+        "parallel_main_machine_semantic_downgrade": "parallel-main",
+        "parallel_split_semantic_downgrade": "parallel-split",
+        "transition_effect_semantic_downgrade": "tx-effect",
+    }
+    if code in short_code_map:
+        return short_code_map[code]
+    if code.endswith("_semantic_downgrade"):
+        code = code[: -len("_semantic_downgrade")]
+    return code.replace("_", "-")
+
+
+def _output_diagnostic_summary(item) -> str:
+    """
+    Build one compact diagnostic summary for the conversion summary table.
+
+    :param item: One conversion output report item.
+    :type item: pyfcstm.convert.sysdesim.convert.SysDeSimOutputValidationReport
+    :return: Compact diagnostic summary.
+    :rtype: str
+    """
+    return _diagnostic_summary(
+        [entry.code for entry in item.diagnostics],
+        item.semantic_note,
+    )
+
+
+def _style_sysdesim_table_cell(header: str, text: str, is_header: bool) -> str:
+    """
+    Style one CLI table cell used by SysDeSim summaries.
+
+    :param header: Column header name.
+    :type header: str
+    :param text: Already width-fitted cell text.
+    :type text: str
+    :param is_header: Whether this cell belongs to the header row.
+    :type is_header: bool
+    :return: Styled cell text.
+    :rtype: str
+    """
+    if is_header:
+        return click.style(text, fg="cyan", bold=True)
+    if header == "output":
+        return click.style(text, fg="blue", bold=True)
+    if header == "file":
+        return click.style(text, fg="white")
+    if header in {"ln", "defines", "events"}:
+        return click.style(text, fg="magenta", bold=True)
+    if header == "status":
+        return click.style(
+            text,
+            fg=("green" if text.strip() == "OK" else "red"),
+            bold=True,
+        )
+    if header == "diag" and text.strip() != "-":
+        return click.style(text, fg="yellow", bold=True)
+    return text
+
+
+def _emit_sysdesim_table(
+    headers: Sequence[str],
+    rows: Sequence[Sequence[str]],
+    max_widths: Dict[str, int],
+    alignments: Optional[Dict[str, str]] = None,
+) -> None:
+    """
+    Print one compact styled ASCII table for SysDeSim CLI summaries.
+
+    :param headers: Column headers in display order.
+    :type headers: collections.abc.Sequence[str]
+    :param rows: Row values in display order.
+    :type rows: collections.abc.Sequence[collections.abc.Sequence[str]]
+    :param max_widths: Maximum widths keyed by header name.
+    :type max_widths: dict[str, int]
+    :param alignments: Optional alignment map keyed by header name.
+    :type alignments: dict[str, str], optional
+    :return: ``None``.
+    :rtype: None
+    """
+    if alignments is None:
+        alignments = {}
+
+    widths = []
+    for index, header in enumerate(headers):
+        max_len = max([len(header)] + [len(str(row[index])) for row in rows])
+        widths.append(max(len(header), min(max_len, max_widths[header])))
+
+    border = "+-" + "-+-".join("-" * width for width in widths) + "-+"
+
+    def _row(values: Sequence[str], is_header: bool = False) -> str:
+        rendered = []
+        for header, value, width in zip(headers, values, widths):
+            fitted = _fit_text(
+                str(value),
+                width,
+                align=alignments.get(header, "left"),
+            )
+            rendered.append(_style_sysdesim_table_cell(header, fitted, is_header))
+        return "| " + " | ".join(rendered) + " |"
+
+    click.echo(click.style(border, dim=True))
+    click.echo(_row(headers, is_header=True))
+    click.echo(click.style(border, dim=True))
+    for row in rows:
+        click.echo(_row(row))
+    click.echo(click.style(border, dim=True))
+
+
+def _emit_sysdesim_output_table(report, output_file_by_name: Dict[str, str]) -> None:
+    """
+    Print one compact styled table for conversion outputs.
+
+    :param report: Structured conversion report.
+    :type report: pyfcstm.convert.sysdesim.convert.SysDeSimConversionReport
+    :param output_file_by_name: Mapping from output name to emitted file path.
+    :type output_file_by_name: dict[str, str]
+    :return: ``None``.
+    :rtype: None
+    """
+    _emit_sysdesim_table(
+        headers=["output", "file", "ln", "status", "diag"],
+        rows=[
+            [
+                item.output_name,
+                Path(output_file_by_name[item.output_name]).name,
+                str(item.dsl_line_count),
+                _output_status_summary(item),
+                _output_diagnostic_summary(item),
+            ]
+            for item in report.outputs
+        ],
+        max_widths={
+            "output": 36,
+            "file": 42,
+            "ln": 4,
+            "status": 24,
+            "diag": 18,
+        },
+        alignments={
+            "ln": "right",
+        },
+    )
+
+
+def _emit_sysdesim_validate_phase9_table(outputs: Sequence[Dict[str, object]]) -> None:
+    """
+    Print one compact styled table for validate-mode Phase9 outputs.
+
+    :param outputs: Phase9 output dictionaries in display order.
+    :type outputs: collections.abc.Sequence[dict[str, object]]
+    :return: ``None``.
+    :rtype: None
+    """
+    _emit_sysdesim_table(
+        headers=["output", "defines", "events", "diag"],
+        rows=[
+            [
+                str(item["output_name"]),
+                str(len(item["define_names"])),
+                str(len(item["event_runtime_refs"])),
+                _diagnostic_summary(
+                    item["diagnostic_codes"],
+                    item["semantic_note"],
+                ),
+            ]
+            for item in outputs
+        ],
+        max_widths={
+            "output": 36,
+            "defines": 7,
+            "events": 6,
+            "diag": 18,
+        },
+        alignments={
+            "defines": "right",
+            "events": "right",
+        },
+    )
+
+
+def _emit_sysdesim_validate_output_notes(
+    outputs: Sequence[Dict[str, object]], report_path: Path
+) -> None:
+    """
+    Print one short note for compact validate-mode output diagnostics.
+
+    :param outputs: Phase9 output dictionaries in display order.
+    :type outputs: collections.abc.Sequence[dict[str, object]]
+    :param report_path: Path to the exported JSON report.
+    :type report_path: pathlib.Path
+    :return: ``None``.
+    :rtype: None
+    """
+    if any(item["diagnostic_codes"] or item["semantic_note"] for item in outputs):
+        click.echo("")
+        click.echo(
+            "{label}: {message}".format(
+                label=click.style("Notes", fg="cyan", bold=True),
+                message="compact diagnostics shown; full details are in {}.".format(
+                    report_path.name
+                ),
+            )
+        )
 
 
 def _short_machine_alias(machine_alias: str, main_alias: Optional[str]) -> str:
@@ -294,17 +557,22 @@ def _emit_phase11_timeline_table(
 
 
 def _emit_sysdesim_cli_summary(
-    report, output_file_by_name: Dict[str, str], report_path: Path
+    report,
+    output_root: Path,
+    output_file_by_name: Dict[str, str],
+    report_path: Optional[Path],
 ) -> None:
     """
     Print a colored phase6 summary for the conversion report.
 
     :param report: Structured conversion report.
     :type report: pyfcstm.convert.sysdesim.convert.SysDeSimConversionReport
+    :param output_root: Directory where FCSTM outputs were written.
+    :type output_root: pathlib.Path
     :param output_file_by_name: Mapping from output name to emitted file path.
     :type output_file_by_name: dict[str, str]
-    :param report_path: Path to the JSON report file.
-    :type report_path: pathlib.Path
+    :param report_path: Optional path to the JSON report file.
+    :type report_path: pathlib.Path, optional
     :return: ``None``.
     :rtype: None
     """
@@ -323,6 +591,19 @@ def _emit_sysdesim_cli_summary(
         )
     )
     click.echo(
+        "{label}: {path}".format(
+            label=click.style("Output Dir", fg="cyan", bold=True),
+            path=output_root,
+        )
+    )
+    if report_path is not None:
+        click.echo(
+            "{label}: {path}".format(
+                label=click.style("Report", fg="cyan", bold=True),
+                path=report_path,
+            )
+        )
+    click.echo(
         "{label}: {tick}".format(
             label=click.style("Tick", fg="cyan", bold=True),
             tick=_format_tick_duration_text(report.tick_duration_ms),
@@ -334,49 +615,21 @@ def _emit_sysdesim_cli_summary(
             count=click.style(str(report.output_count), fg="magenta", bold=True),
         )
     )
-    click.echo(
-        "{label}: {path}".format(
-            label=click.style("Report", fg="cyan", bold=True),
-            path=report_path,
-        )
-    )
+    click.echo("")
+    _emit_sysdesim_output_table(report, output_file_by_name)
 
-    for item in report.outputs:
+    if any(item.diagnostics or item.semantic_note for item in report.outputs):
+        click.echo("")
         click.echo(
-            "{label}: {path}".format(
-                label=click.style(item.output_name, fg="blue", bold=True),
-                path=output_file_by_name[item.output_name],
+            "{label}: {message}".format(
+                label=click.style("Notes", fg="cyan", bold=True),
+                message=(
+                    "compact diagnostics shown; full details are in the JSON report."
+                    if report_path is not None
+                    else "compact diagnostics shown; use --report-file to export full JSON diagnostics."
+                ),
             )
         )
-        click.echo(
-            "  validation: parser={parser} model={model} guards={guards} events={events} init={init}".format(
-                parser=_status_text(item.parser_roundtrip_ok),
-                model=_status_text(item.model_build_ok),
-                guards=_status_text(item.guard_variables_defined),
-                events=_status_text(item.event_paths_valid),
-                init=_status_text(item.composite_states_have_init),
-            )
-        )
-        click.echo(
-            "  lines: {lines}".format(
-                lines=click.style(str(item.dsl_line_count), fg="white", bold=True),
-            )
-        )
-        if item.semantic_note:
-            click.echo(
-                "  {label}: {message}".format(
-                    label=click.style("semantic", fg="yellow", bold=True),
-                    message=item.semantic_note,
-                )
-            )
-        if item.diagnostics:
-            codes = ", ".join(item.code for item in item.diagnostics)
-            click.echo(
-                "  {label}: {codes}".format(
-                    label=click.style("diagnostics", fg="yellow", bold=True),
-                    codes=codes,
-                )
-            )
 
 
 def _emit_sysdesim_validate_summary(
@@ -395,12 +648,12 @@ def _emit_sysdesim_validate_summary(
     phase78 = report_data["phase78"]
     phase9 = report_data["phase9"]
     phase10 = report_data["phase10"]
-    has_phase11 = "phase11" in report_data
+    has_state_query = "phase11" in report_data
 
     click.secho(
         (
-            "SysDeSim State Query Validation Complete"
-            if has_phase11
+            "SysDeSim State Query Complete"
+            if has_state_query
             else "SysDeSim Timeline Import Report Complete"
         ),
         fg="green",
@@ -410,9 +663,9 @@ def _emit_sysdesim_validate_summary(
         "{label}: {mode}".format(
             label=click.style("Mode", fg="cyan", bold=True),
             mode=(
-                "import report + Phase11 state query"
-                if has_phase11
-                else "import report only (no Phase11 state query provided)"
+                "import report + state query"
+                if has_state_query
+                else "import report only"
             ),
         )
     )
@@ -449,7 +702,7 @@ def _emit_sysdesim_validate_summary(
 
     click.echo(
         "{label}: graph_edges={graph} inputs={inputs} events={events} steps={steps} windows={windows} durations={durations} diagnostics={diagnostics}".format(
-            label=click.style("Import Phase78", fg="cyan", bold=True),
+            label=click.style("Model Import", fg="cyan", bold=True),
             graph=_count_text(len(phase78["machine_graph"])),
             inputs=_count_text(len(phase78["input_candidates"])),
             events=_count_text(len(phase78["event_candidates"])),
@@ -463,38 +716,20 @@ def _emit_sysdesim_validate_summary(
     outputs = phase9["outputs"]
     click.echo(
         "{label}: {count}".format(
-            label=click.style("Import Phase9 Outputs", fg="cyan", bold=True),
+            label=click.style("Outputs", fg="cyan", bold=True),
             count=_count_text(len(outputs)),
         )
     )
-    for item in outputs:
-        click.echo(
-            "  {name}: defines={defines} events={events}".format(
-                name=click.style(item["output_name"], fg="blue", bold=True),
-                defines=_count_text(len(item["define_names"])),
-                events=_count_text(len(item["event_runtime_refs"])),
-            )
-        )
-        if item["semantic_note"]:
-            click.echo(
-                "    {label}: {message}".format(
-                    label=click.style("semantic", fg="yellow", bold=True),
-                    message=item["semantic_note"],
-                )
-            )
-        if item["diagnostic_codes"]:
-            click.echo(
-                "    {label}: {codes}".format(
-                    label=click.style("diagnostics", fg="yellow", bold=True),
-                    codes=", ".join(item["diagnostic_codes"]),
-                )
-            )
+    click.echo("")
+    _emit_sysdesim_validate_phase9_table(outputs)
+    _emit_sysdesim_validate_output_notes(outputs, report_path)
 
     scenario = phase10["scenario"]
     traces = phase10["traces"]
+    click.echo("")
     click.echo(
         "{label}: scenario={name} steps={steps} temporal_constraints={constraints} bindings={bindings} traces={traces} diagnostics={diagnostics}".format(
-            label=click.style("Import Phase10", fg="cyan", bold=True),
+            label=click.style("Scenario", fg="cyan", bold=True),
             name=scenario["name"],
             steps=_count_text(len(scenario["steps"])),
             constraints=_count_text(len(scenario["temporal_constraints"])),
@@ -505,7 +740,7 @@ def _emit_sysdesim_validate_summary(
     )
     click.echo(
         "  {label}:".format(
-            label=click.style("initial states", fg="white", bold=True),
+            label=click.style("Initial States", fg="white", bold=True),
         )
     )
     for trace in traces:
@@ -516,10 +751,10 @@ def _emit_sysdesim_validate_summary(
             )
         )
 
-    if not has_phase11:
+    if not has_state_query:
         click.echo(
-            "{label}: no state query was requested; this run only checked the import/report pipeline.".format(
-                label=click.style("Phase11", fg="cyan", bold=True)
+            "{label}: not requested.".format(
+                label=click.style("State Query", fg="cyan", bold=True)
             )
         )
         return
@@ -530,7 +765,7 @@ def _emit_sysdesim_validate_summary(
     timeline_report = phase11["timeline_report"]
     click.echo(
         "{label}: {left} <-> {right}".format(
-            label=click.style("Phase11 Query", fg="cyan", bold=True),
+            label=click.style("State Query", fg="cyan", bold=True),
             left=click.style(
                 "{alias}:{state}".format(
                     alias=solve_result["left_machine_alias"],
@@ -620,13 +855,6 @@ def _run_sysdesim_convert(
         shutil.rmtree(str(output_root))
     output_root.mkdir(parents=True, exist_ok=True)
 
-    report_path = (
-        Path(report_file)
-        if report_file is not None
-        else output_root / "sysdesim_conversion_report.json"
-    )
-    report_path.parent.mkdir(parents=True, exist_ok=True)
-
     output_files = []
     for output_name, dsl_code in dsl_outputs.items():
         output_file = output_root / f"{output_name}.fcstm"
@@ -637,20 +865,19 @@ def _run_sysdesim_convert(
     output_file_by_name = {
         output_name: str(output_file) for output_name, output_file in output_files
     }
-    for output_item in report_data["outputs"]:
-        output_item["output_file"] = output_file_by_name[output_item["output_name"]]
-    report_path.write_text(
-        json.dumps(report_data, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-
-    click.echo(
-        "Converted SysDeSim machine {name!r} into {count} FCSTM output(s).".format(
-            name=report.selected_machine_name,
-            count=len(output_files),
+    report_path = None
+    if report_file is not None:
+        report_path = Path(report_file)
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        for output_item in report_data["outputs"]:
+            output_item["output_file"] = output_file_by_name[output_item["output_name"]]
+        report_path.write_text(
+            json.dumps(report_data, indent=2, ensure_ascii=False, sort_keys=True)
+            + "\n",
+            encoding="utf-8",
         )
-    )
-    _emit_sysdesim_cli_summary(report, output_file_by_name, report_path)
+
+    _emit_sysdesim_cli_summary(report, output_root, output_file_by_name, report_path)
 
 
 def _run_sysdesim_validate(
@@ -761,7 +988,10 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
         "report_file",
         type=str,
         default=None,
-        help="Optional JSON report path. Defaults to <output-dir>/sysdesim_conversion_report.json.",
+        help=(
+            "Optional JSON report path. When provided, the CLI writes the full "
+            "conversion report JSON; otherwise no JSON report is exported."
+        ),
     )
     @click.option(
         "--clear",

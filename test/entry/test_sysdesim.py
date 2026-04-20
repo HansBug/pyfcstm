@@ -41,6 +41,27 @@ def _strip_ansi(text: str) -> str:
     return _ANSI_RE.sub("", text)
 
 
+def _write_sysdesim_convert_json_report(
+    xml_file: Path, output_dir: Path, report_file: Path
+) -> str:
+    """Run the conversion CLI with one explicit JSON report export."""
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "-i",
+            str(xml_file),
+            "-o",
+            str(output_dir),
+            "--report-file",
+            str(report_file),
+        ],
+        color=True,
+    )
+    assert result.exit_code == 0, result.output
+    return _strip_ansi(result.output)
+
+
 @pytest.mark.unittest
 def test_sysdesim_cli_writes_outputs_and_report(tmp_path: Path):
     """The phase6 CLI should write all FCSTM outputs plus the JSON report."""
@@ -81,16 +102,11 @@ def test_sysdesim_cli_writes_outputs_and_report(tmp_path: Path):
         """,
     )
     output_dir = tmp_path / "out"
+    report_file = tmp_path / "conversion_report.json"
 
-    result = CliRunner().invoke(
-        pyfcstmcli,
-        ["sysdesim", "-i", str(xml_file), "-o", str(output_dir)],
-        color=True,
+    plain_output = _write_sysdesim_convert_json_report(
+        xml_file, output_dir, report_file
     )
-
-    assert result.exit_code == 0, result.output
-    assert "\x1b[" in result.output
-    plain_output = _strip_ansi(result.output)
     expected_outputs = {
         "ParallelSplit": dedent(
             """\
@@ -131,7 +147,6 @@ def test_sysdesim_cli_writes_outputs_and_report(tmp_path: Path):
         assert dsl_code == expected_dsl
         _assert_dsl_code_loads_to_state_machine(dsl_code)
 
-    report_file = output_dir / "sysdesim_conversion_report.json"
     report_data = json.loads(report_file.read_text(encoding="utf-8"))
     assert report_data["selected_machine_name"] == "Parallel Split"
     assert report_data["output_count"] == 3
@@ -143,19 +158,64 @@ def test_sysdesim_cli_writes_outputs_and_report(tmp_path: Path):
     assert all(item["guard_variables_defined"] for item in report_data["outputs"])
     assert all(item["event_paths_valid"] for item in report_data["outputs"])
     assert all(item["composite_states_have_init"] for item in report_data["outputs"])
-    assert (
-        "Converted SysDeSim machine 'Parallel Split' into 3 FCSTM output(s)."
-        in plain_output
-    )
     assert "SysDeSim Conversion Complete" in plain_output
     assert "Machine: Parallel Split [machine_1]" in plain_output
+    assert f"Output Dir: {output_dir}" in plain_output
+    assert f"Report: {report_file}" in plain_output
     assert "Tick: not required" in plain_output
     assert "Outputs: 3" in plain_output
-    assert "validation: parser=OK model=OK guards=OK events=OK init=OK" in plain_output
-    assert (
-        "semantic: Parallel-region main output is a semantic downgrade" in plain_output
+    assert "| output" in plain_output
+    assert "| file" in plain_output
+    assert "| ln" in plain_output
+    assert "| status" in plain_output
+    assert "| diag" in plain_output
+    assert "ParallelSplit.fcstm" in plain_output
+    assert "ParallelSplit__Controller_region1.fcstm" in plain_output
+    assert "ParallelSplit__Controller_region2.fcstm" in plain_output
+    assert "OK" in plain_output
+    assert "parallel-main" in plain_output
+    assert "parallel-split" in plain_output
+    assert "full details are in the JSON report" in plain_output
+
+
+@pytest.mark.unittest
+def test_sysdesim_cli_does_not_export_convert_report_without_option(tmp_path: Path):
+    """The conversion CLI should skip JSON export unless --report-file is provided."""
+    xml_file = _write_xml(
+        tmp_path,
+        """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <xmi:XMI xmi:version="20131001"
+                 xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
+                 xmlns:uml="http://www.eclipse.org/uml2/5.0.0/UML">
+          <uml:Model xmi:id="model_1" name="model">
+            <packagedElement xmi:type="uml:Class" xmi:id="class_1" name="Simple" classifierBehavior="machine_1">
+              <ownedBehavior xmi:type="uml:StateMachine" xmi:id="machine_1" name="Simple">
+                <region xmi:type="uml:Region" xmi:id="region_root" name="">
+                  <transition xmi:type="uml:Transition" xmi:id="tx_init" source="init_root" target="state_idle"/>
+                  <subvertex xmi:type="uml:Pseudostate" xmi:id="init_root"/>
+                  <subvertex xmi:type="uml:State" xmi:id="state_idle" name="Idle"/>
+                </region>
+              </ownedBehavior>
+            </packagedElement>
+          </uml:Model>
+        </xmi:XMI>
+        """,
     )
-    assert "diagnostics: parallel_main_machine_semantic_downgrade" in plain_output
+    output_dir = tmp_path / "out"
+
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        ["sysdesim", "-i", str(xml_file), "-o", str(output_dir)],
+        color=True,
+    )
+
+    assert result.exit_code == 0, result.output
+    plain_output = _strip_ansi(result.output)
+    assert "SysDeSim Conversion Complete" in plain_output
+    assert "Report:" not in plain_output
+    assert "use --report-file to export full JSON diagnostics" not in plain_output
+    assert not (output_dir / "sysdesim_conversion_report.json").exists()
 
 
 @pytest.mark.unittest
@@ -233,14 +293,10 @@ def test_sysdesim_cli_ignores_transition_effects_with_report_diagnostic(tmp_path
     )
 
     output_dir = tmp_path / "out"
-    result = CliRunner().invoke(
-        pyfcstmcli,
-        ["sysdesim", "-i", str(xml_file), "-o", str(output_dir)],
-        color=True,
+    report_file = tmp_path / "conversion_report.json"
+    plain_output = _write_sysdesim_convert_json_report(
+        xml_file, output_dir, report_file
     )
-
-    assert result.exit_code == 0, result.output
-    plain_output = _strip_ansi(result.output)
     expected_dsl = dedent(
         """\
         state EffectSample named 'Effect Sample' {
@@ -256,15 +312,13 @@ def test_sysdesim_cli_ignores_transition_effects_with_report_diagnostic(tmp_path
     assert dsl_code == expected_dsl
     _assert_dsl_code_loads_to_state_machine(dsl_code)
 
-    report_data = json.loads(
-        (output_dir / "sysdesim_conversion_report.json").read_text(encoding="utf-8")
-    )
+    report_data = json.loads(report_file.read_text(encoding="utf-8"))
     assert report_data["output_count"] == 1
     assert (
         report_data["outputs"][0]["diagnostics"][-1]["code"]
         == "transition_effect_semantic_downgrade"
     )
-    assert "diagnostics: transition_effect_semantic_downgrade" in plain_output
+    assert "tx-effect" in plain_output
 
 
 @pytest.mark.unittest
@@ -304,12 +358,12 @@ def test_sysdesim_cli_validate_writes_timeline_import_report(tmp_path: Path):
     )
     assert "phase11" not in report_data
     assert "SysDeSim Timeline Import Report Complete" in plain_output
-    assert "Mode: import report only (no Phase11 state query provided)" in plain_output
+    assert "Mode: import report only" in plain_output
     assert "Machine: Timeline Coexist" in plain_output
     assert "Interaction: Scenario 1" in plain_output
     assert f"Report: {report_file}" in plain_output
     assert (
-        "Import Phase78: graph_edges={graph} inputs={inputs} events={events} "
+        "Model Import: graph_edges={graph} inputs={inputs} events={events} "
         "steps={steps} windows={windows} durations={durations} diagnostics={diagnostics}".format(
             graph=len(report_data["phase78"]["machine_graph"]),
             inputs=len(report_data["phase78"]["input_candidates"]),
@@ -321,9 +375,15 @@ def test_sysdesim_cli_validate_writes_timeline_import_report(tmp_path: Path):
         )
         in plain_output
     )
-    assert "Import Phase9 Outputs: 3" in plain_output
+    assert "Outputs: 3" in plain_output
+    assert "| output" in plain_output
+    assert "| defines" in plain_output
+    assert "| events" in plain_output
+    assert "| diag" in plain_output
+    assert "parallel-main" in plain_output
+    assert "parallel-split" in plain_output
     assert (
-        "Import Phase10: scenario={name} steps={steps} temporal_constraints={constraints} "
+        "Scenario: scenario={name} steps={steps} temporal_constraints={constraints} "
         "bindings={bindings} traces={traces} diagnostics={diagnostics}".format(
             name=report_data["phase10"]["scenario"]["name"],
             steps=len(report_data["phase10"]["scenario"]["steps"]),
@@ -334,13 +394,10 @@ def test_sysdesim_cli_validate_writes_timeline_import_report(tmp_path: Path):
         )
         in plain_output
     )
-    assert "initial states:" in plain_output
+    assert "Initial States:" in plain_output
     assert "TimelineCoexist -> TimelineCoexist.Idle" in plain_output
-    assert "Phase11 Query" not in plain_output
-    assert (
-        "Phase11: no state query was requested; this run only checked the import/report pipeline."
-        in plain_output
-    )
+    assert "Phase11" not in plain_output
+    assert "State Query: not requested." in plain_output
 
 
 @pytest.mark.unittest
@@ -376,10 +433,10 @@ def test_sysdesim_cli_validate_writes_phase11_summary_when_report_file_is_used(
     plain_output = _strip_ansi(result.output)
     report_data = json.loads(report_file.read_text(encoding="utf-8"))
     assert report_data["phase11"]["solve_result"]["status"] == "sat"
-    assert "SysDeSim State Query Validation Complete" in plain_output
-    assert "Mode: import report + Phase11 state query" in plain_output
+    assert "SysDeSim State Query Complete" in plain_output
+    assert "Mode: import report + state query" in plain_output
     assert (
-        "Phase11 Query: TimelineCoexist:TimelineCoexist.Idle <-> "
+        "State Query: TimelineCoexist:TimelineCoexist.Idle <-> "
         "TimelineCoexist__Control_region1:TimelineCoexist.Idle"
     ) in plain_output
     assert "scope: both | candidates: 2 | status: SAT" in plain_output
@@ -431,6 +488,7 @@ def test_sysdesim_cli_validate_unsat_query_does_not_print_witness_table(
     assert report_data["phase11"]["solve_result"]["status"] == "unsat"
     assert "status: UNSAT" in plain_output
     assert "reason:" in plain_output
+    assert "Phase11" not in plain_output
     assert "witness timeline:" not in plain_output
 
 

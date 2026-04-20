@@ -494,8 +494,9 @@ def test_sysdesim_cli_validate_unsat_query_does_not_print_witness_table(
 
 @pytest.mark.unittest
 def test_sysdesim_cli_validate_can_include_phase11_query_in_stdout(tmp_path: Path):
-    """The nested validate command should optionally embed one Phase11 query bundle."""
+    """The nested validate command should print a summary without exporting JSON by default."""
     xml_file = _build_parallel_timeline_xml(tmp_path)
+    default_report = tmp_path / "sysdesim_timeline_report.json"
 
     result = CliRunner().invoke(
         pyfcstmcli,
@@ -517,10 +518,15 @@ def test_sysdesim_cli_validate_can_include_phase11_query_in_stdout(tmp_path: Pat
     )
 
     assert result.exit_code == 0, result.output
-    report_data = json.loads(result.output)
-    assert report_data["phase11"]["constraint_preview"]["candidate_count"] == 2
-    assert report_data["phase11"]["solve_result"]["status"] == "sat"
-    assert report_data["phase11"]["solve_result"]["observation_kind"] == "initial"
+    plain_output = _strip_ansi(result.output)
+    assert "SysDeSim State Query Complete" in plain_output
+    assert "Mode: import report + state query" in plain_output
     assert (
-        report_data["phase11"]["timeline_report"]["first_coexistence_symbol"] == "t00"
-    )
+        "State Query: TimelineCoexist:TimelineCoexist.Idle <-> "
+        "TimelineCoexist__Control_region1:TimelineCoexist.Idle"
+    ) in plain_output
+    assert "first coexistence: t00 = 0" in plain_output
+    assert "witness timeline:" in plain_output
+    assert "Wrote SysDeSim timeline" not in plain_output
+    assert "Report:" not in plain_output
+    assert not default_report.exists()

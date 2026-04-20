@@ -376,15 +376,15 @@ def _emit_sysdesim_validate_phase9_table(outputs: Sequence[Dict[str, object]]) -
 
 
 def _emit_sysdesim_validate_output_notes(
-    outputs: Sequence[Dict[str, object]], report_path: Path
+    outputs: Sequence[Dict[str, object]], report_path: Optional[Path]
 ) -> None:
     """
     Print one short note for compact validate-mode output diagnostics.
 
     :param outputs: Phase9 output dictionaries in display order.
     :type outputs: collections.abc.Sequence[dict[str, object]]
-    :param report_path: Path to the exported JSON report.
-    :type report_path: pathlib.Path
+    :param report_path: Optional path to the exported JSON report.
+    :type report_path: pathlib.Path, optional
     :return: ``None``.
     :rtype: None
     """
@@ -393,8 +393,12 @@ def _emit_sysdesim_validate_output_notes(
         click.echo(
             "{label}: {message}".format(
                 label=click.style("Notes", fg="cyan", bold=True),
-                message="compact diagnostics shown; full details are in {}.".format(
-                    report_path.name
+                message=(
+                    "compact diagnostics shown; full details are in {}.".format(
+                        report_path.name
+                    )
+                    if report_path is not None
+                    else "compact diagnostics shown; use --report-file to export full JSON diagnostics."
                 ),
             )
         )
@@ -633,15 +637,15 @@ def _emit_sysdesim_cli_summary(
 
 
 def _emit_sysdesim_validate_summary(
-    report_data: Dict[str, object], report_path: Path
+    report_data: Dict[str, object], report_path: Optional[Path]
 ) -> None:
     """
     Print a colored summary for the timeline validation report.
 
     :param report_data: JSON-serializable validation report.
     :type report_data: dict[str, object]
-    :param report_path: Path to the JSON report file.
-    :type report_path: pathlib.Path
+    :param report_path: Optional path to the JSON report file.
+    :type report_path: pathlib.Path, optional
     :return: ``None``.
     :rtype: None
     """
@@ -693,12 +697,13 @@ def _emit_sysdesim_validate_summary(
             tick=_format_tick_duration_text(report_data["tick_duration_ms"]),
         )
     )
-    click.echo(
-        "{label}: {path}".format(
-            label=click.style("Report", fg="cyan", bold=True),
-            path=report_path,
+    if report_path is not None:
+        click.echo(
+            "{label}: {path}".format(
+                label=click.style("Report", fg="cyan", bold=True),
+                path=report_path,
+            )
         )
-    )
 
     click.echo(
         "{label}: graph_edges={graph} inputs={inputs} events={events} steps={steps} windows={windows} durations={durations} diagnostics={diagnostics}".format(
@@ -908,23 +913,26 @@ def _run_sysdesim_validate(
     except (KeyError, LookupError, NotImplementedError, ValueError) as err:
         raise ClickErrorException(_format_sysdesim_cli_error(err))
 
-    rendered = (
-        json.dumps(report_data, indent=2, ensure_ascii=False, sort_keys=True) + "\n"
-    )
-    if report_file is None:
-        click.echo(rendered, nl=False)
-        return
-
-    report_path = Path(report_file)
-    report_path.parent.mkdir(parents=True, exist_ok=True)
-    report_path.write_text(rendered, encoding="utf-8")
-    _emit_sysdesim_validate_summary(report_data, report_path)
-    click.echo(
-        "Wrote SysDeSim timeline {kind} to {path}.".format(
-            kind=("validation report" if "phase11" in report_data else "import report"),
-            path=report_path,
+    report_path = None
+    if report_file is not None:
+        rendered = (
+            json.dumps(report_data, indent=2, ensure_ascii=False, sort_keys=True) + "\n"
         )
-    )
+        report_path = Path(report_file)
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        report_path.write_text(rendered, encoding="utf-8")
+
+    _emit_sysdesim_validate_summary(report_data, report_path)
+
+    if report_path is not None:
+        click.echo(
+            "Wrote SysDeSim timeline {kind} to {path}.".format(
+                kind=(
+                    "validation report" if "phase11" in report_data else "import report"
+                ),
+                path=report_path,
+            )
+        )
 
 
 def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
@@ -1091,9 +1099,8 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
         type=str,
         default=None,
         help=(
-            "Optional JSON report path. Defaults to stdout. When provided, the "
-            "CLI prints a readable summary and writes the full JSON report to "
-            "the file."
+            "Optional JSON report path. When provided, the CLI writes the full "
+            "timeline report JSON; otherwise no JSON report is exported."
         ),
     )
     @click.option(
@@ -1146,7 +1153,7 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
         observation_scope: str,
     ) -> None:
         """
-        Build a JSON timeline validation report for one SysDeSim input.
+        Build one readable timeline validation summary for one SysDeSim input.
 
         :param input_xml_file: Input SysDeSim XML/XMI file.
         :type input_xml_file: str
@@ -1157,9 +1164,9 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
         :param tick_duration_ms: Runtime tick duration in milliseconds used for
             compatibility lowering.
         :type tick_duration_ms: float, optional
-        :param report_file: Optional JSON report path. Defaults to stdout. When
-            provided, the CLI prints a readable summary and writes the full
-            JSON report to the file.
+        :param report_file: Optional JSON report path. When provided, the CLI
+            writes the full timeline report JSON; otherwise no JSON report is
+            exported.
         :type report_file: str, optional
         :param left_machine_alias: Optional left machine alias for one Phase11 query.
         :type left_machine_alias: str, optional

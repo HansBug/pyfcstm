@@ -1,9 +1,10 @@
 ## 摘要
 
 - 把 timeline 验证 / report 能力放到 `pyfcstm sysdesim validate` 子命令下，不再和原有 `pyfcstm sysdesim` 转换入口混在一起。
-- 保持原有转换路径兼容：`pyfcstm sysdesim -i ... -o ...` 仍然输出 FCSTM 文件族和 conversion report。
-- 修复 Phase11 的初始状态缺口：引入初始观测符号 `t00` 和初始状态窗口，使“只在场景开始前成立的共存”不再被误判成 `unsat`。
-- 补齐 Phase13 方向的 CLI / 单测覆盖：包括嵌套的 `sysdesim validate` 流程和初始状态共存的回归测试。
+- 保持原有转换路径兼容：`pyfcstm sysdesim -i ... -o ...` 仍然输出 FCSTM 文件族；只有显式传 `--report-file` 时才导出 conversion report JSON。
+- 修复状态共存查询的初始状态缺口：引入初始观测符号 `t00` 和初始状态窗口，使“只在场景开始前成立的共存”不再被误判成 `unsat`。
+- 收敛 `sysdesim` / `sysdesim validate` 的 CLI summary：改成统一的紧凑表格输出，去掉内部 phase 术语，默认不再把 validate JSON 打到 stdout。
+- 补齐对应 CLI / 单测覆盖：包括嵌套的 `sysdesim validate` 流程、默认不导出 report 的行为，以及初始状态共存的回归测试。
 
 ## 验证
 
@@ -28,6 +29,16 @@ venv/bin/python -m pyfcstm sysdesim \
   --clear
 
 venv/bin/python -m pyfcstm sysdesim validate \
+  -i "$XML"
+
+venv/bin/python -m pyfcstm sysdesim validate \
+  -i "$XML" \
+  --left-machine-alias StateMachine__Control_region2 \
+  --left-state H.L \
+  --right-machine-alias StateMachine__Control_region3 \
+  --right-state X
+
+venv/bin/python -m pyfcstm sysdesim validate \
   -i "$XML" \
   --report-file "$OUT/reports/timeline_import_report.json"
 
@@ -37,7 +48,7 @@ venv/bin/python -m pyfcstm sysdesim validate \
   --left-state H.L \
   --right-machine-alias StateMachine__Control_region3 \
   --right-state X \
-  --report-file "$OUT/reports/phase11_sat_report.json"
+  --report-file "$OUT/reports/state_query_sat_report.json"
 ```
 
 期望检查点：
@@ -49,12 +60,13 @@ venv/bin/python -m pyfcstm sysdesim validate \
   - `StateMachine__Control_region3`
   - `StateMachine__Control_region4`
 - 转换 CLI 会打印 `Tick: not required`
+- `validate` 在未传 `--report-file` 时只打印可读 summary，不会额外导出 JSON 文件
 - `timeline_import_report.json` 中应看到：
   - `len(phase78.steps) == 28`
   - `len(phase78.duration_constraints) == 9`
   - `len(phase10.bindings) == 5`
   - `len(phase10.traces) == 5`
-- `phase11_sat_report.json` 中应看到：
+- `state_query_sat_report.json` 中应看到：
   - `phase11.solve_result.status == "sat"`
   - `phase11.timeline_report.first_coexistence_symbol == "tau__StateMachine__Control_region3__s20__1"`
   - `phase11.timeline_report.first_coexistence_time_text == "67"`

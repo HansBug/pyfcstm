@@ -209,7 +209,8 @@ export function renderFcstmDiagramSvg(
                 `<path d="${path}" fill="none" stroke="${STYLE.stateTitleColor}" ` +
                 `stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" ` +
                 `data-fcstm-kind="chevron" ` +
-                `${quote('data-fcstm-id', meta.qualifiedName || node.id)}/>`
+                `${quote('data-fcstm-id', meta.qualifiedName || node.id)} ` +
+                `${rangeAttrs('fcstm-range', meta.sourceRange)}/>`
             );
         }
 

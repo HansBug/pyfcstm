@@ -327,18 +327,40 @@ function createPreviewHtml(
             display: block;
             user-select: none;
         }
-        .viewport-inner [data-fcstm-kind="state"],
-        .viewport-inner [data-fcstm-kind="composite-state"],
-        .viewport-inner [data-fcstm-kind="transition"],
-        .viewport-inner [data-fcstm-kind="transition-label"],
+        /* chevron always toggles on plain click, so it keeps pointer cursor. */
         .viewport-inner [data-fcstm-kind="chevron"] {
             cursor: pointer;
         }
-        .viewport-inner [data-fcstm-kind]:hover > rect {
+        /* Other elements adopt the viewport's grab/grabbing cursor by default;
+           only when a modifier is held do they offer the code-tracking cursor
+           used by the Ctrl/Cmd+click reveal-source action. */
+        body.modifier-held .viewport-inner [data-fcstm-kind="state"][data-fcstm-range-start-line],
+        body.modifier-held .viewport-inner [data-fcstm-kind="composite-state"][data-fcstm-range-start-line],
+        body.modifier-held .viewport-inner [data-fcstm-kind="transition"][data-fcstm-range-start-line],
+        body.modifier-held .viewport-inner [data-fcstm-kind="transition-label"][data-fcstm-range-start-line],
+        body.modifier-held .viewport-inner [data-fcstm-kind="chevron"][data-fcstm-range-start-line] {
+            cursor: pointer;
+        }
+        .viewport-inner [data-fcstm-kind="state"]:hover > rect,
+        .viewport-inner [data-fcstm-kind="composite-state"]:hover > rect {
             stroke-width: 2.6px;
             filter: brightness(1.05);
         }
+        body.modifier-held .viewport-inner [data-fcstm-kind]:hover,
+        body.modifier-held .viewport-inner [data-fcstm-kind="transition"]:hover {
+            filter: brightness(1.05);
+        }
 
+        .stage-hint {
+            position: absolute; left: 12px; bottom: 10px;
+            font-size: 10px; color: var(--muted);
+            background: rgba(255, 255, 255, 0.75);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 3px 8px;
+            pointer-events: none;
+            opacity: 0.85;
+        }
         .zoom-controls {
             position: absolute; bottom: 14px; right: 14px;
             display: flex; flex-direction: column; gap: 4px;
@@ -465,7 +487,7 @@ function createPreviewHtml(
         <section class="summary" id="summary"></section>
 
         <div class="stage" id="stage">
-            <div class="viewport" id="viewport">
+            <div class="viewport" id="viewport" title="Drag to pan · wheel to zoom · click chevron to collapse · Ctrl/Cmd+click to reveal source">
                 <div class="viewport-inner" id="viewport-inner"></div>
             </div>
             <div class="stage-empty hidden" id="stage-empty">
@@ -477,6 +499,7 @@ function createPreviewHtml(
                 <button class="btn" id="btn-zoom-out" title="Zoom out">-</button>
                 <div class="zoom-level" id="zoom-level">100%</div>
             </div>
+            <div class="stage-hint" id="stage-hint" aria-hidden="true">Drag to pan · Ctrl/Cmd+click to jump to source</div>
         </div>
 
         <section class="side-panels">
@@ -599,20 +622,36 @@ ${elkRuntime}
             setTransform(newTx, newTy, newScale);
         }, { passive: false });
 
+        // Interaction model (mirrors editors/vscode/src/preview-interaction.ts):
+        //   - mousedown anywhere starts a drag; pan only takes effect if the
+        //     pointer actually moves beyond PREVIEW_DRAG_THRESHOLD_PX.
+        //   - plain click on a chevron toggles collapse.
+        //   - Ctrl/Cmd + click on any element that carries a source range
+        //     reveals that range in the editor (code-tracking style).
+        //   - all other plain clicks are ignored so drag/zoom stay usable.
+        const PREVIEW_DRAG_THRESHOLD_PX = 4;
         let dragState = null;
+        let dragMovedPx = 0;
+
+        function decidePreviewPointerAction(input) {
+            if (input.dragMovedPx > PREVIEW_DRAG_THRESHOLD_PX) return { type: 'none' };
+            if (!input.kind) return { type: 'none' };
+            if (input.kind === 'chevron' && !input.modifier) return { type: 'toggleCollapse' };
+            if (input.modifier && input.hasRange) return { type: 'revealSource' };
+            return { type: 'none' };
+        }
+
         viewportNode.addEventListener('mousedown', (ev) => {
             if (ev.button !== 0) return;
-            if (ev.target && ev.target.closest && ev.target.closest('[data-fcstm-kind]')) {
-                return;
-            }
             dragState = { startX: ev.clientX, startY: ev.clientY, tx: viewTransform.tx, ty: viewTransform.ty };
+            dragMovedPx = 0;
             viewportNode.classList.add('dragging');
-            ev.preventDefault();
         });
         window.addEventListener('mousemove', (ev) => {
             if (!dragState) return;
             const dx = ev.clientX - dragState.startX;
             const dy = ev.clientY - dragState.startY;
+            dragMovedPx = Math.max(dragMovedPx, Math.hypot(dx, dy));
             setTransform(dragState.tx + dx, dragState.ty + dy, viewTransform.scale);
         });
         window.addEventListener('mouseup', () => {
@@ -623,19 +662,38 @@ ${elkRuntime}
         });
 
         viewportNode.addEventListener('click', (ev) => {
-            const target = ev.target.closest && ev.target.closest('[data-fcstm-kind]');
-            if (!target) return;
-            const kind = target.getAttribute('data-fcstm-kind');
-            const id = target.getAttribute('data-fcstm-id');
-            if (kind === 'chevron') {
+            const movedPx = dragMovedPx;
+            dragMovedPx = 0;
+            const target = ev.target && ev.target.closest && ev.target.closest('[data-fcstm-kind]');
+            const kind = target ? target.getAttribute('data-fcstm-kind') : null;
+            const range = target ? readRange(target) : null;
+            const modifier = Boolean(ev.ctrlKey || ev.metaKey);
+            const action = decidePreviewPointerAction({
+                kind,
+                modifier,
+                dragMovedPx: movedPx,
+                hasRange: Boolean(range),
+            });
+            if (action.type === 'toggleCollapse') {
+                const id = target.getAttribute('data-fcstm-id');
                 toggleCollapse(id);
                 return;
             }
-            const range = readRange(target);
-            if (range) {
+            if (action.type === 'revealSource' && range) {
                 vscode.postMessage({ type: 'revealSource', range });
+                return;
             }
         });
+
+        // Highlight targetable elements with the code-tracking cursor only
+        // while a modifier key is held, matching JetBrains-style Ctrl+click.
+        function updateModifierState(ev) {
+            const held = Boolean(ev.ctrlKey || ev.metaKey);
+            document.body.classList.toggle('modifier-held', held);
+        }
+        window.addEventListener('keydown', updateModifierState);
+        window.addEventListener('keyup', updateModifierState);
+        window.addEventListener('blur', () => document.body.classList.remove('modifier-held'));
 
         function readRange(el) {
             const sl = el.getAttribute('data-fcstm-range-start-line');
@@ -849,7 +907,8 @@ ${elkRuntime}
                     const d = collapsed ? 'M' + cx + ',' + cy + ' l4,4 l4,-4' : 'M' + cx + ',' + (cy + 2) + ' l4,-4 l4,4';
                     out.push('<path d="' + d + '" fill="none" stroke="' + STYLE.stateTitleColor + '" stroke-width="1.8" ' +
                         'stroke-linecap="round" stroke-linejoin="round" ' +
-                        q('data-fcstm-kind', 'chevron') + ' ' + q('data-fcstm-id', meta.qualifiedName || node.id) + '/>');
+                        q('data-fcstm-kind', 'chevron') + ' ' + q('data-fcstm-id', meta.qualifiedName || node.id) + ' ' +
+                        rangeAttrs('fcstm-range', meta.sourceRange) + '/>');
                 }
                 out.push('</g>');
                 if (!meta.collapsed) {

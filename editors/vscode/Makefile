@@ -1,7 +1,7 @@
 # Makefile for FCSTM VSCode Extension
 # This file provides commands for building and maintaining the extension
 
-.PHONY: all parser clean install build package verify-p0.2 verify-p0.3 verify-p0.4 verify-p0.5 verify-p0.6 verify-p1.b verify-editor-contexts verify-reference-scoping verify-temp-variables verify-outline-layout verify-import-editor-support verify-semantic-editor-support verify-phase8-preview verify-phase9-preview verify test-e2e help syntaxes icons jsfcstm-install jsfcstm-build jsfcstm-pack
+.PHONY: all parser clean install build package verify-p0.2 verify-p0.3 verify-p0.4 verify-p0.5 verify-p0.6 verify-p1.b verify-editor-contexts verify-reference-scoping verify-temp-variables verify-outline-layout verify-import-editor-support verify-semantic-editor-support verify-phase8-preview verify-phase9-preview verify-preview-interaction verify test-e2e help syntaxes icons jsfcstm-install jsfcstm-build jsfcstm-pack
 
 # ANTLR configuration
 ANTLR_VERSION := 4.9.3
@@ -195,12 +195,18 @@ verify-phase9-preview: install syntaxes
 verify-phase8-preview: verify-phase9-preview
 	@echo ""
 
+verify-preview-interaction: install
+	@echo "Running preview pointer interaction verification script..."
+	$(TSC) -p ./
+	node ./scripts/verify-preview-interaction.js
+	@echo ""
+
 test-e2e: build
 	@echo "Running end-to-end bundle verification..."
 	node ./scripts/test-e2e.js
 	@echo ""
 
-verify: verify-p0.2 verify-p0.3 verify-p0.4 verify-p0.5 verify-p0.6 verify-p1.b verify-editor-contexts verify-reference-scoping verify-temp-variables verify-outline-layout verify-import-editor-support verify-semantic-editor-support verify-phase9-preview test-e2e
+verify: verify-p0.2 verify-p0.3 verify-p0.4 verify-p0.5 verify-p0.6 verify-p1.b verify-editor-contexts verify-reference-scoping verify-temp-variables verify-outline-layout verify-import-editor-support verify-semantic-editor-support verify-phase9-preview verify-preview-interaction test-e2e
 	@echo "All verification tests passed!"
 
 package: all

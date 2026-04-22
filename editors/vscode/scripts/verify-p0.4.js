@@ -18,9 +18,11 @@ const originalRequire = Module.prototype.require;
 // Mock VSCode module
 const vscode = {
     SymbolKind: {
-        Variable: 13,
+        Module: 1,
         Class: 5,
-        Event: 24
+        Function: 11,
+        Variable: 13,
+        Event: 24,
     },
     DocumentSymbol: class DocumentSymbol {
         constructor(name, detail, kind, range, selectionRange) {
@@ -109,6 +111,106 @@ class TestCase {
  * Symbol kind enum (matching VSCode)
  */
 const SymbolKind = vscode.SymbolKind;
+
+// ---------------------------------------------------------------------------
+// Builders for expected document-symbol trees.
+//
+// jsfcstm now groups state children into intermediate "module" containers:
+//   <State>
+//     Events (module)       -> list of event entries
+//     Transitions (module)  -> list of transition entries
+//     Actions (module)      -> Lifecycle / Aspects sub-groups
+//         Lifecycle (module)
+//         Aspects   (module)
+//     States (module)       -> nested states
+// ---------------------------------------------------------------------------
+
+function plural(count, singular, pluralForm) {
+    const word = count === 1 ? singular : (pluralForm || singular + 's');
+    return `${count} ${word}`;
+}
+
+function variable(name, type) {
+    return { name, kind: SymbolKind.Variable, detail: type };
+}
+
+function state(name, detail = '', children) {
+    if (children === undefined) {
+        return { name, kind: SymbolKind.Class, detail };
+    }
+    return { name, kind: SymbolKind.Class, detail, children };
+}
+
+function pseudoState(name) {
+    return { name, kind: SymbolKind.Class, detail: 'pseudo state' };
+}
+
+function event(name, detail = '') {
+    return { name, kind: SymbolKind.Event, detail };
+}
+
+function transition(label, detail) {
+    return { name: label, kind: SymbolKind.Function, detail };
+}
+
+function actionEntry(name, detail) {
+    return { name, kind: SymbolKind.Function, detail };
+}
+
+function eventsGroup(children) {
+    return {
+        name: 'Events',
+        kind: SymbolKind.Module,
+        detail: plural(children.length, 'event'),
+        children,
+    };
+}
+
+function transitionsGroup(children) {
+    return {
+        name: 'Transitions',
+        kind: SymbolKind.Module,
+        detail: plural(children.length, 'transition'),
+        children,
+    };
+}
+
+function statesGroup(children) {
+    return {
+        name: 'States',
+        kind: SymbolKind.Module,
+        detail: plural(children.length, 'state'),
+        children,
+    };
+}
+
+function lifecycleGroup(children) {
+    return {
+        name: 'Lifecycle',
+        kind: SymbolKind.Module,
+        detail: plural(children.length, 'action'),
+        children,
+    };
+}
+
+function aspectsGroup(children) {
+    return {
+        name: 'Aspects',
+        kind: SymbolKind.Module,
+        detail: plural(children.length, 'aspect'),
+        children,
+    };
+}
+
+function actionsGroup(children) {
+    const total = children.reduce((n, g) => n + (g.children ? g.children.length : 0), 0);
+    return {
+        name: 'Actions',
+        kind: SymbolKind.Module,
+        detail: plural(total, 'action entry', 'action entries'),
+        children,
+    };
+}
 
 /**
  * Check if symbol matches expected
@@ -286,15 +388,9 @@ def float z = 2.5;`,
     state Child2;
 }`,
         [
-            {
-                name: 'Root',
-                kind: SymbolKind.Class,
-                detail: '',
-                children: [
-                    { name: 'Child1', kind: SymbolKind.Class, detail: '' },
-                    { name: 'Child2', kind: SymbolKind.Class, detail: '' }
-                ]
-            }
+            state('Root', '', [
+                statesGroup([state('Child1'), state('Child2')]),
+            ]),
         ]
     ),
 
@@ -307,21 +403,13 @@ def float z = 2.5;`,
     }
 }`,
         [
-            {
-                name: 'Root',
-                kind: SymbolKind.Class,
-                detail: '',
-                children: [
-                    {
-                        name: 'Level1',
-                        kind: SymbolKind.Class,
-                        detail: '',
-                        children: [
-                            { name: 'Level2', kind: SymbolKind.Class, detail: '' }
-                        ]
-                    }
-                ]
-            }
+            state('Root', '', [
+                statesGroup([
+                    state('Level1', '', [
+                        statesGroup([state('Level2')]),
+                    ]),
+                ]),
+            ]),
         ]
     ),
 
@@ -333,14 +421,9 @@ def float z = 2.5;`,
     event Start;
 }`,
         [
-            {
-                name: 'Root',
-                kind: SymbolKind.Class,
-                detail: '',
-                children: [
-                    { name: 'Start', kind: SymbolKind.Event, detail: '' }
-                ]
-            }
+            state('Root', '', [
+                eventsGroup([event('Start')]),
+            ]),
         ]
     ),
 
@@ -351,14 +434,9 @@ def float z = 2.5;`,
     event Stop named "Stop Event";
 }`,
         [
-            {
-                name: 'Root',
-                kind: SymbolKind.Class,
-                detail: '',
-                children: [
-                    { name: 'Stop', kind: SymbolKind.Event, detail: 'Stop Event' }
-                ]
-            }
+            state('Root', '', [
+                eventsGroup([event('Stop', 'Stop Event')]),
+            ]),
         ]
     ),
 
@@ -371,16 +449,9 @@ def float z = 2.5;`,
     event Pause;
 }`,
         [
-            {
-                name: 'Root',
-                kind: SymbolKind.Class,
-                detail: '',
-                children: [
-                    { name: 'Start', kind: SymbolKind.Event, detail: '' },
-                    { name: 'Stop', kind: SymbolKind.Event, detail: '' },
-                    { name: 'Pause', kind: SymbolKind.Event, detail: '' }
-                ]
-            }
+            state('Root', '', [
+                eventsGroup([event('Start'), event('Stop'), event('Pause')]),
+            ]),
         ]
     ),
 
@@ -405,16 +476,11 @@ state System {
     state Idle;
 }`,
         [
-            { name: 'counter', kind: SymbolKind.Variable, detail: 'int' },
-            {
-                name: 'System',
-                kind: SymbolKind.Class,
-                detail: '',
-                children: [
-                    { name: 'Start', kind: SymbolKind.Event, detail: '' },
-                    { name: 'Idle', kind: SymbolKind.Class, detail: '' }
-                ]
-            }
+            variable('counter', 'int'),
+            state('System', '', [
+                eventsGroup([event('Start')]),
+                statesGroup([state('Idle')]),
+            ]),
         ]
     ),
 
@@ -432,33 +498,24 @@ state Root {
     }
 }`,
         [
-            { name: 'x', kind: SymbolKind.Variable, detail: 'int' },
-            { name: 'y', kind: SymbolKind.Variable, detail: 'float' },
-            {
-                name: 'Root',
-                kind: SymbolKind.Class,
-                detail: '',
-                children: [
-                    { name: 'GlobalEvent', kind: SymbolKind.Event, detail: '' },
-                    {
-                        name: 'SubSystem',
-                        kind: SymbolKind.Class,
-                        detail: '',
-                        children: [
-                            { name: 'LocalEvent', kind: SymbolKind.Event, detail: '' },
-                            { name: 'Active', kind: SymbolKind.Class, detail: '' },
-                            { name: 'Idle', kind: SymbolKind.Class, detail: '' }
-                        ]
-                    }
-                ]
-            }
+            variable('x', 'int'),
+            variable('y', 'float'),
+            state('Root', '', [
+                eventsGroup([event('GlobalEvent')]),
+                statesGroup([
+                    state('SubSystem', '', [
+                        eventsGroup([event('LocalEvent')]),
+                        statesGroup([state('Active'), state('Idle')]),
+                    ]),
+                ]),
+            ]),
         ]
     ),
 
     // Edge cases
     new TestCase(
         'P0.4-17',
-        'Extract state with lifecycle actions (should ignore actions)',
+        'Extract state with lifecycle actions',
         `def int x = 0;
 state Root {
     enter { x = 0; }
@@ -466,14 +523,22 @@ state Root {
     exit { x = 0; }
 }`,
         [
-            { name: 'x', kind: SymbolKind.Variable, detail: 'int' },
-            { name: 'Root', kind: SymbolKind.Class, detail: '', children: [] }
+            variable('x', 'int'),
+            state('Root', '', [
+                actionsGroup([
+                    lifecycleGroup([
+                        actionEntry('enter', 'enter action operations'),
+                        actionEntry('during', 'during action operations'),
+                        actionEntry('exit', 'exit action operations'),
+                    ]),
+                ]),
+            ]),
         ]
     ),
 
     new TestCase(
         'P0.4-18',
-        'Extract state with transitions (should ignore transitions)',
+        'Extract state with transitions',
         `state Root {
     state A;
     state B;
@@ -481,15 +546,13 @@ state Root {
     A -> B;
 }`,
         [
-            {
-                name: 'Root',
-                kind: SymbolKind.Class,
-                detail: '',
-                children: [
-                    { name: 'A', kind: SymbolKind.Class, detail: '' },
-                    { name: 'B', kind: SymbolKind.Class, detail: '' }
-                ]
-            }
+            state('Root', '', [
+                transitionsGroup([
+                    transition('[*] -> A', 'entry'),
+                    transition('A -> B', 'normal'),
+                ]),
+                statesGroup([state('A'), state('B')]),
+            ]),
         ]
     ),
 
@@ -502,16 +565,9 @@ state Root {
     state State3;
 }`,
         [
-            {
-                name: 'Root',
-                kind: SymbolKind.Class,
-                detail: '',
-                children: [
-                    { name: 'State1', kind: SymbolKind.Class, detail: '' },
-                    { name: 'State2', kind: SymbolKind.Class, detail: '' },
-                    { name: 'State3', kind: SymbolKind.Class, detail: '' }
-                ]
-            }
+            state('Root', '', [
+                statesGroup([state('State1'), state('State2'), state('State3')]),
+            ]),
         ]
     ),
 
@@ -526,34 +582,23 @@ state Root {
     }
 }`,
         [
-            {
-                name: 'L1',
-                kind: SymbolKind.Class,
-                detail: '',
-                children: [
-                    {
-                        name: 'L2',
-                        kind: SymbolKind.Class,
-                        detail: '',
-                        children: [
-                            {
-                                name: 'L3',
-                                kind: SymbolKind.Class,
-                                detail: '',
-                                children: [
-                                    { name: 'L4', kind: SymbolKind.Class, detail: '' }
-                                ]
-                            }
-                        ]
-                    }
-                ]
-            }
+            state('L1', '', [
+                statesGroup([
+                    state('L2', '', [
+                        statesGroup([
+                            state('L3', '', [
+                                statesGroup([state('L4')]),
+                            ]),
+                        ]),
+                    ]),
+                ]),
+            ]),
         ]
     ),
 
     new TestCase(
         'P0.4-21',
-        'Extract state with aspect actions (should ignore aspect actions)',
+        'Extract state with aspect actions',
         `def int x = 0;
 state Root {
     >> during before { x = 0; }
@@ -561,15 +606,16 @@ state Root {
     state Child;
 }`,
         [
-            { name: 'x', kind: SymbolKind.Variable, detail: 'int' },
-            {
-                name: 'Root',
-                kind: SymbolKind.Class,
-                detail: '',
-                children: [
-                    { name: 'Child', kind: SymbolKind.Class, detail: '' }
-                ]
-            }
+            variable('x', 'int'),
+            state('Root', '', [
+                actionsGroup([
+                    aspectsGroup([
+                        actionEntry('during before', 'during aspect before global operations'),
+                        actionEntry('during after', 'during aspect after global operations'),
+                    ]),
+                ]),
+                statesGroup([state('Child')]),
+            ]),
         ]
     ),
 
@@ -582,16 +628,13 @@ state Root {
     state Another;
 }`,
         [
-            {
-                name: 'Root',
-                kind: SymbolKind.Class,
-                detail: '',
-                children: [
-                    { name: 'Normal', kind: SymbolKind.Class, detail: '' },
-                    { name: 'Junction', kind: SymbolKind.Class, detail: 'pseudo state' },
-                    { name: 'Another', kind: SymbolKind.Class, detail: '' }
-                ]
-            }
+            state('Root', '', [
+                statesGroup([
+                    state('Normal'),
+                    pseudoState('Junction'),
+                    state('Another'),
+                ]),
+            ]),
         ]
     ),
 
@@ -600,38 +643,47 @@ state Root {
         'Extract named composite state',
         'state Root named "Root State" { state Child; }',
         [
-            {
-                name: 'Root',
-                kind: SymbolKind.Class,
-                detail: 'Root State',
-                children: [
-                    { name: 'Child', kind: SymbolKind.Class, detail: '' }
-                ]
-            }
+            state('Root', 'Root State', [
+                statesGroup([state('Child')]),
+            ]),
         ]
     ),
 
     new TestCase(
         'P0.4-24',
-        'Extract state with abstract actions (should ignore abstract)',
+        'Extract state with abstract actions',
         `state Root {
     enter abstract Init;
     exit abstract Cleanup;
 }`,
         [
-            { name: 'Root', kind: SymbolKind.Class, detail: '', children: [] }
+            state('Root', '', [
+                actionsGroup([
+                    lifecycleGroup([
+                        actionEntry('Init', 'enter action abstract'),
+                        actionEntry('Cleanup', 'exit action abstract'),
+                    ]),
+                ]),
+            ]),
         ]
     ),
 
     new TestCase(
         'P0.4-25',
-        'Extract state with reference actions (should ignore ref)',
+        'Extract state with reference actions',
         `state Root {
     enter ref /GlobalInit;
     exit ref /GlobalCleanup;
 }`,
         [
-            { name: 'Root', kind: SymbolKind.Class, detail: '', children: [] }
+            state('Root', '', [
+                actionsGroup([
+                    lifecycleGroup([
+                        actionEntry('enter ref', 'enter action ref /GlobalInit'),
+                        actionEntry('exit ref', 'exit action ref /GlobalCleanup'),
+                    ]),
+                ]),
+            ]),
         ]
     ),
 
@@ -660,29 +712,16 @@ def int c = (1 << 4) | 0x0F;`,
     }
 }`,
         [
-            {
-                name: 'Root',
-                kind: SymbolKind.Class,
-                detail: '',
-                children: [
-                    {
-                        name: 'Branch1',
-                        kind: SymbolKind.Class,
-                        detail: '',
-                        children: [
-                            { name: 'Leaf1', kind: SymbolKind.Class, detail: '' }
-                        ]
-                    },
-                    {
-                        name: 'Branch2',
-                        kind: SymbolKind.Class,
-                        detail: '',
-                        children: [
-                            { name: 'Leaf2', kind: SymbolKind.Class, detail: '' }
-                        ]
-                    }
-                ]
-            }
+            state('Root', '', [
+                statesGroup([
+                    state('Branch1', '', [
+                        statesGroup([state('Leaf1')]),
+                    ]),
+                    state('Branch2', '', [
+                        statesGroup([state('Leaf2')]),
+                    ]),
+                ]),
+            ]),
         ]
     ),
 
@@ -693,14 +732,9 @@ def int c = (1 << 4) | 0x0F;`,
     event E1 named 'Event One';
 }`,
         [
-            {
-                name: 'Root',
-                kind: SymbolKind.Class,
-                detail: '',
-                children: [
-                    { name: 'E1', kind: SymbolKind.Event, detail: 'Event One' }
-                ]
-            }
+            state('Root', '', [
+                eventsGroup([event('E1', 'Event One')]),
+            ]),
         ]
     ),
 
@@ -717,20 +751,12 @@ state TrafficLight {
     state Green;
 }`,
         [
-            { name: 'counter', kind: SymbolKind.Variable, detail: 'int' },
-            { name: 'temperature', kind: SymbolKind.Variable, detail: 'float' },
-            {
-                name: 'TrafficLight',
-                kind: SymbolKind.Class,
-                detail: '',
-                children: [
-                    { name: 'Start', kind: SymbolKind.Event, detail: '' },
-                    { name: 'Stop', kind: SymbolKind.Event, detail: '' },
-                    { name: 'Red', kind: SymbolKind.Class, detail: '' },
-                    { name: 'Yellow', kind: SymbolKind.Class, detail: '' },
-                    { name: 'Green', kind: SymbolKind.Class, detail: '' }
-                ]
-            }
+            variable('counter', 'int'),
+            variable('temperature', 'float'),
+            state('TrafficLight', '', [
+                eventsGroup([event('Start'), event('Stop')]),
+                statesGroup([state('Red'), state('Yellow'), state('Green')]),
+            ]),
         ]
     ),
 
@@ -752,28 +778,24 @@ state System named "Main System" {
     }
 }`,
         [
-            { name: 'x', kind: SymbolKind.Variable, detail: 'int' },
-            { name: 'y', kind: SymbolKind.Variable, detail: 'float' },
-            {
-                name: 'System',
-                kind: SymbolKind.Class,
-                detail: 'Main System',
-                children: [
-                    { name: 'GlobalStart', kind: SymbolKind.Event, detail: 'Global Start Event' },
-                    { name: 'GlobalStop', kind: SymbolKind.Event, detail: '' },
-                    { name: 'Junction', kind: SymbolKind.Class, detail: 'pseudo state' },
-                    {
-                        name: 'SubSystem',
-                        kind: SymbolKind.Class,
-                        detail: '',
-                        children: [
-                            { name: 'LocalEvent', kind: SymbolKind.Event, detail: '' },
-                            { name: 'Active', kind: SymbolKind.Class, detail: 'Active State' },
-                            { name: 'Idle', kind: SymbolKind.Class, detail: '' }
-                        ]
-                    }
-                ]
-            }
+            variable('x', 'int'),
+            variable('y', 'float'),
+            state('System', 'Main System', [
+                eventsGroup([
+                    event('GlobalStart', 'Global Start Event'),
+                    event('GlobalStop'),
+                ]),
+                statesGroup([
+                    pseudoState('Junction'),
+                    state('SubSystem', '', [
+                        eventsGroup([event('LocalEvent')]),
+                        statesGroup([
+                            state('Active', 'Active State'),
+                            state('Idle'),
+                        ]),
+                    ]),
+                ]),
+            ]),
         ]
     ),
 
@@ -796,15 +818,10 @@ state Root;`,
 state Root {
     state Child;`,
         [
-            { name: 'x', kind: SymbolKind.Variable, detail: 'int' },
-            {
-                name: 'Root',
-                kind: SymbolKind.Class,
-                detail: '',
-                children: [
-                    { name: 'Child', kind: SymbolKind.Class, detail: '' }
-                ]
-            }
+            variable('x', 'int'),
+            state('Root', '', [
+                statesGroup([state('Child')]),
+            ]),
         ]
     ),
 
@@ -838,7 +855,12 @@ state Root;`,
     [*] -> [*];
 }`,
         [
-            { name: 'Root', kind: SymbolKind.Class, detail: '', children: [] }
+            state('Root', '', [
+                transitionsGroup([
+                    transition('[*] -> ?', 'entry'),
+                    transition('[*] -> ?', 'entry'),
+                ]),
+            ]),
         ]
     ),
 ];

@@ -82,11 +82,12 @@ describe('jsfcstm completion support', () => {
         assert.ok(importBody.some(item => item.label === '/Start' && item.kind === 'event'));
 
         const generalItems = await packageModule.collectCompletionItems(generalDocument, {line: 1, character: 5});
+        // Top-level / state-declaration header position: narrow, precise set.
+        // Math primitives are intentionally not offered here — they would be
+        // noise inside a state declaration header where only structural
+        // keywords and already-declared variables are valid.
         assert.ok(generalItems.some(item => item.label === 'state' && item.kind === 'keyword'));
-        assert.ok(generalItems.some(item => item.label === 'pi' && item.kind === 'constant'));
-        assert.ok(generalItems.some(item => item.label === 'sin' && item.kind === 'function'));
         assert.ok(generalItems.some(item => item.label === 'counter' && item.kind === 'variable'));
-        assert.ok(generalItems.some(item => item.label === 'sin' && item.insertTextFormat === 'snippet'));
     });
 
     it('adds path-aware and action-aware contextual completions', async () => {
@@ -579,14 +580,19 @@ describe('jsfcstm completion support', () => {
         });
     });
 
-    it('gracefully falls back to keyword completions when semantic AST building cannot recover', async () => {
+    it('offers the int/float type keyword right after `def `', async () => {
         const document = createDocument('def ', '/tmp/incomplete-definition.fcstm');
 
         const items = await packageModule.collectCompletionItems(document, {line: 0, character: 4});
 
+        // `def │` is a type-keyword slot: only `int` and `float` are valid.
+        // Math primitives / state keywords are not offered because they can
+        // never legally appear in that position.
         assert.ok(items.some(item => item.label === 'int' && item.kind === 'keyword'));
-        assert.ok(items.some(item => item.label === 'pi' && item.kind === 'constant'));
-        assert.ok(items.some(item => item.label === 'sin' && item.kind === 'function'));
+        assert.ok(items.some(item => item.label === 'float' && item.kind === 'keyword'));
+        assert.equal(items.some(item => item.label === 'pi'), false);
+        assert.equal(items.some(item => item.label === 'sin'), false);
+        assert.equal(items.some(item => item.label === 'state'), false);
     });
 
     it('falls back to parse-tree symbol completions when semantic construction fails on partial input', async () => {

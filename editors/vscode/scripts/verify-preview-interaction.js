@@ -81,87 +81,71 @@ check(
     typeof PREVIEW_DRAG_THRESHOLD_PX === 'number' && PREVIEW_DRAG_THRESHOLD_PX > 0 && PREVIEW_DRAG_THRESHOLD_PX < 20
 );
 
-// 8. Inlined webview copy tracks the policy.
-const previewSrc = fs.readFileSync(path.resolve(__dirname, '..', 'out', 'preview.js'), 'utf8');
+// 8. Webview bundle (IIFE) carries the runtime that the preview actually
+// executes. Verify the Vue + Naive UI shell is stitched together with the
+// shared interaction policy + SVG renderer markers.
+const webviewBundlePath = path.resolve(__dirname, '..', 'dist', 'preview-webview.js');
+const webviewSrc = fs.existsSync(webviewBundlePath) ? fs.readFileSync(webviewBundlePath, 'utf8') : '';
 check(
-    'preview.js embeds decidePreviewPointerAction inside the webview script',
-    previewSrc.includes('function decidePreviewPointerAction')
+    'preview-webview bundle embeds the shared decidePreviewPointerAction policy',
+    webviewSrc.includes('decidePreviewPointerAction')
 );
 check(
-    'preview.js embeds SELECTABLE_KINDS in the webview click handler',
-    previewSrc.includes('SELECTABLE_KINDS')
+    'preview-webview bundle wires Ctrl/Cmd modifier into the click handler',
+    webviewSrc.includes('ctrlKey') && webviewSrc.includes('metaKey')
 );
 check(
-    'preview.js handles select and clearSelection actions',
-    previewSrc.includes("'select'") && previewSrc.includes("'clearSelection'")
+    'preview-webview bundle measures drag movement with Math.hypot',
+    webviewSrc.includes('Math.hypot')
 );
 check(
-    'preview.js PREVIEW_DRAG_THRESHOLD_PX constant is embedded',
-    previewSrc.includes('PREVIEW_DRAG_THRESHOLD_PX')
+    'preview-webview bundle dispatches reveal-source / set-collapsed messages',
+    webviewSrc.includes('revealSource') && webviewSrc.includes('setCollapsed')
 );
 check(
-    'preview.js checks both ctrlKey and metaKey for reveal-source',
-    previewSrc.includes('ev.ctrlKey') && previewSrc.includes('ev.metaKey')
+    'preview-webview bundle uses the modifier-held class for the code-tracking cursor',
+    webviewSrc.includes('modifier-held')
 );
 check(
-    'preview.js tracks dragMovedPx via Math.hypot',
-    previewSrc.includes('Math.hypot(dx, dy)')
+    'preview-webview bundle includes the fcstm-related-hover label↔path highlight class',
+    webviewSrc.includes('fcstm-related-hover')
 );
 check(
-    'preview.js no longer short-circuits mousedown on data-fcstm-kind targets',
-    !previewSrc.match(/mousedown[\s\S]{0,200}closest\(['"]\[data-fcstm-kind\]['"]\)[\s\S]{0,40}return/)
+    'preview-webview bundle includes the fcstm-selected highlight class',
+    webviewSrc.includes('fcstm-selected')
 );
 check(
-    'preview.js toggles modifier-held class on keydown/keyup',
-    previewSrc.includes('modifier-held') && previewSrc.includes('keydown') && previewSrc.includes('keyup')
+    'preview-webview bundle has no Transition Effects card markup',
+    !webviewSrc.includes('effects-card') && !webviewSrc.includes('Transition Effects')
 );
 check(
-    'preview.js still posts revealSource messages to the extension host',
-    previewSrc.includes("type: 'revealSource'") || previewSrc.includes('type: "revealSource"')
+    'preview-webview bundle bootstraps a Vue 3 + Naive UI shell',
+    webviewSrc.includes('createApp') && webviewSrc.includes('NConfigProvider')
 );
 check(
-    'preview.js renders Details card UI (state actions, transition event/guard/effect)',
-    previewSrc.includes('renderStateDetails') && previewSrc.includes('renderTransitionDetails')
+    'preview-webview bundle ships the toolbar / details / bottom-panel components',
+    webviewSrc.includes('fcstm-toolbar') && webviewSrc.includes('fcstm-details') && webviewSrc.includes('fcstm-bottom')
 );
 check(
-    'preview.js adds fcstm-selected class to highlight current selection',
-    previewSrc.includes('fcstm-selected')
+    'preview-webview SVG renderer marks the three state variants',
+    webviewSrc.includes('data-fcstm-variant')
 );
 check(
-    'preview.js exposes Reveal-source button in the Details header',
-    previewSrc.includes('details-reveal')
+    'preview-webview SVG renderer paints labels with a white halo (no solid rect background)',
+    webviewSrc.includes('paint-order="stroke"')
+);
+
+// 9. Extension-host preview.ts no longer ships the legacy 1500-line
+// inlined HTML template; it now defers to the Vue bundle.
+const previewTsPath = path.resolve(__dirname, '..', 'src', 'preview.ts');
+const previewTs = fs.existsSync(previewTsPath) ? fs.readFileSync(previewTsPath, 'utf8') : '';
+check(
+    'extension-host preview.ts no longer carries the legacy inlined webview script',
+    !previewTs.includes('renderSvgFromLaidOut(') && !previewTs.includes('viewport-inner')
 );
 check(
-    'preview.js draws transition labels with a white halo (paint-order stroke) — no more solid rect background',
-    previewSrc.includes('paint-order="stroke"') && previewSrc.includes('stroke-width="3"')
-);
-check(
-    'preview.js distinguishes leaf / composite / pseudo states with data-fcstm-variant',
-    previewSrc.includes('data-fcstm-variant')
-);
-check(
-    'preview.js no longer renders leaf-state event/action detail list (those live in the Details panel)',
-    !/meta\.eventLabels \|\| \[\]\)\.concat\(meta\.actionLabels/.test(previewSrc)
-);
-check(
-    'preview.js event-label colour now tracks the path colour (no hard-coded blue)',
-    !/startsWith\(LABEL_GLYPH_EVENT\) return STYLE\.edgeLabelEventColor/.test(previewSrc)
-);
-check(
-    'preview.js adds hover-related highlight logic for label ↔ path tracing',
-    previewSrc.includes('fcstm-related-hover') && previewSrc.includes('relatedElementsForId')
-);
-check(
-    'preview.js removes the Transition Effects side panel (effectsCard/effectsList refs gone)',
-    !previewSrc.includes('effectsCard') && !previewSrc.includes('effectsList')
-);
-check(
-    'preview.js webview exposes a bottom-panels grid for variables + shared events',
-    previewSrc.includes('bottom-panels') && previewSrc.includes('bottom-card')
-);
-check(
-    'preview.js renders variables & shared events as collapsible <details> (summary + count)',
-    previewSrc.includes('card-summary') && previewSrc.includes('variables-count') && previewSrc.includes('shared-events-count')
+    'extension-host preview.ts inlines the preview-webview Vue bundle into the HTML shell',
+    previewTs.includes('loadPreviewWebviewBundle') && previewTs.includes('webviewAppScript')
 );
 
 const passed = checkpoints.filter(c => c.ok).length;

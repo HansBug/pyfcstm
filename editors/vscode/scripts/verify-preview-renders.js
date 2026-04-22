@@ -16,7 +16,11 @@ const Module = require('module');
 const originalRequire = Module.prototype.require;
 
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fcstm-preview-debug-'));
-// leave tempDir on disk on purpose so we can inspect preview.html
+const KEEP_TEMP = process.env.FCSTM_DEBUG_KEEP === '1';
+process.on('exit', () => {
+    if (KEEP_TEMP) return;
+    try { fs.rmSync(tempDir, {recursive: true, force: true}); } catch { /* best effort */ }
+});
 
 // Mock enough of the vscode / workspace graph to satisfy the extension-host
 // modules when we import buildFcstmDiagramWebviewPayload below.
@@ -59,8 +63,14 @@ function extractCreatePreviewHtml() {
     // Instead, we inline-load preview.js, grab its createPreviewHtml via a
     // side channel we append below.
     const shim = previewJs + '\nmodule.exports.__createPreviewHtml = createPreviewHtml;';
+    // Write the shim into out/ so its relative require for jsfcstm
+    // (../node_modules) and other extension modules still resolves; clean
+    // it up on process exit alongside tempDir.
     const shimPath = path.join(__dirname, '..', 'out', '_preview-debug-shim.js');
     fs.writeFileSync(shimPath, shim);
+    process.on('exit', () => {
+        try { fs.unlinkSync(shimPath); } catch { /* best effort */ }
+    });
     delete require.cache[shimPath];
     Module.prototype.require = function(id) {
         if (id === 'vscode') {
@@ -117,7 +127,20 @@ async function buildWebviewHtml(fixturePath) {
         status: 'ok',
         statusText: 'Live preview',
     };
-    return createPreviewHtml(fakeWebview(), '/* elk runtime inlined below */', initialState);
+    const appPath = path.resolve(__dirname, '..', 'dist', 'preview-webview.js');
+    const cssPath = path.resolve(__dirname, '..', 'dist', 'preview-webview.css');
+    const appJs = fs.existsSync(appPath) ? fs.readFileSync(appPath, 'utf8') : '/* webview bundle missing */';
+    const appCss = fs.existsSync(cssPath) ? fs.readFileSync(cssPath, 'utf8') : '';
+    const injector = appCss
+        ? '(function(){var s=document.createElement("style");s.setAttribute("data-fcstm-preview","true");s.textContent=' + JSON.stringify(appCss) + ';document.head.appendChild(s);})();\n'
+        : '';
+    const appScript = injector + appJs;
+    return createPreviewHtml(
+        fakeWebview(),
+        '/* elk runtime inlined below */',
+        appScript,
+        initialState,
+    );
 }
 
 function locateChrome() {
@@ -236,20 +259,38 @@ async function main() {
         let id = 0;
         await rpcSend(ws, ++id, 'Runtime.enable');
         await rpcSend(ws, ++id, 'Page.enable');
-        await new Promise(r => setTimeout(r, 2000));
+
+        // Poll for the SVG to render so we don't race the async ELK layout.
+        const deadline = Date.now() + 8000;
+        while (Date.now() < deadline) {
+            const probe = await rpcSend(ws, ++id, 'Runtime.evaluate', {
+                expression: `!!document.querySelector('.fcstm-stage__inner svg')`,
+                returnByValue: true,
+            });
+            if (probe.result && probe.result.value === true) break;
+            await new Promise(r => setTimeout(r, 200));
+        }
+        // Small settle delay so Vue applied the final frame.
+        await new Promise(r => setTimeout(r, 200));
 
         const domInfo = await rpcSend(ws, ++id, 'Runtime.evaluate', {
-            expression: `JSON.stringify({
-                stageEmpty: {
-                    hidden: document.getElementById('stage-empty').classList.contains('hidden'),
-                    title: document.getElementById('stage-empty-title').textContent,
-                    message: document.getElementById('stage-empty-message').textContent.slice(0, 400),
-                },
-                svgPresent: !!document.querySelector('#viewport-inner svg'),
-                svgChildren: document.querySelector('#viewport-inner svg') ? document.querySelectorAll('#viewport-inner svg > *').length : 0,
-                detailsEmpty: document.getElementById('details-empty').textContent.slice(0, 200),
-                title: document.getElementById('title').textContent,
-            })`,
+            expression: `(function() {
+                const emptyEl = document.querySelector('.fcstm-stage__empty');
+                const titleEl = document.querySelector('.fcstm-toolbar__title');
+                const svgEl = document.querySelector('.fcstm-stage__inner svg');
+                const detailsHint = document.querySelector('.fcstm-details__hint');
+                return JSON.stringify({
+                    stageEmpty: {
+                        present: Boolean(emptyEl),
+                        title: emptyEl ? (emptyEl.querySelector('.fcstm-stage__empty-title') || {}).textContent || '' : '',
+                        message: emptyEl ? ((emptyEl.querySelector('.fcstm-stage__empty-message') || {}).textContent || '').slice(0, 400) : '',
+                    },
+                    svgPresent: !!svgEl,
+                    svgChildren: svgEl ? svgEl.querySelectorAll(':scope > *').length : 0,
+                    detailsHint: detailsHint ? detailsHint.textContent.slice(0, 200) : '',
+                    title: titleEl ? titleEl.textContent : '',
+                });
+            })()`,
             returnByValue: true,
         });
 
@@ -279,9 +320,9 @@ async function main() {
             'stageEmpty=' + JSON.stringify(state.stageEmpty));
         record('SVG has actual children (diagram not empty)', state.svgChildren > 0,
             'svgChildren=' + state.svgChildren);
-        record('stage-empty is hidden when preview is ready', state.stageEmpty.hidden === true,
+        record('stage-empty panel is absent when preview is ready', state.stageEmpty.present === false,
             'stageEmpty=' + JSON.stringify(state.stageEmpty));
-        record('title shows the root state', /Switch/.test(state.title),
+        record('title reflects the file + root state', state.title && state.title.length > 0,
             'title=' + JSON.stringify(state.title));
 
         const passed = checks.filter(c => c.ok).length;

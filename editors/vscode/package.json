@@ -61,8 +61,11 @@
   },
   "dependencies": {
     "@pyfcstm/jsfcstm": "file:../jsfcstm/jsfcstm.tgz",
+    "@vicons/ionicons5": "^0.12.0",
     "elkjs": "^0.11.1",
-    "vscode-languageclient": "7.0.0"
+    "naive-ui": "^2.38.0",
+    "vscode-languageclient": "7.0.0",
+    "vue": "^3.4.0"
   },
   "devDependencies": {
     "@types/node": "^16.0.0",
@@ -70,9 +73,11 @@
     "@typescript-eslint/eslint-plugin": "^5.0.0",
     "@typescript-eslint/parser": "^5.0.0",
     "@vscode/vsce": "^2.15.0",
+    "@vue/compiler-sfc": "^3.4.0",
     "esbuild": "^0.25.0",
     "eslint": "^8.0.0",
     "typescript": "^4.5.0",
+    "unplugin-vue": "^5.2.1",
     "ws": "^8.0.0"
   },
   "contributes": {

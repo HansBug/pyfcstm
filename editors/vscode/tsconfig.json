@@ -15,5 +15,5 @@
     "moduleResolution": "node"
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "out", "parser"]
+  "exclude": ["node_modules", "out", "parser", "src/preview-webview"]
 }

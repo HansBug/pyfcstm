@@ -177,8 +177,19 @@ async function main() {
     if (!distBundle.includes('FCSTM embedded ELK runtime')) {
         throw new Error('Bundled dist/extension.js does not embed the ELK runtime.');
     }
-    if (!distBundle.includes('new ELK(')) {
-        throw new Error('Bundled dist/extension.js does not instantiate the ELK layout engine.');
+    if (!distBundle.includes('FCSTM embedded preview-webview bundle')) {
+        throw new Error('Bundled dist/extension.js does not embed the preview-webview Vue bundle.');
+    }
+    const webviewBundlePath = path.resolve(__dirname, '..', 'dist', 'preview-webview.js');
+    if (!fs.existsSync(webviewBundlePath)) {
+        throw new Error(`preview-webview bundle missing at ${webviewBundlePath}.`);
+    }
+    const webviewBundle = fs.readFileSync(webviewBundlePath, 'utf8');
+    if (!/new ELK\b/.test(webviewBundle)) {
+        throw new Error('preview-webview bundle does not instantiate the ELK layout engine.');
+    }
+    if (!webviewBundle.includes('createApp') || !webviewBundle.includes('NConfigProvider')) {
+        throw new Error('preview-webview bundle does not bootstrap the Vue 3 + Naive UI shell.');
     }
 
     fs.writeFileSync(previewFile, [
@@ -233,17 +244,24 @@ async function main() {
     if (panel.webview.html.includes('mermaid') || panel.webview.html.includes('stateDiagram-v2')) {
         throw new Error('Preview webview HTML still references Mermaid.');
     }
-    if (!panel.webview.html.includes('id="option-detail"')) {
-        throw new Error('Preview webview HTML does not expose the options bar.');
+    if (!panel.webview.html.includes('FCSTM embedded preview-webview bundle')) {
+        throw new Error('Preview webview HTML does not embed the Vue preview bundle.');
     }
-    if (!panel.webview.html.includes('id="btn-export-svg"') || !panel.webview.html.includes('id="btn-export-png"')) {
-        throw new Error('Preview webview HTML does not expose export buttons.');
+    if (!panel.webview.html.includes('window.__FCSTM_INITIAL_STATE__')) {
+        throw new Error('Preview webview HTML does not seed __FCSTM_INITIAL_STATE__.');
     }
-    if (!panel.webview.html.includes('id="mode-side"') || !panel.webview.html.includes('id="mode-alone"')) {
-        throw new Error('Preview webview HTML does not expose view-mode toggles.');
+    if (!panel.webview.html.includes('<div id="app">')) {
+        throw new Error('Preview webview HTML does not expose the Vue mount point.');
     }
-    if (!panel.webview.html.includes('id="btn-zoom-in"')) {
-        throw new Error('Preview webview HTML does not expose zoom controls.');
+    // Markers from the Vue/Naive UI bundle proper.
+    if (!panel.webview.html.includes('fcstm-toolbar')) {
+        throw new Error('Preview webview bundle does not ship the Toolbar component.');
+    }
+    if (!panel.webview.html.includes('fcstm-stage')) {
+        throw new Error('Preview webview bundle does not ship the Stage component.');
+    }
+    if (!panel.webview.html.includes('fcstm-details')) {
+        throw new Error('Preview webview bundle does not ship the Details panel component.');
     }
     if (panel.postedMessages.length === 0) {
         throw new Error('Preview panel did not receive any rendered state.');
@@ -302,7 +320,7 @@ async function main() {
     if (!initialTransition || !initialTransition.eventLabel) {
         throw new Error('Preview payload transitions do not carry the Idle→Running event label.');
     }
-    if (!panel.webview.html.includes('id="details-card"') || !panel.webview.html.includes('id="details-sections"')) {
+    if (!panel.webview.html.includes('fcstm-details__title') && !panel.webview.html.includes('fcstm-details')) {
         throw new Error('Preview webview HTML does not expose the Details side panel.');
     }
 

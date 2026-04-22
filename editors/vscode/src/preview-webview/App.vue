@@ -11,6 +11,17 @@ import BottomPanels from './components/BottomPanels.vue';
 import DiagnosticsCard from './components/DiagnosticsCard.vue';
 import {bridge} from './composables/useBridge';
 import type {PreviewWebviewState, SelectionRef, PreviewResolvedOptions} from './types';
+import type {PaletteId, PaletteMode} from './render/palette';
+
+type ColorMode = 'light' | 'dark' | 'auto';
+const STORAGE_KEY_PALETTE = 'fcstm.preview.palette';
+const STORAGE_KEY_MODE = 'fcstm.preview.mode';
+function readStorage(key: string): string | null {
+    try { return typeof localStorage !== 'undefined' ? localStorage.getItem(key) : null; } catch { return null; }
+}
+function writeStorage(key: string, value: string) {
+    try { if (typeof localStorage !== 'undefined') localStorage.setItem(key, value); } catch { /* no-op */ }
+}
 
 // Initial state is serialised into window by the HTML shell.
 declare const __FCSTM_INITIAL_STATE__: PreviewWebviewState;
@@ -51,6 +62,51 @@ const state = ref<PreviewWebviewState>(initialState);
 const selection = ref<SelectionRef>(null);
 const vscode = bridge();
 
+// Palette + colour-mode state. Mode can be 'auto' (follow VSCode), or
+// user-overridden to a fixed 'light' / 'dark'. Palette picks the named
+// skin (default / nord / solarized / darcula).
+const palette = ref<PaletteId>(((readStorage(STORAGE_KEY_PALETTE) as PaletteId) || 'default'));
+const colorMode = ref<ColorMode>(((readStorage(STORAGE_KEY_MODE) as ColorMode) || 'auto'));
+
+function applyMode(value: ColorMode) {
+    colorMode.value = value;
+    writeStorage(STORAGE_KEY_MODE, value);
+    syncBodyClasses();
+}
+function applyPalette(value: PaletteId) {
+    palette.value = value;
+    writeStorage(STORAGE_KEY_PALETTE, value);
+    syncBodyClasses();
+}
+
+// Apply .fcstm-mode-dark / .fcstm-mode-light / .fcstm-palette-<name>
+// classes to <body> so both Vue-component CSS and Naive UI can see
+// the current preferences without threading props everywhere.
+function detectVscodeDark(): boolean {
+    if (typeof document === 'undefined') return false;
+    return document.body.classList.contains('vscode-dark') ||
+        document.body.classList.contains('vscode-high-contrast');
+}
+function syncBodyClasses() {
+    if (typeof document === 'undefined') return;
+    const body = document.body;
+    body.classList.remove('fcstm-mode-light', 'fcstm-mode-dark');
+    const effective = colorMode.value === 'auto'
+        ? (detectVscodeDark() ? 'dark' : 'light')
+        : colorMode.value;
+    body.classList.add(`fcstm-mode-${effective}`);
+    for (const cls of Array.from(body.classList)) {
+        if (cls.startsWith('fcstm-palette-')) body.classList.remove(cls);
+    }
+    body.classList.add(`fcstm-palette-${palette.value}`);
+}
+
+const effectiveMode = computed<PaletteMode>(() => {
+    if (colorMode.value === 'light') return 'light';
+    if (colorMode.value === 'dark') return 'dark';
+    return detectVscodeDark() ? 'dark' : 'light';
+});
+
 function setState(next: PreviewWebviewState) {
     state.value = next;
     vscode.setState(next);
@@ -60,16 +116,25 @@ function onMessage(ev: MessageEvent) {
     setState(ev.data as PreviewWebviewState);
 }
 
+let themeObserver: MutationObserver | null = null;
+
 onMounted(() => {
     window.addEventListener('message', onMessage);
     const stored = vscode.getState();
     if (stored) {
         state.value = stored;
     }
+    syncBodyClasses();
+    if (typeof MutationObserver !== 'undefined') {
+        themeObserver = new MutationObserver(() => syncBodyClasses());
+        themeObserver.observe(document.body, {attributes: true, attributeFilter: ['class']});
+    }
 });
 
 onUnmounted(() => {
     window.removeEventListener('message', onMessage);
+    themeObserver?.disconnect();
+    themeObserver = null;
 });
 
 // Provide selection to nested components that need to sync with it.
@@ -107,13 +172,8 @@ function exportError(message: string) {
     vscode.postMessage({type: 'exportError', message});
 }
 
-// VSCode themes expose a body class we can sense for dark mode hints.
-const vscodeThemeDark = computed(() => {
-    if (typeof document === 'undefined') return false;
-    return document.body.classList.contains('vscode-dark') ||
-        document.body.classList.contains('vscode-high-contrast');
-});
-const naiveTheme = computed(() => vscodeThemeDark.value ? darkTheme : null);
+// Naive UI follows the effective mode (user override wins over auto).
+const naiveTheme = computed(() => effectiveMode.value === 'dark' ? darkTheme : null);
 </script>
 
 <template>
@@ -129,11 +189,17 @@ const naiveTheme = computed(() => vscodeThemeDark.value ? darkTheme : null);
                 />
                 <OptionsBar
                     :options="state.previewOptions"
+                    :palette="palette"
+                    :color-mode="colorMode"
                     @patch="patchOptions"
+                    @palette="applyPalette"
+                    @color-mode="applyMode"
                 />
                 <Stage
                     :state="state"
                     :selection="selection"
+                    :palette="palette"
+                    :mode="effectiveMode"
                     @select="(sel: SelectionRef) => (selection = sel)"
                     @toggle-collapse="toggleCollapse"
                     @reveal-source="revealSource"
@@ -169,12 +235,26 @@ const naiveTheme = computed(() => vscodeThemeDark.value ? darkTheme : null);
     --fcstm-mono: "JetBrains Mono", "Fira Code", Consolas, monospace;
 }
 
-body.vscode-dark, body.vscode-high-contrast {
+body.vscode-dark,
+body.vscode-high-contrast,
+body.fcstm-mode-dark {
     --fcstm-surface: color-mix(in srgb, var(--vscode-editor-background, #1e1e1e) 90%, #2c3e52 10%);
     --fcstm-surface-raised: color-mix(in srgb, var(--vscode-editor-background, #1e1e1e) 82%, #3a4f66 18%);
     --fcstm-border: rgba(133, 172, 212, 0.38);
     --fcstm-border-soft: rgba(133, 172, 212, 0.22);
     --fcstm-accent: #6ba4d8;
+    --fcstm-fg: var(--vscode-editor-foreground, #dfe1e5);
+    --fcstm-muted: var(--vscode-descriptionForeground, #9aa5b4);
+}
+/* User may force light mode regardless of VSCode's theme. */
+body.fcstm-mode-light {
+    --fcstm-surface: color-mix(in srgb, var(--vscode-editor-background, #ffffff) 86%, #e6f1fb 14%);
+    --fcstm-surface-raised: color-mix(in srgb, var(--vscode-editor-background, #ffffff) 78%, #ffffff 22%);
+    --fcstm-border: rgba(94, 140, 194, 0.45);
+    --fcstm-border-soft: rgba(94, 140, 194, 0.22);
+    --fcstm-accent: #2d6aa8;
+    --fcstm-fg: var(--vscode-editor-foreground, #1f2937);
+    --fcstm-muted: var(--vscode-descriptionForeground, #6a7280);
 }
 
 html, body, #app {

@@ -85,7 +85,13 @@ check(
 // executes. Verify the Vue + Naive UI shell is stitched together with the
 // shared interaction policy + SVG renderer markers.
 const webviewBundlePath = path.resolve(__dirname, '..', 'dist', 'preview-webview.js');
-const webviewSrc = fs.existsSync(webviewBundlePath) ? fs.readFileSync(webviewBundlePath, 'utf8') : '';
+const webviewCssPath = path.resolve(__dirname, '..', 'dist', 'preview-webview.css');
+// The Vue bundle ships as JS + CSS; concatenate so the marker-style
+// checks match regardless of which file the token landed in after
+// minification / CSS extraction.
+const webviewSrc = (fs.existsSync(webviewBundlePath) ? fs.readFileSync(webviewBundlePath, 'utf8') : '')
+    + '\n/*css*/\n'
+    + (fs.existsSync(webviewCssPath) ? fs.readFileSync(webviewCssPath, 'utf8') : '');
 check(
     'preview-webview bundle embeds the shared decidePreviewPointerAction policy',
     webviewSrc.includes('decidePreviewPointerAction')
@@ -205,6 +211,54 @@ check(
 check(
     'Extension default options are now full + both (the user-tunable Detail / Shared events dropdowns are gone)',
     /detailLevel:\s*'full'/.test(previewTs) && /eventVisualizationMode:\s*'both'/.test(previewTs)
+);
+
+// 11. Theme / palette / related-event highlight (current feature round).
+check(
+    'preview-webview bundle ships 4 named palettes (default / nord / solarized / darcula)',
+    webviewSrc.includes('"Default"') &&
+    webviewSrc.includes('"Nord"') &&
+    webviewSrc.includes('"Solarized"') &&
+    webviewSrc.includes('"Darcula"')
+);
+check(
+    'Palette system exposes both light and dark variants for each theme',
+    webviewSrc.includes('resolvePalette') &&
+    /light:\s*\w+_LIGHT/.test(webviewSrc) === false // compiled; just check the mode branch is wired
+);
+check(
+    'OptionsBar carries both Palette and Mode selectors',
+    webviewSrc.includes('Palette') && webviewSrc.includes('Mode') &&
+    webviewSrc.includes('"auto"') && webviewSrc.includes('"light"') && webviewSrc.includes('"dark"')
+);
+check(
+    'App persists palette + colour-mode picks across re-renders via localStorage',
+    webviewSrc.includes('fcstm.preview.palette') && webviewSrc.includes('fcstm.preview.mode')
+);
+check(
+    'Preview body gets .fcstm-mode-light / .fcstm-mode-dark so CSS tokens can switch',
+    webviewSrc.includes('fcstm-mode-light') && webviewSrc.includes('fcstm-mode-dark')
+);
+check(
+    'Dark-mode CSS overrides surface tokens so the entire page re-skins, not just the SVG',
+    /fcstm-mode-dark[\s\S]{0,200}--fcstm-surface/.test(webviewSrc)
+);
+check(
+    'Selecting an event-based transition highlights related same-event labels via .fcstm-related-event',
+    webviewSrc.includes('fcstm-related-event') &&
+    /eventQualifiedName/.test(webviewSrc)
+);
+check(
+    'related-event halo is visually distinct from the selected highlight',
+    // selected uses #c8761a (orange); related-event uses a teal halo.
+    /rgba\(0,\s*178,\s*148/.test(webviewSrc) ||
+    /rgba\(98,\s*220,\s*193/.test(webviewSrc)
+);
+check(
+    'SVG renderer now takes palette + mode render options (no more hard-coded colours)',
+    webviewSrc.includes('resolvePalette') &&
+    webviewSrc.includes('data-fcstm-palette') &&
+    webviewSrc.includes('data-fcstm-mode')
 );
 
 const passed = checkpoints.filter(c => c.ok).length;

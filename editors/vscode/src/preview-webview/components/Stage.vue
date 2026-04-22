@@ -6,6 +6,7 @@ import {
     ScanOutline, ResizeOutline,
 } from '@vicons/ionicons5';
 import {renderSvg, type RenderedSvg} from '../render/svg';
+import type {PaletteId, PaletteMode} from '../render/palette';
 import {getElk} from '../composables/useElk';
 import {decidePreviewPointerAction, PREVIEW_DRAG_THRESHOLD_PX} from '../interaction';
 import type {PreviewWebviewState, SelectionRef, TextRange} from '../types';
@@ -13,6 +14,8 @@ import type {PreviewWebviewState, SelectionRef, TextRange} from '../types';
 const props = defineProps<{
     state: PreviewWebviewState;
     selection: SelectionRef;
+    palette: PaletteId;
+    mode: PaletteMode;
 }>();
 const emit = defineEmits<{
     (e: 'select', sel: SelectionRef): void;
@@ -86,7 +89,10 @@ async function relayout() {
     try {
         const laid = await getElk().layout(payload.graph);
         if (token !== layoutToken) return;
-        const result: RenderedSvg = renderSvg(laid, payload.options);
+        const result: RenderedSvg = renderSvg(laid, payload.options, {
+            palette: props.palette,
+            mode: props.mode,
+        });
         svgString = result.svg;
         svgBounds.value = {width: result.width, height: result.height};
         if (innerRef.value) {
@@ -117,12 +123,14 @@ function readRange(el: Element): TextRange | null {
 
 function applySelection() {
     if (!innerRef.value) return;
-    for (const el of innerRef.value.querySelectorAll('.fcstm-selected')) {
+    for (const el of innerRef.value.querySelectorAll('.fcstm-selected, .fcstm-related-event')) {
         el.classList.remove('fcstm-selected');
+        el.classList.remove('fcstm-related-event');
     }
     const sel = props.selection;
     if (!sel) return;
-    for (const el of innerRef.value.querySelectorAll('[data-fcstm-kind][data-fcstm-id]')) {
+    const nodes = innerRef.value.querySelectorAll('[data-fcstm-kind][data-fcstm-id]');
+    for (const el of nodes) {
         const kind = el.getAttribute('data-fcstm-kind');
         const id = el.getAttribute('data-fcstm-id');
         if (id !== sel.id) continue;
@@ -132,6 +140,26 @@ function applySelection() {
             }
         } else {
             el.classList.add('fcstm-selected');
+        }
+    }
+    // Related-event highlight: if the selected transition has an
+    // eventQualifiedName, find every *other* transition that shares the
+    // same event and tag its label so the user can see the whole family
+    // fire together.
+    if (sel.kind === 'transition' && props.state.payload) {
+        const selected = props.state.payload.transitions.find(t => t.transitionId === sel.id);
+        if (selected && selected.eventQualifiedName) {
+            const related = props.state.payload.transitions.filter(t =>
+                t.eventQualifiedName === selected.eventQualifiedName &&
+                t.transitionId !== sel.id
+            );
+            for (const relTransition of related) {
+                for (const el of nodes) {
+                    if (el.getAttribute('data-fcstm-kind') !== 'transition-label') continue;
+                    if (el.getAttribute('data-fcstm-id') !== relTransition.transitionId) continue;
+                    el.classList.add('fcstm-related-event');
+                }
+            }
         }
     }
 }
@@ -307,6 +335,12 @@ watch(() => props.state.payload, () => {
 watch(() => props.state.collapsedStateIds, () => {
     void relayout();
 });
+// Palette / mode changes re-skin the existing graph; re-layout is not
+// needed since ELK geometry is palette-agnostic, but re-rendering the
+// SVG with new colours is.
+watch(() => [props.palette, props.mode], () => {
+    void relayout();
+});
 watch(() => props.selection, () => {
     applySelection();
 }, {deep: true});
@@ -441,6 +475,21 @@ body.modifier-held .fcstm-stage__inner [data-fcstm-kind][data-fcstm-range-start-
 }
 .fcstm-stage__inner [data-fcstm-kind="transition-label"].fcstm-related-hover {
     filter: drop-shadow(0 0 2px rgba(45, 106, 168, 0.3));
+}
+/* Same-event labels light up with a softer teal halo when the user
+   selects one transition in the event family; clearly distinct from
+   the bright orange selected highlight. */
+.fcstm-stage__inner [data-fcstm-kind="transition-label"].fcstm-related-event > text {
+    font-weight: 700;
+    paint-order: stroke;
+    stroke: rgba(0, 178, 148, 0.85) !important;
+    stroke-width: 3 !important;
+    stroke-linejoin: round;
+    filter: drop-shadow(0 0 3px rgba(0, 178, 148, 0.45));
+}
+body.fcstm-mode-dark .fcstm-stage__inner [data-fcstm-kind="transition-label"].fcstm-related-event > text {
+    stroke: rgba(98, 220, 193, 0.9) !important;
+    filter: drop-shadow(0 0 3px rgba(98, 220, 193, 0.55));
 }
 
 .fcstm-stage__empty {

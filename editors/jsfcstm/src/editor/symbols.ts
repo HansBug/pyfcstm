@@ -14,7 +14,13 @@ import type {
 import {getWorkspaceGraph} from '../workspace';
 import {findIdentifierRange} from './ranges';
 
-export type FcstmSymbolKind = 'variable' | 'class' | 'event' | 'function' | 'module';
+export type FcstmSymbolKind =
+    | 'variable'
+    | 'class'
+    | 'event'
+    | 'function'
+    | 'method'
+    | 'module';
 
 export interface FcstmDocumentSymbol {
     name: string;
@@ -442,54 +448,91 @@ function isAspectAction(action: FcstmSemanticAction): boolean {
     return Boolean(action.aspect) || action.isGlobalAspect;
 }
 
+/**
+ * Human-friendly symbol name for a lifecycle or aspect action.
+ *
+ *   enter { … }                → enter
+ *   exit { … }                 → exit
+ *   during { … }               → during
+ *   enter Setup { … }          → Setup
+ *   enter abstract Init        → Init
+ *   enter ref Foo.Bar          → enter ref Foo.Bar
+ *   >> during before { … }     → >> during before
+ *   >> during after abstract X → X
+ */
 function actionSymbolName(action: FcstmSemanticAction): string {
     if (action.name) {
         return action.name;
     }
-    if (action.mode === 'abstract') {
-        return `${action.stage} abstract`;
-    }
     if (action.mode === 'ref') {
-        return `${action.stage} ref`;
+        const refPath = action.ref?.rawPath;
+        const aspectPrefix = action.isGlobalAspect ? '>> ' : '';
+        const aspectSuffix = action.aspect ? ` ${action.aspect}` : '';
+        return `${aspectPrefix}${action.stage}${aspectSuffix} ref${refPath ? ' ' + refPath : ''}`;
+    }
+    if (action.isGlobalAspect) {
+        return action.aspect ? `>> ${action.stage} ${action.aspect}` : `>> ${action.stage}`;
     }
     return action.aspect ? `${action.stage} ${action.aspect}` : action.stage;
+}
+
+/**
+ * Compact detail for a lifecycle / aspect action.
+ *
+ * The icon (`Method`) and name already carry most of the structural
+ * information (stage + aspect). The detail should surface the *mode* in
+ * a single word — `abstract` / `ref` / `operations` — plus an optional
+ * summary of the body for operation blocks.
+ */
+function actionSymbolDetail(action: FcstmSemanticAction): string {
+    if (action.mode === 'abstract') {
+        return 'abstract';
+    }
+    if (action.mode === 'ref') {
+        return action.ref?.rawPath ? `ref ${action.ref.rawPath}` : 'ref';
+    }
+    const summary = summarizeOperationBody(action.operationsText);
+    return summary ? `{ ${summary} }` : '{ … }';
+}
+
+function summarizeOperationBody(text: string | undefined): string {
+    if (!text) {
+        return '';
+    }
+    const compact = text.replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/\/\/[^\n]*/g, '')
+        .replace(/[\s\t]+/g, ' ')
+        .replace(/^\s*\{\s*|\s*\}\s*$/g, '')
+        .trim();
+    if (!compact) {
+        return '';
+    }
+    const firstStatement = compact.split(';')[0].trim();
+    const display = firstStatement.length > 0 ? firstStatement + ';' : compact;
+    return truncateForDetail(display, 48);
+}
+
+function truncateForDetail(text: string, max: number): string {
+    if (text.length <= max) {
+        return text;
+    }
+    return text.slice(0, Math.max(0, max - 1)).trimEnd() + '…';
 }
 
 function buildSemanticActionSymbol(
     action: FcstmSemanticAction,
     document: TextDocumentLike
 ): FcstmDocumentSymbol {
-    const detail: string[] = [action.stage];
-    if (isAspectAction(action)) {
-        detail.push('aspect');
-    } else {
-        detail.push('action');
-    }
-    if (action.aspect) {
-        detail.push(action.aspect);
-    }
-    if (action.isGlobalAspect) {
-        detail.push('global');
-    }
-    if (action.mode === 'abstract') {
-        detail.push('abstract');
-    } else if (action.mode === 'ref' && action.ref?.rawPath) {
-        detail.push(`ref ${action.ref.rawPath}`);
-    } else if (action.mode === 'operations') {
-        detail.push('operations');
-    }
-
+    const selectionAnchor =
+        action.name
+        || action.ref?.rawPath.split('.').pop()
+        || action.stage;
     return {
         name: actionSymbolName(action),
-        detail: detail.join(' '),
-        kind: 'function',
+        detail: actionSymbolDetail(action),
+        kind: 'method',
         range: action.range,
-        selectionRange: findIdentifierRange(
-            document,
-            action.name || action.ref?.rawPath.split('.').pop() || action.stage,
-            action.range,
-            {preferLast: true}
-        ),
+        selectionRange: findIdentifierRange(document, selectionAnchor, action.range, {preferLast: true}),
         children: [],
     };
 }
@@ -523,29 +566,69 @@ function transitionSymbolName(transition: FcstmSemanticTransition): string {
     return `${base} ${separator} ${transition.trigger.rawText}`;
 }
 
+/**
+ * Compact, user-facing detail string for a transition.
+ *
+ * The label already carries source / target / trigger, so the detail
+ * concentrates on the things the label can't easily convey: the semantic
+ * role (entry / exit / forced), the guard expression, and whether an
+ * effect block is present. This is kept short because the outline panel
+ * clips long detail strings.
+ */
+function transitionSymbolDetail(
+    transition: FcstmSemanticTransition,
+    document: TextDocumentLike
+): string {
+    const parts: string[] = [];
+    if (transition.transitionKind === 'entry') {
+        parts.push('initial');
+    } else if (transition.transitionKind === 'exit' || transition.transitionKind === 'exitAll') {
+        parts.push('terminal');
+    }
+    if (transition.forced) {
+        parts.push('forced');
+    }
+    const guardText = extractRangeText(document, transition.guard?.range);
+    if (guardText) {
+        parts.push(`if [${truncateForDetail(guardText, 40)}]`);
+    } else if (transition.guard) {
+        parts.push('guarded');
+    }
+    if (transition.effectText?.trim()) {
+        parts.push('effect');
+    }
+    return parts.join(' ');
+}
+
+function extractRangeText(document: TextDocumentLike, range: TextRange | undefined): string {
+    if (!range) {
+        return '';
+    }
+    const [lo, hi] = comparePositions(range.start, range.end) <= 0
+        ? [range.start, range.end]
+        : [range.end, range.start];
+    if (lo.line === hi.line) {
+        const lineText = document.lineAt(lo.line).text;
+        return lineText.substring(lo.character, hi.character).trim();
+    }
+    const lines: string[] = [];
+    for (let line = lo.line; line <= hi.line; line++) {
+        const text = document.lineAt(line).text;
+        const start = line === lo.line ? lo.character : 0;
+        const end = line === hi.line ? hi.character : text.length;
+        lines.push(text.substring(start, end));
+    }
+    return lines.join(' ').replace(/\s+/g, ' ').trim();
+}
+
 function buildSemanticTransitionSymbol(
     transition: FcstmSemanticTransition,
     document: TextDocumentLike
 ): FcstmDocumentSymbol {
-    const detail: string[] = [];
-    if (transition.forced) {
-        detail.push('forced');
-    }
-    detail.push(transition.transitionKind);
-    if (transition.trigger) {
-        detail.push(`${transition.trigger.scope} trigger`);
-    }
-    if (transition.guard) {
-        detail.push('guard');
-    }
-    if (transition.effectText?.trim()) {
-        detail.push('effect');
-    }
-
     const selectionHint = transition.sourceStateName || transition.targetStateName;
     return {
         name: transitionSymbolName(transition),
-        detail: detail.join(' '),
+        detail: transitionSymbolDetail(transition, document),
         kind: 'function',
         range: transition.range,
         selectionRange: selectionHint
@@ -571,18 +654,26 @@ function buildSemanticStateSymbol(
         .map(item => buildSemanticImportSymbol(item));
     const ownedActions = (semantic.actions || [])
         .filter(item => item.ownerStateId === state.identity.id);
-    const actions = ownedActions
+    const actionSymbols = ownedActions
         .map(item => buildSemanticActionSymbol(item, document));
     const transitions = (semantic.transitions || [])
         .filter(item => item.ownerStateId === state.identity.id)
         .map(item => buildSemanticTransitionSymbol(item, document));
-    const lifecycleActions = ownedActions
-        .filter(item => !isAspectAction(item))
-        .map(item => buildSemanticActionSymbol(item, document));
-    const aspectActions = ownedActions
-        .filter(item => isAspectAction(item))
-        .map(item => buildSemanticActionSymbol(item, document));
     const stateChildren: FcstmDocumentSymbol[] = [];
+
+    // Child layout for a state (in render order):
+    //
+    //   - Imports group   (only when the state owns any `import ...`)
+    //   - Events  group
+    //   - Actions (lifecycle + aspect) — flattened directly under the
+    //     state in source order. The previous `Actions → Lifecycle /
+    //     Aspects` double-wrapper made simple states feel deeply nested,
+    //     so we drop it and rely on per-action names + icons instead.
+    //   - Transitions group
+    //   - States      group (nested child states)
+    //
+    // Groups are kept for categories that can grow large (events,
+    // transitions, nested states); single actions stay flat.
 
     if (imports.length > 0) {
         stateChildren.push(buildGroupSymbol(
@@ -600,36 +691,14 @@ function buildSemanticStateSymbol(
             state.range
         ));
     }
+    for (const action of actionSymbols) {
+        stateChildren.push(action);
+    }
     if (transitions.length > 0) {
         stateChildren.push(buildGroupSymbol(
             'Transitions',
             pluralize(transitions.length, 'transition'),
             transitions,
-            state.range
-        ));
-    }
-    if (actions.length > 0) {
-        const actionGroups: FcstmDocumentSymbol[] = [];
-        if (lifecycleActions.length > 0) {
-            actionGroups.push(buildGroupSymbol(
-                'Lifecycle',
-                pluralize(lifecycleActions.length, 'action'),
-                lifecycleActions,
-                state.range
-            ));
-        }
-        if (aspectActions.length > 0) {
-            actionGroups.push(buildGroupSymbol(
-                'Aspects',
-                pluralize(aspectActions.length, 'aspect'),
-                aspectActions,
-                state.range
-            ));
-        }
-        stateChildren.push(buildGroupSymbol(
-            'Actions',
-            pluralize(actions.length, 'action entry', 'action entries'),
-            actionGroups,
             state.range
         ));
     }
@@ -642,14 +711,51 @@ function buildSemanticStateSymbol(
         ));
     }
 
+    stateChildren.sort(compareDocumentSymbols);
+
     return {
         name: state.name,
-        detail: state.pseudo ? 'pseudo state' : state.displayName || '',
+        detail: buildStateDetail(state, {
+            transitionCount: transitions.length,
+            childStateCount: childStates.length,
+            eventCount: declaredEvents.length,
+            actionCount: actionSymbols.length,
+        }),
         kind: 'class',
         range: state.range,
         selectionRange: findIdentifierRange(document, state.name, state.range),
         children: stateChildren,
     };
+}
+
+/**
+ * Compose a short state-level detail string that carries the most useful
+ * signal at a glance: either a named-state display string, a pseudo-state
+ * marker, or a rough shape summary for composite states (how many
+ * transitions / child states). The VSCode outline renders this alongside
+ * the state name.
+ */
+function buildStateDetail(
+    state: FcstmSemanticState,
+    counts: {transitionCount: number; childStateCount: number; eventCount: number; actionCount: number}
+): string {
+    if (state.pseudo) {
+        return 'pseudo state';
+    }
+    if (state.displayName) {
+        return state.displayName;
+    }
+    const fragments: string[] = [];
+    if (counts.childStateCount > 0) {
+        fragments.push(pluralize(counts.childStateCount, 'state'));
+    }
+    if (counts.transitionCount > 0) {
+        fragments.push(pluralize(counts.transitionCount, 'transition'));
+    }
+    if (counts.eventCount > 0) {
+        fragments.push(pluralize(counts.eventCount, 'event'));
+    }
+    return fragments.join(' · ');
 }
 
 function extractDocumentSymbolsFromSemantic(

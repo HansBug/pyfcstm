@@ -603,28 +603,33 @@ describe('jsfcstm symbol extraction', () => {
             const symbols = await packageModule.collectDocumentSymbols(document);
             assert.equal(symbols.length, 1);
             assert.equal(symbols[0].name, 'Root');
+            // Lifecycle and aspect actions now sit directly under the
+            // enclosing state instead of being buried behind an `Actions →
+            // Lifecycle / Aspects` double wrapper. Order follows source
+            // position (imports → setup → aspect-audit → event → [*] → child).
             assert.deepEqual(
                 symbols[0].children.map(item => item.name),
-                ['Imports', 'Events', 'Transitions', 'Actions', 'States']
+                ['Imports', 'Setup', 'Audit', 'Events', 'Transitions', 'States']
             );
 
             const importSymbol = findNestedSymbol(symbols[0], ['Imports', 'Worker']);
             const transitionSymbol = findNestedSymbol(symbols[0], ['Transitions', '[*] -> Child']);
-            const lifecycleSymbol = findNestedSymbol(symbols[0], ['Actions', 'Lifecycle', 'Setup']);
-            const aspectSymbol = findNestedSymbol(symbols[0], ['Actions', 'Aspects', 'Audit']);
+            const lifecycleSymbol = findNestedSymbol(symbols[0], ['Setup']);
+            const aspectSymbol = findNestedSymbol(symbols[0], ['Audit']);
             const eventSymbol = findNestedSymbol(symbols[0], ['Events', 'Start']);
             const childSymbol = findNestedSymbol(symbols[0], ['States', 'Child']);
 
             assert.equal(importSymbol?.kind, 'module');
             assert.deepEqual(importSymbol?.selectionRange, packageModule.createRange(1, 31, 1, 37));
             assert.equal(transitionSymbol?.kind, 'function');
-            assert.equal(transitionSymbol?.detail, 'entry');
+            assert.equal(transitionSymbol?.detail, 'initial');
             assert.deepEqual(transitionSymbol?.selectionRange, packageModule.createRange(7, 11, 7, 16));
-            assert.equal(lifecycleSymbol?.kind, 'function');
-            assert.equal(lifecycleSymbol?.detail, 'enter action operations');
+            assert.equal(lifecycleSymbol?.kind, 'method',
+                'lifecycle actions use the Method icon so they visually differ from transitions');
             assert.deepEqual(lifecycleSymbol?.selectionRange, packageModule.createRange(2, 10, 2, 15));
-            assert.equal(aspectSymbol?.kind, 'function');
-            assert.equal(aspectSymbol?.detail, 'during aspect before global abstract');
+            assert.equal(aspectSymbol?.kind, 'method');
+            assert.equal(aspectSymbol?.detail, 'abstract',
+                'aspect-abstract actions expose `abstract` as their single-word detail');
             assert.deepEqual(aspectSymbol?.selectionRange, packageModule.createRange(5, 30, 5, 35));
             assert.equal(eventSymbol?.kind, 'event');
             assert.deepEqual(eventSymbol?.selectionRange, packageModule.createRange(6, 10, 6, 15));

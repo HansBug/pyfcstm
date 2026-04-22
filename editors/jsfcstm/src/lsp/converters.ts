@@ -82,6 +82,8 @@ export function toLspSymbolKind(kind: FcstmSymbolKind): SymbolKind {
             return SymbolKind.Module;
         case 'function':
             return SymbolKind.Function;
+        case 'method':
+            return SymbolKind.Method;
         case 'variable':
             return SymbolKind.Variable;
         case 'event':

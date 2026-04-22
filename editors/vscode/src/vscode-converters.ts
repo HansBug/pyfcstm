@@ -62,6 +62,8 @@ export function toVscodeSymbolKind(kind: FcstmSymbolKind): vscode.SymbolKind {
             return vscode.SymbolKind.Module;
         case 'function':
             return vscode.SymbolKind.Function;
+        case 'method':
+            return vscode.SymbolKind.Method;
         case 'variable':
             return vscode.SymbolKind.Variable;
         case 'event':

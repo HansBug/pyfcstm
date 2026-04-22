@@ -20,6 +20,7 @@ const vscode = {
     SymbolKind: {
         Module: 1,
         Class: 5,
+        Method: 6,
         Function: 11,
         Variable: 13,
         Event: 24,
@@ -134,11 +135,50 @@ function variable(name, type) {
     return { name, kind: SymbolKind.Variable, detail: type };
 }
 
-function state(name, detail = '', children) {
-    if (children === undefined) {
-        return { name, kind: SymbolKind.Class, detail };
+// Auto-derive the state detail string from the child groups.
+//
+// Composite states now carry a compact shape summary as their detail
+// (e.g. `2 states · 3 transitions · 1 event`). The builder scans the
+// passed-in children to pick up the relevant counts so individual tests
+// don't need to hand-write them.
+function deriveStateDetail(children) {
+    if (!children) {
+        return '';
     }
-    return { name, kind: SymbolKind.Class, detail, children };
+    let stateCount = 0;
+    let transitionCount = 0;
+    let eventCount = 0;
+    for (const child of children) {
+        if (!child || child.kind !== SymbolKind.Module) continue;
+        switch (child.name) {
+            case 'States':
+                stateCount = (child.children || []).length;
+                break;
+            case 'Transitions':
+                transitionCount = (child.children || []).length;
+                break;
+            case 'Events':
+                eventCount = (child.children || []).length;
+                break;
+            default:
+                break;
+        }
+    }
+    const fragments = [];
+    if (stateCount > 0) fragments.push(plural(stateCount, 'state'));
+    if (transitionCount > 0) fragments.push(plural(transitionCount, 'transition'));
+    if (eventCount > 0) fragments.push(plural(eventCount, 'event'));
+    return fragments.join(' · ');
+}
+
+function state(name, detail, children) {
+    const resolvedDetail = detail !== undefined
+        ? detail
+        : (children && children.length > 0 ? deriveStateDetail(children) : '');
+    if (children === undefined) {
+        return { name, kind: SymbolKind.Class, detail: resolvedDetail };
+    }
+    return { name, kind: SymbolKind.Class, detail: resolvedDetail, children };
 }
 
 function pseudoState(name) {
@@ -149,12 +189,15 @@ function event(name, detail = '') {
     return { name, kind: SymbolKind.Event, detail };
 }
 
-function transition(label, detail) {
+function transition(label, detail = '') {
     return { name: label, kind: SymbolKind.Function, detail };
 }
 
+// Lifecycle and aspect actions now live directly under the enclosing
+// state (no more Actions/Lifecycle/Aspects wrappers) and use the Method
+// icon so they visually separate from transitions.
 function actionEntry(name, detail) {
-    return { name, kind: SymbolKind.Function, detail };
+    return { name, kind: SymbolKind.Method, detail };
 }
 
 function eventsGroup(children) {
@@ -388,7 +431,7 @@ def float z = 2.5;`,
     state Child2;
 }`,
         [
-            state('Root', '', [
+            state('Root', undefined, [
                 statesGroup([state('Child1'), state('Child2')]),
             ]),
         ]
@@ -403,9 +446,9 @@ def float z = 2.5;`,
     }
 }`,
         [
-            state('Root', '', [
+            state('Root', undefined, [
                 statesGroup([
-                    state('Level1', '', [
+                    state('Level1', undefined, [
                         statesGroup([state('Level2')]),
                     ]),
                 ]),
@@ -421,7 +464,7 @@ def float z = 2.5;`,
     event Start;
 }`,
         [
-            state('Root', '', [
+            state('Root', undefined, [
                 eventsGroup([event('Start')]),
             ]),
         ]
@@ -434,7 +477,7 @@ def float z = 2.5;`,
     event Stop named "Stop Event";
 }`,
         [
-            state('Root', '', [
+            state('Root', undefined, [
                 eventsGroup([event('Stop', 'Stop Event')]),
             ]),
         ]
@@ -449,7 +492,7 @@ def float z = 2.5;`,
     event Pause;
 }`,
         [
-            state('Root', '', [
+            state('Root', undefined, [
                 eventsGroup([event('Start'), event('Stop'), event('Pause')]),
             ]),
         ]
@@ -477,7 +520,7 @@ state System {
 }`,
         [
             variable('counter', 'int'),
-            state('System', '', [
+            state('System', undefined, [
                 eventsGroup([event('Start')]),
                 statesGroup([state('Idle')]),
             ]),
@@ -500,10 +543,10 @@ state Root {
         [
             variable('x', 'int'),
             variable('y', 'float'),
-            state('Root', '', [
+            state('Root', undefined, [
                 eventsGroup([event('GlobalEvent')]),
                 statesGroup([
-                    state('SubSystem', '', [
+                    state('SubSystem', undefined, [
                         eventsGroup([event('LocalEvent')]),
                         statesGroup([state('Active'), state('Idle')]),
                     ]),
@@ -524,14 +567,10 @@ state Root {
 }`,
         [
             variable('x', 'int'),
-            state('Root', '', [
-                actionsGroup([
-                    lifecycleGroup([
-                        actionEntry('enter', 'enter action operations'),
-                        actionEntry('during', 'during action operations'),
-                        actionEntry('exit', 'exit action operations'),
-                    ]),
-                ]),
+            state('Root', undefined, [
+                actionEntry('enter', '{ x=0; }'),
+                actionEntry('during', '{ x=x+1; }'),
+                actionEntry('exit', '{ x=0; }'),
             ]),
         ]
     ),
@@ -546,12 +585,15 @@ state Root {
     A -> B;
 }`,
         [
-            state('Root', '', [
-                transitionsGroup([
-                    transition('[*] -> A', 'entry'),
-                    transition('A -> B', 'normal'),
-                ]),
+            state('Root', undefined, [
+                // Children are sorted by source position: both child states
+                // are declared before any transitions, so the States group
+                // surfaces above the Transitions group.
                 statesGroup([state('A'), state('B')]),
+                transitionsGroup([
+                    transition('[*] -> A', 'initial'),
+                    transition('A -> B'),
+                ]),
             ]),
         ]
     ),
@@ -565,7 +607,7 @@ state Root {
     state State3;
 }`,
         [
-            state('Root', '', [
+            state('Root', undefined, [
                 statesGroup([state('State1'), state('State2'), state('State3')]),
             ]),
         ]
@@ -582,11 +624,11 @@ state Root {
     }
 }`,
         [
-            state('L1', '', [
+            state('L1', undefined, [
                 statesGroup([
-                    state('L2', '', [
+                    state('L2', undefined, [
                         statesGroup([
-                            state('L3', '', [
+                            state('L3', undefined, [
                                 statesGroup([state('L4')]),
                             ]),
                         ]),
@@ -607,13 +649,9 @@ state Root {
 }`,
         [
             variable('x', 'int'),
-            state('Root', '', [
-                actionsGroup([
-                    aspectsGroup([
-                        actionEntry('during before', 'during aspect before global operations'),
-                        actionEntry('during after', 'during aspect after global operations'),
-                    ]),
-                ]),
+            state('Root', undefined, [
+                actionEntry('>> during before', '{ x=0; }'),
+                actionEntry('>> during after', '{ x=1; }'),
                 statesGroup([state('Child')]),
             ]),
         ]
@@ -628,7 +666,7 @@ state Root {
     state Another;
 }`,
         [
-            state('Root', '', [
+            state('Root', undefined, [
                 statesGroup([
                     state('Normal'),
                     pseudoState('Junction'),
@@ -657,13 +695,9 @@ state Root {
     exit abstract Cleanup;
 }`,
         [
-            state('Root', '', [
-                actionsGroup([
-                    lifecycleGroup([
-                        actionEntry('Init', 'enter action abstract'),
-                        actionEntry('Cleanup', 'exit action abstract'),
-                    ]),
-                ]),
+            state('Root', undefined, [
+                actionEntry('Init', 'abstract'),
+                actionEntry('Cleanup', 'abstract'),
             ]),
         ]
     ),
@@ -676,13 +710,9 @@ state Root {
     exit ref /GlobalCleanup;
 }`,
         [
-            state('Root', '', [
-                actionsGroup([
-                    lifecycleGroup([
-                        actionEntry('enter ref', 'enter action ref /GlobalInit'),
-                        actionEntry('exit ref', 'exit action ref /GlobalCleanup'),
-                    ]),
-                ]),
+            state('Root', undefined, [
+                actionEntry('enter ref /GlobalInit', 'ref /GlobalInit'),
+                actionEntry('exit ref /GlobalCleanup', 'ref /GlobalCleanup'),
             ]),
         ]
     ),
@@ -712,12 +742,12 @@ def int c = (1 << 4) | 0x0F;`,
     }
 }`,
         [
-            state('Root', '', [
+            state('Root', undefined, [
                 statesGroup([
-                    state('Branch1', '', [
+                    state('Branch1', undefined, [
                         statesGroup([state('Leaf1')]),
                     ]),
-                    state('Branch2', '', [
+                    state('Branch2', undefined, [
                         statesGroup([state('Leaf2')]),
                     ]),
                 ]),
@@ -732,7 +762,7 @@ def int c = (1 << 4) | 0x0F;`,
     event E1 named 'Event One';
 }`,
         [
-            state('Root', '', [
+            state('Root', undefined, [
                 eventsGroup([event('E1', 'Event One')]),
             ]),
         ]
@@ -753,7 +783,7 @@ state TrafficLight {
         [
             variable('counter', 'int'),
             variable('temperature', 'float'),
-            state('TrafficLight', '', [
+            state('TrafficLight', undefined, [
                 eventsGroup([event('Start'), event('Stop')]),
                 statesGroup([state('Red'), state('Yellow'), state('Green')]),
             ]),
@@ -787,7 +817,7 @@ state System named "Main System" {
                 ]),
                 statesGroup([
                     pseudoState('Junction'),
-                    state('SubSystem', '', [
+                    state('SubSystem', undefined, [
                         eventsGroup([event('LocalEvent')]),
                         statesGroup([
                             state('Active', 'Active State'),
@@ -819,7 +849,7 @@ state Root {
     state Child;`,
         [
             variable('x', 'int'),
-            state('Root', '', [
+            state('Root', undefined, [
                 statesGroup([state('Child')]),
             ]),
         ]
@@ -855,10 +885,10 @@ state Root;`,
     [*] -> [*];
 }`,
         [
-            state('Root', '', [
+            state('Root', undefined, [
                 transitionsGroup([
-                    transition('[*] -> ?', 'entry'),
-                    transition('[*] -> ?', 'entry'),
+                    transition('[*] -> ?', 'initial'),
+                    transition('[*] -> ?', 'initial'),
                 ]),
             ]),
         ]

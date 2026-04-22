@@ -4,6 +4,12 @@ AGENTS.md is a symbolic link to CLAUDE.md, so do not modify both files separatel
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Conversation Language
+
+Reply in whatever language the user wrote their most recent message in. Do not default to English on your own. If the user writes in Chinese, reply in Chinese; if the user writes in English, reply in English; if the user mixes languages, mirror their dominant language and keep technical terms in their original form. When the user switches languages mid-conversation, switch with them on the very next turn — do not keep using the previous language.
+
+This rule applies to prose only (explanations, summaries, questions, status updates). Do NOT translate code, identifiers, file paths, commit messages, shell commands, CLI output, log lines, API responses, or anything that must stay verbatim for correctness. Code comments and docstrings follow the repository's existing convention (this repo uses English for code comments and reST docstrings — keep it that way regardless of conversation language).
+
 ## Project Overview
 
 **pyfcstm** is the Python Finite Control State Machine Framework. It parses the **FCSTM (Finite Control State
@@ -959,6 +965,68 @@ pyfcstm/
   `Merge pull request #52 from HansBug/dev/fixed`.
 
 See `LLM_DOCS_README.md` for detailed documentation.
+
+### `gh` / `glab` Identity Rule
+
+Any `gh` or `glab` invocation that acts on behalf of a user (viewing private data, creating issues/PRs/MRs, commenting, approving, pushing releases, etc.) MUST run as an identity whose login/email matches the current repo's `git config user.name` and `git config user.email`. Running under whatever account happens to be "active" in the CLI is NOT acceptable — tokens silently carry over the wrong identity across repos and produce PRs/comments authored by the wrong user.
+
+Mandatory procedure before running `gh` / `glab`:
+
+1. Read the repo identity:
+
+   ```bash
+   git -C . config user.name
+   git -C . config user.email
+   ```
+
+2. Enumerate CLI-available identities and confirm one matches BOTH the name and the email above:
+
+   ```bash
+   gh auth status           # GitHub: lists all logged-in accounts, active flag, scopes
+   glab auth status         # GitLab: lists hosts and usernames
+   ```
+
+   If no authenticated identity matches the repo's `user.name` / `user.email`, STOP. Do not fall back to the currently active account. Ask the user to `gh auth login` / `glab auth login` with the correct identity, or to tell you which stored identity should map to this repo.
+
+3. Once the matching identity is known, DO NOT rely on `gh auth switch` — that mutates global CLI state and can leak into unrelated repos/sessions. Instead, resolve that identity's token and force it inline as an environment variable directly in front of every `gh` / `glab` command in the same command line. This scopes the override to that single process.
+
+Concrete executable examples:
+
+```bash
+# GitHub — always prefix with the resolved token for the matching login.
+# The --user flag picks the exact stored account, regardless of which is "active".
+GH_TOKEN="$(gh auth token --user HansBug)" gh pr list
+GH_TOKEN="$(gh auth token --user HansBug)" gh pr create --title "..." --body "..."
+GH_TOKEN="$(gh auth token --user HansBug)" gh pr view 123 --json title,author,state
+GH_TOKEN="$(gh auth token --user HansBug)" gh api user --jq '.login'   # verify: must print HansBug
+
+# Multiple gh calls in one shell line — prefix each, or export for a single subshell:
+( export GH_TOKEN="$(gh auth token --user HansBug)"; \
+  gh pr list && gh pr view 123 )
+
+# GitLab — same pattern. glab honors GITLAB_TOKEN (and GITLAB_HOST for self-hosted).
+GITLAB_TOKEN="$(glab config get token -h gitlab.com)" glab mr list
+GITLAB_TOKEN="$(glab config get token -h gitlab.example.com)" GITLAB_HOST=gitlab.example.com \
+  glab mr create --title "..." --description "..."
+```
+
+Verification step (do this once per session, before the first state-changing call):
+
+```bash
+# GitHub: the login printed here MUST equal `git config user.name` (or its mapped GitHub login),
+# and `gh api user --jq '.email'` — when non-null — MUST equal `git config user.email`.
+GH_TOKEN="$(gh auth token --user <login>)" gh api user --jq '.login, .email'
+
+# GitLab:
+GITLAB_TOKEN="$(glab config get token -h gitlab.com)" glab api user --jq '.username, .email'
+```
+
+Hard rules:
+
+- Never run `gh pr create`, `gh pr merge`, `gh pr comment`, `gh release create`, `gh issue create/comment`, `glab mr create/merge/comment`, `glab issue create/comment`, or any other state-changing call without the inline token prefix scoped to the matching identity.
+- Never use `gh auth switch` / `glab auth set-default` as a substitute — those are process-global and violate this rule.
+- If `gh auth token --user <login>` returns empty or errors, STOP and surface the problem to the user; do not silently fall through to the active account.
+- Read-only, non-sensitive queries that do not depend on identity (e.g., `gh api repos/owner/repo --jq '.default_branch'` on a public repo) may skip the prefix, but when in doubt, prefix anyway — the cost is zero.
 
 ### ANTLR Grammar Modifications
 

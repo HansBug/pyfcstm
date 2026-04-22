@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 /*
  * Verifies the FCSTM preview webview pointer interaction contract:
- *   - plain click pans (no revealSource) when drag movement > threshold
- *   - plain click on a chevron toggles collapse, not revealSource
- *   - plain click on a state does nothing (prevents click-stealing)
- *   - Ctrl/Cmd + click on an element with range reveals the source
+ *   - drag past the threshold cancels any click (pan, not click)
+ *   - plain click on chevron toggles collapse
+ *   - plain click on a state / transition / label → select + show details
+ *   - plain click on empty canvas clears the current selection
+ *   - Ctrl/Cmd + click on an element with a source range reveals it
  *
- * The decision helper lives at src/preview-interaction.ts so both the
- * webview script (inlined copy) and this test consume the same policy.
+ * The policy lives in src/preview-interaction.ts so both the inlined
+ * webview script and this Node test consume the same contract.
  */
 
 const fs = require('fs');
@@ -24,39 +25,39 @@ function check(label, cond) {
     console.log(`${cond ? '\x1b[32m✅\x1b[0m' : '\x1b[31m❌\x1b[0m'} ${label}`);
 }
 
-// 1. Drag past threshold → plain click suppressed, regardless of target.
-check(
-    'drag past threshold cancels click on state (plain)',
-    decidePreviewPointerAction({kind: 'state', modifier: false, dragMovedPx: PREVIEW_DRAG_THRESHOLD_PX + 1, hasRange: true}).type === 'none'
-);
-check(
-    'drag past threshold cancels click on state (modifier held)',
-    decidePreviewPointerAction({kind: 'state', modifier: true, dragMovedPx: PREVIEW_DRAG_THRESHOLD_PX + 1, hasRange: true}).type === 'none'
-);
-check(
-    'drag past threshold cancels click on chevron',
-    decidePreviewPointerAction({kind: 'chevron', modifier: false, dragMovedPx: PREVIEW_DRAG_THRESHOLD_PX + 1, hasRange: true}).type === 'none'
-);
+// 1. Drag past threshold → click suppressed.
+for (const kind of ['state', 'composite-state', 'transition', 'transition-label', 'chevron', null]) {
+    check(
+        `drag past threshold cancels click on ${kind === null ? '<empty>' : kind}`,
+        decidePreviewPointerAction({kind, modifier: false, dragMovedPx: PREVIEW_DRAG_THRESHOLD_PX + 1, hasRange: true}).type === 'none'
+    );
+}
 
-// 2. Plain click on chevron within threshold → toggleCollapse.
+// 2. Plain click on chevron toggles collapse; Ctrl+click reveals source
 check(
     'plain click on chevron toggles collapse',
     decidePreviewPointerAction({kind: 'chevron', modifier: false, dragMovedPx: 0, hasRange: true}).type === 'toggleCollapse'
 );
 check(
-    'plain click on chevron toggles collapse even with stale 1-2px jitter',
-    decidePreviewPointerAction({kind: 'chevron', modifier: false, dragMovedPx: PREVIEW_DRAG_THRESHOLD_PX - 1, hasRange: true}).type === 'toggleCollapse'
+    'Ctrl+click on chevron reveals source (not toggle)',
+    decidePreviewPointerAction({kind: 'chevron', modifier: true, dragMovedPx: 0, hasRange: true}).type === 'revealSource'
 );
 
-// 3. Plain click on non-chevron elements does nothing (reveal is opt-in).
+// 3. Plain click on state / transition / label → select (the new behaviour).
 for (const kind of ['state', 'composite-state', 'transition', 'transition-label', 'pseudo-init', 'pseudo-exit']) {
     check(
-        `plain click on ${kind} is a no-op (prevents click-stealing from pan)`,
-        decidePreviewPointerAction({kind, modifier: false, dragMovedPx: 0, hasRange: true}).type === 'none'
+        `plain click on ${kind} selects it (and opens Details)`,
+        decidePreviewPointerAction({kind, modifier: false, dragMovedPx: 0, hasRange: true}).type === 'select'
     );
 }
 
-// 4. Ctrl/Cmd + click reveals source when element has a source range.
+// 4. Plain click on empty canvas clears selection.
+check(
+    'plain click on empty canvas clears selection',
+    decidePreviewPointerAction({kind: null, modifier: false, dragMovedPx: 0, hasRange: false}).type === 'clearSelection'
+);
+
+// 5. Ctrl/Cmd + click reveals source when element has a range.
 for (const kind of ['state', 'composite-state', 'transition', 'transition-label', 'chevron']) {
     check(
         `Ctrl/Cmd+click on ${kind} with range reveals source`,
@@ -64,41 +65,42 @@ for (const kind of ['state', 'composite-state', 'transition', 'transition-label'
     );
 }
 
-// 5. Ctrl/Cmd + click on elements without a range is a no-op.
+// 6. Ctrl/Cmd + click without a range is a no-op (can't jump).
 check(
     'Ctrl/Cmd+click on state without range does nothing',
     decidePreviewPointerAction({kind: 'state', modifier: true, dragMovedPx: 0, hasRange: false}).type === 'none'
 );
 check(
-    'Ctrl/Cmd+click on pseudo-init (no range) does nothing',
+    'Ctrl/Cmd+click on pseudo-init without range does nothing',
     decidePreviewPointerAction({kind: 'pseudo-init', modifier: true, dragMovedPx: 0, hasRange: false}).type === 'none'
 );
 
-// 6. Clicks outside any data-fcstm-kind element are ignored.
-check(
-    'null kind (click on empty viewport) is ignored',
-    decidePreviewPointerAction({kind: null, modifier: true, dragMovedPx: 0, hasRange: false}).type === 'none'
-);
-
-// 7. Threshold constant is sane.
+// 7. Threshold sanity.
 check(
     'drag threshold is a small positive pixel count',
     typeof PREVIEW_DRAG_THRESHOLD_PX === 'number' && PREVIEW_DRAG_THRESHOLD_PX > 0 && PREVIEW_DRAG_THRESHOLD_PX < 20
 );
 
-// 8. The webview HTML template wires up modifier-aware click and drag threshold.
-//    This keeps the inlined copy in preview.ts in sync with the helper policy.
+// 8. Inlined webview copy tracks the policy.
 const previewSrc = fs.readFileSync(path.resolve(__dirname, '..', 'out', 'preview.js'), 'utf8');
 check(
     'preview.js embeds decidePreviewPointerAction inside the webview script',
     previewSrc.includes('function decidePreviewPointerAction')
 );
 check(
-    'preview.js uses PREVIEW_DRAG_THRESHOLD_PX in the webview script',
+    'preview.js embeds SELECTABLE_KINDS in the webview click handler',
+    previewSrc.includes('SELECTABLE_KINDS')
+);
+check(
+    'preview.js handles select and clearSelection actions',
+    previewSrc.includes("'select'") && previewSrc.includes("'clearSelection'")
+);
+check(
+    'preview.js PREVIEW_DRAG_THRESHOLD_PX constant is embedded',
     previewSrc.includes('PREVIEW_DRAG_THRESHOLD_PX')
 );
 check(
-    'preview.js checks ctrlKey or metaKey for reveal-source',
+    'preview.js checks both ctrlKey and metaKey for reveal-source',
     previewSrc.includes('ev.ctrlKey') && previewSrc.includes('ev.metaKey')
 );
 check(
@@ -111,11 +113,35 @@ check(
 );
 check(
     'preview.js toggles modifier-held class on keydown/keyup',
-    previewSrc.includes('modifier-held') && previewSrc.includes("keydown") && previewSrc.includes('keyup')
+    previewSrc.includes('modifier-held') && previewSrc.includes('keydown') && previewSrc.includes('keyup')
 );
 check(
     'preview.js still posts revealSource messages to the extension host',
     previewSrc.includes("type: 'revealSource'") || previewSrc.includes('type: "revealSource"')
+);
+check(
+    'preview.js renders Details card UI (state actions, transition event/guard/effect)',
+    previewSrc.includes('renderStateDetails') && previewSrc.includes('renderTransitionDetails')
+);
+check(
+    'preview.js adds fcstm-selected class to highlight current selection',
+    previewSrc.includes('fcstm-selected')
+);
+check(
+    'preview.js exposes Reveal-source button in the Details header',
+    previewSrc.includes('details-reveal')
+);
+check(
+    'preview.js draws transition labels with a white halo (paint-order stroke) — no more solid rect background',
+    previewSrc.includes('paint-order="stroke"') && previewSrc.includes('stroke-width="3"')
+);
+check(
+    'preview.js distinguishes leaf / composite / pseudo states with data-fcstm-variant',
+    previewSrc.includes('data-fcstm-variant')
+);
+check(
+    'preview.js no longer renders leaf-state event/action detail list (those live in the Details panel)',
+    !/meta\.eventLabels \|\| \[\]\)\.concat\(meta\.actionLabels/.test(previewSrc)
 );
 
 const passed = checkpoints.filter(c => c.ok).length;

@@ -300,6 +300,39 @@ export interface FcstmElkGraph extends FcstmElkNode {
  * Webview-side payload: everything the preview panel needs to render the
  * current diagram without holding a reference to the semantic model.
  */
+export interface FcstmDiagramStateDetail {
+    qualifiedName: string;
+    displayName?: string;
+    name: string;
+    kind: 'leaf' | 'composite' | 'pseudoState';
+    events: Array<{name: string; displayName?: string}>;
+    actions: Array<{
+        stage: string;
+        aspect?: string;
+        mode: string;
+        name?: string;
+        globalAspect?: boolean;
+        body?: string;
+    }>;
+    transitionIds: string[];
+    sourceRange?: TextRange;
+}
+
+export interface FcstmDiagramTransitionDetail {
+    transitionId: string;
+    from: string;
+    to: string;
+    kind: 'entry' | 'normal' | 'exit' | 'forced';
+    forced: boolean;
+    eventLabel?: string;
+    eventQualifiedName?: string;
+    triggerScope?: 'local' | 'chain' | 'absolute';
+    guardLabel?: string;
+    effectLines?: string[];
+    eventColor?: string;
+    sourceRange?: TextRange;
+}
+
 export interface FcstmDiagramWebviewPayload {
     filePath: string;
     machineName: string;
@@ -309,4 +342,6 @@ export interface FcstmDiagramWebviewPayload {
     graph: FcstmElkGraph;
     effectNotes: FcstmDiagramEffectNote[];
     options: ResolvedFcstmDiagramPreviewOptions;
+    states: FcstmDiagramStateDetail[];
+    transitions: FcstmDiagramTransitionDetail[];
 }

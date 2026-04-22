@@ -289,6 +289,22 @@ async function main() {
     if (!Array.isArray(firstMessage.collapsedStateIds)) {
         throw new Error('Preview payload does not expose collapsed-state-ids.');
     }
+    if (!Array.isArray(firstMessage.payload.states) || firstMessage.payload.states.length < 2) {
+        throw new Error('Preview payload must expose flattened state details for the Details panel.');
+    }
+    if (!firstMessage.payload.states.some(s => s.qualifiedName === 'Fleet.Idle' && s.kind === 'leaf')) {
+        throw new Error('Preview payload states do not include Fleet.Idle as a leaf.');
+    }
+    if (!Array.isArray(firstMessage.payload.transitions) || firstMessage.payload.transitions.length < 1) {
+        throw new Error('Preview payload must expose flattened transition details for the Details panel.');
+    }
+    const initialTransition = firstMessage.payload.transitions.find(t => t.from === 'Fleet.Idle' && t.to === 'Fleet.Running');
+    if (!initialTransition || !initialTransition.eventLabel) {
+        throw new Error('Preview payload transitions do not carry the Idle→Running event label.');
+    }
+    if (!panel.webview.html.includes('id="details-card"') || !panel.webview.html.includes('id="details-sections"')) {
+        throw new Error('Preview webview HTML does not expose the Details side panel.');
+    }
 
     fireWebviewMessage(panel, {
         type: 'patchOptions',

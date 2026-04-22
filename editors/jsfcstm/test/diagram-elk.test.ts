@@ -128,6 +128,77 @@ describe('jsfcstm ELK-based diagram pipeline', () => {
         assert.ok(Array.isArray(payload!.eventLegend));
         assert.ok(Array.isArray(payload!.effectNotes));
         assert.ok(payload!.options.detailLevel === 'full');
+        // Details-panel indices: states and transitions flattened for lookup.
+        assert.ok(Array.isArray(payload!.states));
+        assert.ok(Array.isArray(payload!.transitions));
+        const idleDetail = payload!.states.find(s => s.qualifiedName === 'Fleet.Idle');
+        assert.ok(idleDetail, 'Fleet.Idle should be present in state details');
+        assert.equal(idleDetail!.kind, 'leaf');
+        const runningDetail = payload!.states.find(s => s.qualifiedName === 'Fleet.Running');
+        assert.ok(runningDetail, 'Fleet.Running should be present in state details');
+        assert.equal(runningDetail!.kind, 'composite');
+        const idleToRunning = payload!.transitions.find(t =>
+            t.from === 'Fleet.Idle' && t.to === 'Fleet.Running'
+        );
+        assert.ok(idleToRunning, 'Idle→Running transition must be indexed');
+        assert.ok(idleToRunning!.eventLabel, 'transition should record its event label');
+    });
+
+    it('formats transition labels with glyph prefixes instead of a squashed string', async () => {
+        const doc = createDocument(sampleSource, '/tmp/elk-sample-glyph.fcstm');
+        const diagram = await buildFcstmDiagramFromDocument(doc);
+        assert.ok(diagram);
+        const options = resolveFcstmDiagramPreviewOptions('normal');
+        const graph = buildFcstmElkGraph(diagram!, options);
+        const fleet = graph.children.find(c => c.fcstm?.qualifiedName === 'Fleet')!;
+        const edgesWithLabels = (fleet.edges || []).filter(e => (e.labels || []).length > 0);
+        assert.ok(edgesWithLabels.length > 0, 'sample fixture should produce at least one labelled edge');
+        const labelTexts = edgesWithLabels.flatMap(e => (e.labels || []).map(l => l.text));
+        assert.ok(labelTexts.some(text => text.startsWith('●') || text.includes('\n●') || text.includes('● ')),
+            `event lines should carry the event glyph — got ${JSON.stringify(labelTexts)}`);
+    });
+
+    it('leaf state meta keeps event / action labels for the Details panel but no longer forces them into the SVG box', async () => {
+        const richSource = [
+            'def int counter = 0;',
+            'state Board {',
+            '    event Boot;',
+            '    state PowerOn {',
+            '        enter { counter = 0; }',
+            '        during { counter = counter + 1; }',
+            '        exit { counter = 0; }',
+            '    }',
+            '    state Idle;',
+            '    [*] -> PowerOn;',
+            '    PowerOn -> Idle :: Boot;',
+            '}',
+        ].join('\n');
+        const doc = createDocument(richSource, '/tmp/elk-leaf-box.fcstm');
+        const diagram = await buildFcstmDiagramFromDocument(doc);
+        assert.ok(diagram);
+        const options = resolveFcstmDiagramPreviewOptions('full');
+        const graph = buildFcstmElkGraph(diagram!, options, {collapsedStateIds: new Set<string>()});
+        const board = graph.children.find(c => c.fcstm?.qualifiedName === 'Board')!;
+        const powerOn = (board.children || []).find(c => c.fcstm?.qualifiedName === 'Board.PowerOn')!;
+        assert.ok(powerOn, 'PowerOn leaf should be present');
+        // meta keeps the summary (for the Details panel) ...
+        assert.ok(powerOn.fcstm?.actionLabels && powerOn.fcstm!.actionLabels!.length >= 1);
+        // ... but the leaf box is now sized without packing detail lines
+        // into it: height stays close to the minimum leaf height.
+        assert.ok((powerOn.height || 0) <= 80,
+            `leaf state should no longer expand for enter/during/exit rows; got height ${powerOn.height}`);
+    });
+
+    it('ELK layout spacings are generous enough for readable diagrams', async () => {
+        const doc = createDocument(sampleSource, '/tmp/elk-sample-spacing.fcstm');
+        const diagram = await buildFcstmDiagramFromDocument(doc);
+        assert.ok(diagram);
+        const options = resolveFcstmDiagramPreviewOptions('normal');
+        const graph = buildFcstmElkGraph(diagram!, options);
+        assert.ok(Number(graph.layoutOptions['elk.spacing.nodeNode']) >= 72,
+            'nodeNode spacing should be at least 72 for a non-cramped diagram');
+        assert.ok(Number(graph.layoutOptions['elk.layered.spacing.nodeNodeBetweenLayers']) >= 96,
+            'between-layer spacing should be at least 96');
     });
 
     it('returns null payload when the document has no state machine', async () => {

@@ -21,9 +21,20 @@ import type {
 // boxes so ELK can pack them without our SVG labels overflowing later.
 const CHAR_WIDTH = 8.2;
 const LINE_HEIGHT = 18;
-const STATE_TITLE_HEIGHT = 26;
-const LEAF_MIN_WIDTH = 128;
-const LEAF_MIN_HEIGHT = 52;
+const STATE_TITLE_HEIGHT = 30;
+const LEAF_MIN_WIDTH = 140;
+const LEAF_MIN_HEIGHT = 58;
+
+/**
+ * Glyphs used to visually distinguish transition-label components from
+ * each other. Event / guard / effect each get their own mark so labels
+ * stay readable even without a background rectangle.
+ */
+export const TRANSITION_LABEL_GLYPHS = {
+    event: '●',
+    guard: '◇',
+    effect: '▸',
+};
 
 /** Measure a (possibly multi-line) label rectangle for ELK. */
 export function measureLabel(
@@ -138,21 +149,32 @@ function resolveTransitionLabeling(
 }
 
 /**
- * Concatenate event / guard / inline-effect into a single edge-label line.
- * Mermaid used to squash these into a noisy string; the ELK renderer
- * keeps them comma-separated only when both are present so each part
- * stays visually distinct.
+ * Compose the edge-label text as one line per component with a small
+ * glyph prefix so event / guard / effect stay visually distinguishable
+ * even when the label has no background rectangle.
+ *
+ * Event lines keep their raw name (no glyph) on their own line; guards
+ * are wrapped in ``[...]`` and prefixed with ``◇``; inline effects keep
+ * the leading ``▸`` so they don't look like another guard or event.
  */
 function composeEdgeLabel(
     eventLabel: string,
     guardLabel: string,
     inlineEffect: string
 ): string {
-    const head = [eventLabel, guardLabel].filter(Boolean).join(' ');
-    if (inlineEffect) {
-        return head ? `${head} ${inlineEffect}`.trim() : inlineEffect;
+    const parts: string[] = [];
+    if (eventLabel) {
+        parts.push(`${TRANSITION_LABEL_GLYPHS.event} ${eventLabel}`);
     }
-    return head;
+    if (guardLabel) {
+        parts.push(`${TRANSITION_LABEL_GLYPHS.guard} ${guardLabel}`);
+    }
+    if (inlineEffect) {
+        // Strip the legacy leading "/" so we don't end up with "▸ / ..."
+        const body = inlineEffect.replace(/^\s*\/\s*/, '');
+        parts.push(`${TRANSITION_LABEL_GLYPHS.effect} ${body}`);
+    }
+    return parts.join('\n');
 }
 
 /**
@@ -206,15 +228,14 @@ export function buildFcstmElkGraph(
         const { width: titleW, height: titleH } = measureLabel(title, 18, 6);
         const leafDetails = leafDetailLines(state, options);
 
-        // For a leaf state we pad the box to fit title + detail lines.
+        // Leaf states (and collapsed composites) now show only their title
+        // in the diagram; the detail summary lives in the Details side panel
+        // so the diagram stays uncluttered. We still keep eventLabels /
+        // actionLabels on the meta so the Details panel can read them
+        // without re-traversing the source model.
         if (state.children.length === 0 || isCollapsed) {
-            const detailLines = [...leafDetails.eventLabels, ...leafDetails.actionLabels];
-            const detailWidth = detailLines.length === 0
-                ? 0
-                : Math.max(...detailLines.map(line => line.length)) * CHAR_WIDTH + 20;
-            const width = Math.max(LEAF_MIN_WIDTH, titleW + 16, Math.ceil(detailWidth));
-            const detailH = detailLines.length * LINE_HEIGHT;
-            const height = Math.max(LEAF_MIN_HEIGHT, titleH + 8 + detailH + (detailH > 0 ? 8 : 0));
+            const width = Math.max(LEAF_MIN_WIDTH, titleW + 24);
+            const height = Math.max(LEAF_MIN_HEIGHT, titleH + 14);
             return {
                 id: state.qualifiedName,
                 width,
@@ -305,7 +326,7 @@ export function buildFcstmElkGraph(
             children,
             edges,
             layoutOptions: {
-                'elk.padding': '[top=40,left=18,bottom=18,right=18]',
+                'elk.padding': '[top=54,left=28,bottom=28,right=28]',
             },
             fcstm: {
                 kind: 'state',
@@ -328,13 +349,19 @@ export function buildFcstmElkGraph(
             'elk.direction': options.direction === 'LR' ? 'RIGHT' : 'DOWN',
             'elk.hierarchyHandling': 'INCLUDE_CHILDREN',
             'elk.edgeRouting': 'ORTHOGONAL',
-            'elk.spacing.nodeNode': '44',
-            'elk.layered.spacing.nodeNodeBetweenLayers': '60',
-            'elk.spacing.edgeNode': '22',
-            'elk.spacing.edgeLabel': '14',
+            // Wider breathing room than the first draft — users explicitly
+            // asked for a less cramped layout.
+            'elk.spacing.nodeNode': '80',
+            'elk.layered.spacing.nodeNodeBetweenLayers': '110',
+            'elk.spacing.edgeNode': '42',
+            'elk.spacing.edgeEdge': '30',
+            'elk.spacing.edgeLabel': '24',
+            'elk.spacing.componentComponent': '64',
+            'elk.layered.spacing.baseValue': '48',
+            'elk.layered.spacing.edgeNodeBetweenLayers': '46',
             'elk.edgeLabels.placement': 'CENTER',
             'elk.layered.nodePlacement.favorStraightEdges': 'true',
-            'elk.padding': '[top=28,left=28,bottom=28,right=28]',
+            'elk.padding': '[top=36,left=36,bottom=36,right=36]',
         },
         children: [buildStateNode(diagram.rootState)],
         edges: [],

@@ -327,28 +327,42 @@ function createPreviewHtml(
             display: block;
             user-select: none;
         }
-        /* chevron always toggles on plain click, so it keeps pointer cursor. */
-        .viewport-inner [data-fcstm-kind="chevron"] {
+        /* chevron always toggles on plain click; other kinds are clickable
+           for selection (plain click = select/show details). */
+        .viewport-inner [data-fcstm-kind="chevron"],
+        .viewport-inner [data-fcstm-kind="state"],
+        .viewport-inner [data-fcstm-kind="composite-state"],
+        .viewport-inner [data-fcstm-kind="transition"],
+        .viewport-inner [data-fcstm-kind="transition-label"],
+        .viewport-inner [data-fcstm-kind="pseudo-init"],
+        .viewport-inner [data-fcstm-kind="pseudo-exit"] {
             cursor: pointer;
         }
-        /* Other elements adopt the viewport's grab/grabbing cursor by default;
-           only when a modifier is held do they offer the code-tracking cursor
-           used by the Ctrl/Cmd+click reveal-source action. */
-        body.modifier-held .viewport-inner [data-fcstm-kind="state"][data-fcstm-range-start-line],
-        body.modifier-held .viewport-inner [data-fcstm-kind="composite-state"][data-fcstm-range-start-line],
-        body.modifier-held .viewport-inner [data-fcstm-kind="transition"][data-fcstm-range-start-line],
-        body.modifier-held .viewport-inner [data-fcstm-kind="transition-label"][data-fcstm-range-start-line],
-        body.modifier-held .viewport-inner [data-fcstm-kind="chevron"][data-fcstm-range-start-line] {
-            cursor: pointer;
+        /* Code-tracking cursor appears when modifier is held — signals that
+           Ctrl/Cmd+click will jump to source. */
+        body.modifier-held .viewport-inner [data-fcstm-kind][data-fcstm-range-start-line] {
+            cursor: alias;
         }
         .viewport-inner [data-fcstm-kind="state"]:hover > rect,
         .viewport-inner [data-fcstm-kind="composite-state"]:hover > rect {
-            stroke-width: 2.6px;
-            filter: brightness(1.05);
+            filter: brightness(1.03);
         }
-        body.modifier-held .viewport-inner [data-fcstm-kind]:hover,
-        body.modifier-held .viewport-inner [data-fcstm-kind="transition"]:hover {
-            filter: brightness(1.05);
+        /* Selected element outline — a distinct yellow-orange halo so it
+           reads at a glance without disturbing the node palette. */
+        .viewport-inner [data-fcstm-kind].fcstm-selected > rect,
+        .viewport-inner [data-fcstm-kind].fcstm-selected > circle {
+            stroke: #c8761a !important;
+            stroke-width: 2.6 !important;
+            filter: drop-shadow(0 0 4px rgba(200, 118, 26, 0.5));
+        }
+        .viewport-inner [data-fcstm-kind="transition"].fcstm-selected,
+        .viewport-inner [data-fcstm-kind="transition-label"].fcstm-selected > text {
+            stroke: #c8761a !important;
+            stroke-width: 3 !important;
+            filter: drop-shadow(0 0 3px rgba(200, 118, 26, 0.45));
+        }
+        .viewport-inner [data-fcstm-kind="transition-label"].fcstm-selected > text {
+            font-weight: 700;
         }
 
         .stage-hint {
@@ -431,6 +445,56 @@ function createPreviewHtml(
         .diag-item.warning { border-left-color: var(--warning); }
         .diag-meta { font-size: 10px; color: var(--muted); margin-bottom: 2px; }
         .diag-msg { font-size: 11px; line-height: 1.45; }
+
+        /* Details card: shows the full information for the currently
+           selected state / transition; the user opens it by plain-clicking
+           on any diagram element. */
+        .details-card { grid-column: 1 / -1; }
+        .details-header {
+            display: flex; justify-content: space-between; align-items: center;
+            gap: 8px; flex-wrap: wrap;
+            border-bottom: 1px solid var(--border); padding-bottom: 6px; margin-bottom: 8px;
+        }
+        .details-title { font-size: 13px; font-weight: 700; }
+        .details-kind {
+            font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase;
+            color: var(--accent);
+            padding: 2px 8px; border-radius: 999px;
+            background: rgba(45, 106, 168, 0.12);
+        }
+        .details-reveal {
+            font-size: 10px; color: var(--muted);
+            border: 1px solid var(--border); border-radius: 999px; padding: 2px 8px;
+            background: rgba(255, 255, 255, 0.35); cursor: pointer;
+            font-family: inherit;
+        }
+        .details-reveal:hover { color: var(--accent); background: rgba(45, 106, 168, 0.14); }
+        .details-sections {
+            display: flex; flex-direction: column; gap: 8px;
+        }
+        .details-section-title {
+            font-size: 10px; letter-spacing: 0.08em; color: var(--muted);
+            text-transform: uppercase; font-weight: 700;
+        }
+        .details-section-body { font-size: 12px; line-height: 1.5; }
+        .details-section-body ul { margin: 0; padding-left: 16px; }
+        .details-section-body li { margin-bottom: 2px; }
+        .details-section-body pre {
+            margin: 0; white-space: pre-wrap; word-break: break-word;
+            font-size: 11px; line-height: 1.5;
+            background: rgba(0, 0, 0, 0.04);
+            border-radius: 8px; padding: 6px 8px;
+        }
+        .details-badge {
+            display: inline-flex; align-items: center; gap: 4px;
+            font-size: 10px; padding: 2px 7px; border-radius: 999px;
+            background: rgba(94, 140, 194, 0.12); color: var(--accent);
+            margin-right: 4px; margin-bottom: 2px;
+        }
+        .details-empty {
+            font-size: 11px; color: var(--muted); line-height: 1.5;
+            padding: 8px 0;
+        }
     </style>
 </head>
 <body>
@@ -503,6 +567,19 @@ function createPreviewHtml(
         </div>
 
         <section class="side-panels">
+            <div class="card details-card" id="details-card">
+                <div class="details-header">
+                    <div>
+                        <div class="details-title" id="details-title">Details</div>
+                        <div class="details-kind" id="details-kind" style="display:none"></div>
+                    </div>
+                    <button class="details-reveal" id="details-reveal" type="button" style="display:none">Reveal source</button>
+                </div>
+                <div class="details-sections" id="details-sections"></div>
+                <div class="details-empty" id="details-empty">
+                    Plain click on a state or transition to inspect it. Ctrl/Cmd+click jumps to the source. Click empty space to clear.
+                </div>
+            </div>
             <div class="card hidden" id="variables-card">
                 <div class="card-title">Variables</div>
                 <ul class="card-list" id="variables-list"></ul>
@@ -626,18 +703,30 @@ ${elkRuntime}
         //   - mousedown anywhere starts a drag; pan only takes effect if the
         //     pointer actually moves beyond PREVIEW_DRAG_THRESHOLD_PX.
         //   - plain click on a chevron toggles collapse.
+        //   - plain click on a state / transition / label selects it and
+        //     opens its entry in the Details side panel.
+        //   - plain click on empty space clears the selection.
         //   - Ctrl/Cmd + click on any element that carries a source range
         //     reveals that range in the editor (code-tracking style).
-        //   - all other plain clicks are ignored so drag/zoom stay usable.
         const PREVIEW_DRAG_THRESHOLD_PX = 4;
+        const SELECTABLE_KINDS = new Set([
+            'state', 'composite-state', 'transition', 'transition-label',
+            'pseudo-init', 'pseudo-exit',
+        ]);
         let dragState = null;
         let dragMovedPx = 0;
+        // Selection: remember what's highlighted so re-layouts don't wipe it.
+        let selection = null;
 
         function decidePreviewPointerAction(input) {
             if (input.dragMovedPx > PREVIEW_DRAG_THRESHOLD_PX) return { type: 'none' };
-            if (!input.kind) return { type: 'none' };
-            if (input.kind === 'chevron' && !input.modifier) return { type: 'toggleCollapse' };
-            if (input.modifier && input.hasRange) return { type: 'revealSource' };
+            if (input.modifier) {
+                if (input.kind && input.hasRange) return { type: 'revealSource' };
+                return { type: 'none' };
+            }
+            if (!input.kind) return { type: 'clearSelection' };
+            if (input.kind === 'chevron') return { type: 'toggleCollapse' };
+            if (SELECTABLE_KINDS.has(input.kind)) return { type: 'select' };
             return { type: 'none' };
         }
 
@@ -683,6 +772,23 @@ ${elkRuntime}
                 vscode.postMessage({ type: 'revealSource', range });
                 return;
             }
+            if (action.type === 'select' && target) {
+                const id = target.getAttribute('data-fcstm-id');
+                const isTransitionKind = kind === 'transition' || kind === 'transition-label';
+                selection = {
+                    kind: isTransitionKind ? 'transition' : (kind === 'chevron' ? 'state' : kind),
+                    id,
+                };
+                applySelectionHighlight();
+                renderDetails();
+                return;
+            }
+            if (action.type === 'clearSelection') {
+                selection = null;
+                applySelectionHighlight();
+                renderDetails();
+                return;
+            }
         });
 
         // Highlight targetable elements with the code-tracking cursor only
@@ -717,6 +823,193 @@ ${elkRuntime}
             vscode.postMessage({ type: 'setCollapsed', collapsed: Array.from(collapsedSet) });
         }
 
+        function applySelectionHighlight() {
+            for (const el of viewportInnerNode.querySelectorAll('.fcstm-selected')) {
+                el.classList.remove('fcstm-selected');
+            }
+            if (!selection) return;
+            const selector = selection.kind === 'transition'
+                ? '[data-fcstm-kind="transition"][data-fcstm-id="' + cssEscape(selection.id) + '"],'
+                  + '[data-fcstm-kind="transition-label"][data-fcstm-id="' + cssEscape(selection.id) + '"]'
+                : '[data-fcstm-id="' + cssEscape(selection.id) + '"]';
+            for (const el of viewportInnerNode.querySelectorAll(selector)) {
+                el.classList.add('fcstm-selected');
+            }
+        }
+
+        function cssEscape(value) {
+            if (typeof CSS !== 'undefined' && CSS.escape) return CSS.escape(value);
+            return String(value).replace(/["\\]/g, '\\\\$&');
+        }
+
+        const detailsCardNode = $('details-card');
+        const detailsTitleNode = $('details-title');
+        const detailsKindNode = $('details-kind');
+        const detailsSectionsNode = $('details-sections');
+        const detailsEmptyNode = $('details-empty');
+        const detailsRevealBtn = $('details-reveal');
+
+        detailsRevealBtn.addEventListener('click', () => {
+            if (!selection || !currentState) return;
+            const detail = findSelectedDetail();
+            const range = detail && detail.sourceRange;
+            if (range) {
+                vscode.postMessage({ type: 'revealSource', range });
+            }
+        });
+
+        function findSelectedDetail() {
+            if (!selection || !currentState || !currentState.payload) return null;
+            if (selection.kind === 'transition') {
+                return (currentState.payload.transitions || []).find(t => t.transitionId === selection.id) || null;
+            }
+            return (currentState.payload.states || []).find(s => s.qualifiedName === selection.id) || null;
+        }
+
+        function renderDetails() {
+            detailsSectionsNode.innerHTML = '';
+            if (!selection) {
+                detailsTitleNode.textContent = 'Details';
+                detailsKindNode.style.display = 'none';
+                detailsRevealBtn.style.display = 'none';
+                detailsEmptyNode.style.display = '';
+                return;
+            }
+            const detail = findSelectedDetail();
+            if (!detail) {
+                detailsTitleNode.textContent = 'Details';
+                detailsKindNode.style.display = 'none';
+                detailsRevealBtn.style.display = 'none';
+                detailsEmptyNode.style.display = '';
+                detailsEmptyNode.textContent = 'Selection not found in the current payload.';
+                return;
+            }
+            detailsEmptyNode.style.display = 'none';
+            if (selection.kind === 'transition') {
+                renderTransitionDetails(detail);
+            } else {
+                renderStateDetails(detail);
+            }
+            detailsRevealBtn.style.display = detail.sourceRange ? '' : 'none';
+        }
+
+        function makeSection(label, builder) {
+            const wrap = document.createElement('div');
+            const title = document.createElement('div');
+            title.className = 'details-section-title';
+            title.textContent = label;
+            wrap.appendChild(title);
+            const body = document.createElement('div');
+            body.className = 'details-section-body';
+            builder(body);
+            wrap.appendChild(body);
+            return wrap;
+        }
+
+        function renderStateDetails(state) {
+            const displayName = state.displayName ? state.displayName + ' (' + state.name + ')' : state.name;
+            detailsTitleNode.textContent = displayName;
+            detailsKindNode.style.display = '';
+            detailsKindNode.textContent = state.kind;
+
+            const qn = document.createElement('div');
+            qn.className = 'details-section-body';
+            qn.style.fontFamily = 'inherit';
+            qn.textContent = state.qualifiedName;
+            detailsSectionsNode.appendChild(makeSection('Qualified name', b => b.appendChild(qn)));
+
+            if (state.events && state.events.length) {
+                detailsSectionsNode.appendChild(makeSection('Events', body => {
+                    const ul = document.createElement('ul');
+                    for (const ev of state.events) {
+                        const li = document.createElement('li');
+                        li.textContent = ev.displayName ? ev.displayName + ' (' + ev.name + ')' : ev.name;
+                        ul.appendChild(li);
+                    }
+                    body.appendChild(ul);
+                }));
+            }
+
+            if (state.actions && state.actions.length) {
+                detailsSectionsNode.appendChild(makeSection('Actions', body => {
+                    const ul = document.createElement('ul');
+                    for (const action of state.actions) {
+                        const li = document.createElement('li');
+                        const badges = document.createElement('span');
+                        const badge = (text) => {
+                            const span = document.createElement('span');
+                            span.className = 'details-badge';
+                            span.textContent = text;
+                            return span;
+                        };
+                        badges.appendChild(badge(action.stage));
+                        if (action.aspect) badges.appendChild(badge(action.aspect));
+                        if (action.globalAspect) badges.appendChild(badge('>> aspect'));
+                        if (action.mode && action.mode !== 'operations') badges.appendChild(badge(action.mode));
+                        li.appendChild(badges);
+                        const body2 = document.createElement('span');
+                        body2.textContent = ' ' + (action.name || action.body || '');
+                        li.appendChild(body2);
+                        ul.appendChild(li);
+                    }
+                    body.appendChild(ul);
+                }));
+            }
+
+            if (state.transitionIds && state.transitionIds.length) {
+                detailsSectionsNode.appendChild(makeSection('Outgoing transitions', body => {
+                    const ul = document.createElement('ul');
+                    for (const tid of state.transitionIds) {
+                        const li = document.createElement('li');
+                        const btn = document.createElement('a');
+                        btn.href = '#';
+                        btn.textContent = tid;
+                        btn.addEventListener('click', (ev) => {
+                            ev.preventDefault();
+                            selection = {kind: 'transition', id: tid};
+                            applySelectionHighlight();
+                            renderDetails();
+                        });
+                        li.appendChild(btn);
+                        ul.appendChild(li);
+                    }
+                    body.appendChild(ul);
+                }));
+            }
+        }
+
+        function renderTransitionDetails(transition) {
+            detailsTitleNode.textContent = transition.from + ' → ' + transition.to;
+            detailsKindNode.style.display = '';
+            detailsKindNode.textContent = (transition.forced ? 'forced ' : '') + transition.kind;
+            if (transition.eventLabel) {
+                detailsSectionsNode.appendChild(makeSection('Event', body => {
+                    const pre = document.createElement('div');
+                    pre.textContent = transition.eventLabel + (transition.triggerScope ? '  (' + transition.triggerScope + ')' : '');
+                    body.appendChild(pre);
+                    if (transition.eventQualifiedName) {
+                        const qn = document.createElement('div');
+                        qn.style.color = 'var(--muted)';
+                        qn.style.fontSize = '10px';
+                        qn.textContent = transition.eventQualifiedName;
+                        body.appendChild(qn);
+                    }
+                }));
+            }
+            if (transition.guardLabel) {
+                detailsSectionsNode.appendChild(makeSection('Guard', body => {
+                    body.textContent = '[' + transition.guardLabel + ']';
+                }));
+            }
+            if (transition.effectLines && transition.effectLines.length) {
+                detailsSectionsNode.appendChild(makeSection('Effect', body => {
+                    const pre = document.createElement('pre');
+                    pre.textContent = transition.effectLines.join('\\n');
+                    body.appendChild(pre);
+                }));
+            }
+        }
+
         function layoutOptions(graph) {
             return graph.layoutOptions || {};
         }
@@ -732,9 +1025,11 @@ ${elkRuntime}
                 const laid = await elk.layout(payload.graph);
                 if (token !== renderToken) return;
                 currentSvgString = renderSvgFromLaidOut(laid, state);
-                currentSvgBounds = { width: Math.ceil(laid.width || 0) + 24, height: Math.ceil(laid.height || 0) + 24 };
+                currentSvgBounds = { width: Math.ceil(laid.width || 0) + 28, height: Math.ceil(laid.height || 0) + 28 };
                 viewportInnerNode.innerHTML = currentSvgString;
                 stageEmptyNode.classList.add('hidden');
+                applySelectionHighlight();
+                renderDetails();
                 fitToView();
             } catch (err) {
                 showEmpty('Layout failed', err && err.message ? err.message : String(err));
@@ -752,28 +1047,42 @@ ${elkRuntime}
 
         // Embedded renderer — mirrors svg-renderer.ts from jsfcstm but runs on
         // the already-laid-out ELK graph inside the webview.
+        // Mirror of editors/jsfcstm/src/diagram/svg-renderer.ts. The webview
+        // runs its own copy because layout happens here; keep the two in
+        // sync so SVG export (extension host) matches what the user sees.
         function renderSvgFromLaidOut(canvas, state) {
             const STYLE = {
-                canvasPadding: 24,
-                stateFill: '#ffffff',
-                stateStroke: '#7da9d7',
-                stateTitleColor: '#183b61',
-                compositeFill: '#f4f8fc',
-                compositeStroke: '#8cb3dc',
-                pseudoStateFill: '#f3e6e6',
-                pseudoStateStroke: '#b07575',
+                canvasPadding: 28,
+                leafFill: '#ffffff',
+                leafStroke: '#5a92c4',
+                leafStrokeWidth: 1.4,
+                leafRadius: 10,
+                compositeFill: '#edf4fb',
+                compositeTitleFill: '#dce9f5',
+                compositeStroke: '#2d6aa8',
+                compositeStrokeWidth: 1.8,
+                compositeRadius: 16,
+                pseudoStateFill: '#fdf3e1',
+                pseudoStateStroke: '#b07a36',
+                pseudoStrokeWidth: 1.4,
+                pseudoDash: '6 3',
+                titleColor: '#183b61',
                 initFill: '#2d6aa8',
                 exitOuterStroke: '#2d6aa8',
                 exitInnerFill: '#2d6aa8',
                 edgeStroke: '#3470a8',
-                edgeLabelBg: '#ffffff',
-                edgeLabelBorder: '#c2d4e8',
-                edgeLabelText: '#183b61',
+                edgeLabelHalo: '#ffffff',
+                edgeLabelEventColor: '#2d6aa8',
+                edgeLabelGuardColor: '#9c5d00',
+                edgeLabelEffectColor: '#4a6b8c',
                 fontFamily: '"JetBrains Mono","Fira Code",Consolas,monospace',
                 forcedEdgeDasharray: '6 4',
                 entryEdgeWeight: 1.7,
                 normalEdgeWeight: 1.4,
             };
+            const LABEL_GLYPH_EVENT = '●';
+            const LABEL_GLYPH_GUARD = '◇';
+            const LABEL_GLYPH_EFFECT = '▸';
             function esc(v) {
                 return String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'})[c]);
             }
@@ -785,6 +1094,12 @@ ${elkRuntime}
                        'data-' + prefix + '-end-line="' + r.end.line + '" ' +
                        'data-' + prefix + '-end-character="' + r.end.character + '"';
             }
+            function lineColor(line, fallback) {
+                if (line.startsWith(LABEL_GLYPH_GUARD)) return STYLE.edgeLabelGuardColor;
+                if (line.startsWith(LABEL_GLYPH_EFFECT)) return STYLE.edgeLabelEffectColor;
+                if (line.startsWith(LABEL_GLYPH_EVENT)) return STYLE.edgeLabelEventColor;
+                return fallback;
+            }
             const width = Math.ceil(canvas.width || 0) + STYLE.canvasPadding;
             const height = Math.ceil(canvas.height || 0) + STYLE.canvasPadding;
             const out = [];
@@ -792,9 +1107,16 @@ ${elkRuntime}
             out.push('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + width + ' ' + height + '" ' +
                 'width="' + width + '" height="' + height + '" ' + q('font-family', STYLE.fontFamily) +
                 ' font-size="14" data-fcstm-canvas="true" data-fcstm-direction="' + direction + '">');
-            out.push('<defs><marker id="fcstm-arrow" viewBox="0 0 10 10" refX="9" refY="5" ' +
+            out.push('<defs>' +
+                '<marker id="fcstm-arrow" viewBox="0 0 10 10" refX="9" refY="5" ' +
                 'markerWidth="10" markerHeight="10" orient="auto-start-reverse" markerUnits="userSpaceOnUse">' +
-                '<path d="M0,0 L10,5 L0,10 z" fill="' + STYLE.edgeStroke + '"/></marker></defs>');
+                '<path d="M0,0 L10,5 L0,10 z" fill="' + STYLE.edgeStroke + '"/></marker>' +
+                '<filter id="fcstm-leaf-shadow" x="-10%" y="-10%" width="120%" height="130%">' +
+                '<feGaussianBlur in="SourceAlpha" stdDeviation="1.4"/>' +
+                '<feOffset dx="0" dy="1"/>' +
+                '<feComponentTransfer><feFuncA type="linear" slope="0.18"/></feComponentTransfer>' +
+                '<feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>' +
+                '</filter></defs>');
             out.push('<rect x="0" y="0" width="' + width + '" height="' + height + '" fill="transparent"/>');
 
             function drawEdge(edge, ox, oy) {
@@ -818,20 +1140,23 @@ ${elkRuntime}
                         q('data-fcstm-id', (meta && meta.transitionId) || edge.id) + ' ' +
                         rangeAttrs('fcstm-range', meta && meta.sourceRange) + ' />');
                 }
+                // Background-less label text with a white stroke halo so it
+                // stays legible on top of edges without hiding them.
                 for (const label of (edge.labels || [])) {
                     const lx = (label.x || 0) + ox;
                     const ly = (label.y || 0) + oy;
-                    const lw = label.width || 0;
                     const lh = label.height || 0;
                     out.push('<g ' + q('data-fcstm-kind', 'transition-label') + ' ' +
                         q('data-fcstm-id', (meta && meta.transitionId) || edge.id) + ' ' +
                         rangeAttrs('fcstm-range', meta && meta.sourceRange) + '>');
-                    out.push('<rect x="' + (lx - 4) + '" y="' + (ly - 2) + '" width="' + (lw + 8) + '" height="' + (lh + 4) +
-                        '" rx="5" ry="5" fill="' + STYLE.edgeLabelBg + '" stroke="' + STYLE.edgeLabelBorder + '" stroke-width="0.8"/>');
                     const lines = String(label.text).split('\\n');
                     const lineOffset = lh / Math.max(1, lines.length);
                     for (let i = 0; i < lines.length; i++) {
-                        out.push('<text x="' + (lx + 4) + '" y="' + (ly + lineOffset * (i + 0.7) + 2) + '" fill="' + color + '" font-size="12">' + esc(lines[i]) + '</text>');
+                        const lc = lineColor(lines[i], color);
+                        out.push('<text x="' + (lx + 2) + '" y="' + (ly + lineOffset * (i + 0.7) + 2) + '" ' +
+                            'fill="' + lc + '" font-size="12" font-weight="500" ' +
+                            'paint-order="stroke" stroke="' + STYLE.edgeLabelHalo + '" stroke-width="3" stroke-linejoin="round">' +
+                            esc(lines[i]) + '</text>');
                     }
                     out.push('</g>');
                 }
@@ -862,50 +1187,67 @@ ${elkRuntime}
                         '<circle cx="' + cx + '" cy="' + cy + '" r="' + Math.max(0, r - 4) + '" fill="' + STYLE.exitInnerFill + '"/></g>');
                     return;
                 }
-                const isComposite = Boolean(meta.composite);
+                const isComposite = Boolean(meta.composite) && !meta.collapsed;
                 const isPseudo = Boolean(meta.pseudo);
-                const fill = isPseudo ? STYLE.pseudoStateFill : (isComposite && !meta.collapsed ? STYLE.compositeFill : STYLE.stateFill);
-                const stroke = isPseudo ? STYLE.pseudoStateStroke : (isComposite ? STYLE.compositeStroke : STYLE.stateStroke);
                 const labelText = (node.labels && node.labels[0] && node.labels[0].text) || meta.qualifiedName || node.id;
+                let fill, stroke, strokeWidth, radius, extraAttrs = '', variant;
+                if (isPseudo) {
+                    variant = 'pseudo';
+                    fill = STYLE.pseudoStateFill;
+                    stroke = STYLE.pseudoStateStroke;
+                    strokeWidth = STYLE.pseudoStrokeWidth;
+                    radius = STYLE.leafRadius;
+                    extraAttrs = 'stroke-dasharray="' + STYLE.pseudoDash + '" ';
+                } else if (isComposite) {
+                    variant = 'composite';
+                    fill = STYLE.compositeFill;
+                    stroke = STYLE.compositeStroke;
+                    strokeWidth = STYLE.compositeStrokeWidth;
+                    radius = STYLE.compositeRadius;
+                } else {
+                    variant = 'leaf';
+                    fill = STYLE.leafFill;
+                    stroke = STYLE.leafStroke;
+                    strokeWidth = STYLE.leafStrokeWidth;
+                    radius = STYLE.leafRadius;
+                }
                 out.push('<g ' + q('data-fcstm-kind', isComposite ? 'composite-state' : 'state') + ' ' +
                     q('data-fcstm-id', meta.qualifiedName || node.id) + ' ' +
+                    q('data-fcstm-variant', variant) + ' ' +
                     q('data-fcstm-pseudo', String(isPseudo)) + ' ' +
-                    q('data-fcstm-composite', String(isComposite)) + ' ' +
+                    q('data-fcstm-composite', String(Boolean(meta.composite))) + ' ' +
                     q('data-fcstm-collapsed', String(Boolean(meta.collapsed))) + ' ' +
                     rangeAttrs('fcstm-range', meta.sourceRange) + '>');
+                const shadow = variant === 'leaf' ? ' filter="url(#fcstm-leaf-shadow)"' : '';
                 out.push('<rect x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '" ' +
-                    'rx="' + (isComposite ? 16 : 10) + '" ry="' + (isComposite ? 16 : 10) + '" ' +
-                    'fill="' + fill + '" stroke="' + stroke + '" stroke-width="1.6" ' +
-                    (isPseudo ? 'stroke-dasharray="4 3" ' : '') + '/>');
-                if (isComposite && !meta.collapsed) {
-                    out.push('<text x="' + (x + 16) + '" y="' + (y + 22) + '" fill="' + STYLE.stateTitleColor +
+                    'rx="' + radius + '" ry="' + radius + '" ' +
+                    'fill="' + fill + '" stroke="' + stroke + '" stroke-width="' + strokeWidth + '" ' +
+                    extraAttrs + shadow + ' />');
+                if (isComposite) {
+                    const titleHeight = 32;
+                    out.push('<path d="M' + (x + radius) + ',' + y + ' L' + (x + w - radius) + ',' + y + ' ' +
+                        'Q' + (x + w) + ',' + y + ' ' + (x + w) + ',' + (y + radius) + ' L' + (x + w) + ',' + (y + titleHeight) + ' ' +
+                        'L' + x + ',' + (y + titleHeight) + ' L' + x + ',' + (y + radius) + ' ' +
+                        'Q' + x + ',' + y + ' ' + (x + radius) + ',' + y + ' Z" ' +
+                        'fill="' + STYLE.compositeTitleFill + '" stroke="none"/>');
+                    out.push('<text x="' + (x + 16) + '" y="' + (y + 21) + '" fill="' + STYLE.titleColor +
                         '" font-weight="700" font-size="14">' + esc(labelText) + '</text>');
-                    out.push('<line x1="' + (x + 8) + '" y1="' + (y + 30) + '" x2="' + (x + w - 8) + '" y2="' + (y + 30) +
-                        '" stroke="' + STYLE.compositeStroke + '" stroke-opacity="0.55" stroke-width="1"/>');
+                    out.push('<line x1="' + x + '" y1="' + (y + titleHeight) + '" x2="' + (x + w) + '" y2="' + (y + titleHeight) +
+                        '" stroke="' + STYLE.compositeStroke + '" stroke-opacity="0.35" stroke-width="1"/>');
                 } else {
-                    const detailLines = (meta.eventLabels || []).concat(meta.actionLabels || []);
-                    if (detailLines.length === 0) {
-                        out.push('<text x="' + (x + w / 2) + '" y="' + (y + h / 2 + 5) + '" fill="' + STYLE.stateTitleColor +
-                            '" font-weight="600" text-anchor="middle">' + esc(labelText) + '</text>');
-                    } else {
-                        const titleY = y + 22;
-                        out.push('<text x="' + (x + w / 2) + '" y="' + titleY + '" fill="' + STYLE.stateTitleColor +
-                            '" font-weight="700" text-anchor="middle">' + esc(labelText) + '</text>');
-                        out.push('<line x1="' + (x + 8) + '" y1="' + (titleY + 6) + '" x2="' + (x + w - 8) + '" y2="' + (titleY + 6) +
-                            '" stroke="' + STYLE.stateStroke + '" stroke-opacity="0.4" stroke-width="1"/>');
-                        let ly = titleY + 22;
-                        for (const line of detailLines) {
-                            out.push('<text x="' + (x + 12) + '" y="' + ly + '" fill="' + STYLE.stateTitleColor + '" font-size="12" font-weight="400">' + esc(line) + '</text>');
-                            ly += 16;
-                        }
+                    out.push('<text x="' + (x + w / 2) + '" y="' + (y + h / 2 + 5) + '" fill="' + STYLE.titleColor +
+                        '" font-weight="600" text-anchor="middle">' + esc(labelText) + '</text>');
+                    if (isPseudo) {
+                        out.push('<text x="' + (x + 10) + '" y="' + (y + 14) + '" fill="' + STYLE.pseudoStateStroke +
+                            '" font-size="10" font-weight="700" letter-spacing="0.04em">pseudo</text>');
                     }
                 }
-                if (isComposite) {
+                if (isComposite || meta.collapsed) {
                     const cx = x + w - 22;
-                    const cy = y + 14;
+                    const cy = y + 16;
                     const collapsed = Boolean(meta.collapsed);
                     const d = collapsed ? 'M' + cx + ',' + cy + ' l4,4 l4,-4' : 'M' + cx + ',' + (cy + 2) + ' l4,-4 l4,4';
-                    out.push('<path d="' + d + '" fill="none" stroke="' + STYLE.stateTitleColor + '" stroke-width="1.8" ' +
+                    out.push('<path d="' + d + '" fill="none" stroke="' + STYLE.titleColor + '" stroke-width="1.8" ' +
                         'stroke-linecap="round" stroke-linejoin="round" ' +
                         q('data-fcstm-kind', 'chevron') + ' ' + q('data-fcstm-id', meta.qualifiedName || node.id) + ' ' +
                         rangeAttrs('fcstm-range', meta.sourceRange) + '/>');

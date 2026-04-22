@@ -28,7 +28,7 @@ import {getWorkspaceGraph, type FcstmWorkspaceGraphNode, type FcstmWorkspaceGrap
 import {findIdentifierRange, rangeIntersects, rangeLength} from './ranges';
 import type {FcstmDefinitionLocation} from './navigation';
 
-export type FcstmReferenceSymbolKind = 'variable' | 'state' | 'event' | 'action' | 'import';
+export type FcstmReferenceSymbolKind = 'variable' | 'state' | 'event' | 'action' | 'import' | 'tempVariable';
 export type FcstmSymbolOccurrenceRole = 'definition' | 'reference' | 'write';
 export type FcstmDocumentHighlightKind = 'text' | 'read' | 'write';
 
@@ -515,6 +515,138 @@ function collectActionOperationOccurrences(
     }
 }
 
+/**
+ * Collect block-local temporary variable occurrences from a sequence of
+ * operation statements.
+ *
+ * FCSTM allows assigning to an undeclared name inside an
+ * `enter / during / exit / effect` block; that creates a temp variable
+ * whose scope is the entire block (including nested if / else branches)
+ * and whose lifetime ends when the block finishes. So:
+ *
+ *  - Occurrences of the same name inside the same block are grouped.
+ *  - Occurrences in different blocks (even of the same name) are unrelated.
+ *  - The earliest-seen assignment in document order is tagged as the
+ *    `definition`; later assignments become `write`, and any read on the
+ *    RHS or in a guard becomes a `reference`.
+ */
+function collectTempVariableOccurrences(
+    statements: FcstmAstOperationStatement[] | undefined,
+    document: TextDocumentLike,
+    filePath: string,
+    variablesByName: Map<string, FcstmSemanticVariable>,
+    blockKey: string,
+    occurrences: FcstmSymbolOccurrence[]
+): void {
+    if (!statements || statements.length === 0) {
+        return;
+    }
+
+    interface TempOccurrence {
+        name: string;
+        range: TextRange;
+        role: FcstmSymbolOccurrenceRole;
+    }
+    const collected: TempOccurrence[] = [];
+
+    const walkExpression = (expr: FcstmAstExpression | null | undefined): void => {
+        if (!expr) {
+            return;
+        }
+        switch (expr.expressionKind) {
+            case 'identifier': {
+                if (!variablesByName.has(expr.name)) {
+                    collected.push({name: expr.name, range: expr.range, role: 'reference'});
+                }
+                break;
+            }
+            case 'unary':
+                walkExpression(expr.operand);
+                break;
+            case 'binary':
+                walkExpression(expr.left);
+                walkExpression(expr.right);
+                break;
+            case 'function':
+                walkExpression(expr.argument);
+                break;
+            case 'conditional':
+                walkExpression(expr.condition);
+                walkExpression(expr.whenTrue);
+                walkExpression(expr.whenFalse);
+                break;
+            case 'parenthesized':
+                walkExpression(expr.expression);
+                break;
+            default:
+                break;
+        }
+    };
+
+    const walkStatement = (statement: FcstmAstOperationStatement): void => {
+        if (statement.kind === 'assignmentStatement') {
+            if (!variablesByName.has(statement.targetName)) {
+                collected.push({
+                    name: statement.targetName,
+                    range: findIdentifierRange(document, statement.targetName, statement.range),
+                    role: 'write',
+                });
+            }
+            walkExpression(statement.expression);
+        } else if (statement.kind === 'ifStatement') {
+            for (const branch of statement.branches) {
+                walkExpression(branch.condition);
+                for (const nested of branch.statements) {
+                    walkStatement(nested);
+                }
+            }
+        }
+    };
+
+    for (const statement of statements) {
+        walkStatement(statement);
+    }
+
+    if (collected.length === 0) {
+        return;
+    }
+
+    // Promote the earliest write of each name (by document position) to
+    // `definition` so go-to-definition / find-references have a definitive
+    // anchor inside the block.
+    const earliestWriteKey = new Map<string, TempOccurrence>();
+    for (const item of collected) {
+        if (item.role !== 'write') {
+            continue;
+        }
+        const prev = earliestWriteKey.get(item.name);
+        const itemStart = item.range.start;
+        const prevStart = prev?.range.start;
+        const earlier = !prev || (
+            itemStart.line < prevStart!.line
+            || (itemStart.line === prevStart!.line && itemStart.character < prevStart!.character)
+        );
+        if (earlier) {
+            earliestWriteKey.set(item.name, item);
+        }
+    }
+
+    for (const item of collected) {
+        const isDefinition = earliestWriteKey.get(item.name) === item;
+        occurrences.push({
+            key: `temp:${filePath}:${blockKey}:${item.name}`,
+            kind: 'tempVariable',
+            name: item.name,
+            qualifiedName: `${blockKey}.${item.name}`,
+            filePath,
+            range: item.range,
+            role: isDefinition ? 'definition' : item.role,
+            containerName: blockKey,
+            renameable: true,
+        });
+    }
+}
+
 function importTargetRange(
     snapshot: FcstmWorkspaceGraphSnapshot,
     importItem: FcstmSemanticImport
@@ -669,6 +801,18 @@ function collectNodeOccurrences(
         }
 
         collectActionOperationOccurrences(action.ast, node.document, variablesByName, occurrences);
+
+        // Block-local temporary variables live inside a lifecycle action's
+        // operation block. Each action is its own scope: same-named temps
+        // in sibling actions must stay independent.
+        collectTempVariableOccurrences(
+            action.ast.operationsList,
+            node.document,
+            node.filePath,
+            variablesByName,
+            `action:${action.identity.id}`,
+            occurrences
+        );
     }
 
     for (const importItem of semantic.imports) {
@@ -806,6 +950,17 @@ function collectNodeOccurrences(
         for (const statement of transition.ast.postOperations || []) {
             collectOperationOccurrences(statement, node.document, variablesByName, occurrences);
         }
+
+        // `effect { ... }` blocks on a transition get their own block-local
+        // temp-variable scope, keyed on the transition identity.
+        collectTempVariableOccurrences(
+            transition.ast.postOperations,
+            node.document,
+            node.filePath,
+            variablesByName,
+            `effect:${transition.identity.id}`,
+            occurrences
+        );
 
         if (transition.trigger?.eventId) {
             const event = findEventById(semantic, transition.trigger.eventId);
@@ -995,6 +1150,11 @@ export async function collectWorkspaceSymbols(
     for (const document of documents) {
         const graph = await buildSymbolGraph(document);
         for (const occurrence of definitionOnly(graph.occurrences)) {
+            if (occurrence.kind === 'tempVariable') {
+                // Block-local temps are file- and block-private; excluding
+                // them keeps the workspace symbol picker clean.
+                continue;
+            }
             const haystack = `${occurrence.name} ${occurrence.qualifiedName} ${occurrence.containerName || ''}`.toLowerCase();
             if (normalizedQuery && !haystack.includes(normalizedQuery)) {
                 continue;

@@ -215,6 +215,7 @@ export function toLspWorkspaceEdit(edit: FcstmWorkspaceEdit): WorkspaceEdit {
 export function toLspWorkspaceSymbol(symbol: FcstmWorkspaceSymbol): SymbolInformation {
     const kindMap: Record<FcstmWorkspaceSymbol['kind'], SymbolKind> = {
         variable: SymbolKind.Variable,
+        tempVariable: SymbolKind.Variable,
         state: SymbolKind.Class,
         event: SymbolKind.Event,
         action: SymbolKind.Function,

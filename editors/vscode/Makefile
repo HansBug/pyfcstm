@@ -1,7 +1,7 @@
 # Makefile for FCSTM VSCode Extension
 # This file provides commands for building and maintaining the extension
 
-.PHONY: all parser clean install build package verify-p0.2 verify-p0.3 verify-p0.4 verify-p0.5 verify-p0.6 verify-p1.b verify-editor-contexts verify-reference-scoping verify-import-editor-support verify-semantic-editor-support verify-phase8-preview verify-phase9-preview verify test-e2e help syntaxes icons jsfcstm-install jsfcstm-build jsfcstm-pack
+.PHONY: all parser clean install build package verify-p0.2 verify-p0.3 verify-p0.4 verify-p0.5 verify-p0.6 verify-p1.b verify-editor-contexts verify-reference-scoping verify-temp-variables verify-import-editor-support verify-semantic-editor-support verify-phase8-preview verify-phase9-preview verify test-e2e help syntaxes icons jsfcstm-install jsfcstm-build jsfcstm-pack
 
 # ANTLR configuration
 ANTLR_VERSION := 4.9.3
@@ -42,6 +42,7 @@ help:
 	@echo "  make verify-p1.b  - Verify P1.B language configuration reinforcement"
 	@echo "  make verify-editor-contexts - Verify jsfcstm completion contexts (transition/guard/effect/lifecycle/scope)"
 	@echo "  make verify-reference-scoping - Verify scope-aware reference/highlight/definition for events / states / variables"
+	@echo "  make verify-temp-variables - Verify block-local temporary variable references (enter/during/exit/effect)"
 	@echo "  make verify-import-editor-support - Verify import-aware editor support"
 	@echo "  make verify-semantic-editor-support - Verify scope/event/import semantic editor behavior"
 	@echo "  make verify-phase9-preview - Verify the Mermaid right-side preview flow"
@@ -163,6 +164,11 @@ verify-reference-scoping: jsfcstm-build
 	cd $(JSFCSTM_DIR) && npx mocha --require ts-node/register/transpile-only --extension ts "test/reference-scoping.test.ts" --reporter spec
 	@echo ""
 
+verify-temp-variables: jsfcstm-build
+	@echo "Running jsfcstm block-local temporary variable reference tests..."
+	cd $(JSFCSTM_DIR) && npx mocha --require ts-node/register/transpile-only --extension ts "test/temp-variables.test.ts" --reporter spec
+	@echo ""
+
 verify-import-editor-support: build-tsc
 	@echo "Running import editor support verification script..."
 	node ./scripts/verify-import-editor-support.js
@@ -188,7 +194,7 @@ test-e2e: build
 	node ./scripts/test-e2e.js
 	@echo ""
 
-verify: verify-p0.2 verify-p0.3 verify-p0.4 verify-p0.5 verify-p0.6 verify-p1.b verify-editor-contexts verify-reference-scoping verify-import-editor-support verify-semantic-editor-support verify-phase9-preview test-e2e
+verify: verify-p0.2 verify-p0.3 verify-p0.4 verify-p0.5 verify-p0.6 verify-p1.b verify-editor-contexts verify-reference-scoping verify-temp-variables verify-import-editor-support verify-semantic-editor-support verify-phase9-preview test-e2e
 	@echo "All verification tests passed!"
 
 package: all

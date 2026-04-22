@@ -1,0 +1,39 @@
+def int counter = 0;
+def int error_count = 0;
+def float temperature = 25.0;
+
+state HVAC {
+    event PowerOn;
+    event PowerOff;
+    event Emergency;
+
+    [*] -> Idle;
+
+    state Idle {
+        enter { counter = 0; }
+        during { counter = counter + 1; }
+    }
+
+    state Running {
+        state Heating {
+            enter { counter = 0; }
+            during { temperature = temperature + 0.5; }
+            exit { counter = 0; }
+        }
+        state Stable {
+            during { counter = counter + 1; }
+        }
+        [*] -> Heating;
+        Heating -> Stable : if [temperature >= 22.0];
+        Stable -> Heating : if [temperature < 18.0];
+    }
+
+    state Fault {
+        enter { error_count = error_count + 1; }
+    }
+
+    Idle -> Running :: PowerOn;
+    Running -> Idle :: PowerOff;
+    Running -> Fault : if [temperature > 80.0] effect { error_count = error_count + 1; counter = 0; };
+    !* -> Fault :: Emergency;
+}

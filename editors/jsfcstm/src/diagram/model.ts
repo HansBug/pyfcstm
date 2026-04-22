@@ -215,3 +215,98 @@ export interface FcstmDiagramMermaidRenderResult {
     source: string;
     renderedTransitions: FcstmDiagramRenderedTransition[];
 }
+
+// ---------------------------------------------------------------------------
+// ELK / SVG renderer types
+// ---------------------------------------------------------------------------
+
+/**
+ * ELK graph node produced by the jsfcstm diagram-to-ELK adapter.
+ *
+ * Keeps only the fields elkjs understands plus a small `fcstm` bag that
+ * survives ``elk.layout`` untouched and carries everything the SVG
+ * renderer needs to reconstruct source mapping, kind, and collapse state.
+ */
+export interface FcstmElkNode {
+    id: string;
+    width?: number;
+    height?: number;
+    x?: number;
+    y?: number;
+    labels?: Array<{text: string; width: number; height: number; x?: number; y?: number}>;
+    children?: FcstmElkNode[];
+    edges?: FcstmElkEdge[];
+    layoutOptions?: Record<string, string>;
+    fcstm?: FcstmElkNodeMeta;
+}
+
+/**
+ * Extra per-node metadata that the renderer consumes but ELK ignores.
+ */
+export interface FcstmElkNodeMeta {
+    kind: 'state' | 'pseudoInit' | 'pseudoExit' | 'canvas';
+    qualifiedName?: string;
+    displayName?: string;
+    pseudo?: boolean;
+    composite?: boolean;
+    collapsed?: boolean;
+    sourceRange?: TextRange;
+    // Fields carried for the effect side panel and state detail summary.
+    eventLabels?: string[];
+    actionLabels?: string[];
+}
+
+export interface FcstmElkEdge {
+    id: string;
+    sources: string[];
+    targets: string[];
+    labels?: Array<{text: string; width: number; height: number; x?: number; y?: number}>;
+    sections?: Array<{
+        startPoint: {x: number; y: number};
+        endPoint: {x: number; y: number};
+        bendPoints?: Array<{x: number; y: number}>;
+    }>;
+    fcstm?: FcstmElkEdgeMeta;
+}
+
+export interface FcstmElkEdgeMeta {
+    kind: 'transition';
+    transitionId: string;
+    eventColor?: string;
+    forced?: boolean;
+    transitionKind: 'entry' | 'normal' | 'exit' | 'normalAll' | 'exitAll';
+    sourceRange?: TextRange;
+    eventLabel?: string;
+    guardLabel?: string;
+    effectLines?: string[];
+    /**
+     * Whether the transition carries a multi-line effect block that is
+     * surfaced via the side-panel note (as opposed to an inline label).
+     */
+    hasNoteEffect?: boolean;
+}
+
+/**
+ * Top-level ELK input graph ready to be handed to ``elk.layout``.
+ */
+export interface FcstmElkGraph extends FcstmElkNode {
+    id: '__canvas__';
+    layoutOptions: Record<string, string>;
+    children: FcstmElkNode[];
+    edges: FcstmElkEdge[];
+}
+
+/**
+ * Webview-side payload: everything the preview panel needs to render the
+ * current diagram without holding a reference to the semantic model.
+ */
+export interface FcstmDiagramWebviewPayload {
+    filePath: string;
+    machineName: string;
+    summary: FcstmDiagramSummary;
+    variables: FcstmDiagramVariable[];
+    eventLegend: FcstmDiagramEventLegendItem[];
+    graph: FcstmElkGraph;
+    effectNotes: FcstmDiagramEffectNote[];
+    options: ResolvedFcstmDiagramPreviewOptions;
+}

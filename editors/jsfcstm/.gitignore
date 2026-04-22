@@ -6,6 +6,9 @@ dist/
 parser/
 src/dsl/grammar/
 
+# Visual regression snapshots (regenerated on demand via scripts/visual-check.js)
+test/snapshots/
+
 # Dependencies
 node_modules/
 

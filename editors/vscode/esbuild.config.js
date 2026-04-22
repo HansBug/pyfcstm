@@ -17,30 +17,30 @@ function prepareOutputDirectory() {
   fs.rmSync(outputDir, {recursive: true, force: true});
 }
 
-function loadMermaidRuntimeSource() {
-  const sourceFile = path.resolve(__dirname, 'node_modules', 'mermaid', 'dist', 'mermaid.min.js');
+function loadElkRuntimeSource() {
+  const sourceFile = path.resolve(__dirname, 'node_modules', 'elkjs', 'lib', 'elk.bundled.js');
 
   if (!fs.existsSync(sourceFile)) {
-    throw new Error(`Missing Mermaid runtime source: ${sourceFile}`);
+    throw new Error(`Missing ELK runtime source: ${sourceFile}`);
   }
   return fs.readFileSync(sourceFile, 'utf8');
 }
 
-const mermaidInlinePlugin = {
-  name: 'mermaid-inline',
+const elkInlinePlugin = {
+  name: 'elk-inline',
   setup(build) {
-    const mermaidSource = loadMermaidRuntimeSource();
+    const elkSource = loadElkRuntimeSource();
 
-    build.onResolve({filter: /^@fcstm\/mermaid-inline$/}, args => {
+    build.onResolve({filter: /^@fcstm\/elk-inline$/}, args => {
       return {
         path: args.path,
-        namespace: 'fcstm-mermaid-inline',
+        namespace: 'fcstm-elk-inline',
       };
     });
 
-    build.onLoad({filter: /.*/, namespace: 'fcstm-mermaid-inline'}, () => {
+    build.onLoad({filter: /.*/, namespace: 'fcstm-elk-inline'}, () => {
       return {
-        contents: `export default ${JSON.stringify(mermaidSource)};`,
+        contents: `export default ${JSON.stringify(elkSource)};`,
         loader: 'js',
       };
     });
@@ -88,7 +88,7 @@ const buildOptions = {
     'process.env.NODE_ENV': production ? '"production"' : '"development"'
   },
 
-  plugins: [mermaidInlinePlugin],
+  plugins: [elkInlinePlugin],
 };
 
 async function build() {

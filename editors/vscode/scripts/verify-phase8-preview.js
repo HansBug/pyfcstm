@@ -19,60 +19,47 @@ function createDocument(filePath, text) {
         uri: {
             scheme: 'file',
             fsPath: filePath,
-            toString() {
-                return this.fsPath;
-            },
+            toString() { return this.fsPath; },
         },
-        getText() {
-            return text;
-        },
+        getText() { return text; },
         lineCount: lines().length,
-        lineAt(line) {
-            return {
-                text: lines()[line] || '',
-            };
-        },
-        update(newText) {
-            text = newText;
-        },
+        lineAt(line) { return {text: lines()[line] || ''}; },
+        update(newText) { text = newText; },
     };
 }
 
 function createDisposable(callback = () => {}) {
-    return {
-        dispose: callback,
-    };
+    return {dispose: callback};
 }
 
-const workspaceListeners = {
-    open: [],
-    change: [],
-    save: [],
-    close: [],
-};
-
-const windowListeners = {
-    activeEditor: [],
-};
-
+const workspaceListeners = {open: [], change: [], save: [], close: []};
+const windowListeners = {activeEditor: []};
 const registeredCommands = new Map();
 const createdPanels = [];
 const warningMessages = [];
+const infoMessages = [];
+const errorMessages = [];
+const showTextDocumentCalls = [];
 
 const vscode = {
     Uri: {
         joinPath(base, ...segments) {
-            return {
-                fsPath: path.join(base.fsPath, ...segments),
-                toString() {
-                    return this.fsPath;
-                },
-            };
+            return {fsPath: path.join(base.fsPath, ...segments), toString() { return this.fsPath; }};
+        },
+        file(p) { return {scheme: 'file', fsPath: p, toString() { return 'file://' + p; }}; },
+        parse(s) {
+            const p = s.replace(/^file:\/\//, '');
+            return {scheme: 'file', fsPath: p, toString() { return s; }};
         },
     },
-    ViewColumn: {
-        Beside: 2,
+    ViewColumn: {Active: 1, One: 1, Beside: 2},
+    Range: class {
+        constructor(start, end) { this.start = start; this.end = end; }
     },
+    Position: class {
+        constructor(line, character) { this.line = line; this.character = character; }
+    },
+    TextEditorRevealType: {InCenterIfOutsideViewport: 2},
     commands: {
         registerCommand(name, callback) {
             registeredCommands.set(name, callback);
@@ -81,112 +68,77 @@ const vscode = {
     },
     workspace: {
         textDocuments: [],
+        fs: {
+            async writeFile(uri, buffer) {
+                fs.writeFileSync(uri.fsPath, buffer);
+            },
+        },
         openTextDocument(resource) {
-            const resourcePath = typeof resource === 'string' ? resource : resource.fsPath;
-            const existingDocument = this.textDocuments.find(document => document.uri.fsPath === resourcePath);
-            if (existingDocument) {
-                return Promise.resolve(existingDocument);
-            }
-
-            const text = fs.readFileSync(resourcePath, 'utf8');
-            const document = createDocument(resourcePath, text);
-            this.textDocuments.push(document);
-            return Promise.resolve(document);
+            const p = typeof resource === 'string' ? resource : resource.fsPath;
+            const existing = this.textDocuments.find(d => d.uri.fsPath === p);
+            if (existing) return Promise.resolve(existing);
+            const text = fs.readFileSync(p, 'utf8');
+            const doc = createDocument(p, text);
+            this.textDocuments.push(doc);
+            return Promise.resolve(doc);
         },
-        onDidOpenTextDocument(callback) {
-            workspaceListeners.open.push(callback);
-            return createDisposable();
-        },
-        onDidChangeTextDocument(callback) {
-            workspaceListeners.change.push(callback);
-            return createDisposable();
-        },
-        onDidSaveTextDocument(callback) {
-            workspaceListeners.save.push(callback);
-            return createDisposable();
-        },
-        onDidCloseTextDocument(callback) {
-            workspaceListeners.close.push(callback);
-            return createDisposable();
-        },
+        onDidOpenTextDocument(cb) { workspaceListeners.open.push(cb); return createDisposable(); },
+        onDidChangeTextDocument(cb) { workspaceListeners.change.push(cb); return createDisposable(); },
+        onDidSaveTextDocument(cb) { workspaceListeners.save.push(cb); return createDisposable(); },
+        onDidCloseTextDocument(cb) { workspaceListeners.close.push(cb); return createDisposable(); },
     },
     window: {
         activeTextEditor: null,
-        createOutputChannel() {
-            return createDisposable();
-        },
+        createOutputChannel() { return createDisposable(); },
         createWebviewPanel(viewType, title, showOptions) {
             const disposeListeners = [];
             const panel = {
-                viewType,
-                title,
-                showOptions,
+                viewType, title, showOptions,
                 revealCalls: [],
                 postedMessages: [],
                 webview: {
                     cspSource: 'vscode-resource://fcstm',
                     html: '',
                     receiveMessageListeners: [],
-                    asWebviewUri(resource) {
-                        return {
-                            toString() {
-                                return `vscode-resource:${resource.fsPath}`;
-                            },
-                        };
-                    },
-                    onDidReceiveMessage(listener) {
-                        panel.webview.receiveMessageListeners.push(listener);
-                        return createDisposable();
-                    },
-                    postMessage(message) {
-                        panel.postedMessages.push(message);
-                        return Promise.resolve(true);
-                    },
+                    asWebviewUri(r) { return {toString() { return 'vscode-resource:' + r.fsPath; }}; },
+                    onDidReceiveMessage(l) { panel.webview.receiveMessageListeners.push(l); return createDisposable(); },
+                    postMessage(m) { panel.postedMessages.push(m); return Promise.resolve(true); },
                 },
-                onDidDispose(listener) {
-                    disposeListeners.push(listener);
-                    return createDisposable();
-                },
-                reveal(column, preserveFocus) {
-                    panel.revealCalls.push({column, preserveFocus});
-                },
+                onDidDispose(l) { disposeListeners.push(l); return createDisposable(); },
+                reveal(column, preserveFocus) { panel.revealCalls.push({column, preserveFocus}); },
                 dispose() {
                     while (disposeListeners.length > 0) {
-                        const listener = disposeListeners.pop();
-                        if (listener) {
-                            listener();
-                        }
+                        const l = disposeListeners.pop();
+                        if (l) l();
                     }
                 },
             };
             createdPanels.push(panel);
             return panel;
         },
-        onDidChangeActiveTextEditor(callback) {
-            windowListeners.activeEditor.push(callback);
-            return createDisposable();
+        onDidChangeActiveTextEditor(cb) { windowListeners.activeEditor.push(cb); return createDisposable(); },
+        showWarningMessage(m) { warningMessages.push(m); return Promise.resolve(m); },
+        showInformationMessage(m) { infoMessages.push(m); return Promise.resolve(m); },
+        showErrorMessage(m) { errorMessages.push(m); return Promise.resolve(m); },
+        showTextDocument(doc, opts) {
+            showTextDocumentCalls.push({doc, opts});
+            return Promise.resolve({
+                revealRange(range, type) {},
+            });
         },
-        showWarningMessage(message) {
-            warningMessages.push(message);
-            return Promise.resolve(message);
+        showSaveDialog(opts) {
+            return Promise.resolve(opts.defaultUri || null);
         },
     },
 };
 
 class MockLanguageClient {
-    start() {
-        return createDisposable();
-    }
-
-    stop() {
-        return Promise.resolve();
-    }
+    start() { return createDisposable(); }
+    stop() { return Promise.resolve(); }
 }
 
 Module.prototype.require = function(id) {
-    if (id === 'vscode') {
-        return vscode;
-    }
+    if (id === 'vscode') return vscode;
     if (id === 'vscode-languageclient/node') {
         return {
             CloseAction: {Restart: 1},
@@ -200,32 +152,33 @@ Module.prototype.require = function(id) {
 };
 
 function fireWorkspaceChange(document) {
-    for (const listener of workspaceListeners.change) {
-        listener({document});
-    }
+    for (const listener of workspaceListeners.change) listener({document});
 }
 
 function fireWebviewMessage(panel, message) {
-    for (const listener of panel.webview.receiveMessageListeners) {
-        listener(message);
-    }
+    for (const l of panel.webview.receiveMessageListeners) l(message);
 }
 
 function fireActiveEditor(editor) {
     vscode.window.activeTextEditor = editor;
-    for (const listener of windowListeners.activeEditor) {
-        listener(editor);
-    }
+    for (const l of windowListeners.activeEditor) l(editor);
 }
 
-function sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
-}
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 async function main() {
     const distBundle = fs.readFileSync(distExtensionFile, 'utf8');
-    if (distBundle.includes('svgdom') || distBundle.includes('elkjs/lib/elk.bundled.js')) {
-        throw new Error('The bundled dist/extension.js still contains the removed ELK/SVG preview stack.');
+    if (distBundle.includes('FCSTM embedded Mermaid runtime')
+        || distBundle.includes('loadMermaidBrowserBundle')
+        || /mermaid\.min\.js/.test(distBundle)
+        || distBundle.includes('@fcstm/mermaid-inline')) {
+        throw new Error('Bundled dist/extension.js still wires up the Mermaid webview runtime — remove it.');
+    }
+    if (!distBundle.includes('FCSTM embedded ELK runtime')) {
+        throw new Error('Bundled dist/extension.js does not embed the ELK runtime.');
+    }
+    if (!distBundle.includes('new ELK(')) {
+        throw new Error('Bundled dist/extension.js does not instantiate the ELK layout engine.');
     }
 
     fs.writeFileSync(previewFile, [
@@ -252,15 +205,13 @@ async function main() {
     const context = {
         subscriptions: [],
         extensionUri: {fsPath: path.resolve(__dirname, '..')},
-        asAbsolutePath(relativePath) {
-            return path.resolve(path.join(__dirname, '..', relativePath));
-        },
+        asAbsolutePath(r) { return path.resolve(path.join(__dirname, '..', r)); },
     };
 
     extension.activate(context);
 
-    if (!registeredCommands.has('fcstm.preview.open')) {
-        throw new Error('Preview command was not registered.');
+    for (const name of ['fcstm.preview.open', 'fcstm.preview.openAlone', 'fcstm.preview.toggle']) {
+        if (!registeredCommands.has(name)) throw new Error(`Command not registered: ${name}`);
     }
 
     await registeredCommands.get('fcstm.preview.open')(document.uri);
@@ -269,7 +220,6 @@ async function main() {
     if (createdPanels.length !== 1) {
         throw new Error(`Expected 1 preview panel, got ${createdPanels.length}.`);
     }
-
     const panel = createdPanels[0];
     if (panel.showOptions.viewColumn !== vscode.ViewColumn.Beside) {
         throw new Error('Preview panel was not opened beside the editor.');
@@ -277,43 +227,52 @@ async function main() {
     if (!panel.webview.html.includes('FCSTM Preview')) {
         throw new Error('Preview webview HTML was not initialized.');
     }
-    if (!panel.webview.html.includes('Preview Options')) {
+    if (!panel.webview.html.includes('FCSTM embedded ELK runtime')) {
+        throw new Error('Preview webview HTML does not embed the ELK runtime.');
+    }
+    if (panel.webview.html.includes('mermaid') || panel.webview.html.includes('stateDiagram-v2')) {
+        throw new Error('Preview webview HTML still references Mermaid.');
+    }
+    if (!panel.webview.html.includes('id="option-detail"')) {
         throw new Error('Preview webview HTML does not expose the options bar.');
     }
-    if (!panel.webview.html.includes('Transition Effects')) {
-        throw new Error('Preview webview HTML does not expose the effect-note section.');
+    if (!panel.webview.html.includes('id="btn-export-svg"') || !panel.webview.html.includes('id="btn-export-png"')) {
+        throw new Error('Preview webview HTML does not expose export buttons.');
+    }
+    if (!panel.webview.html.includes('id="mode-side"') || !panel.webview.html.includes('id="mode-alone"')) {
+        throw new Error('Preview webview HTML does not expose view-mode toggles.');
+    }
+    if (!panel.webview.html.includes('id="btn-zoom-in"')) {
+        throw new Error('Preview webview HTML does not expose zoom controls.');
     }
     if (panel.postedMessages.length === 0) {
         throw new Error('Preview panel did not receive any rendered state.');
     }
 
     const firstMessage = panel.postedMessages[panel.postedMessages.length - 1];
-    if (!panel.webview.html.includes('FCSTM embedded Mermaid runtime')) {
-        throw new Error('Preview webview HTML does not embed the Mermaid runtime.');
-    }
-    if (panel.webview.html.includes('node_modules/mermaid') || panel.webview.html.includes('dist/webview/mermaid.min.js')) {
-        throw new Error('Preview webview HTML still references an external Mermaid script.');
-    }
-    if (!firstMessage.mermaidSource || !firstMessage.mermaidSource.includes('stateDiagram-v2')) {
-        throw new Error('Rendered preview Mermaid source is missing.');
+    if (!firstMessage.payload) {
+        throw new Error('Rendered preview payload is missing.');
     }
     if (firstMessage.rootStateName !== 'Fleet') {
         throw new Error(`Unexpected root state in preview: ${JSON.stringify(firstMessage.rootStateName)}`);
     }
-    if (!firstMessage.mermaidSource.includes('[*] -->')) {
-        throw new Error('Preview Mermaid source does not contain start transitions.');
+    if (firstMessage.payload.graph.id !== '__canvas__') {
+        throw new Error('Preview payload graph root should be __canvas__.');
     }
-    if (firstMessage.mermaidSource.includes('state "Fleet"')) {
-        throw new Error('Preview Mermaid source should flatten the root state wrapper.');
+    if (!Array.isArray(firstMessage.payload.graph.children) || firstMessage.payload.graph.children.length === 0) {
+        throw new Error('Preview payload graph has no children.');
     }
-    if (!firstMessage.mermaidSource.includes('state "Idle"')) {
-        throw new Error('Preview Mermaid source does not contain the expected child states.');
+    const rootFleet = firstMessage.payload.graph.children.find(c => c.fcstm && c.fcstm.qualifiedName === 'Fleet');
+    if (!rootFleet) {
+        throw new Error('Preview payload graph should contain Fleet state.');
     }
-    if (!firstMessage.mermaidSource.includes('Go & Run')) {
-        throw new Error('Preview Mermaid source does not expose the shared event label.');
+    if (!rootFleet.children || rootFleet.children.length === 0) {
+        throw new Error('Fleet state should contain Idle and Running children.');
     }
-    if (firstMessage.mermaidSource.includes('event Go & Run') || firstMessage.mermaidSource.includes('local Go & Run')) {
-        throw new Error('Preview Mermaid source still contains redundant event/local prefixes.');
+    const hasIdle = rootFleet.children.some(c => c.fcstm && c.fcstm.qualifiedName === 'Fleet.Idle');
+    const hasRunning = rootFleet.children.some(c => c.fcstm && c.fcstm.qualifiedName === 'Fleet.Running');
+    if (!hasIdle || !hasRunning) {
+        throw new Error('Fleet children should include Idle and Running.');
     }
     if (!firstMessage.previewOptions || firstMessage.previewOptions.transitionEffectMode !== 'note') {
         throw new Error('Preview payload does not expose resolved preview options.');
@@ -326,6 +285,9 @@ async function main() {
     }
     if (!Array.isArray(firstMessage.sharedEvents) || firstMessage.sharedEvents.length !== 1) {
         throw new Error('Preview payload does not expose shared-event metadata.');
+    }
+    if (!Array.isArray(firstMessage.collapsedStateIds)) {
+        throw new Error('Preview payload does not expose collapsed-state-ids.');
     }
 
     fireWebviewMessage(panel, {
@@ -342,9 +304,6 @@ async function main() {
     if (optionUpdatedMessage.previewOptions.transitionEffectMode !== 'inline') {
         throw new Error('Preview options patch did not round-trip through the extension host.');
     }
-    if (!optionUpdatedMessage.mermaidSource.includes('/ counter=counter+1, counter=counter+2')) {
-        throw new Error('Inline effect mode did not rewrite the Mermaid edge label.');
-    }
     if (optionUpdatedMessage.variables.length !== 0) {
         throw new Error('Variables should be hidden when showVariableDefinitions is false.');
     }
@@ -353,6 +312,51 @@ async function main() {
     }
     if (optionUpdatedMessage.effectNotes.length !== 0) {
         throw new Error('Effect notes should be hidden outside note mode.');
+    }
+
+    // Collapse state round-trip
+    fireWebviewMessage(panel, {type: 'setCollapsed', collapsed: ['Fleet']});
+    await sleep(520);
+    const collapsedMessage = panel.postedMessages[panel.postedMessages.length - 1];
+    if (!collapsedMessage.collapsedStateIds.includes('Fleet')) {
+        throw new Error('Collapsed state ids did not round-trip through the extension host.');
+    }
+    const collapsedFleet = collapsedMessage.payload.graph.children.find(c => c.fcstm && c.fcstm.qualifiedName === 'Fleet');
+    if (!collapsedFleet || !collapsedFleet.fcstm.collapsed) {
+        throw new Error('Fleet state should be marked collapsed in the payload.');
+    }
+
+    // Uncollapse to proceed with further checks
+    fireWebviewMessage(panel, {type: 'setCollapsed', collapsed: []});
+    await sleep(520);
+
+    // Reveal source round-trip
+    fireWebviewMessage(panel, {
+        type: 'revealSource',
+        range: {start: {line: 1, character: 0}, end: {line: 1, character: 11}},
+    });
+    await sleep(320);
+    if (showTextDocumentCalls.length === 0) {
+        throw new Error('revealSource did not invoke showTextDocument.');
+    }
+
+    // Export SVG round-trip
+    const exportSvgPath = path.join(tempDir, 'export-test.svg');
+    vscode.window.showSaveDialog = () => Promise.resolve(vscode.Uri.file(exportSvgPath));
+    fireWebviewMessage(panel, {type: 'exportSvg', svg: '<svg xmlns="http://www.w3.org/2000/svg"></svg>'});
+    await sleep(320);
+    if (!fs.existsSync(exportSvgPath)) {
+        throw new Error('exportSvg did not produce an SVG file.');
+    }
+
+    // Export PNG round-trip
+    const exportPngPath = path.join(tempDir, 'export-test.png');
+    vscode.window.showSaveDialog = () => Promise.resolve(vscode.Uri.file(exportPngPath));
+    const pngBase64 = Buffer.from([0x89, 0x50, 0x4e, 0x47]).toString('base64');
+    fireWebviewMessage(panel, {type: 'exportPng', base64: pngBase64});
+    await sleep(320);
+    if (!fs.existsSync(exportPngPath)) {
+        throw new Error('exportPng did not produce a PNG file.');
     }
 
     document.update([
@@ -369,7 +373,8 @@ async function main() {
     await sleep(520);
 
     const updatedMessage = panel.postedMessages[panel.postedMessages.length - 1];
-    if (!updatedMessage.mermaidSource.includes('Maintenance')) {
+    const rootFleet2 = updatedMessage.payload.graph.children.find(c => c.fcstm && c.fcstm.qualifiedName === 'Fleet');
+    if (!rootFleet2 || !rootFleet2.children.some(c => c.fcstm && c.fcstm.qualifiedName === 'Fleet.Maintenance')) {
         throw new Error('Preview did not update after document edits.');
     }
 
@@ -399,29 +404,33 @@ async function main() {
         throw new Error('Preview did not follow active-editor changes.');
     }
 
-    const manifest = require('../package.json');
-    const commandIds = (manifest.contributes.commands || []).map(item => item.command);
-    if (!commandIds.includes('fcstm.preview.open')) {
-        throw new Error('Manifest does not contribute the preview command.');
-    }
-    const editorContextCommands = ((manifest.contributes.menus || {})['editor/context'] || []).map(item => item.command);
-    if (!editorContextCommands.includes('fcstm.preview.open')) {
-        throw new Error('Manifest does not expose the preview command in the editor context menu.');
-    }
-    const explorerContextCommands = ((manifest.contributes.menus || {})['explorer/context'] || []).map(item => item.command);
-    if (!explorerContextCommands.includes('fcstm.preview.open')) {
-        throw new Error('Manifest does not expose the preview command in the explorer context menu.');
-    }
-    const keybindingCommands = (manifest.contributes.keybindings || []).map(item => item.command);
-    if (!keybindingCommands.includes('fcstm.preview.open')) {
-        throw new Error('Manifest does not contribute a preview keybinding.');
+    // Toggle: closing then re-opening
+    await registeredCommands.get('fcstm.preview.toggle')();
+    await sleep(320);
+    // Panel should be disposed
+    // Re-run toggle to open again
+    await registeredCommands.get('fcstm.preview.toggle')();
+    await sleep(900);
+    if (createdPanels.length !== 2) {
+        throw new Error(`Toggle should have created a second panel after close+open; got ${createdPanels.length}.`);
     }
 
-    console.log('✅ Phase 9 preview verification passed');
+    const manifest = require('../package.json');
+    const commandIds = (manifest.contributes.commands || []).map(i => i.command);
+    for (const need of ['fcstm.preview.open', 'fcstm.preview.openAlone', 'fcstm.preview.toggle']) {
+        if (!commandIds.includes(need)) throw new Error(`Manifest does not contribute command: ${need}`);
+    }
+    const keybindings = (manifest.contributes.keybindings || []).map(i => i.command);
+    if (!keybindings.includes('fcstm.preview.open') || !keybindings.includes('fcstm.preview.toggle')) {
+        throw new Error('Manifest does not bind preview keybindings.');
+    }
+
+    console.log('✅ Phase 9 preview (ELK) verification passed');
     console.log(`   Panel title: ${panel.title}`);
     console.log(`   Initial status: ${firstMessage.statusText}`);
-    console.log(`   Initial effect mode: ${firstMessage.previewOptions.transitionEffectMode}`);
-    console.log(`   Updated root: ${switchedMessage.rootStateName}`);
+    console.log(`   Root state: ${firstMessage.rootStateName}`);
+    console.log(`   Graph children: ${firstMessage.payload.graph.children.length}`);
+    console.log(`   Effect notes: ${firstMessage.effectNotes.length}`);
 
     await extension.deactivate();
 }

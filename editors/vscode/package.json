@@ -46,7 +46,9 @@
   "main": "./dist/extension.js",
   "activationEvents": [
     "onLanguage:fcstm",
-    "onCommand:fcstm.preview.open"
+    "onCommand:fcstm.preview.open",
+    "onCommand:fcstm.preview.openAlone",
+    "onCommand:fcstm.preview.toggle"
   ],
   "scripts": {
     "vscode:prepublish": "npm run compile",
@@ -59,7 +61,7 @@
   },
   "dependencies": {
     "@pyfcstm/jsfcstm": "file:../jsfcstm/jsfcstm.tgz",
-    "mermaid": "^11.14.0",
+    "elkjs": "^0.11.1",
     "vscode-languageclient": "7.0.0"
   },
   "devDependencies": {
@@ -79,6 +81,17 @@
         "title": "Open Preview to the Side",
         "category": "FCSTM",
         "icon": "$(open-preview)"
+      },
+      {
+        "command": "fcstm.preview.openAlone",
+        "title": "Open Preview (Diagram Only)",
+        "category": "FCSTM",
+        "icon": "$(preview)"
+      },
+      {
+        "command": "fcstm.preview.toggle",
+        "title": "Toggle Preview Layout",
+        "category": "FCSTM"
       }
     ],
     "languages": [
@@ -135,6 +148,12 @@
         "command": "fcstm.preview.open",
         "key": "ctrl+k v",
         "mac": "cmd+k v",
+        "when": "editorLangId == fcstm"
+      },
+      {
+        "command": "fcstm.preview.toggle",
+        "key": "ctrl+shift+v",
+        "mac": "cmd+shift+v",
         "when": "editorLangId == fcstm"
       }
     ]

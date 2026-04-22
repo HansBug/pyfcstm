@@ -15,6 +15,18 @@ export {
     renderFcstmDiagramMermaid,
     renderFcstmDiagramMermaidView,
 } from './render';
+export {
+    buildFcstmElkGraph,
+    measureLabel as measureFcstmElkLabel,
+    __elkGraphInternals,
+} from './elk-graph';
+export {
+    renderFcstmDiagramSvg,
+    __svgRendererInternals,
+} from './svg-renderer';
+export {
+    buildFcstmDiagramWebviewPayload,
+} from './webview-payload';
 export type {
     FcstmDiagram,
     FcstmDiagramAction,
@@ -32,5 +44,11 @@ export type {
     FcstmDiagramTransition,
     FcstmDiagramTransitionEffectMode,
     FcstmDiagramVariable,
+    FcstmDiagramWebviewPayload,
+    FcstmElkEdge,
+    FcstmElkEdgeMeta,
+    FcstmElkGraph,
+    FcstmElkNode,
+    FcstmElkNodeMeta,
     ResolvedFcstmDiagramPreviewOptions,
 } from './model';

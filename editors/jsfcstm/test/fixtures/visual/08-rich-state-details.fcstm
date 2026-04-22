@@ -1,0 +1,46 @@
+def int counter = 0;
+def int faults = 0;
+def float voltage = 5.0;
+
+state Board {
+    event Boot;
+    event Reset;
+    event Panic;
+
+    [*] -> PowerOn;
+
+    state PowerOn {
+        enter { counter = 0; voltage = 5.0; }
+        during { voltage = voltage - 0.05; }
+        exit { counter = 0; }
+    }
+
+    state Diagnostic {
+        enter abstract runSelfTest;
+        enter abstract checkVoltage /* check input rails */;
+        during { counter = counter + 1; }
+        exit { counter = 0; }
+    }
+
+    state Operational {
+        state Active {
+            during { counter = counter + 1; }
+        }
+        state Sleeping {
+            during { voltage = voltage - 0.01; }
+        }
+        [*] -> Active;
+        Active -> Sleeping : if [counter >= 100];
+        Sleeping -> Active : if [voltage > 4.5];
+    }
+
+    state Panicking {
+        enter { faults = faults + 1; }
+        enter abstract logPanic;
+    }
+
+    PowerOn -> Diagnostic :: Boot;
+    Diagnostic -> Operational : if [voltage >= 4.8] effect { counter = 0; };
+    Operational -> PowerOn :: Reset;
+    !* -> Panicking :: Panic;
+}

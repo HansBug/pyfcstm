@@ -364,6 +364,21 @@ function createPreviewHtml(
         .viewport-inner [data-fcstm-kind="transition-label"].fcstm-selected > text {
             font-weight: 700;
         }
+        /* Hover-related highlight: hovering any label / path of a transition
+           lights up both so the trigger text can always be traced back to
+           its arrow. Uses the path's own colour (via stroke) so shared
+           events stay colour-coded. */
+        .viewport-inner [data-fcstm-kind="transition"].fcstm-related-hover {
+            stroke-width: 3.2 !important;
+            filter: drop-shadow(0 0 3px rgba(45, 106, 168, 0.35));
+        }
+        .viewport-inner [data-fcstm-kind="transition-label"].fcstm-related-hover > text {
+            font-weight: 700;
+            paint-order: stroke;
+        }
+        .viewport-inner [data-fcstm-kind="transition-label"].fcstm-related-hover {
+            filter: drop-shadow(0 0 2px rgba(45, 106, 168, 0.3));
+        }
 
         .stage-hint {
             position: absolute; left: 12px; bottom: 10px;
@@ -409,6 +424,57 @@ function createPreviewHtml(
             grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
             gap: 10px;
         }
+        .side-panels .full-row { grid-column: 1 / -1; }
+
+        /* Bottom panels: variables + shared events side-by-side, each a
+           collapsible <details> summary that can be folded away entirely. */
+        .bottom-panels {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+        @media (max-width: 640px) {
+            .bottom-panels { grid-template-columns: 1fr; }
+        }
+        .bottom-card {
+            padding: 0;
+            overflow: hidden;
+        }
+        .bottom-card > .card-summary {
+            display: flex; align-items: center; gap: 8px;
+            padding: 10px 12px;
+            cursor: pointer;
+            list-style: none;
+            user-select: none;
+        }
+        .bottom-card > .card-summary::-webkit-details-marker {
+            display: none;
+        }
+        .bottom-card > .card-summary::before {
+            content: '▸';
+            display: inline-block;
+            width: 10px;
+            color: var(--muted);
+            transition: transform 160ms ease;
+            font-size: 10px;
+        }
+        .bottom-card[open] > .card-summary::before {
+            transform: rotate(90deg);
+        }
+        .bottom-card > .card-summary .card-title {
+            margin-bottom: 0;
+            flex: 1;
+        }
+        .bottom-card > .card-summary .card-count {
+            font-size: 10px;
+            color: var(--muted);
+            background: rgba(45, 106, 168, 0.12);
+            padding: 2px 8px;
+            border-radius: 999px;
+        }
+        .bottom-card > .card-list {
+            padding: 0 12px 12px 12px;
+        }
         .card {
             border: 1px solid var(--border);
             border-radius: 12px;
@@ -427,19 +493,6 @@ function createPreviewHtml(
         }
         .event-swatch { width: 10px; height: 10px; border-radius: 999px; margin-top: 4px; }
         .event-meta { font-size: 10px; color: var(--muted); margin-top: 2px; }
-        .effect-card {
-            border: 1px solid var(--border);
-            border-left-width: 4px;
-            border-radius: 10px;
-            padding: 10px 12px;
-            background: rgba(255, 255, 255, 0.05);
-        }
-        .effect-heading { font-size: 11px; font-weight: 700; margin-bottom: 3px; }
-        .effect-meta { font-size: 10px; color: var(--muted); margin-bottom: 6px; }
-        .effect-code {
-            margin: 0; white-space: pre-wrap; word-break: break-word;
-            font-size: 11px; line-height: 1.5;
-        }
         .diag-item { border-left: 3px solid var(--border); padding-left: 9px; }
         .diag-item.error { border-left-color: var(--error); }
         .diag-item.warning { border-left-color: var(--warning); }
@@ -580,22 +633,27 @@ function createPreviewHtml(
                     Plain click on a state or transition to inspect it. Ctrl/Cmd+click jumps to the source. Click empty space to clear.
                 </div>
             </div>
-            <div class="card hidden" id="variables-card">
-                <div class="card-title">Variables</div>
-                <ul class="card-list" id="variables-list"></ul>
-            </div>
-            <div class="card hidden" id="shared-events-card">
-                <div class="card-title">Shared Events</div>
-                <ul class="card-list" id="shared-events-list"></ul>
-            </div>
-            <div class="card hidden" id="effects-card">
-                <div class="card-title">Transition Effects</div>
-                <div id="effects-list"></div>
-            </div>
-            <div class="card hidden" id="diagnostics-card">
+            <div class="card full-row hidden" id="diagnostics-card">
                 <div class="card-title">Diagnostics</div>
                 <ul class="card-list" id="diagnostics-list"></ul>
             </div>
+        </section>
+
+        <section class="bottom-panels">
+            <details class="card bottom-card hidden" id="variables-card">
+                <summary class="card-summary">
+                    <span class="card-title">Variables</span>
+                    <span class="card-count" id="variables-count"></span>
+                </summary>
+                <ul class="card-list" id="variables-list"></ul>
+            </details>
+            <details class="card bottom-card hidden" id="shared-events-card">
+                <summary class="card-summary">
+                    <span class="card-title">Shared Events</span>
+                    <span class="card-count" id="shared-events-count"></span>
+                </summary>
+                <ul class="card-list" id="shared-events-list"></ul>
+            </details>
         </section>
     </div>
 
@@ -653,8 +711,8 @@ ${elkRuntime}
         const variablesList = $('variables-list');
         const sharedEventsCard = $('shared-events-card');
         const sharedEventsList = $('shared-events-list');
-        const effectsCard = $('effects-card');
-        const effectsList = $('effects-list');
+        const variablesCountEl = $('variables-count');
+        const sharedEventsCountEl = $('shared-events-count');
         const diagnosticsCard = $('diagnostics-card');
         const diagnosticsList = $('diagnostics-list');
 
@@ -852,6 +910,45 @@ ${elkRuntime}
             }
             vscode.postMessage({ type: 'setCollapsed', collapsed: Array.from(collapsedSet) });
         }
+
+        // Hover-delegation for label ↔ path highlighting: when the cursor
+        // is over any transition or transition-label, light up all DOM
+        // elements that share the same data-fcstm-id.
+        function relatedElementsForId(targetId) {
+            const matches = [];
+            const all = viewportInnerNode.querySelectorAll(
+                '[data-fcstm-kind="transition"][data-fcstm-id], ' +
+                '[data-fcstm-kind="transition-label"][data-fcstm-id]'
+            );
+            for (const n of all) {
+                if (n.getAttribute('data-fcstm-id') === targetId) matches.push(n);
+            }
+            return matches;
+        }
+        function clearRelatedHover() {
+            for (const n of viewportInnerNode.querySelectorAll('.fcstm-related-hover')) {
+                n.classList.remove('fcstm-related-hover');
+            }
+        }
+        viewportInnerNode.addEventListener('mouseover', (ev) => {
+            const el = ev.target && ev.target.closest && ev.target.closest('[data-fcstm-kind][data-fcstm-id]');
+            if (!el) return;
+            const kind = el.getAttribute('data-fcstm-kind');
+            if (kind !== 'transition' && kind !== 'transition-label') return;
+            const id = el.getAttribute('data-fcstm-id');
+            clearRelatedHover();
+            for (const rel of relatedElementsForId(id)) {
+                rel.classList.add('fcstm-related-hover');
+            }
+        });
+        viewportInnerNode.addEventListener('mouseout', (ev) => {
+            const rel = ev.relatedTarget && ev.relatedTarget.closest && ev.relatedTarget.closest('[data-fcstm-kind][data-fcstm-id]');
+            if (rel) {
+                const kind = rel.getAttribute('data-fcstm-kind');
+                if (kind === 'transition' || kind === 'transition-label') return;
+            }
+            clearRelatedHover();
+        });
 
         function applySelectionHighlight() {
             for (const el of viewportInnerNode.querySelectorAll('.fcstm-selected')) {
@@ -1131,7 +1228,8 @@ ${elkRuntime}
             function lineColor(line, fallback) {
                 if (line.startsWith(LABEL_GLYPH_GUARD)) return STYLE.edgeLabelGuardColor;
                 if (line.startsWith(LABEL_GLYPH_EFFECT)) return STYLE.edgeLabelEffectColor;
-                if (line.startsWith(LABEL_GLYPH_EVENT)) return STYLE.edgeLabelEventColor;
+                // Event lines share the path colour so shared-event hue
+                // flows from arrow to label.
                 return fallback;
             }
             const width = Math.ceil(canvas.width || 0) + STYLE.canvasPadding;
@@ -1312,8 +1410,18 @@ ${elkRuntime}
 
         function renderVariables(state) {
             variablesList.innerHTML = '';
-            if (!state.variables.length) { variablesCard.classList.add('hidden'); return; }
+            if (!state.variables.length) {
+                variablesCard.classList.add('hidden');
+                variablesCard.open = false;
+                return;
+            }
             variablesCard.classList.remove('hidden');
+            // Keep the user's previous open/collapsed preference; default
+            // to collapsed so the diagram dominates vertical space.
+            if (variablesCard.dataset.userToggled !== 'true') {
+                variablesCard.open = false;
+            }
+            if (variablesCountEl) variablesCountEl.textContent = String(state.variables.length);
             for (const v of state.variables) {
                 const li = document.createElement('li'); li.className = 'card-item mono'; li.textContent = v;
                 variablesList.appendChild(li);
@@ -1322,8 +1430,16 @@ ${elkRuntime}
 
         function renderSharedEvents(state) {
             sharedEventsList.innerHTML = '';
-            if (!state.sharedEvents.length) { sharedEventsCard.classList.add('hidden'); return; }
+            if (!state.sharedEvents.length) {
+                sharedEventsCard.classList.add('hidden');
+                sharedEventsCard.open = false;
+                return;
+            }
             sharedEventsCard.classList.remove('hidden');
+            if (sharedEventsCard.dataset.userToggled !== 'true') {
+                sharedEventsCard.open = false;
+            }
+            if (sharedEventsCountEl) sharedEventsCountEl.textContent = String(state.sharedEvents.length);
             for (const e of state.sharedEvents) {
                 const li = document.createElement('li'); li.className = 'card-item event-item';
                 const s = document.createElement('span'); s.className = 'event-swatch'; s.style.backgroundColor = e.color;
@@ -1337,24 +1453,13 @@ ${elkRuntime}
             }
         }
 
-        function renderEffects(state) {
-            effectsList.innerHTML = '';
-            if (!state.effectNotes.length) { effectsCard.classList.add('hidden'); return; }
-            effectsCard.classList.remove('hidden');
-            for (const note of state.effectNotes) {
-                const card = document.createElement('div'); card.className = 'effect-card';
-                card.style.borderLeftColor = note.color || 'var(--border)';
-                const h = document.createElement('div'); h.className = 'effect-heading'; h.textContent = note.title;
-                card.appendChild(h);
-                if (note.meta) {
-                    const m = document.createElement('div'); m.className = 'effect-meta'; m.textContent = note.meta;
-                    card.appendChild(m);
-                }
-                const pre = document.createElement('pre'); pre.className = 'effect-code'; pre.textContent = note.effectText;
-                card.appendChild(pre);
-                effectsList.appendChild(card);
-            }
-        }
+        // Remember user's collapse/expand choice so re-renders don't flip it.
+        variablesCard.addEventListener('toggle', () => {
+            variablesCard.dataset.userToggled = 'true';
+        });
+        sharedEventsCard.addEventListener('toggle', () => {
+            sharedEventsCard.dataset.userToggled = 'true';
+        });
 
         function renderDiagnostics(state) {
             diagnosticsList.innerHTML = '';
@@ -1394,7 +1499,6 @@ ${elkRuntime}
             renderSummary(state);
             renderVariables(state);
             renderSharedEvents(state);
-            renderEffects(state);
             renderDiagnostics(state);
             vscode.setState(state);
             if (state.payload) {

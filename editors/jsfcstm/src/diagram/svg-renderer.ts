@@ -89,7 +89,10 @@ function rangeAttrs(prefix: string, range: TextRange | undefined): string {
 function colorForLabelLine(line: string, fallback: string): string {
     if (line.startsWith(LABEL_GLYPH_GUARD)) return STYLE.edgeLabelGuardColor;
     if (line.startsWith(LABEL_GLYPH_EFFECT)) return STYLE.edgeLabelEffectColor;
-    if (line.startsWith(LABEL_GLYPH_EVENT)) return STYLE.edgeLabelEventColor;
+    // Event lines intentionally track the transition's own colour so a
+    // shared event in the legend shows the same hue on both the arrow and
+    // the label — otherwise the label would read as a generic blue chip.
+    if (line.startsWith(LABEL_GLYPH_EVENT)) return fallback;
     return fallback;
 }
 

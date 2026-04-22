@@ -143,6 +143,26 @@ check(
     'preview.js no longer renders leaf-state event/action detail list (those live in the Details panel)',
     !/meta\.eventLabels \|\| \[\]\)\.concat\(meta\.actionLabels/.test(previewSrc)
 );
+check(
+    'preview.js event-label colour now tracks the path colour (no hard-coded blue)',
+    !/startsWith\(LABEL_GLYPH_EVENT\) return STYLE\.edgeLabelEventColor/.test(previewSrc)
+);
+check(
+    'preview.js adds hover-related highlight logic for label ↔ path tracing',
+    previewSrc.includes('fcstm-related-hover') && previewSrc.includes('relatedElementsForId')
+);
+check(
+    'preview.js removes the Transition Effects side panel (effectsCard/effectsList refs gone)',
+    !previewSrc.includes('effectsCard') && !previewSrc.includes('effectsList')
+);
+check(
+    'preview.js webview exposes a bottom-panels grid for variables + shared events',
+    previewSrc.includes('bottom-panels') && previewSrc.includes('bottom-card')
+);
+check(
+    'preview.js renders variables & shared events as collapsible <details> (summary + count)',
+    previewSrc.includes('card-summary') && previewSrc.includes('variables-count') && previewSrc.includes('shared-events-count')
+);
 
 const passed = checkpoints.filter(c => c.ok).length;
 const failed = checkpoints.length - passed;

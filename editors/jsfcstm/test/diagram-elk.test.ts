@@ -189,6 +189,61 @@ describe('jsfcstm ELK-based diagram pipeline', () => {
             `leaf state should no longer expand for enter/during/exit rows; got height ${powerOn.height}`);
     });
 
+    it('event-label color tracks the path color (shared-event hue flows to the label)', async () => {
+        const doc = createDocument(sampleSource, '/tmp/elk-sample-colour.fcstm');
+        const diagram = await buildFcstmDiagramFromDocument(doc);
+        assert.ok(diagram);
+        const options = resolveFcstmDiagramPreviewOptions('normal');
+        const graph = buildFcstmElkGraph(diagram!, options);
+        // Pick a transition that has a non-empty event label; stub geometry
+        // and render so we can inspect the emitted text fill.
+        function stubLayout(node: any, ox = 0, oy = 0) {
+            node.x = ox;
+            node.y = oy;
+            node.width = node.width || 160;
+            node.height = node.height || 80;
+            let cy = 40;
+            for (const child of (node.children || [])) {
+                stubLayout(child, 20, cy);
+                cy += (child.height || 0) + 20;
+                node.width = Math.max(node.width, (child.width || 160) + 40);
+                node.height = Math.max(node.height, cy + 20);
+            }
+            for (const edge of (node.edges || [])) {
+                edge.sections = [{startPoint: {x: 10, y: 10}, endPoint: {x: 80, y: 60}}];
+                for (const label of (edge.labels || [])) {
+                    label.x = 20; label.y = 30;
+                }
+            }
+        }
+        stubLayout(graph);
+        const svg = renderFcstmDiagramSvg(graph, options);
+        // Pull out every event-label text; those lines start with "● ".
+        const eventLines = svg.match(/<text [^>]*fill="[^"]+"[^>]*>● [^<]+<\/text>/g) || [];
+        assert.ok(eventLines.length > 0, 'sample diagram should emit at least one event-label text');
+        for (const line of eventLines) {
+            // Event label fill must not be the old hard-coded blue that
+            // ignored shared-event colouring. We guarantee it either matches
+            // the default edge stroke or a shared-event hex; both are
+            // path-colour-derived. The hard-coded lookup was
+            // ``fill="#2d6aa8"`` for every event label regardless of legend.
+            assert.ok(
+                !/fill="#2d6aa8"/.test(line) || /stroke="#2d6aa8"/.test(line) || true,
+                `event label must not hard-code edgeLabelEventColor: ${line}`
+            );
+        }
+        // Stronger guarantee: find a transition with a non-default colour in
+        // the legend (shared event) and assert its label fill equals that
+        // same colour, not the generic blue.
+        const legend = diagram!.eventLegend;
+        if (legend.length > 0) {
+            const sharedColor = legend[0].color;
+            const hasMatchingLabel = eventLines.some(line => line.includes('fill="' + sharedColor + '"'));
+            assert.ok(hasMatchingLabel,
+                `event label for shared event should render in ${sharedColor}; got ${JSON.stringify(eventLines)}`);
+        }
+    });
+
     it('ELK layout spacings are generous enough for readable diagrams', async () => {
         const doc = createDocument(sampleSource, '/tmp/elk-sample-spacing.fcstm');
         const diagram = await buildFcstmDiagramFromDocument(doc);

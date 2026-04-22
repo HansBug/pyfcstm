@@ -82,6 +82,24 @@ async function buildWebviewHtml(fixturePath) {
     const doc = createDocument(fixturePath);
     const payload = await buildFcstmDiagramWebviewPayload(doc, 'normal');
     const resolvedOptions = resolveFcstmDiagramPreviewOptions('normal');
+    const variables = payload && resolvedOptions.showVariableDefinitions
+        ? payload.variables.map(v => `def ${v.valueType} ${v.name} = ${v.initializer}`)
+        : [];
+    const sharedEvents = payload && (resolvedOptions.eventVisualizationMode === 'legend' || resolvedOptions.eventVisualizationMode === 'both')
+        ? payload.eventLegend.map(e => ({
+            label: e.label,
+            qualifiedName: '/' + e.qualifiedName.split('.').slice(1).join('.'),
+            transitionCount: e.transitionCount,
+            color: e.color,
+        }))
+        : [];
+    const summary = payload ? [
+        {label: 'vars', value: payload.summary.variables},
+        {label: 'states', value: payload.summary.states},
+        {label: 'events', value: payload.summary.events},
+        {label: 'transitions', value: payload.summary.transitions},
+        {label: 'actions', value: payload.summary.actions},
+    ] : [];
     const initialState = {
         title: path.basename(fixturePath),
         filePath: fixturePath,
@@ -91,9 +109,9 @@ async function buildWebviewHtml(fixturePath) {
         collapsedStateIds: [],
         emptyTitle: path.basename(fixturePath),
         emptyMessage: 'Loading preview',
-        summary: [],
-        variables: [],
-        sharedEvents: [],
+        summary,
+        variables,
+        sharedEvents,
         effectNotes: [],
         diagnostics: [],
         status: 'ok',

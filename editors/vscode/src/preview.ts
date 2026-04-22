@@ -607,6 +607,36 @@ ${elkRuntime}
         const vscode = acquireVsCodeApi();
         const initialState = ${initialData};
 
+        // Surface any runtime error to the user so a blank preview is
+        // never the user's only signal that something broke.
+        window.addEventListener('error', (ev) => {
+            try {
+                const stageEmpty = document.getElementById('stage-empty');
+                const titleEl = document.getElementById('stage-empty-title');
+                const msgEl = document.getElementById('stage-empty-message');
+                if (stageEmpty && titleEl && msgEl) {
+                    titleEl.textContent = 'Preview script error';
+                    msgEl.textContent = (ev.message || 'Unknown error') + '\\n' +
+                        (ev.error && ev.error.stack ? ev.error.stack : '');
+                    stageEmpty.classList.remove('hidden');
+                }
+            } catch (err) { /* best effort */ }
+        });
+        window.addEventListener('unhandledrejection', (ev) => {
+            try {
+                const stageEmpty = document.getElementById('stage-empty');
+                const titleEl = document.getElementById('stage-empty-title');
+                const msgEl = document.getElementById('stage-empty-message');
+                if (stageEmpty && titleEl && msgEl) {
+                    titleEl.textContent = 'Preview promise error';
+                    const reason = ev.reason;
+                    msgEl.textContent = (reason && reason.message ? reason.message : String(reason)) + '\\n' +
+                        (reason && reason.stack ? reason.stack : '');
+                    stageEmpty.classList.remove('hidden');
+                }
+            } catch (err) { /* best effort */ }
+        });
+
         const $ = (id) => document.getElementById(id);
         const titleNode = $('title');
         const filePathNode = $('file-path');
@@ -828,18 +858,22 @@ ${elkRuntime}
                 el.classList.remove('fcstm-selected');
             }
             if (!selection) return;
-            const selector = selection.kind === 'transition'
-                ? '[data-fcstm-kind="transition"][data-fcstm-id="' + cssEscape(selection.id) + '"],'
-                  + '[data-fcstm-kind="transition-label"][data-fcstm-id="' + cssEscape(selection.id) + '"]'
-                : '[data-fcstm-id="' + cssEscape(selection.id) + '"]';
-            for (const el of viewportInnerNode.querySelectorAll(selector)) {
-                el.classList.add('fcstm-selected');
+            // Attribute equality comparison is O(n) on all matching data-fcstm-id
+            // elements; using getAttribute avoids the hassle of escaping
+            // identifiers that could otherwise contain CSS-hostile characters.
+            const targetId = String(selection.id);
+            for (const el of viewportInnerNode.querySelectorAll('[data-fcstm-kind][data-fcstm-id]')) {
+                const kind = el.getAttribute('data-fcstm-kind');
+                const id = el.getAttribute('data-fcstm-id');
+                if (id !== targetId) continue;
+                if (selection.kind === 'transition') {
+                    if (kind === 'transition' || kind === 'transition-label') {
+                        el.classList.add('fcstm-selected');
+                    }
+                } else {
+                    el.classList.add('fcstm-selected');
+                }
             }
-        }
-
-        function cssEscape(value) {
-            if (typeof CSS !== 'undefined' && CSS.escape) return CSS.escape(value);
-            return String(value).replace(/["\\]/g, '\\\\$&');
         }
 
         const detailsCardNode = $('details-card');

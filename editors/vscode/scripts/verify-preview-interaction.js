@@ -148,6 +148,65 @@ check(
     previewTs.includes('loadPreviewWebviewBundle') && previewTs.includes('webviewAppScript')
 );
 
+// 10. UI simplification round (7-point cleanup): the Toolbar drops the
+// view-mode + Fit/1:1 buttons (zoom controls own those now); OptionsBar
+// drops Detail / Shared events / Variables / State events / Actions; the
+// Effects mode is the only remaining Select; chevron uses a sized button
+// hit-target instead of an 8-pixel icon path; effect "note" mode draws a
+// PlantUML-style folded note pad around the label.
+check(
+    'Toolbar no longer carries Split / Diagram view-mode buttons',
+    !webviewSrc.includes('Split view') && !webviewSrc.includes('Diagram only')
+);
+check(
+    'Toolbar no longer carries top-level Fit / 1:1 buttons',
+    !webviewSrc.includes('Fit diagram to view') &&
+    !webviewSrc.includes('Actual size (100%)') ||
+    // Tooltip text may have moved into Stage zoom controls instead.
+    webviewSrc.includes('fcstm-stage__zoom')
+);
+check(
+    'Stage zoom controls expose Fit / Actual-size buttons next to +/-',
+    webviewSrc.includes('Fit to view') && webviewSrc.includes('Actual size (100%)')
+);
+check(
+    'OptionsBar dropped the Detail dropdown',
+    !webviewSrc.includes('detailLevel') ||
+    !/<n-select[^>]*update:value="\(v: string\) => patch\('detailLevel'/.test(webviewSrc)
+);
+check(
+    'OptionsBar dropped the Shared events dropdown',
+    !webviewSrc.includes('eventVisualizationMode') ||
+    !/patch\('eventVisualizationMode'/.test(webviewSrc)
+);
+check(
+    'OptionsBar dropped the Variables / State events / Actions toggles',
+    !webviewSrc.includes("patch('showVariableDefinitions'") &&
+    !webviewSrc.includes("patch('showStateEvents'") &&
+    !webviewSrc.includes("patch('showStateActions'")
+);
+check(
+    'OptionsBar still exposes Events + Guards toggles',
+    webviewSrc.includes('showEvents') && webviewSrc.includes('showTransitionGuards')
+);
+check(
+    'OptionsBar Effects select offers hide / inline / note',
+    /value:\s*"hide"/.test(webviewSrc) && /value:\s*"inline"/.test(webviewSrc) && /value:\s*"note"/.test(webviewSrc)
+);
+check(
+    'Chevron uses a sized button hit area (group + background rect) instead of a bare 8-pixel arrow',
+    /data-fcstm-kind="chevron"[^<]*<rect/.test(webviewSrc) ||
+    /<g [^>]*data-fcstm-kind="chevron"[^>]*>[\s\S]{0,80}<rect/.test(webviewSrc)
+);
+check(
+    'Note-effect labels render a folded sticky-note background (PlantUML-style)',
+    webviewSrc.includes('hasNoteEffect') && webviewSrc.includes('#fffaee')
+);
+check(
+    'Extension default options are now full + both (the user-tunable Detail / Shared events dropdowns are gone)',
+    /detailLevel:\s*'full'/.test(previewTs) && /eventVisualizationMode:\s*'both'/.test(previewTs)
+);
+
 const passed = checkpoints.filter(c => c.ok).length;
 const failed = checkpoints.length - passed;
 console.log('');

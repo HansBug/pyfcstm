@@ -260,7 +260,13 @@ export class FcstmPreviewController implements vscode.Disposable {
     private currentDocumentUri: string | null = null;
     private updateTimer: NodeJS.Timeout | undefined;
     private updateSequence = 0;
-    private previewOptions: FcstmDiagramPreviewOptions = {detailLevel: 'normal'};
+    // detailLevel + eventVisualizationMode are no longer user-tunable from
+    // the UI; the preview defaults to the full / both combo so the diagram
+    // shows everything it can without the user having to hunt dropdowns.
+    private previewOptions: FcstmDiagramPreviewOptions = {
+        detailLevel: 'full',
+        eventVisualizationMode: 'both',
+    };
     private collapsedStateIds = new Set<string>();
     private layoutMode: PreviewLayoutMode = 'side';
 

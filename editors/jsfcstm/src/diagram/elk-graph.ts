@@ -136,10 +136,25 @@ function resolveTransitionLabeling(
             .filter(Boolean);
         if (body.length > 0) {
             if (options.transitionEffectMode === 'inline') {
+                // Multi-line, indented; first line carries the ▸ glyph,
+                // continuations are indented under it for readability.
                 const visible = body.slice(0, options.maxTransitionEffectLines);
                 const suffix = body.length > visible.length ? ` +${body.length - visible.length}` : '';
-                inlineEffect = truncate(`/ ${visible.join(' ')}${suffix}`, options.maxLabelLength);
+                const lines = visible.map((line, i) => i === 0 ? line : `  ${line}`);
+                if (suffix) {
+                    lines[lines.length - 1] = lines[lines.length - 1] + suffix;
+                }
+                inlineEffect = lines.join('\n');
             } else if (options.transitionEffectMode === 'note') {
+                // Same multi-line body; the renderer wraps it in a note
+                // pad with a folded-corner background.
+                const visible = body.slice(0, options.maxTransitionEffectLines);
+                const suffix = body.length > visible.length ? ` +${body.length - visible.length}` : '';
+                const lines = visible.map((line, i) => i === 0 ? line : `  ${line}`);
+                if (suffix) {
+                    lines[lines.length - 1] = lines[lines.length - 1] + suffix;
+                }
+                inlineEffect = lines.join('\n');
                 hasNoteEffect = true;
             }
         }

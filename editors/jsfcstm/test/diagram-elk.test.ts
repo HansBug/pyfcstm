@@ -107,13 +107,14 @@ describe('jsfcstm ELK-based diagram pipeline', () => {
         assert.ok(svg.includes('font-family="&quot;JetBrains Mono&quot;'));
         assert.ok(!svg.includes('font-family="\\"'), 'font-family must not use JS-string escapes');
         // Chevrons must carry the source range so Ctrl/Cmd+click can reveal
-        // the composite state they belong to.
-        const chevronMatches = svg.match(/<path [^>]*data-fcstm-kind="chevron"[^/]*\/>/g) || [];
-        assert.ok(chevronMatches.length > 0, 'expected at least one chevron in composite svg output');
+        // the composite state they belong to. The chevron is now wrapped in
+        // a <g> with a sized hit-area rect so it's easier to click.
+        const chevronMatches = svg.match(/<g data-fcstm-kind="chevron"[^>]*>/g) || [];
+        assert.ok(chevronMatches.length > 0, 'expected at least one chevron group in composite svg output');
         for (const chevron of chevronMatches) {
             assert.ok(
                 chevron.includes('data-fcstm-range-start-line='),
-                'chevron path must include data-fcstm-range-* attributes for reveal-source'
+                'chevron group must include data-fcstm-range-* attributes for reveal-source'
             );
         }
     });

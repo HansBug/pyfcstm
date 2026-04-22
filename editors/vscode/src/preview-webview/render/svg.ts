@@ -212,18 +212,28 @@ function drawNode(node: PreviewElkNode, offsetX: number, offsetY: number, depth:
     }
 
     if (isComposite || meta.collapsed) {
-        const chevronX = x + w - 22;
-        const chevronY = y + 16;
+        // Visible chevron button: ~30x22 hit target with a subtle tint so
+        // it reads as clickable. The entire <g> carries data-fcstm-kind so
+        // hit-test resolves to "chevron" anywhere inside the button rect.
+        const btnW = 30, btnH = 22;
+        const btnX = x + w - btnW - 6;
+        const btnY = y + 5;
+        const chevronCx = btnX + btnW / 2;
+        const chevronCy = btnY + btnH / 2;
         const collapsed = Boolean(meta.collapsed);
+        // arrow drawn around (chevronCx, chevronCy)
         const path = collapsed
-            ? `M${chevronX},${chevronY} l4,4 l4,-4`
-            : `M${chevronX},${chevronY + 2} l4,-4 l4,4`;
+            ? `M${chevronCx - 4},${chevronCy - 2} l4,4 l4,-4`
+            : `M${chevronCx - 4},${chevronCy + 2} l4,-4 l4,4`;
         out.push(
-            `<path d="${path}" fill="none" stroke="${STYLE.titleColor}" ` +
-            `stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" ` +
-            `data-fcstm-kind="chevron" ` +
+            `<g data-fcstm-kind="chevron" ` +
             `${attr('data-fcstm-id', meta.qualifiedName || node.id)} ` +
-            `${rangeAttrs('fcstm-range', meta.sourceRange)}/>`
+            `${rangeAttrs('fcstm-range', meta.sourceRange)}>` +
+            `<rect x="${btnX}" y="${btnY}" width="${btnW}" height="${btnH}" ` +
+            `rx="6" ry="6" fill="rgba(255,255,255,0.5)" stroke="rgba(45,106,168,0.25)" stroke-width="1"/>` +
+            `<path d="${path}" fill="none" stroke="${STYLE.titleColor}" ` +
+            `stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>` +
+            `</g>`
         );
     }
 
@@ -267,20 +277,41 @@ function drawEdge(edge: PreviewElkEdge, ox: number, oy: number, out: string[]): 
     for (const label of edge.labels || []) {
         const lx = (label.x || 0) + ox;
         const ly = (label.y || 0) + oy;
+        const lw = label.width || 0;
         const lh = label.height || 0;
         out.push(
             `<g ${attr('data-fcstm-kind', 'transition-label')} ` +
             `${attr('data-fcstm-id', meta?.transitionId || edge.id)} ` +
             `${rangeAttrs('fcstm-range', meta?.sourceRange)}>`
         );
+        if (meta?.hasNoteEffect) {
+            // PlantUML-style note pad: rounded rect + folded top-right corner.
+            const padX = 6, padY = 4;
+            const nx = lx - padX, ny = ly - padY;
+            const nw = lw + padX * 2, nh = lh + padY * 2;
+            const fold = 8;
+            out.push(
+                `<path d="M${nx + 4},${ny} L${nx + nw - fold},${ny} ` +
+                `L${nx + nw},${ny + fold} L${nx + nw},${ny + nh - 4} ` +
+                `Q${nx + nw},${ny + nh} ${nx + nw - 4},${ny + nh} ` +
+                `L${nx + 4},${ny + nh} Q${nx},${ny + nh} ${nx},${ny + nh - 4} ` +
+                `L${nx},${ny + 4} Q${nx},${ny} ${nx + 4},${ny} Z" ` +
+                `fill="#fffaee" stroke="#c79a3d" stroke-width="0.9"/>`
+            );
+            out.push(
+                `<path d="M${nx + nw - fold},${ny} L${nx + nw - fold},${ny + fold} ` +
+                `L${nx + nw},${ny + fold} Z" fill="#f3e3b5" stroke="#c79a3d" stroke-width="0.9"/>`
+            );
+        }
         const lines = String(label.text).split('\n');
         const lineOffset = lh / Math.max(1, lines.length);
         for (const [i, line] of lines.entries()) {
             const lineColor = colorForLabelLine(line, color);
+            const halo = meta?.hasNoteEffect ? '' : `paint-order="stroke" stroke="${STYLE.edgeLabelHalo}" stroke-width="3" stroke-linejoin="round" `;
             out.push(
                 `<text x="${lx + 2}" y="${ly + lineOffset * (i + 0.7) + 2}" ` +
                 `fill="${lineColor}" font-size="12" font-weight="500" ` +
-                `paint-order="stroke" stroke="${STYLE.edgeLabelHalo}" stroke-width="3" stroke-linejoin="round">` +
+                halo + `>` +
                 `${escapeXml(line)}</text>`
             );
         }

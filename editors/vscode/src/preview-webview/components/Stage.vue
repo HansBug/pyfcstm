@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import {computed, nextTick, onMounted, onUnmounted, ref, watch} from 'vue';
-import {NButton, NIcon} from 'naive-ui';
-import {AddOutline, RemoveOutline} from '@vicons/ionicons5';
+import {NButton, NIcon, NTooltip} from 'naive-ui';
+import {
+    AddOutline, RemoveOutline,
+    ScanOutline, ResizeOutline,
+} from '@vicons/ionicons5';
 import {renderSvg, type RenderedSvg} from '../render/svg';
 import {getElk} from '../composables/useElk';
 import {decidePreviewPointerAction, PREVIEW_DRAG_THRESHOLD_PX} from '../interaction';
@@ -332,13 +335,40 @@ void _t;
             <div class="fcstm-stage__empty-message">{{ emptyMessage }}</div>
         </div>
         <div class="fcstm-stage__zoom">
-            <n-button quaternary circle size="small" @click="zoomAtCenter(1.2)">
-                <template #icon><n-icon><AddOutline /></n-icon></template>
-            </n-button>
+            <n-tooltip placement="left" :delay="400">
+                <template #trigger>
+                    <n-button quaternary circle size="small" @click="zoomAtCenter(1.2)">
+                        <template #icon><n-icon><AddOutline /></n-icon></template>
+                    </n-button>
+                </template>
+                Zoom in
+            </n-tooltip>
             <div class="fcstm-stage__zoom-level">{{ zoomLabel }}</div>
-            <n-button quaternary circle size="small" @click="zoomAtCenter(1 / 1.2)">
-                <template #icon><n-icon><RemoveOutline /></n-icon></template>
-            </n-button>
+            <n-tooltip placement="left" :delay="400">
+                <template #trigger>
+                    <n-button quaternary circle size="small" @click="zoomAtCenter(1 / 1.2)">
+                        <template #icon><n-icon><RemoveOutline /></n-icon></template>
+                    </n-button>
+                </template>
+                Zoom out
+            </n-tooltip>
+            <div class="fcstm-stage__zoom-divider"></div>
+            <n-tooltip placement="left" :delay="400">
+                <template #trigger>
+                    <n-button quaternary circle size="small" @click="fitToView">
+                        <template #icon><n-icon><ScanOutline /></n-icon></template>
+                    </n-button>
+                </template>
+                Fit to view
+            </n-tooltip>
+            <n-tooltip placement="left" :delay="400">
+                <template #trigger>
+                    <n-button quaternary circle size="small" @click="actualSize">
+                        <template #icon><n-icon><ResizeOutline /></n-icon></template>
+                    </n-button>
+                </template>
+                Actual size (100%)
+            </n-tooltip>
         </div>
         <div class="fcstm-stage__hint">
             Drag to pan · Ctrl/Cmd+click to jump to source · Click chevron to collapse
@@ -453,6 +483,12 @@ body.modifier-held .fcstm-stage__inner [data-fcstm-kind][data-fcstm-range-start-
     font-size: 10px;
     color: var(--fcstm-accent);
     letter-spacing: 0.04em;
+}
+.fcstm-stage__zoom-divider {
+    width: 70%;
+    height: 1px;
+    background: var(--fcstm-border-soft);
+    margin: 4px 0 2px 0;
 }
 .fcstm-stage__hint {
     position: absolute;

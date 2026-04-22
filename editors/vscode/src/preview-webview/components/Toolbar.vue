@@ -1,22 +1,10 @@
 <script setup lang="ts">
 import {computed, h} from 'vue';
 import {NButton, NButtonGroup, NTag, NIcon, NTooltip} from 'naive-ui';
-import {
-    BrowsersOutline, EyeOutline,
-    ScanOutline, ResizeOutline,
-    DownloadOutline, Image as ImageOutline,
-} from '@vicons/ionicons5';
+import {DownloadOutline, Image as ImageOutline} from '@vicons/ionicons5';
 import type {PreviewWebviewState} from '../types';
 
 const props = defineProps<{state: PreviewWebviewState}>();
-const emit = defineEmits<{
-    (e: 'setLayoutMode', mode: 'side' | 'alone'): void;
-    (e: 'exportSvg', svg: string): void;
-    (e: 'exportPng', base64: string): void;
-    (e: 'exportError', message: string): void;
-    (e: 'fit'): void;
-    (e: 'actual'): void;
-}>();
 
 const title = computed(() => {
     if (props.state.rootStateName) return `${props.state.title} · ${props.state.rootStateName}`;
@@ -33,12 +21,6 @@ function withIcon(Icon: unknown) {
     return () => h(NIcon, null, {default: () => h(Icon as never)});
 }
 
-function requestFit() {
-    window.dispatchEvent(new CustomEvent('fcstm-fit'));
-}
-function requestActual() {
-    window.dispatchEvent(new CustomEvent('fcstm-actual'));
-}
 function requestExportSvg() {
     window.dispatchEvent(new CustomEvent('fcstm-export-svg'));
 }
@@ -70,56 +52,6 @@ function requestExportPng() {
         </div>
 
         <div class="fcstm-toolbar__actions">
-            <n-button-group size="small">
-                <n-tooltip :delay="400">
-                    <template #trigger>
-                        <n-button
-                            quaternary round
-                            :focusable="false"
-                            :render-icon="withIcon(BrowsersOutline)"
-                            @click="emit('setLayoutMode', 'side')"
-                        >Split</n-button>
-                    </template>
-                    Split view — diagram beside the editor
-                </n-tooltip>
-                <n-tooltip :delay="400">
-                    <template #trigger>
-                        <n-button
-                            quaternary round
-                            :focusable="false"
-                            :render-icon="withIcon(EyeOutline)"
-                            @click="emit('setLayoutMode', 'alone')"
-                        >Diagram</n-button>
-                    </template>
-                    Diagram only — preview takes the full column
-                </n-tooltip>
-            </n-button-group>
-
-            <n-button-group size="small">
-                <n-tooltip :delay="400">
-                    <template #trigger>
-                        <n-button
-                            quaternary round
-                            :focusable="false"
-                            :render-icon="withIcon(ScanOutline)"
-                            @click="requestFit"
-                        >Fit</n-button>
-                    </template>
-                    Fit diagram to view
-                </n-tooltip>
-                <n-tooltip :delay="400">
-                    <template #trigger>
-                        <n-button
-                            quaternary round
-                            :focusable="false"
-                            :render-icon="withIcon(ResizeOutline)"
-                            @click="requestActual"
-                        >1:1</n-button>
-                    </template>
-                    Actual size (100%)
-                </n-tooltip>
-            </n-button-group>
-
             <n-button-group size="small">
                 <n-tooltip :delay="400">
                     <template #trigger>

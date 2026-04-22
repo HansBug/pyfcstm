@@ -303,6 +303,57 @@ function eventPathSegmentRange(
     });
 }
 
+/**
+ * Push state-reference occurrences for every intermediate segment of a
+ * chain / absolute identifier path. Used by transition triggers and action
+ * refs so clicking on `Parent` in `/Parent.Inner.Evt` navigates to the
+ * Parent state definition rather than silently doing nothing.
+ */
+function collectStateSegmentOccurrences(
+    semantic: FcstmSemanticDocument,
+    ownerStatePath: string[],
+    path: FcstmAstChainPath,
+    document: TextDocumentLike,
+    filePath: string,
+    occurrences: FcstmSymbolOccurrence[],
+    options: { includeFinal?: boolean } = {}
+): void {
+    const {includeFinal = false} = options;
+    if (path.segments.length === 0) {
+        return;
+    }
+
+    const rootState = findRootState(semantic);
+    const baseStatePath = path.isAbsolute
+        ? rootState?.identity.path
+        : ownerStatePath;
+    if (!baseStatePath || baseStatePath.length === 0) {
+        return;
+    }
+
+    const lastIndex = includeFinal ? path.segments.length : path.segments.length - 1;
+    let currentStatePath = [...baseStatePath];
+    for (let index = 0; index < lastIndex; index += 1) {
+        currentStatePath = [...currentStatePath, path.segments[index]];
+        const state = findStateByPath(semantic, currentStatePath);
+        if (!state) {
+            return;
+        }
+
+        occurrences.push({
+            key: stateOccurrenceKey(state),
+            kind: 'state',
+            name: state.name,
+            qualifiedName: state.identity.qualifiedName,
+            filePath,
+            range: eventPathSegmentRange(document, path, index),
+            role: 'reference',
+            containerName: getContainerName(state.identity.path),
+            renameable: true,
+        });
+    }
+}
+
 function collectEventPathOccurrences(
     semantic: FcstmSemanticDocument,
     ownerStatePath: string[],
@@ -527,6 +578,13 @@ function collectNodeOccurrences(
         if (!event.declared) {
             continue;
         }
+        if (!event.name) {
+            // Parser failure (e.g. event name collides with a reserved token
+            // like `E` or `pi`) can leave us with an empty-named semantic
+            // event. Skip it instead of emitting a bogus zero-width
+            // occurrence at the top of the document.
+            continue;
+        }
         const identifierRange = findIdentifierRange(
             node.document,
             event.name,
@@ -593,6 +651,20 @@ function collectNodeOccurrences(
                     containerName: getContainerName(target.identity.path),
                     renameable: true,
                 });
+            }
+
+            // State segments that walk up to the target action (e.g.
+            // `/Parent.Inner.SetUp`) should be clickable too.
+            const refPath = action.ast.refPath;
+            if (refPath && refPath.segments.length > 1) {
+                collectStateSegmentOccurrences(
+                    semantic,
+                    action.ownerStatePath,
+                    refPath,
+                    node.document,
+                    node.filePath,
+                    occurrences
+                );
             }
         }
 
@@ -750,6 +822,24 @@ function collectNodeOccurrences(
                     containerName: getContainerName(event.identity.path),
                     renameable: true,
                 });
+            }
+
+            // For chain- or absolute-scoped triggers the raw path may carry
+            // intermediate state segments (e.g. `/Parent.Inner.Evt`). Collect
+            // each state segment as a state reference so click-to-navigate
+            // works for the path components, not just the final event name.
+            const chainTrigger = transition.ast.trigger?.kind === 'chainTrigger'
+                ? transition.ast.trigger
+                : undefined;
+            if (chainTrigger && chainTrigger.eventPath.segments.length > 1) {
+                collectStateSegmentOccurrences(
+                    semantic,
+                    transition.ownerStatePath,
+                    chainTrigger.eventPath,
+                    node.document,
+                    node.filePath,
+                    occurrences
+                );
             }
         }
     }

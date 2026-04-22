@@ -163,6 +163,14 @@ export function fallbackRangeFromText(
     search: string,
     startLine = 0
 ): TextRange {
+    if (!search) {
+        // Empty search strings would match position 0 of every line via
+        // `indexOf('')` and collapse to a zero-width range at the top of
+        // the document, which shows up as ghost occurrences in the editor.
+        // Return the document end as a neutral sentinel range instead.
+        const safeLineCount = Math.max(1, document.lineCount);
+        return createRange(0, 0, 0, safeLineCount > 0 ? 1 : 0);
+    }
     const lines = text.split('\n');
     for (let line = startLine; line < lines.length; line++) {
         const column = lines[line].indexOf(search);

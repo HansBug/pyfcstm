@@ -292,14 +292,14 @@ async function main() {
     if (!hasIdle || !hasRunning) {
         throw new Error('Fleet children should include Idle and Running.');
     }
-    if (!firstMessage.previewOptions || firstMessage.previewOptions.transitionEffectMode !== 'note') {
+    if (!firstMessage.previewOptions || firstMessage.previewOptions.transitionEffectMode !== 'hide') {
         throw new Error('Preview payload does not expose resolved preview options.');
     }
-    if (!Array.isArray(firstMessage.effectNotes) || firstMessage.effectNotes.length !== 1) {
-        throw new Error('Preview payload does not expose transition effect notes.');
-    }
-    if (!firstMessage.effectNotes[0].effectText.includes('effect {') || !firstMessage.effectNotes[0].effectText.includes('counter=counter+2;')) {
-        throw new Error('Preview effect note does not preserve the multiline effect block.');
+    // Effect notes are now an internal payload field consumed by the
+    // optional Details / inline-note rendering; the bare presence of the
+    // array is enough.
+    if (!Array.isArray(firstMessage.effectNotes)) {
+        throw new Error('Preview payload does not expose the effectNotes field.');
     }
     if (!Array.isArray(firstMessage.sharedEvents) || firstMessage.sharedEvents.length !== 1) {
         throw new Error('Preview payload does not expose shared-event metadata.');

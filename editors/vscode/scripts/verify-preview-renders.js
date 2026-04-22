@@ -90,8 +90,17 @@ function fakeWebview() {
 async function buildWebviewHtml(fixturePath) {
     const createPreviewHtml = extractCreatePreviewHtml();
     const doc = createDocument(fixturePath);
-    const payload = await buildFcstmDiagramWebviewPayload(doc, 'normal');
-    const resolvedOptions = resolveFcstmDiagramPreviewOptions('normal');
+    const payload = await buildFcstmDiagramWebviewPayload(doc, {
+        detailLevel: 'full',
+        eventVisualizationMode: 'both',
+        transitionEffectMode: 'hide',
+    });
+    // Mirror the extension's defaults so screenshots reflect what users see.
+    const resolvedOptions = resolveFcstmDiagramPreviewOptions({
+        detailLevel: 'full',
+        eventVisualizationMode: 'both',
+        transitionEffectMode: 'hide',
+    });
     const variables = payload && resolvedOptions.showVariableDefinitions
         ? payload.variables.map(v => `def ${v.valueType} ${v.name} = ${v.initializer}`)
         : [];
@@ -276,7 +285,11 @@ async function main() {
         const domInfo = await rpcSend(ws, ++id, 'Runtime.evaluate', {
             expression: `(function() {
                 const emptyEl = document.querySelector('.fcstm-stage__empty');
-                const titleEl = document.querySelector('.fcstm-toolbar__title');
+                // Title block was removed from the toolbar; the document
+                // title (set by the extension panel) is now the source of
+                // truth, and the status chip carries the live-preview
+                // signal. We expose both so the assertion can check either.
+                const statusChip = document.querySelector('.fcstm-toolbar .n-tag');
                 const svgEl = document.querySelector('.fcstm-stage__inner svg');
                 const detailsHint = document.querySelector('.fcstm-details__hint');
                 return JSON.stringify({
@@ -288,7 +301,7 @@ async function main() {
                     svgPresent: !!svgEl,
                     svgChildren: svgEl ? svgEl.querySelectorAll(':scope > *').length : 0,
                     detailsHint: detailsHint ? detailsHint.textContent.slice(0, 200) : '',
-                    title: titleEl ? titleEl.textContent : '',
+                    title: statusChip ? statusChip.textContent.trim() : '',
                 });
             })()`,
             returnByValue: true,
@@ -322,8 +335,8 @@ async function main() {
             'svgChildren=' + state.svgChildren);
         record('stage-empty panel is absent when preview is ready', state.stageEmpty.present === false,
             'stageEmpty=' + JSON.stringify(state.stageEmpty));
-        record('title reflects the file + root state', state.title && state.title.length > 0,
-            'title=' + JSON.stringify(state.title));
+        record('toolbar status chip is rendered', state.title && state.title.length > 0,
+            'status=' + JSON.stringify(state.title));
 
         const passed = checks.filter(c => c.ok).length;
         const failed = checks.length - passed;

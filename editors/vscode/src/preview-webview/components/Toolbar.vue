@@ -1,45 +1,22 @@
 <script setup lang="ts">
-import {computed, h} from 'vue';
-import {NButton, NButtonGroup, NTag, NIcon, NTooltip} from 'naive-ui';
-import {DownloadOutline, Image as ImageOutline} from '@vicons/ionicons5';
+import {computed} from 'vue';
+import {NTag} from 'naive-ui';
 import type {PreviewWebviewState} from '../types';
 
 const props = defineProps<{state: PreviewWebviewState}>();
-
-const title = computed(() => {
-    if (props.state.rootStateName) return `${props.state.title} · ${props.state.rootStateName}`;
-    return props.state.title;
-});
 
 const statusType = computed(() => {
     if (props.state.status === 'error') return 'error';
     if (props.state.status === 'warning') return 'warning';
     return 'info';
 });
-
-function withIcon(Icon: unknown) {
-    return () => h(NIcon, null, {default: () => h(Icon as never)});
-}
-
-function requestExportSvg() {
-    window.dispatchEvent(new CustomEvent('fcstm-export-svg'));
-}
-function requestExportPng() {
-    window.dispatchEvent(new CustomEvent('fcstm-export-png'));
-}
 </script>
 
 <template>
     <div class="fcstm-toolbar">
-        <div class="fcstm-toolbar__title-block">
-            <div class="fcstm-toolbar__title">{{ title }}</div>
-            <div class="fcstm-toolbar__path">{{ state.filePath || '<memory>' }}</div>
-        </div>
-
         <n-tag :type="statusType" round size="small" :bordered="false">
             {{ state.statusText }}
         </n-tag>
-
         <div class="fcstm-toolbar__summary">
             <span
                 v-for="entry in state.summary"
@@ -50,33 +27,6 @@ function requestExportPng() {
                 <span class="fcstm-toolbar__summary-value">{{ entry.value }}</span>
             </span>
         </div>
-
-        <div class="fcstm-toolbar__actions">
-            <n-button-group size="small">
-                <n-tooltip :delay="400">
-                    <template #trigger>
-                        <n-button
-                            quaternary round
-                            :focusable="false"
-                            :render-icon="withIcon(DownloadOutline)"
-                            @click="requestExportSvg"
-                        >SVG</n-button>
-                    </template>
-                    Export SVG
-                </n-tooltip>
-                <n-tooltip :delay="400">
-                    <template #trigger>
-                        <n-button
-                            quaternary round
-                            :focusable="false"
-                            :render-icon="withIcon(ImageOutline)"
-                            @click="requestExportPng"
-                        >PNG</n-button>
-                    </template>
-                    Export PNG (2× raster)
-                </n-tooltip>
-            </n-button-group>
-        </div>
     </div>
 </template>
 
@@ -84,34 +34,12 @@ function requestExportPng() {
 .fcstm-toolbar {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 10px;
     flex-wrap: wrap;
-    padding: 10px 14px;
-    border: 1px solid var(--fcstm-border);
-    border-radius: 14px;
+    padding: 8px 14px;
+    border: 1px solid var(--fcstm-border-soft);
+    border-radius: 12px;
     background: var(--fcstm-surface-raised);
-    backdrop-filter: blur(6px);
-}
-.fcstm-toolbar__title-block {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-    flex: 1 1 auto;
-}
-.fcstm-toolbar__title {
-    font-weight: 700;
-    font-size: 14px;
-    color: var(--fcstm-fg);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-.fcstm-toolbar__path {
-    font-size: 11px;
-    color: var(--fcstm-muted);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
 }
 .fcstm-toolbar__summary {
     display: flex;
@@ -131,10 +59,5 @@ function requestExportPng() {
 .fcstm-toolbar__summary-value {
     color: var(--fcstm-fg);
     font-weight: 700;
-}
-.fcstm-toolbar__actions {
-    display: flex;
-    gap: 6px;
-    align-items: center;
 }
 </style>

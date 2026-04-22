@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import {NSelect, NCheckbox, NSpace} from 'naive-ui';
+import {h} from 'vue';
+import {NSelect, NCheckbox, NSpace, NButton, NButtonGroup, NTooltip, NIcon} from 'naive-ui';
+import {DownloadOutline, Image as ImageOutline} from '@vicons/ionicons5';
 import type {PreviewResolvedOptions} from '../types';
 
 const props = defineProps<{options: PreviewResolvedOptions}>();
@@ -15,6 +17,17 @@ const effectOptions = [
 
 function patch(key: keyof PreviewResolvedOptions, value: unknown) {
     emit('patch', {[key]: value} as Partial<PreviewResolvedOptions>);
+}
+
+function withIcon(Icon: unknown) {
+    return () => h(NIcon, null, {default: () => h(Icon as never)});
+}
+
+function requestExportSvg() {
+    window.dispatchEvent(new CustomEvent('fcstm-export-svg'));
+}
+function requestExportPng() {
+    window.dispatchEvent(new CustomEvent('fcstm-export-png'));
 }
 </script>
 
@@ -42,6 +55,33 @@ function patch(key: keyof PreviewResolvedOptions, value: unknown) {
                 @update:checked="(v: boolean) => patch('showTransitionGuards', v)"
             >Guards</n-checkbox>
         </n-space>
+
+        <div class="fcstm-options__spacer"></div>
+
+        <n-button-group size="small" class="fcstm-options__exports">
+            <n-tooltip :delay="400">
+                <template #trigger>
+                    <n-button
+                        quaternary round
+                        :focusable="false"
+                        :render-icon="withIcon(DownloadOutline)"
+                        @click="requestExportSvg"
+                    >SVG</n-button>
+                </template>
+                Save diagram as SVG
+            </n-tooltip>
+            <n-tooltip :delay="400">
+                <template #trigger>
+                    <n-button
+                        quaternary round
+                        :focusable="false"
+                        :render-icon="withIcon(ImageOutline)"
+                        @click="requestExportPng"
+                    >PNG</n-button>
+                </template>
+                Save diagram as PNG (2× raster)
+            </n-tooltip>
+        </n-button-group>
     </div>
 </template>
 
@@ -71,5 +111,12 @@ function patch(key: keyof PreviewResolvedOptions, value: unknown) {
 .fcstm-options__toggles {
     flex-wrap: wrap;
     row-gap: 6px;
+}
+.fcstm-options__spacer {
+    flex: 1 1 auto;
+    min-width: 4px;
+}
+.fcstm-options__exports {
+    margin-left: auto;
 }
 </style>

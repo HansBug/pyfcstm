@@ -266,6 +266,9 @@ export class FcstmPreviewController implements vscode.Disposable {
     private previewOptions: FcstmDiagramPreviewOptions = {
         detailLevel: 'full',
         eventVisualizationMode: 'both',
+        // Effects default to hidden — the diagram stays uncluttered until
+        // the user explicitly opts into inline / note rendering.
+        transitionEffectMode: 'hide',
     };
     private collapsedStateIds = new Set<string>();
     private layoutMode: PreviewLayoutMode = 'side';

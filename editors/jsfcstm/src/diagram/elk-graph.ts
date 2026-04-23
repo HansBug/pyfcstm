@@ -342,6 +342,12 @@ export function buildFcstmElkGraph(
             edges,
             layoutOptions: {
                 'elk.padding': '[top=54,left=28,bottom=28,right=28]',
+                // Repeat nodeSelfLoop on composites because ELK's
+                // ``INCLUDE_CHILDREN`` mode does not propagate this
+                // spacing into nested layouts — without this copy
+                // self-loops on states nested inside a composite
+                // collapse to the default 10-unit spacing.
+                'elk.spacing.nodeSelfLoop': '28',
             },
             fcstm: {
                 kind: 'state',
@@ -378,6 +384,11 @@ export function buildFcstmElkGraph(
             'elk.spacing.edgeEdge': '36',
             'elk.spacing.edgeLabel': '24',
             'elk.spacing.componentComponent': '64',
+            // ``nodeSelfLoop`` controls the spacing ELK reserves
+            // between a node and its self-transition. The default
+            // of 10 is invisible under the arrow marker; 28 gives
+            // the loop a proper visible size.
+            'elk.spacing.nodeSelfLoop': '28',
             'elk.layered.spacing.baseValue': '50',
             'elk.layered.spacing.edgeNodeBetweenLayers': '52',
             'elk.layered.spacing.edgeEdgeBetweenLayers': '32',

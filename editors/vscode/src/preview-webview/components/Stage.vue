@@ -6,6 +6,7 @@ import {
     ScanOutline, ResizeOutline,
 } from '@vicons/ionicons5';
 import {renderSvg, type RenderedSvg} from '../render/svg';
+import {smoothGraphEdges} from '../render/edge-smoother';
 import type {PaletteId, PaletteMode} from '../render/palette';
 import {getElk} from '../composables/useElk';
 import {decidePreviewPointerAction, PREVIEW_DRAG_THRESHOLD_PX} from '../interaction';
@@ -135,6 +136,12 @@ async function relayout() {
         const graphCopy = JSON.parse(JSON.stringify(payload.graph));
         const laid = await getElk().layout(graphCopy) as PreviewElkNode;
         if (token !== layoutToken) return;
+        // ELK's orthogonal router occasionally lands the last segment
+        // of an edge within a handful of pixels of the target port,
+        // producing an ugly "stub" right under the arrowhead. Shift the
+        // trailing / leading bend pair so the terminal segment is at
+        // least 18px long.
+        smoothGraphEdges(laid);
         lastLaidOut = laid;
         lastLaidOutOptions = payload.options;
         lastLaidOutSourceRef = payload.graph;

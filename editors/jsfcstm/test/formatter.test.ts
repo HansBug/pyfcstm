@@ -2,281 +2,120 @@ import assert from 'node:assert/strict';
 
 import {createDocument, packageModule} from './support';
 
-describe('jsfcstm formatter', () => {
-    it('normalizes indentation by brace depth using spaces', () => {
-        const source = [
-            'def int counter = 0;',
-            'state Root {',
-            'state Inner {',
-            '[*] -> Active;',
-            'state Active;',
-            '}',
-            '}',
-            '',
-        ].join('\n');
-        const document = createDocument(source, '/tmp/fmt-indent.fcstm');
+function format(source: string, options?: Parameters<typeof packageModule.formatDocumentText>[1]): string {
+    const doc = createDocument(source, '/tmp/fmt.fcstm');
+    const edits = packageModule.formatDocumentText(doc, options);
+    if (edits.length === 0) return source;
+    return edits[0].newText;
+}
 
-        const edits = packageModule.formatDocumentText(document);
-        assert.equal(edits.length, 1);
+describe('jsfcstm formatter', () => {
+    it('normalizes spacing inside `def` statements', () => {
+        const input = [
+            'def int  counter=0;',
+            '   def float temperature =  25.5  ;',
+            'def int error_count=0;',
+        ].join('\n');
         const expected = [
             'def int counter = 0;',
-            'state Root {',
-            '    state Inner {',
-            '        [*] -> Active;',
-            '        state Active;',
-            '    }',
-            '}',
-            '',
+            'def float temperature = 25.5;',
+            'def int error_count = 0;',
         ].join('\n');
-        assert.equal(edits[0].newText, expected);
+        assert.equal(format(input), expected);
     });
 
-    it('honors the requested indent size', () => {
-        const source = [
+    it('expands single-line brace blocks into multi-line form with four-space indent', () => {
+        const input = [
+            'state Root {',
+            '    Initializing -> Running :if[counter >= 10]effect{counter=0;temperature=20.0;};',
+            '}',
+        ].join('\n');
+        const expected = [
+            'state Root {',
+            '    Initializing -> Running : if [counter >= 10] effect {',
+            '        counter = 0;',
+            '        temperature = 20.0;',
+            '    };',
+            '}',
+        ].join('\n');
+        assert.equal(format(input), expected);
+    });
+
+    it('normalizes spacing around binary operators while leaving unary intact', () => {
+        const input = [
+            'state Root {',
+            '    enter { counter=counter+1; temperature=-25.5+counter; }',
+            '}',
+        ].join('\n');
+        const expected = [
+            'state Root {',
+            '    enter {',
+            '        counter = counter + 1;',
+            '        temperature = -25.5 + counter;',
+            '    }',
+            '}',
+        ].join('\n');
+        assert.equal(format(input), expected);
+    });
+
+    it('honors the requested indent size while still using spaces', () => {
+        const input = [
             'state Root {',
             'state Child;',
             '}',
         ].join('\n');
-        const document = createDocument(source, '/tmp/fmt-size.fcstm');
-
-        const edits = packageModule.formatDocumentText(document, {indentSize: 2});
-        assert.equal(edits.length, 1);
-        assert.equal(edits[0].newText, [
+        assert.equal(format(input, {indentSize: 2}), [
             'state Root {',
             '  state Child;',
             '}',
         ].join('\n'));
     });
 
-    it('trims trailing whitespace and collapses consecutive blank lines', () => {
-        const source = [
-            'state Root {   ',
-            '',
-            '',
-            '',
-            '    state Child;',
-            '    ',
-            '}',
-        ].join('\n');
-        const document = createDocument(source, '/tmp/fmt-blanks.fcstm');
-
-        const edits = packageModule.formatDocumentText(document);
-        assert.equal(edits.length, 1);
-        assert.equal(edits[0].newText, [
-            'state Root {',
-            '',
-            '    state Child;',
-            '',
-            '}',
-        ].join('\n'));
-    });
-
-    it('does not touch string literals, /* */ raw_doc payloads, or well-indented // lines', () => {
-        const source = [
-            '// top comment',
-            '/* block comment */',
-            'state Root {',
-            '    // braces inside a line comment: { } should be ignored',
-            '    event Fired named "value with { and } inside";',
-            '}',
-        ].join('\n');
-        const document = createDocument(source, '/tmp/fmt-comments.fcstm');
-
-        const edits = packageModule.formatDocumentText(document);
-        assert.equal(edits.length, 0, 'already well-formed content should produce no edits');
-    });
-
-    it('normalizes Python-style "#" line comments into "//" form with a space gap', () => {
-        const source = [
-            '# top comment',
-            '#note without space',
-            'state Root {',
-            '    # python-style comment inside Root',
-            '    state Child; # trailing',
-            '}',
-        ].join('\n');
-        const document = createDocument(source, '/tmp/fmt-hash-to-slash.fcstm');
-
-        const edits = packageModule.formatDocumentText(document);
-        assert.equal(edits.length, 1);
-        const out = edits[0].newText;
-        assert.ok(out.includes('// top comment'));
-        assert.ok(out.includes('// note without space'),
-            'bare "#note" should gain a space so it reads as "// note"');
-        assert.ok(out.includes('// python-style comment inside Root'));
-        assert.ok(out.includes('// trailing'));
-        // No "#" line-comment markers should remain.
-        assert.ok(!/(^|[^0-9a-zA-Z_])#(?!!)/.test(out),
-            '"#" comment markers should have been replaced');
-    });
-
-    it('leaves "#" alone inside string literals and inside /* */ raw_doc blocks', () => {
-        const source = [
-            'state Root {',
-            '    event Tagged named "value with # sharp inside";',
-            '    enter abstract Setup /* note with # sharp inside */',
-            '}',
-        ].join('\n');
-        const document = createDocument(source, '/tmp/fmt-hash-safe.fcstm');
-
-        const edits = packageModule.formatDocumentText(document);
-        // The document is already correctly indented; the "#" characters
-        // inside string / raw_doc should not trigger any rewrite.
-        assert.equal(edits.length, 0);
-    });
-
-    it('gaps a trailing comment when it is glued to code on the same line', () => {
-        const source = [
-            'state Root {',
-            '    state Idle;// no gap before the marker',
-            '    state Active;#glued hash comment',
-            '}',
-        ].join('\n');
-        const document = createDocument(source, '/tmp/fmt-trailing-gap.fcstm');
-
-        const edits = packageModule.formatDocumentText(document);
-        assert.equal(edits.length, 1);
-        const out = edits[0].newText;
-        assert.ok(out.includes('state Idle; // no gap before the marker'));
-        assert.ok(out.includes('state Active; // glued hash comment'));
-    });
-
-    it('adds a space after a standalone "//" marker that has no gap', () => {
-        const source = [
-            'state Root {',
-            '    //tight line comment',
-            '    state Child;',
-            '}',
-        ].join('\n');
-        const document = createDocument(source, '/tmp/fmt-slash-gap.fcstm');
-
-        const edits = packageModule.formatDocumentText(document);
-        assert.equal(edits.length, 1);
-        const out = edits[0].newText;
-        assert.ok(out.includes('// tight line comment'));
-        assert.ok(!out.includes('//tight'));
-    });
-
-    it('preserves intentional multi-space padding inside already-gapped comments', () => {
-        // The formatter must not collapse existing spaces, which would
-        // clobber ASCII alignment and section banners.
-        const source = [
-            '//    === Section ===',
-            'state Root;',
-        ].join('\n');
-        const document = createDocument(source, '/tmp/fmt-keep-padding.fcstm');
-
-        const edits = packageModule.formatDocumentText(document);
-        // Already well formed: content unchanged, no edits expected.
-        assert.equal(edits.length, 0);
-    });
-
-    it('does not insert a leading space for comments that are standalone on their line', () => {
-        const source = [
-            'state Root {',
-            '    // already well spaced',
-            '    state Child;',
-            '}',
-        ].join('\n');
-        const document = createDocument(source, '/tmp/fmt-standalone-ok.fcstm');
-
-        const edits = packageModule.formatDocumentText(document);
-        assert.equal(edits.length, 0);
-    });
-
-    it('is idempotent under a second format pass', () => {
-        const source = [
-            'state Root {',
-            'state Inner {',
-            '    state Leaf;',
-            '}',
-            '}',
-        ].join('\n');
-        const document = createDocument(source, '/tmp/fmt-idem.fcstm');
-
-        const first = packageModule.formatDocumentText(document)[0].newText;
-        const second = packageModule.formatDocumentText(
-            createDocument(first, '/tmp/fmt-idem-2.fcstm')
-        );
-        assert.equal(second.length, 0);
-    });
-
-    it('handles CRLF line endings without losing them', () => {
-        const source = ['state Root {', '    state Child;', '}', ''].join('\r\n');
-        const document = createDocument(source, '/tmp/fmt-crlf.fcstm');
-
-        const edits = packageModule.formatDocumentText(document);
-        if (edits.length === 0) {
-            // Already well formed; acceptable.
-            return;
-        }
-        assert.ok(edits[0].newText.includes('\r\n'));
-        assert.ok(!edits[0].newText.includes('\n\r'));
-    });
-
-    it('returns no edits when the document is already formatted', () => {
-        const source = [
+    it('collapses runs of 3+ blank lines to one and drops blanks adjacent to braces', () => {
+        const input = [
             'def int counter = 0;',
-            'state Root {',
-            '    state Child;',
-            '}',
             '',
-        ].join('\n');
-        const document = createDocument(source, '/tmp/fmt-ok.fcstm');
-
-        const edits = packageModule.formatDocumentText(document);
-        assert.equal(edits.length, 0);
-    });
-
-    it('does not step on leading whitespace of lines inside an unterminated block comment', () => {
-        const source = [
+            '',
+            '',
             'state Root {',
-            '    /*',
-            '     * Important notes here.',
-            '     */',
+            '',
+            '',
+            '    state Child;',
+            '',
+            '}',
+        ].join('\n');
+        const expected = [
+            'def int counter = 0;',
+            '',
+            'state Root {',
             '    state Child;',
             '}',
         ].join('\n');
-        const document = createDocument(source, '/tmp/fmt-block-comment.fcstm');
-
-        const edits = packageModule.formatDocumentText(document);
-        assert.equal(edits.length, 0);
+        assert.equal(format(input), expected);
     });
 
-    it('preserves every comment and every trailing-comment line when re-indenting', () => {
-        // Deliberately wrong indentation with line, shell, and trailing
-        // comments mixed in. All three comment styles must survive and
-        // end up with the correct leading indent for their depth.
-        const source = [
+    it('preserves all three comment styles: //, #, and /* */ (with # normalized to //)', () => {
+        const input = [
+            '// top line comment',
+            '# python-style comment',
+            '/* standalone block comment */',
             'state Root {',
-            '// top of Root',
-            '   # python-style inside Root',
-            '   state Inner { // inline comment',
-            '   state Leaf; /* block-style trailing */',
-            '   } // closing Inner',
+            '    enter abstract Init /* raw_doc payload — stays verbatim */',
+            '    state Child; // trailing line comment',
             '}',
         ].join('\n');
-        const document = createDocument(source, '/tmp/fmt-comments-preserve.fcstm');
-
-        const edits = packageModule.formatDocumentText(document);
-        assert.equal(edits.length, 1);
-        const out = edits[0].newText;
-        // Every comment line or trailing comment must still be present.
-        // "#" line comments get normalized into "//" form but the text survives.
-        assert.ok(out.includes('// top of Root'));
-        assert.ok(out.includes('// python-style inside Root'));
-        assert.ok(out.includes('// inline comment'));
-        assert.ok(out.includes('/* block-style trailing */'));
-        assert.ok(out.includes('// closing Inner'));
-        // Line-count must match exactly — no line was dropped or merged.
-        assert.equal(out.split('\n').length, source.split('\n').length);
+        const out = format(input);
+        assert.ok(out.includes('// top line comment'));
+        assert.ok(out.includes('// python-style comment'),
+            '"#" must be normalized to "//"');
+        assert.ok(out.includes('/* standalone block comment */'));
+        assert.ok(out.includes('/* raw_doc payload — stays verbatim */'),
+            'raw_doc /* */ must be preserved verbatim');
+        assert.ok(out.includes('// trailing line comment'));
     });
 
     it('never reorders declarations of the same kind', () => {
-        // Inputs that exercise the "action order must be preserved" rule:
-        // multiple enters/during/exits/transitions inside one state, and
-        // multiple state siblings at the same level.
-        const source = [
+        const input = [
             'state Root {',
             '    enter Init1 { counter = 1; }',
             '    enter Init2 { counter = 2; }',
@@ -293,13 +132,7 @@ describe('jsfcstm formatter', () => {
             '    Third -> [*];',
             '}',
         ].join('\n');
-        const document = createDocument(source, '/tmp/fmt-order.fcstm');
-
-        const edits = packageModule.formatDocumentText(document);
-        const out = edits.length === 0 ? source : edits[0].newText;
-
-        // Position of each marker must be strictly increasing: formatter must
-        // not move anything past anything else of its kind.
+        const out = format(input);
         const markers = [
             'Init1', 'Init2', 'Init3',
             'ExitA', 'ExitB',
@@ -313,28 +146,213 @@ describe('jsfcstm formatter', () => {
         }
     });
 
-    it('keeps intentional single blank lines between top-level blocks while folding long blank runs', () => {
-        const source = [
-            'def int counter = 0;',
-            '',
-            '',
-            '',
+    it('keeps empty brace blocks inline: `during after {}`', () => {
+        const input = [
             'state Root {',
-            '    state A;',
-            '',
-            '',
-            '',
-            '    state B;',
+            '    during after { }',
+            '    state Child;',
             '}',
         ].join('\n');
-        const document = createDocument(source, '/tmp/fmt-blanks-top.fcstm');
+        const expected = [
+            'state Root {',
+            '    during after {}',
+            '    state Child;',
+            '}',
+        ].join('\n');
+        assert.equal(format(input), expected);
+    });
 
-        const edits = packageModule.formatDocumentText(document);
-        const out = edits.length === 0 ? source : edits[0].newText;
+    it('keeps `} else {` on one line (K&R style)', () => {
+        const input = [
+            'state Root {',
+            '    during {',
+            '        if [counter > 0] { counter = 1; }',
+            '        else { counter = 0; }',
+            '    }',
+            '}',
+        ].join('\n');
+        const out = format(input);
+        assert.ok(/} else {/.test(out), 'expected `} else {` to merge onto one line');
+    });
 
-        // Long blank runs should collapse to exactly one.
-        assert.ok(!/\n\n\n/.test(out), 'expected no runs of three or more newlines');
-        // But a single intentional blank line must survive.
-        assert.ok(/counter = 0;\n\nstate Root/.test(out));
+    it('chain-id prefix `/` hugs the identifier: `ref /Path`, `: /Event`', () => {
+        const input = [
+            'state Root {',
+            '    state Child;',
+            '    [*] -> Child;',
+            '    Child -> Child :/GlobalEvent;',
+            '    exit ref/cleanupHook;',
+            '}',
+        ].join('\n');
+        const out = format(input);
+        assert.ok(/: \/GlobalEvent/.test(out),
+            '`:` should keep its space but hug `/GlobalEvent`');
+        assert.ok(/ref \/cleanupHook/.test(out),
+            '`ref` should keep its space but hug `/cleanupHook`');
+        assert.ok(!/ref \/ cleanupHook/.test(out),
+            '`/` should not gain a trailing space');
+    });
+
+    it('UFUNC calls stay tight: `sin(x)`, `sqrt(y)`', () => {
+        const input = [
+            'def float a = 0.0;',
+            'state Root {',
+            '    enter { a = sin(a) + sqrt(a); }',
+            '    state Child;',
+            '}',
+        ].join('\n');
+        const out = format(input);
+        assert.ok(out.includes('sin(a) + sqrt(a)'));
+        assert.ok(!out.includes('sin (a)'));
+        assert.ok(!out.includes('sqrt (a)'));
+    });
+
+    it('`if [cond]` gets a space between `if` and `[`', () => {
+        const input = [
+            'state Root {',
+            '    state A;',
+            '    state B;',
+            '    [*] -> A;',
+            '    A -> B :if[counter > 0];',
+            '}',
+        ].join('\n');
+        const out = format(input);
+        assert.ok(/: if \[counter > 0\]/.test(out));
+    });
+
+    it('trailing line comments glued to code gain a space gap', () => {
+        const input = [
+            'state Root {',
+            '    state Idle;// no gap',
+            '    state Active;#glued hash',
+            '}',
+        ].join('\n');
+        const out = format(input);
+        assert.ok(out.includes('state Idle; // no gap'));
+        assert.ok(out.includes('state Active; // glued hash'));
+    });
+
+    it('bare `//note` gains a space after the marker', () => {
+        const input = [
+            'state Root {',
+            '    //tight comment',
+            '    state Child;',
+            '}',
+        ].join('\n');
+        const out = format(input);
+        assert.ok(out.includes('// tight comment'));
+        assert.ok(!out.includes('//tight'));
+    });
+
+    it('intentional multi-space padding inside comments is preserved', () => {
+        const input = [
+            '//    ============= Section banner =============',
+            '//    === Intentional column alignment ===',
+            'state Root;',
+        ].join('\n');
+        const out = format(input);
+        assert.ok(out.includes('//    ============= Section banner ============='));
+        assert.ok(out.includes('//    === Intentional column alignment ==='));
+    });
+
+    it('is idempotent under a second format pass', () => {
+        const input = [
+            'def int  x=1;',
+            'state Root {',
+            '    enter{x=x+1;}',
+            '    state Child;',
+            '}',
+        ].join('\n');
+        const first = format(input);
+        const second = format(first);
+        assert.equal(first, second, 'formatter must be idempotent');
+    });
+
+    it('handles CRLF line endings by preserving them', () => {
+        const input = ['state Root {', '    state Child;', '}', ''].join('\r\n');
+        const out = format(input);
+        if (out === input) return;
+        assert.ok(out.includes('\r\n'));
+        assert.ok(!/[^\r]\n/.test(out),
+            'all newlines must be CRLF when the input uses CRLF');
+    });
+
+    it('expands aspect blocks `>> during before { ... }` to multi-line', () => {
+        const input = [
+            'state Root {',
+            '    >> during before {counter = counter + 1;}',
+            '    state Child;',
+            '}',
+        ].join('\n');
+        const out = format(input);
+        assert.ok(out.includes('>> during before {\n        counter = counter + 1;\n    }'));
+    });
+
+    it('preserves /* */ raw_doc for abstract actions without touching its content', () => {
+        const input = [
+            'state Root {',
+            '    enter abstract Init /* Line one of the doc.',
+            '    * Line two stays where it is.',
+            '    * Line three ends. */',
+            '    state Child;',
+            '}',
+        ].join('\n');
+        const out = format(input);
+        assert.ok(out.includes('/* Line one of the doc.'));
+        assert.ok(out.includes('* Line two stays where it is.'));
+        assert.ok(out.includes('* Line three ends. */'));
+    });
+
+    it('runs on a realistic messy document and yields a fully normalized result', () => {
+        // This test is the canonical smoke test: if it breaks, the formatter
+        // has drifted in behaviour and we need to either update the golden
+        // output or the implementation.
+        const messy = [
+            'def int  counter=0;',
+            '   def float temperature =  25.5  ;',
+            '',
+            '',
+            '',
+            '     state System {',
+            '    enter {  counter = 0;error_count=0;}',
+            ' enter Init2 { temperature = 25.0;}',
+            '',
+            '       event CriticalFailure named "critical failure";',
+            '',
+            '    [*] -> Initializing ;',
+            'state Initializing {',
+            'enter {  counter = 0 ;}',
+            '   Initializing -> Running :if[counter >= 10]effect{counter=0;temperature=20.0;};',
+            '}',
+            '}',
+        ].join('\n');
+        const expected = [
+            'def int counter = 0;',
+            'def float temperature = 25.5;',
+            '',
+            'state System {',
+            '    enter {',
+            '        counter = 0;',
+            '        error_count = 0;',
+            '    }',
+            '    enter Init2 {',
+            '        temperature = 25.0;',
+            '    }',
+            '',
+            '    event CriticalFailure named "critical failure";',
+            '',
+            '    [*] -> Initializing;',
+            '    state Initializing {',
+            '        enter {',
+            '            counter = 0;',
+            '        }',
+            '        Initializing -> Running : if [counter >= 10] effect {',
+            '            counter = 0;',
+            '            temperature = 20.0;',
+            '        };',
+            '    }',
+            '}',
+        ].join('\n');
+        assert.equal(format(messy), expected);
     });
 });

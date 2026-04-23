@@ -9,7 +9,7 @@ import {renderSvg, type RenderedSvg} from '../render/svg';
 import type {PaletteId, PaletteMode} from '../render/palette';
 import {getElk} from '../composables/useElk';
 import {decidePreviewPointerAction, PREVIEW_DRAG_THRESHOLD_PX} from '../interaction';
-import type {PreviewWebviewState, SelectionRef, TextRange} from '../types';
+import type {PreviewWebviewState, SelectionRef, TextRange, PreviewElkNode, PreviewPayload} from '../types';
 
 const props = defineProps<{
     state: PreviewWebviewState;
@@ -37,6 +37,17 @@ let layoutToken = 0;
 const viewTransform = {tx: 0, ty: 0, scale: 1};
 let dragState: null | {startX: number; startY: number; tx: number; ty: number} = null;
 let dragMovedPx = 0;
+
+// Cache the last successful layout so palette / mode changes can
+// re-render without asking ELK to lay the graph out again. ELK's
+// ``layout()`` mutates its input — running it twice on the same
+// object (e.g. the live ``payload.graph``) accumulates edge sections
+// and can corrupt state, which is what caused palette / mode flips
+// to first freeze the webview and eventually drag VSCode down when
+// users toggled them repeatedly.
+let lastLaidOut: PreviewElkNode | null = null;
+let lastLaidOutOptions: PreviewPayload['options'] | null = null;
+let lastLaidOutSourceRef: unknown = null;
 
 function setTransform(tx: number, ty: number, scale: number) {
     const next = Math.max(0.1, Math.min(8, scale));
@@ -77,6 +88,25 @@ function zoomAtCenter(factor: number) {
     setTransform(cx - worldX * ns, cy - worldY * ns, ns);
 }
 
+function rerenderFromCache() {
+    if (!lastLaidOut || !lastLaidOutOptions) return;
+    const result: RenderedSvg = renderSvg(lastLaidOut, lastLaidOutOptions, {
+        palette: props.palette,
+        mode: props.mode,
+    });
+    svgString = result.svg;
+    svgBounds.value = {width: result.width, height: result.height};
+    if (innerRef.value) {
+        innerRef.value.innerHTML = result.svg;
+    }
+    isEmpty.value = false;
+    // Re-apply overlays on the new DOM without blowing away the
+    // existing pan / zoom.
+    void nextTick().then(() => {
+        applySelection();
+    });
+}
+
 async function relayout() {
     const token = ++layoutToken;
     const payload = props.state.payload;
@@ -84,11 +114,30 @@ async function relayout() {
         isEmpty.value = true;
         emptyTitle.value = props.state.emptyTitle || 'FCSTM Preview';
         emptyMessage.value = props.state.emptyMessage || 'No diagram available.';
+        lastLaidOut = null;
+        lastLaidOutOptions = null;
+        lastLaidOutSourceRef = null;
+        return;
+    }
+    // Short-circuit: if the payload reference hasn't changed since the
+    // last successful layout, just re-render with the cached geometry.
+    // This is what lets palette / mode / collapse toggles feel instant
+    // and — crucially — keeps us from feeding ELK a graph it has
+    // already mutated.
+    if (lastLaidOut && lastLaidOutSourceRef === payload.graph) {
+        lastLaidOutOptions = payload.options;
+        rerenderFromCache();
         return;
     }
     try {
-        const laid = await getElk().layout(payload.graph);
+        // ELK mutates its input; deep-clone so repeated runs on the
+        // same payload.graph can't poison each other.
+        const graphCopy = JSON.parse(JSON.stringify(payload.graph));
+        const laid = await getElk().layout(graphCopy) as PreviewElkNode;
         if (token !== layoutToken) return;
+        lastLaidOut = laid;
+        lastLaidOutOptions = payload.options;
+        lastLaidOutSourceRef = payload.graph;
         const result: RenderedSvg = renderSvg(laid, payload.options, {
             palette: props.palette,
             mode: props.mode,
@@ -329,17 +378,21 @@ onUnmounted(() => {
     window.removeEventListener('resize', onFitEvt);
 });
 
+// Payload reference change → re-layout (different graph geometry).
 watch(() => props.state.payload, () => {
     void relayout();
 });
-watch(() => props.state.collapsedStateIds, () => {
-    void relayout();
-});
-// Palette / mode changes re-skin the existing graph; re-layout is not
-// needed since ELK geometry is palette-agnostic, but re-rendering the
-// SVG with new colours is.
+// Collapsed-state changes ship as a new payload from the extension, so
+// the payload watch above already covers them. We keep a no-op watch
+// here only to ensure the webview never tries to re-lay out on its
+// own while the extension is still rebuilding.
+watch(() => props.state.collapsedStateIds, () => { /* no-op */ });
+// Palette / mode changes only re-skin the already-laid-out graph.
+// Running elk.layout() again on the same payload is both unnecessary
+// (ELK geometry is palette-agnostic) and actively harmful (ELK mutates
+// its input, so repeated runs accumulate state).
 watch(() => [props.palette, props.mode], () => {
-    void relayout();
+    rerenderFromCache();
 });
 watch(() => props.selection, () => {
     applySelection();

@@ -126,8 +126,29 @@ onMounted(() => {
     }
     syncBodyClasses();
     if (typeof MutationObserver !== 'undefined') {
-        themeObserver = new MutationObserver(() => syncBodyClasses());
-        themeObserver.observe(document.body, {attributes: true, attributeFilter: ['class']});
+        // Only react to VSCode-owned theme class flips (vscode-dark /
+        // vscode-high-contrast). Reacting to *any* body-class change
+        // created a feedback loop with our own fcstm-palette-* /
+        // fcstm-mode-* writes, which pinned the CPU at 100% and
+        // eventually took VSCode down when the user toggled Palette /
+        // Mode a few times.
+        const isDark = (cls: string) => /\bvscode-dark\b|\bvscode-high-contrast\b/.test(cls);
+        themeObserver = new MutationObserver((mutations) => {
+            for (const m of mutations) {
+                if (m.type !== 'attributes' || m.attributeName !== 'class') continue;
+                const prev = (m.oldValue as string | null) || '';
+                const cur = document.body.className;
+                if (isDark(prev) !== isDark(cur)) {
+                    syncBodyClasses();
+                    return;
+                }
+            }
+        });
+        themeObserver.observe(document.body, {
+            attributes: true,
+            attributeFilter: ['class'],
+            attributeOldValue: true,
+        });
     }
 });
 

@@ -260,6 +260,19 @@ check(
     webviewSrc.includes('data-fcstm-palette') &&
     webviewSrc.includes('data-fcstm-mode')
 );
+check(
+    'palette / mode changes never trigger a fresh elk.layout (would mutate the graph and hang the webview)',
+    webviewSrc.includes('rerenderFromCache') &&
+    !/palette\s*,\s*mode[\s\S]{0,400}getElk\s*\(\s*\)\s*\.layout/.test(webviewSrc) &&
+    !/palette\s*,\s*mode[\s\S]{0,400}relayout\s*\(/.test(webviewSrc)
+);
+check(
+    'layout path deep-clones the payload graph so repeated ELK runs do not accumulate mutation state',
+    webviewSrc.includes('JSON.parse(JSON.stringify') &&
+    /JSON\.parse\(JSON\.stringify\([^)]{0,40}payload\.graph/.test(webviewSrc) ||
+    // esbuild may inline locals; accept the plain deep-clone pattern
+    /let\s+\w+=JSON\.parse\(JSON\.stringify\(/.test(webviewSrc)
+);
 
 const passed = checkpoints.filter(c => c.ok).length;
 const failed = checkpoints.length - passed;

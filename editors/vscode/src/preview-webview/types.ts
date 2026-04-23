@@ -5,12 +5,6 @@
 
 export type PreviewLayoutMode = 'side' | 'alone';
 
-export interface PreviewDiagnosticView {
-    severity: string;
-    message: string;
-    location: string;
-}
-
 export interface PreviewSummaryEntry {
     label: string;
     value: number;
@@ -181,9 +175,6 @@ export interface PreviewWebviewState {
     summary: PreviewSummaryEntry[];
     variables: string[];
     sharedEvents: PreviewSharedEventView[];
-    diagnostics: PreviewDiagnosticView[];
-    status: 'ok' | 'warning' | 'error';
-    statusText: string;
 }
 
 export type SelectionRef =

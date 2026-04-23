@@ -5,7 +5,6 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import {
     buildFcstmDiagramWebviewPayload,
-    collectDocumentDiagnostics,
     getWorkspaceGraph,
     resolveFcstmDiagramPreviewOptions,
     type FcstmDiagramPreviewOptions,
@@ -14,12 +13,6 @@ import {
 } from '@pyfcstm/jsfcstm';
 
 type PreviewLayoutMode = 'side' | 'alone';
-
-interface PreviewDiagnosticView {
-    severity: string;
-    message: string;
-    location: string;
-}
 
 interface PreviewSummaryEntry {
     label: string;
@@ -53,9 +46,6 @@ interface PreviewWebviewState {
     variables: string[];
     sharedEvents: PreviewSharedEventView[];
     effectNotes: PreviewEffectNoteView[];
-    diagnostics: PreviewDiagnosticView[];
-    status: 'ok' | 'warning' | 'error';
-    statusText: string;
 }
 
 function loadElkBrowserBundle(): string {
@@ -141,18 +131,6 @@ function toScriptLiteral<T>(value: T): string {
 
 function escapeInlineScript(value: string): string {
     return value.replace(/<\/script/gi, '<\\/script');
-}
-
-function buildDiagnosticView(
-    diagnostic: Awaited<ReturnType<typeof collectDocumentDiagnostics>>[number]
-): PreviewDiagnosticView {
-    const line = diagnostic.range.start.line + 1;
-    const column = diagnostic.range.start.character + 1;
-    return {
-        severity: diagnostic.severity,
-        message: diagnostic.message,
-        location: `L${line}:C${column}`,
-    };
 }
 
 function buildSummaryEntries(payload: FcstmDiagramWebviewPayload | null): PreviewSummaryEntry[] {
@@ -437,9 +415,6 @@ export class FcstmPreviewController implements vscode.Disposable {
             variables: [],
             sharedEvents: [],
             effectNotes: [],
-            diagnostics: [],
-            status: 'ok',
-            statusText: 'Loading preview',
         };
         this.panel.webview.html = createPreviewHtml(
             this.panel.webview,
@@ -635,21 +610,9 @@ export class FcstmPreviewController implements vscode.Disposable {
         let state: PreviewWebviewState;
         try {
             const previewOptions = resolveFcstmDiagramPreviewOptions(this.previewOptions);
-            const [payload, diagnostics] = await Promise.all([
-                buildFcstmDiagramWebviewPayload(document, this.previewOptions, {
-                    collapsedStateIds: this.collapsedStateIds,
-                }),
-                collectDocumentDiagnostics(document),
-            ]);
-            const diagnosticViews = diagnostics.map(buildDiagnosticView);
-            const errorCount = diagnosticViews.filter(d => d.severity === 'error').length;
-            const warningCount = diagnosticViews.length - errorCount;
-            const status = errorCount > 0 ? 'error' : warningCount > 0 ? 'warning' : 'ok';
-            const statusText = errorCount > 0
-                ? `${errorCount} error${errorCount === 1 ? '' : 's'}`
-                : warningCount > 0
-                    ? `${warningCount} warning${warningCount === 1 ? '' : 's'}`
-                    : 'Live preview';
+            const payload = await buildFcstmDiagramWebviewPayload(document, this.previewOptions, {
+                collapsedStateIds: this.collapsedStateIds,
+            });
             const title = basenameForDocument(document);
 
             state = {
@@ -660,14 +623,11 @@ export class FcstmPreviewController implements vscode.Disposable {
                 previewOptions,
                 collapsedStateIds: Array.from(this.collapsedStateIds),
                 emptyTitle: title,
-                emptyMessage: diagnostics.length > 0 ? diagnostics[0].message : 'No diagram available.',
+                emptyMessage: 'No diagram available.',
                 summary: buildSummaryEntries(payload),
                 variables: buildVariables(payload, previewOptions),
                 sharedEvents: buildSharedEvents(payload, previewOptions),
                 effectNotes: buildEffectNotes(payload),
-                diagnostics: diagnosticViews,
-                status,
-                statusText,
             };
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
@@ -683,9 +643,6 @@ export class FcstmPreviewController implements vscode.Disposable {
                 variables: [],
                 sharedEvents: [],
                 effectNotes: [],
-                diagnostics: [{severity: 'error', message, location: 'preview'}],
-                status: 'error',
-                statusText: 'Preview failed',
             };
         }
 

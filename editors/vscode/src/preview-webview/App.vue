@@ -8,7 +8,6 @@ import OptionsBar from './components/OptionsBar.vue';
 import Stage from './components/Stage.vue';
 import DetailsPanel from './components/DetailsPanel.vue';
 import BottomPanels from './components/BottomPanels.vue';
-import DiagnosticsCard from './components/DiagnosticsCard.vue';
 import {bridge} from './composables/useBridge';
 import type {
     PreviewWebviewState, SelectionRef, PreviewResolvedOptions,
@@ -56,9 +55,6 @@ const initialState: PreviewWebviewState = (window as unknown as {
     summary: [],
     variables: [],
     sharedEvents: [],
-    diagnostics: [],
-    status: 'ok',
-    statusText: 'Loading preview',
 });
 
 const state = ref<PreviewWebviewState>(initialState);
@@ -338,7 +334,6 @@ const naiveTheme = computed(() => effectiveMode.value === 'dark' ? darkTheme : n
                     @reveal-source="revealSource"
                     @select="(sel: SelectionRef) => (selection = sel)"
                 />
-                <DiagnosticsCard :diagnostics="state.diagnostics" />
                 <BottomPanels
                     :variables="state.variables"
                     :shared-events="state.sharedEvents"

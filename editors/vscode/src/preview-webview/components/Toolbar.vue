@@ -1,22 +1,11 @@
 <script setup lang="ts">
-import {computed} from 'vue';
-import {NTag} from 'naive-ui';
 import type {PreviewWebviewState} from '../types';
 
-const props = defineProps<{state: PreviewWebviewState}>();
-
-const statusType = computed(() => {
-    if (props.state.status === 'error') return 'error';
-    if (props.state.status === 'warning') return 'warning';
-    return 'info';
-});
+defineProps<{state: PreviewWebviewState}>();
 </script>
 
 <template>
     <div class="fcstm-toolbar">
-        <n-tag :type="statusType" round size="small" :bordered="false">
-            {{ state.statusText }}
-        </n-tag>
         <div class="fcstm-toolbar__summary">
             <span
                 v-for="entry in state.summary"

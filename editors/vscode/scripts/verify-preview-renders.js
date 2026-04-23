@@ -289,7 +289,12 @@ async function main() {
                 // title (set by the extension panel) is now the source of
                 // truth, and the status chip carries the live-preview
                 // signal. We expose both so the assertion can check either.
-                const statusChip = document.querySelector('.fcstm-toolbar .n-tag');
+                // The preview toolbar no longer carries a diagnostics status
+                // pill; diagnostics now live exclusively in the VSCode
+                // Problems panel via LSP. The toolbar still ships a summary
+                // strip, which is what we assert below.
+                const toolbar = document.querySelector('.fcstm-toolbar');
+                const summaryChips = document.querySelectorAll('.fcstm-toolbar__summary-chip');
                 const svgEl = document.querySelector('.fcstm-stage__inner svg');
                 const detailsHint = document.querySelector('.fcstm-details__hint');
                 return JSON.stringify({
@@ -301,7 +306,8 @@ async function main() {
                     svgPresent: !!svgEl,
                     svgChildren: svgEl ? svgEl.querySelectorAll(':scope > *').length : 0,
                     detailsHint: detailsHint ? detailsHint.textContent.slice(0, 200) : '',
-                    title: statusChip ? statusChip.textContent.trim() : '',
+                    toolbarPresent: Boolean(toolbar),
+                    summaryChips: summaryChips.length,
                 });
             })()`,
             returnByValue: true,
@@ -335,8 +341,8 @@ async function main() {
             'svgChildren=' + state.svgChildren);
         record('stage-empty panel is absent when preview is ready', state.stageEmpty.present === false,
             'stageEmpty=' + JSON.stringify(state.stageEmpty));
-        record('toolbar status chip is rendered', state.title && state.title.length > 0,
-            'status=' + JSON.stringify(state.title));
+        record('preview toolbar renders with a summary strip', Boolean(state.toolbarPresent) && state.summaryChips > 0,
+            'toolbarPresent=' + JSON.stringify(state.toolbarPresent) + ' summaryChips=' + state.summaryChips);
 
         const passed = checks.filter(c => c.ok).length;
         const failed = checks.length - passed;

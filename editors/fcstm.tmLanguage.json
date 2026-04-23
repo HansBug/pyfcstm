@@ -94,6 +94,44 @@
           }
         },
         {
+          "name": "meta.definition.import.block.fcstm",
+          "begin": "\\b(import)\\s+((?:\"[^\"]*\"|'[^']*'))\\s+(as)\\s+([a-zA-Z_][a-zA-Z0-9_]*)(?:\\s+(named)\\s+((?:\"[^\"]*\"|'[^']*')))?\\s*(\\{)",
+          "beginCaptures": {
+            "1": {
+              "name": "keyword.control.fcstm"
+            },
+            "2": {
+              "name": "string.quoted.double.fcstm"
+            },
+            "3": {
+              "name": "keyword.control.fcstm"
+            },
+            "4": {
+              "name": "entity.name.type.state.fcstm"
+            },
+            "5": {
+              "name": "keyword.control.fcstm"
+            },
+            "6": {
+              "name": "string.quoted.double.fcstm"
+            },
+            "7": {
+              "name": "punctuation.section.mapping.fcstm"
+            }
+          },
+          "end": "\\}",
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.section.mapping.fcstm"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#import-body"
+            }
+          ]
+        },
+        {
           "name": "meta.definition.import.fcstm",
           "match": "\\b(import)\\s+((?:\"[^\"]*\"|'[^']*'))\\s+(as)\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\b(?:\\s+(named)\\s+((?:\"[^\"]*\"|'[^']*')))?",
           "captures": {
@@ -270,6 +308,87 @@
         {
           "name": "variable.other.fcstm",
           "match": "\\b[a-zA-Z_][a-zA-Z0-9_]*\\b"
+        }
+      ]
+    },
+    "import-body": {
+      "patterns": [
+        {
+          "include": "#comments"
+        },
+        {
+          "include": "#strings"
+        },
+        {
+          "name": "keyword.control.fcstm",
+          "match": "\\b(def|event|named)\\b"
+        },
+        {
+          "name": "keyword.operator.transition.fcstm",
+          "match": "->"
+        },
+        {
+          "name": "variable.parameter.fcstm",
+          "match": "\\$\\{[0-9]+\\}|\\$[0-9]+"
+        },
+        {
+          "name": "variable.parameter.fcstm",
+          "match": "\\b[A-Za-z_][A-Za-z0-9_]*(?:\\$\\{[0-9]+\\}|\\$[0-9]+|\\*)[A-Za-z0-9_*${}]*"
+        },
+        {
+          "name": "variable.parameter.fcstm",
+          "match": "\\*[A-Za-z0-9_${}][A-Za-z0-9_*${}]*"
+        },
+        {
+          "name": "keyword.operator.wildcard.fcstm",
+          "match": "\\*"
+        },
+        {
+          "name": "keyword.operator.path.fcstm",
+          "match": "/"
+        },
+        {
+          "name": "punctuation.separator.mapping.fcstm",
+          "match": ","
+        },
+        {
+          "include": "#import-selector-set"
+        },
+        {
+          "name": "variable.other.fcstm",
+          "match": "\\b[a-zA-Z_][a-zA-Z0-9_]*\\b"
+        }
+      ]
+    },
+    "import-selector-set": {
+      "patterns": [
+        {
+          "name": "meta.import.selector-set.fcstm",
+          "begin": "\\{",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.section.mapping.fcstm"
+            }
+          },
+          "end": "\\}",
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.section.mapping.fcstm"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#comments"
+            },
+            {
+              "name": "punctuation.separator.mapping.fcstm",
+              "match": ","
+            },
+            {
+              "name": "variable.other.fcstm",
+              "match": "\\b[a-zA-Z_][a-zA-Z0-9_]*\\b"
+            }
+          ]
         }
       ]
     }

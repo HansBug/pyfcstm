@@ -125,6 +125,65 @@ describe('jsfcstm formatter', () => {
         assert.equal(edits.length, 0);
     });
 
+    it('gaps a trailing comment when it is glued to code on the same line', () => {
+        const source = [
+            'state Root {',
+            '    state Idle;// no gap before the marker',
+            '    state Active;#glued hash comment',
+            '}',
+        ].join('\n');
+        const document = createDocument(source, '/tmp/fmt-trailing-gap.fcstm');
+
+        const edits = packageModule.formatDocumentText(document);
+        assert.equal(edits.length, 1);
+        const out = edits[0].newText;
+        assert.ok(out.includes('state Idle; // no gap before the marker'));
+        assert.ok(out.includes('state Active; // glued hash comment'));
+    });
+
+    it('adds a space after a standalone "//" marker that has no gap', () => {
+        const source = [
+            'state Root {',
+            '    //tight line comment',
+            '    state Child;',
+            '}',
+        ].join('\n');
+        const document = createDocument(source, '/tmp/fmt-slash-gap.fcstm');
+
+        const edits = packageModule.formatDocumentText(document);
+        assert.equal(edits.length, 1);
+        const out = edits[0].newText;
+        assert.ok(out.includes('// tight line comment'));
+        assert.ok(!out.includes('//tight'));
+    });
+
+    it('preserves intentional multi-space padding inside already-gapped comments', () => {
+        // The formatter must not collapse existing spaces, which would
+        // clobber ASCII alignment and section banners.
+        const source = [
+            '//    === Section ===',
+            'state Root;',
+        ].join('\n');
+        const document = createDocument(source, '/tmp/fmt-keep-padding.fcstm');
+
+        const edits = packageModule.formatDocumentText(document);
+        // Already well formed: content unchanged, no edits expected.
+        assert.equal(edits.length, 0);
+    });
+
+    it('does not insert a leading space for comments that are standalone on their line', () => {
+        const source = [
+            'state Root {',
+            '    // already well spaced',
+            '    state Child;',
+            '}',
+        ].join('\n');
+        const document = createDocument(source, '/tmp/fmt-standalone-ok.fcstm');
+
+        const edits = packageModule.formatDocumentText(document);
+        assert.equal(edits.length, 0);
+    });
+
     it('is idempotent under a second format pass', () => {
         const source = [
             'state Root {',

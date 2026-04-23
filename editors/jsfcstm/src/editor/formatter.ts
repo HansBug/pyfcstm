@@ -40,12 +40,14 @@ interface ScanResult {
     /** ``true`` while the scanner is still inside an unterminated ``/* *\/`` block. */
     inBlockComment: boolean;
     /**
-     * Character offset of the first real ``#`` line-comment marker on this
-     * line, or -1 if this line does not start a ``#`` line comment outside
-     * of strings and block comments. Used by the formatter to normalize
-     * Python-style line comments into ``//`` form.
+     * Character offset of the first real line-comment marker on this line,
+     * or -1 if this line has no line comment outside strings / block
+     * comments. Used by the formatter to normalize the marker glyph and to
+     * tidy spacing around it.
      */
-    hashCommentAt: number;
+    lineCommentAt: number;
+    /** Which marker kind was found at ``lineCommentAt``. */
+    lineCommentKind: 'slash' | 'hash' | null;
 }
 
 /**
@@ -61,7 +63,8 @@ function scanLine(
     let indentBefore = 0;
     let inBlockComment = inBlockCommentIn;
     let inString: '"' | '\'' | null = null;
-    let hashCommentAt = -1;
+    let lineCommentAt = -1;
+    let lineCommentKind: 'slash' | 'hash' | null = null;
 
     const trimmed = line.trim();
     const isBlank = trimmed.length === 0;
@@ -96,10 +99,13 @@ function scanLine(
             continue;
         }
         if (char === '/' && next === '/') {
+            lineCommentAt = i;
+            lineCommentKind = 'slash';
             break;
         }
         if (char === '#') {
-            hashCommentAt = i;
+            lineCommentAt = i;
+            lineCommentKind = 'hash';
             break;
         }
         if (char === '"' || char === '\'') {
@@ -117,28 +123,65 @@ function scanLine(
         }
     }
 
-    return {indentBefore, indentAfter, isBlank, inBlockComment, hashCommentAt};
+    return {
+        indentBefore,
+        indentAfter,
+        isBlank,
+        inBlockComment,
+        lineCommentAt,
+        lineCommentKind,
+    };
 }
 
 /**
- * Rewrite a line so that a Python-style ``#`` line comment becomes the
- * canonical ``//`` form. ``//`` is chosen because FCSTM is otherwise a
- * C-family language (braces, semicolons, ``::``/``:``/``->``), and VSCode's
- * line-comment toggle inserts ``//`` as well, so the muscle memory lines up.
+ * Tidy a single FCSTM line-comment occurrence without dropping the comment.
  *
- * A single space is inserted after the ``//`` marker when the original
- * ``#`` had no space, so ``#note`` becomes ``// note``. Lines inside
- * strings or multiline ``/* *\/`` regions (which FCSTM treats as semantic
- * ``raw_doc`` payload, NOT as discardable comments) are never touched.
+ * Three independent rewrites apply:
+ *
+ * 1. Marker normalization — ``#`` is converted to ``//`` so the file stays
+ *    in one comment dialect. ``//`` is picked because FCSTM is a C-family
+ *    syntax (``{ }``, ``;``, ``->``, ``::``, ``:``) and the VSCode
+ *    language-configuration already declares ``//`` as the canonical
+ *    ``lineComment`` token.
+ * 2. Pre-marker gap — if the comment is a trailing comment glued directly
+ *    to the preceding code (``foo;// bar``), a single space is inserted
+ *    so it reads as ``foo; // bar``. Standalone comment lines (pure
+ *    whitespace before the marker) are not affected.
+ * 3. Post-marker gap — if the comment has content but no space after the
+ *    marker (``//note``), a single space is inserted so it becomes
+ *    ``// note``. Existing spacing is NOT collapsed, so intentional
+ *    column alignment (``//    === section ===``) survives.
+ *
+ * ``/* *\/`` content is never touched — the FCSTM lexer treats multiline
+ * comment bodies as the ``raw_doc`` payload of ``abstract`` actions and
+ * feeds them straight to downstream code generators.
  */
-function normalizeHashComment(line: string, hashCommentAt: number): string {
-    if (hashCommentAt < 0) {
+function normalizeLineComment(
+    line: string,
+    lineCommentAt: number,
+    lineCommentKind: 'slash' | 'hash' | null
+): string {
+    if (lineCommentAt < 0 || lineCommentKind === null) {
         return line;
     }
-    const before = line.slice(0, hashCommentAt);
-    const after = line.slice(hashCommentAt + 1);
-    const needsSpace = after.length > 0 && after[0] !== ' ' && after[0] !== '\t';
-    return `${before}//${needsSpace ? ' ' : ''}${after}`;
+    const before = line.slice(0, lineCommentAt);
+    const markerRawLength = lineCommentKind === 'slash' ? 2 : 1;
+    const after = line.slice(lineCommentAt + markerRawLength);
+
+    const normalizedMarker = '//';
+    const needsLeadingSpace = before.length > 0
+        && !/[\t ]$/.test(before);
+    const needsTrailingSpace = after.length > 0
+        && after[0] !== ' '
+        && after[0] !== '\t';
+
+    return (
+        before
+        + (needsLeadingSpace ? ' ' : '')
+        + normalizedMarker
+        + (needsTrailingSpace ? ' ' : '')
+        + after
+    );
 }
 
 function detectLineEnding(text: string): string {
@@ -188,7 +231,11 @@ export function formatDocumentText(
 
     for (const rawLineOriginal of rawLines) {
         const scan = scanLine(rawLineOriginal, inBlockComment);
-        const rawLine = normalizeHashComment(rawLineOriginal, scan.hashCommentAt);
+        const rawLine = normalizeLineComment(
+            rawLineOriginal,
+            scan.lineCommentAt,
+            scan.lineCommentKind
+        );
         const stripped = rawLine.replace(/[\t ]+$/g, '').trim();
 
         if (scan.isBlank) {

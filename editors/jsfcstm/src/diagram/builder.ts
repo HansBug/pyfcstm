@@ -386,6 +386,7 @@ function buildStateNode(
         actions,
         transitions: state.transitions.map(transition => buildTransition(transition, eventColors)),
         children: Object.values(state.substates).map(child => buildStateNode(child, eventColors)),
+        importedFromFile: state.importedFromFile,
     };
 }
 

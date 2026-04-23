@@ -116,6 +116,14 @@ export interface FcstmAstStateDefinition extends FcstmAstNodeBase {
     during_aspects: FcstmAstAction[];
     forceTransitions: FcstmAstForcedTransition[];
     force_transitions: FcstmAstForcedTransition[];
+    /**
+     * Absolute path of the file this state's definition was imported
+     * from, if it came in through an ``import`` statement in another
+     * file. Set only on the root of an imported subtree so descendants
+     * can be traversed to find their nearest import boundary. Absent
+     * for states authored in the same file as their parent.
+     */
+    importedFromFile?: string;
 }
 
 export type FcstmAstStateStatement =

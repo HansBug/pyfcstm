@@ -251,6 +251,12 @@ export class FcstmPreviewController implements vscode.Disposable {
         transitionEffectMode: 'hide',
     };
     private collapsedStateIds = new Set<string>();
+    // Import boundaries already folded into ``collapsedStateIds`` on a
+    // previous build. Tracked separately so we only default-collapse a
+    // given boundary the first time we see it; if the user later
+    // expands it, subsequent refreshes don't re-collapse it behind
+    // their back.
+    private seenImportBoundaryIds = new Set<string>();
     private layoutMode: PreviewLayoutMode = 'side';
 
     constructor(private readonly context: vscode.ExtensionContext) {
@@ -460,14 +466,9 @@ export class FcstmPreviewController implements vscode.Disposable {
                     await this.switchLayoutMode(payload.mode);
                 }
                 return;
-            case 'exportSvg':
-                if (typeof payload.svg === 'string') {
-                    await this.exportSvg(payload.svg);
-                }
-                return;
-            case 'exportPng':
-                if (typeof payload.base64 === 'string') {
-                    await this.exportPng(payload.base64);
+            case 'exportDiagram':
+                if (typeof payload.svg === 'string' && typeof payload.pngBase64 === 'string') {
+                    await this.exportDiagram(payload.svg, payload.pngBase64);
                 }
                 return;
             case 'exportError':
@@ -525,36 +526,37 @@ export class FcstmPreviewController implements vscode.Disposable {
         editor.revealRange(vsRange, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
     }
 
-    private async exportSvg(svg: string): Promise<void> {
+    /**
+     * Unified export: open one save dialog with SVG + PNG filters, then
+     * write whichever format the chosen file extension matches. The
+     * webview sends both renderings up front so there is no second
+     * round-trip after the user picks a format.
+     */
+    private async exportDiagram(svg: string, pngBase64: string): Promise<void> {
         const defaultUri = this.currentDocumentUri
             ? vscode.Uri.file(this.currentDocumentUri.replace(/^file:\/\//, '').replace(/\.fcstm$/i, '.svg'))
             : undefined;
         const uri = await vscode.window.showSaveDialog({
             defaultUri,
-            filters: {'SVG Image': ['svg']},
-            saveLabel: 'Export SVG',
+            filters: {
+                'SVG Image': ['svg'],
+                'PNG Image': ['png'],
+            },
+            saveLabel: 'Export',
         });
         if (!uri) {
             return;
         }
+        const ext = uri.fsPath.toLowerCase().match(/\.(svg|png)$/)?.[1];
+        if (ext === 'png') {
+            await vscode.workspace.fs.writeFile(uri, Buffer.from(pngBase64, 'base64'));
+            await vscode.window.showInformationMessage(`Exported PNG to ${uri.fsPath}`);
+            return;
+        }
+        // Default to SVG — covers the .svg case and any path without a
+        // recognised extension so the user still gets a valid file.
         await vscode.workspace.fs.writeFile(uri, Buffer.from(svg, 'utf8'));
         await vscode.window.showInformationMessage(`Exported SVG to ${uri.fsPath}`);
-    }
-
-    private async exportPng(base64: string): Promise<void> {
-        const defaultUri = this.currentDocumentUri
-            ? vscode.Uri.file(this.currentDocumentUri.replace(/^file:\/\//, '').replace(/\.fcstm$/i, '.png'))
-            : undefined;
-        const uri = await vscode.window.showSaveDialog({
-            defaultUri,
-            filters: {'PNG Image': ['png']},
-            saveLabel: 'Export PNG',
-        });
-        if (!uri) {
-            return;
-        }
-        await vscode.workspace.fs.writeFile(uri, Buffer.from(base64, 'base64'));
-        await vscode.window.showInformationMessage(`Exported PNG to ${uri.fsPath}`);
     }
 
     private async refreshCurrentDocument(): Promise<void> {
@@ -620,9 +622,28 @@ export class FcstmPreviewController implements vscode.Disposable {
         let state: PreviewWebviewState;
         try {
             const previewOptions = resolveFcstmDiagramPreviewOptions(this.previewOptions);
-            const payload = await buildFcstmDiagramWebviewPayload(document, this.previewOptions, {
+            let payload = await buildFcstmDiagramWebviewPayload(document, this.previewOptions, {
                 collapsedStateIds: this.collapsedStateIds,
             });
+            // Import boundaries (states sourced from an imported file)
+            // start collapsed on first sight; once the user manually
+            // toggles one, ``seenImportBoundaryIds`` prevents us from
+            // ever re-adding it to the auto-collapsed set.
+            if (payload) {
+                const newBoundaries: string[] = [];
+                for (const s of payload.states) {
+                    if (!s.importedFromFile) continue;
+                    if (this.seenImportBoundaryIds.has(s.qualifiedName)) continue;
+                    this.seenImportBoundaryIds.add(s.qualifiedName);
+                    this.collapsedStateIds.add(s.qualifiedName);
+                    newBoundaries.push(s.qualifiedName);
+                }
+                if (newBoundaries.length > 0) {
+                    payload = await buildFcstmDiagramWebviewPayload(document, this.previewOptions, {
+                        collapsedStateIds: this.collapsedStateIds,
+                    });
+                }
+            }
             const title = basenameForDocument(document);
 
             state = {

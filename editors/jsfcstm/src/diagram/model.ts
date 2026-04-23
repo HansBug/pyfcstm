@@ -102,6 +102,13 @@ export interface FcstmDiagramState {
     actions: FcstmDiagramAction[];
     transitions: FcstmDiagramTransition[];
     children: FcstmDiagramState[];
+    /**
+     * Absolute path of the file this state was imported from, when it
+     * is the root of an imported subtree. Missing (``undefined``) for
+     * states that live in the same file as their parent. Used by the
+     * preview to default-collapse import boundaries.
+     */
+    importedFromFile?: string;
 }
 
 /**
@@ -316,6 +323,13 @@ export interface FcstmDiagramStateDetail {
     }>;
     transitionIds: string[];
     sourceRange?: TextRange;
+    /**
+     * Absolute path of the import source file — set when this state is
+     * the root of a subtree imported from another file. The preview
+     * uses this to default-collapse import boundaries so deeply nested
+     * imports don't dump every child into view on first load.
+     */
+    importedFromFile?: string;
 }
 
 export interface FcstmDiagramTransitionDetail {

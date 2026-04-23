@@ -221,8 +221,39 @@ function onMessage(ev: MessageEvent) {
 
 let themeObserver: MutationObserver | null = null;
 
+// Global keyboard shortcuts that act on the diagram as a whole.
+// Ctrl/Cmd+C copies PNG, Ctrl/Cmd+Shift+C copies SVG, Ctrl/Cmd+S
+// triggers Export. The listener bails when the user is focused in
+// an input / textarea / contenteditable so native text copy, browser
+// search, etc. keep working in panels like Details.
+function isEditableTarget(t: EventTarget | null): boolean {
+    if (!(t instanceof HTMLElement)) return false;
+    const tag = t.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return true;
+    if (t.isContentEditable) return true;
+    return false;
+}
+function onKeyDown(ev: KeyboardEvent) {
+    const mod = ev.ctrlKey || ev.metaKey;
+    if (!mod) return;
+    if (isEditableTarget(ev.target)) return;
+    const key = ev.key.toLowerCase();
+    if (key === 'c') {
+        const evtName = ev.shiftKey ? 'fcstm-copy-svg' : 'fcstm-copy-png';
+        window.dispatchEvent(new CustomEvent(evtName));
+        ev.preventDefault();
+        return;
+    }
+    if (key === 's' && !ev.shiftKey && !ev.altKey) {
+        window.dispatchEvent(new CustomEvent('fcstm-export'));
+        ev.preventDefault();
+        return;
+    }
+}
+
 onMounted(() => {
     window.addEventListener('message', onMessage);
+    window.addEventListener('keydown', onKeyDown);
     const stored = vscode.getState();
     if (stored) {
         state.value = stored;
@@ -257,6 +288,7 @@ onMounted(() => {
 
 onUnmounted(() => {
     window.removeEventListener('message', onMessage);
+    window.removeEventListener('keydown', onKeyDown);
     themeObserver?.disconnect();
     themeObserver = null;
 });
@@ -284,14 +316,6 @@ function setLayoutMode(mode: 'side' | 'alone') {
     vscode.postMessage({type: 'setLayoutMode', mode});
 }
 
-function exportSvg(svg: string) {
-    vscode.postMessage({type: 'exportSvg', svg});
-}
-
-function exportPng(base64: string) {
-    vscode.postMessage({type: 'exportPng', base64});
-}
-
 function exportError(message: string) {
     vscode.postMessage({type: 'exportError', message});
 }
@@ -307,8 +331,6 @@ const naiveTheme = computed(() => effectiveMode.value === 'dark' ? darkTheme : n
                 <Toolbar
                     :state="state"
                     @set-layout-mode="setLayoutMode"
-                    @export-svg="exportSvg"
-                    @export-png="exportPng"
                     @export-error="exportError"
                 />
                 <OptionsBar

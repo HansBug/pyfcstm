@@ -941,6 +941,8 @@ export class State extends ModelNode {
     isLeafState: boolean;
     isRootState: boolean;
     isStoppable: boolean;
+    importedFromFile?: string;
+    imported_from_file?: string;
     protected parentState?: State;
 
     constructor(raw: RawFcstmModelState) {
@@ -973,6 +975,8 @@ export class State extends ModelNode {
         this.isLeafState = raw.isLeafState;
         this.isRootState = raw.isRootState;
         this.isStoppable = raw.isStoppable;
+        this.importedFromFile = raw.importedFromFile;
+        this.imported_from_file = raw.importedFromFile;
     }
 
     /**
@@ -1375,6 +1379,7 @@ export class State extends ModelNode {
             during_aspects: duringAspects,
             forceTransitions: [],
             force_transitions: [],
+            importedFromFile: this.importedFromFile,
         };
     }
 

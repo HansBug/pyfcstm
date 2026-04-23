@@ -275,6 +275,9 @@ export interface RawFcstmModelState extends RawFcstmModelNodeBase {
     is_root_state: boolean;
     isStoppable: boolean;
     is_stoppable: boolean;
+    /** Source file this state was imported from (import-root only). */
+    importedFromFile?: string;
+    imported_from_file?: string;
 }
 
 export interface RawFcstmModelLookups {

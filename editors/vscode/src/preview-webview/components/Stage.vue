@@ -191,6 +191,12 @@ function applySelection() {
         const kind = el.getAttribute('data-fcstm-kind');
         const id = el.getAttribute('data-fcstm-id');
         if (id !== sel.id) continue;
+        // Chevrons intentionally share the composite's fcstm-id so
+        // the collapse-toggle handler can find the owning state, but
+        // they are not the visual target of a selection — tagging
+        // their own <rect> produces a spurious double-halo at the
+        // top-right corner.
+        if (kind === 'chevron') continue;
         if (sel.kind === 'transition') {
             if (kind === 'transition' || kind === 'transition-label') {
                 el.classList.add('fcstm-selected');
@@ -330,10 +336,6 @@ function onWheel(ev: WheelEvent) {
 // Toolbar → Stage custom events.
 function onFitEvt() { fitToView(); }
 function onActualEvt() { actualSize(); }
-function onExportSvgEvt() {
-    if (!svgString) return;
-    window.dispatchEvent(new CustomEvent('fcstm-emit', {detail: {type: 'exportSvg', payload: svgString}}));
-}
 /**
  * Shared PNG renderer used by both Export (save to disk) and Copy
  * (to clipboard). They go through the same ``<canvas>`` pipeline so
@@ -381,12 +383,22 @@ async function blobToBase64(blob: Blob): Promise<string> {
     return (typeof btoa !== 'undefined' ? btoa : (s: string) => Buffer.from(s, 'binary').toString('base64'))(binary);
 }
 
-async function onExportPngEvt() {
+/**
+ * Unified export. Renders both SVG and PNG up front and ships both
+ * to the extension in a single message; the save-dialog filter the
+ * user picks decides which one gets written. SVG is a cheap string
+ * dump and PNG goes through the same canvas pipeline as Copy-as-PNG,
+ * so the two outputs stay in lockstep.
+ */
+async function onExportEvt() {
     if (!svgString) return;
     try {
         const blob = await renderCurrentSvgToPng();
         const base64 = await blobToBase64(blob);
-        window.dispatchEvent(new CustomEvent('fcstm-emit', {detail: {type: 'exportPng', payload: base64}}));
+        window.dispatchEvent(new CustomEvent('fcstm-emit', {detail: {
+            type: 'exportDiagram',
+            payload: {svg: svgString, pngBase64: base64},
+        }}));
     } catch (err) {
         window.dispatchEvent(new CustomEvent('fcstm-emit', {detail: {
             type: 'exportError',
@@ -471,13 +483,17 @@ async function copyPngToClipboard() {
     }
 }
 
+function onCopyPngEvt() { void copyPngToClipboard(); }
+function onCopySvgEvt() { void copySvgToClipboard(); }
+
 onMounted(() => {
     window.addEventListener('mousemove', onMouseMoveWindow);
     window.addEventListener('mouseup', onMouseUpWindow);
     window.addEventListener('fcstm-fit', onFitEvt as EventListener);
     window.addEventListener('fcstm-actual', onActualEvt as EventListener);
-    window.addEventListener('fcstm-export-svg', onExportSvgEvt as EventListener);
-    window.addEventListener('fcstm-export-png', onExportPngEvt as EventListener);
+    window.addEventListener('fcstm-export', onExportEvt as EventListener);
+    window.addEventListener('fcstm-copy-png', onCopyPngEvt as EventListener);
+    window.addEventListener('fcstm-copy-svg', onCopySvgEvt as EventListener);
     window.addEventListener('resize', onFitEvt);
     void relayout();
 });
@@ -486,8 +502,9 @@ onUnmounted(() => {
     window.removeEventListener('mouseup', onMouseUpWindow);
     window.removeEventListener('fcstm-fit', onFitEvt as EventListener);
     window.removeEventListener('fcstm-actual', onActualEvt as EventListener);
-    window.removeEventListener('fcstm-export-svg', onExportSvgEvt as EventListener);
-    window.removeEventListener('fcstm-export-png', onExportPngEvt as EventListener);
+    window.removeEventListener('fcstm-export', onExportEvt as EventListener);
+    window.removeEventListener('fcstm-copy-png', onCopyPngEvt as EventListener);
+    window.removeEventListener('fcstm-copy-svg', onCopySvgEvt as EventListener);
     window.removeEventListener('resize', onFitEvt);
 });
 
@@ -623,14 +640,32 @@ void _t;
 body.modifier-held .fcstm-stage__inner [data-fcstm-kind][data-fcstm-range-start-line] {
     cursor: alias;
 }
-.fcstm-stage__inner [data-fcstm-kind="state"]:hover > rect,
-.fcstm-stage__inner [data-fcstm-kind="composite-state"]:hover > rect {
+/* Hover brightness on the body rect only, never on the halo ring —
+   otherwise hovering a selected composite would tint the halo too. */
+.fcstm-stage__inner [data-fcstm-kind="state"]:hover > rect:not(.fcstm-halo),
+.fcstm-stage__inner [data-fcstm-kind="composite-state"]:hover > rect:not(.fcstm-halo) {
     filter: brightness(1.03);
 }
-.fcstm-stage__inner [data-fcstm-kind].fcstm-selected > rect,
+/* Leaves and pseudo-exit circles keep the stroke-override approach:
+   no title bar to cover them, so the body stroke can be recolored
+   directly. Composites use a dedicated halo ring instead (see below). */
+.fcstm-stage__inner [data-fcstm-kind="state"].fcstm-selected > rect,
 .fcstm-stage__inner [data-fcstm-kind].fcstm-selected > circle {
     stroke: #c8761a !important;
     stroke-width: 2.6 !important;
+    filter: drop-shadow(0 0 4px rgba(200, 118, 26, 0.5));
+}
+/* Halo ring for expanded composites. Invisible until selected, then
+   a stroke-only rect sitting just outside the body — the title-bar
+   fill cannot cover it and the chevron's own <rect> is not it. */
+.fcstm-stage__inner .fcstm-halo {
+    fill: none;
+    stroke: transparent;
+    stroke-width: 0;
+}
+.fcstm-stage__inner [data-fcstm-kind="composite-state"].fcstm-selected > .fcstm-halo {
+    stroke: #c8761a;
+    stroke-width: 2.6;
     filter: drop-shadow(0 0 4px rgba(200, 118, 26, 0.5));
 }
 .fcstm-stage__inner [data-fcstm-kind="transition"].fcstm-selected,

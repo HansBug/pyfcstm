@@ -183,7 +183,10 @@ ${init}
         fs.writeFileSync(svgFile, svgDump.result.value || '<!-- no svg -->');
         console.log('svg:', svgFile);
 
-        // Fit the SVG, then screenshot.
+        // Fit the SVG, then screenshot. The +80 margin on the body's
+        // height ensures the final CSS-bordered panel (DetailsPanel or
+        // BottomPanels) keeps its bottom stroke intact in the capture;
+        // the earlier +64 was just barely short of the Details border.
         await rpcSend(ws, ++id, 'Runtime.evaluate', {
             expression: `(() => {
                 const svg = document.querySelector('.fcstm-stage__inner svg');
@@ -195,12 +198,14 @@ ${init}
             })()`,
         });
         const metrics = await rpcSend(ws, ++id, 'Runtime.evaluate', {
-            expression: `(() => ({w: document.body.scrollWidth, h: document.body.scrollHeight}))()`,
+            expression: `(() => ({w: document.documentElement.scrollWidth, h: document.documentElement.scrollHeight}))()`,
             returnByValue: true,
         });
         await rpcSend(ws, ++id, 'Emulation.setDeviceMetricsOverride', {
             width: Math.max(1200, metrics.result.value.w),
-            height: Math.max(900, metrics.result.value.h),
+            // +32 buffer covers the bottom border / padding of the last
+            // panel; without it the capture clips the Details box stroke.
+            height: Math.max(900, metrics.result.value.h + 32),
             deviceScaleFactor: 1,
             mobile: false,
         });

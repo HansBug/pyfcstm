@@ -31,15 +31,11 @@ function collectStateAndTransitionDetails(diagram: FcstmDiagram): {
     const transitions: FcstmDiagramTransitionDetail[] = [];
 
     function pushState(state: FcstmDiagramState): void {
-        if (state.root) {
-            for (const child of state.children) {
-                pushState(child);
-            }
-            for (const transition of state.transitions) {
-                transitions.push(mapTransition(transition, state));
-            }
-            return;
-        }
+        // Root was historically excluded so selection/detail lookups
+        // skipped the top-level box; users asked for it to behave like
+        // any other composite (clickable, bindable to the Details panel,
+        // and reachable from source-cursor sync), so it now goes
+        // through the same push path.
         const kind: FcstmDiagramStateDetail['kind'] = state.pseudo
             ? 'pseudoState'
             : (state.children.length > 0 ? 'composite' : 'leaf');
@@ -60,6 +56,7 @@ function collectStateAndTransitionDetails(diagram: FcstmDiagram): {
             })),
             transitionIds,
             sourceRange: state.range,
+            importedFromFile: state.importedFromFile,
         });
         for (const child of state.children) {
             pushState(child);

@@ -253,6 +253,24 @@ function drawNode(
         );
     }
 
+    // Halo ring for expanded composites. Sits outside the body rect
+    // (and outside the title-bar fill that would otherwise cover half
+    // of a body-stroke-based highlight) and is drawn last so its
+    // drop-shadow renders on top of the composite's own chrome. CSS
+    // paints it orange on ``.fcstm-selected``; the inline ``fill`` and
+    // ``stroke`` attributes below keep it invisible when the SVG is
+    // opened standalone (export / copy), where those CSS rules do not
+    // exist and the SVG default ``fill="black"`` would otherwise cover
+    // every composite with a black rectangle.
+    if (isComposite) {
+        out.push(
+            `<rect class="fcstm-halo" x="${x - 2}" y="${y - 2}" ` +
+            `width="${w + 4}" height="${h + 4}" ` +
+            `rx="${radius + 2}" ry="${radius + 2}" ` +
+            `fill="none" stroke="none" pointer-events="none" />`
+        );
+    }
+
     out.push('</g>');
 
     if (!meta.collapsed) {

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import {h} from 'vue';
 import {NSelect, NCheckbox, NSpace, NButton, NButtonGroup, NTooltip, NIcon} from 'naive-ui';
-import {DownloadOutline, Image as ImageOutline} from '@vicons/ionicons5';
+import {DownloadOutline} from '@vicons/ionicons5';
 import type {PreviewResolvedOptions} from '../types';
 import {PALETTE_IDS, PALETTE_LABEL, type PaletteId} from '../render/palette';
 
@@ -40,11 +40,8 @@ function withIcon(Icon: unknown) {
     return () => h(NIcon, null, {default: () => h(Icon as never)});
 }
 
-function requestExportSvg() {
-    window.dispatchEvent(new CustomEvent('fcstm-export-svg'));
-}
-function requestExportPng() {
-    window.dispatchEvent(new CustomEvent('fcstm-export-png'));
+function requestExport() {
+    window.dispatchEvent(new CustomEvent('fcstm-export'));
 }
 </script>
 
@@ -99,30 +96,19 @@ function requestExportPng() {
 
         <div class="fcstm-options__spacer"></div>
 
-        <n-button-group size="small" class="fcstm-options__exports">
+        <div class="fcstm-options__exports">
             <n-tooltip :delay="400">
                 <template #trigger>
                     <n-button
-                        quaternary round
+                        quaternary round size="small"
                         :focusable="false"
                         :render-icon="withIcon(DownloadOutline)"
-                        @click="requestExportSvg"
-                    >SVG</n-button>
+                        @click="requestExport"
+                    >Export</n-button>
                 </template>
-                Save diagram as SVG
+                Export diagram (Ctrl/Cmd+S) — choose SVG or PNG in save dialog
             </n-tooltip>
-            <n-tooltip :delay="400">
-                <template #trigger>
-                    <n-button
-                        quaternary round
-                        :focusable="false"
-                        :render-icon="withIcon(ImageOutline)"
-                        @click="requestExportPng"
-                    >PNG</n-button>
-                </template>
-                Save diagram as PNG (2× raster)
-            </n-tooltip>
-        </n-button-group>
+        </div>
     </div>
 </template>
 

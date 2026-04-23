@@ -47,18 +47,17 @@ window.addEventListener('blur', () => document.body.classList.remove('modifier-h
 
 // Relay export + copy events from Stage → extension host via the bridge.
 window.addEventListener('fcstm-emit', (ev: Event) => {
-    const detail = (ev as CustomEvent).detail as {type: string; payload: string};
+    const detail = (ev as CustomEvent).detail as {type: string; payload: unknown};
     const api = bridge();
-    if (detail.type === 'exportSvg') {
-        api.postMessage({type: 'exportSvg', svg: detail.payload});
-    } else if (detail.type === 'exportPng') {
-        api.postMessage({type: 'exportPng', base64: detail.payload});
+    if (detail.type === 'exportDiagram') {
+        const p = detail.payload as {svg: string; pngBase64: string};
+        api.postMessage({type: 'exportDiagram', svg: p.svg, pngBase64: p.pngBase64});
     } else if (detail.type === 'exportError') {
-        api.postMessage({type: 'exportError', message: detail.payload});
+        api.postMessage({type: 'exportError', message: detail.payload as string});
     } else if (detail.type === 'copyDone') {
-        api.postMessage({type: 'copyDone', message: detail.payload});
+        api.postMessage({type: 'copyDone', message: detail.payload as string});
     } else if (detail.type === 'copyError') {
-        api.postMessage({type: 'copyError', message: detail.payload});
+        api.postMessage({type: 'copyError', message: detail.payload as string});
     }
 });
 

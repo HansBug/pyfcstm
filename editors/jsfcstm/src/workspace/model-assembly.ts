@@ -975,6 +975,11 @@ function assembleProgramImports(
             importedRoot.displayName = importItem.extraName || importedRoot.displayName;
             importedRoot.extraName = importItem.extraName || importedRoot.extraName;
             importedRoot.extra_name = importItem.extraName || importedRoot.extra_name;
+            // Mark the imported subtree root so the preview can collapse
+            // it by default and the user expands one import boundary at
+            // a time. Absolute path is kept so reruns of the assembly
+            // stay stable across the preview manager's re-seed logic.
+            importedRoot.importedFromFile = semanticImport.entryFile;
             const preservedAbsoluteEventPaths = applyImportEventMappings(
                 importedProgram,
                 program,

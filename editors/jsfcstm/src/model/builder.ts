@@ -216,6 +216,8 @@ class StateMachineModelBuilder {
             is_root_state: !parent,
             isStoppable: definition.substates.length === 0 && !definition.pseudo,
             is_stoppable: definition.substates.length === 0 && !definition.pseudo,
+            importedFromFile: definition.importedFromFile,
+            imported_from_file: definition.importedFromFile,
         };
 
         this.allStates.push(state);

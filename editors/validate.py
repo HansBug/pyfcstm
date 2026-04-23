@@ -279,6 +279,30 @@ state System named "System State Machine" {
     }
 
     // ========================================================================
+    // Import statements (import_statement)
+    // ========================================================================
+
+    state ImportHost named "Import Host" {
+        state Bus;
+
+        // Simple import without block
+        import "./modules/simple.fcstm" as Simple;
+
+        // Import with block and every mapping form the grammar accepts
+        import "./modules/worker.fcstm" as Worker named "Worker Module" {
+            def counter -> shared_counter;
+            def {status_flag, a, b, c} -> set_*;
+            def sensor_* -> sensor_$1;
+            def a_*_b_* -> pair_${1}_${2}_${0};
+            def * -> fallback_$0;
+            event /Start -> Bus.Start named "Mapped Start";
+            event /Alarm -> /Bus.Alarm;
+        }
+
+        [*] -> Bus;
+    }
+
+    // ========================================================================
     // Forced transitions (transition_force_definition)
     // ========================================================================
 
@@ -368,6 +392,14 @@ SHARED_CHECKPOINT_SPECS: List[Dict[str, Any]] = [
             SharedExpectation('named', Token.Keyword.Declaration, 'keywords', 'keyword.control.fcstm'),
             SharedExpectation('def', Token.Keyword.Declaration, 'keywords', 'keyword.control.fcstm'),
             SharedExpectation('event', Token.Keyword.Declaration, 'keywords', 'keyword.control.fcstm'),
+        ],
+    },
+    {
+        'name': 'Keywords - Import',
+        'description': 'import, as keywords used by import statements',
+        'items': [
+            SharedExpectation('import', Token.Keyword.Declaration, 'keywords', 'keyword.control.fcstm'),
+            SharedExpectation('as', Token.Keyword.Declaration, 'keywords', 'keyword.control.fcstm'),
         ],
     },
     {
@@ -574,6 +606,18 @@ SHARED_CHECKPOINT_SPECS: List[Dict[str, Any]] = [
             SharedExpectation('"Stop Event"', Token.String.Double, 'strings', 'string.quoted.double.fcstm'),
         ],
     },
+    {
+        'name': 'Import Block - Templates and Selectors',
+        'description': 'wildcard selectors and target templates in import mappings',
+        'items': [
+            SharedExpectation('sensor_*', Token.Name.Variable, 'import-body', 'variable.parameter.fcstm'),
+            SharedExpectation('a_*_b_*', Token.Name.Variable, 'import-body', 'variable.parameter.fcstm'),
+            SharedExpectation('set_*', Token.Name.Variable, 'import-body', 'variable.parameter.fcstm'),
+            SharedExpectation('sensor_$1', Token.Name.Variable, 'import-body', 'variable.parameter.fcstm'),
+            SharedExpectation('fallback_$0', Token.Name.Variable, 'import-body', 'variable.parameter.fcstm'),
+            SharedExpectation('pair_${1}_${2}_${0}', Token.Name.Variable, 'import-body', 'variable.parameter.fcstm'),
+        ],
+    },
 ]
 
 TEXTMATE_STRUCTURE_SPECS: List[Dict[str, Any]] = [
@@ -600,6 +644,10 @@ TEXTMATE_STRUCTURE_SPECS: List[Dict[str, Any]] = [
     {
         'name': 'Unsupported Binary Literals',
         'description': 'binary integer highlighting is not introduced without grammar support',
+    },
+    {
+        'name': 'Import Block Captures',
+        'description': 'block-form import declaration exposes alias and display-name scopes',
     },
 ]
 
@@ -805,7 +853,10 @@ def _validate_textmate_structure(grammar: Dict[str, Any], vscode_copy: Dict[str,
         name='Repository Sections',
         description='expected repository sections are present',
     )
-    expected_sections = ['comments', 'declarations', 'keywords', 'operators', 'constants', 'strings', 'numbers', 'identifiers']
+    expected_sections = [
+        'comments', 'declarations', 'keywords', 'operators', 'constants',
+        'strings', 'numbers', 'identifiers', 'import-body', 'import-selector-set',
+    ]
     repository = grammar.get('repository', {})
     for section in expected_sections:
         if section not in repository:
@@ -820,6 +871,8 @@ def _validate_textmate_structure(grammar: Dict[str, Any], vscode_copy: Dict[str,
     expected_operator_order = [
         '>>',
         '->',
+        ',',
+        '\\{|\\}',
         '\\[\\*\\]',
         '::',
         ':',
@@ -885,6 +938,44 @@ def _validate_textmate_structure(grammar: Dict[str, Any], vscode_copy: Dict[str,
     else:
         binary_checkpoint.passed = True
     checkpoints.append(binary_checkpoint)
+
+    import_block_checkpoint = ValidationCheckpoint(
+        name='Import Block Captures',
+        description='block-form import declaration exposes alias and display-name scopes',
+    )
+    import_block_sample = 'import "./worker.fcstm" as Worker named "Worker Module" {'
+    import_block_expectations = [
+        (1, 'keyword.control.fcstm'),
+        (3, 'keyword.control.fcstm'),
+        (4, 'entity.name.type.state.fcstm'),
+        (5, 'keyword.control.fcstm'),
+        (7, 'punctuation.section.mapping.fcstm'),
+    ]
+    matched_block_pattern = None
+    for pattern in declaration_patterns:
+        begin_regex = pattern.get('begin')
+        if not begin_regex:
+            continue
+        match = _compile_pattern(begin_regex).search(import_block_sample)
+        if not match:
+            continue
+        matched_block_pattern = pattern
+        break
+    if matched_block_pattern is None:
+        import_block_checkpoint.failures.append(
+            f"no declaration pattern with begin captures matched {import_block_sample!r}"
+        )
+    else:
+        begin_captures = matched_block_pattern.get('beginCaptures', {})
+        for capture_group, expected_scope in import_block_expectations:
+            actual_scope = begin_captures.get(str(capture_group), {}).get('name')
+            if actual_scope != expected_scope:
+                import_block_checkpoint.failures.append(
+                    f"block-form import capture {capture_group} expected scope {expected_scope!r}, "
+                    f"got {actual_scope!r}"
+                )
+    import_block_checkpoint.passed = not import_block_checkpoint.failures
+    checkpoints.append(import_block_checkpoint)
 
     return checkpoints
 

@@ -53,9 +53,10 @@ The TextMate grammar (`editors/fcstm.tmLanguage.json`) provides syntax highlight
 
 ## Supported Syntax
 
-Both implementations support the complete FCSTM syntax. The Pygments lexer is
-already updated for import-related syntax added in PR79, while the TextMate /
-VSCode side is tracked separately in the later editor-support phase.
+Both implementations support the complete FCSTM syntax, including the import
+statement, block-form import mappings, wildcard selectors, and target templates.
+The Pygments lexer and the TextMate / VSCode grammar are kept aligned and share
+the same validation checkpoints in `editors/validate.py`.
 
 **Keywords:** `state`, `pseudo`, `import`, `as`, `named`, `def`, `event`, `enter`, `during`, `exit`, `before`, `after`, `abstract`, `ref`, `effect`, `if`, `else`, `and`, `or`, `not`
 

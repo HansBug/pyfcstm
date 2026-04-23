@@ -149,14 +149,6 @@ export function isInString(text: string): boolean {
     return inDoubleQuote || inSingleQuote;
 }
 
-function getKeywordCompletions(): FcstmCompletionItem[] {
-    return KEYWORDS.map(keyword => ({
-        label: keyword,
-        kind: 'keyword',
-        sortText: `0_${keyword}`,
-    }));
-}
-
 function getConstantCompletions(): FcstmCompletionItem[] {
     return MATH_CONSTANTS.map(constant => ({
         label: constant.name,

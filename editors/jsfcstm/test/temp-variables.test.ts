@@ -288,6 +288,45 @@ describe('jsfcstm block-local temporary variables', () => {
     });
 
     // ------------------------------------------------------------------
+    // Temp-variable discovery must walk unary / function / conditional
+    // expressions too, not just plain identifiers or binary operators.
+    // ------------------------------------------------------------------
+    describe('expression-shape coverage inside temp scopes', () => {
+        const text = [
+            'def int sensor = 1;',                                     // 0
+            'def int fallback = 2;',                                   // 1
+            'def int mode = 0;',                                       // 2
+            'def int output = 0;',                                     // 3
+            'state Root {',                                            // 4
+            '    state A {',                                            // 5
+            '        during {',                                         // 6
+            '            tmp = (mode > 0) ? abs(sensor) : -fallback;',  // 7
+            '            output = tmp;',                                // 8
+            '        }',                                                // 9
+            '    }',                                                    // 10
+            '    [*] -> A;',                                            // 11
+            '}',                                                        // 12
+        ].join('\n');
+
+        it('links temps and globals through conditional, function, and unary expressions', async () => {
+            const doc = createDocument(text, '/tmp/temp-expression-shapes.fcstm');
+
+            const tempRefs = await packageModule.collectReferences(doc, posOfNth(doc, 7, 'tmp'), true) as Reference[];
+            assert.equal(tempRefs.length, 2);
+            assert.deepEqual(countRoles(tempRefs), {definition: 1, reference: 1});
+
+            const sensorRefs = await packageModule.collectReferences(doc, posOfNth(doc, 7, 'sensor'), true) as Reference[];
+            assert.deepEqual(sensorRefs.map(r => r.range.start.line).sort((a, b) => a - b), [0, 7]);
+
+            const fallbackRefs = await packageModule.collectReferences(doc, posOfNth(doc, 7, 'fallback'), true) as Reference[];
+            assert.deepEqual(fallbackRefs.map(r => r.range.start.line).sort((a, b) => a - b), [1, 7]);
+
+            const modeRefs = await packageModule.collectReferences(doc, posOfNth(doc, 7, 'mode'), true) as Reference[];
+            assert.deepEqual(modeRefs.map(r => r.range.start.line).sort((a, b) => a - b), [2, 7]);
+        });
+    });
+
+    // ------------------------------------------------------------------
     // Temps must never leak out as workspace symbols.
     // ------------------------------------------------------------------
     describe('workspace symbol hygiene', () => {

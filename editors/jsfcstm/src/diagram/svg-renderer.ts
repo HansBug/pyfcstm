@@ -384,12 +384,3 @@ function renderDefs(): string {
         '</defs>',
     ].join('');
 }
-
-export const __svgRendererInternals = {
-    STYLE,
-    escapeXml,
-    rangeAttrs,
-    LABEL_GLYPH_EVENT,
-    LABEL_GLYPH_GUARD,
-    LABEL_GLYPH_EFFECT,
-};

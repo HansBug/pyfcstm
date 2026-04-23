@@ -383,10 +383,3 @@ export function buildFcstmElkGraph(
         fcstm: { kind: 'canvas' },
     };
 }
-
-export const __elkGraphInternals = {
-    resolveTransitionLabeling,
-    composeEdgeLabel,
-    initId,
-    exitId,
-};

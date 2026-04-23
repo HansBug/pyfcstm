@@ -2,12 +2,10 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import type * as JsFcstmPackage from '../dist/index';
-import type * as CompletionModule from '../dist/editor/completion';
-import type * as HoverModule from '../dist/editor/hover';
-import type * as SymbolsModule from '../dist/editor/symbols';
-import type * as ParserModule from '../dist/dsl/parser';
-import type * as ImportsModule from '../dist/workspace/imports';
+import type * as JsFcstmPackage from '@pyfcstm/jsfcstm';
+import type * as EditorModule from '@pyfcstm/jsfcstm/editor';
+import type * as DslModule from '@pyfcstm/jsfcstm/dsl';
+import type * as WorkspaceModule from '@pyfcstm/jsfcstm/workspace';
 
 export const packageJson = require('../package.json') as {
     name: string;
@@ -15,12 +13,15 @@ export const packageJson = require('../package.json') as {
     description: string;
 };
 
-export const packageModule = require('../dist/index.js') as typeof JsFcstmPackage;
-export const parserModule = require('../dist/dsl/parser.js') as typeof ParserModule;
-export const importsModule = require('../dist/workspace/imports.js') as typeof ImportsModule;
-export const symbolsModule = require('../dist/editor/symbols.js') as typeof SymbolsModule;
-export const completionModule = require('../dist/editor/completion.js') as typeof CompletionModule;
-export const hoverModule = require('../dist/editor/hover.js') as typeof HoverModule;
+export const packageModule = require('@pyfcstm/jsfcstm') as typeof JsFcstmPackage;
+export const editorModule = require('@pyfcstm/jsfcstm/editor') as typeof EditorModule;
+export const dslModule = require('@pyfcstm/jsfcstm/dsl') as typeof DslModule;
+export const workspaceModule = require('@pyfcstm/jsfcstm/workspace') as typeof WorkspaceModule;
+export const parserModule = dslModule;
+export const importsModule = workspaceModule;
+export const symbolsModule = editorModule;
+export const completionModule = editorModule;
+export const hoverModule = editorModule;
 
 const tempDirs: string[] = [];
 
@@ -106,12 +107,27 @@ export async function withPatchedProperty<T extends object, K extends keyof T, R
     value: T[K],
     fn: () => Promise<R> | R
 ): Promise<R> {
+    const descriptor = Object.getOwnPropertyDescriptor(target, key);
     const original = target[key];
-    (target as T)[key] = value;
+
+    if (descriptor && !descriptor.writable) {
+        Object.defineProperty(target, key, {
+            configurable: true,
+            enumerable: descriptor.enumerable ?? true,
+            writable: true,
+            value,
+        });
+    } else {
+        (target as T)[key] = value;
+    }
 
     try {
         return await fn();
     } finally {
-        (target as T)[key] = original;
+        if (descriptor && !descriptor.writable) {
+            Object.defineProperty(target, key, descriptor);
+        } else {
+            (target as T)[key] = original;
+        }
     }
 }

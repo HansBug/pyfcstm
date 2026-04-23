@@ -1254,17 +1254,3 @@ export async function collectSymbolOccurrences(
     const graph = await buildSymbolGraph(document);
     return graph.occurrences;
 }
-
-/**
- * Test-oriented helper: return a definition range for a file-local occurrence set.
- */
-export function findDefinitionForOccurrences(
-    occurrences: Array<{
-        key: string;
-        range: TextRange;
-        role: FcstmSymbolOccurrenceRole;
-    }>,
-    key: string
-): TextRange | undefined {
-    return occurrences.find(item => item.key === key && item.role === 'definition')?.range;
-}

@@ -656,6 +656,109 @@ describe('jsfcstm completion support', () => {
         assert.ok(nestedItems.some(item => item.label === 'Yellow' && item.kind === 'class'));
     });
 
+    it('keeps fallback state-body starters stable when braces only appear inside comments and strings', async () => {
+        const document = createDocument([
+            'state Root {',
+            '    // { line comment should not change depth',
+            '    /* } block comment should not close the state */',
+            '    event Start named "{ brace in string }";',
+            '    ',
+        ].join('\n'), '/tmp/unbalanced-state-body.fcstm');
+
+        const items = await packageModule.collectCompletionItems(document, {line: 4, character: 4});
+        const labels = new Set(items.map(item => item.label));
+
+        assert.ok(labels.has('state'));
+        assert.ok(labels.has('event'));
+        assert.ok(labels.has('enter'));
+        assert.ok(labels.has('>>'));
+        assert.ok(labels.has('[*]'));
+        assert.ok(labels.has('!'));
+        assert.equal(labels.has('def'), false);
+    });
+
+    it('narrows partial aspect keywords and returns empty follow-up sets after bare `if` / `effect`', async () => {
+        const aspectDocument = createDocument([
+            'state Root {',
+            '    >> d',
+            '    >> during b',
+            '    >> during before a',
+            '}',
+        ].join('\n'), '/tmp/aspect-partials.fcstm');
+
+        const shiftItems = await packageModule.collectCompletionItems(aspectDocument, {
+            line: 1,
+            character: aspectDocument.lineAt(1).text.length,
+        });
+        assert.deepEqual(shiftItems.map(item => item.label), ['during']);
+
+        const duringItems = await packageModule.collectCompletionItems(aspectDocument, {
+            line: 2,
+            character: aspectDocument.lineAt(2).text.length,
+        });
+        assert.deepEqual(duringItems.map(item => item.label), ['before']);
+
+        const beforeItems = await packageModule.collectCompletionItems(aspectDocument, {
+            line: 3,
+            character: aspectDocument.lineAt(3).text.length,
+        });
+        assert.deepEqual(beforeItems.map(item => item.label), ['abstract']);
+
+        const effectDocument = createDocument([
+            'state Root {',
+            '    state Idle;',
+            '    Idle -> Idle effect ',
+            '}',
+        ].join('\n'), '/tmp/post-effect-empty.fcstm');
+        const effectItems = await packageModule.collectCompletionItems(effectDocument, {
+            line: 2,
+            character: effectDocument.lineAt(2).text.length,
+        });
+        assert.deepEqual(effectItems, []);
+
+        const ifDocument = createDocument([
+            'state Root {',
+            '    state Idle;',
+            '    Idle -> Idle : if ',
+            '}',
+        ].join('\n'), '/tmp/post-if-empty.fcstm');
+        const ifItems = await packageModule.collectCompletionItems(ifDocument, {
+            line: 2,
+            character: ifDocument.lineAt(2).text.length,
+        });
+        assert.deepEqual(ifItems, []);
+    });
+
+    it('returns no absolute-path candidates when the container is unknown or semantics are unavailable', async () => {
+        const knownSemanticDocument = createDocument([
+            'state Root {',
+            '    state Idle;',
+            '    Idle -> Idle : /Missing.',
+            '}',
+        ].join('\n'), '/tmp/absolute-path-missing-container.fcstm');
+
+        const knownSemanticItems = await packageModule.collectCompletionItems(knownSemanticDocument, {
+            line: 2,
+            character: knownSemanticDocument.lineAt(2).text.length,
+        });
+        assert.deepEqual(knownSemanticItems, []);
+
+        const invalidDocument = createDocument([
+            'state Root {',
+            '    state Idle;',
+            '    Idle -> Idle : /Ro',
+        ].join('\n'), '/tmp/absolute-path-no-semantic.fcstm');
+        const graph = packageModule.getWorkspaceGraph();
+
+        await withPatchedProperty(graph, 'getSemanticDocument', async () => null, async () => {
+            const invalidItems = await packageModule.collectCompletionItems(invalidDocument, {
+                line: 2,
+                character: invalidDocument.lineAt(2).text.length,
+            });
+            assert.deepEqual(invalidItems, []);
+        });
+    });
+
     it('exposes stable keyword, constant, and function catalogs', () => {
         assert.ok(completionModule.KEYWORDS.includes('state'));
         assert.ok(completionModule.KEYWORDS.includes('import'));

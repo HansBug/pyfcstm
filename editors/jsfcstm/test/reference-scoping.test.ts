@@ -400,19 +400,19 @@ describe('jsfcstm reference scoping', () => {
             ].join('\n');
             const doc = createDocument(text, '/tmp/reserved-event-name.fcstm');
 
-            const occurrences = await packageModule.collectSymbolOccurrences(doc);
-            const ghosts = occurrences.filter(o =>
-                o.range.start.line === 0
-                && o.range.start.character === 0
-                && o.range.end.line === 0
-                && o.range.end.character === 0
+            const workspaceSymbols = await packageModule.collectWorkspaceSymbols([doc], '');
+            const ghosts = workspaceSymbols.filter(symbol =>
+                symbol.location.range.start.line === 0
+                && symbol.location.range.start.character === 0
+                && symbol.location.range.end.line === 0
+                && symbol.location.range.end.character === 0
             );
             assert.deepEqual(ghosts, [],
-                `no ghost L0:0-0 occurrences should be emitted for broken event declarations`);
+                'no ghost L0:0-0 symbols should be emitted for broken event declarations');
 
-            const eventOccs = occurrences.filter(o => o.kind === 'event' && !o.name);
-            assert.deepEqual(eventOccs, [],
-                `no empty-named event occurrence should leak through`);
+            const emptyNamedSymbols = workspaceSymbols.filter(symbol => !symbol.name.trim());
+            assert.deepEqual(emptyNamedSymbols, [],
+                'no empty-named workspace symbols should leak through');
         });
     });
 });

@@ -7,7 +7,7 @@ import {
     buildFcstmElkGraph,
     renderFcstmDiagramSvg,
     resolveFcstmDiagramPreviewOptions,
-} from '../src/diagram';
+} from '@pyfcstm/jsfcstm/diagram';
 
 describe('jsfcstm ELK-based diagram pipeline', () => {
     const sampleSource = [
@@ -261,5 +261,46 @@ describe('jsfcstm ELK-based diagram pipeline', () => {
         const doc = createDocument('// just a comment\n', '/tmp/elk-empty.fcstm');
         const payload = await buildFcstmDiagramWebviewPayload(doc);
         assert.equal(payload, null);
+    });
+
+    it('keeps action bodies and forced transitions in detail payloads while accepting array-based collapsed ids', async () => {
+        const doc = createDocument([
+            'def int counter = 0;',
+            'state Plant {',
+            '    !* -> Error :: Fault;',
+            '    state Working {',
+            '        enter Setup {',
+            '            counter = 0;',
+            '        }',
+            '    }',
+            '    state Error;',
+            '    [*] -> Working;',
+            '}',
+        ].join('\n'), '/tmp/elk-payload-details.fcstm');
+
+        const payload = await buildFcstmDiagramWebviewPayload(doc, 'full', {
+            collapsedStateIds: ['Plant.Working'],
+        });
+
+        assert.ok(payload);
+        const plant = payload!.graph.children.find(c => c.fcstm?.qualifiedName === 'Plant');
+        const workingNode = (plant?.children || []).find(c => c.fcstm?.qualifiedName === 'Plant.Working');
+        assert.equal(workingNode?.fcstm?.collapsed, true);
+
+        const workingState = payload!.states.find(state => state.qualifiedName === 'Plant.Working');
+        assert.ok(workingState);
+        assert.deepEqual(workingState!.actions, [{
+            stage: 'enter',
+            aspect: undefined,
+            mode: 'operations',
+            name: 'Setup',
+            globalAspect: false,
+            body: 'enter Setup',
+        }]);
+
+        const forcedTransition = payload!.transitions.find(transition => transition.kind === 'forced');
+        assert.ok(forcedTransition);
+        assert.equal(forcedTransition!.forced, true);
+        assert.equal(forcedTransition!.eventLabel, 'Fault');
     });
 });

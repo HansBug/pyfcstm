@@ -327,4 +327,72 @@ describe('jsfcstm semantic navigation and rename support', () => {
         assert.equal(sourceEventDefinition?.uri, pathToFileURL(motorFile).toString());
         assert.equal(sourceEventDefinition?.range.start.line, 3);
     });
+
+    it('returns empty navigation results on whitespace and rejects non-renameable, invalid, and conflicting renames', async () => {
+        const dir = trackTempDir('jsfcstm-rename-edges-');
+        const hostFile = path.join(dir, 'host.fcstm');
+        const workerFile = path.join(dir, 'worker.fcstm');
+
+        writeFile(workerFile, [
+            'state WorkerRoot {',
+            '    state Idle;',
+            '}',
+        ].join('\n'));
+        const document = createDocument([
+            'def int counter = 0;',
+            'state Root {',
+            '    import "./worker.fcstm" as Worker;',
+            '    state Idle;',
+            '    state Running;',
+            '    [*] -> Idle;',
+            '    Idle -> Running : if [counter > 0];',
+            '}',
+        ].join('\n'), hostFile);
+
+        const whitespacePosition = {line: 5, character: 4};
+        assert.deepEqual(await packageModule.collectReferences(document, whitespacePosition), []);
+        assert.deepEqual(await packageModule.collectDocumentHighlights(document, whitespacePosition), []);
+
+        const importPathPosition = {
+            line: 2,
+            character: charOf(document, 2, './worker.fcstm') + 2,
+        };
+        assert.equal(await packageModule.prepareRename(document, importPathPosition), null);
+
+        const counterPosition = {
+            line: 0,
+            character: charOf(document, 0, 'counter') + 1,
+        };
+        assert.equal(await packageModule.planRename(document, counterPosition, '1bad'), null);
+        assert.equal(await packageModule.planRename(document, whitespacePosition, 'Renamed'), null);
+
+        const idlePosition = {
+            line: 3,
+            character: charOf(document, 3, 'Idle') + 1,
+        };
+        assert.equal(await packageModule.planRename(document, idlePosition, 'Running'), null);
+    });
+
+    it('keeps duplicate import aliases distinct in workspace search results, even when one target is unresolved', async () => {
+        const dir = trackTempDir('jsfcstm-duplicate-aliases-');
+        const hostFile = path.join(dir, 'host.fcstm');
+        const leftFile = path.join(dir, 'left.fcstm');
+
+        writeFile(leftFile, 'state LeftRoot { state Idle; }');
+        const document = createDocument([
+            'state Root {',
+            '    import "./left.fcstm" as Module;',
+            '    import "./missing.fcstm" as Module;',
+            '}',
+        ].join('\n'), hostFile);
+
+        const symbols = await packageModule.collectWorkspaceSymbols([document], 'module');
+        const moduleSymbols = symbols.filter(item => item.name === 'Module');
+        const symbolLines = new Set(moduleSymbols.map(item => item.location.range.start.line));
+
+        assert.equal(symbolLines.size, 2);
+        assert.ok(moduleSymbols.every(item => item.containerName === 'Root'));
+        assert.ok(symbolLines.has(1));
+        assert.ok(symbolLines.has(2));
+    });
 });

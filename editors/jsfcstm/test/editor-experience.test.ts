@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import {
     createDocument,
     packageModule,
+    trackTempDir,
     withPatchedProperty,
+    writeFile,
 } from './support';
 
 interface DecodedSemanticToken {
@@ -169,6 +171,14 @@ describe('jsfcstm editor experience helpers', () => {
     });
 
     it('collects semantic tokens for lexical constructs and semantic symbol occurrences', async () => {
+        const dir = trackTempDir('jsfcstm-semantic-tokens-');
+        const filePath = `${dir}/semantic-tokens.fcstm`;
+        writeFile(`${dir}/worker.fcstm`, [
+            'state WorkerRoot {',
+            '    state Child;',
+            '    event Tick;',
+            '}',
+        ].join('\n'));
         const document = createDocument([
             '/* block',
             'comment */',
@@ -176,94 +186,41 @@ describe('jsfcstm editor experience helpers', () => {
             '// line comment',
             'state Root {',
             '    import "./worker.fcstm" as Worker;',
+            '    state Child;',
             '    enter Setup {',
             '        counter = counter + 1;',
             '    }',
             '    event Start named "Go";',
-            '    Child -> Root :: Tick;',
+            '    Child -> Worker :: Start;',
             '}',
-        ].join('\n'), '/tmp/semantic-tokens.fcstm');
-        const referencesModule = require('../dist/editor/references.js') as typeof import('../dist/editor/references');
+        ].join('\n'), filePath);
         const legend = packageModule.getFcstmSemanticTokensLegend();
 
-        await withPatchedProperty(referencesModule, 'collectSymbolOccurrences', async () => ([
-            {
-                key: 'state:Root',
-                kind: 'state',
-                name: 'Root',
-                qualifiedName: 'Root',
-                filePath: '/tmp/semantic-tokens.fcstm',
-                range: packageModule.createRange(4, 6, 4, 10),
-                role: 'definition',
-                renameable: true,
-            },
-            {
-                key: 'import:Worker',
-                kind: 'import',
-                name: 'Worker',
-                qualifiedName: 'Root.Worker',
-                filePath: '/tmp/semantic-tokens.fcstm',
-                range: packageModule.createRange(5, 31, 5, 37),
-                role: 'definition',
-                renameable: true,
-            },
-            {
-                key: 'action:Setup',
-                kind: 'action',
-                name: 'Setup',
-                qualifiedName: 'Root.Setup',
-                filePath: '/tmp/semantic-tokens.fcstm',
-                range: packageModule.createRange(6, 10, 6, 15),
-                role: 'definition',
-                renameable: true,
-            },
-            {
-                key: 'var:counter',
-                kind: 'variable',
-                name: 'counter',
-                qualifiedName: 'counter',
-                filePath: '/tmp/semantic-tokens.fcstm',
-                range: packageModule.createRange(2, 8, 2, 15),
-                role: 'definition',
-                renameable: true,
-            },
-            {
-                key: 'event:Start',
-                kind: 'event',
-                name: 'Start',
-                qualifiedName: 'Root.Start',
-                filePath: '/tmp/semantic-tokens.fcstm',
-                range: packageModule.createRange(9, 10, 9, 15),
-                role: 'definition',
-                renameable: true,
-            },
-        ]), async () => {
-            const tokens = await packageModule.collectSemanticTokens(document);
-            const decoded = decodeSemanticTokens(tokens, legend);
-            const types = new Set(decoded.map(item => item.type));
+        const tokens = await packageModule.collectSemanticTokens(document);
+        const decoded = decodeSemanticTokens(tokens, legend);
+        const types = new Set(decoded.map(item => item.type));
 
-            assert.deepEqual(legend.tokenTypes, [
-                'keyword',
-                'type',
-                'class',
-                'function',
-                'variable',
-                'property',
-                'namespace',
-                'string',
-                'comment',
-                'operator',
-            ]);
-            assert.ok(types.has('comment'));
-            assert.ok(types.has('string'));
-            assert.ok(types.has('keyword'));
-            assert.ok(types.has('type'));
-            assert.ok(types.has('operator'));
-            assert.ok(types.has('class'));
-            assert.ok(types.has('namespace'));
-            assert.ok(types.has('function'));
-            assert.ok(types.has('variable'));
-            assert.ok(types.has('property'));
-        });
+        assert.deepEqual(legend.tokenTypes, [
+            'keyword',
+            'type',
+            'class',
+            'function',
+            'variable',
+            'property',
+            'namespace',
+            'string',
+            'comment',
+            'operator',
+        ]);
+        assert.ok(types.has('comment'));
+        assert.ok(types.has('string'));
+        assert.ok(types.has('keyword'));
+        assert.ok(types.has('type'));
+        assert.ok(types.has('operator'));
+        assert.ok(types.has('class'));
+        assert.ok(types.has('namespace'));
+        assert.ok(types.has('function'));
+        assert.ok(types.has('variable'));
+        assert.ok(types.has('property'));
     });
 });

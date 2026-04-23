@@ -444,10 +444,6 @@ function buildSemanticImportSymbol(item: FcstmSemanticImport): FcstmDocumentSymb
     };
 }
 
-function isAspectAction(action: FcstmSemanticAction): boolean {
-    return Boolean(action.aspect) || action.isGlobalAspect;
-}
-
 /**
  * Human-friendly symbol name for a lifecycle or aspect action.
  *

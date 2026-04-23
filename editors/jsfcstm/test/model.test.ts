@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 
-import type * as ModelModule from '../dist/model/index';
+import type * as ModelModule from '@pyfcstm/jsfcstm/model';
 import {createDocument, packageModule} from './support';
 
-const modelModule = require('../dist/model/index.js') as typeof ModelModule;
+const modelModule = require('@pyfcstm/jsfcstm/model') as typeof ModelModule;
 const ZERO_RANGE = {
     start: {line: 0, character: 0},
     end: {line: 0, character: 0},

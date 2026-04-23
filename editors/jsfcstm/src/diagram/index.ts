@@ -18,11 +18,9 @@ export {
 export {
     buildFcstmElkGraph,
     measureLabel as measureFcstmElkLabel,
-    __elkGraphInternals,
 } from './elk-graph';
 export {
     renderFcstmDiagramSvg,
-    __svgRendererInternals,
 } from './svg-renderer';
 export {
     buildFcstmDiagramWebviewPayload,

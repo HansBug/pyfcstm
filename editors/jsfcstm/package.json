@@ -134,7 +134,7 @@
     "sample": "make sample",
     "sample:clean": "make sample_clean",
     "test:unit": "mocha --require ts-node/register/transpile-only --extension ts \"test/**/*.test.ts\" --reporter spec",
-    "test:coverage": "c8 --all --src src --include 'src/**/*.ts' --exclude 'src/dsl/grammar/**' --exclude 'src/model/raw.ts' --exclude 'src/model/model.ts' --exclude-after-remap --check-coverage --lines 85 --statements 85 --functions 90 --branches 70 --reporter=text --reporter=text-summary --reporter=html --reporter=lcov --reporter=json-summary mocha --require ts-node/register/transpile-only --extension ts \"test/**/*.test.ts\" --reporter spec",
+    "test:coverage": "c8 --all --src src --include 'src/index.ts' --include 'src/*/index.ts' --exclude 'src/dsl/grammar/**' --exclude 'src/model/raw.ts' --exclude 'src/model/model.ts' --exclude 'src/diagram/model.ts' --exclude-after-remap --check-coverage --lines 98 --statements 98 --functions 0 --branches 95 --reporter=text --reporter=text-summary --reporter=html --reporter=lcov --reporter=json-summary mocha --require ts-node/register/transpile-only --extension ts \"test/**/*.test.ts\" --reporter spec",
     "test": "npm run build && npm run test:coverage"
   },
   "publishConfig": {

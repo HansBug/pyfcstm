@@ -12,6 +12,7 @@ import type {PaletteId, PaletteMode} from '../render/palette';
 import {getElk} from '../composables/useElk';
 import {decidePreviewPointerAction, PREVIEW_DRAG_THRESHOLD_PX} from '../interaction';
 import type {PreviewWebviewState, SelectionRef, TextRange, PreviewElkNode, PreviewPayload} from '../types';
+import {jsPDF} from 'jspdf';
 
 const props = defineProps<{
     state: PreviewWebviewState;
@@ -343,7 +344,7 @@ function onActualEvt() { actualSize(); }
  * same draw order. Returns a Blob so callers can convert to whatever
  * transport they need.
  */
-async function renderCurrentSvgToPng(): Promise<Blob> {
+async function rasterizeCurrentSvg(scale: number): Promise<{blob: Blob; width: number; height: number}> {
     const svgBlob = new Blob([svgString], {type: 'image/svg+xml;charset=utf-8'});
     const url = URL.createObjectURL(svgBlob);
     try {
@@ -353,24 +354,31 @@ async function renderCurrentSvgToPng(): Promise<Blob> {
             img.onerror = (e) => reject(e);
             img.src = url;
         });
-        const scale = 2;
+        const width = Math.max(1, Math.ceil(svgBounds.value.width * scale));
+        const height = Math.max(1, Math.ceil(svgBounds.value.height * scale));
         const canvas = document.createElement('canvas');
-        canvas.width = Math.max(1, Math.ceil(svgBounds.value.width * scale));
-        canvas.height = Math.max(1, Math.ceil(svgBounds.value.height * scale));
+        canvas.width = width;
+        canvas.height = height;
         const ctx = canvas.getContext('2d');
         if (!ctx) throw new Error('canvas 2d context unavailable');
         ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        return await new Promise<Blob>((resolve, reject) => {
+        ctx.fillRect(0, 0, width, height);
+        ctx.drawImage(img, 0, 0, width, height);
+        const blob = await new Promise<Blob>((resolve, reject) => {
             canvas.toBlob(b => {
                 if (b) resolve(b);
                 else reject(new Error('canvas.toBlob returned null'));
             }, 'image/png');
         });
+        return {blob, width, height};
     } finally {
         URL.revokeObjectURL(url);
     }
+}
+
+async function renderCurrentSvgToPng(): Promise<Blob> {
+    const {blob} = await rasterizeCurrentSvg(2);
+    return blob;
 }
 
 async function blobToBase64(blob: Blob): Promise<string> {
@@ -383,21 +391,77 @@ async function blobToBase64(blob: Blob): Promise<string> {
     return (typeof btoa !== 'undefined' ? btoa : (s: string) => Buffer.from(s, 'binary').toString('base64'))(binary);
 }
 
+function uint8ToBase64(bytes: Uint8Array): string {
+    let binary = '';
+    const chunk = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunk) {
+        binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunk)));
+    }
+    return (typeof btoa !== 'undefined' ? btoa : (s: string) => Buffer.from(s, 'binary').toString('base64'))(binary);
+}
+
 /**
- * Unified export. Renders both SVG and PNG up front and ships both
- * to the extension in a single message; the save-dialog filter the
- * user picks decides which one gets written. SVG is a cheap string
- * dump and PNG goes through the same canvas pipeline as Copy-as-PNG,
- * so the two outputs stay in lockstep.
+ * Render the current diagram as a single-page PDF sized exactly to
+ * the diagram dimensions. The page content is a high-DPI raster of
+ * the SVG (4x the logical size, i.e. ~288 DPI at natural scale),
+ * which is the floor for paper-grade figures. We keep the PDF page
+ * size matched to the SVG in points so LaTeX / word processors can
+ * drop it in with no scaling artefacts.
+ *
+ * We intentionally skip the vector-SVG-to-PDF path: browser SVG
+ * rendering involves CSS cascade, webfonts, filters and
+ * ``foreignObject`` fragments that no in-process converter handles
+ * accurately — a faithful raster at high DPI is more reliable than
+ * a half-broken vector PDF.
+ */
+async function renderCurrentSvgToPdf(): Promise<Uint8Array> {
+    const widthPt = Math.max(1, svgBounds.value.width);
+    const heightPt = Math.max(1, svgBounds.value.height);
+    const {blob} = await rasterizeCurrentSvg(4);
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(reader.error ?? new Error('FileReader failed'));
+        reader.readAsDataURL(blob);
+    });
+    const pdf = new jsPDF({
+        orientation: widthPt > heightPt ? 'landscape' : 'portrait',
+        unit: 'pt',
+        format: [widthPt, heightPt],
+        compress: true,
+    });
+    pdf.addImage(dataUrl, 'PNG', 0, 0, widthPt, heightPt, undefined, 'FAST');
+    const buffer = pdf.output('arraybuffer') as ArrayBuffer;
+    return new Uint8Array(buffer);
+}
+
+/**
+ * Unified export. Renders SVG, PNG and PDF up front and ships all
+ * three to the extension in a single message; the format the user
+ * picks in the QuickPick decides which payload gets written. SVG is
+ * a cheap string dump; PNG goes through the standard canvas pipeline
+ * at 2x; PDF wraps a 4x-rasterised version of the same SVG into a
+ * single page sized to the diagram. All three stay in lockstep with
+ * the current view.
+ *
+ * Rendered in parallel via ``Promise.all`` so the combined latency
+ * is dominated by the slowest of the three (the 4x PDF raster)
+ * rather than the sum.
  */
 async function onExportEvt() {
     if (!svgString) return;
     try {
-        const blob = await renderCurrentSvgToPng();
-        const base64 = await blobToBase64(blob);
+        const [pngBlob, pdfBytes] = await Promise.all([
+            renderCurrentSvgToPng(),
+            renderCurrentSvgToPdf(),
+        ]);
+        const [pngBase64, pdfBase64] = await Promise.all([
+            blobToBase64(pngBlob),
+            Promise.resolve(uint8ToBase64(pdfBytes)),
+        ]);
         window.dispatchEvent(new CustomEvent('fcstm-emit', {detail: {
             type: 'exportDiagram',
-            payload: {svg: svgString, pngBase64: base64},
+            payload: {svg: svgString, pngBase64, pdfBase64},
         }}));
     } catch (err) {
         window.dispatchEvent(new CustomEvent('fcstm-emit', {detail: {

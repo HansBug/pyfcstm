@@ -187,7 +187,7 @@ export type WebviewInboundMessage =
     | {type: 'setCollapsed'; collapsed: string[]}
     | {type: 'revealSource'; range: TextRange}
     | {type: 'setLayoutMode'; mode: PreviewLayoutMode}
-    | {type: 'exportDiagram'; svg: string; pngBase64: string}
+    | {type: 'exportDiagram'; svg: string; pngBase64: string; pdfBase64: string}
     | {type: 'exportError'; message: string};
 
 /**

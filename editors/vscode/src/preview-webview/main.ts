@@ -50,8 +50,8 @@ window.addEventListener('fcstm-emit', (ev: Event) => {
     const detail = (ev as CustomEvent).detail as {type: string; payload: unknown};
     const api = bridge();
     if (detail.type === 'exportDiagram') {
-        const p = detail.payload as {svg: string; pngBase64: string};
-        api.postMessage({type: 'exportDiagram', svg: p.svg, pngBase64: p.pngBase64});
+        const p = detail.payload as {svg: string; pngBase64: string; pdfBase64: string};
+        api.postMessage({type: 'exportDiagram', svg: p.svg, pngBase64: p.pngBase64, pdfBase64: p.pdfBase64});
     } else if (detail.type === 'exportError') {
         api.postMessage({type: 'exportError', message: detail.payload as string});
     } else if (detail.type === 'copyDone') {

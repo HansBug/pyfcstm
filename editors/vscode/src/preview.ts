@@ -467,8 +467,8 @@ export class FcstmPreviewController implements vscode.Disposable {
                 }
                 return;
             case 'exportDiagram':
-                if (typeof payload.svg === 'string' && typeof payload.pngBase64 === 'string') {
-                    await this.exportDiagram(payload.svg, payload.pngBase64);
+                if (typeof payload.svg === 'string' && typeof payload.pngBase64 === 'string' && typeof payload.pdfBase64 === 'string') {
+                    await this.exportDiagram(payload.svg, payload.pngBase64, payload.pdfBase64);
                 }
                 return;
             case 'exportError':
@@ -528,19 +528,25 @@ export class FcstmPreviewController implements vscode.Disposable {
 
     /**
      * Unified export. Two-step flow: QuickPick the target format
-     * (SVG vs PNG), then a single-filter save dialog whose default
-     * filename carries the matching extension. Electron's native
-     * save dialog does not reliably rewrite the filename's extension
-     * when the user switches filter on Linux / some macOS setups,
-     * which left users saving an SVG payload into a .png file
-     * (or vice versa) — splitting the choice into a QuickPick first
-     * avoids that entire class of mismatch.
+     * (SVG / PNG / PDF), then a single-filter save dialog whose
+     * default filename carries the matching extension. Electron's
+     * native save dialog does not reliably rewrite the filename's
+     * extension when the user flips filter on Linux / some macOS
+     * setups, which left users saving an SVG payload into a .png
+     * file (or vice versa) — splitting the choice into a QuickPick
+     * first avoids that entire class of mismatch.
+     *
+     * PDF is a single-page, diagram-sized PDF whose content is a
+     * 4× raster of the current SVG — good enough for paper figure
+     * insertion without the reliability problems of in-browser
+     * SVG→vector-PDF conversion. The payload arrives as base64.
      */
-    private async exportDiagram(svg: string, pngBase64: string): Promise<void> {
+    private async exportDiagram(svg: string, pngBase64: string, pdfBase64: string): Promise<void> {
         const choice = await vscode.window.showQuickPick(
             [
                 {label: 'SVG', description: 'Vector image', format: 'svg' as const},
                 {label: 'PNG', description: '2× raster image', format: 'png' as const},
+                {label: 'PDF', description: 'Single-page PDF, 4× raster (paper-ready)', format: 'pdf' as const},
             ],
             {placeHolder: 'Export diagram as…', matchOnDescription: true}
         );
@@ -553,7 +559,9 @@ export class FcstmPreviewController implements vscode.Disposable {
             : undefined;
         const filters = ext === 'svg'
             ? {'SVG Image': ['svg']}
-            : {'PNG Image': ['png']};
+            : ext === 'png'
+                ? {'PNG Image': ['png']}
+                : {'PDF Document': ['pdf']};
         const uri = await vscode.window.showSaveDialog({
             defaultUri,
             filters,
@@ -565,6 +573,11 @@ export class FcstmPreviewController implements vscode.Disposable {
         if (ext === 'png') {
             await vscode.workspace.fs.writeFile(uri, Buffer.from(pngBase64, 'base64'));
             await vscode.window.showInformationMessage(`Exported PNG to ${uri.fsPath}`);
+            return;
+        }
+        if (ext === 'pdf') {
+            await vscode.workspace.fs.writeFile(uri, Buffer.from(pdfBase64, 'base64'));
+            await vscode.window.showInformationMessage(`Exported PDF to ${uri.fsPath}`);
             return;
         }
         await vscode.workspace.fs.writeFile(uri, Buffer.from(svg, 'utf8'));

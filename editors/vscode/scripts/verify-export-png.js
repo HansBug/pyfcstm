@@ -158,11 +158,17 @@ html,body,#app{margin:0;padding:0;height:100%;background:#fff;}</style></head>
             console.error('no exportDiagram posted — check extension flow');
             process.exit(3);
         }
-        const {svg, pngBase64} = posted[0];
+        const {svg, pngBase64, pdfBase64} = posted[0];
         fs.writeFileSync(path.join(outDir, 'exported.svg'), svg);
         fs.writeFileSync(path.join(outDir, 'exported.png'), Buffer.from(pngBase64, 'base64'));
         console.log('wrote exported.svg (' + svg.length + ' bytes)');
         console.log('wrote exported.png (' + Buffer.byteLength(pngBase64, 'base64') + ' bytes)');
+        if (pdfBase64) {
+            fs.writeFileSync(path.join(outDir, 'exported.pdf'), Buffer.from(pdfBase64, 'base64'));
+            console.log('wrote exported.pdf (' + Buffer.byteLength(pdfBase64, 'base64') + ' bytes)');
+        } else {
+            console.log('pdfBase64 missing from exportDiagram payload');
+        }
 
         ws.close();
     } finally {

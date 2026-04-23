@@ -367,18 +367,20 @@ export function buildFcstmElkGraph(
             // Wider breathing room than the first draft — users explicitly
             // asked for a less cramped layout.
             'elk.spacing.nodeNode': '80',
-            'elk.layered.spacing.nodeNodeBetweenLayers': '120',
-            // Push parallel edges further apart so two transitions that
-            // share a layer do not run glued together. Same story for
-            // the edge-vs-node gap — ELK otherwise happily parks a line
-            // one or two pixels off the node outline.
-            'elk.spacing.edgeNode': '56',
-            'elk.spacing.edgeEdge': '44',
+            'elk.layered.spacing.nodeNodeBetweenLayers': '116',
+            // Push parallel edges apart so two transitions that share
+            // a layer do not run glued together, and keep edges a
+            // readable distance from node outlines. The values are a
+            // compromise between the original tight defaults and the
+            // earlier wider bump — larger than before, but not so
+            // aggressive that small diagrams waste whitespace.
+            'elk.spacing.edgeNode': '48',
+            'elk.spacing.edgeEdge': '36',
             'elk.spacing.edgeLabel': '24',
             'elk.spacing.componentComponent': '64',
-            'elk.layered.spacing.baseValue': '52',
-            'elk.layered.spacing.edgeNodeBetweenLayers': '58',
-            'elk.layered.spacing.edgeEdgeBetweenLayers': '40',
+            'elk.layered.spacing.baseValue': '50',
+            'elk.layered.spacing.edgeNodeBetweenLayers': '52',
+            'elk.layered.spacing.edgeEdgeBetweenLayers': '32',
             'elk.edgeLabels.placement': 'CENTER',
             'elk.layered.nodePlacement.favorStraightEdges': 'true',
             // Merging hierarchy edges lets ELK collapse many parallel

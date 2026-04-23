@@ -73,6 +73,18 @@ const vscode = {
                 fs.writeFileSync(uri.fsPath, buffer);
             },
         },
+        getConfiguration(_section) {
+            const store = new Map();
+            return {
+                get(_key, defaultValue) {
+                    return store.has(_key) ? store.get(_key) : defaultValue;
+                },
+                update(_key, value) {
+                    store.set(_key, value);
+                    return Promise.resolve();
+                },
+            };
+        },
         openTextDocument(resource) {
             const p = typeof resource === 'string' ? resource : resource.fsPath;
             const existing = this.textDocuments.find(d => d.uri.fsPath === p);

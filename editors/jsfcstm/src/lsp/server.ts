@@ -28,7 +28,29 @@ export function createFcstmLanguageServer(
 
     connection.onInitialize(async params => {
         await core.setWorkspaceFolders(params.workspaceFolders || []);
+        // Clients may pre-populate the formatter configuration through
+        // ``initializationOptions.fcstm.format``. Accept whatever
+        // ``FcstmFormatOptions`` fields are present; unknown keys are
+        // ignored by the formatter at runtime.
+        const initOptions = (params.initializationOptions || {}) as {
+            fcstm?: {format?: Record<string, unknown>};
+            format?: Record<string, unknown>;
+        };
+        const formatSettings = initOptions.fcstm?.format || initOptions.format;
+        if (formatSettings && typeof formatSettings === 'object') {
+            core.setFormatOptions(formatSettings as never);
+        }
         return core.getInitializeResult();
+    });
+
+    connection.onDidChangeConfiguration(params => {
+        const settings = (params?.settings || {}) as {
+            fcstm?: {format?: Record<string, unknown>};
+        };
+        const format = settings.fcstm?.format;
+        if (format && typeof format === 'object') {
+            core.setFormatOptions(format as never);
+        }
     });
 
     connection.onDidOpenTextDocument(async params => {

@@ -48,6 +48,7 @@ import {
     resolveDefinitionLocation,
     resolveHover,
 } from '../editor';
+import type {FcstmFormatOptions} from '../editor/formatter';
 import type {TextDocumentLike} from '../utils/text';
 import {getWorkspaceGraph} from '../workspace';
 import {
@@ -84,6 +85,7 @@ export interface FcstmLanguageServerCoreOptions {
     debounceMs?: number;
     onDiagnostics?: (publication: FcstmPublishedDiagnostics) => void | Promise<void>;
     scheduler?: FcstmLanguageServerScheduler;
+    formatOptions?: FcstmFormatOptions;
 }
 
 interface ManagedTimer {
@@ -161,11 +163,27 @@ export class FcstmLanguageServerCore {
     private readonly debounceMs: number;
     private readonly scheduler: FcstmLanguageServerScheduler;
     private readonly onDiagnostics: (publication: FcstmPublishedDiagnostics) => void | Promise<void>;
+    private formatOptions: FcstmFormatOptions;
 
     constructor(options: FcstmLanguageServerCoreOptions = {}) {
         this.debounceMs = options.debounceMs ?? 300;
         this.scheduler = options.scheduler || createScheduler();
         this.onDiagnostics = options.onDiagnostics || (() => undefined);
+        this.formatOptions = {...(options.formatOptions || {})};
+    }
+
+    /**
+     * Update the formatter options held by the core. Clients should call
+     * this when VSCode settings change (typically from a
+     * ``workspace/didChangeConfiguration`` notification). Unspecified
+     * fields fall back to the existing values so partial updates work.
+     */
+    setFormatOptions(options: FcstmFormatOptions): void {
+        this.formatOptions = {...this.formatOptions, ...options};
+    }
+
+    getFormatOptions(): FcstmFormatOptions {
+        return {...this.formatOptions};
     }
 
     getInitializeResult(): InitializeResult {
@@ -597,8 +615,17 @@ export class FcstmLanguageServerCore {
             return [];
         }
 
+        // Precedence: an explicit ``fcstm.format.indentSize`` setting wins;
+        // otherwise fall back to the editor's ``tabSize`` (only honored when
+        // the editor is inserting spaces).
+        const configured = this.formatOptions.indentSize;
+        const resolvedIndent = configured && configured > 0
+            ? configured
+            : (options.insertSpaces === false ? 4 : options.tabSize || 4);
+
         const edits = formatDocumentText(document, {
-            indentSize: options.insertSpaces === false ? 4 : options.tabSize || 4,
+            ...this.formatOptions,
+            indentSize: resolvedIndent,
         });
         if (shouldCancel(token)) {
             return [];

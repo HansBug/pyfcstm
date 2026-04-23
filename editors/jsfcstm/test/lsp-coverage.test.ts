@@ -42,6 +42,7 @@ interface HandlerMap {
     codeAction?: (params: { textDocument: { uri: string }; range: { start: { line: number; character: number }; end: { line: number; character: number } }; context: { diagnostics: unknown[] } }, token?: unknown) => Promise<unknown> | unknown;
     documentFormatting?: (params: { textDocument: { uri: string }; options: { tabSize: number; insertSpaces: boolean } }, token?: unknown) => Promise<unknown> | unknown;
     documentRangeFormatting?: (params: { textDocument: { uri: string }; range: { start: { line: number; character: number }; end: { line: number; character: number } }; options: { tabSize: number; insertSpaces: boolean } }, token?: unknown) => Promise<unknown> | unknown;
+    didChangeConfiguration?: (params: { settings: Record<string, unknown> }) => void;
     initialized?: () => void;
     shutdown?: () => void;
 }
@@ -154,6 +155,10 @@ class FakeConnection {
 
     onDocumentRangeFormatting(callback: HandlerMap['documentRangeFormatting']): void {
         this.handlers.documentRangeFormatting = callback;
+    }
+
+    onDidChangeConfiguration(callback: HandlerMap['didChangeConfiguration']): void {
+        this.handlers.didChangeConfiguration = callback;
     }
 
     onInitialized(callback: HandlerMap['initialized']): void {
@@ -921,6 +926,7 @@ describe('jsfcstm lsp coverage support', () => {
 
         const initializeResult = await fakeConnection.handlers.initialize?.({
             workspaceFolders: [{uri: toUri(dir), name: 'fixture'}],
+            initializationOptions: {fcstm: {format: {indentSize: 3}}},
         }) as {
             capabilities?: {
                 definitionProvider?: boolean;
@@ -1035,6 +1041,18 @@ describe('jsfcstm lsp coverage support', () => {
             options: {tabSize: 4, insertSpaces: true},
         }) as unknown[];
         assert.deepEqual(missingFormatting, []);
+
+        // Push a configuration change through the connection and observe
+        // that ``core.setFormatOptions`` received the payload.
+        fakeConnection.handlers.didChangeConfiguration?.({
+            settings: {fcstm: {format: {indentSize: 2, elseOnSameLine: false}}},
+        });
+        const pushedOptions = server.core.getFormatOptions();
+        assert.equal(pushedOptions.indentSize, 2);
+        assert.equal(pushedOptions.elseOnSameLine, false);
+        // Ignore malformed payloads gracefully.
+        fakeConnection.handlers.didChangeConfiguration?.({settings: {fcstm: undefined} as never});
+        fakeConnection.handlers.didChangeConfiguration?.({settings: {} as never});
 
         assert.ok(symbols.some(item => item.name === 'Root'));
         assert.ok(completionItems.some(item => item.label === 'counter'));

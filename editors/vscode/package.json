@@ -162,6 +162,33 @@
         "mac": "cmd+shift+v",
         "when": "editorLangId == fcstm"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "FCSTM",
+      "properties": {
+        "fcstm.format.indentSize": {
+          "type": "integer",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 16,
+          "markdownDescription": "Number of spaces per indentation level when formatting `.fcstm` files. `0` (the default) falls back to VSCode's `editor.tabSize` so FCSTM inherits the usual editor behavior."
+        },
+        "fcstm.format.elseOnSameLine": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Keep `} else {` on a single line (K&R style). Set to `false` for Allman-style `}\\nelse {`."
+        },
+        "fcstm.format.collapseBlankLines": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Collapse runs of 3+ consecutive blank lines into a single blank line."
+        },
+        "fcstm.format.alignMultilineBlockComments": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Move multi-line `/* ... */` block comments (typically `abstract` action `raw_doc` payloads) onto their own indented lines and align continuation `*` markers under the opening `/*`."
+        }
+      }
+    }
   }
 }

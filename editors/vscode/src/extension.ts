@@ -40,6 +40,21 @@ export function activate(context: vscode.ExtensionContext): void {
         },
     };
 
+    const readFormatSettings = () => {
+        const cfg = vscode.workspace.getConfiguration('fcstm');
+        const indentSize = cfg.get<number>('format.indentSize');
+        return {
+            fcstm: {
+                format: {
+                    indentSize: indentSize && indentSize > 0 ? indentSize : undefined,
+                    elseOnSameLine: cfg.get<boolean>('format.elseOnSameLine'),
+                    collapseBlankLines: cfg.get<boolean>('format.collapseBlankLines'),
+                    alignMultilineBlockComments: cfg.get<boolean>('format.alignMultilineBlockComments'),
+                },
+            },
+        };
+    };
+
     const clientOptions: LanguageClientOptions = {
         documentSelector: [
             {scheme: 'file', language: 'fcstm'},
@@ -47,6 +62,10 @@ export function activate(context: vscode.ExtensionContext): void {
         ],
         outputChannel,
         revealOutputChannelOn: RevealOutputChannelOn.Never,
+        initializationOptions: readFormatSettings(),
+        synchronize: {
+            configurationSection: 'fcstm',
+        },
         errorHandler: {
             error() {
                 return ErrorAction.Continue;

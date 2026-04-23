@@ -36,6 +36,21 @@ export interface FcstmFormatOptions {
     indentSize?: number;
     /** Collapse 3+ blank lines into one blank line. Defaults to true. */
     collapseBlankLines?: boolean;
+    /**
+     * When ``true`` (default), ``} else {`` is merged onto a single line —
+     * conventional K&R brace style. Set ``false`` to emit Allman-style
+     * ``}\nelse {``.
+     */
+    elseOnSameLine?: boolean;
+    /**
+     * When ``true`` (default), a multi-line ``/* *\/`` block comment that
+     * appears inline with code (most commonly as the ``raw_doc`` payload of
+     * an ``abstract`` action) is moved onto its own lines at
+     * ``currentDepth + 1`` indentation, and its continuation lines are
+     * realigned so the ``*`` markers sit one column right of the opening
+     * ``/*``. Relative indentation inside the comment is preserved.
+     */
+    alignMultilineBlockComments?: boolean;
 }
 
 export interface FcstmTextEdit {
@@ -330,11 +345,12 @@ function separatorBetween(
  * Line comments keep their association with the line they trail.
  */
 interface LogicalChunk {
-    kind: 'line' | 'blankMarker';
+    kind: 'line' | 'blankMarker' | 'multilineBlockComment';
     depth: number;
     tokens: Tok[];         // real tokens for this line (no ws / nl)
     trailing?: Tok;        // trailing line-comment attached to the line
     leadingBlockComments?: Tok[];  // standalone blkCom tokens emitted before the line
+    blockCommentText?: string;     // verbatim source for 'multilineBlockComment'
 }
 
 function groupLogicalLines(tokens: Tok[]): LogicalChunk[] {
@@ -435,6 +451,25 @@ function groupLogicalLines(tokens: Tok[]): LogicalChunk[] {
         }
 
         if (t.kind === 'blkCom') {
+            const isMultiLine = t.text.includes('\n');
+            if (isMultiLine) {
+                // A multi-line block comment inline with code (typical
+                // ``enter abstract Foo /* doc */`` raw_doc payload) gets
+                // lifted onto its own chunk one indent level deeper than
+                // the owner statement, so it can be re-aligned cleanly.
+                if (buffer.length > 0) {
+                    commit();
+                }
+                chunks.push({
+                    kind: 'multilineBlockComment',
+                    depth: depth + 1,
+                    tokens: [],
+                    blockCommentText: t.text,
+                });
+                expectLineTerminator = true;
+                blankRun = 0;
+                continue;
+            }
             if (buffer.length > 0) {
                 buffer.push(t);
             } else {
@@ -479,7 +514,7 @@ function groupLogicalLines(tokens: Tok[]): LogicalChunk[] {
     if (lineHasContent()) {
         commit();
     }
-    return mergeInlinePatterns(chunks);
+    return chunks;
 }
 
 /**
@@ -489,7 +524,10 @@ function groupLogicalLines(tokens: Tok[]): LogicalChunk[] {
  * - ``} else {`` — the else clause joins the closing brace so the output
  *   uses conventional K&R-style ``if {} else {}`` layout.
  */
-function mergeInlinePatterns(chunks: LogicalChunk[]): LogicalChunk[] {
+function mergeInlinePatterns(
+    chunks: LogicalChunk[],
+    opts: {elseOnSameLine: boolean}
+): LogicalChunk[] {
     const merged: LogicalChunk[] = [];
     for (const chunk of chunks) {
         const prev = merged[merged.length - 1];
@@ -539,9 +577,11 @@ function mergeInlinePatterns(chunks: LogicalChunk[]): LogicalChunk[] {
         }
 
         // ``} else {`` merge: three chunks in a row where the middle is
-        // ``else`` (possibly followed by ``if [cond] {``).
+        // ``else`` (possibly followed by ``if [cond] {``). Disabled when
+        // the user requests Allman-style braces via configuration.
         if (
-            prev
+            opts.elseOnSameLine
+            && prev
             && prev.kind === 'line'
             && chunk.kind === 'line'
             && chunk.tokens.length > 0
@@ -561,6 +601,57 @@ function mergeInlinePatterns(chunks: LogicalChunk[]): LogicalChunk[] {
         merged.push(chunk);
     }
     return merged;
+}
+
+/**
+ * Re-align a multi-line block comment so its opening ``/*`` sits at the
+ * requested indent column and each continuation line's ``*`` is shifted to
+ * preserve its original alignment relative to the ``/*``. The common
+ * leading whitespace across continuation lines is treated as the "base"
+ * column in the source; in the output, that base is mapped to one column
+ * right of the new ``/*`` so the ``*`` characters line up vertically.
+ */
+function renderMultilineBlockComment(
+    text: string,
+    depth: number,
+    indentSize: number
+): string {
+    const indent = ' '.repeat(depth * indentSize);
+    const lines = text.split('\n');
+    if (lines.length <= 1) {
+        return indent + text;
+    }
+    const continuationLines = lines.slice(1);
+    const leadingOf = (s: string): number => {
+        let i = 0;
+        while (i < s.length && (s[i] === ' ' || s[i] === '\t')) i += 1;
+        return i;
+    };
+    // Continuation lines that are not purely whitespace establish the base
+    // indent. Purely blank lines are passed through unchanged.
+    let base = Number.POSITIVE_INFINITY;
+    for (const line of continuationLines) {
+        if (line.trim().length === 0) continue;
+        const l = leadingOf(line);
+        if (l < base) base = l;
+    }
+    if (!isFinite(base)) base = 0;
+
+    const firstLine = lines[0].replace(/[ \t]+$/, '');
+    const out: string[] = [indent + firstLine];
+    for (const line of continuationLines) {
+        if (line.trim().length === 0) {
+            out.push('');
+            continue;
+        }
+        // Strip exactly ``base`` leading columns so the column-zero of the
+        // original comment body now starts right after one alignment
+        // space. Tabs are treated as single spaces for this purpose —
+        // block comment bodies almost never mix tabs with ``*`` alignment.
+        const stripped = line.length >= base ? line.slice(base) : line.trimStart();
+        out.push(indent + ' ' + stripped.replace(/[ \t]+$/, ''));
+    }
+    return out.join('\n');
 }
 
 function renderLine(chunk: LogicalChunk, indentSize: number): string {
@@ -630,12 +721,17 @@ export function formatDocumentText(
         ? options.indentSize
         : 4;
     const collapseBlankLines = options.collapseBlankLines !== false;
+    const elseOnSameLine = options.elseOnSameLine !== false;
+    const alignMultilineBlockComments = options.alignMultilineBlockComments !== false;
 
     const originalText = document.getText();
     const lineEnding = detectLineEnding(originalText);
 
     const tokens = tokenize(originalText);
-    const chunks = groupLogicalLines(tokens);
+    const chunks = mergeInlinePatterns(
+        groupLogicalLines(tokens),
+        {elseOnSameLine}
+    );
 
     const outputLines: string[] = [];
     let lastEmittedKind: 'line' | 'blank' | null = null;
@@ -655,22 +751,24 @@ export function formatDocumentText(
             // is visual noise more often than it is intentional spacing,
             // so the formatter drops those. Blank lines between two
             // ``ident`` / statement lines stay.
-            let prevLineChunk: LogicalChunk | null = null;
+            let prevContentChunk: LogicalChunk | null = null;
             for (let j = ci - 1; j >= 0; j--) {
-                if (chunks[j].kind === 'line') {
-                    prevLineChunk = chunks[j];
+                if (chunks[j].kind !== 'blankMarker') {
+                    prevContentChunk = chunks[j];
                     break;
                 }
             }
-            let nextLineChunk: LogicalChunk | null = null;
+            let nextContentChunk: LogicalChunk | null = null;
             for (let j = ci + 1; j < chunks.length; j++) {
-                if (chunks[j].kind === 'line') {
-                    nextLineChunk = chunks[j];
+                if (chunks[j].kind !== 'blankMarker') {
+                    nextContentChunk = chunks[j];
                     break;
                 }
             }
-            const prevLast = prevLineChunk ? lastToken(prevLineChunk) : null;
-            const nextFirst = nextLineChunk ? firstToken(nextLineChunk) : null;
+            const prevLast = prevContentChunk && prevContentChunk.kind === 'line'
+                ? lastToken(prevContentChunk) : null;
+            const nextFirst = nextContentChunk && nextContentChunk.kind === 'line'
+                ? firstToken(nextContentChunk) : null;
             const adjacentOpenBrace = prevLast
                 && prevLast.kind === 'punct'
                 && prevLast.text === '{';
@@ -683,6 +781,27 @@ export function formatDocumentText(
                 outputLines.push('');
                 lastEmittedKind = 'blank';
             }
+            continue;
+        }
+        if (chunk.kind === 'multilineBlockComment') {
+            if (alignMultilineBlockComments && chunk.blockCommentText) {
+                const rendered = renderMultilineBlockComment(
+                    chunk.blockCommentText, chunk.depth, indentSize
+                );
+                for (const physicalLine of rendered.split('\n')) {
+                    outputLines.push(physicalLine);
+                }
+            } else if (chunk.blockCommentText) {
+                // Fallback: emit verbatim at the chunk's indent on the first
+                // line only; keep subsequent lines exactly as in the source.
+                const indent = ' '.repeat(chunk.depth * indentSize);
+                const srcLines = chunk.blockCommentText.split('\n');
+                outputLines.push(indent + srcLines[0].replace(/[ \t]+$/, ''));
+                for (const line of srcLines.slice(1)) {
+                    outputLines.push(line.replace(/[ \t]+$/, ''));
+                }
+            }
+            lastEmittedKind = 'line';
             continue;
         }
         const rendered = renderLine(chunk, indentSize);

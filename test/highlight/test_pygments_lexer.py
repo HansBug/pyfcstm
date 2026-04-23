@@ -554,7 +554,7 @@ class TestImportSyntaxHighlighting:
 
         assert (Keyword.Declaration, 'import') in tokens
         assert (String.Double, '"./worker.fcstm"') in tokens
-        assert (Keyword.Namespace, 'as') in tokens
+        assert (Keyword.Declaration, 'as') in tokens
         assert (Name, 'Worker') in tokens
         assert (Keyword.Declaration, 'named') in tokens
         assert (String.Double, '"Worker Module"') in tokens

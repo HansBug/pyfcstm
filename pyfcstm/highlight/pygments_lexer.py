@@ -199,7 +199,7 @@ class FcstmLexer(RegexLexer):
 
             # Keywords - state machine structure
             (words((
-                'state', 'pseudo', 'named', 'def', 'event',
+                'state', 'pseudo', 'named', 'def', 'event', 'as',
             ), suffix=r'\b'), Keyword.Declaration),
 
             # Keywords - lifecycle actions
@@ -209,7 +209,7 @@ class FcstmLexer(RegexLexer):
 
             # Keywords - modifiers
             (words((
-                'abstract', 'ref', 'effect', 'as',
+                'abstract', 'ref', 'effect',
             ), suffix=r'\b'), Keyword.Namespace),
 
             # Keywords - types
@@ -304,7 +304,7 @@ class FcstmLexer(RegexLexer):
         'import-header': [
             include('whitespace'),
             include('comments'),
-            (r'\b(?:as)\b', Keyword.Namespace),
+            (r'\b(?:as)\b', Keyword.Declaration),
             (r'\bnamed\b', Keyword.Declaration),
             (r'"([^"\\]|\\[btnfr"\'\\]|\\[0-7]{1,3}|\\u[0-9a-fA-F]{4}|\\x[0-9a-fA-F]{2})*"', String.Double),
             (r"'([^'\\]|\\[btnfr\"'\\]|\\[0-7]{1,3}|\\u[0-9a-fA-F]{4}|\\x[0-9a-fA-F]{2})*'", String.Single),

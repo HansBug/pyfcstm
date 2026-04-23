@@ -31,9 +31,11 @@ export interface SvgPalette {
     compositeStroke: string;
     compositeStrokeWidth: number;
     compositeRadius: number;
-    pseudoStateFill: string;
-    pseudoStateStroke: string;
-    pseudoStrokeWidth: number;
+    /**
+     * Dash pattern for the pseudo-state border. Pseudo states reuse the
+     * leaf palette's fill / stroke — the dashed outline plus the small
+     * ``pseudo`` badge are what tell them apart.
+     */
     pseudoDash: string;
     titleColor: string;
     initFill: string;
@@ -69,9 +71,6 @@ const DEFAULT_LIGHT: SvgPalette = {
     compositeStroke: '#2d6aa8',
     compositeStrokeWidth: 1.8,
     compositeRadius: 16,
-    pseudoStateFill: '#fdf3e1',
-    pseudoStateStroke: '#b07a36',
-    pseudoStrokeWidth: 1.4,
     pseudoDash: '6 3',
     titleColor: '#183b61',
     initFill: '#2d6aa8',
@@ -100,9 +99,6 @@ const DEFAULT_DARK: SvgPalette = {
     compositeStroke: '#6ea5d5',
     compositeStrokeWidth: 1.8,
     compositeRadius: 16,
-    pseudoStateFill: '#352e20',
-    pseudoStateStroke: '#d4a65e',
-    pseudoStrokeWidth: 1.4,
     pseudoDash: '6 3',
     titleColor: '#dbe4f0',
     initFill: '#6ea5d5',
@@ -131,9 +127,6 @@ const NORD_LIGHT: SvgPalette = {
     compositeStroke: '#5e81ac',
     compositeStrokeWidth: 1.8,
     compositeRadius: 16,
-    pseudoStateFill: '#ead7b8',
-    pseudoStateStroke: '#d08770',
-    pseudoStrokeWidth: 1.4,
     pseudoDash: '6 3',
     titleColor: '#2e3440',
     initFill: '#5e81ac',
@@ -162,9 +155,6 @@ const NORD_DARK: SvgPalette = {
     compositeStroke: '#88c0d0',
     compositeStrokeWidth: 1.8,
     compositeRadius: 16,
-    pseudoStateFill: '#4a3f37',
-    pseudoStateStroke: '#d08770',
-    pseudoStrokeWidth: 1.4,
     pseudoDash: '6 3',
     titleColor: '#eceff4',
     initFill: '#88c0d0',
@@ -193,9 +183,6 @@ const SOLARIZED_LIGHT: SvgPalette = {
     compositeStroke: '#586e75',
     compositeStrokeWidth: 1.8,
     compositeRadius: 16,
-    pseudoStateFill: '#f4cca2',
-    pseudoStateStroke: '#cb4b16',
-    pseudoStrokeWidth: 1.4,
     pseudoDash: '6 3',
     titleColor: '#073642',
     initFill: '#268bd2',
@@ -224,9 +211,6 @@ const SOLARIZED_DARK: SvgPalette = {
     compositeStroke: '#268bd2',
     compositeStrokeWidth: 1.8,
     compositeRadius: 16,
-    pseudoStateFill: '#402919',
-    pseudoStateStroke: '#cb4b16',
-    pseudoStrokeWidth: 1.4,
     pseudoDash: '6 3',
     titleColor: '#eee8d5',
     initFill: '#268bd2',
@@ -255,9 +239,6 @@ const DARCULA_LIGHT: SvgPalette = {
     compositeStroke: '#365880',
     compositeStrokeWidth: 1.8,
     compositeRadius: 12,
-    pseudoStateFill: '#fdecc7',
-    pseudoStateStroke: '#a68a21',
-    pseudoStrokeWidth: 1.4,
     pseudoDash: '6 3',
     titleColor: '#1e1e1e',
     initFill: '#365880',
@@ -286,9 +267,6 @@ const DARCULA_DARK: SvgPalette = {
     compositeStroke: '#589df6',
     compositeStrokeWidth: 1.8,
     compositeRadius: 12,
-    pseudoStateFill: '#433629',
-    pseudoStateStroke: '#e8a33d',
-    pseudoStrokeWidth: 1.4,
     pseudoDash: '6 3',
     titleColor: '#dfe1e5',
     initFill: '#589df6',

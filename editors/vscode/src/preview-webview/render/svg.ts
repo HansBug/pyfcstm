@@ -146,10 +146,14 @@ function drawNode(
     let extraAttrs = '';
 
     if (isPseudo) {
+        // Pseudo states reuse the leaf palette for fill and stroke; the
+        // only visual distinction is the dashed border (and the "pseudo"
+        // badge added below). Users asked for less chromatic noise so the
+        // yellow / amber pseudo skin has been retired.
         variant = 'pseudo';
-        fill = P.pseudoStateFill;
-        stroke = P.pseudoStateStroke;
-        strokeWidth = P.pseudoStrokeWidth;
+        fill = P.leafFill;
+        stroke = P.leafStroke;
+        strokeWidth = P.leafStrokeWidth;
         radius = P.leafRadius;
         extraAttrs = `stroke-dasharray="${P.pseudoDash}" `;
     } else if (isComposite) {
@@ -208,7 +212,7 @@ function drawNode(
         );
         if (isPseudo) {
             out.push(
-                `<text x="${x + 10}" y="${y + 14}" fill="${P.pseudoStateStroke}" ` +
+                `<text x="${x + 10}" y="${y + 14}" fill="${P.leafStroke}" ` +
                 `font-size="10" font-weight="700" letter-spacing="0.04em">pseudo</text>`
             );
         }

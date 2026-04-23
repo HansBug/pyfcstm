@@ -18,6 +18,11 @@ import type {PaletteId, PaletteMode} from './render/palette';
 type ColorMode = 'light' | 'dark' | 'auto';
 const STORAGE_KEY_PALETTE = 'fcstm.preview.palette';
 const STORAGE_KEY_MODE = 'fcstm.preview.mode';
+const STORAGE_KEY_DRAWER_HEIGHT = 'fcstm.preview.drawerHeight';
+const STORAGE_KEY_DRAWER_COLLAPSED = 'fcstm.preview.drawerCollapsed';
+const DRAWER_MIN_HEIGHT = 80;
+const DRAWER_MAX_HEIGHT_RATIO = 0.7;     // cap at 70% of shell height
+const DRAWER_DEFAULT_HEIGHT = 220;
 function readStorage(key: string): string | null {
     try { return typeof localStorage !== 'undefined' ? localStorage.getItem(key) : null; } catch { return null; }
 }
@@ -60,6 +65,53 @@ const initialState: PreviewWebviewState = (window as unknown as {
 const state = ref<PreviewWebviewState>(initialState);
 const selection = ref<SelectionRef>(null);
 const vscode = bridge();
+
+// Bottom drawer (DetailsPanel + BottomPanels) — bounded height with
+// internal scroll, user-adjustable via drag handle, collapsible. The
+// Stage grabs the remaining flex space above so clicking a state does
+// not resize the canvas every time the Details content changes.
+const drawerCollapsed = ref<boolean>(readStorage(STORAGE_KEY_DRAWER_COLLAPSED) === '1');
+function readInitialDrawerHeight(): number {
+    const raw = readStorage(STORAGE_KEY_DRAWER_HEIGHT);
+    if (!raw) return DRAWER_DEFAULT_HEIGHT;
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return DRAWER_DEFAULT_HEIGHT;
+    return Math.max(DRAWER_MIN_HEIGHT, Math.round(n));
+}
+const drawerHeight = ref<number>(readInitialDrawerHeight());
+
+let drawerDragStartY = 0;
+let drawerDragStartHeight = 0;
+function drawerMaxHeight(): number {
+    if (typeof window === 'undefined') return DRAWER_DEFAULT_HEIGHT * 3;
+    return Math.max(DRAWER_MIN_HEIGHT + 40, Math.floor(window.innerHeight * DRAWER_MAX_HEIGHT_RATIO));
+}
+function clampDrawerHeight(h: number): number {
+    return Math.min(drawerMaxHeight(), Math.max(DRAWER_MIN_HEIGHT, Math.round(h)));
+}
+function onDrawerHandleMouseMove(ev: MouseEvent) {
+    const dy = drawerDragStartY - ev.clientY;
+    drawerHeight.value = clampDrawerHeight(drawerDragStartHeight + dy);
+}
+function onDrawerHandleMouseUp() {
+    window.removeEventListener('mousemove', onDrawerHandleMouseMove);
+    window.removeEventListener('mouseup', onDrawerHandleMouseUp);
+    document.body.classList.remove('fcstm-drawer-resizing');
+    writeStorage(STORAGE_KEY_DRAWER_HEIGHT, String(drawerHeight.value));
+}
+function onDrawerHandleMouseDown(ev: MouseEvent) {
+    if (drawerCollapsed.value) return;
+    ev.preventDefault();
+    drawerDragStartY = ev.clientY;
+    drawerDragStartHeight = drawerHeight.value;
+    document.body.classList.add('fcstm-drawer-resizing');
+    window.addEventListener('mousemove', onDrawerHandleMouseMove);
+    window.addEventListener('mouseup', onDrawerHandleMouseUp);
+}
+function toggleDrawer() {
+    drawerCollapsed.value = !drawerCollapsed.value;
+    writeStorage(STORAGE_KEY_DRAWER_COLLAPSED, drawerCollapsed.value ? '1' : '0');
+}
 
 // Palette + colour-mode state. Mode can be 'auto' (follow VSCode), or
 // user-overridden to a fixed 'light' / 'dark'. Palette picks the named
@@ -350,12 +402,38 @@ const naiveTheme = computed(() => effectiveMode.value === 'dark' ? darkTheme : n
                     @toggle-collapse="toggleCollapse"
                     @reveal-source="revealSource"
                 />
-                <DetailsPanel
-                    :state="state"
-                    :selection="selection"
-                    @reveal-source="revealSource"
-                    @select="(sel: SelectionRef) => (selection = sel)"
-                />
+                <div
+                    class="fcstm-bottom-drawer"
+                    :class="{'fcstm-bottom-drawer--collapsed': drawerCollapsed}"
+                    :style="drawerCollapsed ? undefined : {height: drawerHeight + 'px'}"
+                >
+                    <div
+                        class="fcstm-bottom-drawer__handle"
+                        :class="{'fcstm-bottom-drawer__handle--locked': drawerCollapsed}"
+                        :title="drawerCollapsed ? 'Drag or toggle to expand' : 'Drag to resize · double-click to collapse'"
+                        @mousedown="onDrawerHandleMouseDown"
+                        @dblclick="toggleDrawer"
+                    >
+                        <span class="fcstm-bottom-drawer__grip"></span>
+                        <button
+                            type="button"
+                            class="fcstm-bottom-drawer__toggle"
+                            :aria-pressed="!drawerCollapsed"
+                            :title="drawerCollapsed ? 'Expand details' : 'Collapse details'"
+                            @click.stop="toggleDrawer"
+                        >
+                            <span>{{ drawerCollapsed ? '▲ Details' : '▼ Collapse' }}</span>
+                        </button>
+                    </div>
+                    <div v-if="!drawerCollapsed" class="fcstm-bottom-drawer__body">
+                        <DetailsPanel
+                            :state="state"
+                            :selection="selection"
+                            @reveal-source="revealSource"
+                            @select="(sel: SelectionRef) => (selection = sel)"
+                        />
+                    </div>
+                </div>
                 <BottomPanels
                     :variables="state.variables"
                     :shared-events="state.sharedEvents"
@@ -433,5 +511,81 @@ body {
     box-sizing: border-box;
     flex: 1;
     min-height: 0;
+}
+
+/* Bottom drawer: bounded-height container holding DetailsPanel and
+   BottomPanels. Stage above gets the remaining flex space, so clicks
+   into the Details area don't resize the diagram. */
+.fcstm-bottom-drawer {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    gap: 8px;
+}
+.fcstm-bottom-drawer--collapsed {
+    height: auto;
+}
+.fcstm-bottom-drawer__handle {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 12px;
+    cursor: ns-resize;
+    user-select: none;
+    border-radius: 6px;
+    transition: background-color 120ms ease;
+}
+.fcstm-bottom-drawer__handle:hover {
+    background-color: var(--fcstm-border-soft);
+}
+.fcstm-bottom-drawer__handle--locked {
+    cursor: default;
+}
+.fcstm-bottom-drawer__handle--locked:hover {
+    background-color: transparent;
+}
+.fcstm-bottom-drawer__grip {
+    width: 48px;
+    height: 3px;
+    border-radius: 999px;
+    background: var(--fcstm-border);
+    opacity: 0.5;
+}
+.fcstm-bottom-drawer__handle:hover .fcstm-bottom-drawer__grip {
+    opacity: 0.85;
+}
+.fcstm-bottom-drawer__toggle {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    border: 1px solid var(--fcstm-border-soft);
+    border-radius: 999px;
+    background: var(--fcstm-surface-raised);
+    color: var(--fcstm-muted);
+    font-size: 10px;
+    font-family: var(--fcstm-mono);
+    letter-spacing: 0.04em;
+    padding: 2px 10px;
+    cursor: pointer;
+    line-height: 14px;
+}
+.fcstm-bottom-drawer__toggle:hover {
+    color: var(--fcstm-accent);
+    border-color: var(--fcstm-border);
+}
+.fcstm-bottom-drawer__body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+body.fcstm-drawer-resizing {
+    cursor: ns-resize;
+    user-select: none;
 }
 </style>

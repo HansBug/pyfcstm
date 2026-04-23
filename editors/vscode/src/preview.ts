@@ -527,34 +527,46 @@ export class FcstmPreviewController implements vscode.Disposable {
     }
 
     /**
-     * Unified export: open one save dialog with SVG + PNG filters, then
-     * write whichever format the chosen file extension matches. The
-     * webview sends both renderings up front so there is no second
-     * round-trip after the user picks a format.
+     * Unified export. Two-step flow: QuickPick the target format
+     * (SVG vs PNG), then a single-filter save dialog whose default
+     * filename carries the matching extension. Electron's native
+     * save dialog does not reliably rewrite the filename's extension
+     * when the user switches filter on Linux / some macOS setups,
+     * which left users saving an SVG payload into a .png file
+     * (or vice versa) — splitting the choice into a QuickPick first
+     * avoids that entire class of mismatch.
      */
     private async exportDiagram(svg: string, pngBase64: string): Promise<void> {
+        const choice = await vscode.window.showQuickPick(
+            [
+                {label: 'SVG', description: 'Vector image', format: 'svg' as const},
+                {label: 'PNG', description: '2× raster image', format: 'png' as const},
+            ],
+            {placeHolder: 'Export diagram as…', matchOnDescription: true}
+        );
+        if (!choice) {
+            return;
+        }
+        const ext = choice.format;
         const defaultUri = this.currentDocumentUri
-            ? vscode.Uri.file(this.currentDocumentUri.replace(/^file:\/\//, '').replace(/\.fcstm$/i, '.svg'))
+            ? vscode.Uri.file(this.currentDocumentUri.replace(/^file:\/\//, '').replace(/\.fcstm$/i, '.' + ext))
             : undefined;
+        const filters = ext === 'svg'
+            ? {'SVG Image': ['svg']}
+            : {'PNG Image': ['png']};
         const uri = await vscode.window.showSaveDialog({
             defaultUri,
-            filters: {
-                'SVG Image': ['svg'],
-                'PNG Image': ['png'],
-            },
-            saveLabel: 'Export',
+            filters,
+            saveLabel: `Export ${ext.toUpperCase()}`,
         });
         if (!uri) {
             return;
         }
-        const ext = uri.fsPath.toLowerCase().match(/\.(svg|png)$/)?.[1];
         if (ext === 'png') {
             await vscode.workspace.fs.writeFile(uri, Buffer.from(pngBase64, 'base64'));
             await vscode.window.showInformationMessage(`Exported PNG to ${uri.fsPath}`);
             return;
         }
-        // Default to SVG — covers the .svg case and any path without a
-        // recognised extension so the user still gets a valid file.
         await vscode.workspace.fs.writeFile(uri, Buffer.from(svg, 'utf8'));
         await vscode.window.showInformationMessage(`Exported SVG to ${uri.fsPath}`);
     }

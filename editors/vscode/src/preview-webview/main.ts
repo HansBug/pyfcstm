@@ -45,7 +45,7 @@ window.addEventListener('keydown', updateModifierClass);
 window.addEventListener('keyup', updateModifierClass);
 window.addEventListener('blur', () => document.body.classList.remove('modifier-held'));
 
-// Relay export requests from Stage → extension host via the bridge.
+// Relay export + copy events from Stage → extension host via the bridge.
 window.addEventListener('fcstm-emit', (ev: Event) => {
     const detail = (ev as CustomEvent).detail as {type: string; payload: string};
     const api = bridge();
@@ -55,6 +55,10 @@ window.addEventListener('fcstm-emit', (ev: Event) => {
         api.postMessage({type: 'exportPng', base64: detail.payload});
     } else if (detail.type === 'exportError') {
         api.postMessage({type: 'exportError', message: detail.payload});
+    } else if (detail.type === 'copyDone') {
+        api.postMessage({type: 'copyDone', message: detail.payload});
+    } else if (detail.type === 'copyError') {
+        api.postMessage({type: 'copyError', message: detail.payload});
     }
 });
 

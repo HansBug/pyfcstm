@@ -475,6 +475,16 @@ export class FcstmPreviewController implements vscode.Disposable {
                     await vscode.window.showErrorMessage(`Export failed: ${payload.message}`);
                 }
                 return;
+            case 'copyDone':
+                if (payload.message) {
+                    void vscode.window.showInformationMessage(payload.message);
+                }
+                return;
+            case 'copyError':
+                if (payload.message) {
+                    void vscode.window.showErrorMessage(payload.message);
+                }
+                return;
         }
     }
 

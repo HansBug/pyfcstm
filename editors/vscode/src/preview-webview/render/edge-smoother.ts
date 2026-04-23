@@ -132,15 +132,20 @@ function smoothEdge(edge: PreviewElkEdge, threshold: number): void {
         ];
         if (points.length < 3) continue;
 
-        // Try tail first; it is the more visually important end
-        // because the arrowhead lives there.
+        // The tail end carries the arrowhead and is therefore the most
+        // visually important place to elongate a short stub. If the
+        // tail is short, fix it unconditionally — even if the fix
+        // creates a tiny start stub, that one is rarely visible
+        // (circle pseudo-ports hide it, and rect ports put it inside
+        // the node outline). Only fall back to the head fix when the
+        // tail was already fine, to avoid the ping-pong that would
+        // otherwise shuttle the stub back and forth.
         const tailPlan = planTailShift(points, threshold);
-        if (tailPlan && !createsOppositeStub(points, tailPlan, threshold, 'tail')) {
+        if (tailPlan) {
             applyShift(points, tailPlan);
-        }
-        const headPlan = planHeadShift(points, threshold);
-        if (headPlan && !createsOppositeStub(points, headPlan, threshold, 'head')) {
-            applyShift(points, headPlan);
+        } else {
+            const headPlan = planHeadShift(points, threshold);
+            if (headPlan) applyShift(points, headPlan);
         }
 
         section.startPoint = {x: points[0].x, y: points[0].y};

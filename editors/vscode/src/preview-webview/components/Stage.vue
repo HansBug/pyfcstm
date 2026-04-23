@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import {computed, nextTick, onMounted, onUnmounted, ref, watch} from 'vue';
-import {NButton, NIcon, NTooltip} from 'naive-ui';
+import {h, nextTick, onMounted, onUnmounted, ref, watch} from 'vue';
+import {NButton, NDropdown, NIcon, NTooltip} from 'naive-ui';
 import {
     AddOutline, RemoveOutline,
     ScanOutline, ResizeOutline,
+    ImageOutline, CodeOutline,
 } from '@vicons/ionicons5';
 import {renderSvg, type RenderedSvg} from '../render/svg';
 import {smoothGraphEdges} from '../render/edge-smoother';
@@ -333,11 +334,17 @@ function onExportSvgEvt() {
     if (!svgString) return;
     window.dispatchEvent(new CustomEvent('fcstm-emit', {detail: {type: 'exportSvg', payload: svgString}}));
 }
-async function onExportPngEvt() {
-    if (!svgString) return;
+/**
+ * Shared PNG renderer used by both Export (save to disk) and Copy
+ * (to clipboard). They go through the same ``<canvas>`` pipeline so
+ * the pixel output is byte-identical: same scale, same white fill,
+ * same draw order. Returns a Blob so callers can convert to whatever
+ * transport they need.
+ */
+async function renderCurrentSvgToPng(): Promise<Blob> {
+    const svgBlob = new Blob([svgString], {type: 'image/svg+xml;charset=utf-8'});
+    const url = URL.createObjectURL(svgBlob);
     try {
-        const blob = new Blob([svgString], {type: 'image/svg+xml;charset=utf-8'});
-        const url = URL.createObjectURL(blob);
         const img = new Image();
         await new Promise<void>((resolve, reject) => {
             img.onload = () => resolve();
@@ -353,15 +360,114 @@ async function onExportPngEvt() {
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        return await new Promise<Blob>((resolve, reject) => {
+            canvas.toBlob(b => {
+                if (b) resolve(b);
+                else reject(new Error('canvas.toBlob returned null'));
+            }, 'image/png');
+        });
+    } finally {
         URL.revokeObjectURL(url);
-        const dataUrl = canvas.toDataURL('image/png');
-        const base64 = dataUrl.slice(dataUrl.indexOf(',') + 1);
+    }
+}
+
+async function blobToBase64(blob: Blob): Promise<string> {
+    const buffer = await blob.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    for (let i = 0; i < bytes.length; i++) {
+        binary += String.fromCharCode(bytes[i]);
+    }
+    return (typeof btoa !== 'undefined' ? btoa : (s: string) => Buffer.from(s, 'binary').toString('base64'))(binary);
+}
+
+async function onExportPngEvt() {
+    if (!svgString) return;
+    try {
+        const blob = await renderCurrentSvgToPng();
+        const base64 = await blobToBase64(blob);
         window.dispatchEvent(new CustomEvent('fcstm-emit', {detail: {type: 'exportPng', payload: base64}}));
     } catch (err) {
         window.dispatchEvent(new CustomEvent('fcstm-emit', {detail: {
             type: 'exportError',
             payload: (err as Error)?.message || String(err),
         }}));
+    }
+}
+
+// Right-click context menu — quick access to "copy as" actions so the
+// user can drop the diagram straight into a doc, chat, or presentation
+// without going through a save-to-disk round trip.
+const menuVisible = ref(false);
+const menuX = ref(0);
+const menuY = ref(0);
+const contextMenuOptions = [
+    {
+        label: 'Copy as PNG',
+        key: 'copy-png',
+        icon: () => h(NIcon, null, {default: () => h(ImageOutline)}),
+    },
+    {
+        label: 'Copy as SVG',
+        key: 'copy-svg',
+        icon: () => h(NIcon, null, {default: () => h(CodeOutline)}),
+    },
+];
+function onContextMenu(ev: MouseEvent) {
+    if (!svgString) return;
+    ev.preventDefault();
+    menuVisible.value = false;
+    nextTick(() => {
+        menuX.value = ev.clientX;
+        menuY.value = ev.clientY;
+        menuVisible.value = true;
+    });
+}
+function onContextMenuClickOutside() { menuVisible.value = false; }
+function onContextMenuSelect(key: string) {
+    menuVisible.value = false;
+    if (key === 'copy-png') void copyPngToClipboard();
+    else if (key === 'copy-svg') void copySvgToClipboard();
+}
+
+function notifyCopy(kind: 'png' | 'svg', err?: string) {
+    const detail = err
+        ? {type: 'copyError', payload: `Copy ${kind.toUpperCase()} failed: ${err}`}
+        : {type: 'copyDone', payload: `Copied ${kind.toUpperCase()} to clipboard`};
+    window.dispatchEvent(new CustomEvent('fcstm-emit', {detail}));
+}
+
+async function copySvgToClipboard() {
+    if (!svgString) return;
+    try {
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+            await navigator.clipboard.writeText(svgString);
+            notifyCopy('svg');
+            return;
+        }
+        throw new Error('clipboard API not available');
+    } catch (err) {
+        notifyCopy('svg', (err as Error)?.message || String(err));
+    }
+}
+
+async function copyPngToClipboard() {
+    if (!svgString) return;
+    try {
+        // Exactly the same pipeline as Export → Save PNG, so the
+        // clipboard PNG is byte-identical to the saved one.
+        const blob = await renderCurrentSvgToPng();
+        const ClipboardItemCtor = (window as unknown as {
+            ClipboardItem?: typeof ClipboardItem;
+        }).ClipboardItem;
+        if (ClipboardItemCtor && navigator.clipboard && 'write' in navigator.clipboard) {
+            await navigator.clipboard.write([new ClipboardItemCtor({'image/png': blob})]);
+            notifyCopy('png');
+            return;
+        }
+        throw new Error('ClipboardItem not available');
+    } catch (err) {
+        notifyCopy('png', (err as Error)?.message || String(err));
     }
 }
 
@@ -415,15 +521,26 @@ void _t;
         <div
             ref="viewportRef"
             class="fcstm-stage__viewport"
-            title="Drag to pan · wheel to zoom · click chevron to collapse · Ctrl/Cmd+click to reveal source"
+            title="Drag to pan · wheel to zoom · click chevron to collapse · Ctrl/Cmd+click to reveal source · right-click to copy"
             @wheel.prevent="onWheel"
             @mousedown="onMouseDown"
             @click="onClick"
             @mouseover="onMouseOver"
             @mouseout="onMouseOut"
+            @contextmenu="onContextMenu"
         >
             <div ref="innerRef" class="fcstm-stage__inner"></div>
         </div>
+        <n-dropdown
+            trigger="manual"
+            placement="bottom-start"
+            :options="contextMenuOptions"
+            :show="menuVisible"
+            :x="menuX"
+            :y="menuY"
+            @clickoutside="onContextMenuClickOutside"
+            @select="onContextMenuSelect"
+        />
         <div v-if="isEmpty" class="fcstm-stage__empty">
             <div class="fcstm-stage__empty-title">{{ emptyTitle }}</div>
             <div class="fcstm-stage__empty-message">{{ emptyMessage }}</div>

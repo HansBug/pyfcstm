@@ -1,4 +1,4 @@
-.PHONY: docs test unittest resource antlr antlr_build build package clean docs_auto todos_auto tests_auto rst_auto vscode vscode_clean vscode_install vscode_uninstall logos logos_clean app_icons app_icons_clean help tpl tpl_clean templates_package
+.PHONY: docs test unittest resource antlr antlr_build build package clean docs_auto todos_auto tests_auto rst_auto jsfcstm jsfcstm_clean vscode vscode_clean vscode_install vscode_uninstall logos logos_clean app_icons app_icons_clean help tpl tpl_clean templates_package
 
 PYTHON := $(shell which python)
 
@@ -39,6 +39,7 @@ ANTLR_PARSER_GRAMMAR_FILE := ${ANTLR_GRAMMAR_DIR}/GrammarParser.g4
 
 # VSCode extension variables
 VSCODE_EXT_DIR := ${PROJ_DIR}/editors/vscode
+JSFCSTM_DIR := ${PROJ_DIR}/editors/jsfcstm
 APP_ICON_DIR := ${BUILD_DIR}/icons
 APP_ICON_SOURCE := ${LOGOS_DIR}/logo.png
 PYINSTALLER_ICON_ICO := ${APP_ICON_DIR}/pyfcstm.ico
@@ -114,6 +115,8 @@ help:
 	@echo "  make sample_clean - Remove generated sample tests"
 	@echo ""
 	@echo "VSCode Extension:"
+	@echo "  make jsfcstm         - Install, build, test, and pack the jsfcstm npm package"
+	@echo "  make jsfcstm_clean   - Clean jsfcstm npm package artifacts"
 	@echo "  make vscode          - Build VSCode extension package"
 	@echo "  make vscode_clean    - Clean VSCode extension build artifacts"
 	@echo "  make vscode_install  - Build and install VSCode extension via 'code' CLI"
@@ -237,6 +240,13 @@ ${MODEL_TEST_DIR}/test_sample_neg_%.py: ${SAMPLE_NEG_CODES_DIR}/%.fcstm sample_t
 sample_clean:
 	rm -rf ${SAMPLE_TEST_FILES}
 	rm -rf ${SAMPLE_NEG_TEST_FILES}
+
+# jsfcstm build targets
+jsfcstm:
+	$(MAKE) -C ${JSFCSTM_DIR} all pack
+
+jsfcstm_clean:
+	$(MAKE) -C ${JSFCSTM_DIR} clean
 
 # VSCode extension build targets
 vscode:

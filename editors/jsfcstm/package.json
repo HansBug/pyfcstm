@@ -1,0 +1,157 @@
+{
+  "name": "@pyfcstm/jsfcstm",
+  "version": "0.1.0-alpha.2",
+  "description": "FCSTM parser, semantics, editor intelligence, and reusable language-server core for JavaScript and TypeScript",
+  "author": {
+    "name": "HansBug",
+    "email": "hansbug@buaa.edu.cn"
+  },
+  "license": "LGPL-3.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/HansBug/pyfcstm.git"
+  },
+  "bugs": {
+    "url": "https://github.com/HansBug/pyfcstm/issues"
+  },
+  "homepage": "https://github.com/HansBug/pyfcstm#readme",
+  "keywords": [
+    "fcstm",
+    "fsm",
+    "state-machine",
+    "dsl",
+    "language-server",
+    "parser",
+    "semantics"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "typesVersions": {
+    "*": {
+      "ast": [
+        "dist/ast/index.d.ts"
+      ],
+      "config": [
+        "dist/config/index.d.ts"
+      ],
+      "diagram": [
+        "dist/diagram/index.d.ts"
+      ],
+      "dsl": [
+        "dist/dsl/index.d.ts"
+      ],
+      "editor": [
+        "dist/editor/index.d.ts"
+      ],
+      "lsp": [
+        "dist/lsp/index.d.ts"
+      ],
+      "model": [
+        "dist/model/index.d.ts"
+      ],
+      "semantics": [
+        "dist/semantics/index.d.ts"
+      ],
+      "utils": [
+        "dist/utils/index.d.ts"
+      ],
+      "workspace": [
+        "dist/workspace/index.d.ts"
+      ]
+    }
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./config": {
+      "types": "./dist/config/index.d.ts",
+      "require": "./dist/config/index.js",
+      "default": "./dist/config/index.js"
+    },
+    "./diagram": {
+      "types": "./dist/diagram/index.d.ts",
+      "require": "./dist/diagram/index.js",
+      "default": "./dist/diagram/index.js"
+    },
+    "./ast": {
+      "types": "./dist/ast/index.d.ts",
+      "require": "./dist/ast/index.js",
+      "default": "./dist/ast/index.js"
+    },
+    "./dsl": {
+      "types": "./dist/dsl/index.d.ts",
+      "require": "./dist/dsl/index.js",
+      "default": "./dist/dsl/index.js"
+    },
+    "./editor": {
+      "types": "./dist/editor/index.d.ts",
+      "require": "./dist/editor/index.js",
+      "default": "./dist/editor/index.js"
+    },
+    "./lsp": {
+      "types": "./dist/lsp/index.d.ts",
+      "require": "./dist/lsp/index.js",
+      "default": "./dist/lsp/index.js"
+    },
+    "./model": {
+      "types": "./dist/model/index.d.ts",
+      "require": "./dist/model/index.js",
+      "default": "./dist/model/index.js"
+    },
+    "./semantics": {
+      "types": "./dist/semantics/index.d.ts",
+      "require": "./dist/semantics/index.js",
+      "default": "./dist/semantics/index.js"
+    },
+    "./utils": {
+      "types": "./dist/utils/index.d.ts",
+      "require": "./dist/utils/index.js",
+      "default": "./dist/utils/index.js"
+    },
+    "./workspace": {
+      "types": "./dist/workspace/index.d.ts",
+      "require": "./dist/workspace/index.js",
+      "default": "./dist/workspace/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=16"
+  },
+  "scripts": {
+    "build": "rm -rf dist && node ./scripts/generate-parser.js && tsc -p ./ && node ./scripts/sync-runtime-assets.js",
+    "clean": "rm -rf coverage dist parser src/dsl/grammar tsconfig.tsbuildinfo",
+    "pack:local": "node ./scripts/pack-local.js",
+    "pack:check": "npm pack --dry-run",
+    "prepack": "npm run build",
+    "sample": "make sample",
+    "sample:clean": "make sample_clean",
+    "test:unit": "mocha --require ts-node/register/transpile-only --extension ts \"test/**/*.test.ts\" --reporter spec",
+    "test:coverage": "c8 --all --src src --include 'src/index.ts' --include 'src/*/index.ts' --exclude 'src/dsl/grammar/**' --exclude 'src/model/raw.ts' --exclude 'src/model/model.ts' --exclude 'src/diagram/model.ts' --exclude-after-remap --check-coverage --lines 98 --statements 98 --functions 0 --branches 95 --reporter=text --reporter=text-summary --reporter=html --reporter=lcov --reporter=json-summary mocha --require ts-node/register/transpile-only --extension ts \"test/**/*.test.ts\" --reporter spec",
+    "test": "npm run build && npm run test:coverage"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "antlr4": "4.9.3",
+    "elkjs": "^0.11.1",
+    "vscode-languageserver": "7.0.0",
+    "vscode-languageserver-textdocument": "1.0.1"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^16.0.0",
+    "c8": "^10.1.3",
+    "mocha": "^10.8.2",
+    "ts-node": "^10.9.2",
+    "typescript": "^4.5.0"
+  }
+}

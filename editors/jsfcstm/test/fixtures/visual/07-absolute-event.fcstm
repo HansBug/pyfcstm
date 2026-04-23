@@ -1,0 +1,22 @@
+def int counter = 0;
+
+state Plant {
+    event Started;
+    event Stopped;
+
+    state Subsystem {
+        event Alarm;
+        state A;
+        state B;
+        [*] -> A;
+        A -> B :: Alarm;
+    }
+
+    state Parked;
+    state Running;
+
+    [*] -> Parked;
+    Parked -> Running :: Started;
+    Running -> Parked :: Stopped;
+    Running -> Parked : /Subsystem.Alarm;
+}

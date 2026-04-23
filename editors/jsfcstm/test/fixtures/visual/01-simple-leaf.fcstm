@@ -1,0 +1,25 @@
+// Minimal machine: one variable, three leaf states, a couple transitions.
+def int counter = 0;
+
+state Switch {
+    event TurnOn;
+    event TurnOff;
+
+    [*] -> Off;
+
+    state Off {
+        enter { counter = 0; }
+    }
+
+    state On {
+        during { counter = counter + 1; }
+    }
+
+    state Locked {
+        enter { counter = 999; }
+    }
+
+    Off -> On :: TurnOn;
+    On -> Off :: TurnOff;
+    On -> Locked : if [counter >= 100];
+}

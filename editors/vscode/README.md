@@ -1,6 +1,6 @@
 # FCSTM Language Support for VSCode
 
-Syntax highlighting support for FCSTM (Finite State Machine) DSL in Visual Studio Code.
+Pure-JS FCSTM language support for Visual Studio Code with a bundled language server.
 
 ## Project Positioning
 
@@ -14,7 +14,8 @@ The main design principles are:
 - The extension should remain compatible with a wide range of VSCode versions, including older and newer releases where practical.
 - The extension should work fully offline for its core editor features.
 - The FCSTM ANTLR grammar should remain the main source of truth for syntax-driven capabilities.
-- Parser-related assets should be maintainable from within [editors/vscode/](.) through a local regeneration command.
+- The extension host should stay thin: activation, client startup, commands/settings glue, and other VSCode-specific adaptation live here, while FCSTM language logic lives in `@pyfcstm/jsfcstm`.
+- The bundled server should remain fully self-contained and pure JS.
 
 ## Current Scope
 
@@ -25,12 +26,13 @@ The extension currently provides:
 - Bracket matching and auto-closing
 - Code folding support through language configuration
 - Authoring snippets for common FCSTM constructs
+- **Bundled language server** - a pure-JS `vscode-languageclient` + bundled `jsfcstm` LSP server architecture
 - **Syntax diagnostics** - Real-time error detection and reporting
 - **Document symbols** - Outline view and breadcrumb navigation for states, variables, and events
 - **Code completion** - IntelliSense for keywords, built-in functions, constants, and document symbols
 - **Hover documentation** - Contextual help for FCSTM constructs
-
-The extension is planned to grow toward lightweight parser-backed editing features, but it is not positioned as a full language server.
+- **Go to Definition** - import-path navigation into imported FCSTM modules
+- **Document links** - clickable import paths
 
 ## Features
 
@@ -39,6 +41,7 @@ The extension is planned to grow toward lightweight parser-backed editing featur
 - **Bracket matching** and auto-closing
 - **Code folding** support
 - **Authoring snippets** for common FCSTM constructs
+- **Bundled pure-JS language server** powering FCSTM language intelligence without Python, Java, or network services
 - **Syntax diagnostics** - Real-time error detection with clear error messages in the Problems panel
 - **Document symbols** - Navigate your state machine structure via the Outline view
   - Variables (`def int`, `def float`)
@@ -57,7 +60,8 @@ The extension is planned to grow toward lightweight parser-backed editing featur
   - Pseudo-state marker (`[*]`)
   - Keywords (`pseudo`, `effect`, `abstract`, `ref`, `named`, etc.)
   - Lifecycle aspects (`during before/after`, `>> during before/after`)
-- Grammar-aligned language package foundation for future parser-backed editor features
+- **Import navigation** - Go-to-definition and document-link support for FCSTM import paths
+- **Thin client architecture** - `dist/extension.js` starts and supervises `dist/server.js`, while FCSTM logic is implemented in `@pyfcstm/jsfcstm`
 
 ## Installation
 
@@ -106,10 +110,10 @@ If you want to build the extension from source:
    ```
 
    This command will:
+   - Build and install the local `jsfcstm` package
    - Install npm dependencies
    - Copy TextMate grammar files
-   - Generate JavaScript parser from ANTLR grammar
-   - Bundle extension with esbuild (all-in-one)
+   - Bundle the thin VSCode client and bundled language server with esbuild
    - Package the extension as `.vsix`
 
    The built extension will be available at `editors/vscode/build/fcstm-language-support-0.1.0.vsix`
@@ -132,10 +136,7 @@ npm install
 # Copy TextMate grammar
 make syntaxes
 
-# Generate JavaScript parser
-make parser
-
-# Bundle extension
+# Bundle extension client + server
 make build
 
 # Package extension
@@ -173,14 +174,15 @@ When the ANTLR grammar pair (`pyfcstm/dsl/grammar/GrammarLexer.g4` and `pyfcstm/
    make unittest
    ```
 
-3. Regenerate JavaScript parser for VSCode:
+3. Rebuild the JavaScript parser runtime in `jsfcstm`:
    ```bash
-   cd editors/vscode
-   make parser
+   cd editors/jsfcstm
+   npm run build
    ```
 
-4. Rebuild and verify:
+4. Rebuild and verify the VSCode extension:
    ```bash
+   cd ../vscode
    make build
    make verify
    ```

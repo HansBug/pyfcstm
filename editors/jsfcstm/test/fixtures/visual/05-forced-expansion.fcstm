@@ -1,0 +1,23 @@
+def int x = 0;
+
+state System {
+    event Stop;
+    event Panic;
+
+    [*] -> Running;
+
+    state Running {
+        state Working;
+        state Pausing;
+        state Faulting;
+        [*] -> Working;
+        Working -> Pausing :: Stop;
+        Pausing -> Working :: Stop;
+    }
+
+    state Shutdown;
+    state Stopped;
+
+    !* -> Shutdown :: Stop;
+    !* -> Stopped :: Panic;
+}

@@ -18,9 +18,12 @@ const originalRequire = Module.prototype.require;
 // Mock VSCode module
 const vscode = {
     SymbolKind: {
-        Variable: 13,
+        Module: 1,
         Class: 5,
-        Event: 24
+        Method: 6,
+        Function: 11,
+        Variable: 13,
+        Event: 24,
     },
     DocumentSymbol: class DocumentSymbol {
         constructor(name, detail, kind, range, selectionRange) {
@@ -109,6 +112,148 @@ class TestCase {
  * Symbol kind enum (matching VSCode)
  */
 const SymbolKind = vscode.SymbolKind;
+
+// ---------------------------------------------------------------------------
+// Builders for expected document-symbol trees.
+//
+// jsfcstm now groups state children into intermediate "module" containers:
+//   <State>
+//     Events (module)       -> list of event entries
+//     Transitions (module)  -> list of transition entries
+//     Actions (module)      -> Lifecycle / Aspects sub-groups
+//         Lifecycle (module)
+//         Aspects   (module)
+//     States (module)       -> nested states
+// ---------------------------------------------------------------------------
+
+function plural(count, singular, pluralForm) {
+    const word = count === 1 ? singular : (pluralForm || singular + 's');
+    return `${count} ${word}`;
+}
+
+function variable(name, type) {
+    return { name, kind: SymbolKind.Variable, detail: type };
+}
+
+// Auto-derive the state detail string from the child groups.
+//
+// Composite states now carry a compact shape summary as their detail
+// (e.g. `2 states · 3 transitions · 1 event`). The builder scans the
+// passed-in children to pick up the relevant counts so individual tests
+// don't need to hand-write them.
+function deriveStateDetail(children) {
+    if (!children) {
+        return '';
+    }
+    let stateCount = 0;
+    let transitionCount = 0;
+    let eventCount = 0;
+    for (const child of children) {
+        if (!child || child.kind !== SymbolKind.Module) continue;
+        switch (child.name) {
+            case 'States':
+                stateCount = (child.children || []).length;
+                break;
+            case 'Transitions':
+                transitionCount = (child.children || []).length;
+                break;
+            case 'Events':
+                eventCount = (child.children || []).length;
+                break;
+            default:
+                break;
+        }
+    }
+    const fragments = [];
+    if (stateCount > 0) fragments.push(plural(stateCount, 'state'));
+    if (transitionCount > 0) fragments.push(plural(transitionCount, 'transition'));
+    if (eventCount > 0) fragments.push(plural(eventCount, 'event'));
+    return fragments.join(' · ');
+}
+
+function state(name, detail, children) {
+    const resolvedDetail = detail !== undefined
+        ? detail
+        : (children && children.length > 0 ? deriveStateDetail(children) : '');
+    if (children === undefined) {
+        return { name, kind: SymbolKind.Class, detail: resolvedDetail };
+    }
+    return { name, kind: SymbolKind.Class, detail: resolvedDetail, children };
+}
+
+function pseudoState(name) {
+    return { name, kind: SymbolKind.Class, detail: 'pseudo state' };
+}
+
+function event(name, detail = '') {
+    return { name, kind: SymbolKind.Event, detail };
+}
+
+function transition(label, detail = '') {
+    return { name: label, kind: SymbolKind.Function, detail };
+}
+
+// Lifecycle and aspect actions now live directly under the enclosing
+// state (no more Actions/Lifecycle/Aspects wrappers) and use the Method
+// icon so they visually separate from transitions.
+function actionEntry(name, detail) {
+    return { name, kind: SymbolKind.Method, detail };
+}
+
+function eventsGroup(children) {
+    return {
+        name: 'Events',
+        kind: SymbolKind.Module,
+        detail: plural(children.length, 'event'),
+        children,
+    };
+}
+
+function transitionsGroup(children) {
+    return {
+        name: 'Transitions',
+        kind: SymbolKind.Module,
+        detail: plural(children.length, 'transition'),
+        children,
+    };
+}
+
+function statesGroup(children) {
+    return {
+        name: 'States',
+        kind: SymbolKind.Module,
+        detail: plural(children.length, 'state'),
+        children,
+    };
+}
+
+function lifecycleGroup(children) {
+    return {
+        name: 'Lifecycle',
+        kind: SymbolKind.Module,
+        detail: plural(children.length, 'action'),
+        children,
+    };
+}
+
+function aspectsGroup(children) {
+    return {
+        name: 'Aspects',
+        kind: SymbolKind.Module,
+        detail: plural(children.length, 'aspect'),
+        children,
+    };
+}
+
+function actionsGroup(children) {
+    const total = children.reduce((n, g) => n + (g.children ? g.children.length : 0), 0);
+    return {
+        name: 'Actions',
+        kind: SymbolKind.Module,
+        detail: plural(total, 'action entry', 'action entries'),
+        children,
+    };
+}
 
 /**
  * Check if symbol matches expected
@@ -286,15 +431,9 @@ def float z = 2.5;`,
     state Child2;
 }`,
         [
-            {
-                name: 'Root',
-                kind: SymbolKind.Class,
-                detail: '',
-                children: [
-                    { name: 'Child1', kind: SymbolKind.Class, detail: '' },
-                    { name: 'Child2', kind: SymbolKind.Class, detail: '' }
-                ]
-            }
+            state('Root', undefined, [
+                statesGroup([state('Child1'), state('Child2')]),
+            ]),
         ]
     ),
 
@@ -307,21 +446,13 @@ def float z = 2.5;`,
     }
 }`,
         [
-            {
-                name: 'Root',
-                kind: SymbolKind.Class,
-                detail: '',
-                children: [
-                    {
-                        name: 'Level1',
-                        kind: SymbolKind.Class,
-                        detail: '',
-                        children: [
-                            { name: 'Level2', kind: SymbolKind.Class, detail: '' }
-                        ]
-                    }
-                ]
-            }
+            state('Root', undefined, [
+                statesGroup([
+                    state('Level1', undefined, [
+                        statesGroup([state('Level2')]),
+                    ]),
+                ]),
+            ]),
         ]
     ),
 
@@ -333,14 +464,9 @@ def float z = 2.5;`,
     event Start;
 }`,
         [
-            {
-                name: 'Root',
-                kind: SymbolKind.Class,
-                detail: '',
-                children: [
-                    { name: 'Start', kind: SymbolKind.Event, detail: '' }
-                ]
-            }
+            state('Root', undefined, [
+                eventsGroup([event('Start')]),
+            ]),
         ]
     ),
 
@@ -351,14 +477,9 @@ def float z = 2.5;`,
     event Stop named "Stop Event";
 }`,
         [
-            {
-                name: 'Root',
-                kind: SymbolKind.Class,
-                detail: '',
-                children: [
-                    { name: 'Stop', kind: SymbolKind.Event, detail: 'Stop Event' }
-                ]
-            }
+            state('Root', undefined, [
+                eventsGroup([event('Stop', 'Stop Event')]),
+            ]),
         ]
     ),
 
@@ -371,16 +492,9 @@ def float z = 2.5;`,
     event Pause;
 }`,
         [
-            {
-                name: 'Root',
-                kind: SymbolKind.Class,
-                detail: '',
-                children: [
-                    { name: 'Start', kind: SymbolKind.Event, detail: '' },
-                    { name: 'Stop', kind: SymbolKind.Event, detail: '' },
-                    { name: 'Pause', kind: SymbolKind.Event, detail: '' }
-                ]
-            }
+            state('Root', undefined, [
+                eventsGroup([event('Start'), event('Stop'), event('Pause')]),
+            ]),
         ]
     ),
 
@@ -405,16 +519,11 @@ state System {
     state Idle;
 }`,
         [
-            { name: 'counter', kind: SymbolKind.Variable, detail: 'int' },
-            {
-                name: 'System',
-                kind: SymbolKind.Class,
-                detail: '',
-                children: [
-                    { name: 'Start', kind: SymbolKind.Event, detail: '' },
-                    { name: 'Idle', kind: SymbolKind.Class, detail: '' }
-                ]
-            }
+            variable('counter', 'int'),
+            state('System', undefined, [
+                eventsGroup([event('Start')]),
+                statesGroup([state('Idle')]),
+            ]),
         ]
     ),
 
@@ -432,33 +541,24 @@ state Root {
     }
 }`,
         [
-            { name: 'x', kind: SymbolKind.Variable, detail: 'int' },
-            { name: 'y', kind: SymbolKind.Variable, detail: 'float' },
-            {
-                name: 'Root',
-                kind: SymbolKind.Class,
-                detail: '',
-                children: [
-                    { name: 'GlobalEvent', kind: SymbolKind.Event, detail: '' },
-                    {
-                        name: 'SubSystem',
-                        kind: SymbolKind.Class,
-                        detail: '',
-                        children: [
-                            { name: 'LocalEvent', kind: SymbolKind.Event, detail: '' },
-                            { name: 'Active', kind: SymbolKind.Class, detail: '' },
-                            { name: 'Idle', kind: SymbolKind.Class, detail: '' }
-                        ]
-                    }
-                ]
-            }
+            variable('x', 'int'),
+            variable('y', 'float'),
+            state('Root', undefined, [
+                eventsGroup([event('GlobalEvent')]),
+                statesGroup([
+                    state('SubSystem', undefined, [
+                        eventsGroup([event('LocalEvent')]),
+                        statesGroup([state('Active'), state('Idle')]),
+                    ]),
+                ]),
+            ]),
         ]
     ),
 
     // Edge cases
     new TestCase(
         'P0.4-17',
-        'Extract state with lifecycle actions (should ignore actions)',
+        'Extract state with lifecycle actions',
         `def int x = 0;
 state Root {
     enter { x = 0; }
@@ -466,14 +566,18 @@ state Root {
     exit { x = 0; }
 }`,
         [
-            { name: 'x', kind: SymbolKind.Variable, detail: 'int' },
-            { name: 'Root', kind: SymbolKind.Class, detail: '', children: [] }
+            variable('x', 'int'),
+            state('Root', undefined, [
+                actionEntry('enter', '{ x=0; }'),
+                actionEntry('during', '{ x=x+1; }'),
+                actionEntry('exit', '{ x=0; }'),
+            ]),
         ]
     ),
 
     new TestCase(
         'P0.4-18',
-        'Extract state with transitions (should ignore transitions)',
+        'Extract state with transitions',
         `state Root {
     state A;
     state B;
@@ -481,15 +585,16 @@ state Root {
     A -> B;
 }`,
         [
-            {
-                name: 'Root',
-                kind: SymbolKind.Class,
-                detail: '',
-                children: [
-                    { name: 'A', kind: SymbolKind.Class, detail: '' },
-                    { name: 'B', kind: SymbolKind.Class, detail: '' }
-                ]
-            }
+            state('Root', undefined, [
+                // Children are sorted by source position: both child states
+                // are declared before any transitions, so the States group
+                // surfaces above the Transitions group.
+                statesGroup([state('A'), state('B')]),
+                transitionsGroup([
+                    transition('[*] -> A', 'initial'),
+                    transition('A -> B'),
+                ]),
+            ]),
         ]
     ),
 
@@ -502,16 +607,9 @@ state Root {
     state State3;
 }`,
         [
-            {
-                name: 'Root',
-                kind: SymbolKind.Class,
-                detail: '',
-                children: [
-                    { name: 'State1', kind: SymbolKind.Class, detail: '' },
-                    { name: 'State2', kind: SymbolKind.Class, detail: '' },
-                    { name: 'State3', kind: SymbolKind.Class, detail: '' }
-                ]
-            }
+            state('Root', undefined, [
+                statesGroup([state('State1'), state('State2'), state('State3')]),
+            ]),
         ]
     ),
 
@@ -526,34 +624,23 @@ state Root {
     }
 }`,
         [
-            {
-                name: 'L1',
-                kind: SymbolKind.Class,
-                detail: '',
-                children: [
-                    {
-                        name: 'L2',
-                        kind: SymbolKind.Class,
-                        detail: '',
-                        children: [
-                            {
-                                name: 'L3',
-                                kind: SymbolKind.Class,
-                                detail: '',
-                                children: [
-                                    { name: 'L4', kind: SymbolKind.Class, detail: '' }
-                                ]
-                            }
-                        ]
-                    }
-                ]
-            }
+            state('L1', undefined, [
+                statesGroup([
+                    state('L2', undefined, [
+                        statesGroup([
+                            state('L3', undefined, [
+                                statesGroup([state('L4')]),
+                            ]),
+                        ]),
+                    ]),
+                ]),
+            ]),
         ]
     ),
 
     new TestCase(
         'P0.4-21',
-        'Extract state with aspect actions (should ignore aspect actions)',
+        'Extract state with aspect actions',
         `def int x = 0;
 state Root {
     >> during before { x = 0; }
@@ -561,15 +648,12 @@ state Root {
     state Child;
 }`,
         [
-            { name: 'x', kind: SymbolKind.Variable, detail: 'int' },
-            {
-                name: 'Root',
-                kind: SymbolKind.Class,
-                detail: '',
-                children: [
-                    { name: 'Child', kind: SymbolKind.Class, detail: '' }
-                ]
-            }
+            variable('x', 'int'),
+            state('Root', undefined, [
+                actionEntry('>> during before', '{ x=0; }'),
+                actionEntry('>> during after', '{ x=1; }'),
+                statesGroup([state('Child')]),
+            ]),
         ]
     ),
 
@@ -582,16 +666,13 @@ state Root {
     state Another;
 }`,
         [
-            {
-                name: 'Root',
-                kind: SymbolKind.Class,
-                detail: '',
-                children: [
-                    { name: 'Normal', kind: SymbolKind.Class, detail: '' },
-                    { name: 'Junction', kind: SymbolKind.Class, detail: 'pseudo state' },
-                    { name: 'Another', kind: SymbolKind.Class, detail: '' }
-                ]
-            }
+            state('Root', undefined, [
+                statesGroup([
+                    state('Normal'),
+                    pseudoState('Junction'),
+                    state('Another'),
+                ]),
+            ]),
         ]
     ),
 
@@ -600,38 +681,39 @@ state Root {
         'Extract named composite state',
         'state Root named "Root State" { state Child; }',
         [
-            {
-                name: 'Root',
-                kind: SymbolKind.Class,
-                detail: 'Root State',
-                children: [
-                    { name: 'Child', kind: SymbolKind.Class, detail: '' }
-                ]
-            }
+            state('Root', 'Root State', [
+                statesGroup([state('Child')]),
+            ]),
         ]
     ),
 
     new TestCase(
         'P0.4-24',
-        'Extract state with abstract actions (should ignore abstract)',
+        'Extract state with abstract actions',
         `state Root {
     enter abstract Init;
     exit abstract Cleanup;
 }`,
         [
-            { name: 'Root', kind: SymbolKind.Class, detail: '', children: [] }
+            state('Root', undefined, [
+                actionEntry('Init', 'abstract'),
+                actionEntry('Cleanup', 'abstract'),
+            ]),
         ]
     ),
 
     new TestCase(
         'P0.4-25',
-        'Extract state with reference actions (should ignore ref)',
+        'Extract state with reference actions',
         `state Root {
     enter ref /GlobalInit;
     exit ref /GlobalCleanup;
 }`,
         [
-            { name: 'Root', kind: SymbolKind.Class, detail: '', children: [] }
+            state('Root', undefined, [
+                actionEntry('enter ref /GlobalInit', 'ref /GlobalInit'),
+                actionEntry('exit ref /GlobalCleanup', 'ref /GlobalCleanup'),
+            ]),
         ]
     ),
 
@@ -660,29 +742,16 @@ def int c = (1 << 4) | 0x0F;`,
     }
 }`,
         [
-            {
-                name: 'Root',
-                kind: SymbolKind.Class,
-                detail: '',
-                children: [
-                    {
-                        name: 'Branch1',
-                        kind: SymbolKind.Class,
-                        detail: '',
-                        children: [
-                            { name: 'Leaf1', kind: SymbolKind.Class, detail: '' }
-                        ]
-                    },
-                    {
-                        name: 'Branch2',
-                        kind: SymbolKind.Class,
-                        detail: '',
-                        children: [
-                            { name: 'Leaf2', kind: SymbolKind.Class, detail: '' }
-                        ]
-                    }
-                ]
-            }
+            state('Root', undefined, [
+                statesGroup([
+                    state('Branch1', undefined, [
+                        statesGroup([state('Leaf1')]),
+                    ]),
+                    state('Branch2', undefined, [
+                        statesGroup([state('Leaf2')]),
+                    ]),
+                ]),
+            ]),
         ]
     ),
 
@@ -693,14 +762,9 @@ def int c = (1 << 4) | 0x0F;`,
     event E1 named 'Event One';
 }`,
         [
-            {
-                name: 'Root',
-                kind: SymbolKind.Class,
-                detail: '',
-                children: [
-                    { name: 'E1', kind: SymbolKind.Event, detail: 'Event One' }
-                ]
-            }
+            state('Root', undefined, [
+                eventsGroup([event('E1', 'Event One')]),
+            ]),
         ]
     ),
 
@@ -717,20 +781,12 @@ state TrafficLight {
     state Green;
 }`,
         [
-            { name: 'counter', kind: SymbolKind.Variable, detail: 'int' },
-            { name: 'temperature', kind: SymbolKind.Variable, detail: 'float' },
-            {
-                name: 'TrafficLight',
-                kind: SymbolKind.Class,
-                detail: '',
-                children: [
-                    { name: 'Start', kind: SymbolKind.Event, detail: '' },
-                    { name: 'Stop', kind: SymbolKind.Event, detail: '' },
-                    { name: 'Red', kind: SymbolKind.Class, detail: '' },
-                    { name: 'Yellow', kind: SymbolKind.Class, detail: '' },
-                    { name: 'Green', kind: SymbolKind.Class, detail: '' }
-                ]
-            }
+            variable('counter', 'int'),
+            variable('temperature', 'float'),
+            state('TrafficLight', undefined, [
+                eventsGroup([event('Start'), event('Stop')]),
+                statesGroup([state('Red'), state('Yellow'), state('Green')]),
+            ]),
         ]
     ),
 
@@ -752,28 +808,24 @@ state System named "Main System" {
     }
 }`,
         [
-            { name: 'x', kind: SymbolKind.Variable, detail: 'int' },
-            { name: 'y', kind: SymbolKind.Variable, detail: 'float' },
-            {
-                name: 'System',
-                kind: SymbolKind.Class,
-                detail: 'Main System',
-                children: [
-                    { name: 'GlobalStart', kind: SymbolKind.Event, detail: 'Global Start Event' },
-                    { name: 'GlobalStop', kind: SymbolKind.Event, detail: '' },
-                    { name: 'Junction', kind: SymbolKind.Class, detail: 'pseudo state' },
-                    {
-                        name: 'SubSystem',
-                        kind: SymbolKind.Class,
-                        detail: '',
-                        children: [
-                            { name: 'LocalEvent', kind: SymbolKind.Event, detail: '' },
-                            { name: 'Active', kind: SymbolKind.Class, detail: 'Active State' },
-                            { name: 'Idle', kind: SymbolKind.Class, detail: '' }
-                        ]
-                    }
-                ]
-            }
+            variable('x', 'int'),
+            variable('y', 'float'),
+            state('System', 'Main System', [
+                eventsGroup([
+                    event('GlobalStart', 'Global Start Event'),
+                    event('GlobalStop'),
+                ]),
+                statesGroup([
+                    pseudoState('Junction'),
+                    state('SubSystem', undefined, [
+                        eventsGroup([event('LocalEvent')]),
+                        statesGroup([
+                            state('Active', 'Active State'),
+                            state('Idle'),
+                        ]),
+                    ]),
+                ]),
+            ]),
         ]
     ),
 
@@ -796,15 +848,10 @@ state Root;`,
 state Root {
     state Child;`,
         [
-            { name: 'x', kind: SymbolKind.Variable, detail: 'int' },
-            {
-                name: 'Root',
-                kind: SymbolKind.Class,
-                detail: '',
-                children: [
-                    { name: 'Child', kind: SymbolKind.Class, detail: '' }
-                ]
-            }
+            variable('x', 'int'),
+            state('Root', undefined, [
+                statesGroup([state('Child')]),
+            ]),
         ]
     ),
 
@@ -838,7 +885,12 @@ state Root;`,
     [*] -> [*];
 }`,
         [
-            { name: 'Root', kind: SymbolKind.Class, detail: '', children: [] }
+            state('Root', undefined, [
+                transitionsGroup([
+                    transition('[*] -> ?', 'initial'),
+                    transition('[*] -> ?', 'initial'),
+                ]),
+            ]),
         ]
     ),
 ];

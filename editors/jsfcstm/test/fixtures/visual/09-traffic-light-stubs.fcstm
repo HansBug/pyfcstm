@@ -1,0 +1,29 @@
+def int a = 0;
+
+state TrafficLight {
+    event Start;
+    event Maintain;
+    event E2;
+
+    [*] -> InService;
+
+    state InService {
+        [*] -> Red :: Start;
+
+        state Green;
+        state Yellow;
+        state Red;
+
+        Green -> Yellow :: E2;
+        Yellow -> Yellow : /E2;
+        Yellow -> Red : if [a >= 10];
+        Green -> Red;
+    }
+
+    state Idle {
+        Idle -> Idle :: E2;
+    }
+
+    InService -> Idle :: Maintain;
+    Idle -> [*];
+}

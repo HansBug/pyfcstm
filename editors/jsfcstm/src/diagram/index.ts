@@ -1,0 +1,54 @@
+export {
+    buildFcstmDiagramFromDocument,
+    buildFcstmDiagramFromStateMachine,
+    buildFcstmDiagramFromWorkspaceSnapshot,
+    formatFcstmDiagramActionLabel,
+    formatFcstmDiagramEventLabel,
+    formatFcstmDiagramTransitionLabel,
+} from './builder';
+export {resolveFcstmDiagramPreviewOptions} from './options';
+export {
+    collectFcstmDiagramEffectNotes,
+    formatFcstmDiagramTransitionEventLabel,
+    formatFcstmDiagramTransitionGuardLabel,
+    formatFcstmDiagramTransitionInlineEffectLabel,
+    renderFcstmDiagramMermaid,
+    renderFcstmDiagramMermaidView,
+} from './render';
+export {
+    buildFcstmElkGraph,
+    measureLabel as measureFcstmElkLabel,
+} from './elk-graph';
+export {
+    renderFcstmDiagramSvg,
+} from './svg-renderer';
+export {
+    buildFcstmDiagramWebviewPayload,
+} from './webview-payload';
+export type {
+    FcstmDiagram,
+    FcstmDiagramAction,
+    FcstmDiagramDetailLevel,
+    FcstmDiagramEffectNote,
+    FcstmDiagramEvent,
+    FcstmDiagramEventNameFormatPart,
+    FcstmDiagramEventVisualizationMode,
+    FcstmDiagramMermaidRenderResult,
+    FcstmDiagramPreviewOptions,
+    FcstmDiagramPreviewOptionsInput,
+    FcstmDiagramRenderedTransition,
+    FcstmDiagramState,
+    FcstmDiagramStateDetail,
+    FcstmDiagramSummary,
+    FcstmDiagramTransition,
+    FcstmDiagramTransitionDetail,
+    FcstmDiagramTransitionEffectMode,
+    FcstmDiagramVariable,
+    FcstmDiagramWebviewPayload,
+    FcstmElkEdge,
+    FcstmElkEdgeMeta,
+    FcstmElkGraph,
+    FcstmElkNode,
+    FcstmElkNodeMeta,
+    ResolvedFcstmDiagramPreviewOptions,
+} from './model';

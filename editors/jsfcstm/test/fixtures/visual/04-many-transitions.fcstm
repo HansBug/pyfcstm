@@ -1,0 +1,26 @@
+def int x = 0;
+
+state Graph {
+    event a;
+    event b;
+    event c;
+    event d;
+
+    [*] -> A;
+
+    state A;
+    state B;
+    state C;
+    state D;
+    state E;
+
+    A -> B :: a;
+    A -> C :: b;
+    A -> D :: c;
+    B -> C :: a;
+    B -> D :: b;
+    B -> E :: d;
+    C -> E :: d;
+    D -> E :: d;
+    E -> A :: a;
+}

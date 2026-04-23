@@ -1,6 +1,10 @@
 # VSCode Extension Roadmap for FCSTM
 
-This document tracks the planned evolution of the VSCode extension under [editors/vscode/](.) from a static language package into a lightweight but practical editing experience for FCSTM.
+This document tracks the historical evolution of the VSCode extension under [editors/vscode/](.).
+
+As of 2026-04-08, the extension has already moved to a bundled pure-JS language server architecture. Treat any
+remaining "no full language server" statements below as historical roadmap context unless they are reconciled with
+[mds/VSCODE_EXT.md](../../mds/VSCODE_EXT.md).
 
 ## Project Positioning and Design Principles
 
@@ -18,7 +22,7 @@ The FCSTM VSCode extension should follow these product and engineering principle
 - The repository should include a long-term maintainable grammar generation entrypoint under [editors/vscode/](.) so that JavaScript lexer/parser artifacts can be regenerated in the future.
   - A local build script or Makefile-style command should be kept in the VSCode extension directory for this purpose.
 - Prefer features with strong user impact and moderate implementation cost.
-- Avoid introducing a full language server in the near term.
+- Keep the VSCode client thin and push FCSTM language logic into `editors/jsfcstm`.
 
 ## Technical Constraints
 
@@ -26,7 +30,7 @@ The roadmap below assumes the following constraints:
 
 - No dependency on Python at extension runtime.
 - No dependency on the existing CLI at extension runtime.
-- No full language server in the near term.
+- Use a bundled pure-JS language server without Python, Java, or network dependencies.
 - Reuse the existing ANTLR grammar as the single source of truth whenever feasible.
 - Prefer features with strong user impact and moderate implementation cost.
 

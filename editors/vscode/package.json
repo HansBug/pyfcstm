@@ -1,7 +1,7 @@
 {
   "name": "fcstm-language-support",
   "displayName": "FCSTM Language Support",
-  "description": "Syntax highlighting and language support for FCSTM (Finite State Machine) DSL - a domain-specific language for modeling hierarchical state machines",
+  "description": "Language support for FCSTM (Finite State Machine) DSL with a bundled pure-JS language server",
   "version": "0.1.0",
   "publisher": "hansbug",
   "author": {
@@ -45,7 +45,10 @@
   "icon": "resources/icon.png",
   "main": "./dist/extension.js",
   "activationEvents": [
-    "onLanguage:fcstm"
+    "onLanguage:fcstm",
+    "onCommand:fcstm.preview.open",
+    "onCommand:fcstm.preview.openAlone",
+    "onCommand:fcstm.preview.toggle"
   ],
   "scripts": {
     "vscode:prepublish": "npm run compile",
@@ -57,7 +60,13 @@
     "package": "vsce package --out build/"
   },
   "dependencies": {
-    "antlr4": "4.9.3"
+    "@pyfcstm/jsfcstm": "file:../jsfcstm/jsfcstm.tgz",
+    "@vicons/ionicons5": "^0.12.0",
+    "elkjs": "^0.11.1",
+    "jspdf": "^4.2.1",
+    "naive-ui": "^2.38.0",
+    "vscode-languageclient": "7.0.0",
+    "vue": "^3.4.0"
   },
   "devDependencies": {
     "@types/node": "^16.0.0",
@@ -65,11 +74,33 @@
     "@typescript-eslint/eslint-plugin": "^5.0.0",
     "@typescript-eslint/parser": "^5.0.0",
     "@vscode/vsce": "^2.15.0",
+    "@vue/compiler-sfc": "^3.4.0",
     "esbuild": "^0.25.0",
     "eslint": "^8.0.0",
-    "typescript": "^4.5.0"
+    "typescript": "^4.5.0",
+    "unplugin-vue": "^5.2.1",
+    "ws": "^8.0.0"
   },
   "contributes": {
+    "commands": [
+      {
+        "command": "fcstm.preview.open",
+        "title": "Open Preview to the Side",
+        "category": "FCSTM",
+        "icon": "$(open-preview)"
+      },
+      {
+        "command": "fcstm.preview.openAlone",
+        "title": "Open Preview (Diagram Only)",
+        "category": "FCSTM",
+        "icon": "$(preview)"
+      },
+      {
+        "command": "fcstm.preview.toggle",
+        "title": "Toggle Preview Layout",
+        "category": "FCSTM"
+      }
+    ],
     "languages": [
       {
         "id": "fcstm",
@@ -95,6 +126,70 @@
         "language": "fcstm",
         "path": "./snippets/fcstm.code-snippets"
       }
-    ]
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "fcstm.preview.open",
+          "when": "editorLangId == fcstm",
+          "group": "navigation"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "fcstm.preview.open",
+          "when": "resourceLangId == fcstm",
+          "group": "navigation@20"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "fcstm.preview.open",
+          "when": "explorerResourceIsFolder == false && resourceExtname == .fcstm",
+          "group": "navigation@20"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "fcstm.preview.open",
+        "key": "ctrl+k v",
+        "mac": "cmd+k v",
+        "when": "editorLangId == fcstm"
+      },
+      {
+        "command": "fcstm.preview.toggle",
+        "key": "ctrl+shift+v",
+        "mac": "cmd+shift+v",
+        "when": "editorLangId == fcstm"
+      }
+    ],
+    "configuration": {
+      "title": "FCSTM",
+      "properties": {
+        "fcstm.format.indentSize": {
+          "type": "integer",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 16,
+          "markdownDescription": "Number of spaces per indentation level when formatting `.fcstm` files. `0` (the default) falls back to VSCode's `editor.tabSize` so FCSTM inherits the usual editor behavior."
+        },
+        "fcstm.format.elseOnSameLine": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Keep `} else {` on a single line (K&R style). Set to `false` for Allman-style `}\\nelse {`."
+        },
+        "fcstm.format.collapseBlankLines": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Collapse runs of 3+ consecutive blank lines into a single blank line."
+        },
+        "fcstm.format.alignMultilineBlockComments": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Move multi-line `/* ... */` block comments (typically `abstract` action `raw_doc` payloads) onto their own indented lines and align continuation `*` markers under the opening `/*`."
+        }
+      }
+    }
   }
 }

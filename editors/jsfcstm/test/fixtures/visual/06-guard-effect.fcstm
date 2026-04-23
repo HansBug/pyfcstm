@@ -1,0 +1,23 @@
+def int counter = 0;
+def int threshold = 10;
+def int retry_count = 0;
+
+state Controller {
+    event Tick;
+
+    [*] -> Idle;
+
+    state Idle;
+    state Active;
+    state Retry;
+    state Done;
+
+    Idle -> Active :: Tick;
+    Active -> Retry : if [counter >= threshold] effect {
+        retry_count = retry_count + 1;
+        counter = 0;
+    };
+    Retry -> Active : if [retry_count < 3] effect { counter = 0; };
+    Retry -> Done : if [retry_count >= 3];
+    Done -> Idle;
+}

@@ -1,0 +1,26 @@
+def int level = 0;
+
+state Root {
+    event Descend;
+    event Ascend;
+
+    [*] -> L1;
+
+    state L1 {
+        enter { level = 1; }
+        state L2 {
+            enter { level = 2; }
+            state L3 {
+                enter { level = 3; }
+                state L4;
+                [*] -> L4;
+            }
+            [*] -> L3;
+        }
+        [*] -> L2;
+    }
+
+    state Resting;
+    L1 -> Resting :: Ascend;
+    Resting -> L1 :: Descend;
+}

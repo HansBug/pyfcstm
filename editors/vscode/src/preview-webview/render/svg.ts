@@ -13,6 +13,12 @@ import type {
     PreviewResolvedOptions,
     TextRange,
 } from '../types';
+import {
+    buildCrossingIndex,
+    collectSegments,
+    crossingsFor,
+    type CrossingIndex,
+} from './crossings';
 import {resolvePalette, type PaletteId, type PaletteMode, type SvgPalette} from './palette';
 
 const CONSTANTS = {
@@ -21,6 +27,8 @@ const CONSTANTS = {
     forcedEdgeDasharray: '6 4',
     entryEdgeWeight: 1.7,
     normalEdgeWeight: 1.4,
+    /** Radius of the drawio-style semicircular hump at edge crossings. */
+    crossingBridgeRadius: 5,
 };
 
 const LABEL_GLYPH_EVENT = '●';
@@ -86,7 +94,11 @@ export function renderSvg(
     out.push(defs(P));
     out.push(`<rect x="0" y="0" width="${width}" height="${height}" fill="${P.canvasFill}"/>`);
 
-    drawNode(canvas, 0, 0, 0, out, P);
+    // Pre-compute crossing bridges once so drawEdge can decorate each
+    // vertical segment with a hump wherever it crosses a horizontal
+    // segment from a different edge.
+    const crossingIndex = buildCrossingIndex(collectSegments(canvas));
+    drawNode(canvas, 0, 0, 0, out, P, crossingIndex);
 
     out.push('</svg>');
     return {svg: out.join('\n'), width, height};
@@ -99,6 +111,7 @@ function drawNode(
     depth: number,
     out: string[],
     P: SvgPalette,
+    crossings: CrossingIndex,
 ): void {
     const x = (node.x || 0) + offsetX;
     const y = (node.y || 0) + offsetY;
@@ -108,10 +121,10 @@ function drawNode(
 
     if (!meta || meta.kind === 'canvas') {
         for (const child of node.children || []) {
-            drawNode(child, x, y, depth + 1, out, P);
+            drawNode(child, x, y, depth + 1, out, P, crossings);
         }
         for (const edge of node.edges || []) {
-            drawEdge(edge, x, y, out, P);
+            drawEdge(edge, x, y, out, P, crossings);
         }
         return;
     }
@@ -244,15 +257,66 @@ function drawNode(
 
     if (!meta.collapsed) {
         for (const child of node.children || []) {
-            drawNode(child, x, y, depth + 1, out, P);
+            drawNode(child, x, y, depth + 1, out, P, crossings);
         }
         for (const edge of node.edges || []) {
-            drawEdge(edge, x, y, out, P);
+            drawEdge(edge, x, y, out, P, crossings);
         }
     }
 }
 
-function drawEdge(edge: PreviewElkEdge, ox: number, oy: number, out: string[], P: SvgPalette): void {
+/**
+ * Emit a single polyline as an SVG path, with drawio-style hop arcs
+ * over any recorded crossings on vertical segments.
+ */
+function buildEdgePath(
+    pts: Array<[number, number]>,
+    bridges: Array<number[] | undefined>
+): string {
+    const R = CONSTANTS.crossingBridgeRadius;
+    const parts: string[] = [];
+    const toFixed = (n: number) => n.toFixed(2);
+    parts.push(`M${toFixed(pts[0][0])},${toFixed(pts[0][1])}`);
+    for (let i = 0; i + 1 < pts.length; i++) {
+        const [x1, y1] = pts[i];
+        const [x2, y2] = pts[i + 1];
+        const segBridges = bridges[i];
+        const vertical = Math.abs(x2 - x1) < 0.5 && Math.abs(y2 - y1) >= 0.5;
+        if (!vertical || !segBridges || segBridges.length === 0) {
+            parts.push(`L${toFixed(x2)},${toFixed(y2)}`);
+            continue;
+        }
+        // Bridges are crossing Y coordinates. Walk them from y1 to y2.
+        const ordered = segBridges
+            .filter(hy => hy > Math.min(y1, y2) + R + 0.5 && hy < Math.max(y1, y2) - R - 0.5)
+            .slice()
+            .sort((a, b) => y2 > y1 ? a - b : b - a);
+        let cursorY = y1;
+        for (const hy of ordered) {
+            const entryY = y2 > y1 ? hy - R : hy + R;
+            const exitY = y2 > y1 ? hy + R : hy - R;
+            parts.push(`L${toFixed(x1)},${toFixed(entryY)}`);
+            // Arc over the crossing. Sweep direction chosen so the hump
+            // always bulges to the right of the direction of travel.
+            const sweep = y2 > y1 ? 1 : 0;
+            parts.push(`A${R},${R} 0 0 ${sweep} ${toFixed(x1)},${toFixed(exitY)}`);
+            cursorY = exitY;
+        }
+        if (Math.abs(cursorY - y2) > 0.01) {
+            parts.push(`L${toFixed(x2)},${toFixed(y2)}`);
+        }
+    }
+    return parts.join(' ');
+}
+
+function drawEdge(
+    edge: PreviewElkEdge,
+    ox: number,
+    oy: number,
+    out: string[],
+    P: SvgPalette,
+    crossings: CrossingIndex,
+): void {
     const meta = edge.fcstm;
     const kind = meta?.transitionKind || 'normal';
     const forced = Boolean(meta?.forced);
@@ -260,13 +324,21 @@ function drawEdge(edge: PreviewElkEdge, ox: number, oy: number, out: string[], P
     const weight = kind === 'entry' || kind === 'exit' ? CONSTANTS.entryEdgeWeight : CONSTANTS.normalEdgeWeight;
     const dasharray = forced ? CONSTANTS.forcedEdgeDasharray : '';
 
-    for (const section of edge.sections || []) {
+    (edge.sections || []).forEach((section, sectionIdx) => {
         const pts: Array<[number, number]> = [
             [section.startPoint.x + ox, section.startPoint.y + oy],
             ...(section.bendPoints || []).map((pt): [number, number] => [pt.x + ox, pt.y + oy]),
             [section.endPoint.x + ox, section.endPoint.y + oy],
         ];
-        const d = pts.map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(2)},${y.toFixed(2)}`).join(' ');
+        // Pull the precomputed crossing y-values for each segment of
+        // this section. ``crossingsFor`` stores them in absolute canvas
+        // coordinates, the same frame ``pts`` lives in, so no offset
+        // translation is needed here.
+        const bridges: Array<number[] | undefined> = [];
+        for (let i = 0; i + 1 < pts.length; i++) {
+            bridges.push(crossingsFor(crossings, edge.id, sectionIdx, i));
+        }
+        const d = buildEdgePath(pts, bridges);
         out.push(
             `<path ${attr('d', d)} fill="none" stroke="${color}" stroke-width="${weight}" ` +
             (dasharray ? `stroke-dasharray="${dasharray}" ` : '') +
@@ -275,7 +347,7 @@ function drawEdge(edge: PreviewElkEdge, ox: number, oy: number, out: string[], P
             `${attr('data-fcstm-id', meta?.transitionId || edge.id)} ` +
             `${rangeAttrs('fcstm-range', meta?.sourceRange)} />`
         );
-    }
+    });
 
     for (const label of edge.labels || []) {
         const lx = (label.x || 0) + ox;

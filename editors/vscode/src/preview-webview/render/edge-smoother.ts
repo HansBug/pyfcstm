@@ -6,12 +6,11 @@
  * perpendicular "L" glued to the arrowhead that reads as rendering
  * noise rather than intentional routing.
  *
- * The repair is purely geometric and keeps the graph strictly
- * orthogonal: when the last segment of a section is shorter than a
- * threshold, the two trailing bend points are shifted in the direction
- * of that segment so its length grows to meet the threshold while the
- * preceding bend stays perpendicular. The same rule applies to the
- * starting segment, mirrored.
+ * The repair absorbs a short stub into the neighboring bend instead of
+ * shifting both ends — a plain shift can trade one stub for another
+ * when a polyline has a short final AND a short initial segment. The
+ * pass iterates until the polyline stabilizes, so chains of stubs are
+ * collapsed in one go.
  */
 import type {PreviewElkEdge, PreviewElkNode} from '../types';
 
@@ -22,92 +21,75 @@ interface Point {
     y: number;
 }
 
-function segmentLength(a: Point, b: Point): number {
+function segmentLenLInf(a: Point, b: Point): number {
     return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
 }
 
 /**
- * Shift the two bend points adjacent to an endpoint so the terminal
- * segment grows to at least ``minStubLen``. The shift is applied in the
- * direction parallel to the terminal segment, which is guaranteed to be
- * perpendicular to the penultimate segment on orthogonal routings.
+ * Try to collapse the trailing stub of a polyline by removing the
+ * useless bend point adjacent to the endpoint. Returns ``true`` if a
+ * change was made.
+ *
+ * Geometrically: when ``p_{n-1}`` is only ``short`` away from ``p_n`` on
+ * axis F, and ``p_{n-2}`` → ``p_{n-1}`` runs perpendicular to that (axis
+ * P), we can drop ``p_{n-1}`` and slide ``p_{n-2}`` onto ``p_n``'s F
+ * coordinate. The previous segment keeps its axis; the new terminal
+ * segment runs along P and inherits the length of the old penultimate
+ * segment, so no new short stub is introduced as long as the original
+ * penultimate segment was long enough.
  */
-function elongateEndStub(points: Point[], minStubLen: number): void {
-    if (points.length < 3) return;
-    const pEnd = points[points.length - 1];
-    const pN = points[points.length - 2];
-    const pN1 = points[points.length - 3];
-    const dx = pEnd.x - pN.x;
-    const dy = pEnd.y - pN.y;
-    const finalLen = Math.abs(dx) + Math.abs(dy);
-    if (finalLen >= minStubLen || finalLen <= 0) return;
-
-    const delta = minStubLen - finalLen;
-    const horizontal = Math.abs(dx) >= Math.abs(dy);
-    if (horizontal) {
-        const dir = dx > 0 ? -1 : 1;
-        // The penultimate segment must be vertical for orthogonal routing;
-        // guard against malformed inputs by only proceeding when the
-        // preceding bend shares pN's x coordinate.
-        if (Math.abs(pN1.x - pN.x) > 0.5) return;
-        pN.x += dir * delta;
-        pN1.x += dir * delta;
-    } else {
-        const dir = dy > 0 ? -1 : 1;
-        if (Math.abs(pN1.y - pN.y) > 0.5) return;
-        pN.y += dir * delta;
-        pN1.y += dir * delta;
-    }
+function collapseEndStub(points: Point[], threshold: number): boolean {
+    if (points.length < 3) return false;
+    const last = points[points.length - 1];
+    const prev = points[points.length - 2];
+    const pprev = points[points.length - 3];
+    const dx = last.x - prev.x;
+    const dy = last.y - prev.y;
+    const stub = Math.abs(dx) + Math.abs(dy);
+    if (stub <= 0 || stub >= threshold) return false;
+    const axis: 'x' | 'y' = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
+    pprev[axis] = last[axis];
+    points.splice(points.length - 2, 1);
+    return true;
 }
 
-/**
- * Mirror of ``elongateEndStub`` applied to the start of the polyline.
- */
-function elongateStartStub(points: Point[], minStubLen: number): void {
-    if (points.length < 3) return;
-    const pStart = points[0];
-    const p1 = points[1];
-    const p2 = points[2];
-    const dx = p1.x - pStart.x;
-    const dy = p1.y - pStart.y;
-    const startLen = Math.abs(dx) + Math.abs(dy);
-    if (startLen >= minStubLen || startLen <= 0) return;
-
-    const delta = minStubLen - startLen;
-    const horizontal = Math.abs(dx) >= Math.abs(dy);
-    if (horizontal) {
-        const dir = dx > 0 ? 1 : -1;
-        if (Math.abs(p2.x - p1.x) > 0.5) return;
-        p1.x += dir * delta;
-        p2.x += dir * delta;
-    } else {
-        const dir = dy > 0 ? 1 : -1;
-        if (Math.abs(p2.y - p1.y) > 0.5) return;
-        p1.y += dir * delta;
-        p2.y += dir * delta;
-    }
+function collapseStartStub(points: Point[], threshold: number): boolean {
+    if (points.length < 3) return false;
+    const first = points[0];
+    const next = points[1];
+    const nnext = points[2];
+    const dx = next.x - first.x;
+    const dy = next.y - first.y;
+    const stub = Math.abs(dx) + Math.abs(dy);
+    if (stub <= 0 || stub >= threshold) return false;
+    const axis: 'x' | 'y' = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
+    nnext[axis] = first[axis];
+    points.splice(1, 1);
+    return true;
 }
 
 function smoothEdge(edge: PreviewElkEdge, minStubLen: number): void {
     for (const section of edge.sections || []) {
         const points: Point[] = [
-            section.startPoint,
-            ...(section.bendPoints || []),
-            section.endPoint,
+            {x: section.startPoint.x, y: section.startPoint.y},
+            ...(section.bendPoints || []).map(p => ({x: p.x, y: p.y})),
+            {x: section.endPoint.x, y: section.endPoint.y},
         ];
         if (points.length < 3) continue;
-        // End stub is the more visible of the two — the arrowhead is
-        // anchored there — so handle it first. The start stub matters
-        // too; it is the tail of self-loops.
-        elongateEndStub(points, minStubLen);
-        elongateStartStub(points, minStubLen);
-        // The bend-points array references the same objects we just
-        // mutated in-place, so nothing further is needed, but reassign
-        // defensively to keep the invariant "section.bendPoints is the
-        // middle of points" explicit.
-        section.bendPoints = points.slice(1, -1).map(p => ({x: p.x, y: p.y}));
+
+        // Iterate until the polyline is stable. Both collapses shrink
+        // the array so the loop is bounded by the original length.
+        let changed = true;
+        let safety = points.length + 2;
+        while (changed && safety-- > 0) {
+            changed = false;
+            if (collapseEndStub(points, minStubLen)) changed = true;
+            if (collapseStartStub(points, minStubLen)) changed = true;
+        }
+
         section.startPoint = {x: points[0].x, y: points[0].y};
         section.endPoint = {x: points[points.length - 1].x, y: points[points.length - 1].y};
+        section.bendPoints = points.slice(1, -1).map(p => ({x: p.x, y: p.y}));
     }
 }
 

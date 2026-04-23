@@ -367,15 +367,27 @@ export function buildFcstmElkGraph(
             // Wider breathing room than the first draft — users explicitly
             // asked for a less cramped layout.
             'elk.spacing.nodeNode': '80',
-            'elk.layered.spacing.nodeNodeBetweenLayers': '110',
-            'elk.spacing.edgeNode': '42',
-            'elk.spacing.edgeEdge': '30',
+            'elk.layered.spacing.nodeNodeBetweenLayers': '120',
+            // Push parallel edges further apart so two transitions that
+            // share a layer do not run glued together. Same story for
+            // the edge-vs-node gap — ELK otherwise happily parks a line
+            // one or two pixels off the node outline.
+            'elk.spacing.edgeNode': '56',
+            'elk.spacing.edgeEdge': '44',
             'elk.spacing.edgeLabel': '24',
             'elk.spacing.componentComponent': '64',
-            'elk.layered.spacing.baseValue': '48',
-            'elk.layered.spacing.edgeNodeBetweenLayers': '46',
+            'elk.layered.spacing.baseValue': '52',
+            'elk.layered.spacing.edgeNodeBetweenLayers': '58',
+            'elk.layered.spacing.edgeEdgeBetweenLayers': '40',
             'elk.edgeLabels.placement': 'CENTER',
             'elk.layered.nodePlacement.favorStraightEdges': 'true',
+            // Merging hierarchy edges lets ELK collapse many parallel
+            // copies of the same event-triggered transition into a
+            // single well-routed line, cutting down on near-duplicates
+            // that fight for the same lane.
+            'elk.layered.mergeEdges': 'true',
+            'elk.layered.mergeHierarchyEdges': 'true',
+            'elk.layered.unnecessaryBendpoints': 'true',
             'elk.padding': '[top=36,left=36,bottom=36,right=36]',
         },
         children: [buildStateNode(diagram.rootState)],

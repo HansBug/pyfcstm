@@ -33,7 +33,7 @@ function createDisposable(callback = () => {}) {
 }
 
 const workspaceListeners = {open: [], change: [], save: [], close: []};
-const windowListeners = {activeEditor: []};
+const windowListeners = {activeEditor: [], selectionChange: []};
 const registeredCommands = new Map();
 const createdPanels = [];
 const warningMessages = [];
@@ -117,6 +117,7 @@ const vscode = {
             return panel;
         },
         onDidChangeActiveTextEditor(cb) { windowListeners.activeEditor.push(cb); return createDisposable(); },
+        onDidChangeTextEditorSelection(cb) { windowListeners.selectionChange.push(cb); return createDisposable(); },
         showWarningMessage(m) { warningMessages.push(m); return Promise.resolve(m); },
         showInformationMessage(m) { infoMessages.push(m); return Promise.resolve(m); },
         showErrorMessage(m) { errorMessages.push(m); return Promise.resolve(m); },

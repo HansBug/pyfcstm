@@ -1,6 +1,16 @@
 import {pathToFileURL} from 'node:url';
 
-import type {FcstmAstExpression, FcstmAstImportMapping} from '../ast';
+import type {
+    FcstmAstAction,
+    FcstmAstAssignmentStatement,
+    FcstmAstExpression,
+    FcstmAstIfStatement,
+    FcstmAstImportMapping,
+    FcstmAstOperationBlock,
+    FcstmAstOperationStatement,
+    FcstmAstTransition,
+    FcstmAstForcedTransition,
+} from '../ast';
 import type {FcstmSemanticDocument, FcstmSemanticImport, FcstmSemanticTransition} from '../semantics';
 import {FcstmDiagnostic, TextDocumentLike} from '../utils/text';
 import {getWorkspaceGraph} from '../workspace';
@@ -16,6 +26,9 @@ export const FCSTM_DIAGNOSTIC_CODES = {
     duplicateImportMapping: 'fcstm.duplicateImportMapping',
     unresolvedState: 'fcstm.unresolvedState',
     unresolvedActionRef: 'fcstm.unresolvedActionRef',
+    duplicateVariable: 'fcstm.duplicateVariable',
+    undefinedVariable: 'fcstm.undefinedVariable',
+    readBeforeAssignTemporary: 'fcstm.readBeforeAssignTemporary',
 } as const;
 
 function isFalseLiteral(expression: FcstmAstExpression): boolean {
@@ -245,6 +258,255 @@ function addActionDiagnostics(
     }
 }
 
+function collectIdentifierRefs(
+    expression: FcstmAstExpression | null | undefined,
+    out: Array<{name: string; range: import('../utils/text').TextRange}>
+): void {
+    if (!expression) {
+        return;
+    }
+    switch (expression.expressionKind) {
+        case 'identifier':
+            out.push({name: expression.name, range: expression.range});
+            return;
+        case 'unary':
+            collectIdentifierRefs(expression.operand, out);
+            return;
+        case 'binary':
+            collectIdentifierRefs(expression.left, out);
+            collectIdentifierRefs(expression.right, out);
+            return;
+        case 'function':
+            collectIdentifierRefs(expression.argument, out);
+            return;
+        case 'conditional':
+            collectIdentifierRefs(expression.condition, out);
+            collectIdentifierRefs(expression.whenTrue, out);
+            collectIdentifierRefs(expression.whenFalse, out);
+            return;
+        case 'parenthesized':
+            collectIdentifierRefs(expression.expression, out);
+            return;
+        default:
+            return;
+    }
+}
+
+function pushIdentifierDiagnostic(
+    diagnostics: FcstmDiagnostic[],
+    identifier: {name: string; range: import('../utils/text').TextRange},
+    message: string,
+    code: string,
+    severity: 'error' | 'warning' = 'error'
+): void {
+    diagnostics.push({
+        range: identifier.range,
+        message,
+        severity,
+        source: 'fcstm',
+        code,
+    });
+}
+
+/**
+ * Walk a block of operational statements while tracking which names are already
+ * assigned inside the block. Names that are not in ``globals`` become
+ * block-local temporary variables after their first assignment, matching the
+ * pyfcstm runtime rule.
+ */
+function analyzeOperationStatements(
+    statements: FcstmAstOperationStatement[] | undefined,
+    globals: Set<string>,
+    assignedBefore: Set<string>,
+    diagnostics: FcstmDiagnostic[]
+): Set<string> {
+    const assigned = new Set(assignedBefore);
+    if (!statements) {
+        return assigned;
+    }
+
+    for (const statement of statements) {
+        if (statement.kind === 'assignmentStatement') {
+            const assignment = statement as FcstmAstAssignmentStatement;
+            const identifiers: Array<{name: string; range: import('../utils/text').TextRange}> = [];
+            collectIdentifierRefs(assignment.expression, identifiers);
+            for (const identifier of identifiers) {
+                if (globals.has(identifier.name) || assigned.has(identifier.name)) {
+                    continue;
+                }
+                pushIdentifierDiagnostic(
+                    diagnostics,
+                    identifier,
+                    `Variable ${JSON.stringify(identifier.name)} is read before it is assigned in this block.`,
+                    FCSTM_DIAGNOSTIC_CODES.readBeforeAssignTemporary,
+                    'error'
+                );
+            }
+            if (assignment.targetName) {
+                assigned.add(assignment.targetName);
+            }
+        } else if (statement.kind === 'ifStatement') {
+            const ifStatement = statement as FcstmAstIfStatement;
+            const branchAssigned: Set<string>[] = [];
+            for (const branch of ifStatement.branches) {
+                if (branch.condition) {
+                    const identifiers: Array<{name: string; range: import('../utils/text').TextRange}> = [];
+                    collectIdentifierRefs(branch.condition, identifiers);
+                    for (const identifier of identifiers) {
+                        if (globals.has(identifier.name) || assigned.has(identifier.name)) {
+                            continue;
+                        }
+                        pushIdentifierDiagnostic(
+                            diagnostics,
+                            identifier,
+                            `Variable ${JSON.stringify(identifier.name)} is read before it is assigned in this block.`,
+                            FCSTM_DIAGNOSTIC_CODES.readBeforeAssignTemporary,
+                            'error'
+                        );
+                    }
+                }
+                const branchResult = analyzeOperationStatements(
+                    branch.statements,
+                    globals,
+                    assigned,
+                    diagnostics
+                );
+                branchAssigned.push(branchResult);
+            }
+            // Only names assigned on EVERY branch (including else) survive after the if.
+            const hasElse = ifStatement.elseBlock !== undefined
+                || ifStatement.branches.some(branch => branch.condition === null);
+            if (hasElse && branchAssigned.length > 0) {
+                const firstBranch = branchAssigned[0];
+                for (const name of firstBranch) {
+                    if (assigned.has(name)) {
+                        continue;
+                    }
+                    if (branchAssigned.every(set => set.has(name))) {
+                        assigned.add(name);
+                    }
+                }
+            }
+        }
+    }
+
+    return assigned;
+}
+
+function analyzeOperationBlock(
+    block: FcstmAstOperationBlock | undefined,
+    globals: Set<string>,
+    diagnostics: FcstmDiagnostic[]
+): void {
+    if (!block) {
+        return;
+    }
+    analyzeOperationStatements(block.statements, globals, new Set(), diagnostics);
+}
+
+function collectTopLevelGlobals(semantic: FcstmSemanticDocument): Set<string> {
+    return new Set(semantic.variables.map(variable => variable.name));
+}
+
+function addVariableDefinitionDiagnostics(
+    semantic: FcstmSemanticDocument,
+    document: TextDocumentLike,
+    diagnostics: FcstmDiagnostic[]
+): void {
+    const seen = new Map<string, typeof semantic.variables[number]>();
+    for (const variable of semantic.variables) {
+        const firstDefinition = seen.get(variable.name);
+        if (!firstDefinition) {
+            seen.set(variable.name, variable);
+            continue;
+        }
+        diagnostics.push({
+            range: findIdentifierRange(document, variable.name, variable.range),
+            message: `Variable ${JSON.stringify(variable.name)} is already defined.`,
+            severity: 'error',
+            source: 'fcstm',
+            code: FCSTM_DIAGNOSTIC_CODES.duplicateVariable,
+            relatedInformation: [{
+                location: {
+                    uri: toFileUri(document),
+                    range: findIdentifierRange(document, firstDefinition.name, firstDefinition.range),
+                },
+                message: `First definition of ${JSON.stringify(variable.name)} is here.`,
+            }],
+        });
+    }
+}
+
+function addGuardDiagnostics(
+    transitions: FcstmSemanticTransition[],
+    globals: Set<string>,
+    diagnostics: FcstmDiagnostic[]
+): void {
+    for (const transition of transitions) {
+        if (!transition.guard) {
+            continue;
+        }
+        const identifiers: Array<{name: string; range: import('../utils/text').TextRange}> = [];
+        collectIdentifierRefs(transition.guard, identifiers);
+        for (const identifier of identifiers) {
+            if (globals.has(identifier.name)) {
+                continue;
+            }
+            pushIdentifierDiagnostic(
+                diagnostics,
+                identifier,
+                `Variable ${JSON.stringify(identifier.name)} is not defined. Add a \`def\` declaration or fix the name.`,
+                FCSTM_DIAGNOSTIC_CODES.undefinedVariable,
+                'error'
+            );
+        }
+    }
+}
+
+function addEffectBlockDiagnostics(
+    transitions: FcstmSemanticTransition[],
+    globals: Set<string>,
+    diagnostics: FcstmDiagnostic[]
+): void {
+    for (const transition of transitions) {
+        const ast = transition.ast as (FcstmAstTransition | FcstmAstForcedTransition) & {
+            effect?: FcstmAstOperationBlock;
+        };
+        if (ast.effect) {
+            analyzeOperationBlock(ast.effect, globals, diagnostics);
+        }
+    }
+}
+
+function addActionBlockDiagnostics(
+    actions: FcstmSemanticDocument['actions'],
+    globals: Set<string>,
+    diagnostics: FcstmDiagnostic[]
+): void {
+    for (const semanticAction of actions) {
+        if (semanticAction.mode !== 'operations') {
+            continue;
+        }
+        const ast = semanticAction.ast as FcstmAstAction;
+        const block = ast.operationBlock || ast.operation_block;
+        analyzeOperationBlock(block, globals, diagnostics);
+    }
+}
+
+function addExpressionAndVariableDiagnostics(
+    semantic: FcstmSemanticDocument,
+    document: TextDocumentLike,
+    diagnostics: FcstmDiagnostic[]
+): void {
+    addVariableDefinitionDiagnostics(semantic, document, diagnostics);
+
+    const globals = collectTopLevelGlobals(semantic);
+
+    addGuardDiagnostics(semantic.transitions, globals, diagnostics);
+    addEffectBlockDiagnostics(semantic.transitions, globals, diagnostics);
+    addActionBlockDiagnostics(semantic.actions, globals, diagnostics);
+}
+
 /**
  * Run static semantic analyzers that are strong enough to feed diagnostics and quick fixes.
  */
@@ -262,5 +524,6 @@ export async function collectSemanticAnalysisDiagnostics(
     addTransitionDiagnostics(semantic, document, diagnostics);
     addUnusedEventDiagnostics(semantic, document, diagnostics);
     addActionDiagnostics(semantic, document, diagnostics);
+    addExpressionAndVariableDiagnostics(semantic, document, diagnostics);
     return diagnostics;
 }

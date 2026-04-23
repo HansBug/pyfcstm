@@ -1,7 +1,7 @@
 import {pathToFileURL} from 'node:url';
 
-import type {FcstmSemanticDocument, FcstmSemanticImport, FcstmSemanticState} from '../semantics';
-import {FcstmDiagnostic, TextDocumentLike, TextRange} from '../utils/text';
+import type {FcstmSemanticDocument, FcstmSemanticImport, FcstmSemanticState, FcstmSemanticVariable} from '../semantics';
+import {FcstmDiagnostic, TextDocumentLike, TextRange, createRange} from '../utils/text';
 import {getWorkspaceGraph} from '../workspace';
 import {FCSTM_DIAGNOSTIC_CODES} from './analyzers';
 import {rangeIntersects} from './ranges';
@@ -38,6 +38,57 @@ function findImportByRange(semantic: FcstmSemanticDocument, range: TextRange): F
 
 function findStateByRange(semantic: FcstmSemanticDocument, range: TextRange): FcstmSemanticState | undefined {
     return semantic.states.find(item => rangeIntersects(item.range, range));
+}
+
+function findDuplicateVariableByRange(
+    semantic: FcstmSemanticDocument,
+    range: TextRange
+): FcstmSemanticVariable | undefined {
+    const candidates = semantic.variables
+        .filter(variable => rangeIntersects(variable.range, range));
+    if (candidates.length === 0) {
+        return undefined;
+    }
+    // Only duplicates (second and later definitions of the same name) should
+    // be removable. The first definition has no duplicateVariable diagnostic.
+    const grouped = new Map<string, FcstmSemanticVariable[]>();
+    for (const variable of semantic.variables) {
+        const bucket = grouped.get(variable.name) || [];
+        bucket.push(variable);
+        grouped.set(variable.name, bucket);
+    }
+    return candidates.find(candidate => {
+        const bucket = grouped.get(candidate.name) || [];
+        return bucket.length > 1 && bucket[0] !== candidate;
+    });
+}
+
+function extractIdentifierFromMessage(message: string): string | undefined {
+    return message.match(/"([^"]+)"/)?.[1];
+}
+
+function guessVariableType(semantic: FcstmSemanticDocument): 'int' | 'float' {
+    for (const variable of semantic.variables) {
+        return variable.valueType;
+    }
+    return 'int';
+}
+
+function planVariableInsertion(
+    document: TextDocumentLike,
+    semantic: FcstmSemanticDocument,
+    name: string
+): {range: TextRange; newText: string} {
+    const valueType = guessVariableType(semantic);
+    const declaration = `def ${valueType} ${name} = 0;\n`;
+
+    if (semantic.variables.length > 0) {
+        const last = semantic.variables[semantic.variables.length - 1];
+        const insertionLine = last.range.end.line + 1;
+        const zeroRange = createRange(insertionLine, 0, insertionLine, 0);
+        return {range: zeroRange, newText: declaration};
+    }
+    return {range: createRange(0, 0, 0, 0), newText: declaration};
 }
 
 function uniqueCaseInsensitiveStateCandidates(
@@ -117,6 +168,27 @@ export async function collectCodeActions(
                     kind: 'quickfix',
                     diagnostics: [diagnostic],
                     edit: createWorkspaceEdit(document, diagnostic.range, candidates[0]),
+                });
+            }
+        } else if (diagnostic.code === FCSTM_DIAGNOSTIC_CODES.duplicateVariable) {
+            const duplicate = findDuplicateVariableByRange(semantic, diagnostic.range);
+            if (duplicate) {
+                actions.push({
+                    title: `Remove duplicate definition of ${JSON.stringify(duplicate.name)}`,
+                    kind: 'quickfix',
+                    diagnostics: [diagnostic],
+                    edit: createWorkspaceEdit(document, duplicate.range, ''),
+                });
+            }
+        } else if (diagnostic.code === FCSTM_DIAGNOSTIC_CODES.undefinedVariable) {
+            const name = extractIdentifierFromMessage(diagnostic.message);
+            if (name && /^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+                const insertion = planVariableInsertion(document, semantic, name);
+                actions.push({
+                    title: `Define ${JSON.stringify(name)} at the top of the file`,
+                    kind: 'quickfix',
+                    diagnostics: [diagnostic],
+                    edit: createWorkspaceEdit(document, insertion.range, insertion.newText),
                 });
             }
         }

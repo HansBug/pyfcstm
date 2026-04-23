@@ -4,6 +4,7 @@ export * from './code-actions';
 export * from './completion';
 export * from './diagnostics';
 export * from './folding';
+export * from './formatter';
 export * from './hover';
 export * from './navigation';
 export * from './ranges';

@@ -9,6 +9,7 @@ import {
     DocumentLink,
     DocumentSymbol,
     FoldingRange,
+    FormattingOptions,
     Hover,
     InitializeResult,
     Location,
@@ -21,6 +22,7 @@ import {
     TextDocumentContentChangeEvent,
     TextDocumentItem,
     TextDocumentSyncKind,
+    TextEdit,
     WorkspaceEdit,
     WorkspaceFolder,
 } from 'vscode-languageserver/node';
@@ -39,6 +41,7 @@ import {
     collectSelectionRanges,
     collectSemanticTokens,
     collectWorkspaceSymbols,
+    formatDocumentText,
     getFcstmSemanticTokensLegend,
     planRename,
     prepareRename,
@@ -57,6 +60,7 @@ import {
     toLspFoldingRange,
     toLspHover,
     toLspLocation,
+    toLspRange,
     toLspSelectionRange,
     toLspSemanticTokens,
     toLspWorkspaceEdit,
@@ -201,6 +205,8 @@ export class FcstmLanguageServerCore {
             },
             workspaceSymbolProvider: true,
             codeActionProvider: true,
+            documentFormattingProvider: true,
+            documentRangeFormattingProvider: true,
             workspace: {
                 workspaceFolders: {
                     supported: true,
@@ -575,6 +581,45 @@ export class FcstmLanguageServerCore {
         }
 
         return toLspSemanticTokens(tokens);
+    }
+
+    async provideDocumentFormatting(
+        uri: string,
+        options: FormattingOptions,
+        token?: CancellationToken
+    ): Promise<TextEdit[]> {
+        if (shouldCancel(token)) {
+            return [];
+        }
+
+        const document = this.getDocumentLike(uri);
+        if (!document) {
+            return [];
+        }
+
+        const edits = formatDocumentText(document, {
+            indentSize: options.insertSpaces === false ? 4 : options.tabSize || 4,
+        });
+        if (shouldCancel(token)) {
+            return [];
+        }
+
+        return edits.map(edit => ({
+            range: toLspRange(edit.range),
+            newText: edit.newText,
+        }));
+    }
+
+    async provideDocumentRangeFormatting(
+        uri: string,
+        _range: Range,
+        options: FormattingOptions,
+        token?: CancellationToken
+    ): Promise<TextEdit[]> {
+        // The formatter only supports whole-document normalization. Clients
+        // that request range formatting receive the same result as a full
+        // format, which keeps indentation consistent across the range.
+        return this.provideDocumentFormatting(uri, options, token);
     }
 
     async provideCodeActions(

@@ -117,6 +117,23 @@ export function createFcstmLanguageServer(
         );
     });
 
+    connection.onDocumentFormatting(async (params, token) => {
+        return core.provideDocumentFormatting(
+            params.textDocument.uri,
+            params.options,
+            token
+        );
+    });
+
+    connection.onDocumentRangeFormatting(async (params, token) => {
+        return core.provideDocumentRangeFormatting(
+            params.textDocument.uri,
+            params.range,
+            params.options,
+            token
+        );
+    });
+
     connection.onInitialized(() => {
         connection.workspace.onDidChangeWorkspaceFolders(async event => {
             await core.applyWorkspaceFolderChange(event.added, event.removed);

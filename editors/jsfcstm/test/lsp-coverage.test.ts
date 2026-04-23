@@ -40,6 +40,8 @@ interface HandlerMap {
     semanticTokens?: (params: { textDocument: { uri: string } }, token?: unknown) => Promise<unknown> | unknown;
     workspaceSymbol?: (params: { query: string }, token?: unknown) => Promise<unknown> | unknown;
     codeAction?: (params: { textDocument: { uri: string }; range: { start: { line: number; character: number }; end: { line: number; character: number } }; context: { diagnostics: unknown[] } }, token?: unknown) => Promise<unknown> | unknown;
+    documentFormatting?: (params: { textDocument: { uri: string }; options: { tabSize: number; insertSpaces: boolean } }, token?: unknown) => Promise<unknown> | unknown;
+    documentRangeFormatting?: (params: { textDocument: { uri: string }; range: { start: { line: number; character: number }; end: { line: number; character: number } }; options: { tabSize: number; insertSpaces: boolean } }, token?: unknown) => Promise<unknown> | unknown;
     initialized?: () => void;
     shutdown?: () => void;
 }
@@ -144,6 +146,14 @@ class FakeConnection {
 
     onCodeAction(callback: HandlerMap['codeAction']): void {
         this.handlers.codeAction = callback;
+    }
+
+    onDocumentFormatting(callback: HandlerMap['documentFormatting']): void {
+        this.handlers.documentFormatting = callback;
+    }
+
+    onDocumentRangeFormatting(callback: HandlerMap['documentRangeFormatting']): void {
+        this.handlers.documentRangeFormatting = callback;
     }
 
     onInitialized(callback: HandlerMap['initialized']): void {
@@ -918,6 +928,8 @@ describe('jsfcstm lsp coverage support', () => {
                 codeActionProvider?: boolean;
                 foldingRangeProvider?: boolean;
                 selectionRangeProvider?: boolean;
+                documentFormattingProvider?: boolean;
+                documentRangeFormattingProvider?: boolean;
                 semanticTokensProvider?: { legend?: { tokenTypes?: string[] } };
             };
         };
@@ -926,6 +938,8 @@ describe('jsfcstm lsp coverage support', () => {
         assert.equal(initializeResult.capabilities?.codeActionProvider, true);
         assert.equal(initializeResult.capabilities?.foldingRangeProvider, true);
         assert.equal(initializeResult.capabilities?.selectionRangeProvider, true);
+        assert.equal(initializeResult.capabilities?.documentFormattingProvider, true);
+        assert.equal(initializeResult.capabilities?.documentRangeFormattingProvider, true);
         assert.ok(initializeResult.capabilities?.semanticTokensProvider?.legend?.tokenTypes?.includes('class'));
         const initializeWithoutFolders = await fakeConnection.handlers.initialize?.({}) as { capabilities?: { hoverProvider?: boolean } };
         assert.equal(initializeWithoutFolders.capabilities?.hoverProvider, true);
@@ -1003,6 +1017,24 @@ describe('jsfcstm lsp coverage support', () => {
             range: packageModule.toLspRange(packageModule.createRange(0, 0, 3, 1)),
             context: {diagnostics: []},
         }) as unknown[];
+        const formattingEdits = await fakeConnection.handlers.documentFormatting?.({
+            textDocument: {uri: toUri(hostFile)},
+            options: {tabSize: 4, insertSpaces: true},
+        }) as Array<{ newText: string }>;
+        const rangeFormattingEdits = await fakeConnection.handlers.documentRangeFormatting?.({
+            textDocument: {uri: toUri(hostFile)},
+            range: packageModule.toLspRange(packageModule.createRange(0, 0, 3, 1)),
+            options: {tabSize: 4, insertSpaces: true},
+        }) as Array<{ newText: string }>;
+        assert.ok(Array.isArray(formattingEdits));
+        assert.ok(Array.isArray(rangeFormattingEdits));
+
+        // Missing / unknown documents should degrade to empty edit arrays.
+        const missingFormatting = await fakeConnection.handlers.documentFormatting?.({
+            textDocument: {uri: toUri(path.join(dir, 'missing.fcstm'))},
+            options: {tabSize: 4, insertSpaces: true},
+        }) as unknown[];
+        assert.deepEqual(missingFormatting, []);
 
         assert.ok(symbols.some(item => item.name === 'Root'));
         assert.ok(completionItems.some(item => item.label === 'counter'));

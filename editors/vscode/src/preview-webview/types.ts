@@ -199,3 +199,11 @@ export type WebviewInboundMessage =
     | {type: 'exportSvg'; svg: string}
     | {type: 'exportPng'; base64: string}
     | {type: 'exportError'; message: string};
+
+/**
+ * Host → webview messages that carry editor-driven cues rather than a full
+ * state push. The webview distinguishes them from state updates by the
+ * discriminant ``type`` field, which state payloads do not set.
+ */
+export type HostOutboundCue =
+    | {type: 'setActiveRange'; range: TextRange | null};

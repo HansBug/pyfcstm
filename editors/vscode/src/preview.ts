@@ -260,6 +260,8 @@ export class FcstmPreviewController implements vscode.Disposable {
     private currentDocumentUri: string | null = null;
     private updateTimer: NodeJS.Timeout | undefined;
     private updateSequence = 0;
+    private cursorTrackTimer: NodeJS.Timeout | undefined;
+    private lastSentRangeKey = '';
     // detailLevel + eventVisualizationMode are no longer user-tunable from
     // the UI; the preview defaults to the full / both combo so the diagram
     // shows everything it can without the user having to hunt dropdowns.
@@ -310,6 +312,19 @@ export class FcstmPreviewController implements vscode.Disposable {
                 if (this.panel && editor && isFcstmDocument(editor.document)) {
                     this.scheduleRefresh(editor.document);
                 }
+            }),
+            vscode.window.onDidChangeTextEditorSelection(event => {
+                if (!this.panel) {
+                    return;
+                }
+                if (!isFcstmDocument(event.textEditor.document)) {
+                    return;
+                }
+                const documentUri = event.textEditor.document.uri.toString();
+                if (this.currentDocumentUri && this.currentDocumentUri !== documentUri) {
+                    return;
+                }
+                this.scheduleCursorSync(event.textEditor);
             })
         );
     }
@@ -318,6 +333,10 @@ export class FcstmPreviewController implements vscode.Disposable {
         if (this.updateTimer) {
             clearTimeout(this.updateTimer);
             this.updateTimer = undefined;
+        }
+        if (this.cursorTrackTimer) {
+            clearTimeout(this.cursorTrackTimer);
+            this.cursorTrackTimer = undefined;
         }
         if (this.panel) {
             this.panel.dispose();
@@ -329,6 +348,37 @@ export class FcstmPreviewController implements vscode.Disposable {
                 disposable.dispose();
             }
         }
+    }
+
+    private scheduleCursorSync(editor: vscode.TextEditor): void {
+        if (this.cursorTrackTimer) {
+            clearTimeout(this.cursorTrackTimer);
+            this.cursorTrackTimer = undefined;
+        }
+        this.cursorTrackTimer = setTimeout(() => {
+            this.cursorTrackTimer = undefined;
+            this.sendCursorToWebview(editor);
+        }, 80);
+    }
+
+    private sendCursorToWebview(editor: vscode.TextEditor): void {
+        if (!this.panel) {
+            return;
+        }
+        const selection = editor.selection;
+        if (!selection || !selection.start || !selection.end) {
+            return;
+        }
+        const range = {
+            start: {line: selection.start.line, character: selection.start.character},
+            end: {line: selection.end.line, character: selection.end.character},
+        };
+        const key = `${range.start.line}:${range.start.character}-${range.end.line}:${range.end.character}`;
+        if (key === this.lastSentRangeKey) {
+            return;
+        }
+        this.lastSentRangeKey = key;
+        void this.panel.webview.postMessage({type: 'setActiveRange', range});
     }
 
     private async togglePreview(): Promise<void> {
@@ -644,5 +694,17 @@ export class FcstmPreviewController implements vscode.Disposable {
         }
         this.panel.title = `FCSTM Preview: ${basenameForDocument(document)}`;
         void this.panel.webview.postMessage(state);
+
+        // A fresh payload invalidates the last-sent range cache so the next
+        // cursor movement still reaches the webview even if the line/column
+        // numbers happen to repeat.
+        this.lastSentRangeKey = '';
+        const activeEditor = vscode.window.activeTextEditor;
+        if (
+            activeEditor
+            && activeEditor.document.uri.toString() === this.currentDocumentUri
+        ) {
+            this.scheduleCursorSync(activeEditor);
+        }
     }
 }

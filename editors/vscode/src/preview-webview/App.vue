@@ -10,7 +10,10 @@ import DetailsPanel from './components/DetailsPanel.vue';
 import BottomPanels from './components/BottomPanels.vue';
 import DiagnosticsCard from './components/DiagnosticsCard.vue';
 import {bridge} from './composables/useBridge';
-import type {PreviewWebviewState, SelectionRef, PreviewResolvedOptions} from './types';
+import type {
+    PreviewWebviewState, SelectionRef, PreviewResolvedOptions,
+    TextRange, PreviewStateDetail, PreviewTransitionDetail,
+} from './types';
 import type {PaletteId, PaletteMode} from './render/palette';
 
 type ColorMode = 'light' | 'dark' | 'auto';
@@ -112,8 +115,112 @@ function setState(next: PreviewWebviewState) {
     vscode.setState(next);
 }
 
+function rangeLength(range: TextRange): number {
+    const lineSpan = range.end.line - range.start.line;
+    if (lineSpan > 0) {
+        return lineSpan * 100000 + range.end.character;
+    }
+    return Math.max(0, range.end.character - range.start.character);
+}
+
+function positionWithin(range: TextRange, target: TextRange): boolean {
+    // ``target`` is typically the editor cursor range (often zero width).
+    // A range "contains" the target when the target start is not before
+    // the range start and the target end is not after the range end.
+    const startOk = target.start.line > range.start.line
+        || (target.start.line === range.start.line
+            && target.start.character >= range.start.character);
+    const endOk = target.end.line < range.end.line
+        || (target.end.line === range.end.line
+            && target.end.character <= range.end.character);
+    return startOk && endOk;
+}
+
+function findInnermostStateForRange(
+    states: PreviewStateDetail[] | undefined,
+    target: TextRange
+): PreviewStateDetail | null {
+    if (!states) return null;
+    let best: PreviewStateDetail | null = null;
+    let bestLength = Number.POSITIVE_INFINITY;
+    for (const state of states) {
+        const range = state.sourceRange;
+        if (!range) continue;
+        if (!positionWithin(range, target)) continue;
+        const length = rangeLength(range);
+        if (length < bestLength) {
+            best = state;
+            bestLength = length;
+        }
+    }
+    return best;
+}
+
+function findTransitionForRange(
+    transitions: PreviewTransitionDetail[] | undefined,
+    target: TextRange
+): PreviewTransitionDetail | null {
+    if (!transitions) return null;
+    let best: PreviewTransitionDetail | null = null;
+    let bestLength = Number.POSITIVE_INFINITY;
+    for (const transition of transitions) {
+        const range = transition.sourceRange;
+        if (!range) continue;
+        if (!positionWithin(range, target)) continue;
+        const length = rangeLength(range);
+        if (length < bestLength) {
+            best = transition;
+            bestLength = length;
+        }
+    }
+    return best;
+}
+
+function selectionForRange(
+    payload: PreviewWebviewState['payload'] | undefined,
+    target: TextRange
+): SelectionRef {
+    if (!payload) return null;
+    // Prefer a transition hit because transitions usually have tighter
+    // ranges than their enclosing state. Fall back to the innermost state
+    // covering the cursor.
+    const transition = findTransitionForRange(payload.transitions, target);
+    if (transition) {
+        return {kind: 'transition', id: transition.transitionId};
+    }
+    const state = findInnermostStateForRange(payload.states, target);
+    if (state) {
+        if (state.kind === 'composite') {
+            return {kind: 'composite-state', id: state.qualifiedName};
+        }
+        if (state.kind === 'pseudoState') {
+            return {kind: 'state', id: state.qualifiedName};
+        }
+        return {kind: 'state', id: state.qualifiedName};
+    }
+    return null;
+}
+
+function applyActiveRange(range: TextRange | null) {
+    if (!range) {
+        selection.value = null;
+        return;
+    }
+    const next = selectionForRange(state.value.payload, range);
+    selection.value = next;
+}
+
 function onMessage(ev: MessageEvent) {
-    setState(ev.data as PreviewWebviewState);
+    const data = ev.data as unknown;
+    if (data && typeof data === 'object') {
+        const maybeCue = data as {type?: string};
+        if (maybeCue.type === 'setActiveRange') {
+            const cue = maybeCue as {type: 'setActiveRange'; range: TextRange | null};
+            applyActiveRange(cue.range);
+            return;
+        }
+    }
+    setState(data as PreviewWebviewState);
 }
 
 let themeObserver: MutationObserver | null = null;

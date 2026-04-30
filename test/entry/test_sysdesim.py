@@ -442,14 +442,14 @@ def test_sysdesim_cli_validate_writes_phase11_summary_when_report_file_is_used(
     assert "scope: both | candidates: 2 | status: SAT" in plain_output
     assert "first coexistence: t00 = 0" in plain_output
     assert "witness timeline:" in plain_output
-    assert "| t" in plain_output
-    assert "| Main" in plain_output
-    assert "| R1" in plain_output
-    assert "| co" in plain_output
-    assert "| 0" in plain_output
-    assert "| initial" in plain_output
-    assert "| Idle" in plain_output
-    assert "| start" in plain_output
+    # Header / cell labels appear in the table (alignment-agnostic checks).
+    assert " t " in plain_output
+    assert "Main" in plain_output
+    assert " R1 " in plain_output
+    assert " co " in plain_output
+    assert "initial" in plain_output
+    assert " Idle " in plain_output
+    assert "start" in plain_output
     assert "Wrote SysDeSim timeline validation report" in plain_output
 
 
@@ -958,9 +958,12 @@ def test_phase11_action_token_classifier():
 @pytest.mark.unittest
 def test_phase11_witness_uses_arrow_form_and_outbound_signals(tmp_path: Path):
     """A SAT scenario should surface ``Sig9<--`` for emits and ``-->Sig11`` for
-    outbound notes, plus the ``co=start`` row underlined when the terminal
-    supports color."""
+    outbound notes; the first row is labeled ``initial`` (cyan) and the first
+    coexistence row is underlined+bold when the terminal supports color."""
     xml_file = _build_parallel_timeline_xml(tmp_path)
+    # Query Control / F: initial is Idle/Idle (not coexistent), subsequent
+    # rows after Sig1 fire are Control/F (coexistent), giving us both an
+    # ``initial`` row and a ``start`` row to assert on.
     result = CliRunner().invoke(
         pyfcstmcli,
         [
@@ -971,11 +974,11 @@ def test_phase11_witness_uses_arrow_form_and_outbound_signals(tmp_path: Path):
             "--left-machine-alias",
             "TimelineCoexist",
             "--left-state",
-            "Idle",
+            "Control",
             "--right-machine-alias",
             "TimelineCoexist__Control_region1",
             "--right-state",
-            "Idle",
+            "F",
         ],
         color=True,
     )
@@ -984,8 +987,9 @@ def test_phase11_witness_uses_arrow_form_and_outbound_signals(tmp_path: Path):
     assert "Sig1<--" in result.output
     # Outbound signal note must surface as -->SigN.
     assert "-->" in result.output
-    # The first coexistence row for Idle/Idle is the initial state, so
-    # ``start`` will appear with an underline+bold opener (``\x1b[4m\x1b[1m``).
+    # The very first witness row carries the ``initial`` label in cyan.
+    assert "\x1b[36minitial" in result.output
+    # The first coexistence row is line-level underline + bold.
     assert "\x1b[4m\x1b[1m" in result.output
 
 

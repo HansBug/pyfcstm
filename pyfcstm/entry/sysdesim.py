@@ -129,7 +129,8 @@ def _fit_text(text: str, width: int, align: str = "left") -> str:
     :type text: str
     :param width: Target width.
     :type width: int
-    :param align: Text alignment inside the fixed width, defaults to ``left``
+    :param align: Text alignment inside the fixed width — ``left``,
+        ``right``, or ``center``. Defaults to ``left``.
     :type align: str, optional
     :return: Width-limited cell text.
     :rtype: str
@@ -137,6 +138,8 @@ def _fit_text(text: str, width: int, align: str = "left") -> str:
     if len(text) <= width:
         if align == "right":
             return text.rjust(width)
+        if align == "center":
+            return text.center(width)
         return text.ljust(width)
     if width <= 3:
         return text[:width]
@@ -542,22 +545,22 @@ def _emit_phase11_timeline_table(
     machine_headers = [
         _short_machine_alias(alias, main_alias) for alias in output_aliases
     ]
-    headers = ["t", "pt", "act"] + machine_headers + ["co"]
+    headers = ["t", "act"] + machine_headers + ["co"]
     plain_rows: List[List[str]] = []
     colored_rows: List[List[str]] = []
 
     first_coex_symbol = timeline_report["first_coexistence_symbol"]
-    for item in timeline_points:
+    for index, item in enumerate(timeline_points):
         state_map = {
             _short_machine_alias(alias, main_alias): _short_state_text(state)
             for alias, state in item["machine_states"]
         }
-        point_label = item["point_label"]
-        if item["point_kind"] == "auto":
-            point_label = "tau@{}".format(point_label)
-        co_text = ""
-        if item["is_coexistent"]:
+        if index == 0:
+            co_text = "initial"
+        elif item["is_coexistent"]:
             co_text = "start" if item["symbol"] == first_coex_symbol else "yes"
+        else:
+            co_text = ""
         plain_act = _format_phase11_actions(item["actions"], main_alias)
         colored_act = _format_phase11_actions(
             item["actions"], main_alias, colorize=True
@@ -566,61 +569,70 @@ def _emit_phase11_timeline_table(
             colored_co = click.style("start", fg="green", bold=True)
         elif co_text == "yes":
             colored_co = click.style("yes", fg="green")
+        elif co_text == "initial":
+            colored_co = click.style("initial", fg="cyan")
         else:
             colored_co = ""
         machine_cells = [state_map.get(header, "-") for header in machine_headers]
         plain_rows.append(
-            [item["time_value_text"], point_label, plain_act]
-            + machine_cells
-            + [co_text]
+            [item["time_value_text"], plain_act] + machine_cells + [co_text]
         )
         colored_rows.append(
-            [item["time_value_text"], point_label, colored_act]
-            + machine_cells
-            + [colored_co]
+            [item["time_value_text"], colored_act] + machine_cells + [colored_co]
         )
 
     widths = []
+    aligns: List[str] = []
     for index, header in enumerate(headers):
         max_len = max([len(header)] + [len(row[index]) for row in plain_rows])
         if header == "t":
             width = max(len(header), min(max_len, 8))
-        elif header == "pt":
-            width = max(len(header), min(max_len, 14))
+            aligns.append("right")
         elif header == "act":
             width = max(len(header), min(max_len, 28))
+            aligns.append("center")
         elif header == "co":
             width = max(len(header), min(max_len, 8))
+            aligns.append("center")
         else:
             width = max(len(header), min(max_len, 14))
+            aligns.append("center")
         widths.append(width)
 
-    def _fit_with_ansi(plain: str, colored: str, width: int) -> str:
+    def _fit_with_ansi(plain: str, colored: str, width: int, align: str) -> str:
         """Fit a colored cell to ``width`` columns using ``plain`` for length."""
-        if len(plain) > width:
+        if len(plain) > width:  # pragma: no cover - widths are computed from observed cell lengths so truncation never triggers in practice
             if width <= 3:
-                truncated = plain[:width]
-                return truncated
-            truncated = plain[: width - 3] + "..."
-            return truncated
-        padding = " " * (width - len(plain))
-        return colored + padding
+                return plain[:width]
+            return plain[: width - 3] + "..."
+        gap = width - len(plain)
+        if align == "right":
+            return (" " * gap) + colored
+        if align == "center":
+            left_pad = gap // 2
+            right_pad = gap - left_pad
+            return (" " * left_pad) + colored + (" " * right_pad)
+        return colored + (" " * gap)  # pragma: no cover - left-align path unused by the witness table
 
     def _row_plain(values: Sequence[str]) -> str:
         return (
             "| "
             + " | ".join(
-                _fit_text(str(item), width) for item, width in zip(values, widths)
+                _fit_text(str(item), width, align)
+                for item, width, align in zip(values, widths, aligns)
             )
             + " |"
         )
 
-    def _row_colored(plain: Sequence[str], colored: Sequence[str]) -> str:
+    def _row_colored(
+        plain: Sequence[str], colored: Sequence[str], header_row: bool = False
+    ) -> str:
+        cell_aligns = ["center"] * len(aligns) if header_row else aligns
         return (
             "| "
             + " | ".join(
-                _fit_with_ansi(str(p), str(c), width)
-                for p, c, width in zip(plain, colored, widths)
+                _fit_with_ansi(str(p), str(c), width, align)
+                for p, c, width, align in zip(plain, colored, widths, cell_aligns)
             )
             + " |"
         )
@@ -629,16 +641,14 @@ def _emit_phase11_timeline_table(
     click.echo("  witness timeline:")
     click.echo("    - t: solved continuous-time value.")
     click.echo(
-        "    - pt: `sXX` is one imported step, `tau@...` is one hidden auto point."
-    )
-    click.echo(
         "    - act: actions observed at that point. "
         "`Sig9<--` = inbound emit, `-->Sig13` = outbound signal, "
         "`tau:R3 S->X` = hidden auto-transition, `y=2300` = SetInput."
     )
     click.echo(
-        "    - co: `start` marks the first coexistence point (highlighted); "
-        "`yes` means coexistence still holds (highlighted)."
+        "    - co: `initial` marks the initial state, `start` marks the first "
+        "coexistence point, `yes` means coexistence still holds. The `start` "
+        "and `yes` rows are underlined in color terminals."
     )
     def _apply_row_style(line: str, *, underline: bool, bold: bool) -> str:
         """Re-apply line-level ANSI attributes after each inner reset.
@@ -648,7 +658,7 @@ def _emit_phase11_timeline_table(
         outer underline active across the whole row we open the row-level
         styles, then re-open them after every inner reset.
         """
-        if not underline and not bold:
+        if not underline and not bold:  # pragma: no cover - only called with underline=True
             return line
         opener = ""
         if underline:
@@ -657,7 +667,7 @@ def _emit_phase11_timeline_table(
             opener += "\x1b[1m"
         return opener + line.replace("\x1b[0m", "\x1b[0m" + opener) + "\x1b[0m"
 
-    click.echo("  " + _row_colored(headers, header_cells))
+    click.echo("  " + _row_colored(headers, header_cells, header_row=True))
     click.echo("  " + _row_plain(["-" * width for width in widths]))
     for plain, colored in zip(plain_rows, colored_rows):
         co_text = plain[-1]

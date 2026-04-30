@@ -8,6 +8,7 @@ XML fixtures, and also assert end-to-end behavior of
 
 from __future__ import annotations
 
+from decimal import Decimal
 from pathlib import Path
 from textwrap import dedent
 
@@ -21,6 +22,7 @@ from pyfcstm.convert import (
     run_sysdesim_static_pre_checks,
 )
 from pyfcstm.convert.sysdesim import build_sysdesim_phase10_report
+from pyfcstm.convert.sysdesim import static_check as sc
 
 
 def _write_xml(tmp_path: Path, content: str, name: str = "sample.sysdesim.xml") -> Path:
@@ -44,6 +46,122 @@ def _build_parallel_timeline_xml(tmp_path: Path) -> Path:
     from test.convert.sysdesim.test_phase9_11 import _build_parallel_timeline_xml as _orig_builder
 
     return _orig_builder(tmp_path)
+
+
+def _build_dead_state_xml(tmp_path: Path) -> Path:
+    """
+    Tiny machine ``DeadDemo`` containing an ``Orphan`` state that has zero
+    inbound transitions. Used to exercise the dead-state branch of
+    :func:`_analyze_unreachability`.
+    """
+    return _write_xml(
+        tmp_path,
+        """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <xmi:XMI xmi:version="20131001"
+                 xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
+                 xmlns:uml="http://www.eclipse.org/uml2/5.0.0/UML">
+          <uml:Model xmi:id="model_1" name="model">
+            <packagedElement xmi:type="uml:Class" xmi:id="class_1" name="DeadDemo" classifierBehavior="machine_1">
+              <ownedBehavior xmi:type="uml:StateMachine" xmi:id="machine_1" name="DeadDemo">
+                <region xmi:type="uml:Region" xmi:id="region_root" name="">
+                  <transition xmi:type="uml:Transition" xmi:id="tx_root_init" source="init_root" target="state_idle"/>
+                  <transition xmi:type="uml:Transition" xmi:id="tx_idle_run" source="state_idle" target="state_run">
+                    <trigger xmi:type="uml:Trigger" xmi:id="trig_run" event="signal_evt_sig2"/>
+                  </transition>
+                  <subvertex xmi:type="uml:Pseudostate" xmi:id="init_root"/>
+                  <subvertex xmi:type="uml:State" xmi:id="state_idle" name="Idle"/>
+                  <subvertex xmi:type="uml:State" xmi:id="state_run" name="Run"/>
+                  <subvertex xmi:type="uml:State" xmi:id="state_orphan" name="Orphan"/>
+                </region>
+              </ownedBehavior>
+              <ownedBehavior xmi:type="uml:Interaction" xmi:id="interaction_1" name="ScenDead">
+                <ownedAttribute xmi:type="uml:Property" xmi:id="prop_a" name="a"/>
+                <ownedAttribute xmi:type="uml:Property" xmi:id="prop_b" name="b"/>
+                <lifeline xmi:type="uml:Lifeline" xmi:id="ll_a" name="a" represents="prop_a"/>
+                <lifeline xmi:type="uml:Lifeline" xmi:id="ll_b" name="b" represents="prop_b"/>
+                <fragment xmi:type="uml:StateInvariant" xmi:id="inv_a" covered="ll_a">
+                  <invariant xmi:type="uml:Constraint" xmi:id="inv_a_rule">
+                    <specification xmi:type="uml:OpaqueExpression" xmi:id="inv_a_expr">
+                      <body>true</body>
+                    </specification>
+                  </invariant>
+                </fragment>
+                <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="sig2_send" covered="ll_b" message="msg_sig2"/>
+                <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="sig2_recv" covered="ll_a" message="msg_sig2"/>
+                <message xmi:type="uml:Message" xmi:id="msg_sig2" sendEvent="sig2_send" receiveEvent="sig2_recv" signature="signal_sig2"/>
+              </ownedBehavior>
+            </packagedElement>
+            <packagedElement xmi:type="uml:Signal" xmi:id="signal_sig2" name="Sig2"/>
+            <packagedElement xmi:type="uml:SignalEvent" xmi:id="signal_evt_sig2" signal="signal_sig2"/>
+          </uml:Model>
+        </xmi:XMI>
+        """,
+        name="dead_state.xml",
+    )
+
+
+def _build_signal_dropped_xml(tmp_path: Path) -> Path:
+    """
+    Tiny machine ``DroppedSig`` whose scenario emits ``Sig4`` *before* the
+    region has transitioned out of ``Idle``. The transition to ``Done`` is
+    triggered by ``Sig4`` from ``Run``; in this scenario the region is still
+    in ``Idle`` when ``Sig4`` fires, so it is silently dropped and ``Done``
+    is never entered.
+    """
+    return _write_xml(
+        tmp_path,
+        """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <xmi:XMI xmi:version="20131001"
+                 xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
+                 xmlns:uml="http://www.eclipse.org/uml2/5.0.0/UML">
+          <uml:Model xmi:id="model_1" name="model">
+            <packagedElement xmi:type="uml:Class" xmi:id="class_1" name="DroppedSig" classifierBehavior="machine_1">
+              <ownedBehavior xmi:type="uml:StateMachine" xmi:id="machine_1" name="DroppedSig">
+                <region xmi:type="uml:Region" xmi:id="region_root" name="">
+                  <transition xmi:type="uml:Transition" xmi:id="tx_root_init" source="init_root" target="state_idle"/>
+                  <transition xmi:type="uml:Transition" xmi:id="tx_idle_run" source="state_idle" target="state_run">
+                    <trigger xmi:type="uml:Trigger" xmi:id="trig_run" event="signal_evt_sig2"/>
+                  </transition>
+                  <transition xmi:type="uml:Transition" xmi:id="tx_run_done" source="state_run" target="state_done">
+                    <trigger xmi:type="uml:Trigger" xmi:id="trig_done" event="signal_evt_sig4"/>
+                  </transition>
+                  <subvertex xmi:type="uml:Pseudostate" xmi:id="init_root"/>
+                  <subvertex xmi:type="uml:State" xmi:id="state_idle" name="Idle"/>
+                  <subvertex xmi:type="uml:State" xmi:id="state_run" name="Run"/>
+                  <subvertex xmi:type="uml:State" xmi:id="state_done" name="Done"/>
+                </region>
+              </ownedBehavior>
+              <ownedBehavior xmi:type="uml:Interaction" xmi:id="interaction_1" name="ScenDropped">
+                <ownedAttribute xmi:type="uml:Property" xmi:id="prop_a" name="a"/>
+                <ownedAttribute xmi:type="uml:Property" xmi:id="prop_b" name="b"/>
+                <lifeline xmi:type="uml:Lifeline" xmi:id="ll_a" name="a" represents="prop_a"/>
+                <lifeline xmi:type="uml:Lifeline" xmi:id="ll_b" name="b" represents="prop_b"/>
+                <fragment xmi:type="uml:StateInvariant" xmi:id="inv_a" covered="ll_a">
+                  <invariant xmi:type="uml:Constraint" xmi:id="inv_a_rule">
+                    <specification xmi:type="uml:OpaqueExpression" xmi:id="inv_a_expr">
+                      <body>true</body>
+                    </specification>
+                  </invariant>
+                </fragment>
+                <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="sig4_send" covered="ll_b" message="msg_sig4"/>
+                <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="sig4_recv" covered="ll_a" message="msg_sig4"/>
+                <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="sig2_send" covered="ll_b" message="msg_sig2"/>
+                <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="sig2_recv" covered="ll_a" message="msg_sig2"/>
+                <message xmi:type="uml:Message" xmi:id="msg_sig4" sendEvent="sig4_send" receiveEvent="sig4_recv" signature="signal_sig4"/>
+                <message xmi:type="uml:Message" xmi:id="msg_sig2" sendEvent="sig2_send" receiveEvent="sig2_recv" signature="signal_sig2"/>
+              </ownedBehavior>
+            </packagedElement>
+            <packagedElement xmi:type="uml:Signal" xmi:id="signal_sig2" name="Sig2"/>
+            <packagedElement xmi:type="uml:SignalEvent" xmi:id="signal_evt_sig2" signal="signal_sig2"/>
+            <packagedElement xmi:type="uml:Signal" xmi:id="signal_sig4" name="Sig4"/>
+            <packagedElement xmi:type="uml:SignalEvent" xmi:id="signal_evt_sig4" signal="signal_sig4"/>
+          </uml:Model>
+        </xmi:XMI>
+        """,
+        name="signal_dropped.xml",
+    )
 
 
 def _build_contradictory_durations_xml(tmp_path: Path) -> Path:
@@ -345,3 +463,497 @@ def test_run_static_pre_checks_returns_temporal_unsat(tmp_path: Path):
     diags = run_sysdesim_static_pre_checks(xml_path=str(xml_file))
     error_codes = {d.code for d in diags if d.level == "error"}
     assert "temporal_constraints_unsat" in error_codes
+
+
+# =============================================================================
+# Direct unit coverage for private helpers (no mocks; real values only).
+# =============================================================================
+
+
+@pytest.mark.unittest
+class TestParseTimeSeconds:
+    """Cover :func:`_parse_time_seconds` happy / sad paths."""
+
+    def test_returns_none_for_none_input(self):
+        assert sc._parse_time_seconds(None) is None
+
+    def test_seconds_default_unit(self):
+        assert sc._parse_time_seconds("10s") == Decimal("10")
+        assert sc._parse_time_seconds("0.5s") == Decimal("0.5")
+
+    def test_milliseconds(self):
+        assert sc._parse_time_seconds("250ms") == Decimal("0.250")
+
+    def test_minutes_and_hours(self):
+        assert sc._parse_time_seconds("2min") == Decimal("120")
+        assert sc._parse_time_seconds("1h") == Decimal("3600")
+
+    def test_unitless_treated_as_seconds(self):
+        assert sc._parse_time_seconds("42") == Decimal("42")
+
+    def test_raises_on_garbage_literal(self):
+        with pytest.raises(ValueError, match="Unsupported time literal"):
+            sc._parse_time_seconds("garbage")
+
+    def test_raises_on_unknown_unit(self):
+        # The regex itself rejects an unknown unit such as ``"10x"`` because
+        # ``x`` is not in the (?:ms|s|min|h)? alternation, so we synthesize a
+        # regex-passing string and a missing factor by passing a malformed
+        # literal that *parses* via the structural regex but with capital unit.
+        # Actually the regex is case-insensitive, so "10X" still fails. Use a
+        # purely structural mismatch instead:
+        with pytest.raises(ValueError):
+            sc._parse_time_seconds("10x")
+
+
+@pytest.mark.unittest
+class TestFormatSeconds:
+    """Cover :func:`_format_seconds`."""
+
+    def test_integer_seconds(self):
+        assert sc._format_seconds(Decimal("10")) == "10s"
+
+    def test_fractional_strips_trailing_zeros(self):
+        assert sc._format_seconds(Decimal("1.500")) == "1.5s"
+
+    def test_zero_normalizes_to_plain_zero(self):
+        assert sc._format_seconds(Decimal("0")) == "0s"
+
+    def test_negative_zero_normalizes_to_plain_zero(self):
+        assert sc._format_seconds(Decimal("-0")) == "0s"
+
+
+@pytest.mark.unittest
+class TestFriendlyStepLabel:
+    """Cover :func:`_friendly_step_label` for every recognized step shape."""
+
+    def test_emit_action_returns_event_name(self):
+        class _Action:
+            event_name = "Sig9"
+            input_name = None
+            value_text = None
+        class _Step:
+            actions = (_Action(),)
+            notes = ()
+        assert sc._friendly_step_label(_Step()) == "Sig9"
+
+    def test_set_input_action_returns_assignment_text(self):
+        class _Action:
+            event_name = None
+            input_name = "y"
+            value_text = "2300"
+        class _Step:
+            actions = (_Action(),)
+            notes = ()
+        assert sc._friendly_step_label(_Step()) == "y=2300"
+
+    def test_set_input_without_value_returns_input_name_only(self):
+        class _Action:
+            event_name = None
+            input_name = "y"
+            value_text = None
+        class _Step:
+            actions = (_Action(),)
+            notes = ()
+        assert sc._friendly_step_label(_Step()) == "y"
+
+    def test_outbound_signal_note_renders_arrow(self):
+        class _Step:
+            actions = ()
+            notes = ("outbound_signal=Sig13",)
+        assert sc._friendly_step_label(_Step()) == "→Sig13"
+
+    def test_self_message_note_returns_label(self):
+        class _Step:
+            actions = ()
+            notes = ("self_message",)
+        assert sc._friendly_step_label(_Step()) == "self-message"
+
+    def test_anchor_step_falls_back_to_order_index_marker(self):
+        class _Step:
+            actions = ()
+            notes = ()
+            order_index = 7
+        assert sc._friendly_step_label(_Step()) == "(anchor #7)"
+
+    def test_anchor_step_without_order_index_falls_back_to_generic_marker(self):
+        class _Step:
+            actions = ()
+            notes = ()
+        assert sc._friendly_step_label(_Step()) == "(anchor)"
+
+
+@pytest.mark.unittest
+class TestDisplayNameHelpers:
+    """Cover ``_display_event_name`` and ``_display_state_name``."""
+
+    def test_display_event_name_prefers_extra_name(self):
+        class _Event:
+            name = "SIG9"
+            extra_name = "Sig9"
+        assert sc._display_event_name(_Event()) == "Sig9"
+
+    def test_display_event_name_falls_back_to_name(self):
+        class _Event:
+            name = "SIG9"
+            extra_name = None
+        assert sc._display_event_name(_Event()) == "SIG9"
+
+    def test_display_event_name_returns_none_when_event_is_none(self):
+        assert sc._display_event_name(None) is None
+
+    def test_display_event_name_returns_none_when_no_attributes(self):
+        class _Empty:
+            name = None
+            extra_name = None
+        assert sc._display_event_name(_Empty()) is None
+
+    def test_display_state_name_prefers_extra_name(self):
+        class _State:
+            name = "STATE_FOO"
+            extra_name = "Foo"
+        assert sc._display_state_name(_State()) == "Foo"
+
+    def test_display_state_name_falls_back_to_name(self):
+        class _State:
+            name = "STATE_FOO"
+            extra_name = None
+        assert sc._display_state_name(_State()) == "STATE_FOO"
+
+    def test_display_state_name_returns_none_when_state_is_none(self):
+        assert sc._display_state_name(None) is None
+
+    def test_display_state_name_returns_none_when_empty(self):
+        class _Empty:
+            name = None
+            extra_name = None
+        assert sc._display_state_name(_Empty()) is None
+
+
+@pytest.mark.unittest
+class TestLevenshtein:
+    """Cover :func:`_levenshtein` early-return branches and the DP body."""
+
+    def test_equal_strings(self):
+        assert sc._levenshtein("foo", "foo") == 0
+
+    def test_left_empty(self):
+        assert sc._levenshtein("", "abc") == 3
+
+    def test_right_empty(self):
+        assert sc._levenshtein("abc", "") == 3
+
+    def test_typical_distance(self):
+        # Insert, delete, replace
+        assert sc._levenshtein("kitten", "sitting") == 3
+
+
+@pytest.mark.unittest
+class TestAliasLookups:
+    """Cover the alias / trace / state-path lookup helpers."""
+
+    def test_machine_for_alias_returns_none_when_unknown(self, tmp_path: Path):
+        xml_file = _build_parallel_timeline_xml(tmp_path)
+        phase10 = build_sysdesim_phase10_report(str(xml_file))
+        assert sc._machine_for_alias(phase10, "no-such-alias") is None
+
+    def test_trace_for_alias_returns_none_when_unknown(self, tmp_path: Path):
+        xml_file = _build_parallel_timeline_xml(tmp_path)
+        phase10 = build_sysdesim_phase10_report(str(xml_file))
+        assert sc._trace_for_alias(phase10, "no-such-alias") is None
+
+    def test_candidate_state_paths_empty_for_unknown_alias(self, tmp_path: Path):
+        xml_file = _build_parallel_timeline_xml(tmp_path)
+        phase10 = build_sysdesim_phase10_report(str(xml_file))
+        assert sc._candidate_state_paths_for_alias(phase10, "no-such-alias") == ()
+
+
+@pytest.mark.unittest
+class TestStateInTrace:
+    """Cover the three matching paths in :func:`_state_in_trace`."""
+
+    def test_initial_state_match(self, tmp_path: Path):
+        xml_file = _build_parallel_timeline_xml(tmp_path)
+        phase10 = build_sysdesim_phase10_report(str(xml_file))
+        trace = sc._trace_for_alias(phase10, "TimelineCoexist__Control_region1")
+        assert trace is not None
+        assert sc._state_in_trace(trace, trace.initial_state_path) is True
+
+    def test_post_step_match(self, tmp_path: Path):
+        """A state that appears as a step's post_state but not as initial."""
+        xml_file = _build_parallel_timeline_xml(tmp_path)
+        phase10 = build_sysdesim_phase10_report(str(xml_file))
+        trace = sc._trace_for_alias(phase10, "TimelineCoexist__Control_region2")
+        assert trace is not None
+        # Region 2 starts in Idle and walks Control.J -> K -> S -> X.
+        candidate = next(
+            (
+                step.post_state_path
+                for step in trace.steps
+                if step.post_state_path
+                and step.post_state_path != trace.initial_state_path
+            ),
+            None,
+        )
+        assert candidate is not None
+        assert sc._state_in_trace(trace, candidate) is True
+
+    def test_state_window_only_match(self):
+        """A state that appears ONLY in state_windows (not in initial / steps)."""
+        from types import SimpleNamespace
+
+        window = SimpleNamespace(state_path="WindowOnly")
+        synthetic_trace = SimpleNamespace(
+            initial_state_path="OtherInitial",
+            steps=(),
+            state_windows=(window,),
+        )
+        assert sc._state_in_trace(synthetic_trace, "WindowOnly") is True
+
+    def test_returns_false_for_unreachable_state(self, tmp_path: Path):
+        xml_file = _build_parallel_timeline_xml(tmp_path)
+        phase10 = build_sysdesim_phase10_report(str(xml_file))
+        trace = sc._trace_for_alias(phase10, "TimelineCoexist__Control_region1")
+        assert trace is not None
+        # M is unreachable in this scenario.
+        assert sc._state_in_trace(trace, "TimelineCoexist.Control.H.M") is False
+
+
+@pytest.mark.unittest
+class TestResolveStatePath:
+    """Cover the early-return and ambiguity branches of :func:`_resolve_state_path`."""
+
+    def test_returns_none_when_machine_is_none(self):
+        assert sc._resolve_state_path(None, "X") is None
+
+    def test_resolves_full_path(self, tmp_path: Path):
+        xml_file = _build_parallel_timeline_xml(tmp_path)
+        phase10 = build_sysdesim_phase10_report(str(xml_file))
+        machine = sc._machine_for_alias(phase10, "TimelineCoexist__Control_region2")
+        assert machine is not None
+        assert (
+            sc._resolve_state_path(machine, "TimelineCoexist.Control.X")
+            == "TimelineCoexist.Control.X"
+        )
+
+    def test_resolves_local_name(self, tmp_path: Path):
+        xml_file = _build_parallel_timeline_xml(tmp_path)
+        phase10 = build_sysdesim_phase10_report(str(xml_file))
+        machine = sc._machine_for_alias(phase10, "TimelineCoexist__Control_region2")
+        assert machine is not None
+        assert sc._resolve_state_path(machine, "X").endswith(".X")
+
+    def test_returns_none_for_unknown_name(self, tmp_path: Path):
+        xml_file = _build_parallel_timeline_xml(tmp_path)
+        phase10 = build_sysdesim_phase10_report(str(xml_file))
+        machine = sc._machine_for_alias(phase10, "TimelineCoexist__Control_region2")
+        assert machine is not None
+        assert sc._resolve_state_path(machine, "NEVER_EXISTS") is None
+
+    def test_resolves_via_suffix_tokens(self, tmp_path: Path):
+        """A multi-token suffix uniquely identifies a deeply nested state."""
+        xml_file = _build_parallel_timeline_xml(tmp_path)
+        phase10 = build_sysdesim_phase10_report(str(xml_file))
+        machine = sc._machine_for_alias(phase10, "TimelineCoexist__Control_region1")
+        assert machine is not None
+        # "H.M" suffix-matches "TimelineCoexist.Control.H.M" but not
+        # "TimelineCoexist.Control.H.L"; the resolver returns the unique match.
+        resolved = sc._resolve_state_path(machine, "H.M")
+        assert resolved == "TimelineCoexist.Control.H.M"
+
+
+@pytest.mark.unittest
+class TestTemporalDetectorEdgeCases:
+    """Cover edge branches inside :func:`detect_temporal_constraints_unsat`."""
+
+    def test_empty_scenario_returns_no_diagnostics(self, monkeypatch):
+        """No steps → early return without solver invocation."""
+        # Construct a minimal stand-in Phase10Report whose scenario has zero
+        # steps; we use ``types.SimpleNamespace`` so we never mock z3 itself.
+        from types import SimpleNamespace
+
+        empty_scenario = SimpleNamespace(steps=(), temporal_constraints=())
+        empty_report = SimpleNamespace(
+            scenario=empty_scenario,
+            phase9_report=SimpleNamespace(outputs=()),
+            traces=(),
+        )
+        assert sc.detect_temporal_constraints_unsat(empty_report) == []
+
+    def test_unknown_step_in_constraint_is_skipped(self, tmp_path: Path):
+        """A constraint referencing a non-existent step is silently skipped."""
+        xml_file = _build_parallel_timeline_xml(tmp_path)
+        phase10 = build_sysdesim_phase10_report(str(xml_file))
+        # Inject a synthesized constraint referencing a nonexistent step id.
+        from pyfcstm.convert.sysdesim.timeline_verify import (
+            SysDeSimNormalizedTemporalConstraint,
+        )
+
+        bogus_constraint = SysDeSimNormalizedTemporalConstraint(
+            constraint_id="bogus-1",
+            kind="duration_constraint",
+            left_step_id="doesnt-exist",
+            right_step_id="also-doesnt-exist",
+            left_time_symbol="t-bogus-left",
+            right_time_symbol="t-bogus-right",
+            min_seconds_text="1s",
+            max_seconds_text="1s",
+            strict_lower=False,
+            note=None,
+        )
+        # Replace temporal_constraints with the original ones plus the bogus one.
+        from dataclasses import replace
+        new_scenario = replace(
+            phase10.scenario,
+            temporal_constraints=tuple(phase10.scenario.temporal_constraints)
+            + (bogus_constraint,),
+        )
+        new_phase10 = replace(phase10, scenario=new_scenario)
+        # Should still be SAT (the canonical fixture is timing-feasible) and
+        # the bogus constraint is dropped, not raised.
+        diags = sc.detect_temporal_constraints_unsat(new_phase10)
+        assert diags == []
+
+    def test_malformed_bound_value_is_skipped(self, tmp_path: Path):
+        """A constraint with an unparseable time literal is skipped, not raised."""
+        xml_file = _build_parallel_timeline_xml(tmp_path)
+        phase10 = build_sysdesim_phase10_report(str(xml_file))
+        from pyfcstm.convert.sysdesim.timeline_verify import (
+            SysDeSimNormalizedTemporalConstraint,
+        )
+        from dataclasses import replace
+
+        # Use a real step id but with a garbage time literal.
+        first_step_id = phase10.scenario.steps[0].step_id
+        second_step_id = phase10.scenario.steps[1].step_id
+        bogus = SysDeSimNormalizedTemporalConstraint(
+            constraint_id="bad-literal",
+            kind="duration_constraint",
+            left_step_id=first_step_id,
+            right_step_id=second_step_id,
+            left_time_symbol=phase10.scenario.steps[0].time_symbol,
+            right_time_symbol=phase10.scenario.steps[1].time_symbol,
+            min_seconds_text="not-a-time",
+            max_seconds_text="also-not",
+            strict_lower=False,
+            note=None,
+        )
+        new_scenario = replace(
+            phase10.scenario,
+            temporal_constraints=tuple(phase10.scenario.temporal_constraints)
+            + (bogus,),
+        )
+        new_phase10 = replace(phase10, scenario=new_scenario)
+        diags = sc.detect_temporal_constraints_unsat(new_phase10)
+        assert diags == []
+
+
+@pytest.mark.unittest
+class TestDetectorAliasMissingSafety:
+    """Detectors should silently no-op when an alias does not match any output."""
+
+    def test_target_state_never_entered_skips_unknown_alias(self, tmp_path: Path):
+        xml_file = _build_parallel_timeline_xml(tmp_path)
+        phase10 = build_sysdesim_phase10_report(str(xml_file))
+        diags = detect_target_state_never_entered(
+            phase10,
+            left_machine_alias="no-such-alias",
+            left_state_ref="X",
+        )
+        assert diags == []
+
+    def test_query_state_name_unknown_skips_when_alias_missing(self, tmp_path: Path):
+        xml_file = _build_parallel_timeline_xml(tmp_path)
+        phase10 = build_sysdesim_phase10_report(str(xml_file))
+        diags = detect_query_state_name_unknown(
+            phase10,
+            left_machine_alias="no-such-alias",
+            left_state_ref="X",
+        )
+        assert diags == []
+
+    def test_query_state_name_unknown_skips_when_only_alias_provided(
+        self, tmp_path: Path
+    ):
+        """Half-specified queries (only alias, no state) are ignored."""
+        xml_file = _build_parallel_timeline_xml(tmp_path)
+        phase10 = build_sysdesim_phase10_report(str(xml_file))
+        diags = detect_query_state_name_unknown(
+            phase10,
+            left_machine_alias="TimelineCoexist__Control_region1",
+            left_state_ref=None,
+        )
+        assert diags == []
+
+    def test_target_state_never_entered_skips_unresolvable_ref(
+        self, tmp_path: Path
+    ):
+        """If the ref cannot be resolved, the target-entered check defers to
+        :func:`detect_query_state_name_unknown`."""
+        xml_file = _build_parallel_timeline_xml(tmp_path)
+        phase10 = build_sysdesim_phase10_report(str(xml_file))
+        diags = detect_target_state_never_entered(
+            phase10,
+            left_machine_alias="TimelineCoexist__Control_region1",
+            left_state_ref="NEVER_EXISTS",
+        )
+        assert diags == []
+
+
+@pytest.mark.unittest
+class TestUnreachabilityAnalysis:
+    """Cover the two ``hints``-generation branches of :func:`_analyze_unreachability`."""
+
+    def test_canonical_fixture_yields_no_emitted_trigger_hint(self, tmp_path: Path):
+        """In the canonical fixture, M is unreachable because Sig9 is only sent
+        outbound (machine_relevant_direction_mismatch), not as a real emit. The
+        analyzer should fall through to the "trigger signal never emitted" hint
+        and not the "dropped at wrong state" hint."""
+        xml_file = _build_parallel_timeline_xml(tmp_path)
+        phase10 = build_sysdesim_phase10_report(str(xml_file))
+        diags = detect_target_state_never_entered(
+            phase10,
+            left_machine_alias="TimelineCoexist__Control_region1",
+            left_state_ref="M",
+        )
+        assert diags
+        first = diags[0]
+        # The inbound transitions list should include the L --Sig9--> M edge.
+        assert first.details["inbound_transitions"]
+        # No emit records for Sig9 (it is outbound only in this fixture).
+        assert first.details["trigger_signal_emit_steps"] == []
+        # Hint mentions that the signal was never emitted.
+        assert any("none of those signals were emitted" in h for h in first.hints)
+
+    def test_dead_state_with_no_inbound_yields_dead_state_hint(self, tmp_path: Path):
+        """A target state with zero inbound transitions yields the "dead state" hint."""
+        xml_file = _build_dead_state_xml(tmp_path)
+        phase10 = build_sysdesim_phase10_report(str(xml_file))
+        diags = detect_target_state_never_entered(
+            phase10,
+            left_machine_alias="DeadDemo",
+            left_state_ref="Orphan",
+        )
+        assert diags
+        first = diags[0]
+        assert first.details["inbound_transitions"] == []
+        assert any("dead state" in h for h in first.hints)
+
+    def test_emitted_at_wrong_state_yields_dropped_hint(self, tmp_path: Path):
+        """A scenario where the trigger IS emitted but the region is in the
+        wrong source state -> the "silently dropped" hint fires."""
+        xml_file = _build_signal_dropped_xml(tmp_path)
+        phase10 = build_sysdesim_phase10_report(str(xml_file))
+        diags = detect_target_state_never_entered(
+            phase10,
+            left_machine_alias="DroppedSig",
+            left_state_ref="Done",
+        )
+        assert diags
+        first = diags[0]
+        recs = first.details["trigger_signal_emit_steps"]
+        assert recs
+        assert any(not r["did_fire"] for r in recs)
+        assert any("silently dropped" in h for h in first.hints)
+        # Friendly labels — no raw step ids should leak into the hint.
+        assert "s0" not in first.hints[0]

@@ -740,3 +740,207 @@ def test_sysdesim_static_check_emits_ansi_color_when_color_enabled(tmp_path: Pat
     )
     # Expect at least one ANSI escape sequence in the colored output.
     assert "\x1b[" in result.output, "expected ANSI escape codes when color=True"
+
+
+def _build_static_check_clean_xml(tmp_path: Path) -> Path:
+    """A tiny machine + scenario with literally zero static issues.
+
+    Idle --Sig1--> Run; the scenario emits Sig1 once. No DurationConstraints,
+    no signal-drops, no unreachable states. Used to verify the
+    ``Static Pre-check OK`` clean-output branch.
+    """
+    return _write_xml(
+        tmp_path,
+        """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <xmi:XMI xmi:version="20131001"
+                 xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
+                 xmlns:uml="http://www.eclipse.org/uml2/5.0.0/UML">
+          <uml:Model xmi:id="model_1" name="model">
+            <packagedElement xmi:type="uml:Class" xmi:id="class_1" name="CleanDemo" classifierBehavior="machine_1">
+              <ownedBehavior xmi:type="uml:StateMachine" xmi:id="machine_1" name="CleanDemo">
+                <region xmi:type="uml:Region" xmi:id="region_root" name="">
+                  <transition xmi:type="uml:Transition" xmi:id="tx_root_init" source="init_root" target="state_idle"/>
+                  <transition xmi:type="uml:Transition" xmi:id="tx_idle_run" source="state_idle" target="state_run">
+                    <trigger xmi:type="uml:Trigger" xmi:id="trig_run" event="signal_evt_sig1"/>
+                  </transition>
+                  <subvertex xmi:type="uml:Pseudostate" xmi:id="init_root"/>
+                  <subvertex xmi:type="uml:State" xmi:id="state_idle" name="Idle"/>
+                  <subvertex xmi:type="uml:State" xmi:id="state_run" name="Run"/>
+                </region>
+              </ownedBehavior>
+              <ownedBehavior xmi:type="uml:Interaction" xmi:id="interaction_1" name="ScenClean">
+                <ownedAttribute xmi:type="uml:Property" xmi:id="prop_a" name="a"/>
+                <ownedAttribute xmi:type="uml:Property" xmi:id="prop_b" name="b"/>
+                <lifeline xmi:type="uml:Lifeline" xmi:id="ll_a" name="a" represents="prop_a"/>
+                <lifeline xmi:type="uml:Lifeline" xmi:id="ll_b" name="b" represents="prop_b"/>
+                <fragment xmi:type="uml:StateInvariant" xmi:id="inv_a" covered="ll_a">
+                  <invariant xmi:type="uml:Constraint" xmi:id="inv_a_rule">
+                    <specification xmi:type="uml:OpaqueExpression" xmi:id="inv_a_expr">
+                      <body>true</body>
+                    </specification>
+                  </invariant>
+                </fragment>
+                <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="sig1_send" covered="ll_b" message="msg_sig1"/>
+                <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="sig1_recv" covered="ll_a" message="msg_sig1"/>
+                <message xmi:type="uml:Message" xmi:id="msg_sig1" sendEvent="sig1_send" receiveEvent="sig1_recv" signature="signal_sig1"/>
+              </ownedBehavior>
+            </packagedElement>
+            <packagedElement xmi:type="uml:Signal" xmi:id="signal_sig1" name="Sig1"/>
+            <packagedElement xmi:type="uml:SignalEvent" xmi:id="signal_evt_sig1" signal="signal_sig1"/>
+          </uml:Model>
+        </xmi:XMI>
+        """,
+    )
+
+
+@pytest.mark.unittest
+def test_sysdesim_static_check_clean_xml_emits_ok_branch(tmp_path: Path):
+    """A model with zero diagnostics prints the clean ``OK`` branch."""
+    xml_file = _build_static_check_clean_xml(tmp_path)
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        ["sysdesim", "static-check", "-i", str(xml_file)],
+        color=False,
+    )
+    assert result.exit_code == 0, result.output
+    plain = _strip_ansi(result.output)
+    assert "OK (no static issues found)" in plain
+
+
+@pytest.mark.unittest
+def test_sysdesim_validate_writes_static_check_report_when_blocked(tmp_path: Path):
+    """When validate's pre-check blocks, ``--report-file`` still receives the
+    structured static-check payload so CI / LLM tooling can act on it."""
+    xml_file = _build_parallel_timeline_xml(tmp_path)
+    report_file = tmp_path / "blocked.json"
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "validate",
+            "-i",
+            str(xml_file),
+            "--left-machine-alias",
+            "TimelineCoexist__Control_region1",
+            "--left-state",
+            "M",
+            "--right-machine-alias",
+            "TimelineCoexist__Control_region2",
+            "--right-state",
+            "X",
+            "--report-file",
+            str(report_file),
+        ],
+        color=False,
+    )
+    assert result.exit_code != 0
+    payload = json.loads(report_file.read_text(encoding="utf-8"))
+    assert "static_check" in payload
+    assert payload["static_check"]["blocking_errors"] >= 1
+
+
+@pytest.mark.unittest
+def test_sysdesim_static_check_unknown_machine_name_yields_click_error(
+    tmp_path: Path,
+):
+    """An unknown ``--machine-name`` exercises the static-check exception
+    handler that converts ``KeyError`` into a clean ClickErrorException."""
+    xml_file = _build_parallel_timeline_xml(tmp_path)
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "static-check",
+            "-i",
+            str(xml_file),
+            "--machine-name",
+            "NoSuchMachine",
+        ],
+        color=False,
+    )
+    assert result.exit_code != 0
+    plain = _strip_ansi(result.output)
+    assert "NoSuchMachine" in plain
+
+
+@pytest.mark.unittest
+def test_sysdesim_validate_unknown_machine_name_in_static_check_phase(
+    tmp_path: Path,
+):
+    """``validate``'s pre-check catches the same KeyError via the static_check
+    exception handler in :func:`_run_sysdesim_validate`."""
+    xml_file = _build_parallel_timeline_xml(tmp_path)
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "validate",
+            "-i",
+            str(xml_file),
+            "--machine-name",
+            "NoSuchMachine",
+        ],
+        color=False,
+    )
+    assert result.exit_code != 0
+    plain = _strip_ansi(result.output)
+    assert "NoSuchMachine" in plain
+
+
+@pytest.mark.unittest
+def test_sysdesim_validate_no_static_check_propagates_smt_phase_error(
+    tmp_path: Path,
+):
+    """``--no-static-check`` skips the pre-check, so the post-pre-check
+    exception handler in :func:`_run_sysdesim_validate` is the layer that
+    surfaces XML/lookup errors."""
+    xml_file = _build_parallel_timeline_xml(tmp_path)
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "validate",
+            "-i",
+            str(xml_file),
+            "--machine-name",
+            "NoSuchMachine",
+            "--no-static-check",
+        ],
+        color=False,
+    )
+    assert result.exit_code != 0
+    plain = _strip_ansi(result.output)
+    assert "NoSuchMachine" in plain
+
+
+@pytest.mark.unittest
+def test_diagnostic_level_label_info_branch():
+    """``_diagnostic_level_label`` returns the cyan ``[INFO]`` tag for
+    non-error/warning levels (defensive code path for future detector kinds)."""
+    from pyfcstm.entry.sysdesim import _diagnostic_level_label
+
+    label = _diagnostic_level_label("info")
+    # The literal "[INFO]" tag must be present, possibly wrapped with ANSI.
+    assert "[INFO]" in label
+    # Unknown level falls back to the same INFO bucket.
+    assert "[INFO]" in _diagnostic_level_label("note")
+
+
+@pytest.mark.unittest
+def test_serialize_diagnostic_round_trips_state_path_field():
+    """``_serialize_diagnostic`` includes ``state_path`` when the diagnostic
+    carries one, and emits it as a JSON-friendly list."""
+    from pyfcstm.convert.sysdesim.ir import IrDiagnostic
+    from pyfcstm.entry.sysdesim import _serialize_diagnostic
+
+    diag = IrDiagnostic(
+        level="warning",
+        code="custom_code",
+        message="hi",
+        state_path=("Root", "Inner"),
+    )
+    payload = _serialize_diagnostic(diag)
+    assert payload["state_path"] == ["Root", "Inner"]
+    assert payload["code"] == "custom_code"
+    assert payload["level"] == "warning"

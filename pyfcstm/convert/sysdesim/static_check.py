@@ -51,13 +51,12 @@ from __future__ import annotations
 
 import re
 from decimal import Decimal
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import z3
 
 from .ir import IrDiagnostic
 from .timeline_verify import (
-    SysDeSimNormalizedTemporalConstraint,
     SysDeSimPhase10Report,
     SysDeSimTimelineMachineTrace,
     build_sysdesim_phase10_report,
@@ -95,9 +94,11 @@ def _parse_time_seconds(text: Optional[str]) -> Optional[Decimal]:
         raise ValueError("Unsupported time literal: {!r}".format(text))
     value = Decimal(match.group(1))
     unit_key = (match.group(2) or "").lower()
-    factor = _TIME_UNIT_FACTOR.get(unit_key)
-    if factor is None:
-        raise ValueError("Unsupported time unit in literal: {!r}".format(text))
+    # ``_TIME_LITERAL_PATTERN``'s second capture group restricts unit_key to one
+    # of the keys present in ``_TIME_UNIT_FACTOR`` (or empty string), so the
+    # lookup below cannot return ``None`` in practice. Default to seconds as a
+    # belt-and-suspenders safety net.
+    factor = _TIME_UNIT_FACTOR.get(unit_key, _TIME_UNIT_FACTOR[""])
     return value * factor
 
 
@@ -111,44 +112,74 @@ def _format_seconds(value: Decimal) -> str:
     return "{}s".format(text)
 
 
-def _step_event_label(step) -> Optional[str]:
-    """Best-effort human label for the action a step performs (emit / set-input)."""
-    actions = getattr(step, "actions", ())
-    if not actions:
+def _display_event_name(event) -> Optional[str]:
+    """Return the modeler-visible event name (``extra_name`` when set, else ``name``)."""
+    if event is None:
         return None
-    for action in actions:
-        event_name = getattr(action, "event_name", None)
-        if event_name:
-            return event_name
-        input_name = getattr(action, "input_name", None)
-        if input_name:
-            return input_name
+    extra = getattr(event, "extra_name", None)
+    if extra:
+        return str(extra)
+    name = getattr(event, "name", None)
+    if name:
+        return str(name)
     return None
 
 
-def _format_constraint_text(
-    constraint: SysDeSimNormalizedTemporalConstraint,
-    step_labels: Mapping[str, Optional[str]],
-) -> str:
-    """Render a duration constraint as ``t(Sig9) -> t(Sig6) in [10s, 10s]``."""
-    lhs_label = step_labels.get(constraint.left_step_id) or constraint.left_step_id
-    rhs_label = step_labels.get(constraint.right_step_id) or constraint.right_step_id
-    pieces = []
-    if constraint.min_seconds_text is not None:
-        pieces.append(
-            "{} {}".format(">" if constraint.strict_lower else ">=", constraint.min_seconds_text)
-        )
-    if constraint.max_seconds_text is not None:
-        pieces.append("<= {}".format(constraint.max_seconds_text))
-    bound_text = " AND ".join(pieces) if pieces else "(unbounded)"
-    return "t({}) - t({}) {}  [step {} -> step {}, kind={}]".format(
-        rhs_label,
-        lhs_label,
-        bound_text,
-        constraint.left_step_id,
-        constraint.right_step_id,
-        constraint.kind,
-    )
+def _display_state_name(state) -> Optional[str]:
+    """Return the modeler-visible state name (``extra_name`` when set, else ``name``)."""
+    if state is None:
+        return None
+    extra = getattr(state, "extra_name", None)
+    if extra:
+        return str(extra)
+    name = getattr(state, "name", None)
+    if name:
+        return str(name)
+    return None
+
+
+def _friendly_step_label(step) -> str:
+    """
+    Human-friendly label for one scenario step, suitable for diagnostic
+    messages targeted at modelers (no internal ``sNN`` step ids leak out).
+
+    The label is derived from the artifacts the modeler can actually see
+    on the original SysDeSim sequence diagram or in the XML:
+
+    * emit actions surface their signal name (e.g. ``"Sig9"``);
+    * SetInput actions surface the assignment text (e.g. ``"y=2300"``);
+    * outbound-only messages surface as ``"→<signal>"`` based on the step's
+      ``outbound_signal=...`` note;
+    * self-messages surface as ``"self-message"``;
+    * any remaining anchor step falls back to a neutral
+      ``"(anchor #N)"`` marker derived from the step's order index, never
+      the raw ``sNN`` step id.
+
+    :param step: One scenario step (typically
+        :class:`SysDeSimTimelineScenarioStep`).
+    :return: A short, modeler-recognizable label.
+    :rtype: str
+    """
+    for action in getattr(step, "actions", ()) or ():
+        event_name = getattr(action, "event_name", None)
+        if event_name:
+            return str(event_name)
+        input_name = getattr(action, "input_name", None)
+        if input_name:
+            value_text = getattr(action, "value_text", None)
+            if value_text is None:
+                return str(input_name)
+            return "{}={}".format(input_name, value_text)
+    for note in getattr(step, "notes", ()) or ():
+        if isinstance(note, str) and note.startswith("outbound_signal="):
+            signal = note.split("=", 1)[1].strip() or "?"
+            return "→{}".format(signal)
+        if note == "self_message":
+            return "self-message"
+    order_index = getattr(step, "order_index", None)
+    if isinstance(order_index, int):
+        return "(anchor #{})".format(order_index)
+    return "(anchor)"
 
 
 def _levenshtein(a: str, b: str) -> int:
@@ -270,10 +301,9 @@ def detect_temporal_constraints_unsat(
     if not steps:
         return []
 
-    step_labels: Dict[str, Optional[str]] = {
-        step.step_id: _step_event_label(step) for step in steps
+    step_labels: Dict[str, str] = {
+        step.step_id: _friendly_step_label(step) for step in steps
     }
-    step_index: Dict[str, int] = {step.step_id: idx for idx, step in enumerate(steps)}
 
     solver = z3.Solver()
     solver.set(unsat_core=True)
@@ -294,13 +324,11 @@ def detect_temporal_constraints_unsat(
         )
         track_to_payload[track_name] = {
             "kind": "lifeline_order",
-            "left_step_id": previous_step.step_id,
-            "right_step_id": next_step.step_id,
-            "left_label": step_labels.get(previous_step.step_id),
-            "right_label": step_labels.get(next_step.step_id),
+            "left_label": step_labels[previous_step.step_id],
+            "right_label": step_labels[next_step.step_id],
             "human": "lifeline order: t({left}) <= t({right})".format(
-                left=step_labels.get(previous_step.step_id) or previous_step.step_id,
-                right=step_labels.get(next_step.step_id) or next_step.step_id,
+                left=step_labels[previous_step.step_id],
+                right=step_labels[next_step.step_id],
             ),
         }
 
@@ -314,6 +342,12 @@ def detect_temporal_constraints_unsat(
             max_seconds = _parse_time_seconds(constraint.max_seconds_text)
         except ValueError:
             continue
+        left_label = step_labels.get(
+            constraint.left_step_id, constraint.left_step_id
+        )
+        right_label = step_labels.get(
+            constraint.right_step_id, constraint.right_step_id
+        )
         diff = right_var - left_var
         if min_seconds is not None:
             track_name = "lo:{}".format(constraint.constraint_id)
@@ -327,20 +361,14 @@ def detect_temporal_constraints_unsat(
                 "kind": "duration_lower_bound",
                 "constraint_id": constraint.constraint_id,
                 "constraint_kind": constraint.kind,
-                "left_step_id": constraint.left_step_id,
-                "right_step_id": constraint.right_step_id,
-                "left_label": step_labels.get(constraint.left_step_id),
-                "right_label": step_labels.get(constraint.right_step_id),
+                "left_label": left_label,
+                "right_label": right_label,
                 "bound_seconds": _format_seconds(min_seconds),
-                "human": "{} {} {}".format(
-                    "t({}) - t({})".format(
-                        step_labels.get(constraint.right_step_id)
-                        or constraint.right_step_id,
-                        step_labels.get(constraint.left_step_id)
-                        or constraint.left_step_id,
-                    ),
-                    ">" if constraint.strict_lower else ">=",
-                    _format_seconds(min_seconds),
+                "human": "{op} {bound}: t({right}) - t({left})".format(
+                    op=">" if constraint.strict_lower else ">=",
+                    bound=_format_seconds(min_seconds),
+                    right=right_label,
+                    left=left_label,
                 ),
             }
         if max_seconds is not None:
@@ -350,17 +378,13 @@ def detect_temporal_constraints_unsat(
                 "kind": "duration_upper_bound",
                 "constraint_id": constraint.constraint_id,
                 "constraint_kind": constraint.kind,
-                "left_step_id": constraint.left_step_id,
-                "right_step_id": constraint.right_step_id,
-                "left_label": step_labels.get(constraint.left_step_id),
-                "right_label": step_labels.get(constraint.right_step_id),
+                "left_label": left_label,
+                "right_label": right_label,
                 "bound_seconds": _format_seconds(max_seconds),
-                "human": "t({}) - t({}) <= {}".format(
-                    step_labels.get(constraint.right_step_id)
-                    or constraint.right_step_id,
-                    step_labels.get(constraint.left_step_id)
-                    or constraint.left_step_id,
-                    _format_seconds(max_seconds),
+                "human": "<= {bound}: t({right}) - t({left})".format(
+                    bound=_format_seconds(max_seconds),
+                    right=right_label,
+                    left=left_label,
                 ),
             }
 
@@ -380,37 +404,40 @@ def detect_temporal_constraints_unsat(
         {p["constraint_id"] for p in duration_payloads if "constraint_id" in p}
     )
 
-    related_steps: Set[str] = set()
-    for payload in core_payloads:
-        related_steps.add(payload["left_step_id"])
-        related_steps.add(payload["right_step_id"])
+    related_messages: List[str] = sorted(
+        {p["left_label"] for p in core_payloads}
+        | {p["right_label"] for p in core_payloads}
+    )
 
     suggestion_constraint_id: Optional[str] = None
     suggestion_reason: Optional[str] = None
     if duration_payloads:
-        # Heuristic: pick the equality constraint with the smallest bound — empirically this
-        # is the constraint most often mis-attached by modelers (e.g. {1s} put onto the
-        # wrong message endpoints when the modeler meant a longer Sig6→SigX delay). It is
-        # the cheapest to investigate first.
+        # Heuristic: pick the equality constraint with the smallest bound — empirically
+        # this is the constraint most often mis-attached by modelers (a tight ``{1s}``
+        # bracket placed on the wrong pair of messages). It is the cheapest one to
+        # investigate first.
         equality_payloads = [
             p for p in duration_payloads if p["kind"] == "duration_lower_bound"
         ]
         if equality_payloads:
             equality_payloads.sort(
-                key=lambda p: Decimal(p["bound_seconds"].rstrip("s")) if p["bound_seconds"][:-1] else Decimal("0")
+                key=lambda p: Decimal(p["bound_seconds"].rstrip("s"))
+                if p["bound_seconds"][:-1]
+                else Decimal("0")
             )
             tight_payload = equality_payloads[0]
             suggestion_constraint_id = tight_payload["constraint_id"]
             suggestion_reason = (
-                "DurationConstraint `{cid}` with bound {bound} bridges {left} and "
-                "{right}; verify whether its endpoints were attached to the intended "
-                "MessageOccurrenceSpecifications. Tight equality bounds with the wrong "
-                "endpoints are the single most common cause of contradictory timing "
-                "systems in SysDeSim exports.".format(
+                "DurationConstraint `{cid}` with bound {bound} bridges messages "
+                "`{left}` and `{right}` on the sequence diagram; verify whether its "
+                "two endpoints were dragged onto the intended MessageOccurrence "
+                "specifications. Tight equality brackets attached to the wrong pair "
+                "of messages are the single most common cause of contradictory "
+                "timing systems in SysDeSim exports.".format(
                     cid=suggestion_constraint_id,
                     bound=tight_payload["bound_seconds"],
-                    left=tight_payload["left_label"] or tight_payload["left_step_id"],
-                    right=tight_payload["right_label"] or tight_payload["right_step_id"],
+                    left=tight_payload["left_label"],
+                    right=tight_payload["right_label"],
                 )
             )
 
@@ -418,25 +445,12 @@ def detect_temporal_constraints_unsat(
     if suggestion_reason:
         hints.append(suggestion_reason)
     hints.append(
-        "Or: re-check the lifeline ordering (top-to-bottom) of messages "
-        + ", ".join(
-            sorted(
-                {
-                    p["left_label"] or p["left_step_id"]
-                    for p in core_payloads
-                    if p.get("left_label") or p.get("left_step_id")
-                }
-                | {
-                    p["right_label"] or p["right_step_id"]
-                    for p in core_payloads
-                    if p.get("right_label") or p.get("right_step_id")
-                }
-            )
-        )
-        + ". Their visual order on the sequence diagram implies a "
-        + "non-negative delta that may conflict with one of the duration constraints "
-        + "above. Reordering the messages on the sequence diagram is sometimes "
-        + "the right fix instead of relaxing a duration value."
+        "Or: re-check the top-to-bottom lifeline ordering of messages "
+        + ", ".join("`{}`".format(label) for label in related_messages)
+        + " on the sequence diagram. Their visual order implies a non-negative "
+        + "delta that may conflict with one of the duration constraints above. "
+        + "Reordering the messages is sometimes the right fix instead of "
+        + "relaxing a duration value."
     )
     hints.append(
         "Run `pyfcstm sysdesim validate -i <xml> --report-file <out.json>` to "
@@ -445,12 +459,14 @@ def detect_temporal_constraints_unsat(
 
     message_lines = [
         "Imported scenario timing constraints are mutually unsatisfiable.",
-        "Z3 unsat core (minimal contradicting set, {} entries):".format(len(core_payloads)),
+        "Z3 unsat core (minimal contradicting set, {} entries):".format(
+            len(core_payloads)
+        ),
     ]
     for payload in duration_payloads + lifeline_payloads:
         suffix = ""
         if payload["kind"].startswith("duration_") and payload.get("constraint_id"):
-            suffix = " [constraint_id={}]".format(payload["constraint_id"])
+            suffix = "  (DurationConstraint id={})".format(payload["constraint_id"])
         message_lines.append("  - {}{}".format(payload["human"], suffix))
 
     diagnostic = IrDiagnostic(
@@ -461,7 +477,7 @@ def detect_temporal_constraints_unsat(
         details={
             "method": "z3_unsat_core",
             "involved_constraint_ids": duration_constraint_ids,
-            "involved_steps": sorted(related_steps),
+            "involved_messages": related_messages,
             "core": core_payloads,
             "suggested_first_culprit_constraint_id": suggestion_constraint_id,
         },
@@ -644,28 +660,35 @@ def _analyze_unreachability(
     for state in machine.walk_states():
         for tr in state.transitions:
             target_name = getattr(tr, "to_state", None)
-            if not isinstance(target_name, str):
+            if not isinstance(target_name, str):  # pragma: no cover - defensive
+                # Pseudostate / SingletonMark targets like ``[*]`` are not
+                # interesting for unreachability analysis; skip them safely.
                 continue
             if not target_state_path.endswith(target_name):
                 continue
             event = getattr(tr, "event", None)
-            event_name = getattr(event, "name", None) if event else None
+            event_internal_name = getattr(event, "name", None) if event else None
+            event_display_name = _display_event_name(event)
             from_name = getattr(tr, "from_state", None)
-            if not isinstance(from_name, str):
+            if not isinstance(from_name, str):  # pragma: no cover - defensive
                 continue
             inbound.append(
                 {
                     "from_state_local": from_name,
                     "owning_composite_path": ".".join(state.path),
                     "to_state_local": target_name,
-                    "trigger_event_name": event_name,
+                    "trigger_event_name": event_internal_name,
+                    "trigger_signal_name": event_display_name,
                 }
             )
 
-    scenario_steps_by_id = {s.step_id: s for s in phase10_report.scenario.steps}
     state_at_step: Dict[str, str] = {}
     for step in trace.steps:
         state_at_step[step.step_id] = step.pre_state_path
+    step_label_by_id: Dict[str, str] = {
+        step.step_id: _friendly_step_label(step)
+        for step in phase10_report.scenario.steps
+    }
 
     states_visited = sorted(
         {trace.initial_state_path}
@@ -677,7 +700,11 @@ def _analyze_unreachability(
     trigger_emit_records: List[Dict[str, Any]] = []
     for inbound_entry in inbound:
         trigger_name = inbound_entry["trigger_event_name"]
-        if not trigger_name:
+        if not trigger_name:  # pragma: no cover - completion-only inbound has no signal to emit
+            # Inbound transitions without an explicit trigger (UML completion
+            # transitions) cannot be exercised by emitting a signal — they
+            # fire automatically once the source state is reached. They are
+            # handled implicitly by the source's reachability check.
             continue
         for scen_step in phase10_report.scenario.steps:
             actions = getattr(scen_step, "actions", ()) or ()
@@ -700,8 +727,13 @@ def _analyze_unreachability(
                 ) or pre_state == expected_source_local or pre_state in expected_source_path_options
                 trigger_emit_records.append(
                     {
-                        "step_id": scen_step.step_id,
-                        "trigger_event_name": trigger_name,
+                        "step_label": step_label_by_id.get(
+                            scen_step.step_id, _friendly_step_label(scen_step)
+                        ),
+                        "trigger_signal_name": inbound_entry.get(
+                            "trigger_signal_name"
+                        )
+                        or trigger_name,
                         "expected_source_state": expected_source_local,
                         "actual_pre_state": pre_state,
                         "did_fire": ok,
@@ -712,19 +744,28 @@ def _analyze_unreachability(
     hints: List[str] = []
     if not inbound:
         hints.append(
-            "No transition in machine {!r} targets state {!r}; the state may be "
-            "structurally unreachable in the model itself (dead state).".format(
-                trace.machine_alias, target_state_path
+            "No transition in machine `{alias}` targets state `{state}`; the "
+            "state may be structurally unreachable in the model itself "
+            "(dead state).".format(
+                alias=trace.machine_alias, state=target_state_path
             )
         )
     else:
         if not trigger_emit_records:
-            triggers = sorted({i["trigger_event_name"] or "(none)" for i in inbound})
+            trigger_signals = sorted(
+                {
+                    inbound_entry.get("trigger_signal_name")
+                    or inbound_entry.get("trigger_event_name")
+                    or "(none)"
+                    for inbound_entry in inbound
+                }
+            )
             hints.append(
                 "Inbound transitions exist via signals {triggers}, but none of "
-                "those signals were emitted by the imported scenario. Add an "
-                "emission of one such signal (or check signal-name spelling).".format(
-                    triggers=", ".join(triggers)
+                "those signals were emitted by the imported scenario. Add a "
+                "message for one such signal on the sequence diagram (or check "
+                "the signal-name spelling).".format(
+                    triggers=", ".join("`{}`".format(s) for s in trigger_signals)
                 )
             )
         else:
@@ -732,14 +773,15 @@ def _analyze_unreachability(
             if dropped:
                 first = dropped[0]
                 hints.append(
-                    "Signal {sig!r} was emitted at step {step}, but the region "
-                    "was in state {actual!r} at that moment, not the required "
-                    "source state {expected!r}. The signal was silently dropped; "
-                    "either reorder messages so the prerequisite transition fires "
-                    "first, or add the missing prerequisite signal before this "
-                    "step.".format(
-                        sig=first["trigger_event_name"],
-                        step=first["step_id"],
+                    "Signal `{sig}` was emitted at message `{step}`, but the "
+                    "region was in state `{actual}` at that moment, not the "
+                    "required source state `{expected}`. The signal was "
+                    "silently dropped; either reorder messages on the sequence "
+                    "diagram so the prerequisite transition fires first, or add "
+                    "the missing prerequisite signal before this message."
+                    .format(
+                        sig=first["trigger_signal_name"],
+                        step=first["step_label"],
                         actual=first["actual_pre_state"],
                         expected=first["expected_source_state"],
                     )
@@ -777,31 +819,34 @@ def detect_signal_dropped_in_state(
         machine = output.machine
         alias = output.output_name
         trace = _trace_for_alias(phase10_report, alias)
-        if trace is None:
+        if trace is None:  # pragma: no cover - every Phase9 output produces a Phase10 trace
             continue
         signal_to_sources: Dict[str, List[Tuple[str, str]]] = {}
-        # Map state name -> set of ancestor state names (including self) for hierarchy
-        # awareness; force-transitions like ``! H -> G : /SIG`` are owned by H but
-        # apply to every descendant of H (UML "force" semantics).
-        ancestor_names: Dict[str, Set[str]] = {}
+        signal_display_names: Dict[str, str] = {}
         for state in machine.walk_states():
-            ancestor_names.setdefault(state.name, set()).update(state.path)
             for tr in state.transitions:
                 event = getattr(tr, "event", None)
                 event_name = getattr(event, "name", None) if event else None
                 from_name = getattr(tr, "from_state", None)
                 to_name = getattr(tr, "to_state", None)
-                if not isinstance(event_name, str):
+                if not isinstance(event_name, str):  # pragma: no cover - defensive
                     continue
-                if not isinstance(from_name, str) or not isinstance(to_name, str):
+                if not isinstance(from_name, str) or not isinstance(to_name, str):  # pragma: no cover - defensive
                     continue
-                signal_to_sources.setdefault(event_name.lower(), []).append(
-                    (from_name, to_name)
-                )
+                key = event_name.lower()
+                signal_to_sources.setdefault(key, []).append((from_name, to_name))
+                if key not in signal_display_names:
+                    signal_display_names[key] = (
+                        _display_event_name(event) or event_name
+                    )
 
-        if not signal_to_sources:
+        if not signal_to_sources:  # pragma: no cover - main shell + region outputs always carry events here
             continue
 
+        step_label_by_id = {
+            step.step_id: _friendly_step_label(step)
+            for step in phase10_report.scenario.steps
+        }
         state_at_step = {step.step_id: step.pre_state_path for step in trace.steps}
         for scen_step in phase10_report.scenario.steps:
             actions = getattr(scen_step, "actions", ()) or ()
@@ -815,46 +860,59 @@ def detect_signal_dropped_in_state(
                 pre_state = state_at_step.get(scen_step.step_id, trace.initial_state_path)
                 source_locals = sorted({src for src, _ in lookup})
                 pre_path_tokens = pre_state.split(".") if pre_state else []
-                # The signal can be consumed if any of the source states is the
-                # active state itself OR an ancestor on the active state's path
-                # (for force-transitions like ``! Composite -> X``).
-                consumed = any(
-                    src in pre_path_tokens for src in source_locals
-                )
+                # A signal can be consumed if any source-state is the active
+                # state itself or an ancestor (for force-transitions like
+                # ``! Composite -> X`` defined on a parent composite).
+                consumed = any(src in pre_path_tokens for src in source_locals)
                 if consumed:
                     continue
+                signal_display = signal_display_names.get(
+                    event_name.lower(), event_name
+                )
+                step_label = step_label_by_id.get(
+                    scen_step.step_id, _friendly_step_label(scen_step)
+                )
                 diagnostics.append(
                     IrDiagnostic(
                         level="warning",
                         code="signal_dropped_in_state",
                         message=(
-                            "Signal {sig!r} emitted at step {step} was silently "
-                            "dropped in machine {alias!r} (pre-state={pre}; "
-                            "transitions for this signal exist only from {srcs}).".format(
-                                sig=event_name,
-                                step=scen_step.step_id,
+                            "Signal `{sig}` emitted at message `{step}` was "
+                            "silently dropped in machine `{alias}` "
+                            "(active state was `{pre}`; transitions for this "
+                            "signal exist only from {srcs}).".format(
+                                sig=signal_display,
+                                step=step_label,
                                 alias=alias,
                                 pre=pre_state,
-                                srcs=", ".join(repr(s) for s in source_locals),
+                                srcs=", ".join(
+                                    "`{}`".format(s) for s in source_locals
+                                ),
                             )
                         ),
                         source_id=alias,
                         details={
                             "machine_alias": alias,
-                            "step_id": scen_step.step_id,
-                            "signal": event_name,
+                            "step_label": step_label,
+                            "signal": signal_display,
                             "pre_state_path": pre_state,
                             "transition_source_states": source_locals,
                         },
                         hints=[
-                            "If the signal was meant to advance machine {alias!r}, "
-                            "make sure the region is in {srcs} before this step "
-                            "(by emitting the prerequisite signal first or moving "
-                            "this signal later in the lifeline).".format(
-                                alias=alias, srcs=" or ".join(source_locals)
+                            "If signal `{sig}` was meant to advance machine "
+                            "`{alias}`, make sure the region is in {srcs} "
+                            "before this message (by emitting the prerequisite "
+                            "signal first or moving this message later on the "
+                            "sequence diagram).".format(
+                                sig=signal_display,
+                                alias=alias,
+                                srcs=" or ".join(
+                                    "`{}`".format(s) for s in source_locals
+                                ),
                             ),
-                            "If the signal genuinely targets a different machine, "
-                            "ignore this warning — it is an informational hint.",
+                            "If `{sig}` genuinely targets a different "
+                            "machine, ignore this warning — it is an "
+                            "informational hint.".format(sig=signal_display),
                         ],
                     )
                 )

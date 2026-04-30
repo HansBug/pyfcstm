@@ -148,8 +148,8 @@ def _friendly_step_label(step) -> str:
 
     * emit actions surface their signal name (e.g. ``"Sig9"``);
     * SetInput actions surface the assignment text (e.g. ``"y=2300"``);
-    * outbound-only messages surface as ``"→<signal>"`` based on the step's
-      ``outbound_signal=...`` note;
+    * outbound-only messages surface as ``"-->Sig"`` based on the step's
+      ``outbound_signal=...`` note (ASCII arrow, terminal-safe);
     * self-messages surface as ``"self-message"``;
     * any remaining anchor step falls back to a neutral
       ``"(anchor #N)"`` marker derived from the step's order index, never
@@ -173,7 +173,7 @@ def _friendly_step_label(step) -> str:
     for note in getattr(step, "notes", ()) or ():
         if isinstance(note, str) and note.startswith("outbound_signal="):
             signal = note.split("=", 1)[1].strip() or "?"
-            return "→{}".format(signal)
+            return "-->{}".format(signal)
         if note == "self_message":
             return "self-message"
     order_index = getattr(step, "order_index", None)

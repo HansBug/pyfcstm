@@ -561,7 +561,7 @@ class TestFriendlyStepLabel:
         class _Step:
             actions = ()
             notes = ("outbound_signal=Sig13",)
-        assert sc._friendly_step_label(_Step()) == "→Sig13"
+        assert sc._friendly_step_label(_Step()) == "-->Sig13"
 
     def test_self_message_note_returns_label(self):
         class _Step:

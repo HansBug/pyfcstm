@@ -440,7 +440,58 @@ def _short_state_text(state_path: str) -> str:
     return state_path.rsplit(".", 1)[-1]
 
 
-def _format_phase11_actions(actions: Sequence[str], main_alias: Optional[str]) -> str:
+def _format_phase11_action_token(item: str, main_alias: Optional[str]) -> str:
+    """Normalize one action string from the witness timeline.
+
+    Backwards-compatible with the older ``emit(X)`` / ``SetInput(y=2300)``
+    encodings used by earlier reports as well as the newer symmetric
+    ``X<--`` (inbound emit) / ``-->X`` (outbound signal) / ``y=2300``
+    (assignment) encodings.
+    """
+    if item.startswith("hidden_auto(") and ": " in item and " -> " in item:
+        prefix = item[len("hidden_auto(") : -1]
+        machine_alias, arc = prefix.split(": ", 1)
+        src, dst = arc.split(" -> ", 1)
+        return "tau:{alias} {src}->{dst}".format(
+            alias=_short_machine_alias(machine_alias, main_alias),
+            src=_short_state_text(src),
+            dst=_short_state_text(dst),
+        )
+    if item.startswith("SetInput("):
+        return item[len("SetInput(") : -1]
+    if item.startswith("emit(") and item.endswith(")"):
+        return "{}<--".format(item[len("emit(") : -1])
+    return item
+
+
+def _classify_action_token(token: str) -> str:
+    """Categorize one normalized action token for ANSI styling."""
+    if token.startswith("tau:"):
+        return "tau"
+    if token.endswith("<--"):
+        return "inbound"
+    if token.startswith("-->"):
+        return "outbound"
+    if "=" in token:
+        return "assignment"
+    return "other"
+
+
+_ACTION_TOKEN_COLORS: Dict[str, Dict[str, object]] = {
+    "tau": {"fg": "yellow"},
+    "inbound": {"fg": "cyan", "bold": True},
+    "outbound": {"fg": "magenta", "bold": True},
+    "assignment": {"fg": "blue"},
+    "other": {},
+}
+
+
+def _format_phase11_actions(
+    actions: Sequence[str],
+    main_alias: Optional[str],
+    *,
+    colorize: bool = False,
+) -> str:
     """
     Build one compact action summary for the Phase11 witness table.
 
@@ -448,7 +499,12 @@ def _format_phase11_actions(actions: Sequence[str], main_alias: Optional[str]) -
     :type actions: collections.abc.Sequence[str]
     :param main_alias: Main output alias when available.
     :type main_alias: str, optional
-    :return: Compact action text.
+    :param colorize: If true, wrap each action token in ANSI styling that
+        emphasizes the kind of event it represents
+        (inbound emit / outbound signal / tau auto-transition / variable
+        assignment).
+    :type colorize: bool
+    :return: Compact action text, optionally ANSI-colored.
     :rtype: str
     """
     if not actions:
@@ -456,21 +512,12 @@ def _format_phase11_actions(actions: Sequence[str], main_alias: Optional[str]) -
 
     rendered = []
     for item in actions:
-        if item.startswith("hidden_auto(") and ": " in item and " -> " in item:
-            prefix = item[len("hidden_auto(") : -1]
-            machine_alias, arc = prefix.split(": ", 1)
-            src, dst = arc.split(" -> ", 1)
-            rendered.append(
-                "tau:{alias} {src}->{dst}".format(
-                    alias=_short_machine_alias(machine_alias, main_alias),
-                    src=_short_state_text(src),
-                    dst=_short_state_text(dst),
-                )
-            )
-        elif item.startswith("SetInput("):
-            rendered.append(item[len("SetInput(") : -1])
+        token = _format_phase11_action_token(item, main_alias)
+        if colorize:
+            style = _ACTION_TOKEN_COLORS.get(_classify_action_token(token), {})
+            rendered.append(click.style(token, **style))
         else:
-            rendered.append(item)
+            rendered.append(token)
     return ",".join(rendered)
 
 
@@ -496,8 +543,10 @@ def _emit_phase11_timeline_table(
         _short_machine_alias(alias, main_alias) for alias in output_aliases
     ]
     headers = ["t", "pt", "act"] + machine_headers + ["co"]
-    rows = []
+    plain_rows: List[List[str]] = []
+    colored_rows: List[List[str]] = []
 
+    first_coex_symbol = timeline_report["first_coexistence_symbol"]
     for item in timeline_points:
         state_map = {
             _short_machine_alias(alias, main_alias): _short_state_text(state)
@@ -508,24 +557,32 @@ def _emit_phase11_timeline_table(
             point_label = "tau@{}".format(point_label)
         co_text = ""
         if item["is_coexistent"]:
-            co_text = (
-                "start"
-                if item["symbol"] == timeline_report["first_coexistence_symbol"]
-                else "yes"
-            )
-        rows.append(
-            [
-                item["time_value_text"],
-                point_label,
-                _format_phase11_actions(item["actions"], main_alias),
-            ]
-            + [state_map.get(header, "-") for header in machine_headers]
+            co_text = "start" if item["symbol"] == first_coex_symbol else "yes"
+        plain_act = _format_phase11_actions(item["actions"], main_alias)
+        colored_act = _format_phase11_actions(
+            item["actions"], main_alias, colorize=True
+        )
+        if co_text == "start":
+            colored_co = click.style("start", fg="green", bold=True)
+        elif co_text == "yes":
+            colored_co = click.style("yes", fg="green")
+        else:
+            colored_co = ""
+        machine_cells = [state_map.get(header, "-") for header in machine_headers]
+        plain_rows.append(
+            [item["time_value_text"], point_label, plain_act]
+            + machine_cells
             + [co_text]
+        )
+        colored_rows.append(
+            [item["time_value_text"], point_label, colored_act]
+            + machine_cells
+            + [colored_co]
         )
 
     widths = []
     for index, header in enumerate(headers):
-        max_len = max([len(header)] + [len(row[index]) for row in rows])
+        max_len = max([len(header)] + [len(row[index]) for row in plain_rows])
         if header == "t":
             width = max(len(header), min(max_len, 8))
         elif header == "pt":
@@ -538,7 +595,18 @@ def _emit_phase11_timeline_table(
             width = max(len(header), min(max_len, 14))
         widths.append(width)
 
-    def _row(values: Sequence[str]) -> str:
+    def _fit_with_ansi(plain: str, colored: str, width: int) -> str:
+        """Fit a colored cell to ``width`` columns using ``plain`` for length."""
+        if len(plain) > width:
+            if width <= 3:
+                truncated = plain[:width]
+                return truncated
+            truncated = plain[: width - 3] + "..."
+            return truncated
+        padding = " " * (width - len(plain))
+        return colored + padding
+
+    def _row_plain(values: Sequence[str]) -> str:
         return (
             "| "
             + " | ".join(
@@ -547,19 +615,58 @@ def _emit_phase11_timeline_table(
             + " |"
         )
 
+    def _row_colored(plain: Sequence[str], colored: Sequence[str]) -> str:
+        return (
+            "| "
+            + " | ".join(
+                _fit_with_ansi(str(p), str(c), width)
+                for p, c, width in zip(plain, colored, widths)
+            )
+            + " |"
+        )
+
+    header_cells = [click.style(h, fg="cyan", bold=True) for h in headers]
     click.echo("  witness timeline:")
     click.echo("    - t: solved continuous-time value.")
     click.echo(
         "    - pt: `sXX` is one imported step, `tau@...` is one hidden auto point."
     )
-    click.echo("    - act: actions observed at that point.")
     click.echo(
-        "    - co: `start` marks the first coexistence point; `yes` means coexistence still holds."
+        "    - act: actions observed at that point. "
+        "`Sig9<--` = inbound emit, `-->Sig13` = outbound signal, "
+        "`tau:R3 S->X` = hidden auto-transition, `y=2300` = SetInput."
     )
-    click.echo("  " + _row(headers))
-    click.echo("  " + _row(["-" * width for width in widths]))
-    for row in rows:
-        click.echo("  " + _row(row))
+    click.echo(
+        "    - co: `start` marks the first coexistence point (highlighted); "
+        "`yes` means coexistence still holds (highlighted)."
+    )
+    def _apply_row_style(line: str, *, underline: bool, bold: bool) -> str:
+        """Re-apply line-level ANSI attributes after each inner reset.
+
+        ``click.style`` resets every attribute on ``\\x1b[0m``, which our
+        per-cell coloring emits at the end of each colored token. To keep an
+        outer underline active across the whole row we open the row-level
+        styles, then re-open them after every inner reset.
+        """
+        if not underline and not bold:
+            return line
+        opener = ""
+        if underline:
+            opener += "\x1b[4m"
+        if bold:
+            opener += "\x1b[1m"
+        return opener + line.replace("\x1b[0m", "\x1b[0m" + opener) + "\x1b[0m"
+
+    click.echo("  " + _row_colored(headers, header_cells))
+    click.echo("  " + _row_plain(["-" * width for width in widths]))
+    for plain, colored in zip(plain_rows, colored_rows):
+        co_text = plain[-1]
+        line = _row_colored(plain, colored)
+        if co_text == "start":
+            line = _apply_row_style(line, underline=True, bold=True)
+        elif co_text == "yes":
+            line = _apply_row_style(line, underline=True, bold=False)
+        click.echo("  " + line)
 
 
 def _emit_sysdesim_cli_summary(

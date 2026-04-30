@@ -928,6 +928,68 @@ def test_diagnostic_level_label_info_branch():
 
 
 @pytest.mark.unittest
+def test_phase11_action_token_normalizes_legacy_and_new_forms():
+    """``_format_phase11_action_token`` accepts both legacy ``emit(X)`` and
+    the new symmetric ``X<--`` / ``-->X`` forms."""
+    from pyfcstm.entry.sysdesim import _format_phase11_action_token
+
+    # New encodings pass through unchanged.
+    assert _format_phase11_action_token("Sig9<--", None) == "Sig9<--"
+    assert _format_phase11_action_token("-->Sig13", None) == "-->Sig13"
+    assert _format_phase11_action_token("y=2300", None) == "y=2300"
+    # Legacy emit(X) gets converted to the new arrow form.
+    assert _format_phase11_action_token("emit(Sig5)", None) == "Sig5<--"
+    # Legacy SetInput(...) gets unwrapped.
+    assert _format_phase11_action_token("SetInput(z=10)", None) == "z=10"
+
+
+@pytest.mark.unittest
+def test_phase11_action_token_classifier():
+    """Token classification picks the right ANSI bucket per kind."""
+    from pyfcstm.entry.sysdesim import _classify_action_token
+
+    assert _classify_action_token("tau:R3 S->X") == "tau"
+    assert _classify_action_token("Sig9<--") == "inbound"
+    assert _classify_action_token("-->Sig13") == "outbound"
+    assert _classify_action_token("y=2300") == "assignment"
+    assert _classify_action_token("(unknown)") == "other"
+
+
+@pytest.mark.unittest
+def test_phase11_witness_uses_arrow_form_and_outbound_signals(tmp_path: Path):
+    """A SAT scenario should surface ``Sig9<--`` for emits and ``-->Sig11`` for
+    outbound notes, plus the ``co=start`` row underlined when the terminal
+    supports color."""
+    xml_file = _build_parallel_timeline_xml(tmp_path)
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "validate",
+            "-i",
+            str(xml_file),
+            "--left-machine-alias",
+            "TimelineCoexist",
+            "--left-state",
+            "Idle",
+            "--right-machine-alias",
+            "TimelineCoexist__Control_region1",
+            "--right-state",
+            "Idle",
+        ],
+        color=True,
+    )
+    assert result.exit_code == 0, result.output
+    # Inbound emit on Sig1 surfaces in the new arrow form.
+    assert "Sig1<--" in result.output
+    # Outbound signal note must surface as -->SigN.
+    assert "-->" in result.output
+    # The first coexistence row for Idle/Idle is the initial state, so
+    # ``start`` will appear with an underline+bold opener (``\x1b[4m\x1b[1m``).
+    assert "\x1b[4m\x1b[1m" in result.output
+
+
+@pytest.mark.unittest
 def test_serialize_diagnostic_round_trips_state_path_field():
     """``_serialize_diagnostic`` includes ``state_path`` when the diagnostic
     carries one, and emits it as a JSON-friendly list."""

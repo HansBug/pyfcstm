@@ -44,6 +44,13 @@ class IrDiagnostic:
     :type source_id: str, optional
     :param state_path: Optional owning state path for context, defaults to ``None``
     :type state_path: tuple[str, ...], optional
+    :param details: Optional structured payload carrying machine-readable
+        evidence for the diagnostic (constraint ids, step ids, suggested fix
+        hints, etc). Defaults to ``None`` for backward compatibility.
+    :type details: dict[str, Any], optional
+    :param hints: Optional list of human-readable repair hints, defaults to
+        ``None``.
+    :type hints: list[str], optional
     """
 
     level: str
@@ -51,6 +58,8 @@ class IrDiagnostic:
     message: str
     source_id: Optional[str] = None
     state_path: Optional[Tuple[str, ...]] = None
+    details: Optional[Dict[str, Any]] = None
+    hints: Optional[List[str]] = None
 
 
 @dataclass

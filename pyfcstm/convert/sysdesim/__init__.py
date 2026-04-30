@@ -138,6 +138,13 @@ from .timeline_plantuml import (
     build_sysdesim_timeline_plantuml,
     build_sysdesim_timeline_plantuml_from_xml,
 )
+from .static_check import (
+    detect_query_state_name_unknown,
+    detect_signal_dropped_in_state,
+    detect_target_state_never_entered,
+    detect_temporal_constraints_unsat,
+    run_sysdesim_static_pre_checks,
+)
 
 
 __all__ = [
@@ -213,4 +220,9 @@ __all__ = [
     "solve_sysdesim_state_coexistence",
     "summarize_sysdesim_raw_xmi",
     "validate_program_roundtrip",
+    "detect_query_state_name_unknown",
+    "detect_signal_dropped_in_state",
+    "detect_target_state_never_entered",
+    "detect_temporal_constraints_unsat",
+    "run_sysdesim_static_pre_checks",
 ]

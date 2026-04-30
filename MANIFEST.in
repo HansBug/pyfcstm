@@ -5,3 +5,4 @@ include requirements-*.txt
 recursive-include pyfcstm *.json *.yml *.yaml *.png
 recursive-include pyfcstm/template *.zip *.json
 recursive-include pyfcstm/dsl *.g4 *.interp *.tokens
+recursive-include pyfcstm/jsruntime *.js *.wasm *.ttf *.txt

@@ -36,7 +36,14 @@ setup(
     version=meta['__VERSION__'],
     packages=find_packages(include=(_MODULE_NAME, "%s.*" % _MODULE_NAME)),
     package_data={
-        package_name: ['*.yaml', '*.yml', '*.json', '*.png', '*.zip', '*.g4', '*.tokens', '*.interp']
+        package_name: [
+            '*.yaml', '*.yml', '*.json', '*.png', '*.zip',
+            '*.g4', '*.tokens', '*.interp',
+            # Embedded JS runtime assets used by `pyfcstm.jsruntime`
+            # (jsfcstm + elkjs + resvg-wasm IIFE bundle, the WASM blob,
+            # the bundled monospace font and its OFL licence).
+            '*.js', '*.wasm', '*.ttf', '*.txt',
+        ]
         for package_name in find_packages(include=('*'))
     },
     description=meta['__DESCRIPTION__'],

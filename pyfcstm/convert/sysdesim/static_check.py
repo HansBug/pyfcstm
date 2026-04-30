@@ -314,6 +314,10 @@ def detect_temporal_constraints_unsat(
         time_vars[step.step_id] = var
         solver.add(var >= 0)
 
+    # Per-constraint metadata so we can render the FULL bound expression
+    # ("0s <= t(R) - t(L) <= 10s" / "t(R) - t(L) == 1s" / etc.) instead of
+    # one half-bound per row in the unsat core display.
+    constraint_meta: Dict[str, Dict[str, Any]] = {}
     track_to_payload: Dict[str, Dict[str, Any]] = {}
 
     for previous_step, next_step in zip(steps, steps[1:]):
@@ -326,7 +330,7 @@ def detect_temporal_constraints_unsat(
             "kind": "lifeline_order",
             "left_label": step_labels[previous_step.step_id],
             "right_label": step_labels[next_step.step_id],
-            "human": "lifeline order: t({left}) <= t({right})".format(
+            "expression": "t({left}) <= t({right})".format(
                 left=step_labels[previous_step.step_id],
                 right=step_labels[next_step.step_id],
             ),
@@ -360,16 +364,6 @@ def detect_temporal_constraints_unsat(
             track_to_payload[track_name] = {
                 "kind": "duration_lower_bound",
                 "constraint_id": constraint.constraint_id,
-                "constraint_kind": constraint.kind,
-                "left_label": left_label,
-                "right_label": right_label,
-                "bound_seconds": _format_seconds(min_seconds),
-                "human": "{op} {bound}: t({right}) - t({left})".format(
-                    op=">" if constraint.strict_lower else ">=",
-                    bound=_format_seconds(min_seconds),
-                    right=right_label,
-                    left=left_label,
-                ),
             }
         if max_seconds is not None:
             track_name = "hi:{}".format(constraint.constraint_id)
@@ -377,67 +371,81 @@ def detect_temporal_constraints_unsat(
             track_to_payload[track_name] = {
                 "kind": "duration_upper_bound",
                 "constraint_id": constraint.constraint_id,
-                "constraint_kind": constraint.kind,
-                "left_label": left_label,
-                "right_label": right_label,
-                "bound_seconds": _format_seconds(max_seconds),
-                "human": "<= {bound}: t({right}) - t({left})".format(
-                    bound=_format_seconds(max_seconds),
-                    right=right_label,
-                    left=left_label,
-                ),
             }
+        constraint_meta[constraint.constraint_id] = {
+            "constraint_id": constraint.constraint_id,
+            "constraint_kind": constraint.kind,
+            "left_label": left_label,
+            "right_label": right_label,
+            "min_seconds": min_seconds,
+            "max_seconds": max_seconds,
+            "strict_lower": constraint.strict_lower,
+            "expression": _format_duration_expression(
+                left_label, right_label, min_seconds, max_seconds, constraint.strict_lower
+            ),
+        }
 
     check_result = solver.check()
     if check_result != z3.unsat:
         return []
 
     raw_core = solver.unsat_core()
-    core_names = [str(item) for item in raw_core]
-    core_names.sort()
-    core_payloads = [track_to_payload[name] for name in core_names if name in track_to_payload]
+    core_names = sorted(str(item) for item in raw_core)
 
-    duration_payloads = [p for p in core_payloads if p["kind"].startswith("duration_")]
-    lifeline_payloads = [p for p in core_payloads if p["kind"] == "lifeline_order"]
+    # Group unsat-core entries: lifeline order edges keep one row each;
+    # duration constraints get folded into one row per constraint_id so
+    # we render the full bound expression rather than half a bound.
+    lifeline_rows: List[Dict[str, Any]] = []
+    duration_constraint_ids: List[str] = []
+    seen_constraint_ids: Set[str] = set()
+    for track_name in core_names:
+        payload = track_to_payload.get(track_name)
+        if payload is None:  # pragma: no cover - defensive
+            continue
+        if payload["kind"] == "lifeline_order":
+            lifeline_rows.append(payload)
+        else:
+            cid = payload["constraint_id"]
+            if cid not in seen_constraint_ids:
+                seen_constraint_ids.add(cid)
+                duration_constraint_ids.append(cid)
 
-    duration_constraint_ids = sorted(
-        {p["constraint_id"] for p in duration_payloads if "constraint_id" in p}
-    )
-
+    duration_rows = [constraint_meta[cid] for cid in duration_constraint_ids]
     related_messages: List[str] = sorted(
-        {p["left_label"] for p in core_payloads}
-        | {p["right_label"] for p in core_payloads}
+        {row["left_label"] for row in duration_rows + lifeline_rows}
+        | {row["right_label"] for row in duration_rows + lifeline_rows}
     )
 
     suggestion_constraint_id: Optional[str] = None
     suggestion_reason: Optional[str] = None
-    if duration_payloads:
-        # Heuristic: pick the equality constraint with the smallest bound — empirically
-        # this is the constraint most often mis-attached by modelers (a tight ``{1s}``
-        # bracket placed on the wrong pair of messages). It is the cheapest one to
-        # investigate first.
-        equality_payloads = [
-            p for p in duration_payloads if p["kind"] == "duration_lower_bound"
+    if duration_rows:
+        # Heuristic: pick the equality DurationConstraint with the smallest
+        # bound — empirically this is the constraint most often mis-attached
+        # by modelers (a tight ``{1s}`` bracket placed on the wrong pair of
+        # messages). It is the cheapest one to investigate first.
+        equalities = [
+            row
+            for row in duration_rows
+            if row["min_seconds"] is not None
+            and row["max_seconds"] is not None
+            and row["min_seconds"] == row["max_seconds"]
         ]
-        if equality_payloads:
-            equality_payloads.sort(
-                key=lambda p: Decimal(p["bound_seconds"].rstrip("s"))
-                if p["bound_seconds"][:-1]
-                else Decimal("0")
-            )
-            tight_payload = equality_payloads[0]
-            suggestion_constraint_id = tight_payload["constraint_id"]
+        if equalities:
+            equalities.sort(key=lambda r: r["min_seconds"])
+            tight = equalities[0]
+            suggestion_constraint_id = tight["constraint_id"]
             suggestion_reason = (
-                "DurationConstraint `{cid}` with bound {bound} bridges messages "
-                "`{left}` and `{right}` on the sequence diagram; verify whether its "
-                "two endpoints were dragged onto the intended MessageOccurrence "
-                "specifications. Tight equality brackets attached to the wrong pair "
-                "of messages are the single most common cause of contradictory "
-                "timing systems in SysDeSim exports.".format(
+                "DurationConstraint `{cid}` (== {bound}) bridges messages "
+                "`{left}` and `{right}` on the sequence diagram; verify whether "
+                "its two endpoints were dragged onto the intended "
+                "MessageOccurrence specifications. Tight equality brackets "
+                "attached to the wrong pair of messages are the single most "
+                "common cause of contradictory timing systems in SysDeSim "
+                "exports.".format(
                     cid=suggestion_constraint_id,
-                    bound=tight_payload["bound_seconds"],
-                    left=tight_payload["left_label"],
-                    right=tight_payload["right_label"],
+                    bound=_format_seconds(tight["min_seconds"]),
+                    left=tight["left_label"],
+                    right=tight["right_label"],
                 )
             )
 
@@ -457,17 +465,21 @@ def detect_temporal_constraints_unsat(
         "inspect every temporal constraint individually before editing."
     )
 
+    total_entries = len(duration_rows) + len(lifeline_rows)
     message_lines = [
         "Imported scenario timing constraints are mutually unsatisfiable.",
-        "Z3 unsat core (minimal contradicting set, {} entries):".format(
-            len(core_payloads)
+        "Z3 unsat core (minimal contradicting set, {} entr{}):".format(
+            total_entries, "y" if total_entries == 1 else "ies"
         ),
     ]
-    for payload in duration_payloads + lifeline_payloads:
-        suffix = ""
-        if payload["kind"].startswith("duration_") and payload.get("constraint_id"):
-            suffix = "  (DurationConstraint id={})".format(payload["constraint_id"])
-        message_lines.append("  - {}{}".format(payload["human"], suffix))
+    for row in duration_rows:
+        message_lines.append(
+            "  - {expr}    (DurationConstraint id={cid})".format(
+                expr=row["expression"], cid=row["constraint_id"]
+            )
+        )
+    for row in lifeline_rows:
+        message_lines.append("  - lifeline order:  {expr}".format(expr=row["expression"]))
 
     diagnostic = IrDiagnostic(
         level="error",
@@ -476,14 +488,71 @@ def detect_temporal_constraints_unsat(
         source_id=duration_constraint_ids[0] if duration_constraint_ids else None,
         details={
             "method": "z3_unsat_core",
-            "involved_constraint_ids": duration_constraint_ids,
+            "involved_constraint_ids": sorted(duration_constraint_ids),
             "involved_messages": related_messages,
-            "core": core_payloads,
+            "duration_rows": duration_rows,
+            "lifeline_rows": lifeline_rows,
             "suggested_first_culprit_constraint_id": suggestion_constraint_id,
         },
         hints=hints,
     )
     return [diagnostic]
+
+
+def _format_duration_expression(
+    left_label: str,
+    right_label: str,
+    min_seconds: Optional[Decimal],
+    max_seconds: Optional[Decimal],
+    strict_lower: bool,
+) -> str:
+    """
+    Render one DurationConstraint as a single human-readable inequality.
+
+    Output forms (rounded for readability, no internal step IDs):
+
+    * ``min == max``: ``t(R) - t(L) == 10s``
+    * ``min < max``: ``0s <= t(R) - t(L) <= 10s`` (with ``<`` if the lower
+      bound is strict)
+    * only ``min`` set: ``t(R) - t(L) >= 5s`` (or ``> 5s`` when strict)
+    * only ``max`` set: ``t(R) - t(L) <= 10s``
+
+    :param left_label: Friendly label for the left endpoint.
+    :type left_label: str
+    :param right_label: Friendly label for the right endpoint.
+    :type right_label: str
+    :param min_seconds: Lower bound in seconds, or ``None`` if unbounded below.
+    :type min_seconds: decimal.Decimal, optional
+    :param max_seconds: Upper bound in seconds, or ``None`` if unbounded above.
+    :type max_seconds: decimal.Decimal, optional
+    :param strict_lower: Whether the lower bound is a strict ``>`` (otherwise ``>=``).
+    :type strict_lower: bool
+    :return: A single-line inequality string.
+    :rtype: str
+    """
+    diff_text = "t({}) - t({})".format(right_label, left_label)
+    if min_seconds is not None and max_seconds is not None:
+        if min_seconds == max_seconds and not strict_lower:
+            return "{diff} == {bound}".format(
+                diff=diff_text, bound=_format_seconds(min_seconds)
+            )
+        lo_op = "<" if strict_lower else "<="
+        return "{lo} {lo_op} {diff} <= {hi}".format(
+            lo=_format_seconds(min_seconds),
+            lo_op=lo_op,
+            diff=diff_text,
+            hi=_format_seconds(max_seconds),
+        )
+    if min_seconds is not None:  # pragma: no cover - both bounds always present in real exports
+        op = ">" if strict_lower else ">="
+        return "{diff} {op} {bound}".format(
+            diff=diff_text, op=op, bound=_format_seconds(min_seconds)
+        )
+    if max_seconds is not None:  # pragma: no cover - both bounds always present in real exports
+        return "{diff} <= {bound}".format(
+            diff=diff_text, bound=_format_seconds(max_seconds)
+        )
+    return "{diff} (unbounded)".format(diff=diff_text)  # pragma: no cover - never emitted
 
 
 # =============================================================================

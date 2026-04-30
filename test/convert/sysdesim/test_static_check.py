@@ -507,6 +507,48 @@ class TestParseTimeSeconds:
 
 
 @pytest.mark.unittest
+class TestFormatDurationExpression:
+    """Cover :func:`_format_duration_expression` for every output shape.
+
+    Each shape models a real form a SysDeSim ``DurationConstraint`` can take
+    in the XML, lowered into a single human-readable inequality.
+    """
+
+    def test_equality_when_min_equals_max(self):
+        assert (
+            sc._format_duration_expression(
+                "Sig9", "Sig6", Decimal("10"), Decimal("10"), False
+            )
+            == "t(Sig6) - t(Sig9) == 10s"
+        )
+
+    def test_range_when_min_less_than_max(self):
+        assert (
+            sc._format_duration_expression(
+                "Sig13", "Sig4", Decimal("0"), Decimal("10"), False
+            )
+            == "0s <= t(Sig4) - t(Sig13) <= 10s"
+        )
+
+    def test_range_with_strict_lower(self):
+        assert (
+            sc._format_duration_expression(
+                "Sig9", "Sig99", Decimal("0"), Decimal("1"), True
+            )
+            == "0s < t(Sig99) - t(Sig9) <= 1s"
+        )
+
+    def test_strict_equality_with_strict_lower_keeps_range_form(self):
+        """When min == max but lower is strict, render as a (degenerate) range."""
+        rendered = sc._format_duration_expression(
+            "A", "B", Decimal("5"), Decimal("5"), True
+        )
+        # A strict-lower equality is logically empty; we still render the
+        # bounds explicitly so the modeler sees what they wrote.
+        assert rendered == "5s < t(B) - t(A) <= 5s"
+
+
+@pytest.mark.unittest
 class TestFormatSeconds:
     """Cover :func:`_format_seconds`."""
 

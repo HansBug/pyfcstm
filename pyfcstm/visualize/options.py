@@ -9,7 +9,20 @@ so jsfcstm's :func:`resolveFcstmDiagramPreviewOptions` fills in the
 documented defaults.
 """
 import dataclasses
-from typing import List, Literal, Optional
+from typing import List, Optional
+
+try:
+    # Python 3.8+: Literal is part of typing.
+    from typing import Literal
+except ImportError:  # pragma: no cover - Python 3.7 fallback
+    # On Python 3.7 Literal is only available via ``typing_extensions``,
+    # which is not a hard dependency. Degrade gracefully so the module
+    # still imports — Literal becomes a runtime no-op that returns ``str``,
+    # type checkers can still pick up the annotations from a stub.
+    class _LiteralStub:
+        def __getitem__(self, _args):
+            return str
+    Literal = _LiteralStub()  # type: ignore[assignment]
 
 DetailLevel = Literal['minimal', 'normal', 'full']
 Direction = Literal['UP', 'DOWN', 'LEFT', 'RIGHT', 'TB', 'BT', 'LR', 'RL']

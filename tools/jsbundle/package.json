@@ -1,0 +1,9 @@
+{
+  "name": "pyfcstm-jsbundle",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Build helper that bundles jsfcstm + elkjs + resvg-wasm binding into pyfcstm/jsruntime/bundle.js",
+  "dependencies": {
+    "@resvg/resvg-wasm": "2.6.2"
+  }
+}

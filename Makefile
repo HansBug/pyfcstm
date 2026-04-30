@@ -1,4 +1,4 @@
-.PHONY: docs test unittest resource antlr antlr_build build package clean docs_auto todos_auto tests_auto rst_auto jsfcstm jsfcstm_clean vscode vscode_clean vscode_install vscode_uninstall logos logos_clean app_icons app_icons_clean help tpl tpl_clean templates_package
+.PHONY: docs test unittest resource antlr antlr_build build package clean docs_auto todos_auto tests_auto rst_auto jsfcstm jsfcstm_clean jsbundle jsbundle_clean vscode vscode_clean vscode_install vscode_uninstall logos logos_clean app_icons app_icons_clean help tpl tpl_clean templates_package
 
 PYTHON := $(shell which python)
 
@@ -247,6 +247,15 @@ jsfcstm:
 
 jsfcstm_clean:
 	$(MAKE) -C ${JSFCSTM_DIR} clean
+
+# Embedded JS runtime bundle for `pyfcstm.jsruntime` (jsfcstm + elkjs +
+# resvg-wasm glue, single esbuild IIFE). The output `bundle.js` ships
+# in git alongside `resvg.wasm` and the bundled font.
+jsbundle:
+	$(PYTHON) tools/package_jsbundle.py
+
+jsbundle_clean:
+	rm -f ${SRC_DIR}/jsruntime/bundle.js
 
 # VSCode extension build targets
 vscode:

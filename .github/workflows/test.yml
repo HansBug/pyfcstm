@@ -103,6 +103,10 @@ jobs:
           pip install --upgrade flake8 setuptools wheel twine
           pip install -r requirements.txt
           pip install -r requirements-test.txt
+          # Visualization extras (mini-racer / py-mini-racer + bundled
+          # JS runtime). Required by the pyfcstm.jsruntime / pyfcstm.visualize
+          # / pyfcstm.entry.preview test suites.
+          pip install -r requirements-viz.txt
       - name: Test the basic environment
         shell: bash
         run: |

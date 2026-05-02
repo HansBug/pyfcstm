@@ -109,7 +109,10 @@ jobs:
           python -V
           pip --version
           pip list
-          tree .
+          # tree is informational only and chocolatey on Windows
+          # occasionally lands without refreshing PATH for this shell;
+          # don't let an absent tree fail the whole job.
+          { command -v tree >/dev/null && tree . || ls -al; } || true
           cloc pyfcstm
           cloc test
       - name: Run unittest
@@ -216,13 +219,18 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install -r requirements-build.txt
+          # Required so PyInstaller's collect_all() can pull in
+          # py_mini_racer's V8 native binary; without it the standalone
+          # exe imports the pure-Python wrapper but fails at the first
+          # MiniRacer() call when rendering sysdesim SVG/PNG.
+          pip install -r requirements-sysdesim_render.txt
       - name: Test the basic environment
         shell: bash
         run: |
           python -V
           pip --version
           pip list
-          tree .
+          { command -v tree >/dev/null && tree . || ls -al; } || true
       - name: Get package version
         shell: bash
         run: |
@@ -271,8 +279,119 @@ jobs:
         if: ${{ env.OS_NAME == 'Windows' }}
         shell: bash
         run: |
-          python -m tools.test_cli dist/pyfcstm.exe --test-dsl docs/source/tutorials/cli/simple_machine.fcstm --template-dir test/testfile/template_1
+          python -m tools.test_cli dist/pyfcstm.exe --test-dsl docs/source/tutorials/cli/simple_machine.fcstm --template-dir test/testfile/template_1 --sysdesim-fixtures-dir test/testfile/sysdesim
       - uses: actions/upload-artifact@v4
         with:
           name: pyfcstm-v${{ env.PACKAGE_VERSION }}-${{ env.OS_NAME }}-${{ env.CPU_ARCH }}-${{ env.GIT_COMMIT_ID }}
           path: dist
+
+  test_cli_clean_env:
+    name: CLI Clean-Env Test
+    needs: build_cli
+    if: "!contains(github.event.head_commit.message, 'ci skip')"
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - 'ubuntu-22.04'
+          - 'windows-2022'
+          - 'macos-14'
+        python-version:
+          - '3.7'
+        exclude:
+          - os: 'macos-14'
+            python-version: '3.7'
+        include:
+          - os: 'macos-14'
+            python-version: '3.8'
+
+    steps:
+      - name: Get system version for Linux
+        if: ${{ contains(matrix.os, 'ubuntu') }}
+        shell: bash
+        run: |
+          echo "OS_NAME=Linux" >> $GITHUB_ENV
+          echo "IS_WIN=" >> $GITHUB_ENV
+          echo "IS_MAC=" >> $GITHUB_ENV
+      - name: Get system version for Windows
+        if: ${{ contains(matrix.os, 'windows') }}
+        shell: bash
+        run: |
+          echo "OS_NAME=Windows" >> $GITHUB_ENV
+          echo "IS_WIN=1" >> $GITHUB_ENV
+          echo "IS_MAC=" >> $GITHUB_ENV
+      - name: Get system version for MacOS
+        if: ${{ contains(matrix.os, 'macos') }}
+        shell: bash
+        run: |
+          echo "OS_NAME=MacOS" >> $GITHUB_ENV
+          echo "IS_WIN=" >> $GITHUB_ENV
+          echo "IS_MAC=1" >> $GITHUB_ENV
+      # Stage-2 contract: a freshly-checked-out repo plus the stage-1 PyInstaller
+      # artifact, with no project Python deps installed. We need just enough
+      # checkout to feed the test-driver fixtures (DSL, template, sysdesim XML)
+      # and a Python interpreter to run the driver itself - the driver only uses
+      # stdlib. If the bundled exe is missing any runtime asset, this job fails.
+      - name: Checkout code (driver + fixtures only)
+        uses: actions/checkout@v3.3.0
+        with:
+          fetch-depth: 1
+          submodules: false
+      - name: Set up python ${{ matrix.python-version }} for the driver only
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Get package version
+        shell: bash
+        run: |
+          python -c 'from pyfcstm.config.meta import __VERSION__;print(__VERSION__)'
+          echo "PACKAGE_VERSION=$(python -c 'from pyfcstm.config.meta import __VERSION__;print(__VERSION__)')" >> $GITHUB_ENV
+          echo "GIT_COMMIT_ID=$(echo ${GITHUB_SHA} | cut -c1-7)" >> $GITHUB_ENV
+          echo "CPU_ARCH=$(uname -m)" >> $GITHUB_ENV
+      - name: Download stage-1 CLI artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pyfcstm-v${{ env.PACKAGE_VERSION }}-${{ env.OS_NAME }}-${{ env.CPU_ARCH }}-${{ env.GIT_COMMIT_ID }}
+          path: dist
+      - name: Show downloaded artifact and confirm clean env
+        shell: bash
+        run: |
+          ls -la dist/
+          # Sanity-check the runner's Python environment: it must NOT have
+          # any project runtime deps installed - we install nothing in this
+          # job, only set up Python for the stdlib-only test driver. Source
+          # ``./pyfcstm`` lives in the workspace from the checkout and that
+          # is fine; what we explicitly forbid is pip-installed runtime
+          # deps that would mask a missing PyInstaller hook in the bundled
+          # exe (e.g. py-mini-racer / mini-racer leaking from site-packages
+          # could hide ``import py_mini_racer`` failing inside the exe).
+          pip list
+          for pkg in py-mini-racer mini-racer click jinja2 antlr4-python3-runtime z3-solver hbutils; do
+            if pip show "$pkg" >/dev/null 2>&1; then
+              echo "UNEXPECTED: $pkg is installed in this clean-env runner"
+              exit 2
+            fi
+          done
+          echo "OK: no pyfcstm runtime deps leaked into the clean-env runner."
+      - name: Make CLI executable runnable on Linux/MacOS
+        if: ${{ env.OS_NAME != 'Windows' }}
+        shell: bash
+        run: |
+          chmod +x dist/pyfcstm
+      - name: Test CLI executable in clean env (Linux/MacOS)
+        if: ${{ env.OS_NAME != 'Windows' }}
+        shell: bash
+        run: |
+          python -m tools.test_cli dist/pyfcstm \
+            --test-dsl docs/source/tutorials/cli/simple_machine.fcstm \
+            --template-dir test/testfile/template_1 \
+            --sysdesim-fixtures-dir test/testfile/sysdesim
+      - name: Test CLI executable in clean env (Windows)
+        if: ${{ env.OS_NAME == 'Windows' }}
+        shell: bash
+        run: |
+          python -m tools.test_cli dist/pyfcstm.exe \
+            --test-dsl docs/source/tutorials/cli/simple_machine.fcstm \
+            --template-dir test/testfile/template_1 \
+            --sysdesim-fixtures-dir test/testfile/sysdesim

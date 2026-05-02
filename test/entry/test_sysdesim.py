@@ -1010,3 +1010,309 @@ def test_serialize_diagnostic_round_trips_state_path_field():
     assert payload["state_path"] == ["Root", "Inner"]
     assert payload["code"] == "custom_code"
     assert payload["level"] == "warning"
+
+
+# =============================================================================
+# Sequence-render CLI integration tests (Issue #87)
+# =============================================================================
+
+
+@pytest.mark.unittest
+def test_sysdesim_sequence_render_writes_svg(tmp_path: Path):
+    """``pyfcstm sysdesim sequence-render -i ... -o ...`` writes a valid SVG."""
+    xml_file = _build_parallel_timeline_xml(tmp_path)
+    out_svg = tmp_path / "seq.svg"
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "sequence-render",
+            "-i",
+            str(xml_file),
+            "-o",
+            str(out_svg),
+        ],
+        color=False,
+    )
+    assert result.exit_code == 0, result.output
+    assert out_svg.exists()
+    text = out_svg.read_text(encoding="utf-8")
+    assert text.startswith("<?xml")
+    assert "</svg>" in text
+    assert "Wrote sequence-diagram SVG to" in result.output
+
+
+@pytest.mark.unittest
+def test_sysdesim_sequence_render_supports_title_override(tmp_path: Path):
+    """``--title`` overrides the diagram title written into the SVG."""
+    xml_file = _build_parallel_timeline_xml(tmp_path)
+    out_svg = tmp_path / "seq.svg"
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "sequence-render",
+            "-i",
+            str(xml_file),
+            "-o",
+            str(out_svg),
+            "--title",
+            "MyCustomTitle",
+        ],
+        color=False,
+    )
+    assert result.exit_code == 0, result.output
+    assert "MyCustomTitle" in out_svg.read_text(encoding="utf-8")
+
+
+@pytest.mark.unittest
+def test_sysdesim_sequence_render_unknown_machine_yields_click_error(
+    tmp_path: Path,
+):
+    """An unknown ``--machine-name`` is translated by ``_format_sysdesim_cli_error``."""
+    xml_file = _build_parallel_timeline_xml(tmp_path)
+    out_svg = tmp_path / "seq.svg"
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "sequence-render",
+            "-i",
+            str(xml_file),
+            "-o",
+            str(out_svg),
+            "--machine-name",
+            "NoSuchMachine",
+        ],
+        color=False,
+    )
+    assert result.exit_code != 0
+    assert "NoSuchMachine" in _strip_ansi(result.output)
+    assert not out_svg.exists()
+
+
+_PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+
+
+@pytest.mark.unittest
+def test_sysdesim_sequence_render_writes_png_via_extension(tmp_path: Path):
+    """``-o foo.png`` infers the PNG format from the extension."""
+    xml_file = _build_parallel_timeline_xml(tmp_path)
+    out_png = tmp_path / "seq.png"
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "sequence-render",
+            "-i",
+            str(xml_file),
+            "-o",
+            str(out_png),
+        ],
+        color=False,
+    )
+    assert result.exit_code == 0, result.output
+    assert out_png.exists()
+    assert out_png.read_bytes()[:8] == _PNG_MAGIC
+    assert "Wrote sequence-diagram PNG to" in result.output
+
+
+@pytest.mark.unittest
+def test_sysdesim_sequence_render_format_flag_overrides_extension(tmp_path: Path):
+    """``--format png`` forces PNG even when the output extension is unrelated."""
+    xml_file = _build_parallel_timeline_xml(tmp_path)
+    out = tmp_path / "seq.bin"
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "sequence-render",
+            "-i",
+            str(xml_file),
+            "-o",
+            str(out),
+            "--format",
+            "png",
+        ],
+        color=False,
+    )
+    assert result.exit_code == 0, result.output
+    assert out.read_bytes()[:8] == _PNG_MAGIC
+
+
+@pytest.mark.unittest
+def test_sysdesim_sequence_render_requires_output_or_preview(tmp_path: Path):
+    """Calling with neither ``--output`` nor ``--preview`` fails cleanly."""
+    xml_file = _build_parallel_timeline_xml(tmp_path)
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "sequence-render",
+            "-i",
+            str(xml_file),
+        ],
+        color=False,
+    )
+    assert result.exit_code != 0
+    assert "Provide --output / -o, --preview" in _strip_ansi(result.output)
+
+
+@pytest.mark.unittest
+def test_sysdesim_sequence_render_preview_only_uses_tempfile(
+    monkeypatch, tmp_path: Path
+):
+    """``--preview`` without ``-o`` writes a temp SVG and opens the browser."""
+    from urllib.parse import urlparse
+    from urllib.request import url2pathname
+
+    xml_file = _build_parallel_timeline_xml(tmp_path)
+    captured = {}
+
+    def fake_open(uri):
+        captured["uri"] = uri
+        return True
+
+    monkeypatch.setattr("pyfcstm.entry.sysdesim.webbrowser.open", fake_open)
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        ["sysdesim", "sequence-render", "-i", str(xml_file), "--preview"],
+        color=False,
+    )
+    assert result.exit_code == 0, result.output
+    assert "uri" in captured
+    assert captured["uri"].startswith("file://")
+    assert captured["uri"].endswith(".svg")
+    # The temporary file must actually exist on disk. ``urlparse`` +
+    # ``url2pathname`` is the cross-platform reverse of ``Path.as_uri()``;
+    # naive prefix-stripping leaves ``/C:/...`` on Windows.
+    temp_path = Path(url2pathname(urlparse(captured["uri"]).path))
+    assert temp_path.exists()
+    assert temp_path.read_bytes().startswith(b"<?xml")
+    assert "opened" in result.output
+
+
+@pytest.mark.unittest
+def test_sysdesim_sequence_render_preview_with_explicit_output(
+    monkeypatch, tmp_path: Path
+):
+    """``--preview -o foo.svg`` writes the explicit path AND opens the browser."""
+    xml_file = _build_parallel_timeline_xml(tmp_path)
+    out_svg = tmp_path / "explicit.svg"
+    captured = {}
+
+    def fake_open(uri):
+        captured["uri"] = uri
+        return True
+
+    monkeypatch.setattr("pyfcstm.entry.sysdesim.webbrowser.open", fake_open)
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "sequence-render",
+            "-i",
+            str(xml_file),
+            "-o",
+            str(out_svg),
+            "--preview",
+        ],
+        color=False,
+    )
+    assert result.exit_code == 0, result.output
+    assert out_svg.exists()
+    # Browser receives the user-specified path, not a tempfile.
+    assert captured["uri"] == out_svg.as_uri()
+
+
+@pytest.mark.unittest
+def test_sysdesim_sequence_render_preview_browser_unavailable(
+    monkeypatch, tmp_path: Path
+):
+    """When ``webbrowser.open`` returns ``False`` the CLI still reports cleanly."""
+    xml_file = _build_parallel_timeline_xml(tmp_path)
+    out_svg = tmp_path / "seq.svg"
+    monkeypatch.setattr(
+        "pyfcstm.entry.sysdesim.webbrowser.open", lambda uri: False
+    )
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "sequence-render",
+            "-i",
+            str(xml_file),
+            "-o",
+            str(out_svg),
+            "--preview",
+        ],
+        color=False,
+    )
+    assert result.exit_code == 0, result.output
+    assert "no browser available" in _strip_ansi(result.output)
+
+
+@pytest.mark.unittest
+def test_sysdesim_sequence_render_surfaces_render_error(monkeypatch, tmp_path: Path):
+    """A ``SysdesimRenderError`` from the JS bundle becomes a ``ClickErrorException``."""
+    xml_file = _build_parallel_timeline_xml(tmp_path)
+    out_svg = tmp_path / "seq.svg"
+
+    from pyfcstm.convert.sysdesim.render import SysdesimRenderError
+
+    def boom(*_args, **_kwargs):
+        raise SysdesimRenderError("simulated bundle failure")
+
+    monkeypatch.setattr(
+        "pyfcstm.entry.sysdesim.render_sysdesim_timeline_svg", boom
+    )
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "sequence-render",
+            "-i",
+            str(xml_file),
+            "-o",
+            str(out_svg),
+        ],
+        color=False,
+    )
+    assert result.exit_code != 0
+    assert "simulated bundle failure" in _strip_ansi(result.output)
+    assert not out_svg.exists()
+
+
+@pytest.mark.unittest
+def test_sysdesim_sequence_render_png_with_font_file(tmp_path: Path):
+    """``--font-file`` paths are forwarded to the PNG renderer."""
+    xml_file = _build_parallel_timeline_xml(tmp_path)
+    out_png = tmp_path / "seq.png"
+    # Use the bundled DejaVu Sans (also used as the default fallback) as a
+    # stand-in user font so the test stays self-contained.
+    extra_font = (
+        Path(__file__).resolve().parents[2]
+        / "js"
+        / "sysdesim_render"
+        / "src"
+        / "fonts"
+        / "DejaVuSans.ttf"
+    )
+    if not extra_font.exists():
+        pytest.skip("bundled DejaVu Sans not present at expected source path")
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "sequence-render",
+            "-i",
+            str(xml_file),
+            "-o",
+            str(out_png),
+            "--font-file",
+            str(extra_font),
+        ],
+        color=False,
+    )
+    assert result.exit_code == 0, result.output
+    assert out_png.read_bytes()[:8] == _PNG_MAGIC

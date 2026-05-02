@@ -1,0 +1,2 @@
+py-mini-racer; python_version < "3.8"
+mini-racer; python_version >= "3.8"

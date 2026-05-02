@@ -138,7 +138,8 @@ build: tpl ${APP_ICON_STAMP}
 test_cli:
 	python -m tools.test_cli dist/pyfcstm \
 		--test-dsl docs/source/tutorials/cli/simple_machine.fcstm \
-		--template-dir test/testfile/template_1
+		--template-dir test/testfile/template_1 \
+		--sysdesim-fixtures-dir test/testfile/sysdesim
 clean:
 	rm -rf ${DIST_DIR} ${BUILD_DIR} *.egg-info
 	rm -rf build dist pyfcstm.spec

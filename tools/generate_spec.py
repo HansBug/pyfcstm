@@ -72,6 +72,125 @@ def collect_datas(bundle_icon=None):
     return datas
 
 
+def collect_third_party_binaries_and_hiddenimports():
+    """
+    Pull in native binaries + lazy-loaded modules from third-party deps that
+    do not ship a stock PyInstaller hook.
+
+    The current consumer is :mod:`py_mini_racer` / :mod:`mini_racer`, which
+    bundles the V8 isolate as a platform-specific shared library that
+    PyInstaller's import-tracer alone does not pick up. Without it, the
+    standalone exe imports the Python wrapper but fails at first
+    ``MiniRacer()`` instantiation - exactly the regression that the
+    sequence-render CLI smoke tests catch.
+
+    PyInstaller's :func:`collect_dynamic_libs` does not cover
+    py-mini-racer's ``libmini_racer.glibc.so`` filename pattern on every
+    PyInstaller release we support (the 4.7+ baseline missed the
+    multi-suffix form), so we belt-and-suspenders the result with a plain
+    filesystem walk over the package directory.
+    """
+    import importlib
+
+    binaries = []
+    hiddenimports = []
+    datas_extra = []
+
+    try:
+        from PyInstaller.utils.hooks import collect_all
+    except Exception as exc:  # pragma: no cover - PyInstaller absent at runtime is impossible here
+        print(
+            f"Warning: PyInstaller hooks not importable: {exc}",
+            file=sys.stderr,
+        )
+        collect_all = None
+
+    for module_name in ('py_mini_racer', 'mini_racer'):
+        # First try the official helper.
+        if collect_all is not None:
+            try:
+                mod_datas, mod_binaries, mod_hiddenimports = collect_all(module_name)
+            except Exception as exc:
+                # Expected on Pythons where only one of the two distributions
+                # is installed. Skip silently for the missing one.
+                print(
+                    f"Note: collect_all({module_name!r}) skipped: {exc}",
+                    file=sys.stderr,
+                )
+            else:
+                datas_extra.extend(mod_datas)
+                binaries.extend(mod_binaries)
+                hiddenimports.extend(mod_hiddenimports)
+
+        # Belt-and-suspenders: walk the package dir for native libraries
+        # AND every non-Python sibling data file. Both py-mini-racer
+        # (``libmini_racer.glibc.so`` on Linux, ``libmini_racer.dylib`` on
+        # macOS, ``mini_racer.dll`` on Windows) and the newer ``mini-racer``
+        # 0.12.x (which also ships ``icudtl.dat`` and split shared libs)
+        # resolve their dependencies relative to ``_MEIPASS`` flat under
+        # PyInstaller, so we plant a copy of every native + data file
+        # both at the bundle root and under the package subdir.
+        try:
+            mod = importlib.import_module(module_name)
+        except ImportError:
+            continue
+        mod_init = getattr(mod, '__file__', None)
+        if not mod_init:
+            continue
+        mod_dir = Path(mod_init).parent
+        if not mod_dir.is_dir():
+            continue
+        seen_paths = set()
+        for native_file in mod_dir.rglob('*'):
+            if not native_file.is_file():
+                continue
+            suffix = native_file.suffix.lower()
+            name = native_file.name
+            # Skip .py / __pycache__ and obvious metadata files; everything
+            # else (.so, .dylib, .dll, .pyd, .dat, .bin, .pak, ...) gets
+            # staged so V8 / ICU / wasm-style sidecar resources are present
+            # next to the loader at runtime.
+            if suffix in {'.py', '.pyc', '.pyo', '.pyi'}:
+                continue
+            if '__pycache__' in native_file.parts:
+                continue
+            if name in {'PKG-INFO', 'METADATA', 'RECORD', 'WHEEL', 'top_level.txt'}:
+                continue
+            resolved = str(native_file.resolve())
+            if resolved in seen_paths:
+                continue
+            seen_paths.add(resolved)
+            # py-mini-racer's ``_get_lib_path`` (py_mini_racer.py:35) and
+            # mini-racer 0.12.x's ``_dll._open_dll`` both resolve to
+            # ``<_MEIPASS>/<resource>`` *flat* at the bundle root under
+            # PyInstaller, NOT under the package subdirectory. So we plant
+            # native libs and data files at ``'.'``. Also stage a copy
+            # under the package subdir so non-frozen fallbacks
+            # (``pkg_resources.resource_filename``) still resolve, e.g. if
+            # a future release inverts the lookup order.
+            binaries.append((resolved, '.'))
+            relative_dir = native_file.parent.relative_to(mod_dir.parent)
+            binaries.append((resolved, str(relative_dir)))
+        # Hidden import for safety: PyInstaller's tracer occasionally drops
+        # the wrapper module when it is only referenced via dotted import.
+        if module_name not in hiddenimports:
+            hiddenimports.append(module_name)
+
+    # Deduplicate binaries based on (src_resolved, dst_dir)
+    deduped = []
+    seen = set()
+    for entry in binaries:
+        try:
+            key = (str(Path(entry[0]).resolve()), entry[1])
+        except Exception:
+            key = entry
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(entry)
+    return deduped, hiddenimports, datas_extra
+
+
 def resolve_executable_icon(icon_dir):
     """Resolve the native executable icon path for the current platform."""
     icon_root = Path(icon_dir)
@@ -93,6 +212,8 @@ def generate_spec(icon_dir='build/icons'):
     """Generate spec file content"""
     icon_root = Path(icon_dir)
     datas = collect_datas(bundle_icon=icon_root / 'pyfcstm.png')
+    binaries, hiddenimports, datas_extra = collect_third_party_binaries_and_hiddenimports()
+    datas = datas + datas_extra
     executable_icon = resolve_executable_icon(icon_root)
 
     spec_content = f'''# -*- mode: python ; coding: utf-8 -*-
@@ -103,9 +224,9 @@ def generate_spec(icon_dir='build/icons'):
 a = Analysis(
     ['pyfcstm_cli.py'],
     pathex=[],
-    binaries=[],
+    binaries={binaries!r},
     datas={datas!r},
-    hiddenimports=[],
+    hiddenimports={hiddenimports!r},
     hookspath=[],
     hooksconfig={{}},
     runtime_hooks=[],

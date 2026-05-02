@@ -18,8 +18,10 @@ from __future__ import annotations
 
 import io
 import re
+import subprocess
 import sys
 from contextlib import redirect_stdout
+from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
@@ -302,3 +304,123 @@ def test_help_text_advertises_smoke_test_flag():
     result = runner.invoke(pyfcstmcli, ["--help"], color=False)
     assert result.exit_code == 0, result.output
     assert "--smoke-test" in result.output
+
+
+@pytest.mark.unittest
+def test_python_dash_m_pyfcstm_smoke_test_short_circuits_entry_chain():
+    """``python -m pyfcstm --smoke-test`` must NOT pull in the regular
+    ``pyfcstm.entry`` chain.
+
+    The whole point of the short-circuit in ``pyfcstm/__main__.py`` is
+    to keep the smoke runner alive when subcommand modules fail to
+    import (e.g. ANTLR-generated grammar files moved aside, optional
+    extras missing). We verify that property by spawning a fresh
+    interpreter, running ``python -m pyfcstm --smoke-test``, and
+    asserting it returns the canonical summary line. We do not rely on
+    a particular exit code (the test environment may legitimately have
+    failures depending on the ``make tpl`` state of the dev checkout)
+    - we only insist that the runner *finishes* and prints its
+    structured summary.
+    """
+    repo_root = Path(__file__).resolve().parents[2]
+    proc = subprocess.run(
+        [sys.executable, "-m", "pyfcstm", "--smoke-test"],
+        cwd=str(repo_root),
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    output = _strip_ansi(proc.stdout)
+    summary_line = next(
+        (ln for ln in output.splitlines() if ln.startswith("Smoke test summary:")),
+        None,
+    )
+    assert summary_line is not None, (
+        "python -m pyfcstm --smoke-test produced no summary line; runner "
+        "may have crashed mid-flight.\nstdout:\n{}\nstderr:\n{}".format(
+            output, proc.stderr,
+        )
+    )
+    # Optional: assert the runner reports a single "X PASS" or
+    # "X PASS, Y FAIL" structured summary.
+    assert " PASS" in summary_line, summary_line
+
+
+@pytest.mark.unittest
+def test_dash_m_diagnostics_runs_independently_of_entry_chain():
+    """``python -m pyfcstm.diagnostics`` is the apocalypse-grade entry.
+
+    It must work even when the regular ``pyfcstm.entry`` subcommand
+    chain is broken, because that's exactly when users will reach for
+    it. We verify by running the module directly (no entry chain in
+    the import graph) and confirming the summary line.
+    """
+    repo_root = Path(__file__).resolve().parents[2]
+    proc = subprocess.run(
+        [sys.executable, "-m", "pyfcstm.diagnostics"],
+        cwd=str(repo_root),
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    output = _strip_ansi(proc.stdout)
+    summary_line = next(
+        (ln for ln in output.splitlines() if ln.startswith("Smoke test summary:")),
+        None,
+    )
+    assert summary_line is not None, (
+        "python -m pyfcstm.diagnostics produced no summary line; runner "
+        "may have crashed mid-flight.\nstdout:\n{}\nstderr:\n{}".format(
+            output, proc.stderr,
+        )
+    )
+    assert " PASS" in summary_line, summary_line
+
+
+@pytest.mark.unittest
+def test_smoke_runner_finishes_when_every_case_raises_baseexception(monkeypatch):
+    """The runner must finish even when every single case explodes.
+
+    This is the strongest possible reliability assertion: even with
+    100% of the cases blowing up - across the whole BaseException
+    family - the runner returns a summary count rather than crashing.
+    """
+
+    def _explode_runtime():
+        raise RuntimeError("synthetic runtime")
+
+    def _explode_systemexit():
+        raise SystemExit(7)
+
+    def _explode_keyboard():
+        raise KeyboardInterrupt("synthetic ^C")
+
+    def _explode_baseexc():
+        raise BaseException("raw BaseException")
+
+    cases = [
+        SmokeCase("a", "raises RuntimeError", _explode_runtime),
+        SmokeCase("b", "raises SystemExit",   _explode_systemexit),
+        SmokeCase("c", "raises KeyboardInterrupt", _explode_keyboard),
+        SmokeCase("d", "raises BaseException", _explode_baseexc),
+    ]
+    monkeypatch.setattr(
+        smoke_module, "_build_case_groups", lambda: [("Synthetic", cases)],
+    )
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        failed = run_smoke_test()
+    output = _strip_ansi(buf.getvalue())
+    assert failed == 4, (
+        "expected 4 failures (all cases blow up), got {}; output:\n{}".format(
+            failed, output,
+        )
+    )
+    # Each case appears as a FAIL row.
+    for name in ("a", "b", "c", "d"):
+        assert "[FAIL] " + name in output, (
+            "case {!r} did not produce a FAIL row; output:\n{}".format(name, output)
+        )
+    assert "Smoke test summary" in output, (
+        "no summary line - runner crashed; output:\n{}".format(output)
+    )

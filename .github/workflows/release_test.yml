@@ -136,6 +136,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install -r requirements-build.txt
+          # Required so PyInstaller's collect_all() can pull in
+          # py_mini_racer's V8 native binary; without it the standalone
+          # exe imports the pure-Python wrapper but fails at the first
+          # MiniRacer() call when rendering sysdesim SVG/PNG.
+          pip install -r requirements-sysdesim_render.txt
       - name: Test the basic environment
         shell: bash
         run: |

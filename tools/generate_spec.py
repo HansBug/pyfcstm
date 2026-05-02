@@ -148,10 +148,14 @@ def collect_third_party_binaries_and_hiddenimports():
                 if resolved in seen_paths:
                     continue
                 seen_paths.add(resolved)
-                # Place the shared library into the package's directory inside
-                # the bundled binary so ``pkg_resources.resource_filename``
-                # (which is what py-mini-racer uses to locate it) finds it
-                # under ``<_MEIPASS>/py_mini_racer/<lib>``.
+                # py-mini-racer's ``_get_lib_path`` (see py_mini_racer.py:35)
+                # under PyInstaller resolves to ``<_MEIPASS>/<libname>`` *flat*
+                # at the bundle root, NOT under the package subdirectory. So
+                # we have to plant the native lib at ``'.'``. Also stage a
+                # copy under the package subdir so non-bundled fallbacks
+                # (``pkg_resources.resource_filename``) still resolve, e.g.
+                # if a future py-mini-racer release inverts the lookup order.
+                binaries.append((resolved, '.'))
                 relative_dir = native_file.parent.relative_to(mod_dir.parent)
                 binaries.append((resolved, str(relative_dir)))
         # Hidden import for safety: PyInstaller's tracer occasionally drops

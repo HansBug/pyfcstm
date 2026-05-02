@@ -412,20 +412,192 @@ def _verify_resource_template_index() -> None:
 def _verify_resource_template_extract() -> None:
     import tempfile
 
+    from pyfcstm.template import extract_template, list_templates
+
+    names = list_templates()
+    if not names:
+        raise RuntimeError(
+            "list_templates() returned an empty set; index.json may be empty."
+        )
+    failures = []
+    for name in names:
+        with tempfile.TemporaryDirectory(prefix="pyfcstm-smoke-tpl-") as out_dir:
+            try:
+                target = extract_template(name, out_dir)
+            except Exception as exc:
+                failures.append("{}: extract raised {!r}".format(name, exc))
+                continue
+            if target is None or not os.path.isdir(target):
+                failures.append("{}: extract returned {!r}".format(name, target))
+                continue
+            config = os.path.join(target, "config.yaml")
+            if not os.path.exists(config):
+                failures.append("{}: missing config.yaml at {}".format(name, config))
+    if failures:
+        raise RuntimeError(
+            "Built-in template extract failures: {}".format("; ".join(failures))
+        )
+
+
+def _verify_text_identifier_safety() -> None:
+    """Verify the multilingual identifier helpers from PR #75.
+
+    The helpers must rewrap language reserved words and ASCII-ize
+    non-Latin input so generated code is always a syntactically valid
+    identifier in the target language.
+    """
+    from pyfcstm.utils.text import (
+        normalize,
+        to_c_identifier,
+        to_cpp_identifier,
+        to_java_identifier,
+        to_python_identifier,
+    )
+
+    # Plain normalization keeps printable ASCII and replaces gaps.
+    norm = normalize("Hello World!")
+    if not norm or "Hello" not in norm:
+        raise RuntimeError(
+            "normalize('Hello World!') returned {!r}; expected a non-empty "
+            "ASCII identifier-like string.".format(norm)
+        )
+
+    # Language keyword safety: ``class`` must NOT come back as ``class``
+    # in any of these languages because it is a reserved word.
+    py_ident = to_python_identifier("class")
+    if py_ident == "class":
+        raise RuntimeError(
+            "to_python_identifier('class') returned the reserved word "
+            "verbatim ({!r}); the keyword-safety pass is broken.".format(py_ident)
+        )
+    java_ident = to_java_identifier("class")
+    if java_ident == "class":
+        raise RuntimeError(
+            "to_java_identifier('class') returned the reserved word "
+            "verbatim ({!r}).".format(java_ident)
+        )
+    cpp_ident = to_cpp_identifier("class")
+    if cpp_ident == "class":
+        raise RuntimeError(
+            "to_cpp_identifier('class') returned the reserved word "
+            "verbatim ({!r}).".format(cpp_ident)
+        )
+
+    # CJK -> ASCII via the unidecode pass (PR #75).
+    c_ident = to_c_identifier("中文 var")
+    if not c_ident:
+        raise RuntimeError(
+            "to_c_identifier('中文 var') returned an empty string; "
+            "unidecode round-trip is broken."
+        )
+    # Result must be ASCII (Python str.isascii is 3.7+, fall back to
+    # ASCII codec encoding for safety on older builds).
+    try:
+        c_ident.encode("ascii")
+    except UnicodeEncodeError as exc:
+        raise RuntimeError(
+            "to_c_identifier('中文 var') returned non-ASCII {!r}: {!r}".format(
+                c_ident, exc
+            )
+        )
+
+
+def _verify_plantuml_export() -> None:
+    """Verify the model -> PlantUML export pipeline.
+
+    Covers ``pyfcstm plantuml`` end-to-end *core*: parse a tiny DSL,
+    build the model, call ``to_plantuml()`` and assert the output is
+    well-shaped (``@startuml`` / ``@enduml`` envelope + the declared
+    state names appear in the body).
+    """
+    from pyfcstm.dsl import parse_with_grammar_entry
+    from pyfcstm.model.model import parse_dsl_node_to_state_machine
+
+    src = (
+        "def int x = 0;\n"
+        "state Sys {\n"
+        "    [*] -> Idle;\n"
+        "    state Idle;\n"
+        "    state Done;\n"
+        "    Idle -> Done :: Go;\n"
+        "}\n"
+    )
+    machine = parse_dsl_node_to_state_machine(
+        parse_with_grammar_entry(src, "state_machine_dsl")
+    )
+    puml = machine.to_plantuml()
+    if not isinstance(puml, str) or not puml:
+        raise RuntimeError(
+            "to_plantuml() returned {!r}; expected a non-empty string.".format(puml)
+        )
+    if "@startuml" not in puml:
+        raise RuntimeError(
+            "PlantUML output missing @startuml prologue; first 80 chars: {!r}".format(
+                puml[:80]
+            )
+        )
+    if "@enduml" not in puml:
+        raise RuntimeError(
+            "PlantUML output missing @enduml epilogue; last 80 chars: {!r}".format(
+                puml[-80:]
+            )
+        )
+    for state_name in ("Idle", "Done"):
+        if state_name not in puml:
+            raise RuntimeError(
+                "PlantUML output missing declared state {!r}.".format(state_name)
+            )
+
+
+def _verify_generate_python_template() -> None:
+    """Verify the full generate pipeline against the built-in python template.
+
+    This case wires together: built-in template extraction, the
+    Jinja2 environment in ``pyfcstm.render``, the expression and
+    statement style renderers, and ``StateMachineCodeRenderer``. A
+    failure here means at least one of those layers regressed even
+    when their isolated cases pass.
+    """
+    import tempfile
+
+    from pyfcstm.dsl import parse_with_grammar_entry
+    from pyfcstm.model.model import parse_dsl_node_to_state_machine
+    from pyfcstm.render.render import StateMachineCodeRenderer
     from pyfcstm.template import extract_template
 
-    with tempfile.TemporaryDirectory(prefix="pyfcstm-smoke-tpl-") as out_dir:
-        target = extract_template("python", out_dir)
+    src = (
+        "def int counter = 0;\n"
+        "state Sys {\n"
+        "    [*] -> Idle;\n"
+        "    state Idle { during { counter = counter + 1; } }\n"
+        "    state Done;\n"
+        "    Idle -> Done :: Stop;\n"
+        "}\n"
+    )
+    machine = parse_dsl_node_to_state_machine(
+        parse_with_grammar_entry(src, "state_machine_dsl")
+    )
+    with tempfile.TemporaryDirectory(prefix="pyfcstm-smoke-tpl-") as tpl_root:
+        target = extract_template("python", tpl_root)
         if target is None or not os.path.isdir(target):
             raise RuntimeError(
-                "extract_template('python', tmp_dir) returned {!r}; expected "
-                "a real directory holding the unpacked template.".format(target)
+                "extract_template('python', ...) returned {!r}".format(target)
             )
-        config = os.path.join(target, "config.yaml")
-        if not os.path.exists(config):
-            raise RuntimeError(
-                "Extracted python template is missing config.yaml at {}".format(config)
-            )
+        with tempfile.TemporaryDirectory(prefix="pyfcstm-smoke-out-") as out_dir:
+            renderer = StateMachineCodeRenderer(target)
+            renderer.render(machine, out_dir, clear_previous_directory=True)
+            machine_py = os.path.join(out_dir, "machine.py")
+            if not os.path.exists(machine_py):
+                raise RuntimeError(
+                    "Render did not produce machine.py at {}".format(machine_py)
+                )
+            text = open(machine_py, "r", encoding="utf-8").read()
+            for needle in ("class", "SysMachine"):
+                if needle not in text:
+                    raise RuntimeError(
+                        "Generated machine.py is missing token {!r}; "
+                        "first 200 chars: {!r}".format(needle, text[:200])
+                    )
 
 
 def _verify_resource_render_bundle_present() -> None:
@@ -797,6 +969,30 @@ def _build_case_groups() -> List[Tuple[str, List[SmokeCase]]]:
                     "z3 native ABI is incompatible (see native_z3_sat)."
                 ),
             ),
+            SmokeCase(
+                name="pyfcstm_text_identifier_safety",
+                method="to_{python,c,cpp,java}_identifier on reserved + CJK input",
+                func=_verify_text_identifier_safety,
+                remediation=(
+                    "Multilingual identifier helper broken. Either "
+                    "``unidecode`` is missing (see dep_unidecode) or "
+                    "``pyfcstm.utils.text``'s keyword-safety table got "
+                    "corrupted. Reinstall pyfcstm or check that unidecode "
+                    "is on the same Python that runs the CLI."
+                ),
+            ),
+            SmokeCase(
+                name="pyfcstm_plantuml_export",
+                method="machine.to_plantuml() returns @startuml..@enduml + state names",
+                func=_verify_plantuml_export,
+                remediation=(
+                    "PlantUML export broke. Likely either model.to_plantuml "
+                    "regressed, or the model layer dropped a state during "
+                    "build (see pyfcstm_model_build). Run "
+                    "``pyfcstm plantuml -i x.fcstm -o x.puml`` for the full "
+                    "traceback."
+                ),
+            ),
         ]),
         ("Static resources", [
             SmokeCase(
@@ -823,11 +1019,14 @@ def _build_case_groups() -> List[Tuple[str, List[SmokeCase]]]:
             ),
             SmokeCase(
                 name="resource_template_extract",
-                method="extract_template('python') -> dir with config.yaml",
+                method="extract_template(name, tmp) for every template in index.json",
                 func=_verify_resource_template_extract,
                 remediation=(
-                    "Built-in python template zip is unreadable or missing "
-                    "config.yaml. Re-build via `make tpl` or reinstall the wheel."
+                    "One or more built-in template zips are unreadable or "
+                    "missing config.yaml. Re-build via `make tpl` or "
+                    "reinstall the wheel. The error message above lists "
+                    "exactly which template(s) failed - do NOT delete the "
+                    "ones that did succeed when triaging."
                 ),
             ),
             SmokeCase(
@@ -851,6 +1050,25 @@ def _build_case_groups() -> List[Tuple[str, List[SmokeCase]]]:
                     "the bundle is corrupted (re-extract the wheel) or the "
                     "embedded V8 isolate's parser is too old; rebuild the "
                     "bundle with esbuild --target=es2015."
+                ),
+            ),
+        ]),
+        ("End-to-end render pipelines", [
+            SmokeCase(
+                name="generate_python_template_pipeline",
+                method="parse + extract_template('python') + StateMachineCodeRenderer.render -> machine.py",
+                func=_verify_generate_python_template,
+                remediation=(
+                    "Built-in python template generation pipeline broke. "
+                    "This wires together: extract_template, the Jinja2 "
+                    "environment, expr/stmt renderers, and the python "
+                    "template archive. Run "
+                    "``pyfcstm generate -i x.fcstm --template python -o out`` "
+                    "for the full traceback. Common root causes: a "
+                    "regression in the python template (templates/python/), "
+                    "a Jinja2 filter unregistered, or the template zip "
+                    "shipped without the .j2 files (see "
+                    "resource_template_extract)."
                 ),
             ),
         ]),

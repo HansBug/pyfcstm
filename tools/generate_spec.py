@@ -122,9 +122,14 @@ def collect_third_party_binaries_and_hiddenimports():
                 binaries.extend(mod_binaries)
                 hiddenimports.extend(mod_hiddenimports)
 
-        # Belt-and-suspenders: walk the package dir for native libraries.
-        # py-mini-racer ships ``libmini_racer.glibc.so`` (Linux),
-        # ``libmini_racer.dylib`` (macOS), ``mini_racer.dll`` (Windows).
+        # Belt-and-suspenders: walk the package dir for native libraries
+        # AND every non-Python sibling data file. Both py-mini-racer
+        # (``libmini_racer.glibc.so`` on Linux, ``libmini_racer.dylib`` on
+        # macOS, ``mini_racer.dll`` on Windows) and the newer ``mini-racer``
+        # 0.12.x (which also ships ``icudtl.dat`` and split shared libs)
+        # resolve their dependencies relative to ``_MEIPASS`` flat under
+        # PyInstaller, so we plant a copy of every native + data file
+        # both at the bundle root and under the package subdir.
         try:
             mod = importlib.import_module(module_name)
         except ImportError:
@@ -135,29 +140,37 @@ def collect_third_party_binaries_and_hiddenimports():
         mod_dir = Path(mod_init).parent
         if not mod_dir.is_dir():
             continue
-        # Every shared-library extension we expect to see for this dep.
-        patterns = (
-            '*.so', '*.so.*',
-            '*.dylib',
-            '*.dll', '*.pyd',
-        )
         seen_paths = set()
-        for pattern in patterns:
-            for native_file in mod_dir.rglob(pattern):
-                resolved = str(native_file.resolve())
-                if resolved in seen_paths:
-                    continue
-                seen_paths.add(resolved)
-                # py-mini-racer's ``_get_lib_path`` (see py_mini_racer.py:35)
-                # under PyInstaller resolves to ``<_MEIPASS>/<libname>`` *flat*
-                # at the bundle root, NOT under the package subdirectory. So
-                # we have to plant the native lib at ``'.'``. Also stage a
-                # copy under the package subdir so non-bundled fallbacks
-                # (``pkg_resources.resource_filename``) still resolve, e.g.
-                # if a future py-mini-racer release inverts the lookup order.
-                binaries.append((resolved, '.'))
-                relative_dir = native_file.parent.relative_to(mod_dir.parent)
-                binaries.append((resolved, str(relative_dir)))
+        for native_file in mod_dir.rglob('*'):
+            if not native_file.is_file():
+                continue
+            suffix = native_file.suffix.lower()
+            name = native_file.name
+            # Skip .py / __pycache__ and obvious metadata files; everything
+            # else (.so, .dylib, .dll, .pyd, .dat, .bin, .pak, ...) gets
+            # staged so V8 / ICU / wasm-style sidecar resources are present
+            # next to the loader at runtime.
+            if suffix in {'.py', '.pyc', '.pyo', '.pyi'}:
+                continue
+            if '__pycache__' in native_file.parts:
+                continue
+            if name in {'PKG-INFO', 'METADATA', 'RECORD', 'WHEEL', 'top_level.txt'}:
+                continue
+            resolved = str(native_file.resolve())
+            if resolved in seen_paths:
+                continue
+            seen_paths.add(resolved)
+            # py-mini-racer's ``_get_lib_path`` (py_mini_racer.py:35) and
+            # mini-racer 0.12.x's ``_dll._open_dll`` both resolve to
+            # ``<_MEIPASS>/<resource>`` *flat* at the bundle root under
+            # PyInstaller, NOT under the package subdirectory. So we plant
+            # native libs and data files at ``'.'``. Also stage a copy
+            # under the package subdir so non-frozen fallbacks
+            # (``pkg_resources.resource_filename``) still resolve, e.g. if
+            # a future release inverts the lookup order.
+            binaries.append((resolved, '.'))
+            relative_dir = native_file.parent.relative_to(mod_dir.parent)
+            binaries.append((resolved, str(relative_dir)))
         # Hidden import for safety: PyInstaller's tracer occasionally drops
         # the wrapper module when it is only referenced via dotted import.
         if module_name not in hiddenimports:

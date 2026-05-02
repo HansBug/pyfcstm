@@ -145,6 +145,10 @@ from .static_check import (
     detect_temporal_constraints_unsat,
     run_sysdesim_static_pre_checks,
 )
+from .render import (
+    SysdesimRenderError,
+    render_sysdesim_timeline_svg,
+)
 
 
 __all__ = [
@@ -225,4 +229,6 @@ __all__ = [
     "detect_target_state_never_entered",
     "detect_temporal_constraints_unsat",
     "run_sysdesim_static_pre_checks",
+    "SysdesimRenderError",
+    "render_sysdesim_timeline_svg",
 ]

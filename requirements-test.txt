@@ -14,3 +14,5 @@ testtools>=2
 where>=1.0.2
 natsort
 cmake<4
+py-mini-racer; python_version < "3.8"
+mini-racer; python_version >= "3.8"

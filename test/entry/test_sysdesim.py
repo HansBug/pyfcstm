@@ -1010,3 +1010,82 @@ def test_serialize_diagnostic_round_trips_state_path_field():
     assert payload["state_path"] == ["Root", "Inner"]
     assert payload["code"] == "custom_code"
     assert payload["level"] == "warning"
+
+
+# =============================================================================
+# Sequence-render CLI integration tests (Issue #87)
+# =============================================================================
+
+
+@pytest.mark.unittest
+def test_sysdesim_sequence_render_writes_svg(tmp_path: Path):
+    """``pyfcstm sysdesim sequence-render -i ... -o ...`` writes a valid SVG."""
+    xml_file = _build_parallel_timeline_xml(tmp_path)
+    out_svg = tmp_path / "seq.svg"
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "sequence-render",
+            "-i",
+            str(xml_file),
+            "-o",
+            str(out_svg),
+        ],
+        color=False,
+    )
+    assert result.exit_code == 0, result.output
+    assert out_svg.exists()
+    text = out_svg.read_text(encoding="utf-8")
+    assert text.startswith("<?xml")
+    assert "</svg>" in text
+    assert "Wrote sequence-diagram SVG to" in result.output
+
+
+@pytest.mark.unittest
+def test_sysdesim_sequence_render_supports_title_override(tmp_path: Path):
+    """``--title`` overrides the diagram title written into the SVG."""
+    xml_file = _build_parallel_timeline_xml(tmp_path)
+    out_svg = tmp_path / "seq.svg"
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "sequence-render",
+            "-i",
+            str(xml_file),
+            "-o",
+            str(out_svg),
+            "--title",
+            "MyCustomTitle",
+        ],
+        color=False,
+    )
+    assert result.exit_code == 0, result.output
+    assert "MyCustomTitle" in out_svg.read_text(encoding="utf-8")
+
+
+@pytest.mark.unittest
+def test_sysdesim_sequence_render_unknown_machine_yields_click_error(
+    tmp_path: Path,
+):
+    """An unknown ``--machine-name`` is translated by ``_format_sysdesim_cli_error``."""
+    xml_file = _build_parallel_timeline_xml(tmp_path)
+    out_svg = tmp_path / "seq.svg"
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "sequence-render",
+            "-i",
+            str(xml_file),
+            "-o",
+            str(out_svg),
+            "--machine-name",
+            "NoSuchMachine",
+        ],
+        color=False,
+    )
+    assert result.exit_code != 0
+    assert "NoSuchMachine" in _strip_ansi(result.output)
+    assert not out_svg.exists()

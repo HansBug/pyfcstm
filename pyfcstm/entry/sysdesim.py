@@ -29,9 +29,11 @@ from ..convert import (
     build_sysdesim_conversion_report,
     build_sysdesim_timeline_import_report,
     convert_sysdesim_xml_to_dsls,
+    render_sysdesim_timeline_svg,
     run_sysdesim_static_pre_checks,
 )
 from ..convert.sysdesim.ir import IrDiagnostic
+from ..convert.sysdesim.render import SysdesimRenderError
 
 
 def _format_sysdesim_cli_error(err: BaseException) -> str:
@@ -1685,5 +1687,110 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
             raise ClickErrorException(
                 "static pre-check found {} blocking issue(s)".format(blocking)
             )
+
+    @sysdesim.command(
+        "sequence-render",
+        help=(
+            "Render the SysDeSim sequence diagram (顺序图) of one interaction "
+            "as SVG, in the visual style of the SysDeSim XMI tool's own export "
+            "(actor boxes at top, lifelines, numbered message arrows, inline "
+            "time brackets, variable-assignment pills on the left)."
+        ),
+        context_settings=CONTEXT_SETTINGS,
+    )
+    @click.option(
+        "-i",
+        "--input-xml",
+        "input_xml_file",
+        type=str,
+        required=True,
+        help="Input SysDeSim XML/XMI file.",
+    )
+    @click.option(
+        "-o",
+        "--output-svg",
+        "output_svg_file",
+        type=str,
+        required=True,
+        help="Output SVG file path.",
+    )
+    @click.option(
+        "--machine-name",
+        "machine_name",
+        type=str,
+        default=None,
+        help="Exact UML state-machine name to inspect.",
+    )
+    @click.option(
+        "--interaction-name",
+        "interaction_name",
+        type=str,
+        default=None,
+        help="Exact UML interaction name to render.",
+    )
+    @click.option(
+        "--tick-duration-ms",
+        "tick_duration_ms",
+        type=float,
+        default=None,
+        help="Runtime tick duration in milliseconds for uml:TimeEvent lowering.",
+    )
+    @click.option(
+        "--title",
+        "title",
+        type=str,
+        default=None,
+        help="Override the diagram title (defaults to the interaction name).",
+    )
+    @command_wrap()
+    def sysdesim_sequence_render(
+        input_xml_file: str,
+        output_svg_file: str,
+        machine_name: Optional[str],
+        interaction_name: Optional[str],
+        tick_duration_ms: Optional[float],
+        title: Optional[str],
+    ) -> None:
+        """
+        Render one SysDeSim sequence diagram as SVG.
+
+        :param input_xml_file: Input SysDeSim XML/XMI file.
+        :type input_xml_file: str
+        :param output_svg_file: Output SVG file path.
+        :type output_svg_file: str
+        :param machine_name: Optional state-machine selector.
+        :type machine_name: str, optional
+        :param interaction_name: Optional interaction selector.
+        :type interaction_name: str, optional
+        :param tick_duration_ms: Optional tick duration for time-event lowering.
+        :type tick_duration_ms: float, optional
+        :param title: Optional title override.
+        :type title: str, optional
+        :return: ``None``.
+        :rtype: None
+        """
+        try:
+            svg_text = render_sysdesim_timeline_svg(
+                xml_path=input_xml_file,
+                machine_name=machine_name,
+                interaction_name=interaction_name,
+                tick_duration_ms=tick_duration_ms,
+                title=title,
+            )
+        except (KeyError, LookupError, NotImplementedError, ValueError) as err:
+            raise ClickErrorException(_format_sysdesim_cli_error(err))
+        except SysdesimRenderError as err:
+            raise ClickErrorException(str(err))
+
+        out_path = Path(output_svg_file)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(svg_text, encoding="utf-8")
+        click.echo(
+            "{label}  Wrote sequence-diagram SVG to {path} ({size} bytes).".format(
+                label=click.style("SysDeSim Sequence Render", fg="cyan", bold=True),
+                path=str(out_path),
+                size=out_path.stat().st_size,
+            )
+        )
 
     return cli

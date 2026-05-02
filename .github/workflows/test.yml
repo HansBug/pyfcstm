@@ -271,8 +271,117 @@ jobs:
         if: ${{ env.OS_NAME == 'Windows' }}
         shell: bash
         run: |
-          python -m tools.test_cli dist/pyfcstm.exe --test-dsl docs/source/tutorials/cli/simple_machine.fcstm --template-dir test/testfile/template_1
+          python -m tools.test_cli dist/pyfcstm.exe --test-dsl docs/source/tutorials/cli/simple_machine.fcstm --template-dir test/testfile/template_1 --sysdesim-fixtures-dir test/testfile/sysdesim
       - uses: actions/upload-artifact@v4
         with:
           name: pyfcstm-v${{ env.PACKAGE_VERSION }}-${{ env.OS_NAME }}-${{ env.CPU_ARCH }}-${{ env.GIT_COMMIT_ID }}
           path: dist
+
+  test_cli_clean_env:
+    name: CLI Clean-Env Test
+    needs: build_cli
+    if: "!contains(github.event.head_commit.message, 'ci skip')"
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - 'ubuntu-22.04'
+          - 'windows-2022'
+          - 'macos-14'
+        python-version:
+          - '3.7'
+        exclude:
+          - os: 'macos-14'
+            python-version: '3.7'
+        include:
+          - os: 'macos-14'
+            python-version: '3.8'
+
+    steps:
+      - name: Get system version for Linux
+        if: ${{ contains(matrix.os, 'ubuntu') }}
+        shell: bash
+        run: |
+          echo "OS_NAME=Linux" >> $GITHUB_ENV
+          echo "IS_WIN=" >> $GITHUB_ENV
+          echo "IS_MAC=" >> $GITHUB_ENV
+      - name: Get system version for Windows
+        if: ${{ contains(matrix.os, 'windows') }}
+        shell: bash
+        run: |
+          echo "OS_NAME=Windows" >> $GITHUB_ENV
+          echo "IS_WIN=1" >> $GITHUB_ENV
+          echo "IS_MAC=" >> $GITHUB_ENV
+      - name: Get system version for MacOS
+        if: ${{ contains(matrix.os, 'macos') }}
+        shell: bash
+        run: |
+          echo "OS_NAME=MacOS" >> $GITHUB_ENV
+          echo "IS_WIN=" >> $GITHUB_ENV
+          echo "IS_MAC=1" >> $GITHUB_ENV
+      # Stage-2 contract: a freshly-checked-out repo plus the stage-1 PyInstaller
+      # artifact, with no project Python deps installed. We need just enough
+      # checkout to feed the test-driver fixtures (DSL, template, sysdesim XML)
+      # and a Python interpreter to run the driver itself - the driver only uses
+      # stdlib. If the bundled exe is missing any runtime asset, this job fails.
+      - name: Checkout code (driver + fixtures only)
+        uses: actions/checkout@v3.3.0
+        with:
+          fetch-depth: 1
+          submodules: false
+      - name: Set up python ${{ matrix.python-version }} for the driver only
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Get package version
+        shell: bash
+        run: |
+          python -c 'from pyfcstm.config.meta import __VERSION__;print(__VERSION__)'
+          echo "PACKAGE_VERSION=$(python -c 'from pyfcstm.config.meta import __VERSION__;print(__VERSION__)')" >> $GITHUB_ENV
+          echo "GIT_COMMIT_ID=$(echo ${GITHUB_SHA} | cut -c1-7)" >> $GITHUB_ENV
+          echo "CPU_ARCH=$(uname -m)" >> $GITHUB_ENV
+      - name: Download stage-1 CLI artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pyfcstm-v${{ env.PACKAGE_VERSION }}-${{ env.OS_NAME }}-${{ env.CPU_ARCH }}-${{ env.GIT_COMMIT_ID }}
+          path: dist
+      - name: Show downloaded artifact and confirm clean env
+        shell: bash
+        run: |
+          ls -la dist/
+          # Confirm the project itself is NOT importable from this Python:
+          # the driver must only use stdlib. If pyfcstm slipped into the env
+          # somehow, this would mask packaging defects.
+          python -c "import sys; assert all('pyfcstm' not in m for m in sys.modules)" || echo "(pyfcstm not imported)"
+          python -c "
+          try:
+              import pyfcstm  # noqa
+              print('UNEXPECTED: pyfcstm import succeeded in clean env')
+              raise SystemExit(2)
+          except ImportError:
+              print('OK: pyfcstm not importable in clean env')
+          "
+          # Also confirm the driver's only deps are stdlib.
+          pip list
+      - name: Make CLI executable runnable on Linux/MacOS
+        if: ${{ env.OS_NAME != 'Windows' }}
+        shell: bash
+        run: |
+          chmod +x dist/pyfcstm
+      - name: Test CLI executable in clean env (Linux/MacOS)
+        if: ${{ env.OS_NAME != 'Windows' }}
+        shell: bash
+        run: |
+          python -m tools.test_cli dist/pyfcstm \
+            --test-dsl docs/source/tutorials/cli/simple_machine.fcstm \
+            --template-dir test/testfile/template_1 \
+            --sysdesim-fixtures-dir test/testfile/sysdesim
+      - name: Test CLI executable in clean env (Windows)
+        if: ${{ env.OS_NAME == 'Windows' }}
+        shell: bash
+        run: |
+          python -m tools.test_cli dist/pyfcstm.exe \
+            --test-dsl docs/source/tutorials/cli/simple_machine.fcstm \
+            --template-dir test/testfile/template_1 \
+            --sysdesim-fixtures-dir test/testfile/sysdesim

@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Synthetic SysDeSim XMI sample for CLI smoke tests. NOT user data.
+
+  Shape: one linear single-machine handshake.
+    Machine: Greeter (Idle -> Greeting -> Done)
+    Interaction: HandshakeScenario, 2 lifelines (sender + receiver),
+                 2 messages (Hello, Bye), 1 SetInput (greeting_count = 1)
+                 1 StateInvariant on receiver (counter == 0 on entry)
+
+  Designed to exercise the OK paths of the CLI:
+    * sysdesim convert  -> emits a single .fcstm output, no parallel split
+    * sysdesim static-check -> 0 warnings, 0 errors
+    * sysdesim validate -> Phase9/10 import report with 2 steps + 0 windows
+    * sysdesim sequence-render -> SVG with 2 lifelines + 2 numbered arrows
+
+  Lifeline names are intentionally ASCII so PNG renders without CJK fonts.
+-->
+<xmi:XMI xmi:version="20131001"
+         xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
+         xmlns:uml="http://www.eclipse.org/uml2/5.0.0/UML">
+  <uml:Model xmi:id="model_1" name="model">
+    <packagedElement xmi:type="uml:Class" xmi:id="class_1" name="Greeter" classifierBehavior="machine_1">
+      <ownedBehavior xmi:type="uml:StateMachine" xmi:id="machine_1" name="Greeter">
+        <region xmi:type="uml:Region" xmi:id="region_root" name="">
+          <transition xmi:type="uml:Transition" xmi:id="tx_init" source="init_root" target="state_idle"/>
+          <transition xmi:type="uml:Transition" xmi:id="tx_idle_greeting" source="state_idle" target="state_greeting">
+            <trigger xmi:type="uml:Trigger" xmi:id="trigger_hello" event="signal_evt_hello"/>
+          </transition>
+          <transition xmi:type="uml:Transition" xmi:id="tx_greeting_done" source="state_greeting" target="state_done">
+            <trigger xmi:type="uml:Trigger" xmi:id="trigger_bye" event="signal_evt_bye"/>
+          </transition>
+          <subvertex xmi:type="uml:Pseudostate" xmi:id="init_root"/>
+          <subvertex xmi:type="uml:State" xmi:id="state_idle" name="Idle"/>
+          <subvertex xmi:type="uml:State" xmi:id="state_greeting" name="Greeting"/>
+          <subvertex xmi:type="uml:State" xmi:id="state_done" name="Done"/>
+        </region>
+      </ownedBehavior>
+      <ownedBehavior xmi:type="uml:Interaction" xmi:id="interaction_1" name="HandshakeScenario">
+        <ownedAttribute xmi:type="uml:Property" xmi:id="prop_sender" name="sender"/>
+        <ownedAttribute xmi:type="uml:Property" xmi:id="prop_receiver" name="receiver"/>
+        <lifeline xmi:type="uml:Lifeline" xmi:id="ll_sender" name="sender" represents="prop_sender"/>
+        <lifeline xmi:type="uml:Lifeline" xmi:id="ll_receiver" name="receiver" represents="prop_receiver"/>
+        <fragment xmi:type="uml:StateInvariant" xmi:id="inv_counter" covered="ll_receiver">
+          <invariant xmi:type="uml:Constraint" xmi:id="inv_counter_rule">
+            <specification xmi:type="uml:OpaqueExpression" xmi:id="inv_counter_expr">
+              <body>greeting_count=0</body>
+            </specification>
+          </invariant>
+        </fragment>
+        <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="hello_send" covered="ll_sender" message="msg_hello"/>
+        <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="hello_recv" covered="ll_receiver" message="msg_hello"/>
+        <fragment xmi:type="uml:StateInvariant" xmi:id="inv_after_hello" covered="ll_receiver">
+          <invariant xmi:type="uml:Constraint" xmi:id="inv_after_hello_rule">
+            <specification xmi:type="uml:OpaqueExpression" xmi:id="inv_after_hello_expr">
+              <body>greeting_count=1</body>
+            </specification>
+          </invariant>
+        </fragment>
+        <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="bye_send" covered="ll_sender" message="msg_bye"/>
+        <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="bye_recv" covered="ll_receiver" message="msg_bye"/>
+        <message xmi:type="uml:Message" xmi:id="msg_hello" sendEvent="hello_send" receiveEvent="hello_recv" signature="signal_hello"/>
+        <message xmi:type="uml:Message" xmi:id="msg_bye" sendEvent="bye_send" receiveEvent="bye_recv" signature="signal_bye"/>
+      </ownedBehavior>
+      <ownedAttribute xmi:type="uml:Property" xmi:id="var_greeting_count" name="greeting_count">
+        <type xmi:type="uml:PrimitiveType" href="pathmap://UML_LIBRARIES/UMLPrimitiveTypes.library.uml#Real"/>
+        <defaultValue xmi:type="uml:LiteralReal" xmi:id="var_greeting_count_default" value="0.0"/>
+      </ownedAttribute>
+    </packagedElement>
+    <packagedElement xmi:type="uml:Signal" xmi:id="signal_hello" name="Hello"/>
+    <packagedElement xmi:type="uml:SignalEvent" xmi:id="signal_evt_hello" signal="signal_hello"/>
+    <packagedElement xmi:type="uml:Signal" xmi:id="signal_bye" name="Bye"/>
+    <packagedElement xmi:type="uml:SignalEvent" xmi:id="signal_evt_bye" signal="signal_bye"/>
+  </uml:Model>
+</xmi:XMI>

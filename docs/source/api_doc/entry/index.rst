@@ -14,6 +14,7 @@ pyfcstm.entry
     dispatch
     generate
     plantuml
+    reachability
     simulate/index
     visualize
 
@@ -21,5 +22,4 @@ pyfcstm.entry
 -----------------------------------------------------
 
 .. autodata:: __all__
-
 

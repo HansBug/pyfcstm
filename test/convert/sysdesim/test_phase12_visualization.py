@@ -1,0 +1,283 @@
+"""Unit tests for the SysDeSim Phase12 PlantUML timeline export."""
+
+from dataclasses import replace
+from pathlib import Path
+import re
+from textwrap import dedent
+
+import pytest
+
+from pyfcstm.convert.sysdesim import (
+    SysDeSimTimelinePlantumlOptions,
+    build_sysdesim_phase10_report,
+    build_sysdesim_timeline_plantuml,
+    build_sysdesim_timeline_plantuml_from_xml,
+)
+
+pytestmark = pytest.mark.unittest
+
+
+def _write_xml(tmp_path: Path, content: str) -> Path:
+    """Write one temporary SysDeSim XML file."""
+    xml_file = tmp_path / "sample.sysdesim.xml"
+    xml_file.write_text(dedent(content).strip() + "\n", encoding="utf-8")
+    return xml_file
+
+
+def _build_parallel_timeline_xml(tmp_path: Path) -> Path:
+    """Build one compact SysDeSim sample with hidden auto transitions."""
+    return _write_xml(
+        tmp_path,
+        """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <xmi:XMI xmi:version="20131001"
+                 xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
+                 xmlns:uml="http://www.eclipse.org/uml2/5.0.0/UML">
+          <uml:Model xmi:id="model_1" name="model">
+            <packagedElement xmi:type="uml:Class" xmi:id="class_1" name="Timeline Coexist" classifierBehavior="machine_1">
+              <ownedBehavior xmi:type="uml:StateMachine" xmi:id="machine_1" name="Timeline Coexist">
+                <region xmi:type="uml:Region" xmi:id="region_root" name="">
+                  <transition xmi:type="uml:Transition" xmi:id="tx_root_init" source="init_root" target="state_idle"/>
+                  <transition xmi:type="uml:Transition" xmi:id="tx_root_start" source="state_idle" target="state_control">
+                    <trigger xmi:type="uml:Trigger" xmi:id="trigger_root_start" event="signal_evt_start"/>
+                  </transition>
+                  <subvertex xmi:type="uml:Pseudostate" xmi:id="init_root"/>
+                  <subvertex xmi:type="uml:State" xmi:id="state_idle" name="Idle"/>
+                  <subvertex xmi:type="uml:State" xmi:id="state_control" name="Control">
+                    <region xmi:type="uml:Region" xmi:id="region_left" name="">
+                      <transition xmi:type="uml:Transition" xmi:id="tx_left_init" source="init_left" target="state_f"/>
+                      <transition xmi:type="uml:Transition" xmi:id="tx_fw" source="state_f" target="state_w">
+                        <ownedRule xmi:type="uml:Constraint" xmi:id="guard_fw_rule">
+                          <specification xmi:type="uml:OpaqueExpression" xmi:id="guard_fw_expr">
+                            <body>c &lt; d</body>
+                          </specification>
+                        </ownedRule>
+                      </transition>
+                      <transition xmi:type="uml:Transition" xmi:id="tx_wh" source="state_w" target="state_h">
+                        <trigger xmi:type="uml:Trigger" xmi:id="trigger_wh" event="signal_evt_sig2"/>
+                      </transition>
+                      <subvertex xmi:type="uml:Pseudostate" xmi:id="init_left"/>
+                      <subvertex xmi:type="uml:State" xmi:id="state_f" name="F"/>
+                      <subvertex xmi:type="uml:State" xmi:id="state_w" name="W"/>
+                      <subvertex xmi:type="uml:State" xmi:id="state_h" name="H">
+                        <region xmi:type="uml:Region" xmi:id="region_h" name="">
+                          <transition xmi:type="uml:Transition" xmi:id="tx_h_init" source="init_h" target="state_l"/>
+                          <transition xmi:type="uml:Transition" xmi:id="tx_lm" source="state_l" target="state_m">
+                            <trigger xmi:type="uml:Trigger" xmi:id="trigger_lm" event="signal_evt_sig9"/>
+                          </transition>
+                          <transition xmi:type="uml:Transition" xmi:id="tx_ml" source="state_m" target="state_l">
+                            <trigger xmi:type="uml:Trigger" xmi:id="trigger_ml" event="signal_evt_sig6"/>
+                          </transition>
+                          <subvertex xmi:type="uml:Pseudostate" xmi:id="init_h"/>
+                          <subvertex xmi:type="uml:State" xmi:id="state_l" name="L"/>
+                          <subvertex xmi:type="uml:State" xmi:id="state_m" name="M"/>
+                        </region>
+                      </subvertex>
+                    </region>
+                    <region xmi:type="uml:Region" xmi:id="region_right" name="">
+                      <transition xmi:type="uml:Transition" xmi:id="tx_right_init" source="init_right" target="state_j"/>
+                      <transition xmi:type="uml:Transition" xmi:id="tx_jk" source="state_j" target="state_k">
+                        <trigger xmi:type="uml:Trigger" xmi:id="trigger_jk" event="signal_evt_sig2"/>
+                      </transition>
+                      <transition xmi:type="uml:Transition" xmi:id="tx_ks" source="state_k" target="state_s">
+                        <trigger xmi:type="uml:Trigger" xmi:id="trigger_ks" event="signal_evt_sig4"/>
+                      </transition>
+                      <transition xmi:type="uml:Transition" xmi:id="tx_sx" source="state_s" target="state_x"/>
+                      <transition xmi:type="uml:Transition" xmi:id="tx_xs" source="state_x" target="state_s">
+                        <trigger xmi:type="uml:Trigger" xmi:id="trigger_xs" event="signal_evt_sig4"/>
+                      </transition>
+                      <subvertex xmi:type="uml:Pseudostate" xmi:id="init_right"/>
+                      <subvertex xmi:type="uml:State" xmi:id="state_j" name="J"/>
+                      <subvertex xmi:type="uml:State" xmi:id="state_k" name="K"/>
+                      <subvertex xmi:type="uml:State" xmi:id="state_s" name="S"/>
+                      <subvertex xmi:type="uml:State" xmi:id="state_x" name="X"/>
+                    </region>
+                  </subvertex>
+                </region>
+              </ownedBehavior>
+              <ownedBehavior xmi:type="uml:Interaction" xmi:id="interaction_1" name="Scenario 1">
+                <ownedRule xmi:type="uml:DurationConstraint" xmi:id="dur_rule_1" constrainedElement="msg_sig2 msg_sig4">
+                  <specification xmi:type="uml:DurationInterval" xmi:id="dur_interval_1" min="dur_min_1" max="dur_max_1"/>
+                </ownedRule>
+                <ownedRule xmi:type="uml:TimeConstraint" xmi:id="time_rule_1" constrainedElement="msg_self">
+                  <specification xmi:type="uml:TimeInterval" xmi:id="time_interval_1" min="time_min_1" max="time_max_1"/>
+                </ownedRule>
+                <ownedAttribute xmi:type="uml:Property" xmi:id="prop_control" name="控制"/>
+                <ownedAttribute xmi:type="uml:Property" xmi:id="prop_module" name="模块"/>
+                <lifeline xmi:type="uml:Lifeline" xmi:id="ll_control" name="控制" represents="prop_control"/>
+                <lifeline xmi:type="uml:Lifeline" xmi:id="ll_module" name="模块" represents="prop_module"/>
+                <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="start_send" covered="ll_module" message="msg_start"/>
+                <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="start_recv" covered="ll_control" message="msg_start"/>
+                <fragment xmi:type="uml:StateInvariant" xmi:id="inv_c" covered="ll_control">
+                  <invariant xmi:type="uml:Constraint" xmi:id="inv_c_rule">
+                    <specification xmi:type="uml:OpaqueExpression" xmi:id="inv_c_expr">
+                      <body>c=0</body>
+                    </specification>
+                  </invariant>
+                </fragment>
+                <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="self_send" covered="ll_control" message="msg_self"/>
+                <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="self_recv" covered="ll_control" message="msg_self"/>
+                <fragment xmi:type="uml:StateInvariant" xmi:id="inv_d" covered="ll_control">
+                  <invariant xmi:type="uml:Constraint" xmi:id="inv_d_rule">
+                    <specification xmi:type="uml:OpaqueExpression" xmi:id="inv_d_expr">
+                      <body>d=0</body>
+                    </specification>
+                  </invariant>
+                </fragment>
+                <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="sig2_send" covered="ll_module" message="msg_sig2"/>
+                <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="sig2_recv" covered="ll_control" message="msg_sig2"/>
+                <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="sig9_send" covered="ll_control" message="msg_sig9"/>
+                <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="sig9_recv" covered="ll_module" message="msg_sig9"/>
+                <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="sig4_send" covered="ll_module" message="msg_sig4"/>
+                <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="sig4_recv" covered="ll_control" message="msg_sig4"/>
+                <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="tail_send" covered="ll_control" message="msg_tail"/>
+                <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="tail_recv" covered="ll_module" message="msg_tail"/>
+                <message xmi:type="uml:Message" xmi:id="msg_start" sendEvent="start_send" receiveEvent="start_recv" signature="signal_start"/>
+                <message xmi:type="uml:Message" xmi:id="msg_self" sendEvent="self_send" receiveEvent="self_recv"/>
+                <message xmi:type="uml:Message" xmi:id="msg_sig2" sendEvent="sig2_send" receiveEvent="sig2_recv" signature="signal_sig2"/>
+                <message xmi:type="uml:Message" xmi:id="msg_sig9" sendEvent="sig9_send" receiveEvent="sig9_recv" signature="signal_sig9"/>
+                <message xmi:type="uml:Message" xmi:id="msg_sig4" sendEvent="sig4_send" receiveEvent="sig4_recv" signature="signal_sig4"/>
+                <message xmi:type="uml:Message" xmi:id="msg_tail" sendEvent="tail_send" receiveEvent="tail_recv" signature="signal_tail"/>
+              </ownedBehavior>
+              <ownedAttribute xmi:type="uml:Property" xmi:id="var_c" name="c">
+                <type xmi:type="uml:PrimitiveType" href="pathmap://UML_LIBRARIES/UMLPrimitiveTypes.library.uml#Real"/>
+                <defaultValue xmi:type="uml:LiteralReal" xmi:id="var_c_default" value="0.0"/>
+              </ownedAttribute>
+              <ownedAttribute xmi:type="uml:Property" xmi:id="var_d" name="d">
+                <type xmi:type="uml:PrimitiveType" href="pathmap://UML_LIBRARIES/UMLPrimitiveTypes.library.uml#Real"/>
+                <defaultValue xmi:type="uml:LiteralReal" xmi:id="var_d_default" value="0.0"/>
+              </ownedAttribute>
+            </packagedElement>
+            <packagedElement xmi:type="uml:Signal" xmi:id="signal_start" name="Sig1"/>
+            <packagedElement xmi:type="uml:SignalEvent" xmi:id="signal_evt_start" signal="signal_start"/>
+            <packagedElement xmi:type="uml:Signal" xmi:id="signal_sig2" name="Sig2"/>
+            <packagedElement xmi:type="uml:SignalEvent" xmi:id="signal_evt_sig2" signal="signal_sig2"/>
+            <packagedElement xmi:type="uml:Signal" xmi:id="signal_sig4" name="Sig4"/>
+            <packagedElement xmi:type="uml:SignalEvent" xmi:id="signal_evt_sig4" signal="signal_sig4"/>
+            <packagedElement xmi:type="uml:Signal" xmi:id="signal_sig6" name="Sig6"/>
+            <packagedElement xmi:type="uml:SignalEvent" xmi:id="signal_evt_sig6" signal="signal_sig6"/>
+            <packagedElement xmi:type="uml:Signal" xmi:id="signal_sig9" name="Sig9"/>
+            <packagedElement xmi:type="uml:SignalEvent" xmi:id="signal_evt_sig9" signal="signal_sig9"/>
+            <packagedElement xmi:type="uml:Signal" xmi:id="signal_tail" name="Sig11"/>
+            <packagedElement xmi:type="uml:Duration" xmi:id="dur_min_1" observation="dur_obs_min">
+              <expr xmi:type="uml:LiteralString" xmi:id="dur_min_1_expr" value="10s"/>
+            </packagedElement>
+            <packagedElement xmi:type="uml:Duration" xmi:id="dur_max_1" observation="dur_obs_max">
+              <expr xmi:type="uml:LiteralString" xmi:id="dur_max_1_expr" value="10s"/>
+            </packagedElement>
+            <packagedElement xmi:type="uml:DurationObservation" xmi:id="dur_obs_min"/>
+            <packagedElement xmi:type="uml:DurationObservation" xmi:id="dur_obs_max"/>
+            <packagedElement xmi:type="uml:TimeExpression" xmi:id="time_min_1" observation="time_obs_min">
+              <expr xmi:type="uml:LiteralString" xmi:id="time_min_1_expr" value="0s"/>
+            </packagedElement>
+            <packagedElement xmi:type="uml:TimeExpression" xmi:id="time_max_1" observation="time_obs_max">
+              <expr xmi:type="uml:LiteralString" xmi:id="time_max_1_expr" value="1s"/>
+            </packagedElement>
+            <packagedElement xmi:type="uml:TimeObservation" xmi:id="time_obs_min"/>
+            <packagedElement xmi:type="uml:TimeObservation" xmi:id="time_obs_max"/>
+          </uml:Model>
+        </xmi:XMI>
+        """,
+    )
+
+
+def test_build_sysdesim_timeline_plantuml_from_xml_outputs_reviewable_puml(tmp_path: Path):
+    """The XML wrapper should emit a complete review-oriented PlantUML file."""
+    xml_file = _build_parallel_timeline_xml(tmp_path)
+
+    plantuml_text = build_sysdesim_timeline_plantuml_from_xml(str(xml_file))
+
+    assert plantuml_text.startswith("@startuml")
+    assert plantuml_text.strip().endswith("@enduml")
+    assert "!pragma teoz true" in plantuml_text
+    assert "skinparam ParticipantPadding 50" in plantuml_text
+    assert 'participant "控制"' in plantuml_text
+    assert 'participant "模块"' in plantuml_text
+    assert 'participant " " as PT1' in plantuml_text
+    assert "{s01} ll_module -> ll_control" not in plantuml_text
+    assert "{s01} P2 -> P1 : [s01] Sig1" in plantuml_text
+    assert "{s02} P1 -> P1 : [s02] c=0" in plantuml_text
+    assert "{s04} P1 -> P1 : [s04] d=0" in plantuml_text
+    assert "{s05} P2 -> P1 : [s05] Sig2" in plantuml_text
+    assert "{s06} P1 -> P2 : [s06] Sig9" in plantuml_text
+    assert "{s08} P1 -> P2 : [s08] Sig11" in plantuml_text
+    assert "PT1 -[#white]> PT1" in plantuml_text
+    assert re.search(r"PT1 -\[#white\]> PT1 : @s\d+", plantuml_text)
+    assert "<->" in plantuml_text
+    assert ": 10" in plantuml_text
+    assert "note over P1,P2 : [_" not in plantuml_text
+    assert "source_observation_id=msg_start" not in plantuml_text
+    assert "outbound_signal=" not in plantuml_text
+    assert "machine_relevant_direction_mismatch" not in plantuml_text
+
+
+def test_build_sysdesim_timeline_plantuml_from_xml_matches_direct_report_render(tmp_path: Path):
+    """The convenience XML wrapper should stay a thin wrapper around Phase10."""
+    xml_file = _build_parallel_timeline_xml(tmp_path)
+    report = build_sysdesim_phase10_report(str(xml_file))
+
+    direct_text = build_sysdesim_timeline_plantuml(report)
+    wrapped_text = build_sysdesim_timeline_plantuml_from_xml(str(xml_file))
+
+    assert wrapped_text == direct_text
+
+
+def test_build_sysdesim_timeline_plantuml_can_render_hidden_auto_notes(tmp_path: Path):
+    """Hidden auto occurrences should be visible when the debug option is enabled."""
+    xml_file = _build_parallel_timeline_xml(tmp_path)
+    report = build_sysdesim_phase10_report(str(xml_file))
+
+    auto_occurrences = [
+        occurrence
+        for trace in report.traces
+        for execution in trace.steps
+        for occurrence in execution.auto_occurrences
+    ]
+    assert auto_occurrences
+
+    first_auto = auto_occurrences[0]
+    plantuml_text = build_sysdesim_timeline_plantuml(
+        report,
+        options=SysDeSimTimelinePlantumlOptions(include_hidden_auto=True),
+    )
+
+    assert first_auto.occurrence_symbol in plantuml_text
+    assert first_auto.from_state_path in plantuml_text
+    assert first_auto.to_state_path in plantuml_text
+
+
+def test_build_sysdesim_timeline_plantuml_can_emit_debug_comments_when_requested(tmp_path: Path):
+    """Debug comments should remain available as an opt-in mode only."""
+    xml_file = _build_parallel_timeline_xml(tmp_path)
+    report = build_sysdesim_phase10_report(str(xml_file))
+
+    plantuml_text = build_sysdesim_timeline_plantuml(
+        report,
+        options=SysDeSimTimelinePlantumlOptions(include_debug_comments=True),
+    )
+
+    assert "source_observation_id=msg_start" in plantuml_text
+    assert "temporal_constraint_id=" in plantuml_text
+    assert "<->" in plantuml_text
+
+
+def test_build_sysdesim_timeline_plantuml_sanitizes_temporal_anchor_ids(tmp_path: Path):
+    """Temporal constraint anchor names should stay PlantUML-safe."""
+    xml_file = _build_parallel_timeline_xml(tmp_path)
+    report = build_sysdesim_phase10_report(str(xml_file))
+    first_constraint = report.scenario.temporal_constraints[0]
+    scenario = replace(
+        report.scenario,
+        temporal_constraints=(
+            replace(first_constraint, constraint_id="9-invalid:id-value"),
+            *report.scenario.temporal_constraints[1:],
+        ),
+    )
+    rewritten_report = replace(report, scenario=scenario)
+
+    plantuml_text = build_sysdesim_timeline_plantuml(rewritten_report)
+
+    assert "{C_9_invalid_id_value__left}" in plantuml_text
+    assert "{C_9_invalid_id_value__right}" in plantuml_text
+    assert "{9-invalid:id-value__left}" not in plantuml_text
+    assert "{9-invalid:id-value__right}" not in plantuml_text

@@ -37,6 +37,7 @@ from typing import Dict, List, Union
 
 import z3
 
+from .vars import create_z3_vars_from_state_machine, _create_z3_vars_from_var_defines
 from ..model.expr import (
     Expr, Integer, Float, Boolean, Variable,
     BinaryOp, UnaryOp, ConditionalOp, UFunc
@@ -376,7 +377,8 @@ def create_z3_vars_from_models(models: Union[StateMachine, VarDefine, List[VarDe
     - VarDefine: creates a single Z3 variable
     - List[VarDefine]: creates Z3 variables for all definitions in the list
 
-    Integer types map to Z3 Int, float types map to Z3 Real.
+    Integer types map to Z3 Int, float types map to Z3 Real, and bool types
+    map to Z3 Bool.
 
     :param models: Model object(s) containing variable definitions
     :type models: Union[StateMachine, VarDefine, List[VarDefine]]
@@ -415,28 +417,11 @@ def create_z3_vars_from_models(models: Union[StateMachine, VarDefine, List[VarDe
     """
     # Determine the list of VarDefine objects based on input type
     if isinstance(models, StateMachine):
-        var_defines = list(models.defines.values())
+        return create_z3_vars_from_state_machine(models)
     elif isinstance(models, VarDefine):
-        var_defines = [models]
+        return _create_z3_vars_from_var_defines([models])
     elif isinstance(models, list):
-        var_defines = models
+        return _create_z3_vars_from_var_defines(models)
     else:
         raise TypeError(f"Unsupported input type: {type(models).__name__}. "
                         "Expected StateMachine, VarDefine, or List[VarDefine]")
-
-    # Create Z3 variables
-    z3_vars = {}
-
-    for var_def in var_defines:
-        var_name = var_def.name
-        var_type = var_def.type.lower()
-
-        if var_type == 'int':
-            z3_vars[var_name] = z3.Int(var_name)
-        elif var_type == 'float':
-            z3_vars[var_name] = z3.Real(var_name)
-        else:
-            raise ValueError(f"Unsupported variable type '{var_type}' for variable '{var_name}'. "
-                             "Supported types: int, float")
-
-    return z3_vars

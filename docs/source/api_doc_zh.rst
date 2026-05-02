@@ -7,6 +7,7 @@ API 文档
     :hidden:
 
     api_doc/config/index
+    api_doc/convert/index
     api_doc/dsl/index
     api_doc/entry/index
     api_doc/highlight/index
@@ -16,8 +17,10 @@ API 文档
     api_doc/solver/index
     api_doc/template/index
     api_doc/utils/index
+    api_doc/verify/index
 
 * :doc:`api_doc/config/index`
+* :doc:`api_doc/convert/index`
 * :doc:`api_doc/dsl/index`
 * :doc:`api_doc/entry/index`
 * :doc:`api_doc/highlight/index`
@@ -27,4 +30,5 @@ API 文档
 * :doc:`api_doc/solver/index`
 * :doc:`api_doc/template/index`
 * :doc:`api_doc/utils/index`
+* :doc:`api_doc/verify/index`
 

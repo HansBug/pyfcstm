@@ -519,6 +519,44 @@ class TestModelModel:
             ("LX", "LX1", "LX11"),
         ]
 
+    def test_resolve_state(self, demo_model_1, root_state_1, state_LX_LX1, state_LX_LX1_LX11):
+        assert demo_model_1.resolve_state("LX") is root_state_1
+        assert demo_model_1.resolve_state("LX.LX1") is state_LX_LX1
+        assert demo_model_1.resolve_state("LX.LX1.LX11") is state_LX_LX1_LX11
+
+    def test_state_belongs_to_machine(self, demo_model_1, root_state_1, state_LX_LX1_LX11):
+        other_ast_node = parse_with_grammar_entry(
+            """
+        state LX {
+            state LX1 {
+                state LX11;
+                [*] -> LX11;
+            }
+            [*] -> LX1;
+        }
+        """,
+            entry_name="state_machine_dsl",
+        )
+        other_model = parse_dsl_node_to_state_machine(other_ast_node)
+        other_state = other_model.resolve_state("LX.LX1.LX11")
+
+        assert demo_model_1.state_belongs_to_machine(root_state_1)
+        assert demo_model_1.state_belongs_to_machine(state_LX_LX1_LX11)
+        assert not demo_model_1.state_belongs_to_machine(other_state)
+
+    def test_resolve_state_errors(self, demo_model_1):
+        with pytest.raises(ValueError, match="State path cannot be empty"):
+            demo_model_1.resolve_state("")
+
+        with pytest.raises(ValueError, match=r"Invalid state path: 'LX\.\.LX1'"):
+            demo_model_1.resolve_state("LX..LX1")
+
+        with pytest.raises(LookupError, match=r"State path root 'RX' does not match state machine root 'LX'"):
+            demo_model_1.resolve_state("RX.LX1")
+
+        with pytest.raises(LookupError, match=r"State 'LX3' not found in state 'LX'"):
+            demo_model_1.resolve_state("LX.LX3")
+
     def test_var_defines(self, var_define_a, var_define_b):
         assert var_define_a.name == "a"
         assert var_define_a.type == "int"
@@ -896,6 +934,33 @@ class TestModelModel:
             ),
             post_operations=[],
         )
+
+    def test_transition_resolve_state_endpoints(
+            self,
+            transition_1,
+            transition_2,
+            transition_3,
+            transition_5,
+            transition_6,
+            root_state_1,
+            state_LX_LX1,
+    ):
+        assert transition_1.from_state_obj is dsl_nodes.INIT_STATE
+        with pytest.raises(LookupError, match="Cannot resolve to_state 'LX' without parent state"):
+            _ = transition_1.to_state_obj
+
+        with pytest.raises(LookupError, match="Cannot resolve from_state 'LX' without parent state"):
+            _ = transition_2.from_state_obj
+        assert transition_2.to_state_obj is dsl_nodes.EXIT_STATE
+
+        assert transition_3.from_state_obj is dsl_nodes.INIT_STATE
+        assert transition_3.to_state_obj is root_state_1.substates["LX1"]
+
+        assert transition_5.from_state_obj is state_LX_LX1.substates["LX12"]
+        assert transition_5.to_state_obj is state_LX_LX1.substates["LX14"]
+
+        assert transition_6.from_state_obj is state_LX_LX1.substates["LX13"]
+        assert transition_6.to_state_obj is dsl_nodes.EXIT_STATE
 
     def test_parse_duplicate_defs(self):
         ast_node = parse_with_grammar_entry(

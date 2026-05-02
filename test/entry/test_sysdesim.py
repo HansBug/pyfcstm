@@ -1163,6 +1163,9 @@ def test_sysdesim_sequence_render_preview_only_uses_tempfile(
     monkeypatch, tmp_path: Path
 ):
     """``--preview`` without ``-o`` writes a temp SVG and opens the browser."""
+    from urllib.parse import urlparse
+    from urllib.request import url2pathname
+
     xml_file = _build_parallel_timeline_xml(tmp_path)
     captured = {}
 
@@ -1180,8 +1183,10 @@ def test_sysdesim_sequence_render_preview_only_uses_tempfile(
     assert "uri" in captured
     assert captured["uri"].startswith("file://")
     assert captured["uri"].endswith(".svg")
-    # The temporary file must actually exist on disk.
-    temp_path = Path(captured["uri"][len("file://") :])
+    # The temporary file must actually exist on disk. ``urlparse`` +
+    # ``url2pathname`` is the cross-platform reverse of ``Path.as_uri()``;
+    # naive prefix-stripping leaves ``/C:/...`` on Windows.
+    temp_path = Path(url2pathname(urlparse(captured["uri"]).path))
     assert temp_path.exists()
     assert temp_path.read_bytes().startswith(b"<?xml")
     assert "opened" in result.output

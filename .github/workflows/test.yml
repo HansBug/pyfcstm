@@ -358,20 +358,22 @@ jobs:
         shell: bash
         run: |
           ls -la dist/
-          # Confirm the project itself is NOT importable from this Python:
-          # the driver must only use stdlib. If pyfcstm slipped into the env
-          # somehow, this would mask packaging defects.
-          python -c "import sys; assert all('pyfcstm' not in m for m in sys.modules)" || echo "(pyfcstm not imported)"
-          python -c "
-          try:
-              import pyfcstm  # noqa
-              print('UNEXPECTED: pyfcstm import succeeded in clean env')
-              raise SystemExit(2)
-          except ImportError:
-              print('OK: pyfcstm not importable in clean env')
-          "
-          # Also confirm the driver's only deps are stdlib.
+          # Sanity-check the runner's Python environment: it must NOT have
+          # any project runtime deps installed - we install nothing in this
+          # job, only set up Python for the stdlib-only test driver. Source
+          # ``./pyfcstm`` lives in the workspace from the checkout and that
+          # is fine; what we explicitly forbid is pip-installed runtime
+          # deps that would mask a missing PyInstaller hook in the bundled
+          # exe (e.g. py-mini-racer / mini-racer leaking from site-packages
+          # could hide ``import py_mini_racer`` failing inside the exe).
           pip list
+          for pkg in py-mini-racer mini-racer click jinja2 antlr4-python3-runtime z3-solver hbutils; do
+            if pip show "$pkg" >/dev/null 2>&1; then
+              echo "UNEXPECTED: $pkg is installed in this clean-env runner"
+              exit 2
+            fi
+          done
+          echo "OK: no pyfcstm runtime deps leaked into the clean-env runner."
       - name: Make CLI executable runnable on Linux/MacOS
         if: ${{ env.OS_NAME != 'Windows' }}
         shell: bash

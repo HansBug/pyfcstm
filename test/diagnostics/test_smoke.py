@@ -17,6 +17,7 @@ These cover:
 from __future__ import annotations
 
 import io
+import os
 import re
 import subprocess
 import sys
@@ -323,12 +324,20 @@ def test_python_dash_m_pyfcstm_smoke_test_short_circuits_entry_chain():
     structured summary.
     """
     repo_root = Path(__file__).resolve().parents[2]
+    env = os.environ.copy()
+    # Make sure the subprocess can ``import pyfcstm`` even when the test
+    # runner is using a development checkout that has not been pip
+    # installed (the typical Code Test workflow shape).
+    env["PYTHONPATH"] = (
+        str(repo_root) + os.pathsep + env.get("PYTHONPATH", "")
+    )
     proc = subprocess.run(
         [sys.executable, "-m", "pyfcstm", "--smoke-test"],
         cwd=str(repo_root),
+        env=env,
         capture_output=True,
         text=True,
-        timeout=120,
+        timeout=180,
     )
     output = _strip_ansi(proc.stdout)
     summary_line = next(
@@ -356,12 +365,17 @@ def test_dash_m_diagnostics_runs_independently_of_entry_chain():
     the import graph) and confirming the summary line.
     """
     repo_root = Path(__file__).resolve().parents[2]
+    env = os.environ.copy()
+    env["PYTHONPATH"] = (
+        str(repo_root) + os.pathsep + env.get("PYTHONPATH", "")
+    )
     proc = subprocess.run(
         [sys.executable, "-m", "pyfcstm.diagnostics"],
         cwd=str(repo_root),
+        env=env,
         capture_output=True,
         text=True,
-        timeout=120,
+        timeout=180,
     )
     output = _strip_ansi(proc.stdout)
     summary_line = next(

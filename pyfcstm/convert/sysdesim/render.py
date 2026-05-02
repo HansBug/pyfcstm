@@ -34,6 +34,7 @@ Example::
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import threading
@@ -58,6 +59,8 @@ _RENDER_ASSET_PATH = os.path.join(
 
 _runtime_lock = threading.Lock()
 _runtime_cached: Optional[Tuple[object, str]] = None  # (MiniRacer ctx, version_text)
+_PNG_INIT_LOCK = threading.Lock()
+_PNG_INIT_MAX_SPINS = 400
 
 
 class SysdesimRenderError(RuntimeError):
@@ -326,7 +329,159 @@ def render_sysdesim_timeline_svg(
         ) from err
 
 
+def _ensure_png_runtime(ctx) -> None:
+    """
+    Drive the JS-side resvg-wasm initialization to completion on ``ctx``.
+
+    ``initWasm`` returns a Promise; py-mini-racer cannot ``await`` promises
+    directly, but V8 drains microtasks between successive ``ctx.eval()``
+    calls, which advances the resolution chain. The first call kicks off the
+    init; we then spin on ``pngInitState()`` and trigger drains via no-op
+    evals until the JS side reports ``ready`` or ``error``.
+
+    Init runs at most once per MiniRacer context (idempotent). We tag the
+    context with a private attribute so subsequent renders skip re-init.
+    """
+    with _PNG_INIT_LOCK:
+        if getattr(ctx, "_pyfcstm_png_initialized", False):
+            return
+        ctx.eval("PyfcstmSysdesim.startPngInit()")
+        for _ in range(_PNG_INIT_MAX_SPINS):
+            state = ctx.eval("PyfcstmSysdesim.pngInitState()")
+            if state == "ready":
+                ctx._pyfcstm_png_initialized = True
+                return
+            if state == "error":
+                try:
+                    ctx.eval("PyfcstmSysdesim.isPngReady()")
+                except Exception as err:
+                    raise SysdesimRenderError(
+                        "resvg-wasm init failed: {!r}".format(err)
+                    ) from err
+                raise SysdesimRenderError(  # pragma: no cover - defensive: JS sets either ready or error
+                    "resvg-wasm init reported error without throwing."
+                )
+            # noop drain to advance microtasks; in practice resvg-wasm init
+            # completes on the first ``pngInitState()`` poll so this branch
+            # only triggers on slow hardware, which is hard to hit reliably
+            # from a unit test.
+            ctx.eval("0")  # pragma: no cover
+        raise SysdesimRenderError(  # pragma: no cover - 400 drains is far above any observed init time
+            "resvg-wasm init did not complete after {} drains.".format(_PNG_INIT_MAX_SPINS)
+        )
+
+
+def render_sysdesim_timeline_png(
+    *,
+    xml_path: Optional[str] = None,
+    machine_name: Optional[str] = None,
+    interaction_name: Optional[str] = None,
+    tick_duration_ms: Optional[float] = None,
+    phase10_report: Optional[SysDeSimPhase10Report] = None,
+    title: Optional[str] = None,
+    theme: Optional[Dict[str, Any]] = None,
+    resvg_options: Optional[Dict[str, Any]] = None,
+    font_files: Optional[List[str]] = None,
+    font_buffers: Optional[List[bytes]] = None,
+) -> bytes:
+    """
+    Render a SysDeSim sequence-diagram PNG (via resvg-wasm).
+
+    Internally renders the SVG first and then rasterizes via the bundled
+    ``@resvg/resvg-wasm`` running in the same V8 isolate as the SVG
+    renderer. The first PNG render after process start pays a one-time
+    wasm-instantiation cost (typically tens of milliseconds); subsequent
+    renders only pay the SVG layout + raster time.
+
+    Either ``xml_path`` or ``phase10_report`` must be supplied.
+
+    :param xml_path: Path to the SysDeSim XML/XMI file, optional if a
+        pre-built ``phase10_report`` is given.
+    :type xml_path: str, optional
+    :param machine_name: Optional state-machine name selector.
+    :type machine_name: str, optional
+    :param interaction_name: Optional interaction selector.
+    :type interaction_name: str, optional
+    :param tick_duration_ms: Optional tick duration for ``uml:TimeEvent``
+        lowering.
+    :type tick_duration_ms: float, optional
+    :param phase10_report: Pre-built Phase10 report.
+    :type phase10_report: SysDeSimPhase10Report, optional
+    :param title: Override diagram title.
+    :type title: str, optional
+    :param theme: Optional theme overrides forwarded to the JS renderer.
+    :type theme: dict[str, Any], optional
+    :param resvg_options: Optional resvg rendering options
+        (``dpi``/``fitTo``/``background``/etc., see resvg-wasm docs).
+    :type resvg_options: dict[str, Any], optional
+    :param font_files: Optional list of font-file paths to load. Useful for
+        adding CJK / region-specific glyph coverage on top of the bundled
+        DejaVu Sans fallback.
+    :type font_files: list[str], optional
+    :param font_buffers: Optional list of pre-loaded font byte buffers.
+        Equivalent to ``font_files`` but for callers that already have the
+        bytes in memory.
+    :type font_buffers: list[bytes], optional
+    :return: PNG bytes (begins with the standard ``\\x89PNG`` magic).
+    :rtype: bytes
+    :raises SysdesimRenderError: If the JS bundle cannot be loaded, the
+        resvg-wasm init fails, or the renderer raises.
+    :raises ValueError: If neither ``xml_path`` nor ``phase10_report`` is
+        provided.
+
+    Example::
+
+        >>> from pyfcstm.convert.sysdesim import render_sysdesim_timeline_png
+        >>> png = render_sysdesim_timeline_png(xml_path='./model.xml')  # doctest: +SKIP
+        >>> png[:8] == b'\\x89PNG\\r\\n\\x1a\\n'  # doctest: +SKIP
+        True
+    """
+    if phase10_report is None:
+        if xml_path is None:
+            raise ValueError("Either xml_path or phase10_report must be provided.")
+        phase10_report = build_sysdesim_phase10_report(
+            xml_path,
+            machine_name=machine_name,
+            interaction_name=interaction_name,
+            tick_duration_ms=tick_duration_ms,
+        )
+    timeline_json = _build_timeline_json(phase10_report, title=title)
+    options: Dict[str, Any] = {}
+    if theme:
+        options["theme"] = theme
+    if resvg_options:
+        options["resvg"] = resvg_options
+
+    font_buffer_b64_list: List[str] = []
+    for font_path in font_files or ():
+        with open(font_path, "rb") as font_file:
+            font_buffer_b64_list.append(
+                base64.b64encode(font_file.read()).decode("ascii")
+            )
+    for buffer in font_buffers or ():
+        font_buffer_b64_list.append(base64.b64encode(buffer).decode("ascii"))
+    if font_buffer_b64_list:
+        options["fontBuffersB64"] = font_buffer_b64_list
+
+    ctx, _version = _get_runtime()
+    _ensure_png_runtime(ctx)
+    timeline_text = json.dumps(timeline_json, ensure_ascii=False)
+    options_text = json.dumps(options, ensure_ascii=False)
+    try:
+        b64_text = ctx.eval(
+            "PyfcstmSysdesim.renderPng({timeline}, {options})".format(
+                timeline=timeline_text, options=options_text
+            )
+        )
+    except Exception as err:  # pragma: no cover - resvg-wasm failures are surfaced as SysdesimRenderError
+        raise SysdesimRenderError(
+            "JS PNG renderer raised: {!r}".format(err)
+        ) from err
+    return base64.b64decode(b64_text)
+
+
 __all__ = [
     "SysdesimRenderError",
+    "render_sysdesim_timeline_png",
     "render_sysdesim_timeline_svg",
 ]

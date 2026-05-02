@@ -19,8 +19,10 @@ from __future__ import annotations
 
 import json
 import shutil
+import tempfile
+import webbrowser
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence, Tuple
 
 import click
 
@@ -29,6 +31,7 @@ from ..convert import (
     build_sysdesim_conversion_report,
     build_sysdesim_timeline_import_report,
     convert_sysdesim_xml_to_dsls,
+    render_sysdesim_timeline_png,
     render_sysdesim_timeline_svg,
     run_sysdesim_static_pre_checks,
 )
@@ -1692,9 +1695,11 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
         "sequence-render",
         help=(
             "Render the SysDeSim sequence diagram (顺序图) of one interaction "
-            "as SVG, in the visual style of the SysDeSim XMI tool's own export "
-            "(actor boxes at top, lifelines, numbered message arrows, inline "
-            "time brackets, variable-assignment pills on the left)."
+            "as SVG or PNG, in the visual style of the SysDeSim XMI tool's "
+            "own export (actor boxes at top, lifelines, numbered message "
+            "arrows, inline time brackets, variable-assignment pills on the "
+            "left). PNG output uses an embedded resvg-wasm rasterizer; pass "
+            "--font-file to add CJK / region-specific glyph coverage."
         ),
         context_settings=CONTEXT_SETTINGS,
     )
@@ -1708,11 +1713,49 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
     )
     @click.option(
         "-o",
-        "--output-svg",
-        "output_svg_file",
+        "--output",
+        "output_file",
         type=str,
-        required=True,
-        help="Output SVG file path.",
+        default=None,
+        help=(
+            "Output file path. Format inferred from the extension "
+            "(``.svg`` / ``.png``); use ``--format`` to force. Optional "
+            "when ``--preview`` is set (a temporary file is written)."
+        ),
+    )
+    @click.option(
+        "--format",
+        "output_format",
+        type=click.Choice(["svg", "png", "auto"]),
+        default="auto",
+        show_default=True,
+        help=(
+            "Output format. ``auto`` infers the format from the ``--output`` "
+            "extension (defaults to SVG when the extension is missing or the "
+            "render is preview-only)."
+        ),
+    )
+    @click.option(
+        "--preview",
+        "preview",
+        is_flag=True,
+        default=False,
+        help=(
+            "Open the rendered diagram in the system default browser after "
+            "writing. When combined with no ``--output``, the file is "
+            "written to a temporary location."
+        ),
+    )
+    @click.option(
+        "--font-file",
+        "font_files",
+        type=str,
+        multiple=True,
+        help=(
+            "Additional font file(s) to load for PNG rendering on top of "
+            "the bundled DejaVu Sans fallback. Use this to add CJK / "
+            "region-specific glyph coverage. Repeatable."
+        ),
     )
     @click.option(
         "--machine-name",
@@ -1745,19 +1788,29 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
     @command_wrap()
     def sysdesim_sequence_render(
         input_xml_file: str,
-        output_svg_file: str,
+        output_file: Optional[str],
+        output_format: str,
+        preview: bool,
+        font_files: Tuple[str, ...],
         machine_name: Optional[str],
         interaction_name: Optional[str],
         tick_duration_ms: Optional[float],
         title: Optional[str],
     ) -> None:
         """
-        Render one SysDeSim sequence diagram as SVG.
+        Render one SysDeSim sequence diagram as SVG or PNG.
 
         :param input_xml_file: Input SysDeSim XML/XMI file.
         :type input_xml_file: str
-        :param output_svg_file: Output SVG file path.
-        :type output_svg_file: str
+        :param output_file: Output file path. Optional when ``preview`` is set.
+        :type output_file: str, optional
+        :param output_format: One of ``svg``, ``png``, or ``auto``.
+        :type output_format: str
+        :param preview: Whether to open the rendered diagram in the system
+            default browser after writing.
+        :type preview: bool
+        :param font_files: Additional font files for PNG rendering.
+        :type font_files: tuple[str, ...]
         :param machine_name: Optional state-machine selector.
         :type machine_name: str, optional
         :param interaction_name: Optional interaction selector.
@@ -1769,28 +1822,80 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
         :return: ``None``.
         :rtype: None
         """
-        try:
-            svg_text = render_sysdesim_timeline_svg(
-                xml_path=input_xml_file,
-                machine_name=machine_name,
-                interaction_name=interaction_name,
-                tick_duration_ms=tick_duration_ms,
-                title=title,
+        if not output_file and not preview:
+            raise ClickErrorException(
+                "Provide --output / -o, --preview, or both."
             )
+
+        resolved_format = output_format
+        if resolved_format == "auto":
+            if output_file:
+                ext = Path(output_file).suffix.lower()
+                resolved_format = "png" if ext == ".png" else "svg"
+            else:
+                resolved_format = "svg"
+
+        try:
+            if resolved_format == "svg":
+                svg_text = render_sysdesim_timeline_svg(
+                    xml_path=input_xml_file,
+                    machine_name=machine_name,
+                    interaction_name=interaction_name,
+                    tick_duration_ms=tick_duration_ms,
+                    title=title,
+                )
+                payload = svg_text.encode("utf-8")
+            else:
+                payload = render_sysdesim_timeline_png(
+                    xml_path=input_xml_file,
+                    machine_name=machine_name,
+                    interaction_name=interaction_name,
+                    tick_duration_ms=tick_duration_ms,
+                    title=title,
+                    font_files=list(font_files) if font_files else None,
+                )
         except (KeyError, LookupError, NotImplementedError, ValueError) as err:
             raise ClickErrorException(_format_sysdesim_cli_error(err))
         except SysdesimRenderError as err:
             raise ClickErrorException(str(err))
 
-        out_path = Path(output_svg_file)
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_text(svg_text, encoding="utf-8")
+        if output_file:
+            out_path = Path(output_file)
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_bytes(payload)
+        else:
+            tmp = tempfile.NamedTemporaryFile(
+                mode="wb",
+                suffix="." + resolved_format,
+                prefix="pyfcstm-sysdesim-",
+                delete=False,
+            )
+            try:
+                tmp.write(payload)
+            finally:
+                tmp.close()
+            out_path = Path(tmp.name)
+
         click.echo(
-            "{label}  Wrote sequence-diagram SVG to {path} ({size} bytes).".format(
+            "{label}  Wrote sequence-diagram {fmt} to {path} ({size} bytes).".format(
                 label=click.style("SysDeSim Sequence Render", fg="cyan", bold=True),
+                fmt=resolved_format.upper(),
                 path=str(out_path),
                 size=out_path.stat().st_size,
             )
         )
+
+        if preview:
+            opened = webbrowser.open(out_path.as_uri())
+            click.echo(
+                "{label}  {message}".format(
+                    label=click.style("Preview", fg="cyan", bold=True),
+                    message=(
+                        "opened {} in the system default browser.".format(out_path)
+                        if opened
+                        else "no browser available; file written to {}.".format(out_path)
+                    ),
+                )
+            )
 
     return cli

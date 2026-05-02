@@ -328,7 +328,7 @@ function buildSvgChildren(timeline, theme, lifelinePositions, opts) {
   const rightmostX = lifelinePositions.length > 0
     ? lifelinePositions[lifelinePositions.length - 1].centerX
     : LAYOUT.paddingLeft;
-  const bracketBaseX = rightmostX + 70; // distance from rightmost lifeline
+  const bracketBaseX = rightmostX + 36; // distance from rightmost lifeline
 
   // Steps.
   for (let i = 0; i < stepCount; i++) {
@@ -511,47 +511,51 @@ function buildSvgChildren(timeline, theme, lifelinePositions, opts) {
     }
   }
 
-  // Time brackets on the right side.
+  // Time-duration markers on the right side. Each multi-step constraint draws
+  // dashed leader lines from the right-most lifeline column to a shared
+  // vertical lane, capped by a double-headed arrow so the visual semantics
+  // matches the SysDeSim reference: "the gap between these two events is X".
+  const headPad = LAYOUT.arrowHead + 1;
   for (const lane of laneAssignments) {
     const constraint = lane.constraint;
     const topIndex = lane.topIndex;
     const bottomIndex = lane.bottomIndex;
     const yTop = startY + topIndex * stepHeight;
     const yBottom = startY + bottomIndex * stepHeight;
-    const x = bracketBaseX + lane.lane * (LAYOUT.bracketWidth + LAYOUT.bracketGap);
-    if (topIndex === bottomIndex) {
-      // Self-bracket: small inline note next to the message arrow.
-      children.push(svgRect({
-        x: x,
-        y: yTop - 11,
-        width: approxTextWidth(formatBracketLabel(constraint), theme.smallFontSize) + 12,
-        height: 20,
-        fill: theme.diagramBackground,
-        stroke: theme.selfBracketStroke,
-        strokeWidth: 0.8,
-      }));
-      children.push(svgText({
-        x: x + 6,
-        y: yTop + 4,
-        text: formatBracketLabel(constraint),
-        fill: theme.bracketTextColor,
-        fontFamily: theme.fontFamily,
-        fontSize: theme.smallFontSize,
-        anchor: "start",
-      }));
-      continue;
-    }
-    // Multi-step bracket: vertical bar with little notches at top + bottom.
-    const tipX = x;
-    const armX = x + LAYOUT.bracketWidth - 4;
-    children.push(svgPath({
-      d: ["M", tipX, yTop, "L", armX, yTop, "L", armX, yBottom, "L", tipX, yBottom].join(" "),
-      fill: "none",
+    const tipX = bracketBaseX + lane.lane * (LAYOUT.bracketWidth + LAYOUT.bracketGap);
+    // Dashed leader lines from the rightmost lifeline to the lane tip.
+    children.push(svgLine({
+      x1: rightmostX,
+      y1: yTop,
+      x2: tipX,
+      y2: yTop,
+      stroke: theme.bracketStroke,
+      strokeWidth: 0.7,
+      strokeDasharray: "2 3",
+    }));
+    children.push(svgLine({
+      x1: rightmostX,
+      y1: yBottom,
+      x2: tipX,
+      y2: yBottom,
+      stroke: theme.bracketStroke,
+      strokeWidth: 0.7,
+      strokeDasharray: "2 3",
+    }));
+    // Vertical double-arrow segment between the two row endpoints.
+    children.push(svgLine({
+      x1: tipX,
+      y1: yTop + headPad,
+      x2: tipX,
+      y2: yBottom - headPad,
       stroke: theme.bracketStroke,
       strokeWidth: 1,
     }));
+    children.push(svgArrowHead(tipX, yTop, "up", theme));
+    children.push(svgArrowHead(tipX, yBottom, "down", theme));
+    // Label rendered next to the double-arrow midpoint.
     children.push(svgText({
-      x: armX + 4,
+      x: tipX + 6,
       y: (yTop + yBottom) / 2 + 4,
       text: formatBracketLabel(constraint),
       fill: theme.bracketTextColor,
@@ -643,6 +647,14 @@ function svgArrowHead(x, y, dir, theme) {
   if (dir === "left") {
     points = (x + size) + "," + (y - size / 2) + " " +
              (x + size) + "," + (y + size / 2) + " " +
+             x + "," + y;
+  } else if (dir === "up") {
+    points = (x - size / 2) + "," + (y + size) + " " +
+             (x + size / 2) + "," + (y + size) + " " +
+             x + "," + y;
+  } else if (dir === "down") {
+    points = (x - size / 2) + "," + (y - size) + " " +
+             (x + size / 2) + "," + (y - size) + " " +
              x + "," + y;
   } else {
     points = (x - size) + "," + (y - size / 2) + " " +

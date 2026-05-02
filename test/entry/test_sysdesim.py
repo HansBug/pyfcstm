@@ -442,14 +442,14 @@ def test_sysdesim_cli_validate_writes_phase11_summary_when_report_file_is_used(
     assert "scope: both | candidates: 2 | status: SAT" in plain_output
     assert "first coexistence: t00 = 0" in plain_output
     assert "witness timeline:" in plain_output
-    assert "| t" in plain_output
-    assert "| Main" in plain_output
-    assert "| R1" in plain_output
-    assert "| co" in plain_output
-    assert "| 0" in plain_output
-    assert "| initial" in plain_output
-    assert "| Idle" in plain_output
-    assert "| start" in plain_output
+    # Header / cell labels appear in the table (alignment-agnostic checks).
+    assert " t " in plain_output
+    assert "Main" in plain_output
+    assert " R1 " in plain_output
+    assert " co " in plain_output
+    assert "initial" in plain_output
+    assert " Idle " in plain_output
+    assert "start" in plain_output
     assert "Wrote SysDeSim timeline validation report" in plain_output
 
 
@@ -457,7 +457,12 @@ def test_sysdesim_cli_validate_writes_phase11_summary_when_report_file_is_used(
 def test_sysdesim_cli_validate_unsat_query_does_not_print_witness_table(
     tmp_path: Path,
 ):
-    """The nested validate command should keep UNSAT output concise."""
+    """
+    The nested validate command should keep SMT-side UNSAT output concise. The
+    test fixture is a model whose query target is statically unreachable, so we
+    pass ``--no-static-check`` to force-run the SMT path that this test is
+    actually exercising.
+    """
     xml_file = _build_parallel_timeline_xml(tmp_path)
     report_file = tmp_path / "phase11_unsat_report.json"
 
@@ -478,6 +483,7 @@ def test_sysdesim_cli_validate_unsat_query_does_not_print_witness_table(
             "TimelineCoexist__Control_region2",
             "--right-state",
             "X",
+            "--no-static-check",
         ],
         color=True,
     )
@@ -530,3 +536,477 @@ def test_sysdesim_cli_validate_can_include_phase11_query_in_stdout(tmp_path: Pat
     assert "Wrote SysDeSim timeline" not in plain_output
     assert "Report:" not in plain_output
     assert not default_report.exists()
+
+
+# =============================================================================
+# Static-check CLI integration tests (Issue #88)
+# =============================================================================
+
+
+@pytest.mark.unittest
+def test_sysdesim_static_check_subcommand_passes_on_clean_xml(tmp_path: Path):
+    """``pyfcstm sysdesim static-check`` exits 0 on a model with no static issues."""
+    xml_file = _build_parallel_timeline_xml(tmp_path)
+    # Query F (region1 initial) and J (region2 initial) — both are always reached.
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "static-check",
+            "-i",
+            str(xml_file),
+            "--left-machine-alias",
+            "TimelineCoexist__Control_region1",
+            "--left-state",
+            "F",
+            "--right-machine-alias",
+            "TimelineCoexist__Control_region2",
+            "--right-state",
+            "J",
+        ],
+        color=False,
+    )
+    assert result.exit_code == 0, result.output
+    plain = _strip_ansi(result.output)
+    assert "Static Pre-check" in plain
+    # Either "OK (no static issues found)" or warning-only is acceptable here;
+    # the canonical fixture only emits informational warnings.
+    assert ("OK" in plain) or ("warning" in plain.lower())
+
+
+@pytest.mark.unittest
+def test_sysdesim_static_check_subcommand_blocks_on_unreachable_state(tmp_path: Path):
+    """A query for an unreachable state surfaces a structured error and exits 1."""
+    xml_file = _build_parallel_timeline_xml(tmp_path)
+    report_file = tmp_path / "static_check_report.json"
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "static-check",
+            "-i",
+            str(xml_file),
+            "--left-machine-alias",
+            "TimelineCoexist__Control_region1",
+            "--left-state",
+            "M",
+            "--right-machine-alias",
+            "TimelineCoexist__Control_region2",
+            "--right-state",
+            "X",
+            "--report-file",
+            str(report_file),
+        ],
+        color=False,
+    )
+    assert result.exit_code != 0
+    plain = _strip_ansi(result.output)
+    assert "[ERROR]" in plain
+    assert "target_state_never_entered" in plain
+    payload = json.loads(report_file.read_text(encoding="utf-8"))
+    codes = {entry["code"] for entry in payload["static_check"]["diagnostics"]}
+    assert "target_state_never_entered" in codes
+    assert payload["static_check"]["blocking_errors"] >= 1
+
+
+@pytest.mark.unittest
+def test_sysdesim_static_check_subcommand_levenshtein_suggestion(tmp_path: Path):
+    """Misspelled state refs surface ``query_state_name_unknown`` with closest matches."""
+    xml_file = _build_parallel_timeline_xml(tmp_path)
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "static-check",
+            "-i",
+            str(xml_file),
+            "--left-machine-alias",
+            "TimelineCoexist__Control_region2",
+            "--left-state",
+            "X_TYPO",
+        ],
+        color=False,
+    )
+    assert result.exit_code != 0
+    plain = _strip_ansi(result.output)
+    assert "query_state_name_unknown" in plain
+    # The suggestion list should mention X (the closest match) somewhere.
+    assert "Did you mean" in plain or "closest_matches" in plain
+
+
+@pytest.mark.unittest
+def test_sysdesim_validate_blocks_when_static_check_fails(tmp_path: Path):
+    """``validate`` short-circuits at the static pre-check when a target is unreachable."""
+    xml_file = _build_parallel_timeline_xml(tmp_path)
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "validate",
+            "-i",
+            str(xml_file),
+            "--left-machine-alias",
+            "TimelineCoexist__Control_region1",
+            "--left-state",
+            "M",
+            "--right-machine-alias",
+            "TimelineCoexist__Control_region2",
+            "--right-state",
+            "X",
+        ],
+        color=False,
+    )
+    assert result.exit_code != 0
+    plain = _strip_ansi(result.output)
+    assert "Static Pre-check" in plain
+    assert "skipping SMT-based validation" in plain
+    # The downstream SMT report should NOT have run.
+    assert "status: UNSAT" not in plain
+    assert "status: SAT" not in plain
+
+
+@pytest.mark.unittest
+def test_sysdesim_validate_no_static_check_flag_runs_smt(tmp_path: Path):
+    """``--no-static-check`` bypasses the pre-check and falls through to SMT."""
+    xml_file = _build_parallel_timeline_xml(tmp_path)
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "validate",
+            "-i",
+            str(xml_file),
+            "--left-machine-alias",
+            "TimelineCoexist__Control_region1",
+            "--left-state",
+            "M",
+            "--right-machine-alias",
+            "TimelineCoexist__Control_region2",
+            "--right-state",
+            "X",
+            "--no-static-check",
+        ],
+        color=False,
+    )
+    assert result.exit_code == 0, result.output
+    plain = _strip_ansi(result.output)
+    assert "Static Pre-check" not in plain
+    assert "SysDeSim State Query Complete" in plain
+
+
+@pytest.mark.unittest
+def test_sysdesim_static_check_warn_as_error_blocks(tmp_path: Path):
+    """``--warn-as-error`` promotes warnings to blocking failures."""
+    xml_file = _build_parallel_timeline_xml(tmp_path)
+    # No Phase11 query: the only issues are signal_dropped warnings.
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "static-check",
+            "-i",
+            str(xml_file),
+            "--warn-as-error",
+        ],
+        color=False,
+    )
+    assert result.exit_code != 0
+    plain = _strip_ansi(result.output)
+    assert "[WARN]" in plain
+    assert "signal_dropped_in_state" in plain
+
+
+@pytest.mark.unittest
+def test_sysdesim_static_check_emits_ansi_color_when_color_enabled(tmp_path: Path):
+    """Color terminals receive ANSI escape codes for severity prominence."""
+    xml_file = _build_parallel_timeline_xml(tmp_path)
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "static-check",
+            "-i",
+            str(xml_file),
+            "--left-machine-alias",
+            "TimelineCoexist__Control_region1",
+            "--left-state",
+            "M",
+            "--right-machine-alias",
+            "TimelineCoexist__Control_region2",
+            "--right-state",
+            "X",
+        ],
+        color=True,
+    )
+    # Expect at least one ANSI escape sequence in the colored output.
+    assert "\x1b[" in result.output, "expected ANSI escape codes when color=True"
+
+
+def _build_static_check_clean_xml(tmp_path: Path) -> Path:
+    """A tiny machine + scenario with literally zero static issues.
+
+    Idle --Sig1--> Run; the scenario emits Sig1 once. No DurationConstraints,
+    no signal-drops, no unreachable states. Used to verify the
+    ``Static Pre-check OK`` clean-output branch.
+    """
+    return _write_xml(
+        tmp_path,
+        """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <xmi:XMI xmi:version="20131001"
+                 xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
+                 xmlns:uml="http://www.eclipse.org/uml2/5.0.0/UML">
+          <uml:Model xmi:id="model_1" name="model">
+            <packagedElement xmi:type="uml:Class" xmi:id="class_1" name="CleanDemo" classifierBehavior="machine_1">
+              <ownedBehavior xmi:type="uml:StateMachine" xmi:id="machine_1" name="CleanDemo">
+                <region xmi:type="uml:Region" xmi:id="region_root" name="">
+                  <transition xmi:type="uml:Transition" xmi:id="tx_root_init" source="init_root" target="state_idle"/>
+                  <transition xmi:type="uml:Transition" xmi:id="tx_idle_run" source="state_idle" target="state_run">
+                    <trigger xmi:type="uml:Trigger" xmi:id="trig_run" event="signal_evt_sig1"/>
+                  </transition>
+                  <subvertex xmi:type="uml:Pseudostate" xmi:id="init_root"/>
+                  <subvertex xmi:type="uml:State" xmi:id="state_idle" name="Idle"/>
+                  <subvertex xmi:type="uml:State" xmi:id="state_run" name="Run"/>
+                </region>
+              </ownedBehavior>
+              <ownedBehavior xmi:type="uml:Interaction" xmi:id="interaction_1" name="ScenClean">
+                <ownedAttribute xmi:type="uml:Property" xmi:id="prop_a" name="a"/>
+                <ownedAttribute xmi:type="uml:Property" xmi:id="prop_b" name="b"/>
+                <lifeline xmi:type="uml:Lifeline" xmi:id="ll_a" name="a" represents="prop_a"/>
+                <lifeline xmi:type="uml:Lifeline" xmi:id="ll_b" name="b" represents="prop_b"/>
+                <fragment xmi:type="uml:StateInvariant" xmi:id="inv_a" covered="ll_a">
+                  <invariant xmi:type="uml:Constraint" xmi:id="inv_a_rule">
+                    <specification xmi:type="uml:OpaqueExpression" xmi:id="inv_a_expr">
+                      <body>true</body>
+                    </specification>
+                  </invariant>
+                </fragment>
+                <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="sig1_send" covered="ll_b" message="msg_sig1"/>
+                <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="sig1_recv" covered="ll_a" message="msg_sig1"/>
+                <message xmi:type="uml:Message" xmi:id="msg_sig1" sendEvent="sig1_send" receiveEvent="sig1_recv" signature="signal_sig1"/>
+              </ownedBehavior>
+            </packagedElement>
+            <packagedElement xmi:type="uml:Signal" xmi:id="signal_sig1" name="Sig1"/>
+            <packagedElement xmi:type="uml:SignalEvent" xmi:id="signal_evt_sig1" signal="signal_sig1"/>
+          </uml:Model>
+        </xmi:XMI>
+        """,
+    )
+
+
+@pytest.mark.unittest
+def test_sysdesim_static_check_clean_xml_emits_ok_branch(tmp_path: Path):
+    """A model with zero diagnostics prints the clean ``OK`` branch."""
+    xml_file = _build_static_check_clean_xml(tmp_path)
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        ["sysdesim", "static-check", "-i", str(xml_file)],
+        color=False,
+    )
+    assert result.exit_code == 0, result.output
+    plain = _strip_ansi(result.output)
+    assert "OK (no static issues found)" in plain
+
+
+@pytest.mark.unittest
+def test_sysdesim_validate_writes_static_check_report_when_blocked(tmp_path: Path):
+    """When validate's pre-check blocks, ``--report-file`` still receives the
+    structured static-check payload so CI / LLM tooling can act on it."""
+    xml_file = _build_parallel_timeline_xml(tmp_path)
+    report_file = tmp_path / "blocked.json"
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "validate",
+            "-i",
+            str(xml_file),
+            "--left-machine-alias",
+            "TimelineCoexist__Control_region1",
+            "--left-state",
+            "M",
+            "--right-machine-alias",
+            "TimelineCoexist__Control_region2",
+            "--right-state",
+            "X",
+            "--report-file",
+            str(report_file),
+        ],
+        color=False,
+    )
+    assert result.exit_code != 0
+    payload = json.loads(report_file.read_text(encoding="utf-8"))
+    assert "static_check" in payload
+    assert payload["static_check"]["blocking_errors"] >= 1
+
+
+@pytest.mark.unittest
+def test_sysdesim_static_check_unknown_machine_name_yields_click_error(
+    tmp_path: Path,
+):
+    """An unknown ``--machine-name`` exercises the static-check exception
+    handler that converts ``KeyError`` into a clean ClickErrorException."""
+    xml_file = _build_parallel_timeline_xml(tmp_path)
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "static-check",
+            "-i",
+            str(xml_file),
+            "--machine-name",
+            "NoSuchMachine",
+        ],
+        color=False,
+    )
+    assert result.exit_code != 0
+    plain = _strip_ansi(result.output)
+    assert "NoSuchMachine" in plain
+
+
+@pytest.mark.unittest
+def test_sysdesim_validate_unknown_machine_name_in_static_check_phase(
+    tmp_path: Path,
+):
+    """``validate``'s pre-check catches the same KeyError via the static_check
+    exception handler in :func:`_run_sysdesim_validate`."""
+    xml_file = _build_parallel_timeline_xml(tmp_path)
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "validate",
+            "-i",
+            str(xml_file),
+            "--machine-name",
+            "NoSuchMachine",
+        ],
+        color=False,
+    )
+    assert result.exit_code != 0
+    plain = _strip_ansi(result.output)
+    assert "NoSuchMachine" in plain
+
+
+@pytest.mark.unittest
+def test_sysdesim_validate_no_static_check_propagates_smt_phase_error(
+    tmp_path: Path,
+):
+    """``--no-static-check`` skips the pre-check, so the post-pre-check
+    exception handler in :func:`_run_sysdesim_validate` is the layer that
+    surfaces XML/lookup errors."""
+    xml_file = _build_parallel_timeline_xml(tmp_path)
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "validate",
+            "-i",
+            str(xml_file),
+            "--machine-name",
+            "NoSuchMachine",
+            "--no-static-check",
+        ],
+        color=False,
+    )
+    assert result.exit_code != 0
+    plain = _strip_ansi(result.output)
+    assert "NoSuchMachine" in plain
+
+
+@pytest.mark.unittest
+def test_diagnostic_level_label_info_branch():
+    """``_diagnostic_level_label`` returns the cyan ``[INFO]`` tag for
+    non-error/warning levels (defensive code path for future detector kinds)."""
+    from pyfcstm.entry.sysdesim import _diagnostic_level_label
+
+    label = _diagnostic_level_label("info")
+    # The literal "[INFO]" tag must be present, possibly wrapped with ANSI.
+    assert "[INFO]" in label
+    # Unknown level falls back to the same INFO bucket.
+    assert "[INFO]" in _diagnostic_level_label("note")
+
+
+@pytest.mark.unittest
+def test_phase11_action_token_normalizes_legacy_and_new_forms():
+    """``_format_phase11_action_token`` accepts both legacy ``emit(X)`` and
+    the new symmetric ``X<--`` / ``-->X`` forms."""
+    from pyfcstm.entry.sysdesim import _format_phase11_action_token
+
+    # New encodings pass through unchanged.
+    assert _format_phase11_action_token("Sig9<--", None) == "Sig9<--"
+    assert _format_phase11_action_token("-->Sig13", None) == "-->Sig13"
+    assert _format_phase11_action_token("y=2300", None) == "y=2300"
+    # Legacy emit(X) gets converted to the new arrow form.
+    assert _format_phase11_action_token("emit(Sig5)", None) == "Sig5<--"
+    # Legacy SetInput(...) gets unwrapped.
+    assert _format_phase11_action_token("SetInput(z=10)", None) == "z=10"
+
+
+@pytest.mark.unittest
+def test_phase11_action_token_classifier():
+    """Token classification picks the right ANSI bucket per kind."""
+    from pyfcstm.entry.sysdesim import _classify_action_token
+
+    assert _classify_action_token("tau:R3 S->X") == "tau"
+    assert _classify_action_token("Sig9<--") == "inbound"
+    assert _classify_action_token("-->Sig13") == "outbound"
+    assert _classify_action_token("y=2300") == "assignment"
+    assert _classify_action_token("(unknown)") == "other"
+
+
+@pytest.mark.unittest
+def test_phase11_witness_uses_arrow_form_and_outbound_signals(tmp_path: Path):
+    """A SAT scenario should surface ``Sig9<--`` for emits and ``-->Sig11`` for
+    outbound notes; the first row is labeled ``initial`` (cyan) and the first
+    coexistence row is underlined+bold when the terminal supports color."""
+    xml_file = _build_parallel_timeline_xml(tmp_path)
+    # Query Control / F: initial is Idle/Idle (not coexistent), subsequent
+    # rows after Sig1 fire are Control/F (coexistent), giving us both an
+    # ``initial`` row and a ``start`` row to assert on.
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "validate",
+            "-i",
+            str(xml_file),
+            "--left-machine-alias",
+            "TimelineCoexist",
+            "--left-state",
+            "Control",
+            "--right-machine-alias",
+            "TimelineCoexist__Control_region1",
+            "--right-state",
+            "F",
+        ],
+        color=True,
+    )
+    assert result.exit_code == 0, result.output
+    # Inbound emit on Sig1 surfaces in the new arrow form.
+    assert "Sig1<--" in result.output
+    # Outbound signal note must surface as -->SigN.
+    assert "-->" in result.output
+    # The very first witness row carries the ``initial`` label in cyan.
+    assert "\x1b[36minitial" in result.output
+    # The first coexistence row is line-level underline + bold.
+    assert "\x1b[4m\x1b[1m" in result.output
+
+
+@pytest.mark.unittest
+def test_serialize_diagnostic_round_trips_state_path_field():
+    """``_serialize_diagnostic`` includes ``state_path`` when the diagnostic
+    carries one, and emits it as a JSON-friendly list."""
+    from pyfcstm.convert.sysdesim.ir import IrDiagnostic
+    from pyfcstm.entry.sysdesim import _serialize_diagnostic
+
+    diag = IrDiagnostic(
+        level="warning",
+        code="custom_code",
+        message="hi",
+        state_path=("Root", "Inner"),
+    )
+    payload = _serialize_diagnostic(diag)
+    assert payload["state_path"] == ["Root", "Inner"]
+    assert payload["code"] == "custom_code"
+    assert payload["level"] == "warning"

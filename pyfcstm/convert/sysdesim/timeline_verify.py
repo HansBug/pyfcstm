@@ -1404,11 +1404,18 @@ def _build_witness_steps(
         actions = []
         for action in step.actions:
             if isinstance(action, SysDeSimTimelineScenarioEmitAction):
-                actions.append("emit({})".format(action.event_name))
+                # ``Sig9<--`` reads as "Sig9 entering the control side" and
+                # mirrors the ``-->Sig13`` outbound notation below.
+                actions.append("{}<--".format(action.event_name))
             elif isinstance(action, SysDeSimTimelineScenarioSetInputAction):
                 actions.append(
-                    "SetInput({}={})".format(action.input_name, action.value_text)
+                    "{}={}".format(action.input_name, action.value_text)
                 )
+        for note in step.notes:
+            if isinstance(note, str) and note.startswith("outbound_signal="):
+                signal = note.split("=", 1)[1].strip()
+                if signal:
+                    actions.append("-->{}".format(signal))
 
         witness_steps.append(
             SysDeSimTimelineWitnessStep(
@@ -1423,16 +1430,29 @@ def _build_witness_steps(
     return tuple(witness_steps)
 
 
-def _render_scenario_actions(actions: Tuple[object, ...]) -> Tuple[str, ...]:
-    """Render one scenario action tuple into short human-readable text."""
+def _render_scenario_actions(
+    actions: Tuple[object, ...],
+    notes: Tuple[str, ...] = (),
+) -> Tuple[str, ...]:
+    """Render one scenario step's actions + notes into short human-readable text.
+
+    Inbound emits surface as ``Sig9<--`` (signal entering the controlled
+    machine), outbound notes surface as ``-->Sig13`` (signal leaving the
+    controlled machine), and SetInput assignments surface as ``y=2300``.
+    """
     rendered = []
     for action in actions:
         if isinstance(action, SysDeSimTimelineScenarioEmitAction):
-            rendered.append("emit({})".format(action.event_name))
+            rendered.append("{}<--".format(action.event_name))
         elif isinstance(action, SysDeSimTimelineScenarioSetInputAction):
             rendered.append(
-                "SetInput({}={})".format(action.input_name, action.value_text)
+                "{}={}".format(action.input_name, action.value_text)
             )
+    for note in notes:
+        if isinstance(note, str) and note.startswith("outbound_signal="):
+            signal = note.split("=", 1)[1].strip()
+            if signal:
+                rendered.append("-->{}".format(signal))
     return tuple(rendered)
 
 
@@ -1553,7 +1573,9 @@ def build_sysdesim_state_coexistence_timeline_report(
                 "symbol": scenario_step.time_symbol,
                 "point_kind": "step",
                 "point_label": scenario_step.step_id,
-                "actions": _render_scenario_actions(scenario_step.actions),
+                "actions": _render_scenario_actions(
+                    scenario_step.actions, scenario_step.notes
+                ),
                 "updates": tuple(step_updates),
             }
         )

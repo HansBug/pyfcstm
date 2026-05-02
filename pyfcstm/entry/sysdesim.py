@@ -29,7 +29,9 @@ from ..convert import (
     build_sysdesim_conversion_report,
     build_sysdesim_timeline_import_report,
     convert_sysdesim_xml_to_dsls,
+    run_sysdesim_static_pre_checks,
 )
+from ..convert.sysdesim.ir import IrDiagnostic
 
 
 def _format_sysdesim_cli_error(err: BaseException) -> str:
@@ -127,7 +129,8 @@ def _fit_text(text: str, width: int, align: str = "left") -> str:
     :type text: str
     :param width: Target width.
     :type width: int
-    :param align: Text alignment inside the fixed width, defaults to ``left``
+    :param align: Text alignment inside the fixed width — ``left``,
+        ``right``, or ``center``. Defaults to ``left``.
     :type align: str, optional
     :return: Width-limited cell text.
     :rtype: str
@@ -135,6 +138,8 @@ def _fit_text(text: str, width: int, align: str = "left") -> str:
     if len(text) <= width:
         if align == "right":
             return text.rjust(width)
+        if align == "center":
+            return text.center(width)
         return text.ljust(width)
     if width <= 3:
         return text[:width]
@@ -438,7 +443,58 @@ def _short_state_text(state_path: str) -> str:
     return state_path.rsplit(".", 1)[-1]
 
 
-def _format_phase11_actions(actions: Sequence[str], main_alias: Optional[str]) -> str:
+def _format_phase11_action_token(item: str, main_alias: Optional[str]) -> str:
+    """Normalize one action string from the witness timeline.
+
+    Backwards-compatible with the older ``emit(X)`` / ``SetInput(y=2300)``
+    encodings used by earlier reports as well as the newer symmetric
+    ``X<--`` (inbound emit) / ``-->X`` (outbound signal) / ``y=2300``
+    (assignment) encodings.
+    """
+    if item.startswith("hidden_auto(") and ": " in item and " -> " in item:
+        prefix = item[len("hidden_auto(") : -1]
+        machine_alias, arc = prefix.split(": ", 1)
+        src, dst = arc.split(" -> ", 1)
+        return "tau:{alias} {src}->{dst}".format(
+            alias=_short_machine_alias(machine_alias, main_alias),
+            src=_short_state_text(src),
+            dst=_short_state_text(dst),
+        )
+    if item.startswith("SetInput("):
+        return item[len("SetInput(") : -1]
+    if item.startswith("emit(") and item.endswith(")"):
+        return "{}<--".format(item[len("emit(") : -1])
+    return item
+
+
+def _classify_action_token(token: str) -> str:
+    """Categorize one normalized action token for ANSI styling."""
+    if token.startswith("tau:"):
+        return "tau"
+    if token.endswith("<--"):
+        return "inbound"
+    if token.startswith("-->"):
+        return "outbound"
+    if "=" in token:
+        return "assignment"
+    return "other"
+
+
+_ACTION_TOKEN_COLORS: Dict[str, Dict[str, object]] = {
+    "tau": {"fg": "yellow"},
+    "inbound": {"fg": "cyan", "bold": True},
+    "outbound": {"fg": "magenta", "bold": True},
+    "assignment": {"fg": "blue"},
+    "other": {},
+}
+
+
+def _format_phase11_actions(
+    actions: Sequence[str],
+    main_alias: Optional[str],
+    *,
+    colorize: bool = False,
+) -> str:
     """
     Build one compact action summary for the Phase11 witness table.
 
@@ -446,7 +502,12 @@ def _format_phase11_actions(actions: Sequence[str], main_alias: Optional[str]) -
     :type actions: collections.abc.Sequence[str]
     :param main_alias: Main output alias when available.
     :type main_alias: str, optional
-    :return: Compact action text.
+    :param colorize: If true, wrap each action token in ANSI styling that
+        emphasizes the kind of event it represents
+        (inbound emit / outbound signal / tau auto-transition / variable
+        assignment).
+    :type colorize: bool
+    :return: Compact action text, optionally ANSI-colored.
     :rtype: str
     """
     if not actions:
@@ -454,21 +515,12 @@ def _format_phase11_actions(actions: Sequence[str], main_alias: Optional[str]) -
 
     rendered = []
     for item in actions:
-        if item.startswith("hidden_auto(") and ": " in item and " -> " in item:
-            prefix = item[len("hidden_auto(") : -1]
-            machine_alias, arc = prefix.split(": ", 1)
-            src, dst = arc.split(" -> ", 1)
-            rendered.append(
-                "tau:{alias} {src}->{dst}".format(
-                    alias=_short_machine_alias(machine_alias, main_alias),
-                    src=_short_state_text(src),
-                    dst=_short_state_text(dst),
-                )
-            )
-        elif item.startswith("SetInput("):
-            rendered.append(item[len("SetInput(") : -1])
+        token = _format_phase11_action_token(item, main_alias)
+        if colorize:
+            style = _ACTION_TOKEN_COLORS.get(_classify_action_token(token), {})
+            rendered.append(click.style(token, **style))
         else:
-            rendered.append(item)
+            rendered.append(token)
     return ",".join(rendered)
 
 
@@ -493,71 +545,138 @@ def _emit_phase11_timeline_table(
     machine_headers = [
         _short_machine_alias(alias, main_alias) for alias in output_aliases
     ]
-    headers = ["t", "pt", "act"] + machine_headers + ["co"]
-    rows = []
+    headers = ["t", "act"] + machine_headers + ["co"]
+    plain_rows: List[List[str]] = []
+    colored_rows: List[List[str]] = []
 
-    for item in timeline_points:
+    first_coex_symbol = timeline_report["first_coexistence_symbol"]
+    for index, item in enumerate(timeline_points):
         state_map = {
             _short_machine_alias(alias, main_alias): _short_state_text(state)
             for alias, state in item["machine_states"]
         }
-        point_label = item["point_label"]
-        if item["point_kind"] == "auto":
-            point_label = "tau@{}".format(point_label)
-        co_text = ""
-        if item["is_coexistent"]:
-            co_text = (
-                "start"
-                if item["symbol"] == timeline_report["first_coexistence_symbol"]
-                else "yes"
-            )
-        rows.append(
-            [
-                item["time_value_text"],
-                point_label,
-                _format_phase11_actions(item["actions"], main_alias),
-            ]
-            + [state_map.get(header, "-") for header in machine_headers]
-            + [co_text]
+        if index == 0:
+            co_text = "initial"
+        elif item["is_coexistent"]:
+            co_text = "start" if item["symbol"] == first_coex_symbol else "yes"
+        else:
+            co_text = ""
+        plain_act = _format_phase11_actions(item["actions"], main_alias)
+        colored_act = _format_phase11_actions(
+            item["actions"], main_alias, colorize=True
+        )
+        if co_text == "start":
+            colored_co = click.style("start", fg="green", bold=True)
+        elif co_text == "yes":
+            colored_co = click.style("yes", fg="green")
+        elif co_text == "initial":
+            colored_co = click.style("initial", fg="cyan")
+        else:
+            colored_co = ""
+        machine_cells = [state_map.get(header, "-") for header in machine_headers]
+        plain_rows.append(
+            [item["time_value_text"], plain_act] + machine_cells + [co_text]
+        )
+        colored_rows.append(
+            [item["time_value_text"], colored_act] + machine_cells + [colored_co]
         )
 
     widths = []
+    aligns: List[str] = []
     for index, header in enumerate(headers):
-        max_len = max([len(header)] + [len(row[index]) for row in rows])
+        max_len = max([len(header)] + [len(row[index]) for row in plain_rows])
         if header == "t":
             width = max(len(header), min(max_len, 8))
-        elif header == "pt":
-            width = max(len(header), min(max_len, 14))
+            aligns.append("right")
         elif header == "act":
             width = max(len(header), min(max_len, 28))
+            aligns.append("center")
         elif header == "co":
             width = max(len(header), min(max_len, 8))
+            aligns.append("center")
         else:
             width = max(len(header), min(max_len, 14))
+            aligns.append("center")
         widths.append(width)
 
-    def _row(values: Sequence[str]) -> str:
+    def _fit_with_ansi(plain: str, colored: str, width: int, align: str) -> str:
+        """Fit a colored cell to ``width`` columns using ``plain`` for length."""
+        if len(plain) > width:  # pragma: no cover - widths are computed from observed cell lengths so truncation never triggers in practice
+            if width <= 3:
+                return plain[:width]
+            return plain[: width - 3] + "..."
+        gap = width - len(plain)
+        if align == "right":
+            return (" " * gap) + colored
+        if align == "center":
+            left_pad = gap // 2
+            right_pad = gap - left_pad
+            return (" " * left_pad) + colored + (" " * right_pad)
+        return colored + (" " * gap)  # pragma: no cover - left-align path unused by the witness table
+
+    def _row_plain(values: Sequence[str]) -> str:
         return (
             "| "
             + " | ".join(
-                _fit_text(str(item), width) for item, width in zip(values, widths)
+                _fit_text(str(item), width, align)
+                for item, width, align in zip(values, widths, aligns)
             )
             + " |"
         )
 
+    def _row_colored(
+        plain: Sequence[str], colored: Sequence[str], header_row: bool = False
+    ) -> str:
+        cell_aligns = ["center"] * len(aligns) if header_row else aligns
+        return (
+            "| "
+            + " | ".join(
+                _fit_with_ansi(str(p), str(c), width, align)
+                for p, c, width, align in zip(plain, colored, widths, cell_aligns)
+            )
+            + " |"
+        )
+
+    header_cells = [click.style(h, fg="cyan", bold=True) for h in headers]
     click.echo("  witness timeline:")
     click.echo("    - t: solved continuous-time value.")
     click.echo(
-        "    - pt: `sXX` is one imported step, `tau@...` is one hidden auto point."
+        "    - act: actions observed at that point. "
+        "`Sig9<--` = inbound emit, `-->Sig13` = outbound signal, "
+        "`tau:R3 S->X` = hidden auto-transition, `y=2300` = SetInput."
     )
-    click.echo("    - act: actions observed at that point.")
     click.echo(
-        "    - co: `start` marks the first coexistence point; `yes` means coexistence still holds."
+        "    - co: `initial` marks the initial state, `start` marks the first "
+        "coexistence point, `yes` means coexistence still holds. The `start` "
+        "and `yes` rows are underlined in color terminals."
     )
-    click.echo("  " + _row(headers))
-    click.echo("  " + _row(["-" * width for width in widths]))
-    for row in rows:
-        click.echo("  " + _row(row))
+    def _apply_row_style(line: str, *, underline: bool, bold: bool) -> str:
+        """Re-apply line-level ANSI attributes after each inner reset.
+
+        ``click.style`` resets every attribute on ``\\x1b[0m``, which our
+        per-cell coloring emits at the end of each colored token. To keep an
+        outer underline active across the whole row we open the row-level
+        styles, then re-open them after every inner reset.
+        """
+        if not underline and not bold:  # pragma: no cover - only called with underline=True
+            return line
+        opener = ""
+        if underline:
+            opener += "\x1b[4m"
+        if bold:
+            opener += "\x1b[1m"
+        return opener + line.replace("\x1b[0m", "\x1b[0m" + opener) + "\x1b[0m"
+
+    click.echo("  " + _row_colored(headers, header_cells, header_row=True))
+    click.echo("  " + _row_plain(["-" * width for width in widths]))
+    for plain, colored in zip(plain_rows, colored_rows):
+        co_text = plain[-1]
+        line = _row_colored(plain, colored)
+        if co_text == "start":
+            line = _apply_row_style(line, underline=True, bold=True)
+        elif co_text == "yes":
+            line = _apply_row_style(line, underline=True, bold=False)
+        click.echo("  " + line)
 
 
 def _emit_sysdesim_cli_summary(
@@ -829,6 +948,128 @@ def _emit_sysdesim_validate_summary(
         )
 
 
+def _diagnostic_level_label(level: str) -> str:
+    """
+    Build one short colored severity label for a static-check diagnostic.
+
+    :param level: Severity label such as ``error`` or ``warning``.
+    :type level: str
+    :return: ANSI-colored short tag like ``[ERROR]`` or ``[WARN]``.
+    :rtype: str
+    """
+    normalized = (level or "").lower()
+    if normalized == "error":
+        return click.style("[ERROR]", fg="red", bold=True)
+    if normalized == "warning":
+        return click.style("[WARN] ", fg="yellow", bold=True)
+    return click.style("[INFO] ", fg="cyan", bold=True)
+
+
+def _serialize_diagnostic(diag: IrDiagnostic) -> Dict[str, object]:
+    """Convert one :class:`IrDiagnostic` into a JSON-serializable dict."""
+    payload: Dict[str, object] = {
+        "level": diag.level,
+        "code": diag.code,
+        "message": diag.message,
+    }
+    if diag.source_id is not None:
+        payload["source_id"] = diag.source_id
+    if diag.state_path is not None:
+        payload["state_path"] = list(diag.state_path)
+    if diag.details is not None:
+        payload["details"] = diag.details
+    if diag.hints:
+        payload["hints"] = list(diag.hints)
+    return payload
+
+
+def _emit_static_check_diagnostic(diag: IrDiagnostic) -> None:
+    """Print one colored, multi-line static-check diagnostic block to stdout."""
+    label = _diagnostic_level_label(diag.level)
+    code_text = click.style(diag.code, fg="magenta", bold=True)
+    click.echo("{label} {code}".format(label=label, code=code_text))
+    for line in (diag.message or "").splitlines():
+        click.echo("  " + line)
+    if diag.source_id:
+        click.echo("  " + click.style("source: ", dim=True) + diag.source_id)
+    if diag.details:
+        # Only surface the most actionable structured fields here; the full
+        # JSON sits in --report-file under ``static_check.diagnostics``.
+        for key in (
+            "involved_constraint_ids",
+            "suggested_first_culprit_constraint_id",
+            "involved_steps",
+            "machine_alias",
+            "state_path",
+            "step_id",
+            "signal",
+            "pre_state_path",
+            "transition_source_states",
+            "closest_matches",
+        ):
+            value = diag.details.get(key)
+            if not value:
+                continue
+            if isinstance(value, (list, tuple)):
+                rendered = ", ".join(str(item) for item in value)
+            else:
+                rendered = str(value)
+            click.echo("  " + click.style("{}:".format(key), dim=True) + " " + rendered)
+    if diag.hints:
+        click.echo("  " + click.style("hints:", fg="green", bold=True))
+        for hint in diag.hints:
+            click.echo("    - " + hint)
+
+
+def _emit_static_check_summary(diagnostics: Sequence[IrDiagnostic]) -> Dict[str, int]:
+    """
+    Print a colored static-check section header + per-diagnostic blocks; return
+    a counts dict so callers can decide whether to continue.
+    """
+    error_count = sum(1 for d in diagnostics if (d.level or "").lower() == "error")
+    warning_count = sum(
+        1 for d in diagnostics if (d.level or "").lower() == "warning"
+    )
+    if not diagnostics:
+        click.echo(
+            "{label}  {message}".format(
+                label=click.style("Static Pre-check", fg="cyan", bold=True),
+                message=click.style("OK (no static issues found)", fg="green"),
+            )
+        )
+        return {"errors": 0, "warnings": 0}
+
+    parts = []
+    if error_count:
+        parts.append(
+            click.style(
+                "{} error{}".format(error_count, "" if error_count == 1 else "s"),
+                fg="red",
+                bold=True,
+            )
+        )
+    if warning_count:
+        parts.append(
+            click.style(
+                "{} warning{}".format(warning_count, "" if warning_count == 1 else "s"),
+                fg="yellow",
+                bold=True,
+            )
+        )
+    summary = ", ".join(parts) if parts else "0 issues"
+    click.echo(
+        "{label}  {message}".format(
+            label=click.style("Static Pre-check", fg="cyan", bold=True),
+            message=summary,
+        )
+    )
+    for diag in diagnostics:
+        click.echo("")
+        _emit_static_check_diagnostic(diag)
+    click.echo("")
+    return {"errors": error_count, "warnings": warning_count}
+
+
 def _run_sysdesim_convert(
     input_xml_file: str,
     output_dir: str,
@@ -896,8 +1137,69 @@ def _run_sysdesim_validate(
     right_machine_alias: Optional[str],
     right_state_ref: Optional[str],
     observation_scope: str,
+    skip_static_check: bool = False,
 ) -> None:
     """Run the timeline validation/report flow."""
+    static_diagnostics: List[IrDiagnostic] = []
+    if not skip_static_check:
+        try:
+            static_diagnostics = run_sysdesim_static_pre_checks(
+                xml_path=input_xml_file,
+                machine_name=machine_name,
+                interaction_name=interaction_name,
+                tick_duration_ms=tick_duration_ms,
+                left_machine_alias=left_machine_alias,
+                left_state_ref=left_state_ref,
+                right_machine_alias=right_machine_alias,
+                right_state_ref=right_state_ref,
+            )
+        except (KeyError, LookupError, NotImplementedError, ValueError) as err:
+            raise ClickErrorException(_format_sysdesim_cli_error(err))
+        counts = _emit_static_check_summary(static_diagnostics)
+        if counts["errors"]:
+            click.echo(
+                click.style(
+                    "Static pre-check found {} blocking error(s); skipping SMT-based "
+                    "validation. Fix the issues above (or pass --no-static-check to "
+                    "force-run SMT) and try again.".format(counts["errors"]),
+                    fg="red",
+                    bold=True,
+                )
+            )
+            if report_file is not None:
+                static_payload = {
+                    "static_check": {
+                        "skipped": False,
+                        "blocking_errors": counts["errors"],
+                        "warnings": counts["warnings"],
+                        "diagnostics": [
+                            _serialize_diagnostic(d) for d in static_diagnostics
+                        ],
+                    }
+                }
+                report_path = Path(report_file)
+                report_path.parent.mkdir(parents=True, exist_ok=True)
+                report_path.write_text(
+                    json.dumps(
+                        static_payload, indent=2, ensure_ascii=False, sort_keys=True
+                    )
+                    + "\n",
+                    encoding="utf-8",
+                )
+            raise ClickErrorException(
+                "static pre-check failed with {} blocking error(s)".format(
+                    counts["errors"]
+                )
+            )
+        if counts["warnings"]:
+            click.echo(
+                click.style(
+                    "Static pre-check passed with warnings; continuing to "
+                    "SMT-based validation.",
+                    fg="yellow",
+                )
+            )
+
     try:
         report_data = build_sysdesim_timeline_import_report(
             xml_path=input_xml_file,
@@ -912,6 +1214,17 @@ def _run_sysdesim_validate(
         )
     except (KeyError, LookupError, NotImplementedError, ValueError) as err:
         raise ClickErrorException(_format_sysdesim_cli_error(err))
+
+    report_data["static_check"] = {
+        "skipped": skip_static_check,
+        "blocking_errors": sum(
+            1 for d in static_diagnostics if (d.level or "").lower() == "error"
+        ),
+        "warnings": sum(
+            1 for d in static_diagnostics if (d.level or "").lower() == "warning"
+        ),
+        "diagnostics": [_serialize_diagnostic(d) for d in static_diagnostics],
+    }
 
     report_path = None
     if report_file is not None:
@@ -1139,6 +1452,18 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
         show_default=True,
         help="Observation scope used when an optional Phase11 query is included.",
     )
+    @click.option(
+        "--no-static-check",
+        "skip_static_check",
+        is_flag=True,
+        default=False,
+        help=(
+            "Skip the static pre-check phase (timing UNSAT detection, state "
+            "reachability, signal-drop warnings, query-name validation). The "
+            "downstream SMT validation will still run, but blocking errors at "
+            "the model/scenario level are no longer surfaced ahead of time."
+        ),
+    )
     @command_wrap()
     def sysdesim_validate(
         input_xml_file: str,
@@ -1151,6 +1476,7 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
         right_machine_alias: Optional[str],
         right_state_ref: Optional[str],
         observation_scope: str,
+        skip_static_check: bool,
     ) -> None:
         """
         Build one readable timeline validation summary for one SysDeSim input.
@@ -1192,6 +1518,172 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
             right_machine_alias=right_machine_alias,
             right_state_ref=right_state_ref,
             observation_scope=observation_scope,
+            skip_static_check=skip_static_check,
         )
+
+    @sysdesim.command(
+        "static-check",
+        help=(
+            "Run the static pre-check phase only (no SMT). Reports timing "
+            "contradictions, unreachable states, dropped signals, and unknown "
+            "query state references in a colored terminal-friendly form."
+        ),
+        context_settings=CONTEXT_SETTINGS,
+    )
+    @click.option(
+        "-i",
+        "--input-xml",
+        "input_xml_file",
+        type=str,
+        required=True,
+        help="Input SysDeSim XML/XMI file.",
+    )
+    @click.option(
+        "--machine-name",
+        "machine_name",
+        type=str,
+        default=None,
+        help="Exact UML state-machine name to inspect.",
+    )
+    @click.option(
+        "--interaction-name",
+        "interaction_name",
+        type=str,
+        default=None,
+        help="Exact UML interaction name to inspect.",
+    )
+    @click.option(
+        "--tick-duration-ms",
+        "tick_duration_ms",
+        type=float,
+        default=None,
+        help="Runtime tick duration in milliseconds required for uml:TimeEvent lowering.",
+    )
+    @click.option(
+        "--report-file",
+        "report_file",
+        type=str,
+        default=None,
+        help=(
+            "Optional JSON report path. When provided, the CLI writes a JSON "
+            "document containing the structured static-check diagnostics."
+        ),
+    )
+    @click.option(
+        "--left-machine-alias",
+        "left_machine_alias",
+        type=str,
+        default=None,
+        help="Optional left machine alias for a Phase11 coexistence query.",
+    )
+    @click.option(
+        "--left-state",
+        "left_state_ref",
+        type=str,
+        default=None,
+        help="Optional left state ref for a Phase11 coexistence query.",
+    )
+    @click.option(
+        "--right-machine-alias",
+        "right_machine_alias",
+        type=str,
+        default=None,
+        help="Optional right machine alias for a Phase11 coexistence query.",
+    )
+    @click.option(
+        "--right-state",
+        "right_state_ref",
+        type=str,
+        default=None,
+        help="Optional right state ref for a Phase11 coexistence query.",
+    )
+    @click.option(
+        "--warn-as-error",
+        "warn_as_error",
+        is_flag=True,
+        default=False,
+        help=(
+            "Treat warning-level diagnostics (e.g. dropped signals) as blocking "
+            "errors. Useful in CI pipelines where any modeling smell should "
+            "fail the build."
+        ),
+    )
+    @command_wrap()
+    def sysdesim_static_check(
+        input_xml_file: str,
+        machine_name: Optional[str],
+        interaction_name: Optional[str],
+        tick_duration_ms: Optional[float],
+        report_file: Optional[str],
+        left_machine_alias: Optional[str],
+        left_state_ref: Optional[str],
+        right_machine_alias: Optional[str],
+        right_state_ref: Optional[str],
+        warn_as_error: bool,
+    ) -> None:
+        """
+        Run the static pre-check phase only and exit non-zero on errors.
+
+        :param input_xml_file: Input SysDeSim XML/XMI file.
+        :type input_xml_file: str
+        :param machine_name: Exact UML state-machine name to inspect.
+        :type machine_name: str, optional
+        :param interaction_name: Exact UML interaction name to inspect.
+        :type interaction_name: str, optional
+        :param tick_duration_ms: Runtime tick duration in milliseconds used
+            for compatibility lowering.
+        :type tick_duration_ms: float, optional
+        :param report_file: Optional JSON report path.
+        :type report_file: str, optional
+        :param left_machine_alias: Optional Phase11 left machine alias.
+        :type left_machine_alias: str, optional
+        :param left_state_ref: Optional Phase11 left state ref.
+        :type left_state_ref: str, optional
+        :param right_machine_alias: Optional Phase11 right machine alias.
+        :type right_machine_alias: str, optional
+        :param right_state_ref: Optional Phase11 right state ref.
+        :type right_state_ref: str, optional
+        :param warn_as_error: Whether to treat warnings as blocking errors.
+        :type warn_as_error: bool
+        :return: ``None``.
+        :rtype: None
+        """
+        try:
+            diagnostics = run_sysdesim_static_pre_checks(
+                xml_path=input_xml_file,
+                machine_name=machine_name,
+                interaction_name=interaction_name,
+                tick_duration_ms=tick_duration_ms,
+                left_machine_alias=left_machine_alias,
+                left_state_ref=left_state_ref,
+                right_machine_alias=right_machine_alias,
+                right_state_ref=right_state_ref,
+            )
+        except (KeyError, LookupError, NotImplementedError, ValueError) as err:
+            raise ClickErrorException(_format_sysdesim_cli_error(err))
+        counts = _emit_static_check_summary(diagnostics)
+
+        if report_file is not None:
+            payload = {
+                "static_check": {
+                    "warn_as_error": warn_as_error,
+                    "blocking_errors": counts["errors"],
+                    "warnings": counts["warnings"],
+                    "diagnostics": [_serialize_diagnostic(d) for d in diagnostics],
+                }
+            }
+            report_path = Path(report_file)
+            report_path.parent.mkdir(parents=True, exist_ok=True)
+            report_path.write_text(
+                json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True)
+                + "\n",
+                encoding="utf-8",
+            )
+
+        blocking = counts["errors"] + (counts["warnings"] if warn_as_error else 0)
+        if blocking:
+            raise ClickErrorException(
+                "static pre-check found {} blocking issue(s)".format(blocking)
+            )
 
     return cli

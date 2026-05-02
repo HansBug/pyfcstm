@@ -1694,11 +1694,11 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
     @sysdesim.command(
         "sequence-render",
         help=(
-            "Render the SysDeSim sequence diagram (顺序图) of one interaction "
-            "as SVG or PNG, in the visual style of the SysDeSim XMI tool's "
-            "own export (actor boxes at top, lifelines, numbered message "
-            "arrows, inline time brackets, variable-assignment pills on the "
-            "left). PNG output uses an embedded resvg-wasm rasterizer; pass "
+            "Render the SysDeSim sequence diagram of one interaction as SVG "
+            "or PNG, in the visual style of the SysDeSim XMI tool's own "
+            "export (actor boxes at top, lifelines, numbered message arrows, "
+            "inline time brackets, variable-assignment pills on the left). "
+            "PNG output uses an embedded resvg-wasm rasterizer; pass "
             "--font-file to add CJK / region-specific glyph coverage."
         ),
         context_settings=CONTEXT_SETTINGS,

@@ -1,0 +1,1157 @@
+"""
+End-to-end smoke-test runner for the :mod:`pyfcstm` package.
+
+This module powers the ``pyfcstm --smoke-test`` CLI flag. Its single
+responsibility is to verify, on a real running install, that every
+component pyfcstm relies on is present and minimally functional:
+
+* Python runtime + critical stdlib modules
+* Every required third-party library (``click``, ``jinja2``,
+  ``antlr4``, ``z3-solver``, ``hbutils``, ...) and the sysdesim-render
+  optional extras (``py-mini-racer`` / ``mini-racer``)
+* Native binary smoke for the deps that ship a compiled component
+  (``z3-solver``, ``py-mini-racer``'s V8 isolate, the V8 ``WebAssembly``
+  surface and the bundled ``resvg-wasm`` rasterizer)
+* Bundled static resources: ANTLR grammar generated assets, built-in
+  template archives, the SysDeSim JS render bundle and DejaVu Sans font
+* Minimum end-to-end paths through DSL parsing, model building,
+  expression / statement renderers, the simulator, the Z3 solver
+  translation, and the four SysDeSim CLI subcommands
+
+The runner is the **last line of defence** for diagnosing a broken
+install: every case is isolated, every exception is caught and reported,
+and the runner finishes even when most cases fail. The output uses
+``click.style`` ANSI coloring (``[PASS]`` green, ``[FAIL]`` red,
+``[INFO]`` cyan) and is structured so a human or an LLM debugger can act
+on it directly.
+
+The module contains:
+
+* :class:`SmokeCase` - One isolated verification step.
+* :class:`SmokeResult` - Outcome of running one ``SmokeCase``.
+* :func:`run_smoke_test` - Public runner used by the CLI flag.
+"""
+
+from __future__ import annotations
+
+import base64
+import importlib
+import io
+import json
+import os
+import platform
+import struct
+import sys
+import time
+import traceback
+from dataclasses import dataclass, field
+from typing import Callable, List, Optional, Tuple
+
+
+# --------------------------------------------------------------------------- #
+# Types
+# --------------------------------------------------------------------------- #
+
+
+@dataclass
+class SmokeCase:
+    """One isolated smoke-test verification step.
+
+    :param name: Short stable identifier (e.g. ``"dep_click"``).
+    :type name: str
+    :param method: Human-readable description of *how* the case
+        verifies (e.g. ``"import click"``).
+    :type method: str
+    :param func: Zero-argument callable that performs the verification.
+        Must raise on failure; returning normally counts as PASS.
+    :type func: Callable[[], None]
+    :param remediation: Optional one-line remediation hint that will be
+        printed verbatim under a FAIL block. Phrase as an actionable
+        suggestion (e.g. ``"pip install pyyaml"``).
+    :type remediation: str, optional
+    """
+
+    name: str
+    method: str
+    func: Callable[[], None]
+    remediation: Optional[str] = None
+
+
+@dataclass
+class SmokeResult:
+    """Outcome of running one :class:`SmokeCase`.
+
+    :param case: The originating case.
+    :type case: SmokeCase
+    :param status: ``"PASS"`` or ``"FAIL"``.
+    :type status: str
+    :param elapsed_ms: How many milliseconds the case took.
+    :type elapsed_ms: float
+    :param error: Captured exception when ``status == "FAIL"``,
+        ``None`` otherwise.
+    :type error: BaseException, optional
+    :param error_traceback: Captured ``traceback.format_exc()`` text
+        when ``status == "FAIL"``.
+    :type error_traceback: str, optional
+    """
+
+    case: SmokeCase
+    status: str
+    elapsed_ms: float
+    error: Optional[BaseException] = None
+    error_traceback: Optional[str] = None
+
+
+# --------------------------------------------------------------------------- #
+# Tiny SysDeSim XMI fixture used by sysdesim end-to-end smoke cases.
+# Inlined so the smoke runner has zero dependency on test fixture files.
+# Two ASCII lifelines, two messages, no temporal constraints, no
+# dropped-signal warnings - the simplest sysdesim shape the converter
+# / validator / static-check / sequence-render pipeline can consume.
+# --------------------------------------------------------------------------- #
+
+
+_SMOKE_SYSDESIM_XMI = """<?xml version="1.0" encoding="UTF-8"?>
+<xmi:XMI xmi:version="20131001"
+         xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
+         xmlns:uml="http://www.eclipse.org/uml2/5.0.0/UML">
+  <uml:Model xmi:id="m1" name="m1">
+    <packagedElement xmi:type="uml:Class" xmi:id="cls1" name="SmokeMachine" classifierBehavior="machine_1">
+      <ownedBehavior xmi:type="uml:StateMachine" xmi:id="machine_1" name="SmokeMachine">
+        <region xmi:type="uml:Region" xmi:id="region_root" name="">
+          <transition xmi:type="uml:Transition" xmi:id="tx_init" source="init_root" target="state_idle"/>
+          <transition xmi:type="uml:Transition" xmi:id="tx_idle_done" source="state_idle" target="state_done">
+            <trigger xmi:type="uml:Trigger" xmi:id="trigger_go" event="signal_evt_go"/>
+          </transition>
+          <subvertex xmi:type="uml:Pseudostate" xmi:id="init_root"/>
+          <subvertex xmi:type="uml:State" xmi:id="state_idle" name="Idle"/>
+          <subvertex xmi:type="uml:State" xmi:id="state_done" name="Done"/>
+        </region>
+      </ownedBehavior>
+      <ownedBehavior xmi:type="uml:Interaction" xmi:id="interaction_1" name="SmokeScenario">
+        <ownedAttribute xmi:type="uml:Property" xmi:id="prop_send" name="sender"/>
+        <ownedAttribute xmi:type="uml:Property" xmi:id="prop_recv" name="receiver"/>
+        <lifeline xmi:type="uml:Lifeline" xmi:id="ll_send" name="sender" represents="prop_send"/>
+        <lifeline xmi:type="uml:Lifeline" xmi:id="ll_recv" name="receiver" represents="prop_recv"/>
+        <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="go_send" covered="ll_send" message="msg_go"/>
+        <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="go_recv" covered="ll_recv" message="msg_go"/>
+        <message xmi:type="uml:Message" xmi:id="msg_go" sendEvent="go_send" receiveEvent="go_recv" signature="signal_go"/>
+      </ownedBehavior>
+    </packagedElement>
+    <packagedElement xmi:type="uml:Signal" xmi:id="signal_go" name="Go"/>
+    <packagedElement xmi:type="uml:SignalEvent" xmi:id="signal_evt_go" signal="signal_go"/>
+  </uml:Model>
+</xmi:XMI>
+"""
+
+
+# --------------------------------------------------------------------------- #
+# Verification helpers (each one is a SmokeCase ``func`` body).
+# Every helper imports its dependencies inside the function body so an
+# import failure in one case never poisons the rest of the run.
+# --------------------------------------------------------------------------- #
+
+
+def _verify_python_runtime() -> None:
+    if sys.version_info < (3, 7):
+        raise RuntimeError(
+            "Python {} is below the supported floor (3.7+). pyfcstm targets "
+            "the 3.7-3.14 envelope.".format(sys.version.split()[0])
+        )
+
+
+def _verify_core_stdlib() -> None:
+    # Touch every stdlib module that pyfcstm reaches for at import time.
+    for mod in (
+        "json", "re", "pathlib", "hashlib", "base64", "struct",
+        "importlib", "threading", "tempfile", "subprocess", "shutil",
+        "zipfile", "io", "os", "sys", "time", "traceback",
+    ):
+        importlib.import_module(mod)
+
+
+def _make_dep_check(import_name: str) -> Callable[[], None]:
+    """Build a callable that verifies the dep is importable.
+
+    We do not read ``__version__`` at this stage because some deps (e.g.
+    Click 9.1+) emit a ``DeprecationWarning`` when that attribute is
+    accessed. The import itself is the ground-truth smoke we care about
+    here; native binary checks live in the ``Native binaries`` group.
+    """
+
+    def _check() -> None:
+        importlib.import_module(import_name)
+
+    return _check
+
+
+def _verify_z3_native() -> None:
+    import z3  # noqa: F401
+
+    solver = z3.Solver()
+    x = z3.Int("x")
+    solver.add(x > 0)
+    solver.add(x < 5)
+    result = solver.check()
+    if str(result) != "sat":
+        raise RuntimeError(
+            "z3 trivial SAT (0 < x < 5) returned {!r}; expected sat. The "
+            "z3 native library may be miscompiled or stripped.".format(str(result))
+        )
+    model = solver.model()
+    val = model[x].as_long()
+    if not (0 < val < 5):
+        raise RuntimeError(
+            "z3 returned model x={} outside (0,5).".format(val)
+        )
+
+
+def _import_mini_racer():
+    # Both ``py-mini-racer`` (Python 3.7) and ``mini-racer`` (Python 3.8+)
+    # land at the same import path. We surface a clearer error here so a
+    # FAIL on this case immediately points at the install command.
+    return importlib.import_module("py_mini_racer").MiniRacer
+
+
+def _verify_v8_isolate() -> None:
+    MiniRacer = _import_mini_racer()
+    ctx = MiniRacer()
+    result = ctx.eval("40 + 2")
+    if result != 42:
+        raise RuntimeError(
+            "V8 isolate returned {!r} for ``40 + 2``; expected 42. "
+            "The mini-racer binding is mis-installed.".format(result)
+        )
+
+
+def _verify_v8_webassembly() -> None:
+    # Minimal wasm module exporting ``add(i32, i32) -> i32``. If the V8
+    # isolate cannot instantiate this, the resvg-wasm path will fail too.
+    MiniRacer = _import_mini_racer()
+    ctx = MiniRacer()
+    js = """
+    const wasmBytes = new Uint8Array([
+      0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00,
+      0x01, 0x07, 0x01, 0x60, 0x02, 0x7f, 0x7f, 0x01, 0x7f,
+      0x03, 0x02, 0x01, 0x00,
+      0x07, 0x07, 0x01, 0x03, 0x61, 0x64, 0x64, 0x00, 0x00,
+      0x0a, 0x09, 0x01, 0x07, 0x00, 0x20, 0x00, 0x20, 0x01, 0x6a, 0x0b
+    ]);
+    const m = new WebAssembly.Module(wasmBytes);
+    const i = new WebAssembly.Instance(m, {});
+    i.exports.add(7, 35);
+    """
+    result = ctx.eval(js)
+    if result != 42:
+        raise RuntimeError(
+            "WebAssembly.Module + Instance smoke returned {!r}; expected "
+            "42. The V8 isolate is missing wasm support.".format(result)
+        )
+
+
+def _verify_dsl_parser() -> None:
+    from pyfcstm.dsl import parse_with_grammar_entry
+
+    src = "def int counter = 0;\nstate Active;\n"
+    ast = parse_with_grammar_entry(src, "state_machine_dsl")
+    if ast is None:
+        raise RuntimeError("Grammar entry returned a None AST node.")
+
+
+def _verify_model_build() -> None:
+    from pyfcstm.dsl import parse_with_grammar_entry
+    from pyfcstm.model.model import parse_dsl_node_to_state_machine
+
+    src = (
+        "def int counter = 0;\n"
+        "state System {\n"
+        "    [*] -> Idle;\n"
+        "    state Idle;\n"
+        "    state Running;\n"
+        "    Idle -> Running :: Start;\n"
+        "}\n"
+    )
+    ast = parse_with_grammar_entry(src, "state_machine_dsl")
+    machine = parse_dsl_node_to_state_machine(ast)
+    walked = list(machine.walk_states())
+    if not walked:
+        raise RuntimeError("State machine walk_states() returned no states.")
+    if "counter" not in machine.defines:
+        raise RuntimeError(
+            "State machine missing the declared 'counter' variable: defines={}".format(
+                sorted(machine.defines.keys())
+            )
+        )
+
+
+def _verify_render_expression_styles() -> None:
+    from pyfcstm.dsl.node import BinaryOp, Integer, Name
+    from pyfcstm.render.expr import render_expr_node
+
+    # Build ``x + 1 > 0`` directly as DSL nodes so the case has zero
+    # dependence on parser / model layers (those are exercised by their
+    # own dedicated cases). The renderer must support the full nine-style
+    # matrix declared in the templating layer.
+    add_node = BinaryOp(Name("x"), "+", Integer("1"))
+    cmp_node = BinaryOp(add_node, ">", Integer("0"))
+    for style in ("dsl", "c", "cpp", "python", "java", "js", "ts", "rust", "go"):
+        rendered = render_expr_node(cmp_node, lang_style=style)
+        if not isinstance(rendered, str) or not rendered:
+            raise RuntimeError(
+                "render_expr_node(style={!r}) returned {!r}; expected non-empty string.".format(
+                    style, rendered
+                )
+            )
+
+
+def _verify_simulator_runtime() -> None:
+    from pyfcstm.dsl import parse_with_grammar_entry
+    from pyfcstm.model.model import parse_dsl_node_to_state_machine
+    from pyfcstm.simulate.runtime import SimulationRuntime
+
+    src = (
+        "def int counter = 0;\n"
+        "state System {\n"
+        "    [*] -> Idle;\n"
+        "    state Idle { during { counter = counter + 1; } }\n"
+        "}\n"
+    )
+    machine = parse_dsl_node_to_state_machine(parse_with_grammar_entry(src, "state_machine_dsl"))
+    runtime = SimulationRuntime(machine)
+    runtime.cycle()
+    runtime.cycle()
+    counter = dict(runtime.vars).get("counter", 0)
+    if counter <= 0:
+        raise RuntimeError(
+            "Simulator did not advance counter; got vars={!r}".format(dict(runtime.vars))
+        )
+
+
+def _verify_solver_z3_translation() -> None:
+    import z3
+
+    from pyfcstm.dsl import parse_with_grammar_entry
+    from pyfcstm.model.model import parse_dsl_node_to_state_machine
+    from pyfcstm.solver.expr import expr_to_z3
+
+    src = (
+        "def int x = 0;\n"
+        "state Sys {\n"
+        "    [*] -> A;\n"
+        "    state A;\n"
+        "    state B;\n"
+        "    A -> B : if [x > 0 && x < 10];\n"
+        "}\n"
+    )
+    machine = parse_dsl_node_to_state_machine(parse_with_grammar_entry(src, "state_machine_dsl"))
+    guard = None
+    for state in machine.walk_states():
+        for transition in getattr(state, "transitions", []) or []:
+            if getattr(transition, "guard", None) is not None:
+                guard = transition.guard
+                break
+        if guard is not None:
+            break
+    if guard is None:
+        raise RuntimeError("No guarded transition to translate.")
+    z3_vars = {"x": z3.Int("x")}
+    z3_expr = expr_to_z3(guard, z3_vars)
+    if z3_expr is None:
+        raise RuntimeError("expr_to_z3 returned None.")
+
+
+def _verify_resource_grammar() -> None:
+    import pyfcstm.dsl.grammar as grammar_pkg
+
+    grammar_dir = os.path.dirname(os.path.abspath(grammar_pkg.__file__))
+    needed = ("GrammarLexer.py", "GrammarParser.py", "GrammarListener.py")
+    missing = [n for n in needed if not os.path.exists(os.path.join(grammar_dir, n))]
+    if missing:
+        raise RuntimeError(
+            "Generated ANTLR grammar files missing under {}: {}".format(
+                grammar_dir, ", ".join(missing)
+            )
+        )
+
+
+def _verify_resource_template_index() -> None:
+    import pyfcstm.template as template_pkg
+
+    pkg_dir = os.path.dirname(os.path.abspath(template_pkg.__file__))
+    index_path = os.path.join(pkg_dir, "index.json")
+    if not os.path.exists(index_path):
+        raise RuntimeError(
+            "Built-in template index missing at {}. The wheel did not "
+            "ship templates/index.json.".format(index_path)
+        )
+    with open(index_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    entries = data.get("templates") or []
+    if not entries:
+        raise RuntimeError("template/index.json declares zero templates.")
+    missing_archives = []
+    for entry in entries:
+        archive_name = entry.get("archive")
+        if not archive_name:
+            missing_archives.append(repr(entry))
+            continue
+        if not os.path.exists(os.path.join(pkg_dir, archive_name)):
+            missing_archives.append(archive_name)
+    if missing_archives:
+        raise RuntimeError(
+            "Built-in template archives missing under {}: {}".format(
+                pkg_dir, ", ".join(missing_archives)
+            )
+        )
+
+
+def _verify_resource_template_extract() -> None:
+    import tempfile
+
+    from pyfcstm.template import extract_template
+
+    with tempfile.TemporaryDirectory(prefix="pyfcstm-smoke-tpl-") as out_dir:
+        target = extract_template("python", out_dir)
+        if target is None or not os.path.isdir(target):
+            raise RuntimeError(
+                "extract_template('python', tmp_dir) returned {!r}; expected "
+                "a real directory holding the unpacked template.".format(target)
+            )
+        config = os.path.join(target, "config.yaml")
+        if not os.path.exists(config):
+            raise RuntimeError(
+                "Extracted python template is missing config.yaml at {}".format(config)
+            )
+
+
+def _verify_resource_render_bundle_present() -> None:
+    import pyfcstm.convert.sysdesim as sysdesim_pkg
+
+    pkg_dir = os.path.dirname(os.path.abspath(sysdesim_pkg.__file__))
+    bundle_path = os.path.join(pkg_dir, "_render_assets", "pyfcstm-sysdesim-render.js")
+    if not os.path.exists(bundle_path):
+        raise RuntimeError(
+            "SysDeSim render bundle missing at {}. The wheel did not "
+            "ship _render_assets/pyfcstm-sysdesim-render.js.".format(bundle_path)
+        )
+    size = os.path.getsize(bundle_path)
+    if size < 1_000_000:  # ~4 MB expected, refuse anything below 1 MB.
+        raise RuntimeError(
+            "SysDeSim render bundle is implausibly small ({} bytes) - the "
+            "resvg-wasm payload may have been stripped.".format(size)
+        )
+
+
+def _verify_resource_render_bundle_loadable() -> None:
+    from pyfcstm.convert.sysdesim import render as render_module
+
+    # Reset the cache so we exercise the actual load path.
+    render_module._runtime_cached = None
+    ctx, version = render_module._get_runtime()
+    if not version:
+        raise RuntimeError(
+            "PyfcstmSysdesim.version() returned an empty version string."
+        )
+
+
+def _verify_sysdesim_xml_parse() -> None:
+    import tempfile
+
+    from pyfcstm.convert.sysdesim import build_sysdesim_phase56_report
+
+    with tempfile.NamedTemporaryFile(
+        "w", suffix=".xml", delete=False, encoding="utf-8"
+    ) as tmp:
+        tmp.write(_SMOKE_SYSDESIM_XMI)
+        path = tmp.name
+    try:
+        report = build_sysdesim_phase56_report(path)
+        if not report or not getattr(report, "interaction", None):
+            raise RuntimeError("Phase 5/6 report has no interaction.")
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:  # pragma: no cover - tmp cleanup
+            pass
+
+
+def _verify_sysdesim_static_check() -> None:
+    import tempfile
+
+    from pyfcstm.convert import run_sysdesim_static_pre_checks
+
+    with tempfile.NamedTemporaryFile(
+        "w", suffix=".xml", delete=False, encoding="utf-8"
+    ) as tmp:
+        tmp.write(_SMOKE_SYSDESIM_XMI)
+        path = tmp.name
+    try:
+        diagnostics = run_sysdesim_static_pre_checks(xml_path=path)
+        # We don't care whether diagnostics is empty - we only want the
+        # call to complete without raising.
+        _ = list(diagnostics)
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:  # pragma: no cover - tmp cleanup
+            pass
+
+
+def _verify_sysdesim_validate() -> None:
+    import tempfile
+
+    from pyfcstm.convert import build_sysdesim_timeline_import_report
+
+    with tempfile.NamedTemporaryFile(
+        "w", suffix=".xml", delete=False, encoding="utf-8"
+    ) as tmp:
+        tmp.write(_SMOKE_SYSDESIM_XMI)
+        path = tmp.name
+    try:
+        report = build_sysdesim_timeline_import_report(xml_path=path)
+        if not report or "phase78" not in report:
+            raise RuntimeError(
+                "validate report missing phase78 key: {}".format(
+                    sorted(report.keys()) if isinstance(report, dict) else type(report)
+                )
+            )
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:  # pragma: no cover - tmp cleanup
+            pass
+
+
+def _verify_sysdesim_svg_render() -> None:
+    import tempfile
+
+    from pyfcstm.convert import render_sysdesim_timeline_svg
+
+    with tempfile.NamedTemporaryFile(
+        "w", suffix=".xml", delete=False, encoding="utf-8"
+    ) as tmp:
+        tmp.write(_SMOKE_SYSDESIM_XMI)
+        path = tmp.name
+    try:
+        svg = render_sysdesim_timeline_svg(xml_path=path)
+        if not isinstance(svg, str):
+            raise RuntimeError("render returned non-str: {}".format(type(svg)))
+        if not svg.startswith("<?xml"):
+            raise RuntimeError(
+                "Render output missing XML prolog (first 80 chars): {!r}".format(svg[:80])
+            )
+        if "<svg" not in svg or "</svg>" not in svg:
+            raise RuntimeError("Render output missing svg tags.")
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:  # pragma: no cover - tmp cleanup
+            pass
+
+
+def _verify_sysdesim_png_render() -> None:
+    import tempfile
+
+    from pyfcstm.convert import render_sysdesim_timeline_png
+
+    with tempfile.NamedTemporaryFile(
+        "w", suffix=".xml", delete=False, encoding="utf-8"
+    ) as tmp:
+        tmp.write(_SMOKE_SYSDESIM_XMI)
+        path = tmp.name
+    try:
+        png = render_sysdesim_timeline_png(xml_path=path)
+        if not isinstance(png, (bytes, bytearray)):
+            raise RuntimeError("render returned non-bytes: {}".format(type(png)))
+        if png[:8] != b"\x89PNG\r\n\x1a\n":
+            raise RuntimeError(
+                "Render output missing PNG magic bytes: got {!r}".format(png[:16])
+            )
+        # Parse IHDR for a sanity dimension check.
+        width, height = struct.unpack(">II", png[16:24])
+        if width <= 0 or height <= 0:
+            raise RuntimeError(
+                "PNG IHDR reported degenerate dimensions {}x{}".format(width, height)
+            )
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:  # pragma: no cover - tmp cleanup
+            pass
+
+
+# --------------------------------------------------------------------------- #
+# Case registry. Order matters: groups run top-down, cases inside a group
+# also run in the order declared. We put cheap pure-Python imports first
+# so a botched env yields a fast, structured failure list rather than
+# hanging at the first heavy native check.
+# --------------------------------------------------------------------------- #
+
+
+def _build_case_groups() -> List[Tuple[str, List[SmokeCase]]]:
+    return [
+        ("Python runtime", [
+            SmokeCase(
+                name="python_runtime",
+                method="sys.version_info >= (3, 7)",
+                func=_verify_python_runtime,
+                remediation=(
+                    "Upgrade to Python 3.7+; pyfcstm targets 3.7-3.14."
+                ),
+            ),
+            SmokeCase(
+                name="core_stdlib",
+                method="import json/re/pathlib/hashlib/base64/struct/...",
+                func=_verify_core_stdlib,
+                remediation=(
+                    "Some required stdlib modules are missing; this points at "
+                    "a heavily stripped Python install (e.g. minimal CPython "
+                    "build, slim Docker base image). Use a stock CPython distribution."
+                ),
+            ),
+        ]),
+        ("Third-party libraries", [
+            SmokeCase(
+                name="dep_click",
+                method="import click",
+                func=_make_dep_check("click"),
+                remediation="pip install 'click>=8'",
+            ),
+            SmokeCase(
+                name="dep_jinja2",
+                method="import jinja2",
+                func=_make_dep_check("jinja2"),
+                remediation="pip install 'jinja2>=3'",
+            ),
+            SmokeCase(
+                name="dep_antlr4_runtime",
+                method="import antlr4",
+                func=_make_dep_check("antlr4"),
+                remediation="pip install antlr4-python3-runtime==4.9.3",
+            ),
+            SmokeCase(
+                name="dep_z3_solver",
+                method="import z3",
+                func=_make_dep_check("z3"),
+                remediation="pip install 'z3-solver<=4.15.4'",
+            ),
+            SmokeCase(
+                name="dep_hbutils",
+                method="import hbutils",
+                func=_make_dep_check("hbutils"),
+                remediation="pip install 'hbutils>=0.14.0'",
+            ),
+            SmokeCase(
+                name="dep_pyyaml",
+                method="import yaml",
+                func=_make_dep_check("yaml"),
+                remediation="pip install pyyaml",
+            ),
+            SmokeCase(
+                name="dep_pathspec",
+                method="import pathspec",
+                func=_make_dep_check("pathspec"),
+                remediation="pip install pathspec",
+            ),
+            SmokeCase(
+                name="dep_pygments",
+                method="import pygments",
+                func=_make_dep_check("pygments"),
+                remediation="pip install 'pygments>=2.10.0'",
+            ),
+            SmokeCase(
+                name="dep_unidecode",
+                method="import unidecode",
+                func=_make_dep_check("unidecode"),
+                remediation="pip install unidecode",
+            ),
+            SmokeCase(
+                name="dep_chardet",
+                method="import chardet",
+                func=_make_dep_check("chardet"),
+                remediation="pip install chardet",
+            ),
+            SmokeCase(
+                name="dep_prompt_toolkit",
+                method="import prompt_toolkit",
+                func=_make_dep_check("prompt_toolkit"),
+                remediation="pip install 'prompt_toolkit>=3.0.0'",
+            ),
+            SmokeCase(
+                name="dep_rich",
+                method="import rich",
+                func=_make_dep_check("rich"),
+                remediation="pip install 'rich>=13,<14'",
+            ),
+            SmokeCase(
+                name="dep_natsort",
+                method="import natsort",
+                func=_make_dep_check("natsort"),
+                remediation="pip install natsort",
+            ),
+            SmokeCase(
+                name="dep_cachetools",
+                method="import cachetools",
+                func=_make_dep_check("cachetools"),
+                remediation="pip install cachetools",
+            ),
+            SmokeCase(
+                name="dep_plantumlcli",
+                method="import plantumlcli",
+                func=_make_dep_check("plantumlcli"),
+                remediation="pip install 'plantumlcli>=0.2.0'",
+            ),
+            SmokeCase(
+                name="dep_mini_racer",
+                method="import py_mini_racer (covers both py-mini-racer and mini-racer)",
+                func=lambda: _import_mini_racer(),
+                remediation=(
+                    "pip install -r requirements-sysdesim_render.txt or "
+                    "directly: pip install 'py-mini-racer; python_version<\"3.8\"' "
+                    "'mini-racer; python_version>=\"3.8\"'"
+                ),
+            ),
+        ]),
+        ("Native binaries", [
+            SmokeCase(
+                name="native_z3_sat",
+                method="z3.Solver(): 0 < x < 5 -> sat",
+                func=_verify_z3_native,
+                remediation=(
+                    "z3 imported but the native solver mis-fired. Reinstall "
+                    "z3-solver from a wheel that matches your Python ABI: "
+                    "pip install --force-reinstall 'z3-solver<=4.15.4'"
+                ),
+            ),
+            SmokeCase(
+                name="native_v8_isolate",
+                method="MiniRacer().eval('40 + 2') == 42",
+                func=_verify_v8_isolate,
+                remediation=(
+                    "V8 isolate failed to instantiate. py-mini-racer's native "
+                    "library is missing or incompatible. On Win7 install the "
+                    "Visual C++ 2015 redistributable; on stripped Linux make "
+                    "sure you have a glibc-based platform (musl is unsupported)."
+                ),
+            ),
+            SmokeCase(
+                name="native_v8_webassembly",
+                method="V8: WebAssembly.Module + Instance instantiate trivial wasm",
+                func=_verify_v8_webassembly,
+                remediation=(
+                    "V8 isolate runs but cannot host WebAssembly. The "
+                    "py-mini-racer wheel may have shipped a stripped V8 "
+                    "build. Reinstall: pip install --force-reinstall mini-racer"
+                ),
+            ),
+        ]),
+        ("Internal modules", [
+            SmokeCase(
+                name="pyfcstm_dsl_parser",
+                method="parse_with_grammar_entry('def int counter = 0; state Active;', 'state_machine_dsl')",
+                func=_verify_dsl_parser,
+                remediation=(
+                    "DSL parser failed. Possible causes: ANTLR-generated "
+                    "files (GrammarLexer.py / GrammarParser.py / "
+                    "GrammarListener.py) missing under pyfcstm/dsl/grammar/, "
+                    "or antlr4-python3-runtime version mismatch (we pin 4.9.3)."
+                ),
+            ),
+            SmokeCase(
+                name="pyfcstm_model_build",
+                method="parse_dsl_node_to_state_machine on a 2-state hierarchy",
+                func=_verify_model_build,
+                remediation=(
+                    "Model layer failed to consume the AST. Check that "
+                    "pyfcstm.model.model imports without ImportError and "
+                    "that the listener emits the expected node tree."
+                ),
+            ),
+            SmokeCase(
+                name="pyfcstm_render_expression_styles",
+                method="expr_render(style=...) for dsl/c/cpp/python/java/js/ts/rust/go",
+                func=_verify_render_expression_styles,
+                remediation=(
+                    "Expression renderer styles failed. One language style "
+                    "may be unregistered or its handler raises. Run with "
+                    "--smoke-test under a verbose Python (PYTHONUNBUFFERED=1) "
+                    "and inspect the traceback above."
+                ),
+            ),
+            SmokeCase(
+                name="pyfcstm_simulator_runtime",
+                method="SimulationRuntime(machine).cycle() x2 advances vars",
+                func=_verify_simulator_runtime,
+                remediation=(
+                    "Simulator did not advance state. Check that "
+                    "pyfcstm.simulate.runtime is importable and that the "
+                    "model layer produces a stack-style hierarchical machine."
+                ),
+            ),
+            SmokeCase(
+                name="pyfcstm_solver_z3_translation",
+                method="to_z3_expression(guard) on 'x > 0 && x < 10'",
+                func=_verify_solver_z3_translation,
+                remediation=(
+                    "Z3 expression translator failed. Likely either the z3 "
+                    "import works but the solver translation layer "
+                    "(pyfcstm.solver.expr) hit an unsupported node, or the "
+                    "z3 native ABI is incompatible (see native_z3_sat)."
+                ),
+            ),
+        ]),
+        ("Static resources", [
+            SmokeCase(
+                name="resource_antlr_grammar",
+                method="GrammarLexer.py + GrammarParser.py + GrammarListener.py exist",
+                func=_verify_resource_grammar,
+                remediation=(
+                    "ANTLR-generated grammar files missing. Run `make antlr_build` "
+                    "from a development checkout, or install pyfcstm from a wheel "
+                    "(the generated files are part of the distributable, not "
+                    "of the .g4 source)."
+                ),
+            ),
+            SmokeCase(
+                name="resource_template_index",
+                method="template/index.json + every declared archive present",
+                func=_verify_resource_template_index,
+                remediation=(
+                    "Built-in template archives missing. Run `make tpl` from "
+                    "a development checkout, or install pyfcstm from a wheel "
+                    "(`pip install --force-reinstall pyfcstm`)."
+                ),
+            ),
+            SmokeCase(
+                name="resource_template_extract",
+                method="extract_template('python') -> dir with config.yaml",
+                func=_verify_resource_template_extract,
+                remediation=(
+                    "Built-in python template zip is unreadable or missing "
+                    "config.yaml. Re-build via `make tpl` or reinstall the wheel."
+                ),
+            ),
+            SmokeCase(
+                name="resource_render_bundle_present",
+                method="_render_assets/pyfcstm-sysdesim-render.js exists, > 1 MB",
+                func=_verify_resource_render_bundle_present,
+                remediation=(
+                    "SysDeSim render bundle missing or stripped. Rebuild via "
+                    "`cd js/sysdesim_render && npm install && npm run build` "
+                    "and copy dist/pyfcstm-sysdesim-render.js into "
+                    "pyfcstm/convert/sysdesim/_render_assets/, or install "
+                    "pyfcstm from a wheel."
+                ),
+            ),
+            SmokeCase(
+                name="resource_render_bundle_loadable",
+                method="MiniRacer eval(bundle) -> PyfcstmSysdesim.version() returns a string",
+                func=_verify_resource_render_bundle_loadable,
+                remediation=(
+                    "Bundle file present but V8 cannot evaluate it. Either "
+                    "the bundle is corrupted (re-extract the wheel) or the "
+                    "embedded V8 isolate's parser is too old; rebuild the "
+                    "bundle with esbuild --target=es2015."
+                ),
+            ),
+        ]),
+        ("End-to-end SysDeSim CLI paths", [
+            SmokeCase(
+                name="sysdesim_xml_parse",
+                method="build_sysdesim_phase56_report(inline minimal XMI)",
+                func=_verify_sysdesim_xml_parse,
+                remediation=(
+                    "SysDeSim phase 5/6 import broke. Check pyfcstm.convert."
+                    "sysdesim.timeline imports + xmi parser are intact."
+                ),
+            ),
+            SmokeCase(
+                name="sysdesim_static_check",
+                method="run_sysdesim_static_pre_checks(inline minimal XMI)",
+                func=_verify_sysdesim_static_check,
+                remediation=(
+                    "Static pre-check pipeline failed. Inspect "
+                    "pyfcstm.convert.sysdesim.static_check imports."
+                ),
+            ),
+            SmokeCase(
+                name="sysdesim_validate",
+                method="build_sysdesim_timeline_import_report(inline minimal XMI)",
+                func=_verify_sysdesim_validate,
+                remediation=(
+                    "Phase 7-10 timeline validation pipeline failed. May "
+                    "involve z3 (see native_z3_sat) or sysdesim model layer."
+                ),
+            ),
+            SmokeCase(
+                name="sysdesim_svg_render",
+                method="render_sysdesim_timeline_svg(inline minimal XMI)",
+                func=_verify_sysdesim_svg_render,
+                remediation=(
+                    "SVG renderer failed. Most often the bundle eval inside "
+                    "MiniRacer threw - re-run with PYFCSTM_SMOKE_VERBOSE=1 or "
+                    "see the traceback above for the JS-side error."
+                ),
+            ),
+            SmokeCase(
+                name="sysdesim_png_render",
+                method="render_sysdesim_timeline_png(inline minimal XMI) -> PNG magic",
+                func=_verify_sysdesim_png_render,
+                remediation=(
+                    "PNG renderer failed. Likely root causes: missing V8 "
+                    "wasm support (see native_v8_webassembly), missing "
+                    "icudtl.dat sidecar (PyInstaller hook in tools/generate_spec.py), "
+                    "or a corrupt resvg-wasm bundle."
+                ),
+            ),
+        ]),
+    ]
+
+
+# --------------------------------------------------------------------------- #
+# Output formatting. Click is the canonical way to print colored output in
+# this codebase, but because click MUST be importable for the CLI flag to
+# even fire, importing it here is safe. We still wrap the import in a
+# try/except to fall back to bare ASCII output if click fails for any
+# unforeseen reason - the runner's contract is "always finishes".
+# --------------------------------------------------------------------------- #
+
+
+class _Painter:
+    """Best-effort ANSI color helper.
+
+    Falls back to identity (no color) when click cannot be imported or
+    when the destination stream is not a TTY.
+    """
+
+    def __init__(self) -> None:
+        self._click = None
+        try:
+            import click
+        except Exception:  # pragma: no cover - click is required by the CLI flag
+            self._click = None
+        else:
+            self._click = click
+
+    def style(self, text: str, **kwargs) -> str:
+        if self._click is None:
+            return text
+        try:
+            return self._click.style(text, **kwargs)
+        except Exception:  # pragma: no cover - defensive
+            return text
+
+    def echo(self, text: str = "") -> None:
+        if self._click is None:
+            print(text)
+            return
+        try:
+            self._click.echo(text)
+        except Exception:  # pragma: no cover - defensive
+            print(text)
+
+
+def _format_traceback(exc: BaseException, tb_text: str, max_frames: int = 5) -> List[str]:
+    """Pretty-print the most actionable frames of a captured traceback."""
+    lines = tb_text.rstrip().splitlines()
+    if not lines:
+        return ["(no traceback captured)"]
+    if len(lines) <= max_frames * 2 + 2:
+        return lines
+    head = lines[:1]
+    tail = lines[-(max_frames * 2 + 1) :]
+    return head + ["... <{} earlier frames trimmed>".format(len(lines) - len(head) - len(tail))] + tail
+
+
+def _print_environment(painter: _Painter) -> None:
+    rows = [
+        ("python", "{} ({})".format(sys.version.split()[0], platform.python_implementation())),
+        ("platform", "{} {} ({})".format(platform.system(), platform.release(), platform.machine())),
+        ("executable", sys.executable),
+        ("prefix", sys.prefix),
+        ("MEIPASS", getattr(sys, "_MEIPASS", "(not running under PyInstaller)")),
+    ]
+    painter.echo(painter.style("Environment", fg="cyan", bold=True))
+    for label, value in rows:
+        painter.echo("  " + painter.style(label, fg="white", bold=True) + ": " + str(value))
+    painter.echo("")
+
+
+def _print_group_header(painter: _Painter, label: str) -> None:
+    bar = painter.style("|", fg="cyan", bold=True)
+    painter.echo(bar + " " + painter.style(label, fg="cyan", bold=True))
+
+
+def _print_pass(painter: _Painter, result: SmokeResult) -> None:
+    tag = painter.style("[PASS]", fg="green", bold=True)
+    name = painter.style(result.case.name, fg="white", bold=True)
+    sep = painter.style("::", fg="white")
+    painter.echo("  {tag} {name} {sep} {method} ({elapsed:.1f} ms)".format(
+        tag=tag, name=name, sep=sep, method=result.case.method,
+        elapsed=result.elapsed_ms,
+    ))
+
+
+def _print_fail(painter: _Painter, result: SmokeResult) -> None:
+    tag = painter.style("[FAIL]", fg="red", bold=True)
+    name = painter.style(result.case.name, fg="white", bold=True)
+    sep = painter.style("::", fg="white")
+    painter.echo("  {tag} {name} {sep} {method} ({elapsed:.1f} ms)".format(
+        tag=tag, name=name, sep=sep, method=result.case.method,
+        elapsed=result.elapsed_ms,
+    ))
+    label = painter.style("        ↳", fg="red")
+    if result.error is not None:
+        category = type(result.error).__name__
+        message = str(result.error) or "(no error message)"
+        painter.echo(
+            "{prefix} category: {value}".format(
+                prefix=label, value=painter.style(category, fg="yellow", bold=True),
+            )
+        )
+        painter.echo(
+            "{prefix} message:  {value}".format(
+                prefix=label, value=painter.style(message, fg="yellow"),
+            )
+        )
+    if result.error_traceback:
+        painter.echo("{prefix} traceback (most actionable frames):".format(prefix=label))
+        for tb_line in _format_traceback(result.error, result.error_traceback):
+            painter.echo("           " + tb_line)
+    if result.case.remediation:
+        painter.echo(
+            "{prefix} remediation: {value}".format(
+                prefix=label,
+                value=painter.style(result.case.remediation, fg="green"),
+            )
+        )
+
+
+def _print_summary(
+    painter: _Painter, results: List[SmokeResult], elapsed: float
+) -> None:
+    total = len(results)
+    passed = sum(1 for r in results if r.status == "PASS")
+    failed = total - passed
+    painter.echo("")
+    painter.echo(painter.style("=" * 70, fg="cyan", dim=True))
+    if failed == 0:
+        painter.echo(
+            painter.style("Smoke test summary: ", fg="cyan", bold=True)
+            + painter.style("{} PASS".format(passed), fg="green", bold=True)
+            + " (out of {}, {:.2f}s wall)".format(total, elapsed)
+        )
+        painter.echo(
+            painter.style(
+                "All checks passed - the install can run pyfcstm features without "
+                "any extra setup.",
+                fg="green",
+            )
+        )
+    else:
+        painter.echo(
+            painter.style("Smoke test summary: ", fg="cyan", bold=True)
+            + painter.style("{} PASS".format(passed), fg="green", bold=True)
+            + ", "
+            + painter.style("{} FAIL".format(failed), fg="red", bold=True)
+            + " (out of {}, {:.2f}s wall)".format(total, elapsed)
+        )
+        painter.echo(painter.style("Failed cases:", fg="red", bold=True))
+        for result in results:
+            if result.status == "FAIL":
+                painter.echo(
+                    "  - "
+                    + painter.style(result.case.name, fg="red", bold=True)
+                    + ": "
+                    + (str(result.error) if result.error else "(no error)")
+                )
+    painter.echo(painter.style("=" * 70, fg="cyan", dim=True))
+
+
+# --------------------------------------------------------------------------- #
+# Public runner.
+# --------------------------------------------------------------------------- #
+
+
+def _run_one(case: SmokeCase) -> SmokeResult:
+    """Run one case under maximally defensive isolation.
+
+    No exception escapes - including ``KeyboardInterrupt`` and
+    ``SystemExit`` - because the smoke runner's whole purpose is to keep
+    going when individual checks blow up. The captured traceback is
+    formatted via :func:`traceback.format_exc` so we can show the user
+    the same frames the case would print under normal invocation.
+    """
+    started = time.time()
+    try:
+        case.func()
+    except BaseException as exc:  # noqa: BLE001 - intentional broad catch
+        elapsed = (time.time() - started) * 1000
+        return SmokeResult(
+            case=case,
+            status="FAIL",
+            elapsed_ms=elapsed,
+            error=exc,
+            error_traceback=traceback.format_exc(),
+        )
+    elapsed = (time.time() - started) * 1000
+    return SmokeResult(case=case, status="PASS", elapsed_ms=elapsed)
+
+
+def run_smoke_test() -> int:
+    """
+    Run every registered smoke-test case and print a structured PASS/FAIL
+    report on stdout.
+
+    The runner never propagates exceptions out of individual cases - even
+    fatal errors during ``KeyboardInterrupt`` / ``SystemExit`` are caught
+    and rendered as ``[FAIL]`` rows. The exit code returned to the caller
+    is the count of FAIL cases (``0`` on a fully-clean install). The CLI
+    glue translates that into the process exit code.
+
+    :return: Number of failed cases.
+    :rtype: int
+
+    Example::
+
+        >>> from pyfcstm.diagnostics import run_smoke_test
+        >>> exit_code = run_smoke_test()  # doctest: +SKIP
+    """
+    painter = _Painter()
+    painter.echo(painter.style("=" * 70, fg="cyan", dim=True))
+    painter.echo(painter.style("pyfcstm --smoke-test", fg="cyan", bold=True))
+    painter.echo(painter.style("=" * 70, fg="cyan", dim=True))
+    painter.echo("")
+
+    # The environment block is best-effort: even reading sys / platform
+    # is cheap enough to never realistically fail, but we still wrap it.
+    try:
+        _print_environment(painter)
+    except BaseException:  # pragma: no cover - defensive
+        painter.echo("(environment introspection failed; continuing)")
+        painter.echo("")
+
+    try:
+        groups = _build_case_groups()
+    except BaseException as exc:  # pragma: no cover - case definitions live in this module
+        painter.echo(painter.style(
+            "Catastrophic: smoke runner failed to assemble its own case list: {!r}".format(exc),
+            fg="red", bold=True,
+        ))
+        return 1
+
+    overall_started = time.time()
+    all_results: List[SmokeResult] = []
+    for group_label, cases in groups:
+        _print_group_header(painter, group_label)
+        for case in cases:
+            result = _run_one(case)
+            if result.status == "PASS":
+                _print_pass(painter, result)
+            else:
+                _print_fail(painter, result)
+            all_results.append(result)
+        painter.echo("")
+    elapsed = time.time() - overall_started
+    _print_summary(painter, all_results, elapsed)
+    return sum(1 for r in all_results if r.status == "FAIL")

@@ -361,16 +361,20 @@ def _verify_solver_z3_translation() -> None:
 
 
 def _verify_resource_grammar() -> None:
-    import pyfcstm.dsl.grammar as grammar_pkg
-
-    grammar_dir = os.path.dirname(os.path.abspath(grammar_pkg.__file__))
-    needed = ("GrammarLexer.py", "GrammarParser.py", "GrammarListener.py")
-    missing = [n for n in needed if not os.path.exists(os.path.join(grammar_dir, n))]
+    # Each generated file ships as a ``.py`` so under PyInstaller it lives
+    # inside the PYZ archive, not on the filesystem. We verify by import,
+    # which works equally for source layouts, wheels, and frozen exes.
+    needed = ("GrammarLexer", "GrammarParser", "GrammarListener")
+    missing = []
+    for stem in needed:
+        try:
+            importlib.import_module("pyfcstm.dsl.grammar." + stem)
+        except ImportError:
+            missing.append(stem)
     if missing:
         raise RuntimeError(
-            "Generated ANTLR grammar files missing under {}: {}".format(
-                grammar_dir, ", ".join(missing)
-            )
+            "Generated ANTLR grammar modules missing/unimportable under "
+            "pyfcstm.dsl.grammar: {}".format(", ".join(missing))
         )
 
 
@@ -690,12 +694,6 @@ def _build_case_groups() -> List[Tuple[str, List[SmokeCase]]]:
                 remediation="pip install natsort",
             ),
             SmokeCase(
-                name="dep_cachetools",
-                method="import cachetools",
-                func=_make_dep_check("cachetools"),
-                remediation="pip install cachetools",
-            ),
-            SmokeCase(
                 name="dep_plantumlcli",
                 method="import plantumlcli",
                 func=_make_dep_check("plantumlcli"),
@@ -803,13 +801,14 @@ def _build_case_groups() -> List[Tuple[str, List[SmokeCase]]]:
         ("Static resources", [
             SmokeCase(
                 name="resource_antlr_grammar",
-                method="GrammarLexer.py + GrammarParser.py + GrammarListener.py exist",
+                method="import pyfcstm.dsl.grammar.{GrammarLexer,GrammarParser,GrammarListener}",
                 func=_verify_resource_grammar,
                 remediation=(
-                    "ANTLR-generated grammar files missing. Run `make antlr_build` "
-                    "from a development checkout, or install pyfcstm from a wheel "
-                    "(the generated files are part of the distributable, not "
-                    "of the .g4 source)."
+                    "ANTLR-generated grammar modules missing. Run "
+                    "`make antlr_build` from a development checkout to "
+                    "(re)generate them, or install pyfcstm from a wheel "
+                    "(the generated files are part of the distributable, "
+                    "not of the .g4 source)."
                 ),
             ),
             SmokeCase(

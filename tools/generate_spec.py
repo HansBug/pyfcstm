@@ -83,10 +83,19 @@ def collect_third_party_binaries_and_hiddenimports():
     standalone exe imports the Python wrapper but fails at first
     ``MiniRacer()`` instantiation - exactly the regression that the
     sequence-render CLI smoke tests catch.
+
+    PyInstaller's :func:`collect_dynamic_libs` does not cover
+    py-mini-racer's ``libmini_racer.glibc.so`` filename pattern on every
+    PyInstaller release we support (the 4.7+ baseline missed the
+    multi-suffix form), so we belt-and-suspenders the result with a plain
+    filesystem walk over the package directory.
     """
+    import importlib
+
     binaries = []
     hiddenimports = []
     datas_extra = []
+
     try:
         from PyInstaller.utils.hooks import collect_all
     except Exception as exc:  # pragma: no cover - PyInstaller absent at runtime is impossible here
@@ -94,23 +103,75 @@ def collect_third_party_binaries_and_hiddenimports():
             f"Warning: PyInstaller hooks not importable: {exc}",
             file=sys.stderr,
         )
-        return binaries, hiddenimports, datas_extra
+        collect_all = None
 
     for module_name in ('py_mini_racer', 'mini_racer'):
+        # First try the official helper.
+        if collect_all is not None:
+            try:
+                mod_datas, mod_binaries, mod_hiddenimports = collect_all(module_name)
+            except Exception as exc:
+                # Expected on Pythons where only one of the two distributions
+                # is installed. Skip silently for the missing one.
+                print(
+                    f"Note: collect_all({module_name!r}) skipped: {exc}",
+                    file=sys.stderr,
+                )
+            else:
+                datas_extra.extend(mod_datas)
+                binaries.extend(mod_binaries)
+                hiddenimports.extend(mod_hiddenimports)
+
+        # Belt-and-suspenders: walk the package dir for native libraries.
+        # py-mini-racer ships ``libmini_racer.glibc.so`` (Linux),
+        # ``libmini_racer.dylib`` (macOS), ``mini_racer.dll`` (Windows).
         try:
-            mod_datas, mod_binaries, mod_hiddenimports = collect_all(module_name)
-        except Exception as exc:
-            # Expected on Pythons where only one of the two distributions
-            # is installed. Skip silently for the missing one.
-            print(
-                f"Note: collect_all({module_name!r}) skipped: {exc}",
-                file=sys.stderr,
-            )
+            mod = importlib.import_module(module_name)
+        except ImportError:
             continue
-        datas_extra.extend(mod_datas)
-        binaries.extend(mod_binaries)
-        hiddenimports.extend(mod_hiddenimports)
-    return binaries, hiddenimports, datas_extra
+        mod_init = getattr(mod, '__file__', None)
+        if not mod_init:
+            continue
+        mod_dir = Path(mod_init).parent
+        if not mod_dir.is_dir():
+            continue
+        # Every shared-library extension we expect to see for this dep.
+        patterns = (
+            '*.so', '*.so.*',
+            '*.dylib',
+            '*.dll', '*.pyd',
+        )
+        seen_paths = set()
+        for pattern in patterns:
+            for native_file in mod_dir.rglob(pattern):
+                resolved = str(native_file.resolve())
+                if resolved in seen_paths:
+                    continue
+                seen_paths.add(resolved)
+                # Place the shared library into the package's directory inside
+                # the bundled binary so ``pkg_resources.resource_filename``
+                # (which is what py-mini-racer uses to locate it) finds it
+                # under ``<_MEIPASS>/py_mini_racer/<lib>``.
+                relative_dir = native_file.parent.relative_to(mod_dir.parent)
+                binaries.append((resolved, str(relative_dir)))
+        # Hidden import for safety: PyInstaller's tracer occasionally drops
+        # the wrapper module when it is only referenced via dotted import.
+        if module_name not in hiddenimports:
+            hiddenimports.append(module_name)
+
+    # Deduplicate binaries based on (src_resolved, dst_dir)
+    deduped = []
+    seen = set()
+    for entry in binaries:
+        try:
+            key = (str(Path(entry[0]).resolve()), entry[1])
+        except Exception:
+            key = entry
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(entry)
+    return deduped, hiddenimports, datas_extra
 
 
 def resolve_executable_icon(icon_dir):

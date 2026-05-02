@@ -72,6 +72,47 @@ def collect_datas(bundle_icon=None):
     return datas
 
 
+def collect_third_party_binaries_and_hiddenimports():
+    """
+    Pull in native binaries + lazy-loaded modules from third-party deps that
+    do not ship a stock PyInstaller hook.
+
+    The current consumer is :mod:`py_mini_racer` / :mod:`mini_racer`, which
+    bundles the V8 isolate as a platform-specific shared library that
+    PyInstaller's import-tracer alone does not pick up. Without it, the
+    standalone exe imports the Python wrapper but fails at first
+    ``MiniRacer()`` instantiation - exactly the regression that the
+    sequence-render CLI smoke tests catch.
+    """
+    binaries = []
+    hiddenimports = []
+    datas_extra = []
+    try:
+        from PyInstaller.utils.hooks import collect_all
+    except Exception as exc:  # pragma: no cover - PyInstaller absent at runtime is impossible here
+        print(
+            f"Warning: PyInstaller hooks not importable: {exc}",
+            file=sys.stderr,
+        )
+        return binaries, hiddenimports, datas_extra
+
+    for module_name in ('py_mini_racer', 'mini_racer'):
+        try:
+            mod_datas, mod_binaries, mod_hiddenimports = collect_all(module_name)
+        except Exception as exc:
+            # Expected on Pythons where only one of the two distributions
+            # is installed. Skip silently for the missing one.
+            print(
+                f"Note: collect_all({module_name!r}) skipped: {exc}",
+                file=sys.stderr,
+            )
+            continue
+        datas_extra.extend(mod_datas)
+        binaries.extend(mod_binaries)
+        hiddenimports.extend(mod_hiddenimports)
+    return binaries, hiddenimports, datas_extra
+
+
 def resolve_executable_icon(icon_dir):
     """Resolve the native executable icon path for the current platform."""
     icon_root = Path(icon_dir)
@@ -93,6 +134,8 @@ def generate_spec(icon_dir='build/icons'):
     """Generate spec file content"""
     icon_root = Path(icon_dir)
     datas = collect_datas(bundle_icon=icon_root / 'pyfcstm.png')
+    binaries, hiddenimports, datas_extra = collect_third_party_binaries_and_hiddenimports()
+    datas = datas + datas_extra
     executable_icon = resolve_executable_icon(icon_root)
 
     spec_content = f'''# -*- mode: python ; coding: utf-8 -*-
@@ -103,9 +146,9 @@ def generate_spec(icon_dir='build/icons'):
 a = Analysis(
     ['pyfcstm_cli.py'],
     pathex=[],
-    binaries=[],
+    binaries={binaries!r},
     datas={datas!r},
-    hiddenimports=[],
+    hiddenimports={hiddenimports!r},
     hookspath=[],
     hooksconfig={{}},
     runtime_hooks=[],

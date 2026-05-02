@@ -39,6 +39,20 @@ class CLITester:
             return result
         except subprocess.CalledProcessError as e:
             if check:
+                # Surface the actual CLI stdout/stderr before re-raising so
+                # CI logs let us diagnose missing-bundle / missing-binary
+                # failures without a second round-trip.
+                print("  [FAIL] command exited {}: {}".format(
+                    e.returncode, ' '.join(cmd)
+                ))
+                if e.stdout:
+                    print("  ----- stdout -----")
+                    for line in str(e.stdout).splitlines():
+                        print("    " + line)
+                if e.stderr:
+                    print("  ----- stderr -----")
+                    for line in str(e.stderr).splitlines():
+                        print("    " + line)
                 raise
             return e
         except subprocess.TimeoutExpired as e:

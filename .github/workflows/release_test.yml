@@ -147,7 +147,7 @@ jobs:
           python -V
           pip --version
           pip list
-          tree .
+          { command -v tree >/dev/null && tree . || ls -al; } || true
       - name: Get package version
         shell: bash
         run: |

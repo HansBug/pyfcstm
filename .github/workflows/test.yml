@@ -109,7 +109,10 @@ jobs:
           python -V
           pip --version
           pip list
-          tree .
+          # tree is informational only and chocolatey on Windows
+          # occasionally lands without refreshing PATH for this shell;
+          # don't let an absent tree fail the whole job.
+          { command -v tree >/dev/null && tree . || ls -al; } || true
           cloc pyfcstm
           cloc test
       - name: Run unittest
@@ -227,7 +230,7 @@ jobs:
           python -V
           pip --version
           pip list
-          tree .
+          { command -v tree >/dev/null && tree . || ls -al; } || true
       - name: Get package version
         shell: bash
         run: |

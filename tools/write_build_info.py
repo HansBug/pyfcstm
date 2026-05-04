@@ -52,10 +52,21 @@ def _gather():
     branch = _git("rev-parse", "--abbrev-ref", "HEAD") or None
     status = _git("status", "--porcelain")
     dirty = bool(status)
-    dirty_files = tuple(
-        line[3:] if len(line) > 3 else line
-        for line in status.splitlines()
-    ) if status else ()
+    # ``git status --porcelain`` format: ``<XY> <path>`` where ``XY`` is
+    # a 2-char status code and the path starts at column 3. Use
+    # ``str.split(maxsplit=1)`` to recover the path robustly without
+    # depending on a fixed-width offset (which broke previously when
+    # the renamed-file form ``R  src -> dst`` showed up).
+    dirty_files = ()
+    if status:
+        parsed = []
+        for line in status.splitlines():
+            parts = line.split(None, 1)
+            if len(parts) == 2:
+                parsed.append(parts[1])
+            elif parts:
+                parsed.append(parts[0])
+        dirty_files = tuple(parsed)
     return {
         "BUILD_COMMIT": commit,
         "BUILD_COMMIT_SHORT": short,

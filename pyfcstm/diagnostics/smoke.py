@@ -1356,17 +1356,64 @@ def _collect_environment_facts() -> List[Tuple[str, List[Tuple[str, str]]]]:
     # when both are present.
     build_rows = _collect_build_info_facts()
     git_rows = _collect_git_facts()
-    if build_rows or git_rows:
-        merged: List[Tuple[str, str]] = []
+    mode_text = _classify_build_mode(
+        has_build_info=bool(build_rows), has_git=bool(git_rows),
+    )
+    merged: List[Tuple[str, str]] = [("mode", mode_text)]
+    if build_rows:
+        merged.extend(build_rows)
+    if git_rows:
         if build_rows:
-            merged.extend(build_rows)
-        if git_rows:
-            if merged:
-                merged.append(("---", "(live git below; baked-in build above)"))
-            merged.extend(git_rows)
-        sections.append(("Build / git", merged))
+            merged.append(("---", "(live git below; baked-in build above)"))
+        merged.extend(git_rows)
+    sections.append(("Build / git", merged))
 
     return sections
+
+
+def _classify_build_mode(*, has_build_info: bool, has_git: bool) -> str:
+    """Describe the running mode in one human-readable line.
+
+    The string is prefixed with ``WARNING:`` when the combination is
+    *unexpected* (e.g. a PyInstaller exe missing its baked build info,
+    which means ``tools/write_build_info.py`` was skipped during build).
+    The painter renders ``WARNING:`` rows in red so a glance at the
+    diagnostics output flags suspect builds immediately.
+    """
+    is_frozen = bool(getattr(sys, "frozen", False))
+    has_meipass = hasattr(sys, "_MEIPASS")
+    looks_frozen = is_frozen or has_meipass
+    if looks_frozen and has_build_info:
+        return (
+            "frozen PyInstaller exe (baked build info present)"
+        )
+    if looks_frozen and not has_build_info:
+        return (
+            "WARNING: frozen PyInstaller exe but baked build info is "
+            "missing - tools/write_build_info.py was skipped during build, "
+            "which means commit / build-time / dirty state cannot be "
+            "recovered. Rebuild with ``make build`` (which calls the helper) "
+            "to fix."
+        )
+    if not looks_frozen and has_build_info and has_git:
+        return (
+            "source dev tree with baked build info (someone ran "
+            "tools/write_build_info.py locally; live git also reachable)"
+        )
+    if not looks_frozen and has_build_info and not has_git:
+        return (
+            "packaged install (Makefile-built wheel/sdist; no .git "
+            "reachable from the install)"
+        )
+    if not looks_frozen and not has_build_info and has_git:
+        return (
+            "source / dev checkout (live git only; no baked build info, "
+            "as expected for a source-tree run)"
+        )
+    return (
+        "source-style install with no git checkout and no baked build "
+        "info (typical for a sdist that bypassed the Makefile)"
+    )
 
 
 def _collect_build_info_facts() -> List[Tuple[str, str]]:
@@ -1520,6 +1567,23 @@ def _collect_git_facts() -> List[Tuple[str, str]]:
     return rows
 
 
+def _style_env_value(painter: _Painter, value: str) -> str:
+    """Color-code environment values that signal trouble.
+
+    * ``WARNING: ...``        -> bold red, hard-to-miss
+    * ``(unavailable: ...)``  -> yellow, "we read this but it failed"
+    * ``(unset)`` / ``(none)`` -> dim, "explicit absence, not an error"
+    Other values are left at the painter default.
+    """
+    if value.startswith("WARNING:"):
+        return painter.style(value, fg="red", bold=True)
+    if value.startswith("(unavailable"):
+        return painter.style(value, fg="yellow")
+    if value in {"(unset)", "(none)", "(unknown)", "(empty)"}:
+        return painter.style(value, dim=True)
+    return value
+
+
 def _print_environment(painter: _Painter) -> None:
     """Print the (deep) environment dump.
 
@@ -1538,7 +1602,7 @@ def _print_environment(painter: _Painter) -> None:
         label_width = max(len(label) for label, _ in rows)
         for label, value in rows:
             label_styled = painter.style(label.ljust(label_width), fg="white", bold=True)
-            painter.echo("  " + label_styled + " : " + value)
+            painter.echo("  " + label_styled + " : " + _style_env_value(painter, value))
         painter.echo("")
 
 

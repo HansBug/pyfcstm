@@ -523,6 +523,72 @@ def test_build_info_facts_swallows_corrupt_module(monkeypatch):
 
 
 @pytest.mark.unittest
+def test_classify_build_mode_dev_tree_with_git():
+    """Dev source tree (no build_info, has .git) gets the source-mode line."""
+    from pyfcstm.diagnostics.smoke import _classify_build_mode
+
+    text = _classify_build_mode(has_build_info=False, has_git=True)
+    assert "source / dev checkout" in text
+    assert not text.startswith("WARNING:")
+
+
+@pytest.mark.unittest
+def test_classify_build_mode_packaged_install():
+    """Packaged install (build_info present, no .git) is described as such."""
+    from pyfcstm.diagnostics.smoke import _classify_build_mode
+
+    text = _classify_build_mode(has_build_info=True, has_git=False)
+    assert "packaged install" in text
+    assert not text.startswith("WARNING:")
+
+
+@pytest.mark.unittest
+def test_classify_build_mode_frozen_with_build_info(monkeypatch):
+    """Frozen exe with baked build info is the expected PyInstaller case."""
+    from pyfcstm.diagnostics import smoke as smoke_module
+
+    monkeypatch.setattr(smoke_module.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(smoke_module.sys, "_MEIPASS", "/tmp/_MEIfake", raising=False)
+
+    text = smoke_module._classify_build_mode(has_build_info=True, has_git=False)
+    assert "frozen PyInstaller" in text
+    assert "baked build info present" in text
+    assert not text.startswith("WARNING:")
+
+
+@pytest.mark.unittest
+def test_classify_build_mode_frozen_without_build_info_warns(monkeypatch):
+    """Frozen exe missing baked build info MUST raise a WARNING.
+
+    This is the canary for "tools/write_build_info.py was skipped at
+    build time"; without the warning, a user would see an opaque exe
+    with no way to recover commit / build-time state."""
+    from pyfcstm.diagnostics import smoke as smoke_module
+
+    monkeypatch.setattr(smoke_module.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(smoke_module.sys, "_MEIPASS", "/tmp/_MEIfake", raising=False)
+
+    text = smoke_module._classify_build_mode(has_build_info=False, has_git=False)
+    assert text.startswith("WARNING:")
+    assert "missing" in text
+    assert "rebuild" in text.lower() or "Rebuild" in text
+
+
+@pytest.mark.unittest
+def test_environment_dump_includes_build_mode_row():
+    """The Build / git section must always include a ``mode`` row, even
+    in dev tree where no baked info exists. The mode line is the user's
+    primary signal for "how am I running this binary right now?"."""
+    sections = _collect_environment_facts()
+    build_section = dict(sections).get("Build / git")
+    assert build_section is not None, "Build / git section missing"
+    keys = [k for k, _ in build_section]
+    assert "mode" in keys, (
+        "Build / git section missing required 'mode' row; got rows: {}".format(keys)
+    )
+
+
+@pytest.mark.unittest
 def test_diagnostics_main_returns_int_failure_count():
     """``pyfcstm.diagnostics.__main__:main`` returns the failed-case
     count as an int, even if the install is healthy (= 0).

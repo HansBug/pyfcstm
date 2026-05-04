@@ -34,18 +34,20 @@ The module contains:
 
 from __future__ import annotations
 
-import base64
+import contextlib
+import datetime
 import importlib
-import io
 import json
 import os
 import platform
 import struct
+import subprocess
 import sys
+import tempfile
 import time
 import traceback
-from dataclasses import dataclass, field
-from typing import Callable, List, Optional, Tuple
+from dataclasses import dataclass
+from typing import Callable, Iterator, List, Optional, Tuple
 
 
 # --------------------------------------------------------------------------- #
@@ -630,20 +632,20 @@ def _verify_resource_render_bundle_loadable() -> None:
         )
 
 
-def _verify_sysdesim_xml_parse() -> None:
-    import tempfile
+@contextlib.contextmanager
+def _smoke_xmi_path() -> Iterator[str]:
+    """Write the inline SysDeSim XMI fixture to a tempfile and yield its path.
 
-    from pyfcstm.convert.sysdesim import build_sysdesim_phase56_report
-
+    Always cleans up on exit, even if the body raises. Centralises a
+    boilerplate that used to live in five separate verify functions.
+    """
     with tempfile.NamedTemporaryFile(
-        "w", suffix=".xml", delete=False, encoding="utf-8"
+        "w", suffix=".xml", delete=False, encoding="utf-8",
     ) as tmp:
         tmp.write(_SMOKE_SYSDESIM_XMI)
         path = tmp.name
     try:
-        report = build_sysdesim_phase56_report(path)
-        if not report or not getattr(report, "interaction", None):
-            raise RuntimeError("Phase 5/6 report has no interaction.")
+        yield path
     finally:
         try:
             os.unlink(path)
@@ -651,39 +653,29 @@ def _verify_sysdesim_xml_parse() -> None:
             pass
 
 
-def _verify_sysdesim_static_check() -> None:
-    import tempfile
+def _verify_sysdesim_xml_parse() -> None:
+    from pyfcstm.convert.sysdesim import build_sysdesim_phase56_report
 
+    with _smoke_xmi_path() as path:
+        report = build_sysdesim_phase56_report(path)
+        if not report or not getattr(report, "interaction", None):
+            raise RuntimeError("Phase 5/6 report has no interaction.")
+
+
+def _verify_sysdesim_static_check() -> None:
     from pyfcstm.convert import run_sysdesim_static_pre_checks
 
-    with tempfile.NamedTemporaryFile(
-        "w", suffix=".xml", delete=False, encoding="utf-8"
-    ) as tmp:
-        tmp.write(_SMOKE_SYSDESIM_XMI)
-        path = tmp.name
-    try:
+    with _smoke_xmi_path() as path:
         diagnostics = run_sysdesim_static_pre_checks(xml_path=path)
         # We don't care whether diagnostics is empty - we only want the
         # call to complete without raising.
         _ = list(diagnostics)
-    finally:
-        try:
-            os.unlink(path)
-        except OSError:  # pragma: no cover - tmp cleanup
-            pass
 
 
 def _verify_sysdesim_validate() -> None:
-    import tempfile
-
     from pyfcstm.convert import build_sysdesim_timeline_import_report
 
-    with tempfile.NamedTemporaryFile(
-        "w", suffix=".xml", delete=False, encoding="utf-8"
-    ) as tmp:
-        tmp.write(_SMOKE_SYSDESIM_XMI)
-        path = tmp.name
-    try:
+    with _smoke_xmi_path() as path:
         report = build_sysdesim_timeline_import_report(xml_path=path)
         if not report or "phase78" not in report:
             raise RuntimeError(
@@ -691,24 +683,12 @@ def _verify_sysdesim_validate() -> None:
                     sorted(report.keys()) if isinstance(report, dict) else type(report)
                 )
             )
-    finally:
-        try:
-            os.unlink(path)
-        except OSError:  # pragma: no cover - tmp cleanup
-            pass
 
 
 def _verify_sysdesim_svg_render() -> None:
-    import tempfile
-
     from pyfcstm.convert import render_sysdesim_timeline_svg
 
-    with tempfile.NamedTemporaryFile(
-        "w", suffix=".xml", delete=False, encoding="utf-8"
-    ) as tmp:
-        tmp.write(_SMOKE_SYSDESIM_XMI)
-        path = tmp.name
-    try:
+    with _smoke_xmi_path() as path:
         svg = render_sysdesim_timeline_svg(xml_path=path)
         if not isinstance(svg, str):
             raise RuntimeError("render returned non-str: {}".format(type(svg)))
@@ -718,24 +698,12 @@ def _verify_sysdesim_svg_render() -> None:
             )
         if "<svg" not in svg or "</svg>" not in svg:
             raise RuntimeError("Render output missing svg tags.")
-    finally:
-        try:
-            os.unlink(path)
-        except OSError:  # pragma: no cover - tmp cleanup
-            pass
 
 
 def _verify_sysdesim_png_render() -> None:
-    import tempfile
-
     from pyfcstm.convert import render_sysdesim_timeline_png
 
-    with tempfile.NamedTemporaryFile(
-        "w", suffix=".xml", delete=False, encoding="utf-8"
-    ) as tmp:
-        tmp.write(_SMOKE_SYSDESIM_XMI)
-        path = tmp.name
-    try:
+    with _smoke_xmi_path() as path:
         png = render_sysdesim_timeline_png(xml_path=path)
         if not isinstance(png, (bytes, bytearray)):
             raise RuntimeError("render returned non-bytes: {}".format(type(png)))
@@ -749,11 +717,6 @@ def _verify_sysdesim_png_render() -> None:
             raise RuntimeError(
                 "PNG IHDR reported degenerate dimensions {}x{}".format(width, height)
             )
-    finally:
-        try:
-            os.unlink(path)
-        except OSError:  # pragma: no cover - tmp cleanup
-            pass
 
 
 # --------------------------------------------------------------------------- #
@@ -1287,12 +1250,26 @@ def _collect_environment_facts() -> List[Tuple[str, List[Tuple[str, str]]]]:
 
     # --- Environment variables (relevant subset) -----------------------------
     env_vars = (
+        # Python toolchain
         "VIRTUAL_ENV", "CONDA_PREFIX",
         "PYTHONPATH", "PYTHONHOME", "PYTHONIOENCODING",
         "PYTHONDONTWRITEBYTECODE", "PYTHONUNBUFFERED",
+        # Console / terminal
         "TERM", "COLORTERM", "TZ",
         "DISPLAY", "BROWSER",
-        "CI", "GITHUB_ACTIONS",
+        # POSIX user / shell context (HOME / SHELL is the first thing a
+        # user looks at when "for some reason your CLI cannot read foo")
+        "HOME", "USER", "LOGNAME", "SHELL",
+        # Windows user / shell context (matters when the PyInstaller exe
+        # cannot extract _MEIPASS or write a tempfile)
+        "USERPROFILE", "USERNAME", "APPDATA", "LOCALAPPDATA", "COMSPEC",
+        # Common temp-dir overrides on every platform
+        "TMPDIR", "TEMP", "TMP",
+        # TLS / certificate stores (frequent root cause of "pip cannot
+        # install" or "git fetch hangs" surprises in restricted envs)
+        "SSL_CERT_FILE", "REQUESTS_CA_BUNDLE",
+        # CI metadata
+        "CI", "GITHUB_ACTIONS", "RUNNER_OS",
     )
     env_rows: List[Tuple[str, str]] = []
     for var in env_vars:
@@ -1312,8 +1289,11 @@ def _collect_environment_facts() -> List[Tuple[str, List[Tuple[str, str]]]]:
     time_rows: List[Tuple[str, str]] = []
 
     def _utc_now() -> str:
-        import datetime
-        return datetime.datetime.utcnow().isoformat() + "Z"
+        # ``datetime.utcnow()`` is deprecated in Python 3.12+; use a
+        # timezone-aware UTC datetime and render it with the canonical
+        # ``Z`` suffix.
+        now = datetime.datetime.now(datetime.timezone.utc)
+        return now.isoformat(timespec="seconds").replace("+00:00", "Z")
 
     _add(time_rows, "UTC now", _utc_now)
     _add(time_rows, "tzname", lambda: " / ".join(time.tzname) if hasattr(time, "tzname") else "(unknown)")
@@ -1383,6 +1363,20 @@ def _classify_build_mode(*, has_build_info: bool, has_git: bool) -> str:
     is_frozen = bool(getattr(sys, "frozen", False))
     has_meipass = hasattr(sys, "_MEIPASS")
     looks_frozen = is_frozen or has_meipass
+    # Order matters: ``looks_frozen + has_git`` is the strangest of all
+    # the unexpected combos and must short-circuit *before* the normal
+    # frozen branch claims it. A real PyInstaller exe ships only the
+    # files PyInstaller was told to include, never the source tree, so
+    # reaching a live ``.git`` directory means the exe is being run
+    # from inside a developer checkout - the live git facts will
+    # contradict the baked ones if both are present.
+    if looks_frozen and has_git:
+        return (
+            "WARNING: frozen PyInstaller exe also reached a live .git "
+            "checkout - this is unusual; the exe is probably being run "
+            "from inside a source tree, so live git facts may not match "
+            "the baked build info."
+        )
     if looks_frozen and has_build_info:
         return (
             "frozen PyInstaller exe (baked build info present)"
@@ -1537,7 +1531,6 @@ def _collect_git_facts() -> List[Tuple[str, str]]:
 
     def _run_git(*args: str) -> str:
         try:
-            import subprocess
             result = subprocess.run(
                 ["git", *args],
                 cwd=repo_root,

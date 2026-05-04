@@ -50,6 +50,12 @@ def _gather():
     commit = _git("rev-parse", "HEAD") or None
     short = commit[:12] if commit else None
     branch = _git("rev-parse", "--abbrev-ref", "HEAD") or None
+    # Detached HEAD (CI checking out a commit-sha, PR merge-preview
+    # commits, ``git bisect``, ...) reports the literal string ``HEAD``
+    # instead of a branch name, which would otherwise leak into the
+    # final report as ``BUILD_BRANCH = 'HEAD'`` and confuse readers.
+    if branch == "HEAD":
+        branch = None
     status = _git("status", "--porcelain")
     dirty = bool(status)
     # ``git status --porcelain`` format: ``<XY> <path>`` where ``XY`` is

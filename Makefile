@@ -128,8 +128,10 @@ help:
 	@echo ""
 
 package: tpl
+	$(PYTHON) -m tools.write_build_info
 	$(PYTHON) -m build --sdist --wheel --outdir ${DIST_DIR}
 build: tpl ${APP_ICON_STAMP}
+	$(PYTHON) -m tools.write_build_info
 	$(PYTHON) -m tools.generate_spec -o pyfcstm.spec --icon-dir ${APP_ICON_DIR}
 	pyinstaller pyfcstm.spec
 	@echo "Verifying bundled PyInstaller icon asset..."

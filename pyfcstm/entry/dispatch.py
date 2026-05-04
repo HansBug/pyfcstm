@@ -47,6 +47,55 @@ _authors = [
 
 
 # noinspection PyUnusedLocal
+def _run_smoke_test(ctx: Context, param: Option, value: bool) -> None:
+    """
+    ``--smoke-test`` callback: lazy-import the diagnostics package, run
+    every registered smoke case, and exit with the number of failed
+    cases as the exit code.
+
+    The diagnostics import is wrapped in a ``try/except BaseException``
+    block because the whole point of ``--smoke-test`` is to be the last
+    line of defence when an install is broken; if our own diagnostics
+    package can't even be loaded, we still want a clear single-line
+    failure on stdout instead of a bare traceback.
+
+    :param ctx: Click context.
+    :type ctx: :class:`click.core.Context`
+    :param param: Click option metadata.
+    :type param: :class:`click.core.Option`
+    :param value: True iff ``--smoke-test`` was passed.
+    :type value: bool
+    :return: ``None``. Always exits the process via ``ctx.exit``.
+    :rtype: None
+    """
+    if not value or ctx.resilient_parsing:
+        return  # pragma: no cover
+    try:
+        from pyfcstm.diagnostics import run_smoke_test
+    except BaseException as exc:  # pragma: no cover - smoke runner is pure stdlib + click
+        click.echo(
+            "[FATAL] could not import pyfcstm.diagnostics: {!r}\n"
+            "        This usually means the wheel was installed with a "
+            "broken module layout. Try `pip install --force-reinstall pyfcstm`.".format(exc),
+            err=True,
+        )
+        ctx.exit(2)
+        return
+    try:
+        failed_count = run_smoke_test()
+    except BaseException as exc:  # pragma: no cover - run_smoke_test never raises
+        click.echo(
+            "[FATAL] smoke runner itself raised: {!r}\n"
+            "        File this as a pyfcstm bug; the runner is supposed to "
+            "always finish.".format(exc),
+            err=True,
+        )
+        ctx.exit(3)
+        return
+    ctx.exit(failed_count)
+
+
+# noinspection PyUnusedLocal
 def print_version(ctx: Context, param: Option, value: bool) -> None:
     """
     Print the version information for the CLI and exit.
@@ -86,6 +135,14 @@ def print_version(ctx: Context, param: Option, value: bool) -> None:
 @click.option('-v', '--version', is_flag=True,
               callback=print_version, expose_value=False, is_eager=True,
               help="Show pyfcstm's version information.")
+@click.option('--smoke-test', 'smoke_test', is_flag=True,
+              callback=_run_smoke_test, expose_value=False, is_eager=True,
+              help=(
+                  "Run a self-contained smoke test that verifies every "
+                  "third-party dependency, native binary, bundled static "
+                  "asset, and minimum end-to-end path. Exits with the "
+                  "number of failed cases (0 = clean install)."
+              ))
 def pyfcstmcli() -> None:
     """
     Main Click command group for the :mod:`pyfcstm` CLI.

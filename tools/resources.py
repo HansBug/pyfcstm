@@ -1,7 +1,20 @@
 import logging
 import os.path
 
-import importlib_metadata
+# ``importlib_metadata`` is the third-party backport; on Python 3.8+
+# the stdlib ``importlib.metadata`` is equivalent. The build pipeline
+# does not actually call ``list_installed_packages`` from get_resource_files
+# (the call site is commented out below), but the top-level import used to
+# be hard - if the backport was not installed, ``tools.resources`` failed
+# to load entirely and ``generate_spec.collect_datas`` silently returned
+# zero data files. That is exactly what made the PyInstaller exe ship
+# without ``pyfcstm/template/*.zip`` and ``z3/lib/libz3.so``. Fall back
+# to stdlib so the import chain is robust regardless of which environment
+# the build runs in.
+try:
+    import importlib_metadata  # type: ignore
+except ImportError:  # pragma: no cover - exercised on Python 3.8+ envs without the backport
+    import importlib.metadata as importlib_metadata  # type: ignore
 from hbutils.reflection import quick_import_object
 
 

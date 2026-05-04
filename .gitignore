@@ -1247,3 +1247,4 @@ junit.xml
 !/editors/vscode/parser/README.md
 !/editors/vscode/parser/package.json
 /editors/vscode/syntaxes/*.json
+/pyfcstm/config/build_info.py

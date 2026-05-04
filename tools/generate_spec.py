@@ -105,6 +105,21 @@ def collect_third_party_binaries_and_hiddenimports():
         )
         collect_all = None
 
+    # NOTE: z3 is intentionally NOT in this list. ``tools.resources``'s
+    # ``get_resources_from_package('z3')`` already enumerates the entire
+    # z3 wheel directory as data files (including ``z3/lib/libz3.so`` /
+    # ``libz3.dll``), so the wheel's native lib lands at the path z3's
+    # ``importlib_resources`` loader expects (``<_MEIPASS>/z3/lib/...``).
+    # Adding z3 here in addition produces double-staging plus accidental
+    # binary treatment of the ``z3/include/*.h`` headers, which on
+    # Windows breaks PyInstaller's bootstrapper with::
+    #     Error loading Python DLL 'python37.dll'.
+    #     LoadLibrary: Invalid access to memory location.
+    # The remaining defence (so a partial-resource collect doesn't
+    # silently ship an exe without z3 lib) is the ``importlib.metadata``
+    # stdlib fallback in ``tools/resources.py``: that keeps the data
+    # collector working when the third-party ``importlib_metadata``
+    # backport is not installed.
     for module_name in ('py_mini_racer', 'mini_racer'):
         # First try the official helper.
         if collect_all is not None:

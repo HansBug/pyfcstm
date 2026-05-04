@@ -200,6 +200,20 @@ jobs:
             --test-dsl docs/source/tutorials/cli/simple_machine.fcstm \
             --template-dir test/testfile/template_1 \
             --sysdesim-fixtures-dir test/testfile/sysdesim
+      - name: Smoke-test bundled exe (Linux/MacOS)
+        if: ${{ env.OS_NAME != 'Windows' }}
+        shell: bash
+        run: |
+          # The standalone exe must pass --smoke-test in the build runner,
+          # which has every dev dep installed. A FAIL here means PyInstaller
+          # dropped a runtime asset, V8 binary, or generated grammar file
+          # that the in-tree pip-installed pyfcstm would normally provide.
+          dist/pyfcstm --smoke-test
+      - name: Smoke-test bundled exe (Windows)
+        if: ${{ env.OS_NAME == 'Windows' }}
+        shell: bash
+        run: |
+          dist/pyfcstm.exe --smoke-test
       - name: Upload packed files to artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -320,6 +334,21 @@ jobs:
             --test-dsl docs/source/tutorials/cli/simple_machine.fcstm \
             --template-dir test/testfile/template_1 \
             --sysdesim-fixtures-dir test/testfile/sysdesim
+      - name: Smoke-test bundled exe in clean env (Linux/MacOS)
+        if: ${{ env.OS_NAME != 'Windows' }}
+        shell: bash
+        run: |
+          # This is the canonical "is the wheel actually self-contained"
+          # check: a fresh runner with no project deps installed runs the
+          # smoke battery against the bundled exe. If anything fails here,
+          # the standalone exe is not really self-contained and an end
+          # user with the same environment would hit the same break.
+          dist/pyfcstm --smoke-test
+      - name: Smoke-test bundled exe in clean env (Windows)
+        if: ${{ env.OS_NAME == 'Windows' }}
+        shell: bash
+        run: |
+          dist/pyfcstm.exe --smoke-test
 
   release_vscode_extension:
     name: VSCode Extension Build And Release

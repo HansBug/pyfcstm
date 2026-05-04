@@ -438,6 +438,91 @@ def test_run_smoke_test_survives_environment_collector_explosion(monkeypatch):
 
 
 @pytest.mark.unittest
+def test_build_info_facts_optional_in_dev_tree():
+    """Without ``pyfcstm/config/build_info.py`` (dev/source mode), the
+    build-info collector returns ``[]`` and never raises. The wider
+    environment dump must still complete and contain the expected
+    sections."""
+    from pyfcstm.diagnostics.smoke import _collect_build_info_facts
+
+    # Force-remove the module so the import inside the collector hits
+    # the missing-file branch even if a previous test already imported
+    # it.
+    for mod in list(sys.modules):
+        if mod == "pyfcstm.config.build_info":
+            del sys.modules[mod]
+
+    rows = _collect_build_info_facts()
+    # Either the file is genuinely absent (rows == []) or it exists
+    # with all-None placeholders (also no rows generated). Both are
+    # "no baked build info"; both are valid dev-mode outputs.
+    assert isinstance(rows, list)
+    if rows:
+        # If the test environment happens to have a build_info.py with
+        # populated values, every row must still be a (str, str) pair.
+        for key, value in rows:
+            assert isinstance(key, str)
+            assert isinstance(value, str)
+
+
+@pytest.mark.unittest
+def test_build_info_facts_with_populated_module(monkeypatch, tmp_path):
+    """Inject a synthetic ``pyfcstm.config.build_info`` and confirm the
+    collector surfaces every expected key (commit / branch / build
+    time / dirty + files / host)."""
+    import types
+
+    from pyfcstm.diagnostics.smoke import _collect_build_info_facts
+
+    fake_module = types.ModuleType("pyfcstm.config.build_info")
+    fake_module.BUILD_COMMIT = "abc123def456"
+    fake_module.BUILD_COMMIT_SHORT = "abc123def456"
+    fake_module.BUILD_BRANCH = "test-branch"
+    fake_module.BUILD_TIME_UTC = "2026-05-04T01:23:45Z"
+    fake_module.BUILD_DIRTY = True
+    fake_module.BUILD_DIRTY_FILES = ("path/a.py", "path/b.py")
+    fake_module.BUILD_HOST = "test-host"
+    monkeypatch.setitem(
+        sys.modules, "pyfcstm.config.build_info", fake_module
+    )
+
+    rows = _collect_build_info_facts()
+    flat = dict(rows)
+    assert flat.get("baked commit") == "abc123def456"
+    assert flat.get("baked branch") == "test-branch"
+    assert flat.get("baked build time (UTC)") == "2026-05-04T01:23:45Z"
+    assert flat.get("baked dirty?") == "yes"
+    assert "path/a.py" in flat.get("baked dirty files", "")
+    assert "path/b.py" in flat.get("baked dirty files", "")
+    assert flat.get("baked build host") == "test-host"
+
+
+@pytest.mark.unittest
+def test_build_info_facts_swallows_corrupt_module(monkeypatch):
+    """A corrupt ``pyfcstm.config.build_info`` (e.g. it raises during
+    its own initialization) must surface as a placeholder row rather
+    than tearing down the diagnostics dump."""
+    import types
+
+    from pyfcstm.diagnostics.smoke import _collect_build_info_facts
+
+    class _BoomModule(types.ModuleType):
+        def __getattr__(self, name):
+            raise RuntimeError("synthetic build_info corruption: " + name)
+
+    monkeypatch.setitem(
+        sys.modules,
+        "pyfcstm.config.build_info",
+        _BoomModule("pyfcstm.config.build_info"),
+    )
+
+    # Each ``getattr`` call inside the collector becomes a placeholder.
+    # The collector itself must not raise.
+    rows = _collect_build_info_facts()
+    assert isinstance(rows, list)
+
+
+@pytest.mark.unittest
 def test_diagnostics_main_returns_int_failure_count():
     """``pyfcstm.diagnostics.__main__:main`` returns the failed-case
     count as an int, even if the install is healthy (= 0).

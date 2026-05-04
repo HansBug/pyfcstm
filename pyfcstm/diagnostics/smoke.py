@@ -1343,12 +1343,116 @@ def _collect_environment_facts() -> List[Tuple[str, List[Tuple[str, str]]]]:
     _add(pyf_rows, "install path", _pyfcstm_install_path)
     sections.append(("pyfcstm package", pyf_rows))
 
-    # --- Git checkout (when running from a dev tree) -------------------------
+    # --- Build / git facts ---------------------------------------------------
+    # ``Build`` rows come from ``pyfcstm/config/build_info.py`` (regenerated
+    # at ``make build`` / ``make package`` time, gitignored). Its presence
+    # is itself a useful signal: a frozen exe always has it, a dev source
+    # checkout never does (unless someone ran the helper manually).
+    #
+    # ``Live git`` rows come from ``git rev-parse`` against the .git dir
+    # nearest the install. They only show up when running from a real
+    # checkout - the typical PyInstaller exe / wheel install never has
+    # them, but they are also the freshest source, so we prefer them
+    # when both are present.
+    build_rows = _collect_build_info_facts()
     git_rows = _collect_git_facts()
-    if git_rows:
-        sections.append(("Git checkout", git_rows))
+    if build_rows or git_rows:
+        merged: List[Tuple[str, str]] = []
+        if build_rows:
+            merged.extend(build_rows)
+        if git_rows:
+            if merged:
+                merged.append(("---", "(live git below; baked-in build above)"))
+            merged.extend(git_rows)
+        sections.append(("Build / git", merged))
 
     return sections
+
+
+def _collect_build_info_facts() -> List[Tuple[str, str]]:
+    """
+    Read the optional :mod:`pyfcstm.config.build_info` module.
+
+    The module is created at build time by ``tools/write_build_info.py``
+    and is intentionally gitignored. Its absence is the canonical
+    indicator that the running interpreter is a development checkout
+    (or a sdist install that bypassed the Makefile); its presence
+    signals a Makefile-built artefact (PyInstaller exe or wheel).
+
+    Returns ``[]`` when the module is not present, so the dump simply
+    omits the build section without raising.
+    """
+    rows: List[Tuple[str, str]] = []
+    try:
+        from pyfcstm.config import build_info as bi
+    except ImportError:
+        return rows
+    except BaseException as exc:  # noqa: BLE001 - guard against weird import-time errors
+        rows.append(("baked metadata", "(unavailable: {}: {})".format(
+            type(exc).__name__, exc,
+        )))
+        return rows
+
+    def _read(label: str, key: str) -> Optional[str]:
+        """Read one attribute from ``bi`` and add it as a row; return its
+        value (or ``None``) so the caller can branch on it.
+
+        Wrapped in BaseException so a malicious or partially-loaded
+        build_info module cannot abort the whole environment dump.
+        """
+        try:
+            value = getattr(bi, key, None)
+        except BaseException as inner:  # noqa: BLE001
+            rows.append((label, "(unavailable: {}: {})".format(
+                type(inner).__name__, inner,
+            )))
+            return None
+        if value is None or value == "":
+            return None
+        return value
+
+    short = _read("baked commit", "BUILD_COMMIT_SHORT")
+    if short is None:
+        short = _read("baked commit", "BUILD_COMMIT")
+    if short is not None:
+        rows.append(("baked commit", str(short)))
+    branch = _read("baked branch", "BUILD_BRANCH")
+    if branch is not None:
+        rows.append(("baked branch", str(branch)))
+    build_time = _read("baked build time (UTC)", "BUILD_TIME_UTC")
+    if build_time is not None:
+        rows.append(("baked build time (UTC)", str(build_time)))
+
+    try:
+        dirty = getattr(bi, "BUILD_DIRTY", None)
+    except BaseException as inner:  # noqa: BLE001
+        rows.append(("baked dirty?", "(unavailable: {}: {})".format(
+            type(inner).__name__, inner,
+        )))
+        dirty = None
+    if dirty is True:
+        rows.append(("baked dirty?", "yes"))
+        try:
+            dirty_files = getattr(bi, "BUILD_DIRTY_FILES", ()) or ()
+        except BaseException as inner:  # noqa: BLE001
+            rows.append(("baked dirty files", "(unavailable: {}: {})".format(
+                type(inner).__name__, inner,
+            )))
+            dirty_files = ()
+        if dirty_files:
+            shown = list(dirty_files)[:10]
+            extra = len(dirty_files) - len(shown)
+            line = ", ".join(str(f) for f in shown)
+            if extra > 0:
+                line += "  (... {} more)".format(extra)
+            rows.append(("baked dirty files", line))
+    elif dirty is False:
+        rows.append(("baked dirty?", "no"))
+
+    host = _read("baked build host", "BUILD_HOST")
+    if host is not None:
+        rows.append(("baked build host", str(host)))
+    return rows
 
 
 def _find_git_dir() -> Optional[str]:

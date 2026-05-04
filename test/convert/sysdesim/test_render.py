@@ -645,6 +645,73 @@ def test_render_overlay_with_state_cells_appends_table(tmp_path: Path):
 
 
 @pytest.mark.unittest
+def test_overlay_state_cells_include_time_column_with_phase11_timeline(tmp_path: Path):
+    """State table prepends a ``t`` column whose cells echo Phase11 time values."""
+    xml_file = _build_parallel_timeline_xml(tmp_path)
+    phase10 = build_sysdesim_phase10_report(str(xml_file))
+    fake_timeline = {
+        "first_coexistence_symbol": "t02",
+        "first_coexistence_time_text": "5",
+        "first_coexistence_note": None,
+        "timeline_points": [
+            {"symbol": "t01", "time_value_text": "0", "is_coexistent": False, "machine_states": []},
+            {"symbol": "t02", "time_value_text": "5", "is_coexistent": True, "machine_states": []},
+        ],
+    }
+    overlay = build_overlay_from_diagnostics(
+        phase10_report=phase10,
+        diagnostics=[],
+        coexistence_timeline=fake_timeline,
+    )
+    cols = overlay["state_columns"]
+    assert cols[0]["header"] == "t"
+    assert cols[0]["kind"] == "time"
+    rows_by_id = {r["step_id"]: r for r in overlay["step_states"]}
+    # Time cell normalizes "0" -> "0s" so the column reads as a duration.
+    assert rows_by_id["s01"]["cells"][0] == "0s"
+    assert rows_by_id["s02"]["cells"][0] == "5s"
+
+
+@pytest.mark.unittest
+def test_overlay_state_cells_fall_back_to_symbolic_time_without_phase11(tmp_path: Path):
+    """Without a Phase11 timeline, the time column shows the Phase10 symbol."""
+    xml_file = _build_parallel_timeline_xml(tmp_path)
+    phase10 = build_sysdesim_phase10_report(str(xml_file))
+    overlay = build_overlay_from_diagnostics(
+        phase10_report=phase10, diagnostics=[], include_state_cells=True
+    )
+    rows_by_id = {r["step_id"]: r for r in overlay["step_states"]}
+    # Phase10 step.time_symbol is "tNN" (numeric paired with the step id).
+    assert rows_by_id["s01"]["cells"][0] == "t01"
+    assert rows_by_id["s08"]["cells"][0] == "t08"
+
+
+@pytest.mark.unittest
+def test_render_unsat_repaints_base_bracket_red_with_sub_label(tmp_path: Path):
+    """UNSAT constraint_arrows recolors the base bracket and adds a UNSAT sub-line."""
+    xml_file = _build_contradictory_durations_xml(tmp_path)
+    phase10 = build_sysdesim_phase10_report(str(xml_file))
+    overlay = build_overlay_from_diagnostics(
+        phase10_report=phase10,
+        diagnostics=[
+            IrDiagnostic(
+                level="error",
+                code="temporal_constraints_unsat",
+                message="...",
+                details={
+                    "involved_constraint_ids": ["dur_rule_a"],
+                },
+            )
+        ],
+    )
+    decorated = render_sysdesim_timeline_svg(phase10_report=phase10, overlay=overlay)
+    # The base bracket is repainted red (no separate red double-arrow now).
+    assert "#cc3030" in decorated
+    # Sub-label says "UNSAT = 10s" right under the bound expression.
+    assert "UNSAT = 10s" in decorated
+
+
+@pytest.mark.unittest
 def test_render_overlay_state_cells_highlight_first_coexistence(tmp_path: Path):
     """A coexistence_timeline with first_coexistence_symbol triggers a green highlight."""
     xml_file = _build_parallel_timeline_xml(tmp_path)

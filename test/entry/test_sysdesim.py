@@ -1439,9 +1439,11 @@ def test_validate_render_diagram_emits_overlay_with_summary_lines(tmp_path: Path
     text = out_svg.read_text(encoding="utf-8")
     # Banner with at least the static-check headline.
     assert "Static check:" in text or "[INFO]" in text or "[WARNING]" in text
-    # v2: validate render must show the per-step state-cell table directly on
-    # the diagram so it can stand in for the CLI ``co`` table.
+    # v2/v3: validate render must show the per-step state-cell table
+    # directly on the diagram so it can stand in for the CLI ``co`` table.
     assert ">co<" in text
+    # v3: time column header is the leftmost cell of the table.
+    assert ">t<" in text
 
 
 @pytest.mark.unittest

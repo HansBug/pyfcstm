@@ -436,7 +436,11 @@ def _phase11_step_state_rows(
     if not output_aliases:
         return state_columns, step_states
 
-    # Build one column per machine alias plus a trailing ``co`` column.
+    # Layout: ``t`` (time) column first, then one column per machine alias,
+    # then a trailing ``co`` (coexistence) column. Mirrors the validate CLI
+    # ``co`` table column order so the overlay reads identically to the
+    # terminal output.
+    state_columns.append({"header": "t", "kind": "time"})
     for alias in output_aliases:
         state_columns.append(
             {"header": _shorten_machine_alias(alias), "kind": "machine"}
@@ -459,6 +463,17 @@ def _phase11_step_state_rows(
     co_by_step: Dict[str, str] = {}
     first_coex_step: Optional[str] = None
     states_by_step_from_phase11: Dict[str, Dict[str, str]] = {}
+    time_text_by_step: Dict[str, str] = {}
+
+    def _format_time_value_text(raw: Optional[str]) -> str:
+        """Render ``"0"`` as ``"0s"`` so the column reads like a duration."""
+        text = (str(raw) if raw is not None else "").strip()
+        if not text:
+            return ""
+        cleaned = text.lstrip("-")
+        if cleaned and all(ch.isdigit() or ch == "." for ch in cleaned):
+            return text + "s"
+        return text
 
     if coexistence_timeline:
         first_symbol = coexistence_timeline.get("first_coexistence_symbol")
@@ -485,6 +500,13 @@ def _phase11_step_state_rows(
                             cells[str(entry[0])] = str(entry[1])
                     if cells:
                         states_by_step_from_phase11[mapped] = cells
+                # Pick up the resolved time value. tau-auto points map onto
+                # the next scenario step; the t-step point that follows
+                # overwrites it with the actual observation time, which is
+                # the more useful number to print on the row.
+                time_value_text = _format_time_value_text(point.get("time_value_text"))
+                if time_value_text:
+                    time_text_by_step[mapped] = time_value_text
                 if symbol == first_symbol and first_coex_step is None:
                     co_by_step[mapped] = "start"
                     first_coex_step = mapped
@@ -500,6 +522,14 @@ def _phase11_step_state_rows(
     for idx, step in enumerate(phase10_report.scenario.steps):
         cells: List[str] = []
         phase11_states = states_by_step_from_phase11.get(step.step_id, {})
+        # Time column: prefer Phase11-resolved value, else fall back to the
+        # symbolic time variable from Phase10 (still useful when SMT did not
+        # run, e.g. ``static-check`` mode).
+        time_text = time_text_by_step.get(step.step_id)
+        if not time_text:
+            symbol = getattr(step, "time_symbol", None)
+            time_text = str(symbol) if symbol else ""
+        cells.append(time_text)
         for alias in output_aliases:
             # Prefer Phase11 timeline-state when available (it accounts for
             # hidden auto occurrences); otherwise fall back to the Phase10

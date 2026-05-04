@@ -515,6 +515,14 @@ function buildSvgChildren(timeline, theme, lifelinePositions, opts) {
   // dashed leader lines from the right-most lifeline column to a shared
   // vertical lane, capped by a double-headed arrow so the visual semantics
   // matches the SysDeSim reference: "the gap between these two events is X".
+  // When the overlay flags a constraint_id as part of an UNSAT diagnostic,
+  // the bracket is drawn in red instead of black and the label gets a
+  // second line ("UNSAT" by default) directly under the bound expression.
+  const overlayUnsatById = {};
+  for (const a of ((timeline.overlay && timeline.overlay.constraint_arrows) || [])) {
+    if (!a || !a.constraint_id) continue;
+    overlayUnsatById[a.constraint_id] = a;
+  }
   const headPad = LAYOUT.arrowHead + 1;
   for (const lane of laneAssignments) {
     const constraint = lane.constraint;
@@ -523,14 +531,23 @@ function buildSvgChildren(timeline, theme, lifelinePositions, opts) {
     const yTop = startY + topIndex * stepHeight;
     const yBottom = startY + bottomIndex * stepHeight;
     const tipX = bracketBaseX + lane.lane * (LAYOUT.bracketWidth + LAYOUT.bracketGap);
+    const unsatArrow = overlayUnsatById[constraint.constraint_id];
+    const unsat = !!unsatArrow;
+    const sev = unsat ? (unsatArrow.severity || "error") : null;
+    const lineStroke = unsat ? _severityFg(sev) : theme.bracketStroke;
+    const labelFill = unsat ? _severityFg(sev) : theme.bracketTextColor;
+    const lineWidth = unsat ? 2 : 1;
+    const arrowTheme = unsat
+      ? Object.assign({}, theme, { arrowStroke: lineStroke })
+      : theme;
     // Dashed leader lines from the rightmost lifeline to the lane tip.
     children.push(svgLine({
       x1: rightmostX,
       y1: yTop,
       x2: tipX,
       y2: yTop,
-      stroke: theme.bracketStroke,
-      strokeWidth: 0.7,
+      stroke: lineStroke,
+      strokeWidth: unsat ? 1.2 : 0.7,
       strokeDasharray: "2 3",
     }));
     children.push(svgLine({
@@ -538,8 +555,8 @@ function buildSvgChildren(timeline, theme, lifelinePositions, opts) {
       y1: yBottom,
       x2: tipX,
       y2: yBottom,
-      stroke: theme.bracketStroke,
-      strokeWidth: 0.7,
+      stroke: lineStroke,
+      strokeWidth: unsat ? 1.2 : 0.7,
       strokeDasharray: "2 3",
     }));
     // Vertical double-arrow segment between the two row endpoints.
@@ -548,21 +565,40 @@ function buildSvgChildren(timeline, theme, lifelinePositions, opts) {
       y1: yTop + headPad,
       x2: tipX,
       y2: yBottom - headPad,
-      stroke: theme.bracketStroke,
-      strokeWidth: 1,
+      stroke: lineStroke,
+      strokeWidth: lineWidth,
     }));
-    children.push(svgArrowHead(tipX, yTop, "up", theme));
-    children.push(svgArrowHead(tipX, yBottom, "down", theme));
-    // Label rendered next to the double-arrow midpoint.
+    children.push(svgArrowHead(tipX, yTop, "up", arrowTheme));
+    children.push(svgArrowHead(tipX, yBottom, "down", arrowTheme));
+    // Label rendered next to the double-arrow midpoint. When the bracket
+    // is flagged UNSAT, append a second-line UNSAT sub-label so the user
+    // sees the diagnostic right next to the offending bound.
+    const labelMidY = (yTop + yBottom) / 2 + 4;
     children.push(svgText({
       x: tipX + 6,
-      y: (yTop + yBottom) / 2 + 4,
+      y: unsat ? labelMidY - 6 : labelMidY,
       text: formatBracketLabel(constraint),
-      fill: theme.bracketTextColor,
+      fill: labelFill,
       fontFamily: theme.fontFamily,
       fontSize: theme.smallFontSize,
       anchor: "start",
+      fontWeight: unsat ? "bold" : null,
     }));
+    if (unsat) {
+      const subLabel = unsatArrow.violation_text
+        || unsatArrow.label
+        || "UNSAT";
+      children.push(svgText({
+        x: tipX + 6,
+        y: labelMidY + 9,
+        text: subLabel,
+        fill: labelFill,
+        fontFamily: theme.fontFamily,
+        fontSize: theme.smallFontSize - 1,
+        anchor: "start",
+        fontWeight: "bold",
+      }));
+    }
   }
 
   // Document border (light frame). When the overlay attaches a state-column
@@ -816,109 +852,67 @@ function renderOverlayConstraintArrows(
   overlay, timeline, stepIndexById, startY, stepHeight,
   rightmostX, laneCount, multiStepConstraints, theme,
 ) {
+  // Most ``constraint_arrows`` entries are now rendered by the base bracket
+  // pass (it paints those brackets red and adds a second-line UNSAT label).
+  // We only emit a separate marker when the constraint did NOT make it onto
+  // a multi-step bracket lane — single-step / inferred / unknown
+  // constraint_id cases. In those situations a small horizontal red
+  // double-arrow + label keeps the diagnostic visible.
   const out = [];
   const arrows = (overlay && overlay.constraint_arrows) || [];
   if (arrows.length === 0) return out;
 
-  // Reuse the existing bracket-lane assignment so each constraint_arrow
-  // anchors on the same right-margin lane the base diagram already drew
-  // its black bracket on.
-  const laneByConstraintId = {};
+  const onLane = {};
   if (multiStepConstraints && multiStepConstraints.length > 0) {
-    const { laneAssignments } = assignBracketLanes(
-      multiStepConstraints, stepIndexById,
-    );
-    const bracketBaseX = rightmostX + 36;
-    for (const lane of laneAssignments) {
-      const cid = lane.constraint && lane.constraint.constraint_id;
-      if (!cid) continue;
-      laneByConstraintId[cid] = {
-        tipX: bracketBaseX + lane.lane * (LAYOUT.bracketWidth + LAYOUT.bracketGap),
-        topIndex: lane.topIndex,
-        bottomIndex: lane.bottomIndex,
-      };
+    for (const c of multiStepConstraints) {
+      if (c && c.constraint_id) onLane[c.constraint_id] = true;
     }
   }
 
   for (const arrow of arrows) {
     if (!arrow) continue;
-    let topIndex, bottomIndex, tipX;
-    const lane = laneByConstraintId[arrow.constraint_id];
-    if (lane) {
-      topIndex = lane.topIndex;
-      bottomIndex = lane.bottomIndex;
-      tipX = lane.tipX + 6; // shift 6px right of the black bracket lane
-    } else if (arrow.left_step_id != null && arrow.right_step_id != null) {
-      const li = stepIndexById[arrow.left_step_id];
-      const ri = stepIndexById[arrow.right_step_id];
-      if (li === undefined || ri === undefined) continue;
-      topIndex = Math.min(li, ri);
-      bottomIndex = Math.max(li, ri);
-      tipX = rightmostX + 36 + laneCount * (LAYOUT.bracketWidth + LAYOUT.bracketGap) + 8;
-    } else {
-      continue;
-    }
+    if (onLane[arrow.constraint_id]) continue; // base render already paints it red
+    if (arrow.left_step_id == null || arrow.right_step_id == null) continue;
+    const li = stepIndexById[arrow.left_step_id];
+    const ri = stepIndexById[arrow.right_step_id];
+    if (li === undefined || ri === undefined) continue;
+    const topIndex = Math.min(li, ri);
+    const bottomIndex = Math.max(li, ri);
+    const tipX = rightmostX + 36 + laneCount * (LAYOUT.bracketWidth + LAYOUT.bracketGap) + 8;
+    const sev = arrow.severity || "error";
+    const fg = _severityFg(sev);
     if (topIndex === bottomIndex) {
-      // Same row: draw a small horizontal red double-arrow with label
-      // instead of a vertical arrow that has no length.
       const yMid = startY + topIndex * stepHeight;
-      const sev = arrow.severity || "error";
-      const fg = _severityFg(sev);
       out.push(svgLine({
         x1: tipX - 16, y1: yMid, x2: tipX + 16, y2: yMid,
         stroke: fg, strokeWidth: 2.5,
       }));
       out.push(_markerArrowHeadPolygon(tipX - 16, yMid, "left", fg));
       out.push(_markerArrowHeadPolygon(tipX + 16, yMid, "right", fg));
-      if (arrow.label || arrow.violation_text) {
-        out.push(svgText({
-          x: tipX, y: yMid - 8,
-          text: arrow.violation_text || arrow.label,
-          fill: fg, fontFamily: theme.fontFamily,
-          fontSize: theme.smallFontSize, fontWeight: "bold",
-          anchor: "middle",
-        }));
-      }
+      out.push(svgText({
+        x: tipX, y: yMid - 8,
+        text: arrow.violation_text || arrow.label || "UNSAT",
+        fill: fg, fontFamily: theme.fontFamily,
+        fontSize: theme.smallFontSize, fontWeight: "bold",
+        anchor: "middle",
+      }));
       continue;
     }
     const yTop = startY + topIndex * stepHeight;
     const yBottom = startY + bottomIndex * stepHeight;
-    const sev = arrow.severity || "error";
-    const fg = _severityFg(sev);
-    // Thick red vertical line + arrow heads at both endpoints.
     out.push(svgLine({
       x1: tipX, y1: yTop + 6, x2: tipX, y2: yBottom - 6,
       stroke: fg, strokeWidth: 2.5,
     }));
     out.push(_markerArrowHeadPolygon(tipX, yTop, "up", fg));
     out.push(_markerArrowHeadPolygon(tipX, yBottom, "down", fg));
-    // Mid-arrow label: violation text takes precedence; falls back to label.
-    const labelLine1 = arrow.violation_text || arrow.label || "UNSAT";
-    const labelLine2 = arrow.violation_text && arrow.label
-                       && arrow.violation_text !== arrow.label ? arrow.label : null;
-    const labelY = (yTop + yBottom) / 2;
-    out.push(svgRect({
-      x: tipX + 6, y: labelY - 11,
-      width: Math.max(60, approxTextWidth(labelLine1, theme.smallFontSize) + 12),
-      height: labelLine2 ? 32 : 18,
-      fill: _severityBg(sev), stroke: fg, strokeWidth: 1, rx: 3, ry: 3,
-    }));
     out.push(svgText({
-      x: tipX + 12, y: labelY + 2,
-      text: labelLine1,
+      x: tipX + 6, y: (yTop + yBottom) / 2 + 4,
+      text: arrow.violation_text || arrow.label || "UNSAT",
       fill: fg, fontFamily: theme.fontFamily,
       fontSize: theme.smallFontSize, fontWeight: "bold",
       anchor: "start",
     }));
-    if (labelLine2) {
-      out.push(svgText({
-        x: tipX + 12, y: labelY + 16,
-        text: labelLine2,
-        fill: fg, fontFamily: theme.fontFamily,
-        fontSize: theme.smallFontSize,
-        anchor: "start",
-      }));
-    }
   }
   return out;
 }

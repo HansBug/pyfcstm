@@ -1437,8 +1437,63 @@ def test_validate_render_diagram_emits_overlay_with_summary_lines(tmp_path: Path
     assert result.exit_code == 0, result.output
     assert out_svg.exists()
     text = out_svg.read_text(encoding="utf-8")
-    # Banner with at least the static-check headline (clean here).
+    # Banner with at least the static-check headline.
     assert "Static check:" in text or "[INFO]" in text or "[WARNING]" in text
+    # v2: validate render must show the per-step state-cell table directly on
+    # the diagram so it can stand in for the CLI ``co`` table.
+    assert ">co<" in text
+
+
+@pytest.mark.unittest
+def test_static_check_render_drop_shows_red_x_and_detail_badge(tmp_path: Path):
+    """v2 dropped-signal overlay paints a red X + an explanatory badge."""
+    xml_file = _build_signal_dropped_xml(tmp_path)
+    out_svg = tmp_path / "static_drop_v2.svg"
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "static-check",
+            "-i",
+            str(xml_file),
+            "--render-diagram",
+            str(out_svg),
+        ],
+        color=False,
+    )
+    assert result.exit_code == 0, result.output
+    text = out_svg.read_text(encoding="utf-8")
+    # The detail badge spells out the active state and the expected source
+    # state right on the diagram.
+    assert "Sig4 dropped @ Idle" in text
+    assert "expects Run" in text
+
+
+@pytest.mark.unittest
+def test_static_check_render_unsat_shows_red_double_arrow(tmp_path: Path):
+    """v2 UNSAT overlay paints a red ↕ double-arrow with violation text."""
+    xml_file = _build_contradictory_durations_xml(tmp_path)
+    out_svg = tmp_path / "static_unsat_v2.svg"
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "static-check",
+            "-i",
+            str(xml_file),
+            "--render-diagram",
+            str(out_svg),
+        ],
+        color=False,
+    )
+    # static-check on an UNSAT fixture exits non-zero; the overlay file is
+    # still written so the user can investigate.
+    assert result.exit_code != 0
+    assert out_svg.exists()
+    text = out_svg.read_text(encoding="utf-8")
+    assert "#cc3030" in text
+    assert "UNSAT" in text
+    assert "10s" in text or "1s" in text
 
 
 @pytest.mark.unittest

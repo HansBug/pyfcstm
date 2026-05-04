@@ -565,8 +565,11 @@ function buildSvgChildren(timeline, theme, lifelinePositions, opts) {
     }));
   }
 
-  // Document border (light frame).
-  const totalWidth = computeWidth(lifelinePositions, laneCount);
+  // Document border (light frame). When the overlay attaches a state-column
+  // table on the right we need to widen the canvas accordingly, so do this
+  // computation after we know what the overlay payload looks like.
+  const overlayForLayout = timeline.overlay || {};
+  const totalWidth = computeWidth(lifelinePositions, laneCount, overlayForLayout);
   const totalHeight = totalLifelineHeight + LAYOUT.paddingBottom;
   children.unshift(svgRect({
     x: 0,
@@ -622,14 +625,32 @@ function buildSvgChildren(timeline, theme, lifelinePositions, opts) {
 
 // =============================================================================
 // Overlay rendering — diagnostic / coexistence markers added on top of the
-// base sequence diagram. Overlay payload schema:
+// base sequence diagram. Overlay payload schema (v2):
 //
 //   timeline.overlay = {
-//     "banner":             {severity, lines: []},     // top-bar header
+//     "banner":             {severity, lines: []},
+//
 //     "step_bands":         [{step_id|start/end, severity, kind, label}, ...],
+//
+//     "message_drops":      [{message_id, severity, code,
+//                             label, detail, active_state, expected_states}, ...],
+//
+//     "constraint_arrows":  [{constraint_id, severity, code,
+//                             left_step_id, right_step_id,
+//                             label, violation_text}, ...],
+//
+//     "state_columns":      [{header, kind: "machine"|"co"|"action"}, ...],
+//     "step_states":        [{step_id, cells: ["F", "J", "yes"],
+//                             highlight: "first_coexistence"|null}, ...],
+//
+//     // (legacy schema, still honored for backward-compat:)
 //     "message_markers":    [{message_id, severity, code, label}, ...],
 //     "constraint_markers": [{constraint_id, severity, code, label}, ...],
 //   }
+//
+// All elements are bounded-and-best-effort: references to unknown step /
+// message / constraint ids are silently skipped instead of failing the
+// render.
 // =============================================================================
 
 
@@ -637,12 +658,14 @@ const _SEVERITY_FG = {
   error: "#cc3030",
   warning: "#cc7700",
   info: "#3070cc",
+  good: "#1f8b3a",
 };
 
 const _SEVERITY_BG = {
   error: "#fbe3e3",
   warning: "#fff0d6",
   info: "#e1ebfa",
+  good: "#dff5e3",
 };
 
 function _severityFg(sev) {
@@ -651,6 +674,16 @@ function _severityFg(sev) {
 
 function _severityBg(sev) {
   return _SEVERITY_BG[sev] || _SEVERITY_BG.info;
+}
+
+const STATE_COL_WIDTH = 78;
+const STATE_COL_GAP = 4;
+const STATE_COL_HEADER_HEIGHT = 18;
+
+function overlayStateColumnsWidth(overlay) {
+  const cols = (overlay && overlay.state_columns) || [];
+  if (cols.length === 0) return 0;
+  return STATE_COL_GAP + cols.length * (STATE_COL_WIDTH + STATE_COL_GAP);
 }
 
 function computeBannerHeight(overlay) {
@@ -741,6 +774,295 @@ function renderOverlayStepBands(bands, stepIndexById, startY, stepHeight, totalW
   return out;
 }
 
+function _markerArrowHeadPolygon(x, y, dir, fill) {
+  // Filled triangle arrow head, larger and bolder than the base
+  // bracketArrowHead so it reads at a glance.
+  const size = 9;
+  let points;
+  if (dir === "up") {
+    points = (x - size / 2) + "," + (y + size) + " " +
+             (x + size / 2) + "," + (y + size) + " " +
+             x + "," + y;
+  } else if (dir === "down") {
+    points = (x - size / 2) + "," + (y - size) + " " +
+             (x + size / 2) + "," + (y - size) + " " +
+             x + "," + y;
+  } else {
+    points = (x - size) + "," + (y - size / 2) + " " +
+             (x - size) + "," + (y + size / 2) + " " +
+             x + "," + y;
+  }
+  return "<polygon points=\"" + points + "\" fill=\"" + fill +
+         "\" stroke=\"" + fill + "\" stroke-width=\"1\"/>";
+}
+
+function _drawRedX(centerX, centerY, halfSize, color) {
+  // Two crossing strokes form the strikethrough X over a dropped message.
+  return [
+    svgLine({
+      x1: centerX - halfSize, y1: centerY - halfSize,
+      x2: centerX + halfSize, y2: centerY + halfSize,
+      stroke: color, strokeWidth: 2.5, strokeLinecap: "round",
+    }),
+    svgLine({
+      x1: centerX - halfSize, y1: centerY + halfSize,
+      x2: centerX + halfSize, y2: centerY - halfSize,
+      stroke: color, strokeWidth: 2.5, strokeLinecap: "round",
+    }),
+  ];
+}
+
+function renderOverlayConstraintArrows(
+  overlay, timeline, stepIndexById, startY, stepHeight,
+  rightmostX, laneCount, multiStepConstraints, theme,
+) {
+  const out = [];
+  const arrows = (overlay && overlay.constraint_arrows) || [];
+  if (arrows.length === 0) return out;
+
+  // Reuse the existing bracket-lane assignment so each constraint_arrow
+  // anchors on the same right-margin lane the base diagram already drew
+  // its black bracket on.
+  const laneByConstraintId = {};
+  if (multiStepConstraints && multiStepConstraints.length > 0) {
+    const { laneAssignments } = assignBracketLanes(
+      multiStepConstraints, stepIndexById,
+    );
+    const bracketBaseX = rightmostX + 36;
+    for (const lane of laneAssignments) {
+      const cid = lane.constraint && lane.constraint.constraint_id;
+      if (!cid) continue;
+      laneByConstraintId[cid] = {
+        tipX: bracketBaseX + lane.lane * (LAYOUT.bracketWidth + LAYOUT.bracketGap),
+        topIndex: lane.topIndex,
+        bottomIndex: lane.bottomIndex,
+      };
+    }
+  }
+
+  for (const arrow of arrows) {
+    if (!arrow) continue;
+    let topIndex, bottomIndex, tipX;
+    const lane = laneByConstraintId[arrow.constraint_id];
+    if (lane) {
+      topIndex = lane.topIndex;
+      bottomIndex = lane.bottomIndex;
+      tipX = lane.tipX + 6; // shift 6px right of the black bracket lane
+    } else if (arrow.left_step_id != null && arrow.right_step_id != null) {
+      const li = stepIndexById[arrow.left_step_id];
+      const ri = stepIndexById[arrow.right_step_id];
+      if (li === undefined || ri === undefined) continue;
+      topIndex = Math.min(li, ri);
+      bottomIndex = Math.max(li, ri);
+      tipX = rightmostX + 36 + laneCount * (LAYOUT.bracketWidth + LAYOUT.bracketGap) + 8;
+    } else {
+      continue;
+    }
+    if (topIndex === bottomIndex) {
+      // Same row: draw a small horizontal red double-arrow with label
+      // instead of a vertical arrow that has no length.
+      const yMid = startY + topIndex * stepHeight;
+      const sev = arrow.severity || "error";
+      const fg = _severityFg(sev);
+      out.push(svgLine({
+        x1: tipX - 16, y1: yMid, x2: tipX + 16, y2: yMid,
+        stroke: fg, strokeWidth: 2.5,
+      }));
+      out.push(_markerArrowHeadPolygon(tipX - 16, yMid, "left", fg));
+      out.push(_markerArrowHeadPolygon(tipX + 16, yMid, "right", fg));
+      if (arrow.label || arrow.violation_text) {
+        out.push(svgText({
+          x: tipX, y: yMid - 8,
+          text: arrow.violation_text || arrow.label,
+          fill: fg, fontFamily: theme.fontFamily,
+          fontSize: theme.smallFontSize, fontWeight: "bold",
+          anchor: "middle",
+        }));
+      }
+      continue;
+    }
+    const yTop = startY + topIndex * stepHeight;
+    const yBottom = startY + bottomIndex * stepHeight;
+    const sev = arrow.severity || "error";
+    const fg = _severityFg(sev);
+    // Thick red vertical line + arrow heads at both endpoints.
+    out.push(svgLine({
+      x1: tipX, y1: yTop + 6, x2: tipX, y2: yBottom - 6,
+      stroke: fg, strokeWidth: 2.5,
+    }));
+    out.push(_markerArrowHeadPolygon(tipX, yTop, "up", fg));
+    out.push(_markerArrowHeadPolygon(tipX, yBottom, "down", fg));
+    // Mid-arrow label: violation text takes precedence; falls back to label.
+    const labelLine1 = arrow.violation_text || arrow.label || "UNSAT";
+    const labelLine2 = arrow.violation_text && arrow.label
+                       && arrow.violation_text !== arrow.label ? arrow.label : null;
+    const labelY = (yTop + yBottom) / 2;
+    out.push(svgRect({
+      x: tipX + 6, y: labelY - 11,
+      width: Math.max(60, approxTextWidth(labelLine1, theme.smallFontSize) + 12),
+      height: labelLine2 ? 32 : 18,
+      fill: _severityBg(sev), stroke: fg, strokeWidth: 1, rx: 3, ry: 3,
+    }));
+    out.push(svgText({
+      x: tipX + 12, y: labelY + 2,
+      text: labelLine1,
+      fill: fg, fontFamily: theme.fontFamily,
+      fontSize: theme.smallFontSize, fontWeight: "bold",
+      anchor: "start",
+    }));
+    if (labelLine2) {
+      out.push(svgText({
+        x: tipX + 12, y: labelY + 16,
+        text: labelLine2,
+        fill: fg, fontFamily: theme.fontFamily,
+        fontSize: theme.smallFontSize,
+        anchor: "start",
+      }));
+    }
+  }
+  return out;
+}
+
+function renderOverlayMessageDrops(
+  overlay, timeline, lifelinePositions, stepIndexById,
+  startY, stepHeight, theme,
+) {
+  const out = [];
+  const drops = (overlay && overlay.message_drops) || [];
+  if (drops.length === 0) return out;
+
+  const stepIndexByMessageId = {};
+  for (let i = 0; i < timeline.steps.length; i++) {
+    const m = timeline.steps[i].message;
+    if (m && m.message_id) stepIndexByMessageId[m.message_id] = i;
+  }
+  const lastX = lifelinePositions.length > 0
+    ? lifelinePositions[lifelinePositions.length - 1].centerX
+    : LAYOUT.paddingLeft;
+
+  for (const drop of drops) {
+    if (!drop) continue;
+    const idx = stepIndexByMessageId[drop.message_id];
+    if (idx === undefined) continue;
+    const step = timeline.steps[idx];
+    const stepY = startY + idx * stepHeight;
+    const sev = drop.severity || "warning";
+    const fg = _severityFg(sev);
+    const bg = _severityBg(sev);
+    // Locate the message arrow midpoint so we can draw a red X right on
+    // top of it (the arrow itself is rendered by the base layer).
+    let crossX = (LAYOUT.paddingLeft + lastX) / 2;
+    if (step && step.message && step.message.source_lifeline_id != null
+        && step.message.target_lifeline_id != null) {
+      const sx = lifelineCenterById(lifelinePositions, step.message.source_lifeline_id);
+      const tx = lifelineCenterById(lifelinePositions, step.message.target_lifeline_id);
+      if (sx !== null && tx !== null) {
+        crossX = (sx + tx) / 2;
+      }
+    }
+    // Red strikethrough X on the message arrow.
+    const xs = _drawRedX(crossX, stepY, 7, fg);
+    for (const s of xs) out.push(s);
+    // Detail badge at the right margin: "✗ Sig4 dropped @ Idle (expects Run)"
+    const detailLine = drop.detail
+      || (drop.label || "DROPPED")
+         + (drop.active_state ? " @ " + drop.active_state : "")
+         + (drop.expected_states ? " (expects " + drop.expected_states + ")" : "");
+    const badgeX = lastX + 14;
+    const badgeWidth = Math.max(120, approxTextWidth(detailLine, theme.smallFontSize) + 24);
+    out.push(svgRect({
+      x: badgeX, y: stepY - 10,
+      width: badgeWidth, height: 20, rx: 3, ry: 3,
+      fill: bg, stroke: fg, strokeWidth: 1,
+    }));
+    out.push(svgText({
+      x: badgeX + 6, y: stepY + 4,
+      text: "✗ " + detailLine,
+      fill: fg, fontFamily: theme.fontFamily,
+      fontSize: theme.smallFontSize, fontWeight: "bold",
+      anchor: "start",
+    }));
+  }
+  return out;
+}
+
+function renderOverlayStateTable(
+  overlay, timeline, stepIndexById, startY, stepHeight, totalWidth, theme,
+) {
+  const out = [];
+  const cols = (overlay && overlay.state_columns) || [];
+  const rows = (overlay && overlay.step_states) || [];
+  if (cols.length === 0 || rows.length === 0) return out;
+
+  const tableLeft = totalWidth - overlayStateColumnsWidth(overlay) + STATE_COL_GAP;
+  // Column headers, drawn just above the first step row.
+  const headerY = startY - 28;
+  for (let i = 0; i < cols.length; i++) {
+    const col = cols[i] || {};
+    const cellX = tableLeft + i * (STATE_COL_WIDTH + STATE_COL_GAP);
+    out.push(svgRect({
+      x: cellX, y: headerY,
+      width: STATE_COL_WIDTH, height: STATE_COL_HEADER_HEIGHT,
+      fill: "#eef0f2", stroke: "#9ea7ad", strokeWidth: 0.6, rx: 2, ry: 2,
+    }));
+    out.push(svgText({
+      x: cellX + STATE_COL_WIDTH / 2, y: headerY + 13,
+      text: col.header || "",
+      fill: theme.textColor,
+      fontFamily: theme.fontFamily,
+      fontSize: theme.smallFontSize, fontWeight: "bold",
+      anchor: "middle",
+    }));
+  }
+  // Per-step rows.
+  for (const row of rows) {
+    if (!row) continue;
+    const idx = stepIndexById[row.step_id];
+    if (idx === undefined) continue;
+    const stepY = startY + idx * stepHeight;
+    const cellTop = stepY - 12;
+    const isFirstCoex = row.highlight === "first_coexistence";
+    const isCoex = row.highlight === "coexistence";
+    const rowBg = isFirstCoex ? _severityBg("good")
+                  : isCoex ? "#eaf6ed"
+                  : "#fafbfc";
+    const rowStroke = isFirstCoex ? _severityFg("good") : "#cbd1d6";
+    for (let i = 0; i < cols.length; i++) {
+      const cellX = tableLeft + i * (STATE_COL_WIDTH + STATE_COL_GAP);
+      out.push(svgRect({
+        x: cellX, y: cellTop,
+        width: STATE_COL_WIDTH, height: 22,
+        fill: rowBg, stroke: rowStroke,
+        strokeWidth: isFirstCoex ? 1.4 : 0.6, rx: 2, ry: 2,
+      }));
+      const text = (row.cells || [])[i];
+      if (text == null || text === "") continue;
+      const col = cols[i] || {};
+      let textColor = theme.textColor;
+      let weight = null;
+      if (col.kind === "co") {
+        if (text === "start" || isFirstCoex) {
+          textColor = _severityFg("good");
+          weight = "bold";
+        } else if (text === "yes") {
+          textColor = _severityFg("good");
+        } else if (text === "initial") {
+          textColor = _severityFg("info");
+        }
+      }
+      out.push(svgText({
+        x: cellX + STATE_COL_WIDTH / 2, y: cellTop + 15,
+        text: String(text),
+        fill: textColor, fontFamily: theme.fontFamily,
+        fontSize: theme.smallFontSize,
+        fontWeight: weight,
+        anchor: "middle",
+      }));
+    }
+  }
+  return out;
+}
+
 function renderOverlayMarkers(
   overlay, timeline, lifelinePositions, stepIndexById,
   startY, stepHeight, totalWidth, laneCount, multiStepConstraints, theme,
@@ -758,8 +1080,29 @@ function renderOverlayMarkers(
     if (m && m.message_id) stepIndexByMessageId[m.message_id] = i;
   }
 
-  // ---- message_markers: ⚠ icon + small label, anchored just outside the
-  // ----                  rightmost lifeline (above any time-bracket lane).
+  // ---- v2: red X strikethrough + detail badge for message_drops --------
+  const dropChildren = renderOverlayMessageDrops(
+    overlay, timeline, lifelinePositions, stepIndexById,
+    startY, stepHeight, theme,
+  );
+  for (const c of dropChildren) out.push(c);
+
+  // ---- v2: red double-arrow for constraint_arrows ----------------------
+  const arrowChildren = renderOverlayConstraintArrows(
+    overlay, timeline, stepIndexById, startY, stepHeight,
+    lastX, laneCount, multiStepConstraints, theme,
+  );
+  for (const c of arrowChildren) out.push(c);
+
+  // ---- v2: per-step state cells for validate-style overlays ------------
+  const stateChildren = renderOverlayStateTable(
+    overlay, timeline, stepIndexById, startY, stepHeight, totalWidth, theme,
+  );
+  for (const c of stateChildren) out.push(c);
+
+  // ---- legacy v1 schema: small "!" badge + "UNSAT" text label ----------
+  // Kept so older callers / saved overlay JSONs keep rendering, even if
+  // they no longer get the v2 visual treatment.
   for (const marker of (overlay.message_markers || [])) {
     if (marker == null) continue;
     const idx = stepIndexByMessageId[marker.message_id];
@@ -768,20 +1111,11 @@ function renderOverlayMarkers(
     const sev = marker.severity || "warning";
     const fg = _severityFg(sev);
     const iconX = lastX + 16;
-    out.push(svgText({
-      x: iconX, y: stepY + 4,
-      text: "!",
-      fill: "#ffffff",
-      fontFamily: theme.fontFamily,
-      fontSize: theme.fontSize, fontWeight: "bold",
-      anchor: "middle",
-    }));
     out.push(svgRect({
       x: iconX - 6, y: stepY - 7,
       width: 12, height: 14, rx: 2, ry: 2,
       fill: fg, stroke: fg, strokeWidth: 1,
     }));
-    // Re-emit the "!" on top of the badge.
     out.push(svgText({
       x: iconX, y: stepY + 4,
       text: "!",
@@ -800,28 +1134,17 @@ function renderOverlayMarkers(
       }));
     }
   }
-
-  // ---- constraint_markers: short tag printed at the lane's top end ----
-  // We scan the multi-step constraint list to recover the tipX each lane
-  // ended up at; if a marker references a constraint that is not on a
-  // lane (single-step / inferred), the marker is silently skipped.
   const laneXByConstraintId = {};
   if (multiStepConstraints && multiStepConstraints.length > 0) {
-    // Recompute the same lane assignment buildSvgChildren used so we can
-    // line marker text up with the actual lane tip.
     const { laneAssignments } = assignBracketLanes(
       multiStepConstraints, stepIndexById,
     );
-    const rightmostX = lifelinePositions.length > 0
-      ? lifelinePositions[lifelinePositions.length - 1].centerX
-      : LAYOUT.paddingLeft;
-    const bracketBaseX = rightmostX + 36;
+    const bracketBaseX = lastX + 36;
     for (const lane of laneAssignments) {
       const cid = lane.constraint && lane.constraint.constraint_id;
       if (!cid) continue;
-      const tipX = bracketBaseX + lane.lane * (LAYOUT.bracketWidth + LAYOUT.bracketGap);
       laneXByConstraintId[cid] = {
-        tipX: tipX,
+        tipX: bracketBaseX + lane.lane * (LAYOUT.bracketWidth + LAYOUT.bracketGap),
         topIndex: lane.topIndex,
       };
     }
@@ -845,7 +1168,7 @@ function renderOverlayMarkers(
   return out;
 }
 
-function computeWidth(lifelinePositions, bracketLaneCount) {
+function computeWidth(lifelinePositions, bracketLaneCount, overlay) {
   const lastX = lifelinePositions.length > 0
     ? lifelinePositions[lifelinePositions.length - 1].centerX
     : LAYOUT.paddingLeft;
@@ -853,7 +1176,13 @@ function computeWidth(lifelinePositions, bracketLaneCount) {
     bracketLaneCount > 0
       ? 70 + bracketLaneCount * (LAYOUT.bracketWidth + LAYOUT.bracketGap) + 80
       : LAYOUT.paddingRight;
-  return lastX + bracketsRightExtent;
+  const overlayExtent = overlayStateColumnsWidth(overlay);
+  // When state_columns are present we also reserve space for the inline
+  // detail badge a message_drops marker emits next to the rightmost
+  // lifeline; bump the extent a bit so badges don't collide with the
+  // first state column.
+  const dropExtent = (overlay && (overlay.message_drops || []).length > 0) ? 200 : 0;
+  return lastX + bracketsRightExtent + overlayExtent + dropExtent;
 }
 
 // =============================================================================

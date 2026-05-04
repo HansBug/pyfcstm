@@ -1201,15 +1201,22 @@ def _render_overlay_diagram(
     summary_lines: Sequence[str] = (),
     title: Optional[str] = None,
     font_files: Optional[Sequence[str]] = None,
+    coexistence_timeline: Optional[Dict] = None,
+    include_state_cells: bool = True,
 ) -> Tuple[str, int]:
     """Render the sequence diagram with a diagnostics-driven overlay.
 
     Returns the resolved ``(format, byte_size)`` written to ``output_path``.
+    When ``coexistence_timeline`` is given (or ``include_state_cells`` is
+    explicitly true), the overlay also carries the per-step state-cell
+    table that mirrors the validate CLI's ``co`` table on the diagram.
     """
     overlay = build_overlay_from_diagnostics(
         phase10_report=phase10_report,
         diagnostics=diagnostics,
         summary_lines=summary_lines,
+        coexistence_timeline=coexistence_timeline,
+        include_state_cells=include_state_cells,
     )
     fmt = _resolve_render_format(output_path, output_format)
     try:
@@ -1326,6 +1333,7 @@ def _run_sysdesim_validate(
                     summary_lines=(
                         ["Validation skipped: static pre-check has blocking errors."]
                     ),
+                    include_state_cells=True,
                 )
                 click.echo(
                     "{label}  Wrote overlay {fmt} to {path} ({size} bytes).".format(
@@ -1401,7 +1409,9 @@ def _run_sysdesim_validate(
     if render_diagram and phase10_for_render is not None:
         summary_lines: List[str] = []
         timeline_report = (report_data.get("phase11") or {}).get("timeline_report")
+        coexistence_payload: Optional[Dict] = None
         if isinstance(timeline_report, dict):
+            coexistence_payload = timeline_report
             symbol = timeline_report.get("first_coexistence_symbol")
             time_text = timeline_report.get("first_coexistence_time_text")
             note = timeline_report.get("first_coexistence_note")
@@ -1419,6 +1429,8 @@ def _run_sysdesim_validate(
             output_format=render_format,
             diagnostics=static_diagnostics,
             summary_lines=summary_lines,
+            coexistence_timeline=coexistence_payload,
+            include_state_cells=True,
         )
         click.echo(
             "{label}  Wrote overlay {fmt} to {path} ({size} bytes).".format(
@@ -1936,6 +1948,7 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
                 output_path=render_diagram,
                 output_format=render_format,
                 diagnostics=diagnostics,
+                include_state_cells=True,
             )
             click.echo(
                 "{label}  Wrote overlay {fmt} to {path} ({size} bytes).".format(

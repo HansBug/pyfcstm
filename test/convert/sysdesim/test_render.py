@@ -369,8 +369,13 @@ def test_build_timeline_json_passes_overlay_through_when_provided(tmp_path: Path
 
 
 @pytest.mark.unittest
-def test_build_overlay_from_diagnostics_signal_dropped_anchors_message_marker(tmp_path: Path):
-    """A ``signal_dropped_in_state`` warning becomes one ``message_markers`` entry."""
+def test_build_overlay_from_diagnostics_signal_dropped_anchors_message_drop(tmp_path: Path):
+    """A ``signal_dropped_in_state`` warning becomes one v2 ``message_drops`` entry.
+
+    The entry carries enough context (active state + expected source states)
+    that the renderer can write a self-explanatory badge next to the
+    strikethrough red X without forcing the user to consult the CLI text.
+    """
     xml_file = _build_signal_dropped_xml(tmp_path)
     phase10 = build_sysdesim_phase10_report(str(xml_file))
     diag = IrDiagnostic(
@@ -390,18 +395,29 @@ def test_build_overlay_from_diagnostics_signal_dropped_anchors_message_marker(tm
     )
     assert overlay is not None
     assert overlay["banner"]["severity"] == "warning"
-    assert overlay["message_markers"]
-    marker = overlay["message_markers"][0]
-    assert marker["code"] == "signal_dropped_in_state"
-    assert marker["severity"] == "warning"
-    assert marker["label"] == "Sig4"
+    drops = overlay["message_drops"]
+    assert len(drops) == 1
+    drop = drops[0]
+    assert drop["code"] == "signal_dropped_in_state"
+    assert drop["severity"] == "warning"
+    assert drop["label"] == "Sig4"
     # The fixture's Sig4 message-id is ``msg_sig4`` (see fixture XML).
-    assert marker["message_id"] == "msg_sig4"
+    assert drop["message_id"] == "msg_sig4"
+    # Compact active-state (composite "Machine." prefix stripped).
+    assert drop["active_state"] == "Idle"
+    assert drop["expected_states"] == "Run"
+    assert "Sig4 dropped @ Idle" in drop["detail"]
+    assert "expects Run" in drop["detail"]
 
 
 @pytest.mark.unittest
-def test_build_overlay_from_diagnostics_temporal_unsat_emits_constraint_marker(tmp_path: Path):
-    """A ``temporal_constraints_unsat`` error becomes one entry per constraint id."""
+def test_build_overlay_from_diagnostics_temporal_unsat_emits_constraint_arrows(tmp_path: Path):
+    """A ``temporal_constraints_unsat`` error becomes one ``constraint_arrows`` entry per id.
+
+    Each arrow carries the ``left_step_id`` / ``right_step_id`` pair the JS
+    layer needs to draw a red double-headed arrow connecting the offending
+    pair of message rows, plus a violation_text label like ``UNSAT = 10s``.
+    """
     xml_file = _build_contradictory_durations_xml(tmp_path)
     phase10 = build_sysdesim_phase10_report(str(xml_file))
     diag = IrDiagnostic(
@@ -422,16 +438,22 @@ def test_build_overlay_from_diagnostics_temporal_unsat_emits_constraint_marker(t
     )
     assert overlay is not None
     assert overlay["banner"]["severity"] == "error"
-    cm = overlay["constraint_markers"]
-    assert {m["constraint_id"] for m in cm} == {"dur_rule_a", "dur_rule_b"}
-    for m in cm:
-        assert m["severity"] == "error"
-        assert m["label"] == "UNSAT"
+    arrows = overlay["constraint_arrows"]
+    assert {a["constraint_id"] for a in arrows} == {"dur_rule_a", "dur_rule_b"}
+    for a in arrows:
+        assert a["severity"] == "error"
+        assert a["label"] == "UNSAT"
+        # Both endpoints must be present so the renderer can connect them.
+        assert "left_step_id" in a and a["left_step_id"]
+        assert "right_step_id" in a and a["right_step_id"]
+        # The violation text echoes the offending bound (10s for rule_a, 1s for rule_b).
+        assert a["violation_text"].startswith("UNSAT")
+        assert "s" in a["violation_text"]
 
 
 @pytest.mark.unittest
 def test_build_overlay_from_diagnostics_unknown_step_or_constraint_silently_skips(tmp_path: Path):
-    """Diagnostics referencing unknown step labels / constraints add no markers."""
+    """Diagnostics referencing unknown step labels / constraints add no graphical anchor."""
     xml_file = _build_signal_dropped_xml(tmp_path)
     phase10 = build_sysdesim_phase10_report(str(xml_file))
     drop_unknown = IrDiagnostic(
@@ -454,16 +476,15 @@ def test_build_overlay_from_diagnostics_unknown_step_or_constraint_silently_skip
     overlay = build_overlay_from_diagnostics(
         phase10_report=phase10, diagnostics=[drop_unknown, unsat_unknown]
     )
-    # No graphical markers anchor (unknown step + unknown constraint id), but
-    # banner still reflects severity counts.
+    # No message_drops anchored (unknown signal); banner still emitted.
     assert overlay is not None
-    assert "message_markers" not in overlay
-    # constraint_markers ARE inserted unconditionally for known fields - the
-    # JS renderer silently skips unknown constraint ids at draw time, which
-    # is the intended best-effort layering. The Python helper does not have
-    # a constraint-id whitelist (it would require a second walk of the
-    # phase10 scenario). We assert the banner is still emitted instead.
+    assert "message_drops" not in overlay
+    # constraint_arrows ARE inserted unconditionally even for unknown ids -
+    # the JS renderer silently skips at draw time, which is the intended
+    # best-effort layering. The Python helper does not have a constraint-id
+    # whitelist. We assert the banner reflects severity instead.
     assert overlay["banner"]["lines"]
+    assert overlay["banner"]["severity"] == "error"
 
 
 @pytest.mark.unittest
@@ -506,19 +527,26 @@ def test_render_with_overlay_emits_marker_text_in_svg(tmp_path: Path):
                 level="warning",
                 code="signal_dropped_in_state",
                 message="...",
-                details={"step_label": "Sig4", "signal": "Sig4"},
+                details={
+                    "step_label": "Sig4",
+                    "signal": "Sig4",
+                    "pre_state_path": "DroppedSig.Idle",
+                    "transition_source_states": ["Run"],
+                },
             )
         ],
     )
     plain = render_sysdesim_timeline_svg(phase10_report=phase10)
     decorated = render_sysdesim_timeline_svg(phase10_report=phase10, overlay=overlay)
     # The decorated SVG must be different from the plain baseline,
-    # contain the warning banner color, and surface the dropped signal label.
+    # contain the warning banner color, and surface the dropped signal detail.
     assert plain != decorated
     assert "[WARNING]" in decorated
     assert "Static check:" in decorated
     # Severity warning fg color.
     assert "#cc7700" in decorated
+    # v2 detail badge surfaces the dropped signal directly.
+    assert "Sig4 dropped @ Idle" in decorated
 
 
 @pytest.mark.unittest
@@ -527,12 +555,13 @@ def test_render_overlay_with_unknown_message_id_drops_marker_silently(tmp_path: 
     xml_file = _build_parallel_timeline_xml(tmp_path)
     phase10 = build_sysdesim_phase10_report(str(xml_file))
     overlay = {
-        "message_markers": [
+        "message_drops": [
             {
                 "message_id": "unknown_message_id",
                 "severity": "warning",
                 "code": "signal_dropped_in_state",
                 "label": "Phantom",
+                "detail": "Phantom dropped",
             }
         ]
     }
@@ -540,3 +569,108 @@ def test_render_overlay_with_unknown_message_id_drops_marker_silently(tmp_path: 
     # Render still succeeds; the unknown anchor is silently dropped (no
     # ``Phantom`` text appears anywhere).
     assert "Phantom" not in decorated
+
+
+@pytest.mark.unittest
+def test_render_overlay_emits_red_double_arrow_for_constraint(tmp_path: Path):
+    """A v2 ``constraint_arrows`` entry produces a red ↕ between the two step rows."""
+    xml_file = _build_contradictory_durations_xml(tmp_path)
+    phase10 = build_sysdesim_phase10_report(str(xml_file))
+    overlay = build_overlay_from_diagnostics(
+        phase10_report=phase10,
+        diagnostics=[
+            IrDiagnostic(
+                level="error",
+                code="temporal_constraints_unsat",
+                message="...",
+                details={
+                    "involved_constraint_ids": ["dur_rule_a"],
+                },
+            )
+        ],
+    )
+    decorated = render_sysdesim_timeline_svg(phase10_report=phase10, overlay=overlay)
+    # The error severity foreground (#cc3030) must paint the new double-arrow.
+    assert "#cc3030" in decorated
+    # The violation text should be visible on the diagram.
+    assert "UNSAT" in decorated
+
+
+@pytest.mark.unittest
+def test_render_overlay_emits_red_x_strikethrough_for_drop(tmp_path: Path):
+    """A v2 ``message_drops`` entry produces a red X over the message arrow."""
+    xml_file = _build_signal_dropped_xml(tmp_path)
+    phase10 = build_sysdesim_phase10_report(str(xml_file))
+    overlay = build_overlay_from_diagnostics(
+        phase10_report=phase10,
+        diagnostics=[
+            IrDiagnostic(
+                level="warning",
+                code="signal_dropped_in_state",
+                message="...",
+                details={
+                    "step_label": "Sig4",
+                    "signal": "Sig4",
+                    "pre_state_path": "DroppedSig.Idle",
+                    "transition_source_states": ["Run"],
+                },
+            )
+        ],
+    )
+    decorated = render_sysdesim_timeline_svg(phase10_report=phase10, overlay=overlay)
+    # Warning fg #cc7700 paints the X strokes and the right-margin badge.
+    assert "#cc7700" in decorated
+    # The detail badge is self-explanatory.
+    assert "Sig4 dropped @ Idle" in decorated
+    assert "expects Run" in decorated
+
+
+@pytest.mark.unittest
+def test_render_overlay_with_state_cells_appends_table(tmp_path: Path):
+    """``state_columns`` + ``step_states`` produce a per-row state table on the right."""
+    xml_file = _build_parallel_timeline_xml(tmp_path)
+    phase10 = build_sysdesim_phase10_report(str(xml_file))
+    overlay = build_overlay_from_diagnostics(
+        phase10_report=phase10, diagnostics=[], include_state_cells=True
+    )
+    assert overlay is not None
+    assert "state_columns" in overlay
+    assert "step_states" in overlay
+    decorated = render_sysdesim_timeline_svg(phase10_report=phase10, overlay=overlay)
+    plain = render_sysdesim_timeline_svg(phase10_report=phase10)
+    # State table widens the canvas + injects new <text> nodes.
+    assert decorated != plain
+    # The ``co`` column header must be visible.
+    assert ">co<" in decorated
+
+
+@pytest.mark.unittest
+def test_render_overlay_state_cells_highlight_first_coexistence(tmp_path: Path):
+    """A coexistence_timeline with first_coexistence_symbol triggers a green highlight."""
+    xml_file = _build_parallel_timeline_xml(tmp_path)
+    phase10 = build_sysdesim_phase10_report(str(xml_file))
+    # Synthetic timeline so the test does not depend on the SMT solver.
+    # The fixture's scenario steps are s01..s08 (no s00); pick s02 as the
+    # "first coexistence" anchor and confirm the overlay highlights it.
+    fake_timeline = {
+        "first_coexistence_symbol": "s02",
+        "first_coexistence_time_text": "1s",
+        "first_coexistence_note": None,
+        "timeline_points": [
+            {"symbol": "s01", "is_coexistent": False, "machine_states": []},
+            {"symbol": "s02", "is_coexistent": True, "machine_states": []},
+        ],
+    }
+    overlay = build_overlay_from_diagnostics(
+        phase10_report=phase10,
+        diagnostics=[],
+        coexistence_timeline=fake_timeline,
+    )
+    assert overlay is not None
+    rows = overlay["step_states"]
+    rows_by_id = {r["step_id"]: r for r in rows}
+    assert rows_by_id["s02"]["highlight"] == "first_coexistence"
+    assert "start" in rows_by_id["s02"]["cells"]
+    decorated = render_sysdesim_timeline_svg(phase10_report=phase10, overlay=overlay)
+    # First-coexistence cell uses the "good" severity green (#1f8b3a).
+    assert "#1f8b3a" in decorated

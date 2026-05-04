@@ -3,3 +3,10 @@ setuptools
 hbutils
 cairosvg
 Pillow
+# Used by tools/resources.py to enumerate the installed package
+# tree at PyInstaller spec-generation time. The stdlib has the
+# equivalent API (``importlib.metadata``) starting from Python 3.8,
+# so we only pull the backport on 3.7. Skipping the marker here on
+# 3.8+ keeps the build env minimal and avoids the recurring
+# "third-party shadows stdlib" surprise.
+importlib_metadata; python_version < "3.8"

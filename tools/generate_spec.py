@@ -105,7 +105,7 @@ def collect_third_party_binaries_and_hiddenimports():
         )
         collect_all = None
 
-    for module_name in ('py_mini_racer', 'mini_racer'):
+    for module_name in ('py_mini_racer', 'mini_racer', 'z3'):
         # First try the official helper.
         if collect_all is not None:
             try:

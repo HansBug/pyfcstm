@@ -31,8 +31,10 @@ from pyfcstm.diagnostics import smoke as smoke_module
 from pyfcstm.diagnostics.smoke import (
     SmokeCase,
     SmokeResult,
+    _collect_environment_facts,
     _format_traceback,
     _run_one,
+    _safe_env_value,
     run_smoke_test,
 )
 
@@ -305,6 +307,134 @@ def test_help_text_advertises_smoke_test_flag():
     result = runner.invoke(pyfcstmcli, ["--help"], color=False)
     assert result.exit_code == 0, result.output
     assert "--smoke-test" in result.output
+
+
+@pytest.mark.unittest
+def test_safe_env_value_returns_placeholder_on_exception():
+    """``_safe_env_value`` must turn *any* exception into a placeholder
+    string instead of raising. The environment dump runs before any
+    smoke case, and an exception there would prevent the whole battery
+    from starting."""
+
+    def _explode():
+        raise OSError(28, "synthetic disk full")
+
+    result = _safe_env_value(_explode)
+    assert isinstance(result, str)
+    assert "(unavailable" in result
+    assert "OSError" in result
+
+
+@pytest.mark.unittest
+def test_safe_env_value_handles_baseexception_subtypes():
+    """Even SystemExit / KeyboardInterrupt must be trapped inside the
+    environment reader. The runner's defence-in-depth contract goes
+    all the way down to fact collection."""
+
+    for factory in (
+        lambda: (_ for _ in ()).throw(SystemExit(1)),
+        lambda: (_ for _ in ()).throw(KeyboardInterrupt("synthetic")),
+        lambda: (_ for _ in ()).throw(BaseException("raw")),
+    ):
+        result = _safe_env_value(factory)
+        assert isinstance(result, str), result
+        assert "(unavailable" in result, result
+
+
+@pytest.mark.unittest
+def test_safe_env_value_stringifies_non_strings():
+    """Numbers / booleans / None / objects must come back as strings."""
+    assert _safe_env_value(lambda: 42) == "42"
+    assert _safe_env_value(lambda: True) == "True"
+    assert _safe_env_value(lambda: None) == "(none)"
+    assert _safe_env_value(lambda: ["a", "b"]) == "['a', 'b']"
+
+
+@pytest.mark.unittest
+def test_environment_collector_returns_structured_sections():
+    """Sanity: the collector returns one or more (label, [(k,v)]) tuples
+    on a healthy interpreter, with at least the canonical Python /
+    OS / Process sections present."""
+    sections = _collect_environment_facts()
+    section_labels = {label for label, _ in sections}
+    assert "Python interpreter" in section_labels
+    assert "OS / platform" in section_labels
+    assert "Process" in section_labels
+    assert "Locale / encoding" in section_labels
+    assert "pyfcstm package" in section_labels
+
+    # Every value is already stringified.
+    for _label, rows in sections:
+        for key, value in rows:
+            assert isinstance(key, str)
+            assert isinstance(value, str)
+
+
+@pytest.mark.unittest
+def test_environment_collector_does_not_crash_when_specific_readers_break(monkeypatch):
+    """If individual platform readers are sabotaged, the collector
+    still returns a structured result; the broken row carries the
+    placeholder rather than the whole block being dropped."""
+
+    def _broken_libc_ver():
+        raise RuntimeError("synthetic platform.libc_ver() failure")
+
+    def _broken_getcwd():
+        raise OSError(2, "synthetic ENOENT on cwd")
+
+    monkeypatch.setattr("platform.libc_ver", _broken_libc_ver, raising=False)
+    monkeypatch.setattr("os.getcwd", _broken_getcwd)
+
+    sections = _collect_environment_facts()
+    flat = [
+        (section, key, value)
+        for section, rows in sections
+        for key, value in rows
+    ]
+    # The broken cwd reader must surface as a placeholder under Process,
+    # not abort the whole Process section nor the rest of the dump.
+    cwd_row = next(
+        ((s, k, v) for (s, k, v) in flat if s == "Process" and k == "cwd"),
+        None,
+    )
+    assert cwd_row is not None, "cwd row dropped from Process section"
+    assert "(unavailable" in cwd_row[2], cwd_row[2]
+    # Sections downstream of the broken reader are still present.
+    section_labels = {label for label, _ in sections}
+    assert "Locale / encoding" in section_labels
+    assert "Time" in section_labels
+    assert "pyfcstm package" in section_labels
+
+
+@pytest.mark.unittest
+def test_run_smoke_test_survives_environment_collector_explosion(monkeypatch):
+    """If the collector itself blows up (worse than any individual
+    reader), :func:`run_smoke_test` still runs every smoke case.
+
+    The environment dump is supposed to be a *header* in the output;
+    a broken header must not gate the diagnostics body."""
+
+    def _explode():
+        raise RuntimeError("synthetic top-level collector failure")
+
+    monkeypatch.setattr(smoke_module, "_collect_environment_facts", _explode)
+
+    # Plant a tiny synthetic case battery so the run is fast and we
+    # know exactly what to expect.
+    monkeypatch.setattr(
+        smoke_module, "_build_case_groups",
+        lambda: [("Synthetic", [
+            SmokeCase(name="ok", method="noop", func=lambda: None),
+        ])],
+    )
+
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        failed = run_smoke_test()
+    output = _strip_ansi(buf.getvalue())
+    assert failed == 0, "case battery did not run; output:\n{}".format(output)
+    assert "[PASS] ok" in output, output
+    assert "environment introspection failed" in output, output
 
 
 @pytest.mark.unittest

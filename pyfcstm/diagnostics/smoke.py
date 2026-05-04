@@ -1180,18 +1180,262 @@ def _format_traceback(exc: BaseException, tb_text: str, max_frames: int = 5) -> 
     return head + ["... <{} earlier frames trimmed>".format(len(lines) - len(head) - len(tail))] + tail
 
 
+def _safe_env_value(fn) -> str:
+    """Call ``fn`` and stringify the result; turn any exception into a
+    structured ``(unavailable: ...)`` placeholder.
+
+    The whole environment dump must never raise: a failure to read one
+    fact (because some weird OS, a sandbox, a stripped Python build,
+    ...) is itself useful debug data, but it must not block the rest
+    of the diagnostics. Callers do not see exceptions.
+    """
+    try:
+        value = fn()
+    except BaseException as exc:  # noqa: BLE001 - intentional broad catch
+        return "(unavailable: {}: {})".format(type(exc).__name__, exc)
+    if value is None:
+        return "(none)"
+    if isinstance(value, str):
+        return value
+    return str(value)
+
+
+def _collect_environment_facts() -> List[Tuple[str, List[Tuple[str, str]]]]:
+    """
+    Collect a deep environment dump for the diagnostic header.
+
+    Returns a list of ``(section_label, [(key, value), ...])`` rows.
+    Every value is read through :func:`_safe_env_value` so a failure
+    in one reader yields a placeholder string rather than aborting the
+    block. The collector itself swallows top-level exceptions in its
+    caller (:func:`run_smoke_test`), so even a catastrophic failure
+    here cannot prevent the case battery from running.
+    """
+    sections: List[Tuple[str, List[Tuple[str, str]]]] = []
+
+    def _add(rows: List[Tuple[str, str]], label: str, fn) -> None:
+        rows.append((label, _safe_env_value(fn)))
+
+    # --- Python interpreter --------------------------------------------------
+    py_rows: List[Tuple[str, str]] = []
+    _add(py_rows, "implementation", lambda: platform.python_implementation())
+    _add(py_rows, "version", lambda: sys.version.split()[0])
+    _add(py_rows, "build", lambda: " / ".join(platform.python_build()))
+    _add(py_rows, "compiler", lambda: platform.python_compiler())
+    _add(py_rows, "executable", lambda: sys.executable)
+    _add(py_rows, "prefix", lambda: sys.prefix)
+    _add(py_rows, "base prefix", lambda: getattr(sys, "base_prefix", sys.prefix))
+    _add(py_rows, "maxsize bits", lambda: 64 if sys.maxsize > (1 << 32) else 32)
+    _add(py_rows, "byteorder", lambda: sys.byteorder)
+    _add(py_rows, "recursion limit", lambda: sys.getrecursionlimit())
+    sections.append(("Python interpreter", py_rows))
+
+    # --- OS / platform -------------------------------------------------------
+    os_rows: List[Tuple[str, str]] = []
+    _add(os_rows, "system", lambda: platform.system())
+    _add(os_rows, "release", lambda: platform.release())
+    _add(os_rows, "version", lambda: platform.version())
+    _add(os_rows, "machine", lambda: platform.machine())
+    _add(os_rows, "processor", lambda: platform.processor() or "(unknown)")
+    _add(os_rows, "platform", lambda: platform.platform())
+    _add(os_rows, "node", lambda: platform.node())
+    if sys.platform.startswith("linux"):
+        _add(os_rows, "libc", lambda: " ".join(s for s in platform.libc_ver() if s) or "(unknown)")
+    elif sys.platform == "darwin":
+        _add(os_rows, "mac_ver", lambda: " ".join(s for s in platform.mac_ver() if s) or "(unknown)")
+    elif sys.platform == "win32":
+        _add(os_rows, "win32_ver", lambda: " ".join(s for s in platform.win32_ver() if s) or "(unknown)")
+        _add(os_rows, "win32_edition", lambda: platform.win32_edition() or "(unknown)")
+    sections.append(("OS / platform", os_rows))
+
+    # --- Process -------------------------------------------------------------
+    proc_rows: List[Tuple[str, str]] = []
+    _add(proc_rows, "pid", lambda: os.getpid())
+    _add(proc_rows, "cwd", lambda: os.getcwd())
+    if hasattr(os, "getuid") and hasattr(os, "getgid"):
+        _add(proc_rows, "uid/gid", lambda: "{}/{}".format(os.getuid(), os.getgid()))
+        if hasattr(os, "geteuid") and hasattr(os, "getegid"):
+            _add(
+                proc_rows, "euid/egid",
+                lambda: "{}/{}".format(os.geteuid(), os.getegid()),
+            )
+    _add(proc_rows, "argv[0]", lambda: sys.argv[0] if sys.argv else "(none)")
+    _add(proc_rows, "stdin tty?", lambda: bool(sys.stdin and sys.stdin.isatty()))
+    _add(proc_rows, "stdout tty?", lambda: bool(sys.stdout and sys.stdout.isatty()))
+    sections.append(("Process", proc_rows))
+
+    # --- Locale / encoding ---------------------------------------------------
+    loc_rows: List[Tuple[str, str]] = []
+
+    def _preferred_encoding() -> str:
+        import locale
+        return locale.getpreferredencoding(False)
+
+    def _locale_setting() -> str:
+        import locale
+        parts = [p for p in locale.getlocale() if p]
+        return " / ".join(parts) if parts else "(C)"
+
+    _add(loc_rows, "preferred encoding", _preferred_encoding)
+    _add(loc_rows, "locale", _locale_setting)
+    _add(loc_rows, "stdout encoding", lambda: getattr(sys.stdout, "encoding", "(none)"))
+    _add(loc_rows, "stderr encoding", lambda: getattr(sys.stderr, "encoding", "(none)"))
+    _add(loc_rows, "filesystem encoding", lambda: sys.getfilesystemencoding())
+    _add(loc_rows, "LC_ALL", lambda: os.environ.get("LC_ALL", "(unset)"))
+    _add(loc_rows, "LANG", lambda: os.environ.get("LANG", "(unset)"))
+    sections.append(("Locale / encoding", loc_rows))
+
+    # --- Environment variables (relevant subset) -----------------------------
+    env_vars = (
+        "VIRTUAL_ENV", "CONDA_PREFIX",
+        "PYTHONPATH", "PYTHONHOME", "PYTHONIOENCODING",
+        "PYTHONDONTWRITEBYTECODE", "PYTHONUNBUFFERED",
+        "TERM", "COLORTERM", "TZ",
+        "DISPLAY", "BROWSER",
+        "CI", "GITHUB_ACTIONS",
+    )
+    env_rows: List[Tuple[str, str]] = []
+    for var in env_vars:
+        _add(env_rows, var, lambda v=var: os.environ.get(v, "(unset)"))
+
+    def _path_preview() -> str:
+        path = os.environ.get("PATH", "")
+        parts = path.split(os.pathsep)
+        if len(parts) <= 3:
+            return path or "(unset)"
+        return os.pathsep.join(parts[:3]) + "  (... {} more entries)".format(len(parts) - 3)
+
+    _add(env_rows, "PATH (head)", _path_preview)
+    sections.append(("Environment variables", env_rows))
+
+    # --- Time / timezone -----------------------------------------------------
+    time_rows: List[Tuple[str, str]] = []
+
+    def _utc_now() -> str:
+        import datetime
+        return datetime.datetime.utcnow().isoformat() + "Z"
+
+    _add(time_rows, "UTC now", _utc_now)
+    _add(time_rows, "tzname", lambda: " / ".join(time.tzname) if hasattr(time, "tzname") else "(unknown)")
+    _add(time_rows, "monotonic clock res (us)",
+         lambda: int(time.get_clock_info("monotonic").resolution * 1_000_000))
+    sections.append(("Time", time_rows))
+
+    # --- Frozen / PyInstaller ------------------------------------------------
+    frozen_rows: List[Tuple[str, str]] = []
+    _add(frozen_rows, "frozen", lambda: getattr(sys, "frozen", False))
+    _add(frozen_rows, "_MEIPASS",
+         lambda: getattr(sys, "_MEIPASS", "(not running under PyInstaller)"))
+    sections.append(("Frozen / PyInstaller", frozen_rows))
+
+    # --- pyfcstm package install --------------------------------------------
+    pyf_rows: List[Tuple[str, str]] = []
+
+    def _pyfcstm_version() -> str:
+        import pyfcstm  # safe; pyfcstm/__init__.py is a one-liner
+        return getattr(pyfcstm, "__version__", "(unknown)")
+
+    def _pyfcstm_install_path() -> str:
+        import pyfcstm
+        return os.path.dirname(os.path.abspath(pyfcstm.__file__))
+
+    _add(pyf_rows, "version", _pyfcstm_version)
+    _add(pyf_rows, "install path", _pyfcstm_install_path)
+    sections.append(("pyfcstm package", pyf_rows))
+
+    # --- Git checkout (when running from a dev tree) -------------------------
+    git_rows = _collect_git_facts()
+    if git_rows:
+        sections.append(("Git checkout", git_rows))
+
+    return sections
+
+
+def _find_git_dir() -> Optional[str]:
+    """Return the ``.git`` path nearest to the pyfcstm install, or ``None``."""
+    try:
+        import pyfcstm
+        path = os.path.dirname(os.path.abspath(pyfcstm.__file__))
+    except BaseException:  # noqa: BLE001 - import-time failures are out of scope here
+        path = os.getcwd()
+    for _ in range(6):  # walk up at most six levels
+        candidate = os.path.join(path, ".git")
+        if os.path.isdir(candidate) or os.path.isfile(candidate):
+            return candidate
+        new_path = os.path.dirname(path)
+        if new_path == path:
+            break
+        path = new_path
+    return None
+
+
+def _collect_git_facts() -> List[Tuple[str, str]]:
+    """
+    Best-effort git introspection (branch / commit / dirty flag).
+
+    Returns ``[]`` when the diagnostics module is not running from a
+    development checkout (no ``.git`` reachable, ``git`` binary
+    missing, subprocess fails, ...). Never raises.
+    """
+    git_dir = _find_git_dir()
+    if not git_dir:
+        return []
+    repo_root = os.path.dirname(git_dir)
+
+    rows: List[Tuple[str, str]] = []
+
+    def _run_git(*args: str) -> str:
+        try:
+            import subprocess
+            result = subprocess.run(
+                ["git", *args],
+                cwd=repo_root,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode != 0:
+                stderr = (result.stderr or "").strip().splitlines()
+                tail = stderr[-1] if stderr else "exit {}".format(result.returncode)
+                return "(git error: {})".format(tail)
+            return (result.stdout or "").strip() or "(empty)"
+        except BaseException as exc:  # noqa: BLE001 - subprocess can fail in many ways
+            return "(unavailable: {}: {})".format(type(exc).__name__, exc)
+
+    rows.append(("repo root", repo_root))
+    rows.append(("branch", _run_git("rev-parse", "--abbrev-ref", "HEAD")))
+    rows.append(("commit", _run_git("rev-parse", "HEAD")))
+
+    def _dirty_flag() -> str:
+        status = _run_git("status", "--porcelain")
+        if status.startswith("(unavailable") or status.startswith("(git error"):
+            return status
+        return "yes" if status and status != "(empty)" else "no"
+
+    rows.append(("dirty", _dirty_flag()))
+    return rows
+
+
 def _print_environment(painter: _Painter) -> None:
-    rows = [
-        ("python", "{} ({})".format(sys.version.split()[0], platform.python_implementation())),
-        ("platform", "{} {} ({})".format(platform.system(), platform.release(), platform.machine())),
-        ("executable", sys.executable),
-        ("prefix", sys.prefix),
-        ("MEIPASS", getattr(sys, "_MEIPASS", "(not running under PyInstaller)")),
-    ]
-    painter.echo(painter.style("Environment", fg="cyan", bold=True))
-    for label, value in rows:
-        painter.echo("  " + painter.style(label, fg="white", bold=True) + ": " + str(value))
-    painter.echo("")
+    """Print the (deep) environment dump.
+
+    Wrapped in a top-level ``try/except`` in :func:`run_smoke_test`,
+    so a defect inside the collector cannot prevent the case battery
+    from running. Each individual fact reader is also defensive.
+    """
+    sections = _collect_environment_facts()
+    for section_label, rows in sections:
+        painter.echo(painter.style(section_label, fg="cyan", bold=True))
+        if not rows:
+            painter.echo("  (no facts collected)")
+            painter.echo("")
+            continue
+        # Right-pad labels for readability.
+        label_width = max(len(label) for label, _ in rows)
+        for label, value in rows:
+            label_styled = painter.style(label.ljust(label_width), fg="white", bold=True)
+            painter.echo("  " + label_styled + " : " + value)
+        painter.echo("")
 
 
 def _print_group_header(painter: _Painter, label: str) -> None:

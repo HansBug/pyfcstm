@@ -1316,3 +1316,213 @@ def test_sysdesim_sequence_render_png_with_font_file(tmp_path: Path):
     )
     assert result.exit_code == 0, result.output
     assert out_png.read_bytes()[:8] == _PNG_MAGIC
+
+
+# =============================================================================
+# Overlay rendering CLI integration tests (--render-diagram / --diagnostics-file)
+# =============================================================================
+
+
+def _build_signal_dropped_xml(tmp_path: Path) -> Path:
+    """Reuse the canonical signal-dropped fixture from test_static_check."""
+    from test.convert.sysdesim.test_static_check import (
+        _build_signal_dropped_xml as _orig,
+    )
+
+    return _orig(tmp_path)
+
+
+def _build_contradictory_durations_xml(tmp_path: Path) -> Path:
+    """Reuse the canonical UNSAT-durations fixture from test_static_check."""
+    from test.convert.sysdesim.test_static_check import (
+        _build_contradictory_durations_xml as _orig,
+    )
+
+    return _orig(tmp_path)
+
+
+@pytest.mark.unittest
+def test_static_check_render_diagram_writes_overlay_svg(tmp_path: Path):
+    """``static-check --render-diagram`` writes a banner+marker overlay SVG."""
+    xml_file = _build_signal_dropped_xml(tmp_path)
+    out_svg = tmp_path / "static_check.svg"
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "static-check",
+            "-i",
+            str(xml_file),
+            "--render-diagram",
+            str(out_svg),
+        ],
+        color=False,
+    )
+    assert result.exit_code == 0, result.output
+    assert out_svg.exists()
+    text = out_svg.read_text(encoding="utf-8")
+    assert text.startswith("<?xml")
+    # Banner exists and reflects warning severity from signal_dropped_in_state.
+    assert "[WARNING]" in text
+    assert "Static check:" in text
+    # SVG contains the dropped-signal label.
+    assert "Sig4" in text
+    assert "Wrote overlay SVG" in result.output
+
+
+@pytest.mark.unittest
+def test_static_check_render_diagram_writes_overlay_png_via_extension(tmp_path: Path):
+    """``static-check --render-diagram out.png`` infers PNG from the extension."""
+    xml_file = _build_signal_dropped_xml(tmp_path)
+    out_png = tmp_path / "static_check.png"
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "static-check",
+            "-i",
+            str(xml_file),
+            "--render-diagram",
+            str(out_png),
+        ],
+        color=False,
+    )
+    assert result.exit_code == 0, result.output
+    assert out_png.exists()
+    assert out_png.read_bytes()[:8] == _PNG_MAGIC
+
+
+@pytest.mark.unittest
+def test_static_check_render_diagram_still_writes_when_blocking(tmp_path: Path):
+    """Even when static-check has blocking errors, the overlay is still written."""
+    xml_file = _build_contradictory_durations_xml(tmp_path)
+    out_svg = tmp_path / "unsat.svg"
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "static-check",
+            "-i",
+            str(xml_file),
+            "--render-diagram",
+            str(out_svg),
+        ],
+        color=False,
+    )
+    # Static check finds errors → exit code != 0, but the overlay file is written.
+    assert result.exit_code != 0
+    assert out_svg.exists()
+    text = out_svg.read_text(encoding="utf-8")
+    assert "[ERROR]" in text
+    assert "UNSAT" in text
+
+
+@pytest.mark.unittest
+def test_validate_render_diagram_emits_overlay_with_summary_lines(tmp_path: Path):
+    """``validate --render-diagram`` writes overlay including Phase11 summary."""
+    xml_file = _build_parallel_timeline_xml(tmp_path)
+    out_svg = tmp_path / "validate.svg"
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "validate",
+            "-i",
+            str(xml_file),
+            "--render-diagram",
+            str(out_svg),
+        ],
+        color=False,
+    )
+    assert result.exit_code == 0, result.output
+    assert out_svg.exists()
+    text = out_svg.read_text(encoding="utf-8")
+    # Banner with at least the static-check headline (clean here).
+    assert "Static check:" in text or "[INFO]" in text or "[WARNING]" in text
+
+
+@pytest.mark.unittest
+def test_sequence_render_with_diagnostics_file_layers_overlay(tmp_path: Path):
+    """``sequence-render --diagnostics-file`` overlays a previously-saved JSON report."""
+    xml_file = _build_signal_dropped_xml(tmp_path)
+    report = tmp_path / "report.json"
+    runner = CliRunner()
+    # Step 1: produce a static-check report file.
+    r1 = runner.invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "static-check",
+            "-i",
+            str(xml_file),
+            "--report-file",
+            str(report),
+        ],
+        color=False,
+    )
+    assert r1.exit_code == 0, r1.output
+    assert report.exists()
+    # Step 2: render with the diagnostics file as overlay.
+    out_svg = tmp_path / "with_overlay.svg"
+    r2 = runner.invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "sequence-render",
+            "-i",
+            str(xml_file),
+            "-o",
+            str(out_svg),
+            "--diagnostics-file",
+            str(report),
+        ],
+        color=False,
+    )
+    assert r2.exit_code == 0, r2.output
+    text = out_svg.read_text(encoding="utf-8")
+    # Overlay banner present + dropped-signal marker label.
+    assert "[WARNING]" in text
+    assert "Sig4" in text
+
+
+@pytest.mark.unittest
+def test_sequence_render_diagnostics_file_missing_yields_click_error(tmp_path: Path):
+    """A missing diagnostics file produces a clean CLI error."""
+    xml_file = _build_signal_dropped_xml(tmp_path)
+    out_svg = tmp_path / "out.svg"
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "sequence-render",
+            "-i",
+            str(xml_file),
+            "-o",
+            str(out_svg),
+            "--diagnostics-file",
+            str(tmp_path / "no_such_file.json"),
+        ],
+        color=False,
+    )
+    assert result.exit_code != 0
+    assert "Cannot read diagnostics file" in _strip_ansi(result.output)
+
+
+@pytest.mark.unittest
+def test_sequence_render_no_diagnostics_file_produces_baseline(tmp_path: Path):
+    """Without ``--diagnostics-file`` the render is byte-identical to the baseline."""
+    xml_file = _build_signal_dropped_xml(tmp_path)
+    runner = CliRunner()
+    out_a = tmp_path / "a.svg"
+    out_b = tmp_path / "b.svg"
+    runner.invoke(
+        pyfcstmcli,
+        ["sysdesim", "sequence-render", "-i", str(xml_file), "-o", str(out_a)],
+        color=False,
+    )
+    runner.invoke(
+        pyfcstmcli,
+        ["sysdesim", "sequence-render", "-i", str(xml_file), "-o", str(out_b)],
+        color=False,
+    )
+    assert out_a.read_bytes() == out_b.read_bytes()

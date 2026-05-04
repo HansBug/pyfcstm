@@ -567,20 +567,282 @@ function buildSvgChildren(timeline, theme, lifelinePositions, opts) {
 
   // Document border (light frame).
   const totalWidth = computeWidth(lifelinePositions, laneCount);
+  const totalHeight = totalLifelineHeight + LAYOUT.paddingBottom;
   children.unshift(svgRect({
     x: 0,
     y: 0,
     width: totalWidth,
-    height: totalLifelineHeight + LAYOUT.paddingBottom,
+    height: totalHeight,
     fill: theme.diagramBackground,
     stroke: theme.panelStroke,
     strokeWidth: 0.6,
   }));
+
+  // Overlay layer: optional, additive. Diagnostics / coexistence facts
+  // travel through ``timeline.overlay`` so the same layout pipeline can
+  // be used both for plain sequence diagrams and for diagnostics-decorated
+  // ones. Each overlay element is bounded-and-best-effort: when it
+  // references an unknown id we silently skip it rather than break the
+  // whole render.
+  const overlay = timeline.overlay || {};
+  const bandChildren = renderOverlayStepBands(
+    overlay.step_bands || [], stepIndexById, startY, stepHeight, totalWidth, theme,
+  );
+  // Bands sit *below* the message arrows and lifelines so they read as
+  // background tinting; insert them just after the diagram-border rect
+  // (which is at index 0 after the unshift above).
+  for (let i = 0; i < bandChildren.length; i++) {
+    children.splice(1 + i, 0, bandChildren[i]);
+  }
+  // Marker text / icons are decorative top-layer elements - the user
+  // wants to be able to spot them at a glance regardless of what is
+  // already drawn underneath.
+  const markerChildren = renderOverlayMarkers(
+    overlay,
+    timeline,
+    lifelinePositions,
+    stepIndexById,
+    startY,
+    stepHeight,
+    totalWidth,
+    laneCount,
+    multiStepConstraints,
+    theme,
+  );
+  for (const mc of markerChildren) {
+    children.push(mc);
+  }
   return {
     children: children,
     width: totalWidth,
-    height: totalLifelineHeight + LAYOUT.paddingBottom,
+    height: totalHeight,
   };
+}
+
+
+// =============================================================================
+// Overlay rendering — diagnostic / coexistence markers added on top of the
+// base sequence diagram. Overlay payload schema:
+//
+//   timeline.overlay = {
+//     "banner":             {severity, lines: []},     // top-bar header
+//     "step_bands":         [{step_id|start/end, severity, kind, label}, ...],
+//     "message_markers":    [{message_id, severity, code, label}, ...],
+//     "constraint_markers": [{constraint_id, severity, code, label}, ...],
+//   }
+// =============================================================================
+
+
+const _SEVERITY_FG = {
+  error: "#cc3030",
+  warning: "#cc7700",
+  info: "#3070cc",
+};
+
+const _SEVERITY_BG = {
+  error: "#fbe3e3",
+  warning: "#fff0d6",
+  info: "#e1ebfa",
+};
+
+function _severityFg(sev) {
+  return _SEVERITY_FG[sev] || _SEVERITY_FG.info;
+}
+
+function _severityBg(sev) {
+  return _SEVERITY_BG[sev] || _SEVERITY_BG.info;
+}
+
+function computeBannerHeight(overlay) {
+  const banner = overlay && overlay.banner;
+  if (!banner) return 0;
+  const lines = banner.lines || [];
+  if (lines.length === 0) return 0;
+  return 12 + lines.length * 18 + 8;
+}
+
+function renderBanner(overlay, theme, width) {
+  const banner = overlay && overlay.banner;
+  if (!banner) return [];
+  const lines = banner.lines || [];
+  if (lines.length === 0) return [];
+  const sev = banner.severity || "info";
+  const fg = _severityFg(sev);
+  const bg = _severityBg(sev);
+  const height = computeBannerHeight(overlay);
+  const out = [];
+  out.push(svgRect({
+    x: 8, y: 6,
+    width: Math.max(0, width - 16),
+    height: height - 8,
+    fill: bg, stroke: fg, strokeWidth: 1,
+    rx: 4, ry: 4,
+  }));
+  const tag = "[" + sev.toUpperCase() + "]";
+  out.push(svgText({
+    x: 16, y: 22,
+    text: tag,
+    fill: fg, fontFamily: theme.fontFamily,
+    fontSize: theme.smallFontSize, fontWeight: "bold",
+  }));
+  for (let i = 0; i < lines.length; i++) {
+    out.push(svgText({
+      x: 16 + 4 * 11, y: 22 + i * 18,
+      text: lines[i],
+      fill: fg, fontFamily: theme.fontFamily,
+      fontSize: theme.smallFontSize,
+      fontWeight: i === 0 ? "bold" : null,
+    }));
+  }
+  return out;
+}
+
+function renderOverlayStepBands(bands, stepIndexById, startY, stepHeight, totalWidth, theme) {
+  const out = [];
+  for (const band of bands) {
+    let topIdx, bottomIdx;
+    if (band == null) continue;
+    if (band.step_id != null) {
+      const idx = stepIndexById[band.step_id];
+      if (idx === undefined) continue;
+      topIdx = idx;
+      bottomIdx = idx;
+    } else if (band.start_step_id != null && band.end_step_id != null) {
+      const a = stepIndexById[band.start_step_id];
+      const b = stepIndexById[band.end_step_id];
+      if (a === undefined || b === undefined) continue;
+      topIdx = Math.min(a, b);
+      bottomIdx = Math.max(a, b);
+    } else {
+      continue;
+    }
+    const yT = startY + topIdx * stepHeight - stepHeight / 2 + 6;
+    const yB = startY + bottomIdx * stepHeight + stepHeight / 2 - 2;
+    const sev = band.severity || "info";
+    const bg = _severityBg(sev);
+    out.push(svgRect({
+      x: 2, y: yT,
+      width: totalWidth - 4,
+      height: yB - yT,
+      fill: bg, stroke: "none",
+      opacity: "0.45",
+    }));
+    if (band.label) {
+      out.push(svgText({
+        x: 8, y: yT + 14,
+        text: band.label,
+        fill: _severityFg(sev),
+        fontFamily: theme.fontFamily,
+        fontSize: theme.smallFontSize,
+        fontWeight: "bold",
+      }));
+    }
+  }
+  return out;
+}
+
+function renderOverlayMarkers(
+  overlay, timeline, lifelinePositions, stepIndexById,
+  startY, stepHeight, totalWidth, laneCount, multiStepConstraints, theme,
+) {
+  const out = [];
+  const lastX = lifelinePositions.length > 0
+    ? lifelinePositions[lifelinePositions.length - 1].centerX
+    : LAYOUT.paddingLeft;
+
+  // Build a step-index lookup keyed by message_id so markers can find
+  // the row their referenced message sits on.
+  const stepIndexByMessageId = {};
+  for (let i = 0; i < timeline.steps.length; i++) {
+    const m = timeline.steps[i].message;
+    if (m && m.message_id) stepIndexByMessageId[m.message_id] = i;
+  }
+
+  // ---- message_markers: ⚠ icon + small label, anchored just outside the
+  // ----                  rightmost lifeline (above any time-bracket lane).
+  for (const marker of (overlay.message_markers || [])) {
+    if (marker == null) continue;
+    const idx = stepIndexByMessageId[marker.message_id];
+    if (idx === undefined) continue;
+    const stepY = startY + idx * stepHeight;
+    const sev = marker.severity || "warning";
+    const fg = _severityFg(sev);
+    const iconX = lastX + 16;
+    out.push(svgText({
+      x: iconX, y: stepY + 4,
+      text: "!",
+      fill: "#ffffff",
+      fontFamily: theme.fontFamily,
+      fontSize: theme.fontSize, fontWeight: "bold",
+      anchor: "middle",
+    }));
+    out.push(svgRect({
+      x: iconX - 6, y: stepY - 7,
+      width: 12, height: 14, rx: 2, ry: 2,
+      fill: fg, stroke: fg, strokeWidth: 1,
+    }));
+    // Re-emit the "!" on top of the badge.
+    out.push(svgText({
+      x: iconX, y: stepY + 4,
+      text: "!",
+      fill: "#ffffff",
+      fontFamily: theme.fontFamily,
+      fontSize: theme.fontSize, fontWeight: "bold",
+      anchor: "middle",
+    }));
+    if (marker.label) {
+      out.push(svgText({
+        x: iconX + 10, y: stepY + 4,
+        text: marker.label,
+        fill: fg, fontFamily: theme.fontFamily,
+        fontSize: theme.smallFontSize, fontWeight: "bold",
+        anchor: "start",
+      }));
+    }
+  }
+
+  // ---- constraint_markers: short tag printed at the lane's top end ----
+  // We scan the multi-step constraint list to recover the tipX each lane
+  // ended up at; if a marker references a constraint that is not on a
+  // lane (single-step / inferred), the marker is silently skipped.
+  const laneXByConstraintId = {};
+  if (multiStepConstraints && multiStepConstraints.length > 0) {
+    // Recompute the same lane assignment buildSvgChildren used so we can
+    // line marker text up with the actual lane tip.
+    const { laneAssignments } = assignBracketLanes(
+      multiStepConstraints, stepIndexById,
+    );
+    const rightmostX = lifelinePositions.length > 0
+      ? lifelinePositions[lifelinePositions.length - 1].centerX
+      : LAYOUT.paddingLeft;
+    const bracketBaseX = rightmostX + 36;
+    for (const lane of laneAssignments) {
+      const cid = lane.constraint && lane.constraint.constraint_id;
+      if (!cid) continue;
+      const tipX = bracketBaseX + lane.lane * (LAYOUT.bracketWidth + LAYOUT.bracketGap);
+      laneXByConstraintId[cid] = {
+        tipX: tipX,
+        topIndex: lane.topIndex,
+      };
+    }
+  }
+  for (const marker of (overlay.constraint_markers || [])) {
+    if (marker == null) continue;
+    const lane = laneXByConstraintId[marker.constraint_id];
+    if (!lane) continue;
+    const sev = marker.severity || "error";
+    const fg = _severityFg(sev);
+    const yLabel = startY + lane.topIndex * stepHeight - 14;
+    out.push(svgText({
+      x: lane.tipX, y: yLabel,
+      text: (marker.code === "temporal_constraints_unsat" ? "UNSAT" : (marker.label || "ISSUE")),
+      fill: fg, fontFamily: theme.fontFamily,
+      fontSize: theme.smallFontSize, fontWeight: "bold",
+      anchor: "middle",
+    }));
+  }
+
+  return out;
 }
 
 function computeWidth(lifelinePositions, bracketLaneCount) {
@@ -681,13 +943,32 @@ export function renderSequenceSvg(timeline, options) {
   const theme = Object.assign({}, DEFAULT_THEME, (options && options.theme) || {});
   const lifelinePositions = buildLifelinePositions(timeline.lifelines || [], theme);
   const built = buildSvgChildren(timeline, theme, lifelinePositions, options || {});
+
+  // Top banner (overlay summary) sits above the diagram and shifts the
+  // base layout down by ``bannerOffset``. We render the banner directly
+  // (it lives in the outer SVG coordinate space) and wrap the base
+  // children in a ``<g transform=translate(0, bannerOffset)>`` so we do
+  // not have to thread the offset through every ``y`` computation.
+  const overlay = timeline.overlay || {};
+  const bannerOffset = computeBannerHeight(overlay);
+  const totalHeight = built.height + bannerOffset;
+
+  const bannerSvg = bannerOffset > 0
+    ? renderBanner(overlay, theme, built.width).join("\n") + "\n"
+    : "";
+  const baseSvg = bannerOffset > 0
+    ? "<g transform=\"translate(0, " + bannerOffset + ")\">\n"
+        + built.children.join("\n")
+        + "\n</g>"
+    : built.children.join("\n");
   return (
     "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
     "<svg xmlns=\"http://www.w3.org/2000/svg\" " +
-    "viewBox=\"0 0 " + built.width + " " + built.height + "\" " +
-    "width=\"" + built.width + "\" height=\"" + built.height + "\" " +
+    "viewBox=\"0 0 " + built.width + " " + totalHeight + "\" " +
+    "width=\"" + built.width + "\" height=\"" + totalHeight + "\" " +
     "font-family=\"" + escapeXml(theme.fontFamily) + "\">\n" +
-    built.children.join("\n") +
+    bannerSvg +
+    baseSvg +
     "\n</svg>"
   );
 }

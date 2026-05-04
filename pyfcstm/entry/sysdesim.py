@@ -36,7 +36,14 @@ from ..convert import (
     run_sysdesim_static_pre_checks,
 )
 from ..convert.sysdesim.ir import IrDiagnostic
-from ..convert.sysdesim.render import SysdesimRenderError
+from ..convert.sysdesim.render import (
+    SysdesimRenderError,
+    build_overlay_from_diagnostics,
+)
+from ..convert.sysdesim.timeline_verify import (
+    SysDeSimPhase10Report,
+    build_sysdesim_phase10_report,
+)
 
 
 def _format_sysdesim_cli_error(err: BaseException) -> str:
@@ -1131,6 +1138,103 @@ def _run_sysdesim_convert(
     _emit_sysdesim_cli_summary(report, output_root, output_file_by_name, report_path)
 
 
+def _diagnostics_from_report_dict(report: Dict) -> List[IrDiagnostic]:
+    """Reconstruct minimal :class:`IrDiagnostic` instances from a JSON report.
+
+    Accepts either the static-check-only report shape (``{"static_check": {...}}``)
+    or the validate-report shape (which embeds ``static_check`` alongside the
+    timeline import sections). Unrecognized shapes silently yield an empty list
+    so the caller can still render the baseline diagram.
+    """
+    static = report.get("static_check") if isinstance(report, dict) else None
+    raw = (static or {}).get("diagnostics") or []
+    out: List[IrDiagnostic] = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+        details = entry.get("details")
+        if isinstance(details, list):
+            details = None  # ignore malformed
+        hints = entry.get("hints")
+        if isinstance(hints, list):
+            hints_list = [str(h) for h in hints]
+        else:
+            hints_list = None
+        state_path = entry.get("state_path")
+        if isinstance(state_path, list):
+            state_tuple: Optional[Tuple[str, ...]] = tuple(str(s) for s in state_path)
+        else:
+            state_tuple = None
+        out.append(
+            IrDiagnostic(
+                level=str(entry.get("level") or ""),
+                code=str(entry.get("code") or ""),
+                message=str(entry.get("message") or ""),
+                source_id=entry.get("source_id"),
+                state_path=state_tuple,
+                details=details if isinstance(details, dict) else None,
+                hints=hints_list,
+            )
+        )
+    return out
+
+
+def _resolve_render_format(output_path: str, output_format: str = "auto") -> str:
+    """Pick ``svg`` or ``png`` from an explicit format choice + output path.
+
+    ``auto`` infers from the file extension (defaults to ``svg`` when neither
+    ``.svg`` nor ``.png``).
+    """
+    fmt = (output_format or "auto").lower()
+    if fmt in ("svg", "png"):
+        return fmt
+    ext = Path(output_path).suffix.lower()
+    return "png" if ext == ".png" else "svg"
+
+
+def _render_overlay_diagram(
+    *,
+    phase10_report: SysDeSimPhase10Report,
+    output_path: str,
+    output_format: str,
+    diagnostics: Sequence[IrDiagnostic],
+    summary_lines: Sequence[str] = (),
+    title: Optional[str] = None,
+    font_files: Optional[Sequence[str]] = None,
+) -> Tuple[str, int]:
+    """Render the sequence diagram with a diagnostics-driven overlay.
+
+    Returns the resolved ``(format, byte_size)`` written to ``output_path``.
+    """
+    overlay = build_overlay_from_diagnostics(
+        phase10_report=phase10_report,
+        diagnostics=diagnostics,
+        summary_lines=summary_lines,
+    )
+    fmt = _resolve_render_format(output_path, output_format)
+    try:
+        if fmt == "svg":
+            svg_text = render_sysdesim_timeline_svg(
+                phase10_report=phase10_report,
+                title=title,
+                overlay=overlay,
+            )
+            payload = svg_text.encode("utf-8")
+        else:
+            payload = render_sysdesim_timeline_png(
+                phase10_report=phase10_report,
+                title=title,
+                overlay=overlay,
+                font_files=list(font_files) if font_files else None,
+            )
+    except SysdesimRenderError as err:
+        raise ClickErrorException(str(err))
+    out_path = Path(output_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_bytes(payload)
+    return fmt, out_path.stat().st_size
+
+
 def _run_sysdesim_validate(
     input_xml_file: str,
     machine_name: Optional[str],
@@ -1143,21 +1247,43 @@ def _run_sysdesim_validate(
     right_state_ref: Optional[str],
     observation_scope: str,
     skip_static_check: bool = False,
+    render_diagram: Optional[str] = None,
+    render_format: str = "auto",
 ) -> None:
     """Run the timeline validation/report flow."""
     static_diagnostics: List[IrDiagnostic] = []
-    if not skip_static_check:
+    phase10_for_render: Optional[SysDeSimPhase10Report] = None
+    if render_diagram:
         try:
-            static_diagnostics = run_sysdesim_static_pre_checks(
-                xml_path=input_xml_file,
+            phase10_for_render = build_sysdesim_phase10_report(
+                input_xml_file,
                 machine_name=machine_name,
                 interaction_name=interaction_name,
                 tick_duration_ms=tick_duration_ms,
-                left_machine_alias=left_machine_alias,
-                left_state_ref=left_state_ref,
-                right_machine_alias=right_machine_alias,
-                right_state_ref=right_state_ref,
             )
+        except (KeyError, LookupError, NotImplementedError, ValueError) as err:
+            raise ClickErrorException(_format_sysdesim_cli_error(err))
+    if not skip_static_check:
+        try:
+            if phase10_for_render is not None:
+                static_diagnostics = run_sysdesim_static_pre_checks(
+                    phase10_report=phase10_for_render,
+                    left_machine_alias=left_machine_alias,
+                    left_state_ref=left_state_ref,
+                    right_machine_alias=right_machine_alias,
+                    right_state_ref=right_state_ref,
+                )
+            else:
+                static_diagnostics = run_sysdesim_static_pre_checks(
+                    xml_path=input_xml_file,
+                    machine_name=machine_name,
+                    interaction_name=interaction_name,
+                    tick_duration_ms=tick_duration_ms,
+                    left_machine_alias=left_machine_alias,
+                    left_state_ref=left_state_ref,
+                    right_machine_alias=right_machine_alias,
+                    right_state_ref=right_state_ref,
+                )
         except (KeyError, LookupError, NotImplementedError, ValueError) as err:
             raise ClickErrorException(_format_sysdesim_cli_error(err))
         counts = _emit_static_check_summary(static_diagnostics)
@@ -1190,6 +1316,26 @@ def _run_sysdesim_validate(
                     )
                     + "\n",
                     encoding="utf-8",
+                )
+            if render_diagram and phase10_for_render is not None:
+                fmt, size = _render_overlay_diagram(
+                    phase10_report=phase10_for_render,
+                    output_path=render_diagram,
+                    output_format=render_format,
+                    diagnostics=static_diagnostics,
+                    summary_lines=(
+                        ["Validation skipped: static pre-check has blocking errors."]
+                    ),
+                )
+                click.echo(
+                    "{label}  Wrote overlay {fmt} to {path} ({size} bytes).".format(
+                        label=click.style(
+                            "SysDeSim Validate Render", fg="cyan", bold=True
+                        ),
+                        fmt=fmt.upper(),
+                        path=render_diagram,
+                        size=size,
+                    )
                 )
             raise ClickErrorException(
                 "static pre-check failed with {} blocking error(s)".format(
@@ -1249,6 +1395,39 @@ def _run_sysdesim_validate(
                     "validation report" if "phase11" in report_data else "import report"
                 ),
                 path=report_path,
+            )
+        )
+
+    if render_diagram and phase10_for_render is not None:
+        summary_lines: List[str] = []
+        timeline_report = (report_data.get("phase11") or {}).get("timeline_report")
+        if isinstance(timeline_report, dict):
+            symbol = timeline_report.get("first_coexistence_symbol")
+            time_text = timeline_report.get("first_coexistence_time_text")
+            note = timeline_report.get("first_coexistence_note")
+            if symbol is not None:
+                summary_lines.append(
+                    "First coexistence: {sym} = {t}".format(
+                        sym=symbol, t=time_text
+                    )
+                )
+            elif note:
+                summary_lines.append("Phase11: {}".format(note))
+        fmt, size = _render_overlay_diagram(
+            phase10_report=phase10_for_render,
+            output_path=render_diagram,
+            output_format=render_format,
+            diagnostics=static_diagnostics,
+            summary_lines=summary_lines,
+        )
+        click.echo(
+            "{label}  Wrote overlay {fmt} to {path} ({size} bytes).".format(
+                label=click.style(
+                    "SysDeSim Validate Render", fg="cyan", bold=True
+                ),
+                fmt=fmt.upper(),
+                path=render_diagram,
+                size=size,
             )
         )
 
@@ -1469,6 +1648,30 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
             "the model/scenario level are no longer surfaced ahead of time."
         ),
     )
+    @click.option(
+        "--render-diagram",
+        "render_diagram",
+        type=str,
+        default=None,
+        help=(
+            "Optional path to write a sequence-diagram overlay rendering of "
+            "the validation findings. Format inferred from the extension "
+            "(``.svg`` / ``.png``). Includes a banner summarizing static-check "
+            "counts plus any Phase11 first-coexistence point, and per-step "
+            "markers for dropped signals / UNSAT durations."
+        ),
+    )
+    @click.option(
+        "--render-format",
+        "render_format",
+        type=click.Choice(["svg", "png", "auto"]),
+        default="auto",
+        show_default=True,
+        help=(
+            "Output format for ``--render-diagram``. ``auto`` infers from the "
+            "extension; defaults to ``svg`` when neither ``.svg`` nor ``.png``."
+        ),
+    )
     @command_wrap()
     def sysdesim_validate(
         input_xml_file: str,
@@ -1482,6 +1685,8 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
         right_state_ref: Optional[str],
         observation_scope: str,
         skip_static_check: bool,
+        render_diagram: Optional[str],
+        render_format: str,
     ) -> None:
         """
         Build one readable timeline validation summary for one SysDeSim input.
@@ -1509,6 +1714,11 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
         :type right_state_ref: str, optional
         :param observation_scope: Observation scope for the optional Phase11 query.
         :type observation_scope: str
+        :param render_diagram: Optional output path for an overlay-rendered
+            sequence diagram of the validation findings.
+        :type render_diagram: str, optional
+        :param render_format: Output format for ``render_diagram``.
+        :type render_format: str
         :return: ``None``.
         :rtype: None
         """
@@ -1524,6 +1734,8 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
             right_state_ref=right_state_ref,
             observation_scope=observation_scope,
             skip_static_check=skip_static_check,
+            render_diagram=render_diagram,
+            render_format=render_format,
         )
 
     @sysdesim.command(
@@ -1613,6 +1825,29 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
             "fail the build."
         ),
     )
+    @click.option(
+        "--render-diagram",
+        "render_diagram",
+        type=str,
+        default=None,
+        help=(
+            "Optional path to write a sequence-diagram overlay rendering of "
+            "the static-check findings. Format inferred from the extension "
+            "(``.svg`` / ``.png``). Diagnostic markers ride on top of the "
+            "baseline diagram (banner, dropped-signal badges, UNSAT lane tags)."
+        ),
+    )
+    @click.option(
+        "--render-format",
+        "render_format",
+        type=click.Choice(["svg", "png", "auto"]),
+        default="auto",
+        show_default=True,
+        help=(
+            "Output format for ``--render-diagram``. ``auto`` infers from the "
+            "extension; defaults to ``svg`` when neither ``.svg`` nor ``.png``."
+        ),
+    )
     @command_wrap()
     def sysdesim_static_check(
         input_xml_file: str,
@@ -1625,6 +1860,8 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
         right_machine_alias: Optional[str],
         right_state_ref: Optional[str],
         warn_as_error: bool,
+        render_diagram: Optional[str],
+        render_format: str,
     ) -> None:
         """
         Run the static pre-check phase only and exit non-zero on errors.
@@ -1650,15 +1887,23 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
         :type right_state_ref: str, optional
         :param warn_as_error: Whether to treat warnings as blocking errors.
         :type warn_as_error: bool
+        :param render_diagram: Optional output path for an overlay-rendered
+            sequence diagram of the static-check findings.
+        :type render_diagram: str, optional
+        :param render_format: Output format for ``render_diagram``.
+        :type render_format: str
         :return: ``None``.
         :rtype: None
         """
         try:
-            diagnostics = run_sysdesim_static_pre_checks(
-                xml_path=input_xml_file,
+            phase10 = build_sysdesim_phase10_report(
+                input_xml_file,
                 machine_name=machine_name,
                 interaction_name=interaction_name,
                 tick_duration_ms=tick_duration_ms,
+            )
+            diagnostics = run_sysdesim_static_pre_checks(
+                phase10_report=phase10,
                 left_machine_alias=left_machine_alias,
                 left_state_ref=left_state_ref,
                 right_machine_alias=right_machine_alias,
@@ -1683,6 +1928,24 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
                 json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True)
                 + "\n",
                 encoding="utf-8",
+            )
+
+        if render_diagram:
+            fmt, size = _render_overlay_diagram(
+                phase10_report=phase10,
+                output_path=render_diagram,
+                output_format=render_format,
+                diagnostics=diagnostics,
+            )
+            click.echo(
+                "{label}  Wrote overlay {fmt} to {path} ({size} bytes).".format(
+                    label=click.style(
+                        "SysDeSim Static Check Render", fg="cyan", bold=True
+                    ),
+                    fmt=fmt.upper(),
+                    path=render_diagram,
+                    size=size,
+                )
             )
 
         blocking = counts["errors"] + (counts["warnings"] if warn_as_error else 0)
@@ -1785,6 +2048,18 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
         default=None,
         help="Override the diagram title (defaults to the interaction name).",
     )
+    @click.option(
+        "--diagnostics-file",
+        "diagnostics_file",
+        type=str,
+        default=None,
+        help=(
+            "Optional path to a JSON report (produced by ``static-check "
+            "--report-file`` or ``validate --report-file``). When provided, "
+            "the renderer overlays banner + diagnostic markers on top of the "
+            "baseline diagram."
+        ),
+    )
     @command_wrap()
     def sysdesim_sequence_render(
         input_xml_file: str,
@@ -1796,6 +2071,7 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
         interaction_name: Optional[str],
         tick_duration_ms: Optional[float],
         title: Optional[str],
+        diagnostics_file: Optional[str],
     ) -> None:
         """
         Render one SysDeSim sequence diagram as SVG or PNG.
@@ -1819,6 +2095,10 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
         :type tick_duration_ms: float, optional
         :param title: Optional title override.
         :type title: str, optional
+        :param diagnostics_file: Optional path to a previously-written
+            static-check or validate JSON report. When given, diagnostic
+            overlay markers are layered on top of the baseline diagram.
+        :type diagnostics_file: str, optional
         :return: ``None``.
         :rtype: None
         """
@@ -1835,25 +2115,67 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
             else:
                 resolved_format = "svg"
 
+        overlay_payload: Optional[Dict] = None
+        phase10_for_overlay: Optional[SysDeSimPhase10Report] = None
+        if diagnostics_file:
+            try:
+                with open(diagnostics_file, "r", encoding="utf-8") as fp:
+                    diag_doc = json.load(fp)
+            except (OSError, ValueError) as err:
+                raise ClickErrorException(
+                    "Cannot read diagnostics file {}: {}".format(
+                        diagnostics_file, err
+                    )
+                )
+            try:
+                phase10_for_overlay = build_sysdesim_phase10_report(
+                    input_xml_file,
+                    machine_name=machine_name,
+                    interaction_name=interaction_name,
+                    tick_duration_ms=tick_duration_ms,
+                )
+            except (KeyError, LookupError, NotImplementedError, ValueError) as err:
+                raise ClickErrorException(_format_sysdesim_cli_error(err))
+            diag_objs = _diagnostics_from_report_dict(diag_doc)
+            overlay_payload = build_overlay_from_diagnostics(
+                phase10_report=phase10_for_overlay,
+                diagnostics=diag_objs,
+            )
+
         try:
             if resolved_format == "svg":
-                svg_text = render_sysdesim_timeline_svg(
-                    xml_path=input_xml_file,
-                    machine_name=machine_name,
-                    interaction_name=interaction_name,
-                    tick_duration_ms=tick_duration_ms,
-                    title=title,
-                )
+                if phase10_for_overlay is not None:
+                    svg_text = render_sysdesim_timeline_svg(
+                        phase10_report=phase10_for_overlay,
+                        title=title,
+                        overlay=overlay_payload,
+                    )
+                else:
+                    svg_text = render_sysdesim_timeline_svg(
+                        xml_path=input_xml_file,
+                        machine_name=machine_name,
+                        interaction_name=interaction_name,
+                        tick_duration_ms=tick_duration_ms,
+                        title=title,
+                    )
                 payload = svg_text.encode("utf-8")
             else:
-                payload = render_sysdesim_timeline_png(
-                    xml_path=input_xml_file,
-                    machine_name=machine_name,
-                    interaction_name=interaction_name,
-                    tick_duration_ms=tick_duration_ms,
-                    title=title,
-                    font_files=list(font_files) if font_files else None,
-                )
+                if phase10_for_overlay is not None:
+                    payload = render_sysdesim_timeline_png(
+                        phase10_report=phase10_for_overlay,
+                        title=title,
+                        overlay=overlay_payload,
+                        font_files=list(font_files) if font_files else None,
+                    )
+                else:
+                    payload = render_sysdesim_timeline_png(
+                        xml_path=input_xml_file,
+                        machine_name=machine_name,
+                        interaction_name=interaction_name,
+                        tick_duration_ms=tick_duration_ms,
+                        title=title,
+                        font_files=list(font_files) if font_files else None,
+                    )
         except (KeyError, LookupError, NotImplementedError, ValueError) as err:
             raise ClickErrorException(_format_sysdesim_cli_error(err))
         except SysdesimRenderError as err:

@@ -38,8 +38,9 @@ import base64
 import json
 import os
 import threading
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
+from .ir import IrDiagnostic
 from .timeline import (
     SysDeSimMessageObservation,
     SysDeSimStateInvariantObservation,
@@ -113,7 +114,12 @@ def _lifeline_id(lifeline_id: Optional[str]) -> Optional[str]:
     return lifeline_id
 
 
-def _build_timeline_json(report: SysDeSimPhase10Report, *, title: Optional[str] = None) -> Dict[str, Any]:
+def _build_timeline_json(
+    report: SysDeSimPhase10Report,
+    *,
+    title: Optional[str] = None,
+    overlay: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     """
     Flatten a :class:`SysDeSimPhase10Report` into the JSON shape the JS
     renderer consumes.
@@ -249,7 +255,7 @@ def _build_timeline_json(report: SysDeSimPhase10Report, *, title: Optional[str] 
         for item in report.scenario.temporal_constraints
     ]
 
-    return {
+    payload: Dict[str, Any] = {
         "title": title
         or interaction.interaction_name
         or report.scenario.name
@@ -258,6 +264,218 @@ def _build_timeline_json(report: SysDeSimPhase10Report, *, title: Optional[str] 
         "steps": steps_payload,
         "temporal_constraints": constraints_payload,
     }
+    if overlay:
+        payload["overlay"] = overlay
+    return payload
+
+
+def _step_friendly_label(step) -> str:
+    """Mirror :func:`pyfcstm.convert.sysdesim.static_check._friendly_step_label`.
+
+    Kept locally so this module does not depend on ``static_check`` (which in
+    turn pulls in the optional Z3 SMT solver). The behavior must stay in sync
+    so overlay markers can match step_label fields produced by static_check
+    diagnostics.
+    """
+    for action in getattr(step, "actions", ()) or ():
+        event_name = getattr(action, "event_name", None)
+        if event_name:
+            return str(event_name)
+        input_name = getattr(action, "input_name", None)
+        if input_name:
+            value_text = getattr(action, "value_text", None)
+            if value_text is None:
+                return str(input_name)
+            return "{}={}".format(input_name, value_text)
+    for note in getattr(step, "notes", ()) or ():
+        if isinstance(note, str) and note.startswith("outbound_signal="):
+            signal = note.split("=", 1)[1].strip() or "?"
+            return "-->{}".format(signal)
+        if note == "self_message":
+            return "self-message"
+    order_index = getattr(step, "order_index", None)
+    if isinstance(order_index, int):
+        return "(anchor #{})".format(order_index)
+    return "(anchor)"
+
+
+def build_overlay_from_diagnostics(
+    *,
+    phase10_report: SysDeSimPhase10Report,
+    diagnostics: Sequence[IrDiagnostic] = (),
+    summary_lines: Sequence[str] = (),
+    banner_lead: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """
+    Build a renderer overlay payload from a set of static-check diagnostics.
+
+    The resulting overlay maps recognized diagnostic codes to the SVG/PNG
+    renderer's overlay schema:
+
+    * ``signal_dropped_in_state`` (warning) becomes one
+      ``message_markers`` entry anchored on the scenario message that emitted
+      the dropped signal.
+    * ``temporal_constraints_unsat`` (error) becomes one ``constraint_markers``
+      entry per constraint id listed in the diagnostic's
+      ``involved_constraint_ids`` detail field.
+    * Other diagnostic codes contribute to the top-of-diagram banner only;
+      they have no graphical anchor on the diagram itself.
+
+    The returned payload always includes a banner summarizing the
+    error/warning counts plus any *summary_lines* provided by the caller
+    (e.g. Phase11 first-coexistence text). Pass *banner_lead* to override the
+    headline line; otherwise it defaults to a phrase derived from the
+    error/warning counts.
+
+    :param phase10_report: Phase10 report used to resolve diagnostic step
+        labels back to scenario step / message ids.
+    :type phase10_report: SysDeSimPhase10Report
+    :param diagnostics: Static-check diagnostics to project onto the overlay.
+    :type diagnostics: collections.abc.Sequence[pyfcstm.convert.sysdesim.ir.IrDiagnostic]
+    :param summary_lines: Optional extra lines to append under the banner
+        headline (e.g. Phase11 SAT result, first coexistence point).
+    :type summary_lines: collections.abc.Sequence[str]
+    :param banner_lead: Optional override for the banner's first (headline)
+        line. Defaults to a phrase like ``"Static check: 1 error, 2
+        warning(s)."``.
+    :type banner_lead: str, optional
+    :return: Overlay payload dict suitable for
+        :func:`render_sysdesim_timeline_svg` / :func:`render_sysdesim_timeline_png`,
+        or ``None`` when the input would produce an empty banner *and* no
+        graphical markers (callers can treat ``None`` as "render baseline").
+    :rtype: dict[str, Any] | None
+    """
+    diagnostics = list(diagnostics or ())
+    summary_lines = list(summary_lines or ())
+
+    error_count = sum(1 for d in diagnostics if (d.level or "").lower() == "error")
+    warning_count = sum(
+        1 for d in diagnostics if (d.level or "").lower() == "warning"
+    )
+
+    message_markers: List[Dict[str, Any]] = []
+    constraint_markers: List[Dict[str, Any]] = []
+
+    # Walk scenario steps once to build a (signal_name_lower, friendly_label)
+    # ordered queue we can match diagnostics against. The same (label, signal)
+    # pair may legitimately recur (Sig9 emitted at S0 and S5), so we consume
+    # entries in order so the i-th matching diagnostic anchors on the i-th
+    # matching step.
+    scenario_steps = list(phase10_report.scenario.steps)
+    step_signal_index: List[Tuple[str, str, str, Optional[str]]] = []
+    # Each entry: (step_id, friendly_label_lower, event_name_lower, message_id)
+    for step in scenario_steps:
+        friendly_label = _step_friendly_label(step)
+        message_id = (
+            step.source_observation_ids[0]
+            if step.source_observation_ids
+            else None
+        )
+        for action in getattr(step, "actions", ()) or ():
+            event_name = getattr(action, "event_name", None)
+            if not isinstance(event_name, str) or not event_name:
+                continue
+            step_signal_index.append(
+                (
+                    step.step_id,
+                    friendly_label.lower(),
+                    event_name.lower(),
+                    message_id,
+                )
+            )
+
+    consumed_indices: set = set()
+
+    def _claim_message_id(step_label: Optional[str], signal: Optional[str]) -> Optional[str]:
+        label_lo = (step_label or "").lower()
+        signal_lo = (signal or "").lower()
+        for i, (_, friendly_lo, event_lo, message_id) in enumerate(step_signal_index):
+            if i in consumed_indices:
+                continue
+            if label_lo and friendly_lo != label_lo:
+                continue
+            if signal_lo and event_lo != signal_lo:
+                continue
+            consumed_indices.add(i)
+            return message_id
+        # Fallback: if nothing matched on label, try matching on signal alone.
+        if signal_lo:
+            for i, (_, _, event_lo, message_id) in enumerate(step_signal_index):
+                if i in consumed_indices:
+                    continue
+                if event_lo == signal_lo:
+                    consumed_indices.add(i)
+                    return message_id
+        return None
+
+    for diag in diagnostics:
+        code = diag.code or ""
+        details: Dict[str, Any] = diag.details or {}
+        if code == "signal_dropped_in_state":
+            signal_name = str(details.get("signal") or "")
+            step_label = str(details.get("step_label") or "")
+            message_id = _claim_message_id(step_label, signal_name)
+            if message_id is None:
+                continue
+            message_markers.append(
+                {
+                    "message_id": message_id,
+                    "severity": (diag.level or "warning").lower(),
+                    "code": code,
+                    "label": signal_name or "DROPPED",
+                }
+            )
+        elif code == "temporal_constraints_unsat":
+            involved = details.get("involved_constraint_ids") or []
+            for cid in involved:
+                if not isinstance(cid, str) or not cid:
+                    continue
+                constraint_markers.append(
+                    {
+                        "constraint_id": cid,
+                        "severity": (diag.level or "error").lower(),
+                        "code": code,
+                        "label": "UNSAT",
+                    }
+                )
+
+    # Compose the banner. Always include a headline reflecting counts so the
+    # render visibly differs from the no-overlay baseline; then optionally
+    # append caller-supplied summary lines.
+    banner_lines: List[str] = []
+    if banner_lead is not None:
+        if banner_lead:
+            banner_lines.append(banner_lead)
+    else:
+        if error_count or warning_count:
+            banner_lines.append(
+                "Static check: {} error(s), {} warning(s).".format(
+                    error_count, warning_count
+                )
+            )
+        elif summary_lines:
+            banner_lines.append("Sequence diagnostics:")
+        else:
+            banner_lines.append("Static check: clean.")
+    for line in summary_lines:
+        text = str(line).strip()
+        if text:
+            banner_lines.append(text)
+
+    severity = "info"
+    if error_count > 0:
+        severity = "error"
+    elif warning_count > 0:
+        severity = "warning"
+
+    overlay: Dict[str, Any] = {}
+    if banner_lines:
+        overlay["banner"] = {"severity": severity, "lines": banner_lines}
+    if message_markers:
+        overlay["message_markers"] = message_markers
+    if constraint_markers:
+        overlay["constraint_markers"] = constraint_markers
+    return overlay or None
 
 
 def render_sysdesim_timeline_svg(
@@ -269,6 +487,7 @@ def render_sysdesim_timeline_svg(
     phase10_report: Optional[SysDeSimPhase10Report] = None,
     title: Optional[str] = None,
     theme: Optional[Dict[str, Any]] = None,
+    overlay: Optional[Dict[str, Any]] = None,
 ) -> str:
     """
     Render a SysDeSim sequence-diagram SVG.
@@ -293,6 +512,11 @@ def render_sysdesim_timeline_svg(
     :type title: str, optional
     :param theme: Optional theme overrides forwarded to the JS renderer.
     :type theme: dict[str, Any], optional
+    :param overlay: Optional overlay payload (banner / step_bands /
+        message_markers / constraint_markers). The renderer treats this
+        as decorative additive layers; references to unknown step or
+        message ids are silently dropped instead of failing the render.
+    :type overlay: dict[str, Any], optional
     :return: SVG document text (UTF-8, with XML prolog).
     :rtype: str
     :raises SysdesimRenderError: If the JS bundle cannot be loaded or the
@@ -309,7 +533,7 @@ def render_sysdesim_timeline_svg(
             interaction_name=interaction_name,
             tick_duration_ms=tick_duration_ms,
         )
-    timeline_json = _build_timeline_json(phase10_report, title=title)
+    timeline_json = _build_timeline_json(phase10_report, title=title, overlay=overlay)
     options: Dict[str, Any] = {}
     if theme:
         options["theme"] = theme
@@ -383,6 +607,7 @@ def render_sysdesim_timeline_png(
     resvg_options: Optional[Dict[str, Any]] = None,
     font_files: Optional[List[str]] = None,
     font_buffers: Optional[List[bytes]] = None,
+    overlay: Optional[Dict[str, Any]] = None,
 ) -> bytes:
     """
     Render a SysDeSim sequence-diagram PNG (via resvg-wasm).
@@ -422,6 +647,10 @@ def render_sysdesim_timeline_png(
         Equivalent to ``font_files`` but for callers that already have the
         bytes in memory.
     :type font_buffers: list[bytes], optional
+    :param overlay: Optional overlay payload (banner / step_bands /
+        message_markers / constraint_markers). Same shape as the SVG
+        renderer's ``overlay`` parameter.
+    :type overlay: dict[str, Any], optional
     :return: PNG bytes (begins with the standard ``\\x89PNG`` magic).
     :rtype: bytes
     :raises SysdesimRenderError: If the JS bundle cannot be loaded, the
@@ -445,7 +674,7 @@ def render_sysdesim_timeline_png(
             interaction_name=interaction_name,
             tick_duration_ms=tick_duration_ms,
         )
-    timeline_json = _build_timeline_json(phase10_report, title=title)
+    timeline_json = _build_timeline_json(phase10_report, title=title, overlay=overlay)
     options: Dict[str, Any] = {}
     if theme:
         options["theme"] = theme
@@ -482,6 +711,7 @@ def render_sysdesim_timeline_png(
 
 __all__ = [
     "SysdesimRenderError",
+    "build_overlay_from_diagnostics",
     "render_sysdesim_timeline_png",
     "render_sysdesim_timeline_svg",
 ]

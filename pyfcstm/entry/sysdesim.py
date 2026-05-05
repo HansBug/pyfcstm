@@ -26,8 +26,29 @@ import subprocess
 import sys
 import tempfile
 import webbrowser
+from decimal import Decimal
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+
+
+def _json_default(obj):
+    """Best-effort fallback for ``json.dumps`` so Decimal-typed diagnostic
+    payload fields don't crash report writing.
+
+    Used by every ``--report-file`` writer in this module: static-check
+    diagnostic ``details`` carry ``Decimal`` for parsed time bounds, and
+    ``json.dumps`` rejects them by default.
+    """
+    if isinstance(obj, Decimal):
+        # Render integral decimals without trailing zeros so reports stay
+        # human-readable; keep fractional precision otherwise.
+        text = format(obj, "f")
+        if "." in text:
+            text = text.rstrip("0").rstrip(".")
+        return text or "0"
+    raise TypeError(
+        "Object of type {} is not JSON serializable".format(type(obj).__name__)
+    )
 
 import click
 
@@ -1135,7 +1156,7 @@ def _run_sysdesim_convert(
         for output_item in report_data["outputs"]:
             output_item["output_file"] = output_file_by_name[output_item["output_name"]]
         report_path.write_text(
-            json.dumps(report_data, indent=2, ensure_ascii=False, sort_keys=True)
+            json.dumps(report_data, indent=2, ensure_ascii=False, sort_keys=True, default=_json_default)
             + "\n",
             encoding="utf-8",
         )
@@ -1535,7 +1556,8 @@ def _run_sysdesim_validate(
                 report_path.parent.mkdir(parents=True, exist_ok=True)
                 report_path.write_text(
                     json.dumps(
-                        static_payload, indent=2, ensure_ascii=False, sort_keys=True
+                        static_payload, indent=2, ensure_ascii=False,
+                        sort_keys=True, default=_json_default,
                     )
                     + "\n",
                     encoding="utf-8",
@@ -1605,7 +1627,7 @@ def _run_sysdesim_validate(
     report_path = None
     if report_file is not None:
         rendered = (
-            json.dumps(report_data, indent=2, ensure_ascii=False, sort_keys=True) + "\n"
+            json.dumps(report_data, indent=2, ensure_ascii=False, sort_keys=True, default=_json_default) + "\n"
         )
         report_path = Path(report_file)
         report_path.parent.mkdir(parents=True, exist_ok=True)
@@ -2182,7 +2204,7 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
             report_path = Path(report_file)
             report_path.parent.mkdir(parents=True, exist_ok=True)
             report_path.write_text(
-                json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True)
+                json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True, default=_json_default)
                 + "\n",
                 encoding="utf-8",
             )

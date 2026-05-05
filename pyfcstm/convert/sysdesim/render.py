@@ -38,8 +38,9 @@ import base64
 import json
 import os
 import threading
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
+from .ir import IrDiagnostic
 from .timeline import (
     SysDeSimMessageObservation,
     SysDeSimStateInvariantObservation,
@@ -113,7 +114,12 @@ def _lifeline_id(lifeline_id: Optional[str]) -> Optional[str]:
     return lifeline_id
 
 
-def _build_timeline_json(report: SysDeSimPhase10Report, *, title: Optional[str] = None) -> Dict[str, Any]:
+def _build_timeline_json(
+    report: SysDeSimPhase10Report,
+    *,
+    title: Optional[str] = None,
+    overlay: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     """
     Flatten a :class:`SysDeSimPhase10Report` into the JSON shape the JS
     renderer consumes.
@@ -249,7 +255,7 @@ def _build_timeline_json(report: SysDeSimPhase10Report, *, title: Optional[str] 
         for item in report.scenario.temporal_constraints
     ]
 
-    return {
+    payload: Dict[str, Any] = {
         "title": title
         or interaction.interaction_name
         or report.scenario.name
@@ -258,6 +264,531 @@ def _build_timeline_json(report: SysDeSimPhase10Report, *, title: Optional[str] 
         "steps": steps_payload,
         "temporal_constraints": constraints_payload,
     }
+    if overlay:
+        payload["overlay"] = overlay
+    return payload
+
+
+def _step_friendly_label(step) -> str:
+    """Mirror :func:`pyfcstm.convert.sysdesim.static_check._friendly_step_label`.
+
+    Kept locally so this module does not depend on ``static_check`` (which in
+    turn pulls in the optional Z3 SMT solver). The behavior must stay in sync
+    so overlay markers can match step_label fields produced by static_check
+    diagnostics.
+    """
+    for action in getattr(step, "actions", ()) or ():
+        event_name = getattr(action, "event_name", None)
+        if event_name:
+            return str(event_name)
+        input_name = getattr(action, "input_name", None)
+        if input_name:
+            value_text = getattr(action, "value_text", None)
+            if value_text is None:
+                return str(input_name)
+            return "{}={}".format(input_name, value_text)
+    for note in getattr(step, "notes", ()) or ():
+        if isinstance(note, str) and note.startswith("outbound_signal="):
+            signal = note.split("=", 1)[1].strip() or "?"
+            return "-->{}".format(signal)
+        if note == "self_message":
+            return "self-message"
+    order_index = getattr(step, "order_index", None)
+    if isinstance(order_index, int):
+        return "(anchor #{})".format(order_index)
+    return "(anchor)"
+
+
+def _normalize_seconds_text(text: Optional[str]) -> str:
+    """Append a trailing ``s`` when the literal is a bare decimal number.
+
+    Mirrors the ``_normalizeSecondsText`` helper in the JS bundle so the
+    Python-side overlay labels read with the same units as the bracket
+    labels the JS layer writes.
+    """
+    if text is None:
+        return ""
+    trimmed = str(text).strip()
+    if not trimmed:
+        return ""
+    cleaned = trimmed.lstrip("-")
+    if cleaned and all(ch.isdigit() or ch == "." for ch in cleaned):
+        return trimmed + "s"
+    return trimmed
+
+
+def _format_temporal_constraint_violation(
+    constraint, label: Optional[str] = None
+) -> str:
+    """Build a short human-readable violation expression for a temporal constraint.
+
+    Used as the headline label on the v2 ``constraint_arrows`` red double-arrow
+    so the user can read the actual offending bound off the diagram.
+    """
+    min_text = _normalize_seconds_text(getattr(constraint, "min_seconds_text", None))
+    max_text = _normalize_seconds_text(getattr(constraint, "max_seconds_text", None))
+    if min_text and max_text:
+        if min_text == max_text:
+            return "= {}".format(min_text)
+        return "[{}..{}]".format(min_text, max_text)
+    if min_text:
+        return ">= {}".format(min_text)
+    if max_text:
+        return "<= {}".format(max_text)
+    return label or "UNSAT"
+
+
+def _shorten_state_path(state_path: str) -> str:
+    """Compact a state path for the overlay state table.
+
+    Mirrors :func:`pyfcstm.entry.sysdesim._short_state_text` so the overlay
+    cells render the same labels (``F``, ``J``, ``H.M``) as the validate
+    CLI's ``co`` table.
+    """
+    if not isinstance(state_path, str) or not state_path:
+        return ""
+    if ".Control." in state_path:
+        return state_path.split(".Control.", 1)[1]
+    if state_path.endswith(".Control"):
+        return "Control"
+    if "." in state_path:
+        return state_path.rsplit(".", 1)[-1]
+    return state_path
+
+
+def _shorten_machine_alias(alias: str) -> str:
+    """Compact a machine alias for the overlay state-cell header.
+
+    Aliases look like ``StateMachineName__Control_regionN``; the
+    region-suffix is the most informative trailing token.
+    """
+    if not isinstance(alias, str) or not alias:
+        return ""
+    if "__" in alias:
+        return alias.rsplit("__", 1)[-1]
+    return alias
+
+
+def _scenario_step_id_for_phase11_symbol(
+    symbol: str, scenario_step_ids: Sequence[str]
+) -> Optional[str]:
+    """Map a Phase11 timeline symbol back onto a scenario step id.
+
+    The Phase11 timeline uses ``tNN`` (regular observation point) and
+    ``tau__<alias>__<step_id>__<idx>`` (hidden auto occurrence between two
+    scenario steps) as symbols. Scenario steps are stored as ``sNN``. The
+    rule: a ``tNN`` symbol maps to ``sNN`` directly; a tau auto-occurrence
+    rolls forward onto the *next* scenario step (where the new state is
+    first visible to the user).
+    """
+    if not isinstance(symbol, str) or not symbol:
+        return None
+    # Direct match: caller already passed a scenario step_id.
+    if symbol in scenario_step_ids:
+        return symbol
+    if symbol.startswith("t") and not symbol.startswith("tau"):
+        candidate = "s" + symbol[1:]
+        if candidate in scenario_step_ids:
+            return candidate
+        return None
+    if symbol.startswith("tau__"):
+        # tau__<machine_alias>__<step_id>__<occurrence_index>
+        parts = symbol.split("__")
+        if len(parts) < 4:
+            return None
+        host_step = parts[-2]
+        if host_step not in scenario_step_ids:
+            return None
+        # Roll forward: assign the auto occurrence to the scenario step that
+        # *follows* the tau host (the new state becomes observable there).
+        try:
+            idx = scenario_step_ids.index(host_step)
+        except ValueError:
+            return None
+        if idx + 1 < len(scenario_step_ids):
+            return scenario_step_ids[idx + 1]
+        return host_step
+    return None
+
+
+def _phase11_step_state_rows(
+    *,
+    phase10_report: SysDeSimPhase10Report,
+    coexistence_timeline: Optional[Dict[str, Any]] = None,
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Project per-step machine states + coexistence cells into overlay rows.
+
+    Returns ``(state_columns, step_states)`` ready to drop into the overlay
+    payload. ``coexistence_timeline`` is the dict produced by
+    :class:`SysDeSimStateCoexistenceTimelineReport.to_dict()` (or the equivalent
+    JSON shape under ``report["phase11"]["timeline_report"]``).
+
+    The columns are: one per machine alias (in display order), followed by a
+    ``co`` column showing initial / start / yes / blank, mirroring the
+    ``_emit_phase11_timeline_table`` cells in the validate CLI output.
+    """
+    state_columns: List[Dict[str, Any]] = []
+    step_states: List[Dict[str, Any]] = []
+
+    output_aliases = [
+        out.output_name for out in phase10_report.phase9_report.outputs
+    ]
+    if not output_aliases:
+        return state_columns, step_states
+
+    # Layout: ``t`` (time) column first, then one column per machine alias,
+    # then a trailing ``co`` (coexistence) column. Mirrors the validate CLI
+    # ``co`` table column order so the overlay reads identically to the
+    # terminal output.
+    state_columns.append({"header": "t", "kind": "time"})
+    for alias in output_aliases:
+        state_columns.append(
+            {"header": _shorten_machine_alias(alias), "kind": "machine"}
+        )
+    state_columns.append({"header": "co", "kind": "co"})
+
+    # Default per-step machine states from Phase10 traces, keyed by step_id
+    # so the overlay still shows useful state info even without a Phase11
+    # query.
+    state_by_step_alias: Dict[str, Dict[str, str]] = {}
+    initial_by_alias: Dict[str, str] = {}
+    for trace in phase10_report.traces:
+        initial_by_alias[trace.machine_alias] = trace.initial_state_path or ""
+        for s in trace.steps:
+            state_by_step_alias.setdefault(s.step_id, {})[trace.machine_alias] = (
+                s.pre_state_path or ""
+            )
+
+    scenario_step_ids = [s.step_id for s in phase10_report.scenario.steps]
+    co_by_step: Dict[str, str] = {}
+    first_coex_step: Optional[str] = None
+    states_by_step_from_phase11: Dict[str, Dict[str, str]] = {}
+    time_text_by_step: Dict[str, str] = {}
+
+    def _format_time_value_text(raw: Optional[str]) -> str:
+        """Render ``"0"`` as ``"0s"`` so the column reads like a duration."""
+        text = (str(raw) if raw is not None else "").strip()
+        if not text:
+            return ""
+        cleaned = text.lstrip("-")
+        if cleaned and all(ch.isdigit() or ch == "." for ch in cleaned):
+            return text + "s"
+        return text
+
+    if coexistence_timeline:
+        first_symbol = coexistence_timeline.get("first_coexistence_symbol")
+        seen_first = False
+        for point in coexistence_timeline.get("timeline_points") or ():
+            if not isinstance(point, dict):
+                continue
+            symbol = point.get("symbol")
+            if not isinstance(symbol, str):
+                continue
+            mapped = _scenario_step_id_for_phase11_symbol(
+                symbol, scenario_step_ids
+            )
+            machine_states = point.get("machine_states") or ()
+            if mapped:
+                # Last write wins so a tau auto-occurrence mapped onto
+                # ``sNN+1`` overrides the trace-derived state for that row.
+                if isinstance(machine_states, (list, tuple)):
+                    cells: Dict[str, str] = {}
+                    for entry in machine_states:
+                        # entry can be a tuple (alias, state) or a 2-list
+                        # depending on whether the report came from JSON.
+                        if isinstance(entry, (list, tuple)) and len(entry) >= 2:
+                            cells[str(entry[0])] = str(entry[1])
+                    if cells:
+                        states_by_step_from_phase11[mapped] = cells
+                # Pick up the resolved time value. tau-auto points map onto
+                # the next scenario step; the t-step point that follows
+                # overwrites it with the actual observation time, which is
+                # the more useful number to print on the row.
+                time_value_text = _format_time_value_text(point.get("time_value_text"))
+                if time_value_text:
+                    time_text_by_step[mapped] = time_value_text
+                if symbol == first_symbol and first_coex_step is None:
+                    co_by_step[mapped] = "start"
+                    first_coex_step = mapped
+                    seen_first = True
+                elif point.get("is_coexistent") and seen_first:
+                    # Subsequent coexistent rows render as plain "yes".
+                    if co_by_step.get(mapped) != "start":
+                        co_by_step[mapped] = "yes"
+
+    # Render one row per scenario step so the overlay table aligns 1:1 with
+    # the message rows on the sequence diagram.
+    last_state_per_alias: Dict[str, str] = dict(initial_by_alias)
+    for idx, step in enumerate(phase10_report.scenario.steps):
+        cells: List[str] = []
+        phase11_states = states_by_step_from_phase11.get(step.step_id, {})
+        # Time column: prefer Phase11-resolved value, else fall back to the
+        # symbolic time variable from Phase10 (still useful when SMT did not
+        # run, e.g. ``static-check`` mode).
+        time_text = time_text_by_step.get(step.step_id)
+        if not time_text:
+            symbol = getattr(step, "time_symbol", None)
+            time_text = str(symbol) if symbol else ""
+        cells.append(time_text)
+        for alias in output_aliases:
+            # Prefer Phase11 timeline-state when available (it accounts for
+            # hidden auto occurrences); otherwise fall back to the Phase10
+            # trace pre-state, then the last-known state.
+            cell_state = phase11_states.get(alias)
+            if cell_state is None:
+                cell_state = state_by_step_alias.get(step.step_id, {}).get(alias)
+            if cell_state is None:
+                cell_state = last_state_per_alias.get(alias, "")
+            else:
+                last_state_per_alias[alias] = cell_state
+            cells.append(_shorten_state_path(cell_state))
+        co_text = co_by_step.get(step.step_id, "")
+        if not co_text and idx == 0 and not coexistence_timeline:
+            co_text = "initial"
+        cells.append(co_text)
+        highlight: Optional[str] = None
+        if first_coex_step is not None and step.step_id == first_coex_step:
+            highlight = "first_coexistence"
+        elif co_text == "yes":
+            highlight = "coexistence"
+        step_states.append(
+            {"step_id": step.step_id, "cells": cells, "highlight": highlight}
+        )
+    return state_columns, step_states
+
+
+def build_overlay_from_diagnostics(
+    *,
+    phase10_report: SysDeSimPhase10Report,
+    diagnostics: Sequence[IrDiagnostic] = (),
+    summary_lines: Sequence[str] = (),
+    banner_lead: Optional[str] = None,
+    coexistence_timeline: Optional[Dict[str, Any]] = None,
+    include_state_cells: bool = False,
+) -> Optional[Dict[str, Any]]:
+    """
+    Build a renderer overlay payload from a set of static-check diagnostics.
+
+    The resulting v2 overlay maps recognized diagnostic codes to graphical
+    elements that read at a glance:
+
+    * ``signal_dropped_in_state`` (warning) becomes one ``message_drops``
+      entry anchored on the scenario message that emitted the dropped
+      signal. The renderer overlays a red strikethrough X on the message
+      arrow plus a right-margin badge showing the active state and the
+      transition source-states the signal would have advanced.
+    * ``temporal_constraints_unsat`` (error) becomes one ``constraint_arrows``
+      entry per constraint id listed in the diagnostic's
+      ``involved_constraint_ids`` detail field. The renderer draws a thick
+      red double-headed arrow connecting the two scenario steps the
+      constraint binds, with the offending bound expression as a label.
+
+    When *coexistence_timeline* is provided (and *include_state_cells* is
+    true, which is the default for non-empty timelines), the overlay also
+    contains a per-step state table (``state_columns`` + ``step_states``)
+    that mirrors the validate CLI's ``t / act / region / co`` table directly
+    on the diagram. The first-coexistence row is highlighted in green.
+
+    The returned payload always includes a banner summarizing the
+    error/warning counts plus any *summary_lines* provided by the caller.
+    Pass *banner_lead* to override the headline line.
+
+    :param phase10_report: Phase10 report used to resolve diagnostic step
+        labels back to scenario step / message ids.
+    :type phase10_report: SysDeSimPhase10Report
+    :param diagnostics: Static-check diagnostics to project onto the overlay.
+    :type diagnostics: collections.abc.Sequence[pyfcstm.convert.sysdesim.ir.IrDiagnostic]
+    :param summary_lines: Optional extra lines to append under the banner
+        headline (e.g. Phase11 SAT result, first coexistence point).
+    :type summary_lines: collections.abc.Sequence[str]
+    :param banner_lead: Optional override for the banner's first (headline)
+        line.
+    :type banner_lead: str, optional
+    :param coexistence_timeline: Optional Phase11 timeline-report dict
+        (``SysDeSimStateCoexistenceTimelineReport.to_dict()``). When given,
+        the overlay carries per-step state cells.
+    :type coexistence_timeline: dict[str, Any], optional
+    :param include_state_cells: Whether to attach the per-step state table.
+        Defaults to ``True`` whenever *coexistence_timeline* is provided.
+    :type include_state_cells: bool
+    :return: Overlay payload dict suitable for
+        :func:`render_sysdesim_timeline_svg` / :func:`render_sysdesim_timeline_png`,
+        or ``None`` when the input would produce an empty payload.
+    :rtype: dict[str, Any] | None
+    """
+    diagnostics = list(diagnostics or ())
+    summary_lines = list(summary_lines or ())
+
+    error_count = sum(1 for d in diagnostics if (d.level or "").lower() == "error")
+    warning_count = sum(
+        1 for d in diagnostics if (d.level or "").lower() == "warning"
+    )
+
+    message_drops: List[Dict[str, Any]] = []
+    constraint_arrows: List[Dict[str, Any]] = []
+
+    # Walk scenario steps once to build a (signal_name_lower, friendly_label)
+    # ordered queue we can match diagnostics against.
+    scenario_steps = list(phase10_report.scenario.steps)
+    step_signal_index: List[Tuple[str, str, str, Optional[str]]] = []
+    for step in scenario_steps:
+        friendly_label = _step_friendly_label(step)
+        message_id = (
+            step.source_observation_ids[0]
+            if step.source_observation_ids
+            else None
+        )
+        for action in getattr(step, "actions", ()) or ():
+            event_name = getattr(action, "event_name", None)
+            if not isinstance(event_name, str) or not event_name:
+                continue
+            step_signal_index.append(
+                (
+                    step.step_id,
+                    friendly_label.lower(),
+                    event_name.lower(),
+                    message_id,
+                )
+            )
+
+    consumed_indices: set = set()
+
+    def _claim_message_id(step_label: Optional[str], signal: Optional[str]) -> Optional[str]:
+        label_lo = (step_label or "").lower()
+        signal_lo = (signal or "").lower()
+        for i, (_, friendly_lo, event_lo, message_id) in enumerate(step_signal_index):
+            if i in consumed_indices:
+                continue
+            if label_lo and friendly_lo != label_lo:
+                continue
+            if signal_lo and event_lo != signal_lo:
+                continue
+            consumed_indices.add(i)
+            return message_id
+        if signal_lo:
+            for i, (_, _, event_lo, message_id) in enumerate(step_signal_index):
+                if i in consumed_indices:
+                    continue
+                if event_lo == signal_lo:
+                    consumed_indices.add(i)
+                    return message_id
+        return None
+
+    constraints_by_id = {
+        c.constraint_id: c for c in phase10_report.scenario.temporal_constraints
+    }
+
+    for diag in diagnostics:
+        code = diag.code or ""
+        details: Dict[str, Any] = diag.details or {}
+        if code == "signal_dropped_in_state":
+            signal_name = str(details.get("signal") or "")
+            step_label = str(details.get("step_label") or "")
+            message_id = _claim_message_id(step_label, signal_name)
+            if message_id is None:
+                continue
+            active_state = str(details.get("pre_state_path") or "")
+            # Strip "Machine." prefix to keep the badge compact.
+            active_short = active_state.split(".", 1)[1] if "." in active_state else active_state
+            sources = details.get("transition_source_states") or []
+            if isinstance(sources, (list, tuple)):
+                sources_text = " or ".join(str(s) for s in sources)
+            else:
+                sources_text = str(sources)
+            detail = "{sig} dropped @ {act}".format(
+                sig=signal_name or "signal",
+                act=active_short or "?",
+            )
+            if sources_text:
+                detail = detail + " (expects {})".format(sources_text)
+            message_drops.append(
+                {
+                    "message_id": message_id,
+                    "severity": (diag.level or "warning").lower(),
+                    "code": code,
+                    "label": signal_name or "DROPPED",
+                    "active_state": active_short,
+                    "expected_states": sources_text,
+                    "detail": detail,
+                }
+            )
+        elif code == "temporal_constraints_unsat":
+            involved = details.get("involved_constraint_ids") or []
+            for cid in involved:
+                if not isinstance(cid, str) or not cid:
+                    continue
+                c = constraints_by_id.get(cid)
+                if c is None:
+                    constraint_arrows.append(
+                        {
+                            "constraint_id": cid,
+                            "severity": (diag.level or "error").lower(),
+                            "code": code,
+                            "label": "UNSAT",
+                            "violation_text": "UNSAT",
+                        }
+                    )
+                    continue
+                violation = _format_temporal_constraint_violation(c)
+                constraint_arrows.append(
+                    {
+                        "constraint_id": cid,
+                        "severity": (diag.level or "error").lower(),
+                        "code": code,
+                        "left_step_id": c.left_step_id,
+                        "right_step_id": c.right_step_id,
+                        "label": "UNSAT",
+                        "violation_text": "UNSAT " + violation,
+                    }
+                )
+
+    # Compose the banner.
+    banner_lines: List[str] = []
+    if banner_lead is not None:
+        if banner_lead:
+            banner_lines.append(banner_lead)
+    else:
+        if error_count or warning_count:
+            banner_lines.append(
+                "Static check: {} error(s), {} warning(s).".format(
+                    error_count, warning_count
+                )
+            )
+        elif summary_lines:
+            banner_lines.append("Sequence diagnostics:")
+        else:
+            banner_lines.append("Static check: clean.")
+    for line in summary_lines:
+        text = str(line).strip()
+        if text:
+            banner_lines.append(text)
+
+    severity = "info"
+    if error_count > 0:
+        severity = "error"
+    elif warning_count > 0:
+        severity = "warning"
+
+    overlay: Dict[str, Any] = {}
+    if banner_lines:
+        overlay["banner"] = {"severity": severity, "lines": banner_lines}
+    if message_drops:
+        overlay["message_drops"] = message_drops
+    if constraint_arrows:
+        overlay["constraint_arrows"] = constraint_arrows
+
+    # Per-step state table mirrors the validate CLI's ``co`` row table
+    # directly on the diagram.
+    if include_state_cells or coexistence_timeline:
+        state_columns, step_states = _phase11_step_state_rows(
+            phase10_report=phase10_report,
+            coexistence_timeline=coexistence_timeline,
+        )
+        if state_columns and step_states:
+            overlay["state_columns"] = state_columns
+            overlay["step_states"] = step_states
+
+    return overlay or None
 
 
 def render_sysdesim_timeline_svg(
@@ -269,6 +800,7 @@ def render_sysdesim_timeline_svg(
     phase10_report: Optional[SysDeSimPhase10Report] = None,
     title: Optional[str] = None,
     theme: Optional[Dict[str, Any]] = None,
+    overlay: Optional[Dict[str, Any]] = None,
 ) -> str:
     """
     Render a SysDeSim sequence-diagram SVG.
@@ -293,6 +825,11 @@ def render_sysdesim_timeline_svg(
     :type title: str, optional
     :param theme: Optional theme overrides forwarded to the JS renderer.
     :type theme: dict[str, Any], optional
+    :param overlay: Optional overlay payload (banner / step_bands /
+        message_markers / constraint_markers). The renderer treats this
+        as decorative additive layers; references to unknown step or
+        message ids are silently dropped instead of failing the render.
+    :type overlay: dict[str, Any], optional
     :return: SVG document text (UTF-8, with XML prolog).
     :rtype: str
     :raises SysdesimRenderError: If the JS bundle cannot be loaded or the
@@ -309,7 +846,7 @@ def render_sysdesim_timeline_svg(
             interaction_name=interaction_name,
             tick_duration_ms=tick_duration_ms,
         )
-    timeline_json = _build_timeline_json(phase10_report, title=title)
+    timeline_json = _build_timeline_json(phase10_report, title=title, overlay=overlay)
     options: Dict[str, Any] = {}
     if theme:
         options["theme"] = theme
@@ -383,6 +920,7 @@ def render_sysdesim_timeline_png(
     resvg_options: Optional[Dict[str, Any]] = None,
     font_files: Optional[List[str]] = None,
     font_buffers: Optional[List[bytes]] = None,
+    overlay: Optional[Dict[str, Any]] = None,
 ) -> bytes:
     """
     Render a SysDeSim sequence-diagram PNG (via resvg-wasm).
@@ -422,6 +960,10 @@ def render_sysdesim_timeline_png(
         Equivalent to ``font_files`` but for callers that already have the
         bytes in memory.
     :type font_buffers: list[bytes], optional
+    :param overlay: Optional overlay payload (banner / step_bands /
+        message_markers / constraint_markers). Same shape as the SVG
+        renderer's ``overlay`` parameter.
+    :type overlay: dict[str, Any], optional
     :return: PNG bytes (begins with the standard ``\\x89PNG`` magic).
     :rtype: bytes
     :raises SysdesimRenderError: If the JS bundle cannot be loaded, the
@@ -445,7 +987,7 @@ def render_sysdesim_timeline_png(
             interaction_name=interaction_name,
             tick_duration_ms=tick_duration_ms,
         )
-    timeline_json = _build_timeline_json(phase10_report, title=title)
+    timeline_json = _build_timeline_json(phase10_report, title=title, overlay=overlay)
     options: Dict[str, Any] = {}
     if theme:
         options["theme"] = theme
@@ -482,6 +1024,7 @@ def render_sysdesim_timeline_png(
 
 __all__ = [
     "SysdesimRenderError",
+    "build_overlay_from_diagnostics",
     "render_sysdesim_timeline_png",
     "render_sysdesim_timeline_svg",
 ]

@@ -1316,3 +1316,450 @@ def test_sysdesim_sequence_render_png_with_font_file(tmp_path: Path):
     )
     assert result.exit_code == 0, result.output
     assert out_png.read_bytes()[:8] == _PNG_MAGIC
+
+
+# =============================================================================
+# Overlay rendering CLI integration tests (--render-diagram / --diagnostics-file)
+# =============================================================================
+
+
+def _build_signal_dropped_xml(tmp_path: Path) -> Path:
+    """Reuse the canonical signal-dropped fixture from test_static_check."""
+    from test.convert.sysdesim.test_static_check import (
+        _build_signal_dropped_xml as _orig,
+    )
+
+    return _orig(tmp_path)
+
+
+def _build_contradictory_durations_xml(tmp_path: Path) -> Path:
+    """Reuse the canonical UNSAT-durations fixture from test_static_check."""
+    from test.convert.sysdesim.test_static_check import (
+        _build_contradictory_durations_xml as _orig,
+    )
+
+    return _orig(tmp_path)
+
+
+@pytest.mark.unittest
+def test_static_check_render_diagram_writes_overlay_svg(tmp_path: Path):
+    """``static-check --render-diagram`` writes a banner+marker overlay SVG."""
+    xml_file = _build_signal_dropped_xml(tmp_path)
+    out_svg = tmp_path / "static_check.svg"
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "static-check",
+            "-i",
+            str(xml_file),
+            "--render-diagram",
+            str(out_svg),
+        ],
+        color=False,
+    )
+    assert result.exit_code == 0, result.output
+    assert out_svg.exists()
+    text = out_svg.read_text(encoding="utf-8")
+    assert text.startswith("<?xml")
+    # Banner exists and reflects warning severity from signal_dropped_in_state.
+    assert "[WARNING]" in text
+    assert "Static check:" in text
+    # SVG contains the dropped-signal label.
+    assert "Sig4" in text
+    assert "Wrote overlay SVG" in result.output
+
+
+@pytest.mark.unittest
+def test_static_check_render_diagram_writes_overlay_png_via_extension(tmp_path: Path):
+    """``static-check --render-diagram out.png`` infers PNG from the extension."""
+    xml_file = _build_signal_dropped_xml(tmp_path)
+    out_png = tmp_path / "static_check.png"
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "static-check",
+            "-i",
+            str(xml_file),
+            "--render-diagram",
+            str(out_png),
+        ],
+        color=False,
+    )
+    assert result.exit_code == 0, result.output
+    assert out_png.exists()
+    assert out_png.read_bytes()[:8] == _PNG_MAGIC
+
+
+@pytest.mark.unittest
+def test_static_check_render_diagram_still_writes_when_blocking(tmp_path: Path):
+    """Even when static-check has blocking errors, the overlay is still written."""
+    xml_file = _build_contradictory_durations_xml(tmp_path)
+    out_svg = tmp_path / "unsat.svg"
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "static-check",
+            "-i",
+            str(xml_file),
+            "--render-diagram",
+            str(out_svg),
+        ],
+        color=False,
+    )
+    # Static check finds errors → exit code != 0, but the overlay file is written.
+    assert result.exit_code != 0
+    assert out_svg.exists()
+    text = out_svg.read_text(encoding="utf-8")
+    assert "[ERROR]" in text
+    assert "UNSAT" in text
+
+
+@pytest.mark.unittest
+def test_validate_render_diagram_emits_overlay_with_summary_lines(tmp_path: Path):
+    """``validate --render-diagram`` writes overlay including Phase11 summary."""
+    xml_file = _build_parallel_timeline_xml(tmp_path)
+    out_svg = tmp_path / "validate.svg"
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "validate",
+            "-i",
+            str(xml_file),
+            "--render-diagram",
+            str(out_svg),
+        ],
+        color=False,
+    )
+    assert result.exit_code == 0, result.output
+    assert out_svg.exists()
+    text = out_svg.read_text(encoding="utf-8")
+    # Banner with at least the static-check headline.
+    assert "Static check:" in text or "[INFO]" in text or "[WARNING]" in text
+    # v2/v3: validate render must show the per-step state-cell table
+    # directly on the diagram so it can stand in for the CLI ``co`` table.
+    assert ">co<" in text
+    # v3: time column header is the leftmost cell of the table.
+    assert ">t<" in text
+
+
+@pytest.mark.unittest
+def test_static_check_render_drop_shows_red_x_and_detail_badge(tmp_path: Path):
+    """v2 dropped-signal overlay paints a red X + an explanatory badge."""
+    xml_file = _build_signal_dropped_xml(tmp_path)
+    out_svg = tmp_path / "static_drop_v2.svg"
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "static-check",
+            "-i",
+            str(xml_file),
+            "--render-diagram",
+            str(out_svg),
+        ],
+        color=False,
+    )
+    assert result.exit_code == 0, result.output
+    text = out_svg.read_text(encoding="utf-8")
+    # The detail badge spells out the active state and the expected source
+    # state right on the diagram.
+    assert "Sig4 dropped @ Idle" in text
+    assert "expects Run" in text
+
+
+@pytest.mark.unittest
+def test_static_check_render_unsat_shows_red_double_arrow(tmp_path: Path):
+    """v2 UNSAT overlay paints a red ↕ double-arrow with violation text."""
+    xml_file = _build_contradictory_durations_xml(tmp_path)
+    out_svg = tmp_path / "static_unsat_v2.svg"
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "static-check",
+            "-i",
+            str(xml_file),
+            "--render-diagram",
+            str(out_svg),
+        ],
+        color=False,
+    )
+    # static-check on an UNSAT fixture exits non-zero; the overlay file is
+    # still written so the user can investigate.
+    assert result.exit_code != 0
+    assert out_svg.exists()
+    text = out_svg.read_text(encoding="utf-8")
+    assert "#cc3030" in text
+    assert "UNSAT" in text
+    assert "10s" in text or "1s" in text
+
+
+@pytest.mark.unittest
+def test_sequence_render_with_diagnostics_file_layers_overlay(tmp_path: Path):
+    """``sequence-render --diagnostics-file`` overlays a previously-saved JSON report."""
+    xml_file = _build_signal_dropped_xml(tmp_path)
+    report = tmp_path / "report.json"
+    runner = CliRunner()
+    # Step 1: produce a static-check report file.
+    r1 = runner.invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "static-check",
+            "-i",
+            str(xml_file),
+            "--report-file",
+            str(report),
+        ],
+        color=False,
+    )
+    assert r1.exit_code == 0, r1.output
+    assert report.exists()
+    # Step 2: render with the diagnostics file as overlay.
+    out_svg = tmp_path / "with_overlay.svg"
+    r2 = runner.invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "sequence-render",
+            "-i",
+            str(xml_file),
+            "-o",
+            str(out_svg),
+            "--diagnostics-file",
+            str(report),
+        ],
+        color=False,
+    )
+    assert r2.exit_code == 0, r2.output
+    text = out_svg.read_text(encoding="utf-8")
+    # Overlay banner present + dropped-signal marker label.
+    assert "[WARNING]" in text
+    assert "Sig4" in text
+
+
+@pytest.mark.unittest
+def test_sequence_render_diagnostics_file_missing_yields_click_error(tmp_path: Path):
+    """A missing diagnostics file produces a clean CLI error."""
+    xml_file = _build_signal_dropped_xml(tmp_path)
+    out_svg = tmp_path / "out.svg"
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "sequence-render",
+            "-i",
+            str(xml_file),
+            "-o",
+            str(out_svg),
+            "--diagnostics-file",
+            str(tmp_path / "no_such_file.json"),
+        ],
+        color=False,
+    )
+    assert result.exit_code != 0
+    assert "Cannot read diagnostics file" in _strip_ansi(result.output)
+
+
+@pytest.mark.unittest
+def test_sequence_render_no_diagnostics_file_produces_baseline(tmp_path: Path):
+    """Without ``--diagnostics-file`` the render is byte-identical to the baseline."""
+    xml_file = _build_signal_dropped_xml(tmp_path)
+    runner = CliRunner()
+    out_a = tmp_path / "a.svg"
+    out_b = tmp_path / "b.svg"
+    runner.invoke(
+        pyfcstmcli,
+        ["sysdesim", "sequence-render", "-i", str(xml_file), "-o", str(out_a)],
+        color=False,
+    )
+    runner.invoke(
+        pyfcstmcli,
+        ["sysdesim", "sequence-render", "-i", str(xml_file), "-o", str(out_b)],
+        color=False,
+    )
+    assert out_a.read_bytes() == out_b.read_bytes()
+
+
+# =============================================================================
+# CJK-font auto-detection tests (PNG rendering of Chinese state / signal names)
+# =============================================================================
+
+
+@pytest.mark.unittest
+def test_cjk_font_name_regex_matches_known_fonts():
+    """Filename heuristic identifies the major cross-platform CJK fonts."""
+    from pyfcstm.entry.sysdesim import _CJK_FONT_NAME_RE
+
+    expected_matches = [
+        # Windows
+        "msyh", "msyhbd", "simsun", "simhei",
+        # macOS
+        "PingFang", "Hiragino Sans GB", "Songti", "STHeiti",
+        # Linux distro
+        "NotoSansCJK-Regular",
+        "NotoSerifCJKjp-Regular",
+        "SourceHanSansCN",
+        "wqy-microhei",
+        "wqy-zenhei",
+        "DroidSansFallbackFull",
+        "uming",
+        "ukai",
+    ]
+    for name in expected_matches:
+        assert _CJK_FONT_NAME_RE.search(name), "should match {!r}".format(name)
+
+    expected_misses = ["DejaVuSans", "Arial", "Roboto", "Helvetica"]
+    for name in expected_misses:
+        assert not _CJK_FONT_NAME_RE.search(name), "should NOT match {!r}".format(name)
+
+
+@pytest.mark.unittest
+def test_platform_font_dirs_returns_some_dirs(monkeypatch):
+    """Each supported platform returns at least one search directory."""
+    from pyfcstm.entry.sysdesim import _platform_font_dirs
+
+    for system in ("Linux", "Windows", "Darwin"):
+        monkeypatch.setattr("platform.system", lambda s=system: s)
+        dirs = _platform_font_dirs()
+        assert dirs, "expected at least one font directory for {}".format(system)
+        assert all(isinstance(d, str) for d in dirs)
+
+
+@pytest.mark.unittest
+def test_scan_dir_for_cjk_fonts_finds_matching_files(tmp_path: Path):
+    """The directory walker picks up files whose basename matches the CJK regex."""
+    from pyfcstm.entry.sysdesim import _scan_dir_for_cjk_fonts
+
+    # Create a few files: some CJK, some not.
+    (tmp_path / "DejaVuSans.ttf").write_bytes(b"")
+    (tmp_path / "msyh.ttc").write_bytes(b"")
+    (tmp_path / "NotoSansCJK-Regular.ttc").write_bytes(b"")
+    (tmp_path / "Arial.ttf").write_bytes(b"")
+    sub = tmp_path / "nested"
+    sub.mkdir()
+    (sub / "wqy-zenhei.ttc").write_bytes(b"")
+
+    found = _scan_dir_for_cjk_fonts(str(tmp_path))
+    basenames = {Path(p).name for p in found}
+    assert "msyh.ttc" in basenames
+    assert "NotoSansCJK-Regular.ttc" in basenames
+    assert "wqy-zenhei.ttc" in basenames
+    assert "DejaVuSans.ttf" not in basenames
+    assert "Arial.ttf" not in basenames
+
+
+@pytest.mark.unittest
+def test_discover_cjk_font_honors_env_var_override(tmp_path: Path, monkeypatch):
+    """``PYFCSTM_CJK_FONT_FILE`` puts a user-provided path at the head of the list."""
+    import pyfcstm.entry.sysdesim as sysdesim_mod
+
+    fake_font = tmp_path / "MyOverride.ttf"
+    fake_font.write_bytes(b"")
+    monkeypatch.setattr(sysdesim_mod, "_CJK_FONT_DISCOVERY_CACHE", None)
+    monkeypatch.setenv("PYFCSTM_CJK_FONT_FILE", str(fake_font))
+
+    discovered = sysdesim_mod._discover_cjk_font_files()
+    assert discovered, "expected at least the override path"
+    assert discovered[0] == str(fake_font)
+
+
+@pytest.mark.unittest
+def test_resolve_render_font_files_appends_auto_detected(tmp_path: Path, monkeypatch):
+    """User-supplied paths are placed first; auto-detected fonts are appended."""
+    import pyfcstm.entry.sysdesim as sysdesim_mod
+
+    user_font = tmp_path / "user.ttf"
+    user_font.write_bytes(b"")
+    auto_font = tmp_path / "auto-NotoSansCJK.ttc"
+    auto_font.write_bytes(b"")
+
+    monkeypatch.setattr(sysdesim_mod, "_CJK_FONT_DISCOVERY_CACHE", (str(auto_font),))
+    resolved = sysdesim_mod._resolve_render_font_files([str(user_font)])
+    assert resolved is not None
+    assert resolved[0] == str(user_font)
+    assert resolved[-1] == str(auto_font)
+
+
+@pytest.mark.unittest
+def test_resolve_render_font_files_returns_none_when_nothing_available(monkeypatch):
+    """When no user paths and no system fonts found, helper returns ``None``."""
+    import pyfcstm.entry.sysdesim as sysdesim_mod
+
+    monkeypatch.setattr(sysdesim_mod, "_CJK_FONT_DISCOVERY_CACHE", ())
+    assert sysdesim_mod._resolve_render_font_files() is None
+    assert sysdesim_mod._resolve_render_font_files([]) is None
+
+
+@pytest.mark.unittest
+def test_static_check_render_diagram_accepts_font_file_flag(tmp_path: Path):
+    """``--font-file`` is exposed on ``static-check --render-diagram`` (PNG path)."""
+    xml_file = _build_signal_dropped_xml(tmp_path)
+    out_png = tmp_path / "static_drop.png"
+    # Use the bundled DejaVu Sans as a stand-in user font: the test only
+    # has to confirm the flag is wired through without raising.
+    extra_font = (
+        Path(__file__).resolve().parents[2]
+        / "js"
+        / "sysdesim_render"
+        / "src"
+        / "fonts"
+        / "DejaVuSans.ttf"
+    )
+    if not extra_font.exists():
+        pytest.skip("bundled DejaVu Sans not present at expected source path")
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "static-check",
+            "-i",
+            str(xml_file),
+            "--render-diagram",
+            str(out_png),
+            "--font-file",
+            str(extra_font),
+        ],
+        color=False,
+    )
+    assert result.exit_code == 0, result.output
+    assert out_png.exists()
+    assert out_png.read_bytes()[:8] == _PNG_MAGIC
+
+
+@pytest.mark.unittest
+def test_validate_render_diagram_accepts_font_file_flag(tmp_path: Path):
+    """``--font-file`` is exposed on ``validate --render-diagram`` (PNG path)."""
+    xml_file = _build_parallel_timeline_xml(tmp_path)
+    out_png = tmp_path / "validate.png"
+    extra_font = (
+        Path(__file__).resolve().parents[2]
+        / "js"
+        / "sysdesim_render"
+        / "src"
+        / "fonts"
+        / "DejaVuSans.ttf"
+    )
+    if not extra_font.exists():
+        pytest.skip("bundled DejaVu Sans not present at expected source path")
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "validate",
+            "-i",
+            str(xml_file),
+            "--render-diagram",
+            str(out_png),
+            "--font-file",
+            str(extra_font),
+        ],
+        color=False,
+    )
+    assert result.exit_code == 0, result.output
+    assert out_png.exists()
+    assert out_png.read_bytes()[:8] == _PNG_MAGIC

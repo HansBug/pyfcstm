@@ -18,11 +18,37 @@ Example::
 from __future__ import annotations
 
 import json
+import os
+import platform
+import re
 import shutil
+import subprocess
+import sys
 import tempfile
 import webbrowser
+from decimal import Decimal
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+
+
+def _json_default(obj):
+    """Best-effort fallback for ``json.dumps`` so Decimal-typed diagnostic
+    payload fields don't crash report writing.
+
+    Used by every ``--report-file`` writer in this module: static-check
+    diagnostic ``details`` carry ``Decimal`` for parsed time bounds, and
+    ``json.dumps`` rejects them by default.
+    """
+    if isinstance(obj, Decimal):
+        # Render integral decimals without trailing zeros so reports stay
+        # human-readable; keep fractional precision otherwise.
+        text = format(obj, "f")
+        if "." in text:
+            text = text.rstrip("0").rstrip(".")
+        return text or "0"
+    raise TypeError(
+        "Object of type {} is not JSON serializable".format(type(obj).__name__)
+    )
 
 import click
 
@@ -36,7 +62,14 @@ from ..convert import (
     run_sysdesim_static_pre_checks,
 )
 from ..convert.sysdesim.ir import IrDiagnostic
-from ..convert.sysdesim.render import SysdesimRenderError
+from ..convert.sysdesim.render import (
+    SysdesimRenderError,
+    build_overlay_from_diagnostics,
+)
+from ..convert.sysdesim.timeline_verify import (
+    SysDeSimPhase10Report,
+    build_sysdesim_phase10_report,
+)
 
 
 def _format_sysdesim_cli_error(err: BaseException) -> str:
@@ -1123,12 +1156,326 @@ def _run_sysdesim_convert(
         for output_item in report_data["outputs"]:
             output_item["output_file"] = output_file_by_name[output_item["output_name"]]
         report_path.write_text(
-            json.dumps(report_data, indent=2, ensure_ascii=False, sort_keys=True)
+            json.dumps(report_data, indent=2, ensure_ascii=False, sort_keys=True, default=_json_default)
             + "\n",
             encoding="utf-8",
         )
 
     _emit_sysdesim_cli_summary(report, output_root, output_file_by_name, report_path)
+
+
+def _diagnostics_from_report_dict(report: Dict) -> List[IrDiagnostic]:
+    """Reconstruct minimal :class:`IrDiagnostic` instances from a JSON report.
+
+    Accepts either the static-check-only report shape (``{"static_check": {...}}``)
+    or the validate-report shape (which embeds ``static_check`` alongside the
+    timeline import sections). Unrecognized shapes silently yield an empty list
+    so the caller can still render the baseline diagram.
+    """
+    static = report.get("static_check") if isinstance(report, dict) else None
+    raw = (static or {}).get("diagnostics") or []
+    out: List[IrDiagnostic] = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+        details = entry.get("details")
+        if isinstance(details, list):
+            details = None  # ignore malformed
+        hints = entry.get("hints")
+        if isinstance(hints, list):
+            hints_list = [str(h) for h in hints]
+        else:
+            hints_list = None
+        state_path = entry.get("state_path")
+        if isinstance(state_path, list):
+            state_tuple: Optional[Tuple[str, ...]] = tuple(str(s) for s in state_path)
+        else:
+            state_tuple = None
+        out.append(
+            IrDiagnostic(
+                level=str(entry.get("level") or ""),
+                code=str(entry.get("code") or ""),
+                message=str(entry.get("message") or ""),
+                source_id=entry.get("source_id"),
+                state_path=state_tuple,
+                details=details if isinstance(details, dict) else None,
+                hints=hints_list,
+            )
+        )
+    return out
+
+
+def _resolve_render_format(output_path: str, output_format: str = "auto") -> str:
+    """Pick ``svg`` or ``png`` from an explicit format choice + output path.
+
+    ``auto`` infers from the file extension (defaults to ``svg`` when neither
+    ``.svg`` nor ``.png``).
+    """
+    fmt = (output_format or "auto").lower()
+    if fmt in ("svg", "png"):
+        return fmt
+    ext = Path(output_path).suffix.lower()
+    return "png" if ext == ".png" else "svg"
+
+
+# Cache the discovered CJK font path so we only pay the ``fc-match`` /
+# filesystem-probe cost once per CLI process.
+_CJK_FONT_DISCOVERY_CACHE: Optional[Tuple[str, ...]] = None
+
+# Filename-pattern regex of fonts that are known to carry CJK glyph
+# coverage. Matched case-insensitively against the file's basename so we
+# don't depend on absolute paths or specific OS layouts. Covers Microsoft
+# YaHei / SimSun / SimHei / DengXian (Windows), Apple PingFang / Hiragino /
+# Songti / STHeiti / STSong (macOS), Google Noto / Source Han / WenQuanYi /
+# DroidSans / UMing / UKai (Linux distro packages), and a few legacy
+# popular fallbacks.
+_CJK_FONT_NAME_RE = re.compile(
+    r"(?:"
+    r"msyh|simsun|simhei|simfang|simkai|deng|fzheiti|fangsong|kaiti|"
+    r"pingfang|hiragino|songti|stheiti|stsong|stkaiti|stxihei|"
+    r"applesd?gothic|appleminchocho|"
+    r"notosans?(?:hk|jp|kr|sc|tc)?cjk|notoserif?(?:hk|jp|kr|sc|tc)?cjk|"
+    r"sourcehan(?:sans|serif)|"
+    r"wqy[-_]?(?:micro)?(?:zen|hei|microhei)|"
+    r"droidsans(?:fallback)?|"
+    r"u(?:ming|kai)|cwtex|fireflysung"
+    r")",
+    re.IGNORECASE,
+)
+
+_FONT_FILE_EXTS = (".ttc", ".otc", ".ttf", ".otf")
+
+
+def _platform_font_dirs() -> Tuple[str, ...]:
+    """Return the per-platform font-search directories without hard-coding files.
+
+    Order is "system → site → user" so per-user installs are picked up if
+    present but don't shadow well-known system fonts. Non-existent entries
+    are filtered downstream.
+    """
+    system = platform.system()
+    if system == "Windows":
+        # Win10+ allows per-user font installs under %LOCALAPPDATA%; older
+        # Windows only knows %WINDIR%\Fonts.
+        windir = os.environ.get("WINDIR") or os.environ.get("SystemRoot") or r"C:\Windows"
+        local_app = os.environ.get("LOCALAPPDATA")
+        dirs = [os.path.join(windir, "Fonts")]
+        if local_app:
+            dirs.append(os.path.join(local_app, "Microsoft", "Windows", "Fonts"))
+        return tuple(dirs)
+    if system == "Darwin":
+        home = os.path.expanduser("~")
+        return (
+            "/System/Library/Fonts",
+            "/System/Library/Fonts/Supplemental",
+            "/Library/Fonts",
+            os.path.join(home, "Library", "Fonts"),
+        )
+    # Treat everything else (Linux + BSD + cygwin) as XDG-style.
+    home = os.path.expanduser("~")
+    xdg_data = os.environ.get("XDG_DATA_HOME") or os.path.join(home, ".local", "share")
+    extra: List[str] = []
+    xdg_data_dirs = os.environ.get("XDG_DATA_DIRS") or ""
+    for entry in xdg_data_dirs.split(os.pathsep):
+        entry = entry.strip()
+        if entry:
+            extra.append(os.path.join(entry, "fonts"))
+    return tuple([
+        "/usr/share/fonts",
+        "/usr/local/share/fonts",
+        os.path.join(xdg_data, "fonts"),
+        os.path.join(home, ".fonts"),
+        *extra,
+    ])
+
+
+def _scan_dir_for_cjk_fonts(root: str, max_files: int = 4096) -> List[str]:
+    """Walk ``root`` looking for font files whose name matches the CJK regex.
+
+    Bounded by ``max_files`` so a pathological font dir does not freeze the
+    CLI. Returns a list of absolute paths in os-walk order (i.e. roughly
+    deterministic per host but not strictly sorted).
+    """
+    found: List[str] = []
+    if not root or not os.path.isdir(root):
+        return found
+    seen = 0
+    for dirpath, _dirnames, filenames in os.walk(root):
+        for name in filenames:
+            seen += 1
+            if seen > max_files:
+                return found
+            base, ext = os.path.splitext(name)
+            if ext.lower() not in _FONT_FILE_EXTS:
+                continue
+            if not _CJK_FONT_NAME_RE.search(base):
+                continue
+            found.append(os.path.join(dirpath, name))
+    return found
+
+
+def _discover_cjk_font_files() -> Tuple[str, ...]:
+    """Best-effort cross-platform lookup of CJK-capable font files.
+
+    The renderer's V8 isolate has no access to system fonts, and the bundled
+    fallback (DejaVu Sans) has no CJK coverage. This helper tries, in order:
+
+    1. ``PYFCSTM_CJK_FONT_FILE`` env var (one or more os-pathsep-separated
+       absolute paths). Provides an explicit override for sealed/CI hosts.
+    2. ``fc-match -f '%{file}\\n' 'sans-serif:lang=zh-cn'`` (fontconfig).
+       Standard on Linux / macOS-via-Homebrew / MSYS2; reads the user's
+       fontconfig preferences instead of guessing path layouts.
+    3. ``fc-list :lang=zh-cn file`` (fontconfig multi-result fallback).
+    4. A name-pattern regex scan over per-platform font directories. Uses
+       :data:`_CJK_FONT_NAME_RE` so the heuristic is filename-shape based
+       (matches ``msyh`` / ``NotoSansCJK*`` / ``PingFang*`` / ``wqy-zenhei``
+       / etc.) rather than depending on exact absolute paths.
+
+    Returns a tuple of one or more existing font-file paths, deduplicated
+    in priority order. Cached after the first successful resolution.
+    """
+    global _CJK_FONT_DISCOVERY_CACHE
+    if _CJK_FONT_DISCOVERY_CACHE is not None:
+        return _CJK_FONT_DISCOVERY_CACHE
+
+    found: List[str] = []
+
+    def _push(path: Optional[str]) -> None:
+        if not path:
+            return
+        path = str(path).strip()
+        if not path or not os.path.isfile(path):
+            return
+        # Skip the DejaVu fallback the bundle already ships.
+        if "DejaVu" in os.path.basename(path):
+            return
+        if path in found:
+            return
+        found.append(path)
+
+    # 1. Environment-variable override.
+    env_paths = os.environ.get("PYFCSTM_CJK_FONT_FILE")
+    if env_paths:
+        for entry in env_paths.split(os.pathsep):
+            _push(entry)
+
+    # 2. fontconfig: fc-match (single best match).
+    fc_match = shutil.which("fc-match")
+    if fc_match:
+        try:
+            result = subprocess.run(
+                [fc_match, "-f", "%{file}\n", "sans-serif:lang=zh-cn"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+        except (OSError, subprocess.SubprocessError):  # pragma: no cover - fontconfig binaries are stable in CI
+            result = None
+        if result and result.returncode == 0:
+            for line in (result.stdout or "").splitlines():
+                _push(line)
+
+    # 3. fontconfig: fc-list (broader probe in case fc-match returned the
+    # DejaVu fallback or a non-CJK substitute).
+    if not found:
+        fc_list = shutil.which("fc-list")
+        if fc_list:
+            try:
+                result = subprocess.run(
+                    [fc_list, ":lang=zh-cn", "file"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+            except (OSError, subprocess.SubprocessError):  # pragma: no cover
+                result = None
+            if result and result.returncode == 0:
+                for line in (result.stdout or "").splitlines():
+                    # ``fc-list ... file`` returns ``/path/to/font.ttc:`` lines.
+                    candidate = line.strip().rstrip(":").strip()
+                    _push(candidate)
+
+    # 4. Per-platform font-directory scan with filename-pattern matching.
+    if not found:
+        for root in _platform_font_dirs():
+            for cand in _scan_dir_for_cjk_fonts(root):
+                _push(cand)
+
+    _CJK_FONT_DISCOVERY_CACHE = tuple(found)
+    return _CJK_FONT_DISCOVERY_CACHE
+
+
+def _resolve_render_font_files(
+    user_font_files: Optional[Sequence[str]] = None,
+) -> Optional[List[str]]:
+    """Combine user-supplied ``--font-file`` paths with auto-detected CJK fonts.
+
+    User overrides take precedence (passed first); auto-detected fonts are
+    appended so the renderer always has at least one CJK-capable buffer to
+    fall back on. Returns ``None`` when nothing is available, keeping the
+    bundle's DejaVu-only default behavior.
+    """
+    out: List[str] = []
+    if user_font_files:
+        out.extend(str(p) for p in user_font_files)
+    for cand in _discover_cjk_font_files():
+        if cand not in out:
+            out.append(cand)
+    return out or None
+
+
+def _render_overlay_diagram(
+    *,
+    phase10_report: SysDeSimPhase10Report,
+    output_path: str,
+    output_format: str,
+    diagnostics: Sequence[IrDiagnostic],
+    summary_lines: Sequence[str] = (),
+    title: Optional[str] = None,
+    font_files: Optional[Sequence[str]] = None,
+    coexistence_timeline: Optional[Dict] = None,
+    include_state_cells: bool = True,
+) -> Tuple[str, int]:
+    """Render the sequence diagram with a diagnostics-driven overlay.
+
+    Returns the resolved ``(format, byte_size)`` written to ``output_path``.
+    When ``coexistence_timeline`` is given (or ``include_state_cells`` is
+    explicitly true), the overlay also carries the per-step state-cell
+    table that mirrors the validate CLI's ``co`` table on the diagram.
+    """
+    overlay = build_overlay_from_diagnostics(
+        phase10_report=phase10_report,
+        diagnostics=diagnostics,
+        summary_lines=summary_lines,
+        coexistence_timeline=coexistence_timeline,
+        include_state_cells=include_state_cells,
+    )
+    fmt = _resolve_render_format(output_path, output_format)
+    try:
+        if fmt == "svg":
+            svg_text = render_sysdesim_timeline_svg(
+                phase10_report=phase10_report,
+                title=title,
+                overlay=overlay,
+            )
+            payload = svg_text.encode("utf-8")
+        else:
+            # PNG goes through resvg-wasm in the V8 isolate, which only sees
+            # the bundled DejaVu fallback. Auto-detect a system CJK font so
+            # Chinese state / signal names render instead of being silently
+            # dropped from the rasterized output.
+            payload = render_sysdesim_timeline_png(
+                phase10_report=phase10_report,
+                title=title,
+                overlay=overlay,
+                font_files=_resolve_render_font_files(font_files),
+            )
+    except SysdesimRenderError as err:
+        raise ClickErrorException(str(err))
+    out_path = Path(output_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_bytes(payload)
+    return fmt, out_path.stat().st_size
 
 
 def _run_sysdesim_validate(
@@ -1143,21 +1490,44 @@ def _run_sysdesim_validate(
     right_state_ref: Optional[str],
     observation_scope: str,
     skip_static_check: bool = False,
+    render_diagram: Optional[str] = None,
+    render_format: str = "auto",
+    font_files: Optional[Sequence[str]] = None,
 ) -> None:
     """Run the timeline validation/report flow."""
     static_diagnostics: List[IrDiagnostic] = []
-    if not skip_static_check:
+    phase10_for_render: Optional[SysDeSimPhase10Report] = None
+    if render_diagram:
         try:
-            static_diagnostics = run_sysdesim_static_pre_checks(
-                xml_path=input_xml_file,
+            phase10_for_render = build_sysdesim_phase10_report(
+                input_xml_file,
                 machine_name=machine_name,
                 interaction_name=interaction_name,
                 tick_duration_ms=tick_duration_ms,
-                left_machine_alias=left_machine_alias,
-                left_state_ref=left_state_ref,
-                right_machine_alias=right_machine_alias,
-                right_state_ref=right_state_ref,
             )
+        except (KeyError, LookupError, NotImplementedError, ValueError) as err:
+            raise ClickErrorException(_format_sysdesim_cli_error(err))
+    if not skip_static_check:
+        try:
+            if phase10_for_render is not None:
+                static_diagnostics = run_sysdesim_static_pre_checks(
+                    phase10_report=phase10_for_render,
+                    left_machine_alias=left_machine_alias,
+                    left_state_ref=left_state_ref,
+                    right_machine_alias=right_machine_alias,
+                    right_state_ref=right_state_ref,
+                )
+            else:
+                static_diagnostics = run_sysdesim_static_pre_checks(
+                    xml_path=input_xml_file,
+                    machine_name=machine_name,
+                    interaction_name=interaction_name,
+                    tick_duration_ms=tick_duration_ms,
+                    left_machine_alias=left_machine_alias,
+                    left_state_ref=left_state_ref,
+                    right_machine_alias=right_machine_alias,
+                    right_state_ref=right_state_ref,
+                )
         except (KeyError, LookupError, NotImplementedError, ValueError) as err:
             raise ClickErrorException(_format_sysdesim_cli_error(err))
         counts = _emit_static_check_summary(static_diagnostics)
@@ -1186,10 +1556,33 @@ def _run_sysdesim_validate(
                 report_path.parent.mkdir(parents=True, exist_ok=True)
                 report_path.write_text(
                     json.dumps(
-                        static_payload, indent=2, ensure_ascii=False, sort_keys=True
+                        static_payload, indent=2, ensure_ascii=False,
+                        sort_keys=True, default=_json_default,
                     )
                     + "\n",
                     encoding="utf-8",
+                )
+            if render_diagram and phase10_for_render is not None:
+                fmt, size = _render_overlay_diagram(
+                    phase10_report=phase10_for_render,
+                    output_path=render_diagram,
+                    output_format=render_format,
+                    diagnostics=static_diagnostics,
+                    summary_lines=(
+                        ["Validation skipped: static pre-check has blocking errors."]
+                    ),
+                    font_files=font_files,
+                    include_state_cells=True,
+                )
+                click.echo(
+                    "{label}  Wrote overlay {fmt} to {path} ({size} bytes).".format(
+                        label=click.style(
+                            "SysDeSim Validate Render", fg="cyan", bold=True
+                        ),
+                        fmt=fmt.upper(),
+                        path=render_diagram,
+                        size=size,
+                    )
                 )
             raise ClickErrorException(
                 "static pre-check failed with {} blocking error(s)".format(
@@ -1234,7 +1627,7 @@ def _run_sysdesim_validate(
     report_path = None
     if report_file is not None:
         rendered = (
-            json.dumps(report_data, indent=2, ensure_ascii=False, sort_keys=True) + "\n"
+            json.dumps(report_data, indent=2, ensure_ascii=False, sort_keys=True, default=_json_default) + "\n"
         )
         report_path = Path(report_file)
         report_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1249,6 +1642,44 @@ def _run_sysdesim_validate(
                     "validation report" if "phase11" in report_data else "import report"
                 ),
                 path=report_path,
+            )
+        )
+
+    if render_diagram and phase10_for_render is not None:
+        summary_lines: List[str] = []
+        timeline_report = (report_data.get("phase11") or {}).get("timeline_report")
+        coexistence_payload: Optional[Dict] = None
+        if isinstance(timeline_report, dict):
+            coexistence_payload = timeline_report
+            symbol = timeline_report.get("first_coexistence_symbol")
+            time_text = timeline_report.get("first_coexistence_time_text")
+            note = timeline_report.get("first_coexistence_note")
+            if symbol is not None:
+                summary_lines.append(
+                    "First coexistence: {sym} = {t}".format(
+                        sym=symbol, t=time_text
+                    )
+                )
+            elif note:
+                summary_lines.append("Phase11: {}".format(note))
+        fmt, size = _render_overlay_diagram(
+            phase10_report=phase10_for_render,
+            output_path=render_diagram,
+            output_format=render_format,
+            diagnostics=static_diagnostics,
+            summary_lines=summary_lines,
+            coexistence_timeline=coexistence_payload,
+            font_files=font_files,
+            include_state_cells=True,
+        )
+        click.echo(
+            "{label}  Wrote overlay {fmt} to {path} ({size} bytes).".format(
+                label=click.style(
+                    "SysDeSim Validate Render", fg="cyan", bold=True
+                ),
+                fmt=fmt.upper(),
+                path=render_diagram,
+                size=size,
             )
         )
 
@@ -1469,6 +1900,42 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
             "the model/scenario level are no longer surfaced ahead of time."
         ),
     )
+    @click.option(
+        "--render-diagram",
+        "render_diagram",
+        type=str,
+        default=None,
+        help=(
+            "Optional path to write a sequence-diagram overlay rendering of "
+            "the validation findings. Format inferred from the extension "
+            "(``.svg`` / ``.png``). Includes a banner summarizing static-check "
+            "counts plus any Phase11 first-coexistence point, and per-step "
+            "markers for dropped signals / UNSAT durations."
+        ),
+    )
+    @click.option(
+        "--render-format",
+        "render_format",
+        type=click.Choice(["svg", "png", "auto"]),
+        default="auto",
+        show_default=True,
+        help=(
+            "Output format for ``--render-diagram``. ``auto`` infers from the "
+            "extension; defaults to ``svg`` when neither ``.svg`` nor ``.png``."
+        ),
+    )
+    @click.option(
+        "--font-file",
+        "font_files",
+        type=str,
+        multiple=True,
+        help=(
+            "Additional font file(s) to load for PNG rendering. The CLI auto-"
+            "detects a system CJK font for Chinese state / signal names; "
+            "use this flag to override or supplement the detection. "
+            "Repeatable."
+        ),
+    )
     @command_wrap()
     def sysdesim_validate(
         input_xml_file: str,
@@ -1482,6 +1949,9 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
         right_state_ref: Optional[str],
         observation_scope: str,
         skip_static_check: bool,
+        render_diagram: Optional[str],
+        render_format: str,
+        font_files: Tuple[str, ...],
     ) -> None:
         """
         Build one readable timeline validation summary for one SysDeSim input.
@@ -1509,6 +1979,11 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
         :type right_state_ref: str, optional
         :param observation_scope: Observation scope for the optional Phase11 query.
         :type observation_scope: str
+        :param render_diagram: Optional output path for an overlay-rendered
+            sequence diagram of the validation findings.
+        :type render_diagram: str, optional
+        :param render_format: Output format for ``render_diagram``.
+        :type render_format: str
         :return: ``None``.
         :rtype: None
         """
@@ -1524,6 +1999,9 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
             right_state_ref=right_state_ref,
             observation_scope=observation_scope,
             skip_static_check=skip_static_check,
+            render_diagram=render_diagram,
+            render_format=render_format,
+            font_files=list(font_files) if font_files else None,
         )
 
     @sysdesim.command(
@@ -1613,6 +2091,41 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
             "fail the build."
         ),
     )
+    @click.option(
+        "--render-diagram",
+        "render_diagram",
+        type=str,
+        default=None,
+        help=(
+            "Optional path to write a sequence-diagram overlay rendering of "
+            "the static-check findings. Format inferred from the extension "
+            "(``.svg`` / ``.png``). Diagnostic markers ride on top of the "
+            "baseline diagram (banner, dropped-signal badges, UNSAT lane tags)."
+        ),
+    )
+    @click.option(
+        "--render-format",
+        "render_format",
+        type=click.Choice(["svg", "png", "auto"]),
+        default="auto",
+        show_default=True,
+        help=(
+            "Output format for ``--render-diagram``. ``auto`` infers from the "
+            "extension; defaults to ``svg`` when neither ``.svg`` nor ``.png``."
+        ),
+    )
+    @click.option(
+        "--font-file",
+        "font_files",
+        type=str,
+        multiple=True,
+        help=(
+            "Additional font file(s) to load for PNG rendering. The CLI auto-"
+            "detects a system CJK font for Chinese state / signal names; "
+            "use this flag to override or supplement the detection. "
+            "Repeatable."
+        ),
+    )
     @command_wrap()
     def sysdesim_static_check(
         input_xml_file: str,
@@ -1625,6 +2138,9 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
         right_machine_alias: Optional[str],
         right_state_ref: Optional[str],
         warn_as_error: bool,
+        render_diagram: Optional[str],
+        render_format: str,
+        font_files: Tuple[str, ...],
     ) -> None:
         """
         Run the static pre-check phase only and exit non-zero on errors.
@@ -1650,15 +2166,23 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
         :type right_state_ref: str, optional
         :param warn_as_error: Whether to treat warnings as blocking errors.
         :type warn_as_error: bool
+        :param render_diagram: Optional output path for an overlay-rendered
+            sequence diagram of the static-check findings.
+        :type render_diagram: str, optional
+        :param render_format: Output format for ``render_diagram``.
+        :type render_format: str
         :return: ``None``.
         :rtype: None
         """
         try:
-            diagnostics = run_sysdesim_static_pre_checks(
-                xml_path=input_xml_file,
+            phase10 = build_sysdesim_phase10_report(
+                input_xml_file,
                 machine_name=machine_name,
                 interaction_name=interaction_name,
                 tick_duration_ms=tick_duration_ms,
+            )
+            diagnostics = run_sysdesim_static_pre_checks(
+                phase10_report=phase10,
                 left_machine_alias=left_machine_alias,
                 left_state_ref=left_state_ref,
                 right_machine_alias=right_machine_alias,
@@ -1680,9 +2204,29 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
             report_path = Path(report_file)
             report_path.parent.mkdir(parents=True, exist_ok=True)
             report_path.write_text(
-                json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True)
+                json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True, default=_json_default)
                 + "\n",
                 encoding="utf-8",
+            )
+
+        if render_diagram:
+            fmt, size = _render_overlay_diagram(
+                phase10_report=phase10,
+                output_path=render_diagram,
+                output_format=render_format,
+                diagnostics=diagnostics,
+                font_files=list(font_files) if font_files else None,
+                include_state_cells=True,
+            )
+            click.echo(
+                "{label}  Wrote overlay {fmt} to {path} ({size} bytes).".format(
+                    label=click.style(
+                        "SysDeSim Static Check Render", fg="cyan", bold=True
+                    ),
+                    fmt=fmt.upper(),
+                    path=render_diagram,
+                    size=size,
+                )
             )
 
         blocking = counts["errors"] + (counts["warnings"] if warn_as_error else 0)
@@ -1785,6 +2329,18 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
         default=None,
         help="Override the diagram title (defaults to the interaction name).",
     )
+    @click.option(
+        "--diagnostics-file",
+        "diagnostics_file",
+        type=str,
+        default=None,
+        help=(
+            "Optional path to a JSON report (produced by ``static-check "
+            "--report-file`` or ``validate --report-file``). When provided, "
+            "the renderer overlays banner + diagnostic markers on top of the "
+            "baseline diagram."
+        ),
+    )
     @command_wrap()
     def sysdesim_sequence_render(
         input_xml_file: str,
@@ -1796,6 +2352,7 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
         interaction_name: Optional[str],
         tick_duration_ms: Optional[float],
         title: Optional[str],
+        diagnostics_file: Optional[str],
     ) -> None:
         """
         Render one SysDeSim sequence diagram as SVG or PNG.
@@ -1819,6 +2376,10 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
         :type tick_duration_ms: float, optional
         :param title: Optional title override.
         :type title: str, optional
+        :param diagnostics_file: Optional path to a previously-written
+            static-check or validate JSON report. When given, diagnostic
+            overlay markers are layered on top of the baseline diagram.
+        :type diagnostics_file: str, optional
         :return: ``None``.
         :rtype: None
         """
@@ -1835,25 +2396,73 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
             else:
                 resolved_format = "svg"
 
+        overlay_payload: Optional[Dict] = None
+        phase10_for_overlay: Optional[SysDeSimPhase10Report] = None
+        if diagnostics_file:
+            try:
+                with open(diagnostics_file, "r", encoding="utf-8") as fp:
+                    diag_doc = json.load(fp)
+            except (OSError, ValueError) as err:
+                raise ClickErrorException(
+                    "Cannot read diagnostics file {}: {}".format(
+                        diagnostics_file, err
+                    )
+                )
+            try:
+                phase10_for_overlay = build_sysdesim_phase10_report(
+                    input_xml_file,
+                    machine_name=machine_name,
+                    interaction_name=interaction_name,
+                    tick_duration_ms=tick_duration_ms,
+                )
+            except (KeyError, LookupError, NotImplementedError, ValueError) as err:
+                raise ClickErrorException(_format_sysdesim_cli_error(err))
+            diag_objs = _diagnostics_from_report_dict(diag_doc)
+            overlay_payload = build_overlay_from_diagnostics(
+                phase10_report=phase10_for_overlay,
+                diagnostics=diag_objs,
+            )
+
         try:
             if resolved_format == "svg":
-                svg_text = render_sysdesim_timeline_svg(
-                    xml_path=input_xml_file,
-                    machine_name=machine_name,
-                    interaction_name=interaction_name,
-                    tick_duration_ms=tick_duration_ms,
-                    title=title,
-                )
+                if phase10_for_overlay is not None:
+                    svg_text = render_sysdesim_timeline_svg(
+                        phase10_report=phase10_for_overlay,
+                        title=title,
+                        overlay=overlay_payload,
+                    )
+                else:
+                    svg_text = render_sysdesim_timeline_svg(
+                        xml_path=input_xml_file,
+                        machine_name=machine_name,
+                        interaction_name=interaction_name,
+                        tick_duration_ms=tick_duration_ms,
+                        title=title,
+                    )
                 payload = svg_text.encode("utf-8")
             else:
-                payload = render_sysdesim_timeline_png(
-                    xml_path=input_xml_file,
-                    machine_name=machine_name,
-                    interaction_name=interaction_name,
-                    tick_duration_ms=tick_duration_ms,
-                    title=title,
-                    font_files=list(font_files) if font_files else None,
+                # Auto-detect a CJK system font so Chinese state / signal
+                # names rasterize instead of being silently dropped by
+                # resvg-wasm. User ``--font-file`` paths take precedence.
+                resolved_font_files = _resolve_render_font_files(
+                    list(font_files) if font_files else None
                 )
+                if phase10_for_overlay is not None:
+                    payload = render_sysdesim_timeline_png(
+                        phase10_report=phase10_for_overlay,
+                        title=title,
+                        overlay=overlay_payload,
+                        font_files=resolved_font_files,
+                    )
+                else:
+                    payload = render_sysdesim_timeline_png(
+                        xml_path=input_xml_file,
+                        machine_name=machine_name,
+                        interaction_name=interaction_name,
+                        tick_duration_ms=tick_duration_ms,
+                        title=title,
+                        font_files=resolved_font_files,
+                    )
         except (KeyError, LookupError, NotImplementedError, ValueError) as err:
             raise ClickErrorException(_format_sysdesim_cli_error(err))
         except SysdesimRenderError as err:

@@ -147,6 +147,7 @@ from .static_check import (
 )
 from .render import (
     SysdesimRenderError,
+    build_overlay_from_diagnostics,
     render_sysdesim_timeline_png,
     render_sysdesim_timeline_svg,
 )
@@ -231,6 +232,7 @@ __all__ = [
     "detect_temporal_constraints_unsat",
     "run_sysdesim_static_pre_checks",
     "SysdesimRenderError",
+    "build_overlay_from_diagnostics",
     "render_sysdesim_timeline_png",
     "render_sysdesim_timeline_svg",
 ]

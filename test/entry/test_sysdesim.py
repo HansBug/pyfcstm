@@ -1763,3 +1763,270 @@ def test_validate_render_diagram_accepts_font_file_flag(tmp_path: Path):
     assert result.exit_code == 0, result.output
     assert out_png.exists()
     assert out_png.read_bytes()[:8] == _PNG_MAGIC
+
+
+# =============================================================================
+# Interaction selector / list-interactions tests
+# =============================================================================
+
+
+def _build_three_interactions_xml(tmp_path: Path) -> Path:
+    """Tiny SysDeSim XML with three named interactions sharing one StateMachine.
+
+    Mirrors the multi-interaction layout SysDeSim ships in real exports:
+    one ``uml:Class`` carries one shared ``uml:StateMachine`` plus N
+    ``uml:Interaction`` siblings, each with its own lifelines / messages.
+    Only the structure is modelled here; the scenarios are deliberately
+    minimal so the selector logic itself is the unit under test.
+    """
+    return _write_xml(
+        tmp_path,
+        """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <xmi:XMI xmi:version="20131001"
+                 xmlns:xmi="http://www.omg.org/spec/XMI/20131001"
+                 xmlns:uml="http://www.eclipse.org/uml2/5.0.0/UML">
+          <uml:Model xmi:id="model_1" name="model">
+            <packagedElement xmi:type="uml:Class" xmi:id="class_1" name="Demo" classifierBehavior="machine_1">
+              <ownedBehavior xmi:type="uml:StateMachine" xmi:id="machine_1" name="Demo">
+                <region xmi:type="uml:Region" xmi:id="region_root" name="">
+                  <transition xmi:type="uml:Transition" xmi:id="tx_root_init" source="init_root" target="state_idle"/>
+                  <transition xmi:type="uml:Transition" xmi:id="tx_idle_run" source="state_idle" target="state_run">
+                    <trigger xmi:type="uml:Trigger" xmi:id="trig_run" event="signal_evt_sig2"/>
+                  </transition>
+                  <subvertex xmi:type="uml:Pseudostate" xmi:id="init_root"/>
+                  <subvertex xmi:type="uml:State" xmi:id="state_idle" name="Idle"/>
+                  <subvertex xmi:type="uml:State" xmi:id="state_run" name="Run"/>
+                </region>
+              </ownedBehavior>
+              <ownedBehavior xmi:type="uml:Interaction" xmi:id="ix_alpha" name="case_alpha">
+                <ownedAttribute xmi:type="uml:Property" xmi:id="prop_a1" name="a"/>
+                <ownedAttribute xmi:type="uml:Property" xmi:id="prop_b1" name="b"/>
+                <lifeline xmi:type="uml:Lifeline" xmi:id="ll_a1" name="a" represents="prop_a1"/>
+                <lifeline xmi:type="uml:Lifeline" xmi:id="ll_b1" name="b" represents="prop_b1"/>
+                <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="alpha_send" covered="ll_b1" message="msg_alpha"/>
+                <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="alpha_recv" covered="ll_a1" message="msg_alpha"/>
+                <message xmi:type="uml:Message" xmi:id="msg_alpha" sendEvent="alpha_send" receiveEvent="alpha_recv" signature="signal_sig2"/>
+              </ownedBehavior>
+              <ownedBehavior xmi:type="uml:Interaction" xmi:id="ix_beta" name="case_beta">
+                <ownedAttribute xmi:type="uml:Property" xmi:id="prop_a2" name="a"/>
+                <ownedAttribute xmi:type="uml:Property" xmi:id="prop_b2" name="b"/>
+                <lifeline xmi:type="uml:Lifeline" xmi:id="ll_a2" name="a" represents="prop_a2"/>
+                <lifeline xmi:type="uml:Lifeline" xmi:id="ll_b2" name="b" represents="prop_b2"/>
+                <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="beta_send" covered="ll_b2" message="msg_beta"/>
+                <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="beta_recv" covered="ll_a2" message="msg_beta"/>
+                <message xmi:type="uml:Message" xmi:id="msg_beta" sendEvent="beta_send" receiveEvent="beta_recv" signature="signal_sig2"/>
+              </ownedBehavior>
+              <ownedBehavior xmi:type="uml:Interaction" xmi:id="ix_gamma" name="case_gamma">
+                <ownedAttribute xmi:type="uml:Property" xmi:id="prop_a3" name="a"/>
+                <ownedAttribute xmi:type="uml:Property" xmi:id="prop_b3" name="b"/>
+                <lifeline xmi:type="uml:Lifeline" xmi:id="ll_a3" name="a" represents="prop_a3"/>
+                <lifeline xmi:type="uml:Lifeline" xmi:id="ll_b3" name="b" represents="prop_b3"/>
+                <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="gamma_send" covered="ll_b3" message="msg_gamma"/>
+                <fragment xmi:type="uml:MessageOccurrenceSpecification" xmi:id="gamma_recv" covered="ll_a3" message="msg_gamma"/>
+                <message xmi:type="uml:Message" xmi:id="msg_gamma" sendEvent="gamma_send" receiveEvent="gamma_recv" signature="signal_sig2"/>
+              </ownedBehavior>
+            </packagedElement>
+            <packagedElement xmi:type="uml:Signal" xmi:id="signal_sig2" name="Sig2"/>
+            <packagedElement xmi:type="uml:SignalEvent" xmi:id="signal_evt_sig2" signal="signal_sig2"/>
+          </uml:Model>
+        </xmi:XMI>
+        """,
+    )
+
+
+@pytest.mark.unittest
+def test_resolve_interaction_selector_returns_none_for_empty_input(tmp_path: Path):
+    """Empty / None selector means "let the loader pick the first interaction"."""
+    from pyfcstm.entry.sysdesim import _resolve_interaction_selector
+
+    xml = _build_three_interactions_xml(tmp_path)
+    assert _resolve_interaction_selector(str(xml), None) is None
+    assert _resolve_interaction_selector(str(xml), "") is None
+    assert _resolve_interaction_selector(str(xml), "   ") is None
+
+
+@pytest.mark.unittest
+def test_resolve_interaction_selector_handles_index_name_id_substring(tmp_path: Path):
+    """Selector accepts 1-base index, exact name, exact id, prefix, substring."""
+    from pyfcstm.entry.sysdesim import _resolve_interaction_selector
+
+    xml = str(_build_three_interactions_xml(tmp_path))
+    # 1-base index
+    assert _resolve_interaction_selector(xml, "1") == "case_alpha"
+    assert _resolve_interaction_selector(xml, "2") == "case_beta"
+    assert _resolve_interaction_selector(xml, "3") == "case_gamma"
+    # Exact name
+    assert _resolve_interaction_selector(xml, "case_beta") == "case_beta"
+    # Exact id
+    assert _resolve_interaction_selector(xml, "ix_gamma") == "case_gamma"
+    # Unique id prefix (xmi:id always starts with the literal we used; "ix_a"
+    # uniquely matches ix_alpha)
+    assert _resolve_interaction_selector(xml, "ix_a") == "case_alpha"
+    # Unique name substring
+    assert _resolve_interaction_selector(xml, "alpha") == "case_alpha"
+    # Substring case-insensitive
+    assert _resolve_interaction_selector(xml, "BETA") == "case_beta"
+
+
+@pytest.mark.unittest
+def test_resolve_interaction_selector_rejects_ambiguous_substring(tmp_path: Path):
+    """Substring matching multiple interactions surfaces the candidate list."""
+    from pyfcstm.entry.sysdesim import _resolve_interaction_selector
+    from pyfcstm.entry.base import ClickErrorException
+
+    xml = str(_build_three_interactions_xml(tmp_path))
+    # All three names share "case_" - ambiguous prefix substring.
+    with pytest.raises(ClickErrorException) as info:
+        _resolve_interaction_selector(xml, "case_")
+    msg = str(info.value)
+    assert "matches multiple" in msg
+    assert "case_alpha" in msg and "case_beta" in msg and "case_gamma" in msg
+
+
+@pytest.mark.unittest
+def test_resolve_interaction_selector_rejects_out_of_range_index(tmp_path: Path):
+    """Numeric index outside 1..N raises with the candidate listing."""
+    from pyfcstm.entry.sysdesim import _resolve_interaction_selector
+    from pyfcstm.entry.base import ClickErrorException
+
+    xml = str(_build_three_interactions_xml(tmp_path))
+    with pytest.raises(ClickErrorException) as info:
+        _resolve_interaction_selector(xml, "99")
+    assert "out of range (1..3)" in str(info.value)
+
+
+@pytest.mark.unittest
+def test_resolve_interaction_selector_rejects_unknown_value(tmp_path: Path):
+    """A bogus selector raises with the full candidate listing."""
+    from pyfcstm.entry.sysdesim import _resolve_interaction_selector
+    from pyfcstm.entry.base import ClickErrorException
+
+    xml = str(_build_three_interactions_xml(tmp_path))
+    with pytest.raises(ClickErrorException) as info:
+        _resolve_interaction_selector(xml, "not-a-thing")
+    msg = str(info.value)
+    assert "did not match any interaction" in msg
+    assert "case_alpha" in msg
+
+
+@pytest.mark.unittest
+def test_list_interactions_command_prints_three_rows(tmp_path: Path):
+    """``pyfcstm sysdesim list-interactions`` enumerates every interaction."""
+    xml = _build_three_interactions_xml(tmp_path)
+    result = CliRunner().invoke(
+        pyfcstmcli, ["sysdesim", "list-interactions", "-i", str(xml)], color=False
+    )
+    assert result.exit_code == 0, result.output
+    out = _strip_ansi(result.output)
+    assert "Available interactions" in out
+    for name in ("case_alpha", "case_beta", "case_gamma"):
+        assert name in out
+    # The numeric index is part of the printed picker.
+    assert "1)" in out and "2)" in out and "3)" in out
+
+
+@pytest.mark.unittest
+def test_validate_picks_interaction_by_index(tmp_path: Path):
+    """``validate --interaction 2`` runs against the second interaction."""
+    xml = _build_three_interactions_xml(tmp_path)
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        ["sysdesim", "validate", "--no-static-check", "-i", str(xml), "--interaction", "2"],
+        color=False,
+    )
+    assert result.exit_code == 0, result.output
+    out = _strip_ansi(result.output)
+    assert "case_beta" in out
+    # Make sure we didn't silently pick alpha / gamma.
+    assert "case_alpha" not in out or out.find("case_alpha") > out.find("case_beta")
+
+
+@pytest.mark.unittest
+def test_static_check_picks_interaction_by_substring(tmp_path: Path):
+    """``static-check --interaction gamma`` picks the third interaction."""
+    xml = _build_three_interactions_xml(tmp_path)
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        ["sysdesim", "static-check", "-i", str(xml), "--interaction", "gamma"],
+        color=False,
+    )
+    # static-check returns 0 on this fixture (no errors), and in the output
+    # we'd see no diagnostics. The selector must be accepted without error.
+    assert result.exit_code == 0, result.output
+
+
+@pytest.mark.unittest
+def test_sequence_render_picks_interaction_by_id_prefix(tmp_path: Path):
+    """``sequence-render --interaction ix_b`` picks the second by id prefix."""
+    xml = _build_three_interactions_xml(tmp_path)
+    out_svg = tmp_path / "ix_b.svg"
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "sequence-render",
+            "-i",
+            str(xml),
+            "-o",
+            str(out_svg),
+            "--interaction",
+            "ix_b",
+        ],
+        color=False,
+    )
+    assert result.exit_code == 0, result.output
+    assert out_svg.exists()
+    text = out_svg.read_text(encoding="utf-8")
+    # Title falls back to the interaction name when no --title is given.
+    assert "case_beta" in text
+
+
+@pytest.mark.unittest
+def test_validate_legacy_interaction_name_alias_still_works(tmp_path: Path):
+    """``--interaction-name`` keeps working as a back-compat alias."""
+    xml = _build_three_interactions_xml(tmp_path)
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "validate",
+            "--no-static-check",
+            "-i",
+            str(xml),
+            "--interaction-name",
+            "case_gamma",
+        ],
+        color=False,
+    )
+    assert result.exit_code == 0, result.output
+    assert "case_gamma" in _strip_ansi(result.output)
+
+
+@pytest.mark.unittest
+def test_validate_no_selector_defaults_to_first_interaction(tmp_path: Path):
+    """Omitting both --interaction and --interaction-name picks #1."""
+    xml = _build_three_interactions_xml(tmp_path)
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        ["sysdesim", "validate", "--no-static-check", "-i", str(xml)],
+        color=False,
+    )
+    assert result.exit_code == 0, result.output
+    assert "case_alpha" in _strip_ansi(result.output)
+
+
+@pytest.mark.unittest
+def test_validate_reports_full_candidate_list_on_bad_selector(tmp_path: Path):
+    """A bad selector lists candidates in the error so the user can fix it."""
+    xml = _build_three_interactions_xml(tmp_path)
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        ["sysdesim", "validate", "--no-static-check", "-i", str(xml), "--interaction", "wrong"],
+        color=False,
+    )
+    assert result.exit_code != 0
+    out = _strip_ansi(result.output)
+    assert "did not match" in out
+    for name in ("case_alpha", "case_beta", "case_gamma"):
+        assert name in out

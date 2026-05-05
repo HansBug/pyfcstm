@@ -66,10 +66,158 @@ from ..convert.sysdesim.render import (
     SysdesimRenderError,
     build_overlay_from_diagnostics,
 )
+from ..convert.sysdesim.timeline import (
+    SysDeSimInteractionExtract,
+    extract_sysdesim_interactions,
+)
 from ..convert.sysdesim.timeline_verify import (
     SysDeSimPhase10Report,
     build_sysdesim_phase10_report,
 )
+
+
+def _short_interaction_id(interaction_id: str, width: int = 12) -> str:
+    """Trim a UML xmi:id down to a stable prefix for display tables."""
+    if not isinstance(interaction_id, str):
+        return ""
+    text = interaction_id.lstrip("_")
+    return text[:width]
+
+
+def _list_xml_interactions(xml_path: str) -> Tuple[SysDeSimInteractionExtract, ...]:
+    """Walk the XML once and return its ordered interaction list.
+
+    Wraps :func:`pyfcstm.convert.sysdesim.timeline.extract_sysdesim_interactions`
+    so call sites get a single, well-typed source of interaction metadata
+    for picker resolution and ``list-interactions`` rendering. Translates
+    the underlying parse errors into a CLI-friendly :class:`ClickErrorException`.
+    """
+    try:
+        return tuple(extract_sysdesim_interactions(xml_path))
+    except (KeyError, LookupError, NotImplementedError, ValueError) as err:
+        raise ClickErrorException(_format_sysdesim_cli_error(err))
+
+
+def _format_interaction_picker_lines(
+    interactions: Sequence[SysDeSimInteractionExtract],
+) -> List[str]:
+    """Build a numbered table of interactions for error / list output."""
+    if not interactions:
+        return ["(no uml:Interaction found in this XML)"]
+    lines = ["Available interactions (sequence diagrams):"]
+    name_width = max(8, max(len(ix.interaction_name or "") for ix in interactions))
+    for index, ix in enumerate(interactions, start=1):
+        msg_count = sum(
+            1
+            for o in ix.observation_stream
+            if type(o).__name__ == "SysDeSimMessageObservation"
+        )
+        lifelines = ", ".join(ll.raw_name or ll.normalized_name for ll in ix.lifelines)
+        lines.append(
+            "  {idx}) {name:<{name_w}}  {short_id:<14}  msgs={msgs:<3}  lifelines={ll}".format(
+                idx=index,
+                name=ix.interaction_name or "(unnamed)",
+                name_w=name_width,
+                short_id=_short_interaction_id(ix.interaction_id),
+                msgs=msg_count,
+                ll=lifelines or "-",
+            )
+        )
+    return lines
+
+
+def _resolve_interaction_selector(
+    xml_path: str,
+    selector: Optional[str],
+) -> Optional[str]:
+    """Resolve a fuzzy ``--interaction`` selector into an exact UML name.
+
+    Selector lookup order (first unambiguous match wins):
+
+    1. Exact ``interaction_name`` match.
+    2. Exact ``interaction_id`` match (full xmi:id).
+    3. 1-base numeric index (``"1"`` / ``"2"`` / ...).
+    4. Unique ID prefix (e.g. ``"_xJv"`` -> full xmi:id).
+    5. Unique ``interaction_name`` substring.
+
+    Returns ``None`` when ``selector`` is empty / ``None``, signalling the
+    caller should keep its default (the underlying loader picks the first
+    interaction). Raises :class:`ClickErrorException` with a candidate
+    listing when the selector is given but matches zero or multiple
+    entries.
+
+    :param xml_path: SysDeSim XML/XMI file path.
+    :type xml_path: str
+    :param selector: User-supplied ``--interaction`` value, or ``None``.
+    :type selector: str, optional
+    :return: Resolved interaction name to forward to the timeline loader,
+        or ``None`` to keep the loader-default behavior.
+    :rtype: str | None
+    :raises ClickErrorException: when the selector is non-empty but does
+        not unambiguously resolve to one interaction.
+    """
+    if selector is None:
+        return None
+    selector = selector.strip()
+    if not selector:
+        return None
+    interactions = _list_xml_interactions(xml_path)
+    if not interactions:
+        raise ClickErrorException(
+            "This XML has no uml:Interaction; cannot pick a sequence diagram."
+        )
+
+    # 1. Exact name.
+    for ix in interactions:
+        if ix.interaction_name == selector:
+            return ix.interaction_name
+    # 2. Exact id.
+    for ix in interactions:
+        if ix.interaction_id == selector:
+            return ix.interaction_name
+    # 3. 1-base numeric index.
+    if selector.isdigit():
+        idx = int(selector)
+        if 1 <= idx <= len(interactions):
+            return interactions[idx - 1].interaction_name
+        raise ClickErrorException(
+            "--interaction index {} out of range (1..{}).\n".format(
+                idx, len(interactions)
+            )
+            + "\n".join(_format_interaction_picker_lines(interactions))
+        )
+    # 4. Unique id prefix.
+    id_matches = [ix for ix in interactions if ix.interaction_id.startswith(selector)]
+    if len(id_matches) == 1:
+        return id_matches[0].interaction_name
+    if len(id_matches) > 1:
+        raise ClickErrorException(
+            "--interaction \"{}\" matches multiple interaction ids: ".format(selector)
+            + ", ".join(ix.interaction_name for ix in id_matches)
+            + ".\n"
+            + "\n".join(_format_interaction_picker_lines(interactions))
+        )
+    # 5. Unique name substring (case-insensitive).
+    needle = selector.lower()
+    name_matches = [
+        ix for ix in interactions if needle in (ix.interaction_name or "").lower()
+    ]
+    if len(name_matches) == 1:
+        return name_matches[0].interaction_name
+    if len(name_matches) > 1:
+        raise ClickErrorException(
+            "--interaction \"{}\" matches multiple interaction names: ".format(selector)
+            + ", ".join(ix.interaction_name for ix in name_matches)
+            + ". Use a more specific selector (index / full name / id prefix).\n"
+            + "\n".join(_format_interaction_picker_lines(interactions))
+        )
+    # 0 matches: surface the full candidate list so the user can correct.
+    raise ClickErrorException(
+        "--interaction \"{}\" did not match any interaction in this XML.\n".format(
+            selector
+        )
+        + "\n".join(_format_interaction_picker_lines(interactions))
+    )
 
 
 def _format_sysdesim_cli_error(err: BaseException) -> str:
@@ -1829,11 +1977,27 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
         help="Exact UML state-machine name to inspect.",
     )
     @click.option(
+        "--interaction",
+        "interaction",
+        type=str,
+        default=None,
+        help=(
+            "Pick one interaction (sequence diagram) when the model contains "
+            "multiple. Accepts: 1-based index (``1``/``2``/...), exact name, "
+            "exact xmi:id, unique id prefix, or unique name substring. "
+            "Use ``pyfcstm sysdesim list-interactions -i <xml>`` to see what's "
+            "available. Defaults to the first interaction when omitted."
+        ),
+    )
+    @click.option(
         "--interaction-name",
         "interaction_name",
         type=str,
         default=None,
-        help="Exact UML interaction name to inspect.",
+        help=(
+            "Deprecated alias for ``--interaction`` (exact name only). "
+            "Kept for backward compatibility."
+        ),
     )
     @click.option(
         "--tick-duration-ms",
@@ -1940,6 +2104,7 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
     def sysdesim_validate(
         input_xml_file: str,
         machine_name: Optional[str],
+        interaction: Optional[str],
         interaction_name: Optional[str],
         tick_duration_ms: Optional[float],
         report_file: Optional[str],
@@ -1987,10 +2152,17 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
         :return: ``None``.
         :rtype: None
         """
+        # Resolve the user-supplied selector once. ``--interaction`` (new,
+        # accepts index/prefix/substring) takes precedence over the legacy
+        # ``--interaction-name`` (exact name only); the resolver returns
+        # ``None`` to signal "let the loader pick the first interaction".
+        resolved_interaction = _resolve_interaction_selector(
+            input_xml_file, interaction or interaction_name
+        )
         _run_sysdesim_validate(
             input_xml_file=input_xml_file,
             machine_name=machine_name,
-            interaction_name=interaction_name,
+            interaction_name=resolved_interaction,
             tick_duration_ms=tick_duration_ms,
             report_file=report_file,
             left_machine_alias=left_machine_alias,
@@ -2029,11 +2201,27 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
         help="Exact UML state-machine name to inspect.",
     )
     @click.option(
+        "--interaction",
+        "interaction",
+        type=str,
+        default=None,
+        help=(
+            "Pick one interaction (sequence diagram) when the model contains "
+            "multiple. Accepts: 1-based index (``1``/``2``/...), exact name, "
+            "exact xmi:id, unique id prefix, or unique name substring. "
+            "Use ``pyfcstm sysdesim list-interactions -i <xml>`` to see what's "
+            "available. Defaults to the first interaction when omitted."
+        ),
+    )
+    @click.option(
         "--interaction-name",
         "interaction_name",
         type=str,
         default=None,
-        help="Exact UML interaction name to inspect.",
+        help=(
+            "Deprecated alias for ``--interaction`` (exact name only). "
+            "Kept for backward compatibility."
+        ),
     )
     @click.option(
         "--tick-duration-ms",
@@ -2130,6 +2318,7 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
     def sysdesim_static_check(
         input_xml_file: str,
         machine_name: Optional[str],
+        interaction: Optional[str],
         interaction_name: Optional[str],
         tick_duration_ms: Optional[float],
         report_file: Optional[str],
@@ -2175,10 +2364,13 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
         :rtype: None
         """
         try:
+            resolved_interaction = _resolve_interaction_selector(
+                input_xml_file, interaction or interaction_name
+            )
             phase10 = build_sysdesim_phase10_report(
                 input_xml_file,
                 machine_name=machine_name,
-                interaction_name=interaction_name,
+                interaction_name=resolved_interaction,
                 tick_duration_ms=tick_duration_ms,
             )
             diagnostics = run_sysdesim_static_pre_checks(
@@ -2309,11 +2501,27 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
         help="Exact UML state-machine name to inspect.",
     )
     @click.option(
+        "--interaction",
+        "interaction",
+        type=str,
+        default=None,
+        help=(
+            "Pick one interaction (sequence diagram) when the model contains "
+            "multiple. Accepts: 1-based index (``1``/``2``/...), exact name, "
+            "exact xmi:id, unique id prefix, or unique name substring. "
+            "Use ``pyfcstm sysdesim list-interactions -i <xml>`` to see what's "
+            "available. Defaults to the first interaction when omitted."
+        ),
+    )
+    @click.option(
         "--interaction-name",
         "interaction_name",
         type=str,
         default=None,
-        help="Exact UML interaction name to render.",
+        help=(
+            "Deprecated alias for ``--interaction`` (exact name only). "
+            "Kept for backward compatibility."
+        ),
     )
     @click.option(
         "--tick-duration-ms",
@@ -2349,6 +2557,7 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
         preview: bool,
         font_files: Tuple[str, ...],
         machine_name: Optional[str],
+        interaction: Optional[str],
         interaction_name: Optional[str],
         tick_duration_ms: Optional[float],
         title: Optional[str],
@@ -2388,6 +2597,13 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
                 "Provide --output / -o, --preview, or both."
             )
 
+        # Resolve the user-supplied selector once (--interaction takes
+        # precedence over the legacy --interaction-name alias). Returns
+        # ``None`` to keep the loader-default behavior (first interaction).
+        resolved_interaction = _resolve_interaction_selector(
+            input_xml_file, interaction or interaction_name
+        )
+
         resolved_format = output_format
         if resolved_format == "auto":
             if output_file:
@@ -2412,7 +2628,7 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
                 phase10_for_overlay = build_sysdesim_phase10_report(
                     input_xml_file,
                     machine_name=machine_name,
-                    interaction_name=interaction_name,
+                    interaction_name=resolved_interaction,
                     tick_duration_ms=tick_duration_ms,
                 )
             except (KeyError, LookupError, NotImplementedError, ValueError) as err:
@@ -2435,7 +2651,7 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
                     svg_text = render_sysdesim_timeline_svg(
                         xml_path=input_xml_file,
                         machine_name=machine_name,
-                        interaction_name=interaction_name,
+                        interaction_name=resolved_interaction,
                         tick_duration_ms=tick_duration_ms,
                         title=title,
                     )
@@ -2458,7 +2674,7 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
                     payload = render_sysdesim_timeline_png(
                         xml_path=input_xml_file,
                         machine_name=machine_name,
-                        interaction_name=interaction_name,
+                        interaction_name=resolved_interaction,
                         tick_duration_ms=tick_duration_ms,
                         title=title,
                         font_files=resolved_font_files,
@@ -2505,6 +2721,45 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
                         else "no browser available; file written to {}.".format(out_path)
                     ),
                 )
+            )
+
+    @sysdesim.command(
+        "list-interactions",
+        help=(
+            "List the sequence diagrams (uml:Interaction objects) available "
+            "in a SysDeSim XML/XMI file. Use the printed numeric index or "
+            "name with ``--interaction <selector>`` on validate / "
+            "static-check / sequence-render to pick one."
+        ),
+        context_settings=CONTEXT_SETTINGS,
+    )
+    @click.option(
+        "-i",
+        "--input-xml",
+        "input_xml_file",
+        type=str,
+        required=True,
+        help="Input SysDeSim XML/XMI file.",
+    )
+    @command_wrap()
+    def sysdesim_list_interactions(input_xml_file: str) -> None:
+        """
+        Print the ordered list of interactions (sequence diagrams) in one
+        SysDeSim XML/XMI file.
+
+        :param input_xml_file: Input SysDeSim XML/XMI file.
+        :type input_xml_file: str
+        :return: ``None``.
+        :rtype: None
+        """
+        interactions = _list_xml_interactions(input_xml_file)
+        for line in _format_interaction_picker_lines(interactions):
+            click.echo(line)
+        if interactions:
+            click.echo("")
+            click.echo(
+                "Pick one with: --interaction <index|name|id-prefix> on "
+                "validate / static-check / sequence-render."
             )
 
     return cli

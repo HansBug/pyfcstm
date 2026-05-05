@@ -18,11 +18,16 @@ Example::
 from __future__ import annotations
 
 import json
+import os
+import platform
+import re
 import shutil
+import subprocess
+import sys
 import tempfile
 import webbrowser
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 import click
 
@@ -1192,6 +1197,212 @@ def _resolve_render_format(output_path: str, output_format: str = "auto") -> str
     return "png" if ext == ".png" else "svg"
 
 
+# Cache the discovered CJK font path so we only pay the ``fc-match`` /
+# filesystem-probe cost once per CLI process.
+_CJK_FONT_DISCOVERY_CACHE: Optional[Tuple[str, ...]] = None
+
+# Filename-pattern regex of fonts that are known to carry CJK glyph
+# coverage. Matched case-insensitively against the file's basename so we
+# don't depend on absolute paths or specific OS layouts. Covers Microsoft
+# YaHei / SimSun / SimHei / DengXian (Windows), Apple PingFang / Hiragino /
+# Songti / STHeiti / STSong (macOS), Google Noto / Source Han / WenQuanYi /
+# DroidSans / UMing / UKai (Linux distro packages), and a few legacy
+# popular fallbacks.
+_CJK_FONT_NAME_RE = re.compile(
+    r"(?:"
+    r"msyh|simsun|simhei|simfang|simkai|deng|fzheiti|fangsong|kaiti|"
+    r"pingfang|hiragino|songti|stheiti|stsong|stkaiti|stxihei|"
+    r"applesd?gothic|appleminchocho|"
+    r"notosans?(?:hk|jp|kr|sc|tc)?cjk|notoserif?(?:hk|jp|kr|sc|tc)?cjk|"
+    r"sourcehan(?:sans|serif)|"
+    r"wqy[-_]?(?:micro)?(?:zen|hei|microhei)|"
+    r"droidsans(?:fallback)?|"
+    r"u(?:ming|kai)|cwtex|fireflysung"
+    r")",
+    re.IGNORECASE,
+)
+
+_FONT_FILE_EXTS = (".ttc", ".otc", ".ttf", ".otf")
+
+
+def _platform_font_dirs() -> Tuple[str, ...]:
+    """Return the per-platform font-search directories without hard-coding files.
+
+    Order is "system → site → user" so per-user installs are picked up if
+    present but don't shadow well-known system fonts. Non-existent entries
+    are filtered downstream.
+    """
+    system = platform.system()
+    if system == "Windows":
+        # Win10+ allows per-user font installs under %LOCALAPPDATA%; older
+        # Windows only knows %WINDIR%\Fonts.
+        windir = os.environ.get("WINDIR") or os.environ.get("SystemRoot") or r"C:\Windows"
+        local_app = os.environ.get("LOCALAPPDATA")
+        dirs = [os.path.join(windir, "Fonts")]
+        if local_app:
+            dirs.append(os.path.join(local_app, "Microsoft", "Windows", "Fonts"))
+        return tuple(dirs)
+    if system == "Darwin":
+        home = os.path.expanduser("~")
+        return (
+            "/System/Library/Fonts",
+            "/System/Library/Fonts/Supplemental",
+            "/Library/Fonts",
+            os.path.join(home, "Library", "Fonts"),
+        )
+    # Treat everything else (Linux + BSD + cygwin) as XDG-style.
+    home = os.path.expanduser("~")
+    xdg_data = os.environ.get("XDG_DATA_HOME") or os.path.join(home, ".local", "share")
+    extra: List[str] = []
+    xdg_data_dirs = os.environ.get("XDG_DATA_DIRS") or ""
+    for entry in xdg_data_dirs.split(os.pathsep):
+        entry = entry.strip()
+        if entry:
+            extra.append(os.path.join(entry, "fonts"))
+    return tuple([
+        "/usr/share/fonts",
+        "/usr/local/share/fonts",
+        os.path.join(xdg_data, "fonts"),
+        os.path.join(home, ".fonts"),
+        *extra,
+    ])
+
+
+def _scan_dir_for_cjk_fonts(root: str, max_files: int = 4096) -> List[str]:
+    """Walk ``root`` looking for font files whose name matches the CJK regex.
+
+    Bounded by ``max_files`` so a pathological font dir does not freeze the
+    CLI. Returns a list of absolute paths in os-walk order (i.e. roughly
+    deterministic per host but not strictly sorted).
+    """
+    found: List[str] = []
+    if not root or not os.path.isdir(root):
+        return found
+    seen = 0
+    for dirpath, _dirnames, filenames in os.walk(root):
+        for name in filenames:
+            seen += 1
+            if seen > max_files:
+                return found
+            base, ext = os.path.splitext(name)
+            if ext.lower() not in _FONT_FILE_EXTS:
+                continue
+            if not _CJK_FONT_NAME_RE.search(base):
+                continue
+            found.append(os.path.join(dirpath, name))
+    return found
+
+
+def _discover_cjk_font_files() -> Tuple[str, ...]:
+    """Best-effort cross-platform lookup of CJK-capable font files.
+
+    The renderer's V8 isolate has no access to system fonts, and the bundled
+    fallback (DejaVu Sans) has no CJK coverage. This helper tries, in order:
+
+    1. ``PYFCSTM_CJK_FONT_FILE`` env var (one or more os-pathsep-separated
+       absolute paths). Provides an explicit override for sealed/CI hosts.
+    2. ``fc-match -f '%{file}\\n' 'sans-serif:lang=zh-cn'`` (fontconfig).
+       Standard on Linux / macOS-via-Homebrew / MSYS2; reads the user's
+       fontconfig preferences instead of guessing path layouts.
+    3. ``fc-list :lang=zh-cn file`` (fontconfig multi-result fallback).
+    4. A name-pattern regex scan over per-platform font directories. Uses
+       :data:`_CJK_FONT_NAME_RE` so the heuristic is filename-shape based
+       (matches ``msyh`` / ``NotoSansCJK*`` / ``PingFang*`` / ``wqy-zenhei``
+       / etc.) rather than depending on exact absolute paths.
+
+    Returns a tuple of one or more existing font-file paths, deduplicated
+    in priority order. Cached after the first successful resolution.
+    """
+    global _CJK_FONT_DISCOVERY_CACHE
+    if _CJK_FONT_DISCOVERY_CACHE is not None:
+        return _CJK_FONT_DISCOVERY_CACHE
+
+    found: List[str] = []
+
+    def _push(path: Optional[str]) -> None:
+        if not path:
+            return
+        path = str(path).strip()
+        if not path or not os.path.isfile(path):
+            return
+        # Skip the DejaVu fallback the bundle already ships.
+        if "DejaVu" in os.path.basename(path):
+            return
+        if path in found:
+            return
+        found.append(path)
+
+    # 1. Environment-variable override.
+    env_paths = os.environ.get("PYFCSTM_CJK_FONT_FILE")
+    if env_paths:
+        for entry in env_paths.split(os.pathsep):
+            _push(entry)
+
+    # 2. fontconfig: fc-match (single best match).
+    fc_match = shutil.which("fc-match")
+    if fc_match:
+        try:
+            result = subprocess.run(
+                [fc_match, "-f", "%{file}\n", "sans-serif:lang=zh-cn"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+        except (OSError, subprocess.SubprocessError):  # pragma: no cover - fontconfig binaries are stable in CI
+            result = None
+        if result and result.returncode == 0:
+            for line in (result.stdout or "").splitlines():
+                _push(line)
+
+    # 3. fontconfig: fc-list (broader probe in case fc-match returned the
+    # DejaVu fallback or a non-CJK substitute).
+    if not found:
+        fc_list = shutil.which("fc-list")
+        if fc_list:
+            try:
+                result = subprocess.run(
+                    [fc_list, ":lang=zh-cn", "file"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+            except (OSError, subprocess.SubprocessError):  # pragma: no cover
+                result = None
+            if result and result.returncode == 0:
+                for line in (result.stdout or "").splitlines():
+                    # ``fc-list ... file`` returns ``/path/to/font.ttc:`` lines.
+                    candidate = line.strip().rstrip(":").strip()
+                    _push(candidate)
+
+    # 4. Per-platform font-directory scan with filename-pattern matching.
+    if not found:
+        for root in _platform_font_dirs():
+            for cand in _scan_dir_for_cjk_fonts(root):
+                _push(cand)
+
+    _CJK_FONT_DISCOVERY_CACHE = tuple(found)
+    return _CJK_FONT_DISCOVERY_CACHE
+
+
+def _resolve_render_font_files(
+    user_font_files: Optional[Sequence[str]] = None,
+) -> Optional[List[str]]:
+    """Combine user-supplied ``--font-file`` paths with auto-detected CJK fonts.
+
+    User overrides take precedence (passed first); auto-detected fonts are
+    appended so the renderer always has at least one CJK-capable buffer to
+    fall back on. Returns ``None`` when nothing is available, keeping the
+    bundle's DejaVu-only default behavior.
+    """
+    out: List[str] = []
+    if user_font_files:
+        out.extend(str(p) for p in user_font_files)
+    for cand in _discover_cjk_font_files():
+        if cand not in out:
+            out.append(cand)
+    return out or None
+
+
 def _render_overlay_diagram(
     *,
     phase10_report: SysDeSimPhase10Report,
@@ -1228,11 +1439,15 @@ def _render_overlay_diagram(
             )
             payload = svg_text.encode("utf-8")
         else:
+            # PNG goes through resvg-wasm in the V8 isolate, which only sees
+            # the bundled DejaVu fallback. Auto-detect a system CJK font so
+            # Chinese state / signal names render instead of being silently
+            # dropped from the rasterized output.
             payload = render_sysdesim_timeline_png(
                 phase10_report=phase10_report,
                 title=title,
                 overlay=overlay,
-                font_files=list(font_files) if font_files else None,
+                font_files=_resolve_render_font_files(font_files),
             )
     except SysdesimRenderError as err:
         raise ClickErrorException(str(err))
@@ -1256,6 +1471,7 @@ def _run_sysdesim_validate(
     skip_static_check: bool = False,
     render_diagram: Optional[str] = None,
     render_format: str = "auto",
+    font_files: Optional[Sequence[str]] = None,
 ) -> None:
     """Run the timeline validation/report flow."""
     static_diagnostics: List[IrDiagnostic] = []
@@ -1333,6 +1549,7 @@ def _run_sysdesim_validate(
                     summary_lines=(
                         ["Validation skipped: static pre-check has blocking errors."]
                     ),
+                    font_files=font_files,
                     include_state_cells=True,
                 )
                 click.echo(
@@ -1430,6 +1647,7 @@ def _run_sysdesim_validate(
             diagnostics=static_diagnostics,
             summary_lines=summary_lines,
             coexistence_timeline=coexistence_payload,
+            font_files=font_files,
             include_state_cells=True,
         )
         click.echo(
@@ -1684,6 +1902,18 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
             "extension; defaults to ``svg`` when neither ``.svg`` nor ``.png``."
         ),
     )
+    @click.option(
+        "--font-file",
+        "font_files",
+        type=str,
+        multiple=True,
+        help=(
+            "Additional font file(s) to load for PNG rendering. The CLI auto-"
+            "detects a system CJK font for Chinese state / signal names; "
+            "use this flag to override or supplement the detection. "
+            "Repeatable."
+        ),
+    )
     @command_wrap()
     def sysdesim_validate(
         input_xml_file: str,
@@ -1699,6 +1929,7 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
         skip_static_check: bool,
         render_diagram: Optional[str],
         render_format: str,
+        font_files: Tuple[str, ...],
     ) -> None:
         """
         Build one readable timeline validation summary for one SysDeSim input.
@@ -1748,6 +1979,7 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
             skip_static_check=skip_static_check,
             render_diagram=render_diagram,
             render_format=render_format,
+            font_files=list(font_files) if font_files else None,
         )
 
     @sysdesim.command(
@@ -1860,6 +2092,18 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
             "extension; defaults to ``svg`` when neither ``.svg`` nor ``.png``."
         ),
     )
+    @click.option(
+        "--font-file",
+        "font_files",
+        type=str,
+        multiple=True,
+        help=(
+            "Additional font file(s) to load for PNG rendering. The CLI auto-"
+            "detects a system CJK font for Chinese state / signal names; "
+            "use this flag to override or supplement the detection. "
+            "Repeatable."
+        ),
+    )
     @command_wrap()
     def sysdesim_static_check(
         input_xml_file: str,
@@ -1874,6 +2118,7 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
         warn_as_error: bool,
         render_diagram: Optional[str],
         render_format: str,
+        font_files: Tuple[str, ...],
     ) -> None:
         """
         Run the static pre-check phase only and exit non-zero on errors.
@@ -1948,6 +2193,7 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
                 output_path=render_diagram,
                 output_format=render_format,
                 diagnostics=diagnostics,
+                font_files=list(font_files) if font_files else None,
                 include_state_cells=True,
             )
             click.echo(
@@ -2173,12 +2419,18 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
                     )
                 payload = svg_text.encode("utf-8")
             else:
+                # Auto-detect a CJK system font so Chinese state / signal
+                # names rasterize instead of being silently dropped by
+                # resvg-wasm. User ``--font-file`` paths take precedence.
+                resolved_font_files = _resolve_render_font_files(
+                    list(font_files) if font_files else None
+                )
                 if phase10_for_overlay is not None:
                     payload = render_sysdesim_timeline_png(
                         phase10_report=phase10_for_overlay,
                         title=title,
                         overlay=overlay_payload,
-                        font_files=list(font_files) if font_files else None,
+                        font_files=resolved_font_files,
                     )
                 else:
                     payload = render_sysdesim_timeline_png(
@@ -2187,7 +2439,7 @@ def _add_sysdesim_subcommand(cli: click.Group) -> click.Group:
                         interaction_name=interaction_name,
                         tick_duration_ms=tick_duration_ms,
                         title=title,
-                        font_files=list(font_files) if font_files else None,
+                        font_files=resolved_font_files,
                     )
         except (KeyError, LookupError, NotImplementedError, ValueError) as err:
             raise ClickErrorException(_format_sysdesim_cli_error(err))

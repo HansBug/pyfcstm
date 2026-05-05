@@ -1583,3 +1583,183 @@ def test_sequence_render_no_diagnostics_file_produces_baseline(tmp_path: Path):
         color=False,
     )
     assert out_a.read_bytes() == out_b.read_bytes()
+
+
+# =============================================================================
+# CJK-font auto-detection tests (PNG rendering of Chinese state / signal names)
+# =============================================================================
+
+
+@pytest.mark.unittest
+def test_cjk_font_name_regex_matches_known_fonts():
+    """Filename heuristic identifies the major cross-platform CJK fonts."""
+    from pyfcstm.entry.sysdesim import _CJK_FONT_NAME_RE
+
+    expected_matches = [
+        # Windows
+        "msyh", "msyhbd", "simsun", "simhei",
+        # macOS
+        "PingFang", "Hiragino Sans GB", "Songti", "STHeiti",
+        # Linux distro
+        "NotoSansCJK-Regular",
+        "NotoSerifCJKjp-Regular",
+        "SourceHanSansCN",
+        "wqy-microhei",
+        "wqy-zenhei",
+        "DroidSansFallbackFull",
+        "uming",
+        "ukai",
+    ]
+    for name in expected_matches:
+        assert _CJK_FONT_NAME_RE.search(name), "should match {!r}".format(name)
+
+    expected_misses = ["DejaVuSans", "Arial", "Roboto", "Helvetica"]
+    for name in expected_misses:
+        assert not _CJK_FONT_NAME_RE.search(name), "should NOT match {!r}".format(name)
+
+
+@pytest.mark.unittest
+def test_platform_font_dirs_returns_some_dirs(monkeypatch):
+    """Each supported platform returns at least one search directory."""
+    from pyfcstm.entry.sysdesim import _platform_font_dirs
+
+    for system in ("Linux", "Windows", "Darwin"):
+        monkeypatch.setattr("platform.system", lambda s=system: s)
+        dirs = _platform_font_dirs()
+        assert dirs, "expected at least one font directory for {}".format(system)
+        assert all(isinstance(d, str) for d in dirs)
+
+
+@pytest.mark.unittest
+def test_scan_dir_for_cjk_fonts_finds_matching_files(tmp_path: Path):
+    """The directory walker picks up files whose basename matches the CJK regex."""
+    from pyfcstm.entry.sysdesim import _scan_dir_for_cjk_fonts
+
+    # Create a few files: some CJK, some not.
+    (tmp_path / "DejaVuSans.ttf").write_bytes(b"")
+    (tmp_path / "msyh.ttc").write_bytes(b"")
+    (tmp_path / "NotoSansCJK-Regular.ttc").write_bytes(b"")
+    (tmp_path / "Arial.ttf").write_bytes(b"")
+    sub = tmp_path / "nested"
+    sub.mkdir()
+    (sub / "wqy-zenhei.ttc").write_bytes(b"")
+
+    found = _scan_dir_for_cjk_fonts(str(tmp_path))
+    basenames = {Path(p).name for p in found}
+    assert "msyh.ttc" in basenames
+    assert "NotoSansCJK-Regular.ttc" in basenames
+    assert "wqy-zenhei.ttc" in basenames
+    assert "DejaVuSans.ttf" not in basenames
+    assert "Arial.ttf" not in basenames
+
+
+@pytest.mark.unittest
+def test_discover_cjk_font_honors_env_var_override(tmp_path: Path, monkeypatch):
+    """``PYFCSTM_CJK_FONT_FILE`` puts a user-provided path at the head of the list."""
+    import pyfcstm.entry.sysdesim as sysdesim_mod
+
+    fake_font = tmp_path / "MyOverride.ttf"
+    fake_font.write_bytes(b"")
+    monkeypatch.setattr(sysdesim_mod, "_CJK_FONT_DISCOVERY_CACHE", None)
+    monkeypatch.setenv("PYFCSTM_CJK_FONT_FILE", str(fake_font))
+
+    discovered = sysdesim_mod._discover_cjk_font_files()
+    assert discovered, "expected at least the override path"
+    assert discovered[0] == str(fake_font)
+
+
+@pytest.mark.unittest
+def test_resolve_render_font_files_appends_auto_detected(tmp_path: Path, monkeypatch):
+    """User-supplied paths are placed first; auto-detected fonts are appended."""
+    import pyfcstm.entry.sysdesim as sysdesim_mod
+
+    user_font = tmp_path / "user.ttf"
+    user_font.write_bytes(b"")
+    auto_font = tmp_path / "auto-NotoSansCJK.ttc"
+    auto_font.write_bytes(b"")
+
+    monkeypatch.setattr(sysdesim_mod, "_CJK_FONT_DISCOVERY_CACHE", (str(auto_font),))
+    resolved = sysdesim_mod._resolve_render_font_files([str(user_font)])
+    assert resolved is not None
+    assert resolved[0] == str(user_font)
+    assert resolved[-1] == str(auto_font)
+
+
+@pytest.mark.unittest
+def test_resolve_render_font_files_returns_none_when_nothing_available(monkeypatch):
+    """When no user paths and no system fonts found, helper returns ``None``."""
+    import pyfcstm.entry.sysdesim as sysdesim_mod
+
+    monkeypatch.setattr(sysdesim_mod, "_CJK_FONT_DISCOVERY_CACHE", ())
+    assert sysdesim_mod._resolve_render_font_files() is None
+    assert sysdesim_mod._resolve_render_font_files([]) is None
+
+
+@pytest.mark.unittest
+def test_static_check_render_diagram_accepts_font_file_flag(tmp_path: Path):
+    """``--font-file`` is exposed on ``static-check --render-diagram`` (PNG path)."""
+    xml_file = _build_signal_dropped_xml(tmp_path)
+    out_png = tmp_path / "static_drop.png"
+    # Use the bundled DejaVu Sans as a stand-in user font: the test only
+    # has to confirm the flag is wired through without raising.
+    extra_font = (
+        Path(__file__).resolve().parents[2]
+        / "js"
+        / "sysdesim_render"
+        / "src"
+        / "fonts"
+        / "DejaVuSans.ttf"
+    )
+    if not extra_font.exists():
+        pytest.skip("bundled DejaVu Sans not present at expected source path")
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "static-check",
+            "-i",
+            str(xml_file),
+            "--render-diagram",
+            str(out_png),
+            "--font-file",
+            str(extra_font),
+        ],
+        color=False,
+    )
+    assert result.exit_code == 0, result.output
+    assert out_png.exists()
+    assert out_png.read_bytes()[:8] == _PNG_MAGIC
+
+
+@pytest.mark.unittest
+def test_validate_render_diagram_accepts_font_file_flag(tmp_path: Path):
+    """``--font-file`` is exposed on ``validate --render-diagram`` (PNG path)."""
+    xml_file = _build_parallel_timeline_xml(tmp_path)
+    out_png = tmp_path / "validate.png"
+    extra_font = (
+        Path(__file__).resolve().parents[2]
+        / "js"
+        / "sysdesim_render"
+        / "src"
+        / "fonts"
+        / "DejaVuSans.ttf"
+    )
+    if not extra_font.exists():
+        pytest.skip("bundled DejaVu Sans not present at expected source path")
+    result = CliRunner().invoke(
+        pyfcstmcli,
+        [
+            "sysdesim",
+            "validate",
+            "-i",
+            str(xml_file),
+            "--render-diagram",
+            str(out_png),
+            "--font-file",
+            str(extra_font),
+        ],
+        color=False,
+    )
+    assert result.exit_code == 0, result.output
+    assert out_png.exists()
+    assert out_png.read_bytes()[:8] == _PNG_MAGIC

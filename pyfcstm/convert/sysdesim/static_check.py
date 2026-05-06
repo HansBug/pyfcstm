@@ -1090,18 +1090,27 @@ def detect_signal_in_uninitialized_window(
     phase10_report: SysDeSimPhase10Report,
 ) -> List[IrDiagnostic]:
     """
-    Surface ``warning``-level diagnostics for signals (inbound or outbound)
-    that fire at a scenario step before every input variable required by
-    every region of the machine has been observed at least once.
+    Surface ``warning``-level diagnostics for required scenario inputs whose
+    first ``SetInput`` lands *after* one or more signal occurrences have
+    already fired in the imported trajectory.
 
     Phase 10 trace replay applies strict-init semantics: variables not yet
     bound by a ``SetInput`` action are kept as ``NaN`` so guards that
     reference them evaluate to ``False`` (no transition fires on a default
-    ``0.0`` proxy). A signal that arrives in this "uninitialized window" is
-    therefore *steering the machines under partial knowledge*. The detector
-    flags each such signal so the modeler can decide whether to (a) move the
-    relevant ``SetInput`` invariants earlier on the sequence diagram, or (b)
-    accept the warning as intentional.
+    ``0.0`` proxy). A signal that arrives while some variable is still
+    unbound is therefore steering the machines under partial knowledge.
+
+    Rather than emit one warning per signal occurrence (which would explode
+    when one late-init variable like ``rmt`` overlaps a dozen pre-init
+    signals), the detector folds every late-init variable into a single
+    warning that lists all signal occurrences it precedes. Two diagnostic
+    flavors are produced:
+
+    1. ``signal_in_uninitialized_window`` (per late variable) - one row per
+       required input whose first observation is preceded by at least one
+       signal. Lists the first-observation step (or ``None`` if the variable
+       is never bound) and every prior signal-bearing step.
+    2. (no individual per-signal warnings.)
 
     :param phase10_report: Phase10 report.
     :type phase10_report: SysDeSimPhase10Report
@@ -1110,17 +1119,17 @@ def detect_signal_in_uninitialized_window(
     """
     diagnostics: List[IrDiagnostic] = []
 
-    # Required scenario-side input names per machine alias.
-    required_per_machine: Dict[str, Set[str]] = {
-        binding.machine_alias: set(binding.input_map.keys())
-        for binding in phase10_report.bindings
-    }
-    if not any(required_per_machine.values()):
+    # Map every required scenario input back to the machine that wants it.
+    # The same input name may be required by more than one machine; we
+    # surface one warning per ``(input_name, machine_alias)`` combination.
+    required_owners: Dict[str, List[str]] = {}
+    for binding in phase10_report.bindings:
+        for input_name in binding.input_map.keys():
+            required_owners.setdefault(input_name, []).append(
+                binding.machine_alias
+            )
+    if not required_owners:
         return diagnostics
-
-    initialized_per_machine: Dict[str, Set[str]] = {
-        alias: set() for alias in required_per_machine
-    }
 
     def _step_signal_label(step) -> Optional[str]:
         """Pick a human-friendly label for the signal carried by *step*."""
@@ -1135,72 +1144,88 @@ def detect_signal_in_uninitialized_window(
                     return "{}-->".format(signal)
         return None
 
-    for step in phase10_report.scenario.steps:
-        # 1. Apply SetInput actions (record what just got initialized).
-        set_input_names = set()
+    # Pass 1: scan once to collect (a) when each required input is first
+    # SetInput, and (b) the document order of every signal-bearing step.
+    first_set_step: Dict[str, str] = {}
+    signal_steps: List[Tuple[str, str]] = []  # (step_id, signal_label)
+    step_order: Dict[str, int] = {}
+    for index, step in enumerate(phase10_report.scenario.steps):
+        step_order[step.step_id] = index
         for action in getattr(step, "actions", ()) or ():
-            if getattr(action, "kind", None) == "set_input":
-                input_name = getattr(action, "input_name", None)
-                if isinstance(input_name, str) and input_name:
-                    set_input_names.add(input_name)
-        for alias, required in required_per_machine.items():
-            initialized_per_machine[alias].update(set_input_names & required)
-
-        # 2. Check whether this step carries a signal.
+            if getattr(action, "kind", None) != "set_input":
+                continue
+            input_name = getattr(action, "input_name", None)
+            if not isinstance(input_name, str) or not input_name:
+                continue
+            if input_name in required_owners and input_name not in first_set_step:
+                first_set_step[input_name] = step.step_id
         signal_label = _step_signal_label(step)
-        if signal_label is None:
+        if signal_label is not None:
+            signal_steps.append((step.step_id, signal_label))
+
+    # Pass 2: per late-init input, list every signal step that lands strictly
+    # before its first SetInput.
+    for input_name in sorted(required_owners.keys()):
+        owners = required_owners[input_name]
+        first_step = first_set_step.get(input_name)
+        cutoff = step_order.get(first_step, len(phase10_report.scenario.steps))
+        prior_signals = [
+            (sid, label)
+            for sid, label in signal_steps
+            if step_order[sid] < cutoff
+        ]
+        if not prior_signals:
             continue
 
-        # 3. List machines whose required inputs are not all bound yet.
-        unmet_rows: List[Tuple[str, List[str]]] = []
-        for alias, required in required_per_machine.items():
-            missing = required - initialized_per_machine[alias]
-            if missing:
-                unmet_rows.append((alias, sorted(missing)))
-        if not unmet_rows:
-            continue
-
-        # 4. Emit the warning.
-        unmet_text = ", ".join(
-            "{alias} (missing: {missing})".format(
-                alias=alias, missing=", ".join(missing)
-            )
-            for alias, missing in unmet_rows
+        # Build a compact rendering of the prior signal list. ``s01 (emit
+        # Sig1), s06 (Sig11-->), ...`` -- short enough to read inline,
+        # complete enough that the modeler can locate every occurrence.
+        prior_signal_text = ", ".join(
+            "{} ({})".format(sid, label) for sid, label in prior_signals
         )
+        first_step_text = first_step if first_step is not None else "(never observed)"
+        machine_text = ", ".join(owners)
         diagnostics.append(
             IrDiagnostic(
                 level="warning",
                 code="signal_in_uninitialized_window",
                 message=(
-                    "Signal `{label}` at scenario step `{step}` arrives before "
-                    "every required scenario input has been observed in the "
-                    "imported trajectory. Strict-init semantics keep "
-                    "uninitialized variables at NaN, so any guard that "
-                    "references one of them silently evaluates to False; "
-                    "transitions gated by such a guard will not fire here. "
-                    "Affected machines: {unmet}".format(
-                        label=signal_label,
-                        step=step.step_id,
-                        unmet=unmet_text,
+                    "Required scenario input `{name}` (machine: {machines}) "
+                    "is first bound at scenario step `{first}`. {count} "
+                    "signal occurrence(s) fire before it is observed: "
+                    "{prior}. Under strict-init semantics the variable is "
+                    "held at NaN until the first SetInput, so any guard "
+                    "that references it silently evaluates to False at "
+                    "those steps and transitions gated by such a guard will "
+                    "not fire there.".format(
+                        name=input_name,
+                        machines=machine_text,
+                        first=first_step_text,
+                        count=len(prior_signals),
+                        prior=prior_signal_text,
                     )
                 ),
-                source_id=step.step_id,
+                source_id=first_step if first_step is not None else input_name,
                 details={
-                    "step_id": step.step_id,
-                    "signal_label": signal_label,
-                    "missing_inputs_per_machine": [
-                        {"machine_alias": alias, "missing_inputs": missing}
-                        for alias, missing in unmet_rows
+                    "input_name": input_name,
+                    "machine_aliases": list(owners),
+                    "first_set_input_step": first_step,
+                    "prior_signal_count": len(prior_signals),
+                    "prior_signal_steps": [
+                        {"step_id": sid, "signal_label": label}
+                        for sid, label in prior_signals
                     ],
                 },
                 hints=[
-                    "If the missing inputs are meant to be set before this "
-                    "signal, drag the corresponding `name=value` "
-                    "StateInvariant marker(s) above this message on the "
-                    "sequence diagram.",
-                    "If the signal is genuinely meant to fire under partial "
-                    "knowledge (e.g. an external trigger that does not depend "
-                    "on those variables), this warning is informational.",
+                    "If `{name}` is meant to be observed before the listed "
+                    "signals, drag its `name=value` StateInvariant marker "
+                    "above the earliest of them on the sequence diagram.".format(
+                        name=input_name
+                    ),
+                    "If the listed signals are genuinely independent of "
+                    "`{name}` (e.g. external triggers whose downstream "
+                    "transitions do not gate on `{name}`), this warning is "
+                    "informational and can be ignored.".format(name=input_name),
                 ],
             )
         )

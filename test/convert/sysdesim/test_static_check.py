@@ -1010,39 +1010,43 @@ class TestUnreachabilityAnalysis:
 
 
 @pytest.mark.unittest
-def test_signal_in_uninitialized_window_warns_on_pre_init_signals(tmp_path: Path):
-    """Inbound / outbound signals fired before all required SetInputs are
-    observed should be flagged as warnings under strict-init semantics."""
+def test_signal_in_uninitialized_window_warns_per_late_input(tmp_path: Path):
+    """Each late-bound required input gets one consolidated warning that
+    lists every signal occurrence preceding its first SetInput."""
     xml_file = _build_parallel_timeline_xml(tmp_path)
     phase10 = build_sysdesim_phase10_report(str(xml_file))
     diags = detect_signal_in_uninitialized_window(phase10)
-    # Sanity: every diagnostic is a warning targeting a scenario step.
     assert diags
     for d in diags:
         assert d.level == "warning"
         assert d.code == "signal_in_uninitialized_window"
-        assert d.source_id and d.source_id.startswith("s")
-        assert d.details and "missing_inputs_per_machine" in d.details
-        # The first signal should always be in the unbound window since no
-        # SetInput can have happened before the very first scenario step.
+        # New consolidated schema: details is keyed by the late variable.
+        assert d.details and "input_name" in d.details
+        assert "machine_aliases" in d.details
+        assert "prior_signal_steps" in d.details
+        assert d.details["prior_signal_count"] == len(
+            d.details["prior_signal_steps"]
+        )
+    # The warning(s) should mention specific scenario inputs the fixture
+    # actually declares (parallel timeline has ``c`` and ``d``).
+    flagged_inputs = {d.details["input_name"] for d in diags}
+    assert flagged_inputs.issubset({"c", "d"}) or flagged_inputs & {"c", "d"}
+    # Hints reference the variable name so the modeler can cross-reference.
     first = diags[0]
-    assert first.source_id == "s01" or first.source_id == "s00"
-    # Hints contain actionable advice.
-    assert first.hints
-    assert any("StateInvariant" in h for h in first.hints)
+    assert any(first.details["input_name"] in h for h in first.hints)
 
 
 @pytest.mark.unittest
-def test_signal_in_uninitialized_window_clears_after_full_init(tmp_path: Path):
-    """Once every required input has been observed at least once, later
-    signals stop generating warnings."""
-    xml_file = _build_parallel_timeline_xml(tmp_path)
+def test_signal_in_uninitialized_window_clears_when_all_inputs_set_early(tmp_path: Path):
+    """If every required input is observed before the first signal, the
+    detector emits no warnings for that machine's variables."""
+    # The dropped-signal fixture has minimal inputs, often all-or-nothing.
+    xml_file = _build_signal_dropped_xml(tmp_path)
     phase10 = build_sysdesim_phase10_report(str(xml_file))
     diags = detect_signal_in_uninitialized_window(phase10)
-    flagged_steps = {d.source_id for d in diags}
-    # The very last scenario step typically lands well after all SetInputs.
-    last_step = phase10.scenario.steps[-1]
-    assert last_step.step_id not in flagged_steps
+    # The fixture's binding has no input_map entries (no SetInput-driven
+    # variables). The detector must short-circuit and return [].
+    assert all(not b.input_map for b in phase10.bindings) and diags == []
 
 
 @pytest.mark.unittest

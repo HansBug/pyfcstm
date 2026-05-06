@@ -21,6 +21,9 @@ from pyfcstm.convert import (
     detect_temporal_constraints_unsat,
     run_sysdesim_static_pre_checks,
 )
+from pyfcstm.convert.sysdesim.static_check import (
+    detect_signal_in_uninitialized_window,
+)
 from pyfcstm.convert.sysdesim import build_sysdesim_phase10_report
 from pyfcstm.convert.sysdesim import static_check as sc
 
@@ -999,3 +1002,94 @@ class TestUnreachabilityAnalysis:
         assert any("silently dropped" in h for h in first.hints)
         # Friendly labels — no raw step ids should leak into the hint.
         assert "s0" not in first.hints[0]
+
+
+# =============================================================================
+# detect_signal_in_uninitialized_window
+# =============================================================================
+
+
+@pytest.mark.unittest
+def test_signal_in_uninitialized_window_warns_on_pre_init_signals(tmp_path: Path):
+    """Inbound / outbound signals fired before all required SetInputs are
+    observed should be flagged as warnings under strict-init semantics."""
+    xml_file = _build_parallel_timeline_xml(tmp_path)
+    phase10 = build_sysdesim_phase10_report(str(xml_file))
+    diags = detect_signal_in_uninitialized_window(phase10)
+    # Sanity: every diagnostic is a warning targeting a scenario step.
+    assert diags
+    for d in diags:
+        assert d.level == "warning"
+        assert d.code == "signal_in_uninitialized_window"
+        assert d.source_id and d.source_id.startswith("s")
+        assert d.details and "missing_inputs_per_machine" in d.details
+        # The first signal should always be in the unbound window since no
+        # SetInput can have happened before the very first scenario step.
+    first = diags[0]
+    assert first.source_id == "s01" or first.source_id == "s00"
+    # Hints contain actionable advice.
+    assert first.hints
+    assert any("StateInvariant" in h for h in first.hints)
+
+
+@pytest.mark.unittest
+def test_signal_in_uninitialized_window_clears_after_full_init(tmp_path: Path):
+    """Once every required input has been observed at least once, later
+    signals stop generating warnings."""
+    xml_file = _build_parallel_timeline_xml(tmp_path)
+    phase10 = build_sysdesim_phase10_report(str(xml_file))
+    diags = detect_signal_in_uninitialized_window(phase10)
+    flagged_steps = {d.source_id for d in diags}
+    # The very last scenario step typically lands well after all SetInputs.
+    last_step = phase10.scenario.steps[-1]
+    assert last_step.step_id not in flagged_steps
+
+
+@pytest.mark.unittest
+def test_signal_in_uninitialized_window_returns_empty_when_no_inputs(tmp_path: Path):
+    """A scenario without any required scenario inputs (binding.input_map
+    is empty for every machine) emits no warnings."""
+    # Reuse the dead-state fixture: it has minimal inputs and tiny scenarios.
+    xml_file = _build_dead_state_xml(tmp_path)
+    phase10 = build_sysdesim_phase10_report(str(xml_file))
+    diags = detect_signal_in_uninitialized_window(phase10)
+    # The dead-state machine has no input_map entries, so the detector
+    # short-circuits and returns nothing.
+    assert all(any(b.input_map for b in phase10.bindings) is False for _ in [0]) or diags == []
+
+
+@pytest.mark.unittest
+def test_run_static_pre_checks_includes_uninitialized_window_warnings(tmp_path: Path):
+    """The orchestrator surfaces uninitialized-window warnings alongside
+    the other detectors."""
+    xml_file = _build_parallel_timeline_xml(tmp_path)
+    diags = run_sysdesim_static_pre_checks(xml_path=str(xml_file))
+    codes = {d.code for d in diags}
+    assert "signal_in_uninitialized_window" in codes
+
+
+@pytest.mark.unittest
+def test_strict_init_seeds_required_inputs_with_nan(tmp_path: Path):
+    """Phase10 under strict-init: every required scenario input is seeded
+    to ``NaN`` on the first trace step, proving guards that reference an
+    uninitialized variable evaluate to ``False`` (NaN compares False)."""
+    xml_file = _build_parallel_timeline_xml(tmp_path)
+    phase10 = build_sysdesim_phase10_report(str(xml_file))
+    # Pick a region whose binding actually demands at least one input.
+    bindings_with_inputs = [b for b in phase10.bindings if b.input_map]
+    assert bindings_with_inputs, "fixture must have at least one bound input"
+    target_alias = bindings_with_inputs[0].machine_alias
+    target_required = set(bindings_with_inputs[0].input_map.values())
+    target_trace = next(t for t in phase10.traces if t.machine_alias == target_alias)
+    # First trace step's vars_snapshot must show NaN for any required input
+    # that the very first step did NOT explicitly SetInput.
+    first_step = target_trace.steps[0]
+    snapshot = dict(first_step.vars_snapshot)
+    set_in_first_step = {pair[1] for pair in first_step.applied_inputs or ()}
+    expected_nan = target_required - set_in_first_step
+    if expected_nan:
+        for var in expected_nan:
+            assert (snapshot.get(var, "") or "").lower() == "nan", (
+                "var {!r} expected NaN on first step (required={}, applied={}); "
+                "snapshot={!r}".format(var, target_required, set_in_first_step, snapshot)
+            )

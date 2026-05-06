@@ -1077,12 +1077,140 @@ def run_sysdesim_static_pre_checks(
         )
     )
     diagnostics.extend(detect_signal_dropped_in_state(phase10_report))
+    diagnostics.extend(detect_signal_in_uninitialized_window(phase10_report))
+    return diagnostics
+
+
+# =============================================================================
+# Detector: signal_in_uninitialized_window (warning level)
+# =============================================================================
+
+
+def detect_signal_in_uninitialized_window(
+    phase10_report: SysDeSimPhase10Report,
+) -> List[IrDiagnostic]:
+    """
+    Surface ``warning``-level diagnostics for signals (inbound or outbound)
+    that fire at a scenario step before every input variable required by
+    every region of the machine has been observed at least once.
+
+    Phase 10 trace replay applies strict-init semantics: variables not yet
+    bound by a ``SetInput`` action are kept as ``NaN`` so guards that
+    reference them evaluate to ``False`` (no transition fires on a default
+    ``0.0`` proxy). A signal that arrives in this "uninitialized window" is
+    therefore *steering the machines under partial knowledge*. The detector
+    flags each such signal so the modeler can decide whether to (a) move the
+    relevant ``SetInput`` invariants earlier on the sequence diagram, or (b)
+    accept the warning as intentional.
+
+    :param phase10_report: Phase10 report.
+    :type phase10_report: SysDeSimPhase10Report
+    :return: List of warning diagnostics, possibly empty.
+    :rtype: list[IrDiagnostic]
+    """
+    diagnostics: List[IrDiagnostic] = []
+
+    # Required scenario-side input names per machine alias.
+    required_per_machine: Dict[str, Set[str]] = {
+        binding.machine_alias: set(binding.input_map.keys())
+        for binding in phase10_report.bindings
+    }
+    if not any(required_per_machine.values()):
+        return diagnostics
+
+    initialized_per_machine: Dict[str, Set[str]] = {
+        alias: set() for alias in required_per_machine
+    }
+
+    def _step_signal_label(step) -> Optional[str]:
+        """Pick a human-friendly label for the signal carried by *step*."""
+        for action in getattr(step, "actions", ()) or ():
+            event_name = getattr(action, "event_name", None)
+            if event_name:
+                return "emit({})".format(event_name)
+        for note in getattr(step, "notes", ()) or ():
+            if isinstance(note, str) and note.startswith("outbound_signal="):
+                signal = note.split("=", 1)[1].strip()
+                if signal:
+                    return "{}-->".format(signal)
+        return None
+
+    for step in phase10_report.scenario.steps:
+        # 1. Apply SetInput actions (record what just got initialized).
+        set_input_names = set()
+        for action in getattr(step, "actions", ()) or ():
+            if getattr(action, "kind", None) == "set_input":
+                input_name = getattr(action, "input_name", None)
+                if isinstance(input_name, str) and input_name:
+                    set_input_names.add(input_name)
+        for alias, required in required_per_machine.items():
+            initialized_per_machine[alias].update(set_input_names & required)
+
+        # 2. Check whether this step carries a signal.
+        signal_label = _step_signal_label(step)
+        if signal_label is None:
+            continue
+
+        # 3. List machines whose required inputs are not all bound yet.
+        unmet_rows: List[Tuple[str, List[str]]] = []
+        for alias, required in required_per_machine.items():
+            missing = required - initialized_per_machine[alias]
+            if missing:
+                unmet_rows.append((alias, sorted(missing)))
+        if not unmet_rows:
+            continue
+
+        # 4. Emit the warning.
+        unmet_text = ", ".join(
+            "{alias} (missing: {missing})".format(
+                alias=alias, missing=", ".join(missing)
+            )
+            for alias, missing in unmet_rows
+        )
+        diagnostics.append(
+            IrDiagnostic(
+                level="warning",
+                code="signal_in_uninitialized_window",
+                message=(
+                    "Signal `{label}` at scenario step `{step}` arrives before "
+                    "every required scenario input has been observed in the "
+                    "imported trajectory. Strict-init semantics keep "
+                    "uninitialized variables at NaN, so any guard that "
+                    "references one of them silently evaluates to False; "
+                    "transitions gated by such a guard will not fire here. "
+                    "Affected machines: {unmet}".format(
+                        label=signal_label,
+                        step=step.step_id,
+                        unmet=unmet_text,
+                    )
+                ),
+                source_id=step.step_id,
+                details={
+                    "step_id": step.step_id,
+                    "signal_label": signal_label,
+                    "missing_inputs_per_machine": [
+                        {"machine_alias": alias, "missing_inputs": missing}
+                        for alias, missing in unmet_rows
+                    ],
+                },
+                hints=[
+                    "If the missing inputs are meant to be set before this "
+                    "signal, drag the corresponding `name=value` "
+                    "StateInvariant marker(s) above this message on the "
+                    "sequence diagram.",
+                    "If the signal is genuinely meant to fire under partial "
+                    "knowledge (e.g. an external trigger that does not depend "
+                    "on those variables), this warning is informational.",
+                ],
+            )
+        )
     return diagnostics
 
 
 __all__ = [
     "detect_query_state_name_unknown",
     "detect_signal_dropped_in_state",
+    "detect_signal_in_uninitialized_window",
     "detect_target_state_never_entered",
     "detect_temporal_constraints_unsat",
     "run_sysdesim_static_pre_checks",

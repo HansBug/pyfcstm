@@ -686,8 +686,33 @@ def _build_machine_trace(
     binding: SysDeSimTimelineMachineBinding,
     scenario: SysDeSimTimelineScenario,
 ) -> SysDeSimTimelineMachineTrace:
-    """Execute one scenario over one output machine with runtime-assisted closure."""
+    """Execute one scenario over one output machine with runtime-assisted closure.
+
+    Strict-init semantics: every input variable that the imported scenario
+    can write (``binding.input_map.values()``) is reset to ``float('nan')``
+    before the first cycle. IEEE-754 says NaN compared to any value is
+    ``False``, so any transition guard that *references an uninitialized
+    variable* evaluates to ``False`` and the transition does not fire. The
+    NaN is replaced with the real number on the first ``SetInput`` action
+    that writes that variable, and from then on the guard sees the actual
+    runtime value. This avoids the silent ``default 0.0`` semantics where a
+    guard like ``z<1200`` would pass before any ``z=...`` invariant has been
+    observed.
+    """
     runtime = SimulationRuntime(output.machine, abstract_error_mode="log")
+
+    # Strict-init bootstrap. ``binding.input_map.values()`` are the local
+    # variable names this scenario can write. Blank them to NaN before the
+    # first cycle so the runtime evaluator never reads a 0.0 default into a
+    # ``z<C`` / ``y<C`` style guard. Variables that do not appear in any
+    # SetInput action stay NaN forever, which is the correct sentinel for
+    # "no observation has bound this variable yet".
+    for local_name in binding.input_map.values():
+        if local_name in runtime.vars and isinstance(
+            runtime.vars[local_name], (int, float)
+        ):
+            runtime.vars[local_name] = float("nan")
+
     runtime.cycle([])
     initial_state_path = ".".join(runtime.current_state.path)
     initial_vars = tuple(

@@ -1655,29 +1655,36 @@ def _run_sysdesim_validate(
             )
         except (KeyError, LookupError, NotImplementedError, ValueError) as err:
             raise ClickErrorException(_format_sysdesim_cli_error(err))
+
+    # Always collect static-check diagnostics so the validate overlay can
+    # show every red-X / red-arrow / step-band marker the static-check
+    # render would draw. ``skip_static_check`` only controls whether errors
+    # block the SMT-based validation downstream; the overlay should look
+    # the same whether the user passed the flag or not.
+    try:
+        if phase10_for_render is not None:
+            static_diagnostics = run_sysdesim_static_pre_checks(
+                phase10_report=phase10_for_render,
+                left_machine_alias=left_machine_alias,
+                left_state_ref=left_state_ref,
+                right_machine_alias=right_machine_alias,
+                right_state_ref=right_state_ref,
+            )
+        else:
+            static_diagnostics = run_sysdesim_static_pre_checks(
+                xml_path=input_xml_file,
+                machine_name=machine_name,
+                interaction_name=interaction_name,
+                tick_duration_ms=tick_duration_ms,
+                left_machine_alias=left_machine_alias,
+                left_state_ref=left_state_ref,
+                right_machine_alias=right_machine_alias,
+                right_state_ref=right_state_ref,
+            )
+    except (KeyError, LookupError, NotImplementedError, ValueError) as err:
+        raise ClickErrorException(_format_sysdesim_cli_error(err))
+
     if not skip_static_check:
-        try:
-            if phase10_for_render is not None:
-                static_diagnostics = run_sysdesim_static_pre_checks(
-                    phase10_report=phase10_for_render,
-                    left_machine_alias=left_machine_alias,
-                    left_state_ref=left_state_ref,
-                    right_machine_alias=right_machine_alias,
-                    right_state_ref=right_state_ref,
-                )
-            else:
-                static_diagnostics = run_sysdesim_static_pre_checks(
-                    xml_path=input_xml_file,
-                    machine_name=machine_name,
-                    interaction_name=interaction_name,
-                    tick_duration_ms=tick_duration_ms,
-                    left_machine_alias=left_machine_alias,
-                    left_state_ref=left_state_ref,
-                    right_machine_alias=right_machine_alias,
-                    right_state_ref=right_state_ref,
-                )
-        except (KeyError, LookupError, NotImplementedError, ValueError) as err:
-            raise ClickErrorException(_format_sysdesim_cli_error(err))
         counts = _emit_static_check_summary(static_diagnostics)
         if counts["errors"]:
             click.echo(

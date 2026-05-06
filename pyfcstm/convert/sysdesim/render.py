@@ -742,6 +742,41 @@ def build_overlay_from_diagnostics(
                     }
                 )
 
+    # ``signal_in_uninitialized_window`` is a *per-late-input* warning, but on
+    # the diagram it is more natural to show "which step rows are inside the
+    # uninitialized window for which variables". Group prior_signal_steps
+    # across all such warnings into one step-band per affected step row, with
+    # a label listing the variables still NaN at that point.
+    step_bands: List[Dict[str, Any]] = []
+    uninit_inputs_per_step: Dict[str, Set[str]] = {}
+    uninit_summary_rows: List[Tuple[str, Optional[str], int]] = []
+    for diag in diagnostics:
+        if (diag.code or "") != "signal_in_uninitialized_window":
+            continue
+        details = diag.details or {}
+        input_name = str(details.get("input_name") or "")
+        first_step = details.get("first_set_input_step")
+        prior_signals = details.get("prior_signal_steps") or []
+        prior_count = int(details.get("prior_signal_count") or len(prior_signals))
+        if input_name and prior_signals:
+            uninit_summary_rows.append((input_name, first_step, prior_count))
+        for entry in prior_signals:
+            if not isinstance(entry, dict):
+                continue
+            step_id = entry.get("step_id")
+            if not isinstance(step_id, str):
+                continue
+            uninit_inputs_per_step.setdefault(step_id, set()).add(input_name)
+    for step_id, names in sorted(uninit_inputs_per_step.items()):
+        step_bands.append(
+            {
+                "step_id": step_id,
+                "severity": "warning",
+                "kind": "uninit_window",
+                "label": "uninit: " + ", ".join(sorted(n for n in names if n)),
+            }
+        )
+
     # Compose the banner.
     banner_lines: List[str] = []
     if banner_lead is not None:
@@ -762,6 +797,16 @@ def build_overlay_from_diagnostics(
         text = str(line).strip()
         if text:
             banner_lines.append(text)
+    # Surface a one-line summary per late-init variable so the banner reads
+    # like the consolidated static-check output (one line per variable, with
+    # the count of pre-init signal occurrences and the first-bound step).
+    for input_name, first_step, prior_count in uninit_summary_rows:
+        first_text = first_step if first_step else "(never observed)"
+        banner_lines.append(
+            "Uninit window: `{name}` first set @ {first}, {n} prior signal(s).".format(
+                name=input_name, first=first_text, n=prior_count
+            )
+        )
 
     severity = "info"
     if error_count > 0:
@@ -776,6 +821,8 @@ def build_overlay_from_diagnostics(
         overlay["message_drops"] = message_drops
     if constraint_arrows:
         overlay["constraint_arrows"] = constraint_arrows
+    if step_bands:
+        overlay["step_bands"] = step_bands
 
     # Per-step state table mirrors the validate CLI's ``co`` row table
     # directly on the diagram.

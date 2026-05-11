@@ -700,6 +700,73 @@ def _verify_sysdesim_svg_render() -> None:
             raise RuntimeError("Render output missing svg tags.")
 
 
+def _verify_topology_reach() -> None:
+    """End-to-end smoke for ``pyfcstm.topology.check_reachability``."""
+    from pyfcstm.dsl import parse_with_grammar_entry
+    from pyfcstm.model import parse_dsl_node_to_state_machine
+    from pyfcstm.topology import check_reachability
+
+    sm = parse_dsl_node_to_state_machine(
+        parse_with_grammar_entry(
+            "state R { state A; state B; [*] -> A; A -> B; B -> [*]; }",
+            'state_machine_dsl',
+        )
+    )
+    result = check_reachability(sm, target='R.B')
+    if not result.reachable:
+        raise RuntimeError("topology reach smoke: expected R.B reachable")
+    if 'R.A' not in result.format_witness() or 'R.B' not in result.format_witness():
+        raise RuntimeError("topology reach smoke: witness path malformed: " + result.format_witness())
+
+
+def _verify_topology_finiteness() -> None:
+    """End-to-end smoke for ``pyfcstm.topology.check_finiteness``."""
+    from pyfcstm.dsl import parse_with_grammar_entry
+    from pyfcstm.model import parse_dsl_node_to_state_machine
+    from pyfcstm.topology import check_finiteness
+
+    ok = parse_dsl_node_to_state_machine(
+        parse_with_grammar_entry(
+            "state R { state A; [*] -> A; A -> [*]; }",
+            'state_machine_dsl',
+        )
+    )
+    if not check_finiteness(ok).finite:
+        raise RuntimeError("topology finite smoke: expected single-state DSL to be finite")
+    bad = parse_dsl_node_to_state_machine(
+        parse_with_grammar_entry(
+            "state R { state A; state B; [*] -> A; A -> B; B -> A; }",
+            'state_machine_dsl',
+        )
+    )
+    cex = check_finiteness(bad)
+    if cex.finite:
+        raise RuntimeError("topology finite smoke: expected trap-cycle DSL to be infinite")
+    if cex.counterexample is None or cex.counterexample.kind != 'trap_cycle':
+        raise RuntimeError("topology finite smoke: trap_cycle counterexample missing")
+
+
+def _verify_topology_inevitability() -> None:
+    """End-to-end smoke for ``pyfcstm.topology.check_inevitability``."""
+    from pyfcstm.dsl import parse_with_grammar_entry
+    from pyfcstm.model import parse_dsl_node_to_state_machine
+    from pyfcstm.topology import check_inevitability
+
+    sm = parse_dsl_node_to_state_machine(
+        parse_with_grammar_entry(
+            "state R { state I; state G; state B; [*] -> I; I -> G; I -> B; G -> [*]; B -> [*]; }",
+            'state_machine_dsl',
+        )
+    )
+    if check_inevitability(sm, target='R.I').inevitable is False:
+        raise RuntimeError("topology inev smoke: expected R.I to be inevitable from default source")
+    result = check_inevitability(sm, target='R.G')
+    if result.inevitable:
+        raise RuntimeError("topology inev smoke: expected R.G to be avoidable (alt_end via R.B)")
+    if result.counterexample is None or result.counterexample.kind != 'alt_end':
+        raise RuntimeError("topology inev smoke: alt_end counterexample missing")
+
+
 def _verify_sysdesim_png_render() -> None:
     from pyfcstm.convert import render_sysdesim_timeline_png
 
@@ -1082,6 +1149,38 @@ def _build_case_groups() -> List[Tuple[str, List[SmokeCase]]]:
                     "wasm support (see native_v8_webassembly), missing "
                     "icudtl.dat sidecar (PyInstaller hook in tools/generate_spec.py), "
                     "or a corrupt resvg-wasm bundle."
+                ),
+            ),
+        ]),
+        ("Topology verification", [
+            SmokeCase(
+                name="topology_reach",
+                method="check_reachability(linear chain) -> witness",
+                func=_verify_topology_reach,
+                remediation=(
+                    "pyfcstm.topology.check_reachability raised or returned "
+                    "an unexpected verdict; inspect pyfcstm/topology/graph.py "
+                    "and pyfcstm/topology/reachability.py for the failure."
+                ),
+            ),
+            SmokeCase(
+                name="topology_finiteness",
+                method="check_finiteness(ok, trap_cycle) -> correct verdicts",
+                func=_verify_topology_finiteness,
+                remediation=(
+                    "pyfcstm.topology.check_finiteness misclassified one of "
+                    "the smoke fixtures; trap_cycle detection or finiteness "
+                    "verdict is broken."
+                ),
+            ),
+            SmokeCase(
+                name="topology_inevitability",
+                method="check_inevitability(branching) -> alt_end cex",
+                func=_verify_topology_inevitability,
+                remediation=(
+                    "pyfcstm.topology.check_inevitability misclassified the "
+                    "branching fixture; residual-graph algorithm or "
+                    "counterexample classification is broken."
                 ),
             ),
         ]),

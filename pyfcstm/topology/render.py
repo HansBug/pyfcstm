@@ -320,7 +320,54 @@ def _build_reach_overlay(result):
     }
 
 
-def _build_finite_overlay(result):
+def _collect_finiteness_trap_region(sm, result, graph):
+    """Recompute the full set of violating leaf node ids for the renderer.
+
+    The :class:`FinitenessResult` itself only exposes ``violating_node_count``
+    and a single counterexample. For visualization purposes we want the
+    full ``trap_region`` set — every leaf that the topological finiteness
+    algorithm flags as a violator (i.e. part of a reachable non-trivial
+    SCC OR a real deadlock leaf reachable from the source).
+
+    :param sm: State machine the result was computed against.
+    :type sm: pyfcstm.model.StateMachine
+    :param result: Finiteness verdict.
+    :type result: FinitenessResult
+    :param graph: Macro graph used during verification.
+    :type graph: pyfcstm.topology.TopologyGraph
+    :return: List of node id strings for every leaf in the violating set.
+    :rtype: List[str]
+    """
+    from .reachability import bfs_reach
+    from .finiteness import (
+        _induced_adjacency,
+        _is_nontrivial_scc,
+        _tarjan_scc,
+    )
+    from .types import END_KEY, node_key
+    if result.finite:
+        return []
+    source_leaves = (result.source,) if result.source is not None else graph.initial_leaves
+    _reach_nodes, parents = bfs_reach(graph, source_leaves)
+    reach_keys = set(parents.keys())
+    induced = _induced_adjacency(graph, reach_keys)
+    reach_ordered = tuple(
+        node_key(leaf) for leaf in graph.leaves if node_key(leaf) in reach_keys
+    )
+    deadlocks = tuple(
+        k for k in reach_ordered
+        if not graph.adjacency.get(k, ()) and k != END_KEY
+    )
+    sccs = _tarjan_scc(induced, reach_ordered)
+    violating_keys = set(deadlocks)
+    for component in sccs:
+        if _is_nontrivial_scc(component, induced):
+            violating_keys.update(component)
+    violating_keys.discard(END_KEY)
+    return [_key_to_id(k) for k in violating_keys]
+
+
+def _build_finite_overlay(result, sm=None, graph=None):
     """Serialize a :class:`FinitenessResult` into the JS overlay payload.
 
     :param result: Finiteness verdict.
@@ -359,6 +406,9 @@ def _build_finite_overlay(result):
             prefix_path = prefix_ids + [_node_id_for(cex.deadlock_leaf)]
     else:
         banner = "infinite FAIL"
+    trap_region_ids = []
+    if not result.finite and sm is not None and graph is not None:
+        trap_region_ids = _collect_finiteness_trap_region(sm, result, graph)
     return {
         "kind": "finite",
         "verdict": "ok" if result.finite else "fail",
@@ -367,6 +417,7 @@ def _build_finite_overlay(result):
         "prefix": prefix_ids,
         "prefix_path": prefix_path,
         "deadlock_leaf": deadlock_id,
+        "trap_region": trap_region_ids,
         "banner": banner,
     }
 
@@ -471,7 +522,7 @@ def build_render_payload(sm, result, title=None, direction="DOWN", graph=None):
         overlay = _build_reach_overlay(result)
         default_title = "Reachability"
     elif isinstance(result, FinitenessResult):
-        overlay = _build_finite_overlay(result)
+        overlay = _build_finite_overlay(result, sm=sm, graph=graph)
         default_title = "Finiteness"
     elif isinstance(result, InevitabilityResult):
         overlay = _build_inev_overlay(result)

@@ -72,6 +72,11 @@ const STYLE = {
     cycleStroke: "#b62a2a",
     cycleStrokeWidth: 3.4,
   },
+  trapRegion: {
+    nodeFill: "#fdebeb",
+    nodeStroke: "#c97a7a",
+    nodeStrokeWidth: 1.6,
+  },
   deadlock: {
     nodeFill: "#fff1f1",
     nodeStroke: "#b62a2a",
@@ -228,6 +233,11 @@ function classifyNode(node, overlay) {
     if (id === overlay.deadlock_leaf) return { variant: "deadlock", overlay: "deadlock" };
     const prefixSet = new Set(overlay.prefix || []);
     if (prefixSet.has(id)) return { variant: "prefix", overlay: "deadlock" };
+    // Trap-region nodes that are NOT on the reconstructed simple cycle.
+    // These are still in the SCC and trapped forever, just visually
+    // dimmer than the cycle proper to keep the focus on the witness loop.
+    const trapSet = new Set(overlay.trap_region || []);
+    if (trapSet.has(id)) return { variant: "trap_region", overlay: "trapRegion" };
     if (id === overlay.source) return { variant: "source" };
     return { variant: "neutral" };
   }
@@ -301,15 +311,15 @@ function classifyEdge(edge, overlay) {
 function renderDefs(out) {
   out.push(
     `<defs>` +
-      `<marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse" markerUnits="userSpaceOnUse">` +
+      `<marker id="arrow" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" orient="auto" markerUnits="userSpaceOnUse">` +
       `<path d="M0,0 L10,5 L0,10 Z" fill="${STYLE.edgeStroke}"/></marker>` +
-      `<marker id="arrow-witness" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse" markerUnits="userSpaceOnUse">` +
+      `<marker id="arrow-witness" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="9" markerHeight="9" orient="auto" markerUnits="userSpaceOnUse">` +
       `<path d="M0,0 L10,5 L0,10 Z" fill="${STYLE.reachOk.pathStroke}"/></marker>` +
-      `<marker id="arrow-cycle" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse" markerUnits="userSpaceOnUse">` +
+      `<marker id="arrow-cycle" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="9" markerHeight="9" orient="auto" markerUnits="userSpaceOnUse">` +
       `<path d="M0,0 L10,5 L0,10 Z" fill="${STYLE.trapCycle.cycleStroke}"/></marker>` +
-      `<marker id="arrow-avoid" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse" markerUnits="userSpaceOnUse">` +
+      `<marker id="arrow-avoid" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="9" markerHeight="9" orient="auto" markerUnits="userSpaceOnUse">` +
       `<path d="M0,0 L10,5 L0,10 Z" fill="${STYLE.inevAvoid.pathStroke}"/></marker>` +
-      `<marker id="arrow-deadlock" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse" markerUnits="userSpaceOnUse">` +
+      `<marker id="arrow-deadlock" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="9" markerHeight="9" orient="auto" markerUnits="userSpaceOnUse">` +
       `<path d="M0,0 L10,5 L0,10 Z" fill="${STYLE.deadlock.pathStroke}"/></marker>` +
       `</defs>`
   );

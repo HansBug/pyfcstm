@@ -1,0 +1,16 @@
+{
+  "name": "@pyfcstm/topology-render",
+  "version": "0.1.0",
+  "private": true,
+  "description": "SVG/PNG renderer for pyfcstm topological verification results (reachability, finiteness, inevitability). Bundled into the pyfcstm Python package and executed via mini-racer.",
+  "license": "MIT",
+  "scripts": {
+    "build": "esbuild src/index.js --bundle --format=iife --target=es2015 --global-name=PyfcstmTopology --minify --legal-comments=none --loader:.wasm=binary --loader:.ttf=binary --outfile=dist/pyfcstm-topology-render.js",
+    "build:debug": "esbuild src/index.js --bundle --format=iife --target=es2015 --global-name=PyfcstmTopology --legal-comments=none --loader:.wasm=binary --loader:.ttf=binary --outfile=dist/pyfcstm-topology-render.dev.js"
+  },
+  "devDependencies": {
+    "@resvg/resvg-wasm": "^2.6.2",
+    "elkjs": "^0.11.1",
+    "esbuild": "^0.25.0"
+  }
+}

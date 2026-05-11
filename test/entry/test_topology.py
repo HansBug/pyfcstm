@@ -179,3 +179,62 @@ class TestTopologyGroupHelp:
             pyfcstmcli, ['topology', 'reach', '-i', '/tmp/__no_such_file__.fcstm', '-t', 'Root.A']
         )
         assert result.exit_code != 0
+
+
+@pytest.mark.unittest
+class TestTopologyVisualization:
+    def test_reach_writes_svg(self, runner, write_dsl, tmp_path):
+        path = write_dsl(_LINEAR)
+        out = tmp_path / "out.svg"
+        result = runner.invoke(
+            pyfcstmcli,
+            ['topology', 'reach', '-i', path, '-t', 'Root.C', '-o', str(out)],
+        )
+        assert result.exit_code == 0
+        assert out.exists()
+        content = out.read_text()
+        assert content.startswith('<?xml')
+        assert '<svg' in content
+
+    def test_reach_fail_still_writes_svg(self, runner, write_dsl, tmp_path):
+        path = write_dsl(_LINEAR)
+        out = tmp_path / "out.svg"
+        result = runner.invoke(
+            pyfcstmcli,
+            ['topology', 'reach', '-i', path, '-t', 'Root.A', '-s', 'Root.C', '-o', str(out)],
+        )
+        # Property violated → exit 1 but file is still written.
+        assert result.exit_code == 1
+        assert out.exists()
+        assert '<svg' in out.read_text()
+
+    def test_finite_writes_png(self, runner, write_dsl, tmp_path):
+        path = write_dsl(_TRAP)
+        out = tmp_path / "out.png"
+        result = runner.invoke(
+            pyfcstmcli,
+            ['topology', 'finite', '-i', path, '-o', str(out)],
+        )
+        assert result.exit_code == 1
+        png = out.read_bytes()
+        assert png[:8] == b'\x89PNG\r\n\x1a\n'
+
+    def test_inev_writes_png(self, runner, write_dsl, tmp_path):
+        path = write_dsl(_BRANCH)
+        out = tmp_path / "out.png"
+        result = runner.invoke(
+            pyfcstmcli,
+            ['topology', 'inevitable', '-i', path, '-t', 'Root.Good', '-o', str(out)],
+        )
+        assert result.exit_code == 1
+        assert out.read_bytes()[:8] == b'\x89PNG\r\n\x1a\n'
+
+    def test_unknown_extension_errors(self, runner, write_dsl, tmp_path):
+        path = write_dsl(_LINEAR)
+        out = tmp_path / "out.gif"
+        result = runner.invoke(
+            pyfcstmcli,
+            ['topology', 'reach', '-i', path, '-t', 'Root.C', '-o', str(out)],
+        )
+        assert result.exit_code != 0
+        assert not out.exists()

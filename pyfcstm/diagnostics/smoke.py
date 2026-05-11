@@ -700,6 +700,88 @@ def _verify_sysdesim_svg_render() -> None:
             raise RuntimeError("Render output missing svg tags.")
 
 
+def _verify_resource_topology_render_bundle_present() -> None:
+    """Confirm the topology JS render bundle ships in the wheel."""
+    import pyfcstm.topology as topology_pkg
+
+    pkg_dir = os.path.dirname(os.path.abspath(topology_pkg.__file__))
+    bundle_path = os.path.join(pkg_dir, "_render_assets", "pyfcstm-topology-render.js")
+    if not os.path.exists(bundle_path):
+        raise RuntimeError(
+            "Topology render bundle missing at {}. The wheel did not "
+            "ship _render_assets/pyfcstm-topology-render.js.".format(bundle_path)
+        )
+    size = os.path.getsize(bundle_path)
+    if size < 1_000_000:  # ~5.5 MB expected; reject anything below 1 MB.
+        raise RuntimeError(
+            "Topology render bundle is implausibly small ({} bytes); the "
+            "elkjs/resvg-wasm payload may have been stripped.".format(size)
+        )
+
+
+def _verify_resource_topology_render_bundle_loadable() -> None:
+    """Force-load the topology bundle through mini-racer and probe version."""
+    from pyfcstm.topology import render as render_module
+
+    render_module._runtime_cached = None
+    ctx, version = render_module._get_runtime()
+    if not version:
+        raise RuntimeError(
+            "PyfcstmTopology.version() returned an empty version string."
+        )
+
+
+def _verify_topology_svg_render() -> None:
+    """End-to-end smoke for SVG rendering of a reachability verdict."""
+    from pyfcstm.dsl import parse_with_grammar_entry
+    from pyfcstm.model import parse_dsl_node_to_state_machine
+    from pyfcstm.topology import check_reachability
+    from pyfcstm.topology.render import render_topology_svg
+
+    sm = parse_dsl_node_to_state_machine(
+        parse_with_grammar_entry(
+            "state R { state A; state B; [*] -> A; A -> B; B -> [*]; }",
+            'state_machine_dsl',
+        )
+    )
+    svg = render_topology_svg(sm, check_reachability(sm, target='R.B'))
+    if not isinstance(svg, str):
+        raise RuntimeError("Topology SVG render returned non-str: {}".format(type(svg)))
+    if not svg.startswith('<?xml'):
+        raise RuntimeError(
+            "Topology SVG output missing XML prolog (first 80 chars): {!r}".format(svg[:80])
+        )
+    if '<svg' not in svg or '</svg>' not in svg:
+        raise RuntimeError("Topology SVG output missing svg tags.")
+
+
+def _verify_topology_png_render() -> None:
+    """End-to-end smoke for PNG rendering (drives resvg-wasm rasterization)."""
+    from pyfcstm.dsl import parse_with_grammar_entry
+    from pyfcstm.model import parse_dsl_node_to_state_machine
+    from pyfcstm.topology import check_reachability
+    from pyfcstm.topology.render import render_topology_png
+
+    sm = parse_dsl_node_to_state_machine(
+        parse_with_grammar_entry(
+            "state R { state A; state B; [*] -> A; A -> B; B -> [*]; }",
+            'state_machine_dsl',
+        )
+    )
+    png = render_topology_png(sm, check_reachability(sm, target='R.B'))
+    if not isinstance(png, (bytes, bytearray)):
+        raise RuntimeError("Topology PNG render returned non-bytes: {}".format(type(png)))
+    if png[:8] != b"\x89PNG\r\n\x1a\n":
+        raise RuntimeError(
+            "Topology PNG output missing PNG magic bytes: got {!r}".format(png[:16])
+        )
+    width, height = struct.unpack(">II", png[16:24])
+    if width <= 0 or height <= 0:
+        raise RuntimeError(
+            "Topology PNG IHDR reported degenerate dimensions {}x{}".format(width, height)
+        )
+
+
 def _verify_topology_reach() -> None:
     """End-to-end smoke for ``pyfcstm.topology.check_reachability``."""
     from pyfcstm.dsl import parse_with_grammar_entry
@@ -1181,6 +1263,48 @@ def _build_case_groups() -> List[Tuple[str, List[SmokeCase]]]:
                     "pyfcstm.topology.check_inevitability misclassified the "
                     "branching fixture; residual-graph algorithm or "
                     "counterexample classification is broken."
+                ),
+            ),
+            SmokeCase(
+                name="resource_topology_render_bundle_present",
+                method="_render_assets/pyfcstm-topology-render.js exists & >=1 MB",
+                func=_verify_resource_topology_render_bundle_present,
+                remediation=(
+                    "Wheel/PyInstaller bundle is missing the topology JS "
+                    "render asset. Confirm setup.py package_data covers "
+                    "'_render_assets/*.js' and the build picked it up."
+                ),
+            ),
+            SmokeCase(
+                name="resource_topology_render_bundle_loadable",
+                method="MiniRacer loads topology bundle + version() probe",
+                func=_verify_resource_topology_render_bundle_loadable,
+                remediation=(
+                    "The topology bundle loaded but its IIFE global probe "
+                    "failed. Check js/topology_render/src/index.js for "
+                    "export shape (version/render/startRender/renderResult)."
+                ),
+            ),
+            SmokeCase(
+                name="topology_svg_render",
+                method="render_topology_svg(reach result) -> <svg> string",
+                func=_verify_topology_svg_render,
+                remediation=(
+                    "SVG renderer failed. Likely root causes: mini-racer "
+                    "polyfill regression (global/$wnd/setTimeout), ELK.js "
+                    "layout error, or an exception thrown inside "
+                    "topology_svg.js (re-run with PYFCSTM_SMOKE_VERBOSE=1)."
+                ),
+            ),
+            SmokeCase(
+                name="topology_png_render",
+                method="render_topology_png(reach result) -> PNG magic + IHDR",
+                func=_verify_topology_png_render,
+                remediation=(
+                    "PNG renderer failed. Most likely root causes: missing "
+                    "V8 wasm support (see native_v8_webassembly), corrupted "
+                    "resvg-wasm bundle, or the topology SVG itself failed "
+                    "to render (see topology_svg_render)."
                 ),
             ),
         ]),

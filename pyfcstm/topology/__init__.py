@@ -69,6 +69,12 @@ from .graph import build_topology_graph, resolve_to_leaves
 from .reachability import bfs_reach, check_reachability
 from .finiteness import check_finiteness
 from .inevitability import check_inevitability
+from .render import (
+    TopologyRenderError,
+    build_render_payload,
+    render_topology_png,
+    render_topology_svg,
+)
 from .types import (
     END_KEY,
     END_NODE,
@@ -97,12 +103,16 @@ __all__ = [
     "NodeTyping",
     "ReachabilityResult",
     "TopologyGraph",
+    "TopologyRenderError",
     "bfs_reach",
+    "build_render_payload",
     "build_topology_graph",
     "check_finiteness",
     "check_inevitability",
     "check_reachability",
     "format_node",
     "node_key",
+    "render_topology_png",
+    "render_topology_svg",
     "resolve_to_leaves",
 ]

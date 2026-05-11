@@ -41,6 +41,7 @@ from ..topology import (
     check_reachability,
     format_node,
 )
+from ..topology.render import render_topology_png, render_topology_svg
 from ..utils import auto_decode
 from .base import CONTEXT_SETTINGS, ClickErrorException
 
@@ -279,6 +280,50 @@ def _emit_warnings(graph_warnings: Any) -> None:
         click.secho("warning: " + w, fg='yellow', err=True)
 
 
+def _write_viz_output(
+        sm,
+        result,
+        graph,
+        output_path: str,
+) -> str:
+    """Render *result* and write the bytes to *output_path*.
+
+    The output format is inferred from the file extension. ``.svg``
+    triggers SVG rendering; ``.png`` triggers PNG. Anything else is
+    rejected as a usage error.
+
+    :param sm: Parsed state machine.
+    :type sm: pyfcstm.model.StateMachine
+    :param result: Verdict from one of the three check functions.
+    :type result: Union[ReachabilityResult, FinitenessResult, InevitabilityResult]
+    :param graph: Pre-built topology graph (reused for rendering).
+    :type graph: pyfcstm.topology.TopologyGraph
+    :param output_path: Destination path. Extension determines format.
+    :type output_path: str
+    :return: A short human-readable note describing what was written.
+    :rtype: str
+    :raises pyfcstm.entry.base.ClickErrorException: For unknown
+        extensions, render errors, or filesystem write failures.
+    """
+    ext = pathlib.Path(output_path).suffix.lower()
+    try:
+        if ext == '.svg':
+            svg = render_topology_svg(sm, result, graph=graph)
+            pathlib.Path(output_path).write_text(svg, encoding='utf-8')
+            return "wrote SVG to {} ({} bytes)".format(output_path, len(svg.encode('utf-8')))
+        if ext == '.png':
+            png = render_topology_png(sm, result, graph=graph)
+            pathlib.Path(output_path).write_bytes(png)
+            return "wrote PNG to {} ({} bytes)".format(output_path, len(png))
+    except Exception as err:
+        raise ClickErrorException(
+            "Failed to render -o {!r}: {}".format(output_path, err)
+        )
+    raise ClickErrorException(
+        "Unknown -o extension {!r}; expected .svg or .png".format(ext)
+    )
+
+
 def _exit(ctx: click.Context, code: int) -> None:
     """
     Exit the active Click context with *code*.
@@ -331,9 +376,15 @@ def _add_topology_subcommand(cli: click.Group) -> click.Group:
         '--format', 'output_format', type=click.Choice(['text', 'json']),
         default='text', show_default=True, help='Output format.',
     )
+    @click.option(
+        '-o', '--output', 'output_path', type=str, default=None,
+        help='Optional output file path for visualization (.svg or .png). '
+             'Omit to skip visualization.',
+    )
     @click.pass_context
     def reach(ctx: click.Context, input_code_file: str, target: str,
-              source: Optional[str], output_format: str) -> None:
+              source: Optional[str], output_format: str,
+              output_path: Optional[str]) -> None:
         sm = _load_state_machine(input_code_file)
         target_state = _resolve_state(sm, target, '--target')
         source_state = _resolve_state(sm, source, '--source') if source else None
@@ -344,6 +395,10 @@ def _add_topology_subcommand(cli: click.Group) -> click.Group:
         else:
             _print_reach_text(result)
             _emit_warnings(graph.warnings)
+        if output_path:
+            note = _write_viz_output(sm, result, graph, output_path)
+            if output_format == 'text':
+                click.echo("  " + note)
         _exit(ctx, 0 if result.reachable else 1)
 
     @topology.command(
@@ -363,9 +418,15 @@ def _add_topology_subcommand(cli: click.Group) -> click.Group:
         '--format', 'output_format', type=click.Choice(['text', 'json']),
         default='text', show_default=True, help='Output format.',
     )
+    @click.option(
+        '-o', '--output', 'output_path', type=str, default=None,
+        help='Optional output file path for visualization (.svg or .png). '
+             'Omit to skip visualization.',
+    )
     @click.pass_context
     def finite(ctx: click.Context, input_code_file: str,
-               source: Optional[str], output_format: str) -> None:
+               source: Optional[str], output_format: str,
+               output_path: Optional[str]) -> None:
         sm = _load_state_machine(input_code_file)
         source_state = _resolve_state(sm, source, '--source') if source else None
         graph = build_topology_graph(sm)
@@ -375,6 +436,10 @@ def _add_topology_subcommand(cli: click.Group) -> click.Group:
         else:
             _print_finite_text(result)
             _emit_warnings(graph.warnings)
+        if output_path:
+            note = _write_viz_output(sm, result, graph, output_path)
+            if output_format == 'text':
+                click.echo("  " + note)
         _exit(ctx, 0 if result.finite else 1)
 
     @topology.command(
@@ -398,9 +463,15 @@ def _add_topology_subcommand(cli: click.Group) -> click.Group:
         '--format', 'output_format', type=click.Choice(['text', 'json']),
         default='text', show_default=True, help='Output format.',
     )
+    @click.option(
+        '-o', '--output', 'output_path', type=str, default=None,
+        help='Optional output file path for visualization (.svg or .png). '
+             'Omit to skip visualization.',
+    )
     @click.pass_context
     def inevitable(ctx: click.Context, input_code_file: str, target: str,
-                   source: Optional[str], output_format: str) -> None:
+                   source: Optional[str], output_format: str,
+                   output_path: Optional[str]) -> None:
         sm = _load_state_machine(input_code_file)
         target_state = _resolve_state(sm, target, '--target')
         source_state = _resolve_state(sm, source, '--source') if source else None
@@ -411,6 +482,10 @@ def _add_topology_subcommand(cli: click.Group) -> click.Group:
         else:
             _print_inev_text(result)
             _emit_warnings(graph.warnings)
+        if output_path:
+            note = _write_viz_output(sm, result, graph, output_path)
+            if output_format == 'text':
+                click.echo("  " + note)
         _exit(ctx, 0 if result.inevitable else 1)
 
     return cli

@@ -532,6 +532,28 @@ def _collect_finiteness_trap_region(sm, result, graph):
     return [_key_to_id(k) for k in violating_keys]
 
 
+def _collect_finiteness_reach_set(sm, result, graph):
+    """Recompute reach(source) as a list of node ids for the renderer.
+
+    Used by both the finite-OK path (so unreachable leaves render
+    gray) and the finite-FAIL path (to keep source-anchored coloring
+    consistent with the other two check kinds).
+
+    :param sm: State machine the result was computed against.
+    :type sm: pyfcstm.model.StateMachine
+    :param result: Finiteness verdict.
+    :type result: FinitenessResult
+    :param graph: Macro graph view.
+    :type graph: pyfcstm.topology.TopologyGraph
+    :return: List of node id strings; always includes the source.
+    :rtype: List[str]
+    """
+    from .reachability import bfs_reach
+    source_leaves = (result.source,) if result.source is not None else graph.initial_leaves
+    _reach_nodes, parents = bfs_reach(graph, source_leaves)
+    return [_key_to_id(k) for k in parents.keys()]
+
+
 def _build_finite_overlay(result, sm=None, graph=None):
     """Serialize a :class:`FinitenessResult` into the JS overlay payload.
 
@@ -572,8 +594,11 @@ def _build_finite_overlay(result, sm=None, graph=None):
     else:
         banner = "infinite FAIL"
     trap_region_ids = []
-    if not result.finite and sm is not None and graph is not None:
-        trap_region_ids = _collect_finiteness_trap_region(sm, result, graph)
+    reach_set_ids = []
+    if sm is not None and graph is not None:
+        reach_set_ids = _collect_finiteness_reach_set(sm, result, graph)
+        if not result.finite:
+            trap_region_ids = _collect_finiteness_trap_region(sm, result, graph)
     return {
         "kind": "finite",
         "verdict": "ok" if result.finite else "fail",
@@ -583,6 +608,7 @@ def _build_finite_overlay(result, sm=None, graph=None):
         "prefix_path": prefix_path,
         "deadlock_leaf": deadlock_id,
         "trap_region": trap_region_ids,
+        "reach_set": reach_set_ids,
         "banner": banner,
     }
 

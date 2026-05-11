@@ -269,41 +269,45 @@ function classifyNode(node, overlay) {
   }
 
   if (kind === "reach") {
+    // Source / target markers are drawn separately in renderNode so
+    // their fill follows the reach-vs-unreach palette here.
     const reachSet = new Set(overlay.reach_set || []);
-    if (id === overlay.source) return { variant: "source", overlay: "reachOk" };
-    if (id === overlay.target && verdict === "ok") return { variant: "target", overlay: "reachOk" };
-    if (id === overlay.target && verdict === "fail") return { variant: "target_missed", overlay: "reachUnreach" };
     if (reachSet.has(id)) return { variant: "reach", overlay: "reachOk" };
     return { variant: "unreach", overlay: "reachUnreach" };
   }
 
   if (kind === "finite") {
-    if (verdict === "ok") return { variant: "reach", overlay: "reachOk" };
+    const reachSet = new Set(overlay.reach_set || []);
+    if (verdict === "ok") {
+      // Reachable-from-source nodes go green; everything else grays
+      // out so the user can immediately see "what would this run
+      // actually touch from this starting point".
+      if (reachSet.has(id)) return { variant: "reach", overlay: "reachOk" };
+      return { variant: "unreach", overlay: "reachUnreach" };
+    }
+    // verdict === "fail": cycle / deadlock / trap_region get progressively
+    // darker reds; prefix path uses orange; reachable-but-outside-trap
+    // nodes stay neutral so the trap stands out.
     const cycleSet = new Set(overlay.cycle || []);
     if (cycleSet.has(id)) return { variant: "cycle", overlay: "trapCycle" };
     if (id === overlay.deadlock_leaf) return { variant: "deadlock", overlay: "deadlock" };
     const prefixSet = new Set(overlay.prefix || []);
     if (prefixSet.has(id)) return { variant: "prefix", overlay: "deadlock" };
-    // Trap-region nodes that are NOT on the reconstructed simple cycle.
-    // These are still in the SCC and trapped forever, just visually
-    // dimmer than the cycle proper to keep the focus on the witness loop.
     const trapSet = new Set(overlay.trap_region || []);
     if (trapSet.has(id)) return { variant: "trap_region", overlay: "trapRegion" };
-    if (id === overlay.source) return { variant: "source" };
     return { variant: "neutral" };
   }
 
   if (kind === "inev") {
     if (verdict === "ok") {
-      if (id === overlay.target) return { variant: "target", overlay: "reachOk" };
-      if (id === overlay.source) return { variant: "source", overlay: "reachOk" };
+      // OK: highlight reach(source). Source/target markers drawn
+      // separately in renderNode.
       const reachSet = new Set(overlay.reach_set || []);
       if (reachSet.has(id)) return { variant: "reach", overlay: "reachOk" };
       return { variant: "neutral" };
     }
+    // verdict === "fail"
     const cexKind = overlay.cex_kind || "";
-    if (id === overlay.target) return { variant: "target_missed", overlay: "inevAvoid" };
-    if (id === overlay.source) return { variant: "source", overlay: "inevAvoid" };
     if (cexKind === "cycle") {
       const cycleSet = new Set(overlay.cycle || []);
       if (cycleSet.has(id)) return { variant: "cycle", overlay: "trapCycle" };
@@ -502,30 +506,51 @@ function renderNode(node, dx, dy, payload, overlay, out) {
     `<text x="${x + w / 2}" y="${titleY}" text-anchor="middle" ${quote("font-family", STYLE.fontFamily)} font-size="${STYLE.fontSize}" fill="${STYLE.titleColor}" opacity="${textOpacity}">${escapeXml(label)}</text>`
   );
 
-  // Special markers
-  if (cls.variant === "source") {
-    // ▶ marker on the left side
+  // Source ▶ marker: drawn whenever this node is the verification
+  // source, regardless of which trap / reach / cex region also
+  // colors it. The marker color follows the verdict so it reads as
+  // "start" rather than "warning" inside a red trap region.
+  if (overlay && node.id === overlay.source) {
     const mx = x - 16;
     const my = y + h / 2;
-    const color = (cls.overlay && STYLE[cls.overlay] && STYLE[cls.overlay].sourceMarker) || STYLE.reachOk.sourceMarker;
+    let markerColor = STYLE.reachOk.sourceMarker;
+    if (overlay.verdict === "fail") {
+      if (overlay.kind === "reach") markerColor = "#b62a2a";
+      else if (overlay.kind === "finite") markerColor = STYLE.trapCycle.cycleStroke;
+      else if (overlay.kind === "inev") markerColor = STYLE.inevAvoid.pathStroke;
+    }
     out.push(
-      `<polygon points="${mx},${my - 8} ${mx + 12},${my} ${mx},${my + 8}" fill="${color}" ${quote("data-fcstm-topology", "source-marker")}/>`
+      `<polygon points="${mx},${my - 9} ${mx + 13},${my} ${mx},${my + 9}" fill="${markerColor}" ${quote("data-fcstm-topology", "source-marker")}/>`
+    );
+    out.push(
+      `<text x="${mx - 4}" y="${my + 4}" text-anchor="end" ${quote("font-family", STYLE.fontFamily)} font-size="${STYLE.smallFontSize}" font-weight="600" fill="${markerColor}">src</text>`
     );
   }
-  if (cls.variant === "target" && cls.overlay === "reachOk") {
-    const cx = x + w / 2;
-    const cy = y + h / 2;
-    const r = Math.max(w, h) / 2 + STYLE.reachOk.targetRingExtra;
+  // Target ring: drawn whenever this node is the verification target
+  // (only relevant for reach / inev kinds — finite has no target).
+  if (overlay && node.id === overlay.target && overlay.kind !== "finite") {
+    let ringStroke;
+    let ringDash = "";
+    let ringExtra = STYLE.reachOk.targetRingExtra;
+    if (overlay.verdict === "ok") {
+      ringStroke = STYLE.reachOk.targetRingStroke;
+    } else if (overlay.kind === "reach") {
+      ringStroke = "#b62a2a";
+      ringDash = "4 3";
+      ringExtra = 6;
+    } else {
+      ringStroke = STYLE.inevAvoid.targetRingStroke;
+      ringDash = STYLE.inevAvoid.targetRingDash;
+      ringExtra = STYLE.inevAvoid.targetRingExtra;
+    }
     out.push(
-      `<rect x="${x - STYLE.reachOk.targetRingExtra}" y="${y - STYLE.reachOk.targetRingExtra}" width="${w + STYLE.reachOk.targetRingExtra * 2}" height="${h + STYLE.reachOk.targetRingExtra * 2}" rx="${radius + STYLE.reachOk.targetRingExtra}" fill="none" stroke="${STYLE.reachOk.targetRingStroke}" stroke-width="2.4"/>`
+      `<rect x="${x - ringExtra}" y="${y - ringExtra}" width="${w + ringExtra * 2}" height="${h + ringExtra * 2}" rx="${radius + ringExtra}" fill="none" stroke="${ringStroke}" stroke-width="2.4"` +
+        (ringDash ? ` stroke-dasharray="${ringDash}"` : "") +
+        ` ${quote("data-fcstm-topology", "target-ring")}/>`
     );
-  }
-  if (cls.variant === "target_missed") {
-    const ringExtra = (overlay && overlay.kind === "reach") ? 6 : (STYLE.inevAvoid.targetRingExtra || 6);
-    const ringStroke = (overlay && overlay.kind === "reach") ? "#b62a2a" : STYLE.inevAvoid.targetRingStroke;
-    const ringDash = (overlay && overlay.kind === "reach") ? "4 3" : STYLE.inevAvoid.targetRingDash;
+    // "dst" label above the ring, mirroring the "src" label on source.
     out.push(
-      `<rect x="${x - ringExtra}" y="${y - ringExtra}" width="${w + ringExtra * 2}" height="${h + ringExtra * 2}" rx="${radius + ringExtra}" fill="none" stroke="${ringStroke}" stroke-width="2.4" stroke-dasharray="${ringDash}"/>`
+      `<text x="${x + w + ringExtra + 6}" y="${y + h / 2 + 4}" text-anchor="start" ${quote("font-family", STYLE.fontFamily)} font-size="${STYLE.smallFontSize}" font-weight="600" fill="${ringStroke}">dst</text>`
     );
   }
   if (cls.variant === "deadlock") {

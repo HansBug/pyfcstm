@@ -43,7 +43,7 @@ const STYLE = {
   // typography
   titleColor: "#183b61",
   fontFamily:
-    '"DejaVu Sans","JetBrains Mono","Fira Code",Consolas,"Microsoft YaHei",sans-serif',
+    '"Noto Sans CJK SC","Noto Sans CJK","Source Han Sans","PingFang SC","Microsoft YaHei","Droid Sans Fallback","DejaVu Sans","JetBrains Mono","Fira Code",Consolas,sans-serif',
   fontSize: 13,
   smallFontSize: 11,
   // overlay decorations
@@ -166,40 +166,91 @@ function quote(attr, value) {
   return `${attr}="${escapeXml(value)}"`;
 }
 
+const COMPOSITE_TITLE_HEIGHT = 26;
+const COMPOSITE_PADDING_TOP = 38;
+const COMPOSITE_PADDING_SIDE = 18;
+const COMPOSITE_PADDING_BOTTOM = 18;
+
 function buildElkInput(payload) {
-  // Flat compound graph: every node is a top-level child of __canvas__.
-  // v0 does not preserve composite outlines; revisit if users ask.
+  // Compound graph: leaves and composites are nested under their
+  // parents. Composites with no leaf descendants are skipped on the
+  // Python side, so every composite that arrives here has children.
   const nodes = payload.nodes || [];
   const edges = payload.edges || [];
-  const elkNodes = nodes.map((n) => {
-    const labelDims = measureNodeLabel(n.label || n.id);
-    const isPseudoLike = n.kind === "pseudo" || n.kind === "end";
-    return {
-      id: n.id,
-      width: isPseudoLike && n.kind === "end" ? 50 : labelDims.width,
-      height: isPseudoLike && n.kind === "end" ? 50 : labelDims.height,
-      labels: [{ text: n.label || n.id, width: labelDims.width, height: labelDims.height }],
-      meta: n,
-    };
-  });
-  const elkEdges = edges.map((e, idx) => {
-    const edge = {
-      id: e.id || `e${idx}`,
+
+  // First pass: build ELK nodes by id, keep parent_id reference.
+  const elkNodes = new Map();
+  for (const n of nodes) {
+    if (n.kind === "composite") {
+      const titleDims = measureNodeLabel(n.label || n.id);
+      elkNodes.set(n.id, {
+        id: n.id,
+        labels: [{ text: n.label || n.id, width: titleDims.width, height: COMPOSITE_TITLE_HEIGHT }],
+        meta: n,
+        layoutOptions: {
+          "elk.padding": `[top=${COMPOSITE_PADDING_TOP},left=${COMPOSITE_PADDING_SIDE},bottom=${COMPOSITE_PADDING_BOTTOM},right=${COMPOSITE_PADDING_SIDE}]`,
+        },
+        children: [],
+        edges: [],
+      });
+    } else {
+      const labelDims = measureNodeLabel(n.label || n.id);
+      const isEnd = n.kind === "end";
+      elkNodes.set(n.id, {
+        id: n.id,
+        width: isEnd ? 50 : labelDims.width,
+        height: isEnd ? 50 : labelDims.height,
+        labels: [{ text: n.label || n.id, width: labelDims.width, height: labelDims.height }],
+        meta: n,
+      });
+    }
+  }
+
+  // Second pass: attach to parents.
+  const rootChildren = [];
+  for (const n of nodes) {
+    const elkNode = elkNodes.get(n.id);
+    if (!elkNode) continue;
+    if (n.parent_id && elkNodes.has(n.parent_id)) {
+      const parent = elkNodes.get(n.parent_id);
+      parent.children = parent.children || [];
+      parent.children.push(elkNode);
+    } else {
+      rootChildren.push(elkNode);
+    }
+  }
+
+  // Place each edge at its lowest common ancestor composite. The
+  // Python side computes ``container_id`` for every edge; null means
+  // canvas-level. Edges placed at their LCA route cleanly through
+  // composite boundaries; canvas-level edges that cross between
+  // composites are routed via the canvas exterior.
+  const rootEdges = [];
+  for (const e of edges) {
+    const elkEdge = {
+      id: e.id,
       sources: [e.source],
       targets: [e.target],
       meta: e,
     };
     if (e.label) {
       const dims = measureEdgeLabel(e.label);
-      edge.labels = [{ text: e.label, width: dims.width, height: dims.height }];
+      elkEdge.labels = [{ text: e.label, width: dims.width, height: dims.height }];
     }
-    return edge;
-  });
+    if (e.container_id && elkNodes.has(e.container_id)) {
+      const container = elkNodes.get(e.container_id);
+      container.edges = container.edges || [];
+      container.edges.push(elkEdge);
+    } else {
+      rootEdges.push(elkEdge);
+    }
+  }
+
   return {
     id: "__canvas__",
     layoutOptions: { ...ELK_LAYOUT_OPTIONS, "elk.direction": payload.direction || "DOWN" },
-    children: elkNodes,
-    edges: elkEdges,
+    children: rootChildren,
+    edges: rootEdges,
   };
 }
 
@@ -345,11 +396,52 @@ function renderBanner(payload, width, out) {
   out.push(
     `<g ${quote("data-fcstm-topology", "banner")}>` +
       `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="10" fill="${styleBlock.fill}"/>` +
-      `<text x="${x + 18}" y="${y + h / 2 + 5}" ${quote("font-family", STYLE.fontFamily)} font-size="${STYLE.bannerFontSize}" font-weight="700" fill="${styleBlock.textFill}">${escapeXml(text)}</text>` +
+      `<text x="${x + 18}" y="${y + h / 2 + 5}" ${quote("font-family", STYLE.fontFamily)} font-size="${STYLE.bannerFontSize}" fill="${styleBlock.textFill}">${escapeXml(text)}</text>` +
       `</g>`
   );
   return STYLE.bannerHeight + STYLE.canvasPadding;
 }
+
+function renderComposite(node, dx, dy, payload, overlay, out) {
+  // Composite states are drawn as tinted boxes with a title strip.
+  // Children are recursively rendered with this composite as the new
+  // coordinate origin.
+  const x = (node.x || 0) + dx;
+  const y = (node.y || 0) + dy;
+  const w = node.width || 0;
+  const h = node.height || 0;
+  const meta = node.meta || {};
+  const label = (node.labels && node.labels[0] && node.labels[0].text) || meta.label || node.id;
+
+  // Composite styling (mirrors jsfcstm's STYLE.composite* tokens but
+  // tuned lighter so the overlay colors on child leaves remain
+  // dominant).
+  const fill = "#edf4fb";
+  const titleFill = "#dce9f5";
+  const stroke = "#2d6aa8";
+  const strokeWidth = 1.6;
+  const radius = 14;
+  const titleH = 26;
+
+  out.push(
+    `<g ${quote("data-fcstm-topology-composite", node.id)}>` +
+      `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${radius}" fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth}"/>` +
+      `<path d="M ${x} ${y + titleH} L ${x + w} ${y + titleH}" stroke="${stroke}" stroke-width="${strokeWidth}" fill="none"/>` +
+      `<rect x="${x}" y="${y}" width="${w}" height="${titleH}" rx="${radius}" fill="${titleFill}" stroke="none" clip-path="inset(0 0 ${Math.max(0, h - titleH - radius)}px 0)"/>` +
+      `<text x="${x + 14}" y="${y + 18}" text-anchor="start" ${quote("font-family", STYLE.fontFamily)} font-size="${STYLE.fontSize}" font-weight="600" fill="${STYLE.titleColor}">${escapeXml(label)}</text>` +
+      `</g>`
+  );
+
+  // Recurse into children — their coords are local to this composite.
+  for (const child of node.children || []) {
+    if (child.meta && child.meta.kind === "composite") {
+      renderComposite(child, x, y, payload, overlay, out);
+    } else {
+      renderNode(child, x, y, payload, overlay, out);
+    }
+  }
+}
+
 
 function renderNode(node, dx, dy, payload, overlay, out) {
   const x = (node.x || 0) + dx;
@@ -561,12 +653,40 @@ export async function renderTopologySvg(payload, options) {
   const dy = STYLE.canvasPadding + bannerAdvance - STYLE.canvasPadding;
   // dy adjustment: canvas padding at top, banner offsets graph downward.
 
-  // Render nodes first (so edges go on top to be more visible)
+  // Render composites first so their backgrounds sit BEHIND leaf
+  // nodes and edges. Within each composite, leaves render on top of
+  // its tinted box.
+  const originX = dx;
+  const originY = dy + STYLE.canvasPadding;
   for (const node of laidOut.children || []) {
-    renderNode(node, dx, dy + STYLE.canvasPadding, payload, overlay, out);
+    if (node.meta && node.meta.kind === "composite") {
+      renderComposite(node, originX, originY, payload, overlay, out);
+    } else {
+      renderNode(node, originX, originY, payload, overlay, out);
+    }
   }
+  // All macro edges declared at canvas level — ELK reports their
+  // geometry in global coordinates regardless of which composites
+  // they traverse.
   for (const edge of laidOut.edges || []) {
-    renderEdge(edge, dx, dy + STYLE.canvasPadding, overlay, out);
+    renderEdge(edge, originX, originY, overlay, out);
+  }
+  // Edges declared within composites (we don't currently do this,
+  // but defensively recurse) carry their own local coordinates that
+  // ELK does not flatten to canvas.
+  function walkInnerEdges(node, dx2, dy2) {
+    if (!node) return;
+    const cx = (node.x || 0) + dx2;
+    const cy = (node.y || 0) + dy2;
+    for (const edge of node.edges || []) {
+      renderEdge(edge, cx, cy, overlay, out);
+    }
+    for (const child of node.children || []) {
+      walkInnerEdges(child, cx, cy);
+    }
+  }
+  for (const node of laidOut.children || []) {
+    walkInnerEdges(node, originX, originY);
   }
 
   out.push(`</svg>`);

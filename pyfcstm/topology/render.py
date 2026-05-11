@@ -70,6 +70,47 @@ __all__ = [
 ]
 
 
+def _auto_discover_cjk_font():
+    """
+    Best-effort lookup of a system CJK font as a single .ttf path.
+
+    Resvg-wasm's font loader accepts plain TrueType and OpenType
+    streams; ``.ttc`` collections require additional unpacking, so
+    we prefer single-file fonts. Returns ``None`` when nothing
+    suitable is found; callers should treat that as "render in
+    Latin-only mode" rather than failing.
+
+    The search list is roughly ordered from "compact CJK coverage
+    fallback" (DroidSansFallbackFull / wqy-microhei) to "full Noto
+    family" (single-script .otf files extracted from Noto). Only
+    paths that exist are returned.
+
+    :return: Absolute path to a CJK font file, or ``None``.
+    :rtype: Optional[str]
+    """
+    # Prefer fonts that ship both Latin and CJK glyph coverage so a
+    # single font-family can render mixed-script labels (banners
+    # contain English verdict text + Chinese state names in the same
+    # text run, and resvg picks one font per run).
+    candidates = [
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Medium.ttc",
+        "/System/Library/Fonts/PingFang.ttc",
+        "/System/Library/Fonts/STHeiti Medium.ttc",
+        "C:/Windows/Fonts/msyh.ttc",
+        "C:/Windows/Fonts/simhei.ttf",
+        "C:/Windows/Fonts/simsun.ttc",
+        "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+        "/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf",
+        "/usr/share/fonts/truetype/arphic/uming.ttc",
+        "/usr/share/fonts/truetype/arphic/ukai.ttc",
+    ]
+    for path in candidates:
+        if os.path.isfile(path):
+            return path
+    return None
+
+
 _RENDER_ASSET_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
     "_render_assets",
@@ -239,31 +280,115 @@ def _node_id_for(node):
     return _key_to_id(node_key(node))
 
 
+def _state_label(state):
+    """Return the visible label for a :class:`State`.
+
+    Prefers :attr:`State.extra_name` (the DSL ``named "..."`` clause)
+    when set, otherwise falls back to the bare ``name``.
+
+    :param state: State instance.
+    :type state: State
+    :return: Display label (may contain non-ASCII characters).
+    :rtype: str
+    """
+    if getattr(state, "extra_name", None):
+        return state.extra_name
+    return state.name
+
+
 def _short_label(node):
-    """Trim a node label down to its leaf-name (last path segment).
+    """Render a node's short label.
+
+    For :data:`END_NODE`, returns ``"[*]"``. For a :class:`State`, returns
+    the extra_name when set, otherwise the bare name (last path segment).
 
     :param node: A leaf state or the END sentinel.
     :type node: Union[State, _EndNodeSentinel]
-    :return: ``"[*]"`` for END, otherwise the leaf name.
+    :return: Short display label.
     :rtype: str
     """
     if node is END_NODE:
         return "[*]"
     if not isinstance(node, State):
         return str(node)
-    return node.path[-1] if node.path else node.name
+    return _state_label(node)
 
 
-def _build_graph_section(graph):
-    """Serialize the macro graph into the JSON shape the JS bundle consumes.
+def _composite_id_for_path(path_tuple):
+    """Stable ID for a composite state, used as a parent reference.
 
+    :param path_tuple: Composite's :attr:`State.path` tuple.
+    :type path_tuple: Tuple[str, ...]
+    :return: Dotted-path string.
+    :rtype: str
+    """
+    return ".".join(path_tuple)
+
+
+def _build_graph_section(sm, graph):
+    """Serialize the macro graph into a hierarchical JSON payload.
+
+    The emitted payload includes:
+
+    - One node entry per leaf (kind="leaf" or "pseudo"), with
+      ``parent_id`` pointing to the leaf's immediate composite parent
+      (None for top-level leaves).
+    - One node entry per *non-root* composite that contains at least
+      one leaf, with the same ``parent_id`` chain. Composites only
+      appear if they have children that show up in the macro graph.
+    - The synthetic ``__END__`` entry as a top-level node.
+
+    This shape lets the JS renderer construct an ELK compound graph
+    where leaves are nested under their composite parents and ELK
+    automatically lays out composite bounding boxes.
+
+    :param sm: State machine (used to walk the composite hierarchy).
+    :type sm: StateMachine
     :param graph: Macro graph view.
     :type graph: TopologyGraph
     :return: ``(nodes_payload, edges_payload)`` tuple.
     :rtype: Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]
     """
+    # Collect every composite ancestor of every leaf (excluding root,
+    # which we treat as the implicit canvas).
+    composites_in_use = []
+    composites_seen = set()
+    for leaf in graph.leaves:
+        for i in range(1, len(leaf.path) - 1):
+            comp_path = leaf.path[:i + 1]
+            cid = _composite_id_for_path(comp_path)
+            if cid in composites_seen:
+                continue
+            composites_seen.add(cid)
+            comp_state = sm.resolve_state(".".join(comp_path))
+            composites_in_use.append((cid, comp_state, comp_path))
+
+    def _parent_id_for(state_path):
+        # Leaf/composite at depth 1 (direct child of root) has no
+        # composite parent in our viz; ELK treats it as canvas-level.
+        if len(state_path) <= 2:
+            return None
+        return _composite_id_for_path(state_path[:-1])
+
+    # Composite ordering: shallow first so children-of-children get
+    # registered after their parents; otherwise the JS side has to do
+    # a topological sort itself.
+    composites_in_use.sort(key=lambda item: len(item[2]))
+
     nodes = []
     seen_ids = set()
+    for cid, comp_state, comp_path in composites_in_use:
+        if cid in seen_ids:
+            continue
+        seen_ids.add(cid)
+        nodes.append({
+            "id": cid,
+            "label": _state_label(comp_state),
+            "path": list(comp_path),
+            "kind": "composite",
+            "parent_id": _parent_id_for(comp_path),
+        })
+
     for leaf in graph.leaves:
         nid = _node_id_for(leaf)
         if nid in seen_ids:
@@ -274,16 +399,56 @@ def _build_graph_section(graph):
             "label": _short_label(leaf),
             "path": list(leaf.path),
             "kind": "pseudo" if leaf.is_pseudo else "leaf",
+            "parent_id": _parent_id_for(leaf.path),
         })
+
     if "__END__" not in seen_ids:
-        nodes.append({"id": "__END__", "label": "[*]", "kind": "end"})
+        nodes.append({
+            "id": "__END__",
+            "label": "[*]",
+            "kind": "end",
+            "parent_id": None,
+        })
+
+    # For each edge, compute the lowest common ancestor composite that
+    # contains both endpoints. ELK's compound-graph layout expects edges
+    # declared at their LCA; declaring everything at canvas leads to
+    # ELK routing intra-composite edges through the canvas exterior,
+    # producing detached stubs floating outside their composite box.
+    def _path_for_id(nid):
+        # END_NODE lives at canvas level (parent_id=None).
+        if nid == "__END__":
+            return ()
+        return tuple(nid.split("."))
+
+    def _lca_container_id(src_id, tgt_id):
+        s = _path_for_id(src_id)
+        t = _path_for_id(tgt_id)
+        # Drop the leaf name from each path, keep ancestor chain.
+        s_chain = list(s[:-1])
+        t_chain = list(t[:-1])
+        common = []
+        for a, b in zip(s_chain, t_chain):
+            if a == b:
+                common.append(a)
+            else:
+                break
+        # common = list of segments from root down to the deepest shared
+        # composite. Root state itself is depth 1 and corresponds to
+        # canvas — so an LCA of depth <= 1 means "canvas level".
+        if len(common) <= 1:
+            return None
+        return ".".join(common)
 
     edges = []
     for idx, edge in enumerate(graph.edges):
+        src_id = _node_id_for(edge.source)
+        tgt_id = _node_id_for(edge.target)
         edges.append({
             "id": "e{}".format(idx),
-            "source": _node_id_for(edge.source),
-            "target": _node_id_for(edge.target),
+            "source": src_id,
+            "target": tgt_id,
+            "container_id": _lca_container_id(src_id, tgt_id),
         })
     return nodes, edges
 
@@ -517,7 +682,7 @@ def build_render_payload(sm, result, title=None, direction="DOWN", graph=None):
     """
     if graph is None:
         graph = build_topology_graph(sm)
-    nodes, edges = _build_graph_section(graph)
+    nodes, edges = _build_graph_section(sm, graph)
     if isinstance(result, ReachabilityResult):
         overlay = _build_reach_overlay(result)
         default_title = "Reachability"
@@ -617,8 +782,18 @@ def render_topology_png(sm, result, title=None, direction="DOWN", graph=None,
     if resvg_options:
         options["resvg"] = resvg_options
 
+    # Auto-discover a system CJK font when the caller didn't supply
+    # any — diagrams with Chinese/Japanese/Korean state labels would
+    # otherwise render every CJK glyph as a "tofu" rectangle since the
+    # bundled DejaVu Sans fallback has no CJK coverage.
+    effective_font_files = list(font_files or ())
+    if not effective_font_files and not font_buffers:
+        discovered = _auto_discover_cjk_font()
+        if discovered:
+            effective_font_files.append(discovered)
+
     font_buffer_b64_list = []
-    for font_path in font_files or ():
+    for font_path in effective_font_files:
         with open(font_path, "rb") as font_file:
             font_buffer_b64_list.append(
                 base64.b64encode(font_file.read()).decode("ascii")

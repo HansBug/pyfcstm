@@ -782,6 +782,59 @@ def _verify_topology_png_render() -> None:
         )
 
 
+def _verify_topology_hierarchical_render() -> None:
+    """End-to-end smoke for the compound-graph render path.
+
+    Uses ASCII-only state names so CI runners without CJK fonts still
+    produce a valid SVG. Exercises:
+
+    - Composite states (Outer wrapping Inner wrapping leaves)
+    - Cross-composite macro edges that ELK must route through
+      composite borders
+    - LCA-based edge container placement
+    """
+    from pyfcstm.dsl import parse_with_grammar_entry
+    from pyfcstm.model import parse_dsl_node_to_state_machine
+    from pyfcstm.topology import check_reachability
+    from pyfcstm.topology.render import render_topology_svg
+
+    sm = parse_dsl_node_to_state_machine(
+        parse_with_grammar_entry(
+            "state Root {"
+            "  state Outer {"
+            "    state Inner {"
+            "      state A; state B; [*] -> A; A -> B; B -> [*];"
+            "    }"
+            "    state Sibling;"
+            "    [*] -> Inner;"
+            "    Inner -> Sibling;"
+            "    Sibling -> [*];"
+            "  }"
+            "  state Done;"
+            "  [*] -> Outer;"
+            "  Outer -> Done;"
+            "  Done -> [*];"
+            "}",
+            'state_machine_dsl',
+        )
+    )
+    svg = render_topology_svg(sm, check_reachability(sm, target='Root.Done'))
+    if not isinstance(svg, str) or '<svg' not in svg:
+        raise RuntimeError("Hierarchical SVG render returned malformed output.")
+    # Composite containers should appear with their data attribute.
+    if 'data-fcstm-topology-composite' not in svg:
+        raise RuntimeError(
+            "Hierarchical SVG missing composite container elements; "
+            "compound-graph rendering may have regressed."
+        )
+    # Both Inner leaves and the outer Sibling should appear.
+    for needle in ('>A<', '>B<', '>Sibling<', '>Done<'):
+        if needle not in svg:
+            raise RuntimeError(
+                "Hierarchical SVG missing expected leaf label {!r}.".format(needle)
+            )
+
+
 def _verify_topology_reach() -> None:
     """End-to-end smoke for ``pyfcstm.topology.check_reachability``."""
     from pyfcstm.dsl import parse_with_grammar_entry
@@ -1305,6 +1358,18 @@ def _build_case_groups() -> List[Tuple[str, List[SmokeCase]]]:
                     "V8 wasm support (see native_v8_webassembly), corrupted "
                     "resvg-wasm bundle, or the topology SVG itself failed "
                     "to render (see topology_svg_render)."
+                ),
+            ),
+            SmokeCase(
+                name="topology_hierarchical_render",
+                method="render_topology_svg(nested composites) -> compound graph SVG",
+                func=_verify_topology_hierarchical_render,
+                remediation=(
+                    "Hierarchical SVG render failed. Likely root causes: "
+                    "Python-side _build_graph_section dropping composite "
+                    "parent_id, JS-side buildElkInput failing to nest "
+                    "children, or LCA edge placement misrouting "
+                    "intra-composite edges."
                 ),
             ),
         ]),

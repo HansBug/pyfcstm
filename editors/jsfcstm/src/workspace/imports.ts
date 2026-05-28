@@ -176,6 +176,10 @@ export class FcstmImportWorkspaceIndex {
                 stateAliasSeen.set(stateKey, aliasMap);
             }
 
+            // Normalize the schema host_state_path: pyfcstm emits '' for
+            // root-hosted imports, not the literal '<root>' sentinel.
+            const hostStatePath = stateKey === '<root>' ? '' : stateKey;
+
             const firstAlias = aliasMap.get(semanticImport.alias);
             if (firstAlias) {
                 diagnostics.push({
@@ -184,6 +188,11 @@ export class FcstmImportWorkspaceIndex {
                     severity: 'error',
                     source: 'fcstm',
                     code: FCSTM_DIAGNOSTIC_CODES.importAliasConflict,
+                    data: {
+                        alias: semanticImport.alias,
+                        host_state_path: hostStatePath,
+                        conflicting_kind: 'previous_import_alias',
+                    },
                     relatedInformation: [{
                         location: {
                             uri: toFileUri(ownerFile),
@@ -207,6 +216,11 @@ export class FcstmImportWorkspaceIndex {
                     severity: 'error',
                     source: 'fcstm',
                     code: FCSTM_DIAGNOSTIC_CODES.importAliasConflict,
+                    data: {
+                        alias: semanticImport.alias,
+                        host_state_path: hostStatePath,
+                        conflicting_kind: 'existing_substate',
+                    },
                     relatedInformation: [{
                         location: {
                             uri: toFileUri(ownerFile),
@@ -224,6 +238,16 @@ export class FcstmImportWorkspaceIndex {
                     severity: 'error',
                     source: 'fcstm',
                     code: FCSTM_DIAGNOSTIC_CODES.importNotFound,
+                    data: {
+                        source_path: semanticImport.sourcePath,
+                        alias: semanticImport.alias,
+                        host_state_path: hostStatePath,
+                        // jsfcstm cannot distinguish read_error / parse_error /
+                        // no_root_state at this layer — the workspace index
+                        // already filtered missing files. ``file_not_found``
+                        // is the only reason that reaches this emit point.
+                        reason: 'file_not_found',
+                    },
                 });
             }
         }
@@ -231,6 +255,7 @@ export class FcstmImportWorkspaceIndex {
         for (const cycle of snapshot.cycles) {
             const firstHop = cycle.files[1];
             const cycleImport = semantic.imports.find(item => item.entryFile && normalizeFile(item.entryFile) === firstHop);
+            const cycleHostPath = cycleImport?.ownerStatePath.join('.') ?? '';
             diagnostics.push({
                 range: cycleImport?.pathRange || fallbackImportRange(),
                 message: `Circular import detected: ${cycle.files.map(item => path.basename(item)).join(' -> ')}.`,
@@ -240,6 +265,12 @@ export class FcstmImportWorkspaceIndex {
                 severity: 'error',
                 source: 'fcstm',
                 code: FCSTM_DIAGNOSTIC_CODES.importCircular,
+                data: {
+                    source_path: cycleImport?.sourcePath ?? cycle.files[1],
+                    alias: cycleImport?.alias ?? '',
+                    host_state_path: cycleHostPath,
+                    cycle_chain: cycle.files,
+                },
             });
         }
 

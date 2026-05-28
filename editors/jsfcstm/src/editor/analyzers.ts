@@ -161,9 +161,11 @@ function addImportMappingDiagnostics(
     for (const importItem of semantic.imports) {
         const seen = new Map<string, FcstmAstImportMapping>();
         for (const mapping of importItem.ast.mappings) {
-            const key = mapping.kind === 'importDefMapping'
-                ? `${mapping.kind}:${mapping.selector.text}->${mapping.targetTemplate}`
-                : `${mapping.kind}:${mapping.sourceEvent.text}->${mapping.targetEvent.text}`;
+            const isVariable = mapping.kind === 'importDefMapping';
+            const mappingKind: 'variable' | 'event' = isVariable ? 'variable' : 'event';
+            const sourceName = isVariable ? mapping.selector.text : mapping.sourceEvent.text;
+            const targetName = isVariable ? mapping.targetTemplate : mapping.targetEvent.text;
+            const key = `${mapping.kind}:${sourceName}->${targetName}`;
             const firstMapping = seen.get(key);
             if (firstMapping) {
                 diagnostics.push({
@@ -175,6 +177,17 @@ function addImportMappingDiagnostics(
                     severity: 'error',
                     source: 'fcstm',
                     code: FCSTM_DIAGNOSTIC_CODES.importDuplicateMapping,
+                    data: {
+                        alias: importItem.alias,
+                        mapping_kind: mappingKind,
+                        // The dedupe key matches when both source AND target
+                        // are identical, so either ``direction`` is technically
+                        // correct. Pick ``source_duplicated`` as the canonical
+                        // form to match pyfcstm's ordering of these checks.
+                        duplicated_name: sourceName,
+                        direction: 'source_duplicated',
+                        host_state_path: importItem.ownerStatePath.join('.'),
+                    },
                     relatedInformation: [{
                         location: {
                             uri: toFileUri(document),

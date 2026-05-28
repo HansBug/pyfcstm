@@ -453,6 +453,34 @@ describe('diagnostics showcase: jsfcstm collectDocumentDiagnostics parity', () =
                     }
                 }
             }
+
+            // 6. E_IMPORT_* required-field payload check. The schema in
+            //    ``codes.yaml`` declares mandatory ``refs.*`` fields for
+            //    every import diagnostic — pyfcstm fills them, jsfcstm
+            //    used to omit them entirely (PR #115 R2.C3). This
+            //    assertion locks the payload parity in place.
+            const IMPORT_REQUIRED_FIELDS: Record<string, string[]> = {
+                'E_IMPORT_NOT_FOUND': ['source_path', 'alias', 'host_state_path', 'reason'],
+                'E_IMPORT_CIRCULAR': ['source_path', 'alias', 'host_state_path', 'cycle_chain'],
+                'E_IMPORT_ALIAS_CONFLICT': ['alias', 'host_state_path', 'conflicting_kind'],
+                'E_IMPORT_DUPLICATE_MAPPING': ['alias', 'mapping_kind', 'duplicated_name', 'direction', 'host_state_path'],
+                'E_IMPORT_MAPPING_INVALID': ['alias', 'mapping_kind', 'host_state_path', 'reason'],
+            };
+            for (const d of diagnostics) {
+                const required = IMPORT_REQUIRED_FIELDS[d.code];
+                if (!required) {
+                    continue;
+                }
+                const data = d.data as Record<string, unknown> | undefined;
+                for (const field of required) {
+                    assert.ok(
+                        data !== undefined
+                            && data[field] !== undefined
+                            && data[field] !== null,
+                        `${fixture.name}: ${d.code} missing required data field "${field}", got data=${JSON.stringify(data)}`,
+                    );
+                }
+            }
         });
     }
 });

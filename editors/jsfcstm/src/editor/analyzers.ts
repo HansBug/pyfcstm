@@ -800,11 +800,18 @@ function addDuringAspectInvalidDiagnostics(
             continue;
         }
 
+        // I3 lockdown (PR #116 re-review): ``aspect`` may be
+        // ``undefined`` from the live AST or ``null`` after a JSON
+        // round-trip / cross-worker serialization. Treat any value
+        // that is not the literal string ``'before'`` / ``'after'``
+        // as the bare-during case to keep both ends agreeing.
+        const aspectIsBeforeAfter = action.aspect === 'before' || action.aspect === 'after';
+
         // Scenario (a): leaf state with a local ``during before`` /
         // ``during after`` — the aspect-qualified during only makes
         // sense on a composite (it gates on entry/exit of the
         // composite).
-        if (!owner.composite && action.aspect !== undefined) {
+        if (!owner.composite && aspectIsBeforeAfter) {
             diagnostics.push({
                 range: action.range,
                 message: `For leaf state ${JSON.stringify(owner.name)}, during cannot assign aspect ${JSON.stringify(action.aspect)}.`,
@@ -822,7 +829,7 @@ function addDuringAspectInvalidDiagnostics(
 
         // Scenario (b): composite state with a bare ``during`` (no
         // aspect token) — composites must pick ``before`` or ``after``.
-        if (owner.composite && action.aspect === undefined) {
+        if (owner.composite && !aspectIsBeforeAfter) {
             diagnostics.push({
                 range: action.range,
                 message: `For composite state ${JSON.stringify(owner.name)}, during must assign aspect to either 'before' or 'after'.`,

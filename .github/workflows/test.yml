@@ -177,7 +177,9 @@ jobs:
           wget -q -O antlr-4.9.3.jar https://www.antlr.org/download/antlr-4.9.3-complete.jar
       - name: Install jsfcstm deps
         working-directory: editors/jsfcstm
-        run: npm install
+        # ``npm ci`` enforces lockfile fidelity — surfaces silent
+        # transitive upgrades that ``npm install`` would absorb.
+        run: npm ci
       - name: Run jsfcstm test + coverage
         working-directory: editors/jsfcstm
         run: npm test

@@ -220,8 +220,11 @@ describe('jsfcstm analyzers and code actions', () => {
     // PR-A-coverage: targeted tests for expression / statement walker
     // branches that the existing fixtures don't reach.
     describe('analyzer expression walker coverage (PR-A-coverage)', () => {
-        it('walks unary, binary, function, conditional, and parenthesized expressions in guards', async () => {
-            const dir = trackTempDir('jsfcstm-walker-');
+        it('walks unary, binary, function, conditional, and parenthesized expressions in guards (positive case)', async () => {
+            // Positive case: every identifier IS declared, so the walker
+            // recursing through unary/binary/function/conditional/
+            // parenthesized cases must NOT spuriously flag any name.
+            const dir = trackTempDir('jsfcstm-walker-pos-');
             const hostFile = path.join(dir, 'host.fcstm');
             const document = createDocument([
                 'def int counter = 0;',
@@ -239,6 +242,43 @@ describe('jsfcstm analyzers and code actions', () => {
                 0,
                 `unexpected E_UNDEFINED_VAR: ${JSON.stringify(diagnostics)}`,
             );
+        });
+
+        it('walks ConditionalOp ifFalse + UFunc + parenthesized branches and reports nested unknowns', async () => {
+            // Negative case (PR-A-coverage Codex I3): plant an
+            // undefined identifier in *each* nested branch (ternary
+            // ifTrue, ternary ifFalse, function argument, parenthesized
+            // subexpression). If the walker misses any branch, the
+            // corresponding name silently survives without
+            // E_UNDEFINED_VAR. Asserting on every name proves every
+            // branch was actually visited.
+            const dir = trackTempDir('jsfcstm-walker-neg-');
+            const hostFile = path.join(dir, 'host.fcstm');
+            const document = createDocument([
+                'def int known = 0;',
+                'state Root {',
+                '    state A;',
+                '    state B;',
+                '    [*] -> A;',
+                // Each undefined name lives in a distinct walker case:
+                //   inside_paren — Parenthesized
+                //   inside_fcall — Function argument
+                //   inside_true  — ConditionalOp.ifTrue
+                //   inside_false — ConditionalOp.ifFalse
+                //   inside_unary — UnaryOp operand (`-name`)
+                '    A -> B : if [(inside_paren + 1) > 0 && abs(inside_fcall) > 0 && ((known > 0) ? inside_true : inside_false) > 0 && -inside_unary > 0];',
+                '}',
+            ].join('\n'), hostFile);
+            const diagnostics = await packageModule.collectDocumentDiagnostics(document);
+            const undefNames = new Set(
+                diagnostics
+                    .filter(d => d.code === 'E_UNDEFINED_VAR')
+                    .map(d => (d.data as Record<string, unknown>)?.var_name as string),
+            );
+            for (const name of ['inside_paren', 'inside_fcall', 'inside_true', 'inside_false', 'inside_unary']) {
+                assert.ok(undefNames.has(name),
+                    `walker missed branch for ${name}; got E_UNDEFINED_VAR for ${JSON.stringify([...undefNames])}`);
+            }
         });
 
         it('detects read-before-assign inside if-branch condition', async () => {
@@ -285,15 +325,26 @@ describe('jsfcstm analyzers and code actions', () => {
                 '}',
             ].join('\n'), hostFile);
             const diagnostics = await packageModule.collectDocumentDiagnostics(document);
-            const trackerReads = diagnostics.filter(d =>
-                d.code === 'E_UNDEFINED_VAR'
-                && (d.data as Record<string, unknown> | undefined)?.var_name === 'tracker'
+            // Tightened (PR-A-coverage Claude I3): assert (a) tracker
+            // never appears in any E_UNDEFINED_VAR; (b) the post-merge
+            // read of ``tracker + 1`` produced no diagnostic at all —
+            // proves the merge logic actually propagated, not just
+            // that the analyzer happens to be silent.
+            const allUndef = diagnostics.filter(d => d.code === 'E_UNDEFINED_VAR');
+            assert.equal(allUndef.length, 0,
+                `enter-block should be clean after if/else merge, got ${JSON.stringify(allUndef.map(d => d.data))}`);
+            const trackerDiags = diagnostics.filter(d =>
+                (d.data as Record<string, unknown> | undefined)?.var_name === 'tracker'
             );
-            assert.equal(trackerReads.length, 0,
-                `tracker should be merged-assigned after if/else, got ${JSON.stringify(trackerReads)}`);
+            assert.equal(trackerDiags.length, 0,
+                `tracker must not appear in any diagnostic after merge, got ${JSON.stringify(trackerDiags)}`);
         });
 
-        it('forced transition with missing target emits diagnostic', async () => {
+        it('forced transition with missing target emits E_FORCED_TRANSITION_EXPANSION exactly', async () => {
+            // Tightened (PR-A-coverage Claude I4): pin the exact code.
+            // jsfcstm's analyzer for ``!State -> NoSuch`` reports
+            // ``E_FORCED_TRANSITION_EXPANSION``; the previous
+            // OR-form assertion was a contract escape hatch.
             const dir = trackTempDir('jsfcstm-forcedtgt-');
             const hostFile = path.join(dir, 'host.fcstm');
             const document = createDocument([
@@ -304,12 +355,12 @@ describe('jsfcstm analyzers and code actions', () => {
                 '}',
             ].join('\n'), hostFile);
             const diagnostics = await packageModule.collectDocumentDiagnostics(document);
-            const matched = diagnostics.find(d =>
-                d.code === 'E_FORCED_TRANSITION_EXPANSION'
-                || d.code === 'E_MISSING_STATE',
-            );
-            assert.ok(matched,
-                `expected forced-transition diagnostic, got ${JSON.stringify(diagnostics.map(d => d.code))}`);
+            const forced = diagnostics.filter(d => d.code === 'E_FORCED_TRANSITION_EXPANSION');
+            assert.equal(forced.length, 1,
+                `expected exactly one E_FORCED_TRANSITION_EXPANSION, got codes=${JSON.stringify(diagnostics.map(d => d.code))}`);
+            // ``W_GUARD_CONST_FALSE`` may also fire as a side effect
+            // (guard ``if [false]``) — that is not the focus of this
+            // test, so we don't assert on it either way.
         });
     });
 });

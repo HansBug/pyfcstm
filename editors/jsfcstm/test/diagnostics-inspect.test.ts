@@ -256,11 +256,23 @@ state Root {
 }
 `;
 
-        it('inspectModelToJson deep-clones the report via JSON', async () => {
+        it('inspectModelToJson returns a structurally equal but reference-independent copy', async () => {
             const report = inspectModel(await buildMachine(EFFECTS_DSL));
             const cloned = packageModule.inspectModelToJson(report);
-            // Round-trip is structurally equal but reference-independent.
+            // Round-trip is structurally equal to the original.
             assert.deepEqual(cloned, JSON.parse(JSON.stringify(report)));
+            // BUT it must be a distinct object — same-reference would
+            // mean the helper returned the original (or aliased it).
+            assert.notStrictEqual(cloned, report);
+            // Mutation-isolation: mutating the clone must NOT touch the
+            // original. This is the assertion that proves the "deep
+            // copy" claim — assert.deepEqual with the json-roundtrip
+            // form alone is a self-reflexive equation when the impl IS
+            // that round-trip.
+            const originalSnapshot = JSON.stringify(report);
+            (cloned as { variables: unknown[] }).variables.push({mutated: true});
+            assert.equal(JSON.stringify(report), originalSnapshot,
+                'mutating the clone should not affect the original report');
         });
 
         it('walks effect-side expressions (ternary + binary) to record reads', async () => {
@@ -306,13 +318,27 @@ state Root {
                 `expected counter to be written in Active->Idle effect (if-block branches), got ${JSON.stringify(pairs)}`);
         });
 
-        it('effectsText surfaces non-empty effect text on transitions', async () => {
+        it('effectsText surfaces effect text on BOTH transitions, including the IfBlock-bearing one', async () => {
+            // Tightened (PR-A-coverage Codex I3): pin both transitions
+            // — the guard-effect one (Idle→Active) and the if-block
+            // effect one (Active→Idle). The latter is the case that
+            // exercises ``walkStmtReadsWrites`` IfBlock branch.
             const report = inspectModel(await buildMachine(EFFECTS_DSL));
-            const guardedTransition = report.transitions.find(t => t.effect);
-            assert.ok(guardedTransition, 'expected at least one transition with an effect');
+            const idleToActive = report.transitions.find(
+                t => t.from_path === 'Root.Idle' && t.to_path === 'Root.Active',
+            );
+            assert.ok(idleToActive, 'expected Root.Idle → Root.Active transition');
             assert.ok(
-                typeof guardedTransition!.effect === 'string'
-                    && guardedTransition!.effect!.length > 0,
+                typeof idleToActive!.effect === 'string' && idleToActive!.effect!.length > 0,
+                `Idle→Active effect text empty: ${JSON.stringify(idleToActive!.effect)}`,
+            );
+            const activeToIdle = report.transitions.find(
+                t => t.from_path === 'Root.Active' && t.to_path === 'Root.Idle',
+            );
+            assert.ok(activeToIdle, 'expected Root.Active → Root.Idle transition');
+            assert.ok(
+                typeof activeToIdle!.effect === 'string' && activeToIdle!.effect!.length > 0,
+                `Active→Idle (IfBlock-bearing) effect text empty: ${JSON.stringify(activeToIdle!.effect)}`,
             );
         });
 

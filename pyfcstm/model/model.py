@@ -2296,7 +2296,19 @@ def parse_dsl_node_to_state_machine(
     ) -> None:
         """Walk an operation block and record every assignment LHS name
         whose target is NOT a file-top ``def`` — those are exactly the
-        names that look like block-local temporaries (I-i)."""
+        names that look like block-local temporaries (I-i).
+
+        I5 (PR #116 re-review): this scan deliberately flattens across
+        ``if`` branches — a name assigned in branch A is treated as
+        "could be a temp" even when read in branch B's body. The
+        alternative (branch-aware analysis) would require per-path
+        reachable-assignment tracking and is more precision than the
+        ``is_temporary`` schema flag is meant to carry. Both jsfcstm
+        and pyfcstm agree on this flattened heuristic (jsfcstm's
+        ``analyzeOperationStatements`` always emits ``is_temporary:
+        true`` for operation-block reads), so the flag stays
+        cross-end consistent at the cost of cross-branch precision.
+        """
         for op_item in op_nodes:
             if isinstance(op_item, dsl_nodes.OperationAssignment):
                 if op_item.name not in d_defines:

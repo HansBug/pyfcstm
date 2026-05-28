@@ -589,6 +589,42 @@ def test_undefined_var_is_temporary_false_when_no_later_assignment():
 
 
 @pytest.mark.unittest
+def test_is_temporary_flattens_across_if_branches():
+    """I5 lockdown (PR #116 re-review): a name assigned in one
+    ``if`` branch but read in another is reported with
+    ``is_temporary=True`` — the heuristic is intentionally flattened
+    across branches, matching jsfcstm's
+    ``analyzeOperationStatements`` behaviour. A future tightening to
+    per-path precision would diverge the two ends, so this test pins
+    the current contract."""
+    dsl = '\n'.join([
+        'state Root {',
+        '    state Idle {',
+        '        enter {',
+        '            if [1 > 0] { x = 1; }',
+        '            else { y = x + 1; }',
+        '        }',
+        '    }',
+        '    [*] -> Idle;',
+        '}',
+    ])
+    _, _, diagnostics = _collect_codes_from_dsl(dsl)
+    x_reads = [
+        d for d in diagnostics
+        if d.code == 'E_UNDEFINED_VAR' and d.refs.get('var_name') == 'x'
+    ]
+    assert x_reads, (
+        f'expected E_UNDEFINED_VAR for "x" in else branch, '
+        f'got {[d.refs for d in diagnostics]}'
+    )
+    for d in x_reads:
+        assert d.refs.get('is_temporary') is True, (
+            f'x is assigned in the if-branch sibling; the flag should '
+            f'flatten across branches per docstring; refs={d.refs}'
+        )
+
+
+@pytest.mark.unittest
 def test_lookup_api_codes_never_fire_in_static_pipeline():
     """I-b from PR #115 review: E_EVENT_REF_INVALID / E_EVENT_NOT_FOUND
     are marked ``emit_tier: lookup_api`` because they only fire when a

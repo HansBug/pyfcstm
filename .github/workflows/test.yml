@@ -140,8 +140,46 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           file: ./coverage.xml
-          flags: unittests
+          flags: python
           name: codecov-umbrella
+          fail_ci_if_error: false
+
+  jsfcstm_test:
+    # Run jsfcstm's mocha + c8 suite on a single OS+Node version. The
+    # jsfcstm package is pure TypeScript/Node — it does not need the
+    # Python matrix dimension. Codecov receives the lcov report under
+    # the ``jsfcstm`` flag so the dashboard shows py/js coverage
+    # side-by-side.
+    name: jsfcstm test
+    runs-on: ubuntu-22.04
+    if: ${{ !contains(github.event.head_commit.message, 'ci skip') && !contains(github.event.head_commit.message, 'test skip') && !contains(github.event.head_commit.message, '[js skip]') }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3.3.0
+        with:
+          fetch-depth: 20
+          submodules: 'recursive'
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install Python (for sync-runtime-assets reading codes.yaml)
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Install jsfcstm deps
+        working-directory: editors/jsfcstm
+        run: npm install
+      - name: Run jsfcstm test + coverage
+        working-directory: editors/jsfcstm
+        run: npm test
+      - name: Upload jsfcstm coverage to Codecov
+        uses: codecov/codecov-action@v1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          file: ./editors/jsfcstm/coverage/lcov.info
+          flags: jsfcstm
+          name: codecov-jsfcstm
           fail_ci_if_error: false
 
   build_cli:

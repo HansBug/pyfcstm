@@ -154,6 +154,40 @@ const SHOWCASE: ShowcaseFixture[] = [
         mustNotFire: ['E_INITIAL_TRANSITION_INVALID'],
     },
     {
+        // I-f scenario (a): leaf state with a *local* ``during after``
+        // (no ``>>``). pyfcstm flags this; jsfcstm now does too.
+        name: '07a-during-aspect-leaf-local-aspect',
+        dsl: [
+            'def int counter = 0;',
+            'state Root {',
+            '    state Idle {',
+            '        during after { counter = counter + 1; }',
+            '    }',
+            '    [*] -> Idle;',
+            '}',
+        ].join('\n'),
+        mustFire: ['E_DURING_ASPECT_INVALID'],
+        mustNotFire: ['E_INITIAL_TRANSITION_INVALID'],
+    },
+    {
+        // I-f scenario (b): composite state with a *bare* ``during`` (no
+        // aspect). Composite during must pick before/after — pyfcstm
+        // already enforces this and jsfcstm now matches.
+        name: '07b-during-aspect-composite-bare',
+        dsl: [
+            'def int counter = 0;',
+            'state Root {',
+            '    state Outer {',
+            '        during { counter = counter + 1; }',
+            '        state Inner;',
+            '        [*] -> Inner;',
+            '    }',
+            '    [*] -> Outer;',
+            '}',
+        ].join('\n'),
+        mustFire: ['E_DURING_ASPECT_INVALID'],
+    },
+    {
         name: '08-initial-transition-invalid',
         dsl: [
             'state Root {',

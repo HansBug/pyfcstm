@@ -768,14 +768,18 @@ function addDuringAspectInvalidDiagnostics(
         stateById.set(state.identity.id, state);
     }
     for (const action of semantic.actions) {
-        if (!action.isGlobalAspect) {
-            continue;
-        }
         const owner = stateById.get(action.ownerStateId);
         if (!owner) {
             continue;
         }
-        if (!owner.composite) {
+        if (action.stage !== 'during') {
+            continue;
+        }
+
+        // Scenario (c): global ``>> during before/after`` aspect on a
+        // leaf state — there is no descendant for the aspect to fan
+        // into.
+        if (action.isGlobalAspect && !owner.composite) {
             diagnostics.push({
                 range: action.range,
                 message: `Aspect '>> during ${action.aspect ?? 'before'}' cannot appear in leaf state ${JSON.stringify(owner.name)}; aspect actions need at least one descendant leaf.`,
@@ -786,6 +790,49 @@ function addDuringAspectInvalidDiagnostics(
                     state_path: action.ownerStatePath.join('.'),
                     state_kind: 'leaf',
                     aspect: action.aspect ?? 'before',
+                },
+            });
+            continue;
+        }
+
+        // I-f scenarios (a) and (b): non-global ``during`` action.
+        if (action.isGlobalAspect) {
+            continue;
+        }
+
+        // Scenario (a): leaf state with a local ``during before`` /
+        // ``during after`` — the aspect-qualified during only makes
+        // sense on a composite (it gates on entry/exit of the
+        // composite).
+        if (!owner.composite && action.aspect !== undefined) {
+            diagnostics.push({
+                range: action.range,
+                message: `For leaf state ${JSON.stringify(owner.name)}, during cannot assign aspect ${JSON.stringify(action.aspect)}.`,
+                severity: 'error',
+                source: 'fcstm',
+                code: FCSTM_DIAGNOSTIC_CODES.duringAspectInvalid,
+                data: {
+                    state_path: action.ownerStatePath.join('.'),
+                    state_kind: 'leaf',
+                    aspect: action.aspect,
+                },
+            });
+            continue;
+        }
+
+        // Scenario (b): composite state with a bare ``during`` (no
+        // aspect token) — composites must pick ``before`` or ``after``.
+        if (owner.composite && action.aspect === undefined) {
+            diagnostics.push({
+                range: action.range,
+                message: `For composite state ${JSON.stringify(owner.name)}, during must assign aspect to either 'before' or 'after'.`,
+                severity: 'error',
+                source: 'fcstm',
+                code: FCSTM_DIAGNOSTIC_CODES.duringAspectInvalid,
+                data: {
+                    state_path: action.ownerStatePath.join('.'),
+                    state_kind: 'composite',
+                    aspect: null,
                 },
             });
         }

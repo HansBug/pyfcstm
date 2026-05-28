@@ -72,16 +72,33 @@ function syncSharedSchemaDist() {
     copyFile(sharedSchemaSource, sharedSchemaDistTarget);
 }
 
-function syncSharedCodesSrc() {
+function ensureSharedCodesExists() {
     if (!fs.existsSync(sharedCodesSource)) {
         throw new Error(
             `Shared diagnostic codes registry not found: ${sharedCodesSource}. ` +
             `It must be checked in under pyfcstm/diagnostics/codes.yaml.`
         );
     }
+}
+
+function loadSharedCodesRegistry() {
+    ensureSharedCodesExists();
     const text = fs.readFileSync(sharedCodesSource, 'utf-8');
-    const registry = yaml.load(text);
+    return yaml.load(text);
+}
+
+// I-d: each phase must write only to its own target directory and
+// re-read codes.yaml each time. The previous implementation had
+// ``syncSharedCodesSrc()`` write to both ``src/`` and ``dist/`` which
+// meant ``npm run sync:src && (edit codes.yaml) && npm run sync:dist``
+// left dist/codes.json stale.
+function syncSharedCodesSrc() {
+    const registry = loadSharedCodesRegistry();
     writeJson(sharedCodesSrcTarget, registry);
+}
+
+function syncSharedCodesDist() {
+    const registry = loadSharedCodesRegistry();
     writeJson(sharedCodesDistTarget, registry);
 }
 
@@ -102,6 +119,7 @@ function runDistPhase() {
     fs.rmSync(targetDir, {recursive: true, force: true});
     copyTree(sourceDir, targetDir);
     syncSharedSchemaDist();
+    syncSharedCodesDist();
 }
 
 function main() {

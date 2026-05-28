@@ -46,11 +46,13 @@ import json
 import math
 import os
 from abc import ABC
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from textwrap import indent
 from typing import List, Union, Optional, Any
 
 from hbutils.design import SingletonMark
+
+from ..utils.validate import Span
 
 __all__ = [
     "ASTNode",
@@ -785,6 +787,7 @@ class DefAssignment(Statement):
     name: str
     type: str
     expr: Expr
+    _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     def __str__(self) -> str:
         """
@@ -1272,6 +1275,7 @@ class TransitionDefinition(ASTNode):
     event_id: Optional[ChainID]
     condition_expr: Optional[Expr]
     post_operations: List["OperationalStatement"]
+    _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     def __str__(self) -> str:
         """
@@ -1350,6 +1354,7 @@ class ForceTransitionDefinition(ASTNode):
     to_state: Union[str, _StateSingletonMark]
     event_id: Optional[ChainID]
     condition_expr: Optional[Expr]
+    _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     def __str__(self) -> str:
         """
@@ -1444,6 +1449,7 @@ class StateDefinition(ASTNode):
     during_aspects: List["DuringAspectStatement"] = None
     force_transitions: List["ForceTransitionDefinition"] = None
     is_pseudo: bool = False
+    _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         """

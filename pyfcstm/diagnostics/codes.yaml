@@ -239,3 +239,113 @@ E_INITIAL_TRANSITION_INVALID:
         'target_not_child'.
   example_dsl: |
     state Root { state Outer { state Inner; } }
+
+E_DUPLICATE_FUNCTION_NAME:
+  severity: error
+  description: >-
+    Two named lifecycle actions (enter / during / exit / during-aspect) within
+    the same state share the same name. Named actions are referenced via
+    `ref <name>` and must be uniquely identifiable.
+  refs:
+    function_name:
+      type: str
+      required: true
+      description: The duplicated named-action name.
+    state_path:
+      type: str
+      required: true
+      description: Dotted path of the state declaring the duplicates.
+    stage:
+      type: str
+      required: true
+      description: >-
+        Lifecycle stage where the duplicate appears. One of: 'enter',
+        'during', 'exit', 'during_aspect'.
+  example_dsl: |
+    state Root {
+        state A {
+            enter Foo { }
+            enter Foo { }
+        }
+    }
+
+E_DURING_ASPECT_INVALID:
+  severity: error
+  description: >-
+    A `during` block is declared inconsistently with the host state's
+    leaf/composite kind. Leaf states must use `during { ... }` without an
+    aspect modifier; composite states must use `during before { ... }` or
+    `during after { ... }` (the aspect is mandatory on composites).
+  refs:
+    state_path:
+      type: str
+      required: true
+      description: Dotted path of the offending state.
+    state_kind:
+      type: str
+      required: true
+      description: >-
+        Kind of the host state. One of: 'leaf', 'composite'.
+    aspect:
+      type: str_or_null
+      required: false
+      description: >-
+        The aspect token that was actually used (``'before'``, ``'after'``,
+        or null when the user wrote a bare ``during`` on a composite).
+  example_dsl: |
+    state Root {
+        state A {
+            during before { }
+        }
+    }
+
+E_PSEUDO_NOT_LEAF:
+  severity: error
+  description: >-
+    A state was declared with the `pseudo` keyword but has nested
+    substates. Pseudo states must be leaves: they skip ancestor
+    `>> during` aspects and only make sense without inner structure.
+  refs:
+    state_path:
+      type: str
+      required: true
+      description: Dotted path of the offending pseudo state.
+  example_dsl: |
+    state Root {
+        pseudo state Outer {
+            state Inner;
+            [*] -> Inner;
+        }
+    }
+
+E_NAMED_FUNCTION_REF_NOT_FOUND:
+  severity: error
+  description: >-
+    A `ref` lifecycle action could not resolve its target named action.
+    Either the path walks through a state that does not exist, or the final
+    segment is not a named action defined inside the resolved state.
+  refs:
+    ref_path:
+      type: str
+      required: true
+      description: Dotted path of the unresolved reference.
+    reason:
+      type: str
+      required: true
+      description: >-
+        Short tag describing the resolution failure. One of:
+        'state_not_found', 'named_function_not_found'.
+    missing_segment:
+      type: str_or_null
+      required: false
+      description: >-
+        The path segment that failed to resolve. For 'state_not_found' this
+        is the state name that does not exist under the parent path; for
+        'named_function_not_found' this is the action name searched for in
+        the resolved state.
+  example_dsl: |
+    state Root {
+        state A {
+            enter ref NoSuch.NoSuch;
+        }
+    }

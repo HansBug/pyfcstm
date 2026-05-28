@@ -6,6 +6,20 @@ pyfcstm.utils.validate
 .. automodule:: pyfcstm.utils.validate
 
 
+Span
+-----------------------------------------------------
+
+.. autoclass:: Span
+    :members: line,column,end_line,end_column
+
+
+ModelDiagnostic
+-----------------------------------------------------
+
+.. autoclass:: ModelDiagnostic
+    :members: __post_init__,is_error,format_line,code,severity,message,span,refs
+
+
 ValidationError
 -----------------------------------------------------
 

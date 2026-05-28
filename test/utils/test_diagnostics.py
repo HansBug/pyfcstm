@@ -147,7 +147,26 @@ class TestModelValidationError:
         assert err.errors == []
         assert len(err.diagnostics) == 1
         assert err.diagnostics[0] is diag
-        assert 'E_UNDEFINED_VAR' in str(err)
+        # Single-diagnostic case emits the bare message verbatim — this is
+        # how the PR-0 baseline ``"foo" in err.msg`` substring asserts stay
+        # green after PR-2's raise migration. Structured downstream
+        # consumers dispatch on ``err.diagnostics[0].code`` instead.
+        assert 'unknown var' in str(err)
+        assert err.diagnostics[0].code == 'E_UNDEFINED_VAR'
+
+    def test_multiple_diagnostics_construction_uses_list_format(self):
+        diags = [
+            ModelDiagnostic(code='E_UNDEFINED_VAR', severity='error', message='m1'),
+            ModelDiagnostic(code='E_MISSING_STATE', severity='error', message='m2'),
+        ]
+        err = ModelValidationError(diagnostics=diags)
+        s = str(err)
+        # Multi-entry path uses the "Model diagnostics, N items in total:"
+        # wrapper to enumerate every line.
+        assert 'Model diagnostics' in s
+        assert '2 items in total' in s
+        assert '[error/E_UNDEFINED_VAR]' in s
+        assert '[error/E_MISSING_STATE]' in s
 
     def test_mixed_errors_and_diagnostics(self):
         diag = ModelDiagnostic(code='E_X', severity='error', message='mx')

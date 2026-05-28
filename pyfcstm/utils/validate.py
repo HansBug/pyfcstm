@@ -269,6 +269,19 @@ class ModelValidationError(SyntaxError):
             super().__init__(message)
 
     def _build_summary_message(self) -> str:
+        # Single-entry path: emit the underlying message verbatim so that
+        # downstream consumers (and existing tests) that match the raw
+        # ``SyntaxError`` message text continue to work after PR-2's
+        # ``raise SyntaxError(...)`` -> ``raise ModelValidationError(...)``
+        # migration. The "Model diagnostics, N items in total:" wrapper
+        # only adds value when there is more than one entry to enumerate.
+        single_error = len(self.errors) == 1 and not self.diagnostics
+        single_diag = len(self.diagnostics) == 1 and not self.errors
+        if single_error:
+            return str(self.errors[0])
+        if single_diag:
+            return self.diagnostics[0].message
+
         parts: List[str] = []
         if self.errors:
             error_lines = [

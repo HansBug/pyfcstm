@@ -31,11 +31,13 @@ from .codes import (
     CodesSchemaError,
     load_codes,
 )
+from .sink import DiagnosticSink
 
 __all__ = [
     'CODE_REGISTRY',
     'CodeFieldSpec',
     'CodeSpec',
     'CodesSchemaError',
+    'DiagnosticSink',
     'load_codes',
 ]

@@ -58,7 +58,7 @@ const SHOWCASE: ShowcaseFixture[] = [
             '}',
         ].join('\n'),
         mustFire: ['E_UNDEFINED_VAR', 'E_UNDEFINED_VAR'],
-        mustNotFire: ['E_INITIAL_TRANSITION_INVALID', 'E_DURING_ASPECT_INVALID'],
+        mustNotFire: ['E_INITIAL_TRANSITION_INVALID'],
     },
     {
         name: '02-duplicate-variable',
@@ -266,17 +266,21 @@ const SHOWCASE: ShowcaseFixture[] = [
     {
         name: '15-import-duplicate-mapping',
         files: {
+            // Worker declares ``sensor`` so the pyfcstm def-mapping
+            // pipeline runs (it short-circuits on an empty imported
+            // module). jsfcstm independently detects the duplicate
+            // mapping AST nodes.
             'host.fcstm': [
                 'state Root {',
                 '    state Idle;',
                 '    [*] -> Idle;',
                 '    import "./worker.fcstm" as Worker {',
-                '        def sensor_* -> io_$1;',
-                '        def sensor_* -> io_$1;',
+                '        def sensor -> io_a;',
+                '        def sensor -> io_a;',
                 '    }',
                 '}',
             ].join('\n'),
-            'worker.fcstm': 'state Worker;',
+            'worker.fcstm': 'def int sensor = 0;\nstate Worker;',
         },
         entry: 'host.fcstm',
         mustFire: ['E_IMPORT_DUPLICATE_MAPPING'],

@@ -36,8 +36,6 @@ state L1 {
             y = y + 1;
         }
 
-        >> during after ref /F1x;
-
         exit ref /F1x;
     }
 
@@ -521,13 +519,7 @@ class TestModelStateL1:
                             ref=dsl_nodes.ChainID(path=["F1x"], is_absolute=True),
                         )
                     ],
-                    during_aspects=[
-                        dsl_nodes.DuringAspectRefFunction(
-                            name=None,
-                            aspect="after",
-                            ref=dsl_nodes.ChainID(path=["F1x"], is_absolute=True),
-                        )
-                    ],
+                    during_aspects=[],
                     force_transitions=[],
                     is_pseudo=False,
                 ),
@@ -1021,25 +1013,7 @@ class TestModelStateL1:
         assert state_l1_l21.on_exits[0].is_ref
         assert state_l1_l21.on_exits[0].parent.name == "L21"
         assert state_l1_l21.on_exits[0].parent.path == ("L1", "L21")
-        assert len(state_l1_l21.on_during_aspects) == 1
-        assert state_l1_l21.on_during_aspects[0].stage == "during"
-        assert state_l1_l21.on_during_aspects[0].aspect == "after"
-        assert state_l1_l21.on_during_aspects[0].name is None
-        assert state_l1_l21.on_during_aspects[0].doc is None
-        assert state_l1_l21.on_during_aspects[0].operations == []
-        assert not state_l1_l21.on_during_aspects[0].is_abstract
-        assert state_l1_l21.on_during_aspects[0].state_path == ("L1", "L21", None)
-        assert state_l1_l21.on_during_aspects[0].ref.name == "F1x"
-        assert state_l1_l21.on_during_aspects[0].ref.aspect == None
-        assert state_l1_l21.on_during_aspects[0].ref.state_path == ("L1", "F1x")
-        assert state_l1_l21.on_during_aspects[0].ref_state_path == ("L1", "F1x")
-        assert state_l1_l21.on_during_aspects[0].parent_ref().name == "L21"
-        assert state_l1_l21.on_during_aspects[0].parent_ref().path == ("L1", "L21")
-        assert state_l1_l21.on_during_aspects[0].func_name == "L1.L21.<unnamed>"
-        assert state_l1_l21.on_during_aspects[0].is_aspect
-        assert state_l1_l21.on_during_aspects[0].is_ref
-        assert state_l1_l21.on_during_aspects[0].parent.name == "L21"
-        assert state_l1_l21.on_during_aspects[0].parent.path == ("L1", "L21")
+        assert state_l1_l21.on_during_aspects == []
         assert state_l1_l21.parent_ref().name == "L1"
         assert state_l1_l21.parent_ref().path == ("L1",)
         assert state_l1_l21.substate_name_to_id == {}
@@ -1053,44 +1027,7 @@ class TestModelStateL1:
         assert state_l1_l21.is_leaf_state
         assert not state_l1_l21.is_root_state
         assert state_l1_l21.is_stoppable
-        assert len(state_l1_l21.non_abstract_on_during_aspects) == 1
-        assert state_l1_l21.non_abstract_on_during_aspects[0].stage == "during"
-        assert state_l1_l21.non_abstract_on_during_aspects[0].aspect == "after"
-        assert state_l1_l21.non_abstract_on_during_aspects[0].name is None
-        assert state_l1_l21.non_abstract_on_during_aspects[0].doc is None
-        assert state_l1_l21.non_abstract_on_during_aspects[0].operations == []
-        assert not state_l1_l21.non_abstract_on_during_aspects[0].is_abstract
-        assert state_l1_l21.non_abstract_on_during_aspects[0].state_path == (
-            "L1",
-            "L21",
-            None,
-        )
-        assert state_l1_l21.non_abstract_on_during_aspects[0].ref.name == "F1x"
-        assert state_l1_l21.non_abstract_on_during_aspects[0].ref.aspect == None
-        assert state_l1_l21.non_abstract_on_during_aspects[0].ref.state_path == (
-            "L1",
-            "F1x",
-        )
-        assert state_l1_l21.non_abstract_on_during_aspects[0].ref_state_path == (
-            "L1",
-            "F1x",
-        )
-        assert state_l1_l21.non_abstract_on_during_aspects[0].parent_ref().name == "L21"
-        assert state_l1_l21.non_abstract_on_during_aspects[0].parent_ref().path == (
-            "L1",
-            "L21",
-        )
-        assert (
-            state_l1_l21.non_abstract_on_during_aspects[0].func_name
-            == "L1.L21.<unnamed>"
-        )
-        assert state_l1_l21.non_abstract_on_during_aspects[0].is_aspect
-        assert state_l1_l21.non_abstract_on_during_aspects[0].is_ref
-        assert state_l1_l21.non_abstract_on_during_aspects[0].parent.name == "L21"
-        assert state_l1_l21.non_abstract_on_during_aspects[0].parent.path == (
-            "L1",
-            "L21",
-        )
+        assert state_l1_l21.non_abstract_on_during_aspects == []
         assert state_l1_l21.non_abstract_on_durings == []
         assert len(state_l1_l21.non_abstract_on_enters) == 1
         assert state_l1_l21.non_abstract_on_enters[0].stage == "enter"
@@ -1191,13 +1128,7 @@ class TestModelStateL1:
                     name=None, ref=dsl_nodes.ChainID(path=["F1x"], is_absolute=True)
                 )
             ],
-            during_aspects=[
-                dsl_nodes.DuringAspectRefFunction(
-                    name=None,
-                    aspect="after",
-                    ref=dsl_nodes.ChainID(path=["F1x"], is_absolute=True),
-                )
-            ],
+            during_aspects=[],
             force_transitions=[],
             is_pseudo=False,
         )
@@ -1372,98 +1303,22 @@ class TestModelStateL1:
 
     def test_state_l1_l21_during_aspects(self, state_l1_l21):
         lst = state_l1_l21.list_on_during_aspects()
-        assert len(lst) == 1
-        on_stage = lst[0]
-        assert on_stage.stage == "during"
-        assert on_stage.aspect == "after"
-        assert on_stage.name is None
-        assert on_stage.doc is None
-        assert on_stage.operations == []
-        assert not on_stage.is_abstract
-        assert on_stage.state_path == ("L1", "L21", None)
-        assert on_stage.ref.name == "F1x"
-        assert on_stage.ref.aspect == None
-        assert on_stage.ref.state_path == ("L1", "F1x")
-        assert on_stage.ref_state_path == ("L1", "F1x")
-        assert on_stage.parent_ref().name == "L21"
-        assert on_stage.parent_ref().path == ("L1", "L21")
-        assert on_stage.func_name == "L1.L21.<unnamed>"
-        assert on_stage.is_aspect
-        assert on_stage.is_ref
-        assert on_stage.parent.name == "L21"
-        assert on_stage.parent.path == ("L1", "L21")
+        assert lst == []
 
         lst = state_l1_l21.list_on_during_aspects(aspect="before")
         assert lst == []
 
         lst = state_l1_l21.list_on_during_aspects(aspect="after")
-        assert len(lst) == 1
-        on_stage = lst[0]
-        assert on_stage.stage == "during"
-        assert on_stage.aspect == "after"
-        assert on_stage.name is None
-        assert on_stage.doc is None
-        assert on_stage.operations == []
-        assert not on_stage.is_abstract
-        assert on_stage.state_path == ("L1", "L21", None)
-        assert on_stage.ref.name == "F1x"
-        assert on_stage.ref.aspect == None
-        assert on_stage.ref.state_path == ("L1", "F1x")
-        assert on_stage.ref_state_path == ("L1", "F1x")
-        assert on_stage.parent_ref().name == "L21"
-        assert on_stage.parent_ref().path == ("L1", "L21")
-        assert on_stage.func_name == "L1.L21.<unnamed>"
-        assert on_stage.is_aspect
-        assert on_stage.is_ref
-        assert on_stage.parent.name == "L21"
-        assert on_stage.parent.path == ("L1", "L21")
+        assert lst == []
 
         lst = state_l1_l21.list_on_during_aspects(is_abstract=False)
-        assert len(lst) == 1
-        on_stage = lst[0]
-        assert on_stage.stage == "during"
-        assert on_stage.aspect == "after"
-        assert on_stage.name is None
-        assert on_stage.doc is None
-        assert on_stage.operations == []
-        assert not on_stage.is_abstract
-        assert on_stage.state_path == ("L1", "L21", None)
-        assert on_stage.ref.name == "F1x"
-        assert on_stage.ref.aspect == None
-        assert on_stage.ref.state_path == ("L1", "F1x")
-        assert on_stage.ref_state_path == ("L1", "F1x")
-        assert on_stage.parent_ref().name == "L21"
-        assert on_stage.parent_ref().path == ("L1", "L21")
-        assert on_stage.func_name == "L1.L21.<unnamed>"
-        assert on_stage.is_aspect
-        assert on_stage.is_ref
-        assert on_stage.parent.name == "L21"
-        assert on_stage.parent.path == ("L1", "L21")
+        assert lst == []
 
         lst = state_l1_l21.list_on_during_aspects(is_abstract=False, aspect="before")
         assert lst == []
 
         lst = state_l1_l21.list_on_during_aspects(is_abstract=False, aspect="after")
-        assert len(lst) == 1
-        on_stage = lst[0]
-        assert on_stage.stage == "during"
-        assert on_stage.aspect == "after"
-        assert on_stage.name is None
-        assert on_stage.doc is None
-        assert on_stage.operations == []
-        assert not on_stage.is_abstract
-        assert on_stage.state_path == ("L1", "L21", None)
-        assert on_stage.ref.name == "F1x"
-        assert on_stage.ref.aspect == None
-        assert on_stage.ref.state_path == ("L1", "F1x")
-        assert on_stage.ref_state_path == ("L1", "F1x")
-        assert on_stage.parent_ref().name == "L21"
-        assert on_stage.parent_ref().path == ("L1", "L21")
-        assert on_stage.func_name == "L1.L21.<unnamed>"
-        assert on_stage.is_aspect
-        assert on_stage.is_ref
-        assert on_stage.parent.name == "L21"
-        assert on_stage.parent.path == ("L1", "L21")
+        assert lst == []
 
         lst = state_l1_l21.list_on_during_aspects(is_abstract=True)
         assert lst == []
@@ -1476,7 +1331,7 @@ class TestModelStateL1:
 
     def test_state_l1_l21_during_aspect_recursively(self, state_l1_l21):
         lst = state_l1_l21.list_on_during_aspect_recursively()
-        assert len(lst) == 3
+        assert len(lst) == 2
         st, on_stage = lst[0]
         assert st.name == "L1"
         assert st.path == ("L1",)
@@ -1499,27 +1354,6 @@ class TestModelStateL1:
         assert on_stage.parent.name == "L1"
         assert on_stage.parent.path == ("L1",)
         st, on_stage = lst[1]
-        assert st.name == "L21"
-        assert st.path == ("L1", "L21")
-        assert on_stage.stage == "during"
-        assert on_stage.aspect == "after"
-        assert on_stage.name is None
-        assert on_stage.doc is None
-        assert on_stage.operations == []
-        assert not on_stage.is_abstract
-        assert on_stage.state_path == ("L1", "L21", None)
-        assert on_stage.ref.name == "F1x"
-        assert on_stage.ref.aspect == None
-        assert on_stage.ref.state_path == ("L1", "F1x")
-        assert on_stage.ref_state_path == ("L1", "F1x")
-        assert on_stage.parent_ref().name == "L21"
-        assert on_stage.parent_ref().path == ("L1", "L21")
-        assert on_stage.func_name == "L1.L21.<unnamed>"
-        assert on_stage.is_aspect
-        assert on_stage.is_ref
-        assert on_stage.parent.name == "L21"
-        assert on_stage.parent.path == ("L1", "L21")
-        st, on_stage = lst[2]
         assert st.name == "L1"
         assert st.path == ("L1",)
         assert on_stage.stage == "during"
@@ -1542,7 +1376,7 @@ class TestModelStateL1:
         assert on_stage.parent.path == ("L1",)
 
         lst = state_l1_l21.list_on_during_aspect_recursively(with_ids=True)
-        assert len(lst) == 3
+        assert len(lst) == 2
         id_, st, on_stage = lst[0]
         assert id_ == 1
         assert st.name == "L1"
@@ -1566,28 +1400,6 @@ class TestModelStateL1:
         assert on_stage.parent.name == "L1"
         assert on_stage.parent.path == ("L1",)
         id_, st, on_stage = lst[1]
-        assert id_ == 1
-        assert st.name == "L21"
-        assert st.path == ("L1", "L21")
-        assert on_stage.stage == "during"
-        assert on_stage.aspect == "after"
-        assert on_stage.name is None
-        assert on_stage.doc is None
-        assert on_stage.operations == []
-        assert not on_stage.is_abstract
-        assert on_stage.state_path == ("L1", "L21", None)
-        assert on_stage.ref.name == "F1x"
-        assert on_stage.ref.aspect == None
-        assert on_stage.ref.state_path == ("L1", "F1x")
-        assert on_stage.ref_state_path == ("L1", "F1x")
-        assert on_stage.parent_ref().name == "L21"
-        assert on_stage.parent_ref().path == ("L1", "L21")
-        assert on_stage.func_name == "L1.L21.<unnamed>"
-        assert on_stage.is_aspect
-        assert on_stage.is_ref
-        assert on_stage.parent.name == "L21"
-        assert on_stage.parent.path == ("L1", "L21")
-        id_, st, on_stage = lst[2]
         assert id_ == 2
         assert st.name == "L1"
         assert st.path == ("L1",)
@@ -2302,7 +2114,6 @@ state L1 {
             y = y + 1;
         }
         exit ref /F1x;
-        >> during after ref /F1x;
     }
     state L22 {
         enter ref /F1x;
@@ -2342,7 +2153,7 @@ endlegend
 
 state "L1" as l1 <<composite>> {
     state "L21" as l1__l21
-    l1__l21 : enter F1 {\\n    x = 0;\\n    y = y + 1;\\n}\\nexit ref /F1x;\\n>> during after ref /F1x;
+    l1__l21 : enter F1 {\\n    x = 0;\\n    y = y + 1;\\n}\\nexit ref /F1x;
     state "L22" as l1__l22
     l1__l22 : enter ref /F1x;\\nduring ref /F1x;\\nduring ref F1;\\nexit F1 {\\n    x = x + 1;\\n    y = 0;\\n}\\nexit ref /F1;
     [*] --> l1__l21

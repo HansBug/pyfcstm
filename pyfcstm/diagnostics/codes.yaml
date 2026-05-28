@@ -305,7 +305,10 @@ E_DURING_ASPECT_INVALID:
     A `during` block is declared inconsistently with the host state's
     leaf/composite kind. Leaf states must use `during { ... }` without an
     aspect modifier; composite states must use `during before { ... }` or
-    `during after { ... }` (the aspect is mandatory on composites).
+    `during after { ... }` (the aspect is mandatory on composites). The
+    global ``>> during before/after`` aspect form is **also** invalid on
+    a leaf state — aspect actions fan out to every descendant leaf, and
+    a leaf has nothing to fan into.
   refs:
     state_path:
       type: str

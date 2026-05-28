@@ -714,9 +714,15 @@ function addDuplicateFunctionNameDiagnostics(
 
 /**
  * ``E_DURING_ASPECT_INVALID`` — a leaf state cannot host
- * ``>> during before/after`` aspect actions; only composite states can.
- * Mirrors ``pyfcstm.model.model`` rule: aspect actions are descendant-fanning
- * and a leaf has no descendant by definition.
+ * ``>> during before/after`` aspect actions. Aspect actions fan out to
+ * every descendant leaf, so a leaf state (no descendants) has nothing
+ * to fan into and the aspect declaration is invalid.
+ *
+ * Uses the structural definition of "leaf": ``childStateIds.length ===
+ * 0``. The grammar-level ``state.composite`` field already aligns to
+ * this (see ``ast/builder.ts`` — composite is true iff there is at
+ * least one substate or one import that gets merged in), so ``leaf =
+ * !state.composite`` is the canonical check.
  */
 function addDuringAspectInvalidDiagnostics(
     semantic: FcstmSemanticDocument,
@@ -751,6 +757,7 @@ function addDuringAspectInvalidDiagnostics(
         }
     }
 }
+
 
 /**
  * ``E_PSEUDO_NOT_LEAF`` — ``pseudo state`` was declared but the body

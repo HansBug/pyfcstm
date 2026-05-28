@@ -1514,8 +1514,15 @@ _LANGCHECK_POSITIVE_CASES = [
             0
             ;
             state
-            Leaf
+            Root
             {
+                [*]
+                ->
+                Leaf
+                ;
+                state
+                Leaf
+                ;
                 >>
                 during
                 before
@@ -1533,8 +1540,15 @@ _LANGCHECK_POSITIVE_CASES = [
         '26. Split During Aspect Abstract Doc',
         dedent('''\
             state
-            Leaf
+            Root
             {
+                [*]
+                ->
+                Leaf
+                ;
+                state
+                Leaf
+                ;
                 >>
                 during
                 after
@@ -1945,6 +1959,8 @@ _LANGCHECK_POSITIVE_CASES += [
             state Root {
                 [*] -> Work;
                 state Work {
+                    [*] -> Step;
+                    state Step;
                     >> during before {
                         allowmixing = 1;
                         object = 2;

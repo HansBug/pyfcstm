@@ -1415,12 +1415,11 @@ class TestModelModel:
         def int a = 0;
         def int b = 2;
         state LX {
-            state LX1 {
-                >> during before {
-                    a = b + a * 2;
-                    b = a + c;
-                }
+            >> during before {
+                a = b + a * 2;
+                b = a + c;
             }
+            state LX1;
             state LX2;
 
             [*] -> LX1 : if [a == 0];
@@ -1447,13 +1446,12 @@ class TestModelModel:
         def int a = 0;
         def int b = 2;
         state LX {
-            state LX1 {
-                >> during before {
-                    a = b + a * 2;
-                    c = a + 2;
-                    b = c + 5;
-                }
+            >> during before {
+                a = b + a * 2;
+                c = a + 2;
+                b = c + 5;
             }
+            state LX1;
             state LX2;
 
             [*] -> LX1 : if [a == 0];
@@ -1468,7 +1466,7 @@ class TestModelModel:
 
         state_machine = parse_dsl_node_to_state_machine(ast_node)
         operations = (
-            state_machine.root_state.substates["LX1"].on_during_aspects[0].operations
+            state_machine.root_state.on_during_aspects[0].operations
         )
         assert [op.var_name for op in operations] == ["a", "c", "b"]
         assert operations[2].expr == BinaryOp(

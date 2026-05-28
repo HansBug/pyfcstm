@@ -22,8 +22,6 @@ state L1 {
             y = y + 1;
         }
 
-        >> during after ref /F1x;
-
         exit ref /F1x;
     }
 

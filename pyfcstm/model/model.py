@@ -2263,8 +2263,8 @@ def parse_dsl_node_to_state_machine(
         'root'
     """
 
-    dnode = assemble_state_machine_imports(dnode, path=path)
     sink = DiagnosticSink(collect=collect)
+    dnode = assemble_state_machine_imports(dnode, path=path, collect_into=sink)
 
     d_defines: Dict[str, VarDefine] = {}
     # Track first-declaration spans so duplicate diagnostics can point at
@@ -2707,6 +2707,27 @@ def parse_dsl_node_to_state_machine(
 
         on_during_aspects = []
         for during_aspect_item in node.during_aspects:
+            # PR-A alignment with jsfcstm: ``>> during before/after`` is
+            # only meaningful on a composite state (it fans out to every
+            # descendant leaf). On a leaf state there is nothing to fan
+            # into, so the aspect is invalid.
+            if not d_substates:
+                sink.emit(ModelDiagnostic(
+                    code='E_DURING_ASPECT_INVALID',
+                    severity='error',
+                    message=(
+                        f"For leaf state {node.name!r}, ``>> during "
+                        f"{during_aspect_item.aspect}`` aspect actions "
+                        f"need at least one descendant leaf:\n"
+                        f"{during_aspect_item}"
+                    ),
+                    span=getattr(during_aspect_item, '_span', None),
+                    refs={
+                        'state_path': '.'.join(current_path),
+                        'state_kind': 'leaf',
+                        'aspect': during_aspect_item.aspect,
+                    },
+                ))
             on_aspect = None
             if isinstance(during_aspect_item, dsl_nodes.DuringAspectOperations):
                 during_operations = _parse_operation_block(

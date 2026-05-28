@@ -384,6 +384,279 @@ state Root { state A; }
 
 
 @pytest.mark.unittest
+class TestI1FirstWinsNamedFunction:
+    """
+    I1 from PR-110 review: in strict mode the duplicate-named-function
+    raise prevents the subsequent overwrite of ``named_functions[name]``;
+    in collect mode the overwrite still happens, so "last wins" silently
+    flips. Pin "first wins" as the canonical tiebreaker across both modes.
+    """
+
+    def test_collect_mode_named_function_first_wins_enter(self):
+        machine, diags = _collect("""
+state Root {
+    state A {
+        enter F1 { }
+        enter F1 { }
+    }
+    [*] -> A;
+}
+""")
+        # Both stages emit the duplicate-function diagnostic.
+        dup = [d for d in diags if d.code == 'E_DUPLICATE_FUNCTION_NAME']
+        assert len(dup) >= 1
+
+        # The named_functions map under state A must point at the FIRST
+        # declaration (first wins), so a `ref F1` resolves consistently
+        # with strict mode's "abort on duplicate before overwrite".
+        a = machine.root_state.substates['A']
+        first_decl = a.on_enters[0]
+        assert a.named_functions['F1'] is first_decl
+
+    def test_collect_mode_named_function_first_wins_during(self):
+        machine, diags = _collect("""
+state Root {
+    state Outer {
+        during before { }
+        state Inner {
+            during D1 { }
+            during D1 { }
+        }
+        [*] -> Inner;
+    }
+    [*] -> Outer;
+}
+""")
+        inner = machine.root_state.substates['Outer'].substates['Inner']
+        first_decl = inner.on_durings[0]
+        assert inner.named_functions['D1'] is first_decl
+
+
+@pytest.mark.unittest
+class TestI2DanglingTransitionBothNotFound:
+    """
+    I2 from PR-110 review: when both ``from_state`` and ``to_state`` of a
+    transition are unresolved, codes.yaml declares ``reason='both_not_found'``
+    but the emit logic produces two separate diagnostics (one
+    ``src_not_found`` + one ``tgt_not_found``). Collapse to a single
+    diagnostic carrying ``reason='both_not_found'`` so downstream
+    consumers don't double-count one broken transition.
+    """
+
+    def test_both_sides_unknown_emits_single_both_not_found(self):
+        machine, diags = _collect("""
+state Root {
+    state A;
+    NoSrc -> NoTgt;
+}
+""")
+        dangling = [d for d in diags if d.code == 'E_DANGLING_TRANSITION']
+        assert len(dangling) == 1, (
+            f"expected 1 E_DANGLING_TRANSITION, got {len(dangling)}: "
+            f"{[d.refs for d in dangling]}"
+        )
+        d = dangling[0]
+        assert d.refs['reason'] == 'both_not_found'
+        assert d.refs['src'] == 'NoSrc'
+        assert d.refs['tgt'] == 'NoTgt'
+
+    def test_only_src_unknown_still_emits_src_not_found(self):
+        diag = _strict_diag("""
+state Root {
+    state Target;
+    NoSrc -> Target;
+}
+""")
+        assert diag.code == 'E_DANGLING_TRANSITION'
+        assert diag.refs['reason'] == 'src_not_found'
+
+    def test_only_tgt_unknown_still_emits_tgt_not_found(self):
+        diag = _strict_diag("""
+state Root {
+    state Source;
+    Source -> NoTgt;
+}
+""")
+        assert diag.code == 'E_DANGLING_TRANSITION'
+        assert diag.refs['reason'] == 'tgt_not_found'
+
+
+@pytest.mark.unittest
+class TestI3ForceTransitionFailureContinues:
+    """
+    I3 from PR-110 review: failed src/tgt resolution still appends the
+    broken tuple to ``force_transition_tuples_to_inherit``. The bad
+    string later mismatches ``ALL`` and any real substate name, so the
+    inheritance phase silently drops the transition — on top of the
+    diagnostic — but the bad string also lingers in the tuple list and
+    risks downstream defensive-validation logic getting confused.
+
+    After the fix, a failed force-transition must not appear in any form
+    in the partial model (apart from the diagnostic itself).
+    """
+
+    def _walk_states(self, machine):
+        if machine is None:
+            return
+        def _go(s):
+            yield s
+            for c in s.substates.values():
+                yield from _go(c)
+        yield from _go(machine.root_state)
+
+    def test_force_transition_with_bad_src_does_not_pollute_transitions(self):
+        machine, diags = _collect("""
+state Root {
+    state A;
+    state B;
+    !NoSrc -> A;
+    [*] -> A;
+}
+""")
+        ftd = [d for d in diags if d.code == 'E_FORCED_TRANSITION_EXPANSION']
+        assert ftd, "missing E_FORCED_TRANSITION_EXPANSION"
+        # No state in the machine should carry a transition whose
+        # from_state matches the bad source.
+        for state in self._walk_states(machine):
+            for trans in state.transitions:
+                assert getattr(trans, 'from_state', None) != 'NoSrc', (
+                    f"phantom transition with from_state='NoSrc' leaked "
+                    f"into state {'.'.join(state.path)!r}"
+                )
+
+    def test_force_transition_with_bad_tgt_does_not_pollute_transitions(self):
+        machine, diags = _collect("""
+state Root {
+    state A;
+    state B;
+    !A -> NoTgt;
+    [*] -> A;
+}
+""")
+        ftd = [d for d in diags if d.code == 'E_FORCED_TRANSITION_EXPANSION']
+        assert ftd, "missing E_FORCED_TRANSITION_EXPANSION"
+        # Bad to_state must not propagate as a real Transition in any
+        # state's transitions list.
+        for state in self._walk_states(machine):
+            for trans in state.transitions:
+                assert trans.to_state != 'NoTgt', (
+                    f"phantom transition with to_state='NoTgt' leaked "
+                    f"into state {'.'.join(state.path)!r}"
+                )
+
+
+@pytest.mark.unittest
+class TestI4UndefinedVarStatePath:
+    """
+    I4 from PR-110 review: E_UNDEFINED_VAR.refs.state_path is the
+    downstream-required field that tells LLM repair agents "which state
+    owns this block". For block-bound contexts (enter/during/exit/
+    during_aspect), the parser has ``current_path`` available locally
+    and must populate it.
+
+    Guard sites on transitions stay None since the offending block is
+    not state-owned per se.
+    """
+
+    def test_undefined_in_enter_block_carries_state_path(self):
+        diag = _strict_diag("""
+def int x = 0;
+state Root {
+    state A {
+        enter { x = unknown + 1; }
+    }
+    [*] -> A;
+}
+""")
+        assert diag.code == 'E_UNDEFINED_VAR'
+        assert diag.refs.get('state_path') == 'Root.A'
+
+    def test_undefined_in_during_block_carries_state_path(self):
+        diag = _strict_diag("""
+def int x = 0;
+state Root {
+    state A {
+        during { x = unknown + 1; }
+    }
+    [*] -> A;
+}
+""")
+        assert diag.code == 'E_UNDEFINED_VAR'
+        assert diag.refs.get('state_path') == 'Root.A'
+
+    def test_undefined_in_exit_block_carries_state_path(self):
+        diag = _strict_diag("""
+def int x = 0;
+state Root {
+    state A {
+        exit { x = unknown + 1; }
+    }
+    [*] -> A;
+}
+""")
+        assert diag.code == 'E_UNDEFINED_VAR'
+        assert diag.refs.get('state_path') == 'Root.A'
+
+    def test_undefined_in_during_aspect_block_carries_state_path(self):
+        diag = _strict_diag("""
+def int x = 0;
+state Root {
+    state Outer {
+        during before { x = unknown + 1; }
+        state Inner;
+        [*] -> Inner;
+    }
+    [*] -> Outer;
+}
+""")
+        assert diag.code == 'E_UNDEFINED_VAR'
+        assert diag.refs.get('state_path') == 'Root.Outer'
+
+
+@pytest.mark.unittest
+class TestI5EmitHelperPreservesContext:
+    """
+    I5 from PR-110 review: ``_emit(None, ...)`` raises with
+    ``diagnostics=[diagnostic]`` only, losing any previously accumulated
+    warnings or earlier diagnostics. The semantically equivalent
+    ``DiagnosticSink.emit`` (in strict mode) raises with the full
+    accumulated list. Callers shouldn't have to track which path is
+    "context-preserving".
+
+    The fix is to make ``_emit`` accept an optional ``prior`` list (or
+    drop the helper entirely as unused). This test pins the API:
+    ``_emit`` either preserves a prior list passed alongside, or
+    ``None``-sink raise carries the single diagnostic but documents the
+    asymmetry by accepting a ``prior_diagnostics`` kwarg.
+    """
+
+    def test_emit_with_none_sink_accepts_prior_diagnostics(self):
+        from pyfcstm.diagnostics.sink import _emit
+        from pyfcstm.utils import ModelDiagnostic
+        prior = [
+            ModelDiagnostic(code='W_X', severity='warning', message='early'),
+        ]
+        with pytest.raises(ModelValidationError) as info:
+            _emit(None, ModelDiagnostic(
+                code='E_X', severity='error', message='boom',
+            ), prior_diagnostics=prior)
+        codes = [d.code for d in info.value.diagnostics]
+        assert codes == ['W_X', 'E_X']
+
+    def test_emit_with_none_sink_default_no_prior(self):
+        # Backwards-compat: existing callers that don't pass prior just
+        # raise with the single diagnostic.
+        from pyfcstm.diagnostics.sink import _emit
+        from pyfcstm.utils import ModelDiagnostic
+        with pytest.raises(ModelValidationError) as info:
+            _emit(None, ModelDiagnostic(
+                code='E_X', severity='error', message='boom',
+            ))
+        codes = [d.code for d in info.value.diagnostics]
+        assert codes == ['E_X']
+
+
+@pytest.mark.unittest
 class TestEmitMatchesEnum:
     """
     C2 from PR-110 review: every ``refs[field]`` value emitted from a real

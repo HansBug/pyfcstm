@@ -2122,6 +2122,7 @@ def parse_dsl_node_to_state_machine(
         referenced_in: str,
         owner_node,
         available_vars: Optional[Set[str]] = None,
+        state_path: Optional[str] = None,
     ) -> List[OperationStatement]:
         available_vars = set(available_vars or d_defines)
         operations = []
@@ -2133,6 +2134,7 @@ def parse_dsl_node_to_state_machine(
                     referenced_in=referenced_in,
                     owner_node=owner_node,
                     available_vars=available_vars,
+                    state_path=state_path,
                 )
             )
 
@@ -2144,6 +2146,7 @@ def parse_dsl_node_to_state_machine(
         referenced_in: str,
         owner_node,
         available_vars: Set[str],
+        state_path: Optional[str] = None,
     ) -> OperationStatement:
         if isinstance(op_item, dsl_nodes.OperationAssignment):
             operation_val = parse_expr_node_to_expr(op_item.expr)
@@ -2164,6 +2167,7 @@ def parse_dsl_node_to_state_machine(
                     refs={
                         'var_name': unknown_vars,
                         'referenced_in': referenced_in,
+                        'state_path': state_path,
                         'expr_text': str(op_item.expr),
                     },
                 ))
@@ -2178,6 +2182,7 @@ def parse_dsl_node_to_state_machine(
                 referenced_in=referenced_in,
                 owner_node=owner_node,
                 available_vars=available_vars,
+                state_path=state_path,
             )
         else:
             raise TypeError(f"Unknown operation statement node - {op_item!r}.")
@@ -2188,6 +2193,7 @@ def parse_dsl_node_to_state_machine(
         referenced_in: str,
         owner_node,
         available_vars: Set[str],
+        state_path: Optional[str] = None,
     ) -> IfBlock:
         base_available_vars = set(available_vars)
         branches = []
@@ -2214,6 +2220,7 @@ def parse_dsl_node_to_state_machine(
                         refs={
                             'var_name': unknown_vars,
                             'referenced_in': referenced_in,
+                            'state_path': state_path,
                             'expr_text': str(branch.condition),
                         },
                     ))
@@ -2225,6 +2232,7 @@ def parse_dsl_node_to_state_machine(
                 referenced_in=referenced_in,
                 owner_node=owner_node,
                 available_vars=branch_available_vars,
+                state_path=state_path,
             )
             branches.append(
                 IfBlockBranch(condition=condition, statements=branch_statements)
@@ -2271,6 +2279,7 @@ def parse_dsl_node_to_state_machine(
                     "Unknown enter operation variable",
                     "enter",
                     enter_item,
+                    state_path='.'.join(current_path),
                 )
                 on_stage = OnStage(
                     stage="enter",
@@ -2318,6 +2327,10 @@ def parse_dsl_node_to_state_machine(
             if on_stage is not None:
                 if on_stage.name:
                     if on_stage.name in named_functions:
+                        # I1 from PR-110: first-wins tiebreaker — keep the
+                        # initial declaration so collect/strict modes resolve
+                        # ``ref X`` identically (strict raises before the
+                        # overwrite would have happened).
                         sink.emit(ModelDiagnostic(
                             code='E_DUPLICATE_FUNCTION_NAME',
                             severity='error',
@@ -2332,7 +2345,8 @@ def parse_dsl_node_to_state_machine(
                                 'stage': 'enter',
                             },
                         ))
-                    named_functions[on_stage.name] = on_stage
+                    else:
+                        named_functions[on_stage.name] = on_stage
                 on_enters.append(on_stage)
 
         on_durings = []
@@ -2376,6 +2390,7 @@ def parse_dsl_node_to_state_machine(
                     "Unknown during operation variable",
                     "during",
                     during_item,
+                    state_path='.'.join(current_path),
                 )
                 on_stage = OnStage(
                     stage="during",
@@ -2437,7 +2452,8 @@ def parse_dsl_node_to_state_machine(
                                 'stage': 'during',
                             },
                         ))
-                    named_functions[on_stage.name] = on_stage
+                    else:
+                        named_functions[on_stage.name] = on_stage
                 on_durings.append(on_stage)
 
         on_exits = []
@@ -2449,6 +2465,7 @@ def parse_dsl_node_to_state_machine(
                     "Unknown exit operation variable",
                     "exit",
                     exit_item,
+                    state_path='.'.join(current_path),
                 )
                 on_stage = OnStage(
                     stage="exit",
@@ -2510,7 +2527,8 @@ def parse_dsl_node_to_state_machine(
                                 'stage': 'exit',
                             },
                         ))
-                    named_functions[on_stage.name] = on_stage
+                    else:
+                        named_functions[on_stage.name] = on_stage
                 on_exits.append(on_stage)
 
         on_during_aspects = []
@@ -2522,6 +2540,7 @@ def parse_dsl_node_to_state_machine(
                     "Unknown during aspect variable",
                     "during_aspect",
                     during_aspect_item,
+                    state_path='.'.join(current_path),
                 )
                 on_aspect = OnAspect(
                     stage="during",
@@ -2583,7 +2602,8 @@ def parse_dsl_node_to_state_machine(
                                 'stage': 'during_aspect',
                             },
                         ))
-                    named_functions[on_aspect.name] = on_aspect
+                    else:
+                        named_functions[on_aspect.name] = on_aspect
                 on_during_aspects.append(on_aspect)
 
         d_events = {}
@@ -2644,6 +2664,13 @@ def parse_dsl_node_to_state_machine(
 
         force_transition_tuples_to_inherit = []
         for f_transnode in [*force_transitions, *node.force_transitions]:
+            # I3 from PR-110: if either side of a forced transition is
+            # unresolved, skip the rest of the per-transition processing
+            # AND the inherit-tuple append. Otherwise collect mode keeps a
+            # bad ``(from_state, to_state, ...)`` tuple that quietly
+            # corrupts the inheritance phase (bad to_state being attached
+            # to a real substate's transitions).
+            unresolved = False
             if f_transnode.from_state == dsl_nodes.ALL:
                 from_state = dsl_nodes.ALL
             else:
@@ -2662,6 +2689,7 @@ def parse_dsl_node_to_state_machine(
                             'reason': 'src_not_found',
                         },
                     ))
+                    unresolved = True
 
             if f_transnode.to_state is dsl_nodes.EXIT_STATE:
                 to_state = dsl_nodes.EXIT_STATE
@@ -2681,6 +2709,10 @@ def parse_dsl_node_to_state_machine(
                             'reason': 'tgt_not_found',
                         },
                     ))
+                    unresolved = True
+
+            if unresolved:
+                continue
 
             my_event_id, trans_event = None, None
             if f_transnode.event_id is not None:
@@ -2751,6 +2783,7 @@ def parse_dsl_node_to_state_machine(
                         refs={
                             'var_name': unknown_vars,
                             'referenced_in': 'guard',
+                            'state_path': '.'.join(current_path),
                             'expr_text': str(f_transnode.condition_expr),
                         },
                     ))
@@ -2798,52 +2831,82 @@ def parse_dsl_node_to_state_machine(
 
         has_entry_trans = False
         for transnode in node.transitions:
+            # I2 from PR-110: when both sides of a transition are unresolved,
+            # codes.yaml's ``reason='both_not_found'`` should fire as a
+            # single combined diagnostic rather than two unrelated ones
+            # against the same source location.
+            src_unknown = (
+                transnode.from_state is not dsl_nodes.INIT_STATE
+                and transnode.from_state not in current_state.substates
+            )
+            tgt_unknown = (
+                transnode.to_state is not dsl_nodes.EXIT_STATE
+                and transnode.to_state not in current_state.substates
+            )
+
             if transnode.from_state is dsl_nodes.INIT_STATE:
                 from_state = dsl_nodes.INIT_STATE
                 has_entry_trans = True
             else:
                 from_state = transnode.from_state
-                if from_state not in current_state.substates:
-                    sink.emit(ModelDiagnostic(
-                        code='E_DANGLING_TRANSITION',
-                        severity='error',
-                        message=(
-                            f"Unknown from state {from_state!r} of "
-                            f"transition:\n{transnode}"
-                        ),
-                        span=getattr(transnode, '_span', None),
-                        refs={
-                            'src': str(transnode.from_state),
-                            'tgt': (
-                                None if transnode.to_state is dsl_nodes.EXIT_STATE
-                                else str(transnode.to_state)
-                            ),
-                            'reason': 'src_not_found',
-                        },
-                    ))
 
             if transnode.to_state is dsl_nodes.EXIT_STATE:
                 to_state = dsl_nodes.EXIT_STATE
             else:
                 to_state = transnode.to_state
-                if to_state not in current_state.substates:
-                    sink.emit(ModelDiagnostic(
-                        code='E_DANGLING_TRANSITION',
-                        severity='error',
-                        message=(
-                            f"Unknown to state {to_state!r} of "
-                            f"transition:\n{transnode}"
+
+            if src_unknown and tgt_unknown:
+                sink.emit(ModelDiagnostic(
+                    code='E_DANGLING_TRANSITION',
+                    severity='error',
+                    message=(
+                        f"Unknown from state {from_state!r} and "
+                        f"unknown to state {to_state!r} of "
+                        f"transition:\n{transnode}"
+                    ),
+                    span=getattr(transnode, '_span', None),
+                    refs={
+                        'src': str(transnode.from_state),
+                        'tgt': str(transnode.to_state),
+                        'reason': 'both_not_found',
+                    },
+                ))
+            elif src_unknown:
+                sink.emit(ModelDiagnostic(
+                    code='E_DANGLING_TRANSITION',
+                    severity='error',
+                    message=(
+                        f"Unknown from state {from_state!r} of "
+                        f"transition:\n{transnode}"
+                    ),
+                    span=getattr(transnode, '_span', None),
+                    refs={
+                        'src': str(transnode.from_state),
+                        'tgt': (
+                            None if transnode.to_state is dsl_nodes.EXIT_STATE
+                            else str(transnode.to_state)
                         ),
-                        span=getattr(transnode, '_span', None),
-                        refs={
-                            'src': (
-                                None if transnode.from_state is dsl_nodes.INIT_STATE
-                                else str(transnode.from_state)
-                            ),
-                            'tgt': str(transnode.to_state),
-                            'reason': 'tgt_not_found',
-                        },
-                    ))
+                        'reason': 'src_not_found',
+                    },
+                ))
+            elif tgt_unknown:
+                sink.emit(ModelDiagnostic(
+                    code='E_DANGLING_TRANSITION',
+                    severity='error',
+                    message=(
+                        f"Unknown to state {to_state!r} of "
+                        f"transition:\n{transnode}"
+                    ),
+                    span=getattr(transnode, '_span', None),
+                    refs={
+                        'src': (
+                            None if transnode.from_state is dsl_nodes.INIT_STATE
+                            else str(transnode.from_state)
+                        ),
+                        'tgt': str(transnode.to_state),
+                        'reason': 'tgt_not_found',
+                    },
+                ))
 
             trans_event, guard = None, None
             if transnode.event_id is not None:
@@ -2909,6 +2972,7 @@ def parse_dsl_node_to_state_machine(
                         refs={
                             'var_name': unknown_vars,
                             'referenced_in': 'guard',
+                            'state_path': '.'.join(current_path),
                             'expr_text': str(transnode.condition_expr),
                         },
                     ))
@@ -2918,6 +2982,7 @@ def parse_dsl_node_to_state_machine(
                 "Unknown transition operation variable",
                 "effect",
                 transnode,
+                state_path='.'.join(current_path),
             )
 
             transition = Transition(

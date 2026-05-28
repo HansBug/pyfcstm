@@ -107,6 +107,7 @@ class DiagnosticSink:
 def _emit(
         sink: Optional[DiagnosticSink],
         diagnostic: ModelDiagnostic,
+        prior_diagnostics: Optional[List[ModelDiagnostic]] = None,
 ) -> None:
     """
     Convenience helper: route ``diagnostic`` through ``sink`` if one is
@@ -116,13 +117,27 @@ def _emit(
     "callers expect classic raise behavior" without conditional plumbing at
     every call site.
 
+    When ``sink`` is ``None`` and ``prior_diagnostics`` is provided, the
+    raised :class:`ModelValidationError` carries those prior entries before
+    the new ``diagnostic`` — matching the strict-mode
+    :meth:`DiagnosticSink.emit` semantics where accumulated context (e.g.
+    earlier warnings) is preserved into the raise.
+
     :param sink: Active sink, or ``None`` to raise immediately.
     :type sink: pyfcstm.diagnostics.sink.DiagnosticSink, optional
     :param diagnostic: The structured diagnostic to route.
     :type diagnostic: pyfcstm.utils.validate.ModelDiagnostic
+    :param prior_diagnostics: Optional list of diagnostics already
+        accumulated by the caller; included in the raise on the
+        ``sink is None`` path. Defaults to ``None``.
+    :type prior_diagnostics: List[ModelDiagnostic], optional
     :raises pyfcstm.utils.validate.ModelValidationError: When ``sink`` is
         ``None`` or when the sink is in strict mode.
     """
     if sink is None:
-        raise ModelValidationError(diagnostics=[diagnostic])
+        all_diagnostics: List[ModelDiagnostic] = (
+            list(prior_diagnostics) if prior_diagnostics else []
+        )
+        all_diagnostics.append(diagnostic)
+        raise ModelValidationError(diagnostics=all_diagnostics)
     sink.emit(diagnostic)

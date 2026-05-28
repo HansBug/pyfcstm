@@ -242,11 +242,34 @@ export class FcstmImportWorkspaceIndex {
                         source_path: semanticImport.sourcePath,
                         alias: semanticImport.alias,
                         host_state_path: hostStatePath,
-                        // jsfcstm cannot distinguish read_error / parse_error /
-                        // no_root_state at this layer — the workspace index
-                        // already filtered missing files. ``file_not_found``
-                        // is the only reason that reaches this emit point.
+                        // I4 (PR #116 re-review): jsfcstm cannot
+                        // distinguish read_error vs parse_error at this
+                        // layer — the workspace index treats both as
+                        // ``missing``. We use ``file_not_found`` for
+                        // the resolution-failed case and emit a
+                        // separate branch below for ``no_root_state``.
                         reason: 'file_not_found',
+                    },
+                });
+            } else if (
+                semanticImport.entryFile &&
+                !semanticImport.targetRootStateName
+            ) {
+                // I4 (PR #116 re-review): file resolved but the parsed
+                // document declares no top-level state — match the
+                // pyfcstm side which emits ``reason: 'no_root_state'``
+                // for the same scenario.
+                diagnostics.push({
+                    range: semanticImport.pathRange,
+                    message: `Import source ${JSON.stringify(semanticImport.sourcePath)} resolved but declares no root state.`,
+                    severity: 'error',
+                    source: 'fcstm',
+                    code: FCSTM_DIAGNOSTIC_CODES.importNotFound,
+                    data: {
+                        source_path: semanticImport.sourcePath,
+                        alias: semanticImport.alias,
+                        host_state_path: hostStatePath,
+                        reason: 'no_root_state',
                     },
                 });
             }

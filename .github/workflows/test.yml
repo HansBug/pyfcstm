@@ -112,6 +112,17 @@ jobs:
           tree .
           cloc pyfcstm
           cloc test
+      - name: Detect skip-slow flag in commit message
+        id: skipslow
+        shell: bash
+        run: |
+          MSG="${{ github.event.head_commit.message }}"
+          if echo "$MSG" | grep -q '\[skip-slow\]'; then
+            echo "SKIP_SLOW_TESTS=1" >> $GITHUB_ENV
+            echo "Detected [skip-slow] — native-toolchain template tests will be skipped."
+          else
+            echo "SKIP_SLOW_TESTS=" >> $GITHUB_ENV
+          fi
       - name: Run unittest
         env:
           CI: 'true'

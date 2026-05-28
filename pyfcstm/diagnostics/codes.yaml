@@ -1,0 +1,241 @@
+# Single source of truth for structured diagnostic codes emitted by
+# `pyfcstm.model` and consumed by downstream tools (LLM agent loops, IDE
+# integrations, evaluation scripts, and the jsfcstm visualization layer).
+#
+# Each entry documents:
+#   - `severity`       — 'error' or 'warning'
+#   - `description`    — human-readable explanation of when this code fires
+#   - `refs`           — payload schema for `ModelDiagnostic.refs`. Each
+#                        field declares its type, whether it is required,
+#                        and a short description. Field names are part of
+#                        the public contract; downstream consumers should
+#                        rely on these names verbatim.
+#   - `example_dsl`    — minimal DSL snippet that triggers the code (used
+#                        by unit tests and by downstream tooling to
+#                        validate their dispatch paths).
+#
+# Allowed `refs.*.type` tokens (must mirror `_ALLOWED_REF_TYPES` in
+# codes.py — that tuple is the single source of truth, this comment block
+# is documentation; a test asserts the two stay aligned):
+#   str | str_or_null | int | int_or_null | bool | Span | list[str]
+#
+# Adding a new code: append a new top-level entry here AND add a fixture
+# test that triggers it from a real DSL snippet. The loader in `codes.py`
+# verifies the schema at import time.
+
+E_UNDEFINED_VAR:
+  severity: error
+  description: >-
+    A guard, effect, or lifecycle-action block references a name that was
+    never declared with a top-level `def` statement.
+  refs:
+    var_name:
+      type: str
+      required: true
+      description: The undeclared identifier as it appeared in the source.
+    referenced_in:
+      type: str
+      required: true
+      description: >-
+        Which kind of block contained the reference. One of: 'guard',
+        'effect', 'enter', 'during', 'exit', 'init'.
+    state_path:
+      type: str_or_null
+      required: false
+      description: >-
+        Dotted path of the state that owns the offending block, when the
+        reference is inside a state body (not a guard/effect on a
+        transition).
+    expr_text:
+      type: str_or_null
+      required: false
+      description: Original expression text containing the reference.
+  example_dsl: |
+    def int x = 0;
+    state Root { state A; state B; A -> B : if [unknown_var > 0]; }
+
+E_DUPLICATE_VAR:
+  severity: error
+  description: >-
+    A top-level `def` statement re-declares an identifier that was already
+    defined earlier in the file.
+  refs:
+    var_name:
+      type: str
+      required: true
+      description: The duplicated identifier.
+    previous_span:
+      type: Span
+      required: false
+      description: Source position of the first declaration.
+  example_dsl: |
+    def int x = 0;
+    def int x = 1;
+    state Root { state A; }
+
+E_MISSING_STATE:
+  severity: error
+  description: >-
+    A transition target references a state path that cannot be resolved
+    in the surrounding hierarchy.
+  refs:
+    state_path:
+      type: str
+      required: true
+      description: The unresolved dotted state path.
+    referenced_from:
+      type: str_or_null
+      required: false
+      description: Dotted path of the state from which the reference was made.
+    reason:
+      type: str
+      required: false
+      description: >-
+        Short tag describing the resolution failure mode. One of:
+        'not_found', 'parent_missing', 'ambiguous'.
+  example_dsl: |
+    state Root { state A; A -> NoSuch; }
+
+E_DUPLICATE_STATE:
+  severity: error
+  description: Two states share the same name within the same parent scope.
+  refs:
+    state_name:
+      type: str
+      required: true
+      description: The duplicated state name.
+    parent_path:
+      type: str
+      required: true
+      description: Dotted path of the parent that contains both states.
+    previous_span:
+      type: Span
+      required: false
+      description: Source position of the first declaration.
+  example_dsl: |
+    state Root { state A; state A; }
+
+E_EVENT_REF_INVALID:
+  severity: error
+  description: >-
+    The textual form of an event reference is syntactically invalid (e.g.
+    bare '/', trailing dots, going beyond the root state).
+  refs:
+    event_ref:
+      type: str
+      required: true
+      description: The raw event reference text.
+    reason:
+      type: str
+      required: true
+      description: >-
+        Short tag describing why the reference is invalid. One of:
+        'empty', 'bare_slash', 'invalid_absolute', 'invalid_relative',
+        'trailing_dots', 'beyond_root'.
+  example_dsl: |
+    state Root { state A; state B; A -> B : /; }
+
+E_EVENT_NOT_FOUND:
+  severity: error
+  description: >-
+    An event reference parses correctly but does not resolve to any event
+    defined in the targeted scope.
+  refs:
+    event_ref:
+      type: str
+      required: true
+      description: The raw event reference text.
+    scope:
+      type: str
+      required: true
+      description: >-
+        Resolution scope used. One of: 'local', 'chain', 'absolute'.
+    searched_from:
+      type: str_or_null
+      required: false
+      description: Dotted state path where the search originated.
+  example_dsl: |
+    state Root { state A; state B; A -> B :: NoEvent; }
+
+E_DANGLING_TRANSITION:
+  severity: error
+  description: >-
+    A transition cannot resolve either its source or its target.
+  refs:
+    src:
+      type: str_or_null
+      required: false
+      description: Raw source state expression as written in the DSL.
+    tgt:
+      type: str_or_null
+      required: false
+      description: Raw target state expression as written in the DSL.
+    reason:
+      type: str
+      required: true
+      description: >-
+        Short tag describing the dangling reason. One of: 'src_not_found',
+        'tgt_not_found', 'both_not_found'.
+  example_dsl: |
+    state Root { state A; NoSuch -> A; }
+
+E_TYPE_MISMATCH:
+  severity: error
+  description: >-
+    A guard, effect, or assignment uses an expression whose type does not
+    match the expected category (arithmetic vs boolean).
+  refs:
+    expected:
+      type: str
+      required: true
+      description: >-
+        Expected category. One of: 'numeric', 'boolean'.
+    actual:
+      type: str
+      required: true
+      description: Actual category produced by the expression.
+    expr_text:
+      type: str
+      required: true
+      description: Original expression text.
+  example_dsl: |
+    def int x = 0;
+    state Root { state A; state B; A -> B : if [x]; }
+
+E_FORCED_TRANSITION_EXPANSION:
+  severity: error
+  description: >-
+    A forced transition (`!State -> ...` or `!*`) cannot be expanded
+    because the source or target reference is invalid.
+  refs:
+    original_raw:
+      type: str
+      required: true
+      description: Raw forced-transition text as written.
+    reason:
+      type: str
+      required: true
+      description: >-
+        Short tag describing why expansion failed. One of: 'src_not_found',
+        'tgt_not_found', 'src_is_root', 'wildcard_no_descendants'.
+  example_dsl: |
+    state Root { state A; !NoSuch -> A; }
+
+E_INITIAL_TRANSITION_INVALID:
+  severity: error
+  description: >-
+    A composite state either lacks an entry transition (`[*] -> child`) or
+    declares one whose target is not a direct child of the composite.
+  refs:
+    composite_path:
+      type: str
+      required: true
+      description: Dotted path of the offending composite state.
+    reason:
+      type: str
+      required: true
+      description: >-
+        Short tag describing the failure. One of: 'missing_entry',
+        'target_not_child'.
+  example_dsl: |
+    state Root { state Outer { state Inner; } }

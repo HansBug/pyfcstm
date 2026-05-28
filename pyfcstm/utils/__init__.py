@@ -69,4 +69,10 @@ from .text import (
     to_rust_identifier,
     to_go_identifier,
 )
-from .validate import ValidationError, ModelValidationError, IValidatable
+from .validate import (
+    IValidatable,
+    ModelDiagnostic,
+    ModelValidationError,
+    Span,
+    ValidationError,
+)

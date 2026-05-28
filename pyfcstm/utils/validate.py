@@ -37,9 +37,150 @@ Example::
 """
 
 import os
-from typing import Callable, List
+from dataclasses import dataclass, field
+from typing import Any, Callable, Dict, List, Optional
+
+try:
+    from typing import Literal
+except ImportError:  # Python < 3.8
+    from typing_extensions import Literal
 
 from hbutils.string import plural_word
+
+
+@dataclass(frozen=True)
+class Span:
+    """
+    Source-code location used as the anchor for a :class:`ModelDiagnostic`.
+
+    All coordinates are 1-based. ``end_line`` / ``end_column`` are optional;
+    when omitted the span is treated as pointing at a single source position.
+
+    :param line: 1-based source line where the diagnostic anchor begins.
+    :type line: int
+    :param column: 1-based source column where the diagnostic anchor begins.
+    :type column: int
+    :param end_line: 1-based source line where the diagnostic anchor ends,
+        defaults to ``None``.
+    :type end_line: int, optional
+    :param end_column: 1-based source column where the diagnostic anchor ends,
+        defaults to ``None``.
+    :type end_column: int, optional
+
+    Example::
+
+        >>> from pyfcstm.utils.validate import Span
+        >>> span = Span(line=3, column=12)
+        >>> span.line, span.column
+        (3, 12)
+        >>> Span(line=3, column=12, end_line=3, end_column=20).end_column
+        20
+    """
+
+    line: int
+    column: int
+    end_line: Optional[int] = None
+    end_column: Optional[int] = None
+
+
+_ALLOWED_SEVERITIES = ('error', 'warning')
+
+
+@dataclass(frozen=True)
+class ModelDiagnostic:
+    """
+    Structured semantic or design-health diagnostic produced by the model layer.
+
+    Designed as the **stable contract** between :mod:`pyfcstm.model` and
+    downstream consumers such as IDE integrations, LLM agent loops, and
+    evaluation scripts. Consumers should dispatch on :attr:`code` only and
+    treat :attr:`message` as human-facing text that may change between
+    releases.
+
+    The full set of valid :attr:`code` values together with their
+    :attr:`refs` payload schema lives in
+    :mod:`pyfcstm.diagnostics.codes` (loaded from ``pyfcstm/diagnostics/codes.yaml``);
+    this dataclass intentionally does not validate ``code`` at construction
+    time so that experimental codes can be emitted in tests.
+
+    :attr:`severity` is enforced at construction time to be one of
+    ``'error'`` / ``'warning'`` — a typo such as ``'Error'`` would otherwise
+    cause :meth:`is_error` to silently return ``False`` and skew downstream
+    dispatch.
+
+    The dataclass is frozen so the public contract surface (``code`` /
+    ``severity`` / ``message`` / ``span``) cannot be mutated after
+    construction. ``refs`` remains a mutable ``dict`` because PR-2 needs to
+    populate it during emit — downstream consumers should treat it as
+    read-only.
+
+    :param code: Stable diagnostic code, e.g. ``'E_UNDEFINED_VAR'``,
+        ``'W_DEADLOCK_LEAF'``. Always treated as the public contract.
+    :type code: str
+    :param severity: Either ``'error'`` or ``'warning'``.
+    :type severity: str
+    :param message: Human-readable rendering of the diagnostic. **Not** part
+        of the contract — downstream tools must not regex-match against it.
+    :type message: str
+    :param span: Optional source position, defaults to ``None``.
+    :type span: pyfcstm.utils.validate.Span, optional
+    :param refs: Structured payload keyed by field names defined in
+        ``codes.yaml`` for this code. Defaults to an empty dict.
+    :type refs: Dict[str, Any]
+
+    Example::
+
+        >>> from pyfcstm.utils.validate import ModelDiagnostic, Span
+        >>> diag = ModelDiagnostic(
+        ...     code='E_UNDEFINED_VAR',
+        ...     severity='error',
+        ...     message="Unknown guard variable 'unknown_var' in transition",
+        ...     span=Span(line=5, column=21),
+        ...     refs={'var_name': 'unknown_var', 'referenced_in': 'guard'},
+        ... )
+        >>> diag.code
+        'E_UNDEFINED_VAR'
+        >>> diag.is_error()
+        True
+        >>> diag.refs['var_name']
+        'unknown_var'
+    """
+
+    code: str
+    severity: Literal['error', 'warning']
+    message: str
+    span: Optional[Span] = None
+    refs: Dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if self.severity not in _ALLOWED_SEVERITIES:
+            raise ValueError(
+                "ModelDiagnostic.severity must be one of "
+                f"{_ALLOWED_SEVERITIES!r}, got {self.severity!r}"
+            )
+
+    def is_error(self) -> bool:
+        """
+        Return ``True`` if this diagnostic has error severity.
+
+        :return: ``True`` for ``severity == 'error'``, ``False`` otherwise.
+        :rtype: bool
+        """
+        return self.severity == 'error'
+
+    def format_line(self) -> str:
+        """
+        Render this diagnostic as a single human-readable summary line.
+
+        Used by :meth:`ModelValidationError._build_summary_message` so that
+        both legacy :class:`ValidationError` entries and structured
+        :class:`ModelDiagnostic` entries share the same ``[code] message``
+        prefix style in aggregated error output.
+
+        :return: A one-line ``[severity/code] message`` representation.
+        :rtype: str
+        """
+        return f"[{self.severity}/{self.code}] {self.message}"
 
 
 class ValidationError(Exception):
@@ -59,32 +200,99 @@ class ValidationError(Exception):
     pass
 
 
-class ModelValidationError(Exception):
+class ModelValidationError(SyntaxError):
     """
     Exception class for aggregating multiple validation errors.
 
     This exception contains a list of :class:`ValidationError` instances and
     formats them into a readable error message.
 
-    :param errors: List of validation errors that occurred
-    :type errors: List[ValidationError]
+    It multi-inherits from :class:`SyntaxError` for backwards compatibility:
+    callers that previously caught ``SyntaxError`` raised from
+    :mod:`pyfcstm.model` continue to work after later PRs in the Layer 1
+    refactor switch raise sites to this class.
 
-    :ivar errors: Stored validation errors
+    In addition to the legacy :attr:`errors` list, instances may also carry
+    a :attr:`diagnostics` list of structured :class:`ModelDiagnostic`
+    objects when raised from the new collect-mode pipeline. Existing
+    callers that do not read :attr:`diagnostics` continue to work as before.
+
+    :param errors: List of validation errors that occurred, defaults to ``None``.
+    :type errors: List[ValidationError], optional
+    :param diagnostics: List of structured diagnostics, defaults to ``None``.
+    :type diagnostics: List[ModelDiagnostic], optional
+    :param message: Pre-formatted summary message, defaults to ``None``.
+        When omitted, a summary is built from :attr:`errors` /
+        :attr:`diagnostics`.
+    :type message: str, optional
+
+    :ivar errors: Stored validation errors.
     :vartype errors: List[ValidationError]
+    :ivar diagnostics: Stored structured diagnostics.
+    :vartype diagnostics: List[ModelDiagnostic]
 
     Example::
 
         >>> err = ModelValidationError([ValidationError("A"), ValidationError("B")])
         >>> "2 errors" in str(err)
         True
+        >>> isinstance(err, SyntaxError)
+        True
+        >>> err.diagnostics
+        []
     """
 
-    def __init__(self, errors: List[ValidationError]) -> None:
-        super().__init__(
-            f"Model validation error, {plural_word(len(errors), 'error')} in total:{os.linesep}"
-            f"{os.linesep.join(map(lambda x: f'{x[0]}. {x[1]}', enumerate(map(repr, errors), start=1)))}",
+    def __init__(
+            self,
+            errors: Optional[List[ValidationError]] = None,
+            diagnostics: Optional[List[ModelDiagnostic]] = None,
+            message: Optional[str] = None,
+    ) -> None:
+        self.errors: List[ValidationError] = list(errors) if errors else []
+        self.diagnostics: List[ModelDiagnostic] = list(diagnostics) if diagnostics else []
+        if message is None:
+            message = self._build_summary_message()
+
+        # SyntaxError carries a (filename, lineno, offset, text) 4-tuple
+        # behind e.filename / e.lineno / e.offset / e.text. Without this
+        # tuple, downstream code that catches us via the SyntaxError MRO
+        # back-compat hatch sees lineno=None / offset=None, regressing
+        # the source-position signal that callers may already depend on.
+        # Map the first diagnostic that carries a Span onto this 4-tuple.
+        span = next(
+            (d.span for d in self.diagnostics if d.span is not None),
+            None,
         )
-        self.errors = errors
+        if span is not None:
+            super().__init__(message, (None, span.line, span.column, None))
+        else:
+            super().__init__(message)
+
+    def _build_summary_message(self) -> str:
+        parts: List[str] = []
+        if self.errors:
+            error_lines = [
+                f"{i}. [error/VALIDATION] {e}"
+                for i, e in enumerate(self.errors, start=1)
+            ]
+            parts.append(
+                f"Model validation error, {plural_word(len(self.errors), 'error')} in total:"
+                f"{os.linesep}"
+                f"{os.linesep.join(error_lines)}"
+            )
+        if self.diagnostics:
+            diag_lines = [
+                f"{i}. {d.format_line()}"
+                for i, d in enumerate(self.diagnostics, start=1)
+            ]
+            parts.append(
+                f"Model diagnostics, {plural_word(len(self.diagnostics), 'item')} in total:"
+                f"{os.linesep}"
+                f"{os.linesep.join(diag_lines)}"
+            )
+        if not parts:
+            return "Model validation error."
+        return os.linesep.join(parts)
 
 
 class IValidatable:

@@ -114,14 +114,20 @@ jobs:
           cloc test
       - name: Detect skip-slow flag in commit message
         id: skipslow
+        # Pass the commit message via env to avoid shell injection. Inline
+        # `${{ github.event.head_commit.message }}` would be substituted as
+        # raw shell tokens before bash sees the script, so any backtick,
+        # bracket, or `key: value` pattern in the commit body could be
+        # mis-parsed as commands (broke PR-109 on first run).
+        env:
+          HEAD_COMMIT_MSG: ${{ github.event.head_commit.message }}
         shell: bash
         run: |
-          MSG="${{ github.event.head_commit.message }}"
-          if echo "$MSG" | grep -q '\[skip-slow\]'; then
-            echo "SKIP_SLOW_TESTS=1" >> $GITHUB_ENV
+          if printf '%s' "$HEAD_COMMIT_MSG" | grep -q '\[skip-slow\]'; then
+            echo "SKIP_SLOW_TESTS=1" >> "$GITHUB_ENV"
             echo "Detected [skip-slow] — native-toolchain template tests will be skipped."
           else
-            echo "SKIP_SLOW_TESTS=" >> $GITHUB_ENV
+            echo "SKIP_SLOW_TESTS=" >> "$GITHUB_ENV"
           fi
       - name: Run unittest
         env:

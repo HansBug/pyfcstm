@@ -36,14 +36,42 @@ def _audit_imports_emits():
             continue
         if len(node.args) < 2:
             continue
+
+        # I2 lockdown (review of PR #116): the first positional arg
+        # must be the local ``sink`` identifier (or the literal None
+        # placeholder used only inside ``_emit_import_diag`` itself —
+        # not present in actual call sites). Catching ``None`` here
+        # prevents a future refactor from re-introducing the
+        # ``_emit_import_diag(None, ...)`` pattern that C-E removed.
+        sink_arg = node.args[0]
+        if not (isinstance(sink_arg, ast.Name) and sink_arg.id == 'sink'):
+            sink_repr = ast.unparse(sink_arg) if hasattr(ast, 'unparse') else repr(sink_arg)
+            violations.append((node.lineno, '<sink>', 'INVALID_SINK_ARG', sink_repr))
+            continue
+
         code_arg = node.args[1]
         if not isinstance(code_arg, ast.Constant) or not isinstance(code_arg.value, str):
+            # I2 lockdown: dynamically constructed code arguments
+            # bypass the schema audit. We reject them up-front so a
+            # future refactor that introduces ``code = some_var;
+            # _emit_import_diag(sink, code, ...)`` cannot slip past
+            # this safeguard.
+            code_repr = ast.unparse(code_arg) if hasattr(ast, 'unparse') else repr(code_arg)
+            violations.append((node.lineno, '<code>', 'NON_LITERAL_CODE', code_repr))
             continue
         code = code_arg.value
         spec = CODE_REGISTRY.get(code)
         if spec is None:
             violations.append((node.lineno, code, 'UNKNOWN_CODE', '<no schema>'))
             continue
+
+        # I2 lockdown: ``**kwargs`` expansion hides field names from
+        # this audit. Reject up-front so callers cannot bypass the
+        # required-field check by unpacking a dict.
+        if any(kw.arg is None for kw in node.keywords):
+            violations.append((node.lineno, code, 'KWARG_UNPACK', '**unpacked dict not allowed'))
+            continue
+
         provided = {kw.arg for kw in node.keywords if kw.arg is not None}
         for field in spec.required_fields():
             if field not in provided:

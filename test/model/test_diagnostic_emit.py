@@ -384,6 +384,86 @@ state Root { state A; }
 
 
 @pytest.mark.unittest
+class TestCollectModeNoPhantomMutation:
+    """
+    C1 from PR-110 review: in collect mode, ``sink.emit(E_MISSING_STATE)``
+    no longer raises — but the code immediately below the segment-walk
+    falls through and inserts a fabricated ``Event`` into whatever state
+    the walk got stuck on (usually root or the last good parent).
+
+    The "best-effort partial model" returned by collect mode must not be
+    silently polluted with events the user never wrote. These tests assert
+    no phantom events appear in any state's ``events`` dict after a bad
+    event-id path triggers ``E_MISSING_STATE``.
+    """
+
+    def _walk_states(self, machine):
+        # Recursive walker that yields every State in the model.
+        def _go(s):
+            yield s
+            for child in s.substates.values():
+                yield from _go(child)
+        if machine is None:
+            return
+        yield from _go(machine.root_state)
+
+    def test_normal_transition_bad_event_path_no_phantom_event(self):
+        machine, diags = _collect("""
+state Root {
+    state A; state B;
+    [*] -> A;
+    A -> B : /NoSuch.GhostEvent;
+}
+""")
+        codes = [d.code for d in diags]
+        assert 'E_MISSING_STATE' in codes
+        # No state in the partial model should carry a phantom 'GhostEvent'.
+        for state in self._walk_states(machine):
+            assert 'GhostEvent' not in state.events, (
+                f"phantom event 'GhostEvent' leaked into state "
+                f"{'.'.join(state.path)!r} after E_MISSING_STATE in collect mode"
+            )
+
+    def test_force_transition_bad_event_path_no_phantom_event(self):
+        machine, diags = _collect("""
+state Root {
+    state A; state B;
+    [*] -> A;
+    !A -> B : /NoSuch.GhostEvent;
+}
+""")
+        codes = [d.code for d in diags]
+        assert 'E_MISSING_STATE' in codes
+        for state in self._walk_states(machine):
+            assert 'GhostEvent' not in state.events, (
+                f"phantom event 'GhostEvent' leaked into state "
+                f"{'.'.join(state.path)!r} after E_MISSING_STATE in force "
+                f"transition collect mode"
+            )
+
+    def test_phantom_does_not_create_follow_on_diagnostics(self):
+        """A phantom event under the wrong parent would let downstream
+        transitions in the same pass match it and skip further error
+        reporting — assert the diagnostic list stays minimal."""
+        machine, diags = _collect("""
+state Root {
+    state A; state B;
+    [*] -> A;
+    A -> B : /NoSuch.GhostEvent;
+    A -> B : /AlsoNoSuch.OtherEvent;
+}
+""")
+        # Both bad transitions must each surface their own diagnostic; if
+        # the first one polluted state.events, the second's resolution
+        # logic might find a phantom and silently succeed.
+        missing_diags = [d for d in diags if d.code == 'E_MISSING_STATE']
+        assert len(missing_diags) >= 2, (
+            f"expected 2 distinct E_MISSING_STATE, got "
+            f"{[d.refs.get('state_path') for d in missing_diags]}"
+        )
+
+
+@pytest.mark.unittest
 class TestSpanPropagation:
     def test_duplicate_var_carries_span(self):
         diag = _strict_diag("""

@@ -2692,6 +2692,12 @@ def parse_dsl_node_to_state_machine(
                     )
                 start_state = root_state
                 base_path = (root_state.name,)
+                # Walk the event-id state segments. On a missing segment
+                # we emit the diagnostic and skip the suffix resolution —
+                # without this guard, collect mode would silently fabricate
+                # an Event in whatever partial state ``start_state`` landed
+                # on (C1 from PR-110 review).
+                path_resolved = True
                 for seg in my_event_id.path[:-1]:
                     if seg in start_state.substates:
                         start_state = start_state.substates[seg]
@@ -2713,15 +2719,17 @@ def parse_dsl_node_to_state_machine(
                                 'reason': 'event_path_not_found',
                             },
                         ))
+                        path_resolved = False
                         break
 
-                suffix_name = my_event_id.path[-1]
-                if suffix_name not in start_state.events:
-                    start_state.events[suffix_name] = Event(
-                        name=suffix_name,
-                        state_path=start_state.path,
-                    )
-                trans_event = start_state.events[suffix_name]
+                if path_resolved:
+                    suffix_name = my_event_id.path[-1]
+                    if suffix_name not in start_state.events:
+                        start_state.events[suffix_name] = Event(
+                            name=suffix_name,
+                            state_path=start_state.path,
+                        )
+                    trans_event = start_state.events[suffix_name]
 
             condition_expr, guard = f_transnode.condition_expr, None
             if f_transnode.condition_expr is not None:
@@ -2845,6 +2853,10 @@ def parse_dsl_node_to_state_machine(
                 else:
                     start_state = current_state
                     base_path = current_state.path
+                # See C1 in PR-110 review: collect mode must not let
+                # suffix resolution mutate ``start_state.events`` after a
+                # failed segment walk.
+                path_resolved = True
                 for seg in transnode.event_id.path[:-1]:
                     if seg in start_state.substates:
                         start_state = start_state.substates[seg]
@@ -2866,15 +2878,17 @@ def parse_dsl_node_to_state_machine(
                                 'reason': 'event_path_not_found',
                             },
                         ))
+                        path_resolved = False
                         break
 
-                suffix_name = transnode.event_id.path[-1]
-                if suffix_name not in start_state.events:
-                    start_state.events[suffix_name] = Event(
-                        name=suffix_name,
-                        state_path=start_state.path,
-                    )
-                trans_event = start_state.events[suffix_name]
+                if path_resolved:
+                    suffix_name = transnode.event_id.path[-1]
+                    if suffix_name not in start_state.events:
+                        start_state.events[suffix_name] = Event(
+                            name=suffix_name,
+                            state_path=start_state.path,
+                        )
+                    trans_event = start_state.events[suffix_name]
 
             if transnode.condition_expr is not None:
                 guard = parse_expr_node_to_expr(transnode.condition_expr)

@@ -45,7 +45,31 @@ make unittest WORKERS=4                              # With parallel workers
 # Run a single test file or function directly:
 pytest test/simulate/test_runtime.py -v
 pytest test/simulate/test_runtime.py::TestClassName::test_method -v
+
+# Fast path: skip native-toolchain template tests (test/template/c, test/template/c_poll)
+# which invoke real cmake/cc per case and consume ~85% of unittest wall time.
+SKIP_SLOW_TESTS=1 make unittest          # ~24s vs ~174s full local (~7x faster)
 ```
+
+The `SKIP_SLOW_TESTS=1` env var is read by `test/conftest.py`. It auto-skips every test under `test/template/c/` and `test/template/c_poll/` — these are the tests that compile C/C++ via cmake. Use it for iteration cycles that don't touch generated C runtime. The Python template, simulator, model, DSL, render, and verify tests all still run.
+
+### CI Workflow Commit-Message Triggers
+
+`.github/workflows/test.yml` honors three magic substrings in the **head commit message**. They are checked with GitHub Actions' `contains()`, which is a **plain substring match** — there are no word boundaries, no regex anchors. A natural-language phrase that happens to embed one of these substrings will silently trigger the gate. Always grep your commit message against the table below before pushing.
+
+| Substring | Trigger | Effect |
+|---|---|---|
+| `ci skip` | head commit message contains this substring anywhere | Skips both `Code test` (unittest matrix) and `CLI Build` workflows entirely. Use for docs-only / comment-only commits. |
+| `test skip` | head commit message contains this substring anywhere | Skips only the `Code test` (unittest matrix) workflow. `CLI Build` still runs. |
+| `[skip-slow]` | head commit message contains this substring anywhere | Runs the full unittest workflow normally, but injects `SKIP_SLOW_TESTS=1` into the unittest step, which skips `test/template/c` and `test/template/c_poll` (cmake/cc compile tests, ~85% of wall time). Use when iterating on changes that demonstrably can't affect the C/C++ runtime templates. |
+
+**Footgun:** because `contains()` is substring match, phrases like `"slow-test skip mechanism"` or `"document the ci skip flag"` will activate `test skip` / `ci skip` respectively. If you need to mention these tokens in a commit body, either rephrase (`"slow-test gating"`, `"document the ci-bypass flag"`) or quote them with characters that break the literal substring (e.g. `` `ci-skip` ``, `ci_skip`). When in doubt, run:
+
+```bash
+git log -1 --format='%B' | grep -iE 'ci skip|test skip|\[skip-slow\]'
+```
+
+before pushing — if any line matches and that wasn't your intent, amend.
 
 ### Building and Packaging
 

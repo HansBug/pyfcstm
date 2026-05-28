@@ -188,4 +188,49 @@ describe('jsfcstm import workspace support', () => {
 
         assert.deepEqual(await index.collectImportDiagnostics(document), []);
     });
+
+    // PR-A-coverage: exercise the model-assembly rewrite paths through
+    // a successful workspace import. The worker file uses every
+    // expression operator kind (parenthesized, unary, conditional,
+    // function call, binary) plus if-statements and forced transitions,
+    // all referencing variables that the host import remaps. This
+    // drives ``rewriteExpressionVariables`` through every switch case
+    // plus ``rewriteOperationStatementVariables`` through the
+    // if-statement branch plus the forced-transition rewrite loop in
+    // ``rewriteStateMachineDocumentVariables``.
+    it('rewrites all expression-kind nodes when an import remaps variables', async () => {
+        const dir = trackTempDir('jsfcstm-rewrite-all-');
+        const workerFile = path.join(dir, 'worker.fcstm');
+        const hostFile = path.join(dir, 'host.fcstm');
+
+        writeFile(workerFile,
+            'def int counter = 0;\n'
+            + 'def int threshold = 10;\n'
+            + 'state Worker {\n'
+            + '    state Idle;\n'
+            + '    state Active;\n'
+            + '    [*] -> Idle;\n'
+            + '    Idle -> Active : if [(counter + 1) > 0 && (counter > threshold ? 1 : 0) > 0 && abs(-counter) < threshold];\n'
+            + '    Active -> Idle :: Pause effect {\n'
+            + '        if [counter > 0] { counter = counter - 1; } else { counter = 0; }\n'
+            + '    };\n'
+            + '    !* -> Active : if [counter > 100];\n'
+            + '}\n',
+        );
+        const document = createDocument(
+            'state Root {\n'
+            + '    state Hub;\n'
+            + '    [*] -> Hub;\n'
+            + '    import "./worker.fcstm" as Sub {\n'
+            + '        def counter -> remote_counter;\n'
+            + '        def threshold -> remote_threshold;\n'
+            + '    }\n'
+            + '}\n',
+            hostFile,
+        );
+        // Successful import should produce no diagnostics on either end.
+        const diagnostics = await packageModule.collectDocumentDiagnostics(document);
+        assert.deepEqual(diagnostics, [],
+            `expected clean import, got ${JSON.stringify(diagnostics)}`);
+    });
 });

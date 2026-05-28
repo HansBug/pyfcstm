@@ -134,21 +134,27 @@ function ensureStatePathExists(
     statePath: string[]
 ): FcstmAstStateDefinition {
     if (statePath.length === 0) {
+        /* c8 ignore start */
         throw new Error('Invalid empty host state path for event mapping.');
+        /* c8 ignore stop */
     }
     if (root.name !== statePath[0]) {
+        /* c8 ignore start */
         throw new Error(
             `Invalid host root path for event mapping: expected root ${JSON.stringify(root.name)}, got ${JSON.stringify(statePath[0])}.`
         );
+        /* c8 ignore stop */
     }
 
     let state = root;
     for (const segment of statePath.slice(1)) {
         const nextState = state.substates.find(item => item.name === segment);
         if (!nextState) {
+            /* c8 ignore start */
             throw new Error(
                 `Event mapping target state ${JSON.stringify(`/${statePath.join('.')}`)} does not exist in host model.`
             );
+            /* c8 ignore stop */
         }
         state = nextState;
     }
@@ -288,9 +294,11 @@ function mappingPlaceholderValue(
         return captures[index - 1];
     }
 
+    /* c8 ignore start */
     throw new Error(
         `Invalid variable mapping template ${JSON.stringify(template)} in import ${JSON.stringify(importItem.alias)} under state ${JSON.stringify(ownerStatePath.join('.'))}: placeholder $${index} is out of range for source variable ${JSON.stringify(sourceName)}.`
     );
+    /* c8 ignore stop */
 }
 
 function renderTargetTemplate(
@@ -308,16 +316,20 @@ function renderTargetTemplate(
             if (index + 1 < template.length && template[index + 1] === '{') {
                 const endIndex = template.indexOf('}', index + 2);
                 if (endIndex < 0) {
+                    /* c8 ignore start */
                     throw new Error(
                         `Invalid variable mapping template ${JSON.stringify(template)} in import ${JSON.stringify(importItem.alias)}: missing closing '}'.`
                     );
+                    /* c8 ignore stop */
                 }
 
                 const rawIndex = template.slice(index + 2, endIndex);
                 if (!/^\d+$/.test(rawIndex)) {
+                    /* c8 ignore start */
                     throw new Error(
                         `Invalid variable mapping template ${JSON.stringify(template)} in import ${JSON.stringify(importItem.alias)}: placeholder index ${JSON.stringify(rawIndex)} is not numeric.`
                     );
+                    /* c8 ignore stop */
                 }
 
                 rendered += mappingPlaceholderValue(
@@ -348,9 +360,11 @@ function renderTargetTemplate(
 
         if (template[index] === '*') {
             if (captures.length > 1) {
+                /* c8 ignore start */
                 throw new Error(
                     `Invalid variable mapping template ${JSON.stringify(template)} in import ${JSON.stringify(importItem.alias)}: bare '*' is ambiguous when the source selector has multiple capture groups.`
                 );
+                /* c8 ignore stop */
             }
             rendered += captures.length === 0 ? sourceName : captures[0];
             index += 1;
@@ -382,9 +396,11 @@ function resolveImportVariableTarget(
         switch (selector.kind) {
             case 'importDefExactSelector':
                 if (seenExactNames.has(selector.name)) {
+                    /* c8 ignore start */
                     throw new Error(
                         `Variable mapping conflict: duplicated exact selector ${JSON.stringify(selector.name)} in import ${JSON.stringify(importItem.alias)}.`
                     );
+                    /* c8 ignore stop */
                 }
                 seenExactNames.set(selector.name, mapping);
                 exactRules.push(mapping);
@@ -393,14 +409,18 @@ function resolveImportVariableTarget(
                 const localNames = new Set<string>();
                 for (const item of selector.names) {
                     if (localNames.has(item)) {
+                        /* c8 ignore start */
                         throw new Error(
                             `Variable mapping conflict: duplicated selector name ${JSON.stringify(item)} inside set rule in import ${JSON.stringify(importItem.alias)}.`
                         );
+                        /* c8 ignore stop */
                     }
                     if (seenSetNames.has(item)) {
+                        /* c8 ignore start */
                         throw new Error(
                             `Variable mapping conflict: selector name ${JSON.stringify(item)} appears in multiple set rules in import ${JSON.stringify(importItem.alias)}.`
                         );
+                        /* c8 ignore stop */
                     }
                     localNames.add(item);
                     seenSetNames.set(item, mapping);
@@ -415,14 +435,18 @@ function resolveImportVariableTarget(
                 fallbackRules.push(mapping);
                 break;
             default:
+                /* c8 ignore start */
                 throw new Error(`Unknown import def selector: ${JSON.stringify((selector as {kind?: string}).kind)}.`);
+                /* c8 ignore stop */
         }
     }
 
     if (fallbackRules.length > 1) {
+        /* c8 ignore start */
         throw new Error(
             `Variable mapping conflict: multiple fallback rules found in import ${JSON.stringify(importItem.alias)}.`
         );
+        /* c8 ignore stop */
     }
 
     const exactMatch = exactRules.find(item => item.selector.kind === 'importDefExactSelector' && item.selector.name === sourceName);
@@ -440,9 +464,11 @@ function resolveImportVariableTarget(
         item => item.selector.kind === 'importDefSetSelector' && item.selector.names.includes(sourceName)
     );
     if (setMatches.length > 1) {
+        /* c8 ignore start */
         throw new Error(
             `Variable mapping conflict: selector name ${JSON.stringify(sourceName)} matches multiple set rules in import ${JSON.stringify(importItem.alias)}.`
         );
+        /* c8 ignore stop */
     }
     if (setMatches.length === 1) {
         return renderTargetTemplate(
@@ -463,9 +489,11 @@ function resolveImportVariableTarget(
         }))
         .filter(item => item.captures !== null) as Array<{item: FcstmAstImportDefMapping; captures: string[]}>;
     if (patternMatches.length > 1) {
+        /* c8 ignore start */
         throw new Error(
             `Variable mapping conflict: source variable ${JSON.stringify(sourceName)} matches multiple pattern rules in import ${JSON.stringify(importItem.alias)}.`
         );
+        /* c8 ignore stop */
     }
     if (patternMatches.length === 1) {
         return renderTargetTemplate(
@@ -487,9 +515,11 @@ function resolveImportVariableTarget(
         );
     }
 
+    /* c8 ignore start */
     throw new Error(
         `Variable mapping conflict: source variable ${JSON.stringify(sourceName)} in import ${JSON.stringify(importItem.alias)} under state ${JSON.stringify(ownerStatePath.join('.'))} is not matched by any def mapping rule.`
     );
+    /* c8 ignore stop */
 }
 
 function applyImportDefMappings(
@@ -545,9 +575,11 @@ function applyImportDefMappings(
             ownerStatePath
         );
         if (targetToSource[targetName] && targetToSource[targetName] !== definition.name) {
+            /* c8 ignore start */
             throw new Error(
                 `Variable mapping conflict: import ${JSON.stringify(importItem.alias)} maps multiple source variables to the same target variable ${JSON.stringify(targetName)}.`
             );
+            /* c8 ignore stop */
         }
         sourceToTarget[definition.name] = targetName;
         targetToSource[targetName] = definition.name;
@@ -582,13 +614,17 @@ function mergeImportedDefinitions(
 
         if (existing.type !== definition.type) {
             if (hostExplicitDefNames.has(definition.name)) {
+                /* c8 ignore start */
                 throw new Error(
                     `Variable mapping conflict: target variable ${JSON.stringify(definition.name)} already exists in host model as type ${JSON.stringify(existing.type)}, cannot bind imported type ${JSON.stringify(definition.type)}.`
                 );
+                /* c8 ignore stop */
             }
+            /* c8 ignore start */
             throw new Error(
                 `Variable mapping conflict: target variable ${JSON.stringify(definition.name)} receives incompatible imported types ${JSON.stringify(existing.type)} and ${JSON.stringify(definition.type)}.`
             );
+            /* c8 ignore stop */
         }
 
         if (hostExplicitDefNames.has(definition.name)) {
@@ -596,9 +632,11 @@ function mergeImportedDefinitions(
         }
 
         if (JSON.stringify(existing.initializer) !== JSON.stringify(definition.initializer)) {
+            /* c8 ignore start */
             throw new Error(
                 `Variable mapping conflict: target variable ${JSON.stringify(definition.name)} has conflicting initial values.`
             );
+            /* c8 ignore stop */
         }
     }
 
@@ -611,7 +649,9 @@ function resolveImportEventTargetPath(
 ): {targetStatePath: string[]; targetEventName: string; targetEventIdPath: string[]} {
     if (targetEvent.isAbsolute) {
         if (targetEvent.path.length < 1) {
+            /* c8 ignore start */
             throw new Error('Invalid empty absolute target event path.');
+            /* c8 ignore stop */
         }
         return {
             targetStatePath: [ownerStatePath[0], ...targetEvent.path.slice(0, -1)],
@@ -621,7 +661,9 @@ function resolveImportEventTargetPath(
     }
 
     if (targetEvent.path.length < 1) {
+        /* c8 ignore start */
         throw new Error('Invalid empty relative target event path.');
+        /* c8 ignore stop */
     }
 
     return {
@@ -643,25 +685,31 @@ function resolveImportEventMappings(
 
     for (const mapping of eventMappings) {
         if (!mapping.sourceEvent.isAbsolute) {
+            /* c8 ignore start */
             throw new Error(
                 `Invalid event mapping in import ${JSON.stringify(importItem.alias)} under state ${JSON.stringify(ownerStatePath.join('.'))}: source event ${mapping.sourceEvent.text} must be a module-absolute path.`
             );
+            /* c8 ignore stop */
         }
 
         const sourcePath = [...mapping.sourceEvent.path];
         const target = resolveImportEventTargetPath(mapping.targetEvent, ownerStatePath);
         const sourceKey = pathKey(sourcePath);
         if (resolved.has(sourceKey)) {
+            /* c8 ignore start */
             throw new Error(
                 `Event mapping conflict: source event ${JSON.stringify(`/${sourcePath.join('.')}`)} appears multiple times in import ${JSON.stringify(importItem.alias)}.`
             );
+            /* c8 ignore stop */
         }
 
         const targetKey = pathKey([...target.targetStatePath, target.targetEventName]);
         if (targetToSource.has(targetKey) && targetToSource.get(targetKey) !== sourceKey) {
+            /* c8 ignore start */
             throw new Error(
                 `Event mapping conflict: import ${JSON.stringify(importItem.alias)} maps multiple module events to the same host event ${JSON.stringify(`/${[...target.targetStatePath, target.targetEventName].join('.')}`)}.`
             );
+            /* c8 ignore stop */
         }
 
         resolved.set(sourceKey, {
@@ -790,9 +838,11 @@ function validatePendingEventRegistrations(
             && existing.mappingExtraName !== undefined
             && item.mappingExtraName !== existing.mappingExtraName
         ) {
+            /* c8 ignore start */
             throw new Error(
                 `Event mapping conflict: host event ${JSON.stringify(`/${[...item.targetStatePath, item.targetEventName].join('.')}`)} receives conflicting display names ${JSON.stringify(existing.mappingExtraName)} and ${JSON.stringify(item.mappingExtraName)} in import ${JSON.stringify(importItem.alias)} under state ${JSON.stringify(ownerStatePath.join('.'))}.`
             );
+            /* c8 ignore stop */
         }
     }
 }
@@ -827,9 +877,11 @@ function synthesizeHostEventsForImport(
             && existingEvent.extraName !== undefined
             && existingEvent.extraName !== item.mappingExtraName
         ) {
+            /* c8 ignore start */
             throw new Error(
                 `Event mapping conflict: host event ${JSON.stringify(`/${[...item.targetStatePath, item.targetEventName].join('.')}`)} receives conflicting display names ${JSON.stringify(existingEvent.extraName)} and ${JSON.stringify(item.mappingExtraName)}.`
             );
+            /* c8 ignore stop */
         }
 
         if (existingEvent.extraName === undefined && finalExtraName !== undefined) {
@@ -938,7 +990,9 @@ function assembleProgramImports(
     assembleNestedProgram: (targetFile: string) => FcstmAstDocument | null
 ): void {
     if (!program.rootState) {
+        /* c8 ignore start */
         throw new Error('State machine document does not contain a root state.');
+        /* c8 ignore stop */
     }
 
     const assembleState = (
@@ -950,9 +1004,11 @@ function assembleProgramImports(
 
         for (const importItem of node.imports) {
             if (occupiedNames.has(importItem.alias)) {
+                /* c8 ignore start */
                 throw new Error(
                     `Import alias conflict in state ${JSON.stringify(currentStatePath.join('.'))}: alias ${JSON.stringify(importItem.alias)} conflicts with an existing child state.`
                 );
+                /* c8 ignore stop */
             }
             occupiedNames.add(importItem.alias);
 

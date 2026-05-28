@@ -376,4 +376,46 @@ describe('jsfcstm AST builder', () => {
             'DuringAspectRefFunction',
         ]);
     });
+
+    // I-c from PR #115 review: ``state.composite`` was changed by PR-A
+    // from "has braces" to "substates ∪ imports > 0". This means a
+    // brace-only state that has actions but no substates and no imports
+    // is now a leaf (``composite=false``). Pin that contract here so a
+    // future regression in ``ast/builder.ts`` shows up immediately.
+    it('classifies a brace-only state with actions but no substates/imports as a leaf', async () => {
+        const document = createDocument([
+            'def int x = 0;',
+            'state Root {',
+            '    state Idle {',
+            '        enter { x = x + 1; }',
+            '        exit { x = x - 1; }',
+            '    }',
+            '    [*] -> Idle;',
+            '}',
+        ].join('\n'), '/tmp/ast-brace-only-leaf.fcstm');
+
+        const ast = await packageModule.parseAstDocument(document);
+        const idle = ast?.rootState?.substates.find(item => item.name === 'Idle');
+        assert.ok(idle);
+        assert.equal(idle?.composite, false);
+        // ``Root`` is composite because it contains Idle as a substate.
+        assert.equal(ast?.rootState?.composite, true);
+    });
+
+    // I-c sibling test: a state that owns nothing but an ``import``
+    // (no explicit substates) MUST be classified as composite because
+    // the import resolves into a substate during workspace assembly.
+    // The grammar-level ``composite`` flag has to anticipate this.
+    it('classifies an import-only state as composite', async () => {
+        const document = createDocument([
+            'state Root {',
+            '    import "./worker.fcstm" as Worker;',
+            '}',
+        ].join('\n'), '/tmp/ast-import-only-composite.fcstm');
+
+        const ast = await packageModule.parseAstDocument(document);
+        assert.equal(ast?.rootState?.composite, true);
+        assert.equal(ast?.rootState?.substates.length, 0);
+        assert.equal(ast?.rootState?.imports.length, 1);
+    });
 });

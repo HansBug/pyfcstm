@@ -354,15 +354,16 @@ def _assemble_state(
             for diag in err.diagnostics:
                 sink.emit(diag)
             continue
-        except (AttributeError, KeyError, TypeError, IndexError):
-            # Collect-mode safety net: a previously-collected diagnostic
-            # may have left the imported program in an inconsistent
-            # shape (e.g. a mapping target that points nowhere). Skip
-            # the rest of this import; the original diagnostics that
-            # caused the corruption are already on the sink.
-            if not sink.collect:
-                raise
-            continue
+        # I1 (PR #116 re-review): the structural safety net previously
+        # caught AttributeError/KeyError/TypeError/IndexError to absorb
+        # follow-up exceptions from helpers that had emitted a
+        # diagnostic but kept operating on inconsistent state. Each
+        # such helper now returns an explicit safe fallback after
+        # emit (see ``_resolve_import_event_target_path`` /
+        # ``_ensure_state_path_exists``) so the safety net is removed
+        # — letting any remaining structural exception escape, where
+        # it will surface as a real bug instead of being silently
+        # swallowed.
 
     node.imports = []
 
@@ -611,6 +612,13 @@ def _resolve_import_event_target_path(
     alias: str,
     sink: DiagnosticSink,
 ) -> Tuple[Tuple[str, ...], str, Tuple[str, ...]]:
+    # I1 explicit fallback (PR #116 re-review): if the target path is
+    # empty we emit the schema diagnostic and return a safe sentinel
+    # tuple instead of fall-throughing to ``path[-1]`` (which would
+    # ``IndexError`` and rely on the outer safety net to swallow it).
+    # The sentinel ``('', '', ())`` is intentionally unparseable as a
+    # real event, so downstream consumers can detect-and-skip without
+    # confusing it with valid state machine data.
     if target_event.is_absolute:
         if len(target_event.path) < 1:
             _emit_import_diag(sink,
@@ -622,6 +630,7 @@ def _resolve_import_event_target_path(
                 reason='empty_path',
                 detail='absolute',
             )
+            return ((), '', ())
         target_state_path = tuple((owner_state_path[0], *target_event.path[:-1]))
         return (
             target_state_path,
@@ -639,6 +648,7 @@ def _resolve_import_event_target_path(
                 reason='empty_path',
                 detail='relative',
             )
+            return ((), '', ())
         target_state_path = tuple((*owner_state_path, *target_event.path[:-1]))
         target_event_name = target_event.path[-1]
         target_event_id_path = tuple((*owner_state_path[1:], *target_event.path))
@@ -901,6 +911,9 @@ def _ensure_state_path_exists(
     owner_state_path: Tuple[str, ...],
     sink: DiagnosticSink,
 ) -> dsl_nodes.StateDefinition:
+    # I1 explicit fallback (PR #116 re-review): emit-then-return early
+    # on empty path instead of fall-throughing into ``state_path[0]``
+    # IndexError that the outer safety net would have to swallow.
     if not state_path:
         _emit_import_diag(
             sink,
@@ -912,6 +925,7 @@ def _ensure_state_path_exists(
             reason='empty_path',
             detail='<empty>',
         )
+        return root
     if root.name != state_path[0]:
         _emit_import_diag(
             sink,

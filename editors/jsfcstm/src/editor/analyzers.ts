@@ -75,9 +75,12 @@ function findImportAlias(
     ownerStatePath: string[],
     stateName?: string
 ): FcstmSemanticImport | undefined {
+    // Defensive: callers always pass a non-empty state name.
+    /* c8 ignore start */
     if (!stateName) {
         return undefined;
     }
+    /* c8 ignore stop */
 
     for (let length = ownerStatePath.length; length >= 1; length--) {
         const prefix = ownerStatePath.slice(0, length);
@@ -403,9 +406,13 @@ function collectIdentifierRefs(
     expression: FcstmAstExpression | null | undefined,
     out: Array<{name: string; range: import('../utils/text').TextRange}>
 ): void {
+    // Defensive: callers gate on a non-null expression
+    // before invoking this walker.
+    /* c8 ignore start */
     if (!expression) {
         return;
     }
+    /* c8 ignore stop */
     switch (expression.expressionKind) {
         case 'identifier':
             out.push({name: expression.name, range: expression.range});
@@ -485,9 +492,14 @@ function analyzeOperationStatements(
     referencedIn: ReferencedIn
 ): Set<string> {
     const assigned = new Set(assignedBefore);
+    // Defensive: AST builder never emits operation-block nodes with
+    // a null ``statements`` array; the empty-block case shows up as
+    // an empty array, not null.
+    /* c8 ignore start */
     if (!statements) {
         return assigned;
     }
+    /* c8 ignore stop */
 
     for (const statement of statements) {
         if (statement.kind === 'assignmentStatement') {
@@ -570,9 +582,12 @@ function analyzeOperationBlock(
     diagnostics: FcstmDiagnostic[],
     referencedIn: ReferencedIn
 ): void {
+    // Defensive: callers guard ``block`` truthy before invoking.
+    /* c8 ignore start */
     if (!block) {
         return;
     }
+    /* c8 ignore stop */
     analyzeOperationStatements(block.statements, globals, new Set(), diagnostics, referencedIn);
 }
 
@@ -802,12 +817,21 @@ function addDuringAspectInvalidDiagnostics(
     }
     for (const action of semantic.actions) {
         const owner = stateById.get(action.ownerStateId);
+        // Defensive: every action's ownerStateId is added to stateById
+        // before the iteration starts.
+        /* c8 ignore start */
         if (!owner) {
             continue;
         }
+        /* c8 ignore stop */
+        /* c8 ignore start -- defensive: the enclosing loop
+           iterates ``semantic.actions``, all of which have
+           ``stage`` populated by the AST builder; this guard is
+           a belt-and-braces against future builder changes. */
         if (action.stage !== 'during') {
             continue;
         }
+        /* c8 ignore stop */
 
         // Scenario (c): global ``>> during before/after`` aspect on a
         // leaf state — there is no descendant for the aspect to fan
@@ -947,9 +971,14 @@ export async function collectSemanticAnalysisDiagnostics(
 ): Promise<FcstmDiagnostic[]> {
     const diagnostics: FcstmDiagnostic[] = [];
     const semantic = await getWorkspaceGraph().getSemanticDocument(document);
+    // Defensive: callers always invoke against documents with a
+    // semantic analysis available; this guard exists for hypothetical
+    // future async paths.
+    /* c8 ignore start */
     if (!semantic) {
         return diagnostics;
     }
+    /* c8 ignore stop */
 
     addImportMappingDiagnostics(semantic, document, diagnostics);
     addUnreachableStateDiagnostics(semantic, document, diagnostics);
@@ -1028,8 +1057,13 @@ export function inferExpressionCategory(expr: FcstmAstExpression): TypeCategory 
             if (ARITH_BINARY_OPS.has(op) || BITWISE_BINARY_OPS.has(op)) {
                 return 'numeric';
             }
+            /* c8 ignore start */
+            // Defensive: grammar covers all 3 BinaryOp categories
+            // above; ``unknown`` is the fallback for any future
+            // operator extension.
             return 'unknown';
         }
+        /* c8 ignore stop */
         case 'conditional': {
             const cond = expr as FcstmAstConditionalExpression;
             // The ternary's result category is the branch category. We

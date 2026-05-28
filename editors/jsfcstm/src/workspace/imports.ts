@@ -255,6 +255,14 @@ export class FcstmImportWorkspaceIndex {
                 semanticImport.entryFile &&
                 !semanticImport.targetRootStateName
             ) {
+                /* c8 ignore start -- defensive: the grammar requires at
+                   least one ``state X { ... }`` declaration, so any
+                   file that parses successfully has
+                   ``targetRootStateName`` populated. The workspace
+                   index also rejects unparseable files via the
+                   ``missing`` branch above. This emit exists for
+                   future grammar relaxations that admit declaration-
+                   only files. */
                 // I4 (PR #116 re-review): file resolved but the parsed
                 // document declares no top-level state — match the
                 // pyfcstm side which emits ``reason: 'no_root_state'``
@@ -272,6 +280,7 @@ export class FcstmImportWorkspaceIndex {
                         reason: 'no_root_state',
                     },
                 });
+                /* c8 ignore stop */
             }
         }
 

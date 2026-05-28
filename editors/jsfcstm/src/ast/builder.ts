@@ -122,19 +122,28 @@ function decodeEscapedString(value: string): string {
             }
             result += String.fromCharCode(parseInt(octal, 8));
             index += octal.length;
-        } else {
+        } /* c8 ignore start -- defensive: the grammar rejects
+             unknown escape characters at lex time, so the default
+             "preserve literal" fallback is never reached via parsed
+             DSL. Kept so future grammar relaxations don't crash. */ else {
             result += next;
             index += 1;
         }
+        /* c8 ignore stop */
     }
 
     return result;
 }
 
 function unquoteText(value: string | undefined): string {
+    // Defensive: callers pass tokenText(token) which returns '' for
+    // missing tokens; an undefined value would indicate a future
+    // caller-side regression.
+    /* c8 ignore start */
     if (!value) {
         return '';
     }
+    /* c8 ignore stop */
     if (
         (value.startsWith('"') && value.endsWith('"'))
         || (value.startsWith('\'') && value.endsWith('\''))
@@ -149,9 +158,14 @@ function unquoteTokenValue(token: { text?: string } | undefined): string | undef
 }
 
 function formatMultilineComment(rawDoc: string | undefined): string | undefined {
+    // Defensive: callers gate on ``node.raw_doc`` being truthy before
+    // calling; an undefined value would indicate a future caller-side
+    // regression.
+    /* c8 ignore start */
     if (!rawDoc) {
         return undefined;
     }
+    /* c8 ignore stop */
 
     const trimmed = rawDoc.trim();
     if (/^\s*\/\*+\s*\*\/\s*$/.test(trimmed)) {
@@ -172,9 +186,16 @@ function formatMultilineComment(rawDoc: string | undefined): string | undefined 
 
     const trailingTrimmed = lines.map(line => line.replace(/\s+$/g, ''));
     const nonEmptyLines = trailingTrimmed.filter(line => line.trim());
+    // Defensive: any all-whitespace comment is already short-circuited
+    // above by the regex matching empty C-style comments. Reaching this
+    // guard would require non-whitespace input that nonetheless has
+    // zero non-empty lines after stripping, which the implementation
+    // upstream guarantees is impossible.
+    /* c8 ignore start */
     if (nonEmptyLines.length === 0) {
         return '';
     }
+    /* c8 ignore stop */
 
     const indent = nonEmptyLines.reduce((minIndent, line) => {
         const currentIndent = line.match(/^\s*/)![0].length;

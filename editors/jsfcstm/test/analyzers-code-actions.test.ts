@@ -340,6 +340,38 @@ describe('jsfcstm analyzers and code actions', () => {
                 `tracker must not appear in any diagnostic after merge, got ${JSON.stringify(trackerDiags)}`);
         });
 
+        it('branch-merge skips names already assigned before the if-statement', async () => {
+            // Exercises the ``if (assigned.has(name)) continue;`` branch
+            // (line 566-567). A name pre-assigned before the if is
+            // already in ``assigned``; the post-merge loop sees it and
+            // skips without redundantly re-adding.
+            const dir = trackTempDir('jsfcstm-pre-merge-');
+            const hostFile = path.join(dir, 'host.fcstm');
+            const document = createDocument([
+                'def int sensor = 0;',
+                'state Root {',
+                '    state Idle {',
+                '        enter {',
+                '            tracker = 1;',
+                '            if [sensor > 0] {',
+                '                tracker = 2;',
+                '            } else {',
+                '                tracker = 3;',
+                '            }',
+                '            sensor = tracker + 1;',
+                '        }',
+                '    }',
+                '    [*] -> Idle;',
+                '}',
+            ].join('\n'), hostFile);
+            const diagnostics = await packageModule.collectDocumentDiagnostics(document);
+            const trackerDiags = diagnostics.filter(d =>
+                (d.data as Record<string, unknown> | undefined)?.var_name === 'tracker'
+            );
+            assert.equal(trackerDiags.length, 0,
+                `tracker was assigned before the if/else; got ${JSON.stringify(trackerDiags)}`);
+        });
+
         it('forced transition with missing target emits E_FORCED_TRANSITION_EXPANSION exactly', async () => {
             // Tightened (PR-A-coverage Claude I4): pin the exact code.
             // jsfcstm's analyzer for ``!State -> NoSuch`` reports

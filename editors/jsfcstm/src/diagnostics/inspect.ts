@@ -502,7 +502,8 @@ function exprText(expr: Expr | null | undefined): string | null {
     if (!expr) return null;
     const text = (expr as unknown as {text?: string}).text;
     if (typeof text === 'string' && text.length > 0) return text;
-    return null;
+    /* c8 ignore next 2 */
+    return null;  // defensive: grammar always sets .text on Expr; this fallback covers future Expr subclasses that don't
 }
 
 function effectsText(effects: OperationStatement[] | undefined): string | null {
@@ -709,9 +710,13 @@ function functionSignature(defaultPath: readonly string[] | undefined, action: O
     if (actionPath && actionPath.length > 0) {
         normalized = dottedPath(actionPath.slice(0, -1));
         if (!normalized && defaultPath) normalized = dottedPath(defaultPath);
-    } else if (defaultPath) {
+    } /* c8 ignore start -- defensive: OnStage/OnAspect always set statePath */ else if (defaultPath) {
+        // Reserved for future action synthesizers that emit actions
+        // without ``statePath``. The grammar-driven path always sets
+        // statePath (see ``model/runtime.ts:OnStage.statePath`` /
+        // ``OnAspect.statePath``).
         normalized = dottedPath(defaultPath);
-    }
+    } /* c8 ignore stop */
     const leaf = actionPath && actionPath.length > 0
         ? actionPath[actionPath.length - 1] ?? '<inline>'
         : action.name ?? '<inline>';

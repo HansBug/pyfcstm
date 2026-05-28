@@ -153,12 +153,12 @@ class ForLlmSpec:
     Structured guidance attached to a diagnostic code for downstream LLM
     consumers.
 
-    Layer 2 (issue #104) makes this required for new ``W_*`` and ``I_*``
-    codes so that LLM agent loops can read structured fix recommendations
-    instead of regex-ing the human-readable ``message``. Layer 1 ``E_*``
-    codes are grandfathered in without ``for_llm`` for backwards
-    compatibility — when an ``E_*`` code is later updated with one, it
-    will be parsed and validated by the same loader path.
+    Layer 2 (issue #104) requires this for every emitted code — ``E_*``,
+    ``W_*``, and ``I_*`` — so that LLM agent loops can read structured
+    fix recommendations instead of regex-ing the human-readable
+    ``message``. PR-A originally grandfathered the 14 Layer 1 ``E_*``
+    codes; PR-A-fix I-a backfilled them so this field is now expected
+    on every catalogued code.
 
     :param summary: One-line description aimed at LLM consumers.
     :type summary: str
@@ -198,9 +198,10 @@ class CodeSpec:
         declares this required when present; unset means
         ``'pure_static'`` for grandfathered Layer 1 codes.
     :type capability: str, optional
-    :param for_llm: Optional structured guidance for downstream LLM
-        consumers. Required for new Layer 2 ``W_*`` / ``I_*`` codes;
-        absent on grandfathered Layer 1 ``E_*`` codes.
+    :param for_llm: Structured guidance for downstream LLM consumers.
+        Backfilled across all ``E_*`` codes by PR-A-fix I-a; new codes
+        are expected to ship with one. Still typed as ``Optional`` so
+        the loader can tolerate forward-compatibility cases.
     :type for_llm: ForLlmSpec, optional
     """
 

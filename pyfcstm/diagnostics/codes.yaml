@@ -61,6 +61,36 @@ E_UNDEFINED_VAR:
         ``fcstm.readBeforeAssignTemporary`` into this single ``E_*`` code
         plus this flag. Defaults to ``False`` / absent for "real" undefined
         variables that have no matching ``def`` declaration anywhere.
+  for_llm:
+    summary: >-
+      A variable identifier appears in an expression (guard, effect, or
+      action block) but has not been declared with ``def`` at the file
+      top, has not been assigned earlier in the same block (so the
+      block-local temporary path doesn't apply), and is not a known
+      function name. The model refuses to bind unknown identifiers
+      because the generated code would not compile.
+    recommended_actions:
+      - kind: add_definition
+        target: file_top
+        rationale: >-
+          If the variable is genuinely program state, declare it with
+          ``def <type> <name> = <initial>;`` at the file top so the
+          generated runtime allocates storage for it.
+      - kind: assign_first
+        target: same_block
+        rationale: >-
+          If the name was meant to be a block-local temporary, assign
+          to it before reading. Block-local temps only exist after
+          their first assignment in the enclosing concrete block.
+      - kind: fix_typo
+        target: expression
+        rationale: >-
+          If the identifier was meant to be an existing variable,
+          correct the spelling. ``refs.var_name`` carries the exact
+          spelling from the source.
+    do_not:
+      - "Do not declare the variable inside an action block expecting it to leak out — block-local temps are discarded at block exit."
+      - "Do not rely on Python-style implicit None for the missing identifier; the generated runtime will fail to compile."
   example_dsl: |
     def int x = 0;
     state Root { state A; state B; A -> B : if [unknown_var > 0]; }
@@ -79,6 +109,24 @@ E_DUPLICATE_VAR:
       type: Span
       required: false
       description: Source position of the first declaration.
+  for_llm:
+    summary: >-
+      Two ``def`` declarations at the file top use the same variable
+      name. The model allocates one storage slot per name, so a
+      duplicate definition is ambiguous.
+    recommended_actions:
+      - kind: drop_duplicate
+        target: variable_definition
+        rationale: >-
+          If both definitions are meant to declare the same logical
+          variable, keep the first one and delete the second.
+      - kind: rename_one
+        target: variable_definition
+        rationale: >-
+          If both definitions are meant to be separate variables, rename
+          the second to give it its own storage slot.
+    do_not:
+      - "Do not assume the second ``def`` overrides the first — the generated runtime treats this as an error and refuses to compile."
   example_dsl: |
     def int x = 0;
     def int x = 1;
@@ -108,6 +156,24 @@ E_MISSING_STATE:
         - 'parent_missing'
         - 'ambiguous'
         - 'event_path_not_found'
+  for_llm:
+    summary: >-
+      A transition references a state name that does not exist in the
+      machine. The transition target / source must resolve to a state
+      declared in this file or imported.
+    recommended_actions:
+      - kind: fix_typo
+        target: transition
+        rationale: >-
+          If the name was meant to refer to an existing state, correct
+          the spelling. ``refs.state_name`` carries the missing token.
+      - kind: declare_state
+        target: composite_state
+        rationale: >-
+          If the state is genuinely missing, add ``state <name>;`` (or
+          a composite block) under the appropriate composite parent.
+    do_not:
+      - "Do not silently delete the transition; the original intent of the missing state is lost."
   example_dsl: |
     state Root { state A; A -> NoSuch; }
 
@@ -127,6 +193,25 @@ E_DUPLICATE_STATE:
       type: Span
       required: false
       description: Source position of the first declaration.
+  for_llm:
+    summary: >-
+      Two state declarations under the same composite parent use the
+      same name. State names must be unique inside their immediate
+      composite scope.
+    recommended_actions:
+      - kind: drop_duplicate
+        target: state_definition
+        rationale: >-
+          If both declarations describe the same logical state, keep
+          one and remove the other (merge any actions/transitions onto
+          the survivor).
+      - kind: rename_one
+        target: state_definition
+        rationale: >-
+          If the two declarations are meant to be distinct states,
+          rename one to give it its own identity inside the parent.
+    do_not:
+      - "Do not assume the second declaration overrides the first — duplicate state names produce a hard error."
   example_dsl: |
     state Root { state A; state A; }
 
@@ -152,6 +237,27 @@ E_EVENT_REF_INVALID:
         - 'invalid_relative'
         - 'trailing_dots'
         - 'beyond_root'
+  for_llm:
+    summary: >-
+      An event reference (``::``, ``:``, or ``/`` scoped) cannot resolve
+      to a known event under the indicated scope. The grammar accepts
+      the syntactic form, but the resolver cannot bind it to a real
+      event object.
+    recommended_actions:
+      - kind: fix_scope_operator
+        target: transition
+        rationale: >-
+          The three scope operators do not interchange freely. ``::``
+          is source-local, ``:`` is parent-chain, ``/`` is root-absolute.
+          Pick the one that matches where the event is actually
+          declared.
+      - kind: declare_event
+        target: composite_state
+        rationale: >-
+          If the event was supposed to exist, add an
+          ``event <name>;`` declaration in the matching scope.
+    do_not:
+      - "Do not invent a new event by silently aliasing — the dispatcher won't fire on an undeclared name."
   example_dsl: |
     state Root { state A; state B; A -> B : /; }
 
@@ -181,6 +287,24 @@ E_EVENT_NOT_FOUND:
         the originating location of the bad reference in source — not
         the effective search root, which is always the model root for
         absolute references.
+  for_llm:
+    summary: >-
+      A dotted event path could not be resolved against the assembled
+      state hierarchy. The path syntax was valid but no event with
+      that name exists at the resolved state.
+    recommended_actions:
+      - kind: fix_event_path
+        target: transition
+        rationale: >-
+          Confirm the dotted path matches the state hierarchy that
+          actually exists after imports have been merged.
+      - kind: declare_event
+        target: composite_state
+        rationale: >-
+          Add the missing ``event <name>;`` declaration under the
+          intended state.
+    do_not:
+      - "Do not paper over the error by introducing a wildcard alias — events are uniquely bound by their scope."
   example_dsl: |
     state Root { state A; state B; A -> B :: NoEvent; }
 
@@ -203,6 +327,28 @@ E_DANGLING_TRANSITION:
       description: >-
         Short tag describing the dangling reason.
       enum: ['src_not_found', 'tgt_not_found', 'both_not_found']
+  for_llm:
+    summary: >-
+      A transition's source or target points at a state that exists
+      neither in the local composite scope nor in any ancestor scope.
+      The transition cannot be wired into the dispatch graph.
+    recommended_actions:
+      - kind: fix_typo
+        target: transition
+        rationale: >-
+          If the dangling name is misspelled, correct it. ``refs.state_path``
+          carries the location of the offending transition.
+      - kind: declare_target_state
+        target: composite_state
+        rationale: >-
+          Declare the missing state if the transition was intentional.
+      - kind: drop_transition
+        target: transition
+        rationale: >-
+          Remove the transition if it was speculative — leaving a
+          dangling reference blocks the whole file.
+    do_not:
+      - "Do not pretend the transition resolves to ``[*]`` — that has a specific entry/exit semantics."
   example_dsl: |
     state Root { state A; NoSuch -> A; }
 
@@ -225,6 +371,26 @@ E_TYPE_MISMATCH:
       type: str
       required: true
       description: Original expression text.
+  for_llm:
+    summary: >-
+      An expression mixes an arithmetic and a boolean subexpression in
+      a way the grammar does not allow. ``num_expression`` and
+      ``cond_expression`` are strictly separated; comparison operators
+      bridge them, ternary ``? :`` converts boolean → arithmetic.
+    recommended_actions:
+      - kind: wrap_in_ternary
+        target: expression
+        rationale: >-
+          If you wanted to assign a boolean test, wrap it as
+          ``(cond) ? 1 : 0`` so the right-hand side is arithmetic.
+      - kind: add_comparison
+        target: guard
+        rationale: >-
+          If you wanted to gate on a numeric value, compare against a
+          constant (``counter > 0``) instead of using the value
+          directly as a boolean.
+    do_not:
+      - "Do not rely on numeric → boolean implicit coercion; the generated runtimes treat the two domains as distinct."
   example_dsl: |
     def int x = 0;
     state Root { state A; state B; A -> B : if [x]; }
@@ -249,6 +415,26 @@ E_FORCED_TRANSITION_EXPANSION:
         - 'tgt_not_found'
         - 'src_is_root'
         - 'wildcard_no_descendants'
+  for_llm:
+    summary: >-
+      A forced transition (``!Source -> Target`` or ``!* -> Target``)
+      failed to expand cleanly — typically because the source name
+      cannot be found, or because the expansion would create an
+      empty/inconsistent fan-out under the current scope.
+    recommended_actions:
+      - kind: fix_source
+        target: forced_transition
+        rationale: >-
+          Confirm the ``!Name`` source is a real state inside the
+          current composite scope. ``!*`` only matches direct
+          substates; deeper descendants need explicit names.
+      - kind: relocate_forced_transition
+        target: composite_state
+        rationale: >-
+          Move the forced transition into the composite whose substates
+          you actually want to receive the event.
+    do_not:
+      - "Do not add an ``effect { ... }`` block to a forced transition — forced transitions cannot carry effects and the expansion would fail anyway."
   example_dsl: |
     state Root { state A; !NoSuch -> A; }
 
@@ -268,6 +454,25 @@ E_INITIAL_TRANSITION_INVALID:
       description: >-
         Short tag describing the failure.
       enum: ['missing_entry', 'target_not_child']
+  for_llm:
+    summary: >-
+      A composite state lacks a valid ``[*] -> Child`` initial
+      transition, or its declared initial target is not actually a
+      child of this composite. The runtime cannot decide which child
+      to enter when this composite is activated.
+    recommended_actions:
+      - kind: add_initial_transition
+        target: composite_state
+        rationale: >-
+          Add ``[*] -> <ChildName>;`` inside the composite, picking a
+          direct substate as the entry point.
+      - kind: fix_initial_target
+        target: initial_transition
+        rationale: >-
+          If an initial transition already exists, retarget it at a
+          direct child of this composite (not a grandchild).
+    do_not:
+      - "Do not rely on a default ordering of substates; the runtime requires an explicit initial transition."
   example_dsl: |
     state Root { state Outer { state Inner; } }
 
@@ -291,6 +496,24 @@ E_DUPLICATE_FUNCTION_NAME:
       required: true
       description: Lifecycle stage where the duplicate appears.
       enum: ['enter', 'during', 'exit', 'during_aspect']
+  for_llm:
+    summary: >-
+      Two named action / function blocks share the same name within
+      the same scope. Named blocks must be uniquely identifiable so
+      ``ref`` lookups can bind to a single definition.
+    recommended_actions:
+      - kind: rename_one
+        target: named_action
+        rationale: >-
+          Give one of the named blocks a distinct identifier so
+          ``ref <name>`` calls resolve unambiguously.
+      - kind: drop_duplicate
+        target: named_action
+        rationale: >-
+          If the two declarations are meant to be the same logical
+          block, keep one and update its callers to reference it.
+    do_not:
+      - "Do not assume the second declaration shadows the first — the resolver treats this as a hard error."
   example_dsl: |
     state Root {
         state A {
@@ -326,6 +549,26 @@ E_DURING_ASPECT_INVALID:
         The aspect token that was actually used (``'before'``, ``'after'``,
         or null when the user wrote a bare ``during`` on a composite).
       enum: ['before', 'after']
+  for_llm:
+    summary: >-
+      A ``during before`` / ``during after`` or ``>> during ...``
+      aspect declaration was placed on a state that cannot legally
+      receive it (typically a leaf state with no descendant for the
+      aspect to fan out to).
+    recommended_actions:
+      - kind: move_to_composite
+        target: aspect_declaration
+        rationale: >-
+          Aspect actions only make sense on composite states. Move
+          the declaration to a composite ancestor whose descendants
+          should receive the aspect.
+      - kind: drop_aspect
+        target: aspect_declaration
+        rationale: >-
+          If the aspect was speculative and the state is genuinely a
+          leaf, remove the aspect declaration entirely.
+    do_not:
+      - "Do not convert the leaf into a composite just to host the aspect — that changes the runtime entry/exit semantics."
   example_dsl: |
     state Root {
         state A {
@@ -344,6 +587,26 @@ E_PSEUDO_NOT_LEAF:
       type: str
       required: true
       description: Dotted path of the offending pseudo state.
+  for_llm:
+    summary: >-
+      A ``pseudo state`` declaration was given a composite body (or
+      otherwise treated as if it had descendants). Pseudo states must
+      be leaves: they cannot host substates because their semantics
+      explicitly skip ancestor ``>> during`` aspects.
+    recommended_actions:
+      - kind: drop_pseudo_marker
+        target: state_definition
+        rationale: >-
+          If the state genuinely needs substates, remove the
+          ``pseudo`` keyword and treat it as a normal composite.
+      - kind: flatten_pseudo
+        target: state_definition
+        rationale: >-
+          If the state is meant to be a transient pseudo (e.g. an
+          internal junction), remove its substates and turn it back
+          into a leaf.
+    do_not:
+      - "Do not rely on pseudo states for normal hierarchy modeling — they exist solely to bypass ``>> during`` aspect application."
   example_dsl: |
     state Root {
         pseudo state Outer {
@@ -376,6 +639,26 @@ E_NAMED_FUNCTION_REF_NOT_FOUND:
         is the state name that does not exist under the parent path; for
         'named_function_not_found' this is the action name searched for in
         the resolved state.
+  for_llm:
+    summary: >-
+      An ``enter ref ...`` / ``exit ref ...`` / ``during ref ...``
+      clause points at a named action that does not exist. The
+      resolver could not find a matching named block in the indicated
+      scope.
+    recommended_actions:
+      - kind: fix_ref_path
+        target: action_ref
+        rationale: >-
+          Confirm the dotted ref path matches a real named action.
+          Use ``/`` to anchor at the root, or a relative name for the
+          current state.
+      - kind: declare_named_action
+        target: composite_state
+        rationale: >-
+          Add the missing ``enter <Name> { ... }`` / similar block in
+          the resolving scope.
+    do_not:
+      - "Do not silently swap ``ref`` with an inline block — that loses the deduplication that ``ref`` was meant to provide."
   example_dsl: |
     state Root {
         state A {

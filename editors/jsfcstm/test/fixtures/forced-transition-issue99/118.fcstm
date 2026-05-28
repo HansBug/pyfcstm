@@ -1,0 +1,107 @@
+def int configuration_selected = 0;
+def int required_real_time_link_present = 0;
+def int monitoring_cycles = 0;
+
+state SubsystemLifecycleSupervisor {
+    event StartSubsystem;
+    event PublishParameters;
+    event InitializeHardware;
+    event SelectConfiguration;
+    event RealTimeLinkPresent;
+    event VerificationCompleted;
+    event StopSubsystem;
+    event PostOperationalActionsRevoked;
+    event HardwareActionsRevoked;
+    event SoftwareActionsRevoked;
+    event MediumSeverityError;
+    event HighSeverityError;
+    event CriticalHardwareTemperatureLimit;
+    event JoystickOrRobotUnplugged;
+    event LowSeverityOrProgressInformation;
+
+    >> during after {
+        monitoring_cycles = monitoring_cycles + 1;
+    }
+
+    >> during after abstract MonitorSubsystemsAndMaintainRealTimeLinkGraph;
+
+    ! * -> ErrorOperational : HighSeverityError;
+    ! * -> ErrorOperational : CriticalHardwareTemperatureLimit;
+    ! * -> ErrorOperational : JoystickOrRobotUnplugged;
+    ! Operational -> SafeOperational : MediumSeverityError;
+
+    [*] -> Offline;
+
+    state Offline {
+        enter {
+            configuration_selected = 0;
+            required_real_time_link_present = 0;
+        }
+        enter abstract StartServicesLoadSubsystemDescriptorAndSwitchOffHardwareDevices;
+    }
+
+    state SoftwareInit {
+        enter abstract PublishSoftwareDataStructuresAsParameters;
+    }
+
+    state HardwareInit {
+        enter abstract ActivateAndInitializeHardwareDevices;
+    }
+
+    state PreOperational {
+        during abstract ManageSubsystemDescriptorConfigurationAndRealTimeLinks;
+    }
+
+    state SafeOperational {
+        enter abstract DisableHardwareActuators;
+        during abstract RunControlAlgorithmsForVerification;
+    }
+
+    state Operational {
+        enter abstract EnableHardwareActuators;
+        during abstract PermitCompleteSubsystemControl;
+    }
+
+    state ErrorOperational {
+        enter {
+            required_real_time_link_present = 0;
+        }
+        enter abstract BringHardwareDevicesToDefinedState;
+        enter abstract ShutdownJoystickManipulatorAndAffectedRealTimeNetwork;
+    }
+
+    state PostOperational {
+        enter abstract RevokePreOperationalActions;
+    }
+
+    state HardwareDeInit {
+        enter abstract RevokeHardwareInitializationActions;
+    }
+
+    state SoftwareDeInit {
+        enter abstract RevokeSoftwareInitializationActions;
+    }
+
+    Offline -> SoftwareInit : StartSubsystem;
+    SoftwareInit -> HardwareInit : PublishParameters;
+    HardwareInit -> PreOperational : InitializeHardware effect {
+        configuration_selected = 0;
+        required_real_time_link_present = 0;
+    };
+    PreOperational -> PreOperational : SelectConfiguration effect {
+        configuration_selected = 1;
+    };
+    PreOperational -> PreOperational : RealTimeLinkPresent effect {
+        required_real_time_link_present = 1;
+    };
+    PreOperational -> SafeOperational : if [configuration_selected == 1 && required_real_time_link_present == 1] effect {
+        configuration_selected = 0;
+    };
+    SafeOperational -> Operational : VerificationCompleted;
+    Operational -> PostOperational : StopSubsystem;
+    PostOperational -> HardwareDeInit : PostOperationalActionsRevoked;
+    HardwareDeInit -> SoftwareDeInit : HardwareActionsRevoked;
+    SoftwareDeInit -> Offline : SoftwareActionsRevoked;
+    SafeOperational -> SafeOperational : LowSeverityOrProgressInformation;
+    Operational -> Operational : LowSeverityOrProgressInformation;
+}

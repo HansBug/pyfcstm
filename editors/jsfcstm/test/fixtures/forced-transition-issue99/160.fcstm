@@ -1,0 +1,84 @@
+def float degree_range_error = 0.0;
+def float movement_velocity_excess = 0.0;
+def float flight_height_excess = 0.0;
+def float start_end_position_discrepancy = 0.0;
+def int mission_command_available = 0;
+def int behavior_termination_condition = 0;
+
+state VtolUavMissionManager {
+    >> during before abstract SupervisoryControlBeforeSequence;
+    >> during before abstract ReadVehicleStateAndGroundDistanceSensor;
+    >> during after abstract CommandFlightControllerEveryCycle;
+
+    ! * -> MissionControllerOff :: ManualControl;
+    ! MissionMode -> SlowDown :: StopCommand;
+    ! CommandMode -> SlowDown :: StopCommand;
+    ! FlyHome -> SlowDown :: StopCommand;
+    ! SearchAndTrackObject -> SlowDown :: StopCommand;
+    ! MissionMode -> FlyHome : DataLinkLost;
+    ! CommandMode -> FlyHome : DataLinkLost;
+    ! StandBy -> FlyHome : DataLinkLost;
+    ! SlowDown -> FlyHome : DataLinkLost;
+    ! FlyHome -> FlyHome : DataLinkLost;
+    ! SearchAndTrackObject -> FlyHome : DataLinkLost;
+    ! MissionMode -> CommandMode :: PayloadDirectedCommand;
+    ! MissionMode -> StandBy :: MissionPlanProcessed;
+    ! MissionMode -> FlyHome :: FlyHomeObjective;
+    ! MissionMode -> SearchAndTrackObject :: SearchTrackObjective;
+
+    [*] -> MissionMode;
+
+    state MissionControllerOff;
+
+    state StandBy {
+        enter abstract CaptureHoverPosition;
+        during abstract HoldHoverPosition;
+    }
+
+    state SlowDown {
+        during abstract SmoothChangeoverToStandBy;
+    }
+
+    state MissionMode {
+        [*] -> ParseCommand;
+
+        state ParseCommand {
+            during abstract ReadMissionPlanCommand;
+        }
+
+        state PlausibilityCheck {
+            during abstract CheckMissionGrammarAndAttributes;
+        }
+
+        state BehaviorActive {
+            during abstract ExecuteMissionBehavior;
+        }
+
+        ParseCommand -> PlausibilityCheck : if [mission_command_available > 0];
+        PlausibilityCheck -> BehaviorActive : if [degree_range_error <= 0.0 && movement_velocity_excess <= 0.0 && flight_height_excess <= 0.0 && (start_end_position_discrepancy * start_end_position_discrepancy) == 0.0];
+        PlausibilityCheck -> ParseCommand : if [degree_range_error > 0.0 || movement_velocity_excess > 0.0 || flight_height_excess > 0.0 || start_end_position_discrepancy != 0.0];
+        BehaviorActive -> ParseCommand : if [behavior_termination_condition > 0];
+    }
+
+    state CommandMode {
+        [*] -> DirectCommandExecution;
+
+        state DirectCommandExecution {
+            during abstract ExecuteDirectCommand;
+        }
+    }
+
+    state FlyHome {
+        during abstract CommandFlyHomeObjective;
+    }
+
+    state SearchAndTrackObject {
+        during abstract CommandSearchAndTrackObject;
+    }
+
+    StandBy -> StandBy :: StopCommand;
+    SlowDown -> SlowDown :: StopCommand;
+    SlowDown -> StandBy;
+    FlyHome -> MissionMode :: BehaviorTerminated;
+    SearchAndTrackObject -> MissionMode :: BehaviorTerminated;
+}

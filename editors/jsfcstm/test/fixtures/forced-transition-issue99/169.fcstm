@@ -1,0 +1,94 @@
+def float detection_confidence = 0.0;
+def float confidence_threshold = 0.0;
+def float range_uncertainty = 0.0;
+def float range_uncertainty_delta = 0.0;
+def float range_uncertainty_limit = 0.0;
+
+state PirateMissionSupervisor {
+    ! * -> ReturnToHome :: FailsafeInterrupt;
+    ! * -> ReturnToHome :: CommunicationTimeout;
+    ! * -> ReturnToHome :: MissionEnd;
+    ! * -> FaultHandling :: FailureMode;
+    ! Tracking -> VisualProcessing :: OperationallyViableRange;
+    ! VisualProcessing -> Tracking :: TrackingIntervalComplete;
+
+    [*] -> Idle;
+
+    state Idle {
+        enter abstract WaitForMissionInitialization;
+    }
+
+    state Navigation {
+        enter abstract ConfigureMissionNavigation;
+        during abstract IssueNavigationCommandsToPX4;
+        during abstract CommandDifferentialThrustToSternThrusters;
+    }
+
+    state Tracking {
+        [*] -> AcousticTriangulation;
+
+        state AcousticTriangulation {
+            enter { range_uncertainty = 0.0; }
+            during abstract ExecutePredefinedTrackingGeometry;
+            during abstract ReceiveAcousticRangeMeasurements;
+            during abstract EstimateTargetLocationOnboard;
+        }
+
+        state Pursuit {
+            during abstract NavigateTowardEstimatedTargetPosition;
+            during abstract IssueNavigationCommandsToPX4;
+            during abstract CommandDifferentialThrustToSternThrusters;
+        }
+
+        state Loiter {
+            during { range_uncertainty = range_uncertainty + range_uncertainty_delta; }
+            during abstract ReceiveAcousticTransmissions;
+            during abstract AssessTargetVehicleDistanceWithToF;
+            during abstract CollectUnderwaterVisualData;
+        }
+
+        state ReLocalization {
+            enter { range_uncertainty = 0.0; }
+            during abstract ExecutePredefinedTrackingGeometry;
+            during abstract ReceiveAcousticRangeMeasurements;
+            during abstract ReEstimateTargetLocationOnboard;
+        }
+
+        AcousticTriangulation -> Pursuit;
+        Pursuit -> Loiter;
+        Loiter -> ReLocalization : if [range_uncertainty > range_uncertainty_limit];
+        ReLocalization -> Pursuit;
+    }
+
+    state VisualProcessing {
+        enter abstract PiTriggersJetsonBeginDetectionTracking;
+        exit abstract PiTriggersJetsonTerminateDetectionTracking;
+
+        [*] -> DetectorVerification;
+
+        state DetectorVerification {
+            during abstract RunDetectorOnJetsonGPU;
+        }
+
+        state TrackingBurst {
+            enter abstract InitializeTrackerWithDetectorBoundingBox;
+            during abstract RunTrackerOnJetsonGPU;
+        }
+
+        DetectorVerification -> TrackingBurst : if [detection_confidence > confidence_threshold];
+        TrackingBurst -> DetectorVerification;
+    }
+
+    state ReturnToHome {
+        enter abstract TriggerReturnToHome;
+        during abstract NavigateHomeThroughPX4;
+    }
+
+    state FaultHandling {
+        enter abstract HandleFailureMode;
+    }
+
+    Idle -> Navigation :: MissionStart;
+    Navigation -> Tracking :: TrackingMissionStart;
+    FaultHandling -> ReturnToHome;
+}

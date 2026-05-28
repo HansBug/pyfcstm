@@ -22,7 +22,6 @@ from pyfcstm.utils import ModelDiagnostic
 _TYPE_PREDICATES = {
     'str': lambda v: isinstance(v, str),
     'int': lambda v: isinstance(v, int) and not isinstance(v, bool),
-    'float': lambda v: isinstance(v, (int, float)) and not isinstance(v, bool),
     'bool': lambda v: isinstance(v, bool),
     'list[str]': lambda v: isinstance(v, list) and all(isinstance(item, str) for item in v),
     'Span': lambda v: v is None or hasattr(v, 'line'),

@@ -525,3 +525,27 @@ class TestYamlCommentBlockSync:
                 f"type token {ref_type!r} listed in _ALLOWED_REF_TYPES but "
                 f"not documented in the codes.yaml comment block"
             )
+
+    def test_schema_check_type_predicates_cover_all_allowed_types(self):
+        """M3 from PR #115 final review: ``_schema_check._TYPE_PREDICATES``
+        is the runtime side of the contract — every token in
+        ``_ALLOWED_REF_TYPES`` must have a matching predicate, otherwise
+        the schema check silently falls through to "always pass" and a
+        typo or new token slips by undetected.
+        """
+        from ._schema_check import _TYPE_PREDICATES
+        missing = set(_ALLOWED_REF_TYPES) - set(_TYPE_PREDICATES.keys())
+        assert not missing, (
+            f"type tokens declared in _ALLOWED_REF_TYPES but missing a "
+            f"predicate in _TYPE_PREDICATES: {sorted(missing)}. Add a "
+            f"matching lambda to _schema_check._TYPE_PREDICATES so the "
+            f"runtime schema check actually validates the new type."
+        )
+        # And vice versa: every predicate must correspond to an allowed
+        # type — leftover predicates are dead code.
+        extra = set(_TYPE_PREDICATES.keys()) - set(_ALLOWED_REF_TYPES)
+        assert not extra, (
+            f"_TYPE_PREDICATES has predicates for type tokens not in "
+            f"_ALLOWED_REF_TYPES: {sorted(extra)}. Remove the dead "
+            f"predicate(s) or add the token to _ALLOWED_REF_TYPES."
+        )

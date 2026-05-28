@@ -33,6 +33,8 @@ from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model import parse_dsl_node_to_state_machine
 from pyfcstm.utils.validate import ModelDiagnostic
 
+from ._schema_check import assert_all_diags_match_schema
+
 
 def _collect_codes_from_dsl(dsl: str, *, base_dir=None):
     """Parse a DSL string in collect mode and return the emitted code
@@ -50,7 +52,7 @@ def _collect_codes_from_dsl(dsl: str, *, base_dir=None):
     )
     model, diagnostics = result
     codes = [d.code for d in diagnostics]
-    return codes, model
+    return codes, model, diagnostics
 
 
 def _collect_codes_from_file(path: str):
@@ -296,7 +298,7 @@ MULTI_FILE_FIXTURES = [
     item[0] for item in SINGLE_FILE_FIXTURES
 ])
 def test_single_file_fixture_emits_expected_codes(name, dsl, must_fire):
-    codes, _ = _collect_codes_from_dsl(dsl)
+    codes, _, diagnostics = _collect_codes_from_dsl(dsl)
     tally = {}
     for code in codes:
         tally[code] = tally.get(code, 0) + 1
@@ -305,6 +307,11 @@ def test_single_file_fixture_emits_expected_codes(name, dsl, must_fire):
             f'{name}: expected {expected} to fire, got {codes}'
         )
         tally[expected] -= 1
+    # I-e mechanical safeguard: every emitted diagnostic's refs
+    # payload must conform to ``codes.yaml`` (required fields present,
+    # enum values in range, runtime types match). This is the parity
+    # test that would have caught C-A/B/C/D before merge.
+    assert_all_diags_match_schema(diagnostics, context=name)
 
 
 @pytest.mark.unittest
@@ -317,11 +324,12 @@ def test_multi_file_fixture_emits_expected_codes(name, files, entry, must_fire, 
         path.write_text(body, encoding='utf-8')
 
     entry_path = str(tmp_path / entry)
-    codes, _ = _collect_codes_from_file(entry_path)
+    codes, _, diagnostics = _collect_codes_from_file(entry_path)
     for expected in must_fire:
         assert expected in codes, (
             f'{name}: expected {expected} to fire, got {codes}'
         )
+    assert_all_diags_match_schema(diagnostics, context=name)
 
 
 @pytest.mark.unittest
@@ -423,7 +431,7 @@ def test_undefined_var_emits_per_identifier():
         '    A -> B : if [foo > 0 && bar < 10 && baz == 0];',
         '}',
     ])
-    codes, _ = _collect_codes_from_dsl(dsl)
+    codes, _, _ = _collect_codes_from_dsl(dsl)
     assert codes.count('E_UNDEFINED_VAR') == 3, (
         f'expected one E_UNDEFINED_VAR per undefined identifier '
         f'(foo/bar/baz), got {codes}'

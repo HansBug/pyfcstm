@@ -441,3 +441,57 @@ def test_undefined_var_emits_per_identifier():
             f'refs.var_name must be str per schema, got '
             f'{type(d.refs["var_name"]).__name__}={d.refs["var_name"]!r}'
         )
+
+
+@pytest.mark.unittest
+def test_import_mapping_collect_mode_accumulates_multiple_errors(tmp_path):
+    """C-E from PR #115 R2.C4 / R1.C2: in collect mode, multiple
+    mapping errors inside a *single* import statement must accumulate
+    on the sink, not get truncated to the first one.
+
+    Before the fix, ``imports.py`` wrapped the four mapping helpers in
+    a single ``try/except ModelValidationError`` which forwarded only
+    the FIRST raised diagnostic per import. The mapping pipeline was
+    effectively fail-fast inside an import, contradicting the
+    docstring promise that ``execution continues — the import pipeline
+    is expected to ``continue`` past the offending step``.
+    """
+    worker = tmp_path / 'worker.fcstm'
+    worker.write_text(
+        '\n'.join([
+            'def int sensor_a = 0;',
+            'def int sensor_b = 0;',
+            'def int sensor_c = 0;',
+            'state Worker;',
+        ]),
+        encoding='utf-8',
+    )
+    host = tmp_path / 'host.fcstm'
+    # Three independent duplicate-mapping errors in one import block.
+    host.write_text(
+        '\n'.join([
+            'state Root {',
+            '    state Idle;',
+            '    [*] -> Idle;',
+            '    import "./worker.fcstm" as W {',
+            '        def sensor_a -> io_x;',
+            '        def sensor_a -> io_x;',
+            '        def sensor_b -> io_y;',
+            '        def sensor_b -> io_y;',
+            '        def sensor_c -> io_z;',
+            '        def sensor_c -> io_z;',
+            '    }',
+            '}',
+        ]),
+        encoding='utf-8',
+    )
+    with open(host, 'r', encoding='utf-8') as f:
+        ast = parse_with_grammar_entry(f.read(), 'state_machine_dsl')
+    _, diagnostics = parse_dsl_node_to_state_machine(
+        ast, path=str(host), collect=True,
+    )
+    dup_codes = [d.code for d in diagnostics if d.code == 'E_IMPORT_DUPLICATE_MAPPING']
+    assert len(dup_codes) >= 2, (
+        f'expected at least 2 E_IMPORT_DUPLICATE_MAPPING diagnostics in collect mode, '
+        f'got codes={[d.code for d in diagnostics]}'
+    )

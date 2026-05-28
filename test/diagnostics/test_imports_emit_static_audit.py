@@ -50,7 +50,14 @@ def _audit_imports_emits():
             continue
 
         code_arg = node.args[1]
-        if not isinstance(code_arg, ast.Constant) or not isinstance(code_arg.value, str):
+        # Python 3.7 returns ``_ast.Str`` for string literals; 3.8+
+        # uses ``ast.Constant``. Support both so the audit runs on
+        # the full Python version envelope this repo targets.
+        if isinstance(code_arg, ast.Constant) and isinstance(code_arg.value, str):
+            code = code_arg.value
+        elif isinstance(code_arg, getattr(ast, 'Str', tuple())):  # Python 3.7
+            code = code_arg.s
+        else:
             # I2 lockdown: dynamically constructed code arguments
             # bypass the schema audit. We reject them up-front so a
             # future refactor that introduces ``code = some_var;
@@ -59,7 +66,6 @@ def _audit_imports_emits():
             code_repr = ast.unparse(code_arg) if hasattr(ast, 'unparse') else repr(code_arg)
             violations.append((node.lineno, '<code>', 'NON_LITERAL_CODE', code_repr))
             continue
-        code = code_arg.value
         spec = CODE_REGISTRY.get(code)
         if spec is None:
             violations.append((node.lineno, code, 'UNKNOWN_CODE', '<no schema>'))

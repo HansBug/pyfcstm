@@ -25,11 +25,18 @@ CodeFieldSpec
     :members: name,type,required,description,enum
 
 
+ForLlmSpec
+-----------------------------------------------------
+
+.. autoclass:: ForLlmSpec
+    :members: summary,recommended_actions,do_not
+
+
 CodeSpec
 -----------------------------------------------------
 
 .. autoclass:: CodeSpec
-    :members: required_fields,code,severity,description,refs_schema,example_dsl
+    :members: required_fields,code,severity,description,refs_schema,example_dsl,capability,for_llm
 
 
 load\_codes

@@ -3,32 +3,60 @@ import {pathToFileURL} from 'node:url';
 import type {
     FcstmAstAction,
     FcstmAstAssignmentStatement,
+    FcstmAstBinaryExpression,
+    FcstmAstConditionalExpression,
     FcstmAstExpression,
+    FcstmAstForcedTransition,
+    FcstmAstFunctionExpression,
     FcstmAstIfStatement,
     FcstmAstImportMapping,
+    FcstmAstLiteralExpression,
     FcstmAstOperationBlock,
     FcstmAstOperationStatement,
     FcstmAstTransition,
-    FcstmAstForcedTransition,
+    FcstmAstUnaryExpression,
 } from '../ast';
 import type {FcstmSemanticDocument, FcstmSemanticImport, FcstmSemanticTransition} from '../semantics';
 import {FcstmDiagnostic, TextDocumentLike} from '../utils/text';
 import {getWorkspaceGraph} from '../workspace';
 import {findIdentifierRange} from './ranges';
 
+/**
+ * Diagnostic code constants — single source of truth for jsfcstm
+ * analyzer emitters. The values match the codes registered in
+ * ``pyfcstm/diagnostics/codes.yaml`` so that downstream consumers
+ * (LLM agent loops, evaluation tooling, the bundled VSCode extension)
+ * see byte-identical ``code`` strings regardless of which end produced
+ * the diagnostic. PR-A unifies the historical ``fcstm.*`` namespace
+ * into the shared ``E_*`` / ``W_*`` / ``I_*`` set.
+ */
 export const FCSTM_DIAGNOSTIC_CODES = {
-    duplicateImportAlias: 'fcstm.duplicateImportAlias',
-    missingImport: 'fcstm.missingImport',
-    circularImport: 'fcstm.circularImport',
-    unreachableState: 'fcstm.unreachableState',
-    deadTransition: 'fcstm.deadTransition',
-    unusedEvent: 'fcstm.unusedEvent',
-    duplicateImportMapping: 'fcstm.duplicateImportMapping',
-    unresolvedState: 'fcstm.unresolvedState',
-    unresolvedActionRef: 'fcstm.unresolvedActionRef',
-    duplicateVariable: 'fcstm.duplicateVariable',
-    undefinedVariable: 'fcstm.undefinedVariable',
-    readBeforeAssignTemporary: 'fcstm.readBeforeAssignTemporary',
+    // -------- Layer 1 errors (E_*) --------
+    undefinedVar: 'E_UNDEFINED_VAR',
+    duplicateVar: 'E_DUPLICATE_VAR',
+    missingState: 'E_MISSING_STATE',
+    danglingTransition: 'E_DANGLING_TRANSITION',
+    namedFunctionRefNotFound: 'E_NAMED_FUNCTION_REF_NOT_FOUND',
+    duplicateState: 'E_DUPLICATE_STATE',
+    duplicateFunctionName: 'E_DUPLICATE_FUNCTION_NAME',
+    duringAspectInvalid: 'E_DURING_ASPECT_INVALID',
+    pseudoNotLeaf: 'E_PSEUDO_NOT_LEAF',
+    initialTransitionInvalid: 'E_INITIAL_TRANSITION_INVALID',
+    forcedTransitionExpansion: 'E_FORCED_TRANSITION_EXPANSION',
+    eventRefInvalid: 'E_EVENT_REF_INVALID',
+    eventNotFound: 'E_EVENT_NOT_FOUND',
+    typeMismatch: 'E_TYPE_MISMATCH',
+    // -------- Import errors (E_IMPORT_*) --------
+    importAliasConflict: 'E_IMPORT_ALIAS_CONFLICT',
+    importNotFound: 'E_IMPORT_NOT_FOUND',
+    importCircular: 'E_IMPORT_CIRCULAR',
+    importDuplicateMapping: 'E_IMPORT_DUPLICATE_MAPPING',
+    importMappingInvalid: 'E_IMPORT_MAPPING_INVALID',
+    // -------- Layer 2 warnings (W_*) - emit logic kept in place,
+    // codes.yaml schema placeholders introduced in PR-A --------
+    unreachableState: 'W_UNREACHABLE_STATE',
+    guardConstFalse: 'W_GUARD_CONST_FALSE',
+    unusedEvent: 'W_UNUSED_EVENT',
 } as const;
 
 function isFalseLiteral(expression: FcstmAstExpression): boolean {
@@ -133,17 +161,33 @@ function addImportMappingDiagnostics(
     for (const importItem of semantic.imports) {
         const seen = new Map<string, FcstmAstImportMapping>();
         for (const mapping of importItem.ast.mappings) {
-            const key = mapping.kind === 'importDefMapping'
-                ? `${mapping.kind}:${mapping.selector.text}->${mapping.targetTemplate}`
-                : `${mapping.kind}:${mapping.sourceEvent.text}->${mapping.targetEvent.text}`;
+            const isVariable = mapping.kind === 'importDefMapping';
+            const mappingKind: 'variable' | 'event' = isVariable ? 'variable' : 'event';
+            const sourceName = isVariable ? mapping.selector.text : mapping.sourceEvent.text;
+            const targetName = isVariable ? mapping.targetTemplate : mapping.targetEvent.text;
+            const key = `${mapping.kind}:${sourceName}->${targetName}`;
             const firstMapping = seen.get(key);
             if (firstMapping) {
                 diagnostics.push({
                     range: mapping.range,
                     message: `Duplicate import mapping ${JSON.stringify(mapping.text)} in alias ${JSON.stringify(importItem.alias)}.`,
-                    severity: 'warning',
+                    // pyfcstm imports.py treats duplicate mappings as a
+                    // hard error; align the severity so the two ends
+                    // emit the same blocking level for the same input.
+                    severity: 'error',
                     source: 'fcstm',
-                    code: FCSTM_DIAGNOSTIC_CODES.duplicateImportMapping,
+                    code: FCSTM_DIAGNOSTIC_CODES.importDuplicateMapping,
+                    data: {
+                        alias: importItem.alias,
+                        mapping_kind: mappingKind,
+                        // The dedupe key matches when both source AND target
+                        // are identical, so either ``direction`` is technically
+                        // correct. Pick ``source_duplicated`` as the canonical
+                        // form to match pyfcstm's ordering of these checks.
+                        duplicated_name: sourceName,
+                        direction: 'source_duplicated',
+                        host_state_path: importItem.ownerStatePath.join('.'),
+                    },
                     relatedInformation: [{
                         location: {
                             uri: toFileUri(document),
@@ -176,6 +220,9 @@ function addUnreachableStateDiagnostics(
             severity: 'warning',
             source: 'fcstm',
             code: FCSTM_DIAGNOSTIC_CODES.unreachableState,
+            data: {
+                state_path: state.identity.qualifiedName,
+            },
         });
     }
 }
@@ -188,15 +235,42 @@ function addTransitionDiagnostics(
     const reachable = collectReachableStateIds(semantic);
 
     for (const transition of semantic.transitions) {
+        // pyfcstm Layer 1 distinction: the source side of a transition
+        // failing to resolve emits E_MISSING_STATE (a "state reference"
+        // not found in scope), while the target side emits
+        // E_DANGLING_TRANSITION (the transition has a known source but
+        // points at a non-existent target). When both endpoints are
+        // explicitly known and missing, the source-side firing wins —
+        // matches pyfcstm/model/model.py emit order.
         if (transition.sourceKind === 'state' && transition.sourceStateName && !transition.sourceStateId) {
             const imported = findImportAlias(semantic, transition.ownerStatePath, transition.sourceStateName);
             if (!imported) {
+                // pyfcstm distinguishes forced-transition expansion failures
+                // (E_FORCED_TRANSITION_EXPANSION) from regular dangling
+                // transitions. Replicate that here so downstream LLM
+                // dispatch logic can tell whether the bad endpoint came
+                // from a ``!`` forced declaration.
+                const isForced = transition.forced;
                 diagnostics.push({
                     range: findIdentifierRange(document, transition.sourceStateName, transition.range),
-                    message: `State ${JSON.stringify(transition.sourceStateName)} cannot be resolved in this scope.`,
+                    message: isForced
+                        ? `Forced transition source state ${JSON.stringify(transition.sourceStateName)} cannot be resolved in this scope.`
+                        : `State ${JSON.stringify(transition.sourceStateName)} cannot be resolved in this scope.`,
                     severity: 'error',
                     source: 'fcstm',
-                    code: FCSTM_DIAGNOSTIC_CODES.unresolvedState,
+                    code: isForced
+                        ? FCSTM_DIAGNOSTIC_CODES.forcedTransitionExpansion
+                        : FCSTM_DIAGNOSTIC_CODES.missingState,
+                    data: isForced
+                        ? {
+                            original_raw: transition.ast.text,
+                            reason: 'src_not_found',
+                        }
+                        : {
+                            state_path: transition.sourceStateName,
+                            referenced_from: 'transition_source',
+                            reason: 'not_found',
+                        },
                 });
             }
         }
@@ -204,12 +278,27 @@ function addTransitionDiagnostics(
         if (transition.targetKind === 'state' && transition.targetStateName && !transition.targetStateId) {
             const imported = findImportAlias(semantic, transition.ownerStatePath, transition.targetStateName);
             if (!imported) {
+                const isForced = transition.forced;
                 diagnostics.push({
                     range: findIdentifierRange(document, transition.targetStateName, transition.range, {preferLast: true}),
-                    message: `State ${JSON.stringify(transition.targetStateName)} cannot be resolved in this scope.`,
+                    message: isForced
+                        ? `Forced transition target state ${JSON.stringify(transition.targetStateName)} cannot be resolved in this scope.`
+                        : `Transition target state ${JSON.stringify(transition.targetStateName)} cannot be resolved in this scope.`,
                     severity: 'error',
                     source: 'fcstm',
-                    code: FCSTM_DIAGNOSTIC_CODES.unresolvedState,
+                    code: isForced
+                        ? FCSTM_DIAGNOSTIC_CODES.forcedTransitionExpansion
+                        : FCSTM_DIAGNOSTIC_CODES.danglingTransition,
+                    data: isForced
+                        ? {
+                            original_raw: transition.ast.text,
+                            reason: 'tgt_not_found',
+                        }
+                        : {
+                            src: transition.sourceStateName ?? null,
+                            tgt: transition.targetStateName,
+                            reason: 'tgt_not_found',
+                        },
                 });
             }
         }
@@ -228,7 +317,10 @@ function addTransitionDiagnostics(
                     : `Transition ${JSON.stringify(transition.ast.text)} is dead because its guard is always false.`,
                 severity: 'warning',
                 source: 'fcstm',
-                code: FCSTM_DIAGNOSTIC_CODES.deadTransition,
+                code: FCSTM_DIAGNOSTIC_CODES.guardConstFalse,
+                data: {
+                    folded_value: false,
+                },
                 relatedInformation: sourceState
                     ? [{
                         location: {
@@ -265,6 +357,14 @@ function addUnusedEventDiagnostics(
             severity: 'warning',
             source: 'fcstm',
             code: FCSTM_DIAGNOSTIC_CODES.unusedEvent,
+            data: {
+                event_qualified_name: event.identity.qualifiedName,
+                // ``event Foo;`` declarations are always source-local
+                // (they bind into the enclosing state's namespace).
+                // Re-scoping happens at transition-trigger sites (``::``
+                // / ``:`` / ``/``), not at declaration sites.
+                scope: 'local',
+            },
         });
     }
 }
@@ -280,12 +380,21 @@ function addActionDiagnostics(
         }
 
         const refName = action.ref.rawPath.split('.').at(-1) || action.ref.rawPath;
+        // M2: fill schema-required ``ref_path`` + ``reason``. The
+        // jsfcstm resolver does not yet distinguish state-not-found
+        // vs named-function-not-found; emit the latter as a
+        // conservative default, matching the common case where the
+        // path resolves but the action name doesn't.
         diagnostics.push({
             range: findIdentifierRange(document, refName, action.ref.range, {preferLast: true}),
             message: `Action reference ${JSON.stringify(action.ref.rawPath)} cannot be resolved.`,
             severity: 'error',
             source: 'fcstm',
-            code: FCSTM_DIAGNOSTIC_CODES.unresolvedActionRef,
+            code: FCSTM_DIAGNOSTIC_CODES.namedFunctionRefNotFound,
+            data: {
+                ref_path: action.ref.rawPath,
+                reason: 'named_function_not_found',
+            },
         });
     }
 }
@@ -329,14 +438,22 @@ function pushIdentifierDiagnostic(
     identifier: {name: string; range: import('../utils/text').TextRange},
     message: string,
     code: string,
-    severity: 'error' | 'warning' = 'error'
+    severity: 'error' | 'warning' | 'info' = 'error',
+    data?: Record<string, unknown>
 ): void {
+    // M2 (PR #115 final review): inject ``var_name`` from the
+    // identifier itself so every E_UNDEFINED_VAR / E_DUPLICATE_VAR
+    // emit carries the schema-required field without each caller
+    // having to remember it. Callers can still override by passing
+    // ``var_name`` in their ``data``.
+    const mergedData: Record<string, unknown> = {var_name: identifier.name, ...(data ?? {})};
     diagnostics.push({
         range: identifier.range,
         message,
         severity,
         source: 'fcstm',
         code,
+        data: mergedData,
     });
 }
 
@@ -346,11 +463,26 @@ function pushIdentifierDiagnostic(
  * block-local temporary variables after their first assignment, matching the
  * pyfcstm runtime rule.
  */
+/**
+ * Schema enum for ``E_UNDEFINED_VAR.refs.referenced_in`` (see
+ * ``pyfcstm/diagnostics/codes.yaml``). Threaded from each call site
+ * to keep the emitted payload schema-conformant.
+ */
+export type ReferencedIn =
+    | 'guard'
+    | 'effect'
+    | 'enter'
+    | 'during'
+    | 'exit'
+    | 'during_aspect'
+    | 'init';
+
 function analyzeOperationStatements(
     statements: FcstmAstOperationStatement[] | undefined,
     globals: Set<string>,
     assignedBefore: Set<string>,
-    diagnostics: FcstmDiagnostic[]
+    diagnostics: FcstmDiagnostic[],
+    referencedIn: ReferencedIn
 ): Set<string> {
     const assigned = new Set(assignedBefore);
     if (!statements) {
@@ -366,12 +498,17 @@ function analyzeOperationStatements(
                 if (globals.has(identifier.name) || assigned.has(identifier.name)) {
                     continue;
                 }
+                // pyfcstm Layer 2: read-before-assign in a block-local
+                // temporary collapses into E_UNDEFINED_VAR with
+                // ``is_temporary: true`` so the LLM and the VSCode
+                // surface both see a single code family.
                 pushIdentifierDiagnostic(
                     diagnostics,
                     identifier,
                     `Variable ${JSON.stringify(identifier.name)} is read before it is assigned in this block.`,
-                    FCSTM_DIAGNOSTIC_CODES.readBeforeAssignTemporary,
-                    'error'
+                    FCSTM_DIAGNOSTIC_CODES.undefinedVar,
+                    'error',
+                    {is_temporary: true, referenced_in: referencedIn}
                 );
             }
             if (assignment.targetName) {
@@ -392,8 +529,9 @@ function analyzeOperationStatements(
                             diagnostics,
                             identifier,
                             `Variable ${JSON.stringify(identifier.name)} is read before it is assigned in this block.`,
-                            FCSTM_DIAGNOSTIC_CODES.readBeforeAssignTemporary,
-                            'error'
+                            FCSTM_DIAGNOSTIC_CODES.undefinedVar,
+                            'error',
+                            {is_temporary: true, referenced_in: referencedIn}
                         );
                     }
                 }
@@ -401,7 +539,8 @@ function analyzeOperationStatements(
                     branch.statements,
                     globals,
                     assigned,
-                    diagnostics
+                    diagnostics,
+                    referencedIn
                 );
                 branchAssigned.push(branchResult);
             }
@@ -428,12 +567,13 @@ function analyzeOperationStatements(
 function analyzeOperationBlock(
     block: FcstmAstOperationBlock | undefined,
     globals: Set<string>,
-    diagnostics: FcstmDiagnostic[]
+    diagnostics: FcstmDiagnostic[],
+    referencedIn: ReferencedIn
 ): void {
     if (!block) {
         return;
     }
-    analyzeOperationStatements(block.statements, globals, new Set(), diagnostics);
+    analyzeOperationStatements(block.statements, globals, new Set(), diagnostics, referencedIn);
 }
 
 function collectTopLevelGlobals(semantic: FcstmSemanticDocument): Set<string> {
@@ -457,7 +597,10 @@ function addVariableDefinitionDiagnostics(
             message: `Variable ${JSON.stringify(variable.name)} is already defined.`,
             severity: 'error',
             source: 'fcstm',
-            code: FCSTM_DIAGNOSTIC_CODES.duplicateVariable,
+            code: FCSTM_DIAGNOSTIC_CODES.duplicateVar,
+            data: {
+                var_name: variable.name,
+            },
             relatedInformation: [{
                 location: {
                     uri: toFileUri(document),
@@ -488,8 +631,9 @@ function addGuardDiagnostics(
                 diagnostics,
                 identifier,
                 `Variable ${JSON.stringify(identifier.name)} is not defined. Add a \`def\` declaration or fix the name.`,
-                FCSTM_DIAGNOSTIC_CODES.undefinedVariable,
-                'error'
+                FCSTM_DIAGNOSTIC_CODES.undefinedVar,
+                'error',
+                {referenced_in: 'guard'}
             );
         }
     }
@@ -505,7 +649,7 @@ function addEffectBlockDiagnostics(
             effect?: FcstmAstOperationBlock;
         };
         if (ast.effect) {
-            analyzeOperationBlock(ast.effect, globals, diagnostics);
+            analyzeOperationBlock(ast.effect, globals, diagnostics, 'effect');
         }
     }
 }
@@ -521,7 +665,11 @@ function addActionBlockDiagnostics(
         }
         const ast = semanticAction.ast as FcstmAstAction;
         const block = ast.operationBlock || ast.operation_block;
-        analyzeOperationBlock(block, globals, diagnostics);
+        // Map AST stage + aspect onto the schema enum:
+        //   ``>> during before/after`` → ``during_aspect``
+        //   bare ``enter|during|exit`` → same name
+        const referencedIn: ReferencedIn = ast.aspect ? 'during_aspect' : ast.stage;
+        analyzeOperationBlock(block, globals, diagnostics, referencedIn);
     }
 }
 
@@ -542,6 +690,258 @@ function addExpressionAndVariableDiagnostics(
 /**
  * Run static semantic analyzers that are strong enough to feed diagnostics and quick fixes.
  */
+/**
+ * ``E_DUPLICATE_STATE`` — two child states share the same name under the
+ * same composite scope. Mirrors ``pyfcstm.model.model._recursive_finish_states``
+ * duplicate-substate detection.
+ */
+function addDuplicateStateDiagnostics(
+    semantic: FcstmSemanticDocument,
+    document: TextDocumentLike,
+    diagnostics: FcstmDiagnostic[]
+): void {
+    const byParent = new Map<string | undefined, Map<string, typeof semantic.states[number]>>();
+    for (const state of semantic.states) {
+        const parentKey = state.parentStateId;
+        let group = byParent.get(parentKey);
+        if (!group) {
+            group = new Map();
+            byParent.set(parentKey, group);
+        }
+        const first = group.get(state.name);
+        if (first) {
+            const parentPath = (first.identity.qualifiedName || '').split('.').slice(0, -1).join('.');
+            diagnostics.push({
+                range: findIdentifierRange(document, state.name, state.range),
+                message: `State ${JSON.stringify(state.name)} is already defined in scope ${JSON.stringify(parentPath || '<root>')}.`,
+                severity: 'error',
+                source: 'fcstm',
+                code: FCSTM_DIAGNOSTIC_CODES.duplicateState,
+                data: {
+                    state_name: state.name,
+                    parent_path: parentPath,
+                },
+                relatedInformation: [{
+                    location: {
+                        uri: toFileUri(document),
+                        range: findIdentifierRange(document, first.name, first.range),
+                    },
+                    message: `First definition of ${JSON.stringify(state.name)} is here.`,
+                }],
+            });
+            continue;
+        }
+        group.set(state.name, state);
+    }
+}
+
+/**
+ * ``E_DUPLICATE_FUNCTION_NAME`` — two named lifecycle actions on the
+ * same state share the same name within the same stage.
+ */
+function addDuplicateFunctionNameDiagnostics(
+    semantic: FcstmSemanticDocument,
+    document: TextDocumentLike,
+    diagnostics: FcstmDiagnostic[]
+): void {
+    const seen = new Map<string, typeof semantic.actions[number]>();
+    for (const action of semantic.actions) {
+        if (!action.name) {
+            continue;
+        }
+        const stageKey = action.aspect ? `${action.stage}:${action.aspect}` : action.stage;
+        const key = `${action.ownerStateId}::${stageKey}::${action.name}`;
+        const first = seen.get(key);
+        if (first) {
+            const statePath = action.ownerStatePath.join('.');
+            diagnostics.push({
+                range: action.range,
+                message: `Named action ${JSON.stringify(action.name)} is already defined in stage ${JSON.stringify(stageKey)} of state ${JSON.stringify(statePath)}.`,
+                severity: 'error',
+                source: 'fcstm',
+                code: FCSTM_DIAGNOSTIC_CODES.duplicateFunctionName,
+                data: {
+                    function_name: action.name,
+                    state_path: statePath,
+                    stage: stageKey,
+                },
+                relatedInformation: [{
+                    location: {
+                        uri: toFileUri(document),
+                        range: first.range,
+                    },
+                    message: `First definition is here.`,
+                }],
+            });
+            continue;
+        }
+        seen.set(key, action);
+    }
+}
+
+/**
+ * ``E_DURING_ASPECT_INVALID`` — a leaf state cannot host
+ * ``>> during before/after`` aspect actions. Aspect actions fan out to
+ * every descendant leaf, so a leaf state (no descendants) has nothing
+ * to fan into and the aspect declaration is invalid.
+ *
+ * Uses the structural definition of "leaf": ``childStateIds.length ===
+ * 0``. The grammar-level ``state.composite`` field already aligns to
+ * this (see ``ast/builder.ts`` — composite is true iff there is at
+ * least one substate or one import that gets merged in), so ``leaf =
+ * !state.composite`` is the canonical check.
+ */
+function addDuringAspectInvalidDiagnostics(
+    semantic: FcstmSemanticDocument,
+    document: TextDocumentLike,
+    diagnostics: FcstmDiagnostic[]
+): void {
+    const stateById = new Map<string, typeof semantic.states[number]>();
+    for (const state of semantic.states) {
+        stateById.set(state.identity.id, state);
+    }
+    for (const action of semantic.actions) {
+        const owner = stateById.get(action.ownerStateId);
+        if (!owner) {
+            continue;
+        }
+        if (action.stage !== 'during') {
+            continue;
+        }
+
+        // Scenario (c): global ``>> during before/after`` aspect on a
+        // leaf state — there is no descendant for the aspect to fan
+        // into.
+        if (action.isGlobalAspect && !owner.composite) {
+            diagnostics.push({
+                range: action.range,
+                message: `Aspect '>> during ${action.aspect ?? 'before'}' cannot appear in leaf state ${JSON.stringify(owner.name)}; aspect actions need at least one descendant leaf.`,
+                severity: 'error',
+                source: 'fcstm',
+                code: FCSTM_DIAGNOSTIC_CODES.duringAspectInvalid,
+                data: {
+                    state_path: action.ownerStatePath.join('.'),
+                    state_kind: 'leaf',
+                    aspect: action.aspect ?? 'before',
+                },
+            });
+            continue;
+        }
+
+        // I-f scenarios (a) and (b): non-global ``during`` action.
+        if (action.isGlobalAspect) {
+            continue;
+        }
+
+        // I3 lockdown (PR #116 re-review): ``aspect`` may be
+        // ``undefined`` from the live AST or ``null`` after a JSON
+        // round-trip / cross-worker serialization. Treat any value
+        // that is not the literal string ``'before'`` / ``'after'``
+        // as the bare-during case to keep both ends agreeing.
+        const aspectIsBeforeAfter = action.aspect === 'before' || action.aspect === 'after';
+
+        // Scenario (a): leaf state with a local ``during before`` /
+        // ``during after`` — the aspect-qualified during only makes
+        // sense on a composite (it gates on entry/exit of the
+        // composite).
+        if (!owner.composite && aspectIsBeforeAfter) {
+            diagnostics.push({
+                range: action.range,
+                message: `For leaf state ${JSON.stringify(owner.name)}, during cannot assign aspect ${JSON.stringify(action.aspect)}.`,
+                severity: 'error',
+                source: 'fcstm',
+                code: FCSTM_DIAGNOSTIC_CODES.duringAspectInvalid,
+                data: {
+                    state_path: action.ownerStatePath.join('.'),
+                    state_kind: 'leaf',
+                    aspect: action.aspect,
+                },
+            });
+            continue;
+        }
+
+        // Scenario (b): composite state with a bare ``during`` (no
+        // aspect token) — composites must pick ``before`` or ``after``.
+        if (owner.composite && !aspectIsBeforeAfter) {
+            diagnostics.push({
+                range: action.range,
+                message: `For composite state ${JSON.stringify(owner.name)}, during must assign aspect to either 'before' or 'after'.`,
+                severity: 'error',
+                source: 'fcstm',
+                code: FCSTM_DIAGNOSTIC_CODES.duringAspectInvalid,
+                data: {
+                    state_path: action.ownerStatePath.join('.'),
+                    state_kind: 'composite',
+                    aspect: null,
+                },
+            });
+        }
+    }
+}
+
+
+/**
+ * ``E_PSEUDO_NOT_LEAF`` — ``pseudo state`` was declared but the body
+ * still contains substates. pyfcstm rule: pseudo states must be leaves.
+ */
+function addPseudoNotLeafDiagnostics(
+    semantic: FcstmSemanticDocument,
+    document: TextDocumentLike,
+    diagnostics: FcstmDiagnostic[]
+): void {
+    for (const state of semantic.states) {
+        if (state.pseudo && state.childStateIds.length > 0) {
+            diagnostics.push({
+                range: findIdentifierRange(document, state.name, state.range),
+                message: `Pseudo state ${JSON.stringify(state.name)} cannot contain substates; declare it as a regular composite or remove the children.`,
+                severity: 'error',
+                source: 'fcstm',
+                code: FCSTM_DIAGNOSTIC_CODES.pseudoNotLeaf,
+                data: {
+                    state_path: state.identity.qualifiedName,
+                },
+            });
+        }
+    }
+}
+
+/**
+ * ``E_INITIAL_TRANSITION_INVALID`` — a composite state lacks any
+ * ``[*] -> child`` initial transition. The runtime cannot pick an
+ * entry child on entry.
+ */
+function addInitialTransitionInvalidDiagnostics(
+    semantic: FcstmSemanticDocument,
+    document: TextDocumentLike,
+    diagnostics: FcstmDiagnostic[]
+): void {
+    const initialByOwner = new Map<string, number>();
+    for (const transition of semantic.transitions) {
+        if (transition.sourceKind !== 'init') {
+            continue;
+        }
+        initialByOwner.set(transition.ownerStateId, (initialByOwner.get(transition.ownerStateId) ?? 0) + 1);
+    }
+    for (const state of semantic.states) {
+        if (!state.composite || state.pseudo) {
+            continue;
+        }
+        if ((initialByOwner.get(state.identity.id) ?? 0) === 0) {
+            diagnostics.push({
+                range: findIdentifierRange(document, state.name, state.range),
+                message: `Composite state ${JSON.stringify(state.name)} has no '[*] -> child' initial transition; the runtime cannot decide which child to enter.`,
+                severity: 'error',
+                source: 'fcstm',
+                code: FCSTM_DIAGNOSTIC_CODES.initialTransitionInvalid,
+                data: {
+                    composite_path: state.identity.qualifiedName,
+                    reason: 'missing_entry',
+                },
+            });
+        }
+    }
+}
+
 export async function collectSemanticAnalysisDiagnostics(
     document: TextDocumentLike
 ): Promise<FcstmDiagnostic[]> {
@@ -557,5 +957,231 @@ export async function collectSemanticAnalysisDiagnostics(
     addUnusedEventDiagnostics(semantic, document, diagnostics);
     addActionDiagnostics(semantic, document, diagnostics);
     addExpressionAndVariableDiagnostics(semantic, document, diagnostics);
+    addDuplicateStateDiagnostics(semantic, document, diagnostics);
+    addDuplicateFunctionNameDiagnostics(semantic, document, diagnostics);
+    addDuringAspectInvalidDiagnostics(semantic, document, diagnostics);
+    addPseudoNotLeafDiagnostics(semantic, document, diagnostics);
+    addInitialTransitionInvalidDiagnostics(semantic, document, diagnostics);
+    addTypeMismatchDiagnostics(semantic, document, diagnostics);
     return diagnostics;
+}
+
+// -------------------------------------------------------------------------
+// ``E_TYPE_MISMATCH`` — light-weight type checker.
+//
+// pyfcstm separates arithmetic (``num_expression``) and logical
+// (``cond_expression``) expressions in its grammar; jsfcstm's AST keeps
+// the same separation via ``expression.expressionType`` ('init' / 'num'
+// / 'cond'). The grammar already prevents many obvious mixes, but a
+// handful of cases slip through (e.g. ``if [x]`` where ``x`` is an
+// integer, or ``def int y = a > 1;``). This analyzer walks every
+// expression and confirms that operand categories match the operator's
+// requirement, mirroring pyfcstm's planned ``E_TYPE_MISMATCH`` semantics:
+//
+//   * guard: must produce ``boolean``
+//   * assignment RHS / def initializer / function arg / arithmetic
+//     operand: must produce ``numeric``
+//   * logical operand (``&&`` / ``||`` / ``!``): must produce ``boolean``
+//   * comparison operand: must produce ``numeric``
+//   * ternary condition: must produce ``boolean``; both branches share
+//     the parent's expected category
+// -------------------------------------------------------------------------
+
+type TypeCategory = 'numeric' | 'boolean' | 'unknown';
+
+const ARITH_BINARY_OPS = new Set(['+', '-', '*', '/', '%', '**']);
+const BITWISE_BINARY_OPS = new Set(['&', '|', '^', '<<', '>>']);
+const COMPARISON_OPS = new Set(['==', '!=', '<', '<=', '>', '>=', '<>']);
+const LOGICAL_BINARY_OPS = new Set(['&&', '||', 'and', 'or', 'AND', 'OR']);
+
+function isLogicalUnaryOp(op: string | undefined): boolean {
+    if (!op) return false;
+    return op === '!' || op === 'not' || op === 'NOT';
+}
+
+export function inferExpressionCategory(expr: FcstmAstExpression): TypeCategory {
+    switch (expr.expressionKind) {
+        case 'literal': {
+            const lit = expr as FcstmAstLiteralExpression;
+            return lit.literalType === 'boolean' ? 'boolean' : 'numeric';
+        }
+        case 'identifier':
+            // pyfcstm only supports ``int`` and ``float`` def types,
+            // both of which are numeric. Truly undefined identifiers
+            // are caught by E_UNDEFINED_VAR; we keep ``numeric`` as
+            // the optimistic guess to avoid double-firing.
+            return 'numeric';
+        case 'mathConst':
+        case 'function':
+            return 'numeric';
+        case 'unary': {
+            const un = expr as FcstmAstUnaryExpression;
+            return isLogicalUnaryOp(un.operator) ? 'boolean' : 'numeric';
+        }
+        case 'binary': {
+            const bin = expr as FcstmAstBinaryExpression;
+            const op = bin.operator;
+            if (LOGICAL_BINARY_OPS.has(op) || COMPARISON_OPS.has(op)) {
+                return 'boolean';
+            }
+            // arithmetic + bitwise → numeric
+            if (ARITH_BINARY_OPS.has(op) || BITWISE_BINARY_OPS.has(op)) {
+                return 'numeric';
+            }
+            return 'unknown';
+        }
+        case 'conditional': {
+            const cond = expr as FcstmAstConditionalExpression;
+            // The ternary's result category is the branch category. We
+            // walk the true branch first; if it is unknown we try the
+            // false branch as a fallback.
+            const t = inferExpressionCategory(cond.whenTrue || cond.valueTrue);
+            if (t !== 'unknown') return t;
+            return inferExpressionCategory(cond.whenFalse || cond.valueFalse);
+        }
+    }
+    return 'unknown';
+}
+
+function emitTypeMismatch(
+    diagnostics: FcstmDiagnostic[],
+    expr: FcstmAstExpression,
+    expected: TypeCategory,
+    actual: TypeCategory,
+): void {
+    diagnostics.push({
+        range: expr.range,
+        message: `Type mismatch: expected ${expected} expression, got ${actual} (${JSON.stringify((expr as {text?: string}).text ?? '')}).`,
+        severity: 'error',
+        source: 'fcstm',
+        code: FCSTM_DIAGNOSTIC_CODES.typeMismatch,
+        data: {
+            expected,
+            actual,
+            expr_text: (expr as {text?: string}).text ?? '',
+        },
+    });
+}
+
+/**
+ * Recursively type-check ``expr`` against the surrounding ``expected``
+ * category. Reports a mismatch when the inferred category disagrees;
+ * keeps recursing so that nested sub-expressions also get checked, but
+ * stops descending past the offending node to avoid cascading reports.
+ */
+export function checkExpression(
+    expr: FcstmAstExpression | null | undefined,
+    expected: TypeCategory,
+    diagnostics: FcstmDiagnostic[],
+): void {
+    if (!expr) return;
+
+    const actual = inferExpressionCategory(expr);
+    let categoryOk = actual === 'unknown' || actual === expected;
+    if (!categoryOk) {
+        emitTypeMismatch(diagnostics, expr, expected, actual);
+    }
+
+    switch (expr.expressionKind) {
+        case 'unary': {
+            const un = expr as FcstmAstUnaryExpression;
+            const childExpected: TypeCategory = isLogicalUnaryOp(un.operator) ? 'boolean' : 'numeric';
+            checkExpression(un.operand || un.expr, childExpected, diagnostics);
+            break;
+        }
+        case 'binary': {
+            const bin = expr as FcstmAstBinaryExpression;
+            const op = bin.operator;
+            let leftExpected: TypeCategory;
+            let rightExpected: TypeCategory;
+            if (LOGICAL_BINARY_OPS.has(op)) {
+                leftExpected = 'boolean';
+                rightExpected = 'boolean';
+            } else {
+                // arithmetic / bitwise / comparison all want numeric operands
+                leftExpected = 'numeric';
+                rightExpected = 'numeric';
+            }
+            checkExpression(bin.left || bin.expr1, leftExpected, diagnostics);
+            checkExpression(bin.right || bin.expr2, rightExpected, diagnostics);
+            break;
+        }
+        case 'conditional': {
+            const cond = expr as FcstmAstConditionalExpression;
+            checkExpression(cond.condition || cond.cond, 'boolean', diagnostics);
+            checkExpression(cond.whenTrue || cond.valueTrue, expected, diagnostics);
+            checkExpression(cond.whenFalse || cond.valueFalse, expected, diagnostics);
+            break;
+        }
+        case 'function': {
+            const fn = expr as FcstmAstFunctionExpression;
+            checkExpression(fn.argument || fn.expr, 'numeric', diagnostics);
+            break;
+        }
+        default:
+            break;
+    }
+}
+
+function checkOperationStatements(
+    statements: FcstmAstOperationStatement[] | undefined,
+    diagnostics: FcstmDiagnostic[],
+): void {
+    if (!statements) return;
+    for (const stmt of statements) {
+        if (stmt.kind === 'assignmentStatement') {
+            const assign = stmt as FcstmAstAssignmentStatement;
+            checkExpression(assign.expression || assign.expr, 'numeric', diagnostics);
+        } else if (stmt.kind === 'ifStatement') {
+            const ifStmt = stmt as FcstmAstIfStatement;
+            for (const branch of ifStmt.branches) {
+                if (branch.condition) {
+                    checkExpression(branch.condition, 'boolean', diagnostics);
+                }
+                checkOperationStatements(branch.statements, diagnostics);
+            }
+            if (ifStmt.elseBlock) {
+                checkOperationStatements(ifStmt.elseBlock.statements, diagnostics);
+            }
+        }
+    }
+}
+
+function addTypeMismatchDiagnostics(
+    semantic: FcstmSemanticDocument,
+    document: TextDocumentLike,
+    diagnostics: FcstmDiagnostic[]
+): void {
+    // 1. Variable initializers — must be numeric.
+    if (semantic.ast) {
+        for (const def of semantic.ast.definitions) {
+            const init = def.initializer || def.expr;
+            if (init) {
+                checkExpression(init, 'numeric', diagnostics);
+            }
+        }
+    }
+
+    // 2. Transition guards — must be boolean; effect-block RHSs — numeric.
+    for (const transition of semantic.transitions) {
+        const ast = transition.ast as (FcstmAstTransition | FcstmAstForcedTransition) & {
+            guard?: FcstmAstExpression;
+            effect?: FcstmAstOperationBlock;
+        };
+        if (ast.guard) {
+            checkExpression(ast.guard, 'boolean', diagnostics);
+        }
+        if (ast.effect) {
+            checkOperationStatements(ast.effect.statements, diagnostics);
+        }
+    }
+
+    // 3. Lifecycle action bodies — RHSs must be numeric.
+    for (const action of semantic.actions) {
+        const ast = action.ast as FcstmAstAction & {operationBlock?: FcstmAstOperationBlock};
+        const block = ast.operationBlock;
+        if (block) {
+            checkOperationStatements(block.statements, diagnostics);
+        }
+    }
 }

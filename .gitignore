@@ -1228,6 +1228,7 @@ junit.xml
 !/pyfcstm/template/
 !/pyfcstm/template/*.py
 !/pyfcstm/template/*.json
+!/pyfcstm/diagnostics/*.json
 /pyfcstm/template/*.zip
 /test/template/_generated/
 /test/testfile/python_native_dlc6_more_result/
@@ -1247,3 +1248,6 @@ junit.xml
 !/editors/vscode/parser/README.md
 !/editors/vscode/parser/package.json
 /editors/vscode/syntaxes/*.json
+
+# Local demo fixtures (mirrored in jsfcstm test fixtures, see editors/jsfcstm/test/diagnostics-showcase-demos.test.ts)
+/demo/

@@ -12,14 +12,13 @@ class TestModelModelDLC5:
         def int a = 0;
         def int b = 2;
         state LX {
-            state LX1 {
-                >> during before {
-                    a = b + a * 2;
-                    b = a + 2;
-                }
+            >> during before {
+                a = b + a * 2;
+                b = a + 2;
             }
+            state LX1;
             state LX2;
-            
+
             pseudo state LX3 {
                 [*] -> LX31;
                 state LX31;

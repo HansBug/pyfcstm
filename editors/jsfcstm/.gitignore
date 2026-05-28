@@ -6,6 +6,11 @@ dist/
 parser/
 src/dsl/grammar/
 
+# Synced from pyfcstm/diagnostics by scripts/sync-runtime-assets.js
+# (pyfcstm/diagnostics/codes.yaml and schema.json remain the sources of truth)
+src/diagnostics/schema.json
+src/diagnostics/codes.json
+
 # Visual regression snapshots (regenerated on demand via scripts/visual-check.js)
 test/snapshots/
 

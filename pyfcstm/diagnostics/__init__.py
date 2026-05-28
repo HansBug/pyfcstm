@@ -29,7 +29,17 @@ from .codes import (
     CodeFieldSpec,
     CodeSpec,
     CodesSchemaError,
+    ForLlmSpec,
     load_codes,
+)
+from .inspect import (
+    EventInfo,
+    ModelInspect,
+    ModelMetrics,
+    StateInfo,
+    TransitionInfo,
+    VariableInfo,
+    inspect_model,
 )
 from .sink import DiagnosticSink
 
@@ -39,5 +49,13 @@ __all__ = [
     'CodeSpec',
     'CodesSchemaError',
     'DiagnosticSink',
+    'EventInfo',
+    'ForLlmSpec',
+    'ModelInspect',
+    'ModelMetrics',
+    'StateInfo',
+    'TransitionInfo',
+    'VariableInfo',
+    'inspect_model',
     'load_codes',
 ]

@@ -50,7 +50,62 @@ import yaml
 
 #: Allowed values for ``severity`` in ``codes.yaml`` entries. Must stay in
 #: sync with the type-token comment block at the top of ``codes.yaml``.
-_ALLOWED_SEVERITIES = ('error', 'warning')
+#:
+#: ``info`` was added in Layer 2 (issue #104) to host ``I_*`` codes for
+#: observations that are likely-legitimate rather than likely-defects.
+_ALLOWED_SEVERITIES = ('error', 'warning', 'info')
+
+#: Mapping from severity name to the required identifier prefix for codes
+#: at that severity. Used by :func:`_validate_code` to enforce that the
+#: code identifier and its severity stay in sync.
+_SEVERITY_PREFIX = {
+    'error': 'E_',
+    'warning': 'W_',
+    'info': 'I_',
+}
+
+#: Allowed values for the ``capability`` field on a code. Declared by
+#: Layer 2 to gate downstream consumers that may not implement every
+#: analysis flavor (e.g. jsfcstm without SMT WASM).
+#:
+#: * ``pure_static`` — judged from AST/model only, no expression folding,
+#:   no external solver, no simulation
+#: * ``const_fold`` — needs the expression constant folder
+#: * ``requires_solver`` — needs an SMT backend (reserved for Layer 3)
+#: * ``requires_simulation`` — needs the SimulationRuntime (reserved)
+_ALLOWED_CAPABILITIES = (
+    'pure_static',
+    'const_fold',
+    'requires_solver',
+    'requires_simulation',
+)
+
+#: Allowed values for the ``emit_tier`` field on a code. PR-A-fix I-b
+#: lets the schema explicitly declare which emit pipeline produces a
+#: code so downstream dispatchers can register handlers correctly:
+#:
+#: * ``static_pipeline`` — fires during the regular static analysis
+#:   pass (``parse_dsl_node_to_state_machine`` /
+#:   ``collectDocumentDiagnostics``). This is the default for legacy
+#:   codes that omit the field.
+#: * ``lookup_api`` — fires only when a runtime resolver method
+#:   (e.g. ``State.resolve_event``) is invoked explicitly; never seen
+#:   by the static pipeline or the parity tests.
+#: * ``partial_static_pipeline`` — implemented in the static pipeline
+#:   on only one end (typically jsfcstm); the other end intentionally
+#:   does not emit. Downstream LLM consumers should not block waiting
+#:   for the missing end to surface this code.
+_ALLOWED_EMIT_TIERS = (
+    'static_pipeline',
+    'lookup_api',
+    'partial_static_pipeline',
+)
+
+#: Required keys for the ``for_llm`` payload when present on a code.
+#: ``summary`` is a one-line description aimed at downstream LLM consumers;
+#: ``recommended_actions`` is a list of dicts describing concrete fixes;
+#: ``do_not`` is a list of strings describing anti-patterns to avoid.
+_FOR_LLM_REQUIRED_KEYS = ('summary', 'recommended_actions', 'do_not')
 
 #: Allowed values for the ``refs.<field>.type`` token in ``codes.yaml``. This
 #: tuple is the **single source of truth** for the type-token vocabulary; the
@@ -114,13 +169,41 @@ class CodeFieldSpec:
 
 
 @dataclass(frozen=True)
+class ForLlmSpec:
+    """
+    Structured guidance attached to a diagnostic code for downstream LLM
+    consumers.
+
+    Layer 2 (issue #104) requires this for every emitted code — ``E_*``,
+    ``W_*``, and ``I_*`` — so that LLM agent loops can read structured
+    fix recommendations instead of regex-ing the human-readable
+    ``message``. PR-A originally grandfathered the 14 Layer 1 ``E_*``
+    codes; PR-A-fix I-a backfilled them so this field is now expected
+    on every catalogued code.
+
+    :param summary: One-line description aimed at LLM consumers.
+    :type summary: str
+    :param recommended_actions: Ordered list of concrete fix suggestions.
+        Each entry is a free-form dict; downstream tooling is expected to
+        treat the list as a hint rather than a closed schema.
+    :type recommended_actions: Tuple[Mapping[str, Any], ...]
+    :param do_not: List of anti-pattern strings the LLM should avoid.
+    :type do_not: Tuple[str, ...]
+    """
+
+    summary: str
+    recommended_actions: Tuple[Mapping[str, Any], ...]
+    do_not: Tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class CodeSpec:
     """
     Full specification for a single diagnostic code.
 
     :param code: Stable code identifier (e.g. ``'E_UNDEFINED_VAR'``).
     :type code: str
-    :param severity: ``'error'`` or ``'warning'``.
+    :param severity: ``'error'``, ``'warning'``, or ``'info'``.
     :type severity: str
     :param description: Human-readable description of when the code fires.
     :type description: str
@@ -132,6 +215,28 @@ class CodeSpec:
     :param example_dsl: Minimal DSL snippet that triggers the code,
         defaults to ``None``.
     :type example_dsl: str, optional
+    :param capability: Which analysis tier this code belongs to. Layer 2
+        declares this required when present; unset means
+        ``'pure_static'`` for grandfathered Layer 1 codes.
+    :type capability: str, optional
+    :param for_llm: Structured guidance for downstream LLM consumers.
+        Backfilled across all ``E_*`` codes by PR-A-fix I-a; new codes
+        are expected to ship with one. Still typed as ``Optional`` so
+        the loader can tolerate forward-compatibility cases.
+    :type for_llm: ForLlmSpec, optional
+    :param emit_tier: Which emit pipeline actually fires this code.
+        ``'static_pipeline'`` (default) means the code fires during
+        ``parse_dsl_node_to_state_machine`` / the equivalent jsfcstm
+        ``collectDocumentDiagnostics`` static analysis pass.
+        ``'lookup_api'`` means the code only fires through explicit
+        runtime resolver APIs (e.g. ``State.resolve_event``) and is
+        never produced by the static pipeline. ``'partial_static_pipeline'``
+        marks codes whose static-pipeline emit is implemented on one
+        end only (typically jsfcstm) — downstream LLM consumers should
+        not block waiting for the missing end. PR-A-fix I-b makes the
+        field explicit so dispatchers can register handlers based on
+        the actual emit channel.
+    :type emit_tier: str, optional
     """
 
     code: str
@@ -139,6 +244,9 @@ class CodeSpec:
     description: str
     refs_schema: Mapping[str, CodeFieldSpec]
     example_dsl: Optional[str] = None
+    capability: str = 'pure_static'
+    for_llm: Optional[ForLlmSpec] = None
+    emit_tier: str = 'static_pipeline'
 
     def required_fields(self) -> List[str]:
         """
@@ -263,9 +371,9 @@ def _validate_code(path: str, code: str, raw: Any) -> CodeSpec:
             f"got {type(example_dsl).__name__}.",
         ))
 
-    # Codes follow a 1-letter severity prefix convention: E_* for errors,
-    # W_* for warnings. Enforce so that severity and code stay in sync.
-    expected_prefix = 'E_' if severity == 'error' else 'W_'
+    # Codes follow a 1-letter severity prefix convention: E_* errors,
+    # W_* warnings, I_* infos. Enforce so that severity and code stay in sync.
+    expected_prefix = _SEVERITY_PREFIX[severity]
     if not code.startswith(expected_prefix):
         raise CodesSchemaError(_ctx(
             path,
@@ -273,12 +381,90 @@ def _validate_code(path: str, code: str, raw: Any) -> CodeSpec:
             f"with the expected prefix {expected_prefix!r}.",
         ))
 
+    capability = raw.get('capability', 'pure_static')
+    if capability not in _ALLOWED_CAPABILITIES:
+        raise CodesSchemaError(_ctx(
+            path,
+            f"code {code!r} has invalid capability {capability!r}.",
+            f"Allowed: {_ALLOWED_CAPABILITIES}.",
+        ))
+
+    emit_tier = raw.get('emit_tier', 'static_pipeline')
+    if emit_tier not in _ALLOWED_EMIT_TIERS:
+        raise CodesSchemaError(_ctx(
+            path,
+            f"code {code!r} has invalid emit_tier {emit_tier!r}.",
+            f"Allowed: {_ALLOWED_EMIT_TIERS}.",
+        ))
+
+    for_llm = _validate_for_llm(path, code, raw.get('for_llm'))
+
     return CodeSpec(
         code=code,
         severity=severity,
         description=description,
         refs_schema=MappingProxyType(refs_schema),
         example_dsl=example_dsl,
+        capability=capability,
+        for_llm=for_llm,
+        emit_tier=emit_tier,
+    )
+
+
+def _validate_for_llm(path: str, code: str, raw: Any) -> Optional[ForLlmSpec]:
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise CodesSchemaError(_ctx(
+            path,
+            f"code {code!r} 'for_llm' must be a mapping when present,",
+            f"got {type(raw).__name__}.",
+        ))
+    missing = [k for k in _FOR_LLM_REQUIRED_KEYS if k not in raw]
+    if missing:
+        raise CodesSchemaError(_ctx(
+            path,
+            f"code {code!r} 'for_llm' is missing required keys {missing}.",
+            f"Required: {_FOR_LLM_REQUIRED_KEYS}.",
+        ))
+    summary = raw['summary']
+    if not isinstance(summary, str) or not summary.strip():
+        raise CodesSchemaError(_ctx(
+            path,
+            f"code {code!r} 'for_llm.summary' must be a non-empty string.",
+        ))
+    actions_raw = raw['recommended_actions']
+    if not isinstance(actions_raw, list):
+        raise CodesSchemaError(_ctx(
+            path,
+            f"code {code!r} 'for_llm.recommended_actions' must be a list,",
+            f"got {type(actions_raw).__name__}.",
+        ))
+    for i, action in enumerate(actions_raw):
+        if not isinstance(action, dict):
+            raise CodesSchemaError(_ctx(
+                path,
+                f"code {code!r} 'for_llm.recommended_actions[{i}]' must be a",
+                f"mapping, got {type(action).__name__}.",
+            ))
+    do_not_raw = raw['do_not']
+    if not isinstance(do_not_raw, list):
+        raise CodesSchemaError(_ctx(
+            path,
+            f"code {code!r} 'for_llm.do_not' must be a list,",
+            f"got {type(do_not_raw).__name__}.",
+        ))
+    for i, item in enumerate(do_not_raw):
+        if not isinstance(item, str):
+            raise CodesSchemaError(_ctx(
+                path,
+                f"code {code!r} 'for_llm.do_not[{i}]' must be a string,",
+                f"got {type(item).__name__}.",
+            ))
+    return ForLlmSpec(
+        summary=summary.strip(),
+        recommended_actions=tuple(MappingProxyType(dict(a)) for a in actions_raw),
+        do_not=tuple(do_not_raw),
     )
 
 

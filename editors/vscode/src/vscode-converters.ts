@@ -38,9 +38,14 @@ export function toVscodeRange(range: TextRange): vscode.Range {
 }
 
 export function toVscodeDiagnostic(item: FcstmDiagnostic): vscode.Diagnostic {
-    const severity = item.severity === 'error'
-        ? vscode.DiagnosticSeverity.Error
-        : vscode.DiagnosticSeverity.Warning;
+    let severity: vscode.DiagnosticSeverity;
+    if (item.severity === 'error') {
+        severity = vscode.DiagnosticSeverity.Error;
+    } else if (item.severity === 'info') {
+        severity = vscode.DiagnosticSeverity.Information;
+    } else {
+        severity = vscode.DiagnosticSeverity.Warning;
+    }
     const diagnostic = new vscode.Diagnostic(toVscodeRange(item.range), item.message, severity);
     diagnostic.source = item.source;
     if (item.code) {

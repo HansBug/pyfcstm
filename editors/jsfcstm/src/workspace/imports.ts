@@ -150,14 +150,35 @@ export class FcstmImportWorkspaceIndex {
             return diagnostics;
         }
 
+        // Build a name → state lookup per composite scope so we can
+        // detect "import alias clashes with a sibling regular state",
+        // matching pyfcstm/model/imports.py:_resolve_import_node_into_state.
+        const siblingNamesByScope = new Map<string, Map<string, {name: string; range: typeof semanticImport.aliasRange}>>();
+        type ImportLike = typeof semantic.imports[number];
+        let semanticImport!: ImportLike;
+        for (const state of semantic.states ?? []) {
+            const ownerPath = state.identity.qualifiedName.split('.').slice(0, -1).join('.');
+            const scopeKey = ownerPath || '<root>';
+            let bucket = siblingNamesByScope.get(scopeKey);
+            if (!bucket) {
+                bucket = new Map();
+                siblingNamesByScope.set(scopeKey, bucket);
+            }
+            bucket.set(state.name, {name: state.name, range: state.range});
+        }
+
         const stateAliasSeen = new Map<string, Map<string, FcstmSemanticImport>>();
-        for (const semanticImport of semantic.imports) {
+        for (semanticImport of semantic.imports) {
             const stateKey = semanticImport.ownerStatePath.join('.') || '<root>';
             let aliasMap = stateAliasSeen.get(stateKey);
             if (!aliasMap) {
                 aliasMap = new Map<string, FcstmSemanticImport>();
                 stateAliasSeen.set(stateKey, aliasMap);
             }
+
+            // Normalize the schema host_state_path: pyfcstm emits '' for
+            // root-hosted imports, not the literal '<root>' sentinel.
+            const hostStatePath = stateKey === '<root>' ? '' : stateKey;
 
             const firstAlias = aliasMap.get(semanticImport.alias);
             if (firstAlias) {
@@ -166,7 +187,12 @@ export class FcstmImportWorkspaceIndex {
                     message: `Duplicate import alias ${JSON.stringify(semanticImport.alias)} in state ${JSON.stringify(stateKey)}.`,
                     severity: 'error',
                     source: 'fcstm',
-                    code: FCSTM_DIAGNOSTIC_CODES.duplicateImportAlias,
+                    code: FCSTM_DIAGNOSTIC_CODES.importAliasConflict,
+                    data: {
+                        alias: semanticImport.alias,
+                        host_state_path: hostStatePath,
+                        conflicting_kind: 'previous_import_alias',
+                    },
                     relatedInformation: [{
                         location: {
                             uri: toFileUri(ownerFile),
@@ -179,13 +205,72 @@ export class FcstmImportWorkspaceIndex {
                 aliasMap.set(semanticImport.alias, semanticImport);
             }
 
+            // Check alias vs sibling regular-state name.
+            const scopeKey = stateKey;
+            const siblings = siblingNamesByScope.get(scopeKey);
+            const conflictingState = siblings?.get(semanticImport.alias);
+            if (conflictingState) {
+                diagnostics.push({
+                    range: semanticImport.aliasRange,
+                    message: `Import alias ${JSON.stringify(semanticImport.alias)} conflicts with an existing child state in ${JSON.stringify(stateKey)}.`,
+                    severity: 'error',
+                    source: 'fcstm',
+                    code: FCSTM_DIAGNOSTIC_CODES.importAliasConflict,
+                    data: {
+                        alias: semanticImport.alias,
+                        host_state_path: hostStatePath,
+                        conflicting_kind: 'existing_substate',
+                    },
+                    relatedInformation: [{
+                        location: {
+                            uri: toFileUri(ownerFile),
+                            range: conflictingState.range,
+                        },
+                        message: `Existing state ${JSON.stringify(conflictingState.name)} is declared here.`,
+                    }],
+                });
+            }
+
             if (semanticImport.missing) {
                 diagnostics.push({
                     range: semanticImport.pathRange,
                     message: `Import source ${JSON.stringify(semanticImport.sourcePath)} cannot be resolved from ${JSON.stringify(path.dirname(ownerFile))}.`,
                     severity: 'error',
                     source: 'fcstm',
-                    code: FCSTM_DIAGNOSTIC_CODES.missingImport,
+                    code: FCSTM_DIAGNOSTIC_CODES.importNotFound,
+                    data: {
+                        source_path: semanticImport.sourcePath,
+                        alias: semanticImport.alias,
+                        host_state_path: hostStatePath,
+                        // I4 (PR #116 re-review): jsfcstm cannot
+                        // distinguish read_error vs parse_error at this
+                        // layer — the workspace index treats both as
+                        // ``missing``. We use ``file_not_found`` for
+                        // the resolution-failed case and emit a
+                        // separate branch below for ``no_root_state``.
+                        reason: 'file_not_found',
+                    },
+                });
+            } else if (
+                semanticImport.entryFile &&
+                !semanticImport.targetRootStateName
+            ) {
+                // I4 (PR #116 re-review): file resolved but the parsed
+                // document declares no top-level state — match the
+                // pyfcstm side which emits ``reason: 'no_root_state'``
+                // for the same scenario.
+                diagnostics.push({
+                    range: semanticImport.pathRange,
+                    message: `Import source ${JSON.stringify(semanticImport.sourcePath)} resolved but declares no root state.`,
+                    severity: 'error',
+                    source: 'fcstm',
+                    code: FCSTM_DIAGNOSTIC_CODES.importNotFound,
+                    data: {
+                        source_path: semanticImport.sourcePath,
+                        alias: semanticImport.alias,
+                        host_state_path: hostStatePath,
+                        reason: 'no_root_state',
+                    },
                 });
             }
         }
@@ -193,12 +278,22 @@ export class FcstmImportWorkspaceIndex {
         for (const cycle of snapshot.cycles) {
             const firstHop = cycle.files[1];
             const cycleImport = semantic.imports.find(item => item.entryFile && normalizeFile(item.entryFile) === firstHop);
+            const cycleHostPath = cycleImport?.ownerStatePath.join('.') ?? '';
             diagnostics.push({
                 range: cycleImport?.pathRange || fallbackImportRange(),
                 message: `Circular import detected: ${cycle.files.map(item => path.basename(item)).join(' -> ')}.`,
-                severity: 'warning',
+                // pyfcstm imports.py reports circular imports as a hard
+                // failure (SyntaxError); Layer 2 aligns to error severity
+                // so jsfcstm and pyfcstm agree on the blocking nature.
+                severity: 'error',
                 source: 'fcstm',
-                code: FCSTM_DIAGNOSTIC_CODES.circularImport,
+                code: FCSTM_DIAGNOSTIC_CODES.importCircular,
+                data: {
+                    source_path: cycleImport?.sourcePath ?? cycle.files[1],
+                    alias: cycleImport?.alias ?? '',
+                    host_state_path: cycleHostPath,
+                    cycle_chain: cycle.files,
+                },
             });
         }
 

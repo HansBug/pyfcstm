@@ -60,7 +60,7 @@ export interface ParseTreeNode {
     target_event?: { getText?: () => string };
 }
 
-export type FcstmDiagnosticSeverity = 'error' | 'warning';
+export type FcstmDiagnosticSeverity = 'error' | 'warning' | 'info';
 
 export interface FcstmDiagnosticRelatedInformation {
     location: TextLocation;

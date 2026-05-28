@@ -934,8 +934,8 @@ function buildStateDefinition(
     node: ParseTreeContext,
     document: TextDocumentLike
 ): FcstmAstStateDefinition {
-    const composite = node.constructor?.name === 'CompositeStateDefinitionContext';
-    const statements = composite
+    const hasBraceBody = node.constructor?.name === 'CompositeStateDefinitionContext';
+    const statements = hasBraceBody
         ? contextChildren(node)
             .filter(child => child.constructor?.name === 'State_inner_statementContext')
             .map(child => buildStateStatement(child, document))
@@ -949,6 +949,13 @@ function buildStateDefinition(
     const forceTransitions = statements.filter(item => item.kind === 'forcedTransition') as FcstmAstForcedTransition[];
     const events = statements.filter(item => item.kind === 'eventDefinition') as FcstmAstEventDefinition[];
     const imports = statements.filter(item => item.kind === 'importStatement') as FcstmAstImportStatement[];
+    // ``composite`` follows the pyfcstm semantic rule: it is true iff the
+    // state has at least one substate (a direct ``state X;`` child) or
+    // at least one ``import ... as Alias`` that gets merged in as a
+    // substate by the workspace-assembly phase. A ``state X { enter
+    // { ... } }`` with neither is semantically a leaf even though the
+    // grammar uses the ``{ ... }`` form.
+    const composite = substates.length > 0 || imports.length > 0;
     const enters = statements.filter(item => item.kind === 'action' && item.stage === 'enter') as FcstmAstAction[];
     const durings = statements.filter(
         item => item.kind === 'action' && item.stage === 'during' && !item.isGlobalAspect

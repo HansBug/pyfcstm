@@ -75,7 +75,7 @@ state Root {
 }
 """)
         assert diag.code == 'E_UNDEFINED_VAR'
-        assert diag.refs['var_name'] == ['unknown']
+        assert diag.refs['var_name'] == 'unknown'
         assert diag.refs['referenced_in'] == 'guard'
         _assert_refs_match_schema(diag)
 

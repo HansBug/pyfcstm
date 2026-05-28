@@ -14,7 +14,9 @@
 #                        by unit tests and by downstream tooling to
 #                        validate their dispatch paths).
 #
-# Allowed `refs.*.type` tokens:
+# Allowed `refs.*.type` tokens (must mirror `_ALLOWED_REF_TYPES` in
+# codes.py — that tuple is the single source of truth, this comment block
+# is documentation; a test asserts the two stay aligned):
 #   str | str_or_null | int | int_or_null | bool | Span | list[str]
 #
 # Adding a new code: append a new top-level entry here AND add a fixture

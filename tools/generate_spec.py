@@ -7,6 +7,17 @@ import sys
 from pathlib import Path
 
 
+HIDDEN_IMPORTS = [
+    # Force-include the diagnostics package so its bundled `codes.yaml`
+    # asset is reachable in the standalone build even when no current
+    # import chain references it. PR-2 of issue #103 will make
+    # `pyfcstm.model` import this at runtime — pre-bundling here keeps
+    # the CI Build matrix green across the rename / refactor.
+    'pyfcstm.diagnostics',
+    'pyfcstm.diagnostics.codes',
+]
+
+
 EXCLUDED_MODULES = [
     # GUI, data-science, and notebook stacks that are not used by the CLI.
     'tkinter',
@@ -105,7 +116,7 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas={datas!r},
-    hiddenimports=[],
+    hiddenimports={HIDDEN_IMPORTS!r},
     hookspath=[],
     hooksconfig={{}},
     runtime_hooks=[],

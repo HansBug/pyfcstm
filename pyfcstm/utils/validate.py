@@ -83,7 +83,10 @@ class Span:
     end_column: Optional[int] = None
 
 
-@dataclass
+_ALLOWED_SEVERITIES = ('error', 'warning')
+
+
+@dataclass(frozen=True)
 class ModelDiagnostic:
     """
     Structured semantic or design-health diagnostic produced by the model layer.
@@ -96,9 +99,20 @@ class ModelDiagnostic:
 
     The full set of valid :attr:`code` values together with their
     :attr:`refs` payload schema lives in
-    :mod:`pyfcstm.verify.codes` (loaded from ``pyfcstm/verify/codes.yaml``);
+    :mod:`pyfcstm.diagnostics.codes` (loaded from ``pyfcstm/diagnostics/codes.yaml``);
     this dataclass intentionally does not validate ``code`` at construction
     time so that experimental codes can be emitted in tests.
+
+    :attr:`severity` is enforced at construction time to be one of
+    ``'error'`` / ``'warning'`` — a typo such as ``'Error'`` would otherwise
+    cause :meth:`is_error` to silently return ``False`` and skew downstream
+    dispatch.
+
+    The dataclass is frozen so the public contract surface (``code`` /
+    ``severity`` / ``message`` / ``span``) cannot be mutated after
+    construction. ``refs`` remains a mutable ``dict`` because PR-2 needs to
+    populate it during emit — downstream consumers should treat it as
+    read-only.
 
     :param code: Stable diagnostic code, e.g. ``'E_UNDEFINED_VAR'``,
         ``'W_DEADLOCK_LEAF'``. Always treated as the public contract.
@@ -138,6 +152,13 @@ class ModelDiagnostic:
     span: Optional[Span] = None
     refs: Dict[str, Any] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        if self.severity not in _ALLOWED_SEVERITIES:
+            raise ValueError(
+                "ModelDiagnostic.severity must be one of "
+                f"{_ALLOWED_SEVERITIES!r}, got {self.severity!r}"
+            )
+
     def is_error(self) -> bool:
         """
         Return ``True`` if this diagnostic has error severity.
@@ -146,6 +167,20 @@ class ModelDiagnostic:
         :rtype: bool
         """
         return self.severity == 'error'
+
+    def format_line(self) -> str:
+        """
+        Render this diagnostic as a single human-readable summary line.
+
+        Used by :meth:`ModelValidationError._build_summary_message` so that
+        both legacy :class:`ValidationError` entries and structured
+        :class:`ModelDiagnostic` entries share the same ``[code] message``
+        prefix style in aggregated error output.
+
+        :return: A one-line ``[severity/code] message`` representation.
+        :rtype: str
+        """
+        return f"[{self.severity}/{self.code}] {self.message}"
 
 
 class ValidationError(Exception):
@@ -217,19 +252,37 @@ class ModelValidationError(SyntaxError):
         self.diagnostics: List[ModelDiagnostic] = list(diagnostics) if diagnostics else []
         if message is None:
             message = self._build_summary_message()
-        super().__init__(message)
+
+        # SyntaxError carries a (filename, lineno, offset, text) 4-tuple
+        # behind e.filename / e.lineno / e.offset / e.text. Without this
+        # tuple, downstream code that catches us via the SyntaxError MRO
+        # back-compat hatch sees lineno=None / offset=None, regressing
+        # the source-position signal that callers may already depend on.
+        # Map the first diagnostic that carries a Span onto this 4-tuple.
+        span = next(
+            (d.span for d in self.diagnostics if d.span is not None),
+            None,
+        )
+        if span is not None:
+            super().__init__(message, (None, span.line, span.column, None))
+        else:
+            super().__init__(message)
 
     def _build_summary_message(self) -> str:
         parts: List[str] = []
         if self.errors:
+            error_lines = [
+                f"{i}. [error/VALIDATION] {e}"
+                for i, e in enumerate(self.errors, start=1)
+            ]
             parts.append(
                 f"Model validation error, {plural_word(len(self.errors), 'error')} in total:"
                 f"{os.linesep}"
-                f"{os.linesep.join(f'{i}. {repr(e)}' for i, e in enumerate(self.errors, start=1))}"
+                f"{os.linesep.join(error_lines)}"
             )
         if self.diagnostics:
             diag_lines = [
-                f"{i}. [{d.severity}/{d.code}] {d.message}"
+                f"{i}. {d.format_line()}"
                 for i, d in enumerate(self.diagnostics, start=1)
             ]
             parts.append(

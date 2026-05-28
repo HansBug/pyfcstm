@@ -87,6 +87,36 @@ class TestModelDiagnostic:
         a.refs['k'] = 1
         assert 'k' not in b.refs
 
+    def test_rejects_invalid_severity_capitalized(self):
+        with pytest.raises(ValueError, match='severity'):
+            ModelDiagnostic(code='E_X', severity='Error', message='m')
+
+    def test_rejects_invalid_severity_uppercase(self):
+        with pytest.raises(ValueError, match='severity'):
+            ModelDiagnostic(code='E_X', severity='ERROR', message='m')
+
+    def test_rejects_invalid_severity_typo(self):
+        with pytest.raises(ValueError, match='severity'):
+            ModelDiagnostic(code='E_X', severity='err', message='m')
+
+    def test_is_frozen_top_level_fields(self):
+        """``frozen=True`` covers code / severity / message / span; ``refs``
+        is intentionally mutable (PR-2 emit needs to populate it)."""
+        diag = ModelDiagnostic(code='E_X', severity='error', message='m')
+        with pytest.raises(Exception):
+            diag.code = 'E_Y'  # noqa
+        with pytest.raises(Exception):
+            diag.severity = 'warning'  # noqa
+        with pytest.raises(Exception):
+            diag.message = 'other'  # noqa
+        # refs remains mutable by design
+        diag.refs['k'] = 1
+        assert diag.refs['k'] == 1
+
+    def test_format_line(self):
+        diag = ModelDiagnostic(code='E_X', severity='error', message='oops')
+        assert diag.format_line() == '[error/E_X] oops'
+
 
 @pytest.mark.unittest
 class TestModelValidationError:
@@ -165,3 +195,63 @@ class TestModelValidationError:
         with pytest.raises(ModelValidationError) as info:
             _BadModel().validate()
         assert len(info.value.errors) == 1
+
+    def test_span_propagates_to_syntax_error_lineno(self):
+        """
+        I2 from PR-107 review: when at least one diagnostic carries a Span,
+        the SyntaxError 4-tuple (filename, lineno, offset, text) must be
+        populated so downstream ``except SyntaxError as e: e.lineno`` keeps
+        working after PR-2 swaps the raise type.
+        """
+        diag = ModelDiagnostic(
+            code='E_X',
+            severity='error',
+            message='m',
+            span=Span(line=7, column=3),
+        )
+        err = ModelValidationError(diagnostics=[diag])
+        assert err.lineno == 7
+        assert err.offset == 3
+        assert err.filename is None
+        assert err.text is None
+
+    def test_no_span_means_lineno_none(self):
+        diag = ModelDiagnostic(code='E_X', severity='error', message='m')
+        err = ModelValidationError(diagnostics=[diag])
+        assert err.lineno is None
+        assert err.offset is None
+
+    def test_first_span_wins_when_multiple_diagnostics(self):
+        diags = [
+            ModelDiagnostic(code='E_X', severity='error', message='m1'),  # no span
+            ModelDiagnostic(
+                code='E_Y', severity='error', message='m2',
+                span=Span(line=10, column=5),
+            ),
+            ModelDiagnostic(
+                code='E_Z', severity='error', message='m3',
+                span=Span(line=20, column=8),
+            ),
+        ]
+        err = ModelValidationError(diagnostics=diags)
+        # First diagnostic with a span wins, not first diagnostic outright.
+        assert err.lineno == 10
+        assert err.offset == 5
+
+    def test_summary_unifies_error_and_diagnostic_format(self):
+        """
+        M2 from PR-107 review: legacy ValidationError entries and structured
+        ModelDiagnostic entries now share the ``[severity/code] message``
+        prefix format.
+        """
+        diag = ModelDiagnostic(code='E_X', severity='error', message='dx')
+        err = ModelValidationError(
+            errors=[ValidationError('legacy_err')],
+            diagnostics=[diag],
+        )
+        s = str(err)
+        # legacy error path also uses the unified [severity/code] prefix
+        assert '[error/VALIDATION]' in s
+        assert 'legacy_err' in s
+        # diagnostic path uses ``format_line()``
+        assert '[error/E_X] dx' in s

@@ -719,6 +719,13 @@ E_IMPORT_NOT_FOUND:
       means the file was loaded but is not valid FCSTM DSL; ``no_root_state``
       means the file parses but declares no ``state Root { ... }`` block.
       The four reasons need different fixes — do not collapse them.
+      Cross-end note (I2 from PR #115 final review): jsfcstm currently
+      only distinguishes ``file_not_found`` and ``no_root_state``; its
+      workspace index treats I/O failures and parse failures alike as
+      ``missing`` and emits ``file_not_found`` for both. When consuming
+      jsfcstm-side diagnostics, treat ``file_not_found`` as "any
+      pre-no_root_state failure" and inspect the imported file
+      directly to disambiguate read vs parse failures.
     recommended_actions:
       - kind: fix_path
         target: import_statement
@@ -997,6 +1004,7 @@ E_IMPORT_MAPPING_INVALID:
 # to special-case the placeholder set.
 # ---------------------------------------------------------------------------
 
+# scheduled for PR-C: emitted-by analyzer not yet implemented in either end
 W_UNREACHABLE_STATE:
   severity: warning
   capability: pure_static
@@ -1029,6 +1037,7 @@ W_UNREACHABLE_STATE:
         [*] -> Idle;
     }
 
+# scheduled for PR-C: emitted-by analyzer not yet implemented in either end
 W_GUARD_CONST_FALSE:
   severity: warning
   capability: const_fold
@@ -1065,6 +1074,7 @@ W_GUARD_CONST_FALSE:
         A -> B : if [false];
     }
 
+# scheduled for PR-C: emitted-by analyzer not yet implemented in either end
 W_UNUSED_EVENT:
   severity: warning
   capability: pure_static

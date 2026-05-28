@@ -37,8 +37,8 @@ E_UNDEFINED_VAR:
       type: str
       required: true
       description: >-
-        Which kind of block contained the reference. One of: 'guard',
-        'effect', 'enter', 'during', 'exit', 'init'.
+        Which kind of block contained the reference.
+      enum: ['guard', 'effect', 'enter', 'during', 'exit', 'during_aspect', 'init']
     state_path:
       type: str_or_null
       required: false
@@ -91,8 +91,12 @@ E_MISSING_STATE:
       type: str
       required: false
       description: >-
-        Short tag describing the resolution failure mode. One of:
-        'not_found', 'parent_missing', 'ambiguous'.
+        Short tag describing the resolution failure mode.
+      enum:
+        - 'not_found'
+        - 'parent_missing'
+        - 'ambiguous'
+        - 'event_path_not_found'
   example_dsl: |
     state Root { state A; A -> NoSuch; }
 
@@ -129,9 +133,14 @@ E_EVENT_REF_INVALID:
       type: str
       required: true
       description: >-
-        Short tag describing why the reference is invalid. One of:
-        'empty', 'bare_slash', 'invalid_absolute', 'invalid_relative',
-        'trailing_dots', 'beyond_root'.
+        Short tag describing why the reference is invalid.
+      enum:
+        - 'empty'
+        - 'bare_slash'
+        - 'invalid_absolute'
+        - 'invalid_relative'
+        - 'trailing_dots'
+        - 'beyond_root'
   example_dsl: |
     state Root { state A; state B; A -> B : /; }
 
@@ -149,7 +158,8 @@ E_EVENT_NOT_FOUND:
       type: str
       required: true
       description: >-
-        Resolution scope used. One of: 'local', 'chain', 'absolute'.
+        Resolution scope used.
+      enum: ['local', 'chain', 'absolute']
     searched_from:
       type: str_or_null
       required: false
@@ -174,8 +184,8 @@ E_DANGLING_TRANSITION:
       type: str
       required: true
       description: >-
-        Short tag describing the dangling reason. One of: 'src_not_found',
-        'tgt_not_found', 'both_not_found'.
+        Short tag describing the dangling reason.
+      enum: ['src_not_found', 'tgt_not_found', 'both_not_found']
   example_dsl: |
     state Root { state A; NoSuch -> A; }
 
@@ -216,8 +226,12 @@ E_FORCED_TRANSITION_EXPANSION:
       type: str
       required: true
       description: >-
-        Short tag describing why expansion failed. One of: 'src_not_found',
-        'tgt_not_found', 'src_is_root', 'wildcard_no_descendants'.
+        Short tag describing why expansion failed.
+      enum:
+        - 'src_not_found'
+        - 'tgt_not_found'
+        - 'src_is_root'
+        - 'wildcard_no_descendants'
   example_dsl: |
     state Root { state A; !NoSuch -> A; }
 
@@ -235,8 +249,8 @@ E_INITIAL_TRANSITION_INVALID:
       type: str
       required: true
       description: >-
-        Short tag describing the failure. One of: 'missing_entry',
-        'target_not_child'.
+        Short tag describing the failure.
+      enum: ['missing_entry', 'target_not_child']
   example_dsl: |
     state Root { state Outer { state Inner; } }
 
@@ -258,9 +272,8 @@ E_DUPLICATE_FUNCTION_NAME:
     stage:
       type: str
       required: true
-      description: >-
-        Lifecycle stage where the duplicate appears. One of: 'enter',
-        'during', 'exit', 'during_aspect'.
+      description: Lifecycle stage where the duplicate appears.
+      enum: ['enter', 'during', 'exit', 'during_aspect']
   example_dsl: |
     state Root {
         state A {
@@ -284,14 +297,15 @@ E_DURING_ASPECT_INVALID:
     state_kind:
       type: str
       required: true
-      description: >-
-        Kind of the host state. One of: 'leaf', 'composite'.
+      description: Kind of the host state.
+      enum: ['leaf', 'composite']
     aspect:
       type: str_or_null
       required: false
       description: >-
         The aspect token that was actually used (``'before'``, ``'after'``,
         or null when the user wrote a bare ``during`` on a composite).
+      enum: ['before', 'after']
   example_dsl: |
     state Root {
         state A {
@@ -332,9 +346,8 @@ E_NAMED_FUNCTION_REF_NOT_FOUND:
     reason:
       type: str
       required: true
-      description: >-
-        Short tag describing the resolution failure. One of:
-        'state_not_found', 'named_function_not_found'.
+      description: Short tag describing the resolution failure.
+      enum: ['state_not_found', 'named_function_not_found']
     missing_segment:
       type: str_or_null
       required: false

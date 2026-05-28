@@ -384,6 +384,148 @@ state Root { state A; }
 
 
 @pytest.mark.unittest
+class TestEmitMatchesEnum:
+    """
+    C2 from PR-110 review: every ``refs[field]`` value emitted from a real
+    DSL fixture must be a member of the ``enum`` declared for that field
+    in codes.yaml. Schema documentation is documentation-only; the only
+    way to keep emitters honest is to drive them through fixtures and
+    assert membership.
+
+    These tests would catch the original drift where ``E_MISSING_STATE``
+    was emitting ``reason='event_path_not_found'`` against an enum that
+    only allowed ``'not_found' | 'parent_missing' | 'ambiguous'``.
+    """
+
+    # (fixture_dsl, expected_code, refs_assertions)
+    # refs_assertions is a list of (field_name, expected_value_or_None)
+    # where None means "just assert the field is present".
+    ENUM_FIXTURES = [
+        # E_MISSING_STATE — normal transition through bad event path
+        (
+            """
+state Root {
+    state A; state B;
+    [*] -> A;
+    A -> B : /NoSuch.GhostEvt;
+}
+""",
+            'E_MISSING_STATE',
+            [('reason', None)],  # whatever reason it emits must be in enum
+        ),
+        # E_DANGLING_TRANSITION — unknown to-state
+        (
+            """
+state Root {
+    state A;
+    A -> NoSuch;
+}
+""",
+            'E_DANGLING_TRANSITION',
+            [('reason', None)],
+        ),
+        # E_FORCED_TRANSITION_EXPANSION — unknown src
+        (
+            """
+state Root {
+    state A;
+    !NoSuch -> A;
+}
+""",
+            'E_FORCED_TRANSITION_EXPANSION',
+            [('reason', None)],
+        ),
+        # E_INITIAL_TRANSITION_INVALID — composite missing entry
+        (
+            """
+state Root {
+    state Outer {
+        state Inner;
+    }
+}
+""",
+            'E_INITIAL_TRANSITION_INVALID',
+            [('reason', None)],
+        ),
+        # E_NAMED_FUNCTION_REF_NOT_FOUND — bare-name unresolved
+        (
+            """
+state Root {
+    state A {
+        enter ref MissingFunc;
+    }
+    [*] -> A;
+}
+""",
+            'E_NAMED_FUNCTION_REF_NOT_FOUND',
+            [('reason', None)],
+        ),
+        # E_DURING_ASPECT_INVALID — leaf state with aspect
+        (
+            """
+state Root {
+    state A {
+        during before { }
+    }
+}
+""",
+            'E_DURING_ASPECT_INVALID',
+            [('state_kind', None)],
+        ),
+        # E_UNDEFINED_VAR — referenced_in tag
+        (
+            """
+def int x = 0;
+state Root {
+    state A; state B;
+    [*] -> A;
+    A -> B : if [unknown > 0];
+}
+""",
+            'E_UNDEFINED_VAR',
+            [('referenced_in', None)],
+        ),
+        # E_DUPLICATE_FUNCTION_NAME — stage tag
+        (
+            """
+state Root {
+    state A {
+        enter F1 { }
+        enter F1 { }
+    }
+    [*] -> A;
+}
+""",
+            'E_DUPLICATE_FUNCTION_NAME',
+            [('stage', None)],
+        ),
+    ]
+
+    @pytest.mark.parametrize(
+        'dsl,expected_code,refs_assertions',
+        ENUM_FIXTURES,
+        ids=[f[1] + '_' + str(i) for i, f in enumerate(ENUM_FIXTURES)],
+    )
+    def test_emitted_refs_values_are_in_declared_enum(
+            self, dsl, expected_code, refs_assertions):
+        """For every enumerated field the emitter populates, the value
+        must be a member of the schema's declared enum (if any)."""
+        diag = _strict_diag(dsl)
+        assert diag.code == expected_code
+        spec = CODE_REGISTRY[diag.code]
+        for field_name, _ in refs_assertions:
+            field_spec = spec.refs_schema[field_name]
+            declared_enum = field_spec.enum
+            if declared_enum is None:
+                continue  # no enum constraint for this field
+            actual = diag.refs.get(field_name)
+            assert actual in declared_enum, (
+                f"code {diag.code} field {field_name!r}: emitted value "
+                f"{actual!r} is not in declared enum {declared_enum}"
+            )
+
+
+@pytest.mark.unittest
 class TestCollectModeNoPhantomMutation:
     """
     C1 from PR-110 review: in collect mode, ``sink.emit(E_MISSING_STATE)``

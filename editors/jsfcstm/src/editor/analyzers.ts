@@ -32,6 +32,11 @@ export const FCSTM_DIAGNOSTIC_CODES = {
     missingState: 'E_MISSING_STATE',
     danglingTransition: 'E_DANGLING_TRANSITION',
     namedFunctionRefNotFound: 'E_NAMED_FUNCTION_REF_NOT_FOUND',
+    duplicateState: 'E_DUPLICATE_STATE',
+    duplicateFunctionName: 'E_DUPLICATE_FUNCTION_NAME',
+    duringAspectInvalid: 'E_DURING_ASPECT_INVALID',
+    pseudoNotLeaf: 'E_PSEUDO_NOT_LEAF',
+    initialTransitionInvalid: 'E_INITIAL_TRANSITION_INVALID',
     // -------- Import errors (E_IMPORT_*) --------
     importAliasConflict: 'E_IMPORT_ALIAS_CONFLICT',
     importNotFound: 'E_IMPORT_NOT_FOUND',
@@ -581,6 +586,197 @@ function addExpressionAndVariableDiagnostics(
 /**
  * Run static semantic analyzers that are strong enough to feed diagnostics and quick fixes.
  */
+/**
+ * ``E_DUPLICATE_STATE`` — two child states share the same name under the
+ * same composite scope. Mirrors ``pyfcstm.model.model._recursive_finish_states``
+ * duplicate-substate detection.
+ */
+function addDuplicateStateDiagnostics(
+    semantic: FcstmSemanticDocument,
+    document: TextDocumentLike,
+    diagnostics: FcstmDiagnostic[]
+): void {
+    const byParent = new Map<string | undefined, Map<string, typeof semantic.states[number]>>();
+    for (const state of semantic.states) {
+        const parentKey = state.parentStateId;
+        let group = byParent.get(parentKey);
+        if (!group) {
+            group = new Map();
+            byParent.set(parentKey, group);
+        }
+        const first = group.get(state.name);
+        if (first) {
+            const parentPath = (first.identity.qualifiedName || '').split('.').slice(0, -1).join('.');
+            diagnostics.push({
+                range: findIdentifierRange(document, state.name, state.range),
+                message: `State ${JSON.stringify(state.name)} is already defined in scope ${JSON.stringify(parentPath || '<root>')}.`,
+                severity: 'error',
+                source: 'fcstm',
+                code: FCSTM_DIAGNOSTIC_CODES.duplicateState,
+                data: {
+                    state_name: state.name,
+                    parent_path: parentPath,
+                },
+                relatedInformation: [{
+                    location: {
+                        uri: toFileUri(document),
+                        range: findIdentifierRange(document, first.name, first.range),
+                    },
+                    message: `First definition of ${JSON.stringify(state.name)} is here.`,
+                }],
+            });
+            continue;
+        }
+        group.set(state.name, state);
+    }
+}
+
+/**
+ * ``E_DUPLICATE_FUNCTION_NAME`` — two named lifecycle actions on the
+ * same state share the same name within the same stage.
+ */
+function addDuplicateFunctionNameDiagnostics(
+    semantic: FcstmSemanticDocument,
+    document: TextDocumentLike,
+    diagnostics: FcstmDiagnostic[]
+): void {
+    const seen = new Map<string, typeof semantic.actions[number]>();
+    for (const action of semantic.actions) {
+        if (!action.name) {
+            continue;
+        }
+        const stageKey = action.aspect ? `${action.stage}:${action.aspect}` : action.stage;
+        const key = `${action.ownerStateId}::${stageKey}::${action.name}`;
+        const first = seen.get(key);
+        if (first) {
+            const statePath = action.ownerStatePath.join('.');
+            diagnostics.push({
+                range: action.range,
+                message: `Named action ${JSON.stringify(action.name)} is already defined in stage ${JSON.stringify(stageKey)} of state ${JSON.stringify(statePath)}.`,
+                severity: 'error',
+                source: 'fcstm',
+                code: FCSTM_DIAGNOSTIC_CODES.duplicateFunctionName,
+                data: {
+                    function_name: action.name,
+                    state_path: statePath,
+                    stage: stageKey,
+                },
+                relatedInformation: [{
+                    location: {
+                        uri: toFileUri(document),
+                        range: first.range,
+                    },
+                    message: `First definition is here.`,
+                }],
+            });
+            continue;
+        }
+        seen.set(key, action);
+    }
+}
+
+/**
+ * ``E_DURING_ASPECT_INVALID`` — a leaf state cannot host
+ * ``>> during before/after`` aspect actions; only composite states can.
+ * Mirrors ``pyfcstm.model.model`` rule: aspect actions are descendant-fanning
+ * and a leaf has no descendant by definition.
+ */
+function addDuringAspectInvalidDiagnostics(
+    semantic: FcstmSemanticDocument,
+    document: TextDocumentLike,
+    diagnostics: FcstmDiagnostic[]
+): void {
+    const stateById = new Map<string, typeof semantic.states[number]>();
+    for (const state of semantic.states) {
+        stateById.set(state.identity.id, state);
+    }
+    for (const action of semantic.actions) {
+        if (!action.isGlobalAspect) {
+            continue;
+        }
+        const owner = stateById.get(action.ownerStateId);
+        if (!owner) {
+            continue;
+        }
+        if (!owner.composite) {
+            diagnostics.push({
+                range: action.range,
+                message: `Aspect '>> during ${action.aspect ?? 'before'}' cannot appear in leaf state ${JSON.stringify(owner.name)}; aspect actions need at least one descendant leaf.`,
+                severity: 'error',
+                source: 'fcstm',
+                code: FCSTM_DIAGNOSTIC_CODES.duringAspectInvalid,
+                data: {
+                    state_path: action.ownerStatePath.join('.'),
+                    state_kind: 'leaf',
+                    aspect: action.aspect ?? 'before',
+                },
+            });
+        }
+    }
+}
+
+/**
+ * ``E_PSEUDO_NOT_LEAF`` — ``pseudo state`` was declared but the body
+ * still contains substates. pyfcstm rule: pseudo states must be leaves.
+ */
+function addPseudoNotLeafDiagnostics(
+    semantic: FcstmSemanticDocument,
+    document: TextDocumentLike,
+    diagnostics: FcstmDiagnostic[]
+): void {
+    for (const state of semantic.states) {
+        if (state.pseudo && state.childStateIds.length > 0) {
+            diagnostics.push({
+                range: findIdentifierRange(document, state.name, state.range),
+                message: `Pseudo state ${JSON.stringify(state.name)} cannot contain substates; declare it as a regular composite or remove the children.`,
+                severity: 'error',
+                source: 'fcstm',
+                code: FCSTM_DIAGNOSTIC_CODES.pseudoNotLeaf,
+                data: {
+                    state_path: state.identity.qualifiedName,
+                },
+            });
+        }
+    }
+}
+
+/**
+ * ``E_INITIAL_TRANSITION_INVALID`` — a composite state lacks any
+ * ``[*] -> child`` initial transition. The runtime cannot pick an
+ * entry child on entry.
+ */
+function addInitialTransitionInvalidDiagnostics(
+    semantic: FcstmSemanticDocument,
+    document: TextDocumentLike,
+    diagnostics: FcstmDiagnostic[]
+): void {
+    const initialByOwner = new Map<string, number>();
+    for (const transition of semantic.transitions) {
+        if (transition.sourceKind !== 'init') {
+            continue;
+        }
+        initialByOwner.set(transition.ownerStateId, (initialByOwner.get(transition.ownerStateId) ?? 0) + 1);
+    }
+    for (const state of semantic.states) {
+        if (!state.composite || state.pseudo) {
+            continue;
+        }
+        if ((initialByOwner.get(state.identity.id) ?? 0) === 0) {
+            diagnostics.push({
+                range: findIdentifierRange(document, state.name, state.range),
+                message: `Composite state ${JSON.stringify(state.name)} has no '[*] -> child' initial transition; the runtime cannot decide which child to enter.`,
+                severity: 'error',
+                source: 'fcstm',
+                code: FCSTM_DIAGNOSTIC_CODES.initialTransitionInvalid,
+                data: {
+                    composite_path: state.identity.qualifiedName,
+                    reason: 'no_initial_transition',
+                },
+            });
+        }
+    }
+}
+
 export async function collectSemanticAnalysisDiagnostics(
     document: TextDocumentLike
 ): Promise<FcstmDiagnostic[]> {
@@ -596,5 +792,10 @@ export async function collectSemanticAnalysisDiagnostics(
     addUnusedEventDiagnostics(semantic, document, diagnostics);
     addActionDiagnostics(semantic, document, diagnostics);
     addExpressionAndVariableDiagnostics(semantic, document, diagnostics);
+    addDuplicateStateDiagnostics(semantic, document, diagnostics);
+    addDuplicateFunctionNameDiagnostics(semantic, document, diagnostics);
+    addDuringAspectInvalidDiagnostics(semantic, document, diagnostics);
+    addPseudoNotLeafDiagnostics(semantic, document, diagnostics);
+    addInitialTransitionInvalidDiagnostics(semantic, document, diagnostics);
     return diagnostics;
 }

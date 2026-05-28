@@ -68,6 +68,7 @@ describe('jsfcstm lsp core', () => {
             'def int counter = 0;',
             'state Root {',
             '    import "./worker.fcstm" as Worker;',
+            '    [*] -> Worker;',
             '}',
         ].join('\n');
 
@@ -159,7 +160,7 @@ describe('jsfcstm lsp core', () => {
         assert.equal(links[0].target, toUri(workerFile));
 
         const foldingRanges = await core.provideFoldingRanges(toUri(hostFile));
-        assert.ok(foldingRanges.some(item => item.startLine === 1 && item.endLine === 3));
+        assert.ok(foldingRanges.some(item => item.startLine === 1 && item.endLine === 4));
 
         const selectionRanges = await core.provideSelectionRanges(toUri(hostFile), [{
             line: 2,

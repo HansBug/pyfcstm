@@ -167,6 +167,14 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: '3.11'
+      - name: Set up Java (for ANTLR)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+      - name: Download ANTLR jar (jsfcstm parser regen needs it)
+        run: |
+          wget -q -O antlr-4.9.3.jar https://www.antlr.org/download/antlr-4.9.3-complete.jar
       - name: Install jsfcstm deps
         working-directory: editors/jsfcstm
         run: npm install

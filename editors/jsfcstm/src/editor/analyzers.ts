@@ -814,7 +814,7 @@ function addInitialTransitionInvalidDiagnostics(
                 code: FCSTM_DIAGNOSTIC_CODES.initialTransitionInvalid,
                 data: {
                     composite_path: state.identity.qualifiedName,
-                    reason: 'no_initial_transition',
+                    reason: 'missing_entry',
                 },
             });
         }

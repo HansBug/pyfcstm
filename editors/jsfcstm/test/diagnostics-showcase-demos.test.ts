@@ -416,6 +416,25 @@ describe('diagnostics showcase: jsfcstm collectDocumentDiagnostics parity', () =
                     `${fixture.name} produced a diagnostic without a code: ${JSON.stringify(d)}`,
                 );
             }
+
+            // 5. Schema-enum payload checks. These guard against
+            //    schema↔emit drift — see ``pyfcstm/diagnostics/codes.yaml``
+            //    for the authoritative ``reason`` enum on each code.
+            //    Extend this block when adding new codes whose payload
+            //    has an enumerated field.
+            const VALID_INITIAL_TRANSITION_REASONS = new Set([
+                'missing_entry',
+                'target_not_child',
+            ]);
+            for (const d of diagnostics) {
+                if (d.code === 'E_INITIAL_TRANSITION_INVALID') {
+                    const reason = (d.data as { reason?: string } | undefined)?.reason;
+                    assert.ok(
+                        reason !== undefined && VALID_INITIAL_TRANSITION_REASONS.has(reason),
+                        `${fixture.name}: E_INITIAL_TRANSITION_INVALID emitted with reason=${JSON.stringify(reason)}, expected one of [${[...VALID_INITIAL_TRANSITION_REASONS].join(', ')}]`,
+                    );
+                }
+            }
         });
     }
 });

@@ -225,4 +225,108 @@ describe('diagnostics/inspect (PR-A)', () => {
             ]);
         });
     });
+
+    // PR-A-coverage: hit the uncovered code paths in
+    // ``editors/jsfcstm/src/diagnostics/inspect.ts`` —
+    // ``inspectModelToJson`` round-trip helper, ``effectsText`` + the
+    // effect-statement var-dataflow walker, ``walkExprCollect`` cases
+    // for BinaryOp/UnaryOp/ConditionalOp inside effects, and the
+    // ``IfBlock`` reads/writes walker.
+    describe('extended coverage (PR-A-coverage)', () => {
+        const EFFECTS_DSL = `
+def int counter = 0;
+def int last = 0;
+def int total = 0;
+state Root {
+    state Idle;
+    state Active;
+    [*] -> Idle;
+    Idle -> Active : if [counter > 0] effect {
+        last = counter;
+        counter = counter + 1;
+        total = (counter > 10) ? counter * 2 : counter - last;
+    };
+    Active -> Idle :: Pause effect {
+        if [counter > 5] {
+            counter = 0;
+        } else {
+            counter = counter + 1;
+        }
+    };
+}
+`;
+
+        it('inspectModelToJson deep-clones the report via JSON', async () => {
+            const report = inspectModel(await buildMachine(EFFECTS_DSL));
+            const cloned = packageModule.inspectModelToJson(report);
+            // Round-trip is structurally equal but reference-independent.
+            assert.deepEqual(cloned, JSON.parse(JSON.stringify(report)));
+        });
+
+        it('walks effect-side expressions (ternary + binary) to record reads', async () => {
+            const report = inspectModel(await buildMachine(EFFECTS_DSL));
+            // ``counter`` is read inside the effect (RHS of ``last =
+            // counter`` AND inside ``counter + 1`` AND inside the
+            // ternary's condition and branches). The walker must
+            // descend through BinaryOp + ConditionalOp + UnaryOp
+            // nodes to find every read.
+            assert.ok(report.var_dataflow['counter']);
+            assert.ok(report.var_dataflow['counter'].reads.includes('Root.Idle'));
+            // ``last`` is only read inside the ternary's else branch
+            // (``counter - last``) — proves the ConditionalOp.ifFalse
+            // walker visited.
+            assert.ok(report.var_dataflow['last']);
+            assert.ok(report.var_dataflow['last'].reads.includes('Root.Idle'));
+        });
+
+        it('per-variable VariableInfo captures effect writes per from→to pair', async () => {
+            // ``var_dataflow.writes`` records state-block writes only
+            // (enter/during/exit). Transition-effect writes go into
+            // ``variables[i].written_in_effects`` as [from, to] pairs.
+            const report = inspectModel(await buildMachine(EFFECTS_DSL));
+            const counter = report.variables.find(v => v.name === 'counter');
+            assert.ok(counter);
+            // Idle -> Active transition effect writes counter.
+            const pairs = counter!.written_in_effects;
+            const hasIdleActive = pairs.some(p => p[0] === 'Root.Idle' && p[1] === 'Root.Active');
+            assert.ok(hasIdleActive,
+                `expected ['Root.Idle', 'Root.Active'] in counter.written_in_effects, got ${JSON.stringify(pairs)}`);
+        });
+
+        it('walks IfBlock inside transition effect to collect reads/writes', async () => {
+            const report = inspectModel(await buildMachine(EFFECTS_DSL));
+            // The Active -> Idle :: Pause effect has an if/else where
+            // both branches reassign counter; the IfBlock walker must
+            // visit branch.statements. Verify via written_in_effects.
+            const counter = report.variables.find(v => v.name === 'counter');
+            assert.ok(counter);
+            const pairs = counter!.written_in_effects;
+            const hasActiveIdle = pairs.some(p => p[0] === 'Root.Active' && p[1] === 'Root.Idle');
+            assert.ok(hasActiveIdle,
+                `expected counter to be written in Active->Idle effect (if-block branches), got ${JSON.stringify(pairs)}`);
+        });
+
+        it('effectsText surfaces non-empty effect text on transitions', async () => {
+            const report = inspectModel(await buildMachine(EFFECTS_DSL));
+            const guardedTransition = report.transitions.find(t => t.effect);
+            assert.ok(guardedTransition, 'expected at least one transition with an effect');
+            assert.ok(
+                typeof guardedTransition!.effect === 'string'
+                    && guardedTransition!.effect!.length > 0,
+            );
+        });
+
+        it('var_dataflow stays empty when no effects use the variable', async () => {
+            // A variable referenced only by guard / external read should
+            // not leak into the ``writes`` list.
+            const dsl = `
+def int sensor = 0;
+state Root { state A; state B; [*] -> A; A -> B : if [sensor > 0]; }
+`;
+            const report = inspectModel(await buildMachine(dsl));
+            const sensor = report.var_dataflow['sensor'];
+            assert.ok(sensor);
+            assert.equal(sensor.writes.length, 0);
+        });
+    });
 });

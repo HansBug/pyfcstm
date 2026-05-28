@@ -2405,7 +2405,11 @@ def parse_dsl_node_to_state_machine(
                 state_path=state_path,
                 block_local_names=block_local_names,
             )
-        else:
+        else:  # pragma: no cover
+            # Defensive: the grammar only produces ``OperationAssignment``
+            # or ``OperationIf``. Reaching this branch means a future
+            # parser change started emitting a new node kind without
+            # extending this helper — fail loudly.
             raise TypeError(f"Unknown operation statement node - {op_item!r}.")
 
     def _parse_if_block(

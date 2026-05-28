@@ -1058,10 +1058,10 @@ def _diagnostic_to_json(d: ModelDiagnostic) -> Dict[str, Any]:
     span = None
     if d.span is not None:
         span = {
-            'start_line': d.span.start_line,
-            'start_col': d.span.start_col,
+            'line': d.span.line,
+            'column': d.span.column,
             'end_line': d.span.end_line,
-            'end_col': d.span.end_col,
+            'end_column': d.span.end_column,
         }
     return {
         'code': d.code,

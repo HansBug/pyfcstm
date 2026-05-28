@@ -586,3 +586,58 @@ def test_undefined_var_is_temporary_false_when_no_later_assignment():
             f'real undefined (no later assignment) should have is_temporary=False; '
             f'refs={d.refs}'
         )
+
+
+@pytest.mark.unittest
+def test_lookup_api_codes_never_fire_in_static_pipeline():
+    """I-b from PR #115 review: E_EVENT_REF_INVALID / E_EVENT_NOT_FOUND
+    are marked ``emit_tier: lookup_api`` because they only fire when a
+    caller invokes ``State.resolve_event`` / ``StateMachine.resolve_event``
+    explicitly. The static pipeline (``parse_dsl_node_to_state_machine``)
+    must never produce them. This test pins that contract: even when
+    we exercise every single-file showcase fixture in collect mode,
+    none of the lookup_api codes appear.
+    """
+    from pyfcstm.diagnostics import CODE_REGISTRY
+
+    lookup_api_codes = {
+        code
+        for code, spec in CODE_REGISTRY.items()
+        if spec.emit_tier == 'lookup_api'
+    }
+    assert lookup_api_codes, 'expected at least one lookup_api code in registry'
+
+    for name, dsl, _ in SINGLE_FILE_FIXTURES:
+        codes, _, _ = _collect_codes_from_dsl(dsl)
+        bad = [c for c in codes if c in lookup_api_codes]
+        assert not bad, (
+            f'fixture {name}: static pipeline emitted lookup_api code(s) {bad}; '
+            f'these codes must only surface through ``resolve_event`` API calls.'
+        )
+
+
+@pytest.mark.unittest
+def test_partial_static_pipeline_codes_dont_fire_on_pyfcstm():
+    """I-b sibling: E_TYPE_MISMATCH is currently ``emit_tier:
+    partial_static_pipeline`` — jsfcstm has an analyzer that emits it
+    on type-confused expressions, pyfcstm has no such analyzer. This
+    test pins the "pyfcstm doesn't fire it" half so downstream
+    consumers know not to expect it from the Python side.
+    """
+    from pyfcstm.diagnostics import CODE_REGISTRY
+
+    partial_codes = {
+        code
+        for code, spec in CODE_REGISTRY.items()
+        if spec.emit_tier == 'partial_static_pipeline'
+    }
+    if not partial_codes:
+        pytest.skip('no partial_static_pipeline codes declared')
+
+    for name, dsl, _ in SINGLE_FILE_FIXTURES:
+        codes, _, _ = _collect_codes_from_dsl(dsl)
+        leaked = [c for c in codes if c in partial_codes]
+        assert not leaked, (
+            f'fixture {name}: pyfcstm emitted partial_static_pipeline code(s) {leaked}; '
+            f'these are currently implemented only on jsfcstm.'
+        )

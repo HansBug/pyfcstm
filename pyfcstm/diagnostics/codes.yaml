@@ -217,6 +217,7 @@ E_DUPLICATE_STATE:
 
 E_EVENT_REF_INVALID:
   severity: error
+  emit_tier: lookup_api
   description: >-
     The textual form of an event reference is syntactically invalid (e.g.
     bare '/', trailing dots, going beyond the root state).
@@ -263,6 +264,7 @@ E_EVENT_REF_INVALID:
 
 E_EVENT_NOT_FOUND:
   severity: error
+  emit_tier: lookup_api
   description: >-
     An event reference parses correctly but does not resolve to any event
     defined in the targeted scope.
@@ -354,6 +356,7 @@ E_DANGLING_TRANSITION:
 
 E_TYPE_MISMATCH:
   severity: error
+  emit_tier: partial_static_pipeline
   description: >-
     A guard, effect, or assignment uses an expression whose type does not
     match the expected category (arithmetic vs boolean).

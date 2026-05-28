@@ -312,6 +312,32 @@ MULTI_FILE_FIXTURES = [
         'a.fcstm',
         ['E_IMPORT_CIRCULAR'],
     ),
+    # I1 from PR #115 final review: E_IMPORT_MAPPING_INVALID was
+    # static-audit-only. Add runtime fixtures covering the most
+    # common reasons so ``assert_all_diags_match_schema`` exercises
+    # the enum-validation path and locks the refs payload.
+    (
+        # reason='source_not_found' — mapping points at a variable
+        # name the imported module does not declare.
+        'import-mapping-invalid-source-not-found',
+        {
+            'host.fcstm': '\n'.join([
+                'state Root {',
+                '    state Idle;',
+                '    [*] -> Idle;',
+                '    import "./worker.fcstm" as Worker {',
+                '        def nonexistent_var -> host_alias;',
+                '    }',
+                '}',
+            ]),
+            'worker.fcstm': '\n'.join([
+                'def int sensor = 0;',
+                'state Worker;',
+            ]),
+        },
+        'host.fcstm',
+        ['E_IMPORT_MAPPING_INVALID'],
+    ),
 ]
 
 

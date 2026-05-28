@@ -37,6 +37,10 @@ export const FCSTM_DIAGNOSTIC_CODES = {
     duringAspectInvalid: 'E_DURING_ASPECT_INVALID',
     pseudoNotLeaf: 'E_PSEUDO_NOT_LEAF',
     initialTransitionInvalid: 'E_INITIAL_TRANSITION_INVALID',
+    forcedTransitionExpansion: 'E_FORCED_TRANSITION_EXPANSION',
+    eventRefInvalid: 'E_EVENT_REF_INVALID',
+    eventNotFound: 'E_EVENT_NOT_FOUND',
+    typeMismatch: 'E_TYPE_MISMATCH',
     // -------- Import errors (E_IMPORT_*) --------
     importAliasConflict: 'E_IMPORT_ALIAS_CONFLICT',
     importNotFound: 'E_IMPORT_NOT_FOUND',
@@ -217,17 +221,32 @@ function addTransitionDiagnostics(
         if (transition.sourceKind === 'state' && transition.sourceStateName && !transition.sourceStateId) {
             const imported = findImportAlias(semantic, transition.ownerStatePath, transition.sourceStateName);
             if (!imported) {
+                // pyfcstm distinguishes forced-transition expansion failures
+                // (E_FORCED_TRANSITION_EXPANSION) from regular dangling
+                // transitions. Replicate that here so downstream LLM
+                // dispatch logic can tell whether the bad endpoint came
+                // from a ``!`` forced declaration.
+                const isForced = transition.forced;
                 diagnostics.push({
                     range: findIdentifierRange(document, transition.sourceStateName, transition.range),
-                    message: `State ${JSON.stringify(transition.sourceStateName)} cannot be resolved in this scope.`,
+                    message: isForced
+                        ? `Forced transition source state ${JSON.stringify(transition.sourceStateName)} cannot be resolved in this scope.`
+                        : `State ${JSON.stringify(transition.sourceStateName)} cannot be resolved in this scope.`,
                     severity: 'error',
                     source: 'fcstm',
-                    code: FCSTM_DIAGNOSTIC_CODES.missingState,
-                    data: {
-                        state_path: transition.sourceStateName,
-                        referenced_from: 'transition_source',
-                        reason: 'state_not_found',
-                    },
+                    code: isForced
+                        ? FCSTM_DIAGNOSTIC_CODES.forcedTransitionExpansion
+                        : FCSTM_DIAGNOSTIC_CODES.missingState,
+                    data: isForced
+                        ? {
+                            original_raw: transition.ast.text,
+                            reason: 'src_not_found',
+                        }
+                        : {
+                            state_path: transition.sourceStateName,
+                            referenced_from: 'transition_source',
+                            reason: 'state_not_found',
+                        },
                 });
             }
         }
@@ -235,17 +254,27 @@ function addTransitionDiagnostics(
         if (transition.targetKind === 'state' && transition.targetStateName && !transition.targetStateId) {
             const imported = findImportAlias(semantic, transition.ownerStatePath, transition.targetStateName);
             if (!imported) {
+                const isForced = transition.forced;
                 diagnostics.push({
                     range: findIdentifierRange(document, transition.targetStateName, transition.range, {preferLast: true}),
-                    message: `Transition target state ${JSON.stringify(transition.targetStateName)} cannot be resolved in this scope.`,
+                    message: isForced
+                        ? `Forced transition target state ${JSON.stringify(transition.targetStateName)} cannot be resolved in this scope.`
+                        : `Transition target state ${JSON.stringify(transition.targetStateName)} cannot be resolved in this scope.`,
                     severity: 'error',
                     source: 'fcstm',
-                    code: FCSTM_DIAGNOSTIC_CODES.danglingTransition,
-                    data: {
-                        src: transition.sourceStateName ?? null,
-                        tgt: transition.targetStateName,
-                        reason: 'tgt_not_found',
-                    },
+                    code: isForced
+                        ? FCSTM_DIAGNOSTIC_CODES.forcedTransitionExpansion
+                        : FCSTM_DIAGNOSTIC_CODES.danglingTransition,
+                    data: isForced
+                        ? {
+                            original_raw: transition.ast.text,
+                            reason: 'tgt_not_found',
+                        }
+                        : {
+                            src: transition.sourceStateName ?? null,
+                            tgt: transition.targetStateName,
+                            reason: 'tgt_not_found',
+                        },
                 });
             }
         }

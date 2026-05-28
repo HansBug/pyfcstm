@@ -1,0 +1,12 @@
+// Demo: E_FORCED_TRANSITION_EXPANSION — ``!Foo -> Bar`` references a state
+// that doesn't exist in the scope where the forced transition is declared.
+// Expected:
+//   * E_FORCED_TRANSITION_EXPANSION on the ``!Ghost -> Idle :: Panic;`` line.
+
+state Root {
+    state Idle;
+    state Active;
+    [*] -> Idle;
+    !Ghost -> Idle :: Panic;
+    Active -> Idle :: Stop;
+}

@@ -665,3 +665,116 @@ E_IMPORT_MAPPING_INVALID:
             def x = no_such_var;
         }
     }
+
+# ---------------------------------------------------------------------------
+# Layer 2 PR-A placeholder warnings — jsfcstm already emits these codes
+# under the new W_* naming; pyfcstm-side analyzers remain TBD in PR-B/PR-C.
+# The schema registry entry exists here so the loader recognises the codes
+# and downstream LLM dispatch logic can mirror the catalog without having
+# to special-case the placeholder set.
+# ---------------------------------------------------------------------------
+
+W_UNREACHABLE_STATE:
+  severity: warning
+  capability: pure_static
+  description: >-
+    A state is not reachable from the model's root entry path via any
+    sequence of normal or forced transitions.
+  refs:
+    state_path:
+      type: str
+      required: true
+      description: Dotted path of the unreachable state.
+  for_llm:
+    summary: >-
+      This state cannot be entered at runtime; the surrounding
+      transitions never lead to it. It is dead from the machine's
+      perspective.
+    recommended_actions:
+      - kind: add_inbound_transition
+        target: state
+        rationale: Add a transition that reaches the state if it was meant to be used.
+      - kind: remove_state
+        target: state
+        rationale: Remove the state if it was added speculatively.
+    do_not:
+      - "Do not add a self-loop to mask the unreachability."
+  example_dsl: |
+    state Root {
+        state Idle;
+        state Orphan;
+        [*] -> Idle;
+    }
+
+W_GUARD_CONST_FALSE:
+  severity: warning
+  capability: const_fold
+  description: >-
+    A transition's guard condition reduces to the literal ``false``
+    after constant folding, so the transition can never fire.
+  refs:
+    transition_span:
+      type: Span
+      required: false
+      description: Source span of the transition declaration.
+    folded_value:
+      type: bool
+      required: true
+      description: Constant-folded guard value (always ``false``).
+  for_llm:
+    summary: >-
+      The transition's guard is statically known to be ``false`` and the
+      transition is effectively dead code.
+    recommended_actions:
+      - kind: fix_guard
+        target: transition
+        rationale: Rewrite the guard so it can become true under some valid state.
+      - kind: remove_transition
+        target: transition
+        rationale: Remove the transition if it was placeholder / debug.
+    do_not:
+      - "Do not silently remove the guard — that would change the semantics."
+  example_dsl: |
+    state Root {
+        state A;
+        state B;
+        [*] -> A;
+        A -> B : if [false];
+    }
+
+W_UNUSED_EVENT:
+  severity: warning
+  capability: pure_static
+  description: >-
+    An ``event`` declaration is never referenced by any transition.
+  refs:
+    event_qualified_name:
+      type: str
+      required: true
+      description: Fully qualified event name (e.g. ``Root.SubA.Pause``).
+    scope:
+      type: str
+      required: true
+      description: Scope at which the event is declared.
+      enum: ['local', 'chain', 'absolute']
+  for_llm:
+    summary: >-
+      An event is declared but never triggers any transition, so it is
+      unused from the machine's perspective.
+    recommended_actions:
+      - kind: wire_event
+        target: transition
+        rationale: Add a transition that uses the event if it was meant to be emitted.
+      - kind: remove_event
+        target: event_declaration
+        rationale: Remove the event if it was added speculatively.
+    do_not:
+      - "Do not rename the event to dodge the warning — that just shifts the problem."
+  example_dsl: |
+    state Root {
+        event Unused;
+        state A;
+        state B;
+        [*] -> A;
+        A -> B :: SomethingElse;
+    }

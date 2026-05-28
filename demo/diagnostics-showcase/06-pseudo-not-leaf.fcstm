@@ -1,0 +1,12 @@
+// Demo: E_PSEUDO_NOT_LEAF — ``pseudo state`` declared with child states.
+// Expected:
+//   * E_PSEUDO_NOT_LEAF at the pseudo state name token.
+
+state Root {
+    pseudo state BadPseudo {
+        state Inner;
+        [*] -> Inner;
+    }
+    state Idle;
+    [*] -> Idle;
+}

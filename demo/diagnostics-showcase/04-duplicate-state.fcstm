@@ -1,0 +1,11 @@
+// Demo: E_DUPLICATE_STATE — same state name twice in the same composite scope.
+// Expected:
+//   * E_DUPLICATE_STATE at line 10 — second ``Idle``
+
+state Root {
+    state Idle;
+    state Active;
+    state Idle;
+    [*] -> Idle;
+    Active -> Idle :: Stop;
+}

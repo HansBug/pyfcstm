@@ -1,0 +1,14 @@
+// Demo: 3 Layer 2 W_* placeholder warnings that jsfcstm currently emits.
+// Expected (severity = warning, yellow squiggle):
+//   * W_UNREACHABLE_STATE on ``OrphanState`` (no inbound)
+//   * W_GUARD_CONST_FALSE on the ``Idle -> Active : if [false]`` transition
+//   * W_UNUSED_EVENT on the ``event Unused`` declaration
+
+state Root {
+    event Unused;
+    state Idle;
+    state Active;
+    state OrphanState;
+    [*] -> Idle;
+    Idle -> Active : if [false];
+}

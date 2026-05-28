@@ -1,0 +1,12 @@
+// Demo: E_DURING_ASPECT_INVALID — leaf state hosts ``>> during before/after``
+// aspect actions, which is illegal because a leaf has no descendants.
+// Expected:
+//   * E_DURING_ASPECT_INVALID on the ``>> during before`` line.
+
+def int counter = 0;
+state Root {
+    state Idle {
+        >> during before { counter = counter + 1; }
+    }
+    [*] -> Idle;
+}

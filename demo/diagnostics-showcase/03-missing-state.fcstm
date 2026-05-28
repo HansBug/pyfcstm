@@ -1,0 +1,13 @@
+// Demo: E_MISSING_STATE — transition source state not resolvable.
+//        E_DANGLING_TRANSITION — transition target state not resolvable.
+// Expected diagnostics:
+//   * E_MISSING_STATE at line 11 — source ``GhostState`` not in scope
+//   * E_DANGLING_TRANSITION at line 12 — target ``NoSuchTarget`` not in scope
+
+state Root {
+    state Idle;
+    state Active;
+    [*] -> Idle;
+    GhostState -> Idle :: Wake;
+    Active -> NoSuchTarget :: Halt;
+}

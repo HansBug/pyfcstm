@@ -1,0 +1,14 @@
+// Demo: E_DUPLICATE_FUNCTION_NAME — two named actions on the same state share
+// the same name within the same stage.
+// Expected:
+//   * E_DUPLICATE_FUNCTION_NAME on the second ``Initialize`` enter action.
+
+state Root {
+    state System {
+        enter Initialize { /* first */ }
+        enter Initialize { /* duplicate */ }
+        state Idle;
+        [*] -> Idle;
+    }
+    [*] -> System;
+}

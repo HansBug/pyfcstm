@@ -1,0 +1,16 @@
+// Demo: E_UNDEFINED_VAR — undefined variables in guards / effects.
+// Expected diagnostics from jsfcstm (visible in VSCode Problems panel):
+//   * E_UNDEFINED_VAR at line 9 column 28 — unknown_var
+//   * E_UNDEFINED_VAR at line 10 column 22 — also_unknown
+//
+// Each diagnostic should match what pyfcstm CLI / inspect_model emit
+// for the same DSL.
+
+def int counter = 0;
+state Root {
+    state Idle;
+    state Active;
+    [*] -> Idle;
+    Idle -> Active : if [unknown_var > 0];
+    Active -> Idle : if [counter > 5] effect { also_unknown = counter; };
+}

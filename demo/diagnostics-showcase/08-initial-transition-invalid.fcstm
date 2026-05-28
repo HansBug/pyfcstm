@@ -1,0 +1,14 @@
+// Demo: E_INITIAL_TRANSITION_INVALID — a composite state has no ``[*] -> child``.
+// Expected:
+//   * E_INITIAL_TRANSITION_INVALID on ``InnerScope`` (composite with no initial).
+
+state Root {
+    state Outer {
+        state InnerScope {
+            state Leaf;
+            // missing: [*] -> Leaf;
+        }
+        [*] -> InnerScope;
+    }
+    [*] -> Outer;
+}

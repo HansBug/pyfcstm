@@ -75,6 +75,28 @@ function collectReachableStateIds(semantic: FcstmSemanticDocument): Set<string> 
         worklist.push(semantic.machine.rootStateId);
     }
 
+    // Index forced-transition expansions by their concrete per-descendant source.
+    // A forced transition such as `!* -> X :: E` is expanded in the semantics layer
+    // into one synthetic edge per affected descendant: any state in that index
+    // contributes an outgoing edge to the expanded target (issue #99).
+    const forcedExpandedBySource = new Map<string, Set<string>>();
+    for (const transition of semantic.transitions) {
+        if (!transition.forced) {
+            continue;
+        }
+        for (const expanded of transition.expandedTransitions) {
+            if (!expanded.targetStateId) {
+                continue;
+            }
+            let targets = forcedExpandedBySource.get(expanded.sourceStateId);
+            if (!targets) {
+                targets = new Set<string>();
+                forcedExpandedBySource.set(expanded.sourceStateId, targets);
+            }
+            targets.add(expanded.targetStateId);
+        }
+    }
+
     while (worklist.length > 0) {
         const stateId = worklist.pop() as string;
         const outgoing = semantic.transitions.filter(item => (
@@ -86,6 +108,16 @@ function collectReachableStateIds(semantic: FcstmSemanticDocument): Set<string> 
             if (transition.targetStateId && !reachable.has(transition.targetStateId)) {
                 reachable.add(transition.targetStateId);
                 worklist.push(transition.targetStateId);
+            }
+        }
+
+        const forcedTargets = forcedExpandedBySource.get(stateId);
+        if (forcedTargets) {
+            for (const targetId of forcedTargets) {
+                if (!reachable.has(targetId)) {
+                    reachable.add(targetId);
+                    worklist.push(targetId);
+                }
             }
         }
     }

@@ -1,0 +1,8 @@
+state Root {
+    event Err;
+    event UnusedOne;
+    state Idle;
+    state ErrorState;
+    [*] -> Idle;
+    !* -> ErrorState : Err;
+}

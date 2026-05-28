@@ -488,21 +488,24 @@ describe('diagnostics showcase: jsfcstm collectDocumentDiagnostics parity', () =
                 }
             }
 
-            // 6. E_IMPORT_* required-field payload check. The schema in
-            //    ``codes.yaml`` declares mandatory ``refs.*`` fields for
-            //    every import diagnostic — pyfcstm fills them, jsfcstm
-            //    used to omit them entirely (PR #115 R2.C3). This
-            //    assertion locks the payload parity in place.
-            const IMPORT_REQUIRED_FIELDS: Record<string, string[]> = {
-                'E_IMPORT_NOT_FOUND': ['source_path', 'alias', 'host_state_path', 'reason'],
-                'E_IMPORT_CIRCULAR': ['source_path', 'alias', 'host_state_path', 'cycle_chain'],
-                'E_IMPORT_ALIAS_CONFLICT': ['alias', 'host_state_path', 'conflicting_kind'],
-                'E_IMPORT_DUPLICATE_MAPPING': ['alias', 'mapping_kind', 'duplicated_name', 'direction', 'host_state_path'],
-                'E_IMPORT_MAPPING_INVALID': ['alias', 'mapping_kind', 'host_state_path', 'reason'],
-            };
+            // 6. Schema-driven required-field payload check. M2 from
+            //    PR #115 final review: previously this loop hard-coded
+            //    only the E_IMPORT_* required field list. Switch to
+            //    consulting ``loadCodesRegistry()`` so every catalogued
+            //    code is validated against its declared schema — the
+            //    mirror of pyfcstm's ``_schema_check.py`` runtime
+            //    helper. Any emit-site that fails to fill a required
+            //    field now surfaces in the mocha run.
+            const registry = packageModule.loadCodesRegistry();
             for (const d of diagnostics) {
-                const required = IMPORT_REQUIRED_FIELDS[d.code];
-                if (!required) {
+                const spec = registry[d.code];
+                if (!spec || !spec.refs) {
+                    continue;
+                }
+                const required = Object.entries(spec.refs)
+                    .filter(entry => entry[1].required === true)
+                    .map(entry => entry[0]);
+                if (required.length === 0) {
                     continue;
                 }
                 const data = d.data as Record<string, unknown> | undefined;
@@ -513,6 +516,19 @@ describe('diagnostics showcase: jsfcstm collectDocumentDiagnostics parity', () =
                             && data[field] !== null,
                         `${fixture.name}: ${d.code} missing required data field "${field}", got data=${JSON.stringify(data)}`,
                     );
+                }
+                // M2 second half: validate enum-typed fields against
+                // their declared enum.
+                if (data !== undefined) {
+                    for (const [field, fieldSpec] of Object.entries(spec.refs)) {
+                        if (!fieldSpec.enum || data[field] === undefined) {
+                            continue;
+                        }
+                        assert.ok(
+                            fieldSpec.enum.includes(data[field] as string),
+                            `${fixture.name}: ${d.code} data.${field}=${JSON.stringify(data[field])} not in declared enum [${fieldSpec.enum.join(', ')}]`,
+                        );
+                    }
                 }
             }
         });

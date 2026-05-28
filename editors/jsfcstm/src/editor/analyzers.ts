@@ -220,6 +220,9 @@ function addUnreachableStateDiagnostics(
             severity: 'warning',
             source: 'fcstm',
             code: FCSTM_DIAGNOSTIC_CODES.unreachableState,
+            data: {
+                state_path: state.identity.qualifiedName,
+            },
         });
     }
 }
@@ -266,7 +269,7 @@ function addTransitionDiagnostics(
                         : {
                             state_path: transition.sourceStateName,
                             referenced_from: 'transition_source',
-                            reason: 'state_not_found',
+                            reason: 'not_found',
                         },
                 });
             }
@@ -315,6 +318,9 @@ function addTransitionDiagnostics(
                 severity: 'warning',
                 source: 'fcstm',
                 code: FCSTM_DIAGNOSTIC_CODES.guardConstFalse,
+                data: {
+                    folded_value: false,
+                },
                 relatedInformation: sourceState
                     ? [{
                         location: {
@@ -351,6 +357,14 @@ function addUnusedEventDiagnostics(
             severity: 'warning',
             source: 'fcstm',
             code: FCSTM_DIAGNOSTIC_CODES.unusedEvent,
+            data: {
+                event_qualified_name: event.identity.qualifiedName,
+                // ``event Foo;`` declarations are always source-local
+                // (they bind into the enclosing state's namespace).
+                // Re-scoping happens at transition-trigger sites (``::``
+                // / ``:`` / ``/``), not at declaration sites.
+                scope: 'local',
+            },
         });
     }
 }
@@ -366,12 +380,21 @@ function addActionDiagnostics(
         }
 
         const refName = action.ref.rawPath.split('.').at(-1) || action.ref.rawPath;
+        // M2: fill schema-required ``ref_path`` + ``reason``. The
+        // jsfcstm resolver does not yet distinguish state-not-found
+        // vs named-function-not-found; emit the latter as a
+        // conservative default, matching the common case where the
+        // path resolves but the action name doesn't.
         diagnostics.push({
             range: findIdentifierRange(document, refName, action.ref.range, {preferLast: true}),
             message: `Action reference ${JSON.stringify(action.ref.rawPath)} cannot be resolved.`,
             severity: 'error',
             source: 'fcstm',
             code: FCSTM_DIAGNOSTIC_CODES.namedFunctionRefNotFound,
+            data: {
+                ref_path: action.ref.rawPath,
+                reason: 'named_function_not_found',
+            },
         });
     }
 }
@@ -418,13 +441,19 @@ function pushIdentifierDiagnostic(
     severity: 'error' | 'warning' | 'info' = 'error',
     data?: Record<string, unknown>
 ): void {
+    // M2 (PR #115 final review): inject ``var_name`` from the
+    // identifier itself so every E_UNDEFINED_VAR / E_DUPLICATE_VAR
+    // emit carries the schema-required field without each caller
+    // having to remember it. Callers can still override by passing
+    // ``var_name`` in their ``data``.
+    const mergedData: Record<string, unknown> = {var_name: identifier.name, ...(data ?? {})};
     diagnostics.push({
         range: identifier.range,
         message,
         severity,
         source: 'fcstm',
         code,
-        ...(data ? {data} : {}),
+        data: mergedData,
     });
 }
 
@@ -569,6 +598,9 @@ function addVariableDefinitionDiagnostics(
             severity: 'error',
             source: 'fcstm',
             code: FCSTM_DIAGNOSTIC_CODES.duplicateVar,
+            data: {
+                var_name: variable.name,
+            },
             relatedInformation: [{
                 location: {
                     uri: toFileUri(document),
@@ -600,7 +632,8 @@ function addGuardDiagnostics(
                 identifier,
                 `Variable ${JSON.stringify(identifier.name)} is not defined. Add a \`def\` declaration or fix the name.`,
                 FCSTM_DIAGNOSTIC_CODES.undefinedVar,
-                'error'
+                'error',
+                {referenced_in: 'guard'}
             );
         }
     }

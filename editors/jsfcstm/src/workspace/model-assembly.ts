@@ -1002,6 +1002,14 @@ function assembleProgramImports(
         }
 
         node.substates = [...importedSubstates, ...node.substates];
+        // I-c from PR #115 review: keep this assignment in lockstep with
+        // ``ast/builder.ts``. By the time we reach this point we have
+        // already merged the import-resolved substates into
+        // ``node.substates``, so ``substates.length > 0`` covers both
+        // the explicit-substate and imported-substate cases — there is
+        // no separate ``imports`` array to check here. The AST builder
+        // computes ``composite`` differently (``substates ∪ imports >
+        // 0``) because it runs BEFORE imports have been resolved.
         node.composite = node.substates.length > 0;
     };
 

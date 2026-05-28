@@ -154,6 +154,40 @@ const SHOWCASE: ShowcaseFixture[] = [
         mustNotFire: ['E_INITIAL_TRANSITION_INVALID'],
     },
     {
+        // I-f scenario (a): leaf state with a *local* ``during after``
+        // (no ``>>``). pyfcstm flags this; jsfcstm now does too.
+        name: '07a-during-aspect-leaf-local-aspect',
+        dsl: [
+            'def int counter = 0;',
+            'state Root {',
+            '    state Idle {',
+            '        during after { counter = counter + 1; }',
+            '    }',
+            '    [*] -> Idle;',
+            '}',
+        ].join('\n'),
+        mustFire: ['E_DURING_ASPECT_INVALID'],
+        mustNotFire: ['E_INITIAL_TRANSITION_INVALID'],
+    },
+    {
+        // I-f scenario (b): composite state with a *bare* ``during`` (no
+        // aspect). Composite during must pick before/after — pyfcstm
+        // already enforces this and jsfcstm now matches.
+        name: '07b-during-aspect-composite-bare',
+        dsl: [
+            'def int counter = 0;',
+            'state Root {',
+            '    state Outer {',
+            '        during { counter = counter + 1; }',
+            '        state Inner;',
+            '        [*] -> Inner;',
+            '    }',
+            '    [*] -> Outer;',
+            '}',
+        ].join('\n'),
+        mustFire: ['E_DURING_ASPECT_INVALID'],
+    },
+    {
         name: '08-initial-transition-invalid',
         dsl: [
             'state Root {',
@@ -415,6 +449,71 @@ describe('diagnostics showcase: jsfcstm collectDocumentDiagnostics parity', () =
                     typeof d.code === 'string' && d.code.length > 0,
                     `${fixture.name} produced a diagnostic without a code: ${JSON.stringify(d)}`,
                 );
+            }
+
+            // 5. Schema-enum payload checks. These guard against
+            //    schema↔emit drift — see ``pyfcstm/diagnostics/codes.yaml``
+            //    for the authoritative enums on each code.
+            //    Extend this block when adding new codes whose payload
+            //    has an enumerated field.
+            const VALID_INITIAL_TRANSITION_REASONS = new Set([
+                'missing_entry',
+                'target_not_child',
+            ]);
+            const VALID_REFERENCED_IN = new Set([
+                'guard',
+                'effect',
+                'enter',
+                'during',
+                'exit',
+                'during_aspect',
+                'init',
+            ]);
+            for (const d of diagnostics) {
+                if (d.code === 'E_INITIAL_TRANSITION_INVALID') {
+                    const reason = (d.data as { reason?: string } | undefined)?.reason;
+                    assert.ok(
+                        reason !== undefined && VALID_INITIAL_TRANSITION_REASONS.has(reason),
+                        `${fixture.name}: E_INITIAL_TRANSITION_INVALID emitted with reason=${JSON.stringify(reason)}, expected one of [${[...VALID_INITIAL_TRANSITION_REASONS].join(', ')}]`,
+                    );
+                }
+                if (d.code === 'E_UNDEFINED_VAR') {
+                    const ri = (d.data as { referenced_in?: string } | undefined)?.referenced_in;
+                    if (ri !== undefined) {
+                        assert.ok(
+                            VALID_REFERENCED_IN.has(ri),
+                            `${fixture.name}: E_UNDEFINED_VAR emitted with referenced_in=${JSON.stringify(ri)}, expected one of [${[...VALID_REFERENCED_IN].join(', ')}]`,
+                        );
+                    }
+                }
+            }
+
+            // 6. E_IMPORT_* required-field payload check. The schema in
+            //    ``codes.yaml`` declares mandatory ``refs.*`` fields for
+            //    every import diagnostic — pyfcstm fills them, jsfcstm
+            //    used to omit them entirely (PR #115 R2.C3). This
+            //    assertion locks the payload parity in place.
+            const IMPORT_REQUIRED_FIELDS: Record<string, string[]> = {
+                'E_IMPORT_NOT_FOUND': ['source_path', 'alias', 'host_state_path', 'reason'],
+                'E_IMPORT_CIRCULAR': ['source_path', 'alias', 'host_state_path', 'cycle_chain'],
+                'E_IMPORT_ALIAS_CONFLICT': ['alias', 'host_state_path', 'conflicting_kind'],
+                'E_IMPORT_DUPLICATE_MAPPING': ['alias', 'mapping_kind', 'duplicated_name', 'direction', 'host_state_path'],
+                'E_IMPORT_MAPPING_INVALID': ['alias', 'mapping_kind', 'host_state_path', 'reason'],
+            };
+            for (const d of diagnostics) {
+                const required = IMPORT_REQUIRED_FIELDS[d.code];
+                if (!required) {
+                    continue;
+                }
+                const data = d.data as Record<string, unknown> | undefined;
+                for (const field of required) {
+                    assert.ok(
+                        data !== undefined
+                            && data[field] !== undefined
+                            && data[field] !== null,
+                        `${fixture.name}: ${d.code} missing required data field "${field}", got data=${JSON.stringify(data)}`,
+                    );
+                }
             }
         });
     }

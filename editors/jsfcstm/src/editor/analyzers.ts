@@ -161,9 +161,11 @@ function addImportMappingDiagnostics(
     for (const importItem of semantic.imports) {
         const seen = new Map<string, FcstmAstImportMapping>();
         for (const mapping of importItem.ast.mappings) {
-            const key = mapping.kind === 'importDefMapping'
-                ? `${mapping.kind}:${mapping.selector.text}->${mapping.targetTemplate}`
-                : `${mapping.kind}:${mapping.sourceEvent.text}->${mapping.targetEvent.text}`;
+            const isVariable = mapping.kind === 'importDefMapping';
+            const mappingKind: 'variable' | 'event' = isVariable ? 'variable' : 'event';
+            const sourceName = isVariable ? mapping.selector.text : mapping.sourceEvent.text;
+            const targetName = isVariable ? mapping.targetTemplate : mapping.targetEvent.text;
+            const key = `${mapping.kind}:${sourceName}->${targetName}`;
             const firstMapping = seen.get(key);
             if (firstMapping) {
                 diagnostics.push({
@@ -175,6 +177,17 @@ function addImportMappingDiagnostics(
                     severity: 'error',
                     source: 'fcstm',
                     code: FCSTM_DIAGNOSTIC_CODES.importDuplicateMapping,
+                    data: {
+                        alias: importItem.alias,
+                        mapping_kind: mappingKind,
+                        // The dedupe key matches when both source AND target
+                        // are identical, so either ``direction`` is technically
+                        // correct. Pick ``source_duplicated`` as the canonical
+                        // form to match pyfcstm's ordering of these checks.
+                        duplicated_name: sourceName,
+                        direction: 'source_duplicated',
+                        host_state_path: importItem.ownerStatePath.join('.'),
+                    },
                     relatedInformation: [{
                         location: {
                             uri: toFileUri(document),
@@ -421,11 +434,26 @@ function pushIdentifierDiagnostic(
  * block-local temporary variables after their first assignment, matching the
  * pyfcstm runtime rule.
  */
+/**
+ * Schema enum for ``E_UNDEFINED_VAR.refs.referenced_in`` (see
+ * ``pyfcstm/diagnostics/codes.yaml``). Threaded from each call site
+ * to keep the emitted payload schema-conformant.
+ */
+export type ReferencedIn =
+    | 'guard'
+    | 'effect'
+    | 'enter'
+    | 'during'
+    | 'exit'
+    | 'during_aspect'
+    | 'init';
+
 function analyzeOperationStatements(
     statements: FcstmAstOperationStatement[] | undefined,
     globals: Set<string>,
     assignedBefore: Set<string>,
-    diagnostics: FcstmDiagnostic[]
+    diagnostics: FcstmDiagnostic[],
+    referencedIn: ReferencedIn
 ): Set<string> {
     const assigned = new Set(assignedBefore);
     if (!statements) {
@@ -451,7 +479,7 @@ function analyzeOperationStatements(
                     `Variable ${JSON.stringify(identifier.name)} is read before it is assigned in this block.`,
                     FCSTM_DIAGNOSTIC_CODES.undefinedVar,
                     'error',
-                    {is_temporary: true, referenced_in: 'operation_block'}
+                    {is_temporary: true, referenced_in: referencedIn}
                 );
             }
             if (assignment.targetName) {
@@ -474,7 +502,7 @@ function analyzeOperationStatements(
                             `Variable ${JSON.stringify(identifier.name)} is read before it is assigned in this block.`,
                             FCSTM_DIAGNOSTIC_CODES.undefinedVar,
                             'error',
-                            {is_temporary: true, referenced_in: 'operation_block'}
+                            {is_temporary: true, referenced_in: referencedIn}
                         );
                     }
                 }
@@ -482,7 +510,8 @@ function analyzeOperationStatements(
                     branch.statements,
                     globals,
                     assigned,
-                    diagnostics
+                    diagnostics,
+                    referencedIn
                 );
                 branchAssigned.push(branchResult);
             }
@@ -509,12 +538,13 @@ function analyzeOperationStatements(
 function analyzeOperationBlock(
     block: FcstmAstOperationBlock | undefined,
     globals: Set<string>,
-    diagnostics: FcstmDiagnostic[]
+    diagnostics: FcstmDiagnostic[],
+    referencedIn: ReferencedIn
 ): void {
     if (!block) {
         return;
     }
-    analyzeOperationStatements(block.statements, globals, new Set(), diagnostics);
+    analyzeOperationStatements(block.statements, globals, new Set(), diagnostics, referencedIn);
 }
 
 function collectTopLevelGlobals(semantic: FcstmSemanticDocument): Set<string> {
@@ -586,7 +616,7 @@ function addEffectBlockDiagnostics(
             effect?: FcstmAstOperationBlock;
         };
         if (ast.effect) {
-            analyzeOperationBlock(ast.effect, globals, diagnostics);
+            analyzeOperationBlock(ast.effect, globals, diagnostics, 'effect');
         }
     }
 }
@@ -602,7 +632,11 @@ function addActionBlockDiagnostics(
         }
         const ast = semanticAction.ast as FcstmAstAction;
         const block = ast.operationBlock || ast.operation_block;
-        analyzeOperationBlock(block, globals, diagnostics);
+        // Map AST stage + aspect onto the schema enum:
+        //   ``>> during before/after`` → ``during_aspect``
+        //   bare ``enter|during|exit`` → same name
+        const referencedIn: ReferencedIn = ast.aspect ? 'during_aspect' : ast.stage;
+        analyzeOperationBlock(block, globals, diagnostics, referencedIn);
     }
 }
 
@@ -734,14 +768,18 @@ function addDuringAspectInvalidDiagnostics(
         stateById.set(state.identity.id, state);
     }
     for (const action of semantic.actions) {
-        if (!action.isGlobalAspect) {
-            continue;
-        }
         const owner = stateById.get(action.ownerStateId);
         if (!owner) {
             continue;
         }
-        if (!owner.composite) {
+        if (action.stage !== 'during') {
+            continue;
+        }
+
+        // Scenario (c): global ``>> during before/after`` aspect on a
+        // leaf state — there is no descendant for the aspect to fan
+        // into.
+        if (action.isGlobalAspect && !owner.composite) {
             diagnostics.push({
                 range: action.range,
                 message: `Aspect '>> during ${action.aspect ?? 'before'}' cannot appear in leaf state ${JSON.stringify(owner.name)}; aspect actions need at least one descendant leaf.`,
@@ -752,6 +790,56 @@ function addDuringAspectInvalidDiagnostics(
                     state_path: action.ownerStatePath.join('.'),
                     state_kind: 'leaf',
                     aspect: action.aspect ?? 'before',
+                },
+            });
+            continue;
+        }
+
+        // I-f scenarios (a) and (b): non-global ``during`` action.
+        if (action.isGlobalAspect) {
+            continue;
+        }
+
+        // I3 lockdown (PR #116 re-review): ``aspect`` may be
+        // ``undefined`` from the live AST or ``null`` after a JSON
+        // round-trip / cross-worker serialization. Treat any value
+        // that is not the literal string ``'before'`` / ``'after'``
+        // as the bare-during case to keep both ends agreeing.
+        const aspectIsBeforeAfter = action.aspect === 'before' || action.aspect === 'after';
+
+        // Scenario (a): leaf state with a local ``during before`` /
+        // ``during after`` — the aspect-qualified during only makes
+        // sense on a composite (it gates on entry/exit of the
+        // composite).
+        if (!owner.composite && aspectIsBeforeAfter) {
+            diagnostics.push({
+                range: action.range,
+                message: `For leaf state ${JSON.stringify(owner.name)}, during cannot assign aspect ${JSON.stringify(action.aspect)}.`,
+                severity: 'error',
+                source: 'fcstm',
+                code: FCSTM_DIAGNOSTIC_CODES.duringAspectInvalid,
+                data: {
+                    state_path: action.ownerStatePath.join('.'),
+                    state_kind: 'leaf',
+                    aspect: action.aspect,
+                },
+            });
+            continue;
+        }
+
+        // Scenario (b): composite state with a bare ``during`` (no
+        // aspect token) — composites must pick ``before`` or ``after``.
+        if (owner.composite && !aspectIsBeforeAfter) {
+            diagnostics.push({
+                range: action.range,
+                message: `For composite state ${JSON.stringify(owner.name)}, during must assign aspect to either 'before' or 'after'.`,
+                severity: 'error',
+                source: 'fcstm',
+                code: FCSTM_DIAGNOSTIC_CODES.duringAspectInvalid,
+                data: {
+                    state_path: action.ownerStatePath.join('.'),
+                    state_kind: 'composite',
+                    aspect: null,
                 },
             });
         }
@@ -814,7 +902,7 @@ function addInitialTransitionInvalidDiagnostics(
                 code: FCSTM_DIAGNOSTIC_CODES.initialTransitionInvalid,
                 data: {
                     composite_path: state.identity.qualifiedName,
-                    reason: 'no_initial_transition',
+                    reason: 'missing_entry',
                 },
             });
         }

@@ -187,10 +187,17 @@ def _assemble_program(
     sink: DiagnosticSink,
 ) -> None:
     if program.root_state is None:
+        # Top-level entry program has no root state. The user-fed
+        # file is treated as a degenerate import for diagnostic
+        # purposes — there is no enclosing alias/host_state_path.
+        entry_source = import_stack[0] if import_stack else '<entry>'
         _emit_import_diag(
             sink,
             'E_IMPORT_NOT_FOUND',
             "State machine DSL program does not contain a root state.",
+            source_path=entry_source,
+            alias='',
+            host_state_path='',
             reason='no_root_state',
         )
         # In collect mode we cannot proceed without a root state — the
@@ -284,17 +291,23 @@ def _assemble_state(
             sink=sink,
         )
 
-        # The mapping helpers (def / event) keep the legacy always-raise
-        # shape — they have many internal failure modes that we don't
-        # want to thread sink through individually. Instead, wrap the
-        # whole merge pipeline once: in strict mode (collect=False) the
-        # error propagates unchanged; in collect mode, we forward the
-        # diagnostic to the sink and ``continue`` past this import.
+        # The mapping helpers (def / event) are sink-aware: in strict
+        # mode (``DiagnosticSink(collect=False)``) the first emit raises
+        # :class:`ModelValidationError`; in collect mode the diagnostics
+        # accumulate on the sink and each helper continues past
+        # individual errors via explicit ``return``/``continue`` paths
+        # (see ``_resolve_import_event_target_path`` and
+        # ``_ensure_state_path_exists`` for the sentinel-return form).
+        # Only the ``ModelValidationError`` branch remains below as a
+        # belt-and-braces guard; the previous AttributeError /
+        # TypeError / KeyError / IndexError safety net was removed by
+        # I1 (PR #116 re-review) once every helper became sink-aware.
         try:
             _apply_import_def_mappings(
                 program=imported_program,
                 import_item=import_item,
                 owner_state_path=current_state_path,
+                sink=sink,
             )
             _merge_imported_definitions(
                 host_program=host_program,
@@ -302,6 +315,7 @@ def _assemble_state(
                 host_explicit_def_names=host_explicit_def_names,
                 import_item=import_item,
                 owner_state_path=current_state_path,
+                sink=sink,
             )
 
             imported_root = imported_program.root_state
@@ -309,6 +323,7 @@ def _assemble_state(
                 program=imported_program,
                 import_item=import_item,
                 owner_state_path=current_state_path,
+                sink=sink,
             )
             imported_root.name = import_item.alias
             imported_root.extra_name = (
@@ -320,6 +335,7 @@ def _assemble_state(
                 import_item=import_item,
                 owner_state_path=current_state_path,
                 resolved_event_mappings=event_mappings,
+                sink=sink,
             )
             _rewrite_absolute_paths_for_imported_root(
                 node=imported_root,
@@ -328,13 +344,28 @@ def _assemble_state(
             )
             imported_substates.append(imported_root)
         except ModelValidationError as err:
+            # Strict mode: should not reach here normally because the
+            # helpers raise straight through; keep the re-raise as a
+            # belt-and-braces guard against future helper changes.
             if not sink.collect:
                 raise
+            # Collect mode: forward any straggler diagnostics that
+            # somehow escaped the helper's own sink emit (shouldn't
+            # happen post C-E, but harmless if it does) and skip this
+            # import to avoid further corruption.
             for diag in err.diagnostics:
                 sink.emit(diag)
-            # Skip this import — the partial merge state would corrupt
-            # the host program.
             continue
+        # I1 (PR #116 re-review): the structural safety net previously
+        # caught AttributeError/KeyError/TypeError/IndexError to absorb
+        # follow-up exceptions from helpers that had emitted a
+        # diagnostic but kept operating on inconsistent state. Each
+        # such helper now returns an explicit safe fallback after
+        # emit (see ``_resolve_import_event_target_path`` /
+        # ``_ensure_state_path_exists``) so the safety net is removed
+        # — letting any remaining structural exception escape, where
+        # it will surface as a real bug instead of being silently
+        # swallowed.
 
     node.imports = []
 
@@ -504,6 +535,7 @@ def _resolve_import_event_mappings(
     program: dsl_nodes.StateMachineDSLProgram,
     import_item: dsl_nodes.ImportStatement,
     owner_state_path: Tuple[str, ...],
+    sink: DiagnosticSink,
 ) -> Dict[Tuple[str, ...], _ResolvedImportEventMapping]:
     event_mappings = [
         item
@@ -515,7 +547,7 @@ def _resolve_import_event_mappings(
 
     for mapping in event_mappings:
         if not mapping.source_event.is_absolute:
-            _emit_import_diag(None, 
+            _emit_import_diag(sink, 
                 'E_IMPORT_MAPPING_INVALID',
                 f"Invalid event mapping in import {import_item.alias!r} under state "
                 f"{'.'.join(owner_state_path)!r}: source event {mapping.source_event} "
@@ -535,9 +567,11 @@ def _resolve_import_event_mappings(
         ) = _resolve_import_event_target_path(
             target_event=mapping.target_event,
             owner_state_path=owner_state_path,
+            alias=import_item.alias,
+            sink=sink,
         )
         if source_path in resolved:
-            _emit_import_diag(None, 
+            _emit_import_diag(sink, 
                 'E_IMPORT_DUPLICATE_MAPPING',
                 f"Event mapping conflict: source event "
                 f"{_format_event_path(source_path, is_absolute=True)!r} appears "
@@ -550,7 +584,7 @@ def _resolve_import_event_mappings(
             )
         target_key = (*target_state_path, target_event_name)
         if target_key in target_to_source and target_to_source[target_key] != source_path:
-            _emit_import_diag(None, 
+            _emit_import_diag(sink, 
                 'E_IMPORT_DUPLICATE_MAPPING',
                 f"Event mapping conflict: import {import_item.alias!r} maps multiple "
                 f"module events to the same host event "
@@ -577,17 +611,28 @@ def _resolve_import_event_mappings(
 def _resolve_import_event_target_path(
     target_event: dsl_nodes.ChainID,
     owner_state_path: Tuple[str, ...],
+    alias: str,
+    sink: DiagnosticSink,
 ) -> Tuple[Tuple[str, ...], str, Tuple[str, ...]]:
+    # I1 explicit fallback (PR #116 re-review): if the target path is
+    # empty we emit the schema diagnostic and return a safe sentinel
+    # tuple instead of fall-throughing to ``path[-1]`` (which would
+    # ``IndexError`` and rely on the outer safety net to swallow it).
+    # The sentinel ``('', '', ())`` is intentionally unparseable as a
+    # real event, so downstream consumers can detect-and-skip without
+    # confusing it with valid state machine data.
     if target_event.is_absolute:
         if len(target_event.path) < 1:
-            _emit_import_diag(None, 
+            _emit_import_diag(sink,
                 'E_IMPORT_MAPPING_INVALID',
                 "Invalid empty absolute target event path.",
+                alias=alias,
                 mapping_kind='event',
                 host_state_path='.'.join(owner_state_path),
                 reason='empty_path',
                 detail='absolute',
             )
+            return ((), '', ())
         target_state_path = tuple((owner_state_path[0], *target_event.path[:-1]))
         return (
             target_state_path,
@@ -596,14 +641,16 @@ def _resolve_import_event_target_path(
         )
     else:
         if len(target_event.path) < 1:
-            _emit_import_diag(None, 
+            _emit_import_diag(sink,
                 'E_IMPORT_MAPPING_INVALID',
                 "Invalid empty relative target event path.",
+                alias=alias,
                 mapping_kind='event',
                 host_state_path='.'.join(owner_state_path),
                 reason='empty_path',
                 detail='relative',
             )
+            return ((), '', ())
         target_state_path = tuple((*owner_state_path, *target_event.path[:-1]))
         target_event_name = target_event.path[-1]
         target_event_id_path = tuple((*owner_state_path[1:], *target_event.path))
@@ -616,6 +663,7 @@ def _apply_import_event_mappings(
     import_item: dsl_nodes.ImportStatement,
     owner_state_path: Tuple[str, ...],
     resolved_event_mappings: Dict[Tuple[str, ...], _ResolvedImportEventMapping],
+    sink: DiagnosticSink,
 ) -> set:
     source_event_names = {}
     _collect_event_extra_names(program.root_state, current_path=(), output=source_event_names)
@@ -636,10 +684,13 @@ def _apply_import_event_mappings(
         registrations=pending_registrations,
         import_item=import_item,
         owner_state_path=owner_state_path,
+        sink=sink,
     )
     _synthesize_host_events_for_import(
         host_root=host_program.root_state,
         registrations=pending_registrations,
+        owner_state_path=owner_state_path,
+        sink=sink,
     )
     return {
         tuple(item.target_state_path[1:]) + (item.target_event_name,)
@@ -770,6 +821,7 @@ def _validate_pending_event_registrations(
     registrations: List[_PendingEventRegistration],
     import_item: dsl_nodes.ImportStatement,
     owner_state_path: Tuple[str, ...],
+    sink: DiagnosticSink,
 ) -> None:
     by_target = {}
     for item in registrations:
@@ -781,7 +833,7 @@ def _validate_pending_event_registrations(
         existing = by_target[target_key]
         if item.mapping_extra_name is not None and existing.mapping_extra_name is not None:
             if item.mapping_extra_name != existing.mapping_extra_name:
-                _emit_import_diag(None, 
+                _emit_import_diag(sink, 
                     'E_IMPORT_DUPLICATE_MAPPING',
                     f"Event mapping conflict: host event "
                     f"{_format_event_path(target_key, is_absolute=True)!r} "
@@ -800,6 +852,8 @@ def _validate_pending_event_registrations(
 def _synthesize_host_events_for_import(
     host_root: dsl_nodes.StateDefinition,
     registrations: List[_PendingEventRegistration],
+    owner_state_path: Tuple[str, ...],
+    sink: DiagnosticSink,
 ) -> None:
     if not registrations:
         return
@@ -808,6 +862,9 @@ def _synthesize_host_events_for_import(
         owner_state = _ensure_state_path_exists(
             root=host_root,
             state_path=item.target_state_path,
+            alias=item.import_alias,
+            owner_state_path=owner_state_path,
+            sink=sink,
         )
         event_name = item.target_event_name
         existing_event = None
@@ -831,17 +888,19 @@ def _synthesize_host_events_for_import(
                 and existing_event.extra_name is not None
                 and existing_event.extra_name != item.mapping_extra_name
             ):
-                _emit_import_diag(None, 
+                _emit_import_diag(sink,
                     'E_IMPORT_DUPLICATE_MAPPING',
                     f"Event mapping conflict: host event "
                     f"{_format_event_path((*item.target_state_path, event_name), is_absolute=True)!r} "
                     f"receives conflicting display names "
                     f"{existing_event.extra_name!r} and {item.mapping_extra_name!r}.",
+                    alias=item.import_alias,
                     mapping_kind='event',
                     duplicated_name=_format_event_path(
                         (*item.target_state_path, event_name), is_absolute=True
                     ),
                     direction='target_duplicated',
+                    host_state_path='.'.join(owner_state_path),
                 )
             if existing_event.extra_name is None and final_extra_name is not None:
                 existing_event.extra_name = final_extra_name
@@ -850,22 +909,34 @@ def _synthesize_host_events_for_import(
 def _ensure_state_path_exists(
     root: dsl_nodes.StateDefinition,
     state_path: Tuple[str, ...],
+    alias: str,
+    owner_state_path: Tuple[str, ...],
+    sink: DiagnosticSink,
 ) -> dsl_nodes.StateDefinition:
+    # I1 explicit fallback (PR #116 re-review): emit-then-return early
+    # on empty path instead of fall-throughing into ``state_path[0]``
+    # IndexError that the outer safety net would have to swallow.
     if not state_path:
         _emit_import_diag(
-            None,
+            sink,
             'E_IMPORT_MAPPING_INVALID',
             "Invalid empty host state path for event mapping.",
+            alias=alias,
             mapping_kind='event',
+            host_state_path='.'.join(owner_state_path),
             reason='empty_path',
+            detail='<empty>',
         )
+        return root
     if root.name != state_path[0]:
         _emit_import_diag(
-            None,
+            sink,
             'E_IMPORT_MAPPING_INVALID',
             f"Invalid host root path for event mapping: expected root {root.name!r}, "
             f"got {state_path[0]!r}.",
+            alias=alias,
             mapping_kind='event',
+            host_state_path='.'.join(owner_state_path),
             reason='host_root_mismatch',
             detail=f"expected={root.name!r} got={state_path[0]!r}",
         )
@@ -879,12 +950,14 @@ def _ensure_state_path_exists(
                 break
         if next_state is None:
             _emit_import_diag(
-                None,
+                sink,
                 'E_IMPORT_MAPPING_INVALID',
                 f"Event mapping target state "
                 f"{_format_event_path(state_path, is_absolute=True)!r} does not exist "
                 f"in host model.",
+                alias=alias,
                 mapping_kind='event',
+                host_state_path='.'.join(owner_state_path),
                 reason='target_invalid',
                 detail=_format_event_path(state_path, is_absolute=True),
             )
@@ -901,6 +974,7 @@ def _apply_import_def_mappings(
     program: dsl_nodes.StateMachineDSLProgram,
     import_item: dsl_nodes.ImportStatement,
     owner_state_path: Tuple[str, ...],
+    sink: DiagnosticSink,
 ) -> None:
     def_mappings = [
         item
@@ -928,13 +1002,14 @@ def _apply_import_def_mappings(
             mappings=def_mappings,
             import_item=import_item,
             owner_state_path=owner_state_path,
+            sink=sink,
         )
         if (
             target_name in target_to_source
             and target_to_source[target_name] != def_item.name
         ):
             _emit_import_diag(
-                None,
+                sink,
                 'E_IMPORT_DUPLICATE_MAPPING',
                 f"Variable mapping conflict: import {import_item.alias!r} maps "
                 f"multiple source variables to the same target variable "
@@ -962,6 +1037,7 @@ def _merge_imported_definitions(
     host_explicit_def_names,
     import_item: dsl_nodes.ImportStatement,
     owner_state_path: Tuple[str, ...],
+    sink: DiagnosticSink,
 ) -> None:
     existing_definitions = {item.name: item for item in host_program.definitions}
     for def_item in imported_program.definitions:
@@ -974,7 +1050,7 @@ def _merge_imported_definitions(
         if existing_item.type != def_item.type:
             if def_item.name in host_explicit_def_names:
                 _emit_import_diag(
-                    None,
+                    sink,
                     'E_IMPORT_DUPLICATE_MAPPING',
                     f"Variable mapping conflict: target variable {def_item.name!r} "
                     f"already exists in host model as type {existing_item.type!r}, "
@@ -987,7 +1063,7 @@ def _merge_imported_definitions(
                 )
             else:
                 _emit_import_diag(
-                    None,
+                    sink,
                     'E_IMPORT_DUPLICATE_MAPPING',
                     f"Variable mapping conflict: target variable {def_item.name!r} "
                     f"receives incompatible imported types {existing_item.type!r} "
@@ -1004,7 +1080,7 @@ def _merge_imported_definitions(
 
         if existing_item.expr != def_item.expr:
             _emit_import_diag(
-                None,
+                sink,
                 'E_IMPORT_DUPLICATE_MAPPING',
                 f"Variable mapping conflict: target variable {def_item.name!r} has "
                 f"conflicting initial values.",
@@ -1023,6 +1099,7 @@ def _resolve_import_variable_target(
     mappings: List[dsl_nodes.ImportDefMapping],
     import_item: dsl_nodes.ImportStatement,
     owner_state_path: Tuple[str, ...],
+    sink: DiagnosticSink,
 ) -> str:
     exact_rules = []
     set_rules = []
@@ -1036,7 +1113,7 @@ def _resolve_import_variable_target(
         if isinstance(selector, dsl_nodes.ImportDefExactSelector):
             if selector.name in seen_exact_names:
                 _emit_import_diag(
-                    None,
+                    sink,
                     'E_IMPORT_DUPLICATE_MAPPING',
                     f"Variable mapping conflict: duplicated exact selector "
                     f"{selector.name!r} in import {import_item.alias!r}.",
@@ -1044,6 +1121,7 @@ def _resolve_import_variable_target(
                     mapping_kind='variable',
                     duplicated_name=selector.name,
                     direction='source_duplicated',
+                    host_state_path='.'.join(owner_state_path),
                 )
             seen_exact_names[selector.name] = mapping
             exact_rules.append(mapping)
@@ -1052,7 +1130,7 @@ def _resolve_import_variable_target(
             for item in selector.names:
                 if item in local_names:
                     _emit_import_diag(
-                        None,
+                        sink,
                         'E_IMPORT_DUPLICATE_MAPPING',
                         f"Variable mapping conflict: duplicated selector name "
                         f"{item!r} inside set rule in import {import_item.alias!r}.",
@@ -1060,10 +1138,11 @@ def _resolve_import_variable_target(
                         mapping_kind='variable',
                         duplicated_name=item,
                         direction='source_duplicated',
+                        host_state_path='.'.join(owner_state_path),
                     )
                 if item in seen_set_names:
                     _emit_import_diag(
-                        None,
+                        sink,
                         'E_IMPORT_DUPLICATE_MAPPING',
                         f"Variable mapping conflict: selector name {item!r} appears "
                         f"in multiple set rules in import {import_item.alias!r}.",
@@ -1071,6 +1150,7 @@ def _resolve_import_variable_target(
                         mapping_kind='variable',
                         duplicated_name=item,
                         direction='source_duplicated',
+                        host_state_path='.'.join(owner_state_path),
                     )
                 local_names.add(item)
                 seen_set_names[item] = mapping
@@ -1084,7 +1164,7 @@ def _resolve_import_variable_target(
 
     if len(fallback_rules) > 1:
         _emit_import_diag(
-            None,
+            sink,
             'E_IMPORT_DUPLICATE_MAPPING',
             f"Variable mapping conflict: multiple fallback rules found in import "
             f"{import_item.alias!r}.",
@@ -1092,6 +1172,7 @@ def _resolve_import_variable_target(
             mapping_kind='variable',
             duplicated_name='<fallback>',
             direction='source_duplicated',
+            host_state_path='.'.join(owner_state_path),
         )
 
     exact_matches = [
@@ -1106,6 +1187,7 @@ def _resolve_import_variable_target(
             captures=[],
             import_item=import_item,
             owner_state_path=owner_state_path,
+            sink=sink,
         )
 
     set_matches = [
@@ -1115,7 +1197,7 @@ def _resolve_import_variable_target(
     ]
     if len(set_matches) > 1:
         _emit_import_diag(
-            None,
+            sink,
             'E_IMPORT_DUPLICATE_MAPPING',
             f"Variable mapping conflict: selector name {source_name!r} matches "
             f"multiple set rules in import {import_item.alias!r}.",
@@ -1123,6 +1205,7 @@ def _resolve_import_variable_target(
             mapping_kind='variable',
             duplicated_name=source_name,
             direction='source_duplicated',
+            host_state_path='.'.join(owner_state_path),
         )
     if set_matches:
         return _render_target_template(
@@ -1131,6 +1214,7 @@ def _resolve_import_variable_target(
             captures=[],
             import_item=import_item,
             owner_state_path=owner_state_path,
+            sink=sink,
         )
 
     pattern_matches = []
@@ -1140,7 +1224,7 @@ def _resolve_import_variable_target(
             pattern_matches.append((item, captures))
     if len(pattern_matches) > 1:
         _emit_import_diag(
-            None,
+            sink,
             'E_IMPORT_DUPLICATE_MAPPING',
             f"Variable mapping conflict: source variable {source_name!r} matches "
             f"multiple pattern rules in import {import_item.alias!r}.",
@@ -1148,6 +1232,7 @@ def _resolve_import_variable_target(
             mapping_kind='variable',
             duplicated_name=source_name,
             direction='source_duplicated',
+            host_state_path='.'.join(owner_state_path),
         )
     if pattern_matches:
         item, captures = pattern_matches[0]
@@ -1157,6 +1242,7 @@ def _resolve_import_variable_target(
             captures=captures,
             import_item=import_item,
             owner_state_path=owner_state_path,
+            sink=sink,
         )
 
     if fallback_rules:
@@ -1166,10 +1252,11 @@ def _resolve_import_variable_target(
             captures=[],
             import_item=import_item,
             owner_state_path=owner_state_path,
+            sink=sink,
         )
 
     _emit_import_diag(
-        None,
+        sink,
         'E_IMPORT_MAPPING_INVALID',
         f"Variable mapping conflict: source variable {source_name!r} in import "
         f"{import_item.alias!r} under state {'.'.join(owner_state_path)!r} is not "
@@ -1197,6 +1284,7 @@ def _render_target_template(
     captures: List[str],
     import_item: dsl_nodes.ImportStatement,
     owner_state_path: Tuple[str, ...],
+    sink: DiagnosticSink,
 ) -> str:
     rendered = []
     i = 0
@@ -1206,25 +1294,27 @@ def _render_target_template(
                 end_index = template.find("}", i + 2)
                 if end_index < 0:
                     _emit_import_diag(
-                        None,
+                        sink,
                         'E_IMPORT_MAPPING_INVALID',
                         f"Invalid variable mapping template {template!r} in import "
                         f"{import_item.alias!r}: missing closing '}}'.",
                         alias=import_item.alias,
                         mapping_kind='variable',
+                        host_state_path='.'.join(owner_state_path),
                         reason='template_invalid',
                         detail=template,
                     )
                 raw_index = template[i + 2:end_index]
                 if not raw_index.isdigit():
                     _emit_import_diag(
-                        None,
+                        sink,
                         'E_IMPORT_MAPPING_INVALID',
                         f"Invalid variable mapping template {template!r} in import "
                         f"{import_item.alias!r}: placeholder index {raw_index!r} "
                         f"is not numeric.",
                         alias=import_item.alias,
                         mapping_kind='variable',
+                        host_state_path='.'.join(owner_state_path),
                         reason='template_invalid',
                         detail=template,
                     )
@@ -1236,6 +1326,7 @@ def _render_target_template(
                         template=template,
                         import_item=import_item,
                         owner_state_path=owner_state_path,
+                        sink=sink,
                     )
                 )
                 i = end_index + 1
@@ -1249,6 +1340,7 @@ def _render_target_template(
                         template=template,
                         import_item=import_item,
                         owner_state_path=owner_state_path,
+                        sink=sink,
                     )
                 )
                 i += 2
@@ -1257,13 +1349,14 @@ def _render_target_template(
         if template[i] == "*":
             if len(captures) > 1:
                 _emit_import_diag(
-                    None,
+                    sink,
                     'E_IMPORT_MAPPING_INVALID',
                     f"Invalid variable mapping template {template!r} in import "
                     f"{import_item.alias!r}: bare '*' is ambiguous when the source "
                     f"selector has multiple capture groups.",
                     alias=import_item.alias,
                     mapping_kind='variable',
+                    host_state_path='.'.join(owner_state_path),
                     reason='template_invalid',
                     detail=template,
                 )
@@ -1284,6 +1377,7 @@ def _mapping_placeholder_value(
     template: str,
     import_item: dsl_nodes.ImportStatement,
     owner_state_path: Tuple[str, ...],
+    sink: DiagnosticSink,
 ) -> str:
     if index == 0:
         return source_name
@@ -1291,7 +1385,7 @@ def _mapping_placeholder_value(
         return captures[index - 1]
     else:
         _emit_import_diag(
-            None,
+            sink,
             'E_IMPORT_MAPPING_INVALID',
             f"Invalid variable mapping template {template!r} in import "
             f"{import_item.alias!r} under state {'.'.join(owner_state_path)!r}: "

@@ -33,6 +33,18 @@ ModelValidationError
     :members: __init__
 
 
+ModelValueError
+-----------------------------------------------------
+
+.. autoclass:: ModelValueError
+
+
+ModelLookupError
+-----------------------------------------------------
+
+.. autoclass:: ModelLookupError
+
+
 IValidatable
 -----------------------------------------------------
 

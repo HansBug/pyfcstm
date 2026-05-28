@@ -72,7 +72,9 @@ from .text import (
 from .validate import (
     IValidatable,
     ModelDiagnostic,
+    ModelLookupError,
     ModelValidationError,
+    ModelValueError,
     Span,
     ValidationError,
 )

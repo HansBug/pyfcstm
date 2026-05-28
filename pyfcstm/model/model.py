@@ -53,7 +53,13 @@ from .imports import assemble_state_machine_imports
 from .plantuml import PlantUMLOptions, PlantUMLOptionsInput, format_state_name
 from ..diagnostics import DiagnosticSink
 from ..dsl import node as dsl_nodes, INIT_STATE, EXIT_STATE
-from ..utils.validate import ModelDiagnostic, ModelValidationError, Span
+from ..utils.validate import (
+    ModelDiagnostic,
+    ModelLookupError,
+    ModelValidationError,
+    ModelValueError,
+    Span,
+)
 
 __all__ = [
     "OperationStatement",
@@ -1630,7 +1636,12 @@ class State(AstExportable, PlantUMLExportable):
         for _, substate in self.substates.items():
             yield from substate.walk_states()
 
-    def resolve_event(self, event_ref: str) -> Event:
+    def resolve_event(
+            self,
+            event_ref: str,
+            *,
+            collect_into: Optional[DiagnosticSink] = None,
+    ) -> Optional[Event]:
         """
         Resolve an event reference string to an existing Event object in the state hierarchy.
 
@@ -1648,11 +1659,26 @@ class State(AstExportable, PlantUMLExportable):
 
         :param event_ref: The event reference string to resolve
         :type event_ref: str
-        :return: The resolved Event object from the state hierarchy
-        :rtype: Event
-        :raises ValueError: If the event reference is invalid or cannot be resolved
-        :raises ValueError: If parent-relative reference goes beyond the root state
-        :raises LookupError: If the event does not exist in the state hierarchy
+        :param collect_into: Optional structured-diagnostic sink. When provided, any
+            failure is recorded as a :class:`pyfcstm.utils.validate.ModelDiagnostic`
+            on the sink and the method returns ``None`` instead of raising — letting
+            callers accumulate multiple diagnostics in one pass. When omitted
+            (the default), the method raises :class:`ModelValueError` or
+            :class:`ModelLookupError` directly, both of which multi-inherit
+            ``ValueError`` / ``LookupError`` for backwards compatibility with
+            existing ``except ValueError:`` / ``except LookupError:`` callers.
+        :type collect_into: pyfcstm.diagnostics.DiagnosticSink, optional
+        :return: The resolved Event object from the state hierarchy, or
+            ``None`` when ``collect_into`` is provided and resolution failed.
+        :rtype: Optional[Event]
+        :raises pyfcstm.utils.validate.ModelValueError: If the event reference
+            is syntactically invalid (empty, malformed, exceeds root). Multi-
+            inherits :class:`ValueError`. Only raised when ``collect_into`` is
+            ``None``.
+        :raises pyfcstm.utils.validate.ModelLookupError: If the event reference
+            parses but the targeted state or event does not exist. Multi-
+            inherits :class:`LookupError`. Only raised when ``collect_into`` is
+            ``None``.
 
         Example::
 
@@ -1667,8 +1693,55 @@ class State(AstExportable, PlantUMLExportable):
             >>> state.resolve_event("/global.shutdown")
             Event(name="shutdown", state_path=("Root", "global"))
         """
+        # Determine the resolution scope from the lexical form of the reference.
+        # This is used both for the structured ``refs.scope`` field on
+        # ``E_EVENT_NOT_FOUND`` and to keep the legacy error message text
+        # accurate for the parent-relative branch ("chain") versus the bare
+        # relative form ("local"). The empty-ref case has no meaningful
+        # scope yet — we default to ``'local'`` for refs purposes.
         if not event_ref:
-            raise ValueError("Event reference cannot be empty")
+            scope = 'local'
+        elif event_ref.startswith('/'):
+            scope = 'absolute'
+        elif event_ref.startswith('.'):
+            scope = 'chain'
+        else:
+            scope = 'local'
+
+        def _fail_invalid(reason: str, message: str) -> None:
+            diag = ModelDiagnostic(
+                code='E_EVENT_REF_INVALID',
+                severity='error',
+                message=message,
+                refs={
+                    'event_ref': event_ref,
+                    'reason': reason,
+                },
+            )
+            if collect_into is not None:
+                collect_into.emit(diag)
+                return
+            raise ModelValueError(diagnostics=[diag])
+
+        def _fail_not_found(message: str, searched_from: Optional[str] = None) -> None:
+            diag = ModelDiagnostic(
+                code='E_EVENT_NOT_FOUND',
+                severity='error',
+                message=message,
+                refs={
+                    'event_ref': event_ref,
+                    'scope': scope,
+                    'searched_from': searched_from,
+                },
+            )
+            if collect_into is not None:
+                collect_into.emit(diag)
+                return
+            raise ModelLookupError(diagnostics=[diag])
+
+        if not event_ref:
+            _fail_invalid('empty', "Event reference cannot be empty")
+            return None
 
         # Determine the target state path and event name based on reference type
         target_state_path = None
@@ -1679,7 +1752,8 @@ class State(AstExportable, PlantUMLExportable):
             # Remove leading '/' and resolve from root
             relative_path = event_ref[1:]
             if not relative_path:
-                raise ValueError("Absolute event reference cannot be just '/'")
+                _fail_invalid('bare_slash', "Absolute event reference cannot be just '/'")
+                return None
 
             # Find root state
             root_state = self
@@ -1689,7 +1763,11 @@ class State(AstExportable, PlantUMLExportable):
             # Split the path
             path_parts = relative_path.split(".")
             if not all(path_parts):
-                raise ValueError(f"Invalid absolute event reference: {event_ref!r}")
+                _fail_invalid(
+                    'invalid_absolute',
+                    f"Invalid absolute event reference: {event_ref!r}",
+                )
+                return None
 
             event_name = path_parts[-1]
             target_state_path = root_state.path + tuple(path_parts[:-1])
@@ -1707,26 +1785,32 @@ class State(AstExportable, PlantUMLExportable):
             # Get the remaining path after dots
             remaining_path = event_ref[dot_count:]
             if not remaining_path:
-                raise ValueError(
-                    f"Parent-relative event reference cannot end with dots: {event_ref!r}"
+                _fail_invalid(
+                    'trailing_dots',
+                    f"Parent-relative event reference cannot end with dots: {event_ref!r}",
                 )
+                return None
 
             # Move up the hierarchy
             current_state = self
             for _ in range(dot_count):
                 if current_state.parent is None:
-                    raise ValueError(
+                    _fail_invalid(
+                        'beyond_root',
                         f"Parent-relative event reference {event_ref!r} goes beyond root state "
-                        f"(current state: {'.'.join(self.path)}, tried to go up {dot_count} levels)"
+                        f"(current state: {'.'.join(self.path)}, tried to go up {dot_count} levels)",
                     )
+                    return None
                 current_state = current_state.parent
 
             # Split the remaining path
             path_parts = remaining_path.split(".")
             if not all(path_parts):
-                raise ValueError(
-                    f"Invalid parent-relative event reference: {event_ref!r}"
+                _fail_invalid(
+                    'invalid_relative',
+                    f"Invalid parent-relative event reference: {event_ref!r}",
                 )
+                return None
 
             event_name = path_parts[-1]
             target_state_path = current_state.path + tuple(path_parts[:-1])
@@ -1735,7 +1819,11 @@ class State(AstExportable, PlantUMLExportable):
         else:
             path_parts = event_ref.split(".")
             if not all(path_parts):
-                raise ValueError(f"Invalid relative event reference: {event_ref!r}")
+                _fail_invalid(
+                    'invalid_relative',
+                    f"Invalid relative event reference: {event_ref!r}",
+                )
+                return None
 
             event_name = path_parts[-1]
             target_state_path = self.path + tuple(path_parts[:-1])
@@ -1750,18 +1838,22 @@ class State(AstExportable, PlantUMLExportable):
         current_state = root_state
         for i, state_name in enumerate(target_state_path[1:], 1):  # Skip root name
             if state_name not in current_state.substates:
-                raise LookupError(
+                _fail_not_found(
                     f"State {'.'.join(target_state_path[: i + 1])!r} not found in hierarchy "
-                    f"while resolving event reference {event_ref!r}"
+                    f"while resolving event reference {event_ref!r}",
+                    searched_from='.'.join(self.path),
                 )
+                return None
             current_state = current_state.substates[state_name]
 
         # Look for the event in the target state
         if event_name not in current_state.events:
-            raise LookupError(
+            _fail_not_found(
                 f"Event {event_name!r} not found in state {'.'.join(target_state_path)!r} "
-                f"while resolving event reference {event_ref!r}"
+                f"while resolving event reference {event_ref!r}",
+                searched_from='.'.join(self.path),
             )
+            return None
 
         return current_state.events[event_name]
 
@@ -1955,7 +2047,12 @@ class StateMachine(AstExportable, PlantUMLExportable):
         """
         yield from self.root_state.walk_states()
 
-    def resolve_event(self, event_path: str) -> Event:
+    def resolve_event(
+            self,
+            event_path: str,
+            *,
+            collect_into: Optional[DiagnosticSink] = None,
+    ) -> Optional[Event]:
         """
         Resolve a full event path to an existing Event object in the state machine.
 
@@ -1966,10 +2063,24 @@ class StateMachine(AstExportable, PlantUMLExportable):
 
         :param event_path: The complete event path (e.g., ``"Root.System.Active.error"``)
         :type event_path: str
-        :return: The resolved Event object from the state hierarchy
-        :rtype: Event
-        :raises ValueError: If the event path is invalid or empty
-        :raises LookupError: If any state in the path or the event does not exist
+        :param collect_into: Optional structured-diagnostic sink. When provided, any
+            failure is recorded as a :class:`pyfcstm.utils.validate.ModelDiagnostic`
+            on the sink and the method returns ``None`` instead of raising — letting
+            callers accumulate multiple diagnostics in one pass. When omitted
+            (the default), the method raises :class:`ModelValueError` or
+            :class:`ModelLookupError` directly, both of which multi-inherit
+            ``ValueError`` / ``LookupError`` for backwards compatibility.
+        :type collect_into: pyfcstm.diagnostics.DiagnosticSink, optional
+        :return: The resolved Event object, or ``None`` when ``collect_into``
+            is provided and resolution failed.
+        :rtype: Optional[Event]
+        :raises pyfcstm.utils.validate.ModelValueError: If the event path is
+            invalid or empty (multi-inherits :class:`ValueError`). Only raised
+            when ``collect_into`` is ``None``.
+        :raises pyfcstm.utils.validate.ModelLookupError: If any state in the
+            path or the event does not exist (multi-inherits
+            :class:`LookupError`). Only raised when ``collect_into`` is
+            ``None``.
 
         Example::
 
@@ -1979,21 +2090,57 @@ class StateMachine(AstExportable, PlantUMLExportable):
             >>> event.name
             'error'
         """
+        def _fail_invalid(reason: str, message: str) -> None:
+            diag = ModelDiagnostic(
+                code='E_EVENT_REF_INVALID',
+                severity='error',
+                message=message,
+                refs={
+                    'event_ref': event_path,
+                    'reason': reason,
+                },
+            )
+            if collect_into is not None:
+                collect_into.emit(diag)
+                return
+            raise ModelValueError(diagnostics=[diag])
+
+        def _fail_not_found(message: str, searched_from: Optional[str] = None) -> None:
+            diag = ModelDiagnostic(
+                code='E_EVENT_NOT_FOUND',
+                severity='error',
+                message=message,
+                refs={
+                    'event_ref': event_path,
+                    'scope': 'absolute',
+                    'searched_from': searched_from,
+                },
+            )
+            if collect_into is not None:
+                collect_into.emit(diag)
+                return
+            raise ModelLookupError(diagnostics=[diag])
+
         if not event_path:
-            raise ValueError("Event path cannot be empty")
+            _fail_invalid('empty', "Event path cannot be empty")
+            return None
 
         # Split the path into components
         path_parts = event_path.split(".")
         if not all(path_parts):
-            raise ValueError(
-                f"Invalid event path: {event_path!r} (contains empty parts)"
+            _fail_invalid(
+                'invalid_absolute',
+                f"Invalid event path: {event_path!r} (contains empty parts)",
             )
+            return None
 
         if len(path_parts) < 2:
-            raise ValueError(
+            _fail_invalid(
+                'invalid_absolute',
                 f"Invalid event path: {event_path!r} "
-                f"(must contain at least state name and event name)"
+                f"(must contain at least state name and event name)",
             )
+            return None
 
         # The last part is the event name, everything before is the state path
         event_name = path_parts[-1]
@@ -2004,27 +2151,35 @@ class StateMachine(AstExportable, PlantUMLExportable):
 
         # Verify the first part matches the root state name
         if state_path_parts[0] != current_state.name:
-            raise LookupError(
+            _fail_not_found(
                 f"Event path root '{state_path_parts[0]}' does not match "
                 f"state machine root '{current_state.name}' "
-                f"while resolving event path {event_path!r}"
+                f"while resolving event path {event_path!r}",
+                searched_from=current_state.name,
             )
+            return None
 
         # Navigate through the remaining state path
         for i, state_name in enumerate(state_path_parts[1:], 1):
             if state_name not in current_state.substates:
-                raise LookupError(
-                    f"State '{state_name}' not found in state '{'.'.join(state_path_parts[:i])}' "
-                    f"while resolving event path {event_path!r}"
+                _fail_not_found(
+                    f"State '{state_name}' not found in state "
+                    f"'{'.'.join(state_path_parts[:i])}' "
+                    f"while resolving event path {event_path!r}",
+                    searched_from='.'.join(state_path_parts[:i]),
                 )
+                return None
             current_state = current_state.substates[state_name]
 
         # Look for the event in the target state
         if event_name not in current_state.events:
-            raise LookupError(
-                f"Event '{event_name}' not found in state '{'.'.join(state_path_parts)}' "
-                f"while resolving event path {event_path!r}"
+            _fail_not_found(
+                f"Event '{event_name}' not found in state "
+                f"'{'.'.join(state_path_parts)}' "
+                f"while resolving event path {event_path!r}",
+                searched_from='.'.join(state_path_parts),
             )
+            return None
 
         return current_state.events[event_name]
 

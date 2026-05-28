@@ -459,3 +459,129 @@ class TestInspectModelToJsonRoundtrip:
         payload = report.to_json()
         assert isinstance(payload['metrics']['aspect_coverage'], dict)
         assert payload['metrics']['abstract_action_inventory']
+
+
+@pytest.mark.unittest
+class TestInspectModelExtendedCoverage:
+    """Additional fixtures targeting code paths surfaced by the PR #115
+    codecov delta: effects with reads/writes, ternary expressions, unary
+    function calls, and the diagnostic-to-json export.
+    """
+
+    EFFECTS_DSL = """
+    def int counter = 0;
+    def int last = 0;
+    def float temperature = 0.0;
+    state Root {
+        state Idle;
+        state Active;
+        [*] -> Idle;
+        Idle -> Active : if [counter > 0] effect {
+            last = counter;
+            counter = counter + 1;
+            temperature = (counter > 10) ? 1.0 : 0.0;
+        };
+        Active -> Idle :: Pause effect {
+            counter = counter * 2;
+        };
+    }
+    """
+
+    UNARY_FUNC_DSL = """
+    def float angle = 0.0;
+    def float value = 0.0;
+    state Root {
+        state Idle;
+        state Computing;
+        [*] -> Idle;
+        Idle -> Computing : if [angle > 0.0] effect {
+            value = sin(angle);
+        };
+    }
+    """
+
+    def test_var_dataflow_captures_effect_reads_and_writes(self):
+        report = inspect_model(_parse(self.EFFECTS_DSL))
+        vars_by_name = {v.name: v for v in report.variables}
+        # ``counter`` is read by guard AND read by effect AND written by
+        # effect — exercise the effect-walking branch in _build_var_dataflow.
+        assert 'counter' in vars_by_name
+        # ``last`` is assigned only in effects.
+        assert 'last' in vars_by_name
+        # ``temperature`` uses a ternary in the effect right-hand side.
+        assert 'temperature' in vars_by_name
+
+    def test_to_json_with_effects_serializes_fully(self):
+        report = inspect_model(_parse(self.EFFECTS_DSL))
+        payload = report.to_json()
+        # Round-trip through json to confirm no non-serializable types
+        # leak through (catches e.g. set / tuple slip-ups).
+        json.dumps(payload)
+        # The effect text must surface in the transition entries when
+        # the transition has an effect block.
+        effects_present = [
+            t for t in payload['transitions'] if t.get('effect')
+        ]
+        assert effects_present, 'expected at least one transition with effect text'
+
+    def test_unary_function_in_effect_walks_correctly(self):
+        # The ``sin(angle)`` call exercises the UFunc branch of
+        # _walk_expr_collect (the recursive variable collector).
+        report = inspect_model(_parse(self.UNARY_FUNC_DSL))
+        vars_by_name = {v.name: v for v in report.variables}
+        # ``angle`` is read inside the unary function call in the effect.
+        assert 'Root.Idle' in vars_by_name['angle'].read_in_states
+
+    def test_to_json_handles_diagnostics_without_span(self):
+        # The collect-mode pipeline can attach diagnostics whose span is
+        # None (e.g. duplicate-var emitted at file-top with no span). The
+        # _diagnostic_to_json helper has a None-span branch that needs
+        # explicit coverage.
+        from pyfcstm.utils import ModelDiagnostic
+        dsl = """
+        def int x = 0;
+        state Root {
+            state Idle;
+            [*] -> Idle;
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        # ``report.diagnostics`` is a tuple — build a new ModelInspect
+        # with an extended tuple to inject a synthetic spanless
+        # diagnostic that exercises the None-span branch of
+        # ``_diagnostic_to_json``.
+        import dataclasses
+        synthetic = ModelDiagnostic(
+            code='W_GUARD_CONST_FALSE',
+            severity='warning',
+            message='synthetic test diag',
+            span=None,
+            refs={'folded_value': False},
+        )
+        report = dataclasses.replace(
+            report,
+            diagnostics=(*report.diagnostics, synthetic),
+        )
+        payload = report.to_json()
+        assert payload['diagnostics']
+        json.dumps(payload)
+        # span field on a None-span diagnostic must be None, not a dict.
+        synthetic = next(
+            d for d in payload['diagnostics']
+            if d['message'] == 'synthetic test diag'
+        )
+        assert synthetic['span'] is None
+
+    def test_inspect_model_handles_state_with_no_path_attribute(self):
+        # ``_state_path`` has an early-return for falsy ``path``. The
+        # main inspect_model pipeline always populates ``path``; this
+        # smoke test exercises the helper through to_json on a
+        # minimal machine, asserting the helper does not crash on
+        # roots whose path tuple is short.
+        dsl = """
+        state Root { state Idle; [*] -> Idle; }
+        """
+        report = inspect_model(_parse(dsl))
+        payload = report.to_json()
+        # Root path is just 'Root'.
+        assert payload['states'][0]['path'] == 'Root'

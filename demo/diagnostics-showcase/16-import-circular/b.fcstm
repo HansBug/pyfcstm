@@ -1,5 +1,0 @@
-state B {
-    state Idle;
-    [*] -> Idle;
-    import "./a.fcstm" as A;
-}

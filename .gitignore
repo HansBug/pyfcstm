@@ -1248,3 +1248,6 @@ junit.xml
 !/editors/vscode/parser/README.md
 !/editors/vscode/parser/package.json
 /editors/vscode/syntaxes/*.json
+
+# Local demo fixtures (mirrored in jsfcstm test fixtures, see editors/jsfcstm/test/diagnostics-showcase-demos.test.ts)
+/demo/

@@ -1,9 +1,0 @@
-// Demo: E_IMPORT_CIRCULAR — a.fcstm imports b.fcstm which imports a.fcstm.
-// Open this file; expected diagnostic:
-//   * E_IMPORT_CIRCULAR on `"./b.fcstm"` line 6
-
-state A {
-    state Idle;
-    [*] -> Idle;
-    import "./b.fcstm" as B;
-}

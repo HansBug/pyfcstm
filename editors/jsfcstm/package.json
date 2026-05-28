@@ -34,6 +34,9 @@
       "config": [
         "dist/config/index.d.ts"
       ],
+      "diagnostics": [
+        "dist/diagnostics/index.d.ts"
+      ],
       "diagram": [
         "dist/diagram/index.d.ts"
       ],
@@ -70,6 +73,11 @@
       "types": "./dist/config/index.d.ts",
       "require": "./dist/config/index.js",
       "default": "./dist/config/index.js"
+    },
+    "./diagnostics": {
+      "types": "./dist/diagnostics/index.d.ts",
+      "require": "./dist/diagnostics/index.js",
+      "default": "./dist/diagnostics/index.js"
     },
     "./diagram": {
       "types": "./dist/diagram/index.d.ts",

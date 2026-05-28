@@ -51,7 +51,7 @@ from .base import AstExportable, PlantUMLExportable
 from .expr import Expr, parse_expr_node_to_expr
 from .imports import assemble_state_machine_imports
 from .plantuml import PlantUMLOptions, PlantUMLOptionsInput, format_state_name
-from ..diagnostics import DiagnosticSink
+from ..diagnostics.sink import DiagnosticSink
 from ..diagnostics.sink import _emit as _emit_or_raise
 from ..dsl import node as dsl_nodes, INIT_STATE, EXIT_STATE
 from ..utils.validate import (

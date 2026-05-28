@@ -10,6 +10,7 @@ pyfcstm.diagnostics
     :maxdepth: 3
 
     codes
+    inspect
     sink
 
 \_\_all\_\_

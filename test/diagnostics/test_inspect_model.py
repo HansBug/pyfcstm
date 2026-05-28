@@ -1,0 +1,301 @@
+"""
+Unit tests for :func:`pyfcstm.diagnostics.inspect_model` (Layer 2 PR-A).
+
+These tests pin down the structural contract returned by
+:func:`inspect_model` and verify the five derived view graphs
+(reachability, event emission, variable data flow, aspect impact,
+action reference). PR-A populates everything except the
+``diagnostics`` array — which stays empty until PR-B / PR-C add the
+W_* / I_* rules.
+"""
+
+import json
+import os
+
+import pytest
+
+from pyfcstm.diagnostics import (
+    EventInfo,
+    ModelInspect,
+    ModelMetrics,
+    StateInfo,
+    TransitionInfo,
+    VariableInfo,
+    inspect_model,
+)
+from pyfcstm.dsl import parse_with_grammar_entry
+from pyfcstm.model import parse_dsl_node_to_state_machine
+
+
+def _parse(src):
+    ast = parse_with_grammar_entry(src, 'state_machine_dsl')
+    return parse_dsl_node_to_state_machine(ast)
+
+
+def _by_path(infos):
+    return {item.path: item for item in infos}
+
+
+SIMPLE_DSL = """
+def int counter = 0;
+def float temp = 25.0;
+state Root {
+    state Idle;
+    state Active { during { counter = counter + 1; } }
+    [*] -> Idle;
+    Idle -> Active : if [counter > 0];
+    Active -> Idle :: Pause;
+}
+"""
+
+
+@pytest.mark.unittest
+class TestInspectModelBasic:
+    @pytest.fixture
+    def report(self):
+        return inspect_model(_parse(SIMPLE_DSL))
+
+    def test_returns_model_inspect(self, report):
+        assert isinstance(report, ModelInspect)
+
+    def test_root_state_path(self, report):
+        assert report.root_state_path == 'Root'
+
+    def test_state_count(self, report):
+        assert len(report.states) == 3
+
+    def test_state_kinds(self, report):
+        by_path = _by_path(report.states)
+        assert by_path['Root'].is_composite is True
+        assert by_path['Root'].is_leaf is False
+        assert by_path['Root.Idle'].is_leaf is True
+        assert by_path['Root.Active'].is_leaf is True
+
+    def test_state_parent_path(self, report):
+        by_path = _by_path(report.states)
+        assert by_path['Root'].parent_path is None
+        assert by_path['Root.Idle'].parent_path == 'Root'
+
+    def test_state_substates(self, report):
+        by_path = _by_path(report.states)
+        assert set(by_path['Root'].substates) == {'Root.Idle', 'Root.Active'}
+        assert by_path['Root.Idle'].substates == tuple()
+
+    def test_state_initial_targets(self, report):
+        by_path = _by_path(report.states)
+        targets = by_path['Root'].initial_targets
+        assert len(targets) == 1
+        t = targets[0]
+        assert t['target'] == 'Root.Idle'
+        assert t['guard'] is None
+        assert t['event'] is None
+        assert t['is_unconditional'] is True
+
+    def test_state_during_actions(self, report):
+        by_path = _by_path(report.states)
+        assert by_path['Root.Active'].during_actions == ('<inline>',)
+
+    def test_transition_count(self, report):
+        # 1 initial + 2 normal
+        assert len(report.transitions) == 3
+
+    def test_transition_init_marker(self, report):
+        inits = [t for t in report.transitions if t.from_path == '[*]']
+        assert len(inits) == 1
+        assert inits[0].to_path == 'Root.Idle'
+
+    def test_transition_guard_text(self, report):
+        guarded = [t for t in report.transitions if t.guard is not None]
+        assert len(guarded) == 1
+        assert 'counter' in guarded[0].guard
+
+    def test_transition_event_qualified(self, report):
+        with_event = [t for t in report.transitions if t.event is not None]
+        assert len(with_event) == 1
+        assert with_event[0].event == 'Root.Active.Pause'
+
+    def test_variable_payload(self, report):
+        vars_by_name = {v.name: v for v in report.variables}
+        assert set(vars_by_name) == {'counter', 'temp'}
+        counter = vars_by_name['counter']
+        assert counter.type == 'int'
+        assert counter.init_value == '0'
+        assert 'Root.Active' in counter.read_in_states
+        assert 'Root.Active' in counter.written_in_states
+        # guard read should also be captured
+        assert any('Root.Idle' == fp for fp, _ in counter.read_in_guards)
+        # ``temp`` has no participation in this DSL.
+        temp = vars_by_name['temp']
+        assert temp.read_in_states == tuple()
+        assert temp.written_in_states == tuple()
+        assert temp.participates_directly is False
+
+    def test_event_payload(self, report):
+        events_by_name = {e.qualified_name: e for e in report.events}
+        assert 'Root.Active.Pause' in events_by_name
+        pause = events_by_name['Root.Active.Pause']
+        assert pause.scope == 'local'
+        assert ('Root.Active', 'Root.Idle') in pause.used_by
+
+    def test_metrics(self, report):
+        m = report.metrics
+        assert m.n_states_leaf == 2
+        assert m.n_states_composite == 1
+        assert m.n_states_pseudo == 0
+        assert m.n_transitions_normal == 3
+        assert m.n_transitions_forced == 0
+        assert m.n_events == 1
+        assert m.n_variables == 2
+        assert m.var_to_leaf_ratio == 1.0
+        assert m.max_hierarchy_depth == 1
+
+
+@pytest.mark.unittest
+class TestInspectModelViews:
+    @pytest.fixture
+    def report(self):
+        return inspect_model(_parse(SIMPLE_DSL))
+
+    def test_reachability_graph_keys_match_states(self, report):
+        keys = set(report.reachability_graph.keys())
+        assert keys == {s.path for s in report.states}
+
+    def test_reachability_leaf_to_leaf(self, report):
+        assert 'Root.Active' in report.reachability_graph['Root.Idle']
+        assert 'Root.Idle' in report.reachability_graph['Root.Active']
+
+    def test_event_emission_map(self, report):
+        assert report.event_emission_map == {
+            'Root.Active.Pause': ('Root.Active',),
+        }
+
+    def test_var_dataflow(self, report):
+        df = report.var_dataflow
+        assert df['counter']['reads'] == ('Root.Active',)
+        assert df['counter']['writes'] == ('Root.Active',)
+        assert df['temp'] == {'reads': tuple(), 'writes': tuple()}
+
+    def test_aspect_impact_map_empty_without_aspects(self, report):
+        assert report.aspect_impact_map == {}
+
+    def test_action_ref_graph_keys(self, report):
+        # `Root.Active` has one inline during action; expect at least one
+        # entry though no outgoing ref edges.
+        assert 'Root.Active:<inline>' in report.action_ref_graph
+        for value in report.action_ref_graph.values():
+            assert all(isinstance(v, str) for v in value)
+
+
+@pytest.mark.unittest
+class TestInspectModelComposite:
+    DSL = """
+def int x = 0;
+state Outer {
+    state Inner {
+        state A;
+        state B;
+        [*] -> A;
+        A -> B :: Go;
+    }
+    state Sibling;
+    [*] -> Inner;
+    Inner -> Sibling :: Done;
+    >> during before { x = x + 1; }
+}
+"""
+
+    @pytest.fixture
+    def report(self):
+        return inspect_model(_parse(self.DSL))
+
+    def test_hierarchy_depth(self, report):
+        # Outer (depth 0) → Inner (1) → A/B (2)
+        assert report.metrics.max_hierarchy_depth == 2
+
+    def test_aspect_impact_map_lists_descendant_leaves(self, report):
+        # Outer has `>> during before` and three reachable leaves
+        # (A, B, Sibling). Sibling is a direct child of Outer.
+        leaves = report.aspect_impact_map.get('Outer')
+        assert leaves is not None
+        assert set(leaves) == {'Outer.Inner.A', 'Outer.Inner.B', 'Outer.Sibling'}
+
+    def test_aspect_coverage_metric(self, report):
+        assert report.metrics.aspect_coverage.get('Outer') == 3
+
+
+@pytest.mark.unittest
+class TestInspectModelToJson:
+    @pytest.fixture
+    def report(self):
+        return inspect_model(_parse(SIMPLE_DSL))
+
+    def test_to_json_is_json_dumpable(self, report):
+        payload = report.to_json()
+        assert isinstance(payload, dict)
+        # Must serialize without TypeError.
+        json.dumps(payload)
+
+    def test_to_json_top_level_keys(self, report):
+        payload = report.to_json()
+        assert set(payload.keys()) == {
+            'root_state_path',
+            'states',
+            'transitions',
+            'variables',
+            'events',
+            'metrics',
+            'reachability_graph',
+            'event_emission_map',
+            'var_dataflow',
+            'aspect_impact_map',
+            'action_ref_graph',
+            'diagnostics',
+        }
+
+    def test_to_json_lists_not_tuples(self, report):
+        payload = report.to_json()
+        for state in payload['states']:
+            assert isinstance(state['substates'], list)
+            assert isinstance(state['entry_actions'], list)
+        assert isinstance(payload['variables'][0]['read_in_states'], list)
+
+    def test_to_json_diagnostics_empty_for_pr_a(self, report):
+        # PR-A keeps the diagnostics field empty until PR-B / PR-C land.
+        assert report.to_json()['diagnostics'] == []
+
+
+@pytest.mark.unittest
+class TestSchemaJsonValidates:
+    """Verify the schema.json contract validates a real inspection."""
+
+    def test_schema_exists(self):
+        path = os.path.join(
+            os.path.dirname(__file__), '..', '..',
+            'pyfcstm', 'diagnostics', 'schema.json',
+        )
+        assert os.path.exists(path)
+
+    def test_schema_is_valid_json(self):
+        path = os.path.join(
+            os.path.dirname(__file__), '..', '..',
+            'pyfcstm', 'diagnostics', 'schema.json',
+        )
+        with open(path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        assert data['title'] == 'ModelInspect'
+
+    def test_schema_validates_simple_inspect(self):
+        # Light-weight structural validation rather than pulling in
+        # jsonschema as a hard test dep — verify each required top-level
+        # key from the schema is present in the inspect output.
+        path = os.path.join(
+            os.path.dirname(__file__), '..', '..',
+            'pyfcstm', 'diagnostics', 'schema.json',
+        )
+        with open(path, 'r', encoding='utf-8') as f:
+            schema = json.load(f)
+        required = set(schema['required'])
+        payload = inspect_model(_parse(SIMPLE_DSL)).to_json()
+        assert required.issubset(set(payload.keys())), (
+            f'missing keys: {required - set(payload.keys())}'
+        )

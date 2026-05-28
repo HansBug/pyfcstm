@@ -1,0 +1,280 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/HansBug/pyfcstm/blob/main/pyfcstm/diagnostics/schema.json",
+  "title": "ModelInspect",
+  "description": "Shared contract between pyfcstm and jsfcstm for inspect_model() output. PR-A baseline; PR-B/PR-C extend the diagnostics array.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "root_state_path",
+    "states",
+    "transitions",
+    "variables",
+    "events",
+    "metrics",
+    "reachability_graph",
+    "event_emission_map",
+    "var_dataflow",
+    "aspect_impact_map",
+    "action_ref_graph",
+    "diagnostics"
+  ],
+  "properties": {
+    "root_state_path": {
+      "type": "string",
+      "description": "Dotted path of the model's root state."
+    },
+    "states": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/StateInfo" }
+    },
+    "transitions": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/TransitionInfo" }
+    },
+    "variables": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/VariableInfo" }
+    },
+    "events": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/EventInfo" }
+    },
+    "metrics": { "$ref": "#/definitions/ModelMetrics" },
+    "reachability_graph": {
+      "type": "object",
+      "description": "Mapping state path -> reachable state paths via normal transitions (BFS closure, guards ignored).",
+      "additionalProperties": {
+        "type": "array",
+        "items": { "type": "string" }
+      }
+    },
+    "event_emission_map": {
+      "type": "object",
+      "description": "Mapping qualified event name -> source state paths that can emit it.",
+      "additionalProperties": {
+        "type": "array",
+        "items": { "type": "string" }
+      }
+    },
+    "var_dataflow": {
+      "type": "object",
+      "description": "Mapping variable name -> {reads: [...], writes: [...]} of state paths.",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["reads", "writes"],
+        "properties": {
+          "reads": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "writes": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    },
+    "aspect_impact_map": {
+      "type": "object",
+      "description": "Mapping composite path -> descendant leaf paths actually reached by aspect actions.",
+      "additionalProperties": {
+        "type": "array",
+        "items": { "type": "string" }
+      }
+    },
+    "action_ref_graph": {
+      "type": "object",
+      "description": "Mapping named-action function signature -> outgoing ref edge function signatures.",
+      "additionalProperties": {
+        "type": "array",
+        "items": { "type": "string" }
+      }
+    },
+    "diagnostics": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/ModelDiagnostic" }
+    }
+  },
+  "definitions": {
+    "StateInfo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path", "name", "parent_path", "is_leaf", "is_pseudo", "is_composite",
+        "substates", "initial_targets", "entry_actions", "during_actions",
+        "exit_actions", "aspect_before", "aspect_after", "has_abstract_action"
+      ],
+      "properties": {
+        "path": { "type": "string" },
+        "name": { "type": "string" },
+        "parent_path": { "type": ["string", "null"] },
+        "is_leaf": { "type": "boolean" },
+        "is_pseudo": { "type": "boolean" },
+        "is_composite": { "type": "boolean" },
+        "substates": { "type": "array", "items": { "type": "string" } },
+        "initial_targets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["target", "guard", "event", "is_unconditional"],
+            "properties": {
+              "target": { "type": "string" },
+              "guard": { "type": ["string", "null"] },
+              "event": { "type": ["string", "null"] },
+              "is_unconditional": { "type": "boolean" }
+            }
+          }
+        },
+        "entry_actions": { "type": "array", "items": { "type": "string" } },
+        "during_actions": { "type": "array", "items": { "type": "string" } },
+        "exit_actions": { "type": "array", "items": { "type": "string" } },
+        "aspect_before": { "type": "array", "items": { "type": "string" } },
+        "aspect_after": { "type": "array", "items": { "type": "string" } },
+        "has_abstract_action": { "type": "boolean" }
+      }
+    },
+    "TransitionInfo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "from_path", "to_path", "event", "event_scope",
+        "guard", "effect", "is_forced", "forced_origin"
+      ],
+      "properties": {
+        "from_path": { "type": "string" },
+        "to_path": { "type": "string" },
+        "event": { "type": ["string", "null"] },
+        "event_scope": {
+          "type": ["string", "null"],
+          "enum": ["local", "chain", "absolute", null]
+        },
+        "guard": { "type": ["string", "null"] },
+        "effect": { "type": ["string", "null"] },
+        "is_forced": { "type": "boolean" },
+        "forced_origin": { "type": ["string", "null"] }
+      }
+    },
+    "VariableInfo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name", "type", "init_value",
+        "read_in_states", "written_in_states",
+        "read_in_guards", "written_in_effects",
+        "participates_directly", "participates_indirectly",
+        "abstract_actions_in_scope"
+      ],
+      "properties": {
+        "name": { "type": "string" },
+        "type": { "type": "string" },
+        "init_value": { "type": "string" },
+        "read_in_states": { "type": "array", "items": { "type": "string" } },
+        "written_in_states": { "type": "array", "items": { "type": "string" } },
+        "read_in_guards": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": { "type": "string" },
+            "minItems": 2,
+            "maxItems": 2
+          }
+        },
+        "written_in_effects": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": { "type": "string" },
+            "minItems": 2,
+            "maxItems": 2
+          }
+        },
+        "participates_directly": { "type": "boolean" },
+        "participates_indirectly": { "type": "boolean" },
+        "abstract_actions_in_scope": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "EventInfo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["qualified_name", "scope", "used_by"],
+      "properties": {
+        "qualified_name": { "type": "string" },
+        "scope": { "type": "string", "enum": ["local", "chain", "absolute"] },
+        "used_by": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": { "type": "string" },
+            "minItems": 2,
+            "maxItems": 2
+          }
+        }
+      }
+    },
+    "ModelMetrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "n_states_leaf", "n_states_composite", "n_states_pseudo",
+        "max_hierarchy_depth", "n_transitions_normal", "n_transitions_forced",
+        "n_events", "n_variables", "var_to_leaf_ratio",
+        "aspect_coverage", "abstract_action_inventory"
+      ],
+      "properties": {
+        "n_states_leaf": { "type": "integer", "minimum": 0 },
+        "n_states_composite": { "type": "integer", "minimum": 0 },
+        "n_states_pseudo": { "type": "integer", "minimum": 0 },
+        "max_hierarchy_depth": { "type": "integer", "minimum": 0 },
+        "n_transitions_normal": { "type": "integer", "minimum": 0 },
+        "n_transitions_forced": { "type": "integer", "minimum": 0 },
+        "n_events": { "type": "integer", "minimum": 0 },
+        "n_variables": { "type": "integer", "minimum": 0 },
+        "var_to_leaf_ratio": { "type": "number", "minimum": 0 },
+        "aspect_coverage": {
+          "type": "object",
+          "additionalProperties": { "type": "integer", "minimum": 0 }
+        },
+        "abstract_action_inventory": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "ModelDiagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "severity", "message", "span", "refs"],
+      "properties": {
+        "code": { "type": "string" },
+        "severity": {
+          "type": "string",
+          "enum": ["error", "warning", "info"]
+        },
+        "message": { "type": "string" },
+        "span": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["start_line", "start_col", "end_line", "end_col"],
+              "properties": {
+                "start_line": { "type": "integer", "minimum": 1 },
+                "start_col": { "type": "integer", "minimum": 0 },
+                "end_line": { "type": "integer", "minimum": 1 },
+                "end_col": { "type": "integer", "minimum": 0 }
+              }
+            }
+          ]
+        },
+        "refs": { "type": "object" }
+      }
+    }
+  }
+}

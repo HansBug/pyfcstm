@@ -275,6 +275,14 @@ class ModelValidationError(SyntaxError):
         # ``raise SyntaxError(...)`` -> ``raise ModelValidationError(...)``
         # migration. The "Model diagnostics, N items in total:" wrapper
         # only adds value when there is more than one entry to enumerate.
+        #
+        # Threshold semantics (M2 from PR-110 review): the fast path only
+        # fires when one of ``errors`` / ``diagnostics`` is empty and the
+        # other has exactly one entry. The mixed 1+1 case still routes to
+        # the enumerated multi-item format on purpose — that case carries
+        # two semantically distinct entries (one legacy validation error
+        # plus one structured diagnostic) that deserve enumeration. PR-3
+        # may revisit this if a new aggregated raise type emerges.
         single_error = len(self.errors) == 1 and not self.diagnostics
         single_diag = len(self.diagnostics) == 1 and not self.errors
         if single_error:

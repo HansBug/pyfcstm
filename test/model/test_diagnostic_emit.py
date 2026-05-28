@@ -384,6 +384,47 @@ state Root { state A; }
 
 
 @pytest.mark.unittest
+class TestM1NamedFunctionRefSpan:
+    """
+    M1 from PR-110 review: E_NAMED_FUNCTION_REF_NOT_FOUND emit sites
+    hard-coded ``span=None``. The containing StateDefinition has _span
+    available — use it as a fallback so ``e.lineno`` and IDE annotations
+    can anchor somewhere meaningful instead of falling back to line 1.
+    """
+
+    def test_named_ref_state_not_found_carries_state_span(self):
+        diag = _strict_diag("""
+state Root {
+    state A {
+        enter ref NoSuch.NoSuch;
+    }
+    [*] -> A;
+}
+""")
+        assert diag.code == 'E_NAMED_FUNCTION_REF_NOT_FOUND'
+        assert diag.refs['reason'] == 'state_not_found'
+        assert diag.span is not None, (
+            "M1: state-level fallback span must replace the previously "
+            "hard-coded None"
+        )
+        # The owning state A is on line 3 (after the leading blank line).
+        assert diag.span.line >= 3
+
+    def test_named_ref_function_not_found_carries_state_span(self):
+        diag = _strict_diag("""
+state Root {
+    state A {
+        enter ref MissingFunc;
+    }
+    [*] -> A;
+}
+""")
+        assert diag.code == 'E_NAMED_FUNCTION_REF_NOT_FOUND'
+        assert diag.refs['reason'] == 'named_function_not_found'
+        assert diag.span is not None
+
+
+@pytest.mark.unittest
 class TestI1FirstWinsNamedFunction:
     """
     I1 from PR-110 review: in strict mode the duplicate-named-function

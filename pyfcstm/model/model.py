@@ -3020,6 +3020,10 @@ def parse_dsl_node_to_state_machine(
                 walk_failed = False
                 for i, segment in enumerate(func_item.ref_state_path[1:-1], start=1):
                     if segment not in state.substates:
+                        # M1 from PR-110 review: the named-function ref AST
+                        # nodes don't carry their own spans yet, so fall back
+                        # to the owning state's span. State-level anchoring
+                        # is imprecise but vastly better than line 1.
                         sink.emit(ModelDiagnostic(
                             code='E_NAMED_FUNCTION_REF_NOT_FOUND',
                             severity='error',
@@ -3031,7 +3035,7 @@ def parse_dsl_node_to_state_machine(
                                 f"so cannot resolve reference "
                                 f"{'.'.join(func_item.ref_state_path)!r}."
                             ),
-                            span=None,
+                            span=getattr(node, '_span', None),
                             refs={
                                 'ref_path': '.'.join(func_item.ref_state_path),
                                 'reason': 'state_not_found',
@@ -3053,7 +3057,7 @@ def parse_dsl_node_to_state_machine(
                             f"Cannot find named function {segment!r} under "
                             f"state:\n{state.to_ast_node()}"
                         ),
-                        span=None,
+                        span=getattr(node, '_span', None),
                         refs={
                             'ref_path': '.'.join(func_item.ref_state_path),
                             'reason': 'named_function_not_found',

@@ -379,6 +379,71 @@ class TestSpanInvariants:
                 f"child={child_span}, parent={root._span}"
             )
 
+    def test_ctx_span_handles_empty_stop_text(self):
+        """
+        M3 from PR-110 review: when an ANTLR ``stop`` token has empty
+        text (e.g. synthetic / EOF tokens during error recovery),
+        ``_ctx_span`` previously computed
+        ``end_column = stop.column + len(stop.text) + 1`` which becomes
+        ``stop.column + 1`` — i.e. ``end_column == column`` on the same
+        line, a zero-width span that downstream editor squiggles refuse
+        to render.
+
+        The fix must guarantee at least one column of width on a single-
+        line span. We drive ``_ctx_span`` directly with a stub context.
+        """
+        from pyfcstm.dsl.listener import _ctx_span
+
+        class _StubToken:
+            def __init__(self, line, column, text):
+                self.line = line
+                self.column = column
+                self.text = text
+
+        class _StubCtx:
+            def __init__(self, start, stop):
+                self.start = start
+                self.stop = stop
+
+        # Same start/stop with empty text — the worst case.
+        tok = _StubToken(line=4, column=10, text='')
+        ctx = _StubCtx(start=tok, stop=tok)
+        span = _ctx_span(ctx)
+        assert span.line == 4
+        assert span.column == 11  # 0-based -> 1-based
+        # Zero-width would be end_column == 11 — must NOT happen.
+        assert span.end_column > span.column, (
+            f"_ctx_span produced zero-width single-line span: {span}"
+        )
+
+    def test_single_line_span_is_never_zero_width(self, parsed):
+        """For real parsed fixtures, every single-line span must cover
+        at least one character. Sister to the empty-token unit test."""
+        src, ast = parsed
+
+        def _walk(node):
+            yield node
+            for attr in ('definitions', 'root_state', 'substates',
+                         'transitions', 'force_transitions'):
+                child = getattr(node, attr, None)
+                if child is None:
+                    continue
+                if isinstance(child, list):
+                    for c in child:
+                        yield from _walk(c)
+                else:
+                    yield from _walk(child)
+
+        for node in _walk(ast):
+            span = getattr(node, '_span', None)
+            if span is None:
+                continue
+            if span.end_line == span.line:
+                assert span.end_column > span.column, (
+                    f"{type(node).__name__} has zero-width single-line span: "
+                    f"{span}"
+                )
+
     def test_slice_via_span_equals_original_for_full_root(self, parsed):
         src, ast = parsed
         root_span = ast.root_state._span

@@ -154,6 +154,29 @@ class TestModelValidationError:
         assert 'unknown var' in str(err)
         assert err.diagnostics[0].code == 'E_UNDEFINED_VAR'
 
+    def test_one_plus_one_mixed_still_uses_list_format(self):
+        """
+        M2 from PR-110 review: a ``ModelValidationError(errors=[e],
+        diagnostics=[d])`` carries one entry on each side. Even though the
+        total is 2, the bare-message fast path is intentionally NOT used —
+        the two entries deserve enumeration. This test pins the threshold
+        semantics so the boundary isn't changed accidentally during PR-3.
+
+        If a future PR genuinely wants 1+1 to render bare, this test
+        guarantees we make that decision explicitly rather than via drift.
+        """
+        diag = ModelDiagnostic(code='E_X', severity='error', message='mixed_diag')
+        e = ModelValidationError(
+            errors=[ValidationError('mixed_err')],
+            diagnostics=[diag],
+        )
+        s = str(e)
+        # Multi-item enumeration kicks in: both prefixes appear, and the
+        # "in total" wrapper is present (current canonical format).
+        assert '[error/VALIDATION] mixed_err' in s
+        assert '[error/E_X] mixed_diag' in s
+        assert 'in total' in s
+
     def test_multiple_diagnostics_construction_uses_list_format(self):
         diags = [
             ModelDiagnostic(code='E_UNDEFINED_VAR', severity='error', message='m1'),

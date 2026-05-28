@@ -58,13 +58,24 @@ def _ctx_span(ctx) -> Span:
     ANTLR exposes ``token.column`` (0-based start) and ``len(token.text)``;
     we translate that into a 1-based half-open range so downstream tooling
     can highlight the matching source slice with simple substring math.
+
+    M3 from PR-110 review: when ``stop.text`` is empty (synthetic / EOF
+    tokens during ANTLR error recovery), the naive
+    ``stop.column + len(stop.text) + 1`` formula would produce a
+    zero-width span on a single line (``end_column == column``). Editor
+    squiggles refuse to render zero-width spans, so we widen single-line
+    spans by at least one column. Multi-line spans are always
+    positive-width by construction.
     """
     start = ctx.start
     stop = ctx.stop if ctx.stop is not None else start
+    column = start.column + 1
     end_column = stop.column + len(stop.text) + 1
+    if stop.line == start.line and end_column <= column:
+        end_column = column + 1
     return Span(
         line=start.line,
-        column=start.column + 1,
+        column=column,
         end_line=stop.line,
         end_column=end_column,
     )

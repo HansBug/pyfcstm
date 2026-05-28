@@ -22,7 +22,7 @@ CodeFieldSpec
 -----------------------------------------------------
 
 .. autoclass:: CodeFieldSpec
-    :members: name,type,required,description
+    :members: name,type,required,description,enum
 
 
 CodeSpec

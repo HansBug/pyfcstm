@@ -44,7 +44,7 @@ import os
 import sys
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 import yaml
 
@@ -99,12 +99,18 @@ class CodeFieldSpec:
     :type required: bool
     :param description: Human-readable explanation of the field.
     :type description: str
+    :param enum: Optional tuple of allowed string values for the field.
+        When present, downstream emit-test infrastructure (and any future
+        runtime validator) checks that ``refs[field]`` is a member of the
+        tuple. ``None`` means the field has no enumeration constraint.
+    :type enum: Optional[Tuple[str, ...]]
     """
 
     name: str
     type: str
     required: bool
     description: str
+    enum: Optional[Tuple[str, ...]] = None
 
 
 @dataclass(frozen=True)
@@ -178,11 +184,38 @@ def _validate_field(path: str, code: str, field_name: str, raw: Any) -> CodeFiel
             f"got {type(raw_required).__name__}: {raw_required!r}",
         ))
     description = str(raw.get('description', ''))
+
+    raw_enum = raw.get('enum')
+    field_enum: Optional[Tuple[str, ...]] = None
+    if raw_enum is not None:
+        if not isinstance(raw_enum, list):
+            raise CodesSchemaError(_ctx(
+                path,
+                f"code {code!r} field {field_name!r} 'enum' must be a list "
+                f"when present,",
+                f"got {type(raw_enum).__name__}",
+            ))
+        if not raw_enum:
+            raise CodesSchemaError(_ctx(
+                path,
+                f"code {code!r} field {field_name!r} 'enum' must be non-empty "
+                f"when present.",
+            ))
+        for value in raw_enum:
+            if not isinstance(value, str):
+                raise CodesSchemaError(_ctx(
+                    path,
+                    f"code {code!r} field {field_name!r} 'enum' members must "
+                    f"be strings, got {type(value).__name__}: {value!r}",
+                ))
+        field_enum = tuple(raw_enum)
+
     return CodeFieldSpec(
         name=field_name,
         type=field_type,
         required=raw_required,
         description=description,
+        enum=field_enum,
     )
 
 

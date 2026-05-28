@@ -39,6 +39,46 @@ from typing import Any, Dict
 from .grammar import GrammarListener, GrammarParser
 from .node import *
 from ..utils import format_multiline_comment
+from ..utils.validate import Span
+
+
+def _ctx_span(ctx) -> Span:
+    """
+    Build a 1-based :class:`Span` covering an ANTLR4 parse context.
+
+    Semantics follow common editor / LSP conventions:
+
+    * ``line`` / ``column`` —  the 1-based start position (column points at
+      the **first character** of the first token).
+    * ``end_line`` / ``end_column`` — the 1-based exclusive end position
+      (``end_column`` points one column **past** the last character of the
+      last token, so a span covering ``[col, end_col)`` exactly contains
+      the token range).
+
+    ANTLR exposes ``token.column`` (0-based start) and ``len(token.text)``;
+    we translate that into a 1-based half-open range so downstream tooling
+    can highlight the matching source slice with simple substring math.
+
+    M3 from PR-110 review: when ``stop.text`` is empty (synthetic / EOF
+    tokens during ANTLR error recovery), the naive
+    ``stop.column + len(stop.text) + 1`` formula would produce a
+    zero-width span on a single line (``end_column == column``). Editor
+    squiggles refuse to render zero-width spans, so we widen single-line
+    spans by at least one column. Multi-line spans are always
+    positive-width by construction.
+    """
+    start = ctx.start
+    stop = ctx.stop if ctx.stop is not None else start
+    column = start.column + 1
+    end_column = stop.column + len(stop.text) + 1
+    if stop.line == start.line and end_column <= column:
+        end_column = column + 1
+    return Span(
+        line=start.line,
+        column=column,
+        end_line=stop.line,
+        end_column=end_column,
+    )
 
 
 def _parse_string_literal(raw_text: str) -> str:
@@ -494,11 +534,13 @@ class GrammarParseListener(GrammarListener):
         :type ctx: GrammarParser.Def_assignmentContext
         """
         super().exitDef_assignment(ctx)
-        self.nodes[ctx] = DefAssignment(
+        node = DefAssignment(
             name=str(ctx.ID()),
             type=ctx.deftype.text,
             expr=self.nodes[ctx.init_expression()],
         )
+        node._span = _ctx_span(ctx)
+        self.nodes[ctx] = node
 
     def exitState_machine_dsl(
         self, ctx: GrammarParser.State_machine_dslContext
@@ -525,7 +567,7 @@ class GrammarParseListener(GrammarListener):
         :type ctx: GrammarParser.LeafStateDefinitionContext
         """
         super().exitLeafStateDefinition(ctx)
-        self.nodes[ctx] = StateDefinition(
+        node = StateDefinition(
             name=str(ctx.ID()),
             extra_name=_parse_string_literal(ctx.extra_name.text)
             if ctx.extra_name
@@ -537,6 +579,8 @@ class GrammarParseListener(GrammarListener):
             exits=[],
             is_pseudo=bool(ctx.pseudo),
         )
+        node._span = _ctx_span(ctx)
+        self.nodes[ctx] = node
 
     def exitCompositeStateDefinition(
         self, ctx: GrammarParser.CompositeStateDefinitionContext
@@ -548,7 +592,7 @@ class GrammarParseListener(GrammarListener):
         :type ctx: GrammarParser.CompositeStateDefinitionContext
         """
         super().exitCompositeStateDefinition(ctx)
-        self.nodes[ctx] = StateDefinition(
+        node = StateDefinition(
             name=str(ctx.ID()),
             extra_name=_parse_string_literal(ctx.extra_name.text)
             if ctx.extra_name
@@ -603,6 +647,8 @@ class GrammarParseListener(GrammarListener):
             ],
             is_pseudo=bool(ctx.pseudo),
         )
+        node._span = _ctx_span(ctx)
+        self.nodes[ctx] = node
 
     def exitEntryTransitionDefinition(
         self, ctx: GrammarParser.EntryTransitionDefinitionContext
@@ -614,7 +660,7 @@ class GrammarParseListener(GrammarListener):
         :type ctx: GrammarParser.EntryTransitionDefinitionContext
         """
         super().exitEntryTransitionDefinition(ctx)
-        self.nodes[ctx] = TransitionDefinition(
+        node = TransitionDefinition(
             from_state=INIT_STATE,
             to_state=ctx.to_state.text,
             event_id=self.nodes[ctx.chain_id()] if ctx.chain_id() else None,
@@ -625,6 +671,8 @@ class GrammarParseListener(GrammarListener):
             if ctx.operational_statement_set()
             else [],
         )
+        node._span = _ctx_span(ctx)
+        self.nodes[ctx] = node
 
     def exitNormalTransitionDefinition(
         self, ctx: GrammarParser.NormalTransitionDefinitionContext
@@ -641,7 +689,7 @@ class GrammarParseListener(GrammarListener):
             event_id = self.nodes[ctx.chain_id()]
         elif ctx.from_id:
             event_id = ChainID([ctx.from_state.text, ctx.from_id.text])
-        self.nodes[ctx] = TransitionDefinition(
+        node = TransitionDefinition(
             from_state=ctx.from_state.text,
             to_state=ctx.to_state.text,
             event_id=event_id,
@@ -652,6 +700,8 @@ class GrammarParseListener(GrammarListener):
             if ctx.operational_statement_set()
             else [],
         )
+        node._span = _ctx_span(ctx)
+        self.nodes[ctx] = node
 
     def exitExitTransitionDefinition(
         self, ctx: GrammarParser.ExitTransitionDefinitionContext
@@ -668,7 +718,7 @@ class GrammarParseListener(GrammarListener):
             event_id = self.nodes[ctx.chain_id()]
         elif ctx.from_id:
             event_id = ChainID([ctx.from_state.text, ctx.from_id.text])
-        self.nodes[ctx] = TransitionDefinition(
+        node = TransitionDefinition(
             from_state=ctx.from_state.text,
             to_state=EXIT_STATE,
             event_id=event_id,
@@ -679,6 +729,8 @@ class GrammarParseListener(GrammarListener):
             if ctx.operational_statement_set()
             else [],
         )
+        node._span = _ctx_span(ctx)
+        self.nodes[ctx] = node
 
     def exitChain_id(self, ctx: GrammarParser.Chain_idContext) -> None:
         """
@@ -1016,7 +1068,7 @@ class GrammarParseListener(GrammarListener):
             event_id = self.nodes[ctx.chain_id()]
         elif ctx.from_id:
             event_id = ChainID([ctx.from_state.text, ctx.from_id.text])
-        self.nodes[ctx] = ForceTransitionDefinition(
+        node = ForceTransitionDefinition(
             from_state=ctx.from_state.text,
             to_state=ctx.to_state.text,
             event_id=event_id,
@@ -1024,6 +1076,8 @@ class GrammarParseListener(GrammarListener):
             if ctx.cond_expression()
             else None,
         )
+        node._span = _ctx_span(ctx)
+        self.nodes[ctx] = node
 
     def exitExitForceTransitionDefinition(
         self, ctx: GrammarParser.ExitForceTransitionDefinitionContext
@@ -1040,7 +1094,7 @@ class GrammarParseListener(GrammarListener):
             event_id = self.nodes[ctx.chain_id()]
         elif ctx.from_id:
             event_id = ChainID([ctx.from_state.text, ctx.from_id.text])
-        self.nodes[ctx] = ForceTransitionDefinition(
+        node = ForceTransitionDefinition(
             from_state=ctx.from_state.text,
             to_state=EXIT_STATE,
             event_id=event_id,
@@ -1048,6 +1102,8 @@ class GrammarParseListener(GrammarListener):
             if ctx.cond_expression()
             else None,
         )
+        node._span = _ctx_span(ctx)
+        self.nodes[ctx] = node
 
     def exitNormalAllForceTransitionDefinition(
         self, ctx: GrammarParser.NormalAllForceTransitionDefinitionContext
@@ -1059,7 +1115,7 @@ class GrammarParseListener(GrammarListener):
         :type ctx: GrammarParser.NormalAllForceTransitionDefinitionContext
         """
         super().exitNormalAllForceTransitionDefinition(ctx)
-        self.nodes[ctx] = ForceTransitionDefinition(
+        node = ForceTransitionDefinition(
             from_state=ALL,
             to_state=ctx.to_state.text,
             event_id=self.nodes[ctx.chain_id()] if ctx.chain_id() else None,
@@ -1067,6 +1123,8 @@ class GrammarParseListener(GrammarListener):
             if ctx.cond_expression()
             else None,
         )
+        node._span = _ctx_span(ctx)
+        self.nodes[ctx] = node
 
     def exitExitAllForceTransitionDefinition(
         self, ctx: GrammarParser.ExitAllForceTransitionDefinitionContext
@@ -1078,8 +1136,7 @@ class GrammarParseListener(GrammarListener):
         :type ctx: GrammarParser.ExitAllForceTransitionDefinitionContext
         """
         super().exitExitAllForceTransitionDefinition(ctx)
-        # print(self.nodes[ctx.chain_id()] if ctx.chain_id() else None)
-        self.nodes[ctx] = ForceTransitionDefinition(
+        node = ForceTransitionDefinition(
             from_state=ALL,
             to_state=EXIT_STATE,
             event_id=self.nodes[ctx.chain_id()] if ctx.chain_id() else None,
@@ -1087,6 +1144,8 @@ class GrammarParseListener(GrammarListener):
             if ctx.cond_expression()
             else None,
         )
+        node._span = _ctx_span(ctx)
+        self.nodes[ctx] = node
 
     def exitEvent_definition(self, ctx: GrammarParser.Event_definitionContext) -> None:
         """

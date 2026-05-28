@@ -287,6 +287,81 @@ class TestLoaderValidation:
         with pytest.raises(CodesSchemaError, match='must be a mapping'):
             load_codes(path)
 
+    def test_rejects_enum_as_non_list(self, tmp_path):
+        path = self._write_yaml(tmp_path, """
+            E_FOO:
+              severity: error
+              description: Bad enum shape.
+              refs:
+                bar:
+                  type: str
+                  required: true
+                  description: A bar.
+                  enum: "not_a_list"
+        """)
+        with pytest.raises(CodesSchemaError, match='enum'):
+            load_codes(path)
+
+    def test_rejects_enum_as_empty_list(self, tmp_path):
+        path = self._write_yaml(tmp_path, """
+            E_FOO:
+              severity: error
+              description: Empty enum.
+              refs:
+                bar:
+                  type: str
+                  required: true
+                  description: A bar.
+                  enum: []
+        """)
+        with pytest.raises(CodesSchemaError, match='non-empty'):
+            load_codes(path)
+
+    def test_rejects_enum_with_non_string_member(self, tmp_path):
+        path = self._write_yaml(tmp_path, """
+            E_FOO:
+              severity: error
+              description: Mixed enum.
+              refs:
+                bar:
+                  type: str
+                  required: true
+                  description: A bar.
+                  enum: ['ok', 42, 'still_ok']
+        """)
+        with pytest.raises(CodesSchemaError, match='strings'):
+            load_codes(path)
+
+    def test_accepts_field_without_enum(self, tmp_path):
+        path = self._write_yaml(tmp_path, """
+            E_FOO:
+              severity: error
+              description: No-enum field is fine.
+              refs:
+                bar:
+                  type: str
+                  required: true
+                  description: A bar.
+        """)
+        reg = load_codes(path)
+        assert reg['E_FOO'].refs_schema['bar'].enum is None
+
+    def test_loads_enum_into_code_field_spec(self, tmp_path):
+        path = self._write_yaml(tmp_path, """
+            E_FOO:
+              severity: error
+              description: With enum.
+              refs:
+                bar:
+                  type: str
+                  required: true
+                  description: A bar.
+                  enum: ['a', 'b', 'c']
+        """)
+        reg = load_codes(path)
+        spec = reg['E_FOO'].refs_schema['bar']
+        assert spec.enum == ('a', 'b', 'c')
+
     def test_rejects_example_dsl_as_non_string(self, tmp_path):
         path = self._write_yaml(tmp_path, """
             E_FOO:

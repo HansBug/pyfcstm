@@ -1,20 +1,16 @@
-pyfcstm.model
+pyfcstm.diagnostics
 ========================================================
 
-.. currentmodule:: pyfcstm.model
+.. currentmodule:: pyfcstm.diagnostics
 
-.. automodule:: pyfcstm.model
+.. automodule:: pyfcstm.diagnostics
 
 
 .. toctree::
     :maxdepth: 3
 
-    base
-    expr
-    imports
-    load
-    model
-    plantuml
+    codes
+    sink
 
 \_\_all\_\_
 -----------------------------------------------------

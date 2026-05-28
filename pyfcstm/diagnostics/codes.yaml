@@ -546,9 +546,12 @@ E_DURING_ASPECT_INVALID:
       type: str_or_null
       required: false
       description: >-
-        The aspect token that was actually used (``'before'``, ``'after'``,
-        or null when the user wrote a bare ``during`` on a composite).
-      enum: ['before', 'after']
+        The aspect token that was actually used. ``'before'`` or
+        ``'after'`` for ``during before`` / ``during after`` and
+        ``>> during before/after``; ``null`` when the user wrote a bare
+        ``during`` on a composite state. ``null`` is intentional — the
+        consumer should branch on the bare-during case rather than
+        treat it as an enum value.
   for_llm:
     summary: >-
       A ``during before`` / ``during after`` or ``>> during ...``

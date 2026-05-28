@@ -397,3 +397,47 @@ def test_collect_mode_accumulates_import_and_model_errors(tmp_path):
     # neither aborted the other.
     assert 'E_IMPORT_NOT_FOUND' in codes
     assert 'E_DANGLING_TRANSITION' in codes
+
+
+@pytest.mark.unittest
+def test_undefined_var_emits_per_identifier():
+    """``E_UNDEFINED_VAR`` must emit one diagnostic per undefined
+    identifier, and ``refs['var_name']`` must be a ``str`` — not a list.
+
+    The schema (``pyfcstm/diagnostics/codes.yaml``) declares
+    ``var_name: type: str, required: true``. Bundling multiple unknown
+    names into a list violates the schema type contract and diverges
+    from jsfcstm, which emits one diagnostic per identifier so VSCode
+    can highlight each one independently.
+
+    This fixture has three undefined identifiers inside a *single*
+    guard expression — the only way to surface the difference between
+    list-emit and per-identifier-emit behaviour.
+    """
+    dsl = '\n'.join([
+        'def int counter = 0;',
+        'state Root {',
+        '    state A;',
+        '    state B;',
+        '    [*] -> A;',
+        '    A -> B : if [foo > 0 && bar < 10 && baz == 0];',
+        '}',
+    ])
+    codes, _ = _collect_codes_from_dsl(dsl)
+    assert codes.count('E_UNDEFINED_VAR') == 3, (
+        f'expected one E_UNDEFINED_VAR per undefined identifier '
+        f'(foo/bar/baz), got {codes}'
+    )
+
+    ast = parse_with_grammar_entry(dsl, 'state_machine_dsl')
+    _, diagnostics = parse_dsl_node_to_state_machine(ast, collect=True)
+    undef_diags = [d for d in diagnostics if d.code == 'E_UNDEFINED_VAR']
+    var_names = sorted(d.refs['var_name'] for d in undef_diags)
+    assert var_names == ['bar', 'baz', 'foo'], (
+        f'expected per-identifier var_name values, got {var_names}'
+    )
+    for d in undef_diags:
+        assert isinstance(d.refs['var_name'], str), (
+            f'refs.var_name must be str per schema, got '
+            f'{type(d.refs["var_name"]).__name__}={d.refs["var_name"]!r}'
+        )

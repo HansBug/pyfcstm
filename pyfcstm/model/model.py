@@ -2329,17 +2329,17 @@ def parse_dsl_node_to_state_machine(
                 if var.name not in available_vars and var.name not in unknown_vars:
                     unknown_vars.append(var.name)
 
-            if unknown_vars:
+            for unknown_var in unknown_vars:
                 sink.emit(ModelDiagnostic(
                     code='E_UNDEFINED_VAR',
                     severity='error',
                     message=(
-                        f"{unknown_var_message} {', '.join(unknown_vars)} "
+                        f"{unknown_var_message} {unknown_var} "
                         f"in transition:\n{owner_node}"
                     ),
                     span=getattr(owner_node, '_span', None),
                     refs={
-                        'var_name': unknown_vars,
+                        'var_name': unknown_var,
                         'referenced_in': referenced_in,
                         'state_path': state_path,
                         'expr_text': str(op_item.expr),
@@ -2382,17 +2382,17 @@ def parse_dsl_node_to_state_machine(
                         and var.name not in unknown_vars
                     ):
                         unknown_vars.append(var.name)
-                if unknown_vars:
+                for unknown_var in unknown_vars:
                     sink.emit(ModelDiagnostic(
                         code='E_UNDEFINED_VAR',
                         severity='error',
                         message=(
-                            f"{unknown_var_message} {', '.join(unknown_vars)} "
+                            f"{unknown_var_message} {unknown_var} "
                             f"in transition:\n{owner_node}"
                         ),
                         span=getattr(owner_node, '_span', None),
                         refs={
-                            'var_name': unknown_vars,
+                            'var_name': unknown_var,
                             'referenced_in': referenced_in,
                             'state_path': state_path,
                             'expr_text': str(branch.condition),
@@ -2965,18 +2965,18 @@ def parse_dsl_node_to_state_machine(
                 for var in guard.list_variables():
                     if var.name not in d_defines:
                         unknown_vars.append(var.name)
-                if unknown_vars:
+                for unknown_var in unknown_vars:
                     sink.emit(ModelDiagnostic(
                         code='E_UNDEFINED_VAR',
                         severity='error',
                         message=(
                             f"Unknown guard variable "
-                            f"{', '.join(unknown_vars)} in force "
+                            f"{unknown_var} in force "
                             f"transition:\n{f_transnode}"
                         ),
                         span=getattr(f_transnode, '_span', None),
                         refs={
-                            'var_name': unknown_vars,
+                            'var_name': unknown_var,
                             'referenced_in': 'guard',
                             'state_path': '.'.join(current_path),
                             'expr_text': str(f_transnode.condition_expr),
@@ -3154,18 +3154,18 @@ def parse_dsl_node_to_state_machine(
                 for var in guard.list_variables():
                     if var.name not in d_defines:
                         unknown_vars.append(var.name)
-                if unknown_vars:
+                for unknown_var in unknown_vars:
                     sink.emit(ModelDiagnostic(
                         code='E_UNDEFINED_VAR',
                         severity='error',
                         message=(
                             f"Unknown guard variable "
-                            f"{', '.join(unknown_vars)} in "
+                            f"{unknown_var} in "
                             f"transition:\n{transnode}"
                         ),
                         span=getattr(transnode, '_span', None),
                         refs={
-                            'var_name': unknown_vars,
+                            'var_name': unknown_var,
                             'referenced_in': 'guard',
                             'state_path': '.'.join(current_path),
                             'expr_text': str(transnode.condition_expr),

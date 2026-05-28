@@ -1013,7 +1013,9 @@ class TestModelModel:
 
         err = ei.value
         assert isinstance(err, SyntaxError)
-        assert "Unknown guard variable c, d in transition:" in err.msg
+        # Per-identifier emit (PR-A-fix C-B): strict mode raises on
+        # the first undefined name encountered, which is ``c``.
+        assert "Unknown guard variable c in transition:" in err.msg
         assert "LX1 -> [*] : if [a == 0 && c > 0 || a - d > 0];" in err.msg
 
     def test_parse_unknown_transition_effect_variable(self):

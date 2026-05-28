@@ -163,7 +163,13 @@ E_EVENT_NOT_FOUND:
     searched_from:
       type: str_or_null
       required: false
-      description: Dotted state path where the search originated.
+      description: >-
+        Dotted state path of the **caller** that initiated the lookup
+        (i.e. the state on which `.resolve_event()` was invoked, or, for
+        `StateMachine.resolve_event`, the state machine's root). This is
+        the originating location of the bad reference in source — not
+        the effective search root, which is always the model root for
+        absolute references.
   example_dsl: |
     state Root { state A; state B; A -> B :: NoEvent; }
 

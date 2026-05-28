@@ -316,6 +316,70 @@ class ModelValidationError(SyntaxError):
         return os.linesep.join(parts)
 
 
+class ModelValueError(ModelValidationError, ValueError):
+    """
+    Raised by model lookup APIs when an input string is syntactically
+    invalid as a value (empty, bad format, dotted path that exceeds the
+    root state, ...).
+
+    Multi-inherits from :class:`ModelValidationError` (which itself
+    multi-inherits :class:`SyntaxError`) and from :class:`ValueError`, so:
+
+    * ``except ValueError:`` continues to catch this — preserving the
+      pre-PR-3 behavior at every call site that already handles
+      ``ValueError`` raised from ``State.resolve_event`` /
+      ``StateMachine.resolve_event``.
+    * ``except SyntaxError:`` continues to catch too (inherited via
+      :class:`ModelValidationError`), keeping the PR-2 multi-inheritance
+      contract consistent.
+    * The new ``except ModelValueError:`` (or ``ModelValidationError``)
+      lets diagnostic-aware consumers dispatch on the typed class.
+
+    All structured diagnostics emitted via this exception carry
+    ``code='E_EVENT_REF_INVALID'`` per the contract in
+    ``pyfcstm/diagnostics/codes.yaml``.
+
+    Example::
+
+        >>> from pyfcstm.utils.validate import ModelValueError
+        >>> try:
+        ...     raise ModelValueError(message="invalid ref")
+        ... except ValueError as e:
+        ...     isinstance(e, ModelValueError)
+        True
+    """
+
+
+class ModelLookupError(ModelValidationError, LookupError):
+    """
+    Raised by model lookup APIs when a state path or event name cannot be
+    found in the live state hierarchy.
+
+    Multi-inherits :class:`ModelValidationError` and :class:`LookupError`,
+    so:
+
+    * ``except LookupError:`` continues to catch this — preserving the
+      pre-PR-3 behavior at every call site that already handles
+      ``LookupError`` raised from ``State.resolve_event`` /
+      ``StateMachine.resolve_event``.
+    * ``except SyntaxError:`` and ``except ModelValidationError:`` both
+      catch as well (inherited path).
+
+    Structured diagnostics emitted via this exception carry
+    ``code='E_EVENT_NOT_FOUND'`` per the contract in
+    ``pyfcstm/diagnostics/codes.yaml``.
+
+    Example::
+
+        >>> from pyfcstm.utils.validate import ModelLookupError
+        >>> try:
+        ...     raise ModelLookupError(message="state not found")
+        ... except LookupError as e:
+        ...     isinstance(e, ModelLookupError)
+        True
+    """
+
+
 class IValidatable:
     """
     Interface class for implementing validatable objects.

@@ -410,6 +410,10 @@ state Root {
         it('actions_in_scope path with abstract action label', async () => {
             // Lines 529-530: abstract-action label assembly in
             // ``actionsInScope`` for variable abstract-action listing.
+            // The variable ``counter`` is read in ``Idle.during`` and
+            // the state ``Idle`` has an ``enter abstract Setup``, so
+            // the helper must include ``Root.Idle:<abstract>`` in the
+            // variable's ``abstract_actions_in_scope`` list.
             const dsl = `
 def int counter = 0;
 state Root {
@@ -423,9 +427,7 @@ state Root {
             const report = inspectModel(await buildMachine(dsl));
             const counter = report.variables.find(v => v.name === 'counter');
             assert.ok(counter);
-            // The abstract action should appear via abstract_actions_in_scope.
-            const abstracts = counter!.abstract_actions_in_scope;
-            assert.ok(abstracts.length > 0 || true);  // may be empty if counter isn't impacted
+            assert.deepEqual(counter!.abstract_actions_in_scope, ['Root.Idle:<abstract>']);
         });
 
         it('inspect_model handles effect text fallback via stmt.text field', async () => {

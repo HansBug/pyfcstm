@@ -134,7 +134,7 @@
     "node": ">=16"
   },
   "scripts": {
-    "build": "rm -rf dist && node ./scripts/generate-parser.js && tsc -p ./ && node ./scripts/sync-runtime-assets.js",
+    "build": "rm -rf dist && node ./scripts/generate-parser.js && node ./scripts/sync-runtime-assets.js --phase=src && tsc -p ./ && node ./scripts/sync-runtime-assets.js --phase=dist",
     "clean": "rm -rf coverage dist parser src/dsl/grammar tsconfig.tsbuildinfo",
     "pack:local": "node ./scripts/pack-local.js",
     "pack:check": "npm pack --dry-run",
@@ -155,9 +155,11 @@
     "vscode-languageserver-textdocument": "1.0.1"
   },
   "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
     "@types/mocha": "^10.0.10",
     "@types/node": "^16.0.0",
     "c8": "^10.1.3",
+    "js-yaml": "^4.1.1",
     "mocha": "^10.8.2",
     "ts-node": "^10.9.2",
     "typescript": "^4.5.0"

@@ -299,3 +299,163 @@ class TestSchemaJsonValidates:
         assert required.issubset(set(payload.keys())), (
             f'missing keys: {required - set(payload.keys())}'
         )
+
+
+@pytest.mark.unittest
+class TestInspectModelAdvancedFeatures:
+    """Exercise abstract actions, refs, pseudo states, forced transitions,
+    chain / absolute events, and function-call expressions to keep the
+    structural inspector covered for the less common DSL constructs."""
+
+    ADVANCED_DSL = """
+def int counter = 0;
+def float angle = 0.0;
+state Root {
+    state System {
+        state Setup {
+            enter abstract HardwareInit;
+            enter Initialize { counter = 0; }
+            exit { counter = -1; }
+        }
+        state Running {
+            enter Restart { counter = 0; }
+            during { counter = counter + 1; angle = sin(angle); }
+        }
+        state Error;
+        pseudo state Crash;
+        [*] -> Setup;
+        Setup -> Running : if [counter >= 0];
+        Running -> Error : /Halt;
+        Running -> Crash : Tick;
+        !Running -> Error :: Panic;
+        >> during before Logger { counter = counter + 0; }
+        >> during after { counter = counter; }
+    }
+    [*] -> System;
+}
+"""
+
+    @pytest.fixture
+    def report(self):
+        return inspect_model(_parse(self.ADVANCED_DSL))
+
+    def test_abstract_action_inventory_populated(self, report):
+        assert any(
+            'Root.System.Setup' in path
+            for path in report.metrics.abstract_action_inventory
+        )
+
+    def test_state_has_abstract_action_flag(self, report):
+        by_path = _by_path(report.states)
+        assert by_path['Root.System.Setup'].has_abstract_action is True
+        assert by_path['Root.System.Running'].has_abstract_action is False
+
+    def test_named_action_label_appears(self, report):
+        by_path = _by_path(report.states)
+        running_enters = by_path['Root.System.Running'].entry_actions
+        assert 'Restart' in running_enters
+
+    def test_named_aspect_label_appears(self, report):
+        by_path = _by_path(report.states)
+        # `>> during before Logger` produces a named aspect.
+        assert 'Logger' in by_path['Root.System'].aspect_before
+        # Anonymous `>> during after` should fall back to `<inline>`.
+        assert '<inline>' in by_path['Root.System'].aspect_after
+
+    def test_pseudo_state_flagged(self, report):
+        by_path = _by_path(report.states)
+        assert by_path['Root.System.Crash'].is_pseudo is True
+        # Pseudo states still count as leaves in the metrics
+        assert report.metrics.n_states_pseudo == 1
+
+    def test_absolute_event_scope(self, report):
+        with_event = {t.event: t.event_scope for t in report.transitions if t.event}
+        # `/Halt` is scoped at the root state (``Root``).
+        assert with_event.get('Root.Halt') == 'absolute'
+
+    def test_chain_event_scope(self, report):
+        with_event = {t.event: t.event_scope for t in report.transitions if t.event}
+        # `Tick` (no `::`, no `/`) is scoped at the parent ``Root.System``.
+        assert with_event.get('Root.System.Tick') == 'chain'
+
+    def test_forced_transition_expansion_visible(self, report):
+        # The forced ``!Running -> Error :: Panic;`` is expanded by the
+        # model layer into regular transitions. PR-A surfaces them in
+        # the transition list; the ``is_forced`` flag itself depends
+        # on the model layer preserving the forced-origin (TBD PR-B).
+        panic_transitions = [
+            t for t in report.transitions
+            if t.event and 'Panic' in t.event
+        ]
+        assert len(panic_transitions) >= 1
+
+    def test_function_call_in_expression(self, report):
+        running = next(s for s in report.states if s.path == 'Root.System.Running')
+        # Inline during action records both reads and writes for ``angle``.
+        angle = next(v for v in report.variables if v.name == 'angle')
+        assert 'Root.System.Running' in angle.read_in_states
+        assert 'Root.System.Running' in angle.written_in_states
+
+    def test_var_dataflow_handles_function_call(self, report):
+        df = report.var_dataflow['angle']
+        assert 'Root.System.Running' in df['reads']
+        assert 'Root.System.Running' in df['writes']
+
+    def test_action_ref_graph_has_named_keys(self, report):
+        graph = report.action_ref_graph
+        # Named actions populate the graph as keys even without ref
+        # edges (so downstream tooling can iterate every action).
+        keys = list(graph.keys())
+        assert any('Initialize' in k for k in keys)
+        assert any('Restart' in k for k in keys)
+
+
+@pytest.mark.unittest
+class TestInspectModelExpressionWalker:
+    """Direct unit tests for the expression / statement walkers that
+    feed the variable participation flags."""
+
+    DSL_WITH_IF_BLOCK = """
+def int x = 0;
+def int y = 0;
+state Root {
+    state A { enter {
+        if [x > 0] {
+            y = 1;
+        } else {
+            y = x + 1;
+        }
+    } }
+    state B;
+    [*] -> A;
+    A -> B :: Done;
+}
+"""
+
+    def test_if_block_branches_capture_reads(self):
+        report = inspect_model(_parse(self.DSL_WITH_IF_BLOCK))
+        vars_by_name = {v.name: v for v in report.variables}
+        # ``x`` is read by both the branch guard and the else-branch
+        # right-hand side.
+        assert 'Root.A' in vars_by_name['x'].read_in_states
+        # ``y`` is written in both branches.
+        assert 'Root.A' in vars_by_name['y'].written_in_states
+
+
+@pytest.mark.unittest
+class TestInspectModelToJsonRoundtrip:
+    """Tighter to_json() guarantees beyond the smoke tests above."""
+
+    def test_to_json_handles_advanced_features(self):
+        report = inspect_model(_parse(TestInspectModelAdvancedFeatures.ADVANCED_DSL))
+        payload = report.to_json()
+        json.dumps(payload)
+        # is_forced is exposed on every transition as a boolean.
+        for t in payload['transitions']:
+            assert isinstance(t['is_forced'], bool)
+
+    def test_to_json_preserves_aspect_coverage(self):
+        report = inspect_model(_parse(TestInspectModelAdvancedFeatures.ADVANCED_DSL))
+        payload = report.to_json()
+        assert isinstance(payload['metrics']['aspect_coverage'], dict)
+        assert payload['metrics']['abstract_action_inventory']

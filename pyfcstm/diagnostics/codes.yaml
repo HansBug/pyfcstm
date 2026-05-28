@@ -50,6 +50,17 @@ E_UNDEFINED_VAR:
       type: str_or_null
       required: false
       description: Original expression text containing the reference.
+    is_temporary:
+      type: bool
+      required: false
+      description: >-
+        ``True`` when the identifier looked like a block-local temporary
+        (the read occurred before the variable was assigned within the
+        same ``enter`` / ``during`` / ``exit`` / ``effect`` block). Layer 2
+        merges what jsfcstm previously emitted as
+        ``fcstm.readBeforeAssignTemporary`` into this single ``E_*`` code
+        plus this flag. Defaults to ``False`` / absent for "real" undefined
+        variables that have no matching ``def`` declaration anywhere.
   example_dsl: |
     def int x = 0;
     state Root { state A; state B; A -> B : if [unknown_var > 0]; }
@@ -366,5 +377,291 @@ E_NAMED_FUNCTION_REF_NOT_FOUND:
     state Root {
         state A {
             enter ref NoSuch.NoSuch;
+        }
+    }
+
+# ---------------------------------------------------------------------------
+# Import-related errors (Layer 2 PR-A alignment).
+#
+# These cover the ``imports.py`` raise sites that previously surfaced as
+# unstructured ``SyntaxError`` ``ValueError``. jsfcstm has its own set of
+# import-time analyzers (workspace-graph based) which now emit the same
+# ``E_IMPORT_*`` codes so the two ends stay aligned.
+# ---------------------------------------------------------------------------
+
+E_IMPORT_NOT_FOUND:
+  severity: error
+  capability: pure_static
+  description: >-
+    An ``import`` statement points at a source file that cannot be found,
+    cannot be read, or fails to parse.
+  refs:
+    source_path:
+      type: str
+      required: true
+      description: >-
+        The source-path token from the import statement, exactly as it
+        appeared in the DSL.
+    alias:
+      type: str
+      required: true
+      description: >-
+        The alias under which the import was declared.
+    host_state_path:
+      type: str
+      required: true
+      description: >-
+        Dotted path of the composite state hosting the import statement.
+    reason:
+      type: str
+      required: true
+      description: >-
+        Why resolution failed.
+      enum: ['file_not_found', 'read_error', 'parse_error', 'no_root_state']
+  for_llm:
+    summary: >-
+      An imported sub-machine file is missing or unreadable. The import
+      statement at host_state_path is dangling — every downstream
+      mapping that depends on it will also be invalid.
+    recommended_actions:
+      - kind: fix_path
+        target: import_statement
+        rationale: >-
+          Adjust the source_path to a real file relative to the host file,
+          or remove the import if the sub-machine is no longer required.
+      - kind: create_file
+        target: import_target
+        rationale: >-
+          If the file should exist, create it with at least a top-level
+          ``state Root { ... }`` so its root state can be merged in.
+    do_not:
+      - "Do not silently rename the alias to dodge the missing file."
+      - "Do not add a placeholder state under the alias — the import must resolve to a real file."
+  example_dsl: |
+    state System {
+        import "missing.fcstm" as Sub;
+    }
+
+E_IMPORT_CIRCULAR:
+  severity: error
+  capability: pure_static
+  description: >-
+    A cycle was detected while resolving ``import`` statements between
+    two or more state-machine source files.
+  refs:
+    source_path:
+      type: str
+      required: true
+      description: The source-path token that closed the cycle.
+    alias:
+      type: str
+      required: true
+      description: The alias under which the cyclic import was declared.
+    host_state_path:
+      type: str
+      required: true
+      description: Dotted path of the composite state hosting the import.
+    cycle_chain:
+      type: list[str]
+      required: true
+      description: >-
+        Ordered list of file paths that participate in the cycle, starting
+        and ending at the same file.
+  for_llm:
+    summary: >-
+      Two or more state-machine files import each other transitively. The
+      compiler refuses to resolve cycles to keep the merged hierarchy
+      tractable.
+    recommended_actions:
+      - kind: refactor
+        target: import_statement
+        rationale: >-
+          Break the cycle by extracting the shared state(s) into a third
+          file that both ends import without depending on each other.
+      - kind: drop_back_edge
+        target: import_statement
+        rationale: >-
+          If the cycle is accidental, remove the import statement that
+          closes the loop (the one named in ``source_path``).
+    do_not:
+      - "Do not duplicate the imported states inline to break the cycle — that defeats the purpose of imports."
+      - "Do not introduce a stub alias that re-exports the cycle from another file."
+  example_dsl: |
+    # a.fcstm
+    state A { import "b.fcstm" as B; }
+    # b.fcstm
+    state B { import "a.fcstm" as A; }
+
+E_IMPORT_ALIAS_CONFLICT:
+  severity: error
+  capability: pure_static
+  description: >-
+    An ``import`` alias clashes with an existing child state (or with
+    another import alias) under the same composite state.
+  refs:
+    alias:
+      type: str
+      required: true
+      description: The conflicting alias name.
+    host_state_path:
+      type: str
+      required: true
+      description: Dotted path of the composite state hosting the import.
+    conflicting_kind:
+      type: str
+      required: true
+      description: >-
+        What the alias clashed with.
+      enum: ['existing_substate', 'previous_import_alias']
+  for_llm:
+    summary: >-
+      The import alias collides with an already-defined name in the same
+      composite scope. The merged hierarchy cannot have two children
+      sharing a name.
+    recommended_actions:
+      - kind: rename_alias
+        target: import_statement
+        rationale: >-
+          Pick a unique alias for the import; references to the imported
+          machine elsewhere in the file must follow the new alias.
+      - kind: rename_other
+        target: existing_substate
+        rationale: >-
+          If the existing substate is the one that should be renamed,
+          update its declaration and every transition referencing it.
+    do_not:
+      - "Do not silently drop one of the conflicting definitions."
+      - "Do not add a numeric suffix to the alias as an automatic fix without checking downstream references."
+  example_dsl: |
+    state System {
+        state Worker;
+        import "worker.fcstm" as Worker;
+    }
+
+E_IMPORT_DUPLICATE_MAPPING:
+  severity: error
+  capability: pure_static
+  description: >-
+    Two or more mapping clauses under the same ``import { ... }`` block
+    target the same source name (event or variable), or two source names
+    target the same host name.
+  refs:
+    alias:
+      type: str
+      required: true
+      description: The import alias whose mapping is duplicated.
+    mapping_kind:
+      type: str
+      required: true
+      description: >-
+        Which mapping flavor was duplicated.
+      enum: ['event', 'variable']
+    duplicated_name:
+      type: str
+      required: true
+      description: >-
+        The source-side or target-side name that appears more than once.
+    direction:
+      type: str
+      required: true
+      description: >-
+        Which side of the mapping was duplicated.
+      enum: ['source_duplicated', 'target_duplicated']
+    host_state_path:
+      type: str
+      required: true
+      description: Dotted path of the composite state hosting the import.
+  for_llm:
+    summary: >-
+      An import-mapping block contains a duplicate source or target name.
+      Each source identifier can be mapped at most once; each target host
+      slot can receive at most one source.
+    recommended_actions:
+      - kind: drop_duplicate
+        target: mapping_clause
+        rationale: >-
+          Delete the duplicated mapping line — keep the intended one.
+      - kind: rename_target
+        target: mapping_clause
+        rationale: >-
+          If both sources are needed, give them distinct host-side names
+          via a fresh mapping target.
+    do_not:
+      - "Do not merge mappings by concatenating their values."
+      - "Do not introduce wildcard selectors to mask the duplicate."
+  example_dsl: |
+    state System {
+        import "sub.fcstm" as Sub {
+            def x = a;
+            def x = b;
+        }
+    }
+
+E_IMPORT_MAPPING_INVALID:
+  severity: error
+  capability: pure_static
+  description: >-
+    An import-mapping clause refers to a source name that does not exist
+    in the imported machine, uses an invalid selector / template, or
+    points at a host target that cannot host the mapped element.
+  refs:
+    alias:
+      type: str
+      required: true
+      description: The import alias whose mapping is malformed.
+    mapping_kind:
+      type: str
+      required: true
+      description: Mapping flavor.
+      enum: ['event', 'variable']
+    host_state_path:
+      type: str
+      required: true
+      description: Dotted path of the composite state hosting the import.
+    reason:
+      type: str
+      required: true
+      description: Short tag describing the failure mode.
+      enum:
+        - 'source_not_found'
+        - 'target_invalid'
+        - 'selector_invalid'
+        - 'template_invalid'
+        - 'empty_path'
+        - 'host_root_mismatch'
+    detail:
+      type: str
+      required: true
+      description: >-
+        Human-readable specifics of the mapping failure (mapping text,
+        selector / template literal, or path that failed to resolve).
+  for_llm:
+    summary: >-
+      An ``import { ... }`` mapping clause is malformed or points at a
+      non-existent element on the source side / a non-receivable element
+      on the host side.
+    recommended_actions:
+      - kind: fix_source
+        target: mapping_clause
+        rationale: >-
+          Update the source-side name to match a real def / event in the
+          imported file.
+      - kind: fix_target
+        target: mapping_clause
+        rationale: >-
+          Update the host-side target to a valid identifier that the
+          merge can attach the imported element to.
+      - kind: drop_clause
+        target: mapping_clause
+        rationale: >-
+          Remove the mapping if it was speculative — unmapped imports
+          still merge under their alias.
+    do_not:
+      - "Do not invent fake source names to make the selector match."
+      - "Do not silently widen the selector to a wildcard if the original was specific."
+  example_dsl: |
+    state System {
+        import "sub.fcstm" as Sub {
+            def x = no_such_var;
         }
     }

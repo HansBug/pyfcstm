@@ -16,19 +16,33 @@ import {FcstmDiagnostic, TextDocumentLike} from '../utils/text';
 import {getWorkspaceGraph} from '../workspace';
 import {findIdentifierRange} from './ranges';
 
+/**
+ * Diagnostic code constants — single source of truth for jsfcstm
+ * analyzer emitters. The values match the codes registered in
+ * ``pyfcstm/diagnostics/codes.yaml`` so that downstream consumers
+ * (LLM agent loops, evaluation tooling, the bundled VSCode extension)
+ * see byte-identical ``code`` strings regardless of which end produced
+ * the diagnostic. PR-A unifies the historical ``fcstm.*`` namespace
+ * into the shared ``E_*`` / ``W_*`` / ``I_*`` set.
+ */
 export const FCSTM_DIAGNOSTIC_CODES = {
-    duplicateImportAlias: 'fcstm.duplicateImportAlias',
-    missingImport: 'fcstm.missingImport',
-    circularImport: 'fcstm.circularImport',
-    unreachableState: 'fcstm.unreachableState',
-    deadTransition: 'fcstm.deadTransition',
-    unusedEvent: 'fcstm.unusedEvent',
-    duplicateImportMapping: 'fcstm.duplicateImportMapping',
-    unresolvedState: 'fcstm.unresolvedState',
-    unresolvedActionRef: 'fcstm.unresolvedActionRef',
-    duplicateVariable: 'fcstm.duplicateVariable',
-    undefinedVariable: 'fcstm.undefinedVariable',
-    readBeforeAssignTemporary: 'fcstm.readBeforeAssignTemporary',
+    // -------- Layer 1 errors (E_*) --------
+    undefinedVar: 'E_UNDEFINED_VAR',
+    duplicateVar: 'E_DUPLICATE_VAR',
+    missingState: 'E_MISSING_STATE',
+    danglingTransition: 'E_DANGLING_TRANSITION',
+    namedFunctionRefNotFound: 'E_NAMED_FUNCTION_REF_NOT_FOUND',
+    // -------- Import errors (E_IMPORT_*) --------
+    importAliasConflict: 'E_IMPORT_ALIAS_CONFLICT',
+    importNotFound: 'E_IMPORT_NOT_FOUND',
+    importCircular: 'E_IMPORT_CIRCULAR',
+    importDuplicateMapping: 'E_IMPORT_DUPLICATE_MAPPING',
+    importMappingInvalid: 'E_IMPORT_MAPPING_INVALID',
+    // -------- Layer 2 warnings (W_*) - emit logic kept in place,
+    // codes.yaml schema placeholders introduced in PR-A --------
+    unreachableState: 'W_UNREACHABLE_STATE',
+    guardConstFalse: 'W_GUARD_CONST_FALSE',
+    unusedEvent: 'W_UNUSED_EVENT',
 } as const;
 
 function isFalseLiteral(expression: FcstmAstExpression): boolean {
@@ -143,7 +157,7 @@ function addImportMappingDiagnostics(
                     message: `Duplicate import mapping ${JSON.stringify(mapping.text)} in alias ${JSON.stringify(importItem.alias)}.`,
                     severity: 'warning',
                     source: 'fcstm',
-                    code: FCSTM_DIAGNOSTIC_CODES.duplicateImportMapping,
+                    code: FCSTM_DIAGNOSTIC_CODES.importDuplicateMapping,
                     relatedInformation: [{
                         location: {
                             uri: toFileUri(document),
@@ -188,6 +202,13 @@ function addTransitionDiagnostics(
     const reachable = collectReachableStateIds(semantic);
 
     for (const transition of semantic.transitions) {
+        // pyfcstm Layer 1 distinction: the source side of a transition
+        // failing to resolve emits E_MISSING_STATE (a "state reference"
+        // not found in scope), while the target side emits
+        // E_DANGLING_TRANSITION (the transition has a known source but
+        // points at a non-existent target). When both endpoints are
+        // explicitly known and missing, the source-side firing wins —
+        // matches pyfcstm/model/model.py emit order.
         if (transition.sourceKind === 'state' && transition.sourceStateName && !transition.sourceStateId) {
             const imported = findImportAlias(semantic, transition.ownerStatePath, transition.sourceStateName);
             if (!imported) {
@@ -196,7 +217,12 @@ function addTransitionDiagnostics(
                     message: `State ${JSON.stringify(transition.sourceStateName)} cannot be resolved in this scope.`,
                     severity: 'error',
                     source: 'fcstm',
-                    code: FCSTM_DIAGNOSTIC_CODES.unresolvedState,
+                    code: FCSTM_DIAGNOSTIC_CODES.missingState,
+                    data: {
+                        state_path: transition.sourceStateName,
+                        referenced_from: 'transition_source',
+                        reason: 'state_not_found',
+                    },
                 });
             }
         }
@@ -206,10 +232,15 @@ function addTransitionDiagnostics(
             if (!imported) {
                 diagnostics.push({
                     range: findIdentifierRange(document, transition.targetStateName, transition.range, {preferLast: true}),
-                    message: `State ${JSON.stringify(transition.targetStateName)} cannot be resolved in this scope.`,
+                    message: `Transition target state ${JSON.stringify(transition.targetStateName)} cannot be resolved in this scope.`,
                     severity: 'error',
                     source: 'fcstm',
-                    code: FCSTM_DIAGNOSTIC_CODES.unresolvedState,
+                    code: FCSTM_DIAGNOSTIC_CODES.danglingTransition,
+                    data: {
+                        src: transition.sourceStateName ?? null,
+                        tgt: transition.targetStateName,
+                        reason: 'tgt_not_found',
+                    },
                 });
             }
         }
@@ -228,7 +259,7 @@ function addTransitionDiagnostics(
                     : `Transition ${JSON.stringify(transition.ast.text)} is dead because its guard is always false.`,
                 severity: 'warning',
                 source: 'fcstm',
-                code: FCSTM_DIAGNOSTIC_CODES.deadTransition,
+                code: FCSTM_DIAGNOSTIC_CODES.guardConstFalse,
                 relatedInformation: sourceState
                     ? [{
                         location: {
@@ -285,7 +316,7 @@ function addActionDiagnostics(
             message: `Action reference ${JSON.stringify(action.ref.rawPath)} cannot be resolved.`,
             severity: 'error',
             source: 'fcstm',
-            code: FCSTM_DIAGNOSTIC_CODES.unresolvedActionRef,
+            code: FCSTM_DIAGNOSTIC_CODES.namedFunctionRefNotFound,
         });
     }
 }
@@ -329,7 +360,8 @@ function pushIdentifierDiagnostic(
     identifier: {name: string; range: import('../utils/text').TextRange},
     message: string,
     code: string,
-    severity: 'error' | 'warning' = 'error'
+    severity: 'error' | 'warning' | 'info' = 'error',
+    data?: Record<string, unknown>
 ): void {
     diagnostics.push({
         range: identifier.range,
@@ -337,6 +369,7 @@ function pushIdentifierDiagnostic(
         severity,
         source: 'fcstm',
         code,
+        ...(data ? {data} : {}),
     });
 }
 
@@ -366,12 +399,17 @@ function analyzeOperationStatements(
                 if (globals.has(identifier.name) || assigned.has(identifier.name)) {
                     continue;
                 }
+                // pyfcstm Layer 2: read-before-assign in a block-local
+                // temporary collapses into E_UNDEFINED_VAR with
+                // ``is_temporary: true`` so the LLM and the VSCode
+                // surface both see a single code family.
                 pushIdentifierDiagnostic(
                     diagnostics,
                     identifier,
                     `Variable ${JSON.stringify(identifier.name)} is read before it is assigned in this block.`,
-                    FCSTM_DIAGNOSTIC_CODES.readBeforeAssignTemporary,
-                    'error'
+                    FCSTM_DIAGNOSTIC_CODES.undefinedVar,
+                    'error',
+                    {is_temporary: true, referenced_in: 'operation_block'}
                 );
             }
             if (assignment.targetName) {
@@ -392,8 +430,9 @@ function analyzeOperationStatements(
                             diagnostics,
                             identifier,
                             `Variable ${JSON.stringify(identifier.name)} is read before it is assigned in this block.`,
-                            FCSTM_DIAGNOSTIC_CODES.readBeforeAssignTemporary,
-                            'error'
+                            FCSTM_DIAGNOSTIC_CODES.undefinedVar,
+                            'error',
+                            {is_temporary: true, referenced_in: 'operation_block'}
                         );
                     }
                 }
@@ -457,7 +496,7 @@ function addVariableDefinitionDiagnostics(
             message: `Variable ${JSON.stringify(variable.name)} is already defined.`,
             severity: 'error',
             source: 'fcstm',
-            code: FCSTM_DIAGNOSTIC_CODES.duplicateVariable,
+            code: FCSTM_DIAGNOSTIC_CODES.duplicateVar,
             relatedInformation: [{
                 location: {
                     uri: toFileUri(document),
@@ -488,7 +527,7 @@ function addGuardDiagnostics(
                 diagnostics,
                 identifier,
                 `Variable ${JSON.stringify(identifier.name)} is not defined. Add a \`def\` declaration or fix the name.`,
-                FCSTM_DIAGNOSTIC_CODES.undefinedVariable,
+                FCSTM_DIAGNOSTIC_CODES.undefinedVar,
                 'error'
             );
         }

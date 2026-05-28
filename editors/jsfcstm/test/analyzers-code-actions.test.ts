@@ -28,13 +28,16 @@ describe('jsfcstm analyzers and code actions', () => {
 
         const diagnostics = await packageModule.collectDocumentDiagnostics(document);
         const codes = diagnostics.map(item => item.code);
-        assert.ok(codes.includes(packageModule.FCSTM_DIAGNOSTIC_CODES.missingImport));
-        assert.ok(codes.includes(packageModule.FCSTM_DIAGNOSTIC_CODES.duplicateImportMapping));
+        assert.ok(codes.includes(packageModule.FCSTM_DIAGNOSTIC_CODES.importNotFound));
+        assert.ok(codes.includes(packageModule.FCSTM_DIAGNOSTIC_CODES.importDuplicateMapping));
         assert.ok(codes.includes(packageModule.FCSTM_DIAGNOSTIC_CODES.unreachableState));
-        assert.ok(codes.includes(packageModule.FCSTM_DIAGNOSTIC_CODES.deadTransition));
+        assert.ok(codes.includes(packageModule.FCSTM_DIAGNOSTIC_CODES.guardConstFalse));
         assert.ok(codes.includes(packageModule.FCSTM_DIAGNOSTIC_CODES.unusedEvent));
-        assert.ok(codes.includes(packageModule.FCSTM_DIAGNOSTIC_CODES.unresolvedState));
-        assert.ok(codes.includes(packageModule.FCSTM_DIAGNOSTIC_CODES.unresolvedActionRef));
+        // pyfcstm split: source-side mismatch is E_MISSING_STATE, target-side
+        // mismatch is E_DANGLING_TRANSITION. The fixture uses ``Idle -> dead``
+        // which fails on the target side, so we expect the dangling code.
+        assert.ok(codes.includes(packageModule.FCSTM_DIAGNOSTIC_CODES.danglingTransition));
+        assert.ok(codes.includes(packageModule.FCSTM_DIAGNOSTIC_CODES.namedFunctionRefNotFound));
     });
 
     it('builds safe quick fixes for missing imports, duplicate mappings, unused events, and unresolved states', async () => {
@@ -78,7 +81,7 @@ describe('jsfcstm analyzers and code actions', () => {
         ].join('\n'), '/tmp/dup-var.fcstm');
 
         const diagnostics = await packageModule.collectDocumentDiagnostics(document);
-        const duplicate = diagnostics.find(item => item.code === packageModule.FCSTM_DIAGNOSTIC_CODES.duplicateVariable);
+        const duplicate = diagnostics.find(item => item.code === packageModule.FCSTM_DIAGNOSTIC_CODES.duplicateVar);
         assert.ok(duplicate, 'expected duplicateVariable diagnostic');
         assert.match(duplicate.message, /counter/);
         assert.equal(duplicate.severity, 'error');
@@ -108,7 +111,7 @@ describe('jsfcstm analyzers and code actions', () => {
         ].join('\n'), '/tmp/undef-var.fcstm');
 
         const diagnostics = await packageModule.collectDocumentDiagnostics(document);
-        const undef = diagnostics.find(item => item.code === packageModule.FCSTM_DIAGNOSTIC_CODES.undefinedVariable);
+        const undef = diagnostics.find(item => item.code === packageModule.FCSTM_DIAGNOSTIC_CODES.undefinedVar);
         assert.ok(undef, 'expected undefinedVariable diagnostic');
         assert.match(undef.message, /missing_flag/);
 
@@ -139,7 +142,7 @@ describe('jsfcstm analyzers and code actions', () => {
 
         const diagnostics = await packageModule.collectDocumentDiagnostics(document);
         const undef = diagnostics.find(item => (
-            item.code === packageModule.FCSTM_DIAGNOSTIC_CODES.readBeforeAssignTemporary
+            item.code === packageModule.FCSTM_DIAGNOSTIC_CODES.undefinedVar
             && /counter/.test(item.message)
         ));
         assert.ok(undef, 'expected read-before-assign diagnostic for the RHS identifier');
@@ -165,7 +168,7 @@ describe('jsfcstm analyzers and code actions', () => {
 
         const diagnostics = await packageModule.collectDocumentDiagnostics(document);
         assert.equal(
-            diagnostics.filter(item => item.code === packageModule.FCSTM_DIAGNOSTIC_CODES.undefinedVariable).length,
+            diagnostics.filter(item => item.code === packageModule.FCSTM_DIAGNOSTIC_CODES.undefinedVar).length,
             0
         );
     });
@@ -186,7 +189,7 @@ describe('jsfcstm analyzers and code actions', () => {
 
         const diagnostics = await packageModule.collectDocumentDiagnostics(document);
         assert.equal(
-            diagnostics.filter(item => item.code === packageModule.FCSTM_DIAGNOSTIC_CODES.readBeforeAssignTemporary).length,
+            diagnostics.filter(item => item.code === packageModule.FCSTM_DIAGNOSTIC_CODES.undefinedVar).length,
             0
         );
     });
@@ -208,7 +211,7 @@ describe('jsfcstm analyzers and code actions', () => {
 
         const diagnostics = await packageModule.collectDocumentDiagnostics(document);
         const tempDiag = diagnostics.find(item => (
-            item.code === packageModule.FCSTM_DIAGNOSTIC_CODES.readBeforeAssignTemporary
+            item.code === packageModule.FCSTM_DIAGNOSTIC_CODES.undefinedVar
         ));
         assert.ok(tempDiag, 'expected temp read-before-assign diagnostic inside the if-branch');
         assert.match(tempDiag.message, /scratch/);

@@ -120,7 +120,7 @@ export async function collectCodeActions(
     const relevantDiagnostics = diagnostics.filter(item => rangeIntersects(item.range, range));
 
     for (const diagnostic of relevantDiagnostics) {
-        if (diagnostic.code === FCSTM_DIAGNOSTIC_CODES.missingImport) {
+        if (diagnostic.code === FCSTM_DIAGNOSTIC_CODES.importNotFound) {
             const importItem = findImportByRange(semantic, diagnostic.range);
             if (importItem) {
                 actions.push({
@@ -130,7 +130,7 @@ export async function collectCodeActions(
                     edit: createWorkspaceEdit(document, importItem.range, ''),
                 });
             }
-        } else if (diagnostic.code === FCSTM_DIAGNOSTIC_CODES.duplicateImportMapping) {
+        } else if (diagnostic.code === FCSTM_DIAGNOSTIC_CODES.importDuplicateMapping) {
             const importItem = findImportByRange(semantic, diagnostic.range);
             const duplicateMapping = importItem?.ast.mappings.find(item => rangeIntersects(item.range, diagnostic.range));
             if (duplicateMapping) {
@@ -155,7 +155,14 @@ export async function collectCodeActions(
                     edit: createWorkspaceEdit(document, event.declarationAst.range, ''),
                 });
             }
-        } else if (diagnostic.code === FCSTM_DIAGNOSTIC_CODES.unresolvedState) {
+        } else if (
+            diagnostic.code === FCSTM_DIAGNOSTIC_CODES.missingState
+            || diagnostic.code === FCSTM_DIAGNOSTIC_CODES.danglingTransition
+        ) {
+            // Both E_MISSING_STATE (source state unresolved) and
+            // E_DANGLING_TRANSITION (target state unresolved) carry the
+            // offending state name in the diagnostic message; offer the
+            // same "rename to a close match" quick fix for either case.
             const stateName = diagnostic.message.match(/"([^"]+)"/)?.[1];
             if (!stateName) {
                 continue;
@@ -170,7 +177,7 @@ export async function collectCodeActions(
                     edit: createWorkspaceEdit(document, diagnostic.range, candidates[0]),
                 });
             }
-        } else if (diagnostic.code === FCSTM_DIAGNOSTIC_CODES.duplicateVariable) {
+        } else if (diagnostic.code === FCSTM_DIAGNOSTIC_CODES.duplicateVar) {
             const duplicate = findDuplicateVariableByRange(semantic, diagnostic.range);
             if (duplicate) {
                 actions.push({
@@ -180,7 +187,7 @@ export async function collectCodeActions(
                     edit: createWorkspaceEdit(document, duplicate.range, ''),
                 });
             }
-        } else if (diagnostic.code === FCSTM_DIAGNOSTIC_CODES.undefinedVariable) {
+        } else if (diagnostic.code === FCSTM_DIAGNOSTIC_CODES.undefinedVar) {
             const name = extractIdentifierFromMessage(diagnostic.message);
             if (name && /^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
                 const insertion = planVariableInsertion(document, semantic, name);

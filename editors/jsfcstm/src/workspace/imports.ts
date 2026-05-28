@@ -166,7 +166,7 @@ export class FcstmImportWorkspaceIndex {
                     message: `Duplicate import alias ${JSON.stringify(semanticImport.alias)} in state ${JSON.stringify(stateKey)}.`,
                     severity: 'error',
                     source: 'fcstm',
-                    code: FCSTM_DIAGNOSTIC_CODES.duplicateImportAlias,
+                    code: FCSTM_DIAGNOSTIC_CODES.importAliasConflict,
                     relatedInformation: [{
                         location: {
                             uri: toFileUri(ownerFile),
@@ -185,7 +185,7 @@ export class FcstmImportWorkspaceIndex {
                     message: `Import source ${JSON.stringify(semanticImport.sourcePath)} cannot be resolved from ${JSON.stringify(path.dirname(ownerFile))}.`,
                     severity: 'error',
                     source: 'fcstm',
-                    code: FCSTM_DIAGNOSTIC_CODES.missingImport,
+                    code: FCSTM_DIAGNOSTIC_CODES.importNotFound,
                 });
             }
         }
@@ -198,7 +198,7 @@ export class FcstmImportWorkspaceIndex {
                 message: `Circular import detected: ${cycle.files.map(item => path.basename(item)).join(' -> ')}.`,
                 severity: 'warning',
                 source: 'fcstm',
-                code: FCSTM_DIAGNOSTIC_CODES.circularImport,
+                code: FCSTM_DIAGNOSTIC_CODES.importCircular,
             });
         }
 

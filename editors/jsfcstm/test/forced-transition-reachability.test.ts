@@ -28,19 +28,19 @@ describe('forced transition reachability (issue #99)', () => {
 
         // The forced-transition target must not be reported unreachable.
         assert.ok(
-            !codes.some(line => line.includes('fcstm.unreachableState') && line.includes('Root.ErrorState')),
+            !codes.some(line => line.includes('W_UNREACHABLE_STATE') && line.includes('Root.ErrorState')),
             `Root.ErrorState should be reachable via "!* -> ErrorState : Err". Got:\n${codes.join('\n')}`
         );
 
         // Sanity: a genuinely unused event must still surface.
         assert.ok(
-            codes.some(line => line.includes('fcstm.unusedEvent') && line.includes('Root.UnusedOne')),
+            codes.some(line => line.includes('W_UNUSED_EVENT') && line.includes('Root.UnusedOne')),
             `Root.UnusedOne should still be reported as unused. Got:\n${codes.join('\n')}`
         );
 
         // Sanity: the event used only by the forced transition must NOT be flagged unused.
         assert.ok(
-            !codes.some(line => line.includes('fcstm.unusedEvent') && line.includes('Root.Err')),
+            !codes.some(line => line.includes('W_UNUSED_EVENT') && line.includes('Root.Err')),
             `Root.Err is used by a forced transition and must not be flagged unused. Got:\n${codes.join('\n')}`
         );
     });
@@ -48,11 +48,11 @@ describe('forced transition reachability (issue #99)', () => {
     it('118.fcstm: ErrorOperational must be reachable via "!* -> ErrorOperational : ..." forced transitions', async () => {
         const codes = await collectCodes('118.fcstm');
         assert.ok(
-            !codes.some(line => line.includes('fcstm.unreachableState')),
+            !codes.some(line => line.includes('W_UNREACHABLE_STATE')),
             `118.fcstm should produce no unreachableState diagnostics. Got:\n${codes.join('\n')}`
         );
         assert.ok(
-            !codes.some(line => line.includes('fcstm.deadTransition')),
+            !codes.some(line => line.includes('W_GUARD_CONST_FALSE')),
             `118.fcstm should produce no deadTransition diagnostics. Got:\n${codes.join('\n')}`
         );
     });
@@ -60,11 +60,11 @@ describe('forced transition reachability (issue #99)', () => {
     it('160.fcstm: MissionControllerOff reachable via forced transitions', async () => {
         const codes = await collectCodes('160.fcstm');
         assert.ok(
-            !codes.some(line => line.includes('fcstm.unreachableState')),
+            !codes.some(line => line.includes('W_UNREACHABLE_STATE')),
             `160.fcstm should produce no unreachableState diagnostics. Got:\n${codes.join('\n')}`
         );
         assert.ok(
-            !codes.some(line => line.includes('fcstm.deadTransition')),
+            !codes.some(line => line.includes('W_GUARD_CONST_FALSE')),
             `160.fcstm should produce no deadTransition diagnostics. Got:\n${codes.join('\n')}`
         );
     });
@@ -72,11 +72,11 @@ describe('forced transition reachability (issue #99)', () => {
     it('169.fcstm: ReturnToHome/FaultHandling reachable; no dead transition between them', async () => {
         const codes = await collectCodes('169.fcstm');
         assert.ok(
-            !codes.some(line => line.includes('fcstm.unreachableState')),
+            !codes.some(line => line.includes('W_UNREACHABLE_STATE')),
             `169.fcstm should produce no unreachableState diagnostics. Got:\n${codes.join('\n')}`
         );
         assert.ok(
-            !codes.some(line => line.includes('fcstm.deadTransition')),
+            !codes.some(line => line.includes('W_GUARD_CONST_FALSE')),
             `169.fcstm should produce no deadTransition diagnostics. Got:\n${codes.join('\n')}`
         );
     });

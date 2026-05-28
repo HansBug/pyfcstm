@@ -449,8 +449,8 @@ def _walk_expr_collect(expr: 'Expr', out: List[str]) -> None:
         return
     if isinstance(expr, ConditionalOp):
         _walk_expr_collect(expr.cond, out)
-        _walk_expr_collect(expr.value_true, out)
-        _walk_expr_collect(expr.value_false, out)
+        _walk_expr_collect(expr.if_true, out)
+        _walk_expr_collect(expr.if_false, out)
         return
     if isinstance(expr, UFunc):
         _walk_expr_collect(expr.x, out)

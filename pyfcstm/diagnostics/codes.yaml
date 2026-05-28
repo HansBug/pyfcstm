@@ -709,23 +709,54 @@ E_IMPORT_NOT_FOUND:
       enum: ['file_not_found', 'read_error', 'parse_error', 'no_root_state']
   for_llm:
     summary: >-
-      An imported sub-machine file is missing or unreadable. The import
-      statement at host_state_path is dangling — every downstream
-      mapping that depends on it will also be invalid.
+      An import target could not be resolved. Inspect ``refs.reason`` to
+      branch the fix: ``file_not_found`` means the path is wrong or the
+      file does not exist; ``read_error`` means the file exists but the
+      I/O layer rejected it (permissions / encoding); ``parse_error``
+      means the file was loaded but is not valid FCSTM DSL; ``no_root_state``
+      means the file parses but declares no ``state Root { ... }`` block.
+      The four reasons need different fixes — do not collapse them.
     recommended_actions:
       - kind: fix_path
         target: import_statement
+        applies_to_reason: file_not_found
         rationale: >-
-          Adjust the source_path to a real file relative to the host file,
-          or remove the import if the sub-machine is no longer required.
+          For ``file_not_found``, adjust the source_path to a real file
+          relative to the host file, or remove the import if the
+          sub-machine is no longer required.
       - kind: create_file
         target: import_target
+        applies_to_reason: file_not_found
         rationale: >-
-          If the file should exist, create it with at least a top-level
-          ``state Root { ... }`` so its root state can be merged in.
+          For ``file_not_found``, if the file should exist, create it
+          with at least a top-level ``state Root { ... }`` so its root
+          state can be merged in.
+      - kind: fix_permissions
+        target: import_target
+        applies_to_reason: read_error
+        rationale: >-
+          For ``read_error``, the file exists but the I/O layer could not
+          read it. Check file permissions, encoding (FCSTM expects UTF-8
+          or auto-detected text), and that the path is not a directory.
+      - kind: fix_dsl_in_imported_file
+        target: import_target
+        applies_to_reason: parse_error
+        rationale: >-
+          For ``parse_error``, the file was read but contains invalid
+          FCSTM DSL. Open the imported file directly; the underlying
+          grammar parse error is reported with its own line/column when
+          you run ``pyfcstm`` on it standalone.
+      - kind: add_root_state
+        target: import_target
+        applies_to_reason: no_root_state
+        rationale: >-
+          For ``no_root_state``, the file parses but declares no
+          top-level ``state <Name> { ... }``. Add one — the merge needs
+          a root state to inline.
     do_not:
       - "Do not silently rename the alias to dodge the missing file."
       - "Do not add a placeholder state under the alias — the import must resolve to a real file."
+      - "Do not give the same recommended_action regardless of reason — the LLM consumer should branch on ``refs.reason`` and apply only the matching ``applies_to_reason`` actions."
   example_dsl: |
     state System {
         import "missing.fcstm" as Sub;

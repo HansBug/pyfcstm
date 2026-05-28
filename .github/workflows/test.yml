@@ -9,7 +9,7 @@ jobs:
   unittest:
     name: Code test
     runs-on: ${{ matrix.os }}
-    if: ${{ !contains(github.event.head_commit.message, 'ci skip') && !contains(github.event.head_commit.message, 'test skip') && !contains(github.event.head_commit.message, 'python skip') }}
+    if: ${{ !contains(github.event.head_commit.message, 'ci skip') && !contains(github.event.head_commit.message, 'test skip') && !contains(github.event.head_commit.message, '[python skip]') }}
     strategy:
       fail-fast: false
       matrix:
@@ -130,7 +130,7 @@ jobs:
   build_cli:
     name: CLI Build
     runs-on: ${{ matrix.os }}
-    if: ${{ !contains(github.event.head_commit.message, 'ci skip') && !contains(github.event.head_commit.message, 'python skip') }}
+    if: ${{ !contains(github.event.head_commit.message, 'ci skip') && !contains(github.event.head_commit.message, '[python skip]') }}
     strategy:
       fail-fast: false
       matrix:
@@ -315,7 +315,7 @@ jobs:
   jsfcstm_unit:
     name: jsfcstm unit tests
     runs-on: ubuntu-22.04
-    if: ${{ !contains(github.event.head_commit.message, 'ci skip') && !contains(github.event.head_commit.message, 'js skip') }}
+    if: ${{ !contains(github.event.head_commit.message, 'ci skip') && !contains(github.event.head_commit.message, '[js skip]') }}
     strategy:
       fail-fast: false
       matrix:

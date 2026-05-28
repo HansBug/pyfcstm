@@ -3,13 +3,18 @@ import {pathToFileURL} from 'node:url';
 import type {
     FcstmAstAction,
     FcstmAstAssignmentStatement,
+    FcstmAstBinaryExpression,
+    FcstmAstConditionalExpression,
     FcstmAstExpression,
+    FcstmAstForcedTransition,
+    FcstmAstFunctionExpression,
     FcstmAstIfStatement,
     FcstmAstImportMapping,
+    FcstmAstLiteralExpression,
     FcstmAstOperationBlock,
     FcstmAstOperationStatement,
     FcstmAstTransition,
-    FcstmAstForcedTransition,
+    FcstmAstUnaryExpression,
 } from '../ast';
 import type {FcstmSemanticDocument, FcstmSemanticImport, FcstmSemanticTransition} from '../semantics';
 import {FcstmDiagnostic, TextDocumentLike} from '../utils/text';
@@ -164,7 +169,10 @@ function addImportMappingDiagnostics(
                 diagnostics.push({
                     range: mapping.range,
                     message: `Duplicate import mapping ${JSON.stringify(mapping.text)} in alias ${JSON.stringify(importItem.alias)}.`,
-                    severity: 'warning',
+                    // pyfcstm imports.py treats duplicate mappings as a
+                    // hard error; align the severity so the two ends
+                    // emit the same blocking level for the same input.
+                    severity: 'error',
                     source: 'fcstm',
                     code: FCSTM_DIAGNOSTIC_CODES.importDuplicateMapping,
                     relatedInformation: [{
@@ -826,5 +834,226 @@ export async function collectSemanticAnalysisDiagnostics(
     addDuringAspectInvalidDiagnostics(semantic, document, diagnostics);
     addPseudoNotLeafDiagnostics(semantic, document, diagnostics);
     addInitialTransitionInvalidDiagnostics(semantic, document, diagnostics);
+    addTypeMismatchDiagnostics(semantic, document, diagnostics);
     return diagnostics;
+}
+
+// -------------------------------------------------------------------------
+// ``E_TYPE_MISMATCH`` — light-weight type checker.
+//
+// pyfcstm separates arithmetic (``num_expression``) and logical
+// (``cond_expression``) expressions in its grammar; jsfcstm's AST keeps
+// the same separation via ``expression.expressionType`` ('init' / 'num'
+// / 'cond'). The grammar already prevents many obvious mixes, but a
+// handful of cases slip through (e.g. ``if [x]`` where ``x`` is an
+// integer, or ``def int y = a > 1;``). This analyzer walks every
+// expression and confirms that operand categories match the operator's
+// requirement, mirroring pyfcstm's planned ``E_TYPE_MISMATCH`` semantics:
+//
+//   * guard: must produce ``boolean``
+//   * assignment RHS / def initializer / function arg / arithmetic
+//     operand: must produce ``numeric``
+//   * logical operand (``&&`` / ``||`` / ``!``): must produce ``boolean``
+//   * comparison operand: must produce ``numeric``
+//   * ternary condition: must produce ``boolean``; both branches share
+//     the parent's expected category
+// -------------------------------------------------------------------------
+
+type TypeCategory = 'numeric' | 'boolean' | 'unknown';
+
+const ARITH_BINARY_OPS = new Set(['+', '-', '*', '/', '%', '**']);
+const BITWISE_BINARY_OPS = new Set(['&', '|', '^', '<<', '>>']);
+const COMPARISON_OPS = new Set(['==', '!=', '<', '<=', '>', '>=', '<>']);
+const LOGICAL_BINARY_OPS = new Set(['&&', '||', 'and', 'or', 'AND', 'OR']);
+
+function isLogicalUnaryOp(op: string | undefined): boolean {
+    if (!op) return false;
+    return op === '!' || op === 'not' || op === 'NOT';
+}
+
+export function inferExpressionCategory(expr: FcstmAstExpression): TypeCategory {
+    switch (expr.expressionKind) {
+        case 'literal': {
+            const lit = expr as FcstmAstLiteralExpression;
+            return lit.literalType === 'boolean' ? 'boolean' : 'numeric';
+        }
+        case 'identifier':
+            // pyfcstm only supports ``int`` and ``float`` def types,
+            // both of which are numeric. Truly undefined identifiers
+            // are caught by E_UNDEFINED_VAR; we keep ``numeric`` as
+            // the optimistic guess to avoid double-firing.
+            return 'numeric';
+        case 'mathConst':
+        case 'function':
+            return 'numeric';
+        case 'unary': {
+            const un = expr as FcstmAstUnaryExpression;
+            return isLogicalUnaryOp(un.operator) ? 'boolean' : 'numeric';
+        }
+        case 'binary': {
+            const bin = expr as FcstmAstBinaryExpression;
+            const op = bin.operator;
+            if (LOGICAL_BINARY_OPS.has(op) || COMPARISON_OPS.has(op)) {
+                return 'boolean';
+            }
+            // arithmetic + bitwise → numeric
+            if (ARITH_BINARY_OPS.has(op) || BITWISE_BINARY_OPS.has(op)) {
+                return 'numeric';
+            }
+            return 'unknown';
+        }
+        case 'conditional': {
+            const cond = expr as FcstmAstConditionalExpression;
+            // The ternary's result category is the branch category. We
+            // walk the true branch first; if it is unknown we try the
+            // false branch as a fallback.
+            const t = inferExpressionCategory(cond.whenTrue || cond.valueTrue);
+            if (t !== 'unknown') return t;
+            return inferExpressionCategory(cond.whenFalse || cond.valueFalse);
+        }
+    }
+    return 'unknown';
+}
+
+function emitTypeMismatch(
+    diagnostics: FcstmDiagnostic[],
+    expr: FcstmAstExpression,
+    expected: TypeCategory,
+    actual: TypeCategory,
+): void {
+    diagnostics.push({
+        range: expr.range,
+        message: `Type mismatch: expected ${expected} expression, got ${actual} (${JSON.stringify((expr as {text?: string}).text ?? '')}).`,
+        severity: 'error',
+        source: 'fcstm',
+        code: FCSTM_DIAGNOSTIC_CODES.typeMismatch,
+        data: {
+            expected,
+            actual,
+            expr_text: (expr as {text?: string}).text ?? '',
+        },
+    });
+}
+
+/**
+ * Recursively type-check ``expr`` against the surrounding ``expected``
+ * category. Reports a mismatch when the inferred category disagrees;
+ * keeps recursing so that nested sub-expressions also get checked, but
+ * stops descending past the offending node to avoid cascading reports.
+ */
+export function checkExpression(
+    expr: FcstmAstExpression | null | undefined,
+    expected: TypeCategory,
+    diagnostics: FcstmDiagnostic[],
+): void {
+    if (!expr) return;
+
+    const actual = inferExpressionCategory(expr);
+    let categoryOk = actual === 'unknown' || actual === expected;
+    if (!categoryOk) {
+        emitTypeMismatch(diagnostics, expr, expected, actual);
+    }
+
+    switch (expr.expressionKind) {
+        case 'unary': {
+            const un = expr as FcstmAstUnaryExpression;
+            const childExpected: TypeCategory = isLogicalUnaryOp(un.operator) ? 'boolean' : 'numeric';
+            checkExpression(un.operand || un.expr, childExpected, diagnostics);
+            break;
+        }
+        case 'binary': {
+            const bin = expr as FcstmAstBinaryExpression;
+            const op = bin.operator;
+            let leftExpected: TypeCategory;
+            let rightExpected: TypeCategory;
+            if (LOGICAL_BINARY_OPS.has(op)) {
+                leftExpected = 'boolean';
+                rightExpected = 'boolean';
+            } else {
+                // arithmetic / bitwise / comparison all want numeric operands
+                leftExpected = 'numeric';
+                rightExpected = 'numeric';
+            }
+            checkExpression(bin.left || bin.expr1, leftExpected, diagnostics);
+            checkExpression(bin.right || bin.expr2, rightExpected, diagnostics);
+            break;
+        }
+        case 'conditional': {
+            const cond = expr as FcstmAstConditionalExpression;
+            checkExpression(cond.condition || cond.cond, 'boolean', diagnostics);
+            checkExpression(cond.whenTrue || cond.valueTrue, expected, diagnostics);
+            checkExpression(cond.whenFalse || cond.valueFalse, expected, diagnostics);
+            break;
+        }
+        case 'function': {
+            const fn = expr as FcstmAstFunctionExpression;
+            checkExpression(fn.argument || fn.expr, 'numeric', diagnostics);
+            break;
+        }
+        default:
+            break;
+    }
+}
+
+function checkOperationStatements(
+    statements: FcstmAstOperationStatement[] | undefined,
+    diagnostics: FcstmDiagnostic[],
+): void {
+    if (!statements) return;
+    for (const stmt of statements) {
+        if (stmt.kind === 'assignmentStatement') {
+            const assign = stmt as FcstmAstAssignmentStatement;
+            checkExpression(assign.expression || assign.expr, 'numeric', diagnostics);
+        } else if (stmt.kind === 'ifStatement') {
+            const ifStmt = stmt as FcstmAstIfStatement;
+            for (const branch of ifStmt.branches) {
+                if (branch.condition) {
+                    checkExpression(branch.condition, 'boolean', diagnostics);
+                }
+                checkOperationStatements(branch.statements, diagnostics);
+            }
+            if (ifStmt.elseBlock) {
+                checkOperationStatements(ifStmt.elseBlock.statements, diagnostics);
+            }
+        }
+    }
+}
+
+function addTypeMismatchDiagnostics(
+    semantic: FcstmSemanticDocument,
+    document: TextDocumentLike,
+    diagnostics: FcstmDiagnostic[]
+): void {
+    // 1. Variable initializers — must be numeric.
+    if (semantic.ast) {
+        for (const def of semantic.ast.definitions) {
+            const init = def.initializer || def.expr;
+            if (init) {
+                checkExpression(init, 'numeric', diagnostics);
+            }
+        }
+    }
+
+    // 2. Transition guards — must be boolean; effect-block RHSs — numeric.
+    for (const transition of semantic.transitions) {
+        const ast = transition.ast as (FcstmAstTransition | FcstmAstForcedTransition) & {
+            guard?: FcstmAstExpression;
+            effect?: FcstmAstOperationBlock;
+        };
+        if (ast.guard) {
+            checkExpression(ast.guard, 'boolean', diagnostics);
+        }
+        if (ast.effect) {
+            checkOperationStatements(ast.effect.statements, diagnostics);
+        }
+    }
+
+    // 3. Lifecycle action bodies — RHSs must be numeric.
+    for (const action of semantic.actions) {
+        const ast = action.ast as FcstmAstAction & {operationBlock?: FcstmAstOperationBlock};
+        const block = ast.operationBlock;
+        if (block) {
+            checkOperationStatements(block.statements, diagnostics);
+        }
+    }
 }

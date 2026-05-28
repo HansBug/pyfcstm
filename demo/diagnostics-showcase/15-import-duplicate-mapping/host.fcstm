@@ -1,0 +1,13 @@
+// Demo: E_IMPORT_DUPLICATE_MAPPING — two mappings inside the same
+// `import { ... }` block target the same source selector.
+// Expected:
+//   * E_IMPORT_DUPLICATE_MAPPING on the second `def sensor_* -> io_$1;`
+
+state Root {
+    state Idle;
+    [*] -> Idle;
+    import "./worker.fcstm" as Worker {
+        def sensor_* -> io_$1;
+        def sensor_* -> io_$1;
+    }
+}

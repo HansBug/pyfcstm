@@ -12,14 +12,26 @@
  * If you add a new diagnostic, append a SHOWCASE entry here.
  */
 import assert from 'node:assert/strict';
+import * as path from 'node:path';
 
-import {createDocument, packageModule} from './support';
+import {createDocument, packageModule, trackTempDir, writeFile} from './support';
 
 interface ShowcaseFixture {
     /** Identifier used as the mocha case name and the synthetic file path. */
     name: string;
-    /** Full DSL body. */
-    dsl: string;
+    /**
+     * Single-file DSL body. Mutually exclusive with ``files``.
+     */
+    dsl?: string;
+    /**
+     * Multi-file workspace fixture for import-related diagnostics. Keys
+     * are relative file names; ``entry`` selects which file to feed
+     * through ``collectDocumentDiagnostics``. All file contents come
+     * from this object — no on-disk fixtures are read.
+     */
+    files?: Record<string, string>;
+    /** When ``files`` is set, identifies the file to run diagnostics on. */
+    entry?: string;
     /** Codes that MUST fire (each entry is asserted present). */
     mustFire: string[];
     /**
@@ -220,6 +232,86 @@ const SHOWCASE: ShowcaseFixture[] = [
         ].join('\n'),
         mustFire: ['W_UNREACHABLE_STATE', 'W_GUARD_CONST_FALSE', 'W_UNUSED_EVENT'],
     },
+    {
+        name: '13-import-not-found',
+        files: {
+            'host.fcstm': [
+                'state Root {',
+                '    state Idle;',
+                '    [*] -> Idle;',
+                '    import "./absent.fcstm" as Worker;',
+                '}',
+            ].join('\n'),
+        },
+        entry: 'host.fcstm',
+        mustFire: ['E_IMPORT_NOT_FOUND'],
+        sideEffects: ['W_UNREACHABLE_STATE'],
+    },
+    {
+        name: '14-import-alias-conflict',
+        files: {
+            'host.fcstm': [
+                'state Root {',
+                '    state Idle;',
+                '    [*] -> Idle;',
+                '    import "./worker.fcstm" as Idle;',
+                '}',
+            ].join('\n'),
+            'worker.fcstm': 'state Worker;',
+        },
+        entry: 'host.fcstm',
+        mustFire: ['E_IMPORT_ALIAS_CONFLICT'],
+        sideEffects: ['W_UNREACHABLE_STATE', 'W_GUARD_CONST_FALSE'],
+    },
+    {
+        name: '15-import-duplicate-mapping',
+        files: {
+            'host.fcstm': [
+                'state Root {',
+                '    state Idle;',
+                '    [*] -> Idle;',
+                '    import "./worker.fcstm" as Worker {',
+                '        def sensor_* -> io_$1;',
+                '        def sensor_* -> io_$1;',
+                '    }',
+                '}',
+            ].join('\n'),
+            'worker.fcstm': 'state Worker;',
+        },
+        entry: 'host.fcstm',
+        mustFire: ['E_IMPORT_DUPLICATE_MAPPING'],
+        sideEffects: ['W_UNREACHABLE_STATE'],
+    },
+    {
+        name: '16-import-circular',
+        files: {
+            'a.fcstm': [
+                'state A {',
+                '    state Idle;',
+                '    [*] -> Idle;',
+                '    import "./b.fcstm" as B;',
+                '}',
+            ].join('\n'),
+            'b.fcstm': [
+                'state B {',
+                '    state Idle;',
+                '    [*] -> Idle;',
+                '    import "./a.fcstm" as A;',
+                '}',
+            ].join('\n'),
+        },
+        entry: 'a.fcstm',
+        mustFire: ['E_IMPORT_CIRCULAR'],
+        // Cycle detection often surfaces secondary diagnostics on the
+        // alias path; we accept any of these as benign side effects.
+        sideEffects: [
+            'W_UNREACHABLE_STATE',
+            'W_GUARD_CONST_FALSE',
+            'W_UNUSED_EVENT',
+            'E_IMPORT_NOT_FOUND',
+            'E_IMPORT_ALIAS_CONFLICT',
+        ],
+    },
 ];
 
 function tallyCodes(codes: Array<string | undefined>): Map<string, number> {
@@ -240,10 +332,40 @@ function consumeOne(tally: Map<string, number>, code: string): boolean {
 }
 
 describe('diagnostics showcase: jsfcstm collectDocumentDiagnostics parity', () => {
+    afterEach(() => {
+        packageModule.getWorkspaceGraph().clearOverlays();
+    });
+
     for (const fixture of SHOWCASE) {
         it(`${fixture.name} emits the expected diagnostic catalog`, async () => {
-            const syntheticPath = `/tmp/jsfcstm-showcase-${fixture.name}.fcstm`;
-            const doc = createDocument(fixture.dsl, syntheticPath);
+            let doc;
+            if (fixture.files && fixture.entry) {
+                // Multi-file workspace fixture: materialize every file
+                // declared in ``fixture.files`` to a fresh tmp dir, then
+                // run diagnostics on the entry file. File contents are
+                // still inlined in this .ts source — we never read any
+                // external .fcstm.
+                const dir = trackTempDir(`jsfcstm-showcase-${fixture.name}-`);
+                let entryPath: string | undefined;
+                for (const [relative, body] of Object.entries(fixture.files)) {
+                    const absolute = path.join(dir, relative);
+                    writeFile(absolute, body);
+                    if (relative === fixture.entry) {
+                        entryPath = absolute;
+                    }
+                }
+                if (!entryPath) {
+                    throw new Error(
+                        `fixture ${fixture.name}: entry ${fixture.entry} not found in files`,
+                    );
+                }
+                doc = createDocument(fixture.files[fixture.entry], entryPath);
+            } else if (fixture.dsl) {
+                const syntheticPath = `/tmp/jsfcstm-showcase-${fixture.name}.fcstm`;
+                doc = createDocument(fixture.dsl, syntheticPath);
+            } else {
+                throw new Error(`fixture ${fixture.name}: neither dsl nor files+entry is set`);
+            }
             const diagnostics = await packageModule.collectDocumentDiagnostics(doc);
             const codes = diagnostics.map(item => item.code);
             const tally = tallyCodes(codes);

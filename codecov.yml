@@ -12,6 +12,25 @@ coverage:
 #   - ``jsfcstm``: mocha + c8 lcov.info from the standalone jsfcstm job
 # Codecov merges these into a single project total; the flag rows on
 # the PR comment let reviewers see per-side coverage at a glance.
+#
+# Regression-gate layering (PR #117 review M):
+#   - LOCAL c8 floor (editors/jsfcstm/package.json ``test:coverage``):
+#     ``--lines 93 --statements 93 --branches 83 --functions 95``.
+#     This is the fail-fast gate that runs inside ``npm test``. The
+#     thresholds sit ~2 percentage points below the post-PR-#117
+#     baseline (lines 95.25 / branches 86) so each new test pushes
+#     the floor up monotonically and the floor itself is never the
+#     binding constraint. Bump these as coverage climbs.
+#   - CODECOV gate (this file): ``threshold: 3%`` ``target: auto``
+#     compares THIS commit's flag coverage against the base commit's
+#     flag coverage. Diff-based, not floor-based. Note that codecov's
+#     reported percentage (jsfcstm ≈ 92.49% after PR #117) is lower
+#     than the c8 local report (95.25%) because codecov ingests the
+#     lcov.info as-is and counts a wider denominator (codecov's
+#     ``ignore:`` only filters discovery, not the per-file line
+#     denominator). The local-c8 / codecov numbers are independent
+#     gates measuring different things; do not chase parity between
+#     them.
 flags:
   python:
     paths:

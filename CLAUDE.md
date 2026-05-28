@@ -55,18 +55,20 @@ The `SKIP_SLOW_TESTS=1` env var is read by `test/conftest.py`. It auto-skips eve
 
 ### CI Workflow Commit-Message Triggers
 
-`.github/workflows/test.yml` honors three magic substrings in the **head commit message**. They are checked with GitHub Actions' `contains()`, which is a **plain substring match** — there are no word boundaries, no regex anchors. A natural-language phrase that happens to embed one of these substrings will silently trigger the gate. Always grep your commit message against the table below before pushing.
+`.github/workflows/test.yml` honors five magic substrings in the **head commit message**. They are checked with GitHub Actions' `contains()`, which is a **plain substring match** — there are no word boundaries, no regex anchors. A natural-language phrase that happens to embed one of these substrings will silently trigger the gate. Always grep your commit message against the table below before pushing.
 
 | Substring | Trigger | Effect |
 |---|---|---|
-| `ci skip` | head commit message contains this substring anywhere | Skips both `Code test` (unittest matrix) and `CLI Build` workflows entirely. Use for docs-only / comment-only commits. |
-| `test skip` | head commit message contains this substring anywhere | Skips only the `Code test` (unittest matrix) workflow. `CLI Build` still runs. |
+| `ci skip` | head commit message contains this substring anywhere | Skips both `Code test` (unittest matrix), `jsfcstm test`, and `CLI Build` workflows entirely. Use for docs-only / comment-only commits. |
+| `test skip` | head commit message contains this substring anywhere | Skips both the `Code test` (Python unittest matrix) AND the `jsfcstm test` workflows. `CLI Build` still runs. |
 | `[skip-slow]` | head commit message contains this substring anywhere | Runs the full unittest workflow normally, but injects `SKIP_SLOW_TESTS=1` into the unittest step, which skips `test/template/c` and `test/template/c_poll` (cmake/cc compile tests, ~85% of wall time). Use when iterating on changes that demonstrably can't affect the C/C++ runtime templates. |
+| `[python skip]` | head commit message contains this substring anywhere | Skips the `Code test` (Python unittest matrix) AND `CLI Build` jobs. The `jsfcstm test` job still runs. Use for jsfcstm-only changes (TypeScript / mocha updates) where the Python matrix would only burn CI minutes. |
+| `[js skip]` | head commit message contains this substring anywhere | Skips only the `jsfcstm test` workflow. The Python unittest matrix and `CLI Build` still run. Use for Python-only / Makefile changes that obviously can't affect the jsfcstm TypeScript build. |
 
 **Footgun:** because `contains()` is substring match, phrases like `"slow-test skip mechanism"` or `"document the ci skip flag"` will activate `test skip` / `ci skip` respectively. If you need to mention these tokens in a commit body, either rephrase (`"slow-test gating"`, `"document the ci-bypass flag"`) or quote them with characters that break the literal substring (e.g. `` `ci-skip` ``, `ci_skip`). When in doubt, run:
 
 ```bash
-git log -1 --format='%B' | grep -iE 'ci skip|test skip|\[skip-slow\]'
+git log -1 --format='%B' | grep -iE 'ci skip|test skip|\[skip-slow\]|\[python skip\]|\[js skip\]'
 ```
 
 before pushing — if any line matches and that wasn't your intent, amend.

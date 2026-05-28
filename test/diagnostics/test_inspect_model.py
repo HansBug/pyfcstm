@@ -586,41 +586,17 @@ class TestInspectModelExtendedCoverage:
         # Root path is just 'Root'.
         assert payload['states'][0]['path'] == 'Root'
 
-    def test_state_path_empty_returns_empty_string(self):
-        # Directly target the defensive empty-path branch in
-        # ``_state_path`` (inspect.py:376). The grammar never produces
-        # such a state, so call the helper directly with a stub.
-        from pyfcstm.diagnostics import inspect as inspect_mod
-        class _Stub:
-            path = ()
-        assert inspect_mod._state_path(_Stub()) == ''
-        class _Stub2:
-            pass  # no path attribute at all
-        assert inspect_mod._state_path(_Stub2()) == ''
-
-    def test_expr_text_swallows_to_ast_node_exception(self):
-        # ``_expr_text`` catches any exception from ``expr.to_ast_node()``
-        # and returns None. Pass an object whose to_ast_node raises.
-        from pyfcstm.diagnostics import inspect as inspect_mod
-        class _BoomExpr:
-            def to_ast_node(self):
-                raise RuntimeError('boom')
-        assert inspect_mod._expr_text(_BoomExpr()) is None
-
-    def test_effects_text_swallows_per_stmt_exception_and_empty_parts(self):
-        # ``_effects_text`` continues past per-statement exceptions,
-        # returns None if no parts survive.
-        from pyfcstm.diagnostics import inspect as inspect_mod
-        class _BoomStmt:
-            def to_ast_node(self):
-                raise RuntimeError('boom')
-        class _GoodStmt:
-            def to_ast_node(self):
-                return 'x = 1'
-        # All-broken stmts → empty parts → None
-        assert inspect_mod._effects_text([_BoomStmt(), _BoomStmt()]) is None
-        # Mix: only good parts survive
-        assert inspect_mod._effects_text([_BoomStmt(), _GoodStmt()]) == 'x = 1'
+    # NOTE (PR #117 follow-up): the previously-present
+    # ``test_state_path_empty_returns_empty_string``,
+    # ``test_expr_text_swallows_to_ast_node_exception``,
+    # ``test_effects_text_swallows_per_stmt_exception_and_empty_parts``
+    # tests have been removed. They invoked private helpers directly
+    # with hand-rolled stubs, violating the project's "no private-helper
+    # / no mock" rule. The corresponding defensive branches in
+    # ``inspect.py`` are now marked with ``# pragma: no cover`` plus a
+    # justification comment — they exist as fail-loud guards against
+    # future model-layer regressions (grammar-produced AST nodes
+    # always have ``path`` / always serialize via ``to_ast_node``).
 
     def test_aspect_function_label_for_ref_aspects(self):
         # ``_aspect_function_label`` has is_ref + ref.name branch
@@ -641,36 +617,6 @@ class TestInspectModelExtendedCoverage:
         # Just confirm parse + inspect didn't crash and aspect is set.
         # Detailed label check is brittle — focus on coverage.
         assert report.aspect_impact_map is not None
-
-    def test_transition_endpoint_non_string_marker_fallback(self):
-        # ``_transition_endpoint`` line 395: ``return str(marker_or_name)``
-        # for non-string non-marker values. Pass an integer sentinel.
-        from pyfcstm.diagnostics import inspect as inspect_mod
-        class _ParentStub:
-            path = ('Root',)
-        # 42 is not _StateSingletonMark / str — falls through to str() fallback.
-        result = inspect_mod._transition_endpoint(_ParentStub(), 42, is_source=False)
-        assert result == '42'
-
-    def test_abstract_actions_in_scope_skips_unknown_state(self):
-        # ``_abstract_actions_in_scope`` line 789: ``info is None: continue``.
-        # Pass a touched-paths list that includes a nonexistent path.
-        from pyfcstm.diagnostics import inspect as inspect_mod
-        # Build a minimal real report so state_lookup has at least one
-        # entry, then call the helper with an extra fake path.
-        dsl = """
-        state Root { state A; [*] -> A; }
-        """
-        report = inspect_model(_parse(dsl))
-        state_lookup = {info.path: info for info in report.states}
-        # Helper signature: (state_lookup, read_states, written_states).
-        # Mix real + fake paths so the iter visits the ``info is None``
-        # continue at line 789.
-        out = inspect_mod._abstract_actions_in_scope(
-            state_lookup, ('Nonexistent.Path', 'Root'), ('Root.A',),
-        )
-        # Returns a tuple/list-like; assert it's iterable and finite.
-        assert hasattr(out, '__iter__')
 
     def test_function_signature_for_ref_actions(self):
         # ``_function_signature`` has an ``is_ref`` branch that exposes
@@ -695,98 +641,18 @@ class TestInspectModelExtendedCoverage:
             f'expected at least one action_ref edge, got {report.action_ref_graph}'
         )
 
-    def test_hierarchy_depth_empty_states(self):
-        # ``_hierarchy_depth`` returns 0 for empty state list. Call
-        # directly with empty tuple.
-        from pyfcstm.diagnostics import inspect as inspect_mod
-        assert inspect_mod._hierarchy_depth(()) == 0
-
-    def test_to_json_dataclass_list_and_dict_payload(self):
-        # ``_to_json_dataclass`` has list (line 1030) and dict (line
-        # 1031-1032) branches. Call directly with each.
-        from pyfcstm.diagnostics import inspect as inspect_mod
-        assert inspect_mod._to_json_dataclass([1, 'x', 2.5]) == [1, 'x', 2.5]
-        assert inspect_mod._to_json_dataclass({'a': 1, 2: 'b'}) == {'a': 1, '2': 'b'}
-        # tuple branch (line 1028) for completeness.
-        assert inspect_mod._to_json_dataclass(('a', 'b')) == ['a', 'b']
-
-    def test_build_reachability_graph_skips_unknown_from_path(self):
-        # Line 879: ``if t.from_path not in adjacency: continue``.
-        # Grammar never produces this normally; call the helper
-        # directly with a transition whose from_path is not in the
-        # state list.
-        from pyfcstm.diagnostics import inspect as inspect_mod
-        # Build minimal real report then construct a fake transition.
-        dsl = "state Root { state A; [*] -> A; }"
+    def test_exit_transition_inspected_via_to_path(self):
+        # A ``Foo -> [*]`` exit transition shows up in the report with
+        # ``to_path == '[*]'``. This is the public-facing contract;
+        # ``_is_exit_target`` was removed as dead code (it was defined
+        # but never called).
+        dsl = """
+        state Root {
+            state Active;
+            [*] -> Active;
+            Active -> [*];
+        }
+        """
         report = inspect_model(_parse(dsl))
-        fake_t = TransitionInfo(
-            from_path='Phantom',  # not in state list
-            to_path='Root.A',
-            event=None,
-            event_scope=None,
-            guard=None,
-            effect=None,
-            is_forced=False,
-            forced_origin=None,
-        )
-        graph = inspect_mod._build_reachability_graph(
-            report.states, (*report.transitions, fake_t),
-        )
-        # Phantom isn't in adjacency, so it didn't add anything; real
-        # states are present.
-        assert 'Phantom' not in graph
-        assert 'Root.A' in graph
-
-    def test_function_signature_handles_action_with_no_path_attr(self):
-        # Line 976: ``else: normalized = default_path or _state_path(state) or ''``
-        # — when action has no ``state_path`` attribute, fall through to
-        # default_path / state.path / empty string.
-        from pyfcstm.diagnostics import inspect as inspect_mod
-        class _Stub:
-            name = 'F'
-            # no ``state_path`` attribute
-        class _StateStub:
-            path = ('Root', 'Idle')
-        label = inspect_mod._function_signature(_StateStub(), None, _Stub())
-        assert label == 'Root.Idle:F'
-
-    def test_diagnostic_to_json_with_span(self):
-        # ``_diagnostic_to_json`` line 1060 region (span dict construction).
-        # The earlier test with synthetic-injected None-span hit the None
-        # branch; this one hits the populated-span branch.
-        from pyfcstm.diagnostics import inspect as inspect_mod
-        from pyfcstm.utils import ModelDiagnostic, Span
-        d = ModelDiagnostic(
-            code='E_UNDEFINED_VAR',
-            severity='error',
-            message='test',
-            span=Span(line=1, column=2, end_line=3, end_column=4),
-            refs={'var_name': 'x', 'referenced_in': 'guard'},
-        )
-        payload = inspect_mod._diagnostic_to_json(d)
-        # Span dict structure shape — exact field names are
-        # implementation-defined; just confirm the helper produced a
-        # dict (not None) when span is populated.
-        assert isinstance(payload['span'], dict)
-        assert payload['span']
-
-    def test_is_exit_target_and_event_scope_helpers(self):
-        # Directly exercise the small defensive helpers
-        # ``_is_exit_target`` + ``_event_scope`` for unusual inputs.
-        from pyfcstm.diagnostics import inspect as inspect_mod
-        from pyfcstm.dsl.node import EXIT_STATE
-        assert inspect_mod._is_exit_target(EXIT_STATE) is True
-        assert inspect_mod._is_exit_target(object()) is False
-        # _event_scope: event=None branch (line 529)
-        assert inspect_mod._event_scope(None, None, None, None) == 'absolute'
-        # _event_scope: fallback chain (line 540) — when owner_path
-        # matches none of root / parent / parent+from_state.
-        class _Event:
-            state_path = ('SomeOther',)
-        class _State:
-            path = ('Root',)
-        # parent_path = ('Root',), root_path = ('Root',), owner_path = ('SomeOther',)
-        # owner != root, owner != parent, owner != parent+from → 'chain'
-        class _Machine:
-            root_state = _State()
-        assert inspect_mod._event_scope(_Event(), _State(), 'X', _Machine()) == 'chain'
+        exits = [t for t in report.transitions if t.to_path == '[*]']
+        assert len(exits) >= 1, f'expected exit transition, got {report.transitions}'

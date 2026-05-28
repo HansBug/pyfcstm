@@ -372,7 +372,11 @@ _EXIT_MARK = '[*]'
 
 def _state_path(state: Any) -> str:
     path = getattr(state, 'path', None)
-    if not path:
+    if not path:  # pragma: no cover
+        # Defensive: grammar-produced State always has a non-empty
+        # ``path`` tuple. Reaching this guard means a future state
+        # builder shipped a half-initialized object; keep as fail-soft
+        # to avoid masking a downstream rewrite that produced ''.
         return ''
     return '.'.join(p for p in path if p is not None)
 
@@ -392,7 +396,9 @@ def _transition_endpoint(parent_state: Any, marker_or_name: Any, is_source: bool
         return _INIT_MARK if is_source else _EXIT_MARK
     if isinstance(marker_or_name, str):
         return _resolve_sibling_path(parent_state, marker_or_name)
-    return str(marker_or_name)
+    return str(marker_or_name)  # pragma: no cover -- grammar produces
+    # only INIT/EXIT singletons and string names; this str() fallback
+    # exists for future AST extensions and never fires today.
 
 
 def _expr_text(expr: Optional['Expr']) -> Optional[str]:
@@ -400,8 +406,11 @@ def _expr_text(expr: Optional['Expr']) -> Optional[str]:
         return None
     try:
         return str(expr.to_ast_node())
-    except Exception:
-        # Defensive: never let a malformed expr crash inspection.
+    except Exception:  # pragma: no cover
+        # Defensive: grammar-emitted Expr.to_ast_node always succeeds.
+        # The try/except guards against future Expr subclasses whose
+        # to_ast_node could fail; keep as fail-soft so inspection
+        # never crashes the IDE / CLI.
         return None
 
 
@@ -412,9 +421,14 @@ def _effects_text(effects: List['OperationStatement']) -> Optional[str]:
     for stmt in effects:
         try:
             parts.append(str(stmt.to_ast_node()))
-        except Exception:
+        except Exception:  # pragma: no cover
+            # Defensive: see ``_expr_text`` — grammar-emitted stmts
+            # always serialize.
             continue
-    if not parts:
+    if not parts:  # pragma: no cover
+        # Unreachable while ``except`` above is unreachable. Belt-and-
+        # braces guard so the empty-parts case still returns None
+        # cleanly rather than producing an empty-string label.
         return None
     return ' '.join(parts)
 
@@ -525,7 +539,10 @@ def _event_scope(
     * local (``::``) — owner is the parent's path extended by
       ``from_state``
     """
-    if event is None:
+    if event is None:  # pragma: no cover
+        # Defensive: callers (``_qualified_event_name``) already guard
+        # on ``transition.event is None`` and short-circuit; reaching
+        # here would mean the caller forgot the guard.
         return 'absolute'
     owner_path = tuple(event.state_path)
     root_path = tuple(machine.root_state.path) if machine is not None else ()
@@ -537,7 +554,10 @@ def _event_scope(
     if isinstance(from_state, str) and owner_path == parent_path + (from_state,):
         return 'local'
     # Owner is somewhere else on the chain — conservative fallback.
-    return 'chain'
+    # Unreachable via real DSL (events are declared in local / chain /
+    # absolute scopes — never in a sibling that the transition cannot
+    # reach), but kept as a non-crashing safety net.
+    return 'chain'  # pragma: no cover
 
 
 def _state_actions(
@@ -590,11 +610,6 @@ def _is_init_source(from_state: Any) -> bool:
     return from_state is INIT_STATE
 
 
-def _is_exit_target(to_state: Any) -> bool:
-    from ..dsl.node import EXIT_STATE
-    return to_state is EXIT_STATE
-
-
 def _is_forced_transition(transition: 'Transition') -> bool:
     return bool(getattr(transition, 'is_forced', False)) or hasattr(
         transition, 'forced_origin'
@@ -602,7 +617,10 @@ def _is_forced_transition(transition: 'Transition') -> bool:
 
 
 def _hierarchy_depth(states: Tuple[StateInfo, ...]) -> int:
-    if not states:
+    if not states:  # pragma: no cover
+        # Defensive: ``inspect_model`` always builds at least one
+        # StateInfo (the root). Empty input would mean a caller used
+        # this helper outside the pipeline; keep the fail-soft 0.
         return 0
     return max(s.path.count('.') for s in states)
 
@@ -785,7 +803,11 @@ def _abstract_actions_in_scope(
     out: List[str] = []
     for path in sorted(touched):
         info = state_lookup.get(path)
-        if info is None:
+        if info is None:  # pragma: no cover
+            # Defensive: ``touched`` paths come from VariableInfo
+            # read_in_states / written_in_states, which are populated
+            # only with paths that exist in state_lookup. Unreachable
+            # in the current pipeline; kept as a safety net.
             continue
         if info.has_abstract_action:
             label = f'{info.path}:<abstract>'
@@ -875,7 +897,12 @@ def _build_reachability_graph(
             # parent composite (the parent's "active" implies traversing
             # the initial transition).
             continue
-        if t.from_path not in adjacency:
+        if t.from_path not in adjacency:  # pragma: no cover
+            # Defensive: transitions emitted by the model layer always
+            # have from_path equal to a known state path (or the INIT
+            # marker caught above). Unreachable through grammar-driven
+            # input; kept as a safety net so a future synthesizer that
+            # invents from_paths doesn't crash here.
             continue
         adjacency[t.from_path].add(t.to_path)
 
@@ -972,7 +999,11 @@ def _function_signature(state: Any, default_path: Optional[str], action: Any) ->
         normalized = '.'.join(p for p in action_path[:-1] if p is not None) or (
             default_path or _state_path(state)
         )
-    else:
+    else:  # pragma: no cover
+        # Defensive: grammar-emitted actions always have a non-empty
+        # state_path. Reaching here means a future action synthesizer
+        # produced an action without one; fall through to the
+        # default_path / state.path chain so labels stay useful.
         normalized = default_path or _state_path(state) or ''
     leaf = (action.name or '<inline>') if action_path is None else (action_path[-1] or '<inline>')
     return f'{normalized}:{leaf}' if normalized else leaf
@@ -1026,9 +1057,16 @@ def _to_json_dataclass(obj: Any) -> Any:
         }
     if isinstance(obj, tuple):
         return [_to_json_dataclass(x) for x in obj]
-    if isinstance(obj, list):
+    if isinstance(obj, list):  # pragma: no cover
+        # Defensive: PR-A model emits ``Tuple[...]`` fields exclusively.
+        # PR-B / PR-C may emit list-typed fields (e.g. open-ended
+        # ``related_diagnostics``) — this branch reserves the recursion
+        # for that future.
         return [_to_json_dataclass(x) for x in obj]
-    if isinstance(obj, dict):
+    if isinstance(obj, dict):  # pragma: no cover
+        # Same as list: PR-A keeps every dict field at the ModelInspect
+        # top level (so they go through ``_to_json_inspect``). PR-B / PR-C
+        # may nest dict payloads inside dataclass fields.
         return {str(k): _to_json_dataclass(v) for k, v in obj.items()}
     return obj
 
@@ -1056,7 +1094,12 @@ def _to_json_inspect(report: ModelInspect) -> Dict[str, Any]:
 
 def _diagnostic_to_json(d: ModelDiagnostic) -> Dict[str, Any]:
     span = None
-    if d.span is not None:
+    if d.span is not None:  # pragma: no cover
+        # Defensive: PR-A keeps ``ModelInspect.diagnostics`` empty.
+        # PR-B / PR-C will emit W_*/I_* diagnostics that carry spans;
+        # this serializer branch exists to be ready for them. Once a
+        # fixture lands that exercises a spanned diagnostic, drop the
+        # pragma.
         span = {
             'line': d.span.line,
             'column': d.span.column,

@@ -295,11 +295,13 @@ def _assemble_state(
         # mode (``DiagnosticSink(collect=False)``) the first emit raises
         # :class:`ModelValidationError`; in collect mode the diagnostics
         # accumulate on the sink and each helper continues past
-        # individual errors. We still wrap the call sequence in a safety
-        # net so structural follow-up failures (e.g. ``AttributeError``
-        # / ``TypeError`` triggered by the corrupt state left over from
-        # an accumulated error in collect mode) skip this import
-        # cleanly instead of poisoning the host program.
+        # individual errors via explicit ``return``/``continue`` paths
+        # (see ``_resolve_import_event_target_path`` and
+        # ``_ensure_state_path_exists`` for the sentinel-return form).
+        # Only the ``ModelValidationError`` branch remains below as a
+        # belt-and-braces guard; the previous AttributeError /
+        # TypeError / KeyError / IndexError safety net was removed by
+        # I1 (PR #116 re-review) once every helper became sink-aware.
         try:
             _apply_import_def_mappings(
                 program=imported_program,

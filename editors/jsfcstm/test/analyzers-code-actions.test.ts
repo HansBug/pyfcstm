@@ -216,4 +216,100 @@ describe('jsfcstm analyzers and code actions', () => {
         assert.ok(tempDiag, 'expected temp read-before-assign diagnostic inside the if-branch');
         assert.match(tempDiag.message, /scratch/);
     });
+
+    // PR-A-coverage: targeted tests for expression / statement walker
+    // branches that the existing fixtures don't reach.
+    describe('analyzer expression walker coverage (PR-A-coverage)', () => {
+        it('walks unary, binary, function, conditional, and parenthesized expressions in guards', async () => {
+            const dir = trackTempDir('jsfcstm-walker-');
+            const hostFile = path.join(dir, 'host.fcstm');
+            const document = createDocument([
+                'def int counter = 0;',
+                'def int limit = 10;',
+                'state Root {',
+                '    state A;',
+                '    state B;',
+                '    [*] -> A;',
+                '    A -> B : if [(counter + limit) > 0 && abs(-counter) < (limit * 2) && ((counter > limit) ? 1 : 0) > 0];',
+                '}',
+            ].join('\n'), hostFile);
+            const diagnostics = await packageModule.collectDocumentDiagnostics(document);
+            assert.equal(
+                diagnostics.filter(d => d.code === 'E_UNDEFINED_VAR').length,
+                0,
+                `unexpected E_UNDEFINED_VAR: ${JSON.stringify(diagnostics)}`,
+            );
+        });
+
+        it('detects read-before-assign inside if-branch condition', async () => {
+            const dir = trackTempDir('jsfcstm-ifbranch-');
+            const hostFile = path.join(dir, 'host.fcstm');
+            const document = createDocument([
+                'state Root {',
+                '    state Idle {',
+                '        enter {',
+                '            if [scratch > 0] {',
+                '                scratch = 1;',
+                '            }',
+                '        }',
+                '    }',
+                '    [*] -> Idle;',
+                '}',
+            ].join('\n'), hostFile);
+            const diagnostics = await packageModule.collectDocumentDiagnostics(document);
+            const undef = diagnostics.find(d =>
+                d.code === 'E_UNDEFINED_VAR'
+                && (d.data as Record<string, unknown> | undefined)?.var_name === 'scratch'
+            );
+            assert.ok(undef, `expected E_UNDEFINED_VAR for scratch, got ${JSON.stringify(diagnostics)}`);
+            assert.equal((undef.data as Record<string, unknown>).is_temporary, true);
+        });
+
+        it('merges branch-local assignments into outer scope when every branch (including else) assigns', async () => {
+            const dir = trackTempDir('jsfcstm-branchmerge-');
+            const hostFile = path.join(dir, 'host.fcstm');
+            const document = createDocument([
+                'def int sensor = 0;',
+                'state Root {',
+                '    state Idle {',
+                '        enter {',
+                '            if [sensor > 0] {',
+                '                tracker = 1;',
+                '            } else {',
+                '                tracker = 0;',
+                '            }',
+                '            sensor = tracker + 1;',
+                '        }',
+                '    }',
+                '    [*] -> Idle;',
+                '}',
+            ].join('\n'), hostFile);
+            const diagnostics = await packageModule.collectDocumentDiagnostics(document);
+            const trackerReads = diagnostics.filter(d =>
+                d.code === 'E_UNDEFINED_VAR'
+                && (d.data as Record<string, unknown> | undefined)?.var_name === 'tracker'
+            );
+            assert.equal(trackerReads.length, 0,
+                `tracker should be merged-assigned after if/else, got ${JSON.stringify(trackerReads)}`);
+        });
+
+        it('forced transition with missing target emits diagnostic', async () => {
+            const dir = trackTempDir('jsfcstm-forcedtgt-');
+            const hostFile = path.join(dir, 'host.fcstm');
+            const document = createDocument([
+                'state Root {',
+                '    state Idle;',
+                '    [*] -> Idle;',
+                '    !Idle -> NoSuchTarget : if [false];',
+                '}',
+            ].join('\n'), hostFile);
+            const diagnostics = await packageModule.collectDocumentDiagnostics(document);
+            const matched = diagnostics.find(d =>
+                d.code === 'E_FORCED_TRANSITION_EXPANSION'
+                || d.code === 'E_MISSING_STATE',
+            );
+            assert.ok(matched,
+                `expected forced-transition diagnostic, got ${JSON.stringify(diagnostics.map(d => d.code))}`);
+        });
+    });
 });

@@ -2290,6 +2290,21 @@ def parse_dsl_node_to_state_machine(
                 },
             ))
 
+    def _collect_block_local_names(
+        op_nodes: List[dsl_nodes.OperationalStatement],
+        accum: Set[str],
+    ) -> None:
+        """Walk an operation block and record every assignment LHS name
+        whose target is NOT a file-top ``def`` — those are exactly the
+        names that look like block-local temporaries (I-i)."""
+        for op_item in op_nodes:
+            if isinstance(op_item, dsl_nodes.OperationAssignment):
+                if op_item.name not in d_defines:
+                    accum.add(op_item.name)
+            elif isinstance(op_item, dsl_nodes.OperationIf):
+                for branch in op_item.branches:
+                    _collect_block_local_names(branch.statements, accum)
+
     def _parse_operation_block(
         op_nodes: List[dsl_nodes.OperationalStatement],
         unknown_var_message: str,
@@ -2297,8 +2312,15 @@ def parse_dsl_node_to_state_machine(
         owner_node,
         available_vars: Optional[Set[str]] = None,
         state_path: Optional[str] = None,
+        block_local_names: Optional[Set[str]] = None,
     ) -> List[OperationStatement]:
         available_vars = set(available_vars or d_defines)
+        # On the outermost call (no block_local_names yet) pre-walk the
+        # block to discover all would-be block-local temps so each emit
+        # can fill the ``is_temporary`` schema flag accurately.
+        if block_local_names is None:
+            block_local_names = set()
+            _collect_block_local_names(op_nodes, block_local_names)
         operations = []
         for op_item in op_nodes:
             operations.append(
@@ -2309,6 +2331,7 @@ def parse_dsl_node_to_state_machine(
                     owner_node=owner_node,
                     available_vars=available_vars,
                     state_path=state_path,
+                    block_local_names=block_local_names,
                 )
             )
 
@@ -2321,7 +2344,9 @@ def parse_dsl_node_to_state_machine(
         owner_node,
         available_vars: Set[str],
         state_path: Optional[str] = None,
+        block_local_names: Optional[Set[str]] = None,
     ) -> OperationStatement:
+        block_local_names = block_local_names if block_local_names is not None else set()
         if isinstance(op_item, dsl_nodes.OperationAssignment):
             operation_val = parse_expr_node_to_expr(op_item.expr)
             unknown_vars = []
@@ -2330,6 +2355,14 @@ def parse_dsl_node_to_state_machine(
                     unknown_vars.append(var.name)
 
             for unknown_var in unknown_vars:
+                # I-i: ``is_temporary`` is True when this name is
+                # assigned somewhere later in the same operation block,
+                # which is the read-before-assign signature of a
+                # would-be block-local temporary. Names that are
+                # neither defined at file top nor assigned anywhere in
+                # this block are "real" undefineds and leave the flag
+                # off per schema default.
+                is_temporary = unknown_var in block_local_names
                 sink.emit(ModelDiagnostic(
                     code='E_UNDEFINED_VAR',
                     severity='error',
@@ -2343,6 +2376,7 @@ def parse_dsl_node_to_state_machine(
                         'referenced_in': referenced_in,
                         'state_path': state_path,
                         'expr_text': str(op_item.expr),
+                        'is_temporary': is_temporary,
                     },
                 ))
 
@@ -2357,6 +2391,7 @@ def parse_dsl_node_to_state_machine(
                 owner_node=owner_node,
                 available_vars=available_vars,
                 state_path=state_path,
+                block_local_names=block_local_names,
             )
         else:
             raise TypeError(f"Unknown operation statement node - {op_item!r}.")
@@ -2368,7 +2403,9 @@ def parse_dsl_node_to_state_machine(
         owner_node,
         available_vars: Set[str],
         state_path: Optional[str] = None,
+        block_local_names: Optional[Set[str]] = None,
     ) -> IfBlock:
+        block_local_names = block_local_names if block_local_names is not None else set()
         base_available_vars = set(available_vars)
         branches = []
         for branch in if_node.branches:
@@ -2383,6 +2420,8 @@ def parse_dsl_node_to_state_machine(
                     ):
                         unknown_vars.append(var.name)
                 for unknown_var in unknown_vars:
+                    # I-i: see _parse_operation_statement.
+                    is_temporary = unknown_var in block_local_names
                     sink.emit(ModelDiagnostic(
                         code='E_UNDEFINED_VAR',
                         severity='error',
@@ -2396,6 +2435,7 @@ def parse_dsl_node_to_state_machine(
                             'referenced_in': referenced_in,
                             'state_path': state_path,
                             'expr_text': str(branch.condition),
+                            'is_temporary': is_temporary,
                         },
                     ))
 
@@ -2407,6 +2447,7 @@ def parse_dsl_node_to_state_machine(
                 owner_node=owner_node,
                 available_vars=branch_available_vars,
                 state_path=state_path,
+                block_local_names=block_local_names,
             )
             branches.append(
                 IfBlockBranch(condition=condition, statements=branch_statements)

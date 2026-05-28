@@ -206,6 +206,28 @@ SINGLE_FILE_FIXTURES = [
         ]),
         ['E_FORCED_TRANSITION_EXPANSION'],
     ),
+    # I-h: mirror jsfcstm fixture 11-temporary-read-before-assign.
+    # ``tracker`` and ``compute_me`` are not declared at file top, so
+    # the first read of ``compute_me`` (on the right-hand side of the
+    # first assignment) fires E_UNDEFINED_VAR with ``is_temporary=True``
+    # — the schema flag distinguishing read-before-assign of a
+    # would-be block-local temp from a read of a genuinely undefined
+    # identifier.
+    (
+        'temporary-read-before-assign',
+        '\n'.join([
+            'state Root {',
+            '    state Idle {',
+            '        enter {',
+            '            tracker = compute_me + 1;',
+            '            compute_me = tracker * 2;',
+            '        }',
+            '    }',
+            '    [*] -> Idle;',
+            '}',
+        ]),
+        ['E_UNDEFINED_VAR'],
+    ),
 ]
 
 
@@ -503,3 +525,64 @@ def test_import_mapping_collect_mode_accumulates_multiple_errors(tmp_path):
         f'expected at least 2 E_IMPORT_DUPLICATE_MAPPING diagnostics in collect mode, '
         f'got codes={[d.code for d in diagnostics]}'
     )
+
+
+@pytest.mark.unittest
+def test_undefined_var_carries_is_temporary_flag():
+    """I-i from PR #115 review: a read-before-assign of a name that
+    has no file-top ``def`` is semantically a would-be block-local
+    temporary that was never written. ``refs.is_temporary=True``
+    distinguishes this case from a read of a genuinely undefined
+    identifier so downstream LLM consumers can branch on the flag.
+    """
+    dsl = '\n'.join([
+        'state Root {',
+        '    state Idle {',
+        '        enter {',
+        '            tracker = compute_me + 1;',
+        '            compute_me = tracker * 2;',
+        '        }',
+        '    }',
+        '    [*] -> Idle;',
+        '}',
+    ])
+    _, _, diagnostics = _collect_codes_from_dsl(dsl)
+    undef_diags = [d for d in diagnostics if d.code == 'E_UNDEFINED_VAR']
+    assert undef_diags, f'expected E_UNDEFINED_VAR to fire, got {[d.code for d in diagnostics]}'
+    for d in undef_diags:
+        assert d.refs.get('is_temporary') is True, (
+            f'expected is_temporary=True (var has no file-top def), '
+            f'got refs={d.refs}'
+        )
+
+
+@pytest.mark.unittest
+def test_undefined_var_is_temporary_false_when_no_later_assignment():
+    """The complementary half of I-i: a read of a name that is neither
+    a file-top ``def`` nor assigned anywhere later in the same block is
+    a "real" undefined identifier, NOT a would-be temp. The flag must
+    be ``False`` (or absent) so the LLM can give different fix advice
+    (declare a def vs. assign before read).
+    """
+    dsl = '\n'.join([
+        'state Root {',
+        '    state Idle {',
+        '        enter {',
+        '            tracker = nowhere_else + 1;',
+        '        }',
+        '    }',
+        '    [*] -> Idle;',
+        '}',
+    ])
+    _, _, diagnostics = _collect_codes_from_dsl(dsl)
+    undef_diags = [d for d in diagnostics if d.code == 'E_UNDEFINED_VAR']
+    assert undef_diags
+    # ``nowhere_else`` is the unknown identifier; it has no file-top
+    # def and is not assigned later in this block.
+    nowhere_diags = [d for d in undef_diags if d.refs.get('var_name') == 'nowhere_else']
+    assert nowhere_diags, f'expected diag for "nowhere_else", got {[d.refs for d in undef_diags]}'
+    for d in nowhere_diags:
+        assert d.refs.get('is_temporary') is False, (
+            f'real undefined (no later assignment) should have is_temporary=False; '
+            f'refs={d.refs}'
+        )

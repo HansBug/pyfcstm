@@ -1,10 +1,11 @@
-// Demo: E_UNDEFINED_VAR — undefined variables in guards / effects.
-// Expected diagnostics from jsfcstm (visible in VSCode Problems panel):
-//   * E_UNDEFINED_VAR at line 9 column 28 — unknown_var
-//   * E_UNDEFINED_VAR at line 10 column 22 — also_unknown
+// Demo: E_UNDEFINED_VAR — undefined variables read in guards / effects.
+// Expected diagnostics (red squiggles in Problems panel):
+//   * E_UNDEFINED_VAR on `unknown_var` (line 11)
+//   * E_UNDEFINED_VAR on `mystery_input` (line 12, on the RHS of effect)
 //
-// Each diagnostic should match what pyfcstm CLI / inspect_model emit
-// for the same DSL.
+// Note: only RHS reads of undeclared variables trigger the error. An
+// assignment to a brand-new name on the LHS is treated as a block-local
+// temporary (see 11-temporary-read-before-assign.fcstm for that case).
 
 def int counter = 0;
 state Root {
@@ -12,5 +13,5 @@ state Root {
     state Active;
     [*] -> Idle;
     Idle -> Active : if [unknown_var > 0];
-    Active -> Idle : if [counter > 5] effect { also_unknown = counter; };
+    Active -> Idle : if [counter > 5] effect { counter = counter + mystery_input; };
 }

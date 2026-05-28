@@ -1214,6 +1214,7 @@ fabric.properties
 /pyfcstm/**/*.json
 /pyfcstm/**/*.yaml
 /pyfcstm/**/*.yml
+!/pyfcstm/verify/codes.yaml
 !/test/testfile/**/*
 !/zoo/testfile/**/*
 /test/testfile/dataset

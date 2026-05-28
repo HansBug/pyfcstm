@@ -20,7 +20,7 @@ Downstream consumers (LLM agent loops, IDE integrations, the future
 contract surface is the diagnostic objects themselves, not this class.
 """
 
-from typing import List, Optional
+from typing import List, Optional, Type
 
 from ..utils.validate import ModelDiagnostic, ModelValidationError
 
@@ -107,37 +107,88 @@ class DiagnosticSink:
 def _emit(
         sink: Optional[DiagnosticSink],
         diagnostic: ModelDiagnostic,
+        *,
+        exc_cls: Type[ModelValidationError] = ModelValidationError,
         prior_diagnostics: Optional[List[ModelDiagnostic]] = None,
 ) -> None:
     """
     Convenience helper: route ``diagnostic`` through ``sink`` if one is
-    provided; otherwise raise immediately as :class:`ModelValidationError`.
+    provided in collect mode; otherwise raise the typed ``exc_cls``.
 
-    Used by code paths that want to support both "callers pass a sink" and
-    "callers expect classic raise behavior" without conditional plumbing at
-    every call site.
+    Used by code paths that want to support all three sink dispositions
+    without writing the ``if sink is None: raise; elif sink.collect: emit;
+    else: raise typed`` ladder at every call site:
 
-    When ``sink`` is ``None`` and ``prior_diagnostics`` is provided, the
-    raised :class:`ModelValidationError` carries those prior entries before
-    the new ``diagnostic`` — matching the strict-mode
-    :meth:`DiagnosticSink.emit` semantics where accumulated context (e.g.
-    earlier warnings) is preserved into the raise.
+    * ``sink=None`` (no sink) — raise ``exc_cls`` carrying ``[diagnostic]``
+      plus any optional ``prior_diagnostics`` already accumulated by the
+      caller.
+    * ``sink`` provided AND ``sink.collect=True`` — append the diagnostic
+      to the sink and return; the caller is responsible for surfacing the
+      collected list later.
+    * ``sink`` provided AND ``sink.collect=False`` (strict) — also raise
+      ``exc_cls``, but include the sink's previously accumulated entries
+      (e.g. earlier warnings) in the raise. The diagnostic is also
+      appended to the sink so post-raise inspection sees a consistent
+      history.
+
+    The strict-sink path is what makes ``ModelValueError`` /
+    ``ModelLookupError`` reachable when a caller layers a sink onto an
+    existing API that historically raised ``ValueError`` / ``LookupError``.
+    Without ``exc_cls``, strict-sink mode would silently downgrade those
+    raises to plain :class:`ModelValidationError`, breaking
+    ``except ValueError:`` / ``except LookupError:`` catch handlers.
 
     :param sink: Active sink, or ``None`` to raise immediately.
     :type sink: pyfcstm.diagnostics.sink.DiagnosticSink, optional
     :param diagnostic: The structured diagnostic to route.
     :type diagnostic: pyfcstm.utils.validate.ModelDiagnostic
+    :param exc_cls: Exception class to raise when ``sink`` is ``None`` or
+        strict. Must inherit :class:`ModelValidationError`; defaults to
+        :class:`ModelValidationError` itself. Callers that want
+        ``except ValueError:`` / ``except LookupError:`` catch
+        compatibility should pass :class:`ModelValueError` or
+        :class:`ModelLookupError`.
+    :type exc_cls: Type[ModelValidationError], optional
     :param prior_diagnostics: Optional list of diagnostics already
-        accumulated by the caller; included in the raise on the
-        ``sink is None`` path. Defaults to ``None``.
+        accumulated by the caller; prepended to the raise's diagnostics
+        list. Defaults to ``None``.
     :type prior_diagnostics: List[ModelDiagnostic], optional
-    :raises pyfcstm.utils.validate.ModelValidationError: When ``sink`` is
-        ``None`` or when the sink is in strict mode.
+    :raises pyfcstm.utils.validate.ModelValidationError: Of type
+        ``exc_cls``. Only raised when ``sink`` is ``None`` or
+        ``sink.collect`` is ``False``.
+
+    Example::
+
+        >>> from pyfcstm.diagnostics import DiagnosticSink
+        >>> from pyfcstm.diagnostics.sink import _emit
+        >>> from pyfcstm.utils import ModelDiagnostic
+        >>> from pyfcstm.utils.validate import ModelValueError
+        >>> sink = DiagnosticSink(collect=True)
+        >>> _emit(sink, ModelDiagnostic(
+        ...     code='E_EVENT_REF_INVALID', severity='error', message='m',
+        ... ), exc_cls=ModelValueError)
+        >>> [d.code for d in sink.diagnostics]
+        ['E_EVENT_REF_INVALID']
     """
+    accumulated: List[ModelDiagnostic] = (
+        list(prior_diagnostics) if prior_diagnostics else []
+    )
+
     if sink is None:
-        all_diagnostics: List[ModelDiagnostic] = (
-            list(prior_diagnostics) if prior_diagnostics else []
-        )
-        all_diagnostics.append(diagnostic)
-        raise ModelValidationError(diagnostics=all_diagnostics)
-    sink.emit(diagnostic)
+        accumulated.append(diagnostic)
+        raise exc_cls(diagnostics=accumulated)
+
+    if sink.collect:
+        sink.emit(diagnostic)
+        return
+
+    # Strict sink (collect=False): emit raises ``ModelValidationError``
+    # internally with all prior sink entries + the new one. We catch and
+    # translate to ``exc_cls`` so legacy ``except ValueError:`` /
+    # ``except LookupError:`` handlers stay alive.
+    try:
+        sink.emit(diagnostic)
+    except ModelValidationError as err:
+        raise exc_cls(
+            diagnostics=accumulated + list(err.diagnostics),
+        ) from err

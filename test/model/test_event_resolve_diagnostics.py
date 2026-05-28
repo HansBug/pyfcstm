@@ -62,6 +62,14 @@ def _assert_refs_match_schema(diag: ModelDiagnostic) -> None:
     assert not extra, (
         f"{diag.code} refs has extra keys {extra} not in codes.yaml schema"
     )
+    # M2 from PR-112 review: enforce required-field presence. Without
+    # this, a regression that drops a ``required: true`` field (e.g.
+    # ``event_ref`` on E_EVENT_REF_INVALID) slips through silently.
+    for name, field_spec in spec.refs_schema.items():
+        if field_spec.required:
+            assert name in actual, (
+                f"{diag.code} refs missing required field {name!r}"
+            )
     for name, value in diag.refs.items():
         field_spec = spec.refs_schema[name]
         if field_spec.enum is None or value is None:
@@ -280,19 +288,17 @@ class TestSinkInjection:
         machine.root_state.resolve_event('', collect_into=sink)
         machine.resolve_event('Root.NoSuch.Go', collect_into=sink)
 
-    def test_sink_in_strict_mode_still_raises(self, machine):
-        # A strict-mode sink (collect=False) should still let resolve_event
-        # raise — because sink.emit raises on error. This pins the design
-        # contract: collect_into is "give me a sink"; if the sink is strict,
-        # behavior matches no-sink (raise).
+    def test_sink_in_strict_mode_raises_typed_subclass(self, machine):
+        # Post-review fix: a strict-mode sink (collect=False) must raise
+        # the typed subclass (ModelValueError / ModelLookupError), not
+        # plain ModelValidationError — preserving the back-compat catch
+        # surface for ``except ValueError:`` / ``except LookupError:``.
+        # Full MRO matrix is exercised in
+        # TestStrictSinkTypedExceptionMatrix.
         sink = DiagnosticSink(collect=False)
-        with pytest.raises(ModelValidationError) as info:
+        with pytest.raises(ModelValueError) as info:
             machine.root_state.resolve_event('', collect_into=sink)
-        # The strict sink raises plain ModelValidationError (its baseline
-        # raise type), not ModelValueError — because the sink doesn't know
-        # the subclass. Callers that want the typed exception must NOT pass
-        # a strict sink; they either omit collect_into entirely or use a
-        # collect=True sink.
+        assert isinstance(info.value, ValueError)
         assert info.value.diagnostics[0].code == 'E_EVENT_REF_INVALID'
 
     def test_sink_preserves_happy_path(self, machine):
@@ -361,6 +367,200 @@ class TestSinkInjection:
         assert diag.code == expected_code
         key = 'reason' if expected_code == 'E_EVENT_REF_INVALID' else 'scope'
         assert diag.refs[key] == expected_reason_or_scope
+
+
+@pytest.mark.unittest
+class TestStrictSinkTypedExceptionMatrix:
+    """
+    Post-review fix (PR-110/PR-112 review I1 + M5): passing a strict-mode
+    ``DiagnosticSink`` (``collect=False``) to ``resolve_event`` must still
+    raise the typed subclass (``ModelValueError`` / ``ModelLookupError``)
+    so the legacy ``except ValueError:`` / ``except LookupError:`` catch
+    surface keeps working. The earlier implementation routed through
+    ``sink.emit()`` which raised plain ``ModelValidationError``, breaking
+    the back-compat promise.
+
+    These tests pin the full MRO matrix across both resolver methods, both
+    diagnostic codes (E_EVENT_REF_INVALID / E_EVENT_NOT_FOUND), and all
+    four catch handlers (ValueError / LookupError / SyntaxError /
+    ModelValidationError).
+    """
+
+    @pytest.mark.parametrize('event_ref', ['', '/', '/foo..bar', 'foo..bar'])
+    def test_state_resolve_event_strict_sink_keeps_value_error(
+            self, machine, event_ref):
+        sink = DiagnosticSink(collect=False)
+        with pytest.raises(ValueError) as info:
+            machine.root_state.resolve_event(event_ref, collect_into=sink)
+        # All four catch handlers must succeed.
+        assert isinstance(info.value, ModelValueError)
+        assert isinstance(info.value, ValueError)
+        assert isinstance(info.value, SyntaxError)
+        assert isinstance(info.value, ModelValidationError)
+        assert info.value.diagnostics[0].code == 'E_EVENT_REF_INVALID'
+
+    @pytest.mark.parametrize('event_ref', [
+        '/NoSuch.Go',
+        '/Inner.NoEvent',
+        'NoSuch.Go',
+    ])
+    def test_state_resolve_event_strict_sink_keeps_lookup_error(
+            self, machine, event_ref):
+        sink = DiagnosticSink(collect=False)
+        with pytest.raises(LookupError) as info:
+            machine.root_state.resolve_event(event_ref, collect_into=sink)
+        assert isinstance(info.value, ModelLookupError)
+        assert isinstance(info.value, LookupError)
+        assert isinstance(info.value, SyntaxError)
+        assert isinstance(info.value, ModelValidationError)
+        assert info.value.diagnostics[0].code == 'E_EVENT_NOT_FOUND'
+
+    @pytest.mark.parametrize('event_path', ['', 'Root..Go', 'Go'])
+    def test_state_machine_resolve_event_strict_sink_keeps_value_error(
+            self, machine, event_path):
+        sink = DiagnosticSink(collect=False)
+        with pytest.raises(ValueError) as info:
+            machine.resolve_event(event_path, collect_into=sink)
+        assert isinstance(info.value, ModelValueError)
+        assert isinstance(info.value, ValueError)
+        assert isinstance(info.value, SyntaxError)
+
+    @pytest.mark.parametrize('event_path', [
+        'NotRoot.Go',
+        'Root.NoSuch.Go',
+        'Root.Inner.NoEvent',
+    ])
+    def test_state_machine_resolve_event_strict_sink_keeps_lookup_error(
+            self, machine, event_path):
+        sink = DiagnosticSink(collect=False)
+        with pytest.raises(LookupError) as info:
+            machine.resolve_event(event_path, collect_into=sink)
+        assert isinstance(info.value, ModelLookupError)
+        assert isinstance(info.value, LookupError)
+        assert isinstance(info.value, SyntaxError)
+
+
+@pytest.mark.unittest
+class TestParentRelativeReasonDepthIndependence:
+    """
+    Post-review fix (PR-112 review I2): a malformed parent-relative
+    reference like ``.foo..bar`` should report ``reason='invalid_relative'``
+    regardless of the calling state's depth in the hierarchy. The original
+    implementation walked up the hierarchy BEFORE syntax-validating the
+    remaining dotted path, so the same input reported ``beyond_root``
+    when called from a shallow state but ``invalid_relative`` from a
+    deeper one — a contract violation where ``reason`` (a schema-backed
+    enum field) silently changes based on geometry rather than syntax.
+    """
+
+    def test_dotdot_foodotdotbar_from_root_is_invalid_relative(
+            self, machine):
+        # Was previously beyond_root because walk-up exhausts hierarchy
+        # before the syntax check fires. After the fix the syntax check
+        # runs first.
+        with pytest.raises(ModelValueError) as info:
+            machine.root_state.resolve_event('.foo..bar')
+        assert info.value.diagnostics[0].refs['reason'] == 'invalid_relative'
+
+    def test_dotdot_foodotdotbar_from_inner_is_invalid_relative(
+            self, machine):
+        # From Inner (depth 2) the walk-up succeeds, so this already
+        # reported invalid_relative pre-fix. Pin that behavior so the
+        # fix doesn't regress it.
+        inner = machine.root_state.substates['Inner']
+        with pytest.raises(ModelValueError) as info:
+            inner.resolve_event('.foo..bar')
+        assert info.value.diagnostics[0].refs['reason'] == 'invalid_relative'
+
+    def test_dot_foo_from_root_still_beyond_root(self, machine):
+        # Sanity: syntactically valid parent-relative refs that overflow
+        # the root must still report beyond_root.
+        with pytest.raises(ModelValueError) as info:
+            machine.root_state.resolve_event('.foo')
+        assert info.value.diagnostics[0].refs['reason'] == 'beyond_root'
+
+
+@pytest.mark.unittest
+class TestSearchedFromCallerState:
+    """
+    Post-review fix (PR-112 review M3): codes.yaml describes
+    ``E_EVENT_NOT_FOUND.refs.searched_from`` as the originating state
+    path, but the previous tests never asserted the actual value. Pin the
+    contract: ``searched_from`` is the CALLER's state path (not the
+    effective search root, which would always be ``Root`` for absolute
+    refs).
+    """
+
+    def test_local_scope_searched_from_is_caller_state_path(self, machine):
+        inner = machine.root_state.substates['Inner']
+        with pytest.raises(ModelLookupError) as info:
+            inner.resolve_event('NoSuch.Go')
+        diag = info.value.diagnostics[0]
+        assert diag.refs['scope'] == 'local'
+        assert diag.refs['searched_from'] == 'Root.Inner'
+
+    def test_chain_scope_searched_from_is_caller_state_path(self, machine):
+        inner = machine.root_state.substates['Inner']
+        with pytest.raises(ModelLookupError) as info:
+            inner.resolve_event('.NoSuch.Go')
+        diag = info.value.diagnostics[0]
+        assert diag.refs['scope'] == 'chain'
+        assert diag.refs['searched_from'] == 'Root.Inner'
+
+    def test_absolute_scope_searched_from_is_caller_state_path(self, machine):
+        # For absolute refs, the search physically starts at Root, but
+        # the contract says ``searched_from`` carries the caller's state
+        # path so downstream tooling can highlight where the bad ref
+        # textually lives.
+        inner = machine.root_state.substates['Inner']
+        with pytest.raises(ModelLookupError) as info:
+            inner.resolve_event('/NoSuch.Go')
+        diag = info.value.diagnostics[0]
+        assert diag.refs['scope'] == 'absolute'
+        assert diag.refs['searched_from'] == 'Root.Inner'
+
+    def test_state_machine_resolve_event_searched_from_for_root_mismatch(
+            self, machine):
+        # StateMachine.resolve_event isn't tied to a single State, so
+        # ``searched_from`` describes the search root token at the point
+        # of failure. Pin that as ``Root`` (the model's root state name).
+        with pytest.raises(ModelLookupError) as info:
+            machine.resolve_event('NotRoot.Go')
+        diag = info.value.diagnostics[0]
+        assert diag.refs['searched_from'] == 'Root'
+
+
+@pytest.mark.unittest
+class TestAssertRefsMatchSchemaRequiredField:
+    """
+    Post-review fix (PR-112 review M2): the test helper used across this
+    file must enforce required-field presence, not just extra-key absence
+    and enum membership. Without this, a regression that drops a
+    ``required: true`` field (like ``event_ref`` on E_EVENT_REF_INVALID)
+    slips through silently.
+    """
+
+    def test_helper_rejects_missing_required_field(self):
+        # Build a hand-crafted diagnostic that violates the required
+        # contract of E_EVENT_REF_INVALID — missing ``event_ref``.
+        bad_diag = ModelDiagnostic(
+            code='E_EVENT_REF_INVALID',
+            severity='error',
+            message='m',
+            refs={'reason': 'empty'},  # missing event_ref
+        )
+        with pytest.raises(AssertionError, match='missing required field'):
+            _assert_refs_match_schema(bad_diag)
+
+    def test_helper_accepts_all_required_fields_present(self):
+        # Sanity: a well-formed diagnostic must pass.
+        ok_diag = ModelDiagnostic(
+            code='E_EVENT_REF_INVALID',
+            severity='error',
+            message='m',
+            refs={'event_ref': 'x', 'reason': 'empty'},
+        )
+        _assert_refs_match_schema(ok_diag)
 
 
 @pytest.mark.unittest

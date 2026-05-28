@@ -419,12 +419,21 @@ describe('diagnostics showcase: jsfcstm collectDocumentDiagnostics parity', () =
 
             // 5. Schema-enum payload checks. These guard against
             //    schema↔emit drift — see ``pyfcstm/diagnostics/codes.yaml``
-            //    for the authoritative ``reason`` enum on each code.
+            //    for the authoritative enums on each code.
             //    Extend this block when adding new codes whose payload
             //    has an enumerated field.
             const VALID_INITIAL_TRANSITION_REASONS = new Set([
                 'missing_entry',
                 'target_not_child',
+            ]);
+            const VALID_REFERENCED_IN = new Set([
+                'guard',
+                'effect',
+                'enter',
+                'during',
+                'exit',
+                'during_aspect',
+                'init',
             ]);
             for (const d of diagnostics) {
                 if (d.code === 'E_INITIAL_TRANSITION_INVALID') {
@@ -433,6 +442,15 @@ describe('diagnostics showcase: jsfcstm collectDocumentDiagnostics parity', () =
                         reason !== undefined && VALID_INITIAL_TRANSITION_REASONS.has(reason),
                         `${fixture.name}: E_INITIAL_TRANSITION_INVALID emitted with reason=${JSON.stringify(reason)}, expected one of [${[...VALID_INITIAL_TRANSITION_REASONS].join(', ')}]`,
                     );
+                }
+                if (d.code === 'E_UNDEFINED_VAR') {
+                    const ri = (d.data as { referenced_in?: string } | undefined)?.referenced_in;
+                    if (ri !== undefined) {
+                        assert.ok(
+                            VALID_REFERENCED_IN.has(ri),
+                            `${fixture.name}: E_UNDEFINED_VAR emitted with referenced_in=${JSON.stringify(ri)}, expected one of [${[...VALID_REFERENCED_IN].join(', ')}]`,
+                        );
+                    }
                 }
             }
         });

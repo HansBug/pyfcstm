@@ -421,11 +421,26 @@ function pushIdentifierDiagnostic(
  * block-local temporary variables after their first assignment, matching the
  * pyfcstm runtime rule.
  */
+/**
+ * Schema enum for ``E_UNDEFINED_VAR.refs.referenced_in`` (see
+ * ``pyfcstm/diagnostics/codes.yaml``). Threaded from each call site
+ * to keep the emitted payload schema-conformant.
+ */
+export type ReferencedIn =
+    | 'guard'
+    | 'effect'
+    | 'enter'
+    | 'during'
+    | 'exit'
+    | 'during_aspect'
+    | 'init';
+
 function analyzeOperationStatements(
     statements: FcstmAstOperationStatement[] | undefined,
     globals: Set<string>,
     assignedBefore: Set<string>,
-    diagnostics: FcstmDiagnostic[]
+    diagnostics: FcstmDiagnostic[],
+    referencedIn: ReferencedIn
 ): Set<string> {
     const assigned = new Set(assignedBefore);
     if (!statements) {
@@ -451,7 +466,7 @@ function analyzeOperationStatements(
                     `Variable ${JSON.stringify(identifier.name)} is read before it is assigned in this block.`,
                     FCSTM_DIAGNOSTIC_CODES.undefinedVar,
                     'error',
-                    {is_temporary: true, referenced_in: 'operation_block'}
+                    {is_temporary: true, referenced_in: referencedIn}
                 );
             }
             if (assignment.targetName) {
@@ -474,7 +489,7 @@ function analyzeOperationStatements(
                             `Variable ${JSON.stringify(identifier.name)} is read before it is assigned in this block.`,
                             FCSTM_DIAGNOSTIC_CODES.undefinedVar,
                             'error',
-                            {is_temporary: true, referenced_in: 'operation_block'}
+                            {is_temporary: true, referenced_in: referencedIn}
                         );
                     }
                 }
@@ -482,7 +497,8 @@ function analyzeOperationStatements(
                     branch.statements,
                     globals,
                     assigned,
-                    diagnostics
+                    diagnostics,
+                    referencedIn
                 );
                 branchAssigned.push(branchResult);
             }
@@ -509,12 +525,13 @@ function analyzeOperationStatements(
 function analyzeOperationBlock(
     block: FcstmAstOperationBlock | undefined,
     globals: Set<string>,
-    diagnostics: FcstmDiagnostic[]
+    diagnostics: FcstmDiagnostic[],
+    referencedIn: ReferencedIn
 ): void {
     if (!block) {
         return;
     }
-    analyzeOperationStatements(block.statements, globals, new Set(), diagnostics);
+    analyzeOperationStatements(block.statements, globals, new Set(), diagnostics, referencedIn);
 }
 
 function collectTopLevelGlobals(semantic: FcstmSemanticDocument): Set<string> {
@@ -586,7 +603,7 @@ function addEffectBlockDiagnostics(
             effect?: FcstmAstOperationBlock;
         };
         if (ast.effect) {
-            analyzeOperationBlock(ast.effect, globals, diagnostics);
+            analyzeOperationBlock(ast.effect, globals, diagnostics, 'effect');
         }
     }
 }
@@ -602,7 +619,11 @@ function addActionBlockDiagnostics(
         }
         const ast = semanticAction.ast as FcstmAstAction;
         const block = ast.operationBlock || ast.operation_block;
-        analyzeOperationBlock(block, globals, diagnostics);
+        // Map AST stage + aspect onto the schema enum:
+        //   ``>> during before/after`` → ``during_aspect``
+        //   bare ``enter|during|exit`` → same name
+        const referencedIn: ReferencedIn = ast.aspect ? 'during_aspect' : ast.stage;
+        analyzeOperationBlock(block, globals, diagnostics, referencedIn);
     }
 }
 

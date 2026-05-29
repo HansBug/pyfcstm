@@ -83,13 +83,20 @@ from ..utils import sequence_safe
 def _event_origin_from_id(
         event_id: dsl_nodes.ChainID,
         event_scope: Optional[str] = None,
+        source_state: Optional[str] = None,
 ) -> str:
     """Infer the event trigger scope preserved by the DSL listener."""
     if event_scope is not None:
         return event_scope
     if event_id.is_absolute:
         return 'absolute'
-    return 'local' if len(event_id.path) > 1 else 'chain'
+    if (
+            source_state is not None
+            and len(event_id.path) == 2
+            and event_id.path[0] == source_state
+    ):
+        return 'local'
+    return 'chain'
 
 
 @dataclass
@@ -3003,7 +3010,14 @@ def parse_dsl_node_to_state_machine(
             my_event_id, trans_event = None, None
             if f_transnode.event_id is not None:
                 my_event_id = f_transnode.event_id
-                origin = _event_origin_from_id(my_event_id, f_transnode.event_scope)
+                source_state = (
+                    from_state if isinstance(from_state, str) else None
+                )
+                origin = _event_origin_from_id(
+                    my_event_id,
+                    f_transnode.event_scope,
+                    source_state=source_state,
+                )
                 if not my_event_id.is_absolute:
                     my_event_id = dsl_nodes.ChainID(
                         path=[*current_state.path[1:], *my_event_id.path],
@@ -3111,7 +3125,7 @@ def parse_dsl_node_to_state_machine(
                     condition_expr,
                     guard,
                     f_transnode.event_scope,
-                    str(f_transnode),
+                    getattr(f_transnode, 'source_raw', None) or str(f_transnode),
                 )
             )
 
@@ -3148,6 +3162,7 @@ def parse_dsl_node_to_state_machine(
                             event_id=my_event_id,
                             condition_expr=condition_expr,
                             event_scope=event_scope,
+                            source_raw=forced_origin,
                         )
                     )
 
@@ -3243,6 +3258,11 @@ def parse_dsl_node_to_state_machine(
                 event_scope = _event_origin_from_id(
                     transnode.event_id,
                     transnode.event_scope,
+                    source_state=(
+                        transnode.from_state
+                        if isinstance(transnode.from_state, str)
+                        else None
+                    ),
                 )
                 if transnode.event_id.is_absolute:
                     start_state = root_state
@@ -3283,6 +3303,11 @@ def parse_dsl_node_to_state_machine(
                     origin = _event_origin_from_id(
                         transnode.event_id,
                         transnode.event_scope,
+                        source_state=(
+                            transnode.from_state
+                            if isinstance(transnode.from_state, str)
+                            else None
+                        ),
                     )
                     if suffix_name not in start_state.events:
                         start_state.events[suffix_name] = Event(

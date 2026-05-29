@@ -52,6 +52,7 @@ interface InheritedForceTransition {
     guard?: FcstmModelExpression;
     range: FcstmModelTransition['range'];
     text: string;
+    originalRaw: string;
     declaredInStatePath: string[];
     triggerScope?: 'local' | 'chain' | 'absolute';
     transitionKind: FcstmModelTransition['transitionKind'];
@@ -386,7 +387,7 @@ class StateMachineModelBuilder {
 
                 this.pushTransition({
                     range: force.range,
-                    text: force.text,
+                    text: force.originalRaw,
                     fromState: substateDefinition.name,
                     toState: force.toState,
                     event: force.event,
@@ -408,6 +409,7 @@ class StateMachineModelBuilder {
                     guard: force.guard,
                     range: force.range,
                     text: force.text,
+                    originalRaw: force.originalRaw,
                     declaredInStatePath: force.declaredInStatePath,
                     triggerScope: force.triggerScope,
                     transitionKind: 'exitAll',
@@ -450,6 +452,7 @@ class StateMachineModelBuilder {
         const event = transition.eventId
             ? this.resolveEventReference(currentState, transition.eventId, transition.trigger?.range || transition.range, triggerScope)
             : undefined;
+        const guard = transition.guard ? this.buildExpression(transition.guard) : undefined;
         return {
             fromStateName: transition.sourceKind === 'all'
                 ? 'ALL'
@@ -458,9 +461,10 @@ class StateMachineModelBuilder {
                 ? 'EXIT_STATE'
                 : (transition.targetStateName || 'EXIT_STATE'),
             event,
-            guard: transition.guard ? this.buildExpression(transition.guard) : undefined,
+            guard,
             range: transition.range,
             text: transition.text,
+            originalRaw: this.formatForcedTransitionDeclaration(transition, guard),
             declaredInStatePath: currentState.path,
             triggerScope,
             transitionKind: transition.transitionKind,
@@ -480,8 +484,6 @@ class StateMachineModelBuilder {
         const toPath = force.toState === 'EXIT_STATE'
             ? '[*]'
             : statePathName([...currentState.path, force.toState]);
-        const eventDelimiter = force.text.includes('::') ? '::' : ':';
-        const normalizedRaw = `! ${force.fromStateName === 'ALL' ? '*' : force.fromStateName} -> ${force.toState === 'EXIT_STATE' ? '[*]' : force.toState}${force.event ? ` ${eventDelimiter} ${force.event.name}` : ''};`;
         this.forcedTransitions.push({
             statePath: [...currentState.path],
             state_path: [...currentState.path],
@@ -492,11 +494,63 @@ class StateMachineModelBuilder {
             event: force.event?.pathName,
             event_scope: force.event ? force.triggerScope : undefined,
             guard: force.guard ? force.guard.text : undefined,
-            originalRaw: normalizedRaw,
-            original_raw: normalizedRaw,
+            originalRaw: force.originalRaw,
+            original_raw: force.originalRaw,
             expansionCount: expansionCount,
             expansion_count: expansionCount,
         });
+    }
+
+    private formatForcedTransitionDeclaration(
+        transition: FcstmAstForcedTransition,
+        guard?: FcstmModelExpression,
+    ): string {
+        const fromState = transition.sourceKind === 'all' ? '*' : (transition.sourceStateName ?? '*');
+        const toState = transition.targetKind === 'exit' ? '[*]' : (transition.targetStateName ?? '[*]');
+        const triggerText = this.formatForcedTransitionTrigger(transition, guard);
+        return `! ${fromState} -> ${toState}${triggerText};`;
+    }
+
+    private formatForcedTransitionTrigger(
+        transition: FcstmAstForcedTransition,
+        guard?: FcstmModelExpression,
+    ): string {
+        if (transition.eventId && !transition.eventId.isAbsolute) {
+            const path = transition.eventId.segments;
+            const isAllLocal = transition.sourceKind === 'all' && path.length === 1;
+            const isStateLocal = transition.sourceKind !== 'all'
+                && transition.sourceStateName !== undefined
+                && path.length === 2
+                && path[0] === transition.sourceStateName;
+            if (isAllLocal || isStateLocal) {
+                return ` :: ${path[path.length - 1]}`;
+            }
+        }
+        if (transition.trigger?.kind === 'localTrigger') {
+            return ` :: ${transition.trigger.eventName}`;
+        }
+        if (transition.trigger?.kind === 'chainTrigger') {
+            return ` : ${transition.trigger.eventPath.text}`;
+        }
+        if (guard) {
+            return ` : if [${this.formatExpression(guard)}]`;
+        }
+        return '';
+    }
+
+    private formatExpression(expression: FcstmModelExpression): string {
+        switch (expression.kind) {
+            case 'binaryOp':
+                return `${this.formatExpression(expression.x)} ${expression.op} ${this.formatExpression(expression.y)}`;
+            case 'conditionalOp':
+                return `${this.formatExpression(expression.cond)} ? ${this.formatExpression(expression.ifTrue)} : ${this.formatExpression(expression.ifFalse)}`;
+            case 'unaryOp':
+                return `${expression.op}${this.formatExpression(expression.x)}`;
+            case 'ufunc':
+                return `${expression.func}(${this.formatExpression(expression.x)})`;
+            default:
+                return expression.text;
+        }
     }
 
     private getTriggerScope(

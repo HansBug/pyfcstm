@@ -1335,6 +1335,8 @@ W_REDUNDANT_TRANSITION:
   capability: pure_static
   description: >-
     Multiple transitions share the same source, target, event, and guard.
+    Forced and normal transitions with the same key are counted here as
+    redundant and may also emit W_FORCED_OVERRIDES_NORMAL.
   refs:
     from_path:
       type: str

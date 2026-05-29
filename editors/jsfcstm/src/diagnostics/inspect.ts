@@ -183,6 +183,7 @@ export interface ModelDiagnosticJson {
  * Run the structural inspector against a jsfcstm state-machine model.
  */
 export function inspectModel(machine: StateMachine): ModelInspect {
+    const rootStatePath = dottedPath(machine.rootState.path);
     const states = buildStateInfos(machine);
     const transitions = buildTransitionInfos(machine);
     const variables = buildVariableInfos(machine, states);
@@ -192,7 +193,7 @@ export function inspectModel(machine: StateMachine): ModelInspect {
     const metrics = buildMetrics(states, transitions, variables, events);
     const reachabilityGraph = buildReachabilityGraph(states, transitions);
     return {
-        root_state_path: dottedPath(machine.rootState.path),
+        root_state_path: rootStatePath,
         states,
         transitions,
         variables,
@@ -213,6 +214,7 @@ export function inspectModel(machine: StateMachine): ModelInspect {
             actions,
             forcedTransitions,
             reachabilityGraph,
+            rootStatePath,
         ),
     };
 }
@@ -355,7 +357,7 @@ function buildTransitionInfos(machine: StateMachine): TransitionInfo[] {
                 guard: exprText(t.guard),
                 effect: effectsText(t.effects),
                 is_forced: !!t.forced,
-                forced_origin: t.forced ? (t as unknown as {text?: string}).text ?? null : null,
+                forced_origin: t.forced ? t.text : null,
             });
         }
     }
@@ -653,8 +655,9 @@ function buildForcedTransitionInfos(machine: StateMachine): ForcedTransitionInfo
 }
 
 function scopeFromEventOrigins(event: Event): 'local' | 'chain' | 'absolute' {
-    if (event.origins.includes('local')) return 'local';
-    if (event.origins.includes('absolute')) return 'absolute';
+    const scopes = event.origins.filter(origin => origin !== 'declared');
+    if (scopes.includes('local')) return 'local';
+    if (scopes.includes('absolute')) return 'absolute';
     return 'chain';
 }
 

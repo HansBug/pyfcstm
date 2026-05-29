@@ -124,6 +124,8 @@ function collectShadowedEventWarnings(events: EventInfo[]): ModelDiagnosticJson[
         const localLike = items.filter(item => item.scope === 'local');
         if (chainLike.length === 0 || localLike.length === 0) continue;
         for (const localEvent of localLike) {
+            const shadowingEvent = findShadowingEvent(localEvent, chainLike);
+            if (!shadowingEvent) continue;
             out.push({
                 code: 'W_SHADOWED_EVENT',
                 severity: 'warning',
@@ -132,10 +134,29 @@ function collectShadowedEventWarnings(events: EventInfo[]): ModelDiagnosticJson[
                 refs: {
                     event_name: eventName,
                     local_path: localEvent.qualified_name,
-                    chain_path: chainLike[0].qualified_name,
+                    chain_path: shadowingEvent.qualified_name,
                 },
             });
         }
     }
     return out;
+}
+
+function findShadowingEvent(localEvent: EventInfo, chainLike: EventInfo[]): EventInfo | undefined {
+    const localOwner = eventOwnerPath(localEvent.qualified_name);
+    const candidates = chainLike.filter(item =>
+        isSameOrAncestorScope(localOwner, eventOwnerPath(item.qualified_name))
+    );
+    candidates.sort((a, b) => eventOwnerPath(b.qualified_name).length - eventOwnerPath(a.qualified_name).length);
+    return candidates[0];
+}
+
+function eventOwnerPath(qualifiedName: string): string {
+    const index = qualifiedName.lastIndexOf('.');
+    return index < 0 ? '' : qualifiedName.slice(0, index);
+}
+
+function isSameOrAncestorScope(localOwner: string, broaderOwner: string): boolean {
+    if (broaderOwner === '') return true;
+    return localOwner === broaderOwner || localOwner.startsWith(`${broaderOwner}.`);
 }

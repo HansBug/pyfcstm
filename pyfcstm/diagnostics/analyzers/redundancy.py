@@ -138,6 +138,9 @@ def _shadowed_event_warnings(events) -> List[ModelDiagnostic]:
         if not chain_like or not local_like:
             continue
         for local_event in local_like:
+            shadowing_event = _find_shadowing_event(local_event, chain_like)
+            if shadowing_event is None:
+                continue
             diagnostics.append(ModelDiagnostic(
                 code='W_SHADOWED_EVENT',
                 severity='warning',
@@ -148,7 +151,36 @@ def _shadowed_event_warnings(events) -> List[ModelDiagnostic]:
                 refs={
                     'event_name': event_name,
                     'local_path': local_event.qualified_name,
-                    'chain_path': chain_like[0].qualified_name,
+                    'chain_path': shadowing_event.qualified_name,
                 },
             ))
     return diagnostics
+
+
+def _find_shadowing_event(local_event, chain_like):
+    local_owner = _event_owner_path(local_event.qualified_name)
+    candidates = [
+        item for item in chain_like
+        if _is_same_or_ancestor_scope(
+            local_owner,
+            _event_owner_path(item.qualified_name),
+        )
+    ]
+    if not candidates:
+        return None
+    return max(
+        candidates,
+        key=lambda item: len(_event_owner_path(item.qualified_name)),
+    )
+
+
+def _event_owner_path(qualified_name: str) -> str:
+    if '.' not in qualified_name:
+        return ''
+    return qualified_name.rsplit('.', 1)[0]
+
+
+def _is_same_or_ancestor_scope(local_owner: str, broader_owner: str) -> bool:
+    if broader_owner == '':
+        return True
+    return local_owner == broader_owner or local_owner.startswith(f'{broader_owner}.')

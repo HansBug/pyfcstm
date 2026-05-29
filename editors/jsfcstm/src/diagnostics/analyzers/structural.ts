@@ -12,12 +12,13 @@ export function collectStructuralWarnings(
     actions: ActionInfo[],
     forcedTransitions: ForcedTransitionInfo[],
     reachabilityGraph: Record<string, string[]>,
+    rootStatePath?: string,
 ): ModelDiagnosticJson[] {
     return [
         ...collectDeadlockLeafWarnings(states, transitions),
         ...collectInitialUnconditionalMissingWarnings(states),
         ...collectForcedNeverExpandsWarnings(forcedTransitions),
-        ...collectDeadNamedActionWarnings(states, actions, reachabilityGraph),
+        ...collectDeadNamedActionWarnings(states, actions, reachabilityGraph, rootStatePath),
     ];
 }
 
@@ -92,12 +93,17 @@ function collectDeadNamedActionWarnings(
     states: StateInfo[],
     actions: ActionInfo[],
     reachabilityGraph: Record<string, string[]>,
+    rootStatePath?: string,
 ): ModelDiagnosticJson[] {
-    if (states.length === 0) return [];
-    const reachable = new Set<string>(reachabilityGraph[states[0].path] ?? []);
-    reachable.add(states[0].path);
+    if (states.length === 0 && rootStatePath === undefined) return [];
+    const rootPath = rootStatePath ?? states[0].path;
+    const reachable = new Set<string>(reachabilityGraph[rootPath] ?? []);
+    reachable.add(rootPath);
     const referenced = new Set(
-        actions.map(action => action.ref_target).filter((item): item is string => item !== null),
+        actions
+            .filter(action => reachable.has(action.state_path))
+            .map(action => action.ref_target)
+            .filter((item): item is string => item !== null),
     );
     const out: ModelDiagnosticJson[] = [];
     for (const action of actions) {

@@ -19,9 +19,10 @@ export function collectDesignHealthWarnings(
     actions: ActionInfo[],
     forcedTransitions: ForcedTransitionInfo[],
     reachabilityGraph: Record<string, string[]>,
+    rootStatePath?: string,
 ): ModelDiagnosticJson[] {
     return [
-        ...collectUnreachableStateDiagnostics(states, reachabilityGraph),
+        ...collectUnreachableStateDiagnostics(states, reachabilityGraph, rootStatePath),
         ...collectGuardConstFalseDiagnostics(transitions),
         ...collectUnusedEventDiagnostics(events),
         ...collectStructuralWarnings(
@@ -30,6 +31,7 @@ export function collectDesignHealthWarnings(
             actions,
             forcedTransitions,
             reachabilityGraph,
+            rootStatePath,
         ),
         ...collectDataFlowWarnings(variables),
         ...collectRedundancyWarnings(transitions, events),
@@ -39,9 +41,10 @@ export function collectDesignHealthWarnings(
 function collectUnreachableStateDiagnostics(
     states: StateInfo[],
     reachabilityGraph: Record<string, string[]>,
+    rootStatePath?: string,
 ): ModelDiagnosticJson[] {
     if (states.length === 0) return [];
-    const rootPath = states[0].path;
+    const rootPath = rootStatePath ?? states[0].path;
     const reachable = new Set<string>(reachabilityGraph[rootPath] ?? []);
     reachable.add(rootPath);
     const out: ModelDiagnosticJson[] = [];

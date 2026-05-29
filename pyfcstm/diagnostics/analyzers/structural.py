@@ -1,6 +1,6 @@
 """Structural design-health diagnostics."""
 
-from typing import TYPE_CHECKING, Dict, Iterable, List, Set
+from typing import TYPE_CHECKING, Dict, Iterable, List, Optional, Set
 
 from ...utils.validate import ModelDiagnostic
 
@@ -14,6 +14,7 @@ def collect_structural_warnings(
     actions: Iterable['ActionInfo'],
     forced_transitions: Iterable['ForcedTransitionInfo'],
     reachability_graph,
+    root_state_path: Optional[str] = None,
 ) -> List[ModelDiagnostic]:
     states = list(states)
     transitions = list(transitions)
@@ -23,7 +24,12 @@ def collect_structural_warnings(
     diagnostics.extend(_deadlock_leaf_warnings(states, transitions))
     diagnostics.extend(_initial_unconditional_missing_warnings(states))
     diagnostics.extend(_forced_never_expands_warnings(forced_transitions))
-    diagnostics.extend(_dead_named_action_warnings(states, actions, reachability_graph))
+    diagnostics.extend(_dead_named_action_warnings(
+        states,
+        actions,
+        reachability_graph,
+        root_state_path,
+    ))
     return diagnostics
 
 
@@ -96,16 +102,21 @@ def _forced_never_expands_warnings(forced_transitions) -> List[ModelDiagnostic]:
     return diagnostics
 
 
-def _dead_named_action_warnings(states, actions, reachability_graph) -> List[ModelDiagnostic]:
-    if not states:
+def _dead_named_action_warnings(
+        states,
+        actions,
+        reachability_graph,
+        root_state_path=None,
+) -> List[ModelDiagnostic]:
+    if not states and root_state_path is None:
         return []
-    root_path = states[0].path
+    root_path = root_state_path or states[0].path
     reachable = set(reachability_graph.get(root_path, ()))
     reachable.add(root_path)
     referenced: Set[str] = {
         action.ref_target
         for action in actions
-        if action.ref_target is not None
+        if action.ref_target is not None and action.state_path in reachable
     }
     diagnostics: List[ModelDiagnostic] = []
     for action in actions:

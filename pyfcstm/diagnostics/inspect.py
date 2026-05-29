@@ -899,9 +899,10 @@ def _build_event_infos(machine: 'StateMachine', transitions: Tuple[TransitionInf
 
 
 def _scope_from_event_origins(origins: List[str]) -> str:
-    if 'local' in origins:
+    scopes = [origin for origin in origins if origin != 'declared']
+    if 'local' in scopes:
         return 'local'
-    if 'absolute' in origins:
+    if 'absolute' in scopes:
         return 'absolute'
     return 'chain'
 
@@ -1158,8 +1159,9 @@ def inspect_model(machine: 'StateMachine') -> ModelInspect:
     forced_transitions = _build_forced_transition_infos(machine)
     metrics = _build_metrics(states, transitions, variables, events)
     reachability_graph = _build_reachability_graph(states, transitions)
+    root_state_path = _state_path(machine.root_state)
     return ModelInspect(
-        root_state_path=_state_path(machine.root_state),
+        root_state_path=root_state_path,
         states=states,
         transitions=transitions,
         variables=variables,
@@ -1180,6 +1182,7 @@ def inspect_model(machine: 'StateMachine') -> ModelInspect:
             actions,
             forced_transitions,
             reachability_graph,
+            root_state_path=root_state_path,
         )),
     )
 

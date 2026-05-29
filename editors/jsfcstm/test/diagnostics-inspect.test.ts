@@ -441,6 +441,97 @@ state Root {
                 },
             ].sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))));
         });
+
+        it('keeps guard and chain path in forced transition origin text', async () => {
+            const report = inspectModel(await buildMachine(`
+def int counter = 0;
+state Root {
+    state Idle;
+    state Error;
+    state Bus { event Fail; }
+    [*] -> Idle;
+    !Idle -> [*] : if [counter > 0];
+    !Error -> Idle : Bus.Fail;
+}
+`));
+            const declarations: Record<string, string> = {};
+            for (const item of report.forced_transitions) {
+                declarations[item.from_path] = item.original_raw;
+            }
+            assert.equal(declarations['Root.Idle'], '! Idle -> [*] : if [counter > 0];');
+            assert.equal(declarations['Root.Error'], '! Error -> Idle : Bus.Fail;');
+
+            const origins: Record<string, string | null> = {};
+            for (const transition of report.transitions.filter(t => t.is_forced)) {
+                origins[`${transition.from_path}->${transition.to_path}`] = transition.forced_origin;
+            }
+            assert.equal(origins['Root.Idle->[*]'], '! Idle -> [*] : if [counter > 0];');
+            assert.equal(origins['Root.Error->Root.Idle'], '! Error -> Idle : Bus.Fail;');
+        });
+
+        it('keeps inherited forced transition origins on the original declaration', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    state Running {
+        state A;
+        state B;
+        [*] -> A;
+    }
+    state Error;
+    [*] -> Running;
+    !Running -> Error :: Panic;
+}
+`));
+            const origins: Record<string, string | null> = {};
+            for (const transition of report.transitions.filter(t => t.is_forced)) {
+                origins[transition.from_path] = transition.forced_origin;
+            }
+            assert.equal(origins['Root.Running'], '! Running -> Error :: Panic;');
+            assert.equal(origins['Root.Running.A'], '! Running -> Error :: Panic;');
+            assert.equal(origins['Root.Running.B'], '! Running -> Error :: Panic;');
+        });
+
+        it('does not shadow events across unrelated sibling scopes', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    state A {
+        state A1;
+        state A2;
+        [*] -> A1;
+        A1 -> A2 :: Tick;
+    }
+    state B {
+        state B1;
+        state B2;
+        [*] -> B1;
+        B1 -> B2 : Tick;
+    }
+    [*] -> A;
+    A -> B :: Go;
+}
+`));
+            assert.deepEqual(
+                report.diagnostics.filter(d => d.code === 'W_SHADOWED_EVENT'),
+                [],
+            );
+        });
+
+        it('does not let unreachable refs suppress dead named action diagnostics', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    state Idle;
+    state Orphan { enter Target {} }
+    state Other { enter ref /Orphan.Target; }
+    [*] -> Idle;
+}
+`));
+            assert.deepEqual(
+                report.diagnostics
+                    .filter(d => d.code === 'W_DEAD_NAMED_ACTION')
+                    .map(d => d.refs),
+                [{function_name: 'Target', defined_in: 'Root.Orphan'}],
+            );
+        });
     });
 
     describe('extended inspect coverage', () => {

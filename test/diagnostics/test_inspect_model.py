@@ -416,6 +416,62 @@ state Root {
             'Root.Active.Stop': '! Active -> Error :: Stop;',
         }
 
+    def test_forced_transition_origin_keeps_guard_and_chain_path(self):
+        dsl = """
+        def int counter = 0;
+        state Root {
+            state Idle;
+            state Error;
+            state Bus { event Fail; }
+            [*] -> Idle;
+            !Idle -> [*] : if [counter > 0];
+            !Error -> Idle : Bus.Fail;
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        declarations = {
+            item.from_path: item.original_raw
+            for item in report.forced_transitions
+        }
+        assert declarations['Root.Idle'] == (
+            '! Idle -> [*] : if [counter > 0];'
+        )
+        assert declarations['Root.Error'] == '! Error -> Idle : Bus.Fail;'
+        origins = {
+            (t.from_path, t.to_path): t.forced_origin
+            for t in report.transitions
+            if t.is_forced
+        }
+        assert origins[('Root.Idle', '[*]')] == (
+            '! Idle -> [*] : if [counter > 0];'
+        )
+        assert origins[('Root.Error', 'Root.Idle')] == (
+            '! Error -> Idle : Bus.Fail;'
+        )
+
+    def test_inherited_forced_transition_origin_stays_original(self):
+        dsl = """
+        state Root {
+            state Running {
+                state A;
+                state B;
+                [*] -> A;
+            }
+            state Error;
+            [*] -> Running;
+            !Running -> Error :: Panic;
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        origins = {
+            t.from_path: t.forced_origin
+            for t in report.transitions
+            if t.is_forced
+        }
+        assert origins['Root.Running'] == '! Running -> Error :: Panic;'
+        assert origins['Root.Running.A'] == '! Running -> Error :: Panic;'
+        assert origins['Root.Running.B'] == '! Running -> Error :: Panic;'
+
     def test_actions_and_forced_declarations_visible(self, report):
         assert all(isinstance(item, ActionInfo) for item in report.actions)
         assert any(item.name == 'Restart' for item in report.actions)
@@ -440,6 +496,46 @@ state Root {
         report = inspect_model(_parse(dsl))
         events_by_name = {e.qualified_name: e for e in report.events}
         assert events_by_name['Root.Idle.Panic'].scope == 'local'
+
+    def test_shadowed_event_ignores_unrelated_sibling_scope(self):
+        dsl = """
+        state Root {
+            state A {
+                state A1;
+                state A2;
+                [*] -> A1;
+                A1 -> A2 :: Tick;
+            }
+            state B {
+                state B1;
+                state B2;
+                [*] -> B1;
+                B1 -> B2 : Tick;
+            }
+            [*] -> A;
+            A -> B :: Go;
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        assert [
+            d for d in report.diagnostics
+            if d.code == 'W_SHADOWED_EVENT'
+        ] == []
+
+    def test_dead_named_action_ignores_unreachable_refs(self):
+        dsl = """
+        state Root {
+            state Idle;
+            state Orphan { enter Target {} }
+            state Other { enter ref /Orphan.Target; }
+            [*] -> Idle;
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        assert [
+            d.refs for d in report.diagnostics
+            if d.code == 'W_DEAD_NAMED_ACTION'
+        ] == [{'function_name': 'Target', 'defined_in': 'Root.Orphan'}]
 
     def test_nested_chain_event_keeps_chain_scope(self):
         dsl = """

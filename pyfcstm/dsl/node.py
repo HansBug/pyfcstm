@@ -1359,6 +1359,7 @@ class ForceTransitionDefinition(ASTNode):
     event_id: Optional[ChainID]
     condition_expr: Optional[Expr]
     event_scope: Optional[str] = field(default=None, repr=False, compare=False)
+    source_raw: Optional[str] = field(default=None, repr=False, compare=False)
     _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     def __str__(self) -> str:

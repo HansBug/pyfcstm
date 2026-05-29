@@ -551,7 +551,7 @@ class StateMachineModelBuilder {
             to_path: toPath,
             event: force.event?.pathName,
             event_scope: force.event ? force.triggerScope : undefined,
-            guard: force.guard ? force.guard.text : undefined,
+            guard: force.guard ? this.formatExpression(force.guard) : undefined,
             originalRaw: force.originalRaw,
             original_raw: force.originalRaw,
             expansionCount: expansionCount,
@@ -615,11 +615,7 @@ class StateMachineModelBuilder {
             }
             case 'conditionalOp': {
                 const myPrecedence = expressionPrecedence(expression);
-                let condition = this.formatExpression(expression.cond);
-                const conditionPrecedence = expressionPrecedence(expression.cond);
-                if (myPrecedence !== null && conditionPrecedence !== null && conditionPrecedence <= myPrecedence) {
-                    condition = `(${condition})`;
-                }
+                const condition = `(${this.formatExpression(expression.cond)})`;
                 let whenTrue = this.formatExpression(expression.ifTrue);
                 const truePrecedence = expressionPrecedence(expression.ifTrue);
                 if (myPrecedence !== null && truePrecedence !== null && truePrecedence <= myPrecedence) {
@@ -644,8 +640,14 @@ class StateMachineModelBuilder {
             }
             case 'ufunc':
                 return `${expression.func}(${this.formatExpression(expression.x)})`;
-            default:
+            case 'integer':
+                return expression.text.toLowerCase();
+            case 'float':
                 return expression.text;
+            case 'boolean':
+                return expression.value ? 'true' : 'false';
+            case 'variable':
+                return expression.name;
         }
     }
 

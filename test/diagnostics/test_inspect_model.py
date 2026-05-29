@@ -472,6 +472,27 @@ state Root {
             '! A -> B : if [(x + 1) * 2 > 0];'
         )
 
+    def test_forced_transition_declaration_guard_uses_dsl_text_normal_form(self):
+        dsl = """
+        def int x = 0;
+        def int y = 1;
+        state Root {
+            state A;
+            state B;
+            [*] -> A;
+            !A -> B : if [x == 0x0F and not (y == 0)];
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        declaration = next(
+            item for item in report.forced_transitions
+            if item.from_path == 'Root.A'
+        )
+        assert declaration.guard == 'x == 0x0f && !(y == 0)'
+        assert declaration.original_raw == (
+            '! A -> B : if [x == 0x0f && !(y == 0)];'
+        )
+
     def test_inherited_forced_transition_origin_stays_original(self):
         dsl = """
         state Root {

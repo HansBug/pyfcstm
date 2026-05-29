@@ -508,6 +508,23 @@ state Root {
             assert.equal(transition!.forced_origin, '! A -> B : if [(x + 1) * 2 > 0];');
         });
 
+        it('normalizes forced transition declaration guard text like pyfcstm', async () => {
+            const report = inspectModel(await buildMachine(`
+def int x = 0;
+def int y = 1;
+state Root {
+    state A;
+    state B;
+    [*] -> A;
+    !A -> B : if [x == 0x0F and not (y == 0)];
+}
+`));
+            const declaration = report.forced_transitions.find(item => item.from_path === 'Root.A');
+            assert.ok(declaration);
+            assert.equal(declaration!.guard, 'x == 0x0f && !(y == 0)');
+            assert.equal(declaration!.original_raw, '! A -> B : if [x == 0x0f && !(y == 0)];');
+        });
+
         it('keeps inherited forced transition origins on the original declaration', async () => {
             const report = inspectModel(await buildMachine(`
 state Root {

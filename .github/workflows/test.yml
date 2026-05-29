@@ -144,54 +144,6 @@ jobs:
           name: codecov-umbrella
           fail_ci_if_error: false
 
-  jsfcstm_test:
-    # Run jsfcstm's mocha + c8 suite on a single OS+Node version. The
-    # jsfcstm package is pure TypeScript/Node — it does not need the
-    # Python matrix dimension. Codecov receives the lcov report under
-    # the ``jsfcstm`` flag so the dashboard shows py/js coverage
-    # side-by-side.
-    name: jsfcstm test
-    runs-on: ubuntu-22.04
-    if: ${{ !contains(github.event.head_commit.message, 'ci skip') && !contains(github.event.head_commit.message, 'test skip') && !contains(github.event.head_commit.message, '[js skip]') }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3.3.0
-        with:
-          fetch-depth: 20
-          submodules: 'recursive'
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-      - name: Install Python (for sync-runtime-assets reading codes.yaml)
-        uses: actions/setup-python@v6
-        with:
-          python-version: '3.11'
-      - name: Set up Java (for ANTLR)
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '17'
-      - name: Download ANTLR jar (jsfcstm parser regen needs it)
-        run: |
-          wget -q -O antlr-4.9.3.jar https://www.antlr.org/download/antlr-4.9.3-complete.jar
-      - name: Install jsfcstm deps
-        working-directory: editors/jsfcstm
-        # ``npm ci`` enforces lockfile fidelity — surfaces silent
-        # transitive upgrades that ``npm install`` would absorb.
-        run: npm ci
-      - name: Run jsfcstm test + coverage
-        working-directory: editors/jsfcstm
-        run: npm test
-      - name: Upload jsfcstm coverage to Codecov
-        uses: codecov/codecov-action@v1
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          file: ./editors/jsfcstm/coverage/lcov.info
-          flags: jsfcstm
-          name: codecov-jsfcstm
-          fail_ci_if_error: false
-
   build_cli:
     name: CLI Build
     runs-on: ${{ matrix.os }}
@@ -377,10 +329,15 @@ jobs:
           name: pyfcstm-v${{ env.PACKAGE_VERSION }}-${{ env.OS_NAME }}-${{ env.CPU_ARCH }}-${{ env.GIT_COMMIT_ID }}
           path: dist
 
-  jsfcstm_unit:
-    name: jsfcstm unit tests
+  jsfcstm_test:
+    # Run jsfcstm's mocha + c8 suite across the supported Node versions.
+    # The jsfcstm package is pure TypeScript/Node — it does not need the
+    # Python matrix dimension. Codecov receives the lcov report under
+    # the ``jsfcstm`` flag (uploaded once from the Node 20 leg) so the
+    # dashboard shows py/js coverage side-by-side without double-counting.
+    name: jsfcstm test
     runs-on: ubuntu-22.04
-    if: ${{ !contains(github.event.head_commit.message, 'ci skip') && !contains(github.event.head_commit.message, '[js skip]') }}
+    if: ${{ !contains(github.event.head_commit.message, 'ci skip') && !contains(github.event.head_commit.message, 'test skip') && !contains(github.event.head_commit.message, '[js skip]') }}
     strategy:
       fail-fast: false
       matrix:
@@ -414,6 +371,19 @@ jobs:
       - name: Build jsfcstm (parser + tsc)
         working-directory: editors/jsfcstm
         run: make build
-      - name: Run jsfcstm unit tests
+      - name: Run jsfcstm tests with coverage
+        # ``npm test`` runs ``npm run build && npm run test:coverage``
+        # which produces both the c8 threshold gate and the lcov report.
+        # Same script the unit tests used previously, now with coverage.
         working-directory: editors/jsfcstm
-        run: npm run test:unit
+        run: npm test
+      - name: Upload jsfcstm coverage to Codecov
+        # Mirror the python matrix: every matrix cell uploads, codecov
+        # merges by flag. Avoids dropping coverage if one Node leg fails.
+        uses: codecov/codecov-action@v1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          file: ./editors/jsfcstm/coverage/lcov.info
+          flags: jsfcstm
+          name: codecov-jsfcstm
+          fail_ci_if_error: false

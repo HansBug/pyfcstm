@@ -107,24 +107,17 @@ def _is_lifecycle_free_leaf(state_path: str, states_by_path) -> bool:
 def _effect_self_assign_warnings(transitions) -> List[ModelDiagnostic]:
     diagnostics: List[ModelDiagnostic] = []
     for t in transitions:
-        if t.effect is None:
-            continue
-        parts = [part.strip() for part in t.effect.split(';') if part.strip()]
-        for part in parts:
-            if '=' not in part:
-                continue
-            left, right = [item.strip() for item in part.split('=', 1)]
-            if left and left == right:
-                diagnostics.append(ModelDiagnostic(
-                    code='W_EFFECT_SELF_ASSIGN',
-                    severity='warning',
-                    message=f'Transition effect assigns {left!r} to itself.',
-                    refs={
-                        'state_path': t.from_path,
-                        'transition_span': None,
-                        'var_name': left,
-                    },
-                ))
+        for var_name in getattr(t, 'effect_self_assigns', ()):
+            diagnostics.append(ModelDiagnostic(
+                code='W_EFFECT_SELF_ASSIGN',
+                severity='warning',
+                message=f'Transition effect assigns {var_name!r} to itself.',
+                refs={
+                    'state_path': t.from_path,
+                    'transition_span': None,
+                    'var_name': var_name,
+                },
+            ))
     return diagnostics
 
 

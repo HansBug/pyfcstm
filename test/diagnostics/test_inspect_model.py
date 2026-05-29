@@ -449,6 +449,29 @@ state Root {
             '! Error -> Idle : Bus.Fail;'
         )
 
+    def test_forced_transition_origin_keeps_grouped_guard(self):
+        dsl = """
+        def int x = 0;
+        state Root {
+            state A;
+            state B;
+            [*] -> A;
+            !A -> B : if [(x + 1) * 2 > 0];
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        declaration = next(
+            item for item in report.forced_transitions
+            if item.from_path == 'Root.A'
+        )
+        assert declaration.original_raw == (
+            '! A -> B : if [(x + 1) * 2 > 0];'
+        )
+        transition = next(t for t in report.transitions if t.is_forced)
+        assert transition.forced_origin == (
+            '! A -> B : if [(x + 1) * 2 > 0];'
+        )
+
     def test_inherited_forced_transition_origin_stays_original(self):
         dsl = """
         state Root {
@@ -938,3 +961,27 @@ class TestInspectModelRedundancySemantics:
             d for d in report.diagnostics
             if d.code == 'W_SELF_TRANSITION_NOP'
         ] == []
+
+    def test_nested_effect_self_assignment_reports_diagnostic(self):
+        dsl = """
+        def int x = 0;
+        state Root {
+            state A;
+            state B;
+            [*] -> A;
+            A -> B effect {
+                if [x > 0] {
+                    x = x;
+                }
+            };
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        assert [
+            d.refs for d in report.diagnostics
+            if d.code == 'W_EFFECT_SELF_ASSIGN'
+        ] == [{
+            'state_path': 'Root.A',
+            'transition_span': None,
+            'var_name': 'x',
+        }]

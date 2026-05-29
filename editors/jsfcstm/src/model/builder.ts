@@ -45,6 +45,36 @@ const MATH_CONSTANTS: Record<string, number> = {
     tau: Math.PI * 2,
 };
 
+const EXPR_PRECEDENCE: Record<string, number> = {
+    'function_call': 90,
+    'unary+': 80,
+    'unary-': 80,
+    '!': 80,
+    'not': 80,
+    '**': 70,
+    '*': 60,
+    '/': 60,
+    '%': 60,
+    '+': 50,
+    '-': 50,
+    '<<': 40,
+    '>>': 40,
+    '&': 35,
+    '^': 30,
+    '|': 25,
+    '<': 20,
+    '>': 20,
+    '<=': 20,
+    '>=': 20,
+    '==': 20,
+    '!=': 20,
+    '&&': 15,
+    'and': 15,
+    '||': 10,
+    'or': 10,
+    '?:': 5,
+};
+
 interface InheritedForceTransition {
     fromStateName: 'ALL' | string;
     toState: 'EXIT_STATE' | string;
@@ -78,6 +108,34 @@ function parseNumberLiteral(raw: string): number {
         return parseInt(raw.slice(2), 2);
     }
     return Number(raw);
+}
+
+function canonicalBinaryOperator(op: string): string {
+    if (op === 'and') return '&&';
+    if (op === 'or') return '||';
+    return op;
+}
+
+function canonicalUnaryOperator(op: string): string {
+    return op === 'not' ? '!' : op;
+}
+
+function unaryPrecedenceKey(op: string): string {
+    const canonical = canonicalUnaryOperator(op);
+    return canonical === '+' || canonical === '-' ? `unary${canonical}` : canonical;
+}
+
+function expressionPrecedence(expression: FcstmModelExpression): number | null {
+    switch (expression.kind) {
+        case 'binaryOp':
+            return EXPR_PRECEDENCE[canonicalBinaryOperator(expression.op)] ?? null;
+        case 'conditionalOp':
+            return EXPR_PRECEDENCE['?:'];
+        case 'unaryOp':
+            return EXPR_PRECEDENCE[unaryPrecedenceKey(expression.op)] ?? null;
+        default:
+            return null;
+    }
 }
 
 function isSemanticDocument(
@@ -540,12 +598,50 @@ class StateMachineModelBuilder {
 
     private formatExpression(expression: FcstmModelExpression): string {
         switch (expression.kind) {
-            case 'binaryOp':
-                return `${this.formatExpression(expression.x)} ${expression.op} ${this.formatExpression(expression.y)}`;
-            case 'conditionalOp':
-                return `${this.formatExpression(expression.cond)} ? ${this.formatExpression(expression.ifTrue)} : ${this.formatExpression(expression.ifFalse)}`;
-            case 'unaryOp':
-                return `${expression.op}${this.formatExpression(expression.x)}`;
+            case 'binaryOp': {
+                const op = canonicalBinaryOperator(expression.op);
+                const myPrecedence = expressionPrecedence(expression);
+                let left = this.formatExpression(expression.x);
+                const leftPrecedence = expressionPrecedence(expression.x);
+                if (myPrecedence !== null && leftPrecedence !== null && leftPrecedence < myPrecedence) {
+                    left = `(${left})`;
+                }
+                let right = this.formatExpression(expression.y);
+                const rightPrecedence = expressionPrecedence(expression.y);
+                if (myPrecedence !== null && rightPrecedence !== null && rightPrecedence <= myPrecedence) {
+                    right = `(${right})`;
+                }
+                return `${left} ${op} ${right}`;
+            }
+            case 'conditionalOp': {
+                const myPrecedence = expressionPrecedence(expression);
+                let condition = this.formatExpression(expression.cond);
+                const conditionPrecedence = expressionPrecedence(expression.cond);
+                if (myPrecedence !== null && conditionPrecedence !== null && conditionPrecedence <= myPrecedence) {
+                    condition = `(${condition})`;
+                }
+                let whenTrue = this.formatExpression(expression.ifTrue);
+                const truePrecedence = expressionPrecedence(expression.ifTrue);
+                if (myPrecedence !== null && truePrecedence !== null && truePrecedence <= myPrecedence) {
+                    whenTrue = `(${whenTrue})`;
+                }
+                let whenFalse = this.formatExpression(expression.ifFalse);
+                const falsePrecedence = expressionPrecedence(expression.ifFalse);
+                if (myPrecedence !== null && falsePrecedence !== null && falsePrecedence <= myPrecedence) {
+                    whenFalse = `(${whenFalse})`;
+                }
+                return `${condition} ? ${whenTrue} : ${whenFalse}`;
+            }
+            case 'unaryOp': {
+                const op = canonicalUnaryOperator(expression.op);
+                const myPrecedence = expressionPrecedence(expression);
+                let value = this.formatExpression(expression.x);
+                const valuePrecedence = expressionPrecedence(expression.x);
+                if (myPrecedence !== null && valuePrecedence !== null && valuePrecedence <= myPrecedence) {
+                    value = `(${value})`;
+                }
+                return `${op}${value}`;
+            }
             case 'ufunc':
                 return `${expression.func}(${this.formatExpression(expression.x)})`;
             default:

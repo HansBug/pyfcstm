@@ -143,6 +143,10 @@ class TransitionInfo:
     :type guard: Optional[str]
     :param effect: Source text of the effect block, or ``None``.
     :type effect: Optional[str]
+    :param effect_self_assigns: Variable names assigned to themselves
+        anywhere inside the transition effect block, including nested
+        ``if`` branches.
+    :type effect_self_assigns: Tuple[str, ...]
     :param is_forced: ``True`` when the transition was expanded from a
         ``!``-prefixed forced transition.
     :type is_forced: bool
@@ -158,6 +162,7 @@ class TransitionInfo:
     event_scope: Optional[str]
     guard: Optional[str]
     effect: Optional[str]
+    effect_self_assigns: Tuple[str, ...]
     is_forced: bool
     forced_origin: Optional[str]
 
@@ -531,6 +536,32 @@ def _walk_stmt_reads_writes(
                 _walk_stmt_reads_writes(inner, reads, writes)
 
 
+def _effect_self_assigns(effects: List['OperationStatement']) -> Tuple[str, ...]:
+    out: List[str] = []
+    for stmt in effects:
+        _walk_stmt_self_assigns(stmt, out)
+    seen = set()
+    deduped: List[str] = []
+    for name in out:
+        if name not in seen:
+            seen.add(name)
+            deduped.append(name)
+    return tuple(deduped)
+
+
+def _walk_stmt_self_assigns(stmt: 'OperationStatement', out: List[str]) -> None:
+    from ..model.expr import Variable
+    from ..model.model import IfBlock, Operation
+    if isinstance(stmt, Operation):
+        if isinstance(stmt.expr, Variable) and stmt.expr.name == stmt.var_name:
+            out.append(stmt.var_name)
+        return
+    if isinstance(stmt, IfBlock):
+        for branch in stmt.branches:
+            for inner in branch.statements:
+                _walk_stmt_self_assigns(inner, out)
+
+
 def _stage_function_label(stage_item: 'OnStage') -> str:
     """Choose a stable label for an action (named, abstract, or inline)."""
     if stage_item.name:
@@ -719,6 +750,7 @@ def _build_transition_infos(machine: 'StateMachine') -> Tuple[TransitionInfo, ..
                 event_scope=scope,
                 guard=_expr_text(transition.guard),
                 effect=_effects_text(transition.effects),
+                effect_self_assigns=_effect_self_assigns(transition.effects),
                 is_forced=is_forced,
                 forced_origin=forced_origin,
             ))

@@ -151,7 +151,8 @@
       "additionalProperties": false,
       "required": [
         "from_path", "to_path", "event", "event_scope",
-        "guard", "effect", "is_forced", "forced_origin"
+        "guard", "effect", "effect_self_assigns", "is_forced",
+        "forced_origin"
       ],
       "properties": {
         "from_path": { "type": "string" },
@@ -163,6 +164,10 @@
         },
         "guard": { "type": ["string", "null"] },
         "effect": { "type": ["string", "null"] },
+        "effect_self_assigns": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
         "is_forced": { "type": "boolean" },
         "forced_origin": { "type": ["string", "null"] }
       }

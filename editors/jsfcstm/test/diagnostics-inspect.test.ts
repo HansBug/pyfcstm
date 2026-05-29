@@ -490,6 +490,24 @@ state Root {
             assert.equal(origins['Root.Error->Root.Idle'], '! Error -> Idle : Bus.Fail;');
         });
 
+        it('keeps grouped guard expression in forced transition origin text', async () => {
+            const report = inspectModel(await buildMachine(`
+def int x = 0;
+state Root {
+    state A;
+    state B;
+    [*] -> A;
+    !A -> B : if [(x + 1) * 2 > 0];
+}
+`));
+            const declaration = report.forced_transitions.find(item => item.from_path === 'Root.A');
+            assert.ok(declaration);
+            assert.equal(declaration!.original_raw, '! A -> B : if [(x + 1) * 2 > 0];');
+            const transition = report.transitions.find(t => t.is_forced);
+            assert.ok(transition);
+            assert.equal(transition!.forced_origin, '! A -> B : if [(x + 1) * 2 > 0];');
+        });
+
         it('keeps inherited forced transition origins on the original declaration', async () => {
             const report = inspectModel(await buildMachine(`
 state Root {
@@ -626,6 +644,32 @@ state Root {
             assert.deepEqual(
                 report.diagnostics.filter(d => d.code === 'W_SELF_TRANSITION_NOP'),
                 [],
+            );
+        });
+
+        it('reports self assignment inside nested effect if-block', async () => {
+            const report = inspectModel(await buildMachine(`
+def int x = 0;
+state Root {
+    state A;
+    state B;
+    [*] -> A;
+    A -> B effect {
+        if [x > 0] {
+            x = x;
+        }
+    };
+}
+`));
+            assert.deepEqual(
+                report.diagnostics
+                    .filter(d => d.code === 'W_EFFECT_SELF_ASSIGN')
+                    .map(d => d.refs),
+                [{
+                    state_path: 'Root.A',
+                    transition_span: null,
+                    var_name: 'x',
+                }],
             );
         });
     });

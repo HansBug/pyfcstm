@@ -102,23 +102,16 @@ function isLifecycleFreeLeaf(statePath: string, statesByPath: Map<string, StateI
 function collectEffectSelfAssignWarnings(transitions: TransitionInfo[]): ModelDiagnosticJson[] {
     const out: ModelDiagnosticJson[] = [];
     for (const transition of transitions) {
-        if (transition.effect === null) continue;
-        const parts = transition.effect.split(';').map(item => item.trim()).filter(Boolean);
-        for (const part of parts) {
-            if (!part.includes('=')) continue;
-            const [leftRaw, rightRaw] = part.split('=', 2);
-            const left = leftRaw.trim();
-            const right = rightRaw.trim();
-            if (!left || left !== right) continue;
+        for (const varName of transition.effect_self_assigns) {
             out.push({
                 code: 'W_EFFECT_SELF_ASSIGN',
                 severity: 'warning',
-                message: `Transition effect assigns ${JSON.stringify(left)} to itself.`,
+                message: `Transition effect assigns ${JSON.stringify(varName)} to itself.`,
                 span: null,
                 refs: {
                     state_path: transition.from_path,
                     transition_span: null,
-                    var_name: left,
+                    var_name: varName,
                 },
             });
         }

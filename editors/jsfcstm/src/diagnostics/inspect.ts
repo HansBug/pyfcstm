@@ -106,6 +106,7 @@ export interface TransitionInfo {
     event_scope: 'local' | 'chain' | 'absolute' | null;
     guard: string | null;
     effect: string | null;
+    effect_self_assigns: string[];
     is_forced: boolean;
     forced_origin: string | null;
 }
@@ -395,6 +396,7 @@ function buildTransitionInfos(machine: StateMachine): TransitionInfo[] {
                 event_scope: t.event ? (t.triggerScope ?? null) : null,
                 guard: exprText(t.guard),
                 effect: effectsText(t.effects),
+                effect_self_assigns: effectSelfAssigns(t.effects),
                 is_forced: !!t.forced,
                 forced_origin: t.forced ? t.text : null,
             });
@@ -581,6 +583,30 @@ function walkStmtReadsWrites(
             }
             for (const inner of branch.statements) {
                 walkStmtReadsWrites(inner, reads, writes);
+            }
+        }
+    }
+}
+
+function effectSelfAssigns(effects: OperationStatement[] | undefined): string[] {
+    const out: string[] = [];
+    for (const stmt of effects ?? []) {
+        walkStmtSelfAssigns(stmt, out);
+    }
+    return Array.from(new Set(out));
+}
+
+function walkStmtSelfAssigns(stmt: OperationStatement, out: string[]): void {
+    if (stmt instanceof Operation) {
+        if (stmt.expr instanceof Variable && stmt.expr.name === stmt.varName) {
+            out.push(stmt.varName);
+        }
+        return;
+    }
+    if (stmt instanceof IfBlock) {
+        for (const branch of stmt.branches) {
+            for (const inner of branch.statements) {
+                walkStmtSelfAssigns(inner, out);
             }
         }
     }

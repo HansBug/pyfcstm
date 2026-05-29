@@ -266,8 +266,9 @@ class ModelMetrics:
     :param n_transitions_forced: Number of transitions expanded from
         ``!``-forced declarations.
     :type n_transitions_forced: int
-    :param n_events: Number of distinct qualified events used in
-        transitions.
+    :param n_events: Number of distinct qualified events exposed by the
+        inspect surface, including explicitly declared events that no
+        transition uses.
     :type n_events: int
     :param n_variables: Number of variable definitions.
     :type n_variables: int
@@ -308,8 +309,9 @@ class ModelInspect:
     :type transitions: Tuple[TransitionInfo, ...]
     :param variables: All ``def`` variables, in declaration order.
     :type variables: Tuple[VariableInfo, ...]
-    :param events: All qualified events that appear in at least one
-        transition, sorted by qualified name.
+    :param events: All qualified events exposed by the inspect surface,
+        including explicitly declared events that no transition uses,
+        sorted by qualified name.
     :type events: Tuple[EventInfo, ...]
     :param metrics: Aggregate model metrics.
     :type metrics: ModelMetrics

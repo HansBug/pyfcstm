@@ -4,6 +4,52 @@ AGENTS.md is a symbolic link to CLAUDE.md, so do not modify both files separatel
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## AI / Vibe Coding First Principles
+
+Vibe coding is fine for quick exploration, but once you touch repository code you fall back to engineering discipline: requirements before implementation, behavior before code, verification before completion.
+
+- Make the goal, boundaries, inputs, outputs, and success criteria explicit before writing code.
+- Prefer the smallest verifiable change; don't let one task balloon into unrelated refactors.
+- Every generated piece of code must be readable, explainable, testable, and revertible by a human.
+- Don't blindly accept AI output; review it the same way you would review a human teammate's commit.
+- Stick to the existing architecture, naming, tests, and tooling — don't start a parallel style of your own.
+- After each change, run checks proportional to the risk; nothing that hasn't been verified may be claimed as done.
+- When requirements are unclear, an action is destructive, or you're near a security boundary, stop and surface assumptions and risks before proceeding.
+
+References: OpenAI's [AGENTS.md guide](https://developers.openai.com/codex/guides/agents-md), the [agents.md GitHub](https://github.com/openai/agents.md), and Tweag's [Agentic Coding vs Vibe Coding](https://github.com/tweag/agentic-coding-handbook/blob/main/VIBE_CODING.md).
+
+## Exception Handling Policy (no broad catches)
+
+Broad `except Exception:` (Python) / `} catch {` / `} catch (e) {` (TypeScript / JavaScript) are **prohibited unless every expected exception class is named and justified inline**. The rule:
+
+1. **Catch the smallest possible class.** Do not write `except Exception` when you really mean `except (ValueError, KeyError)`. Do not write `} catch (error) {` when you really mean `} catch (error: SyntaxError) {` (or its equivalent guard inside the handler).
+2. **Document why each expected class can fire.** Every caught class needs an inline comment naming the call site / failure mode that produces it. A bare `except SomeError:` without explanation is not acceptable — the next reader must be able to understand *what* throws that class.
+3. **Re-raise anything outside the documented set.** If the catch site cannot enumerate the failure modes (i.e. it really does need to be broad), it must check the actual exception type and re-raise on anything unexpected. Pattern:
+   ```python
+   try:
+       ...
+   except (ExpectedA, ExpectedB) as err:
+       # ExpectedA: <when this fires>; ExpectedB: <when this fires>
+       handle(err)
+   # Anything else propagates and surfaces the bug.
+   ```
+   TypeScript equivalent:
+   ```ts
+   try {
+       ...
+   } catch (err) {
+       if (!(err instanceof ExpectedA) && !(err instanceof ExpectedB)) {
+           // Each branch above documents *why* it can fire.
+           throw err;
+       }
+       handle(err);
+   }
+   ```
+4. **Never silently swallow.** A `} catch {}` with no body, or `except Exception: pass` / `... return None`, is allowed only when the function's contract explicitly says "swallow everything and degrade gracefully" *and* the swallow site logs / records the dropped error somewhere observable. Otherwise the unexpected class becomes a silent CI-passing prod bug.
+5. **Exceptions to the rule (literal exceptions):** the `ModelValidationError` belt-and-braces re-raise in `pyfcstm/model/imports.py` is allowed because it explicitly checks `if not sink.collect: raise` and forwards the structured diagnostics — the broad catch is just a re-entry point, not a swallow. Document the equivalent pattern at any new broad catch you introduce.
+
+Applies to all code in `pyfcstm/`, `editors/jsfcstm/src/`, `editors/vscode/src/`, and any new code under those trees. Auto-generated grammar files (`pyfcstm/dsl/grammar/`, `editors/jsfcstm/src/dsl/grammar/`) are exempt — they are produced by ANTLR.
+
 ## Conversation Language
 
 Reply in whatever language the user wrote their most recent message in. Do not default to English on your own. If the user writes in Chinese, reply in Chinese; if the user writes in English, reply in English; if the user mixes languages, mirror their dominant language and keep technical terms in their original form. When the user switches languages mid-conversation, switch with them on the very next turn — do not keep using the previous language.

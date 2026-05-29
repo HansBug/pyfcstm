@@ -219,10 +219,12 @@ class TestParseValue:
 
     def test_escape_sequence_decode_failure(self):
         """Test handling of invalid escape sequences that fail to decode."""
-        # This tests the exception handler in _decode_string
-        # We need to mock codecs.decode to raise an exception
-        with patch('pyfcstm.utils.parse.codecs.decode', side_effect=Exception('decode error')):
-            # When decode fails, the function should return the string as-is
+        # _decode_string degrades on UnicodeDecodeError / ValueError --
+        # the two real-world failure modes for codecs.decode('unicode_escape').
+        # Use UnicodeDecodeError here, mirroring a truncated/illegal escape.
+        decode_err = UnicodeDecodeError('unicode_escape', b'\\x', 0, 2, 'truncated')
+        with patch('pyfcstm.utils.parse.codecs.decode', side_effect=decode_err):
+            # When decode fails, the function should return the string as-is.
             result = parse_value('"test"', str)
             assert result == 'test'
 

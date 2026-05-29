@@ -1088,7 +1088,19 @@ export async function parseAstDocument(
         }
 
         return buildAstFromTree(tree as ParseTreeNode, document);
-    } catch {
+    } catch (err) {
+        // Barrier around the antlr4 parser plus the AST builder. The
+        // builder routinely receives PARTIAL parse trees while the user
+        // types in the editor (e.g. ``def `` mid-edit). Partial trees
+        // make ``buildAstFromTree`` reach undefined children and raise
+        // ``TypeError`` on ``.constructor`` access -- this is the
+        // documented degrade-to-null behavior the LSP relies on. We
+        // therefore accept any ``Error`` subclass here, but still
+        // re-raise non-Error throws (raw strings / numbers), which can
+        // only happen via misuse and indicate a programmer bug.
+        if (!(err instanceof Error)) {
+            throw err;
+        }
         return null;
     }
 }

@@ -13,6 +13,32 @@ from .display import StateDisplay
 from .logging import configure_simulate_cli_logger
 
 
+# Programmer-bug exception classes that REPL command handlers must NOT
+# swallow. If one of these fires inside ``execute_command`` / ``_handle_*``,
+# it indicates a defect in pyfcstm itself (bad attribute lookup, wrong
+# argument arity, missing import, ...) and the simulator should crash loudly
+# instead of presenting it as a normal ``CommandResult``. ``MemoryError``
+# and ``RecursionError`` are also re-raised because they indicate runaway
+# state-machine inputs and the REPL cannot meaningfully recover.
+_PROGRAMMER_BUG_EXCEPTIONS = (
+    TypeError,
+    AttributeError,
+    NameError,
+    ImportError,
+    MemoryError,
+    RecursionError,
+)
+
+
+def _is_programmer_bug(exc: BaseException) -> bool:
+    """
+    Return True if *exc* is a programmer-bug-shaped exception that must
+    propagate out of REPL command handlers rather than be reformatted into
+    a user-facing ``CommandResult``. See ``_PROGRAMMER_BUG_EXCEPTIONS``.
+    """
+    return isinstance(exc, _PROGRAMMER_BUG_EXCEPTIONS)
+
+
 class LogLevel(Enum):
     """
     Log level enumeration for controlling output verbosity.
@@ -226,6 +252,13 @@ class CommandProcessor:
             else:
                 return CommandResult(f"Unknown command: {command}. Type 'help' for available commands.")
         except Exception as e:
+            # Broad catch is the REPL's top-of-handler barrier: any expected
+            # user-input / runtime / parsing error becomes a polite
+            # ``CommandResult``. Programmer bugs are re-raised so they fail
+            # loudly during development and in CI (see
+            # ``_PROGRAMMER_BUG_EXCEPTIONS``).
+            if _is_programmer_bug(e):
+                raise
             return CommandResult(f"Error: {e}")
 
     def _handle_cycle(self, events: List[str]) -> CommandResult:
@@ -275,6 +308,10 @@ class CommandProcessor:
             # Import here to avoid circular dependency
             from ...simulate import SimulationRuntimeDfsError
 
+            # Re-raise programmer-bug-shaped errors so they crash loudly
+            # in tests; everything else becomes a user-facing CommandResult.
+            if _is_programmer_bug(e):
+                raise
             if isinstance(e, SimulationRuntimeDfsError):
                 return CommandResult(
                     "Cycle execution failed: State machine contains an unbounded execution chain.\n"
@@ -363,6 +400,10 @@ class CommandProcessor:
                 self.display.format_current_state(self.runtime)
             )
         except Exception as e:
+            # See ``execute_command`` for the broad-catch + programmer-bug
+            # re-raise pattern.
+            if _is_programmer_bug(e):
+                raise
             return CommandResult(f"Initialization failed: {e}")
 
     def _parse_value(self, value_str: str) -> float:
@@ -708,6 +749,12 @@ Keyboard shortcuts (interactive mode):
 
             return CommandResult(f"History exported to {filename} ({len(self.runtime.history)} entries)")
         except Exception as e:
+            # See ``execute_command`` for the broad-catch + programmer-bug
+            # re-raise pattern. Export here can fail with OSError (disk
+            # full / permission denied), ValueError (yaml serialization),
+            # or csv.Error — all are user-actionable, so we format them.
+            if _is_programmer_bug(e):
+                raise
             return CommandResult(f"Export failed: {e}")
 
     def _export_csv(self, filename: str) -> None:

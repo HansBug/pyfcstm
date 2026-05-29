@@ -67,7 +67,11 @@ class TestVisualizeHelpers:
                 return None
 
         def _local_fail(**kwargs):
-            raise RuntimeError('local unavailable')
+            # OSError mirrors a real plantumlcli local-backend failure
+            # (missing java, jar not found). It is in the documented
+            # _PLANTUMLCLI_RUNTIME_ERRORS whitelist; an unexpected class
+            # such as TypeError would (correctly) propagate.
+            raise OSError('local unavailable')
 
         monkeypatch.setattr(visualize_module, 'create_local_plantuml_backend', _local_fail)
         monkeypatch.setattr(visualize_module, 'create_remote_plantuml_backend', lambda **kwargs: DummyRemote())

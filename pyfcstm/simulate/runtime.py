@@ -1117,6 +1117,17 @@ class SimulationRuntime:
                     self.logger.debug(f'Executing handler {idx + 1}/{len(handlers)} for {func_path}')
                     handler(ctx)
                 except Exception as e:
+                    # Broad catch by design: ``handler`` is user-registered
+                    # abstract action code, so any ``Exception`` subclass it
+                    # raises is part of the documented contract surface.
+                    # Both branches below are observable:
+                    #   * ``raise`` mode re-raises the original exception
+                    #     (the runtime sets error state so callers can
+                    #     inspect ``_error_info``).
+                    #   * ``log`` mode records ``(func_path, e)`` in
+                    #     ``_abstract_handler_errors`` and logs the failure.
+                    # ``BaseException`` (KeyboardInterrupt, SystemExit) is
+                    # intentionally *not* caught.
                     if self._abstract_error_mode == 'raise':
                         # Raise mode: set error state and re-raise
                         self._is_error_state = True

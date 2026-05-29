@@ -263,7 +263,18 @@ function extractVariableSymbol(
             selectionRange: findIdentifierRange(document, varName, range),
             children: [],
         };
-    } catch {
+    } catch (err) {
+        // Defensive symbol extractor: traversing antlr4 ParseTreeNode
+        // subtrees with varying shapes routinely throws Error subclasses
+        // (TypeError on a missing child, RangeError on a malformed token
+        // table, and plain Error from antlr4 internals). All of those are
+        // the documented degrade-to-null path used while the user is
+        // mid-typing. Non-Error throws (raw strings) would only happen
+        // through API misuse, so we still re-raise those as a programmer
+        // bug guard.
+        if (!(err instanceof Error)) {
+            throw err;
+        }
         return null;
     }
 }
@@ -304,7 +315,18 @@ function extractEventSymbol(
             selectionRange: findIdentifierRange(document, eventName, range),
             children: [],
         };
-    } catch {
+    } catch (err) {
+        // Defensive symbol extractor: traversing antlr4 ParseTreeNode
+        // subtrees with varying shapes routinely throws Error subclasses
+        // (TypeError on a missing child, RangeError on a malformed token
+        // table, and plain Error from antlr4 internals). All of those are
+        // the documented degrade-to-null path used while the user is
+        // mid-typing. Non-Error throws (raw strings) would only happen
+        // through API misuse, so we still re-raise those as a programmer
+        // bug guard.
+        if (!(err instanceof Error)) {
+            throw err;
+        }
         return null;
     }
 }
@@ -384,7 +406,18 @@ function extractStateSymbol(
         }
 
         return symbol;
-    } catch {
+    } catch (err) {
+        // Defensive symbol extractor: traversing antlr4 ParseTreeNode
+        // subtrees with varying shapes routinely throws Error subclasses
+        // (TypeError on a missing child, RangeError on a malformed token
+        // table, and plain Error from antlr4 internals). All of those are
+        // the documented degrade-to-null path used while the user is
+        // mid-typing. Non-Error throws (raw strings) would only happen
+        // through API misuse, so we still re-raise those as a programmer
+        // bug guard.
+        if (!(err instanceof Error)) {
+            throw err;
+        }
         return null;
     }
 }

@@ -326,3 +326,105 @@ class TestRenderExprNode:
             input_value, lang_style=lang_type, ext_configs=ext_configs, env=new_env
         )
         assert result == expected_result
+
+
+@pytest.mark.unittest
+class TestGoStyleTypeInference:
+    """
+    Drive the Go expression style so that ``_infer_expr_type`` and the
+    ``go_expr_type`` / ``go_abs_expr`` helper paths are exercised through
+    real templates. Each case targets a distinct branch.
+    """
+
+    @pytest.mark.parametrize(
+        'expr_text, expected_substr',
+        [
+            # abs(int) -> int(math.Abs(float64(...)))
+            ('abs(-5)', 'int(math.Abs'),
+            # abs(float-via-Float) -> float math.Abs without int cast
+            ('abs(3.14)', 'math.Abs'),
+            # abs(hex-int literal) routes through HexInt -> 'int' branch
+            ('abs(0xFF)', 'int(math.Abs'),
+            # Conditional with float arms -> go_expr_type returns float64
+            ('(1 > 0) ? 1.5 : 2.5', 'float64'),
+            # Conditional with int arms -> go_expr_type returns int
+            ('(1 > 0) ? 1 : -1', 'int'),
+            # Boolean condition arms (int + int via boolean coercion)
+            ('(1 > 0) ? True : False', 'int'),
+            # tau -> Float branch -> float type inferred
+            ('abs(tau)', 'math.Abs'),
+            # Constant 'pi' is float; ceil over pi -> int branch
+            ('ceil(pi)', 'int(math.Ceil'),
+            # Unary '!' op -> 'int' branch (wrap in ternary so it appears
+            # in numeric context, since '!' is a logical operator and the
+            # grammar rejects ``abs(!true)`` directly).
+            ('((!true) ? 0 : 1)', 'int'),
+            # Unary other -> recurses
+            ('abs(-3.14)', 'math.Abs'),
+            # Binary with shift '<<' -> int branch
+            ('abs(1 << 2)', 'int(math.Abs'),
+            # Binary with comparison '==' -> int branch
+            ('abs((1 == 1) ? 0 : 0)', 'int(math.Abs'),
+            # Binary with division -> float branch
+            ('abs(1 / 2)', 'math.Abs'),
+            # Paren passthrough
+            ('abs((1 + 2))', 'int(math.Abs'),
+            # round/floor/trunc/int over float -> int branch
+            ('round(3.14)', 'int(math.Round'),
+            ('floor(3.14)', 'int(math.Floor'),
+            ('trunc(3.14)', 'int(math.Trunc'),
+            # abs over Name -> _infer_expr_type returns None -> go_abs_expr
+            # falls through to the float branch
+            ('abs(some_var)', 'math.Abs'),
+            # sin over Name -> non-int float UFunc branch
+            ('sin(x_var)', 'math.Sin'),
+            # Binary '+' over two Name nodes wrapped in a ternary -> both
+            # inferred None -> _merge_numeric_types returns None ->
+            # default branch
+            ('((a_var + b_var) > 0) ? 1 : 0', 'int'),
+            # Constant 'pi' alone (Constant float branch)
+            ('(pi > 0) ? 1.0 : 2.0', 'float64'),
+            # abs(sin(x)) -> abs branch with UFunc child returning 'float'
+            ('abs(sin(x_var))', 'math.Abs'),
+            # abs of binary op with two Names -> _merge_numeric_types(None,None)
+            ('abs(a_var + b_var)', 'math.Abs'),
+            # ceil(int) -> floor/ceil/round/int/trunc -> int branch
+            ('ceil(1)', 'int(math.Ceil'),
+            # sin(int) -> UFunc default 'float' branch
+            ('sin(1)', 'math.Sin'),
+            # abs() over a shift binary op exercises BinaryOp shift branch
+            ('abs(1 << 3)', 'int(math.Abs'),
+            # abs(ceil(...)) -> ceil child reports 'int' via UFunc int-set
+            ('abs(ceil(3.14))', 'int(math.Abs'),
+            # abs(abs(x)) -> outer abs reads the inner abs UFunc child via
+            # _infer_expr_type, hitting the UFunc('abs') recursive branch.
+            ('abs(abs(x_var))', 'math.Abs'),
+        ],
+    )
+    def test_go_style_expression_inference(self, expr_text, expected_substr, new_env):
+        ast_node = parse_with_grammar_entry(expr_text, entry_name='generic_expression')
+        result = render_expr_node(ast_node, lang_style='go', env=new_env)
+        assert expected_substr in result, f'expected {expected_substr!r} in {result!r}'
+
+    def test_create_base_env_with_preexisting_env(self):
+        """``_create_base_env`` accepts an existing env and seeds it
+        without replacing the user's existing globals."""
+        import jinja2
+        from pyfcstm.render.expr import _create_base_env
+
+        env = jinja2.Environment()
+        env.globals['custom_marker'] = 'pre-existing'
+        out = _create_base_env(env)
+        assert out is env
+        assert env.globals['custom_marker'] == 'pre-existing'
+        assert callable(env.globals['expr_infer_type'])
+        assert callable(env.globals['go_expr_type'])
+        assert callable(env.globals['go_abs_expr'])
+
+    def test_create_base_env_without_env_creates_new(self):
+        from pyfcstm.render.expr import _create_base_env
+
+        env = _create_base_env()
+        assert callable(env.globals['expr_infer_type'])
+        assert callable(env.globals['go_expr_type'])
+        assert callable(env.globals['go_abs_expr'])

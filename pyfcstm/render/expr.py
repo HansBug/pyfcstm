@@ -209,7 +209,11 @@ def _merge_numeric_types(type_a: Optional[str], type_b: Optional[str]) -> Option
         return 'float'
     if known == {'int'}:
         return 'int'
-    return next(iter(known))
+    # Defensive fallback: _infer_expr_type never produces types outside
+    # {None, 'int', 'float'}, so this line is unreachable today. Kept as a
+    # belt-and-braces guard against future type additions instead of
+    # raising and breaking template rendering.
+    return next(iter(known))  # pragma: no cover
 
 
 def _infer_expr_type(node: dsl_nodes.Expr) -> Optional[str]:
@@ -226,15 +230,23 @@ def _infer_expr_type(node: dsl_nodes.Expr) -> Optional[str]:
     if isinstance(node, dsl_nodes.Float):
         return 'float'
     if isinstance(node, dsl_nodes.Constant):
-        if str(node.value) in {'pi', 'e', 'tau'}:
-            return 'float'
-        return None
+        # Constant nodes (pi, e, tau) carry their numeric value as a float
+        # on .value after parsing -- the symbolic name lives on .raw. The
+        # only Constant kinds the grammar emits are the three math
+        # constants, all of which are floats.
+        return 'float'
     if isinstance(node, dsl_nodes.Name):
         return None
     if isinstance(node, dsl_nodes.Paren):
         return _infer_expr_type(node.expr)
     if isinstance(node, dsl_nodes.UnaryOp):
-        if node.op == '!':
+        if node.op == '!':  # pragma: no cover
+            # ``!`` is a logical operator. The grammar only allows it in
+            # boolean contexts (transition guards / ConditionalOp cond),
+            # which are never reached by _infer_expr_type since this
+            # function only descends into numeric arms (UFunc operand,
+            # ConditionalOp value_true/value_false, BinaryOp operands).
+            # Kept as a belt-and-braces guard if the grammar ever extends.
             return 'int'
         return _infer_expr_type(node.expr)
     if isinstance(node, dsl_nodes.UFunc):
@@ -246,7 +258,11 @@ def _infer_expr_type(node: dsl_nodes.Expr) -> Optional[str]:
     if isinstance(node, dsl_nodes.BinaryOp):
         if node.op in {'<<', '>>', '&', '^', '|'}:
             return 'int'
-        if node.op in {'&&', '||', '==', '!=', '<', '<=', '>', '>='}:
+        if node.op in {'&&', '||', '==', '!=', '<', '<=', '>', '>='}:  # pragma: no cover
+            # These BinaryOp operators produce boolean results and only
+            # appear in boolean contexts (guard / ConditionalOp cond) per
+            # the grammar -- the same reason the ``!`` UnaryOp branch
+            # above is unreachable. Kept for completeness.
             return 'int'
         left = _infer_expr_type(node.expr1)
         right = _infer_expr_type(node.expr2)
@@ -258,7 +274,10 @@ def _infer_expr_type(node: dsl_nodes.Expr) -> Optional[str]:
             _infer_expr_type(node.value_true),
             _infer_expr_type(node.value_false),
         )
-    return None
+    # All grammar-emitted Expr subclasses are handled above. The fallback
+    # exists to keep type inference total for hypothetical future Expr
+    # subclasses; it never fires today.
+    return None  # pragma: no cover
 
 
 def _create_base_env(env: Optional[jinja2.Environment] = None) -> jinja2.Environment:
@@ -342,7 +361,12 @@ def fn_expr_render(node: Union[float, int, dict, dsl_nodes.Expr, Any],
             template_str = templates[f'{type(node).__name__}({node.op})']
         elif isinstance(node, dsl_nodes.BinaryOp) and type(node).__name__ in templates:
             template_str = templates[type(node).__name__]
-        else:
+        else:  # pragma: no cover
+            # Fallback when the dispatched-on node type has no specific
+            # template entry (e.g. a hypothetical future Expr subclass).
+            # Every grammar-emitted node currently has a matching entry,
+            # so this branch is dead today; the default key is kept so
+            # templates can override it via ext_configs in the future.
             template_str = templates['default']
 
         tp: jinja2.Template = env.from_string(template_str)

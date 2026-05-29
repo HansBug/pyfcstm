@@ -54,9 +54,35 @@ class _ScriptedPrompt:
         return item
 
 
+class _DummySession:
+    """
+    Lightweight stand-in for ``prompt_toolkit.PromptSession``.
+
+    PromptSession's constructor opens a real terminal output handle. On
+    Windows CI (xterm under the GitHub Actions runner) that crashes with
+    ``NoConsoleScreenBufferError`` because there's no Windows console.
+    We bypass the real constructor and only expose ``prompt`` (which the
+    test then replaces with a scripted callable).
+    """
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def prompt(self, *args, **kwargs):  # pragma: no cover - replaced per test
+        raise EOFError
+
+
+@pytest.fixture
+def patch_prompt_session(monkeypatch):
+    """Patch PromptSession before SimulationREPL constructs it."""
+    from pyfcstm.entry.simulate import repl as repl_module
+    monkeypatch.setattr(repl_module, 'PromptSession', _DummySession)
+    return _DummySession
+
+
 @pytest.mark.unittest
 class TestSimulationREPLRun:
-    def test_run_processes_commands_then_exits_on_quit(self, capsys):
+    def test_run_processes_commands_then_exits_on_quit(self, capsys, patch_prompt_session):
         runtime, model = _make_runtime()
         repl = SimulationREPL(runtime, state_machine=model, use_color=False)
 
@@ -77,7 +103,7 @@ class TestSimulationREPLRun:
         assert 'Goodbye' in captured.out  # quit produces goodbye message
         assert scripted.calls >= 3
 
-    def test_run_eof_exits_gracefully(self, capsys):
+    def test_run_eof_exits_gracefully(self, capsys, patch_prompt_session):
         runtime, model = _make_runtime()
         repl = SimulationREPL(runtime, state_machine=model, use_color=False)
 
@@ -89,7 +115,7 @@ class TestSimulationREPLRun:
         captured = capsys.readouterr()
         assert 'Goodbye' in captured.out
 
-    def test_run_keyboard_interrupt_continues(self, capsys):
+    def test_run_keyboard_interrupt_continues(self, capsys, patch_prompt_session):
         runtime, model = _make_runtime()
         repl = SimulationREPL(runtime, state_machine=model, use_color=False)
 

@@ -1,0 +1,11 @@
+state Root {
+    event Unused;
+    event Used;
+    state Idle;
+    state Active;
+    state Blocked;
+    state Orphan;
+    [*] -> Idle;
+    Idle -> Active : Used;
+    Active -> Blocked : if [false];
+}

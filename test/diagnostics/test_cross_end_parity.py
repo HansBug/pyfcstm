@@ -24,12 +24,15 @@ richer ``sideEffects`` and ``mustNotFire`` lists for the W_* layer that
 pyfcstm has not implemented yet — see issue #104).
 """
 
+import json
 import os
+import subprocess
 import tempfile
 
 import pytest
 
 from pyfcstm.dsl import parse_with_grammar_entry
+from pyfcstm.diagnostics import inspect_model
 from pyfcstm.model import parse_dsl_node_to_state_machine
 from pyfcstm.utils.validate import ModelDiagnostic
 
@@ -59,6 +62,72 @@ def _collect_codes_from_file(path: str):
     with open(path, 'r', encoding='utf-8') as f:
         dsl = f.read()
     return _collect_codes_from_dsl(dsl, base_dir=path)
+
+
+def _normalize_inspect_diagnostics(diags):
+    normalized = []
+    for diag in diags:
+        refs = diag.refs if isinstance(diag, ModelDiagnostic) else diag['refs']
+        normalized.append({
+            'code': diag.code if isinstance(diag, ModelDiagnostic) else diag['code'],
+            'severity': diag.severity if isinstance(diag, ModelDiagnostic) else diag['severity'],
+            'refs': json.loads(json.dumps(refs, sort_keys=True)),
+        })
+    return sorted(
+        normalized,
+        key=lambda item: (
+            item['code'],
+            item['severity'],
+            json.dumps(item['refs'], sort_keys=True),
+        ),
+    )
+
+
+def _py_inspect_normalized_diagnostics(dsl: str):
+    ast = parse_with_grammar_entry(dsl, 'state_machine_dsl')
+    machine = parse_dsl_node_to_state_machine(ast)
+    report = inspect_model(machine)
+    assert_all_diags_match_schema(report.diagnostics, context='py-inspect-parity')
+    return _normalize_inspect_diagnostics(report.diagnostics)
+
+
+def _js_inspect_normalized_diagnostics(dsl: str):
+    script = r"""
+const fs = require('fs');
+const pkg = require('./editors/jsfcstm/dist');
+
+const text = fs.readFileSync(0, 'utf8');
+const lines = text.split('\n');
+const document = {
+  filePath: '/tmp/inspect-parity.fcstm',
+  uri: {fsPath: '/tmp/inspect-parity.fcstm', toString() { return this.fsPath; }},
+  lineCount: lines.length,
+  getText() { return text; },
+  lineAt(line) { return {text: lines[line] || ''}; },
+};
+
+(async () => {
+  const ast = await pkg.parseAstDocument(document);
+  const machine = pkg.buildStateMachineModel(ast);
+  if (!machine) {
+    throw new Error('buildStateMachineModel returned null');
+  }
+  const report = pkg.inspectModel(machine);
+  process.stdout.write(JSON.stringify(report.diagnostics));
+})().catch(err => {
+  console.error(err && err.stack ? err.stack : String(err));
+  process.exit(1);
+});
+"""
+    result = subprocess.run(
+        ['node', '-e', script],
+        input=dsl,
+        text=True,
+        capture_output=True,
+        cwd=os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')),
+        check=True,
+    )
+    return _normalize_inspect_diagnostics(json.loads(result.stdout))
 
 
 # ---------------------------------------------------------------------------
@@ -341,6 +410,51 @@ MULTI_FILE_FIXTURES = [
 ]
 
 
+B1_INSPECT_PARITY_FIXTURES = [
+    (
+        'b1-unused-event-unreachable-const-false',
+        '\n'.join([
+            'state Root {',
+            '    event Unused;',
+            '    event Used;',
+            '    state Idle;',
+            '    state Active;',
+            '    state Blocked;',
+            '    state Orphan;',
+            '    [*] -> Idle;',
+            '    Idle -> Active : Used;',
+            '    Active -> Blocked : if [false];',
+            '}',
+        ]),
+        [
+            {
+                'code': 'W_GUARD_CONST_FALSE',
+                'severity': 'warning',
+                'refs': {
+                    'transition_span': None,
+                    'folded_value': False,
+                },
+            },
+            {
+                'code': 'W_UNREACHABLE_STATE',
+                'severity': 'warning',
+                'refs': {
+                    'state_path': 'Root.Orphan',
+                },
+            },
+            {
+                'code': 'W_UNUSED_EVENT',
+                'severity': 'warning',
+                'refs': {
+                    'event_qualified_name': 'Root.Unused',
+                    'scope': 'chain',
+                },
+            },
+        ],
+    ),
+]
+
+
 @pytest.mark.unittest
 @pytest.mark.parametrize('name,dsl,must_fire', SINGLE_FILE_FIXTURES, ids=[
     item[0] for item in SINGLE_FILE_FIXTURES
@@ -378,6 +492,23 @@ def test_multi_file_fixture_emits_expected_codes(name, files, entry, must_fire, 
             f'{name}: expected {expected} to fire, got {codes}'
         )
     assert_all_diags_match_schema(diagnostics, context=name)
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize('name,dsl,expected', B1_INSPECT_PARITY_FIXTURES, ids=[
+    item[0] for item in B1_INSPECT_PARITY_FIXTURES
+])
+def test_b1_inspect_diagnostics_match_jsfcstm(name, dsl, expected):
+    normalized_expected = _normalize_inspect_diagnostics(expected)
+    py_diags = _py_inspect_normalized_diagnostics(dsl)
+    js_diags = _js_inspect_normalized_diagnostics(dsl)
+    assert py_diags == normalized_expected, (
+        f'{name}: pyfcstm inspect diagnostics mismatch: {py_diags}'
+    )
+    assert js_diags == normalized_expected, (
+        f'{name}: jsfcstm inspect diagnostics mismatch: {js_diags}'
+    )
+    assert py_diags == js_diags
 
 
 @pytest.mark.unittest

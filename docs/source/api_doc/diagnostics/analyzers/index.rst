@@ -1,22 +1,17 @@
-pyfcstm.diagnostics
+pyfcstm.diagnostics.analyzers
 ========================================================
 
-.. currentmodule:: pyfcstm.diagnostics
+.. currentmodule:: pyfcstm.diagnostics.analyzers
 
-.. automodule:: pyfcstm.diagnostics
+.. automodule:: pyfcstm.diagnostics.analyzers
 
 
 .. toctree::
     :maxdepth: 3
 
-    analyzers/index
-    codes
-    inspect
-    sink
+    b1
 
 \_\_all\_\_
 -----------------------------------------------------
 
 .. autodata:: __all__
-
-

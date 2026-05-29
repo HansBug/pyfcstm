@@ -48,6 +48,7 @@ Example::
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
+from .analyzers import collect_b1_diagnostics
 from ..utils.validate import ModelDiagnostic
 
 if TYPE_CHECKING:  # pragma: no cover - import-time forward refs only
@@ -231,11 +232,19 @@ class EventInfo:
     :param used_by: ``(from_path, to_path)`` tuples for every transition
         that references this event.
     :type used_by: Tuple[Tuple[str, str], ...]
+    :param is_declared: ``True`` when the event came from an explicit
+        ``event`` declaration.
+    :type is_declared: bool
+    :param is_used: ``True`` when at least one transition references the
+        event.
+    :type is_used: bool
     """
 
     qualified_name: str
     scope: str
     used_by: Tuple[Tuple[str, str], ...]
+    is_declared: bool
+    is_used: bool
 
 
 @dataclass(frozen=True)
@@ -666,7 +675,8 @@ def _build_transition_infos(machine: 'StateMachine') -> Tuple[TransitionInfo, ..
             to_path = _transition_endpoint(state, transition.to_state, is_source=False)
             qualified_event = _qualified_event_name(transition, state)
             scope = (
-                _event_scope(transition.event, state, transition.from_state, machine)
+                getattr(transition, 'event_scope', None)
+                or _event_scope(transition.event, state, transition.from_state, machine)
                 if transition.event is not None
                 else None
             )
@@ -817,9 +827,19 @@ def _abstract_actions_in_scope(
 
 
 def _build_event_infos(machine: 'StateMachine', transitions: Tuple[TransitionInfo, ...]) -> Tuple[EventInfo, ...]:
-    """Group transitions by their qualified event name."""
+    """Group declared and transition-used events by qualified event name."""
     event_users: Dict[str, List[Tuple[str, str]]] = {}
     event_scope: Dict[str, str] = {}
+    event_declared: Dict[str, bool] = {}
+    for state in machine.walk_states():
+        for event in state.events.values():
+            qn = event.path_name
+            event_users.setdefault(qn, [])
+            event_scope[qn] = _scope_from_event_origins(
+                getattr(event, 'origins', None) or []
+            )
+            event_declared[qn] = bool(getattr(event, 'declared', False))
+
     for state in machine.walk_states():
         for transition in state.transitions:
             qn = _qualified_event_name(transition, state)
@@ -828,17 +848,33 @@ def _build_event_infos(machine: 'StateMachine', transitions: Tuple[TransitionInf
             from_path = _transition_endpoint(state, transition.from_state, is_source=True)
             to_path = _transition_endpoint(state, transition.to_state, is_source=False)
             event_users.setdefault(qn, []).append((from_path, to_path))
-            event_scope[qn] = _event_scope(
-                transition.event, state, transition.from_state, machine
+            event_scope[qn] = (
+                getattr(transition, 'event_scope', None)
+                or _event_scope(transition.event, state, transition.from_state, machine)
+            )
+            event_declared.setdefault(
+                qn,
+                bool(getattr(transition.event, 'declared', False)),
             )
     out: List[EventInfo] = []
-    for qn in sorted(event_users.keys()):
+    for qn in sorted(set(event_users.keys()) | set(event_declared.keys())):
+        used_by = tuple(event_users.get(qn, []))
         out.append(EventInfo(
             qualified_name=qn,
             scope=event_scope.get(qn, 'absolute'),
-            used_by=tuple(event_users[qn]),
+            used_by=used_by,
+            is_declared=event_declared.get(qn, False),
+            is_used=bool(used_by),
         ))
     return tuple(out)
+
+
+def _scope_from_event_origins(origins: List[str]) -> str:
+    if 'local' in origins:
+        return 'local'
+    if 'absolute' in origins:
+        return 'absolute'
+    return 'chain'
 
 
 def _build_metrics(
@@ -933,6 +969,8 @@ def _build_event_emission_map(
 ) -> Dict[str, Tuple[str, ...]]:
     out: Dict[str, Tuple[str, ...]] = {}
     for e in events:
+        if not e.is_used:
+            continue
         froms = sorted({pair[0] for pair in e.used_by if pair[0] != _INIT_MARK})
         out[e.qualified_name] = tuple(froms)
     return out
@@ -1033,6 +1071,7 @@ def inspect_model(machine: 'StateMachine') -> ModelInspect:
     variables = _build_variable_infos(machine, states)
     events = _build_event_infos(machine, transitions)
     metrics = _build_metrics(states, transitions, variables, events)
+    reachability_graph = _build_reachability_graph(states, transitions)
     return ModelInspect(
         root_state_path=_state_path(machine.root_state),
         states=states,
@@ -1040,12 +1079,17 @@ def inspect_model(machine: 'StateMachine') -> ModelInspect:
         variables=variables,
         events=events,
         metrics=metrics,
-        reachability_graph=_build_reachability_graph(states, transitions),
+        reachability_graph=reachability_graph,
         event_emission_map=_build_event_emission_map(events),
         var_dataflow=_build_var_dataflow(variables),
         aspect_impact_map=_build_aspect_impact_map(states),
         action_ref_graph=_build_action_ref_graph(machine),
-        diagnostics=tuple(),
+        diagnostics=tuple(collect_b1_diagnostics(
+            states,
+            transitions,
+            events,
+            reachability_graph,
+        )),
     )
 
 

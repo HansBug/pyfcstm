@@ -271,14 +271,14 @@ TransitionDefinition
 -----------------------------------------------------
 
 .. autoclass:: TransitionDefinition
-    :members: __str__,from_state,to_state,event_id,condition_expr,post_operations
+    :members: __str__,from_state,to_state,event_id,condition_expr,post_operations,event_scope
 
 
 ForceTransitionDefinition
 -----------------------------------------------------
 
 .. autoclass:: ForceTransitionDefinition
-    :members: __str__,from_state,to_state,event_id,condition_expr
+    :members: __str__,from_state,to_state,event_id,condition_expr,event_scope
 
 
 StateDefinition

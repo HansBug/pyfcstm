@@ -31,7 +31,7 @@ EventInfo
 -----------------------------------------------------
 
 .. autoclass:: EventInfo
-    :members: qualified_name,scope,used_by
+    :members: qualified_name,scope,used_by,is_declared,is_used
 
 
 ModelMetrics

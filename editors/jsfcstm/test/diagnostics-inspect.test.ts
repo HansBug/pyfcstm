@@ -201,7 +201,7 @@ describe('diagnostics/inspect (PR-A)', () => {
             assert.equal(parsed.root_state_path, 'Root');
         });
 
-        it('diagnostics array empty for PR-A', async () => {
+        it('diagnostics array empty for clean model without PR-B warnings', async () => {
             const report = inspectModel(await buildMachine(SIMPLE_DSL));
             assert.deepEqual(report.diagnostics, []);
         });
@@ -223,6 +223,77 @@ describe('diagnostics/inspect (PR-A)', () => {
                 'var_dataflow',
                 'variables',
             ]);
+        });
+    });
+
+    describe('PR-B1 inspect diagnostics', () => {
+        const B1_DSL = `
+state Root {
+    event Unused;
+    event Used;
+    state Idle;
+    state Active;
+    state Blocked;
+    state Orphan;
+    [*] -> Idle;
+    Idle -> Active : Used;
+    Active -> Blocked : if [false];
+}
+`;
+
+        it('exposes declared-but-unused events in EventInfo', async () => {
+            const report = inspectModel(await buildMachine(B1_DSL));
+            const byName: Record<string, typeof report.events[number]> = {};
+            for (const event of report.events) byName[event.qualified_name] = event;
+
+            assert.deepEqual(Object.keys(byName).sort(), ['Root.Unused', 'Root.Used']);
+            assert.equal(byName['Root.Unused'].scope, 'chain');
+            assert.deepEqual(byName['Root.Unused'].used_by, []);
+            assert.equal(byName['Root.Unused'].is_declared, true);
+            assert.equal(byName['Root.Unused'].is_used, false);
+
+            assert.equal(byName['Root.Used'].scope, 'chain');
+            assert.deepEqual(byName['Root.Used'].used_by, [['Root.Idle', 'Root.Active']]);
+            assert.equal(byName['Root.Used'].is_declared, true);
+            assert.equal(byName['Root.Used'].is_used, true);
+        });
+
+        it('emits B1 warnings on inspectModel diagnostics surface', async () => {
+            const report = inspectModel(await buildMachine(B1_DSL));
+            const codes = report.diagnostics.map(d => d.code);
+            assert.equal(codes.filter(code => code === 'W_UNUSED_EVENT').length, 1);
+            assert.equal(codes.filter(code => code === 'W_GUARD_CONST_FALSE').length, 1);
+            assert.equal(codes.filter(code => code === 'W_UNREACHABLE_STATE').length, 1);
+
+            const unused = report.diagnostics.find(d => d.code === 'W_UNUSED_EVENT');
+            assert.ok(unused);
+            assert.equal(unused!.severity, 'warning');
+            assert.deepEqual(unused!.refs, {
+                event_qualified_name: 'Root.Unused',
+                scope: 'chain',
+            });
+
+            const constFalse = report.diagnostics.find(d => d.code === 'W_GUARD_CONST_FALSE');
+            assert.ok(constFalse);
+            assert.equal(constFalse!.severity, 'warning');
+            assert.deepEqual(constFalse!.refs, {
+                transition_span: null,
+                folded_value: false,
+            });
+
+            const unreachable = report.diagnostics.find(d => d.code === 'W_UNREACHABLE_STATE');
+            assert.ok(unreachable);
+            assert.equal(unreachable!.severity, 'warning');
+            assert.deepEqual(unreachable!.refs, {
+                state_path: 'Root.Orphan',
+            });
+        });
+
+        it('event emission map only lists used events', async () => {
+            const report = inspectModel(await buildMachine(B1_DSL));
+            assert.deepEqual(report.event_emission_map, {
+                'Root.Used': ['Root.Idle'],
+            });
         });
     });
 

@@ -11,6 +11,7 @@
  */
 
 import {
+    Event,
     Expr,
     IfBlock,
     OnAspect,
@@ -20,6 +21,7 @@ import {
     StateMachine,
     Transition,
 } from '../model/runtime';
+import {collectB1Diagnostics} from './analyzers';
 
 const INIT_MARK = '[*]';
 const EXIT_MARK = '[*]';
@@ -91,6 +93,8 @@ export interface EventInfo {
     qualified_name: string;
     scope: 'local' | 'chain' | 'absolute';
     used_by: Array<[string, string]>;
+    is_declared: boolean;
+    is_used: boolean;
 }
 
 /**
@@ -154,6 +158,7 @@ export function inspectModel(machine: StateMachine): ModelInspect {
     const variables = buildVariableInfos(machine, states);
     const events = buildEventInfos(machine);
     const metrics = buildMetrics(states, transitions, variables, events);
+    const reachabilityGraph = buildReachabilityGraph(states, transitions);
     return {
         root_state_path: dottedPath(machine.rootState.path),
         states,
@@ -161,12 +166,12 @@ export function inspectModel(machine: StateMachine): ModelInspect {
         variables,
         events,
         metrics,
-        reachability_graph: buildReachabilityGraph(states, transitions),
+        reachability_graph: reachabilityGraph,
         event_emission_map: buildEventEmissionMap(events),
         var_dataflow: buildVarDataflow(variables),
         aspect_impact_map: buildAspectImpactMap(states),
         action_ref_graph: buildActionRefGraph(machine),
-        diagnostics: [],
+        diagnostics: collectB1Diagnostics(states, transitions, events, reachabilityGraph),
     };
 }
 
@@ -536,6 +541,13 @@ function abstractActionsInScope(
 function buildEventInfos(machine: StateMachine): EventInfo[] {
     const users: Record<string, Array<[string, string]>> = {};
     const scopes: Record<string, 'local' | 'chain' | 'absolute'> = {};
+    const declared: Record<string, boolean> = {};
+    for (const event of machine.allEvents ?? []) {
+        const qn = event.pathName;
+        if (!users[qn]) users[qn] = [];
+        scopes[qn] = scopeFromEventOrigins(event);
+        declared[qn] = event.declared;
+    }
     for (const state of machine.allStates) {
         for (const t of state.transitions) {
             if (!t.event) continue;
@@ -545,17 +557,27 @@ function buildEventInfos(machine: StateMachine): EventInfo[] {
             if (!users[qn]) users[qn] = [];
             users[qn].push([fromPath, toPath]);
             scopes[qn] = t.triggerScope ?? 'absolute';
+            declared[qn] = declared[qn] ?? t.event.declared;
         }
     }
     const out: EventInfo[] = [];
     for (const qn of Object.keys(users).sort()) {
+        const usedBy = users[qn];
         out.push({
             qualified_name: qn,
             scope: scopes[qn] ?? 'absolute',
-            used_by: users[qn],
+            used_by: usedBy,
+            is_declared: declared[qn] ?? false,
+            is_used: usedBy.length > 0,
         });
     }
     return out;
+}
+
+function scopeFromEventOrigins(event: Event): 'local' | 'chain' | 'absolute' {
+    if (event.origins.includes('local')) return 'local';
+    if (event.origins.includes('absolute')) return 'absolute';
+    return 'chain';
 }
 
 function buildMetrics(
@@ -648,6 +670,7 @@ function buildReachabilityGraph(
 function buildEventEmissionMap(events: EventInfo[]): Record<string, string[]> {
     const out: Record<string, string[]> = {};
     for (const e of events) {
+        if (!e.is_used) continue;
         const froms = Array.from(
             new Set(e.used_by.filter(p => p[0] !== INIT_MARK).map(p => p[0])),
         ).sort();

@@ -1249,6 +1249,9 @@ class TransitionDefinition(ASTNode):
     :type to_state: Union[str, _StateSingletonMark]
     :param event_id: Optional event identifier that triggers the transition
     :type event_id: Optional[ChainID]
+    :param event_scope: Original DSL trigger scope for ``event_id`` when
+        known. One of ``'local'``, ``'chain'``, or ``'absolute'``.
+    :type event_scope: Optional[str]
     :param condition_expr: Optional condition expression that must be true for the transition
     :type condition_expr: Optional[Expr]
     :param post_operations: List of operation statements to perform after the transition
@@ -1275,6 +1278,7 @@ class TransitionDefinition(ASTNode):
     event_id: Optional[ChainID]
     condition_expr: Optional[Expr]
     post_operations: List["OperationalStatement"]
+    event_scope: Optional[str] = field(default=None, repr=False, compare=False)
     _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     def __str__(self) -> str:
@@ -1354,6 +1358,7 @@ class ForceTransitionDefinition(ASTNode):
     to_state: Union[str, _StateSingletonMark]
     event_id: Optional[ChainID]
     condition_expr: Optional[Expr]
+    event_scope: Optional[str] = field(default=None, repr=False, compare=False)
     _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     def __str__(self) -> str:

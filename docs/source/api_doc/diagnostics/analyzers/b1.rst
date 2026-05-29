@@ -1,0 +1,12 @@
+pyfcstm.diagnostics.analyzers.b1
+========================================================
+
+.. currentmodule:: pyfcstm.diagnostics.analyzers.b1
+
+.. automodule:: pyfcstm.diagnostics.analyzers.b1
+
+
+collect\_b1\_diagnostics
+-----------------------------------------------------
+
+.. autofunction:: collect_b1_diagnostics

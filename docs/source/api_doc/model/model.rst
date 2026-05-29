@@ -43,14 +43,14 @@ Event
 -----------------------------------------------------
 
 .. autoclass:: Event
-    :members: path,path_name,to_ast_node,name,state_path,extra_name
+    :members: path,path_name,to_ast_node,name,state_path,extra_name,declared,origins
 
 
 Transition
 -----------------------------------------------------
 
 .. autoclass:: Transition
-    :members: parent,parent,to_ast_node,from_state,to_state,event,guard,effects,parent_ref
+    :members: parent,parent,to_ast_node,from_state,to_state,event,guard,effects,event_scope,parent_ref
 
 
 OnStage
@@ -92,5 +92,4 @@ parse\_dsl\_node\_to\_state\_machine
 -----------------------------------------------------
 
 .. autofunction:: parse_dsl_node_to_state_machine
-
 

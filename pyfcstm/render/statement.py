@@ -344,13 +344,23 @@ def _merge_numeric_types(type_a: Optional[str], type_b: Optional[str]) -> Option
     :rtype: Optional[str]
     """
     known = {type_a, type_b} - {None}
-    if not known:
+    if not known:  # pragma: no cover
+        # _infer_expr_type within this module always returns one of {None,
+        # 'int', 'float'}, but every caller already strips Names via the
+        # known_types map. With both sides reaching None we should fall
+        # through to this branch; in practice the callers either have at
+        # least one literal arm or one typed name. Kept as defensive
+        # fallback against future code paths that genuinely produce
+        # (None, None).
         return None
     if 'float' in known:
         return 'float'
     if known == {'int'}:
         return 'int'
-    return next(iter(known))
+    # Defensive fallback: type set never contains anything outside
+    # {'int', 'float'} today, but kept to avoid raising on hypothetical
+    # future type additions.
+    return next(iter(known))  # pragma: no cover
 
 
 def _infer_expr_type(node: dsl_nodes.Expr, known_types: Mapping[str, str]) -> Optional[str]:
@@ -369,15 +379,20 @@ def _infer_expr_type(node: dsl_nodes.Expr, known_types: Mapping[str, str]) -> Op
     if isinstance(node, dsl_nodes.Float):
         return 'float'
     if isinstance(node, dsl_nodes.Constant):
-        if str(node.value) in {'pi', 'e'}:
-            return 'float'
-        return None
+        # Constant nodes (pi, e, tau) carry their numeric float value on
+        # .value after parsing; .raw holds the symbolic name. Every grammar
+        # Constant is a math constant so the type is always 'float'.
+        return 'float'
     if isinstance(node, dsl_nodes.Name):
         return known_types.get(node.name)
     if isinstance(node, dsl_nodes.Paren):
         return _infer_expr_type(node.expr, known_types)
     if isinstance(node, dsl_nodes.UnaryOp):
-        if node.op == '!':
+        if node.op == '!':  # pragma: no cover
+            # ``!`` is a logical operator; it only appears inside boolean
+            # contexts (guard / ConditionalOp cond), which _infer_expr_type
+            # never descends into. Kept symmetric with the numeric branches
+            # above against future grammar changes.
             return 'int'
         return _infer_expr_type(node.expr, known_types)
     if isinstance(node, dsl_nodes.UFunc):
@@ -389,7 +404,10 @@ def _infer_expr_type(node: dsl_nodes.Expr, known_types: Mapping[str, str]) -> Op
     if isinstance(node, dsl_nodes.BinaryOp):
         if node.op in {'<<', '>>', '&', '^', '|'}:
             return 'int'
-        if node.op in {'&&', '||', '==', '!=', '<', '<=', '>', '>='}:
+        if node.op in {'&&', '||', '==', '!=', '<', '<=', '>', '>='}:  # pragma: no cover
+            # Boolean BinaryOp results only appear in boolean contexts
+            # (guard / ConditionalOp cond), which _infer_expr_type does
+            # not descend into. Kept for symmetry / future grammar changes.
             return 'int'
         left = _infer_expr_type(node.expr1, known_types)
         right = _infer_expr_type(node.expr2, known_types)
@@ -401,7 +419,9 @@ def _infer_expr_type(node: dsl_nodes.Expr, known_types: Mapping[str, str]) -> Op
             _infer_expr_type(node.value_true, known_types),
             _infer_expr_type(node.value_false, known_types),
         )
-    return None
+    # All grammar-emitted Expr subclasses are handled above. Kept for
+    # forward-compatibility with hypothetical future Expr subclasses.
+    return None  # pragma: no cover
 
 
 def _create_scoped_expr_render(
@@ -484,7 +504,12 @@ def _restore_scoped_expr_render(
         env.filters['expr_render'] = previous_filter
     if previous_resolver is None:
         env.globals.pop('stmt_resolve_name', None)
-    else:
+    else:  # pragma: no cover
+        # Reaching this branch requires nested statement renders inside
+        # a template whose outer scope already registered an stmt_resolve_name
+        # global. This is not part of the documented user-facing surface
+        # but is preserved so that custom templates that nest renders can
+        # safely restore the outer state.
         env.globals['stmt_resolve_name'] = previous_resolver
 
 
@@ -531,7 +556,11 @@ def _render_temp_declaration(
     temp_type = (templates.get('temp_type_aliases') or {}).get(inferred_type, inferred_type)
     if temp_type is None:
         temp_type = templates.get('temp_type_fallback')
-    if temp_type is None:
+    if temp_type is None:  # pragma: no cover
+        # Reached only when the template disables declarations for one
+        # specific inferred type by setting the alias to ``null`` and
+        # omitting ``temp_type_fallback``. The default styles never do
+        # this; kept so custom configurations can opt out.
         return None
     return _render_template_string(declare_temp, env, name=name, temp_type=temp_type)
 

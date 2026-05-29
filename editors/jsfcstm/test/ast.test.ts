@@ -402,6 +402,51 @@ describe('jsfcstm AST builder', () => {
         assert.equal(ast?.rootState?.composite, true);
     });
 
+    // PR-A-coverage push: empty / whitespace-only multi-line comments
+    // on abstract actions exercise ``formatMultilineComment`` empty-
+    // and whitespace-only branches (builder.ts:176-177).
+    it('normalizes empty and whitespace-only multi-line abstract-action docs', async () => {
+        // Pure empty /* */ — special-cased early in formatMultilineComment.
+        const docEmpty = createDocument(
+            'state Root { state Idle { enter abstract X /* */; } [*] -> Idle; }',
+            '/tmp/ast-empty-doc.fcstm',
+        );
+        const astEmpty = await packageModule.parseAstDocument(docEmpty);
+        const actionEmpty = astEmpty?.rootState?.substates?.[0]?.enters?.[0];
+        assert.equal(actionEmpty?.doc, '');
+        // Multi-line whitespace-only — exercises the "nonEmptyLines
+        // empty after trim" branch.
+        const docWs = createDocument(
+            'state Root {\n    state Idle {\n        enter abstract X /*\n   \n   \n*/;\n    }\n    [*] -> Idle;\n}',
+            '/tmp/ast-ws-doc.fcstm',
+        );
+        const astWs = await packageModule.parseAstDocument(docWs);
+        const actionWs = astWs?.rootState?.substates?.[0]?.enters?.[0];
+        assert.equal(actionWs?.doc, '');
+    });
+
+    // PR-A-coverage push: exercise the string-escape branches in
+    // ``decodeEscapedString`` (builder.ts:81-130). The grammar accepts
+    // most C-style escapes inside named strings; the rare \b backspace
+    // and \NNN octal branches need explicit DSL coverage.
+    it('decodes \\b backspace and octal escapes inside named strings', async () => {
+        // \b backspace (line 93-94 region)
+        const docB = createDocument(
+            'state Root named "alpha\\bgamma" { state A; [*] -> A; }',
+            '/tmp/ast-escape-b.fcstm',
+        );
+        const astB = await packageModule.parseAstDocument(docB);
+        assert.equal(astB?.rootState?.displayName, 'alpha\bgamma');
+        // \NNN octal (decodeEscapedString octal branch)
+        const docOct = createDocument(
+            'state Root named "x\\101y" { state A; [*] -> A; }',
+            '/tmp/ast-escape-octal.fcstm',
+        );
+        const astOct = await packageModule.parseAstDocument(docOct);
+        // \101 = 0o101 = 'A'
+        assert.equal(astOct?.rootState?.displayName, 'xAy');
+    });
+
     // I-c sibling test: a state that owns nothing but an ``import``
     // (no explicit substates) MUST be classified as composite because
     // the import resolves into a substate during workspace assembly.

@@ -186,10 +186,12 @@ def _assemble_program(
     import_stack: List[str],
     sink: DiagnosticSink,
 ) -> None:
-    if program.root_state is None:
-        # Top-level entry program has no root state. The user-fed
-        # file is treated as a degenerate import for diagnostic
-        # purposes — there is no enclosing alias/host_state_path.
+    if program.root_state is None:  # pragma: no cover
+        # Defensive: grammar always emits at least one ``state X { ... }``
+        # block, so a parsed program always has a non-None root_state.
+        # Reaching here means a caller constructed a degenerate AST
+        # directly via ``dsl_nodes.StateMachineDSLProgram(...)``; emit
+        # the explicit diagnostic and skip rather than crashing.
         entry_source = import_stack[0] if import_stack else '<entry>'
         _emit_import_diag(
             sink,
@@ -353,9 +355,12 @@ def _assemble_state(
             # somehow escaped the helper's own sink emit (shouldn't
             # happen post C-E, but harmless if it does) and skip this
             # import to avoid further corruption.
-            for diag in err.diagnostics:
+            for diag in err.diagnostics:  # pragma: no cover
+                # Defensive: every mapping helper is sink-aware post
+                # C-E, so this loop is dead under normal flow. Kept as
+                # a belt-and-braces forward path.
                 sink.emit(diag)
-            continue
+            continue  # pragma: no cover
         # I1 (PR #116 re-review): the structural safety net previously
         # caught AttributeError/KeyError/TypeError/IndexError to absorb
         # follow-up exceptions from helpers that had emitted a
@@ -460,7 +465,12 @@ def _load_imported_program(
         )
         return None
 
-    if program.root_state is None:
+    if program.root_state is None:  # pragma: no cover
+        # Defensive: the grammar entry ``state_machine_dsl`` requires
+        # at least one ``state X { ... }`` block, so any file that
+        # parses successfully has a non-None root_state. A future
+        # parser change that relaxes this would surface here cleanly
+        # instead of crashing the merger.
         _emit_import_diag(
             sink,
             'E_IMPORT_NOT_FOUND',
@@ -622,7 +632,12 @@ def _resolve_import_event_target_path(
     # real event, so downstream consumers can detect-and-skip without
     # confusing it with valid state machine data.
     if target_event.is_absolute:
-        if len(target_event.path) < 1:
+        if len(target_event.path) < 1:  # pragma: no cover
+            # Defensive: the ``event_path`` grammar production
+            # requires at least one identifier, so ``ChainID.path``
+            # is never empty on a parsed AST. Emit the schema
+            # diagnostic and return a sentinel for future stub-driven
+            # callers.
             _emit_import_diag(sink,
                 'E_IMPORT_MAPPING_INVALID',
                 "Invalid empty absolute target event path.",
@@ -640,7 +655,9 @@ def _resolve_import_event_target_path(
             tuple(target_event.path),
         )
     else:
-        if len(target_event.path) < 1:
+        if len(target_event.path) < 1:  # pragma: no cover
+            # Same reason as the absolute branch above — grammar never
+            # produces an empty ``event_path``.
             _emit_import_diag(sink,
                 'E_IMPORT_MAPPING_INVALID',
                 "Invalid empty relative target event path.",
@@ -916,7 +933,12 @@ def _ensure_state_path_exists(
     # I1 explicit fallback (PR #116 re-review): emit-then-return early
     # on empty path instead of fall-throughing into ``state_path[0]``
     # IndexError that the outer safety net would have to swallow.
-    if not state_path:
+    if not state_path:  # pragma: no cover
+        # Defensive: ``state_path`` flows from
+        # ``_resolve_import_event_target_path`` which itself rejects
+        # empty event paths (the sentinel returned above is the empty
+        # tuple — but callers also short-circuit on that sentinel,
+        # so this branch is unreachable in the post-C-E pipeline).
         _emit_import_diag(
             sink,
             'E_IMPORT_MAPPING_INVALID',

@@ -121,7 +121,15 @@ function uriToFilePath(uri: string): string | undefined {
 
     try {
         return fileURLToPath(uri);
-    } catch {
+    } catch (err) {
+        // Node's fileURLToPath throws TypeError (subclass: ERR_INVALID_URL_SCHEME,
+        // ERR_INVALID_FILE_URL_HOST, ERR_INVALID_FILE_URL_PATH) for any URI
+        // that fails the file:// validation rules. Treat those as "uri is
+        // not a usable filesystem path" and return undefined; anything
+        // outside that class is a programmer bug and must surface.
+        if (!(err instanceof TypeError)) {
+            throw err;
+        }
         return undefined;
     }
 }

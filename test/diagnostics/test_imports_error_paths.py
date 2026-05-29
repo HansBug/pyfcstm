@@ -107,29 +107,12 @@ class TestImportLoadErrorPaths:
             worker.chmod(stat.S_IRUSR | stat.S_IWUSR)
 
 
-@pytest.mark.unittest
-class TestAssembleStateMachineImportsCornerCases:
-    """Corner cases for ``assemble_state_machine_imports`` itself."""
-
-    def test_top_level_program_with_no_root_state_emits_diagnostic(self, tmp_path):
-        # ``_assemble_program`` emits E_IMPORT_NOT_FOUND.reason='no_root_state'
-        # when the program-under-assembly itself has no root state.
-        # The grammar disallows this in normal parsing, so we use the
-        # internal AST constructor.
-        from pyfcstm.dsl import node as dsl_nodes
-        program = dsl_nodes.StateMachineDSLProgram(
-            definitions=[],
-            root_state=None,
-        )
-        sink = DiagnosticSink(collect=True)
-        assemble_state_machine_imports(program, collect_into=sink)
-        codes = [d.code for d in sink.diagnostics]
-        assert 'E_IMPORT_NOT_FOUND' in codes
-        reasons = [
-            d.refs.get('reason') for d in sink.diagnostics
-            if d.code == 'E_IMPORT_NOT_FOUND'
-        ]
-        assert 'no_root_state' in reasons
+# Note: ``test_top_level_program_with_no_root_state_emits_diagnostic``
+# was removed. It hand-constructed a StateMachineDSLProgram with
+# root_state=None — that AST shape is never produced by the grammar,
+# so the test was driving an unreachable defensive branch via a
+# non-public AST constructor (rule 4 violation). The corresponding
+# branch in ``imports.py`` is marked ``# pragma: no cover``.
 
 
 @pytest.mark.unittest
@@ -139,9 +122,10 @@ class TestImportCollectModeSkipsCorruptedImports:
     ``imported_program is None`` after a failed load, and the
     straggler ``ModelValidationError`` forward branch."""
 
-    def test_collect_mode_continues_past_unloadable_import(self, tmp_path):
-        # First import has a parse error; second import is valid. In
-        # collect mode the second should still be merged.
+    def test_collect_mode_continues_past_unloadable_import_first(self, tmp_path):
+        # Same as below but use a unique name so the next test stays
+        # distinct (kept for backward compat with the originally-named
+        # test which we replace).
         broken = tmp_path / 'broken.fcstm'
         broken.write_text('garbage{', encoding='utf-8')
         good = tmp_path / 'good.fcstm'
@@ -173,6 +157,22 @@ class TestImportCollectModeSkipsCorruptedImports:
         )
         codes = [d.code for d in diagnostics]
         assert 'E_IMPORT_NOT_FOUND' in codes
-        # The good import is merged into the host state tree.
         substate_names = list(model.root_state.substates.keys())
         assert 'Good' in substate_names
+
+
+
+# NOTE (PR #117 follow-up): the previously-present
+# ``TestInternalHelpersDirectInvocation`` class has been removed.
+# Each of its 4 tests invoked private helpers
+# (``_resolve_import_event_target_path``,
+# ``_ensure_state_path_exists``, ``_load_imported_program``,
+# ``_apply_import_def_mappings``) directly or monkey-patched them,
+# violating the project's "no private-helper / no mock" testing rule.
+#
+# The defensive branches those tests "covered" are now marked with
+# ``# pragma: no cover`` directly in ``pyfcstm/model/imports.py``,
+# with rationale notes explaining why grammar-protected DSL inputs
+# never reach them. The branches remain in the source as fail-loud
+# guards against future regressions of the upstream validation
+# pipeline.

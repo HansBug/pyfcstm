@@ -56,16 +56,24 @@ def _add_simulate_subcommand(cli: click.Group) -> click.Group:
         """
         # Import here to avoid circular dependencies
         from ...dsl import parse_with_grammar_entry
+        from ...dsl.error import GrammarParseError
         from ...model import parse_dsl_node_to_state_machine
         from ...simulate import SimulationRuntime
         from ...utils import auto_decode
+        from ...utils.validate import ModelValidationError
 
         # Parse DSL file
         try:
             code = auto_decode(Path(input_code_file).read_bytes())
             ast_node = parse_with_grammar_entry(code, entry_name='state_machine_dsl')
             model = parse_dsl_node_to_state_machine(ast_node, path=input_code_file)
-        except Exception as e:
+        except (OSError, GrammarParseError, ModelValidationError, UnicodeDecodeError) as e:
+            # OSError: input file missing / unreadable (Path.read_bytes).
+            # GrammarParseError: DSL syntax issues from ANTLR.
+            # ModelValidationError: semantic checks during AST -> model.
+            # UnicodeDecodeError: auto_decode could not pick a working codec.
+            # Programmer bugs (TypeError, AttributeError, KeyError, ...) and
+            # unrelated runtime errors deliberately propagate.
             click.echo(f"Failed to parse DSL file: {e}", err=True)
             return
 

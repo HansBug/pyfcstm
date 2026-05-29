@@ -39,6 +39,56 @@ _PLANTUML_HOST_ENV = 'PLANTUML_HOST'
 _OFFICIAL_PLANTUML_HOST = 'http://www.plantuml.com/plantuml'
 
 
+def _plantumlcli_runtime_errors() -> tuple:
+    """
+    Build the tuple of exception classes that ``plantumlcli`` realistically
+    raises during ``check()`` / ``dump()`` calls.
+
+    Listed classes and why they can fire:
+
+    * ``CommandLineExecuteError`` -- raised by ``plantumlcli.models.local``
+      when the bundled ``java -jar plantuml.jar`` invocation fails (non-zero
+      exit, bad jar, missing class). It subclasses ``Exception`` directly.
+    * ``ValueError`` -- ``plantumlcli`` raises this for input validation
+      (missing java path, malformed host URL, unsupported resource type).
+    * ``FileNotFoundError`` / ``IsADirectoryError`` / ``PermissionError`` --
+      raised when the java executable or plantuml jar path is wrong.
+    * ``OSError`` -- general filesystem / subprocess errors during local
+      rendering. (``FileNotFoundError`` etc. subclass it but we list it
+      explicitly to also catch lower-level subprocess failures.)
+    * ``requests.exceptions.RequestException`` -- raised by the remote
+      backend when the HTTP request to the PlantUML server fails (network
+      down, DNS failure, timeout, 5xx). Lazily imported so the dependency
+      stays optional in environments that only use the local backend.
+
+    Unexpected classes (``TypeError`` / ``AttributeError`` / ``KeyError`` /
+    ``ImportError``) are deliberately *not* swallowed -- they indicate a
+    programmer bug in this module or in ``plantumlcli`` itself and must
+    surface, not be reformatted into a user-facing ``ClickErrorException``.
+    """
+    classes = [OSError, ValueError]
+    try:
+        from plantumlcli.utils.execute import CommandLineExecuteError
+    except ImportError:  # pragma: no cover - plantumlcli ships this since 0.0.1; defensive only.
+        # The only reason this import would fail is a corrupted plantumlcli
+        # install. The outer load_plantumlcli_classes() barrier would already
+        # have surfaced the problem before we got here.
+        pass
+    else:
+        classes.append(CommandLineExecuteError)
+    try:
+        import requests.exceptions as _rex
+    except ImportError:  # pragma: no cover - requests is a hard dep of plantumlcli.
+        # plantumlcli pins ``requests``; this branch is purely belt-and-braces.
+        pass
+    else:
+        classes.append(_rex.RequestException)
+    return tuple(classes)
+
+
+_PLANTUMLCLI_RUNTIME_ERRORS = _plantumlcli_runtime_errors()
+
+
 def _env_flag(name: str) -> bool:
     """
     Check whether an environment variable is set to a truthy value.
@@ -66,9 +116,14 @@ def get_visualize_cache_dir() -> pathlib.Path:
     :rtype: pathlib.Path
     """
     home = pathlib.Path.home()
-    if sys.platform == 'win32':
+    if sys.platform == 'win32':  # pragma: no cover -- exercised on the Windows CI runner only.
+        # Windows uses %LOCALAPPDATA% so the cache survives roaming-profile
+        # syncs. Falls back to the documented default when the env var is
+        # unset (locked-down user profiles).
         base_dir = pathlib.Path(os.environ.get('LOCALAPPDATA') or (home / 'AppData' / 'Local'))
-    elif sys.platform == 'darwin':
+    elif sys.platform == 'darwin':  # pragma: no cover -- exercised on the macOS CI runner only.
+        # macOS convention; ~/Library/Caches is the documented per-user
+        # cache root.
         base_dir = home / 'Library' / 'Caches'
     else:
         base_dir = pathlib.Path(os.environ.get('XDG_CACHE_HOME') or (home / '.cache'))
@@ -260,7 +315,8 @@ def resolve_renderer_backend(
         try:
             backend = create_local_plantuml_backend(java=java, plantuml_jar=plantuml_jar)
             backend.check()
-        except Exception as err:
+        except _PLANTUMLCLI_RUNTIME_ERRORS as err:
+            # See _plantumlcli_runtime_errors() for the documented class set.
             raise ClickErrorException(f'Local PlantUML renderer is unavailable: {_format_exception_message(err)}')
         return 'local', backend
 
@@ -268,18 +324,21 @@ def resolve_renderer_backend(
         try:
             backend = create_remote_plantuml_backend(remote_host=remote_host)
             backend.check()
-        except Exception as err:
+        except _PLANTUMLCLI_RUNTIME_ERRORS as err:
+            # See _plantumlcli_runtime_errors() for the documented class set.
             raise ClickErrorException(f'Remote PlantUML renderer is unavailable: {_format_exception_message(err)}')
         return 'remote', backend
 
     try:
         backend = create_local_plantuml_backend(java=java, plantuml_jar=plantuml_jar)
         backend.check()
-    except Exception as local_err:
+    except _PLANTUMLCLI_RUNTIME_ERRORS as local_err:
+        # See _plantumlcli_runtime_errors() for the documented class set.
         try:
             backend = create_remote_plantuml_backend(remote_host=remote_host)
             backend.check()
-        except Exception as remote_err:
+        except _PLANTUMLCLI_RUNTIME_ERRORS as remote_err:
+            # See _plantumlcli_runtime_errors() for the documented class set.
             raise ClickErrorException(
                 'No usable PlantUML renderer found. '
                 f'Local failed: {_format_exception_message(local_err)}. '
@@ -331,7 +390,8 @@ def render_plantuml_diagram(
 
     try:
         backend.dump(str(output_file), render_type, plantuml_output)
-    except Exception as err:
+    except _PLANTUMLCLI_RUNTIME_ERRORS as err:
+        # See _plantumlcli_runtime_errors() for the documented class set.
         raise ClickErrorException(
             f'Failed to render diagram with plantumlcli ({effective_renderer}): {_format_exception_message(err)}'
         )
@@ -377,10 +437,13 @@ def open_diagram_with_default_app(file_path: pathlib.Path) -> Tuple[bool, str]:
         return False, reason or 'GUI display is not available.'
 
     try:
-        if sys.platform == 'win32':
+        if sys.platform == 'win32':  # pragma: no cover -- exercised on Windows CI only.
+            # ``os.startfile`` is Windows-only; the type-ignore is intentional.
             os.startfile(str(file_path))  # type: ignore[attr-defined]
             return True, ''
-        if sys.platform == 'darwin':
+        if sys.platform == 'darwin':  # pragma: no cover -- exercised on macOS CI only.
+            # macOS uses the ``open`` CLI to dispatch to the registered
+            # viewer for the file extension.
             subprocess.Popen(
                 ['open', str(file_path)],
                 stdout=subprocess.DEVNULL,

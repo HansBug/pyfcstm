@@ -300,8 +300,15 @@ def _decode_string(s: str) -> str:
     try:
         # Use Python's built-in codec to decode escape sequences
         return codecs.decode(s, 'unicode_escape')
-    except Exception:
-        # If decoding fails, return as-is
+    except (UnicodeDecodeError, ValueError):
+        # UnicodeDecodeError: codecs.decode raises this for malformed escape
+        #   bytes (e.g. truncated ``\xZ`` or invalid UTF-8 after decoding).
+        # ValueError: raised for malformed ``\N{...}`` named escapes and
+        #   other codec-level violations.
+        # Both indicate user-authored escape strings that can't be decoded
+        # — degrade gracefully by returning the original text. Anything
+        # outside this set (TypeError on a non-str, AttributeError, etc.)
+        # is a programmer bug and must surface.
         return s
 
 

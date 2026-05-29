@@ -263,12 +263,12 @@
             {
               "type": "object",
               "additionalProperties": false,
-              "required": ["start_line", "start_col", "end_line", "end_col"],
+              "required": ["line", "column", "end_line", "end_column"],
               "properties": {
-                "start_line": { "type": "integer", "minimum": 1 },
-                "start_col": { "type": "integer", "minimum": 0 },
-                "end_line": { "type": "integer", "minimum": 1 },
-                "end_col": { "type": "integer", "minimum": 0 }
+                "line": { "type": "integer", "minimum": 1 },
+                "column": { "type": "integer", "minimum": 1 },
+                "end_line": { "anyOf": [{ "type": "integer", "minimum": 1 }, { "type": "null" }] },
+                "end_column": { "anyOf": [{ "type": "integer", "minimum": 1 }, { "type": "null" }] }
               }
             }
           ]

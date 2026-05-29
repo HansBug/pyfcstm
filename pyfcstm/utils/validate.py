@@ -42,7 +42,9 @@ from typing import Any, Callable, Dict, List, Optional
 
 try:
     from typing import Literal
-except ImportError:  # Python < 3.8
+except ImportError:  # pragma: no cover
+    # Python < 3.8 fallback. The CI matrix on Python >= 3.8 never
+    # executes this branch.
     from typing_extensions import Literal
 
 from hbutils.string import plural_word

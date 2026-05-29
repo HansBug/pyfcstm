@@ -3,6 +3,23 @@ const antlr4 = require('antlr4') as {
     CommonTokenStream: new (lexer: unknown) => unknown;
 };
 
+// Documented expected throw classes from antlr4 runtime when parse() or
+// nextToken() blows up on malformed input:
+//   * RecognitionException (antlr4's own error base) and its subclasses
+//     LexerNoViableAltException, NoViableAltException,
+//     InputMismatchException, FailedPredicateException,
+//     ParseCancellationException.
+//   * RangeError / TypeError raised by antlr4 internals when decision-DFA
+//     state lookups touch undefined entries (this happens on malformed
+//     input where the lexer fails before the parser context is ready).
+//
+// All of those subclass ``Error``. The only thing we still re-raise are
+// non-Error throws (raw strings, numbers) which can only happen if a
+// caller misuses the parser API and indicates a programmer bug.
+function isExpectedAntlrError(err: unknown): boolean {
+    return err instanceof Error;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const GrammarLexer = require('./grammar/GrammarLexer').default;
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -234,6 +251,9 @@ export class FcstmParser {
                 errors,
             };
         } catch (error) {
+            if (!isExpectedAntlrError(error)) {
+                throw error;
+            }
             return {
                 success: false,
                 errors: [{
@@ -266,7 +286,10 @@ export class FcstmParser {
             parser.addErrorListener(errorListener);
 
             return parser.state_machine_dsl();
-        } catch {
+        } catch (error) {
+            if (!isExpectedAntlrError(error)) {
+                throw error;
+            }
             return null;
         }
     }
@@ -295,7 +318,10 @@ export class FcstmParser {
             }
 
             return tokens;
-        } catch {
+        } catch (error) {
+            if (!isExpectedAntlrError(error)) {
+                throw error;
+            }
             return [];
         }
     }

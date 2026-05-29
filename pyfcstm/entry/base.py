@@ -191,10 +191,21 @@ def command_wrap() -> Callable[[Callable[P, R]], Callable[P, R]]:
             try:
                 return func(*args, **kwargs)
             except ClickException:
+                # Click's own user-facing errors already format themselves.
                 raise
             except KeyboardInterrupt:
+                # Translate Ctrl-C into our own typed sentinel so caller code
+                # can pattern-match on it.
                 raise KeyboardInterrupted
             except BaseException as err:
+                # Top-of-stack CLI barrier: format *any* remaining failure
+                # (``Exception`` subclasses AND ``SystemExit``-style escapes
+                # that aren't ``KeyboardInterrupt``) into a friendly red
+                # message and exit non-zero. This is the only place in the
+                # codebase where ``BaseException`` is acceptable — it is the
+                # last-resort process boundary for the ``pyfcstm`` console
+                # script. The full traceback is still printed via
+                # ``print_exception`` so the underlying bug stays diagnosable.
                 click.secho('Unexpected error found when running pyfcstm!', fg='red', file=sys.stderr)
                 print_exception(err, partial(click.secho, fg='red', file=sys.stderr))
                 click.get_current_context().exit(1)

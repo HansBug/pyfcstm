@@ -21,7 +21,15 @@ def create_cross_platform_output_func() -> Callable[[str], None]:
     :return: Output function that takes a string and prints it
     :rtype: Callable[[str], None]
     """
-    if sys.platform == 'win32':
+    if sys.platform == 'win32':  # pragma: no cover -- Windows CI runner only.
+        # On Windows the default ``print()`` path goes through the
+        # locale codepage (cp1252) which mangles non-ASCII characters
+        # produced by REPL display widgets. We bypass it by writing
+        # UTF-8 bytes straight to the binary stdout buffer. The inner
+        # try/except is the documented fall-back for environments
+        # where stdout has no ``buffer`` attribute or refuses the
+        # encode (UnicodeEncodeError); both are platform-specific and
+        # cannot be exercised from a Linux CI host.
         def windows_output(text: str) -> None:
             """Output function for Windows with UTF-8 encoding."""
             try:

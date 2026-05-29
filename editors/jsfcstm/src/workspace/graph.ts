@@ -15,7 +15,10 @@ import {
     type FcstmSemanticImport,
 } from '../semantics';
 import {getDocumentFilePath, TextDocumentLike} from '../utils/text';
-import {buildStateMachineModelFromWorkspaceSnapshot} from './model-assembly';
+import {
+    buildStateMachineModelFromWorkspaceSnapshot,
+    ModelAssemblyError,
+} from './model-assembly';
 
 export interface FcstmWorkspaceOverlay {
     filePath: string;
@@ -331,7 +334,17 @@ export class FcstmWorkspaceGraph {
                     },
                     filePath
                 ) || buildStateMachineModel(node.semantic || node.ast);
-            } catch {
+            } catch (err) {
+                // Only ModelAssemblyError (an expected validation failure
+                // inside the workspace-aware assembler — e.g. unknown
+                // import-def selector kind, malformed event path) falls
+                // back to the simpler single-document assembler. Genuine
+                // programmer bugs (TypeError, ReferenceError, RangeError,
+                // ...) must propagate so they surface in tests instead of
+                // being silently absorbed.
+                if (!(err instanceof ModelAssemblyError)) {
+                    throw err;
+                }
                 node.model = buildStateMachineModel(node.semantic || node.ast);
             }
         }

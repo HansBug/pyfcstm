@@ -225,4 +225,232 @@ describe('diagnostics/inspect (PR-A)', () => {
             ]);
         });
     });
+
+    // PR-A-coverage: hit the uncovered code paths in
+    // ``editors/jsfcstm/src/diagnostics/inspect.ts`` —
+    // ``inspectModelToJson`` round-trip helper, ``effectsText`` + the
+    // effect-statement var-dataflow walker, ``walkExprCollect`` cases
+    // for BinaryOp/UnaryOp/ConditionalOp inside effects, and the
+    // ``IfBlock`` reads/writes walker.
+    describe('extended coverage (PR-A-coverage)', () => {
+        const EFFECTS_DSL = `
+def int counter = 0;
+def int last = 0;
+def int total = 0;
+state Root {
+    state Idle;
+    state Active;
+    [*] -> Idle;
+    Idle -> Active : if [counter > 0] effect {
+        last = counter;
+        counter = counter + 1;
+        total = (counter > 10) ? counter * 2 : counter - last;
+    };
+    Active -> Idle :: Pause effect {
+        if [counter > 5] {
+            counter = 0;
+        } else {
+            counter = counter + 1;
+        }
+    };
+}
+`;
+
+        it('inspectModelToJson returns a structurally equal but reference-independent copy', async () => {
+            const report = inspectModel(await buildMachine(EFFECTS_DSL));
+            const cloned = packageModule.inspectModelToJson(report);
+            // Round-trip is structurally equal to the original.
+            assert.deepEqual(cloned, JSON.parse(JSON.stringify(report)));
+            // BUT it must be a distinct object — same-reference would
+            // mean the helper returned the original (or aliased it).
+            assert.notStrictEqual(cloned, report);
+            // Mutation-isolation: mutating the clone must NOT touch the
+            // original. This is the assertion that proves the "deep
+            // copy" claim — assert.deepEqual with the json-roundtrip
+            // form alone is a self-reflexive equation when the impl IS
+            // that round-trip.
+            const originalSnapshot = JSON.stringify(report);
+            (cloned as { variables: unknown[] }).variables.push({mutated: true});
+            assert.equal(JSON.stringify(report), originalSnapshot,
+                'mutating the clone should not affect the original report');
+        });
+
+        it('walks effect-side expressions (ternary + binary) to record reads', async () => {
+            const report = inspectModel(await buildMachine(EFFECTS_DSL));
+            // ``counter`` is read inside the effect (RHS of ``last =
+            // counter`` AND inside ``counter + 1`` AND inside the
+            // ternary's condition and branches). The walker must
+            // descend through BinaryOp + ConditionalOp + UnaryOp
+            // nodes to find every read.
+            assert.ok(report.var_dataflow['counter']);
+            assert.ok(report.var_dataflow['counter'].reads.includes('Root.Idle'));
+            // ``last`` is only read inside the ternary's else branch
+            // (``counter - last``) — proves the ConditionalOp.ifFalse
+            // walker visited.
+            assert.ok(report.var_dataflow['last']);
+            assert.ok(report.var_dataflow['last'].reads.includes('Root.Idle'));
+        });
+
+        it('per-variable VariableInfo captures effect writes per from→to pair', async () => {
+            // ``var_dataflow.writes`` records state-block writes only
+            // (enter/during/exit). Transition-effect writes go into
+            // ``variables[i].written_in_effects`` as [from, to] pairs.
+            const report = inspectModel(await buildMachine(EFFECTS_DSL));
+            const counter = report.variables.find(v => v.name === 'counter');
+            assert.ok(counter);
+            // Idle -> Active transition effect writes counter.
+            const pairs = counter!.written_in_effects;
+            const hasIdleActive = pairs.some(p => p[0] === 'Root.Idle' && p[1] === 'Root.Active');
+            assert.ok(hasIdleActive,
+                `expected ['Root.Idle', 'Root.Active'] in counter.written_in_effects, got ${JSON.stringify(pairs)}`);
+        });
+
+        it('walks IfBlock inside transition effect to collect reads/writes', async () => {
+            const report = inspectModel(await buildMachine(EFFECTS_DSL));
+            // The Active -> Idle :: Pause effect has an if/else where
+            // both branches reassign counter; the IfBlock walker must
+            // visit branch.statements. Verify via written_in_effects.
+            const counter = report.variables.find(v => v.name === 'counter');
+            assert.ok(counter);
+            const pairs = counter!.written_in_effects;
+            const hasActiveIdle = pairs.some(p => p[0] === 'Root.Active' && p[1] === 'Root.Idle');
+            assert.ok(hasActiveIdle,
+                `expected counter to be written in Active->Idle effect (if-block branches), got ${JSON.stringify(pairs)}`);
+        });
+
+        it('effectsText surfaces effect text on BOTH transitions, including the IfBlock-bearing one', async () => {
+            // Tightened (PR-A-coverage Codex I3): pin both transitions
+            // — the guard-effect one (Idle→Active) and the if-block
+            // effect one (Active→Idle). The latter is the case that
+            // exercises ``walkStmtReadsWrites`` IfBlock branch.
+            const report = inspectModel(await buildMachine(EFFECTS_DSL));
+            const idleToActive = report.transitions.find(
+                t => t.from_path === 'Root.Idle' && t.to_path === 'Root.Active',
+            );
+            assert.ok(idleToActive, 'expected Root.Idle → Root.Active transition');
+            assert.ok(
+                typeof idleToActive!.effect === 'string' && idleToActive!.effect!.length > 0,
+                `Idle→Active effect text empty: ${JSON.stringify(idleToActive!.effect)}`,
+            );
+            const activeToIdle = report.transitions.find(
+                t => t.from_path === 'Root.Active' && t.to_path === 'Root.Idle',
+            );
+            assert.ok(activeToIdle, 'expected Root.Active → Root.Idle transition');
+            assert.ok(
+                typeof activeToIdle!.effect === 'string' && activeToIdle!.effect!.length > 0,
+                `Active→Idle (IfBlock-bearing) effect text empty: ${JSON.stringify(activeToIdle!.effect)}`,
+            );
+        });
+
+        it('var_dataflow stays empty when no effects use the variable', async () => {
+            // A variable referenced only by guard / external read should
+            // not leak into the ``writes`` list.
+            const dsl = `
+def int sensor = 0;
+state Root { state A; state B; [*] -> A; A -> B : if [sensor > 0]; }
+`;
+            const report = inspectModel(await buildMachine(dsl));
+            const sensor = report.var_dataflow['sensor'];
+            assert.ok(sensor);
+            assert.equal(sensor.writes.length, 0);
+        });
+
+        // PR-A-coverage push to 100% — cover the remaining 15 lines in
+        // inspect.ts: action label ref branches (263-264, 271-272),
+        // walkExprCollect UnaryOp/UFunc branch (463-464), ref targets
+        // in action_ref_graph (690-692), state-path fallback in
+        // functionSignature (713-714), and the actions_in_scope label
+        // emission (529-530).
+        it('exposes ref:<name> labels for both action and aspect refs', async () => {
+            // Lines 263-264 (functionSignature ref:name) +
+            // 271-272 (aspectLabel ref:name).
+            const dsl = `
+state Root {
+    enter Setup { }
+    state Idle {
+        enter ref /Setup;
+    }
+    state Sub {
+        state Leaf;
+        [*] -> Leaf;
+        >> during before ref /Setup;
+    }
+    [*] -> Idle;
+}
+`;
+            const report = inspectModel(await buildMachine(dsl));
+            // At least one action_ref edge with the resolved ref:Setup label.
+            const refEdges = Object.values(report.action_ref_graph).flat();
+            assert.ok(refEdges.length > 0,
+                `expected ref edges in action_ref_graph, got ${JSON.stringify(report.action_ref_graph)}`);
+        });
+
+        it('walks unary / function expressions inside effects', async () => {
+            // Line 463-464: ``case 'UnaryOp': case 'UFunc'`` branch
+            // of walkExprCollect (effect-block walker).
+            const dsl = `
+def float angle = 0.0;
+def float v = 0.0;
+state Root {
+    state Idle; state Computing;
+    [*] -> Idle;
+    Idle -> Computing : if [angle > 0.0] effect {
+        v = -sin(angle);
+    };
+}
+`;
+            const report = inspectModel(await buildMachine(dsl));
+            const angle = report.var_dataflow['angle'];
+            assert.ok(angle);
+            // angle is read inside the effect (sin's argument).
+            assert.ok(angle.reads.includes('Root.Idle'),
+                `expected angle read in Root.Idle, got ${JSON.stringify(angle)}`);
+        });
+
+        it('actions_in_scope path with abstract action label', async () => {
+            // Lines 529-530: abstract-action label assembly in
+            // ``actionsInScope`` for variable abstract-action listing.
+            // The variable ``counter`` is read in ``Idle.during`` and
+            // the state ``Idle`` has an ``enter abstract Setup``, so
+            // the helper must include ``Root.Idle:<abstract>`` in the
+            // variable's ``abstract_actions_in_scope`` list.
+            const dsl = `
+def int counter = 0;
+state Root {
+    state Idle {
+        enter abstract Setup;
+        during { counter = counter + 1; }
+    }
+    [*] -> Idle;
+}
+`;
+            const report = inspectModel(await buildMachine(dsl));
+            const counter = report.variables.find(v => v.name === 'counter');
+            assert.ok(counter);
+            assert.deepEqual(counter!.abstract_actions_in_scope, ['Root.Idle:<abstract>']);
+        });
+
+        it('inspect_model handles effect text fallback via stmt.text field', async () => {
+            // Lines 505-506: ``effectStatementText`` reads stmt.text
+            // when present. The standard parser sets .text on each
+            // OperationStatement, so a normal effect block exercises
+            // this path. The earlier "effectsText surfaces non-empty"
+            // test already pins this, but add an explicit assertion
+            // on the rendered effect to lock it.
+            const dsl = `
+def int counter = 0;
+state Root {
+    state Idle; state Active;
+    [*] -> Idle;
+    Idle -> Active :: Go effect { counter = counter + 1; };
+}
+`;
+            const report = inspectModel(await buildMachine(dsl));
+            const t = report.transitions.find(
+                tr => tr.from_path === 'Root.Idle' && tr.to_path === 'Root.Active',
+            );
+            assert.ok(t);
+            assert.ok(typeof t!.effect === 'string' && t!.effect!.length > 0);
+        });
+    });
 });

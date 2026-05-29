@@ -94,7 +94,7 @@ Abstract handler registration::
 import copy
 import warnings
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 try:
     from typing import Literal
@@ -102,6 +102,7 @@ except ImportError:
     from typing_extensions import Literal
 
 from ..utils.logging import get_logger
+from ..utils.validate import ModelLookupError, ModelValueError
 
 from ..dsl import EXIT_STATE
 from ..model import Event, IfBlock, OnAspect, OnStage, Operation, OperationStatement, State, StateMachine, Transition
@@ -164,6 +165,26 @@ class SimulationRuntimeDfsError(RuntimeError):
     """
 
     pass
+
+
+class SimulationRuntimeEventError(ValueError):
+    """
+    Raised when a user-supplied cycle event cannot be resolved.
+
+    This exception is intentionally narrower than ``LookupError`` so CLI
+    callers can report invalid event input without also swallowing internal
+    ``KeyError`` / ``IndexError`` defects from runtime or model state.
+    """
+
+
+class SimulationRuntimeExpressionError(ValueError, ArithmeticError):
+    """
+    Raised when a DSL guard or action expression fails during execution.
+
+    The class keeps legacy ``ValueError`` / ``ArithmeticError`` catch
+    compatibility while giving command-line callers a precise exception to
+    handle without swallowing abstract-handler or internal runtime defects.
+    """
 
 
 @dataclass
@@ -715,7 +736,8 @@ class SimulationRuntime:
         :return: The resolved event instance.
         :rtype: Event
         :raises TypeError: If ``event`` is neither a string nor an :class:`Event`.
-        :raises LookupError: If the event path cannot be resolved by either method.
+        :raises SimulationRuntimeEventError: If the user-supplied event path
+            cannot be resolved by any supported method.
 
         Example::
 
@@ -770,25 +792,39 @@ class SimulationRuntime:
 
             # If runtime has ended, only use StateMachine.resolve_event
             if not has_current_state:
-                return self.state_machine.resolve_event(event)
+                try:
+                    return self.state_machine.resolve_event(event)
+                except (ModelValueError, ModelLookupError) as e:
+                    # ModelValueError/ModelLookupError: the user-supplied event
+                    # path is malformed or does not exist in the current model.
+                    raise SimulationRuntimeEventError(str(e)) from e
 
             # Check if path is definitely State.resolve_event syntax
             is_definitely_state_path = is_state_resolve_event_path(event)
 
             if is_definitely_state_path:
                 # Use State.resolve_event from current state
-                return self.current_state.resolve_event(event)
+                try:
+                    return self.current_state.resolve_event(event)
+                except (ModelValueError, ModelLookupError) as e:
+                    # ModelValueError/ModelLookupError: the user-supplied event
+                    # path is malformed or does not exist in the current state.
+                    raise SimulationRuntimeEventError(str(e)) from e
             else:
                 # Uncertain path - try StateMachine first, then State
                 try:
                     return self.state_machine.resolve_event(event)
-                except (ValueError, LookupError):
+                except (ModelValueError, ModelLookupError):
+                    # ModelValueError/ModelLookupError: the path was not valid
+                    # as a full event path, so try resolving from current state.
                     # Fall back to State.resolve_event
                     try:
                         return self.current_state.resolve_event(event)
-                    except (ValueError, LookupError) as e:
+                    except (ModelValueError, ModelLookupError) as e:
+                        # ModelValueError/ModelLookupError: the same
+                        # user-supplied path also failed state-relative lookup.
                         # Both methods failed - raise informative error
-                        raise LookupError(
+                        raise SimulationRuntimeEventError(
                             f"Cannot resolve event path {event!r}: "
                             f"failed with both StateMachine.resolve_event and State.resolve_event. "
                             f"Last error: {e}"
@@ -852,6 +888,12 @@ class SimulationRuntime:
         :type is_validation_mode: bool
         :return: ``None``.
         :rtype: None
+        :raises SimulationRuntimeEventError: If a user-supplied event path
+            cannot be resolved.
+        :raises SimulationRuntimeExpressionError: If a DSL guard or action
+            expression fails during numeric evaluation.
+        :raises SimulationRuntimeDfsError: If speculative validation exceeds
+            safety limits.
         """
         if not transition.effects:
             return
@@ -970,12 +1012,20 @@ class SimulationRuntime:
         :raises TypeError: If the statement type is unsupported.
         """
         if isinstance(statement, Operation):
-            scope[statement.var_name] = statement.expr(**scope)
+            scope[statement.var_name] = self._evaluate_runtime_expr(
+                statement.expr,
+                scope,
+                usage=f"operation assignment to '{statement.var_name}'",
+            )
             return
 
         if isinstance(statement, IfBlock):
             for branch in statement.branches:
-                if branch.condition is not None and not bool(branch.condition(**scope)):
+                if branch.condition is not None and not bool(self._evaluate_runtime_expr(
+                        branch.condition,
+                        scope,
+                        usage='if-block condition',
+                )):
                     continue
 
                 visible_names = tuple(scope.keys())
@@ -991,6 +1041,32 @@ class SimulationRuntime:
             return
 
         raise TypeError(f'Unknown operation statement type {type(statement)!r}.')
+
+    @staticmethod
+    def _evaluate_runtime_expr(
+            expr,
+            scope: Dict[str, Union[int, float]],
+            *,
+            usage: str,
+    ) -> Any:
+        """
+        Evaluate a DSL expression and normalize numeric user-data failures.
+
+        :param expr: Expression object to evaluate.
+        :param scope: Variable scope passed into the expression.
+        :param usage: Human-readable expression usage for diagnostics.
+        :return: Expression result.
+        """
+        try:
+            return expr(**scope)
+        except (ValueError, ArithmeticError) as e:
+            # ValueError: math domain errors or invalid numeric operations
+            # raised while evaluating the user's DSL expression.
+            # ArithmeticError: division by zero, overflow, or other numeric
+            # runtime failure while evaluating the user's DSL expression.
+            raise SimulationRuntimeExpressionError(
+                f"{usage} evaluation failed: {e}"
+            ) from e
 
     def _format_var_changes(
             self,
@@ -1117,6 +1193,17 @@ class SimulationRuntime:
                     self.logger.debug(f'Executing handler {idx + 1}/{len(handlers)} for {func_path}')
                     handler(ctx)
                 except Exception as e:
+                    # Broad catch by design: ``handler`` is user-registered
+                    # abstract action code, so any ``Exception`` subclass it
+                    # raises is part of the documented contract surface.
+                    # Both branches below are observable:
+                    #   * ``raise`` mode re-raises the original exception
+                    #     (the runtime sets error state so callers can
+                    #     inspect ``_error_info``).
+                    #   * ``log`` mode records ``(func_path, e)`` in
+                    #     ``_abstract_handler_errors`` and logs the failure.
+                    # ``BaseException`` (KeyboardInterrupt, SystemExit) is
+                    # intentionally *not* caught.
                     if self._abstract_error_mode == 'raise':
                         # Raise mode: set error state and re-raise
                         self._is_error_state = True
@@ -1173,7 +1260,11 @@ class SimulationRuntime:
         """
         if transition.guard is None:
             return True
-        return bool(transition.guard(**vars_))
+        return bool(self._evaluate_runtime_expr(
+            transition.guard,
+            vars_,
+            usage='transition guard',
+        ))
 
     def _transition_is_enabled(
             self,

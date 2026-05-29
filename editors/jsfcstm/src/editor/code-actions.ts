@@ -1,6 +1,6 @@
 import {pathToFileURL} from 'node:url';
 
-import type {FcstmSemanticDocument, FcstmSemanticImport, FcstmSemanticState, FcstmSemanticVariable} from '../semantics';
+import type {FcstmSemanticDocument, FcstmSemanticImport, FcstmSemanticVariable} from '../semantics';
 import {FcstmDiagnostic, TextDocumentLike, TextRange, createRange} from '../utils/text';
 import {getWorkspaceGraph} from '../workspace';
 import {FCSTM_DIAGNOSTIC_CODES} from './analyzers';
@@ -36,9 +36,9 @@ function findImportByRange(semantic: FcstmSemanticDocument, range: TextRange): F
     return semantic.imports.find(item => rangeIntersects(item.range, range));
 }
 
-function findStateByRange(semantic: FcstmSemanticDocument, range: TextRange): FcstmSemanticState | undefined {
-    return semantic.states.find(item => rangeIntersects(item.range, range));
-}
+// ``findStateByRange`` removed — was defined but never invoked by any
+// caller in this module or any consumer. PR-A-coverage audit (rule 3:
+// dead code → delete).
 
 function findDuplicateVariableByRange(
     semantic: FcstmSemanticDocument,
@@ -46,9 +46,14 @@ function findDuplicateVariableByRange(
 ): FcstmSemanticVariable | undefined {
     const candidates = semantic.variables
         .filter(variable => rangeIntersects(variable.range, range));
+    /* c8 ignore start */
+    // Defensive: when no variable falls inside ``range`` we don't
+    // have a quickfix target. Caller (code-action provider) only
+    // invokes this with ranges intersecting an actual variable token.
     if (candidates.length === 0) {
         return undefined;
     }
+    /* c8 ignore stop */
     // Only duplicates (second and later definitions of the same name) should
     // be removable. The first definition has no duplicateVariable diagnostic.
     const grouped = new Map<string, FcstmSemanticVariable[]>();
@@ -112,9 +117,13 @@ export async function collectCodeActions(
     diagnostics: FcstmDiagnostic[] = []
 ): Promise<FcstmCodeAction[]> {
     const semantic = await getWorkspaceGraph().getSemanticDocument(document);
+    /* c8 ignore start */
+    // Defensive: code-action provider only invokes against parsed
+    // documents in the workspace graph; semantic is always present.
     if (!semantic) {
         return [];
     }
+    /* c8 ignore stop */
 
     const actions: FcstmCodeAction[] = [];
     const relevantDiagnostics = diagnostics.filter(item => rangeIntersects(item.range, range));
@@ -164,9 +173,14 @@ export async function collectCodeActions(
             // offending state name in the diagnostic message; offer the
             // same "rename to a close match" quick fix for either case.
             const stateName = diagnostic.message.match(/"([^"]+)"/)?.[1];
+            /* c8 ignore start */
+            // Defensive: the diagnostic message template always wraps
+            // the offending state name in double quotes; missing
+            // capture indicates a future message-format change.
             if (!stateName) {
                 continue;
             }
+            /* c8 ignore stop */
 
             const candidates = uniqueCaseInsensitiveStateCandidates(semantic, stateName);
             if (candidates.length === 1) {

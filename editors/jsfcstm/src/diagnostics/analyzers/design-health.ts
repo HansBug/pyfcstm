@@ -1,6 +1,6 @@
 import type {EventInfo, ModelDiagnosticJson, StateInfo, TransitionInfo} from '../inspect';
 
-export function collectB1Diagnostics(
+export function collectDesignHealthWarnings(
     states: StateInfo[],
     transitions: TransitionInfo[],
     events: EventInfo[],

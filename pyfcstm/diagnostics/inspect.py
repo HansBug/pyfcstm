@@ -48,7 +48,7 @@ Example::
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
-from .analyzers import collect_b1_diagnostics
+from .analyzers import collect_design_health_warnings
 from ..utils.validate import ModelDiagnostic
 
 if TYPE_CHECKING:  # pragma: no cover - import-time forward refs only
@@ -1084,7 +1084,7 @@ def inspect_model(machine: 'StateMachine') -> ModelInspect:
         var_dataflow=_build_var_dataflow(variables),
         aspect_impact_map=_build_aspect_impact_map(states),
         action_ref_graph=_build_action_ref_graph(machine),
-        diagnostics=tuple(collect_b1_diagnostics(
+        diagnostics=tuple(collect_design_health_warnings(
             states,
             transitions,
             events,

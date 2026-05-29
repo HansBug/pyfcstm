@@ -226,8 +226,8 @@ describe('diagnostics/inspect (PR-A)', () => {
         });
     });
 
-    describe('PR-B1 inspect diagnostics', () => {
-        const B1_DSL = `
+    describe('inspect design-health diagnostics', () => {
+        const DESIGN_HEALTH_DSL = `
 state Root {
     event Unused;
     event Used;
@@ -242,7 +242,7 @@ state Root {
 `;
 
         it('exposes declared-but-unused events in EventInfo', async () => {
-            const report = inspectModel(await buildMachine(B1_DSL));
+            const report = inspectModel(await buildMachine(DESIGN_HEALTH_DSL));
             const byName: Record<string, typeof report.events[number]> = {};
             for (const event of report.events) byName[event.qualified_name] = event;
 
@@ -258,8 +258,8 @@ state Root {
             assert.equal(byName['Root.Used'].is_used, true);
         });
 
-        it('emits B1 warnings on inspectModel diagnostics surface', async () => {
-            const report = inspectModel(await buildMachine(B1_DSL));
+        it('emits design-health warnings on inspectModel diagnostics surface', async () => {
+            const report = inspectModel(await buildMachine(DESIGN_HEALTH_DSL));
             const codes = report.diagnostics.map(d => d.code);
             assert.equal(codes.filter(code => code === 'W_UNUSED_EVENT').length, 1);
             assert.equal(codes.filter(code => code === 'W_GUARD_CONST_FALSE').length, 1);
@@ -290,7 +290,7 @@ state Root {
         });
 
         it('event emission map only lists used events', async () => {
-            const report = inspectModel(await buildMachine(B1_DSL));
+            const report = inspectModel(await buildMachine(DESIGN_HEALTH_DSL));
             assert.deepEqual(report.event_emission_map, {
                 'Root.Used': ['Root.Idle'],
             });

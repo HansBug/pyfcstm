@@ -1,1 +1,1 @@
-export {collectB1Diagnostics} from './b1';
+export {collectDesignHealthWarnings} from './design-health';

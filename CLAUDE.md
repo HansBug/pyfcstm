@@ -13,6 +13,9 @@ Vibe coding is fine for quick exploration, but once you touch repository code yo
 - Every generated piece of code must be readable, explainable, testable, and revertible by a human.
 - Don't blindly accept AI output; review it the same way you would review a human teammate's commit.
 - Stick to the existing architecture, naming, tests, and tooling — don't start a parallel style of your own.
+- Name modules, functions, classes, tests, and docs for the concrete behavior or domain concept they implement, not
+  for temporary project-management labels such as PR slice IDs, roadmap phases, or plan bullets. A reader should be
+  able to understand what something does without knowing the execution plan that introduced it.
 - After each change, run checks proportional to the risk; nothing that hasn't been verified may be claimed as done.
 - When requirements are unclear, an action is destructive, or you're near a security boundary, stop and surface assumptions and risks before proceeding.
 

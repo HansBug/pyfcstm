@@ -1,5 +1,5 @@
 """Analyzer helpers for :mod:`pyfcstm.diagnostics.inspect`."""
 
-from .b1 import collect_b1_diagnostics
+from .design_health import collect_design_health_warnings
 
-__all__ = ['collect_b1_diagnostics']
+__all__ = ['collect_design_health_warnings']

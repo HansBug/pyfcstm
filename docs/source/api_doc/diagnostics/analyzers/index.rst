@@ -9,7 +9,7 @@ pyfcstm.diagnostics.analyzers
 .. toctree::
     :maxdepth: 3
 
-    b1
+    design_health
 
 \_\_all\_\_
 -----------------------------------------------------

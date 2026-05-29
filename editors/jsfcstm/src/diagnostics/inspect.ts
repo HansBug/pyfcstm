@@ -21,7 +21,7 @@ import {
     StateMachine,
     Transition,
 } from '../model/runtime';
-import {collectB1Diagnostics} from './analyzers';
+import {collectDesignHealthWarnings} from './analyzers';
 
 const INIT_MARK = '[*]';
 const EXIT_MARK = '[*]';
@@ -171,7 +171,7 @@ export function inspectModel(machine: StateMachine): ModelInspect {
         var_dataflow: buildVarDataflow(variables),
         aspect_impact_map: buildAspectImpactMap(states),
         action_ref_graph: buildActionRefGraph(machine),
-        diagnostics: collectB1Diagnostics(states, transitions, events, reachabilityGraph),
+        diagnostics: collectDesignHealthWarnings(states, transitions, events, reachabilityGraph),
     };
 }
 

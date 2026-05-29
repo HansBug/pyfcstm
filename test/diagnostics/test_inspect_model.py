@@ -651,7 +651,7 @@ class TestInspectModelExtendedCoverage:
         # Detailed label check is brittle — focus on coverage.
         assert report.aspect_impact_map is not None
 
-    def test_b1_declared_unused_event_and_warnings(self):
+    def test_design_health_declared_unused_event_and_warnings(self):
         dsl = """
         state Root {
             event Unused;
@@ -700,7 +700,7 @@ class TestInspectModelExtendedCoverage:
         assert unreachable.refs == {'state_path': 'Root.Orphan'}
 
         from ._schema_check import assert_all_diags_match_schema
-        assert_all_diags_match_schema(diagnostics, context='b1-inspect')
+        assert_all_diags_match_schema(diagnostics, context='design-health-inspect')
 
         payload = report.to_json()
         unused_payload = next(

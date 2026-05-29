@@ -350,9 +350,9 @@ MULTI_FILE_FIXTURES = [
 ]
 
 
-B1_INSPECT_FIXTURES = [
+DESIGN_HEALTH_INSPECT_FIXTURES = [
     (
-        'b1-unused-event-unreachable-const-false',
+        'design-health-unused-event-unreachable-const-false',
         '\n'.join([
             'state Root {',
             '    event Unused;',
@@ -435,10 +435,10 @@ def test_multi_file_fixture_emits_expected_codes(name, files, entry, must_fire, 
 
 
 @pytest.mark.unittest
-@pytest.mark.parametrize('name,dsl,expected', B1_INSPECT_FIXTURES, ids=[
-    item[0] for item in B1_INSPECT_FIXTURES
+@pytest.mark.parametrize('name,dsl,expected', DESIGN_HEALTH_INSPECT_FIXTURES, ids=[
+    item[0] for item in DESIGN_HEALTH_INSPECT_FIXTURES
 ])
-def test_b1_inspect_diagnostics_match_inlined_expected(name, dsl, expected):
+def test_design_health_inspect_diagnostics_match_inlined_expected(name, dsl, expected):
     normalized_expected = _normalize_inspect_diagnostics(expected)
     py_diags = _py_inspect_normalized_diagnostics(dsl)
     assert py_diags == normalized_expected, (

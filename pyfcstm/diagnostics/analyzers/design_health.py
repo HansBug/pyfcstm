@@ -1,4 +1,4 @@
-"""PR-B1 inspect-surface diagnostics."""
+"""Design-health diagnostics derived from inspect-surface data."""
 
 import re
 from typing import TYPE_CHECKING, Iterable, List
@@ -9,13 +9,13 @@ if TYPE_CHECKING:  # pragma: no cover - import-time type hints only
     from ..inspect import EventInfo, StateInfo, TransitionInfo
 
 
-def collect_b1_diagnostics(
+def collect_design_health_warnings(
     states: Iterable['StateInfo'],
     transitions: Iterable['TransitionInfo'],
     events: Iterable['EventInfo'],
     reachability_graph,
 ) -> List[ModelDiagnostic]:
-    """Collect the three PR-B1 diagnostics from inspect payloads."""
+    """Collect design-health warning diagnostics from inspect payloads."""
     diagnostics: List[ModelDiagnostic] = []
     diagnostics.extend(_unreachable_state_diagnostics(states, reachability_graph))
     diagnostics.extend(_guard_const_false_diagnostics(transitions))

@@ -4,7 +4,12 @@ import pytest
 
 from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model import parse_dsl_node_to_state_machine
-from pyfcstm.simulate import SimulationRuntime, SimulationRuntimeDfsError
+from pyfcstm.simulate import (
+    SimulationRuntime,
+    SimulationRuntimeDfsError,
+    SimulationRuntimeEventError,
+    SimulationRuntimeExpressionError,
+)
 
 
 def build_runtime(dsl_code: str) -> SimulationRuntime:
@@ -1760,6 +1765,37 @@ state Root {
         run_cycle_and_assert(runtime, current_path=('Root', 'A'), vars={'counter': 1})
         # Use relative path "go" instead of full path "Root.A.go"
         run_cycle_and_assert(runtime, ['go'], current_path=('Root', 'B'), vars={'counter': 11})
+
+    def test_4_200_invalid_event_path_raises_event_error(self):
+        """Test invalid event paths raise the runtime event error type."""
+        dsl_code = '''
+state Root {
+    state A;
+    [*] -> A;
+}
+'''
+        runtime = build_runtime(dsl_code)
+
+        with pytest.raises(SimulationRuntimeEventError, match="Cannot resolve event path 'Missing'"):
+            runtime.cycle(['Missing'])
+
+    def test_4_200_dsl_expression_failure_raises_expression_error(self):
+        """Test DSL expression numeric failures raise the runtime expression type."""
+        dsl_code = '''
+def int counter = 1;
+state Root {
+    state A {
+        during {
+            counter = counter / 0;
+        }
+    }
+    [*] -> A;
+}
+'''
+        runtime = build_runtime(dsl_code)
+
+        with pytest.raises(SimulationRuntimeExpressionError, match="operation assignment to 'counter'"):
+            runtime.cycle()
 
     def test_4_201_flexible_path_parent_relative(self):
         """Test parent-relative event paths with leading dots."""

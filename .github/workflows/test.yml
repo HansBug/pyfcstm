@@ -333,8 +333,9 @@ jobs:
     # Run jsfcstm's mocha + c8 suite across the supported Node versions.
     # The jsfcstm package is pure TypeScript/Node — it does not need the
     # Python matrix dimension. Codecov receives the lcov report under
-    # the ``jsfcstm`` flag (uploaded once from the Node 20 leg) so the
-    # dashboard shows py/js coverage side-by-side without double-counting.
+    # the ``jsfcstm`` flag from every Node matrix leg, mirroring the
+    # Python matrix. Codecov merges reports by flag so the dashboard shows
+    # py/js coverage side-by-side without double-counting.
     name: jsfcstm test
     runs-on: ubuntu-22.04
     if: ${{ !contains(github.event.head_commit.message, 'ci skip') && !contains(github.event.head_commit.message, 'test skip') && !contains(github.event.head_commit.message, '[js skip]') }}

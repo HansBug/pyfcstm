@@ -166,6 +166,18 @@ class TestCommandProcessorEdgeCases:
             result = processor.process("export /invalid/path/file.csv")
             assert "export failed" in result.output.lower()
 
+    @pytest.mark.parametrize("extension", ["json", "yaml", "jsonl"])
+    def test_handle_export_write_error_for_text_formats(self, runtime, extension):
+        """Test JSON/YAML/JSONL export commands surface file write errors."""
+        processor = CommandProcessor(runtime, use_color=False)
+        runtime.cycle()
+
+        with patch('builtins.open', side_effect=PermissionError("Access denied")):
+            result = processor.process(f"export /invalid/path/file.{extension}")
+
+        assert "export failed" in result.output.lower()
+        assert "Access denied" in result.output
+
 
 @pytest.mark.unittest
 class TestCompleterEdgeCases:

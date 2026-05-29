@@ -568,22 +568,31 @@ class TestCommandProcessor:
         assert "Unknown command" in result.output
         assert not result.should_exit
 
-    def test_process_exception_handling(self, command_processor, monkeypatch):
-        """Test exception handling in process method."""
+    def test_process_internal_exception_propagates(self, command_processor, monkeypatch):
+        """Test process does not mask internal command-handler defects."""
 
-        # Mock _handle_current to raise an exception
         def mock_handle_current():
             raise RuntimeError("Test exception")
 
         monkeypatch.setattr(command_processor, '_handle_current', mock_handle_current)
-        result = command_processor.process("current")
-        assert "Error:" in result.output
-        assert "Test exception" in result.output
+        with pytest.raises(RuntimeError, match="Test exception"):
+            command_processor.process("current")
+
+    def test_cycle_internal_key_error_propagates(self, command_processor, monkeypatch):
+        """Test cycle command does not report internal KeyError as user input."""
+
+        def mock_cycle(events=None):
+            raise KeyError("internal missing key")
+
+        monkeypatch.setattr(command_processor.runtime, 'cycle', mock_cycle)
+        with pytest.raises(KeyError, match="internal missing key"):
+            command_processor.process("cycle")
 
     def test_handle_cycle_error(self, command_processor):
         """Test cycle with invalid event."""
         result = command_processor.process("cycle InvalidEvent")
-        assert "failed" in result.output.lower() or "error" in result.output.lower()
+        assert "Cycle execution failed" in result.output
+        assert "Cannot resolve event path 'InvalidEvent'" in result.output
 
     def test_handle_cycle_dfs_error(self, command_processor, monkeypatch):
         """Test cycle with SimulationRuntimeDfsError."""
@@ -596,6 +605,55 @@ class TestCommandProcessor:
         result = command_processor.process("cycle")
         assert "unbounded execution chain" in result.output
         assert "stoppable states" in result.output
+
+    def test_cycle_dsl_expression_error_is_user_visible(self):
+        """Test DSL numeric expression errors are reported as cycle failures."""
+        dsl = """
+        def int counter = 1;
+
+        state System {
+            state Active {
+                during {
+                    counter = counter / 0;
+                }
+            }
+
+            [*] -> Active;
+        }
+        """
+        ast = parse_with_grammar_entry(dsl, 'state_machine_dsl')
+        sm = parse_dsl_node_to_state_machine(ast)
+        runtime = SimulationRuntime(sm)
+        processor = CommandProcessor(runtime, use_color=False)
+
+        result = processor.process("cycle")
+
+        assert "Cycle execution failed" in result.output
+        assert "operation assignment to 'counter' evaluation failed" in result.output
+        assert "division by zero" in result.output
+
+    def test_cycle_abstract_handler_value_error_propagates(self):
+        """Test cycle does not mask abstract-handler ValueError defects."""
+        dsl = """
+        state System {
+            state Active {
+                enter abstract Init;
+            }
+
+            [*] -> Active;
+        }
+        """
+        ast = parse_with_grammar_entry(dsl, 'state_machine_dsl')
+        sm = parse_dsl_node_to_state_machine(ast)
+        runtime = SimulationRuntime(sm, abstract_error_mode='raise')
+        processor = CommandProcessor(runtime, use_color=False)
+
+        def handler(ctx):
+            raise ValueError("handler bug")
+
+        runtime.register_abstract_handler('System.Active.Init', handler)
+        with pytest.raises(ValueError, match="handler bug"):
+            processor.process("cycle")
 
     def test_handle_history_empty(self, command_processor):
         """Test history command with no history."""
@@ -2125,6 +2183,29 @@ class TestDSLVariety:
 
         assert runtime.is_ended
         assert runtime.vars['steps'] >= 5
+
+    def test_events_after_termination_reports_no_events(self):
+        """Test events command remains user-friendly after runtime termination."""
+        dsl = """
+        state System {
+            state Running;
+
+            [*] -> Running;
+            Running -> [*];
+        }
+        """
+        ast = parse_with_grammar_entry(dsl, 'state_machine_dsl')
+        sm = parse_dsl_node_to_state_machine(ast)
+        runtime = SimulationRuntime(sm)
+        processor = CommandProcessor(runtime, use_color=False)
+
+        processor.process("cycle")
+        processor.process("cycle")
+
+        assert runtime.is_ended
+        result = processor.process("events")
+        assert "No events available" in result.output
+        assert not result.should_exit
 
 
 @pytest.mark.unittest

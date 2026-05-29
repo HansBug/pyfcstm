@@ -210,6 +210,31 @@ state Root {
         assert not result.should_exit
         assert 'Error: Invalid numeric value' in result.output
 
+    @pytest.mark.parametrize(
+        ['command', 'expected'],
+        [
+            ('init Root.A counter=0xZZ', 'Invalid hexadecimal value'),
+            ('init Root.A counter=0b102', 'Invalid binary value'),
+        ],
+    )
+    def test_init_command_invalid_prefixed_value_format(self, command, expected):
+        """Test init command reports invalid hexadecimal and binary values."""
+        dsl_code = '''
+def int counter = 0;
+state Root {
+    state A;
+    [*] -> A;
+}
+'''
+        sm = build_state_machine(dsl_code)
+        runtime = SimulationRuntime(sm)
+        processor = CommandProcessor(runtime, state_machine=sm, use_color=False)
+
+        result = processor.process(command)
+
+        assert not result.should_exit
+        assert expected in result.output
+
     def test_init_command_no_arguments(self):
         """Test init command without arguments."""
         dsl_code = '''

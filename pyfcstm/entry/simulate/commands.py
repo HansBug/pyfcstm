@@ -9,34 +9,13 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import List, Optional, Tuple, Dict, Any
 
+from ...simulate import (
+    SimulationRuntimeDfsError,
+    SimulationRuntimeEventError,
+    SimulationRuntimeExpressionError,
+)
 from .display import StateDisplay
 from .logging import configure_simulate_cli_logger
-
-
-# Programmer-bug exception classes that REPL command handlers must NOT
-# swallow. If one of these fires inside ``execute_command`` / ``_handle_*``,
-# it indicates a defect in pyfcstm itself (bad attribute lookup, wrong
-# argument arity, missing import, ...) and the simulator should crash loudly
-# instead of presenting it as a normal ``CommandResult``. ``MemoryError``
-# and ``RecursionError`` are also re-raised because they indicate runaway
-# state-machine inputs and the REPL cannot meaningfully recover.
-_PROGRAMMER_BUG_EXCEPTIONS = (
-    TypeError,
-    AttributeError,
-    NameError,
-    ImportError,
-    MemoryError,
-    RecursionError,
-)
-
-
-def _is_programmer_bug(exc: BaseException) -> bool:
-    """
-    Return True if *exc* is a programmer-bug-shaped exception that must
-    propagate out of REPL command handlers rather than be reformatted into
-    a user-facing ``CommandResult``. See ``_PROGRAMMER_BUG_EXCEPTIONS``.
-    """
-    return isinstance(exc, _PROGRAMMER_BUG_EXCEPTIONS)
 
 
 class LogLevel(Enum):
@@ -228,38 +207,28 @@ class CommandProcessor:
         command = parts[0]
         args = parts[1:]
 
-        try:
-            if command == 'cycle':
-                return self._handle_cycle(args)
-            elif command == 'init':
-                return self._handle_init(args)
-            elif command == 'clear':
-                return self._handle_clear()
-            elif command == 'current':
-                return self._handle_current()
-            elif command == 'events':
-                return self._handle_events()
-            elif command == 'history':
-                return self._handle_history(args)
-            elif command == 'setting':
-                return self._handle_setting(args)
-            elif command == 'export':
-                return self._handle_export(args)
-            elif command == 'help':
-                return self._handle_help()
-            elif command in ['quit', 'exit']:
-                return CommandResult("Goodbye!", should_exit=True)
-            else:
-                return CommandResult(f"Unknown command: {command}. Type 'help' for available commands.")
-        except Exception as e:
-            # Broad catch is the REPL's top-of-handler barrier: any expected
-            # user-input / runtime / parsing error becomes a polite
-            # ``CommandResult``. Programmer bugs are re-raised so they fail
-            # loudly during development and in CI (see
-            # ``_PROGRAMMER_BUG_EXCEPTIONS``).
-            if _is_programmer_bug(e):
-                raise
-            return CommandResult(f"Error: {e}")
+        if command == 'cycle':
+            return self._handle_cycle(args)
+        elif command == 'init':
+            return self._handle_init(args)
+        elif command == 'clear':
+            return self._handle_clear()
+        elif command == 'current':
+            return self._handle_current()
+        elif command == 'events':
+            return self._handle_events()
+        elif command == 'history':
+            return self._handle_history(args)
+        elif command == 'setting':
+            return self._handle_setting(args)
+        elif command == 'export':
+            return self._handle_export(args)
+        elif command == 'help':
+            return self._handle_help()
+        elif command in ['quit', 'exit']:
+            return CommandResult("Goodbye!", should_exit=True)
+        else:
+            return CommandResult(f"Unknown command: {command}. Type 'help' for available commands.")
 
     def _handle_cycle(self, events: List[str]) -> CommandResult:
         """
@@ -304,22 +273,21 @@ class CommandProcessor:
             # Multiple cycles - use table format
             return self._handle_multiple_cycles(count, event_list)
 
-        except Exception as e:
-            # Import here to avoid circular dependency
-            from ...simulate import SimulationRuntimeDfsError
-
-            # Re-raise programmer-bug-shaped errors so they crash loudly
-            # in tests; everything else becomes a user-facing CommandResult.
-            if _is_programmer_bug(e):
-                raise
-            if isinstance(e, SimulationRuntimeDfsError):
-                return CommandResult(
-                    "Cycle execution failed: State machine contains an unbounded execution chain.\n"
-                    "This usually means there are too many automatic transitions without a stable state.\n"
-                    "Please review your state machine definition for missing stoppable states."
-                )
-            else:
-                return CommandResult(f"Cycle execution failed: {e}")
+        except SimulationRuntimeDfsError:
+            # SimulationRuntimeDfsError: runtime.cycle validation exceeded its
+            # DFS safety limits for the user's state machine.
+            return CommandResult(
+                "Cycle execution failed: State machine contains an unbounded execution chain.\n"
+                "This usually means there are too many automatic transitions without a stable state.\n"
+                "Please review your state machine definition for missing stoppable states."
+            )
+        except (SimulationRuntimeEventError, SimulationRuntimeExpressionError) as e:
+            # SimulationRuntimeEventError: runtime.cycle rejected a
+            # user-supplied event path after trying supported resolution modes.
+            # SimulationRuntimeExpressionError: user DSL guard/action
+            # expression evaluation failed, for example division by zero,
+            # math domain error, or numeric overflow.
+            return CommandResult(f"Cycle execution failed: {e}")
 
     def _handle_init(self, args: List[str]) -> CommandResult:
         """
@@ -399,11 +367,9 @@ class CommandProcessor:
                 f"Initialized from state: {state_path}\n" +
                 self.display.format_current_state(self.runtime)
             )
-        except Exception as e:
-            # See ``execute_command`` for the broad-catch + programmer-bug
-            # re-raise pattern.
-            if _is_programmer_bug(e):
-                raise
+        except ValueError as e:
+            # ValueError: SimulationRuntime hot-start validation rejected the
+            # user-provided state path or initial variable values.
             return CommandResult(f"Initialization failed: {e}")
 
     def _parse_value(self, value_str: str) -> float:
@@ -679,6 +645,8 @@ Keyboard shortcuts (interactive mode):
         :return: List of (full_path, short_name) tuples
         :rtype: List[Tuple[str, Optional[str]]]
         """
+        if self.runtime.is_ended:
+            return []
         if not self.runtime.current_state:
             return []
 
@@ -737,25 +705,41 @@ Keyboard shortcuts (interactive mode):
         if ext not in ['.csv', '.json', '.yaml', '.jsonl']:
             return CommandResult(f"Unsupported file format: {ext}\nSupported formats: .csv, .json, .yaml, .jsonl")
 
-        try:
-            if ext == '.csv':
-                self._export_csv(filename)
-            elif ext == '.json':
-                self._export_json(filename)
-            elif ext == '.yaml':
-                self._export_yaml(filename)
-            elif ext == '.jsonl':
-                self._export_jsonl(filename)
+        if ext == '.csv':
+            import csv
 
-            return CommandResult(f"History exported to {filename} ({len(self.runtime.history)} entries)")
-        except Exception as e:
-            # See ``execute_command`` for the broad-catch + programmer-bug
-            # re-raise pattern. Export here can fail with OSError (disk
-            # full / permission denied), ValueError (yaml serialization),
-            # or csv.Error — all are user-actionable, so we format them.
-            if _is_programmer_bug(e):
-                raise
-            return CommandResult(f"Export failed: {e}")
+            try:
+                self._export_csv(filename)
+            except (OSError, csv.Error) as e:
+                # OSError: open/write failed due to path, permission, or disk
+                # state; csv.Error: csv.writer rejected the output stream/data.
+                return CommandResult(f"Export failed: {e}")
+        elif ext == '.json':
+            try:
+                self._export_json(filename)
+            except (OSError, ValueError) as e:
+                # OSError: open/write failed due to path, permission, or disk
+                # state; ValueError: json serialization/write rejected payload.
+                return CommandResult(f"Export failed: {e}")
+        elif ext == '.yaml':
+            import yaml
+
+            try:
+                self._export_yaml(filename)
+            except (OSError, ValueError, yaml.YAMLError) as e:
+                # OSError: open/write failed due to path, permission, or disk
+                # state; ValueError/YAMLError: PyYAML rejected the payload or
+                # output stream.
+                return CommandResult(f"Export failed: {e}")
+        elif ext == '.jsonl':
+            try:
+                self._export_jsonl(filename)
+            except (OSError, ValueError) as e:
+                # OSError: open/write failed due to path, permission, or disk
+                # state; ValueError: per-entry json serialization/write failed.
+                return CommandResult(f"Export failed: {e}")
+
+        return CommandResult(f"History exported to {filename} ({len(self.runtime.history)} entries)")
 
     def _export_csv(self, filename: str) -> None:
         """

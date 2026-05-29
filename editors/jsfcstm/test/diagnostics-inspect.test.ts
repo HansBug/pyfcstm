@@ -111,6 +111,27 @@ describe('diagnostics/inspect', () => {
             assert.ok(guarded[0].guard && guarded[0].guard.includes('counter'));
         });
 
+        it('normalizes inspect expression and effect text like pyfcstm', async () => {
+            const report = inspectModel(await buildMachine(`
+def int x = 0x0F;
+state Root {
+    state A;
+    state B;
+    [*] -> A;
+    A -> B : if [9007199254740993 == 9007199254740992] effect { x = (0x0F); };
+}
+`));
+            assert.equal(report.variables.find(v => v.name === 'x')!.init_value, '15');
+            const transition = report.transitions.find(t => t.from_path === 'Root.A');
+            assert.ok(transition);
+            assert.equal(transition!.guard, '9007199254740993 == 9007199254740992');
+            assert.equal(transition!.effect, 'x = 15;');
+            assert.equal(
+                report.diagnostics.filter(d => d.code === 'W_GUARD_CONST_FALSE').length,
+                1,
+            );
+        });
+
         it('captures qualified event names with local scope', async () => {
             const report = inspectModel(await buildMachine(SIMPLE_DSL));
             const withEvent = report.transitions.filter(t => t.event !== null);
@@ -547,10 +568,31 @@ state Root {
             const effects = report.transitions
                 .filter(t => t.from_path === 'Root.A' && t.to_path === 'Root.B')
                 .map(t => t.effect);
-            assert.deepEqual(effects, ['x=1;', 'x=2;']);
+            assert.deepEqual(effects, ['x = 1;', 'x = 2;']);
             assert.deepEqual(
                 report.diagnostics.filter(d => d.code === 'W_REDUNDANT_TRANSITION'),
                 [],
+            );
+        });
+
+        it('normalizes equivalent effect text before redundant transition comparison', async () => {
+            const report = inspectModel(await buildMachine(`
+def int x = 0;
+state Root {
+    state A;
+    state B;
+    [*] -> A;
+    A -> B effect { x = 1; };
+    A -> B effect { x = (1); };
+}
+`));
+            const effects = report.transitions
+                .filter(t => t.from_path === 'Root.A' && t.to_path === 'Root.B')
+                .map(t => t.effect);
+            assert.deepEqual(effects, ['x = 1;', 'x = 1;']);
+            assert.equal(
+                report.diagnostics.filter(d => d.code === 'W_REDUNDANT_TRANSITION').length,
+                1,
             );
         });
 

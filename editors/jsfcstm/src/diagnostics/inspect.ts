@@ -11,21 +11,60 @@
  */
 
 import {
+    BinaryOp,
+    BooleanExpr,
+    ConditionalOp,
     Event,
     Expr,
+    Float,
     IfBlock,
+    Integer,
     OnAspect,
     OnStage,
     Operation,
     OperationStatement,
     StateMachine,
     Transition,
+    UFunc,
+    UnaryOp,
+    Variable,
 } from '../model/runtime';
 import {collectDesignHealthWarnings} from './analyzers';
 import type {RawFcstmModelForcedTransition} from '../model/raw';
 
 const INIT_MARK = '[*]';
 const EXIT_MARK = '[*]';
+const FLOAT_EPSILON = 1e-10;
+
+const OP_PRECEDENCE: Record<string, number> = {
+    'function_call': 90,
+    'unary+': 80,
+    'unary-': 80,
+    '!': 80,
+    'not': 80,
+    '**': 70,
+    '*': 60,
+    '/': 60,
+    '%': 60,
+    '+': 50,
+    '-': 50,
+    '<<': 40,
+    '>>': 40,
+    '&': 35,
+    '^': 30,
+    '|': 25,
+    '<': 20,
+    '>': 20,
+    '<=': 20,
+    '>=': 20,
+    '==': 20,
+    '!=': 20,
+    '&&': 15,
+    'and': 15,
+    '||': 10,
+    'or': 10,
+    '?:': 5,
+};
 
 /**
  * Per-state structural summary.
@@ -547,21 +586,178 @@ function walkStmtReadsWrites(
     }
 }
 
+function canonicalBinaryOperator(op: string): string {
+    if (op === 'and') return '&&';
+    if (op === 'or') return '||';
+    return op;
+}
+
+function canonicalUnaryOperator(op: string): string {
+    return op === 'not' ? '!' : op;
+}
+
+function unaryPrecedenceKey(op: string): string {
+    const canonical = canonicalUnaryOperator(op);
+    return canonical === '+' || canonical === '-' ? `unary${canonical}` : canonical;
+}
+
+function exprPrecedence(expr: Expr): number | null {
+    if (expr instanceof BinaryOp) return OP_PRECEDENCE[canonicalBinaryOperator(expr.op)] ?? null;
+    if (expr instanceof UnaryOp) return OP_PRECEDENCE[unaryPrecedenceKey(expr.op)] ?? null;
+    if (expr instanceof ConditionalOp) return OP_PRECEDENCE['?:'];
+    return null;
+}
+
+function normalizeDecimalDigits(raw: string): string {
+    const normalized = raw.replace(/^0+/, '');
+    return normalized.length > 0 ? normalized : '0';
+}
+
+function addSmallDecimal(raw: string, value: number): string {
+    if (value === 0) return raw;
+    let carry = value;
+    const out: string[] = [];
+    for (let index = raw.length - 1; index >= 0; index -= 1) {
+        const total = Number(raw[index]) + carry;
+        out.push(String(total % 10));
+        carry = Math.floor(total / 10);
+    }
+    while (carry > 0) {
+        out.push(String(carry % 10));
+        carry = Math.floor(carry / 10);
+    }
+    return out.reverse().join('');
+}
+
+function multiplySmallDecimal(raw: string, factor: number): string {
+    if (raw === '0' || factor === 0) return '0';
+    let carry = 0;
+    const out: string[] = [];
+    for (let index = raw.length - 1; index >= 0; index -= 1) {
+        const total = Number(raw[index]) * factor + carry;
+        out.push(String(total % 10));
+        carry = Math.floor(total / 10);
+    }
+    while (carry > 0) {
+        out.push(String(carry % 10));
+        carry = Math.floor(carry / 10);
+    }
+    return out.reverse().join('');
+}
+
+function convertRadixDigitsToDecimal(digits: string, radix: number): string {
+    let value = '0';
+    for (const char of digits.toLowerCase()) {
+        const digit = parseInt(char, radix);
+        value = addSmallDecimal(multiplySmallDecimal(value, radix), digit);
+    }
+    return value;
+}
+
+function integerText(expr: Integer): string {
+    const raw = expr.text.trim();
+    if (/^\d+$/.test(raw)) return normalizeDecimalDigits(raw);
+    if (/^0[xX][0-9a-fA-F]+$/.test(raw)) {
+        return convertRadixDigitsToDecimal(raw.slice(2), 16);
+    }
+    if (/^0[bB][01]+$/.test(raw)) {
+        return convertRadixDigitsToDecimal(raw.slice(2), 2);
+    }
+    return String(Math.trunc(expr.value));
+}
+
+function floatText(expr: Float): string {
+    if (Math.abs(expr.value - Math.PI) < FLOAT_EPSILON) return 'pi';
+    if (Math.abs(expr.value - Math.E) < FLOAT_EPSILON) return 'E';
+    if (Math.abs(expr.value - Math.PI * 2) < FLOAT_EPSILON) return 'tau';
+    if (Number.isInteger(expr.value)) return `${expr.value}.0`;
+    return String(expr.value);
+}
+
+function formatExpr(expr: Expr): string {
+    if (expr instanceof Integer) return integerText(expr);
+    if (expr instanceof Float) return floatText(expr);
+    if (expr instanceof BooleanExpr) return expr.value ? 'true' : 'false';
+    if (expr instanceof Variable) return expr.name;
+    if (expr instanceof UFunc) return `${expr.func}(${formatExpr(expr.x)})`;
+    if (expr instanceof UnaryOp) {
+        const op = canonicalUnaryOperator(expr.op);
+        const myPrecedence = OP_PRECEDENCE[unaryPrecedenceKey(expr.op)];
+        let value = formatExpr(expr.x);
+        const valuePrecedence = exprPrecedence(expr.x);
+        if (valuePrecedence !== null && valuePrecedence <= myPrecedence) {
+            value = `(${value})`;
+        }
+        return `${op}${value}`;
+    }
+    if (expr instanceof BinaryOp) {
+        const op = canonicalBinaryOperator(expr.op);
+        const myPrecedence = OP_PRECEDENCE[op];
+        let left = formatExpr(expr.x);
+        const leftPrecedence = exprPrecedence(expr.x);
+        if (leftPrecedence !== null && leftPrecedence < myPrecedence) {
+            left = `(${left})`;
+        }
+        let right = formatExpr(expr.y);
+        const rightPrecedence = exprPrecedence(expr.y);
+        if (rightPrecedence !== null && rightPrecedence <= myPrecedence) {
+            right = `(${right})`;
+        }
+        return `${left} ${op} ${right}`;
+    }
+    if (expr instanceof ConditionalOp) {
+        const myPrecedence = OP_PRECEDENCE['?:'];
+        let whenTrue = formatExpr(expr.ifTrue);
+        const truePrecedence = exprPrecedence(expr.ifTrue);
+        if (truePrecedence !== null && truePrecedence <= myPrecedence) {
+            whenTrue = `(${whenTrue})`;
+        }
+        let whenFalse = formatExpr(expr.ifFalse);
+        const falsePrecedence = exprPrecedence(expr.ifFalse);
+        if (falsePrecedence !== null && falsePrecedence <= myPrecedence) {
+            whenFalse = `(${whenFalse})`;
+        }
+        return `(${formatExpr(expr.cond)}) ? ${whenTrue} : ${whenFalse}`;
+    }
+    return expr.text;
+}
+
+function statementText(stmt: OperationStatement): string {
+    if (stmt instanceof Operation) {
+        return `${stmt.varName} = ${formatExpr(stmt.expr)};`;
+    }
+    if (stmt instanceof IfBlock) {
+        const firstBranch = stmt.branches[0];
+        if (!firstBranch || firstBranch.condition === null) return stmt.text;
+        const lines: string[] = [`if [${formatExpr(firstBranch.condition)}] {`];
+        for (let index = 0; index < stmt.branches.length; index += 1) {
+            const branch = stmt.branches[index];
+            if (index > 0) {
+                if (branch.condition === null) {
+                    lines.push('} else {');
+                } else {
+                    lines.push(`} else if [${formatExpr(branch.condition)}] {`);
+                }
+            }
+            for (const inner of branch.statements) {
+                for (const line of statementText(inner).split('\n')) {
+                    lines.push(line.trim().length > 0 ? `    ${line}` : line);
+                }
+            }
+        }
+        lines.push('}');
+        return lines.join('\n');
+    }
+    return stmt.text;
+}
+
 function exprText(expr: Expr | null | undefined): string | null {
-    if (!expr) return null;
-    const text = (expr as unknown as {text?: string}).text;
-    if (typeof text === 'string' && text.length > 0) return text;
-    /* c8 ignore next 2 */
-    return null;  // defensive: grammar always sets .text on Expr; this fallback covers future Expr subclasses that don't
+    return expr ? formatExpr(expr) : null;
 }
 
 function effectsText(effects: OperationStatement[] | undefined): string | null {
     if (!effects || effects.length === 0) return null;
-    const parts: string[] = [];
-    for (const stmt of effects) {
-        const t = (stmt as unknown as {text?: string}).text;
-        if (typeof t === 'string' && t.length > 0) parts.push(t);
-    }
+    const parts = effects.map(statementText).filter(text => text.length > 0);
     return parts.length ? parts.join(' ') : null;
 }
 

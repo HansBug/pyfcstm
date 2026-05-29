@@ -1,33 +1,12 @@
 """
-Cross-end E_* parity tests — confirm that a given DSL fixture triggers
-the same ``E_*`` code set on both pyfcstm and jsfcstm.
+Pyfcstm diagnostic catalog tests.
 
-The jsfcstm side has its own hermetic showcase (mocha test
-``editors/jsfcstm/test/diagnostics-showcase-demos.test.ts``) that runs
-``collectDocumentDiagnostics`` against the same DSL strings inlined
-below. This pytest file pins down the **pyfcstm** half of the same
-fixture set: each fixture runs through
-:func:`pyfcstm.model.parse_dsl_node_to_state_machine` with
-``collect=True`` and the resulting ``ModelDiagnostic`` list must contain
-the expected ``E_*`` codes.
-
-If a fixture here triggers ``E_*`` codes that the matching jsfcstm
-showcase does not, or vice versa, the two ends have drifted and the
-Layer 2 PR-A contract is violated. Keeping these two suites in lockstep
-is the mechanical safeguard for "what pyfcstm CLI reports must equal
-what VSCode shows".
-
-The fixture catalogue mirrors
-``editors/jsfcstm/test/diagnostics-showcase-demos.test.ts``: same names,
-same DSL bodies, same ``mustFire`` codes (the jsfcstm side has slightly
-richer ``sideEffects`` and ``mustNotFire`` lists for the W_* layer that
-pyfcstm has not implemented yet — see issue #104).
+Every DSL body and expected diagnostic list used by this pytest module
+is inlined below. The tests intentionally do not import, execute, or
+read resources outside the Python test runtime.
 """
 
 import json
-import os
-import subprocess
-import tempfile
 
 import pytest
 
@@ -91,47 +70,8 @@ def _py_inspect_normalized_diagnostics(dsl: str):
     return _normalize_inspect_diagnostics(report.diagnostics)
 
 
-def _js_inspect_normalized_diagnostics(dsl: str):
-    script = r"""
-const fs = require('fs');
-const pkg = require('./editors/jsfcstm/dist');
-
-const text = fs.readFileSync(0, 'utf8');
-const lines = text.split('\n');
-const document = {
-  filePath: '/tmp/inspect-parity.fcstm',
-  uri: {fsPath: '/tmp/inspect-parity.fcstm', toString() { return this.fsPath; }},
-  lineCount: lines.length,
-  getText() { return text; },
-  lineAt(line) { return {text: lines[line] || ''}; },
-};
-
-(async () => {
-  const ast = await pkg.parseAstDocument(document);
-  const machine = pkg.buildStateMachineModel(ast);
-  if (!machine) {
-    throw new Error('buildStateMachineModel returned null');
-  }
-  const report = pkg.inspectModel(machine);
-  process.stdout.write(JSON.stringify(report.diagnostics));
-})().catch(err => {
-  console.error(err && err.stack ? err.stack : String(err));
-  process.exit(1);
-});
-"""
-    result = subprocess.run(
-        ['node', '-e', script],
-        input=dsl,
-        text=True,
-        capture_output=True,
-        cwd=os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')),
-        check=True,
-    )
-    return _normalize_inspect_diagnostics(json.loads(result.stdout))
-
-
 # ---------------------------------------------------------------------------
-# Single-file fixtures (mirror jsfcstm/test/diagnostics-showcase-demos.test.ts)
+# Single-file fixtures.
 # ---------------------------------------------------------------------------
 
 SINGLE_FILE_FIXTURES = [
@@ -410,7 +350,7 @@ MULTI_FILE_FIXTURES = [
 ]
 
 
-B1_INSPECT_PARITY_FIXTURES = [
+B1_INSPECT_FIXTURES = [
     (
         'b1-unused-event-unreachable-const-false',
         '\n'.join([
@@ -495,20 +435,15 @@ def test_multi_file_fixture_emits_expected_codes(name, files, entry, must_fire, 
 
 
 @pytest.mark.unittest
-@pytest.mark.parametrize('name,dsl,expected', B1_INSPECT_PARITY_FIXTURES, ids=[
-    item[0] for item in B1_INSPECT_PARITY_FIXTURES
+@pytest.mark.parametrize('name,dsl,expected', B1_INSPECT_FIXTURES, ids=[
+    item[0] for item in B1_INSPECT_FIXTURES
 ])
-def test_b1_inspect_diagnostics_match_jsfcstm(name, dsl, expected):
+def test_b1_inspect_diagnostics_match_inlined_expected(name, dsl, expected):
     normalized_expected = _normalize_inspect_diagnostics(expected)
     py_diags = _py_inspect_normalized_diagnostics(dsl)
-    js_diags = _js_inspect_normalized_diagnostics(dsl)
     assert py_diags == normalized_expected, (
         f'{name}: pyfcstm inspect diagnostics mismatch: {py_diags}'
     )
-    assert js_diags == normalized_expected, (
-        f'{name}: jsfcstm inspect diagnostics mismatch: {js_diags}'
-    )
-    assert py_diags == js_diags
 
 
 @pytest.mark.unittest

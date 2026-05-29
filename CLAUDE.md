@@ -1160,6 +1160,17 @@ For built-in template work, the current design bar is defined by the `python` te
 
 - Tests in `test/`; use `@pytest.mark.unittest`
 - Unit tests must not depend on local files ignored by version control (for example, gitignored files).
+- Unit test suites must be strictly self-contained within their owning test tree. Python tests may use fixtures,
+  helpers, and expected data under `test/`, and jsfcstm tests may use fixtures, helpers, and expected data under
+  `editors/jsfcstm/test/`; neither side may read from, execute, import from, or assume the presence of the other
+  side's test tree. A Python unit test must still run if `editors/jsfcstm/` is removed, and a jsfcstm unit test must
+  still run if `test/` is removed.
+- When both Python and jsfcstm need to cover the same behavior, duplicate the DSL text, expected diagnostics,
+  snapshots, or fixtures as checked-in literals/files inside each side's own test tree. Do not share unit-test
+  fixtures across those trees, do not shell out to the other runtime (for example Python tests invoking Node.js or
+  jsfcstm tests invoking Python), and do not rely on build artifacts from the other side.
+- Unit tests may import the production code under test and use production assets through the public runtime/build
+  entry points, but test-only data, helper scripts, and golden outputs must live in the corresponding test tree.
 - Shared test utilities and fixtures in `test/testings/`
 - Sample DSL files in `test/testfile/sample_codes/` (auto-generate tests via `make sample`)
 - Negative cases in `test/testfile/sample_neg_codes/`

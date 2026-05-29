@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft-07/schema#",
   "$id": "https://github.com/HansBug/pyfcstm/blob/main/pyfcstm/diagnostics/schema.json",
   "title": "ModelInspect",
-  "description": "Shared contract between pyfcstm and jsfcstm for inspect_model() output. PR-A baseline; PR-B/PR-C extend the diagnostics array.",
+  "description": "Shared contract between pyfcstm and jsfcstm for inspect_model() output, including structural data, derived graphs, and diagnostics.",
   "type": "object",
   "additionalProperties": false,
   "required": [

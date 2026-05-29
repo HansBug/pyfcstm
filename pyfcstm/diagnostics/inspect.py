@@ -168,9 +168,8 @@ class VariableInfo:
     Structural summary of a variable definition plus participation flags.
 
     The ``participates_directly`` and ``participates_indirectly`` flags
-    are precomputed here so that PR-C's ``W_UNREFERENCED_VAR`` /
-    ``I_UNREFERENCED_VAR_MAYBE_ABSTRACT`` rules can be expressed as a
-    one-line filter against this object.
+    are precomputed here so that unreferenced-variable diagnostics can
+    be expressed as a one-line filter against this object.
 
     :param name: Variable identifier.
     :type name: str
@@ -195,15 +194,15 @@ class VariableInfo:
     :type participates_directly: bool
     :param participates_indirectly: ``True`` when the variable is not
         directly referenced but is transitively reachable through
-        write-then-read data dependency across blocks. PR-A keeps this
-        field as ``False`` for variables that lack any read; PR-C
-        replaces it with the closure-based computation.
+        write-then-read data dependency across blocks. The current
+        inspect implementation keeps this field as ``False`` for
+        variables that lack any read.
     :type participates_indirectly: bool
     :param abstract_actions_in_scope: Function names of abstract actions
         whose enclosing state is on the ancestor chain or sub-tree of
-        any state that touches this variable. Used by PR-C to split
-        ``W_UNREFERENCED_VAR`` (high confidence) from
-        ``I_UNREFERENCED_VAR_MAYBE_ABSTRACT`` (low confidence).
+        any state that touches this variable. Downstream diagnostics can
+        use this to distinguish high-confidence unused variables from
+        variables that may be touched by abstract behavior.
     :type abstract_actions_in_scope: Tuple[str, ...]
     """
 
@@ -330,9 +329,8 @@ class ModelInspect:
     :param action_ref_graph: Mapping named-action function path → list
         of ``ref`` edges out of it.
     :type action_ref_graph: Dict[str, Tuple[str, ...]]
-    :param diagnostics: Layer 1 ``E_*`` + Layer 2 ``W_*`` / ``I_*``
-        diagnostics. PR-A returns an empty tuple; PR-B / PR-C populate
-        it.
+    :param diagnostics: Layer 1 ``E_*`` plus design-health ``W_*`` /
+        ``I_*`` diagnostics derived from the inspect payload.
     :type diagnostics: Tuple[ModelDiagnostic, ...]
     """
 
@@ -792,7 +790,7 @@ def _build_variable_infos(
             read_in_guards=read_guards,
             written_in_effects=written_effects,
             participates_directly=participates_directly,
-            participates_indirectly=False,  # PR-C will fill the closure.
+            participates_indirectly=False,
             abstract_actions_in_scope=abstract_actions,
         ))
     return tuple(out)
@@ -807,8 +805,7 @@ def _abstract_actions_in_scope(
     touched = set(read_states) | set(written_states)
     if not touched:
         # Variable touches no state — declared but unused. There is no
-        # "scope" to look into, return empty. PR-C decides whether this
-        # counts as W_ or I_.
+        # abstract-action scope to inspect from here.
         return tuple()
     out: List[str] = []
     for path in sorted(touched):
@@ -1051,9 +1048,9 @@ def inspect_model(machine: 'StateMachine') -> ModelInspect:
     """
     Build a structured inspection report for a state machine model.
 
-    PR-A focuses on the structural payload and the five derived view
-    graphs; the ``diagnostics`` field stays empty until PR-B / PR-C add
-    the ``W_*`` and ``I_*`` rules.
+    The report combines the structural payload, the five derived view
+    graphs, and design-health diagnostics that can be computed from the
+    inspect surface.
 
     :param machine: The state machine model to inspect.
     :type machine: pyfcstm.model.StateMachine
@@ -1102,15 +1099,14 @@ def _to_json_dataclass(obj: Any) -> Any:
     if isinstance(obj, tuple):
         return [_to_json_dataclass(x) for x in obj]
     if isinstance(obj, list):  # pragma: no cover
-        # Defensive: PR-A model emits ``Tuple[...]`` fields exclusively.
-        # PR-B / PR-C may emit list-typed fields (e.g. open-ended
-        # ``related_diagnostics``) — this branch reserves the recursion
-        # for that future.
+        # Defensive: the current model emits ``Tuple[...]`` fields
+        # exclusively, but future payloads may introduce list-typed
+        # dataclass fields.
         return [_to_json_dataclass(x) for x in obj]
     if isinstance(obj, dict):  # pragma: no cover
-        # Same as list: PR-A keeps every dict field at the ModelInspect
-        # top level (so they go through ``_to_json_inspect``). PR-B / PR-C
-        # may nest dict payloads inside dataclass fields.
+        # Same as list: the current ModelInspect keeps every dict field
+        # at the top level, but nested dict payloads should still
+        # serialize predictably if introduced later.
         return {str(k): _to_json_dataclass(v) for k, v in obj.items()}
     return obj
 
@@ -1139,11 +1135,9 @@ def _to_json_inspect(report: ModelInspect) -> Dict[str, Any]:
 def _diagnostic_to_json(d: ModelDiagnostic) -> Dict[str, Any]:
     span = None
     if d.span is not None:  # pragma: no cover
-        # Defensive: PR-A keeps ``ModelInspect.diagnostics`` empty.
-        # PR-B / PR-C will emit W_*/I_* diagnostics that carry spans;
-        # this serializer branch exists to be ready for them. Once a
-        # fixture lands that exercises a spanned diagnostic, drop the
-        # pragma.
+        # Current design-health diagnostics are spanless, but the JSON
+        # contract already supports spans for diagnostics that can be
+        # anchored precisely.
         span = {
             'line': d.span.line,
             'column': d.span.column,

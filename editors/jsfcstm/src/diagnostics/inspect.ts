@@ -1,13 +1,13 @@
 /**
  * Structured model inspection for jsfcstm, mirrored from the pyfcstm
- * Layer 2 PR-A entry point ``pyfcstm.diagnostics.inspect_model``.
+ * ``pyfcstm.diagnostics.inspect_model`` entry point.
  *
  * The public field shape, view-graph derivation, and ``toJson()`` output
  * are kept byte-equivalent to the pyfcstm side so that the shared
  * ``pyfcstm/diagnostics/schema.json`` contract validates either side's
  * output. Layer 2 strictness: anything pyfcstm produces, jsfcstm must
- * produce too. PR-B / PR-C will populate the ``diagnostics`` array;
- * PR-A keeps it empty.
+ * produce too, including design-health diagnostics derived from the
+ * inspect surface.
  */
 
 import {
@@ -134,7 +134,6 @@ export interface ModelInspect {
 
 /**
  * JSON-shaped diagnostic payload used inside :class:`ModelInspect`.
- * PR-A keeps this empty; PR-B / PR-C populate it.
  */
 export interface ModelDiagnosticJson {
     code: string;

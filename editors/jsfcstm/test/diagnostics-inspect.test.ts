@@ -42,7 +42,7 @@ async function buildMachine(src: string) {
     return machine;
 }
 
-describe('diagnostics/inspect (PR-A)', () => {
+describe('diagnostics/inspect', () => {
     describe('basic structure', () => {
         it('returns top-level shape', async () => {
             const report = inspectModel(await buildMachine(SIMPLE_DSL));
@@ -201,7 +201,7 @@ describe('diagnostics/inspect (PR-A)', () => {
             assert.equal(parsed.root_state_path, 'Root');
         });
 
-        it('diagnostics array empty for clean model without PR-B warnings', async () => {
+        it('diagnostics array empty for clean model without design-health warnings', async () => {
             const report = inspectModel(await buildMachine(SIMPLE_DSL));
             assert.deepEqual(report.diagnostics, []);
         });
@@ -295,15 +295,24 @@ state Root {
                 'Root.Used': ['Root.Idle'],
             });
         });
+
+        it('folds large integer equality guards without number precision loss', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    state Idle;
+    state Active;
+    [*] -> Idle;
+    Idle -> Active : if [9007199254740993 == 9007199254740992];
+}
+`));
+            assert.equal(
+                report.diagnostics.filter(d => d.code === 'W_GUARD_CONST_FALSE').length,
+                1,
+            );
+        });
     });
 
-    // PR-A-coverage: hit the uncovered code paths in
-    // ``editors/jsfcstm/src/diagnostics/inspect.ts`` —
-    // ``inspectModelToJson`` round-trip helper, ``effectsText`` + the
-    // effect-statement var-dataflow walker, ``walkExprCollect`` cases
-    // for BinaryOp/UnaryOp/ConditionalOp inside effects, and the
-    // ``IfBlock`` reads/writes walker.
-    describe('extended coverage (PR-A-coverage)', () => {
+    describe('extended inspect coverage', () => {
         const EFFECTS_DSL = `
 def int counter = 0;
 def int last = 0;
@@ -390,10 +399,10 @@ state Root {
         });
 
         it('effectsText surfaces effect text on BOTH transitions, including the IfBlock-bearing one', async () => {
-            // Tightened (PR-A-coverage Codex I3): pin both transitions
-            // — the guard-effect one (Idle→Active) and the if-block
-            // effect one (Active→Idle). The latter is the case that
-            // exercises ``walkStmtReadsWrites`` IfBlock branch.
+            // Pin both transitions: the guard-effect one
+            // (Idle->Active) and the if-block effect one
+            // (Active->Idle). The latter exercises the
+            // ``walkStmtReadsWrites`` IfBlock branch.
             const report = inspectModel(await buildMachine(EFFECTS_DSL));
             const idleToActive = report.transitions.find(
                 t => t.from_path === 'Root.Idle' && t.to_path === 'Root.Active',
@@ -426,12 +435,10 @@ state Root { state A; state B; [*] -> A; A -> B : if [sensor > 0]; }
             assert.equal(sensor.writes.length, 0);
         });
 
-        // PR-A-coverage push to 100% — cover the remaining 15 lines in
-        // inspect.ts: action label ref branches (263-264, 271-272),
-        // walkExprCollect UnaryOp/UFunc branch (463-464), ref targets
-        // in action_ref_graph (690-692), state-path fallback in
-        // functionSignature (713-714), and the actions_in_scope label
-        // emission (529-530).
+        // Target less common inspect paths: action label ref branches,
+        // unary / function expression walking, ref targets in
+        // action_ref_graph, state-path fallback in functionSignature,
+        // and actions_in_scope label emission.
         it('exposes ref:<name> labels for both action and aspect refs', async () => {
             // Lines 263-264 (functionSignature ref:name) +
             // 271-272 (aspectLabel ref:name).

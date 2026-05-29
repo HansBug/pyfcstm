@@ -1,12 +1,11 @@
 """
-Unit tests for :func:`pyfcstm.diagnostics.inspect_model` (Layer 2 PR-A).
+Unit tests for :func:`pyfcstm.diagnostics.inspect_model`.
 
 These tests pin down the structural contract returned by
-:func:`inspect_model` and verify the five derived view graphs
+:func:`inspect_model`, verify the five derived view graphs
 (reachability, event emission, variable data flow, aspect impact,
-action reference). PR-A populates everything except the
-``diagnostics`` array — which stays empty until PR-B / PR-C add the
-W_* / I_* rules.
+action reference), and cover design-health diagnostics derived from
+that inspect surface.
 """
 
 import json
@@ -261,8 +260,7 @@ class TestInspectModelToJson:
             assert isinstance(state['entry_actions'], list)
         assert isinstance(payload['variables'][0]['read_in_states'], list)
 
-    def test_to_json_diagnostics_empty_for_pr_a(self, report):
-        # PR-A keeps the diagnostics field empty until PR-B / PR-C land.
+    def test_to_json_diagnostics_empty_for_clean_model(self, report):
         assert report.to_json()['diagnostics'] == []
 
 
@@ -382,9 +380,8 @@ state Root {
 
     def test_forced_transition_expansion_visible(self, report):
         # The forced ``!Running -> Error :: Panic;`` is expanded by the
-        # model layer into regular transitions. PR-A surfaces them in
-        # the transition list; the ``is_forced`` flag itself depends
-        # on the model layer preserving the forced-origin (TBD PR-B).
+        # model layer into regular transitions. Inspect exposes them in
+        # the transition list and marks their forced origin.
         panic_transitions = [
             t for t in report.transitions
             if t.event and 'Panic' in t.event

@@ -55,7 +55,19 @@ function isMinimalConstFalseGuard(guard: string | null): boolean {
     const normalized = guard.trim().toLowerCase();
     if (normalized === 'false' || normalized === '0') return true;
     const match = /^\s*([+-]?\d+)\s*==\s*([+-]?\d+)\s*$/.exec(guard);
-    return match !== null && Number.parseInt(match[1], 10) !== Number.parseInt(match[2], 10);
+    return match !== null && normalizeDecimalInteger(match[1]) !== normalizeDecimalInteger(match[2]);
+}
+
+function normalizeDecimalInteger(value: string): string {
+    let sign = '';
+    let digits = value;
+    if (digits.startsWith('+') || digits.startsWith('-')) {
+        sign = digits[0] === '-' ? '-' : '';
+        digits = digits.slice(1);
+    }
+    digits = digits.replace(/^0+/, '');
+    if (digits === '') return '0';
+    return sign + digits;
 }
 
 function collectUnusedEventDiagnostics(events: EventInfo[]): ModelDiagnosticJson[] {

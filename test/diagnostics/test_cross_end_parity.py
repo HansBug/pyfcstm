@@ -392,6 +392,27 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
             },
         ],
     ),
+    (
+        'design-health-large-integer-const-false',
+        '\n'.join([
+            'state Root {',
+            '    state Idle;',
+            '    state Active;',
+            '    [*] -> Idle;',
+            '    Idle -> Active : if [9007199254740993 == 9007199254740992];',
+            '}',
+        ]),
+        [
+            {
+                'code': 'W_GUARD_CONST_FALSE',
+                'severity': 'warning',
+                'refs': {
+                    'transition_span': None,
+                    'folded_value': False,
+                },
+            },
+        ],
+    ),
 ]
 
 

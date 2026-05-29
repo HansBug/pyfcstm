@@ -43,7 +43,7 @@ Example::
 import io
 import json
 import weakref
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from textwrap import indent
 from typing import Optional, Union, List, Dict, Tuple, Iterator, Set
 
@@ -78,6 +78,18 @@ __all__ = [
 ]
 
 from ..utils import sequence_safe
+
+
+def _event_origin_from_id(
+        event_id: dsl_nodes.ChainID,
+        event_scope: Optional[str] = None,
+) -> str:
+    """Infer the event trigger scope preserved by the DSL listener."""
+    if event_scope is not None:
+        return event_scope
+    if event_id.is_absolute:
+        return 'absolute'
+    return 'local' if len(event_id.path) > 1 else 'chain'
 
 
 @dataclass
@@ -216,6 +228,11 @@ class Event:
     name: str
     state_path: Tuple[str, ...]
     extra_name: Optional[str] = None
+    declared: bool = field(default=False, compare=False)
+    origins: List[str] = field(default_factory=list, compare=False)
+
+    def __post_init__(self) -> None:
+        self.origins = list(self.origins or (['declared'] if self.declared else []))
 
     @property
     def path(self) -> Tuple[str, ...]:
@@ -288,6 +305,9 @@ class Transition(AstExportable):
     :type guard: Optional[Expr]
     :param effects: Operation statements to execute when the transition occurs
     :type effects: List[OperationStatement]
+    :param event_scope: Original DSL trigger scope for ``event`` when
+        known. One of ``'local'``, ``'chain'``, or ``'absolute'``.
+    :type event_scope: Optional[str]
     :param parent_ref: Weak reference to the parent state
     :type parent_ref: Optional[weakref.ReferenceType]
 
@@ -307,6 +327,7 @@ class Transition(AstExportable):
     event: Optional[Event]
     guard: Optional[Expr]
     effects: List[OperationStatement]
+    event_scope: Optional[str] = field(default=None, compare=False)
     parent_ref: Optional[weakref.ReferenceType] = None
 
     @property
@@ -2864,6 +2885,8 @@ def parse_dsl_node_to_state_machine(
                 name=event.name,
                 extra_name=event.extra_name,
                 state_path=current_path,
+                declared=True,
+                origins=['declared'],
             )
 
         my_state = State(
@@ -2969,6 +2992,7 @@ def parse_dsl_node_to_state_machine(
             my_event_id, trans_event = None, None
             if f_transnode.event_id is not None:
                 my_event_id = f_transnode.event_id
+                origin = _event_origin_from_id(my_event_id, f_transnode.event_scope)
                 if not my_event_id.is_absolute:
                     my_event_id = dsl_nodes.ChainID(
                         path=[*current_state.path[1:], *my_event_id.path],
@@ -3012,7 +3036,11 @@ def parse_dsl_node_to_state_machine(
                         start_state.events[suffix_name] = Event(
                             name=suffix_name,
                             state_path=start_state.path,
+                            origins=[origin],
                         )
+                    else:
+                        if origin not in start_state.events[suffix_name].origins:
+                            start_state.events[suffix_name].origins.append(origin)
                     trans_event = start_state.events[suffix_name]
 
             condition_expr, guard = f_transnode.condition_expr, None
@@ -3041,7 +3069,15 @@ def parse_dsl_node_to_state_machine(
                     ))
 
             force_transition_tuples_to_inherit.append(
-                (from_state, to_state, my_event_id, trans_event, condition_expr, guard)
+                (
+                    from_state,
+                    to_state,
+                    my_event_id,
+                    trans_event,
+                    condition_expr,
+                    guard,
+                    f_transnode.event_scope,
+                )
             )
 
         transitions = current_state.transitions
@@ -3054,6 +3090,7 @@ def parse_dsl_node_to_state_machine(
                 trans_event,
                 condition_expr,
                 guard,
+                event_scope,
             ) in force_transition_tuples_to_inherit:
                 if from_state is dsl_nodes.ALL or from_state == subnode.name:
                     transitions.append(
@@ -3063,6 +3100,7 @@ def parse_dsl_node_to_state_machine(
                             event=trans_event,
                             guard=guard,
                             effects=[],
+                            event_scope=event_scope,
                         )
                     )
                     _inner_force_transitions.append(
@@ -3071,6 +3109,7 @@ def parse_dsl_node_to_state_machine(
                             to_state=dsl_nodes.EXIT_STATE,
                             event_id=my_event_id,
                             condition_expr=condition_expr,
+                            event_scope=event_scope,
                         )
                     )
 
@@ -3161,7 +3200,12 @@ def parse_dsl_node_to_state_machine(
                 ))
 
             trans_event, guard = None, None
+            event_scope = None
             if transnode.event_id is not None:
+                event_scope = _event_origin_from_id(
+                    transnode.event_id,
+                    transnode.event_scope,
+                )
                 if transnode.event_id.is_absolute:
                     start_state = root_state
                     base_path = (root_state.name,)
@@ -3198,11 +3242,19 @@ def parse_dsl_node_to_state_machine(
 
                 if path_resolved:
                     suffix_name = transnode.event_id.path[-1]
+                    origin = _event_origin_from_id(
+                        transnode.event_id,
+                        transnode.event_scope,
+                    )
                     if suffix_name not in start_state.events:
                         start_state.events[suffix_name] = Event(
                             name=suffix_name,
                             state_path=start_state.path,
+                            origins=[origin],
                         )
+                    else:
+                        if origin not in start_state.events[suffix_name].origins:
+                            start_state.events[suffix_name].origins.append(origin)
                     trans_event = start_state.events[suffix_name]
 
             if transnode.condition_expr is not None:
@@ -3243,6 +3295,7 @@ def parse_dsl_node_to_state_machine(
                 event=trans_event,
                 guard=guard,
                 effects=post_operations,
+                event_scope=event_scope,
             )
             transitions.append(transition)
 

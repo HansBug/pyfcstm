@@ -1,12 +1,11 @@
 """
-Unit tests for :func:`pyfcstm.diagnostics.inspect_model` (Layer 2 PR-A).
+Unit tests for :func:`pyfcstm.diagnostics.inspect_model`.
 
 These tests pin down the structural contract returned by
-:func:`inspect_model` and verify the five derived view graphs
+:func:`inspect_model`, verify the five derived view graphs
 (reachability, event emission, variable data flow, aspect impact,
-action reference). PR-A populates everything except the
-``diagnostics`` array — which stays empty until PR-B / PR-C add the
-W_* / I_* rules.
+action reference), and cover design-health diagnostics derived from
+that inspect surface.
 """
 
 import json
@@ -136,6 +135,8 @@ class TestInspectModelBasic:
         pause = events_by_name['Root.Active.Pause']
         assert pause.scope == 'local'
         assert ('Root.Active', 'Root.Idle') in pause.used_by
+        assert pause.is_declared is False
+        assert pause.is_used is True
 
     def test_metrics(self, report):
         m = report.metrics
@@ -259,8 +260,7 @@ class TestInspectModelToJson:
             assert isinstance(state['entry_actions'], list)
         assert isinstance(payload['variables'][0]['read_in_states'], list)
 
-    def test_to_json_diagnostics_empty_for_pr_a(self, report):
-        # PR-A keeps the diagnostics field empty until PR-B / PR-C land.
+    def test_to_json_diagnostics_empty_for_clean_model(self, report):
         assert report.to_json()['diagnostics'] == []
 
 
@@ -380,14 +380,44 @@ state Root {
 
     def test_forced_transition_expansion_visible(self, report):
         # The forced ``!Running -> Error :: Panic;`` is expanded by the
-        # model layer into regular transitions. PR-A surfaces them in
-        # the transition list; the ``is_forced`` flag itself depends
-        # on the model layer preserving the forced-origin (TBD PR-B).
+        # model layer into regular transitions. Inspect exposes them in
+        # the transition list and marks their forced origin.
         panic_transitions = [
             t for t in report.transitions
             if t.event and 'Panic' in t.event
         ]
         assert len(panic_transitions) >= 1
+
+    def test_forced_local_event_keeps_scope(self):
+        dsl = """
+        state Root {
+            state Idle;
+            state Error;
+            [*] -> Idle;
+            !Idle -> Error :: Panic;
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        events_by_name = {e.qualified_name: e for e in report.events}
+        assert events_by_name['Root.Idle.Panic'].scope == 'local'
+
+    def test_nested_chain_event_keeps_chain_scope(self):
+        dsl = """
+        state Root {
+            state Bus {
+                event Stop;
+            }
+            state Idle;
+            state Done;
+            [*] -> Idle;
+            Idle -> Done : Bus.Stop;
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        events_by_name = {e.qualified_name: e for e in report.events}
+        assert events_by_name['Root.Bus.Stop'].scope == 'chain'
+        transition = next(t for t in report.transitions if t.event == 'Root.Bus.Stop')
+        assert transition.event_scope == 'chain'
 
     def test_function_call_in_expression(self, report):
         running = next(s for s in report.states if s.path == 'Root.System.Running')
@@ -617,6 +647,64 @@ class TestInspectModelExtendedCoverage:
         # Just confirm parse + inspect didn't crash and aspect is set.
         # Detailed label check is brittle — focus on coverage.
         assert report.aspect_impact_map is not None
+
+    def test_design_health_declared_unused_event_and_warnings(self):
+        dsl = """
+        state Root {
+            event Unused;
+            event Used;
+            state Idle;
+            state Active;
+            state Blocked;
+            state Orphan;
+            [*] -> Idle;
+            Idle -> Active : Used;
+            Active -> Blocked : if [false];
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        events_by_name = {e.qualified_name: e for e in report.events}
+        assert set(events_by_name) == {'Root.Unused', 'Root.Used'}
+
+        unused = events_by_name['Root.Unused']
+        assert unused.scope == 'chain'
+        assert unused.used_by == tuple()
+        assert unused.is_declared is True
+        assert unused.is_used is False
+
+        used = events_by_name['Root.Used']
+        assert used.scope == 'chain'
+        assert used.used_by == (('Root.Idle', 'Root.Active'),)
+        assert used.is_declared is True
+        assert used.is_used is True
+        assert report.event_emission_map == {'Root.Used': ('Root.Idle',)}
+
+        diagnostics = list(report.diagnostics)
+        codes = [d.code for d in diagnostics]
+        assert codes.count('W_UNUSED_EVENT') == 1
+        assert codes.count('W_GUARD_CONST_FALSE') == 1
+        assert codes.count('W_UNREACHABLE_STATE') == 1
+
+        unused_diag = next(d for d in diagnostics if d.code == 'W_UNUSED_EVENT')
+        assert unused_diag.refs == {
+            'event_qualified_name': 'Root.Unused',
+            'scope': 'chain',
+        }
+        const_false = next(d for d in diagnostics if d.code == 'W_GUARD_CONST_FALSE')
+        assert const_false.refs['folded_value'] is False
+        assert const_false.refs['transition_span'] is None
+        unreachable = next(d for d in diagnostics if d.code == 'W_UNREACHABLE_STATE')
+        assert unreachable.refs == {'state_path': 'Root.Orphan'}
+
+        from ._schema_check import assert_all_diags_match_schema
+        assert_all_diags_match_schema(diagnostics, context='design-health-inspect')
+
+        payload = report.to_json()
+        unused_payload = next(
+            e for e in payload['events'] if e['qualified_name'] == 'Root.Unused'
+        )
+        assert unused_payload['is_declared'] is True
+        assert unused_payload['is_used'] is False
 
     def test_function_signature_for_ref_actions(self):
         # ``_function_signature`` has an ``is_ref`` branch that exposes

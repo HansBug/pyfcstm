@@ -1,35 +1,17 @@
 """
-Cross-end E_* parity tests — confirm that a given DSL fixture triggers
-the same ``E_*`` code set on both pyfcstm and jsfcstm.
+Pyfcstm diagnostic catalog tests.
 
-The jsfcstm side has its own hermetic showcase (mocha test
-``editors/jsfcstm/test/diagnostics-showcase-demos.test.ts``) that runs
-``collectDocumentDiagnostics`` against the same DSL strings inlined
-below. This pytest file pins down the **pyfcstm** half of the same
-fixture set: each fixture runs through
-:func:`pyfcstm.model.parse_dsl_node_to_state_machine` with
-``collect=True`` and the resulting ``ModelDiagnostic`` list must contain
-the expected ``E_*`` codes.
-
-If a fixture here triggers ``E_*`` codes that the matching jsfcstm
-showcase does not, or vice versa, the two ends have drifted and the
-Layer 2 PR-A contract is violated. Keeping these two suites in lockstep
-is the mechanical safeguard for "what pyfcstm CLI reports must equal
-what VSCode shows".
-
-The fixture catalogue mirrors
-``editors/jsfcstm/test/diagnostics-showcase-demos.test.ts``: same names,
-same DSL bodies, same ``mustFire`` codes (the jsfcstm side has slightly
-richer ``sideEffects`` and ``mustNotFire`` lists for the W_* layer that
-pyfcstm has not implemented yet — see issue #104).
+Every DSL body and expected diagnostic list used by this pytest module
+is inlined below. The tests intentionally do not import, execute, or
+read resources outside the Python test runtime.
 """
 
-import os
-import tempfile
+import json
 
 import pytest
 
 from pyfcstm.dsl import parse_with_grammar_entry
+from pyfcstm.diagnostics import inspect_model
 from pyfcstm.model import parse_dsl_node_to_state_machine
 from pyfcstm.utils.validate import ModelDiagnostic
 
@@ -61,8 +43,35 @@ def _collect_codes_from_file(path: str):
     return _collect_codes_from_dsl(dsl, base_dir=path)
 
 
+def _normalize_inspect_diagnostics(diags):
+    normalized = []
+    for diag in diags:
+        refs = diag.refs if isinstance(diag, ModelDiagnostic) else diag['refs']
+        normalized.append({
+            'code': diag.code if isinstance(diag, ModelDiagnostic) else diag['code'],
+            'severity': diag.severity if isinstance(diag, ModelDiagnostic) else diag['severity'],
+            'refs': json.loads(json.dumps(refs, sort_keys=True)),
+        })
+    return sorted(
+        normalized,
+        key=lambda item: (
+            item['code'],
+            item['severity'],
+            json.dumps(item['refs'], sort_keys=True),
+        ),
+    )
+
+
+def _py_inspect_normalized_diagnostics(dsl: str):
+    ast = parse_with_grammar_entry(dsl, 'state_machine_dsl')
+    machine = parse_dsl_node_to_state_machine(ast)
+    report = inspect_model(machine)
+    assert_all_diags_match_schema(report.diagnostics, context='py-inspect-parity')
+    return _normalize_inspect_diagnostics(report.diagnostics)
+
+
 # ---------------------------------------------------------------------------
-# Single-file fixtures (mirror jsfcstm/test/diagnostics-showcase-demos.test.ts)
+# Single-file fixtures.
 # ---------------------------------------------------------------------------
 
 SINGLE_FILE_FIXTURES = [
@@ -341,6 +350,72 @@ MULTI_FILE_FIXTURES = [
 ]
 
 
+DESIGN_HEALTH_INSPECT_FIXTURES = [
+    (
+        'design-health-unused-event-unreachable-const-false',
+        '\n'.join([
+            'state Root {',
+            '    event Unused;',
+            '    event Used;',
+            '    state Idle;',
+            '    state Active;',
+            '    state Blocked;',
+            '    state Orphan;',
+            '    [*] -> Idle;',
+            '    Idle -> Active : Used;',
+            '    Active -> Blocked : if [false];',
+            '}',
+        ]),
+        [
+            {
+                'code': 'W_GUARD_CONST_FALSE',
+                'severity': 'warning',
+                'refs': {
+                    'transition_span': None,
+                    'folded_value': False,
+                },
+            },
+            {
+                'code': 'W_UNREACHABLE_STATE',
+                'severity': 'warning',
+                'refs': {
+                    'state_path': 'Root.Orphan',
+                },
+            },
+            {
+                'code': 'W_UNUSED_EVENT',
+                'severity': 'warning',
+                'refs': {
+                    'event_qualified_name': 'Root.Unused',
+                    'scope': 'chain',
+                },
+            },
+        ],
+    ),
+    (
+        'design-health-large-integer-const-false',
+        '\n'.join([
+            'state Root {',
+            '    state Idle;',
+            '    state Active;',
+            '    [*] -> Idle;',
+            '    Idle -> Active : if [9007199254740993 == 9007199254740992];',
+            '}',
+        ]),
+        [
+            {
+                'code': 'W_GUARD_CONST_FALSE',
+                'severity': 'warning',
+                'refs': {
+                    'transition_span': None,
+                    'folded_value': False,
+                },
+            },
+        ],
+    ),
+]
+
+
 @pytest.mark.unittest
 @pytest.mark.parametrize('name,dsl,must_fire', SINGLE_FILE_FIXTURES, ids=[
     item[0] for item in SINGLE_FILE_FIXTURES
@@ -378,6 +453,18 @@ def test_multi_file_fixture_emits_expected_codes(name, files, entry, must_fire, 
             f'{name}: expected {expected} to fire, got {codes}'
         )
     assert_all_diags_match_schema(diagnostics, context=name)
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize('name,dsl,expected', DESIGN_HEALTH_INSPECT_FIXTURES, ids=[
+    item[0] for item in DESIGN_HEALTH_INSPECT_FIXTURES
+])
+def test_design_health_inspect_diagnostics_match_inlined_expected(name, dsl, expected):
+    normalized_expected = _normalize_inspect_diagnostics(expected)
+    py_diags = _py_inspect_normalized_diagnostics(dsl)
+    assert py_diags == normalized_expected, (
+        f'{name}: pyfcstm inspect diagnostics mismatch: {py_diags}'
+    )
 
 
 @pytest.mark.unittest

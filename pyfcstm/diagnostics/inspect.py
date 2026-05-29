@@ -48,6 +48,7 @@ Example::
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
+from .analyzers import collect_design_health_warnings
 from ..utils.validate import ModelDiagnostic
 
 if TYPE_CHECKING:  # pragma: no cover - import-time forward refs only
@@ -167,9 +168,8 @@ class VariableInfo:
     Structural summary of a variable definition plus participation flags.
 
     The ``participates_directly`` and ``participates_indirectly`` flags
-    are precomputed here so that PR-C's ``W_UNREFERENCED_VAR`` /
-    ``I_UNREFERENCED_VAR_MAYBE_ABSTRACT`` rules can be expressed as a
-    one-line filter against this object.
+    are precomputed here so that unreferenced-variable diagnostics can
+    be expressed as a one-line filter against this object.
 
     :param name: Variable identifier.
     :type name: str
@@ -194,15 +194,15 @@ class VariableInfo:
     :type participates_directly: bool
     :param participates_indirectly: ``True`` when the variable is not
         directly referenced but is transitively reachable through
-        write-then-read data dependency across blocks. PR-A keeps this
-        field as ``False`` for variables that lack any read; PR-C
-        replaces it with the closure-based computation.
+        write-then-read data dependency across blocks. The current
+        inspect implementation keeps this field as ``False`` for
+        variables that lack any read.
     :type participates_indirectly: bool
     :param abstract_actions_in_scope: Function names of abstract actions
         whose enclosing state is on the ancestor chain or sub-tree of
-        any state that touches this variable. Used by PR-C to split
-        ``W_UNREFERENCED_VAR`` (high confidence) from
-        ``I_UNREFERENCED_VAR_MAYBE_ABSTRACT`` (low confidence).
+        any state that touches this variable. Downstream diagnostics can
+        use this to distinguish high-confidence unused variables from
+        variables that may be touched by abstract behavior.
     :type abstract_actions_in_scope: Tuple[str, ...]
     """
 
@@ -231,11 +231,19 @@ class EventInfo:
     :param used_by: ``(from_path, to_path)`` tuples for every transition
         that references this event.
     :type used_by: Tuple[Tuple[str, str], ...]
+    :param is_declared: ``True`` when the event came from an explicit
+        ``event`` declaration.
+    :type is_declared: bool
+    :param is_used: ``True`` when at least one transition references the
+        event.
+    :type is_used: bool
     """
 
     qualified_name: str
     scope: str
     used_by: Tuple[Tuple[str, str], ...]
+    is_declared: bool
+    is_used: bool
 
 
 @dataclass(frozen=True)
@@ -258,8 +266,9 @@ class ModelMetrics:
     :param n_transitions_forced: Number of transitions expanded from
         ``!``-forced declarations.
     :type n_transitions_forced: int
-    :param n_events: Number of distinct qualified events used in
-        transitions.
+    :param n_events: Number of distinct qualified events exposed by the
+        inspect surface, including explicitly declared events that no
+        transition uses.
     :type n_events: int
     :param n_variables: Number of variable definitions.
     :type n_variables: int
@@ -300,8 +309,9 @@ class ModelInspect:
     :type transitions: Tuple[TransitionInfo, ...]
     :param variables: All ``def`` variables, in declaration order.
     :type variables: Tuple[VariableInfo, ...]
-    :param events: All qualified events that appear in at least one
-        transition, sorted by qualified name.
+    :param events: All qualified events exposed by the inspect surface,
+        including explicitly declared events that no transition uses,
+        sorted by qualified name.
     :type events: Tuple[EventInfo, ...]
     :param metrics: Aggregate model metrics.
     :type metrics: ModelMetrics
@@ -321,9 +331,8 @@ class ModelInspect:
     :param action_ref_graph: Mapping named-action function path → list
         of ``ref`` edges out of it.
     :type action_ref_graph: Dict[str, Tuple[str, ...]]
-    :param diagnostics: Layer 1 ``E_*`` + Layer 2 ``W_*`` / ``I_*``
-        diagnostics. PR-A returns an empty tuple; PR-B / PR-C populate
-        it.
+    :param diagnostics: Layer 1 ``E_*`` plus design-health ``W_*`` /
+        ``I_*`` diagnostics derived from the inspect payload.
     :type diagnostics: Tuple[ModelDiagnostic, ...]
     """
 
@@ -666,7 +675,8 @@ def _build_transition_infos(machine: 'StateMachine') -> Tuple[TransitionInfo, ..
             to_path = _transition_endpoint(state, transition.to_state, is_source=False)
             qualified_event = _qualified_event_name(transition, state)
             scope = (
-                _event_scope(transition.event, state, transition.from_state, machine)
+                getattr(transition, 'event_scope', None)
+                or _event_scope(transition.event, state, transition.from_state, machine)
                 if transition.event is not None
                 else None
             )
@@ -782,7 +792,7 @@ def _build_variable_infos(
             read_in_guards=read_guards,
             written_in_effects=written_effects,
             participates_directly=participates_directly,
-            participates_indirectly=False,  # PR-C will fill the closure.
+            participates_indirectly=False,
             abstract_actions_in_scope=abstract_actions,
         ))
     return tuple(out)
@@ -797,8 +807,7 @@ def _abstract_actions_in_scope(
     touched = set(read_states) | set(written_states)
     if not touched:
         # Variable touches no state — declared but unused. There is no
-        # "scope" to look into, return empty. PR-C decides whether this
-        # counts as W_ or I_.
+        # abstract-action scope to inspect from here.
         return tuple()
     out: List[str] = []
     for path in sorted(touched):
@@ -817,9 +826,19 @@ def _abstract_actions_in_scope(
 
 
 def _build_event_infos(machine: 'StateMachine', transitions: Tuple[TransitionInfo, ...]) -> Tuple[EventInfo, ...]:
-    """Group transitions by their qualified event name."""
+    """Group declared and transition-used events by qualified event name."""
     event_users: Dict[str, List[Tuple[str, str]]] = {}
     event_scope: Dict[str, str] = {}
+    event_declared: Dict[str, bool] = {}
+    for state in machine.walk_states():
+        for event in state.events.values():
+            qn = event.path_name
+            event_users.setdefault(qn, [])
+            event_scope[qn] = _scope_from_event_origins(
+                getattr(event, 'origins', None) or []
+            )
+            event_declared[qn] = bool(getattr(event, 'declared', False))
+
     for state in machine.walk_states():
         for transition in state.transitions:
             qn = _qualified_event_name(transition, state)
@@ -828,17 +847,33 @@ def _build_event_infos(machine: 'StateMachine', transitions: Tuple[TransitionInf
             from_path = _transition_endpoint(state, transition.from_state, is_source=True)
             to_path = _transition_endpoint(state, transition.to_state, is_source=False)
             event_users.setdefault(qn, []).append((from_path, to_path))
-            event_scope[qn] = _event_scope(
-                transition.event, state, transition.from_state, machine
+            event_scope[qn] = (
+                getattr(transition, 'event_scope', None)
+                or _event_scope(transition.event, state, transition.from_state, machine)
+            )
+            event_declared.setdefault(
+                qn,
+                bool(getattr(transition.event, 'declared', False)),
             )
     out: List[EventInfo] = []
-    for qn in sorted(event_users.keys()):
+    for qn in sorted(set(event_users.keys()) | set(event_declared.keys())):
+        used_by = tuple(event_users.get(qn, []))
         out.append(EventInfo(
             qualified_name=qn,
             scope=event_scope.get(qn, 'absolute'),
-            used_by=tuple(event_users[qn]),
+            used_by=used_by,
+            is_declared=event_declared.get(qn, False),
+            is_used=bool(used_by),
         ))
     return tuple(out)
+
+
+def _scope_from_event_origins(origins: List[str]) -> str:
+    if 'local' in origins:
+        return 'local'
+    if 'absolute' in origins:
+        return 'absolute'
+    return 'chain'
 
 
 def _build_metrics(
@@ -933,6 +968,8 @@ def _build_event_emission_map(
 ) -> Dict[str, Tuple[str, ...]]:
     out: Dict[str, Tuple[str, ...]] = {}
     for e in events:
+        if not e.is_used:
+            continue
         froms = sorted({pair[0] for pair in e.used_by if pair[0] != _INIT_MARK})
         out[e.qualified_name] = tuple(froms)
     return out
@@ -1013,9 +1050,9 @@ def inspect_model(machine: 'StateMachine') -> ModelInspect:
     """
     Build a structured inspection report for a state machine model.
 
-    PR-A focuses on the structural payload and the five derived view
-    graphs; the ``diagnostics`` field stays empty until PR-B / PR-C add
-    the ``W_*`` and ``I_*`` rules.
+    The report combines the structural payload, the five derived view
+    graphs, and design-health diagnostics that can be computed from the
+    inspect surface.
 
     :param machine: The state machine model to inspect.
     :type machine: pyfcstm.model.StateMachine
@@ -1033,6 +1070,7 @@ def inspect_model(machine: 'StateMachine') -> ModelInspect:
     variables = _build_variable_infos(machine, states)
     events = _build_event_infos(machine, transitions)
     metrics = _build_metrics(states, transitions, variables, events)
+    reachability_graph = _build_reachability_graph(states, transitions)
     return ModelInspect(
         root_state_path=_state_path(machine.root_state),
         states=states,
@@ -1040,12 +1078,17 @@ def inspect_model(machine: 'StateMachine') -> ModelInspect:
         variables=variables,
         events=events,
         metrics=metrics,
-        reachability_graph=_build_reachability_graph(states, transitions),
+        reachability_graph=reachability_graph,
         event_emission_map=_build_event_emission_map(events),
         var_dataflow=_build_var_dataflow(variables),
         aspect_impact_map=_build_aspect_impact_map(states),
         action_ref_graph=_build_action_ref_graph(machine),
-        diagnostics=tuple(),
+        diagnostics=tuple(collect_design_health_warnings(
+            states,
+            transitions,
+            events,
+            reachability_graph,
+        )),
     )
 
 
@@ -1058,15 +1101,14 @@ def _to_json_dataclass(obj: Any) -> Any:
     if isinstance(obj, tuple):
         return [_to_json_dataclass(x) for x in obj]
     if isinstance(obj, list):  # pragma: no cover
-        # Defensive: PR-A model emits ``Tuple[...]`` fields exclusively.
-        # PR-B / PR-C may emit list-typed fields (e.g. open-ended
-        # ``related_diagnostics``) — this branch reserves the recursion
-        # for that future.
+        # Defensive: the current model emits ``Tuple[...]`` fields
+        # exclusively, but future payloads may introduce list-typed
+        # dataclass fields.
         return [_to_json_dataclass(x) for x in obj]
     if isinstance(obj, dict):  # pragma: no cover
-        # Same as list: PR-A keeps every dict field at the ModelInspect
-        # top level (so they go through ``_to_json_inspect``). PR-B / PR-C
-        # may nest dict payloads inside dataclass fields.
+        # Same as list: the current ModelInspect keeps every dict field
+        # at the top level, but nested dict payloads should still
+        # serialize predictably if introduced later.
         return {str(k): _to_json_dataclass(v) for k, v in obj.items()}
     return obj
 
@@ -1095,11 +1137,9 @@ def _to_json_inspect(report: ModelInspect) -> Dict[str, Any]:
 def _diagnostic_to_json(d: ModelDiagnostic) -> Dict[str, Any]:
     span = None
     if d.span is not None:  # pragma: no cover
-        # Defensive: PR-A keeps ``ModelInspect.diagnostics`` empty.
-        # PR-B / PR-C will emit W_*/I_* diagnostics that carry spans;
-        # this serializer branch exists to be ready for them. Once a
-        # fixture lands that exercises a spanned diagnostic, drop the
-        # pragma.
+        # Current design-health diagnostics are spanless, but the JSON
+        # contract already supports spans for diagnostics that can be
+        # anchored precisely.
         span = {
             'line': d.span.line,
             'column': d.span.column,

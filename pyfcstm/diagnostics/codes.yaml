@@ -997,14 +997,9 @@ E_IMPORT_MAPPING_INVALID:
     }
 
 # ---------------------------------------------------------------------------
-# Layer 2 PR-A placeholder warnings — jsfcstm already emits these codes
-# under the new W_* naming; pyfcstm-side analyzers remain TBD in PR-B/PR-C.
-# The schema registry entry exists here so the loader recognises the codes
-# and downstream LLM dispatch logic can mirror the catalog without having
-# to special-case the placeholder set.
+# Design-health warnings emitted from inspect-surface analyzers.
 # ---------------------------------------------------------------------------
 
-# scheduled for PR-C: emitted-by analyzer not yet implemented in either end
 W_UNREACHABLE_STATE:
   severity: warning
   capability: pure_static
@@ -1037,13 +1032,15 @@ W_UNREACHABLE_STATE:
         [*] -> Idle;
     }
 
-# scheduled for PR-C: emitted-by analyzer not yet implemented in either end
 W_GUARD_CONST_FALSE:
   severity: warning
   capability: const_fold
   description: >-
-    A transition's guard condition reduces to the literal ``false``
-    after constant folding, so the transition can never fire.
+    A transition's guard condition matches the current minimal
+    constant-false patterns, so the transition can never fire. This
+    analyzer currently recognizes ``false`` / ``0`` and simple signed
+    decimal integer equality checks such as ``1 == 0``; it is not a
+    complete constant-folding engine.
   refs:
     transition_span:
       type: Span
@@ -1074,7 +1071,6 @@ W_GUARD_CONST_FALSE:
         A -> B : if [false];
     }
 
-# scheduled for PR-C: emitted-by analyzer not yet implemented in either end
 W_UNUSED_EVENT:
   severity: warning
   capability: pure_static

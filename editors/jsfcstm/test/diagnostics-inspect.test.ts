@@ -42,7 +42,7 @@ async function buildMachine(src: string) {
     return machine;
 }
 
-describe('diagnostics/inspect (PR-A)', () => {
+describe('diagnostics/inspect', () => {
     describe('basic structure', () => {
         it('returns top-level shape', async () => {
             const report = inspectModel(await buildMachine(SIMPLE_DSL));
@@ -201,7 +201,7 @@ describe('diagnostics/inspect (PR-A)', () => {
             assert.equal(parsed.root_state_path, 'Root');
         });
 
-        it('diagnostics array empty for PR-A', async () => {
+        it('diagnostics array empty for clean model without design-health warnings', async () => {
             const report = inspectModel(await buildMachine(SIMPLE_DSL));
             assert.deepEqual(report.diagnostics, []);
         });
@@ -226,13 +226,93 @@ describe('diagnostics/inspect (PR-A)', () => {
         });
     });
 
-    // PR-A-coverage: hit the uncovered code paths in
-    // ``editors/jsfcstm/src/diagnostics/inspect.ts`` —
-    // ``inspectModelToJson`` round-trip helper, ``effectsText`` + the
-    // effect-statement var-dataflow walker, ``walkExprCollect`` cases
-    // for BinaryOp/UnaryOp/ConditionalOp inside effects, and the
-    // ``IfBlock`` reads/writes walker.
-    describe('extended coverage (PR-A-coverage)', () => {
+    describe('inspect design-health diagnostics', () => {
+        const DESIGN_HEALTH_DSL = `
+state Root {
+    event Unused;
+    event Used;
+    state Idle;
+    state Active;
+    state Blocked;
+    state Orphan;
+    [*] -> Idle;
+    Idle -> Active : Used;
+    Active -> Blocked : if [false];
+}
+`;
+
+        it('exposes declared-but-unused events in EventInfo', async () => {
+            const report = inspectModel(await buildMachine(DESIGN_HEALTH_DSL));
+            const byName: Record<string, typeof report.events[number]> = {};
+            for (const event of report.events) byName[event.qualified_name] = event;
+
+            assert.deepEqual(Object.keys(byName).sort(), ['Root.Unused', 'Root.Used']);
+            assert.equal(byName['Root.Unused'].scope, 'chain');
+            assert.deepEqual(byName['Root.Unused'].used_by, []);
+            assert.equal(byName['Root.Unused'].is_declared, true);
+            assert.equal(byName['Root.Unused'].is_used, false);
+
+            assert.equal(byName['Root.Used'].scope, 'chain');
+            assert.deepEqual(byName['Root.Used'].used_by, [['Root.Idle', 'Root.Active']]);
+            assert.equal(byName['Root.Used'].is_declared, true);
+            assert.equal(byName['Root.Used'].is_used, true);
+        });
+
+        it('emits design-health warnings on inspectModel diagnostics surface', async () => {
+            const report = inspectModel(await buildMachine(DESIGN_HEALTH_DSL));
+            const codes = report.diagnostics.map(d => d.code);
+            assert.equal(codes.filter(code => code === 'W_UNUSED_EVENT').length, 1);
+            assert.equal(codes.filter(code => code === 'W_GUARD_CONST_FALSE').length, 1);
+            assert.equal(codes.filter(code => code === 'W_UNREACHABLE_STATE').length, 1);
+
+            const unused = report.diagnostics.find(d => d.code === 'W_UNUSED_EVENT');
+            assert.ok(unused);
+            assert.equal(unused!.severity, 'warning');
+            assert.deepEqual(unused!.refs, {
+                event_qualified_name: 'Root.Unused',
+                scope: 'chain',
+            });
+
+            const constFalse = report.diagnostics.find(d => d.code === 'W_GUARD_CONST_FALSE');
+            assert.ok(constFalse);
+            assert.equal(constFalse!.severity, 'warning');
+            assert.deepEqual(constFalse!.refs, {
+                transition_span: null,
+                folded_value: false,
+            });
+
+            const unreachable = report.diagnostics.find(d => d.code === 'W_UNREACHABLE_STATE');
+            assert.ok(unreachable);
+            assert.equal(unreachable!.severity, 'warning');
+            assert.deepEqual(unreachable!.refs, {
+                state_path: 'Root.Orphan',
+            });
+        });
+
+        it('event emission map only lists used events', async () => {
+            const report = inspectModel(await buildMachine(DESIGN_HEALTH_DSL));
+            assert.deepEqual(report.event_emission_map, {
+                'Root.Used': ['Root.Idle'],
+            });
+        });
+
+        it('folds large integer equality guards without number precision loss', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    state Idle;
+    state Active;
+    [*] -> Idle;
+    Idle -> Active : if [9007199254740993 == 9007199254740992];
+}
+`));
+            assert.equal(
+                report.diagnostics.filter(d => d.code === 'W_GUARD_CONST_FALSE').length,
+                1,
+            );
+        });
+    });
+
+    describe('extended inspect coverage', () => {
         const EFFECTS_DSL = `
 def int counter = 0;
 def int last = 0;
@@ -319,10 +399,10 @@ state Root {
         });
 
         it('effectsText surfaces effect text on BOTH transitions, including the IfBlock-bearing one', async () => {
-            // Tightened (PR-A-coverage Codex I3): pin both transitions
-            // — the guard-effect one (Idle→Active) and the if-block
-            // effect one (Active→Idle). The latter is the case that
-            // exercises ``walkStmtReadsWrites`` IfBlock branch.
+            // Pin both transitions: the guard-effect one
+            // (Idle->Active) and the if-block effect one
+            // (Active->Idle). The latter exercises the
+            // ``walkStmtReadsWrites`` IfBlock branch.
             const report = inspectModel(await buildMachine(EFFECTS_DSL));
             const idleToActive = report.transitions.find(
                 t => t.from_path === 'Root.Idle' && t.to_path === 'Root.Active',
@@ -355,12 +435,10 @@ state Root { state A; state B; [*] -> A; A -> B : if [sensor > 0]; }
             assert.equal(sensor.writes.length, 0);
         });
 
-        // PR-A-coverage push to 100% — cover the remaining 15 lines in
-        // inspect.ts: action label ref branches (263-264, 271-272),
-        // walkExprCollect UnaryOp/UFunc branch (463-464), ref targets
-        // in action_ref_graph (690-692), state-path fallback in
-        // functionSignature (713-714), and the actions_in_scope label
-        // emission (529-530).
+        // Target less common inspect paths: action label ref branches,
+        // unary / function expression walking, ref targets in
+        // action_ref_graph, state-path fallback in functionSignature,
+        // and actions_in_scope label emission.
         it('exposes ref:<name> labels for both action and aspect refs', async () => {
             // Lines 263-264 (functionSignature ref:name) +
             // 271-272 (aspectLabel ref:name).

@@ -1,15 +1,38 @@
-import type {EventInfo, ModelDiagnosticJson, StateInfo, TransitionInfo} from '../inspect';
+import type {
+    ActionInfo,
+    EventInfo,
+    ForcedTransitionInfo,
+    ModelDiagnosticJson,
+    StateInfo,
+    TransitionInfo,
+    VariableInfo,
+} from '../inspect';
+import {collectDataFlowWarnings} from './data-flow';
+import {collectRedundancyWarnings} from './redundancy';
+import {collectStructuralWarnings} from './structural';
 
 export function collectDesignHealthWarnings(
     states: StateInfo[],
     transitions: TransitionInfo[],
+    variables: VariableInfo[],
     events: EventInfo[],
+    actions: ActionInfo[],
+    forcedTransitions: ForcedTransitionInfo[],
     reachabilityGraph: Record<string, string[]>,
 ): ModelDiagnosticJson[] {
     return [
         ...collectUnreachableStateDiagnostics(states, reachabilityGraph),
         ...collectGuardConstFalseDiagnostics(transitions),
         ...collectUnusedEventDiagnostics(events),
+        ...collectStructuralWarnings(
+            states,
+            transitions,
+            actions,
+            forcedTransitions,
+            reachabilityGraph,
+        ),
+        ...collectDataFlowWarnings(variables),
+        ...collectRedundancyWarnings(transitions, events),
     ];
 }
 

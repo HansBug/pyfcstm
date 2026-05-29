@@ -14,7 +14,9 @@ import os
 import pytest
 
 from pyfcstm.diagnostics import (
+    ActionInfo,
     EventInfo,
+    ForcedTransitionInfo,
     ModelInspect,
     ModelMetrics,
     StateInfo,
@@ -244,6 +246,8 @@ class TestInspectModelToJson:
             'transitions',
             'variables',
             'events',
+            'actions',
+            'forced_transitions',
             'metrics',
             'reachability_graph',
             'event_emission_map',
@@ -387,6 +391,42 @@ state Root {
             if t.event and 'Panic' in t.event
         ]
         assert len(panic_transitions) >= 1
+        assert all(t.is_forced for t in panic_transitions)
+        assert all(t.forced_origin for t in panic_transitions)
+
+    def test_forced_transition_origin_matches_declaration(self):
+        dsl = """
+        state Root {
+            state Idle;
+            state Active;
+            state Error;
+            [*] -> Idle;
+            !Idle -> Error :: Fail;
+            !Active -> Error :: Stop;
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        origins_by_event = {
+            t.event: t.forced_origin
+            for t in report.transitions
+            if t.is_forced
+        }
+        assert origins_by_event == {
+            'Root.Idle.Fail': '! Idle -> Error :: Fail;',
+            'Root.Active.Stop': '! Active -> Error :: Stop;',
+        }
+
+    def test_actions_and_forced_declarations_visible(self, report):
+        assert all(isinstance(item, ActionInfo) for item in report.actions)
+        assert any(item.name == 'Restart' for item in report.actions)
+        assert all(
+            isinstance(item, ForcedTransitionInfo)
+            for item in report.forced_transitions
+        )
+        assert any(
+            item.original_raw == '! Running -> Error :: Panic;'
+            for item in report.forced_transitions
+        )
 
     def test_forced_local_event_keeps_scope(self):
         dsl = """

@@ -32,6 +32,28 @@ state Outer {
 }
 `;
 
+const STRUCTURAL_DATAFLOW_REDUNDANCY_DSL = `
+def int read_only = 0;
+def int write_only = 0;
+def int stable = 0;
+state Root {
+    event Tick;
+    state Idle { enter Touch { write_only = 1; } }
+    state Active;
+    state Trapped;
+    state Orphan { enter Cleanup {} }
+    state LeafForced { !* -> [*] :: Never; }
+    [*] -> Idle : if [stable > 0];
+    Idle -> Active : if [read_only > 0];
+    Idle -> Active : if [read_only > 0];
+    Active -> Active;
+    Active -> Idle effect { stable = stable; };
+    Active -> Trapped :: Tick;
+    Trapped -> Idle : Tick;
+    !Active -> Trapped :: Tick;
+}
+`;
+
 async function buildMachine(src: string) {
     const document = createDocument(src, '/tmp/inspect.fcstm');
     const ast = await packageModule.parseAstDocument(document);
@@ -211,10 +233,12 @@ describe('diagnostics/inspect', () => {
             const keys = Object.keys(report).sort();
             assert.deepEqual(keys, [
                 'action_ref_graph',
+                'actions',
                 'aspect_impact_map',
                 'diagnostics',
                 'event_emission_map',
                 'events',
+                'forced_transitions',
                 'metrics',
                 'reachability_graph',
                 'root_state_path',
@@ -309,6 +333,113 @@ state Root {
                 report.diagnostics.filter(d => d.code === 'W_GUARD_CONST_FALSE').length,
                 1,
             );
+        });
+
+        it('emits structural dataflow and redundancy warnings', async () => {
+            const report = inspectModel(await buildMachine(STRUCTURAL_DATAFLOW_REDUNDANCY_DSL));
+            const normalized = report.diagnostics
+                .map(d => ({
+                    code: d.code,
+                    severity: d.severity,
+                    refs: JSON.parse(JSON.stringify(d.refs)),
+                }))
+                .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+
+            assert.deepEqual(normalized, [
+                {
+                    code: 'W_DEADLOCK_LEAF',
+                    severity: 'warning',
+                    refs: {state_path: 'Root.LeafForced', reason: 'no_outgoing_transition'},
+                },
+                {
+                    code: 'W_DEADLOCK_LEAF',
+                    severity: 'warning',
+                    refs: {state_path: 'Root.Orphan', reason: 'no_outgoing_transition'},
+                },
+                {
+                    code: 'W_DEAD_NAMED_ACTION',
+                    severity: 'warning',
+                    refs: {function_name: 'Cleanup', defined_in: 'Root.Orphan'},
+                },
+                {
+                    code: 'W_EFFECT_SELF_ASSIGN',
+                    severity: 'warning',
+                    refs: {state_path: 'Root.Active', transition_span: null, var_name: 'stable'},
+                },
+                {
+                    code: 'W_FORCED_NEVER_EXPANDS',
+                    severity: 'warning',
+                    refs: {state_path: 'Root.LeafForced', original_raw: '! * -> [*] :: Never;'},
+                },
+                {
+                    code: 'W_FORCED_OVERRIDES_NORMAL',
+                    severity: 'warning',
+                    refs: {from_path: 'Root.Active', to_path: 'Root.Trapped', forced_span: null, normal_span: null},
+                },
+                {
+                    code: 'W_INITIAL_UNCONDITIONAL_MISSING',
+                    severity: 'warning',
+                    refs: {composite_path: 'Root', existing_conditional_count: 1},
+                },
+                {
+                    code: 'W_REDUNDANT_TRANSITION',
+                    severity: 'warning',
+                    refs: {
+                        from_path: 'Root.Idle',
+                        to_path: 'Root.Active',
+                        duplicate_spans: [
+                            'Root.Idle->Root.Active#1',
+                            'Root.Idle->Root.Active#2',
+                        ],
+                    },
+                },
+                {
+                    code: 'W_REDUNDANT_TRANSITION',
+                    severity: 'warning',
+                    refs: {
+                        from_path: 'Root.Active',
+                        to_path: 'Root.Trapped',
+                        duplicate_spans: [
+                            'Root.Active->Root.Trapped#1',
+                            'Root.Active->Root.Trapped#2',
+                        ],
+                    },
+                },
+                {
+                    code: 'W_SELF_TRANSITION_NOP',
+                    severity: 'warning',
+                    refs: {state_path: 'Root.Active'},
+                },
+                {
+                    code: 'W_SHADOWED_EVENT',
+                    severity: 'warning',
+                    refs: {
+                        event_name: 'Tick',
+                        local_path: 'Root.Active.Tick',
+                        chain_path: 'Root.Tick',
+                    },
+                },
+                {
+                    code: 'W_UNREACHABLE_STATE',
+                    severity: 'warning',
+                    refs: {state_path: 'Root.LeafForced'},
+                },
+                {
+                    code: 'W_UNREACHABLE_STATE',
+                    severity: 'warning',
+                    refs: {state_path: 'Root.Orphan'},
+                },
+                {
+                    code: 'W_UNWRITTEN_READ_VAR',
+                    severity: 'warning',
+                    refs: {var_name: 'read_only', read_states: ['Root.Idle'], init_value: '0'},
+                },
+                {
+                    code: 'W_WRITE_ONLY_VAR',
+                    severity: 'warning',
+                    refs: {var_name: 'write_only', written_states: ['Root.Idle']},
+                },
+            ].sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))));
         });
     });
 

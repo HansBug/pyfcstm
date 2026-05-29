@@ -16,6 +16,10 @@ Vibe coding is fine for quick exploration, but once you touch repository code yo
 - Name modules, functions, classes, tests, and docs for the concrete behavior or domain concept they implement, not
   for temporary project-management labels such as PR slice IDs, roadmap phases, or plan bullets. A reader should be
   able to understand what something does without knowing the execution plan that introduced it.
+- Keep Python and JavaScript unit tests strictly independent. Python tests may use fixtures and literals under `test/`,
+  but must not call Node.js, jsfcstm, or resources outside the Python test tree. jsfcstm tests may use fixtures and
+  literals under `editors/jsfcstm/test/`, but must not call Python code or the repository-level `test/` tree. Either
+  side's tests must keep running if the other side's implementation and test directories are removed.
 - After each change, run checks proportional to the risk; nothing that hasn't been verified may be claimed as done.
 - When requirements are unclear, an action is destructive, or you're near a security boundary, stop and surface assumptions and risks before proceeding.
 

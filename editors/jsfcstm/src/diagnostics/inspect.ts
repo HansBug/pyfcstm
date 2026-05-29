@@ -22,6 +22,7 @@ import {
     Transition,
 } from '../model/runtime';
 import {collectDesignHealthWarnings} from './analyzers';
+import type {RawFcstmModelForcedTransition} from '../model/raw';
 
 const INIT_MARK = '[*]';
 const EXIT_MARK = '[*]';
@@ -98,6 +99,34 @@ export interface EventInfo {
 }
 
 /**
+ * Per-action structural summary.
+ */
+export interface ActionInfo {
+    signature: string;
+    state_path: string;
+    name: string | null;
+    stage: string;
+    aspect: string | null;
+    is_ref: boolean;
+    ref_target: string | null;
+    is_attached: boolean;
+}
+
+/**
+ * Per-forced-transition declaration summary.
+ */
+export interface ForcedTransitionInfo {
+    state_path: string;
+    from_path: string;
+    to_path: string;
+    event: string | null;
+    event_scope: 'local' | 'chain' | 'absolute' | null;
+    guard: string | null;
+    original_raw: string;
+    expansion_count: number;
+}
+
+/**
  * Aggregate model metrics.
  */
 export interface ModelMetrics {
@@ -123,6 +152,8 @@ export interface ModelInspect {
     transitions: TransitionInfo[];
     variables: VariableInfo[];
     events: EventInfo[];
+    actions: ActionInfo[];
+    forced_transitions: ForcedTransitionInfo[];
     metrics: ModelMetrics;
     reachability_graph: Record<string, string[]>;
     event_emission_map: Record<string, string[]>;
@@ -156,6 +187,8 @@ export function inspectModel(machine: StateMachine): ModelInspect {
     const transitions = buildTransitionInfos(machine);
     const variables = buildVariableInfos(machine, states);
     const events = buildEventInfos(machine);
+    const actions = buildActionInfos(machine);
+    const forcedTransitions = buildForcedTransitionInfos(machine);
     const metrics = buildMetrics(states, transitions, variables, events);
     const reachabilityGraph = buildReachabilityGraph(states, transitions);
     return {
@@ -164,13 +197,23 @@ export function inspectModel(machine: StateMachine): ModelInspect {
         transitions,
         variables,
         events,
+        actions,
+        forced_transitions: forcedTransitions,
         metrics,
         reachability_graph: reachabilityGraph,
         event_emission_map: buildEventEmissionMap(events),
         var_dataflow: buildVarDataflow(variables),
         aspect_impact_map: buildAspectImpactMap(states),
         action_ref_graph: buildActionRefGraph(machine),
-        diagnostics: collectDesignHealthWarnings(states, transitions, events, reachabilityGraph),
+        diagnostics: collectDesignHealthWarnings(
+            states,
+            transitions,
+            variables,
+            events,
+            actions,
+            forcedTransitions,
+            reachabilityGraph,
+        ),
     };
 }
 
@@ -312,7 +355,7 @@ function buildTransitionInfos(machine: StateMachine): TransitionInfo[] {
                 guard: exprText(t.guard),
                 effect: effectsText(t.effects),
                 is_forced: !!t.forced,
-                forced_origin: null,
+                forced_origin: t.forced ? (t as unknown as {text?: string}).text ?? null : null,
             });
         }
     }
@@ -571,6 +614,42 @@ function buildEventInfos(machine: StateMachine): EventInfo[] {
         });
     }
     return out;
+}
+
+function buildActionInfos(machine: StateMachine): ActionInfo[] {
+    const out: ActionInfo[] = [];
+    for (const state of machine.allStates) {
+        for (const collection of [state.onEnters, state.onDurings, state.onExits, state.onDuringAspects]) {
+            for (const action of collection) {
+                out.push({
+                    signature: functionSignature(state.path, action),
+                    state_path: dottedPath(state.path),
+                    name: action.name ?? null,
+                    stage: action.stage,
+                    aspect: action.aspect ?? null,
+                    is_ref: action.isRef,
+                    ref_target: action.isRef && action.ref
+                        ? functionSignature(undefined, action.ref as unknown as OnStage)
+                        : null,
+                    is_attached: true,
+                });
+            }
+        }
+    }
+    return out;
+}
+
+function buildForcedTransitionInfos(machine: StateMachine): ForcedTransitionInfo[] {
+    return (machine.forcedTransitions as RawFcstmModelForcedTransition[]).map(item => ({
+        state_path: dottedPath(item.statePath ?? item.state_path),
+        from_path: item.fromPath ?? item.from_path,
+        to_path: item.toPath ?? item.to_path,
+        event: item.event ?? null,
+        event_scope: item.event ? (item.event_scope ?? null) : null,
+        guard: item.guard ?? null,
+        original_raw: item.originalRaw ?? item.original_raw,
+        expansion_count: item.expansionCount ?? item.expansion_count,
+    }));
 }
 
 function scopeFromEventOrigins(event: Event): 'local' | 'chain' | 'absolute' {

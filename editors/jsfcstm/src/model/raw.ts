@@ -241,6 +241,22 @@ export interface RawFcstmModelTransition extends RawFcstmModelNodeBase {
     trigger_scope?: 'local' | 'chain' | 'absolute';
 }
 
+export interface RawFcstmModelForcedTransition {
+    statePath: string[];
+    state_path: string[];
+    fromPath: string;
+    from_path: string;
+    toPath: string;
+    to_path: string;
+    event?: string;
+    event_scope?: 'local' | 'chain' | 'absolute';
+    guard?: string;
+    originalRaw: string;
+    original_raw: string;
+    expansionCount: number;
+    expansion_count: number;
+}
+
 export interface RawFcstmModelState extends RawFcstmModelNodeBase {
     kind: 'state';
     pyModelType: 'State';
@@ -301,6 +317,8 @@ export interface RawFcstmModelStateMachine extends RawFcstmModelNodeBase {
     all_events: RawFcstmModelEvent[];
     allTransitions: RawFcstmModelTransition[];
     all_transitions: RawFcstmModelTransition[];
+    forcedTransitions: RawFcstmModelForcedTransition[];
+    forced_transitions: RawFcstmModelForcedTransition[];
     allActions: RawFcstmModelNamedFunction[];
     all_actions: RawFcstmModelNamedFunction[];
     lookups: RawFcstmModelLookups;

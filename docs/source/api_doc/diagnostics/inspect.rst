@@ -34,6 +34,20 @@ EventInfo
     :members: qualified_name,scope,used_by,is_declared,is_used
 
 
+ActionInfo
+-----------------------------------------------------
+
+.. autoclass:: ActionInfo
+    :members: signature,state_path,name,stage,aspect,is_ref,ref_target,is_attached
+
+
+ForcedTransitionInfo
+-----------------------------------------------------
+
+.. autoclass:: ForcedTransitionInfo
+    :members: state_path,from_path,to_path,event,event_scope,guard,original_raw,expansion_count
+
+
 ModelMetrics
 -----------------------------------------------------
 
@@ -45,7 +59,7 @@ ModelInspect
 -----------------------------------------------------
 
 .. autoclass:: ModelInspect
-    :members: to_json,root_state_path,states,transitions,variables,events,metrics,reachability_graph,event_emission_map,var_dataflow,aspect_impact_map,action_ref_graph,diagnostics
+    :members: to_json,root_state_path,states,transitions,variables,events,actions,forced_transitions,metrics,reachability_graph,event_emission_map,var_dataflow,aspect_impact_map,action_ref_graph,diagnostics
 
 
 inspect\_model

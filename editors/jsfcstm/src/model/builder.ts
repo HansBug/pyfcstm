@@ -31,6 +31,7 @@ import type {
     RawFcstmModelState as FcstmModelState,
     RawFcstmModelStateMachine as FcstmRawStateMachine,
     RawFcstmModelTransition as FcstmModelTransition,
+    RawFcstmModelForcedTransition as FcstmModelForcedTransition,
     RawFcstmModelUFunc as FcstmModelUFunc,
     RawFcstmModelUnaryOp as FcstmModelUnaryOp,
     RawFcstmModelVarDefine as FcstmModelVarDefine,
@@ -91,6 +92,7 @@ class StateMachineModelBuilder {
     private readonly allStates: FcstmModelState[] = [];
     private readonly allEvents: FcstmModelEvent[] = [];
     private readonly allTransitions: FcstmModelTransition[] = [];
+    private readonly forcedTransitions: FcstmModelForcedTransition[] = [];
     private readonly allActions: FcstmModelNamedFunction[] = [];
     private readonly statesByPath = new Map<string, FcstmModelState>();
     private readonly stateAstByPath = new Map<string, FcstmAstStateDefinition>();
@@ -147,6 +149,8 @@ class StateMachineModelBuilder {
             all_events: this.allEvents,
             allTransitions: this.allTransitions,
             all_transitions: this.allTransitions,
+            forcedTransitions: this.forcedTransitions,
+            forced_transitions: this.forcedTransitions,
             allActions: this.allActions,
             all_actions: this.allActions,
             lookups,
@@ -360,10 +364,16 @@ class StateMachineModelBuilder {
         currentState: FcstmModelState,
         inheritedForceTransitions: InheritedForceTransition[]
     ): void {
+        const localForceTransitions = definition.forceTransitions.map(
+            force => this.buildForceTransition(force, currentState),
+        );
         const effectiveForceTransitions = [
             ...inheritedForceTransitions,
-            ...definition.forceTransitions.map(force => this.buildForceTransition(force, currentState)),
+            ...localForceTransitions,
         ];
+        for (const force of localForceTransitions) {
+            this.recordForcedTransition(force, currentState);
+        }
 
         for (const substateDefinition of definition.substates) {
             const nextState = currentState.substates[substateDefinition.name];
@@ -455,6 +465,38 @@ class StateMachineModelBuilder {
             triggerScope,
             transitionKind: transition.transitionKind,
         };
+    }
+
+    private recordForcedTransition(
+        force: InheritedForceTransition,
+        currentState: FcstmModelState
+    ): void {
+        const expansionCount = force.fromStateName === 'ALL'
+            ? Object.keys(currentState.substates).length
+            : (currentState.substates[force.fromStateName] ? 1 : 0);
+        const fromPath = force.fromStateName === 'ALL'
+            ? '*'
+            : statePathName([...currentState.path, force.fromStateName]);
+        const toPath = force.toState === 'EXIT_STATE'
+            ? '[*]'
+            : statePathName([...currentState.path, force.toState]);
+        const eventDelimiter = force.text.includes('::') ? '::' : ':';
+        const normalizedRaw = `! ${force.fromStateName === 'ALL' ? '*' : force.fromStateName} -> ${force.toState === 'EXIT_STATE' ? '[*]' : force.toState}${force.event ? ` ${eventDelimiter} ${force.event.name}` : ''};`;
+        this.forcedTransitions.push({
+            statePath: [...currentState.path],
+            state_path: [...currentState.path],
+            fromPath,
+            from_path: fromPath,
+            toPath,
+            to_path: toPath,
+            event: force.event?.pathName,
+            event_scope: force.event ? force.triggerScope : undefined,
+            guard: force.guard ? force.guard.text : undefined,
+            originalRaw: normalizedRaw,
+            original_raw: normalizedRaw,
+            expansionCount: expansionCount,
+            expansion_count: expansionCount,
+        });
     }
 
     private getTriggerScope(

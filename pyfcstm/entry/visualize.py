@@ -116,9 +116,14 @@ def get_visualize_cache_dir() -> pathlib.Path:
     :rtype: pathlib.Path
     """
     home = pathlib.Path.home()
-    if sys.platform == 'win32':
+    if sys.platform == 'win32':  # pragma: no cover -- exercised on the Windows CI runner only.
+        # Windows uses %LOCALAPPDATA% so the cache survives roaming-profile
+        # syncs. Falls back to the documented default when the env var is
+        # unset (locked-down user profiles).
         base_dir = pathlib.Path(os.environ.get('LOCALAPPDATA') or (home / 'AppData' / 'Local'))
-    elif sys.platform == 'darwin':
+    elif sys.platform == 'darwin':  # pragma: no cover -- exercised on the macOS CI runner only.
+        # macOS convention; ~/Library/Caches is the documented per-user
+        # cache root.
         base_dir = home / 'Library' / 'Caches'
     else:
         base_dir = pathlib.Path(os.environ.get('XDG_CACHE_HOME') or (home / '.cache'))
@@ -432,10 +437,13 @@ def open_diagram_with_default_app(file_path: pathlib.Path) -> Tuple[bool, str]:
         return False, reason or 'GUI display is not available.'
 
     try:
-        if sys.platform == 'win32':
+        if sys.platform == 'win32':  # pragma: no cover -- exercised on Windows CI only.
+            # ``os.startfile`` is Windows-only; the type-ignore is intentional.
             os.startfile(str(file_path))  # type: ignore[attr-defined]
             return True, ''
-        if sys.platform == 'darwin':
+        if sys.platform == 'darwin':  # pragma: no cover -- exercised on macOS CI only.
+            # macOS uses the ``open`` CLI to dispatch to the registered
+            # viewer for the file extension.
             subprocess.Popen(
                 ['open', str(file_path)],
                 stdout=subprocess.DEVNULL,

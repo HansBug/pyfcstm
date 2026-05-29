@@ -54,7 +54,7 @@ def collect_design_health_warnings(
         root_state_path=resolved_root_state_path,
     ))
     diagnostics.extend(collect_data_flow_warnings(variables))
-    diagnostics.extend(collect_redundancy_warnings(transitions, events))
+    diagnostics.extend(collect_redundancy_warnings(transitions, events, states))
     return diagnostics
 
 

@@ -532,6 +532,60 @@ state Root {
                 [{function_name: 'Target', defined_in: 'Root.Orphan'}],
             );
         });
+
+        it('does not treat transitions with different effects as redundant', async () => {
+            const report = inspectModel(await buildMachine(`
+def int x = 0;
+state Root {
+    state A;
+    state B;
+    [*] -> A;
+    A -> B effect { x = 1; };
+    A -> B effect { x = 2; };
+}
+`));
+            const effects = report.transitions
+                .filter(t => t.from_path === 'Root.A' && t.to_path === 'Root.B')
+                .map(t => t.effect);
+            assert.deepEqual(effects, ['x=1;', 'x=2;']);
+            assert.deepEqual(
+                report.diagnostics.filter(d => d.code === 'W_REDUNDANT_TRANSITION'),
+                [],
+            );
+        });
+
+        it('does not report lifecycle self re-entry as no-op', async () => {
+            const report = inspectModel(await buildMachine(`
+def int counter = 0;
+state Root {
+    state Active {
+        enter { counter = counter + 1; }
+    }
+    [*] -> Active;
+    Active -> Active;
+}
+`));
+            assert.deepEqual(
+                report.diagnostics.filter(d => d.code === 'W_SELF_TRANSITION_NOP'),
+                [],
+            );
+        });
+
+        it('does not report self re-entry with ancestor aspects as no-op', async () => {
+            const report = inspectModel(await buildMachine(`
+def int counter = 0;
+state Root {
+    >> during before { counter = counter + 1; }
+    state Active;
+    [*] -> Active;
+    Active -> Active;
+}
+`));
+            assert.deepEqual(
+                report.diagnostics.filter(d => d.code === 'W_SELF_TRANSITION_NOP'),
+                [],
+            );
+        });
     });
 
     describe('extended inspect coverage', () => {

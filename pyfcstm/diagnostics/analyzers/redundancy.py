@@ -5,44 +5,50 @@ from typing import TYPE_CHECKING, Dict, Iterable, List, Tuple
 from ...utils.validate import ModelDiagnostic
 
 if TYPE_CHECKING:  # pragma: no cover
-    from ..inspect import EventInfo, TransitionInfo
+    from ..inspect import EventInfo, StateInfo, TransitionInfo
 
 
 def collect_redundancy_warnings(
     transitions: Iterable['TransitionInfo'],
     events: Iterable['EventInfo'],
+    states: Iterable['StateInfo'] = (),
 ) -> List[ModelDiagnostic]:
     transitions = list(transitions)
+    states = list(states)
     diagnostics: List[ModelDiagnostic] = []
     diagnostics.extend(_redundant_transition_warnings(transitions))
-    diagnostics.extend(_self_transition_nop_warnings(transitions))
+    diagnostics.extend(_self_transition_nop_warnings(transitions, states))
     diagnostics.extend(_effect_self_assign_warnings(transitions))
     diagnostics.extend(_forced_overrides_normal_warnings(transitions))
     diagnostics.extend(_shadowed_event_warnings(events))
     return diagnostics
 
 
-def _transition_key(t) -> Tuple[str, str, object, object]:
+def _transition_trigger_key(t) -> Tuple[str, str, object, object]:
     return t.from_path, t.to_path, t.event, t.guard
 
 
+def _transition_behavior_key(t) -> Tuple[str, str, object, object, object]:
+    return t.from_path, t.to_path, t.event, t.guard, t.effect
+
+
 def _redundant_transition_warnings(transitions) -> List[ModelDiagnostic]:
-    groups: Dict[Tuple[str, str, object, object], List[object]] = {}
+    groups: Dict[Tuple[str, str, object, object, object], List[object]] = {}
     for t in transitions:
         if t.from_path == '[*]':
             continue
-        groups.setdefault(_transition_key(t), []).append(t)
+        groups.setdefault(_transition_behavior_key(t), []).append(t)
     diagnostics: List[ModelDiagnostic] = []
     for key, items in groups.items():
         if len(items) < 2:
             continue
-        from_path, to_path, _, _ = key
+        from_path, to_path, _, _, _ = key
         diagnostics.append(ModelDiagnostic(
             code='W_REDUNDANT_TRANSITION',
             severity='warning',
             message=(
                 f'Transition {from_path!r} -> {to_path!r} is duplicated '
-                'with the same event and guard.'
+                'with the same event, guard, and effect.'
             ),
             refs={
                 'from_path': from_path,
@@ -56,20 +62,46 @@ def _redundant_transition_warnings(transitions) -> List[ModelDiagnostic]:
     return diagnostics
 
 
-def _self_transition_nop_warnings(transitions) -> List[ModelDiagnostic]:
+def _self_transition_nop_warnings(transitions, states) -> List[ModelDiagnostic]:
+    states_by_path = {state.path: state for state in states}
     diagnostics: List[ModelDiagnostic] = []
     for t in transitions:
         if t.from_path != t.to_path:
             continue
         if t.event is not None or t.guard is not None or t.effect is not None:
             continue
+        if not _is_lifecycle_free_leaf(t.from_path, states_by_path):
+            continue
         diagnostics.append(ModelDiagnostic(
             code='W_SELF_TRANSITION_NOP',
             severity='warning',
-            message=f'Self transition on {t.from_path!r} has no trigger, guard, or effect.',
+            message=(
+                f'Self transition on {t.from_path!r} has no trigger, '
+                'guard, effect, or re-entry lifecycle behavior.'
+            ),
             refs={'state_path': t.from_path},
         ))
     return diagnostics
+
+
+def _is_lifecycle_free_leaf(state_path: str, states_by_path) -> bool:
+    state = states_by_path.get(state_path)
+    if state is None or not state.is_leaf or state.is_pseudo:
+        return False
+    if (
+        state.entry_actions
+        or state.during_actions
+        or state.exit_actions
+        or state.aspect_before
+        or state.aspect_after
+    ):
+        return False
+    parts = state_path.split('.')
+    for index in range(1, len(parts)):
+        ancestor = states_by_path.get('.'.join(parts[:index]))
+        if ancestor is not None and (ancestor.aspect_before or ancestor.aspect_after):
+            return False
+    return True
 
 
 def _effect_self_assign_warnings(transitions) -> List[ModelDiagnostic]:
@@ -98,13 +130,13 @@ def _effect_self_assign_warnings(transitions) -> List[ModelDiagnostic]:
 
 def _forced_overrides_normal_warnings(transitions) -> List[ModelDiagnostic]:
     normal = {
-        _transition_key(t)
+        _transition_trigger_key(t)
         for t in transitions
         if not t.is_forced
     }
     diagnostics: List[ModelDiagnostic] = []
     for t in transitions:
-        if not t.is_forced or _transition_key(t) not in normal:
+        if not t.is_forced or _transition_trigger_key(t) not in normal:
             continue
         diagnostics.append(ModelDiagnostic(
             code='W_FORCED_OVERRIDES_NORMAL',

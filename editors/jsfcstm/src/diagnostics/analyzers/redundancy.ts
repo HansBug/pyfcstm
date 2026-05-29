@@ -1,19 +1,20 @@
-import type {EventInfo, ModelDiagnosticJson, TransitionInfo} from '../inspect';
+import type {EventInfo, ModelDiagnosticJson, StateInfo, TransitionInfo} from '../inspect';
 
 export function collectRedundancyWarnings(
     transitions: TransitionInfo[],
     events: EventInfo[],
+    states: StateInfo[] = [],
 ): ModelDiagnosticJson[] {
     return [
         ...collectRedundantTransitionWarnings(transitions),
-        ...collectSelfTransitionNopWarnings(transitions),
+        ...collectSelfTransitionNopWarnings(transitions, states),
         ...collectEffectSelfAssignWarnings(transitions),
         ...collectForcedOverridesNormalWarnings(transitions),
         ...collectShadowedEventWarnings(events),
     ];
 }
 
-function transitionKey(transition: TransitionInfo): string {
+function transitionTriggerKey(transition: TransitionInfo): string {
     return JSON.stringify([
         transition.from_path,
         transition.to_path,
@@ -22,11 +23,21 @@ function transitionKey(transition: TransitionInfo): string {
     ]);
 }
 
+function transitionBehaviorKey(transition: TransitionInfo): string {
+    return JSON.stringify([
+        transition.from_path,
+        transition.to_path,
+        transition.event,
+        transition.guard,
+        transition.effect,
+    ]);
+}
+
 function collectRedundantTransitionWarnings(transitions: TransitionInfo[]): ModelDiagnosticJson[] {
     const groups = new Map<string, TransitionInfo[]>();
     for (const transition of transitions) {
         if (transition.from_path === '[*]') continue;
-        const key = transitionKey(transition);
+        const key = transitionBehaviorKey(transition);
         groups.set(key, [...(groups.get(key) ?? []), transition]);
     }
     const out: ModelDiagnosticJson[] = [];
@@ -36,7 +47,7 @@ function collectRedundantTransitionWarnings(transitions: TransitionInfo[]): Mode
         out.push({
             code: 'W_REDUNDANT_TRANSITION',
             severity: 'warning',
-            message: `Transition ${JSON.stringify(first.from_path)} -> ${JSON.stringify(first.to_path)} is duplicated with the same event and guard.`,
+            message: `Transition ${JSON.stringify(first.from_path)} -> ${JSON.stringify(first.to_path)} is duplicated with the same event, guard, and effect.`,
             span: null,
             refs: {
                 from_path: first.from_path,
@@ -48,20 +59,44 @@ function collectRedundantTransitionWarnings(transitions: TransitionInfo[]): Mode
     return out;
 }
 
-function collectSelfTransitionNopWarnings(transitions: TransitionInfo[]): ModelDiagnosticJson[] {
+function collectSelfTransitionNopWarnings(transitions: TransitionInfo[], states: StateInfo[]): ModelDiagnosticJson[] {
+    const statesByPath = new Map(states.map(state => [state.path, state]));
     const out: ModelDiagnosticJson[] = [];
     for (const transition of transitions) {
         if (transition.from_path !== transition.to_path) continue;
         if (transition.event !== null || transition.guard !== null || transition.effect !== null) continue;
+        if (!isLifecycleFreeLeaf(transition.from_path, statesByPath)) continue;
         out.push({
             code: 'W_SELF_TRANSITION_NOP',
             severity: 'warning',
-            message: `Self transition on ${JSON.stringify(transition.from_path)} has no trigger, guard, or effect.`,
+            message: `Self transition on ${JSON.stringify(transition.from_path)} has no trigger, guard, effect, or re-entry lifecycle behavior.`,
             span: null,
             refs: {state_path: transition.from_path},
         });
     }
     return out;
+}
+
+function isLifecycleFreeLeaf(statePath: string, statesByPath: Map<string, StateInfo>): boolean {
+    const state = statesByPath.get(statePath);
+    if (!state || !state.is_leaf || state.is_pseudo) return false;
+    if (
+        state.entry_actions.length > 0 ||
+        state.during_actions.length > 0 ||
+        state.exit_actions.length > 0 ||
+        state.aspect_before.length > 0 ||
+        state.aspect_after.length > 0
+    ) {
+        return false;
+    }
+    const parts = statePath.split('.');
+    for (let index = 1; index < parts.length; index += 1) {
+        const ancestor = statesByPath.get(parts.slice(0, index).join('.'));
+        if (ancestor && (ancestor.aspect_before.length > 0 || ancestor.aspect_after.length > 0)) {
+            return false;
+        }
+    }
+    return true;
 }
 
 function collectEffectSelfAssignWarnings(transitions: TransitionInfo[]): ModelDiagnosticJson[] {
@@ -92,10 +127,10 @@ function collectEffectSelfAssignWarnings(transitions: TransitionInfo[]): ModelDi
 }
 
 function collectForcedOverridesNormalWarnings(transitions: TransitionInfo[]): ModelDiagnosticJson[] {
-    const normal = new Set(transitions.filter(t => !t.is_forced).map(transitionKey));
+    const normal = new Set(transitions.filter(t => !t.is_forced).map(transitionTriggerKey));
     const out: ModelDiagnosticJson[] = [];
     for (const transition of transitions) {
-        if (!transition.is_forced || !normal.has(transitionKey(transition))) continue;
+        if (!transition.is_forced || !normal.has(transitionTriggerKey(transition))) continue;
         out.push({
             code: 'W_FORCED_OVERRIDES_NORMAL',
             severity: 'warning',

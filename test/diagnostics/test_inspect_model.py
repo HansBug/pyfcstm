@@ -880,3 +880,61 @@ class TestInspectModelExtendedCoverage:
         report = inspect_model(_parse(dsl))
         exits = [t for t in report.transitions if t.to_path == '[*]']
         assert len(exits) >= 1, f'expected exit transition, got {report.transitions}'
+
+
+@pytest.mark.unittest
+class TestInspectModelRedundancySemantics:
+    def test_transition_effect_differentiates_redundancy_key(self):
+        dsl = """
+        def int x = 0;
+        state Root {
+            state A;
+            state B;
+            [*] -> A;
+            A -> B effect { x = 1; };
+            A -> B effect { x = 2; };
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        effects = [
+            t.effect for t in report.transitions
+            if t.from_path == 'Root.A' and t.to_path == 'Root.B'
+        ]
+        assert effects == ['x = 1;', 'x = 2;']
+        assert [
+            d for d in report.diagnostics
+            if d.code == 'W_REDUNDANT_TRANSITION'
+        ] == []
+
+    def test_self_transition_with_lifecycle_action_is_not_noop(self):
+        dsl = """
+        def int counter = 0;
+        state Root {
+            state Active {
+                enter { counter = counter + 1; }
+            }
+            [*] -> Active;
+            Active -> Active;
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        assert [
+            d for d in report.diagnostics
+            if d.code == 'W_SELF_TRANSITION_NOP'
+        ] == []
+
+    def test_self_transition_with_ancestor_aspect_is_not_noop(self):
+        dsl = """
+        def int counter = 0;
+        state Root {
+            >> during before { counter = counter + 1; }
+            state Active;
+            [*] -> Active;
+            Active -> Active;
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        assert [
+            d for d in report.diagnostics
+            if d.code == 'W_SELF_TRANSITION_NOP'
+        ] == []

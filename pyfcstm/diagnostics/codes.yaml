@@ -1334,9 +1334,9 @@ W_REDUNDANT_TRANSITION:
   severity: warning
   capability: pure_static
   description: >-
-    Multiple transitions share the same source, target, event, and guard.
-    Forced and normal transitions with the same key are counted here as
-    redundant and may also emit W_FORCED_OVERRIDES_NORMAL.
+    Multiple transitions share the same source, target, event, guard, and
+    effect. Forced and normal transitions with the same behavioral key are
+    counted here as redundant and may also emit W_FORCED_OVERRIDES_NORMAL.
   refs:
     from_path:
       type: str
@@ -1353,7 +1353,7 @@ W_REDUNDANT_TRANSITION:
   for_llm:
     summary: >-
       These transitions are indistinguishable by source, target, event,
-      and guard, so later copies do not add behavior.
+      guard, and effect, so later copies do not add behavior.
     recommended_actions:
       - kind: remove_duplicate
         target: transition
@@ -1377,7 +1377,8 @@ W_SELF_TRANSITION_NOP:
   severity: warning
   capability: pure_static
   description: >-
-    A self transition has no event, guard, or effect.
+    A leaf self transition has no event, guard, effect, own lifecycle action,
+    or ancestor aspect action.
   refs:
     state_path:
       type: str
@@ -1386,7 +1387,8 @@ W_SELF_TRANSITION_NOP:
   for_llm:
     summary: >-
       The transition points from a state to itself and has no trigger,
-      guard, or effect, so it does not model useful behavior.
+      guard, effect, or re-entry lifecycle behavior, so it does not model
+      useful behavior.
     recommended_actions:
       - kind: remove_transition
         target: transition
@@ -1395,7 +1397,7 @@ W_SELF_TRANSITION_NOP:
         target: transition
         rationale: Add the missing behavior if this transition is intentional.
     do_not:
-      - "Do not assume a no-op self transition re-enters the state."
+      - "Do not apply this warning to self transitions whose re-entry would run enter, during, exit, or ancestor aspect actions."
   emit_tier: static_pipeline
   example_dsl: |
     state Root {

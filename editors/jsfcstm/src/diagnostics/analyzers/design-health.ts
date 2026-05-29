@@ -34,7 +34,7 @@ export function collectDesignHealthWarnings(
             rootStatePath,
         ),
         ...collectDataFlowWarnings(variables),
-        ...collectRedundancyWarnings(transitions, events),
+        ...collectRedundancyWarnings(transitions, events, states),
     ];
 }
 

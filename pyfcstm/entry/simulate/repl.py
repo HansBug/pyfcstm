@@ -138,7 +138,10 @@ class SimulationREPL:
         :return: FileHistory instance
         :rtype: FileHistory
         """
-        if os.name == 'nt':  # Windows
+        if os.name == 'nt':  # pragma: no cover -- Windows CI runner only.
+            # Windows convention: %APPDATA% is the user-roaming config
+            # root; fall back to $HOME when APPDATA is somehow unset
+            # (locked-down user profiles).
             history_dir = Path(os.environ.get('APPDATA', Path.home())) / 'pyfcstm'
         else:  # Unix-like (Linux, macOS)
             history_dir = Path.home() / '.config' / 'pyfcstm'
